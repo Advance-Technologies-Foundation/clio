@@ -26,20 +26,23 @@ public sealed class SetObjectRightsTool(
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
-	[Description("Grant object operation + record permissions to an object AND every entity connected to it through a lookup column, " +
-		"making it available to the external (portal) audience (DESTRUCTIVE — changes access rights). " +
-		"Object-level analog of set-record-rights. Unlike set-record-rights it takes no grantee/operation: " +
-		"the platform service is coarse — pass only the root object via entity-schema-name and the server resolves the connected lookup objects itself. " +
-		"This wraps the Freedom UI designer's \"Update object permissions now\" action. " +
-		"It does NOT change column permissions. The call is asynchronous (rights are recalculated) and may take tens of seconds.")]
+	[Description("Grant or revoke OBJECT operation permissions (read/create/edit/delete) for one role on an object — the SysSchemaOperationRight / \"Object permissions\" layer (DESTRUCTIVE — changes access rights). " +
+		"Object-level analog of set-record-rights, and works for ANY role. Grants turn on the object's operation permissions when needed. " +
+		"grantee is a SysAdminUnit id (roles/users; names are not unique). Portal audience: All external users = 720b771c-e7a7-4f31-9cfb-52cd21c3739f. " +
+		"operations defaults to all four; revoke=true removes them (a role left with none is removed). " +
+		"include-connected also applies to the root object's own lookup objects (the portal-section convenience). Does NOT change column permissions. Read it back with get-object-rights.")]
 	public SetObjectRightsResponse SetObjectRights(
-		[Description("Parameters: environment-name, entity-schema-name (both required).")]
+		[Description("Parameters: environment-name, entity-schema-name, grantee (required); operations, revoke, include-connected (optional).")]
 		[Required]
 		SetObjectRightsArgs args) {
 		try {
 			SetObjectRightsOptions options = new() {
 				Environment = args.EnvironmentName,
 				EntitySchemaName = args.EntitySchemaName,
+				Grantee = args.Grantee,
+				Operations = args.Operations,
+				Revoke = args.Revoke ?? false,
+				IncludeConnected = args.IncludeConnected ?? false,
 				// --confirm is a CLI-only interactive gate; on MCP the Destructive flag is the safety mechanism,
 				// so confirm the apply here (the command otherwise refuses in a non-interactive run).
 				Confirm = true
@@ -74,9 +77,26 @@ public sealed record SetObjectRightsArgs(
 	string EnvironmentName,
 
 	[property: JsonPropertyName("entity-schema-name")]
-	[property: Description("Root object (entity schema) name whose access is granted; connected lookup objects are resolved server-side.")]
+	[property: Description("Object (entity schema) name whose operation permissions are changed.")]
 	[property: Required]
-	string EntitySchemaName
+	string EntitySchemaName,
+
+	[property: JsonPropertyName("grantee")]
+	[property: Description("SysAdminUnit id (role or user) to grant/revoke. Names are not unique — pass the id. All external users = 720b771c-e7a7-4f31-9cfb-52cd21c3739f.")]
+	[property: Required]
+	string Grantee,
+
+	[property: JsonPropertyName("operations")]
+	[property: Description("Comma-separated operations: read,create,edit,delete. Default: all four.")]
+	string Operations = null,
+
+	[property: JsonPropertyName("revoke")]
+	[property: Description("Revoke the operations instead of granting (default false). A role left with no operations is removed.")]
+	bool? Revoke = null,
+
+	[property: JsonPropertyName("include-connected")]
+	[property: Description("Also apply to the root object's own lookup objects (portal-section convenience; default false).")]
+	bool? IncludeConnected = null
 );
 
 public sealed class SetObjectRightsResponse {

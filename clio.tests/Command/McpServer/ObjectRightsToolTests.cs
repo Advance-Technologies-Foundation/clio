@@ -52,12 +52,16 @@ public class ObjectRightsToolTests {
 
 		// Act
 		SetObjectRightsArgs args = JsonSerializer.Deserialize<SetObjectRightsArgs>(
-			"""{"environment-name":"sandbox","entity-schema-name":"UsrPortalSpike"}""",
+			"""{"environment-name":"sandbox","entity-schema-name":"UsrPortalSpike","grantee":"720b771c-e7a7-4f31-9cfb-52cd21c3739f","operations":"read,edit","revoke":true,"include-connected":true}""",
 			options)!;
 
 		// Assert
 		args.EnvironmentName.Should().Be("sandbox", because: "the kebab-case environment-name binds");
 		args.EntitySchemaName.Should().Be("UsrPortalSpike", because: "the kebab-case entity-schema-name binds");
+		args.Grantee.Should().Be("720b771c-e7a7-4f31-9cfb-52cd21c3739f", because: "the grantee id binds");
+		args.Operations.Should().Be("read,edit", because: "the operations list binds");
+		args.Revoke.Should().BeTrue(because: "the revoke flag binds");
+		args.IncludeConnected.Should().BeTrue(because: "the include-connected flag binds");
 	}
 
 	[Test]
@@ -100,11 +104,13 @@ public class ObjectRightsToolTests {
 
 		// Act
 		GetObjectRightsArgs args = JsonSerializer.Deserialize<GetObjectRightsArgs>(
-			"""{"environment-name":"sandbox","entity-schema-name":"UsrPortalSpike"}""",
+			"""{"environment-name":"sandbox","entity-schema-name":"UsrPortalSpike","grantee":"720b771c-e7a7-4f31-9cfb-52cd21c3739f","include-connected":true}""",
 			options)!;
 
 		// Assert
 		args.EnvironmentName.Should().Be("sandbox", because: "the kebab-case environment-name binds");
 		args.EntitySchemaName.Should().Be("UsrPortalSpike", because: "the kebab-case entity-schema-name binds");
+		args.Grantee.Should().Be("720b771c-e7a7-4f31-9cfb-52cd21c3739f", because: "the grantee id binds");
+		args.IncludeConnected.Should().BeTrue(because: "the include-connected flag binds");
 	}
 }

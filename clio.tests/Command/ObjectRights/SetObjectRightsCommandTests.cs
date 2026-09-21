@@ -1,6 +1,11 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
+using Clio.Command;
+using Clio.Command.EntitySchemaDesigner;
 using Clio.Command.ObjectRights;
 using Clio.Common;
+using Clio.Common.ObjectRights;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
@@ -12,8 +17,11 @@ namespace Clio.Tests.Command.ObjectRights;
 [Property("Module", "Command")]
 public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptions> {
 
+	private const string Grantee = "720b771c-e7a7-4f31-9cfb-52cd21c3739f";
+
 	private SetObjectRightsCommand _command;
-	private ISectionServiceClient _sectionServiceClient;
+	private IObjectRightsWriter _rightsWriter;
+	private IRemoteEntitySchemaColumnManager _columnManager;
 	private ILogger _logger;
 
 	public override void Setup() {
@@ -22,40 +30,89 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 	}
 
 	public override void TearDown() {
-		_sectionServiceClient.ClearReceivedCalls();
+		_rightsWriter.ClearReceivedCalls();
+		_columnManager.ClearReceivedCalls();
 		_logger.ClearReceivedCalls();
 		base.TearDown();
 	}
 
 	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
 		base.AdditionalRegistrations(containerBuilder);
-		_sectionServiceClient = Substitute.For<ISectionServiceClient>();
+		_rightsWriter = Substitute.For<IObjectRightsWriter>();
+		_columnManager = Substitute.For<IRemoteEntitySchemaColumnManager>();
 		_logger = Substitute.For<ILogger>();
-		containerBuilder.AddTransient(_ => _sectionServiceClient);
+		_rightsWriter.SetObjectRights(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<ObjectOperation>>(),
+			Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>()).Returns(new ObjectRightsChange(true, true));
+		containerBuilder.AddTransient(_ => _rightsWriter);
+		containerBuilder.AddTransient(_ => _columnManager);
 		containerBuilder.AddTransient(_ => _logger);
 	}
 
 	[Test]
-	[Description("Calls the SectionService with only the root entity name and returns 0 when --confirm is set.")]
-	public void Execute_ShouldCallService_WhenConfirmSet() {
+	[Description("Grants the parsed operations for the grantee on the root object and returns 0 when --confirm is set.")]
+	public void Execute_ShouldGrantParsedOperations_WhenConfirmSet() {
 		// Arrange
-		SetObjectRightsOptions options = new() { EntitySchemaName = "UsrPortalSpike", Confirm = true };
+		SetObjectRightsOptions options = new() {
+			EntitySchemaName = "UsrPortalSpike", Grantee = Grantee, Operations = "read,edit", Confirm = true
+		};
 
 		// Act
 		int exitCode = _command.Execute(options);
 
 		// Assert
 		exitCode.Should().Be(0, because: "a successful grant returns exit code 0");
-		_sectionServiceClient.Received(1).SetConnectedEntitiesAdministratedByEntity(
-			Arg.Is<string>(name => name == "UsrPortalSpike"),
+		_rightsWriter.Received(1).SetObjectRights(
+			"UsrPortalSpike",
+			Arg.Is<Guid>(g => g == Guid.Parse(Grantee)),
+			Arg.Is<IReadOnlyCollection<ObjectOperation>>(ops =>
+				ops.Count == 2 && ops.Contains(ObjectOperation.Read) && ops.Contains(ObjectOperation.Edit)),
+			false,
 			Arg.Any<CreatioRequestOptions>());
+	}
+
+	[Test]
+	[Description("Passes revoke through to the writer when --revoke is set.")]
+	public void Execute_ShouldRevoke_WhenRevokeSet() {
+		// Arrange
+		SetObjectRightsOptions options = new() {
+			EntitySchemaName = "UsrPortalSpike", Grantee = Grantee, Operations = "delete", Revoke = true, Confirm = true
+		};
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "a successful revoke returns exit code 0");
+		_rightsWriter.Received(1).SetObjectRights("UsrPortalSpike", Arg.Any<Guid>(),
+			Arg.Any<IReadOnlyCollection<ObjectOperation>>(), true, Arg.Any<CreatioRequestOptions>());
+	}
+
+	[Test]
+	[Description("Fans out to the root's own connected lookup objects when --include-connected is set.")]
+	public void Execute_ShouldFanOutToConnected_WhenIncludeConnectedSet() {
+		// Arrange
+		_columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>())
+			.Returns(SchemaWithLookups("UsrPortalSpike", "UsrPSCategory"));
+		SetObjectRightsOptions options = new() {
+			EntitySchemaName = "UsrPortalSpike", Grantee = Grantee, IncludeConnected = true, Confirm = true
+		};
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "granting root and its connected objects succeeds");
+		_rightsWriter.Received(1).SetObjectRights("UsrPortalSpike", Arg.Any<Guid>(),
+			Arg.Any<IReadOnlyCollection<ObjectOperation>>(), false, Arg.Any<CreatioRequestOptions>());
+		_rightsWriter.Received(1).SetObjectRights("UsrPSCategory", Arg.Any<Guid>(),
+			Arg.Any<IReadOnlyCollection<ObjectOperation>>(), false, Arg.Any<CreatioRequestOptions>());
 	}
 
 	[Test]
 	[Description("Returns a friendly error and calls nothing when --entity-schema-name is empty.")]
 	public void Execute_ShouldReturnError_WhenEntitySchemaNameMissing() {
 		// Arrange
-		SetObjectRightsOptions options = new() { EntitySchemaName = "  ", Confirm = true };
+		SetObjectRightsOptions options = new() { EntitySchemaName = "  ", Grantee = Grantee, Confirm = true };
 
 		// Act
 		int exitCode = _command.Execute(options);
@@ -63,17 +120,44 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		// Assert
 		exitCode.Should().Be(1, because: "a missing entity schema name is an input error");
 		_logger.Received().WriteError(Arg.Is<string>(m => m.Contains("entity-schema-name")));
-		_sectionServiceClient.DidNotReceive().SetConnectedEntitiesAdministratedByEntity(
-			Arg.Any<string>(), Arg.Any<CreatioRequestOptions>());
+		_rightsWriter.DidNotReceive().SetObjectRights(Arg.Any<string>(), Arg.Any<Guid>(),
+			Arg.Any<IReadOnlyCollection<ObjectOperation>>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>());
+	}
+
+	[Test]
+	[Description("Returns a friendly error when --grantee is not a GUID.")]
+	public void Execute_ShouldReturnError_WhenGranteeInvalid() {
+		// Arrange
+		SetObjectRightsOptions options = new() { EntitySchemaName = "UsrPortalSpike", Grantee = "All external users", Confirm = true };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "grantee must be a SysAdminUnit id");
+		_logger.Received().WriteError(Arg.Is<string>(m => m.Contains("grantee")));
+	}
+
+	[Test]
+	[Description("Returns a friendly error when an operation token is unknown.")]
+	public void Execute_ShouldReturnError_WhenOperationUnknown() {
+		// Arrange
+		SetObjectRightsOptions options = new() { EntitySchemaName = "UsrPortalSpike", Grantee = Grantee, Operations = "read,frobnicate", Confirm = true };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "an unknown operation is an input error");
+		_logger.Received().WriteError(Arg.Is<string>(m => m.Contains("frobnicate")));
 	}
 
 	[Test]
 	[Description("Refuses to apply the destructive change in a non-interactive run when --confirm is absent.")]
 	public void Execute_ShouldRefuse_WhenNonInteractiveAndConfirmAbsent() {
 		// Arrange
-		// dotnet test runs with stdin redirected, so the command takes the non-interactive refuse branch.
 		Assume.That(Console.IsInputRedirected, Is.True, "the confirm-gate refuse path requires redirected stdin");
-		SetObjectRightsOptions options = new() { EntitySchemaName = "UsrPortalSpike", Confirm = false };
+		SetObjectRightsOptions options = new() { EntitySchemaName = "UsrPortalSpike", Grantee = Grantee, Confirm = false };
 
 		// Act
 		int exitCode = _command.Execute(options);
@@ -81,25 +165,39 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		// Assert
 		exitCode.Should().Be(1, because: "a destructive change without --confirm is refused in a non-interactive run");
 		_logger.Received().WriteError(Arg.Is<string>(m => m.Contains("--confirm")));
-		_sectionServiceClient.DidNotReceive().SetConnectedEntitiesAdministratedByEntity(
-			Arg.Any<string>(), Arg.Any<CreatioRequestOptions>());
+		_rightsWriter.DidNotReceive().SetObjectRights(Arg.Any<string>(), Arg.Any<Guid>(),
+			Arg.Any<IReadOnlyCollection<ObjectOperation>>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>());
 	}
 
 	[Test]
-	[Description("Returns exit code 1 and logs the error when the SectionService call fails.")]
-	public void Execute_ShouldReturnError_WhenServiceThrows() {
+	[Description("Returns exit code 1 and logs the error when the writer reports a failure.")]
+	public void Execute_ShouldReturnError_WhenWriterFails() {
 		// Arrange
-		_sectionServiceClient
-			.When(client => client.SetConnectedEntitiesAdministratedByEntity(
-				Arg.Any<string>(), Arg.Any<CreatioRequestOptions>()))
-			.Do(_ => throw new InvalidOperationException("boom"));
-		SetObjectRightsOptions options = new() { EntitySchemaName = "UsrPortalSpike", Confirm = true };
+		_rightsWriter.SetObjectRights(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<ObjectOperation>>(),
+			Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>()).Returns(new ObjectRightsChange(true, false, "boom"));
+		SetObjectRightsOptions options = new() { EntitySchemaName = "UsrPortalSpike", Grantee = Grantee, Confirm = true };
 
 		// Act
 		int exitCode = _command.Execute(options);
 
 		// Assert
-		exitCode.Should().Be(1, because: "a service failure returns exit code 1");
+		exitCode.Should().Be(1, because: "a writer failure returns exit code 1");
 		_logger.Received().WriteError(Arg.Is<string>(m => m.Contains("boom")));
+	}
+
+	private static EntitySchemaPropertiesInfo SchemaWithLookups(string schemaName, params string[] referenceSchemaNames) {
+		List<EntitySchemaPropertyColumnInfo> columns = new();
+		foreach (string reference in referenceSchemaNames) {
+			columns.Add(new EntitySchemaPropertyColumnInfo(
+				Name: reference + "Col", UId: Guid.NewGuid(), Source: "own", Title: null, Description: null,
+				Type: "Lookup", Required: false, Indexed: false, ReferenceSchemaName: reference));
+		}
+		return new EntitySchemaPropertiesInfo(
+			Name: schemaName, Title: null, Description: null, PackageName: schemaName, ParentSchemaName: null,
+			ExtendParent: false, PrimaryColumnName: null, PrimaryDisplayColumnName: null, OwnColumnCount: 0,
+			InheritedColumnCount: 0, IndexesCount: null, TrackChangesInDb: false, DbView: false, SspAvailable: null,
+			Virtual: false, UseRecordDeactivation: null, ShowInAdvancedMode: false, AdministratedByOperations: false,
+			AdministratedByColumns: false, AdministratedByRecords: false, UseDenyRecordRights: null,
+			UseLiveEditing: null, Columns: columns);
 	}
 }

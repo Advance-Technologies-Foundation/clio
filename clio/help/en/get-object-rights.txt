@@ -2,38 +2,43 @@ COMMAND TYPE
     Object rights
 
 NAME
-    get-object-rights - Read whether external (portal) users have object operation access to an object and its connected (lookup) entities
+    get-object-rights - Read object operation permissions (read/create/edit/delete per role) for an object
 
 SYNOPSIS
-    get-object-rights --entity-schema-name <EntitySchemaName> [OPTIONS]
+    get-object-rights --entity-schema-name <EntitySchemaName> [--grantee <SysAdminUnitId>] [--include-connected] [OPTIONS]
 
 DESCRIPTION
-    Read-only companion of set-object-rights. For the root object and every entity connected to it
-    through a lookup column, it reports whether the external (portal) audience (the "All external
-    users" role) already has object operation access (read/create/edit), and lists the objects that
-    still need a grant.
-
-    This mirrors the Freedom UI page designer's red "objects not available to external users"
-    notification: use it to grant only where needed and to verify a grant made by set-object-rights.
+    Read-only companion of set-object-rights. Reports the object's per-role operation permissions — the
+    SysSchemaOperationRight / "Object permissions" layer (who may read/create/edit/delete ANY record of
+    the entity). By default every role's rights are listed; pass --grantee to filter to one role.
 
     An object that is not administered by operation permissions is reported as available to all (no
-    grant needed). Connected lookup objects are enumerated from the root entity schema; if that read
-    fails the root object is still checked.
+    grant needed). With --include-connected the root object's own lookup objects are read too; combined
+    with --grantee this lists the objects that role still lacks access to — the same information as the
+    Freedom page designer's red "objects not available to external users" notification.
 
 OPTIONS
     --entity-schema-name
-        Root object (entity schema) name to check (for example UsrOrder). Required. Its connected
-        lookup objects are checked too.
+        Object (entity schema) name to read (for example UsrOrder). Required.
+
+    --grantee
+        Optional SysAdminUnit id to filter to one role (e.g. All external users =
+        720b771c-e7a7-4f31-9cfb-52cd21c3739f). When omitted, every role's rights are reported.
+
+    --include-connected
+        Also read every object referenced by the root object's OWN lookup columns.
 
     -e, --environment
         Name of the registered environment to read.
 
 EXIT CODES
-    0   The check ran; per-object findings and a summary are printed (including which objects, if
-        any, still need a grant for All external users).
-    1   The entity schema name was missing or the read failed. A user-friendly "Error: ..." message
-        is printed.
+    0   The check ran; per-object findings are printed (and, with --grantee, which objects that role
+        still lacks read/create/edit on).
+    1   The entity schema name was missing, --grantee was not a GUID, or the read failed.
 
 EXAMPLES
-    Check external-user object access for a section object and its lookups:
+    List every role's object permissions:
         clio get-object-rights --entity-schema-name UsrOrder -e production
+
+    Check whether portal users have access to an object and its lookups:
+        clio get-object-rights --entity-schema-name UsrOrder --grantee 720b771c-e7a7-4f31-9cfb-52cd21c3739f --include-connected -e production

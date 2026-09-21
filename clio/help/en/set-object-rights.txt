@@ -2,30 +2,43 @@ COMMAND TYPE
     Object rights
 
 NAME
-    set-object-rights - Grant operation and record permissions to an object and its connected (lookup) entities
+    set-object-rights - Grant or revoke object operation permissions (read/create/edit/delete) for a role on an object
 
 SYNOPSIS
-    set-object-rights --entity-schema-name <EntitySchemaName> [--confirm] [OPTIONS]
+    set-object-rights --entity-schema-name <EntitySchemaName> --grantee <SysAdminUnitId> [--operations read,create,edit,delete] [--revoke] [--include-connected] [--confirm] [OPTIONS]
 
 DESCRIPTION
-    Turns on operation and record permissions for an object and operation permissions for every
-    entity connected to it through a lookup column, making it available to the external (portal)
-    audience. This is the object-level analog of set-record-rights (which is per-record) and wraps
-    the Freedom UI page designer's "Update object permissions now" action.
+    Grants (or, with --revoke, revokes) object operation permissions for one role on an object — the
+    SysSchemaOperationRight / "Object permissions" layer that decides who may read/create/edit/delete
+    ANY record of an entity. This is the object-level analog of set-record-rights (which is per-record),
+    and it works for ANY role, not only the portal audience.
 
-    Only the root object is sent; the server (SectionService) resolves the connected lookup objects
-    from the root entity schema and grants them itself — you do not enumerate them. It does NOT
-    change column permissions. The call is asynchronous on the server (rights are recalculated) and
-    can take tens of seconds.
+    It is a read-modify-write over the native RightManagementService: the object's per-role grid is
+    read, the grantee's row is added/updated (or removed), and the object is saved. Granting to an
+    object that does not yet use operation permissions turns them on (Creatio then also grants
+    "All employees" by default so internal users keep access). It does NOT change column permissions.
 
     DESTRUCTIVE: this command changes access. In a non-interactive run it refuses to apply unless
-    --confirm is passed; in an interactive run it asks for a y/n confirmation. Re-granting the same
-    object access is idempotent.
+    --confirm is passed; in an interactive run it asks for a y/n confirmation.
 
 OPTIONS
     --entity-schema-name
-        Root object (entity schema) name whose access is granted (for example UsrOrder). Required.
-        Connected lookup objects are resolved server-side.
+        Object (entity schema) name whose operation permissions are changed (for example UsrOrder). Required.
+
+    --grantee
+        SysAdminUnit id (organizational/functional role or user) to grant or revoke. Names are not
+        unique, so the id is required. Portal audience: All external users =
+        720b771c-e7a7-4f31-9cfb-52cd21c3739f. Resolve other ids yourself (e.g. execute-esq on SysAdminUnit).
+
+    --operations
+        Comma-separated operations to grant/revoke: read, create, edit, delete. Default: all four.
+
+    --revoke
+        Revoke the operations instead of granting them. A role left with no operations is removed.
+
+    --include-connected
+        Also apply to every object referenced by the root object's OWN lookup columns. This is the
+        convenience for making a Freedom portal section's object AND its lookups available in one call.
 
     --confirm
         Confirm the destructive change without a prompt. Required in non-interactive runs.
@@ -34,11 +47,16 @@ OPTIONS
         Name of the registered environment to change.
 
 EXIT CODES
-    0   The change was applied, or was cancelled at the prompt. Re-granting the same object access
-        is idempotent on the server.
-    1   The entity schema name was missing, confirmation was missing in a non-interactive run, or
-        the apply failed. A user-friendly "Error: ..." message is printed.
+    0   The change was applied (or was already in the requested state, or cancelled at the prompt).
+    1   An input was invalid (missing entity-schema-name, grantee not a GUID, unknown operation),
+        confirmation was missing in a non-interactive run, or the write failed.
 
 EXAMPLES
-    Grant object access for a section object and its lookups:
-        clio set-object-rights --entity-schema-name UsrOrder --confirm -e production
+    Make an object and its lookups available to portal users (grant the external audience):
+        clio set-object-rights --entity-schema-name UsrOrder --grantee 720b771c-e7a7-4f31-9cfb-52cd21c3739f --operations read,create,edit --include-connected --confirm -e production
+
+    Grant a functional role full access to one object:
+        clio set-object-rights --entity-schema-name UsrOrder --grantee <role-id> --confirm -e production
+
+    Revoke delete from a role:
+        clio set-object-rights --entity-schema-name UsrOrder --grantee <role-id> --operations delete --revoke --confirm -e production

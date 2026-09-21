@@ -16,6 +16,9 @@ namespace Clio.Tests.Command.ObjectRights;
 [Property("Module", "Command")]
 public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptions> {
 
+	private static readonly Guid ExternalUsers = Guid.Parse("720b771c-e7a7-4f31-9cfb-52cd21c3739f");
+	private static readonly Guid Employees = Guid.Parse("a29a3ba5-4b0d-de11-9a51-005056c00008");
+
 	private GetObjectRightsCommand _command;
 	private IObjectRightsReader _rightsReader;
 	private IRemoteEntitySchemaColumnManager _columnManager;
@@ -43,7 +46,12 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 		containerBuilder.AddTransient(_ => _logger);
 	}
 
-	// Builds a merged-schema snapshot exposing one lookup column per referenced schema name.
+	private static ObjectRightsInfo Administered(string name, params RoleOperationRights[] roles) =>
+		new(true, name, name, true, roles);
+
+	private static RoleOperationRights Ext(bool read, bool create, bool edit, bool del) =>
+		new(ExternalUsers, "All external users", read, create, edit, del);
+
 	private static EntitySchemaPropertiesInfo SchemaWithLookups(string schemaName, params string[] referenceSchemaNames) {
 		List<EntitySchemaPropertyColumnInfo> columns = new();
 		foreach (string reference in referenceSchemaNames) {
@@ -61,57 +69,75 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 	}
 
 	[Test]
-	[Description("Returns 0 and reports no grant needed when the root and every connected lookup already grant read/create/edit to All external users.")]
-	public void Execute_ShouldReportNoGrantNeeded_WhenAllObjectsGranted() {
+	[Description("With a grantee filter, reports no missing objects when the grantee has read/create/edit on the root and every connected object.")]
+	public void Execute_ShouldReportNoMissing_WhenGranteeGrantedEverywhere() {
 		// Arrange
 		_columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>())
 			.Returns(SchemaWithLookups("UsrPortalSpike2", "UsrPSCategory"));
 		_rightsReader.GetObjectRights("UsrPortalSpike2", Arg.Any<CreatioRequestOptions>())
-			.Returns(new ObjectRightsInfo(true, "UsrPortalSpike2", "Portal Spike 2", true,
-				new ExternalUsersOperationRights(true, true, true, false)));
+			.Returns(Administered("UsrPortalSpike2", Ext(true, true, true, false)));
 		_rightsReader.GetObjectRights("UsrPSCategory", Arg.Any<CreatioRequestOptions>())
-			.Returns(new ObjectRightsInfo(true, "UsrPSCategory", "PS Category", true,
-				new ExternalUsersOperationRights(true, true, true, false)));
-		GetObjectRightsOptions options = new() { EntitySchemaName = "UsrPortalSpike2" };
+			.Returns(Administered("UsrPSCategory", Ext(true, true, true, false)));
+		GetObjectRightsOptions options = new() {
+			EntitySchemaName = "UsrPortalSpike2", Grantee = ExternalUsers.ToString(), IncludeConnected = true
+		};
 
 		// Act
 		int exitCode = _command.Execute(options);
 
 		// Assert
-		exitCode.Should().Be(0, because: "a completed read returns exit code 0");
-		_logger.Received().WriteInfo(Arg.Is<string>(m => m.Contains("No grant needed")));
-		_logger.DidNotReceive().WriteWarning(Arg.Is<string>(m => m.Contains("needing a grant")));
+		exitCode.Should().Be(0, because: "the read completed");
+		_logger.Received().WriteInfo(Arg.Is<string>(m => m.Contains("already has read/create/edit")));
+		_logger.DidNotReceive().WriteWarning(Arg.Is<string>(m => m.Contains("lacks")));
 	}
 
 	[Test]
-	[Description("Lists a connected object that lacks external access and points at set-object-rights.")]
-	public void Execute_ShouldListMissingObject_WhenConnectedLookupNotGranted() {
+	[Description("With a grantee filter, lists a connected object where the grantee has no grant.")]
+	public void Execute_ShouldListMissing_WhenGranteeLacksOnConnected() {
 		// Arrange
 		_columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>())
 			.Returns(SchemaWithLookups("UsrPortalSpike2", "UsrPSCategory"));
 		_rightsReader.GetObjectRights("UsrPortalSpike2", Arg.Any<CreatioRequestOptions>())
-			.Returns(new ObjectRightsInfo(true, "UsrPortalSpike2", "Portal Spike 2", true,
-				new ExternalUsersOperationRights(true, true, true, false)));
+			.Returns(Administered("UsrPortalSpike2", Ext(true, true, true, false)));
 		_rightsReader.GetObjectRights("UsrPSCategory", Arg.Any<CreatioRequestOptions>())
-			.Returns(new ObjectRightsInfo(true, "UsrPSCategory", "PS Category", true, null));
+			.Returns(Administered("UsrPSCategory", new RoleOperationRights(Employees, "All employees", true, true, true, true)));
+		GetObjectRightsOptions options = new() {
+			EntitySchemaName = "UsrPortalSpike2", Grantee = ExternalUsers.ToString(), IncludeConnected = true
+		};
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "a read that finds gaps still completes");
+		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("lacks") && m.Contains("UsrPSCategory")));
+	}
+
+	[Test]
+	[Description("Without a grantee filter, reports every role's operations on the object.")]
+	public void Execute_ShouldReportAllRoles_WhenNoGrantee() {
+		// Arrange
+		_rightsReader.GetObjectRights("UsrPortalSpike2", Arg.Any<CreatioRequestOptions>())
+			.Returns(Administered("UsrPortalSpike2",
+				Ext(true, true, true, false),
+				new RoleOperationRights(Employees, "All employees", true, true, true, true)));
 		GetObjectRightsOptions options = new() { EntitySchemaName = "UsrPortalSpike2" };
 
 		// Act
 		int exitCode = _command.Execute(options);
 
 		// Assert
-		exitCode.Should().Be(0, because: "a read that finds gaps still completes with exit code 0");
-		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("needing a grant") && m.Contains("UsrPSCategory")));
+		exitCode.Should().Be(0, because: "the read completed");
+		_logger.Received().WriteInfo(Arg.Is<string>(m => m.Contains("All external users")));
+		_logger.Received().WriteInfo(Arg.Is<string>(m => m.Contains("All employees")));
 	}
 
 	[Test]
 	[Description("Reports an object that is not administered by operation permissions as available to all.")]
 	public void Execute_ShouldReportAvailable_WhenNotAdministratedByOperations() {
 		// Arrange
-		_columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>())
-			.Returns(SchemaWithLookups("UsrOpen"));
 		_rightsReader.GetObjectRights("UsrOpen", Arg.Any<CreatioRequestOptions>())
-			.Returns(new ObjectRightsInfo(true, "UsrOpen", "Open", false, null));
+			.Returns(new ObjectRightsInfo(true, "UsrOpen", "Open", false, Array.Empty<RoleOperationRights>()));
 		GetObjectRightsOptions options = new() { EntitySchemaName = "UsrOpen" };
 
 		// Act
@@ -120,11 +146,10 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 		// Assert
 		exitCode.Should().Be(0, because: "the read completed");
 		_logger.Received().WriteInfo(Arg.Is<string>(m => m.Contains("available to all")));
-		_logger.Received().WriteInfo(Arg.Is<string>(m => m.Contains("No grant needed")));
 	}
 
 	[Test]
-	[Description("Returns a friendly error and reads nothing when --entity-schema-name is empty.")]
+	[Description("Returns a friendly error when --entity-schema-name is empty.")]
 	public void Execute_ShouldReturnError_WhenEntitySchemaNameMissing() {
 		// Arrange
 		GetObjectRightsOptions options = new() { EntitySchemaName = "  " };
@@ -139,22 +164,19 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 	}
 
 	[Test]
-	[Description("Checks the root only (with a warning) when connected-object enumeration fails.")]
-	public void Execute_ShouldCheckRootOnly_WhenColumnEnumerationThrows() {
+	[Description("Skips an object with a warning when reading its rights fails, without aborting.")]
+	public void Execute_ShouldSkip_WhenReadError() {
 		// Arrange
-		_columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>())
-			.Returns(_ => throw new InvalidOperationException("schema read failed"));
 		_rightsReader.GetObjectRights("UsrPortalSpike2", Arg.Any<CreatioRequestOptions>())
-			.Returns(new ObjectRightsInfo(true, "UsrPortalSpike2", "Portal Spike 2", true,
-				new ExternalUsersOperationRights(true, true, true, false)));
+			.Returns(new ObjectRightsInfo(true, "UsrPortalSpike2", null, false, Array.Empty<RoleOperationRights>(),
+				ReadError: "Request Error"));
 		GetObjectRightsOptions options = new() { EntitySchemaName = "UsrPortalSpike2" };
 
 		// Act
 		int exitCode = _command.Execute(options);
 
 		// Assert
-		exitCode.Should().Be(0, because: "root-only fallback still completes the read");
-		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("Could not enumerate connected objects")));
-		_rightsReader.Received(1).GetObjectRights("UsrPortalSpike2", Arg.Any<CreatioRequestOptions>());
+		exitCode.Should().Be(0, because: "a per-object read failure does not abort the read");
+		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("could not read object rights")));
 	}
 }

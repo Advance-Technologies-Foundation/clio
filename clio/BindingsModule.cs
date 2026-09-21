@@ -1008,8 +1008,8 @@ public class BindingsModule {
 		services.AddTransient<SetLogoCommand>();
 		services.AddTransient<CheckThemingAccessCommand>();
 		services.AddTransient<ICreatioRightsClient, CreatioRightsClient>();
-		services.AddTransient<ISectionServiceClient, CreatioSectionServiceClient>();
 		services.AddTransient<Clio.Common.ObjectRights.IObjectRightsReader, Clio.Common.ObjectRights.RightManagementServiceClient>();
+		services.AddTransient<Clio.Common.ObjectRights.IObjectRightsWriter, Clio.Common.ObjectRights.RightManagementServiceClient>();
 		services.AddTransient<ICreatioLicenseClient, CreatioLicenseClient>();
 		services.AddTransient<IFsmModeStatusService, FsmModeStatusService>();
 		services.AddTransient<SetFsmConfigCommand>();

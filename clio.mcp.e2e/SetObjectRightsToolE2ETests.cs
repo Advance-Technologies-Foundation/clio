@@ -60,7 +60,9 @@ public sealed class SetObjectRightsToolE2ETests : McpContractFixtureBase {
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
 					["environment-name"] = invalidEnvironmentName,
-					["entity-schema-name"] = "Contact"
+					["entity-schema-name"] = "Contact",
+					["grantee"] = "720b771c-e7a7-4f31-9cfb-52cd21c3739f",
+					["operations"] = "read"
 				}
 			},
 			arrangeContext.CancellationTokenSource.Token);

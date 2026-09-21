@@ -26,19 +26,20 @@ public sealed class GetObjectRightsTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Check whether the external (portal) audience already has object operation access to an object AND every entity connected to it through a lookup column. " +
-		"Read-only companion of set-object-rights: use it to grant only where needed and to verify a grant. " +
-		"For the root object and each connected lookup object it reports whether All external users has read/create/edit, and lists the objects that still need a grant " +
-		"(this mirrors the Freedom UI designer's red \"objects not available to external users\" notification). " +
-		"An object that is not administered by operation permissions is reported as available to all (no grant needed).")]
+	[Description("Read OBJECT operation permissions — who may read/create/edit/delete a whole entity (the SysSchemaOperationRight / \"Object permissions\" layer). " +
+		"Read-only companion of set-object-rights. Reports every role's rights on the object; pass grantee to filter to one role (e.g. All external users = 720b771c-e7a7-4f31-9cfb-52cd21c3739f). " +
+		"include-connected also reports the root object's own lookup objects (with a grantee this lists the objects that role still lacks access to — the Freedom designer's red \"not available to external users\" list). " +
+		"An object not administered by operation permissions is reported as available to all.")]
 	public GetObjectRightsResponse GetObjectRights(
-		[Description("Parameters: environment-name, entity-schema-name (both required).")]
+		[Description("Parameters: environment-name, entity-schema-name (required); grantee, include-connected (optional).")]
 		[Required]
 		GetObjectRightsArgs args) {
 		try {
 			GetObjectRightsOptions options = new() {
 				Environment = args.EnvironmentName,
-				EntitySchemaName = args.EntitySchemaName
+				EntitySchemaName = args.EntitySchemaName,
+				Grantee = args.Grantee,
+				IncludeConnected = args.IncludeConnected ?? false
 			};
 			CommandExecutionResult result = InternalExecute<GetObjectRightsCommand>(options);
 			return new GetObjectRightsResponse {
@@ -70,9 +71,17 @@ public sealed record GetObjectRightsArgs(
 	string EnvironmentName,
 
 	[property: JsonPropertyName("entity-schema-name")]
-	[property: Description("Root object (entity schema) name to check; its connected lookup objects are checked too.")]
+	[property: Description("Object (entity schema) name to read.")]
 	[property: Required]
-	string EntitySchemaName
+	string EntitySchemaName,
+
+	[property: JsonPropertyName("grantee")]
+	[property: Description("Optional SysAdminUnit id to filter to one role. All external users = 720b771c-e7a7-4f31-9cfb-52cd21c3739f. Omit to report every role.")]
+	string Grantee = null,
+
+	[property: JsonPropertyName("include-connected")]
+	[property: Description("Also read the root object's own lookup objects (portal-section convenience; default false).")]
+	bool? IncludeConnected = null
 );
 
 public sealed class GetObjectRightsResponse {
