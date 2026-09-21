@@ -1,7 +1,7 @@
 {
   "os": "Microsoft Windows NT 10.0.26200.0",
   "framework": "10.0.11",
-  "workDirectory": "C:\\Temp\\detached-ops-0acvkfal.uhj",
+  "workDirectory": "C:\\Temp\\detached-ops-fy531acy.dhw",
   "cases": [
     {
       "name": "A1a the original operation still answers after a newer runtime is activated",
@@ -156,19 +156,19 @@
       "passed": true,
       "detail": {
         "Violations": 0,
-        "Admitted": 85,
-        "Refused": 39,
-        "Windows": 6
+        "Admitted": 48,
+        "Refused": 74,
+        "Windows": 11
       }
     },
     {
       "name": "A5i mutation control: the same regression detects a deliberately split admission",
       "passed": true,
       "detail": {
-        "Violations": 28,
-        "Admitted": 13,
-        "Refused": 100,
-        "Windows": 20,
+        "Violations": 16,
+        "Admitted": 20,
+        "Refused": 85,
+        "Windows": 16,
         "note": "non-zero here is the point: it shows A5h can fail"
       }
     },
@@ -268,6 +268,24 @@
         "idleAfterRelease": true,
         "windowGrantedAfter": true,
         "note": "the outcome was Succeeded throughout; only ownership changed"
+      }
+    },
+    {
+      "name": "L1 a concurrent disposal cannot release ownership before the outcome is recorded",
+      "passed": true,
+      "detail": {
+        "stateWhenDisposeReturned": "Succeeded",
+        "quiescentAfter": true,
+        "note": "Dispose blocks on the lease gate until the in-flight completion has recorded its outcome"
+      }
+    },
+    {
+      "name": "L2 a rejected completion does not burn the report; the operation can still finish",
+      "passed": true,
+      "detail": {
+        "rejectedInvalidState": true,
+        "finalState": "Succeeded",
+        "note": "validation happens before the single report is consumed"
       }
     },
     {
