@@ -74,6 +74,29 @@ This splits scenario (c)/(d)'s remaining gap in two, per
 (Creatio, for scenario d) and therefore never need to block a swap at all, and which
 can only ever report uncertain and therefore genuinely require quiescence first.**
 
+**Answered, measured against a live stand:**
+[Alexandr's three-tier classification](https://github.com/Advance-Technologies-Foundation/clio/blob/Alexandr-Kravchuk/detached-operation-probe/experiments/DetachedOperations/reconcilability.md)
+splits this further than "reconcilable vs. not" — attributability and state-persistence
+turn out to be separate axes:
+
+| tier | example | must a swap wait? | after a process loss |
+|---|---|---|---|
+| 1 — attributable | `create-app-section` (artefact exists or doesn't); `list-packages` for a named version | no — reconcile by the artefact's own key | recoverable |
+| 2 — state-reconcilable, not attributable | `compile-creatio` — Creatio persists the last build result, but with no id or timestamp; attributable only because Creatio serialises compilation per environment, so "last result" *becomes* "my result" once a terminal signal exists | only until a terminal signal exists — which E3's durable end-marker already supplies | recoverable **iff** an end-marker survived |
+| 3 — not reconcilable | `restart` — `get-info` exposes no uptime or process-start-time field; a restarted and never-restarted server are indistinguishable | yes | permanently `Unknown` |
+
+Tier 2 is the one worth designing for: it converts from unrecoverable to recoverable for
+free once operations carry a durable terminal marker, which is exactly what the
+detached-operation ledger already provides — no new Creatio-side surface needed.
+
+**Carried forward from kirillkrylov's qualification, restated by Alexandr:** a tier-1
+answer establishes an *outcome*, never *continuity* — the artefact being absent doesn't
+resume the work and doesn't make a retry safe on its own.
+
+Measured on one stand (Creatio 10.1.725.0, .NET Framework, MSSQL, clio 8.1.0.131);
+`sync-pages` and `run-process` are reasoned about, not measured, and not classified on
+a guess.
+
 **Qualification from review**
 ([kirillkrylov](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18540898)):
 reconciliation against Creatio only covers the state Creatio itself authoritatively
@@ -94,33 +117,36 @@ a clean, quiescent shutdown.
 
 - The **global** (not per-target) execution-quiescence signal for host-level swap —
   depends on the in-flight-operation experiment's ledger, aggregated across targets.
-- The **reconcilable vs. uncertain-only** classification of operation classes, which
-  determines whether quiescence can be skipped for a given operation type.
+- ~~The reconcilable vs. uncertain-only classification of operation classes~~ —
+  **done**, see the three-tier table above.
 - Call classification (read-only vs. side-effecting) for scenario (b) — undesigned.
-- ~~Composing transport continuity with a durable ledger~~ — **done, including the
-  handover case, against the repaired barrier.**
-  [`experiments/SupervisorQuiescenceComposition`](https://github.com/Advance-Technologies-Foundation/clio/tree/nikonov/supervisor-quiescence-probe/experiments/SupervisorQuiescenceComposition)
-  runs a real separate backend process, gated on E3's `TryEnterSwapWindow`, against the
-  `create-app-section`-shaped workload. History, on the record rather than smoothed
-  over: the first pass (4/4) ran against `e3138962c`, which
+- ~~Composing transport continuity with a durable ledger~~ — **done, including a real
+  respawn under concurrent handover pressure, against the repaired barrier.**
+  [`experiments/SupervisorQuiescenceComposition`](https://github.com/Advance-Technologies-Foundation/clio/tree/nikonov/supervisor-quiescence-probe/experiments/SupervisorQuiescenceComposition).
+  History, on the record rather than smoothed over: the first pass (S1-S4) ran against
+  `e3138962c`, which
   [kirillkrylov's review](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18540898)
-  then found had three reproduced defects (admission race, one-directional window
-  exclusion, completion-boundary race) that this probe's sequential scenarios hadn't
-  been shaped to trigger either way. Alexandr
+  found had three reproduced defects (admission race, one-directional window exclusion,
+  completion-boundary race) that this probe's sequential scenarios hadn't been shaped
+  to trigger either way. Alexandr
   [repaired all three at `551f25c92538`](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18541013).
-  Re-run against the repair: **S1–S4 unchanged within noise** (expected — those
-  scenarios don't contend for the window, so they couldn't have shown the difference
-  either way), plus a new **S5**: a second `Begin` for the gated target while the
-  window is held is refused (`SwapWindowHeldException`) every run, and the target
-  accepts work again the instant the window is released — the concrete "work arriving
-  during the handover" case. **5/5, three consecutive runs.**
+  Re-run against the repair, S1-S4 unchanged within noise as expected, plus **S5**
+  (single sampled handover-admission attempt, refused). A
+  [second independent review](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18541164)
+  then found S1-S4 were drain-before-termination measurements only — no respawn ever
+  happened, despite the README's original "Kill + respawn" claim. **S6** closes that
+  gap: a real V1→V2 respawn, admission closure held through termination *and* V2's
+  confirmed readiness (not just the kill), and continuous concurrent admission pressure
+  throughout the handover rather than one sampled attempt. **6/6, three consecutive
+  runs** — V1 and V2 are distinct real PIDs each run, V1's original operation and V2's
+  post-handover operation are both present in the effect log, and every pressure
+  attempt tagged as occurring during the window was refused.
 
-  Limits unchanged: assumes the ledger already has a record for every live target (a
-  target the supervisor never learned about wouldn't block the gate); does not
-  re-measure transport continuity itself; polls `TryEnterSwapWindow` rather than using
-  an event/callback; no wait-budget/timeout policy if quiescence never arrives — that's
-  activation policy, still open. Contention beyond one swapper and one new-work
-  attempt (S5) is untested, mirroring E3's own stated limit.
+  Limits: assumes the ledger already has a record for every live target; polls rather
+  than using an event/callback; no wait-budget/timeout policy if quiescence never
+  arrives — activation policy, still open; no mutation control for the composed path
+  itself (E3's A5i covers the underlying ledger, not this probe's kill/respawn/pressure
+  logic); concurrency beyond one swapper and one pressure loop is untested.
 
 ~~A small counterexample probe demonstrating "idle transport ≠ idle process"~~ —
 **superseded.** [Alexandr-Kravchuk pointed out](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18540612)
