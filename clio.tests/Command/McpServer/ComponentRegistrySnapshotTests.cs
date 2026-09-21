@@ -259,6 +259,36 @@ public sealed class ComponentRegistrySnapshotTests {
 		}
 	}
 
+	[Test]
+	[Description("A payload carrying the top-level mobileRuntimeVersion marker maps release and commit to the right fields and leaves no unmapped key. The live fixture has carried no marker since the producer dropped it on 2026-09-17, so the snapshot guard's marker branch never executes and swapping the two properties would pass every other test — while the mapping itself is kept precisely so a re-published marker cannot fall into the extension bucket unnoticed, which is how it was missed the first time.")]
+	public void Synthetic_MobileRuntimeVersion_Payload_Should_Map_Every_Field() {
+		// Arrange — the marker exactly as the producer published it on 2026-09-17, values made distinguishable
+		// so a release/commit swap cannot pass.
+		const string payload = """
+		{
+		  "mobileRuntimeVersion": { "release": "main", "commit": "d7a0c3bb6796a1cde204ab8762b04d8940e38726" },
+		  "components": [
+		    { "componentType": "crt.Input", "category": "inputs", "description": "Text input.", "properties": {} }
+		  ]
+		}
+		""";
+		using MemoryStream stream = new(Encoding.UTF8.GetBytes(payload));
+
+		// Act
+		ComponentCatalogState state = ComponentInfoCatalog.LoadFromStream(stream);
+
+		// Assert
+		state.MobileRuntimeVersion.Should().NotBeNull(
+			because: "the envelope declares the marker, so the catalog state must carry it rather than drop it");
+		state.MobileRuntimeVersion!.Release.Should().Be("main",
+			because: "release is the branch the runtime was built from, and the two string fields are trivially swappable");
+		state.MobileRuntimeVersion.Commit.Should().Be("d7a0c3bb6796a1cde204ab8762b04d8940e38726",
+			because: "commit identifies the exact runtime build, which is the whole value of the marker");
+		UnmappedKeys(state.EnvelopeExtensions).Should().BeEmpty(
+			because: "this is the point of keeping the mapping at all — without it the marker lands in the envelope's "
+				+ "extension bucket and a producer change goes unnoticed, exactly as it did before ENG-96589");
+	}
+
 	private static IEnumerable<string> UnmappedKeys(IDictionary<string, JsonElement>? bucket) =>
 		bucket is null ? System.Array.Empty<string>() : bucket.Keys;
 }

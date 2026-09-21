@@ -53,6 +53,14 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	private const string FloorRegistryVersion = "10.0.0";
 
 	/// <summary>
+	/// A version above the floor with nothing published under it, so the registry client falls back to the
+	/// runtime-derived <c>latest</c> catalog — the real shape of a stand newer than the newest versioned
+	/// registry, and the only way to drive the prune-ON half deterministically. Deliberately NOT
+	/// <c>latest</c>: that alias is refused by the gate precisely because it says nothing about the stand.
+	/// </summary>
+	private const string AboveFloorRegistryVersion = "10.1.0";
+
+	/// <summary>
 	/// Budget for the one-off candidate probe, which converts every seeded page. It is deliberately
 	/// independent of the calling test's token: the probe is fixture-scoped work, and charging it to the
 	/// first test's (smallest) budget would cancel that test for a cost none of its own assertions caused.
@@ -1168,10 +1176,10 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			.ToHashSet(StringComparer.OrdinalIgnoreCase)!;
 
 	[Test]
-	[Description("Against the runtime-derived mobile registry (version=latest), every top-level key the conversion emits is declared by the target component's own published contract, and anything the page carried beyond it is reported in prunedProperties rather than pasted into the page (ENG-96589).")]
+	[Description("Against the runtime-derived mobile registry (a version above the floor, which falls back to the latest catalog), everything the page carried beyond the target component's published contract is reported in prunedProperties rather than pasted into the page (ENG-96589).")]
 	[AllureTag(ToolName)]
 	[AllureName("get-mobile-page-conversion-guide prunes undeclared properties against the runtime-derived registry")]
-	[AllureDescription("Starts the real clio MCP server and converts a seeded page pinned to version=latest, so the runtime-derived MobileComponentRegistry is served deterministically regardless of the stand's platform version. Asserts the response is self-consistent: propertyPruneApplied is true, and every property reported as pruned is genuinely absent from that type's published allowedProperties.")]
+	[AllureDescription("Starts the real clio MCP server and converts a seeded page pinned to a version above the prune floor, so the runtime-derived MobileComponentRegistry is served deterministically regardless of the stand's platform version. Asserts the response is self-consistent: propertyPruneApplied is true, at least one property was actually pruned, and every property reported as pruned is genuinely absent from that type's published allowedProperties.")]
 	public async Task MobilePageConversionGuideTool_Should_Prune_Undeclared_Properties_Against_RuntimeDerived_Registry() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -1184,14 +1192,17 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 
 		// Act — the version is PINNED rather than resolved from the stand: only /latest/ serves the
 		// runtime-derived catalog today, so a stand on 8.3.x would otherwise disable the very behaviour
-		// under test and every assertion below would pass vacuously.
+		// under test and every assertion below would pass vacuously. It is pinned to a SEMVER above the
+		// floor rather than to `latest`: the alias is refused by the gate on purpose, since it names a
+		// catalog and not the stand. Nothing is published under 10.1.0, so the client falls back to the
+		// latest catalog — which is what makes this deterministic on any stand.
 		List<string> failedCandidates = [];
 		MobilePageConversionGuide? guide = null;
 		string convertedSchemaName = string.Empty;
 		foreach (string schemaName in candidates) {
 			MobilePageConversionGuide? candidate = await ConvertAtVersionOrCollectFailureAsync(
 				context.Session, context.CancellationTokenSource.Token, environmentName, schemaName,
-				ComponentRegistryClient.LatestVersion, failedCandidates);
+				AboveFloorRegistryVersion, failedCandidates);
 			if (candidate is not null) {
 				guide = candidate;
 				convertedSchemaName = schemaName;
@@ -1206,10 +1217,10 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			return;
 		}
 		guide.PropertyPruneApplied.Should().BeTrue(
-			because: $"'{convertedSchemaName}' was converted against version=latest, which serves the runtime-derived "
-				+ "catalog, so the gate must have opened. This flag is the response's only prune signal — the "
-				+ "catalog's mobileRuntimeVersion marker is published irregularly and is not echoed, precisely so "
-				+ "nobody reads its absence as 'the prune did not run'");
+			because: $"'{convertedSchemaName}' was converted at {AboveFloorRegistryVersion}, which is above the floor "
+				+ "and falls back to the runtime-derived catalog, so the gate must have opened. This flag is the "
+				+ "response's only prune signal — the catalog's mobileRuntimeVersion marker is published irregularly "
+				+ "and is not echoed, precisely so nobody reads its absence as 'the prune did not run'");
 		guide.MobileContracts.Should().NotBeEmpty(
 			because: "the pruned keys below are cross-checked against these contracts");
 
@@ -1235,6 +1246,11 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		TestContext.Out.WriteLine(
 			$"prune cross-check: {checkedKeys} pruned key(s) verified against the published contracts on "
 			+ $"'{convertedSchemaName}'.");
+		checkedKeys.Should().BeGreaterThan(0,
+			because: $"the loop above is the whole assertion, and on a page that lost nothing it iterates zero times "
+				+ $"and proves nothing. A seeded page of '{ApplicationCode}' converted against the runtime-derived "
+				+ "catalog always carries at least one undeclared web property (layout `rows`, `icon`, `tooltip`), so "
+				+ "zero here means the prune silently stopped running rather than that the page was clean");
 	}
 
 	[Test]

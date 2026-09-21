@@ -5,7 +5,7 @@ applies-to:
   - clio.tests/Command/McpServer/Tools/MobilePageConverter/WebToMobileRealPageRegressionTests.cs
   - clio.tests/Command/McpServer/Tools/MobilePageConverter/WebToMobilePropertyPruneTests.cs
 ticket: ENG-95081
-date: 2026-08-26
+date: 2026-09-21
 ---
 
 **What is true** — `clio.tests/Command/McpServer/Fixtures/MobileComponentRegistry.live-snapshot.json` is a pin

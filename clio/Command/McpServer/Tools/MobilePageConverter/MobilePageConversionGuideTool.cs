@@ -877,7 +877,7 @@ public sealed record MobilePageConversionGuideArgs(
 	string TargetSchemaName = null,
 
 	[property: JsonPropertyName("version")]
-	[property: Description("Optional Creatio/registry version used to resolve the mobile and web component registries. Defaults to the latest published registry.")]
+	[property: Description("Optional Creatio/registry version used to resolve the mobile and web component registries. A 3-part semver, or 'latest'. Defaults to probing the target environment. NOTE: an explicit value OVERRIDES that probe, and the literal 'latest' names a catalog rather than a stand, so it switches the undeclared-property prune OFF (propertyPruneApplied reports false). Name a version above 10.0.0 to prune deliberately.")]
 	string Version = null,
 
 	[property: JsonPropertyName("environment-name")]

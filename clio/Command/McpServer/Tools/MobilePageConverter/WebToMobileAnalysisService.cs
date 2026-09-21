@@ -45,8 +45,10 @@ using JsonValue = System.Text.Json.Nodes.JsonValue;
 [SuppressMessage("Major Code Smell", "S3358:Ternary operators should not be nested", Justification = "The nested ternaries express a compact fallback chain that reads clearly in context.")]
 [SuppressMessage("Major Code Smell", "S2589:Boolean expressions should not be gratuitous", Justification = "The flagged null checks guard values the analyzer cannot prove non-null across the Newtonsoft/STJ boundary; removing them would risk an NRE on malformed bundles.")]
 // Split across two files: the conversion walk here, and the ENG-96589 property prune in
-// WebToMobilePropertyPrune.cs, which needs this file's private registry and reason helpers. The
-// [SuppressMessage] block above therefore governs that file too.
+// WebToMobilePropertyPrune.cs, which needs this file's private registry and reason helpers. Attributes sit
+// on the TYPE, so the [SuppressMessage] block above governs that file's MEMBERS as well — but not anything
+// outside the type declaration there, such as its file-header comment. Keep that comment free of
+// code-shaped text rather than adding a second suppression block.
 public static partial class WebToMobileAnalysisService {
 
 	private const string GuidanceArticleName = "freedom-page-web-to-mobile-conversion";
@@ -266,7 +268,17 @@ public static partial class WebToMobileAnalysisService {
 		// reports a prune on an element the page will not have. It runs BEFORE BuildRequestConversionInfo so
 		// a pruned event binding can still be reclassified in the collectors below, and before every
 		// converter-authored write further down (adaptive, positional, child slots, property overrides,
-		// placements) so the converter never prunes its own output. A no-op unless the environment's version is
+		// placements) so the converter never prunes its own output.
+		//
+		// One consequence of running FIRST is worth stating, because it is not a write-ordering question:
+		// ApplyComponentPropertyOverrides SELECTS its rules by reading these values (MatchesValueConstraints,
+		// where an ABSENT property never matches), so a pruned key can silently disable an override — no
+		// normalizations entry, no skip record. It is latent today, because all three bundled overrides
+		// filter on `type`, which ExcludedSourceProps never removes. It stops being latent the moment a rules
+		// update filters on anything else, which is why WebToMobilePageConversionRulesRegistryTests asserts
+		// that every property an override READS or WRITES is one the registry declares.
+		//
+		// A no-op unless the environment's version is
 		// positively known and above the floor AND the loaded payload carries the Flutter inherited surface,
 		// which is how the runtime-derived generation is recognised — see MobileRegistryGeneration.
 		DeclaredPropertyIndex declaredProps =
@@ -342,10 +354,20 @@ public static partial class WebToMobileAnalysisService {
 		//    exclusion rule drops every crt.SearchFilter here — and BuildMobileContracts follows the
 		//    suggestions, so an early answer also sends a contract set that is wrong in BOTH directions.
 		List<ComponentSuggestion> suggestions = BuildComponentSuggestions(namesByType, rules, webTypes, elementMap);
-		// The contract's allowedProperties is the SAME union the prune enforces (same function, same
-		// baseInputs), so a caller can always see WHY a property was pruned.
-		List<MobileComponentContract> contracts =
-			BuildMobileContracts(suggestions, mobileByType, mobileRegistryGeneration?.BaseInputs);
+		// The contract's allowedProperties is the SAME union the prune enforces, so a caller can always see
+		// WHY a property was pruned. The inherited surface is folded in only when the loaded payload IS the
+		// runtime-derived generation: the web-derived one publishes Angular element attributes (classes, id,
+		// loading, shape, styles, tabIndex) under the same key, and folding those in would advertise `classes`
+		// and `tabIndex` as accepted MOBILE properties in the field the guidance tells the agent to build
+		// values from.
+		//
+		// The predicate is CatalogIsRuntimeDerived and deliberately NOT declaredProps.Enabled. The prune gate
+		// asks about the STAND; this asks about the payload, and they disagree on every stand whose versioned
+		// registry 404s (served `latest`), on a degraded probe, and on an explicit version=latest. Using the
+		// gate here would deny `visible` and `layoutConfig` on a response whose every insert carries them.
+		List<MobileComponentContract> contracts = BuildMobileContracts(
+			suggestions, mobileByType,
+			mobileRegistryGeneration is { CatalogIsRuntimeDerived: true } ? mobileRegistryGeneration.BaseInputs : null);
 
 		// 5. Data sections applied to the mobile body verbatim/filtered (identical structural support on
 		//    mobile): modelConfig is carried over as-is (preserving attribute types like ForwardReference);

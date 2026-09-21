@@ -15,9 +15,9 @@ using JsonValue = System.Text.Json.Nodes.JsonValue;
 // against an incomplete catalog would have discarded genuinely supported properties. The
 // runtime-derived generation removed that reason, and membership in it became a valid test.
 //
-// The leak is not merely cosmetic. A web `crt.GridContainer` carries `rows: "minmax(max-content, 0)"`,
-// which mobile does not declare; the row track collapses and the fields inside it never render — while
-// `validate-page` and `update-page --dry-run` both pass.
+// The leak is not merely cosmetic. A web `crt.GridContainer` carries a `rows` track sizing that mobile
+// does not declare; the row track collapses and the fields inside it never render — while `validate-page`
+// and `update-page --dry-run` both pass.
 public static partial class WebToMobileAnalysisService {
 
 	/// <summary>
@@ -67,8 +67,9 @@ public static partial class WebToMobileAnalysisService {
 		internal static readonly Version MinimumPrunableVersion = new(10, 0, 0);
 
 		/// <summary>
-		/// True when the target version is positively KNOWN and above the floor. Those two are the gate;
-		/// the payload's own shape is checked separately by <see cref="DeclaredPropertyIndex.Build"/>.
+		/// True when the target version is positively KNOWN and is a semver above the floor. Those two are
+		/// the gate; the payload's own shape is checked separately by
+		/// <see cref="DeclaredPropertyIndex.Build"/>.
 		/// <para>
 		/// Both halves are needed and neither implies the other. A stand on 8.3.5 has no published versioned
 		/// mobile registry, so the client falls back to the <c>latest</c> catalog — which describes a mobile
@@ -91,23 +92,57 @@ public static partial class WebToMobileAnalysisService {
 		public bool PruneEnabled => VersionKnown && VersionAllowsPrune(RequestedVersion);
 
 		/// <summary>
-		/// True for <c>latest</c> and for any version that normalises to a 3-part semver strictly above
-		/// <see cref="MinimumPrunableVersion"/>. Everything else — blank, unparseable, or at/below the
-		/// floor — is refused.
+		/// True when the LOADED payload is the runtime-derived generation, judged by the inherited surface it
+		/// publishes. Deliberately independent of <see cref="PruneEnabled"/>: the gate is a question about the
+		/// STAND, this is a question about the CATALOG, and the two disagree on every stand whose versioned
+		/// registry 404s (8.3.5, 9.0.0 — served <c>latest</c>), on a degraded probe, and on an explicit
+		/// <c>version=latest</c>. Confusing them makes <c>mobileContracts[].allowedProperties</c> deny
+		/// <c>visible</c> and <c>layoutConfig</c> on a response whose every insert carries them.
+		/// <para>
+		/// Recognised case-INSENSITIVELY. The registry's dictionaries come from <c>System.Text.Json</c> with
+		/// the ORDINAL comparer, so an indexed lookup would make the whole feature hinge on the producer's
+		/// casing — the same single-string fragility that made the provenance marker unusable as a gate.
+		/// </para>
+		/// </summary>
+		public bool CatalogIsRuntimeDerived =>
+			BaseInputs is { Count: > 0 } surface
+			&& new HashSet<string>(surface.Keys, StringComparer.OrdinalIgnoreCase) is { } keys
+			&& keys.Contains("layoutConfig")
+			&& keys.Contains("visible");
+
+		/// <summary>
+		/// True only for a version that normalises to a 3-part semver strictly above
+		/// <see cref="MinimumPrunableVersion"/>. Everything else — blank, unparseable, at/below the floor, or
+		/// the literal <c>latest</c> — is refused.
 		/// </summary>
 		/// <remarks>
+		/// <para>
+		/// <c>latest</c> is refused DELIBERATELY, and it is the one value that needs arguing. It is a CATALOG
+		/// ALIAS, not a statement about the target: a successful probe always returns a semver, so the string
+		/// reaches this method only from a caller who named it, or from a failed probe (which
+		/// <see cref="VersionKnown"/> already rejects). Accepting it meant <c>environment-name: &lt;8.3.5
+		/// stand&gt;</c> plus <c>version: "latest"</c> skipped the probe entirely and pruned against a Flutter
+		/// runtime that stand does not run — the exact input this feature's floor exists to refuse. The
+		/// sibling tools do not have this hole because they reject <c>version</c> and <c>environment-name</c>
+		/// together; this tool cannot, because it NEEDS the environment to read the source page.
+		/// </para>
+		/// <para>
+		/// The cost is that a caller who pins <c>latest</c> on a modern stand gets no prune. That is the
+		/// fail-open direction every other rule here takes, and it is visible rather than silent:
+		/// <c>propertyPruneApplied</c> reports false. To prune deliberately, name a version above the floor.
+		/// </para>
+		/// <para>
 		/// The version is NORMALISED before comparing, never handed to <c>System.Version</c> raw. A Creatio
 		/// core version is commonly 4-part (<c>10.0.0.934</c>), and <c>System.Version</c> compares its
 		/// Revision against the floor's implicit <c>-1</c> — so a raw comparison reads <c>10.0.0.934</c> as
 		/// ABOVE <c>10.0.0</c> and prunes the very generation the floor is named after. Normalising also
 		/// makes a 2-part <c>10.0</c> behave like <c>10.0.0</c> instead of sorting below it.
+		/// </para>
 		/// </remarks>
 		internal static bool VersionAllowsPrune(string requestedVersion) {
-			if (string.IsNullOrWhiteSpace(requestedVersion)) {
+			if (string.IsNullOrWhiteSpace(requestedVersion)
+				|| string.Equals(requestedVersion.Trim(), ComponentRegistryClient.LatestVersion, StringComparison.OrdinalIgnoreCase)) {
 				return false;
-			}
-			if (string.Equals(requestedVersion.Trim(), ComponentRegistryClient.LatestVersion, StringComparison.OrdinalIgnoreCase)) {
-				return true;
 			}
 			return PlatformVersionResolver.TryNormaliseToThreePartSemver(requestedVersion, out string threePart)
 				&& Version.TryParse(threePart, out Version parsed)
@@ -157,9 +192,7 @@ public static partial class WebToMobileAnalysisService {
 			//     flexConfig, bindTo, adaptive, visible). Requiring `layoutConfig` is therefore not a
 			//     heuristic over prose — it is the presence of the layout model the prune's whole
 			//     top-level-only design depends on, and no web-derived payload has ever carried it.
-			if (generation is not { PruneEnabled: true }
-				|| generation.BaseInputs is not { Count: > 0 }
-				|| !DeclaresInheritedSurface(generation.BaseInputs)
+			if (generation is not { PruneEnabled: true, CatalogIsRuntimeDerived: true }
 				|| mobileByType is not { Count: > 0 }) {
 				return Disabled;
 			}
@@ -181,17 +214,6 @@ public static partial class WebToMobileAnalysisService {
 				byType[pair.Key] = declared;
 			}
 			return byType.Count == 0 ? Disabled : new DeclaredPropertyIndex(true, byType);
-		}
-
-		/// <summary>
-		/// True when the inherited surface is the RUNTIME-DERIVED one. Matched case-insensitively on purpose:
-		/// the registry's own dictionaries come from System.Text.Json with the ORDINAL comparer, so an
-		/// indexed lookup here would make the whole feature hinge on the producer's casing — the same
-		/// single-string fragility that made the provenance marker unusable as a gate.
-		/// </summary>
-		private static bool DeclaresInheritedSurface(IReadOnlyDictionary<string, JsonElement> baseInputs) {
-			var keys = new HashSet<string>(baseInputs.Keys, StringComparer.OrdinalIgnoreCase);
-			return keys.Contains("layoutConfig") && keys.Contains("visible");
 		}
 
 		/// <summary>
@@ -379,7 +401,7 @@ public static partial class WebToMobileAnalysisService {
 			ElementName = elementName,
 			Binding = binding,
 			WebRequest = webRequest,
-			// Built through the shared Reason(...) factory, never by constructing the record directly: the
+			// Built through the shared reason factory below, never by constructing the record directly: the
 			// vocabulary guard scans that factory's call sites, so a direct construction would be invisible
 			// to it — and the guard's own regex is literal enough that even naming the shape in a comment
 			// trips it, which is the point.

@@ -24,15 +24,17 @@ namespace Clio.Tests.Command.McpServer.Tools.MobilePageConverter;
 /// <c>MobileRegistryGeneration</c> that the TOOL is responsible for composing.
 /// </summary>
 /// <remarks>
-/// The gap is narrow and expensive. <c>VersionKnown</c> is derived from
+/// The gap is narrow and expensive, and it has two axes. <c>VersionKnown</c> is derived from
 /// <c>versionResolution.Source == VersionResolutionSource.Environment</c>, and the platform-version
 /// resolver returns the literal string <c>"latest"</c> for EVERY failure class. Hard-coding that
 /// derivation to <see langword="true"/> leaves the whole analysis fixture green while a stand whose
 /// version probe failed is pruned against a runtime it does not run — the single failure the version
-/// floor exists to prevent.
+/// floor exists to prevent. The other axis is the string: <c>ResolveVersionAsync</c> short-circuits on an
+/// explicit <c>version</c> argument and reports it as Environment-sourced, so a caller-pinned
+/// <c>latest</c> arrives indistinguishable from a real probe unless the gate refuses the alias itself.
 /// <para>
-/// Unlike <c>MobilePageConversionGuideToolRefusalWiringTests</c>, these tests pass NO explicit version, so
-/// version resolution actually reaches the injected resolver instead of short-circuiting.
+/// Most tests here pass NO explicit version, so resolution actually reaches the injected resolver instead
+/// of short-circuiting; the alias test is the one that deliberately does the opposite.
 /// </para>
 /// </remarks>
 [TestFixture]
@@ -47,11 +49,14 @@ public sealed class MobilePageConversionGuidePruneWiringTests {
 	/// <summary>A property the stubbed mobile <c>crt.Input</c> does not declare — the prune's subject.</summary>
 	private const string UndeclaredProperty = "tooltip";
 
+	/// <summary>What a SUCCESSFUL probe returns: a semver, above the floor. A probe never returns an alias.</summary>
+	private const string ResolvedVersion = "10.1.0";
+
 	[Test]
 	[Description("A version that came from a FAILED probe does not enable the prune, even though the string it carries is 'latest'. The resolver returns that literal for every failure class, so the tool must decide on the resolution SOURCE and never on the string.")]
 	public async Task GetGuide_WhenVersionProbeDegraded_ShouldNotPrune() {
 		// Arrange
-		var tool = new StubbedTool(VersionResolutionSource.LatestFallback);
+		var tool = new StubbedTool(VersionResolutionSource.LatestFallback, "latest");
 
 		// Act
 		MobilePageConversionGuideResponse response = await tool.GetMobilePageConversionGuide(Args());
@@ -66,10 +71,10 @@ public sealed class MobilePageConversionGuidePruneWiringTests {
 	}
 
 	[Test]
-	[Description("The control case: the SAME version string, resolved FROM THE ENVIRONMENT, does enable the prune. Without it the degraded-probe test would pass on a tool that never prunes at all — the same class of vacuity it exists to close.")]
+	[Description("The control case: a version READ FROM THE ENVIRONMENT does enable the prune. Without it the degraded-probe test would pass on a tool that never prunes at all — the same class of vacuity it exists to close.")]
 	public async Task GetGuide_WhenVersionResolvedFromEnvironment_ShouldPrune() {
 		// Arrange
-		var tool = new StubbedTool(VersionResolutionSource.Environment);
+		var tool = new StubbedTool(VersionResolutionSource.Environment, ResolvedVersion);
 
 		// Act
 		MobilePageConversionGuideResponse response = await tool.GetMobilePageConversionGuide(Args());
@@ -84,10 +89,48 @@ public sealed class MobilePageConversionGuidePruneWiringTests {
 	}
 
 	[Test]
+	[Description("A degraded probe does not enable the prune even when the version string it carries WOULD pass the floor. Every other refusal here pairs a failed probe with the literal 'latest', which the version half of the gate refuses on its own — so without this case, hard-coding VersionKnown to true at the composition site leaves both fixtures green. The resolver cannot produce this pairing today; the gate is not allowed to depend on that.")]
+	public async Task GetGuide_WhenProbeDegradedButVersionWouldPass_ShouldNotPrune() {
+		// Arrange
+		var tool = new StubbedTool(VersionResolutionSource.LatestFallback, ResolvedVersion);
+
+		// Act
+		MobilePageConversionGuideResponse response = await tool.GetMobilePageConversionGuide(Args());
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "a degraded probe withholds the prune, not the conversion");
+		Values(response, "UsrName").Should().ContainKey(UndeclaredProperty,
+			because: "the version was never read from the stand, so the string alone cannot authorise measuring it");
+		response.Guide!.PropertyPruneApplied.Should().BeFalse(
+			because: "this is the case that proves the SOURCE half of the gate is load-bearing on its own");
+	}
+
+	[Test]
+	[Description("An explicit `version: latest` argument does not enable the prune, even on a stand whose probe would have succeeded. This is the wiring half of the alias rule: ResolveVersionAsync SHORT-CIRCUITS on an explicit version and reports it as Environment-sourced, so the alias arrives carrying the same provenance a real probe would have. `environment-name` is required to read the source page and therefore cannot be made mutually exclusive with `version` the way the sibling tools do, which leaves this the only guard.")]
+	public async Task GetGuide_WhenCallerPinsTheLatestAlias_ShouldNotPrune() {
+		// Arrange — the resolver would answer with a prunable semver; the explicit argument must win anyway.
+		var tool = new StubbedTool(VersionResolutionSource.Environment, ResolvedVersion);
+
+		// Act
+		MobilePageConversionGuideResponse response = await tool.GetMobilePageConversionGuide(
+			new MobilePageConversionGuideArgs(
+				SourcePage, TargetSchemaName: null, Version: "latest", EnvironmentName: "unit-test-env"));
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "pinning the alias is legal — it selects a catalog, and only the prune is withheld");
+		Values(response, "UsrName").Should().ContainKey(UndeclaredProperty,
+			because: "the stand's own version was never read, so nothing authorises measuring it against the newest runtime");
+		response.Guide!.PropertyPruneApplied.Should().BeFalse(
+			because: "the refusal has to be visible in the response rather than inferred from an unchanged page");
+	}
+
+	[Test]
 	[Description("The tool threads the loaded catalog's inherited input surface into the analysis. baseInputs is BOTH half the membership union and how the runtime-derived generation is recognised, so a tool that failed to pass it would either disable the prune or prune without it.")]
 	public async Task GetGuide_ShouldCarryTheCatalogsInheritedSurfaceIntoTheAnalysis() {
 		// Arrange — the stubbed catalog declares `visible` ONLY in baseInputs, on no component.
-		var tool = new StubbedTool(VersionResolutionSource.Environment);
+		var tool = new StubbedTool(VersionResolutionSource.Environment, ResolvedVersion);
 
 		// Act
 		MobilePageConversionGuideResponse response = await tool.GetMobilePageConversionGuide(Args());
@@ -114,10 +157,10 @@ public sealed class MobilePageConversionGuidePruneWiringTests {
 	/// <summary>The tool with every page read answered in-memory and one stubbed version resolution.</summary>
 	private sealed class StubbedTool : MobilePageConversionGuideTool {
 
-		internal StubbedTool(VersionResolutionSource source)
+		internal StubbedTool(VersionResolutionSource source, string version)
 			: base(Substitute.For<IToolCommandResolver>(), Substitute.For<ILogger>(),
 				MobileCatalog(), WebCatalog(), RulesCatalog(),
-				VersionResolverFactory(source), SettingsRepository()) { }
+				VersionResolverFactory(source, version), SettingsRepository()) { }
 
 		internal override PageGetResponse ReadPageUnderTenantLock(PageGetOptions options) =>
 			string.Equals(options.SchemaName, SourcePage, StringComparison.OrdinalIgnoreCase)
@@ -131,12 +174,14 @@ public sealed class MobilePageConversionGuidePruneWiringTests {
 		return repository;
 	}
 
-	private static IPlatformVersionResolverFactory VersionResolverFactory(VersionResolutionSource source) {
+	private static IPlatformVersionResolverFactory VersionResolverFactory(
+		VersionResolutionSource source, string version) {
 		IPlatformVersionResolver resolver = Substitute.For<IPlatformVersionResolver>();
-		// Deliberately the SAME string on both paths: it is what a degraded probe and a genuine `latest`
-		// environment have in common, and only the source separates them. That is the whole point.
+		// The string and the source are set INDEPENDENTLY on purpose: a degraded probe reports "latest" with
+		// LatestFallback, a successful one reports a semver with Environment, and the tool must be pinned on
+		// both axes — neither the string nor the source decides on its own.
 		resolver.ResolveAsync(Arg.Any<CancellationToken>())
-			.Returns(Task.FromResult(new PlatformVersionResolution("latest", source)));
+			.Returns(Task.FromResult(new PlatformVersionResolution(version, source)));
 		IPlatformVersionResolverFactory factory = Substitute.For<IPlatformVersionResolverFactory>();
 		factory.Create(Arg.Any<EnvironmentSettings>()).Returns(resolver);
 		return factory;

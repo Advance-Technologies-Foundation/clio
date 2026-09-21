@@ -4,8 +4,9 @@ applies-to:
   - clio/Command/McpServer/Tools/MobilePageConverter/WebToMobilePropertyPrune.cs
   - clio/Command/McpServer/Tools/MobilePageConverter/WebToMobileAnalysisService.cs
   - clio/Command/McpServer/Tools/MobilePageConverter/WebToMobilePageConversionRulesModels.cs
+  - clio.tests/Command/McpServer/Tools/MobilePageConverter/WebToMobilePropertyPruneTests.cs
 ticket: ENG-96589
-date: 2026-09-17
+date: 2026-09-21
 ---
 
 **What is true** — `dataSourceName` is declared by **zero** components in the runtime-derived

@@ -788,11 +788,17 @@ public sealed class MobileComponentContract {
 	public string Description { get; init; }
 
 	/// <summary>
-	/// Property/input names this mobile component accepts: its legacy <c>properties</c>, its <c>inputs</c>,
-	/// its <c>outputs</c> (where the runtime-derived registry puts event bindings) and the registry's root
-	/// <c>references.baseInputs</c>. Built by <c>WebToMobileAnalysisService.BuildAllowedPropertyNames</c>,
-	/// which is also what the property prune enforces — so this is exactly the set
-	/// <see cref="MobilePageConversionGuide.PrunedProperties"/> can be reconciled against.
+	/// Property/input names this mobile component accepts: its legacy <c>properties</c>, its <c>inputs</c>
+	/// and its <c>outputs</c> (where the runtime-derived registry puts event bindings). The registry's root
+	/// <c>references.baseInputs</c> is folded in as well whenever the LOADED catalog is the runtime-derived
+	/// generation — and only then, because the web-derived one publishes Angular element attributes
+	/// (<c>classes</c>, <c>shape</c>, <c>tabIndex</c>) under that same key and they are not mobile properties.
+	/// <para>
+	/// Built by <c>WebToMobileAnalysisService.BuildAllowedPropertyNames</c>, which is also what the property
+	/// prune enforces — so wherever <see cref="MobilePageConversionGuide.PrunedProperties"/> is non-null this
+	/// is exactly the set it can be reconciled against. (The prune is gated on the STAND as well, so the
+	/// reverse does not hold: this set can carry the inherited surface on a conversion that pruned nothing.)
+	/// </para>
 	/// </summary>
 	[JsonPropertyName("allowedProperties")]
 	public IReadOnlyList<string> AllowedProperties { get; init; } = [];
@@ -1235,8 +1241,9 @@ public sealed class MobilePageConversionGuide {
 
 	/// <summary>
 	/// Whether the property prune RAN for this conversion. False means the gate refused (the platform
-	/// version could not be positively determined, is at/below the prune floor, or the loaded catalog is not
-	/// the runtime-derived generation), so an undeclared property surviving is EXPECTED rather than a
+	/// version could not be positively determined, is at/below the prune floor, was pinned to the literal
+	/// <c>latest</c> — an alias that names a catalog rather than a stand — or the loaded catalog is not the
+	/// runtime-derived generation), so an undeclared property surviving is EXPECTED rather than a
 	/// defect. True with an absent <see cref="PrunedProperties"/> means the page simply carried nothing
 	/// undeclared.
 	/// <para>

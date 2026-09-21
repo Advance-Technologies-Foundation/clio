@@ -57,7 +57,7 @@ data and is unit-tested without an environment. Every environment-dependent inpu
 
 ## 3. Contract
 
-Thirty fields, three caller actions. A "report" field is never planned from; a "paste" field is never rebuilt.
+Thirty-two fields, three caller actions. A "report" field is never planned from; a "paste" field is never rebuilt.
 
 ### 3.1 Paste / pass
 
@@ -86,6 +86,8 @@ Thirty fields, three caller actions. A "report" field is never planned from; a "
 | `templateMatch` | `"matched"` (rule has a `web` template) or `"generic-fallback"` (default rule); null without a rule |
 | `adaptiveLayout` / `tabAreaLayers` | Readable indexes of layout the operations already carry |
 | `webOnlySections` | Handlers / validators / converters the source declares and mobile has no place for |
+| `prunedProperties` | Per element, the top-level properties removed because the target mobile type does not declare them (ENG-96589). Already applied in `viewConfigDiff` — never re-add one |
+| `propertyPruneApplied` | Whether that prune RAN at all. The field a caller branches on: false means the gate refused, so an undeclared property surviving is expected rather than a defect |
 
 ### 3.3 Read only to understand
 
@@ -142,6 +144,10 @@ Each one fails silently when broken.
 | `BuildAdaptiveLayout` before `PlacePositionalGroups` and `BuildTabAreaLayers` | Adaptive would overwrite positional grid placement; synthesized layers would shift a child's stacking index |
 | `InitializeContainerChildSlots` after `BuildTabAreaLayers` | Synthesized layers are insert parents; earlier seeding leaves them without a slot → differ: `Item X is not a container for other items` |
 | `ApplyComponentPropertyOverrides` before `NormalizePlacements` | A rule that declares a `layoutConfig` would write a partial one after normalization |
+| `PruneUndeclaredProperties` after `ProcessEventBindings` | That pass removes a binding key and re-adds it, so an earlier prune is silently undone |
+| `PruneUndeclaredProperties` before `BuildRequestConversionInfo` | A pruned binding stays in `convertedRequests`, naming an action the shipped `viewConfigDiff` does not contain |
+| `PruneUndeclaredProperties` before every converter-authored write (adaptive, positional, child slots, property overrides, placements) | The converter prunes its own output — e.g. a synthesized layer's slot is removed as "undeclared" |
+| `PruneUndeclaredProperties` before `ApplyComponentPropertyOverrides` — and note the coupling | Overrides SELECT rules by reading these values (an absent property never matches), so a pruned key can silently disable an override with no `normalizations` entry. Latent while every bundled override filters on `type`; `WebToMobilePageConversionRulesRegistryTests` is what keeps a rules update from making it live |
 | `StampParentSource` last | Parent provenance is complete only after the tab layers re-point a tab's children |
 
 ---

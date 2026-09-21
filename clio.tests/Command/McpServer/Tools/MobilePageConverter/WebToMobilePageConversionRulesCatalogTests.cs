@@ -378,7 +378,10 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 			because: "a converted tab strip must scroll on mobile; with creation explicit in the declaration, the strip's mobile "
 				+ "standard is declared here rather than stamped by a viewConfigTemplate matching the strip by name");
 		tabs.Values.Should().NotContainKey("scrollable",
-			because: "the runtime-derived registry declares the slot as 'isScrollable' — the web spelling would now be pruned as undeclared (ENG-96589)");
+			because: "the runtime-derived registry declares the slot as 'isScrollable'. The web spelling had to be "
+				+ "corrected BY HAND rather than left to the prune: a rule-declared value is prune-EXEMPT, so the "
+				+ "converter would have written 'scrollable' into every converted tab strip and reported nothing "
+				+ "(ENG-96589). WebToMobilePageConversionRulesRegistryTests is what now catches the next one");
 		tabs.Values.Should().NotContainKey("bodyBackgroundColor",
 			because: "mobile crt.TabPanel declares no background slot, so declaring one shipped a property the runtime ignores (ENG-96589)");
 		rightArea.Containers.Should().Contain(c => c.Web == "Tabs" && c.Mobile == "Tabs",
