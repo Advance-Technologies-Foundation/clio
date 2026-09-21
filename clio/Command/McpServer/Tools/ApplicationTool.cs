@@ -568,7 +568,7 @@ public sealed class ApplicationSectionDeleteTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.Progress,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Deletes a section from an existing application in Creatio through backend MCP and returns structured deleted-section readback data. Deletes the section ITSELF, from EVERY workplace; to remove it from one workplace only, see get-guidance name=workplaces. Long-running: streams notifications/progress while working — await completion and do not retry on a perceived timeout.")]
+	[Description("Deletes a section from an existing application in Creatio through backend MCP and returns structured deleted-section readback data. Uses declared page UIds, never a name prefix; preserves unowned auxiliary schemas and the entity unless explicitly opted in. Consult get-guidance name=existing-app-maintenance before deletion. Deletes the section ITSELF, from EVERY workplace; to remove it from one workplace only, see get-guidance name=workplaces. Long-running: streams notifications/progress while working — await completion and do not retry on a perceived timeout.")]
 	public async Task<ApplicationSectionDeleteContextResponse> ApplicationSectionDelete(
 		[Description("Parameters: environment-name (required unless passthrough), application-code, section-code (all required)")]
 		[Required]
