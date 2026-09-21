@@ -299,33 +299,49 @@ compared on concrete failure semantics rather than asserted:
 | ordering | outage window if V2 fails | precondition | risk |
 |---|---|---|---|
 | **A. Kill V1, then start V2** (my probe's current code) | Total, indefinite — no backend exists until manually fixed | none | This is the actual gap; not a missing test, a wrong default |
-| **B. Confirm V2, then retire V1** ("both generations coexist") | None, if the precondition holds | **V1 and V2 must not require the same exclusive resource.** See the inventory below — this is now answered concretely rather than left open | The readiness check itself must not run real work or mutate shared state before selection commits — my probe's `__readiness__` probe exercises the same code path as real work, which is fine in a sandbox with its own effect file but would not be fine against a real backend touching a real environment. A true readiness check needs to be a no-side-effect handshake, not a synthetic unit of real work |
+| **B. Confirm V2, then retire V1** ("both generations coexist") | None, if the precondition holds | **V1 and V2 must not require the same exclusive resource.** Process coexistence itself is an established clio pattern (see `McpHostPresence` below); which specific *operations* would still conflict is an incomplete inventory, not a closed one | The readiness check itself must not run real work or mutate shared state before selection commits — my probe's `__readiness__` probe exercises the same code path as real work, which is fine in a sandbox with its own effect file but would not be fine against a real backend touching a real environment. A true readiness check needs to be a no-side-effect handshake, not a synthetic unit of real work |
 | **C. Kill V1, start V2; on V2 failure, restart V1 from its retained binary** | **An attempt with a bound, not a guarantee** — corrected below | Bounding requires an explicit deadline and a terminal "unavailable" outcome, which don't exist yet | V1 can itself fail to restart, or share whatever broke V2 (same config, same dependency) — a fallback that can also fail is not the same claim as a bounded outage |
 
-**Exclusivity, inventoried rather than left open**
-([Alexandr, read out of clio 8's source](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18541984)):
+**Exclusivity, inventoried — then explicitly walked back as incomplete, not settled.**
+[Alexandr's first pass](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18541984)
+found:
 - `iis-port-{port}.lock` (`IisDeploymentPortReservation`) — machine-wide, exclusive per
-  port. **Two generations deploying to the same IIS port genuinely cannot coexist** —
-  this is ordering B's precondition failing for real, not hypothetically.
+  port. Two generations deploying to the same IIS port genuinely cannot coexist.
 - The DbHub TOML settings-store lock — exclusive, but held only per-write (`using`),
-  not for the process lifetime. Two generations contend briefly; the loser fails rather
-  than corrupting. Too brief to block B in practice.
-- `McpToolExecutionLock.CwdLock` — in-process only (guards the shared current
-  directory within one process). Irrelevant to a supervisor model, since V1/V2 are
-  separate processes each with their own CWD.
-- **No named mutex, no single-instance guard anywhere in clio** — two
-  `clio mcp-server` processes can run concurrently today, which is exactly ordering B's
-  precondition holding, in general.
-- The client pipe is exclusive by construction (one process owns stdin/stdout toward
-  the client) — not an inventoriable lock, it's the shape of the transport, and it's
-  why the supervisor owns the pipe rather than V1 or V2 directly.
+  not for the process lifetime. Too brief to block B in practice.
+- `McpToolExecutionLock.CwdLock` — in-process only, irrelevant to a supervisor model
+  where V1/V2 are separate processes.
+- The client pipe is exclusive by construction — the shape of the transport, not an
+  inventoriable lock.
 
-So: **ordering B is available except where an operation binds an IIS deployment
-port.** Caveat from the same audit, carried forward rather than dropped: this is a
-source audit for exclusivity primitives *in clio*, not a proof of completeness — a
-resource held by a dependency (a Creatio session the platform treats as exclusive, a
-database connection with a server-side constraint) wouldn't show up in it. A floor,
-not a ceiling.
+**Retracted before it hardened**
+([kirillkrylov](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18542098):
+"absence of a searched symbol does not establish coexistence"; [Alexandr's own
+follow-up](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18542168)
+found four things the first pass missed):
+- **`DeploymentTargetReservation`** — a *general* machine-wide reservation mechanism
+  keyed by `(kind, identity)`. The IIS port lock is **one instance of it, not the only
+  one** — the kind of exclusion isn't enumerated, only one example of it.
+- **`StaleWorkerRegistry`'s `workers.lock`** — a cross-process registry lock not in the
+  first pass.
+- **`{AppSettingsFile}.lock`** in `ConfigurationOptions` — separate from the DbHub lock
+  already found.
+- **`McpHostPresence`** — the one finding that cuts the other way: clio already records
+  every running MCP host on disk with its **PID and version**, and calls
+  `TryFindResidentMcpHost` at startup. Concurrent hosts aren't just permitted, they're
+  already tracked. This is real, positive evidence that process coexistence (ordering
+  B's core requirement) is an established pattern, even though the exclusion inventory
+  around it is incomplete.
+
+**So, correctly stated:** ordering B's precondition is *not* "available except IIS
+port" — that understates the exclusion set, since `DeploymentTargetReservation` is
+general and its other kinds aren't enumerated. What's solid is narrower: clio already
+supports concurrent MCP host processes as a tracked, working pattern (`McpHostPresence`),
+and *some* operations (IIS deployment, at minimum) hold machine-wide exclusive
+reservations that would block two generations acting on the same target simultaneously.
+Which operations do is still an open inventory, not a closed one. Kirillkrylov's
+sharper framing: process coexistence and *safe simultaneous operation* are different
+questions, and the inventory so far only ever spoke to the first.
 
 **Ordering C, corrected**
 ([kirillkrylov](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18542014)):
@@ -337,9 +353,11 @@ activation-policy gap already open (A5h's wait-budget/starvation question), now 
 second concrete instance.
 
 So the comparison isn't "A is wrong, B is right" — it's: **A has no fallback and
-should not be the default; B is the zero-outage option and is available except for
-IIS-port-bound operations; C is the fallback for exactly that exception, but needs a
-bounded-attempt policy before it can be called a guarantee rather than a best effort.**
+should not be the default; B is the zero-outage option, and process coexistence for it
+is an established clio pattern, but the operations that would block it are an
+incomplete inventory, not a closed one; C is the fallback for whatever exclusion B
+can't clear, but needs a bounded-attempt policy before it can be called a guarantee
+rather than a best effort.**
 
 One more asymmetry worth naming: Alexandr's
 [P1 finding](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18541844)
