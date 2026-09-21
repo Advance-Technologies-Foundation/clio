@@ -1,0 +1,34 @@
+{
+  "transport": "real MCP client, StreamClientTransport, one connection, never reconnected",
+  "cases": [
+    {
+      "name": "early query, before the swap, reports Running",
+      "passed": true,
+      "detail": {
+        "state": "Running"
+      }
+    },
+    {
+      "name": "trigger-swap over MCP reports a real V1-\u003EV2 PID change, not a deferral",
+      "passed": true,
+      "detail": {
+        "swapOutcome": "swapped 6026 -\u003E 6027",
+        "newPid": 6027
+      }
+    },
+    {
+      "name": "post-swap query, same connection, same id, reports Succeeded -- correlation survived a real swap",
+      "passed": true,
+      "detail": {
+        "state": "Succeeded"
+      }
+    },
+    {
+      "name": "a new operation on the swapped-to backend succeeds, same connection throughout",
+      "passed": true,
+      "detail": {
+        "state": "Succeeded"
+      }
+    }
+  ]
+}

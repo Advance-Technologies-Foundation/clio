@@ -17,6 +17,26 @@ probe's milliseconds). **S10** is this stream's own disproof test, mirroring Ale
 applied to the host-swap case rather than his in-process one: under continuous admission pressure, the
 old poll never grants a window; the new reserve-then-drain always does.
 
+**Sixth round: a real MCP client, not a synthetic pipe.**
+[Named explicitly, twice](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18542626):
+"do not equate an open pipe with surviving execution." Two new projects — `McpHost` (a real
+`ModelContextProtocol` stdio server, same pattern as `Clio10.Mcp.McpAdapter`, wrapping the ledger +
+backend-swap logic behind three tools: `start-operation`, `query-operation`, `trigger-swap`) and
+`McpClientProbe` (a real `McpClient` / `StreamClientTransport` connection, opened once and never
+reconnected, per [Alexandr's five requirements for a shared client harness](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18543803)).
+Genuine correlation measured: start an operation over MCP, query it mid-flight (`Running`), trigger a
+real V1→V2 swap over MCP, query the **same opaque id on the same connection** afterward (`Succeeded`),
+and confirm a real PID change. **4/4 on first run, 3/3 consecutive runs.**
+
+**What this does not yet demonstrate, found while building it rather than assumed away:** the
+three-outcome requirement's third state (`Unknown`, not just `Running`/`Succeeded`) needs the MCP
+*pipe-owning* process itself to be lost while the client stays connected — which this design cannot
+produce, because `McpHost` owns both the pipe and the ledger in the same process. Demonstrating
+`Unknown` honestly needs the genuine three-tier split this whole discussion's Flow B describes (client
+→ thin pipe-owning supervisor → separately replaceable backend/ledger owner), which is a materially
+different architecture from `McpHost`, not a missing test case on top of it. Recorded as an
+architectural finding, not a gap to paper over with a contrived crash.
+
 **Repair history, on the record.** The first measurement ran against `e3138962c`.
 [kirillkrylov's independent review](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18540898)
 found three reproduced defects in `TryEnterSwapWindow` at that exact commit — an admission race
@@ -283,6 +303,40 @@ every target in play. It does **not** demonstrate:
 - **Concurrency beyond one swapper and one pressure loop**, native resources, real Creatio/DI dependencies,
   or any integration with `UpdatingComposition` — same boundary E3 draws, for the same reason: this probe
   loads nothing through Core and cannot conflict with either other branch.
+
+## Real MCP client: shape, reproduce, results
+
+Two projects, reusing the same linked `OperationLedger.cs` and `Backend`:
+
+- **`McpHost`** — real MCP stdio server (`ModelContextProtocol` + `Microsoft.Extensions.Hosting`, same
+  pattern as `Clio10.Mcp.McpAdapter`/`CreatioTools`). `SupervisorState` owns the ledger and the current
+  backend process; `SupervisorTools` exposes `start-operation`, `query-operation`, `trigger-swap`.
+- **`McpClientProbe`** — real `McpClient` over `StreamClientTransport(host.StandardInput.BaseStream,
+  host.StandardOutput.BaseStream)`. One connection for the whole scenario.
+
+```bash
+dotnet build experiments/SupervisorQuiescenceComposition/Backend/Backend.csproj -c Release
+dotnet build experiments/SupervisorQuiescenceComposition/McpHost/McpHost.csproj -c Release
+dotnet build experiments/SupervisorQuiescenceComposition/McpClientProbe/McpClientProbe.csproj -c Release
+dotnet run --project experiments/SupervisorQuiescenceComposition/McpClientProbe/McpClientProbe.csproj -c Release --no-build -- \
+  experiments/SupervisorQuiescenceComposition/McpHost/bin/Release/net10.0/Clio10.SupervisorComposition.McpHost.dll \
+  experiments/SupervisorQuiescenceComposition/Backend/bin/Release/net10.0/Clio10.SupervisorComposition.Backend.dll
+```
+
+**Results, three consecutive runs, macOS 27.0.0 (arm64), .NET 10.0.4 — 4/4 every run:**
+
+| run | early query | swap outcome | post-swap query (same id) | new op on swapped backend |
+|---|---|---|---|---|
+| 1 | Running | `swapped 5833 -> 5835` | Succeeded | Succeeded |
+| 2 | Running | swapped (new PID) | Succeeded | Succeeded |
+| 3 | Running | swapped (new PID) | Succeeded | Succeeded |
+
+Against Alexandr's five requirements: **(1)** real MCP SDK client — yes, `ModelContextProtocol.Client`,
+not a hand-rolled writer. **(2)** one call returns an id, a second asks about it — `start-operation` /
+`query-operation`. **(3)** the id crosses as an opaque string, read once via `GetProperty("id")` and
+never reconstructed. **(4)** `Running` → `Succeeded` measured; `Unknown` is not — see the architectural
+finding above. **(5)** one connection, never reconnected — `McpClient.CreateAsync` is called exactly
+once per run, before the swap, and used for every call after it.
 
 ## Relationship to the other two streams
 

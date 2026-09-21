@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>Clio10.SupervisorComposition.McpHost</AssemblyName>
+    <RootNamespace>Clio10.SupervisorComposition.McpHost</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../DetachedOperations/Contract/Contract.csproj" />
+    <!-- Reused, not duplicated: the same generic ledger E3 publishes and the Supervisor probe links. -->
+    <Compile Include="../../DetachedOperations/Host/OperationLedger.cs" Link="OperationLedger.cs" />
+    <PackageReference Include="ModelContextProtocol" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+  </ItemGroup>
+</Project>
