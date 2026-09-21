@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>Clio10.SupervisorComposition.Supervisor</AssemblyName>
+    <RootNamespace>Clio10.SupervisorComposition</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../DetachedOperations/Contract/Contract.csproj" />
+    <!-- Reused, not duplicated: the same generic ledger E3 published, linked rather than copied so the
+         two probes cannot silently drift apart. -->
+    <Compile Include="../../DetachedOperations/Host/OperationLedger.cs" Link="OperationLedger.cs" />
+  </ItemGroup>
+</Project>
