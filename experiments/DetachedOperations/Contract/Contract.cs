@@ -93,6 +93,30 @@ public interface IOperationLedger {
     /// </remarks>
     IOperationLease Begin(string target, string runtimeVersion, object owner, string? configurationSnapshot);
 
+    /// <summary>The pair a scope is currently serving.</summary>
+    ActivationSelection CurrentSelection(string target);
+
+    /// <summary>
+    /// Publishes a new pair for a scope, if it still sits on <paramref name="expectedGeneration"/>.
+    /// </summary>
+    /// <returns><see langword="false"/> when the scope has moved on; nothing is changed in that case.</returns>
+    /// <remarks>
+    /// The coordination boundary: publication and admission are serialised against each other, so an
+    /// admission observes the pair entirely before or entirely after, never halfway through.
+    /// </remarks>
+    bool TryPublishSelection(string target, string runtimeVersion, string? configurationSnapshot,
+        long expectedGeneration);
+
+    /// <summary>
+    /// Admits an operation against the scope's current pair, taking both halves from one read.
+    /// </summary>
+    /// <remarks>
+    /// The point of this overload over <see cref="Begin(string, string, object, string?)"/>: a caller that
+    /// reads the runtime and the snapshot separately can interleave with a publication between the two
+    /// reads and admit a pair that was never current.
+    /// </remarks>
+    IOperationLease BeginFromSelection(string target, object owner);
+
     /// <summary>Answers for an identifier, including for operations this process did not start.</summary>
     OperationRecord Query(string id);
 
@@ -236,6 +260,28 @@ public sealed class SwapWindowHeldException(string scope)
     /// <summary>The held scope — a target name, or an empty string for the whole process.</summary>
     public string Scope { get; } = scope;
 }
+
+/// <summary>
+/// The one runtime/configuration pair a scope is currently serving, published and read as a unit.
+/// </summary>
+/// <param name="RuntimeVersion">The activated release.</param>
+/// <param name="ConfigurationSnapshot">The activated configuration snapshot, or <see langword="null"/>.</param>
+/// <param name="Generation">
+/// Monotonic per scope. A publication states which generation it replaces, so two publishers cannot both
+/// believe they updated the same one.
+/// </param>
+/// <remarks>
+/// <b>Why a pair and not two activations</b> (@kirillkrylov). Ordering the halves — prepare settings,
+/// activate the runtime, then commit the settings — is not sufficient on its own: an admission landing
+/// between the last two steps sees the new runtime with the old settings, and a settings commit that
+/// fails after the runtime is already activated leaves the same split. Both halves therefore become
+/// current in one publication, and an admission takes both from one read.
+/// <para>
+/// Failure leaves the previous selection usable, because a failed publication simply does not happen.
+/// There is no rollback step to get wrong.
+/// </para>
+/// </remarks>
+public sealed record ActivationSelection(string RuntimeVersion, string? ConfigurationSnapshot, long Generation);
 
 /// <summary>
 /// An owner whose continued existence can be checked, rather than one that promises to release itself.
