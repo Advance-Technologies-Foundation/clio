@@ -36,6 +36,12 @@ public enum OperationState {
 /// <param name="State">Current state.</param>
 /// <param name="FinishedUtc">When a terminal state was recorded, if it was.</param>
 /// <param name="Code">Opaque runtime-supplied detail. The host never interprets it.</param>
+/// <param name="ConfigurationSnapshot">
+/// Which configuration snapshot this operation was ADMITTED under, as an opaque string. Clause 6 of the
+/// shared contract: the lifetime side needs only that a snapshot has a portable identity, so a record
+/// naming it outlives the release and the process. Everything about preparing, migrating or rolling back
+/// a snapshot belongs to the settings lane (@vladimir-nikonov) and nothing here interprets this value.
+/// </param>
 public sealed record OperationRecord(
     string Id,
     string Target,
@@ -43,7 +49,8 @@ public sealed record OperationRecord(
     string RuntimeVersion,
     OperationState State,
     DateTimeOffset? FinishedUtc = null,
-    string? Code = null);
+    string? Code = null,
+    string? ConfigurationSnapshot = null);
 
 /// <summary>
 /// The right to keep executing, and the obligation to report a terminal state exactly once.
@@ -67,6 +74,24 @@ public interface IOperationLedger {
     /// <param name="runtimeVersion">Release identity of the owning runtime.</param>
     /// <param name="owner">The object whose lifetime must outlast the operation; retained by reference only.</param>
     IOperationLease Begin(string target, string runtimeVersion, object owner);
+
+    /// <summary>
+    /// Accepts a new operation and records the configuration snapshot in force at admission.
+    /// </summary>
+    /// <param name="target">Environment or tenant key this operation occupies.</param>
+    /// <param name="runtimeVersion">Release identity of the owning runtime.</param>
+    /// <param name="owner">The object whose lifetime must outlast the operation.</param>
+    /// <param name="configurationSnapshot">Opaque identity of the snapshot; the ledger never reads it.</param>
+    /// <remarks>
+    /// <b>A separate overload, deliberately, and this was measured rather than reasoned about.</b> The
+    /// first attempt added an optional parameter to the three-argument method instead. That is source
+    /// compatible and <b>binary incompatible</b>: every release already built against the previous
+    /// contract died with
+    /// <c>MissingMethodException: Method not found: IOperationLedger.Begin(String, String, Object)</c>
+    /// the moment it started an operation. An already-shipped partner or release is exactly what this
+    /// contract exists to keep working, so the old signature stays and the new capability is an addition.
+    /// </remarks>
+    IOperationLease Begin(string target, string runtimeVersion, object owner, string? configurationSnapshot);
 
     /// <summary>Answers for an identifier, including for operations this process did not start.</summary>
     OperationRecord Query(string id);
@@ -146,6 +171,34 @@ public interface IOperationLedger {
     /// Clearing a degraded scope is an operator decision, deliberately absent here.
     /// </remarks>
     IReadOnlyCollection<string> DegradedScopes { get; }
+
+    /// <summary>
+    /// Operations this host can never resolve, because their owner cannot be asked whether it is there.
+    /// </summary>
+    /// <remarks>
+    /// An owner that does not implement <see cref="IOwnerLiveness"/> is skipped by orphan resolution, and
+    /// silently: the operation simply stays <see cref="OperationState.Running"/> and keeps retaining. The
+    /// failure only becomes visible as a drain that never finishes, which is the worst possible moment.
+    /// Found by @vladimir-nikonov, who wired the correction into his own harness and observed that
+    /// passing a bare <c>Process</c> changed nothing until it was wrapped.
+    /// <para>
+    /// So the ledger says so up front. A host about to drain a scope can see how many operations in it
+    /// are unresolvable BEFORE it starts waiting for them.
+    /// </para>
+    /// </remarks>
+    IReadOnlyCollection<string> UnresolvableOwners { get; }
+
+    /// <summary>
+    /// Configuration snapshots still referenced by a retained operation.
+    /// </summary>
+    /// <remarks>
+    /// The reference set for snapshot cleanup, derived rather than counted: a snapshot is referenced
+    /// exactly while some operation admitted under it is still retained. Orphan resolution releases the
+    /// reference with the retention, so a lost owner does not pin a snapshot forever — the same failure
+    /// shape as H3, in the settings lane. Requested shape for @vladimir-nikonov's cleanup requirement,
+    /// so he does not build a separate reference count that can disagree with this one.
+    /// </remarks>
+    IReadOnlyCollection<string> ReferencedSnapshots { get; }
 
     /// <summary>
     /// Operations whose outcome is known in memory but is NOT on disk.

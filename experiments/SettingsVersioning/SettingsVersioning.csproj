@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>Clio10.SettingsVersioning</AssemblyName>
+    <RootNamespace>Clio10.SettingsVersioning</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../DetachedOperations/Contract/Contract.csproj" />
+    <!-- Same ledger E3 publishes and the supervisor/McpHost probes link: the ConfigurationSnapshot
+         seam this fixture consumes (Begin's fourth overload, ReferencedSnapshots) lives here, not
+         duplicated. -->
+    <Compile Include="../DetachedOperations/Host/OperationLedger.cs" Link="OperationLedger.cs" />
+  </ItemGroup>
+</Project>
