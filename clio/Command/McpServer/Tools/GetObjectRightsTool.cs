@@ -1,7 +1,6 @@
 using System;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
-using System.Linq;
 using System.Text.Json.Serialization;
 using Clio.Command.ObjectRights;
 using Clio.Common;
@@ -30,7 +29,7 @@ public sealed class GetObjectRightsTool(
 		"Read-only companion of set-object-rights. Reports every role's rights on the object; pass grantee to filter to one role (e.g. All external users = 720b771c-e7a7-4f31-9cfb-52cd21c3739f). " +
 		"include-connected also reports the root object's own lookup objects (with a grantee this lists the objects that role still lacks access to — the Freedom designer's red \"not available to external users\" list). " +
 		"An object not administered by operation permissions is reported as available to all.")]
-	public GetObjectRightsResponse GetObjectRights(
+	public ObjectRightsToolResponse GetObjectRights(
 		[Description("Parameters: environment-name, entity-schema-name (required); grantee, include-connected (optional).")]
 		[Required]
 		GetObjectRightsArgs args) {
@@ -41,29 +40,10 @@ public sealed class GetObjectRightsTool(
 				Grantee = args.Grantee,
 				IncludeConnected = args.IncludeConnected ?? false
 			};
-			CommandExecutionResult result = InternalExecute<GetObjectRightsCommand>(options);
-			return new GetObjectRightsResponse {
-				Success = result.ExitCode == 0,
-				Output = result.ExitCode == 0 ? ResolveMessages(result) : null,
-				// Redact the error path: command/service failures can carry request URIs, paths or session
-				// tokens in the raw response text, and this structured success-return is not scrubbed by the
-				// MCP pipeline.
-				Error = result.ExitCode == 0 ? null : SensitiveErrorTextRedactor.Redact(ResolveMessages(result))
-			};
+			return ObjectRightsToolResponse.From(InternalExecute<GetObjectRightsCommand>(options));
 		} catch (Exception ex) {
-			return new GetObjectRightsResponse {
-				Success = false,
-				Error = SensitiveErrorTextRedactor.Redact(ex.Message)
-			};
+			return ObjectRightsToolResponse.FromError(ex);
 		}
-	}
-
-	private static string ResolveMessages(CommandExecutionResult result) {
-		string[] messages = result.Output
-			.Select(message => message.Value?.ToString())
-			.Where(message => !string.IsNullOrWhiteSpace(message))
-			.ToArray();
-		return messages.Length > 0 ? string.Join("\n", messages) : null;
 	}
 }
 
@@ -86,16 +66,3 @@ public sealed record GetObjectRightsArgs(
 	[property: Description("Also read the root object's own lookup objects (portal-section convenience; default false).")]
 	bool? IncludeConnected = null
 );
-
-public sealed class GetObjectRightsResponse {
-	[JsonPropertyName("success")]
-	public bool Success { get; init; }
-
-	[JsonPropertyName("output")]
-	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public string? Output { get; init; }
-
-	[JsonPropertyName("error")]
-	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public string? Error { get; init; }
-}
