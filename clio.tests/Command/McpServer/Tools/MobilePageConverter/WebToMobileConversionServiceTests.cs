@@ -6747,8 +6747,8 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("A same-component TWIN's dead action is reported but never marked removed: the twin's mobileValues is a delta MERGE payload, where omitting a key means the mobile element keeps the template's own value — so no removal happened and claiming one would tell the caller a control 'renders and does nothing' when it may still fire the template's request.")]
-	public void Analyze_TwinMergeTargetMissing_ReportsWithoutClaimingARemoval() {
+	[Description("A same-component TWIN's dead action is reported but never marked removed, AND the broken request is never written into the merge payload either: the twin's mobileValues is a delta MERGE payload, where omitting a key means the mobile element keeps the template's own value — writing a converted-but-verified-missing request there would override that value with one guaranteed to fail, so the binding stays out of values entirely.")]
+	public void Analyze_TwinMergeTargetMissing_ReportsWithoutClaimingARemovalAndOmitsTheBrokenBinding() {
 		// Arrange — a same-component twin (crt.Feed -> crt.Feed) whose clicked binding the page CHANGED from
 		// the web-template baseline, pointing at a page that cannot exist on mobile.
 		PageBundleInfo bundle = Bundle("""
@@ -6788,14 +6788,20 @@ public sealed class WebToMobileConversionServiceTests {
 		twin.Operation.Should().Be("merge", because: "a same-component twin merges onto the template element");
 		UnresolvedTargetRequest finding = guide.RequestConversions!.UnresolvedTargetRequests
 			.Should().ContainSingle(because: "the dead target is still worth reporting on a twin").Subject;
-		guide.RequestConversions.DroppedRequests.Should().NotContain(r => r.ElementName == "Feed",
-			because: "a droppedRequests entry saying 'the component still renders' would contradict a merge "
-				+ "whose payload never carried the binding");
+		guide.RequestConversions.DroppedRequests.Should().Contain(r => r.ElementName == "Feed" && r.Binding == "clicked",
+			because: "the target is verified missing, so the binding is genuinely left out of the merge payload — "
+				+ "droppedRequests must say so, or the caller has no way to learn the control's tap action was "
+				+ "dropped rather than merely unreported");
 		finding.BindingRemoved.Should().BeFalse(
 			because: "a merge payload cannot remove anything — an omitted key means the mobile element keeps "
 				+ "its own value, so 'ALREADY REMOVED' would be a claim about a write that never happened");
 		finding.OriginalBinding.Should().BeNull(
 			because: "nothing was removed, so there is nothing to restore later");
+		twin.Values.Should().NotBeNull(because: "the page also changed dataSourceName, so the merge still carries a payload");
+		twin.Values!.AsObject().Should().NotContainKey("clicked",
+			because: "writing the converted request into the merge payload would override the mobile template's "
+				+ "own value with one that targets a page verified missing — omitting the key is the only way "
+				+ "this writer can avoid shipping a guaranteed-broken tap action");
 	}
 
 	[Test]

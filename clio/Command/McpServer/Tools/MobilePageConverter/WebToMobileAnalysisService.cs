@@ -4538,14 +4538,17 @@ public static class WebToMobileAnalysisService {
 				ActionTargetResolution target = ResolvedTargetOf(ctx, rule, source);
 				if (target is { State: ActionTargetState.Missing or ActionTargetState.Unknown }) {
 					bool missing = target.State == ActionTargetState.Missing;
-					// Removed only for a DEFINITIONAL absence (a web page cannot open on mobile, and no
-					// environment read was involved) AND when this writer can actually perform a removal.
-					// An object's add-on verdict is a report, never a removal: it cannot prove absence, and
-					// stripping on it would cost a working action. The pre-removal shape is captured on
-					// OriginalBinding so a later repoint restores it verbatim, param-for-param.
-					bool removed = missing
-						&& canRemoveBinding
+					// A DEFINITIONAL absence means the target cannot open on mobile at all (a web page
+					// cannot open on mobile, and no environment read was involved) — writing a converted
+					// request that still points at it is broken regardless of which writer is calling.
+					bool definitionallyAbsent = missing
 						&& MobileActionTargetProbe.StripsBindingOnMissing(target.Kind);
+					// Removed (in the BindingRemoved sense) only when this writer can also perform an
+					// actual removal. An object's add-on verdict is a report, never a removal: it cannot
+					// prove absence, and stripping on it would cost a working action. The pre-removal
+					// shape is captured on OriginalBinding so a later repoint restores it verbatim,
+					// param-for-param.
+					bool removed = definitionallyAbsent && canRemoveBinding;
 					ctx.UnresolvedTargetRequests.Add(new UnresolvedTargetRequest {
 						ElementName = elementName, Binding = binding, WebRequest = webRequest,
 						TargetKind = target.Kind, Target = target.Target,
@@ -4555,6 +4558,17 @@ public static class WebToMobileAnalysisService {
 						ResolvedCandidateSchemaName = target.ResolvedCandidateSchemaName
 					});
 					if (removed) {
+						ctx.DroppedRequests.Add(new DroppedRequest {
+							ElementName = elementName, Binding = binding, WebRequest = webRequest,
+							Reason = [Reason(ReasonCodes.DropRequestTargetMissing,
+								("targetKind", Nz(target.Kind)), ("target", Nz(target.Target)))]
+						});
+						return;
+					}
+					if (definitionallyAbsent) {
+						// canRemoveBinding is false here (the twin-merge writer): omitting the key from
+						// this DELTA MERGE payload keeps the template element's own value instead of
+						// overwriting it with a request that is guaranteed broken.
 						ctx.DroppedRequests.Add(new DroppedRequest {
 							ElementName = elementName, Binding = binding, WebRequest = webRequest,
 							Reason = [Reason(ReasonCodes.DropRequestTargetMissing,
