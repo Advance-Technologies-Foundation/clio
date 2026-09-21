@@ -9,7 +9,7 @@ date: 2026-09-17
 ---
 
 **What is true** — `dataSourceName` is declared by **zero** components in the runtime-derived
-`MobileComponentRegistry` (neither `inputs` nor `outputs`, on any of the 66), and it is not in
+`MobileComponentRegistry` (neither `inputs` nor `outputs`, on any component), and it is not in
 `references.baseInputs`. The converter's prune therefore removes it from every converted element wherever
 pruning is enabled, and reports it in `prunedProperties`.
 

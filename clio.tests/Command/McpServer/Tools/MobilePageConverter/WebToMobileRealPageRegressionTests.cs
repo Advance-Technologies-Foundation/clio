@@ -585,6 +585,20 @@ public sealed class WebToMobileRealPageRegressionTests {
 			});
 
 	[Test]
+	[Description("PROBE")]
+	public void Probe_SelfParent() {
+		JsonObject fixture = LoadFixture();
+		MobilePageConversionGuide guide = Convert(fixture, MobileTypesResolvingSearchFilter(fixture["viewConfig"]!), BundledRules());
+		foreach (ViewConfigDiffOperation op in guide.ViewConfigDiff) {
+			if (string.Equals(op.Name, op.ParentName, StringComparison.OrdinalIgnoreCase)) {
+				TestContext.Out.WriteLine($"SELF-PARENT {op.Operation} name={op.Name} parent={op.ParentName} slot={op.PropertyName} type={TypeOf(op)}");
+			}
+		}
+		TestContext.Out.WriteLine($"ops={guide.ViewConfigDiff.Count} merges={guide.ViewConfigDiff.Count(o => o.Operation == "merge")}");
+		Assert.Pass();
+	}
+
+	[Test]
 	[Description("The central promise — \"paste viewConfigDiff verbatim\" — put through the Creatio differ clones on the real page, hermetically. The only other oracle that applies converter output lives in the sandbox E2E fixture, which Assert.Ignores without a stand, so the promise had no gate that runs on every build: a regression making the emitted diff unappliable would reach a user before anything went red.")]
 	public void Analyze_ViewConfigDiff_ShouldApplyThroughTheCreatioDiffer_OnTheRealLeadsFormPageShape() {
 		// Arrange

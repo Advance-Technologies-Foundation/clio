@@ -110,7 +110,8 @@ public sealed class WebToMobilePropertyPruneTests {
 		Values(guide, "HelpTab").Should().ContainKey("icon",
 			because: $"a stand on {environmentVersion} runs a mobile runtime older than the one `latest` was generated from, so pruning against it could strip properties that stand supports");
 		guide.PrunedProperties.Should().BeNull(
-			because: "backward compatibility means the conversion is byte-identical to the pre-feature one");
+			because: "below the floor the PRUNE is a no-op — the rules-name corrections that shipped with it "
+				+ "are resolved independently of this gate and are not what this asserts");
 		guide.PropertyPruneApplied.Should().BeFalse(
 			because: "this is how a caller tells that the prune did not run on this stand");
 	}
@@ -249,7 +250,7 @@ public sealed class WebToMobilePropertyPruneTests {
 
 	[TestCase("visible")]
 	[TestCase("layoutConfig")]
-	[Description("A property declared ONLY in the registry's root references.baseInputs survives. `visible` and `layoutConfig` appear in zero of the 66 components' own inputs, so ignoring baseInputs would strip both from every element of every converted page — the second highest-cost way to get the predicate wrong.")]
+	[Description("A property declared ONLY in the registry's root references.baseInputs survives. No component declares `visible` or `layoutConfig` in its own inputs, so ignoring baseInputs would strip both from every element of every converted page — the second highest-cost way to get the predicate wrong.")]
 	public void Analyze_ShouldKeepPropertyDeclaredOnlyInBaseInputs(string propertyName) {
 		// Arrange — assert the premise against the live payload rather than trusting it.
 		LiveMobileCatalog().Entries

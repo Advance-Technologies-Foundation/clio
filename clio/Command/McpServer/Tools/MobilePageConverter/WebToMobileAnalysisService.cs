@@ -1412,7 +1412,7 @@ public static partial class WebToMobileAnalysisService {
 	/// <c>crt.ComboBox.valuePicked</c>, …), so an inputs-only union strips every binding.</description></item>
 	/// <item><description><c>properties</c> — the legacy schema generation.</description></item>
 	/// <item><description>the registry's root <c>references.baseInputs</c> — the inherited surface.
-	/// <c>visible</c> is declared by ZERO of the 66 components in their own <c>inputs</c>, and so is
+	/// NO component declares <c>visible</c> in its own <c>inputs</c>, and none declares
 	/// <c>layoutConfig</c>; they exist ONLY here.</description></item>
 	/// </list>
 	/// The caller-facing <c>mobileContracts[].allowedProperties</c> and the set the prune enforces are this

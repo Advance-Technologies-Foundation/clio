@@ -208,7 +208,7 @@ public sealed class ComponentRegistrySnapshotTests {
 		}
 
 		// Assert — the inherited input surface. `visible` and `layoutConfig` are declared by ZERO of
-		// the 66 components in their own `inputs`; they exist ONLY here. A membership test that
+		// any component in its own `inputs`; they exist ONLY here. A membership test that
 		// forgot baseInputs would therefore strip them from every element of every converted page.
 		state.GlobalReferences.Should().NotBeNull(
 			because: "the mobile payload parses through the same wrapped envelope as the web one and ships references.baseInputs");

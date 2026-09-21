@@ -57,9 +57,9 @@ public static partial class WebToMobileAnalysisService {
 	/// <param name="Commit">Commit SHA of that runtime.</param>
 	/// <param name="BaseInputs">
 	/// The registry's root <c>references.baseInputs</c> — the surface every component inherits. It is the
-	/// SOLE declaration site of <c>visible</c> and <c>layoutConfig</c>: neither appears in any of the 66
-	/// components' own <c>inputs</c>, so a membership test that ignored this would strip both from every
-	/// element of every converted page.
+	/// SOLE declaration site of <c>visible</c> and <c>layoutConfig</c>: NO component declares either in its
+	/// own <c>inputs</c>, so a membership test that ignored this would strip both from every element of
+	/// every converted page.
 	/// </param>
 	public sealed record MobileRegistryGeneration(
 		string RequestedVersion,
@@ -72,7 +72,14 @@ public static partial class WebToMobileAnalysisService {
 		/// <summary>
 		/// The version floor the prune requires, exclusive. Every published path at or below it serves the
 		/// WEB-derived generation (10.0.0 lists 46 components describing web inputs; 8.3.0 lists three), so
-		/// a stand on those versions must convert exactly as it did before this feature existed.
+		/// on a stand at or below it THE PRUNE is a no-op.
+		/// <para>
+		/// "No-op" is scoped to the prune and no wider. ENG-96589 also corrected three property names the
+		/// bundled conversion RULES declared, and rules are resolved independently of this gate — the CDN
+		/// rules file is unpublished, so <c>WebToMobilePageConversionRulesCatalog</c> falls back to the
+		/// embedded copy, and rule-declared elements are exempt from the prune anyway. Those corrections
+		/// therefore reach every stand, including one below the floor.
+		/// </para>
 		/// </summary>
 		internal static readonly Version MinimumPrunableVersion = new(10, 0, 0);
 
