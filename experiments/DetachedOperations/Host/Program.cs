@@ -210,14 +210,11 @@ Check("N3 an intervening operation makes a last-result read answer about the wro
           ledger = n3Record.State.ToString(),
           note = "attributing the last result to the interrupted operation would report v2's outcome as v1's" });
 
-// ── P1/P2: a failed evidence write degrades storage without rewriting the outcome ──────────────────
+// ── P1/P2/P3: a failed evidence write degrades storage without rewriting the outcome ───────────────
 // @kirillkrylov: execution outcome and evidence health are different axes. Successful work must not
-// become a failed or retryable business operation because storage failed. So the true terminal state is
-// published, the scope is marked degraded, and automatic retirement is refused — no replay.
-var faultLedger = new OperationLedger(Path.Combine(work, "fault.jsonl")) { FailEndPersistenceForTests = true };
-string faultId = v2.StartDetached(faultLedger, "envP", Path.Combine(work, "p1-effect.log"), 100,
-    "succeed", CancellationToken.None);
-var faultTerminal = await WaitTerminal(faultLedger, faultId, TimeSpan.FromSeconds(20));
+// become a failed or retryable business operation because storage failed.
+var (faultLedger, faultId, faultWeak) = await PhaseDegradedPersistence(v1Dir, work);
+var faultTerminal = faultLedger.Query(faultId);
 
 Check("P1 a failed evidence write does NOT rewrite the execution outcome",
     faultTerminal.State == OperationState.Succeeded,
@@ -231,7 +228,19 @@ Check("P2 the scope is visibly degraded and automatic retirement is refused",
         && faultLedger.TryEnterSwapWindow() is null,
     new { degradedScopes = faultLedger.DegradedScopes, quiescent = faultLedger.IsQuiescent("envP"),
           targetWindow = "refused", globalWindow = "refused",
-          note = "quiescent because nothing runs, yet unswappable because the outcome exists only in memory" });
+          note = "refusal is conservative POLICY, not a consequence of the evidence living in the runtime - see P3" });
+
+// P3: the correction @kirillkrylov asked for. The evidence is host-owned, so unloading the runtime
+// does not destroy it. Only replacing the process that owns the ledger does.
+for (int i = 0; i < 40 && faultWeak.IsAlive; i++) { GC.Collect(); GC.WaitForPendingFinalizers(); await Task.Delay(50); }
+var afterRetirement = faultLedger.Query(faultId);
+Check("P3 retiring the runtime does not destroy degraded evidence; only replacing its owner would",
+    !faultWeak.IsAlive
+        && afterRetirement.State == OperationState.Succeeded
+        && faultLedger.DegradedScopes.Contains("envP"),
+    new { runtimeCollected = !faultWeak.IsAlive, stateAfterRetirement = afterRetirement.State.ToString(),
+          stillDegraded = faultLedger.DegradedScopes.Contains("envP"),
+          note = "OperationRecord is a host-contract type held in a host collection, so it survives the release that produced it" });
 
 // ── O1: terminal status is NOT sufficient for reclamation ──────────────────────────────────────────
 // @kirillkrylov's returned-value-ownership finding, measured against my own invariant I3. A caller that
@@ -273,6 +282,22 @@ static async Task<(WeakReference Weak, object Escaped)> PhaseEscapedResult(
     runtime = null!;
     context.Unload();
     return (weak, escaped);
+}
+
+// Runs one operation whose terminal evidence write fails, then retires the release that produced it.
+// Kept in its own frame so no local keeps that release alive for the collectibility assertion.
+[MethodImpl(MethodImplOptions.NoInlining)]
+static async Task<(OperationLedger Ledger, string Id, WeakReference Weak)> PhaseDegradedPersistence(
+    string releaseDirectory, string work) {
+    var ledger = new OperationLedger(Path.Combine(work, "fault.jsonl")) { FailEndPersistenceForTests = true };
+    var (context, runtime) = Load(releaseDirectory);
+    string id = runtime.StartDetached(ledger, "envP", Path.Combine(work, "p1-effect.log"), 100,
+        "succeed", CancellationToken.None);
+    await WaitTerminal(ledger, id, TimeSpan.FromSeconds(20));
+    var weak = new WeakReference(context, trackResurrection: true);
+    runtime = null!;
+    context.Unload();
+    return (ledger, id, weak);
 }
 
 // Shared contention harness: one starter against one swapper, so the repaired and the deliberately

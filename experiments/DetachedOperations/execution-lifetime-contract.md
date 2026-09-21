@@ -88,7 +88,7 @@ path or from bytes does not decide whether deleting a release is safe — establ
 retirement probe and reproduced on macOS, where path-mode early deletion succeeds and still breaks a
 later lazy dependency.
 
-## Persistence failure — resolved, and it moved the gate predicate
+## Persistence failure — proposed behaviour demonstrated, not approved
 
 My first version listed three options and asked for a decision. @kirillkrylov supplied the one that
 separates the axes correctly: **execution outcome and evidence health are different things, and
@@ -105,21 +105,40 @@ A failed terminal write now publishes the true outcome, marks the scope degraded
 retirement. Nothing is replayed, nothing is rewritten, and clearing a degraded scope is deliberately not
 automatic — it is an operator decision this contract does not make.
 
+**This is demonstrated proposed behaviour, not an approved decision.** Clearing degradation and whether
+forced interruption is permitted remain open for Kirill.
+
 What the earlier version did instead, and why it was wrong: the state was never published, so a
 *successful* operation stayed `Running` forever and its scope was silently stuck. That reported a
 storage fault as a business outcome, which is exactly the conflation the fix removes.
 
 ### The consequence I did not anticipate: quiescence is not the retirement predicate
 
-Look at P2 again. The scope is **quiescent** — nothing is running — and still **unswappable**, because
-the only copy of that outcome is in memory and retiring the release would destroy it.
+Look at P2 again. The scope is **quiescent** — nothing is running — and still refused.
+
+**A correction I had wrong, caught by @kirillkrylov and now measured as P3.** I wrote that the refusal
+followed from retiring the release destroying the only copy of the outcome. That is false. `_live` holds
+`OperationRecord`s — host-contract types in a host-owned collection — so unloading the runtime does not
+touch them:
+
+```
+P3  runtimeCollected=true   stateAfterRetirement=Succeeded   stillDegraded=true
+```
+
+The release that produced the operation was retired and collected; the record and the degraded flag
+survived it. **Runtime retirement and replacement of the evidence owner are different operations**, and
+only the second destroys in-memory evidence. P2 refuses both, which is defensible conservatism — but it
+is *policy*, not a consequence of anything P2 measures, and the contract now says so.
+
+That distinction matters beyond this case: it is the same axis the whole round turns on. Updating a
+runtime does not endanger host-owned state; replacing the host does.
 
 So there are two independent reasons to refuse a swap, and they are not the same shape:
 
 | reason | visible to | ends when |
 |---|---|---|
 | live work | the ledger, via `IsQuiescent` | the operation terminates |
-| degraded evidence | the ledger, via `DegradedScopes` | an operator resolves it |
+| degraded evidence (blocks **host replacement**; runtime retirement is safe, per P3) | the ledger, via `DegradedScopes` | an operator resolves it |
 | an escaped runtime-defined value (I9, O1) | **nobody** | the caller drops its reference |
 
 A gate built on quiescence alone admits a swap in the second and third cases. The retirement predicate
@@ -154,6 +173,9 @@ release that produced it.
 5. **Cross-process coordination.** Out of scope throughout; one Core instance is assumed.
 
 ## Limits
+
+The injected persistence failure fires **before** `Append`, so partial-write and fsync-failure recovery
+are outside the measured claim — a torn write is a different failure from a refused one.
 
 Everything above is grounded in a probe with one owner at a time, two threads in the contention cases,
 no native libraries, no real Creatio dependencies, and no multi-process coordination. The clio 8
