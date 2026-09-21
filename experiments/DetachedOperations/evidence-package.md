@@ -69,6 +69,11 @@ the MCP tool contract and the settings contract.
   [`Alexandr-Kravchuk/mcp-client-mutation-control`](https://github.com/Advance-Technologies-Foundation/clio/tree/Alexandr-Kravchuk/mcp-client-mutation-control),
   `49e622e027dd`). Forcing it produced a client told `Running` forever, which is what the H cases then
   fixed on the ledger side.
+- **The supervisor harness is not repaired as a whole.** The owner-wrapper correction closes the
+  orphan-status path for @vladimir-nikonov's MCP host only. `Supervisor/Program.cs` (S1–S10) still
+  registers bare `Process` owners, so H3's failure — a drain after a lost owner never finishing — is
+  untested there, not fixed there. `UnresolvableOwners` (K1) makes that state visible rather than
+  silent, which is the part that needed doing now.
 - **Package authenticity and trusted acquisition.** Untouched, by anyone, and it is a release gate.
   Nothing in this package bears on it.
 - **Which architecture wins.** Not decided, and this package deliberately does not recommend one.
