@@ -1,7 +1,7 @@
 {
   "os": "Unix 27.0.0",
   "framework": "10.0.12",
-  "workDirectory": "/var/folders/xk/pl1m8g6d1w55jscyxzg0wjkc0000gn/T/detached-ops-f82AL6",
+  "workDirectory": "/var/folders/xk/pl1m8g6d1w55jscyxzg0wjkc0000gn/T/detached-ops-6yseL7",
   "cases": [
     {
       "name": "A1a the original operation still answers after a newer runtime is activated",
@@ -156,18 +156,18 @@
       "passed": true,
       "detail": {
         "Violations": 0,
-        "Admitted": 49,
-        "Refused": 91,
-        "Windows": 92
+        "Admitted": 50,
+        "Refused": 89,
+        "Windows": 89
       }
     },
     {
       "name": "A5i mutation control: the same regression detects a deliberately split admission",
       "passed": true,
       "detail": {
-        "Violations": 18,
-        "Admitted": 55,
-        "Refused": 79,
+        "Violations": 16,
+        "Admitted": 52,
+        "Refused": 80,
         "Windows": 85,
         "note": "non-zero here is the point: it shows A5h can fail"
       }
@@ -387,7 +387,7 @@
         "busyWhenReserved": true,
         "reservedImmediately": true,
         "drained": true,
-        "drainMs": 103,
+        "drainMs": 134,
         "note": "new admissions are refused under the reservation, so in-flight work is finite"
       }
     },
@@ -398,7 +398,7 @@
         "reserved": true,
         "drainedWithinBudget": false,
         "hungStillRunning": true,
-        "reservationHeldMs": 614,
+        "reservationHeldMs": 608,
         "note": "the hung operation was neither killed nor completed; the update defers again"
       }
     },
