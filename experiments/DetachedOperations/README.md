@@ -1,5 +1,8 @@
 # Detached operations: explicit ownership across a runtime update
 
+> **Start here if you are catching up:** [`evidence-package.md`](evidence-package.md) — the
+> settled clauses, what is not established, the clio 8 defects, and every corrected claim, in one place.
+
 Discussion #1643; baseline `7225ebcaa`. This isolated probe changes no product/Core contracts. It does
 not implement durable replay, a lease manager, or retirement policy.
 
