@@ -32,15 +32,56 @@ and `spec/adr/` before implementation. Six contract questions are open (listed i
 | Traps, deferred questions, the serialization capture | `spec/eng-92707-sub-process-element/` (clio, master) |
 | The 61/416 corpus scan | `docs/sub-process-element-capture.md` (CrtProcessBuilder) |
 
-## Source locations
+## The local checkouts, and what each one actually is
 
-- Platform: `C:\Projects\Creatio2\TSBpm` and `C:\Projects\PackageStore` (the designer client lives in
-  PackageStore under `CrtProcessDesigner/branches/7.8.0/Schemas/`, plus
-  `Terrasoft.Nui/Resources/Terrasoft/manager/` in TSBpm).
-- Package: `C:\Projects\workspace\ProcessBuilder`, branch `main`, currently at CrtProcessBuilder
-  **1.6.3.29**.
-- clio: `C:\Projects\clio` — NOTE its working tree sits on an unrelated feature branch, so read master
-  with `git show origin/master:<path>`.
+Surveyed 2026-09-21. Only three of these are git repositories; the rest are checked-out trees or a
+deployed instance, so "the branch" is a meaningful question for three of them and not for the others.
+
+| Path | What it is | Git |
+|---|---|---|
+| `C:\Projects\Creatio2` | **Creatio core sources** — the authority for server and core-client behaviour. Everything under `TSBpm/Src/Lib`. | `tscore-git.creatio.com/creatio/core.git`, branch `trunk` |
+| `C:\Projects\PackageStore` | **Product packages**, checked out. The process designer's own client schemas live here. Also the corpus every "N of M shipped elements" figure was scanned over. | not a repo |
+| `C:\Projects\workspace\ProcessBuilder` | **CrtProcessBuilder** — the package this work changes. | `creatio.ghe.com/engineering/crt-process-builder`, working tree on a chore branch — read `origin/main` |
+| `C:\Projects\clio` | **clio** — the CLI and MCP surface. | `github.com/Advance-Technologies-Foundation/clio`, working tree on an UNRELATED feature branch — read `origin/master` |
+| `C:\Projects\clio-knowledge` | The **shipped guidance library** an agent reads through `get-guidance`. Not internal notes. | `github.com/.../clio-knowledge` |
+| `C:\Projects\WorkPackageStore` | Working/custom packages (CreatioStateMachine, CrtGenAICopilot and others). Not product. | not a repo |
+| `C:\Projects\Creatio` | A **deployed instance** — `Terrasoft.WebApp`, `Web.config`, `bin`. Build output, not sources. | not a repo |
+| `C:\Projects\MyWorkspace` | A clio workspace (packages, projects, tasks). | not a repo |
+
+## Where the DESIGNER is implemented
+
+This matters for multi-instance specifically, because conversion is a client behaviour: the only place
+the platform assigns `MultiInstanceOptions` server-side is the metadata reader. Whatever converts an
+element does it in the browser and sends the result down.
+
+The designer's code is split across two trees, and you will need both.
+
+**1. The designer package** — `C:\Projects\PackageStore\CrtProcessDesigner\branches\7.8.0\Schemas\`
+The property pages and view configs. The ones read during ENG-92707:
+`SubProcessPropertiesPage`, `ProcessFlowElementPropertiesPage`, `RootUserTaskPropertiesPage`,
+`ProcessSchemaParameterViewConfig` (the parameter ROW — four cells, no code column),
+`ProcessSchemaParameterEditPage`, `ProcessSchemaParameterEditModule`, `MappingEditMixin`.
+Note `EventSubProcessPropertiesPage` exists separately — the EVENT sub-process is a different element
+that shares the platform class.
+
+**2. The core client managers** —
+`C:\Projects\Creatio2\TSBpm\Src\Lib\Terrasoft.Nui\Resources\Terrasoft\manager\`
+The client-side schema model the pages operate on. Under
+`process-flow-element-schema-manager/`: `parametrized-process-schema-element.js` (this is where
+`clearParameters` removes mapping rows and `_prepareClonedParameter` mints a fresh UId),
+`process-activity-schema.js` (`findParameterByNameOrByUId` — name first, and the UId branch cannot
+match), `base-process-schema-element.js`. Under `base-schema-manager/`: `base-schema.js`
+(`getDisplayValue` = caption-or-name). Under `process-schema-manager/`: `process-schema.js` (what
+serialization actually writes).
+
+**A trap in these paths.** The same client files also exist as a DEPLOYED copy under
+`Creatio2\TSBpm\Src\Lib\Terrasoft.WebApp.Loader\Terrasoft.WebApp\Conf\content\`. Read the source
+tree, not `Conf/content` — the deployed copy can lag, and citing it proves nothing about what ships.
+
+**Server side** — `C:\Projects\Creatio2\TSBpm\Src\Lib\Terrasoft.Core\Process\` is where
+`ProcessSchemaActivity`, `ProcessSchemaSubProcess`, `ProcessSchemaMultiInstanceOptions` and
+`ProcessEnum` live; `Terrasoft.Core.Process` and `Terrasoft.Core.Process.Tests` alongside it hold the
+execution engine and the platform's own tests, which are usable as evidence.
 
 ## The code sites you will need first
 
