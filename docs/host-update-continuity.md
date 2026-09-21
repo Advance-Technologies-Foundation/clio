@@ -412,12 +412,22 @@ design description. **Two remain, and neither is a probe-scale fix:**
   name. This is the exact mechanism **my own S2/S4/S6-S9 wait loops use**
   (`while ((window = ledger.TryEnterSwapWindow(...)) is null) ...`); none of my
   scenarios triggered it only because none run continuous admission pressure during
-  the wait, not because the mechanism is safe. The fix Alexandr measured,
-  `TryReserveAdmission` (reserve-then-drain instead of poll-for-idle, ~130ms drain
-  under the same load that starved the poll), is not yet adopted here — whether it
-  belongs on the shared ledger or the caller is Alexandr's own open question to
-  kirillkrylov, and migrating S2/S4/S6-S9 to it is this stream's concrete next step
-  once that's settled, not attempted this round.
+  the wait, not because the mechanism is safe.
+
+  **Ledger-vs-caller, settled**
+  ([Alexandr](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18542906),
+  reversing his own earlier "say the word and I'll move it"): `TryReserveAdmission`
+  must live on the ledger, not the caller. A caller can only *wait*; the wait becomes
+  finite only if new admissions stop, and only `Begin` can refuse an admission. A
+  caller-side gate that tried to close a scope from outside would have to re-implement
+  admission authority one layer up, with two places that could disagree about whether
+  a scope is open. Migrating S2/S4/S6-S9 to `TryReserveAdmission` is this stream's
+  concrete next build step now that this is settled — not attempted this round.
+  Carried forward for that migration: the bound matters more than the mechanism — a
+  real `compile-creatio` runs minutes, not this probe's milliseconds, so an unbounded
+  drain would be worse than the deferral it replaces (it turns one stuck update into
+  every subsequent call on that scope failing). A reservation must release on expiry,
+  meaning the update is deferred again, not escalated.
 
 Flow B also carries a standing cost Flow A doesn't: a permanent second process that
 [becomes its own compatibility boundary and can never update itself mid-session](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18539699).
@@ -432,8 +442,18 @@ rather than a tail risk, "eventually" is functionally "never", and the calculus 
 Flow B's standing cost becomes worth paying regardless of the two remaining gaps,
 because Flow A would not actually be solving the problem this discussion opened with.
 This is an empirical question about session shapes in practice, not one this document
-or its probes can answer from the inside — closest available proxy is Alexandr's own
-framing of the identical risk on his side of the round.
+or its probes can answer from the inside.
+
+**Shared assumption, named explicitly rather than left as two separately-caveated
+recommendations**
+([Alexandr](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18542906)):
+this recommendation and his "defer, never kill" are the same shape — both choose
+*wait rather than force*, and both are honest only if the waiting provably
+terminates. His disproof is the bound (an unbounded drain is worse than the deferral
+it replaces); mine is the empirical question above. Neither is answerable from inside
+a fixture. Recorded together because a reader evaluating either recommendation in
+isolation would miss that they share one unmeasured premise, not two independent
+ones.
 
 ## Position on the six candidate boundaries
 
