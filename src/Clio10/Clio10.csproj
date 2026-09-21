@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>clio</ToolCommandName>
+    <PackageId>clio</PackageId>
+    <Description>Clio 10 product: CLI and MCP interaction surfaces.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Cli/Clio10.Cli.csproj" />
+    <ProjectReference Include="../Mcp/Clio10.Mcp.csproj" />
+  </ItemGroup>
+</Project>

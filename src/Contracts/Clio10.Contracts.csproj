@@ -1,0 +1,4 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Shared loader ABI: bump deliberately for host/runtime API changes, independently of package releases. -->
+  <PropertyGroup><AssemblyVersion>10.4.0.0</AssemblyVersion></PropertyGroup>
+</Project>

@@ -1,244 +1,119 @@
-[![Build](https://github.com/Advance-Technologies-Foundation/clio/actions/workflows/build.yml/badge.svg)](https://github.com/Advance-Technologies-Foundation/clio/actions/workflows/build.yml)
+# Clio 10
 
-# Introduction
+A fresh .NET 10 blueprint for porting Clio 8 behavior into independently testable layers. Open **Clio10.slnx** at the repository root on branch `krylov/clio-10-experiment`. This branch intentionally replaces the legacy source tree with the experimental solution; it is not intended to merge into master as-is. The migration currently implements 21 operations: maintenance, service calls, compilation, catalogs, profile culture, local package versions, dependency editing, package activation, package archives including ZIP/directory batches, and compiled package file inspection. See the [migration ledger](docs/porting/README.md) for exact scope and remaining gaps. This is an experimental foundation, not feature parity or a published release.
 
-Command Line Interface clio is the utility for integration Creatio platform with development and CI/CD tools.
+An opt-in [complete runtime update proof](docs/runtime-update-proof.md) exercises Composition and primitive V1-to-V2 activation over the same MCP connection, including changed workflows and a newly added operation. Core and adapters remain running.
 
-Please give **[clio-explorer](https://marketplace.visualstudio.com/items?itemName=AdvanceTechnologiesFoundation.clio-explorer)**, a Visual Studio code extension for **clio** a try! This extension provides user interface over clio commands.
+See the [development team guide](docs/agent-team.md) for project roles and invocation. The team pilot also adds [verify-file](docs/verify-file.md), a new local SHA-256 verification operation separate from the 21 legacy ports. Its [execution record](docs/agent-runs/verify-file.md) tracks layer assignments, functional proof and independent review.
 
-# Installation and features
+## Layers
 
-> **Prerequisite:** clio requires the **.NET SDK** (or, at minimum, both the .NET runtime
-> **and** the ASP.NET Core shared runtime — `Microsoft.AspNetCore.App`). The SDK bundles the
-> ASP.NET Core shared framework, so SDK-based installs need nothing extra. Runtime-only
-> installs that ship only the base .NET runtime (`Microsoft.NETCore.App`) without ASP.NET Core
-> — e.g. minimal CI agents — are **not supported**: clio references the ASP.NET Core shared
-> framework (used by `clio mcp-http`) for all commands, so it will fail to start with a
-> "framework not found" error when ASP.NET Core is absent.
+Start with the [architectural principles](docs/architectural-principles.md) for layer ownership, class placement and incremental Clio 8 porting rules.
 
-## Windows
-
-To register clio as the global tool, run the command:
-
-```
-dotnet tool install clio
-```
-
-you can register clio for all users:
-
-```
-dotnet tool install clio -g
+```mermaid
+flowchart TD
+    Product[Clio10 product] --> CLI[Clio10.Cli]
+    Product --> MCP[Clio10.Mcp: stdio]
+    App[Managed custom application] --> Composition[Clio10.Composition]
+    CLI --> Composition
+    MCP --> Composition
+    Partner[Partner.Composition example] --> Contracts
+    Composition -. invokes registered .-> Partner
+    Composition --> Core[Clio10.Core]
+    Core --> Contracts[Stable host contracts]
+    Composition --> Features[Clio10.PrimitiveContracts]
+    Primitives[Clio10.Primitives] --> Features
+    Features --> Contracts
+    Primitives --> Creatio[Creatio async client]
 ```
 
-To unregister clio as the global tool, run the command:
+| Project | Responsibility |
+|---|---|
+| src/Clio10 | Shipping tool; surface selection and shutdown. |
+| src/Cli | CLI parsing and JSON presentation. References Composition only among Clio projects. |
+| src/Mcp | Optional stdio MCP adapter. References Composition only. |
+| src/Composition | Registered workflows, sequencing, validation and default wiring. |
+| src/Core | Environment snapshots, local coordination, bundle selection and session lifetime. No concrete primitive reference. |
+| src/Runtime | Complete release entry point: wires Composition and primitives using borrowed Core services. |
+| src/Primitives | HTTP via Creatio.Client.IAsyncCreatioClient and filesystem I/O; session-owned authentication. |
+| src/Contracts | Stable host interfaces/data; no feature capability or transport SDK dependencies. |
+| src/PrimitiveContracts | Typed feature capabilities and DTOs shared inside a complete runtime by Composition and Primitives. |
+| examples/Partner.Composition | Separate optional workflows; references host/primitive contracts and DI. |
+| tests/* | Separate workflow, Core, transport and product tests. |
 
-```
-dotnet tool uninstall clio
-```
+The application awaits IClioComposition.ExecuteAsync. Composition selects a workflow; Core opens one environment-bound session; nested workflows borrow it. Results return through ordinary C# calls. Progress is separate; no log parsing or subprocess protocol connects layers.
 
-or for all users:
+## Build and run
 
-```
-dotnet tool uninstall clio -g
-```
-
-More information you can see in [.NET Core Global Tools overview](https://docs.microsoft.com/en-US/dotnet/core/tools/global-tools).
-
-## Context menu
-
-```
-clio register
-```
-https://user-images.githubusercontent.com/26967647/169416137-351674ca-0bd2-44f1-83af-df4557bd02fd.mp4
-
-```
-clio unregister
-```
-
-## MacOS / Linux
-
-1. Download [.net 8](https://dotnet.microsoft.com/en-us/download/dotnet/8.0) for Mac/Linux
-
-2. Register clio as the global tool, with the command:
-
-```
-dotnet tool install clio
+```shell
+dotnet build Clio10.slnx -c Release
+dotnet test Clio10.slnx -c Release --no-build
+dotnet run --project src/Clio10 -- --help
 ```
 
-More information you can see in [.NET Core Global Tools overview](https://docs.microsoft.com/en-US/dotnet/core/tools/global-tools).
+Set CLIO10_PASSWORD in the process environment before explicit live execution:
 
-Execute command in terminal for success check
-
-```
-clio help
-```
-
-## Help and examples
-
-To display available commands use:
-
-```
-clio help
+```shell
+clio --execute restart https://your-creatio/ username netcore
+clio --execute flush-redis https://your-creatio/ username netcore
+clio mcp https://your-creatio/ username netcore
 ```
 
-For display command help use:
+Use framework for .NET Framework routes. No-argument startup does no remote work. Legacy settings are never implicitly imported. Certificate validation is enabled; CLIO10_ALLOW_UNTRUSTED_CERTIFICATE=true explicitly opts into a self-signed lab.
 
-```
-clio <COMMAND_NAME> --help
-```
+CLI/MCP are reusable adapter libraries bundled by the product. A managed app can reference Composition without CLI/MCP dependencies. HTTP MCP hosting and NativeAOT embedding are not implemented.
 
-## Run with docker
+## Embed and extend
 
-### Build
-
-```
-docker build -f ./install/Dockerfile -t clio .
-```
-
-### Run
-
-```
-docker run -it --rm clio help
-docker run -it --rm clio reg-web-app -help
-```
-
-## Commands Reference
-[Explore clio commands](clio/Commands.md)
-
-## Contributing
-See [CONTRIBUTING.md](CONTRIBUTING.md) for build setup, test targets, code style, and PR workflow.
-
-## MCP Server
-
-Clio supports Model Context Protocol (MCP) for integration with AI code agents.
-
-### Prerequisites
-
-Install clio as a global .NET tool (see [Installation](#installation-and-features) above), then verify:
-
-```bash
-clio mcp-server --help
+```csharp
+var services = new ServiceCollection();
+services.AddClioComposition(new CompositionOptions(
+    new Uri("https://your-creatio/"), userName, password));
+services.AddPartnerWorkflows(); // optional partner assembly
+await using var provider = services.BuildServiceProvider();
+await using var scope = provider.CreateAsyncScope();
+var composition = scope.ServiceProvider.GetRequiredService<IClioComposition>();
+var result = await composition.ExecuteAsync(new CompositionRequest(
+    "partner.flush-then-restart", Arguments: new Dictionary<string, object?> {
+        ["restart-after-flush"] = true
+    }), cancellationToken: cancellationToken);
 ```
 
-### Registering in AI Code Agents
+Composition setup supplies defaults. Register IPrimitiveCatalog or IEnvironmentResolver before defaults to override them. Bundle registrations are additive; set IncludeDefaultPrimitives=false when supplying a replacement bundle with the same version. Hosts can also pass CoreOptions with named environments. Core has no test-only shortcut. Partners implement IClioWorkflow, register a keyed scoped handler and separate WorkflowRegistration metadata with DI; the example is not bundled into the tool.
 
-All agents use **stdio transport** with the same command: `clio mcp-server`.
+Arguments support strings, booleans, integers, finite numbers, nested dictionaries and arrays. Composition snapshots them and checks descriptor schemas before opening Core. Child calls receive explicit replacement arguments; omitted arguments mean an empty object. Await children sequentially and finish them before returning. Core rejects nested roots; Composition rejects overlapping children and drains any unfinished child before releasing ownership. OperationResult.Payload can carry a typed data record; adapters serialize it, while managed callers can consume the type directly. AcceptedSteps records partial acceptance.
 
-#### Claude Code
+The partner example also reads real files through IFileSystemPrimitive and composes two inspections with independent inputs. A local-only host uses `new CompositionOptions()` without a Creatio URL. Custom products call `AddClioCli(s => s.AddPartnerWorkflows())` or `AddClioMcp(s => s.AddPartnerWorkflows())`; the existing adapters discover and execute these operations automatically. The test-only PartnerHost proves both routes using `--execute partner.compare-texts --local <arguments-json>` and `mcp --local`.
 
-```bash
-claude mcp add clio -- clio mcp-server
+Feature interfaces are runtime-owned: see [the contract boundary and live update proof](docs/primitive-contract-boundary.md). Core neither references nor shares these interfaces in complete-runtime mode. Static embedding can still use typed capabilities through explicitly shared contracts.
+
+## Versions and settings
+
+Set `CLIO10_RUNTIME_COMPOSITION=true` to select complete Composition+primitive releases from `CLIO10_BUNDLES`. See the [runtime proof](docs/runtime-update-proof.md) for acquisition, compatibility, per-root pinning and the local preview package. Without this opt-in, Composition stays static and only primitives are selected dynamically.
+
+CLIO10_BUNDLES selects complete version directories with bundle.json manifests instead of bundled defaults. Optional CLIO10_PRIMITIVE_VERSION=10.0.0.0 pins a release. Otherwise Core chooses the newest compatible bundle. Checks cover contract version, range and capabilities, not identical behavior. The capability-provider boundary is ABI 2; old ABI 1 bundles are rejected. One complete bundle remains pinned for the whole workflow.
+
+Managed hosts can set CompositionOptions.SettingsPath to a JSON dictionary of named environments. Core reads a snapshot per root invocation; CompositionRequest.EnvironmentName selects it. Existing contexts retain their snapshots. Editing/migration and cross-process synchronization are not implemented. Protect credentials through filesystem permissions. CLI supports explicit named settings with `-e <name> --settings <file>` (or CLIO10_SETTINGS). MCP currently configures one explicit target.
+
+## Package locally
+
+```shell
+dotnet pack Clio10.slnx -c Release -o artifacts/packages -p:Version=10.0.0-preview.20
+dotnet tool install clio --version 10.0.0-preview.20 --tool-path artifacts/tool-preview20 --configfile scripts/local-packages.config --add-source artifacts/packages
 ```
 
-Or add to `.claude/settings.json` in your project (or `~/.claude/settings.json` globally):
+Run artifacts/tool-preview20/clio.exe --help on Windows, or the extensionless command elsewhere. This leaves the global tool unchanged. Libraries pack separately; the tool bundles dependencies. Dynamic loading needs a complete dependency output and manifest, not just an extracted library NuGet. The opt-in MCP background service downloads complete bundle packages; see the update proof for supported sources and limits.
 
-```json
-{
-  "mcpServers": {
-    "clio": {
-      "command": "clio",
-      "args": ["mcp-server"],
-      "type": "stdio"
-    }
-  }
-}
-```
+Production dependencies: Microsoft DI/Hosting, MCP SDK in its adapter, creatio.client in Primitives. Creatio SDK brings Newtonsoft privately; SDK types do not cross contracts. Versions are centralized. NUnit, FluentAssertions and NSubstitute are test-only.
 
-#### GitHub Copilot (VS Code)
+## Evidence and limits
 
-Open the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`) and run **MCP: Add Server**, then follow the guided flow.
+The dedicated Clio10Architecture lab runs Creatio 10.1.585/PostgreSQL. The new product called restart and Redis flush; both returned success:true. Authenticated connection worked afterward. Both local bundle versions executed against the lab. See [current verification and review](docs/design-convergence.md) and [earlier live evidence](docs/validation.md).
 
-Alternatively, add to `.vscode/mcp.json` manually:
+HTTP acceptance is not readiness or exactly-once execution. The SDK may renew authentication and replay an unauthorized request despite transport retries being disabled. A lost connection after dispatch is outcome-unknown. Endpoint-specific interpretation belongs in workflows.
 
-```json
-{
-  "servers": {
-    "clio": {
-      "type": "stdio",
-      "command": "clio",
-      "args": ["mcp-server"]
-    }
-  }
-}
-```
+CI redesign is deferred. Local tests do not establish all-platform/live-.NET-Framework parity. Bundle loading is trusted in-process code, not a sandbox. Host replacement, automatic unloading, plugin-folder discovery and cross-process locking remain outside this slice.
 
-#### GitHub Copilot CLI
+See [architecture](docs/architecture.md), [contributing](CONTRIBUTING.md), and [commands](docs/commands.md).
 
-Inside a Copilot CLI session, run the interactive command:
-
-```
-/mcp add
-```
-
-Then follow the guided flow to register a stdio server with command `clio` and argument `mcp-server`.
-
-Alternatively, add to `~/.copilot/mcp-config.json` (global) or `.mcp.json` (project root) manually:
-
-```json
-{
-  "servers": {
-    "clio": {
-      "type": "stdio",
-      "command": "clio",
-      "args": ["mcp-server"]
-    }
-  }
-}
-```
-
-#### Codex CLI
-
-```bash
-codex mcp add clio -- clio mcp-server
-```
-
-Alternatively, add to `~/.codex/config.toml` manually:
-
-```toml
-[mcp_servers.clio]
-command = "clio"
-args = ["mcp-server"]
-```
-
-### Testing with MCP Inspector
-
-```bash
-npx @modelcontextprotocol/inspector dotnet run --project ~/Projects/clio/clio mcp-server
-```
-
-Or configure manually:
-- **Command:** `dotnet`
-- **Arguments:** `run --project /path/to/clio/clio mcp-server`
-- **Transport Type:** STDIO
-
-This opens a browser interface to test MCP tools.
-
-### Available MCP Tools
-
-**list-pages** - List Freedom UI pages
-- `packageName` (optional) - Filter by package
-- `searchPattern` (optional) - Filter by name pattern
-- `limit` (optional) - Max results (default: 50)
-- `environmentName` / `uri+login+password` - Connection
-
-**get-page** - Get page schema body
-- `schemaName` (required) - Page schema name
-- `environmentName` / `uri+login+password` - Connection
-
-**update-page** - Update page body (Destructive)
-- `schemaName` (required) - Page schema name
-- `body` (required) - New JSON body
-- `dryRun` (optional) - Validate only
-- `environmentName` / `uri+login+password` - Connection
-
-**install-application** - Install application package
-
-## Workspace Solution Generation (.slnx)
-
-Starting from September 2025, the `createw` command generates a solution file in `.slnx` format. All projects are added in a sorted order by their relative path, ensuring a stable and repeatable solution structure.
-
-- Solution file: `.solution/CreatioPackages.slnx`
-- Projects: always sorted by path
-- Command: `clio createw`
-
-This change improves consistency for CI/CD and version control.
+The revised [agent-team trial](docs/agent-runs/compare-directories.md) adds [compare-directories](docs/compare-directories.md), a read-only local tree comparison using SHA-256 and the existing generic CLI/MCP adapters.

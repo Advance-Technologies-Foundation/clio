@@ -1,0 +1,2355 @@
+{
+  "sourceCommit": "11293657cb326cb3b488c891ca9e973b5aea8c14",
+  "scope": "CLI declarations, including hidden verbs; not proof of Program registration or MCP-only parity",
+  "commands": [
+    {
+      "command": "CustomizeDataProtection",
+      "aliases": [
+        "cdp"
+      ],
+      "source": "clio/Command/CustomizeDataProtection.cs",
+      "line": 21,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "activate-pkg",
+      "aliases": [
+        "apkg",
+        "activate-package",
+        "enable-package"
+      ],
+      "source": "clio/Command/PackageCommand/ActivatePackageCommand.cs",
+      "line": 9,
+      "hidden": false,
+      "status": "implemented-partial"
+    },
+    {
+      "command": "add-custom-logging",
+      "aliases": [],
+      "source": "clio/Command/AddCustomLoggingCommand.cs",
+      "line": 14,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "add-data-binding-row",
+      "aliases": [],
+      "source": "clio/Command/DataBindingCommand.cs",
+      "line": 47,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "add-item",
+      "aliases": [
+        "create"
+      ],
+      "source": "clio/Command/AddItemCommand.cs",
+      "line": 16,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "add-knowledge-source",
+      "aliases": [],
+      "source": "clio/Command/KnowledgeCommands.cs",
+      "line": 105,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "add-package",
+      "aliases": [
+        "ap"
+      ],
+      "source": "clio/Command/AddPackageCommand.cs",
+      "line": 14,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "add-package-dependency",
+      "aliases": [
+        "add-pkg-dependency",
+        "add-pkg-dep"
+      ],
+      "source": "clio/Command/AddPackageDependencyCommand.cs",
+      "line": 14,
+      "hidden": false,
+      "status": "implemented-partial"
+    },
+    {
+      "command": "add-schema",
+      "aliases": [],
+      "source": "clio/Command/AddSchema.cs",
+      "line": 6,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "add-user-task",
+      "aliases": [],
+      "source": "clio/Command/CreateUserTaskCommand.cs",
+      "line": 17,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "alm-deploy",
+      "aliases": [
+        "deploy"
+      ],
+      "source": "clio/Command/ALMCommand/DeployCommand.cs",
+      "line": 11,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "apply-manifest",
+      "aliases": [
+        "applym",
+        "apply-environment-manifest"
+      ],
+      "source": "clio/Command/ApplyEnvironmentManifestCommand.cs",
+      "line": 13,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "assert",
+      "aliases": [],
+      "source": "clio/Command/AssertOptions.cs",
+      "line": 5,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "autoupdate",
+      "aliases": [],
+      "source": "clio/Command/Update/SetAutoupdateCommand.cs",
+      "line": 7,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "build-docker-image",
+      "aliases": [],
+      "source": "clio/Command/BuildDockerImageCommand.cs",
+      "line": 9,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "build-theme",
+      "aliases": [],
+      "source": "clio/Command/Theming/BuildThemeCommand.cs",
+      "line": 21,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "build-workspace",
+      "aliases": [
+        "build",
+        "compile",
+        "compile-all",
+        "rebuild"
+      ],
+      "source": "clio/Command/CompileWorspaceCommand.cs",
+      "line": 8,
+      "hidden": false,
+      "status": "implemented-partial",
+      "operation": "build-workspace",
+      "notes": "See docs/porting/README.md for behavior and parity limits; not full CLI/MCP equivalence."
+    },
+    {
+      "command": "call-service",
+      "aliases": [
+        "cs"
+      ],
+      "source": "clio/Query/DataServiceQuery.cs",
+      "line": 17,
+      "hidden": false,
+      "status": "implemented-partial",
+      "operation": "call-service",
+      "notes": "See docs/porting/README.md for behavior and parity limits; not full CLI/MCP equivalence."
+    },
+    {
+      "command": "cfg-worspace",
+      "aliases": [
+        "cfgw"
+      ],
+      "source": "clio/Command/ConfigureWorkspaceCommand.cs",
+      "line": 17,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "check-auth-code-flow",
+      "aliases": [
+        "auth-code-flow"
+      ],
+      "source": "clio/Command/CheckAuthCodeFlowCommand.cs",
+      "line": 12,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "check-nuget-update",
+      "aliases": [
+        "check"
+      ],
+      "source": "clio/Command/CheckNugetUpdateCommand.cs",
+      "line": 11,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "check-windows-features",
+      "aliases": [
+        "checkw",
+        "checks",
+        "checkf",
+        "cf"
+      ],
+      "source": "clio/Command/CheckWindowsFeatureCommand.cs",
+      "line": 12,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "clear-browser-session",
+      "aliases": [
+        "clear-session"
+      ],
+      "source": "clio/Command/BrowserSession/ClearBrowserSessionCommand.cs",
+      "line": 10,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "clear-local-env",
+      "aliases": [
+        "clear-env"
+      ],
+      "source": "clio/Command/ClearLocalEnvironmentCommand.cs",
+      "line": 14,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "clear-redis-db",
+      "aliases": [
+        "flushdb"
+      ],
+      "source": "clio/Command/RedisCommand.cs",
+      "line": 7,
+      "hidden": false,
+      "status": "implemented-partial",
+      "operation": "flush-redis",
+      "notes": "See docs/porting/README.md for behavior and parity limits; not full CLI/MCP equivalence."
+    },
+    {
+      "command": "clear-themes-cache",
+      "aliases": [
+        "flush-themes"
+      ],
+      "source": "clio/Command/Theming/ClearThemesCacheCommand.cs",
+      "line": 9,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "clone-env",
+      "aliases": [
+        "clone",
+        "clone-environment"
+      ],
+      "source": "clio/Command/CloneEnvironmentCommand.cs",
+      "line": 22,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "compare-web-farm-node",
+      "aliases": [
+        "check-web-farm-node",
+        "check-farm",
+        "farm-check",
+        "cwf"
+      ],
+      "source": "clio/Command/CheckWebFarmNodeConfigurationsCommand.cs",
+      "line": 13,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "compile-configuration",
+      "aliases": [
+        "cc",
+        "compile-remote"
+      ],
+      "source": "clio/Command/CompileConfigurationCommand.cs",
+      "line": 18,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "compile-package",
+      "aliases": [
+        "comp-pkg"
+      ],
+      "source": "clio/Command/CompilePackageCommand.cs",
+      "line": 8,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "component-registry-refresh",
+      "aliases": [
+        "component-registry"
+      ],
+      "source": "clio/Command/ComponentRegistryRefreshCommand.cs",
+      "line": 13,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "compressApp",
+      "aliases": [
+        "comp-app"
+      ],
+      "source": "clio/Command/CompressAppCommand.cs",
+      "line": 12,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "config",
+      "aliases": [],
+      "source": "clio/Command/ConfigCommand.cs",
+      "line": 17,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "convert",
+      "aliases": [],
+      "source": "clio/Command/CommandLineOptions.cs",
+      "line": 251,
+      "hidden": true,
+      "status": "pending"
+    },
+    {
+      "command": "create-app",
+      "aliases": [],
+      "source": "clio/Command/ApplicationCreateCommand.cs",
+      "line": 10,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "create-app-section",
+      "aliases": [],
+      "source": "clio/Command/ApplicationSectionCreateCommand.cs",
+      "line": 25,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "create-client-unit-schema",
+      "aliases": [
+        "client-unit-schema-create"
+      ],
+      "source": "clio/Command/ClientUnitSchemaCreate.cs",
+      "line": 9,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "create-data-binding",
+      "aliases": [],
+      "source": "clio/Command/DataBindingCommand.cs",
+      "line": 20,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "create-data-binding-db",
+      "aliases": [],
+      "source": "clio/Command/DataBindingDbCommand.cs",
+      "line": 17,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "create-entity-schema",
+      "aliases": [],
+      "source": "clio/Command/CreateEntitySchemaCommand.cs",
+      "line": 9,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "create-k8-files",
+      "aliases": [
+        "ck8f"
+      ],
+      "source": "clio/Command/CreateInfrastructure.cs",
+      "line": 10,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "create-lookup",
+      "aliases": [],
+      "source": "clio/Command/CreateLookupCommand.cs",
+      "line": 11,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "create-oauth-technical-user",
+      "aliases": [],
+      "source": "clio/Command/OAuthAppConfiguration/CreateOAuthTechnicalUserCommand.cs",
+      "line": 14,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "create-page",
+      "aliases": [
+        "page-create"
+      ],
+      "source": "clio/Command/PageCreateOptions.cs",
+      "line": 14,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "create-related-page-addon",
+      "aliases": [
+        "related-page-addon",
+        "set-related-pages"
+      ],
+      "source": "clio/Command/CreateRelatedPageAddonOptions.cs",
+      "line": 31,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "create-schema",
+      "aliases": [
+        "schema-create"
+      ],
+      "source": "clio/Command/SourceCodeSchemaCreate.cs",
+      "line": 8,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "create-server-to-server-oauth-app",
+      "aliases": [],
+      "source": "clio/Command/OAuthAppConfiguration/CreateServerToServerOAuthAppCommand.cs",
+      "line": 14,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "create-sql-schema",
+      "aliases": [
+        "sql-schema-create"
+      ],
+      "source": "clio/Command/SqlSchemaCreate.cs",
+      "line": 9,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "create-theme",
+      "aliases": [],
+      "source": "clio/Command/Theming/CreateThemeCommand.cs",
+      "line": 13,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "create-workspace",
+      "aliases": [
+        "createw"
+      ],
+      "source": "clio/Command/CreateWorkspaceCommand.cs",
+      "line": 15,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "dataservice",
+      "aliases": [
+        "ds"
+      ],
+      "source": "clio/Query/DataServiceQuery.cs",
+      "line": 82,
+      "hidden": false,
+      "status": "implemented-partial",
+      "operation": "dataservice",
+      "notes": "See docs/porting/README.md for behavior and parity limits; not full CLI/MCP equivalence."
+    },
+    {
+      "command": "deactivate-pkg",
+      "aliases": [
+        "dpkg",
+        "deactivate-package",
+        "disable-package"
+      ],
+      "source": "clio/Command/PackageCommand/DeactivatePackageCommand.cs",
+      "line": 9,
+      "hidden": false,
+      "status": "implemented-partial"
+    },
+    {
+      "command": "delete-app-section",
+      "aliases": [],
+      "source": "clio/Command/ApplicationSectionDeleteCommand.cs",
+      "line": 16,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "delete-infrastructure",
+      "aliases": [
+        "di-delete",
+        "remove-infrastructure"
+      ],
+      "source": "clio/Command/DeleteInfrastructureCommand.cs",
+      "line": 8,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "delete-knowledge",
+      "aliases": [],
+      "source": "clio/Command/KnowledgeCommands.cs",
+      "line": 79,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "delete-pkg-remote",
+      "aliases": [
+        "delete"
+      ],
+      "source": "clio/Command/DeletePkgOptions.cs",
+      "line": 5,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "delete-schema",
+      "aliases": [],
+      "source": "clio/Command/DeleteSchemaCommand.cs",
+      "line": 13,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "delete-theme",
+      "aliases": [],
+      "source": "clio/Command/Theming/DeleteThemeCommand.cs",
+      "line": 12,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "delete-toolkit",
+      "aliases": [
+        "delete-skill"
+      ],
+      "source": "clio/Command/SkillCommands.cs",
+      "line": 75,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "deploy-application",
+      "aliases": [
+        "deploy-app"
+      ],
+      "source": "clio/Command/DeployAppCommand.cs",
+      "line": 12,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "deploy-creatio",
+      "aliases": [
+        "dc",
+        "ic",
+        "install-creatio"
+      ],
+      "source": "clio/Command/CreatioInstallCommand/InstallerCommand.cs",
+      "line": 13,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "deploy-identity",
+      "aliases": [],
+      "source": "clio/Command/IdentityServiceDeployment/DeployIdentityCommand.cs",
+      "line": 11,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "deploy-infrastructure",
+      "aliases": [
+        "di"
+      ],
+      "source": "clio/Command/DeployInfrastructureCommand.cs",
+      "line": 14,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "disable-knowledge-source",
+      "aliases": [],
+      "source": "clio/Command/KnowledgeCommands.cs",
+      "line": 264,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "distribute-license",
+      "aliases": [
+        "grant-license"
+      ],
+      "source": "clio/Command/DistributeLicenseOptions.cs",
+      "line": 9,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "download-application",
+      "aliases": [
+        "dapp",
+        "download-app"
+      ],
+      "source": "clio/Command/DownloadAppCommand.cs",
+      "line": 12,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "download-configuration",
+      "aliases": [
+        "dconf"
+      ],
+      "source": "clio/Command/DownloadConfigurationCommand.cs",
+      "line": 90,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "enable-knowledge-source",
+      "aliases": [],
+      "source": "clio/Command/KnowledgeCommands.cs",
+      "line": 246,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "env-ui",
+      "aliases": [
+        "gui",
+        "far"
+      ],
+      "source": "clio/Command/EnvManageUiCommand.cs",
+      "line": 17,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "execute-assembly-code",
+      "aliases": [
+        "exec"
+      ],
+      "source": "clio/Command/AssemblyCommand.cs",
+      "line": 10,
+      "hidden": true,
+      "status": "pending"
+    },
+    {
+      "command": "execute-sql-script",
+      "aliases": [
+        "sql"
+      ],
+      "source": "clio/Command/SqlScriptCommand.cs",
+      "line": 14,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "experimental",
+      "aliases": [
+        "exp"
+      ],
+      "source": "clio/Command/ExperimentalCommand.cs",
+      "line": 22,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "export-component-registry",
+      "aliases": [
+        "export-registry"
+      ],
+      "source": "clio/Command/ExportComponentRegistryCommand.cs",
+      "line": 17,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "export-schema",
+      "aliases": [
+        "schema-export"
+      ],
+      "source": "clio/Command/ExportSchemaCommand.cs",
+      "line": 13,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "externalLink",
+      "aliases": [
+        "link"
+      ],
+      "source": "clio/Command/ExternalLink.cs",
+      "line": 18,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "extract-pkg-zip",
+      "aliases": [
+        "extract",
+        "unzip"
+      ],
+      "source": "clio/Command/PackageCommand/ExtractPackageCommand.cs",
+      "line": 10,
+      "hidden": false,
+      "status": "implemented-partial"
+    },
+    {
+      "command": "find-app",
+      "aliases": [],
+      "source": "clio/Command/FindAppCommand.cs",
+      "line": 16,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "find-entity-schema",
+      "aliases": [],
+      "source": "clio/Command/FindEntitySchemaCommand.cs",
+      "line": 15,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "generate-pkg-zip",
+      "aliases": [
+        "comp-pkg",
+        "compress"
+      ],
+      "source": "clio/Command/CompressPackageCommand.cs",
+      "line": 8,
+      "hidden": false,
+      "status": "implemented-partial"
+    },
+    {
+      "command": "generate-process-model",
+      "aliases": [
+        "gpm"
+      ],
+      "source": "clio/Command/GenerateProcessModelCommand.cs",
+      "line": 11,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "generate-source-code",
+      "aliases": [
+        "gsc"
+      ],
+      "source": "clio/Command/GenerateSourceCodeCommand.cs",
+      "line": 10,
+      "hidden": false,
+      "status": "implemented-partial",
+      "operation": "generate-source-code",
+      "notes": "See docs/porting/README.md for behavior and parity limits; not full CLI/MCP equivalence."
+    },
+    {
+      "command": "get-app-hash",
+      "aliases": [],
+      "source": "clio/Command/GetAppHash.cs",
+      "line": 8,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "get-app-info",
+      "aliases": [],
+      "source": "clio/Command/GetAppInfoCommand.cs",
+      "line": 13,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "get-browser-session",
+      "aliases": [
+        "get-session"
+      ],
+      "source": "clio/Command/BrowserSession/GetBrowserSessionCommand.cs",
+      "line": 10,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "get-build-info",
+      "aliases": [
+        "buildinfo",
+        "bi"
+      ],
+      "source": "clio/Command/BuildInfoCommand.cs",
+      "line": 11,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "get-classic-list-columns",
+      "aliases": [],
+      "source": "clio/Command/GetClassicListColumnsCommand.cs",
+      "line": 10,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "get-classic-page-sources",
+      "aliases": [
+        "classic-page-sources",
+        "get-classic-migration-bundle",
+        "classic-migration-bundle"
+      ],
+      "source": "clio/Command/GetClassicPageSourcesCommand.cs",
+      "line": 19,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "get-client-unit-schema",
+      "aliases": [
+        "client-unit-schema-get"
+      ],
+      "source": "clio/Command/ClientUnitSchemaGet.cs",
+      "line": 11,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "get-component-info",
+      "aliases": [
+        "component-info"
+      ],
+      "source": "clio/Command/ComponentInfoCommand.cs",
+      "line": 14,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "get-entity-schema-column-properties",
+      "aliases": [],
+      "source": "clio/Command/GetEntitySchemaColumnPropertiesCommand.cs",
+      "line": 11,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "get-entity-schema-properties",
+      "aliases": [],
+      "source": "clio/Command/GetEntitySchemaPropertiesCommand.cs",
+      "line": 13,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "get-identity-assertion",
+      "aliases": [
+        "identity-assertion"
+      ],
+      "source": "clio/Command/GetIdentityAssertionCommand.cs",
+      "line": 15,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "get-identity-public-jwk",
+      "aliases": [
+        "identity-public-jwk"
+      ],
+      "source": "clio/Command/GetIdentityPublicJwkCommand.cs",
+      "line": 13,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "get-identity-service-config",
+      "aliases": [],
+      "source": "clio/Command/OAuthAppConfiguration/GetIdentityServiceConfigCommand.cs",
+      "line": 13,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "get-info",
+      "aliases": [
+        "describe",
+        "describe-creatio",
+        "instance-info"
+      ],
+      "source": "clio/Command/GetCreatioInfoCommand.cs",
+      "line": 19,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "get-page",
+      "aliases": [
+        "page-get"
+      ],
+      "source": "clio/Command/PageGetOptions.cs",
+      "line": 13,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "get-page-hierarchy",
+      "aliases": [
+        "page-hierarchy-get"
+      ],
+      "source": "clio/Command/GetPageHierarchyCommand.cs",
+      "line": 14,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "get-pkg-version",
+      "aliases": [
+        "gpv"
+      ],
+      "source": "clio/Command/PackageCommand/GetPackageVersionCommand.cs",
+      "line": 13,
+      "hidden": false,
+      "status": "implemented-partial",
+      "operation": "get-pkg-version",
+      "notes": "See docs/porting/README.md for behavior and parity limits; not full CLI/MCP equivalence."
+    },
+    {
+      "command": "get-process-signature",
+      "aliases": [
+        "gps"
+      ],
+      "source": "clio/Command/GetProcessSignatureCommand.cs",
+      "line": 15,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "get-record-rights",
+      "aliases": [],
+      "source": "clio/Command/RecordRights/GetRecordRightsCommand.cs",
+      "line": 9,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "get-related-page-addon",
+      "aliases": [
+        "related-page-addon-get",
+        "get-related-pages"
+      ],
+      "source": "clio/Command/GetRelatedPageAddonOptions.cs",
+      "line": 17,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "get-schema",
+      "aliases": [
+        "schema-get"
+      ],
+      "source": "clio/Command/SourceCodeSchemaGet.cs",
+      "line": 10,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "get-sql-schema",
+      "aliases": [
+        "sql-schema-get"
+      ],
+      "source": "clio/Command/SqlSchemaGet.cs",
+      "line": 10,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "get-target-package",
+      "aliases": [],
+      "source": "clio/Command/GetTargetPackageCommand.cs",
+      "line": 13,
+      "hidden": true,
+      "status": "pending"
+    },
+    {
+      "command": "get-user-culture",
+      "aliases": [
+        "profile-language"
+      ],
+      "source": "clio/Command/GetUserCultureCommand.cs",
+      "line": 16,
+      "hidden": false,
+      "status": "implemented-partial",
+      "operation": "get-user-culture",
+      "notes": "See docs/porting/README.md for behavior and parity limits; not full CLI/MCP equivalence."
+    },
+    {
+      "command": "get-webservice-url",
+      "aliases": [
+        "gwu"
+      ],
+      "source": "clio/SetWebServiceUrlCommand.cs",
+      "line": 91,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "git-sync",
+      "aliases": [
+        "sync"
+      ],
+      "source": "clio/Command/GitSync.cs",
+      "line": 8,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "healthcheck",
+      "aliases": [
+        "hc"
+      ],
+      "source": "clio/Command/HealthCheckCommand.cs",
+      "line": 13,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "hosts",
+      "aliases": [
+        "list-hosts"
+      ],
+      "source": "clio/Command/HostsCommand.cs",
+      "line": 17,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "idp-bind",
+      "aliases": [],
+      "source": "clio/Command/IdentityProviderManagementCommand.cs",
+      "line": 69,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "idp-delete",
+      "aliases": [],
+      "source": "clio/Command/IdentityProviderManagementCommand.cs",
+      "line": 51,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "idp-list",
+      "aliases": [],
+      "source": "clio/Command/IdentityProviderManagementCommand.cs",
+      "line": 12,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "idp-services",
+      "aliases": [],
+      "source": "clio/Command/IdentityProviderManagementCommand.cs",
+      "line": 90,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "idp-set-default",
+      "aliases": [],
+      "source": "clio/Command/IdentityProviderManagementCommand.cs",
+      "line": 60,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "idp-set-secret",
+      "aliases": [],
+      "source": "clio/Command/IdentityProviderManagementCommand.cs",
+      "line": 39,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "idp-unbind",
+      "aliases": [],
+      "source": "clio/Command/IdentityProviderManagementCommand.cs",
+      "line": 84,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "idp-upsert",
+      "aliases": [],
+      "source": "clio/Command/IdentityProviderManagementCommand.cs",
+      "line": 18,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "import-schema",
+      "aliases": [
+        "schema-import"
+      ],
+      "source": "clio/Command/ImportSchemaCommand.cs",
+      "line": 13,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "info",
+      "aliases": [
+        "ver",
+        "get-version",
+        "i"
+      ],
+      "source": "clio/Command/InfoCommand.cs",
+      "line": 9,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "info-knowledge",
+      "aliases": [],
+      "source": "clio/Command/KnowledgeCommands.cs",
+      "line": 53,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "install-application",
+      "aliases": [
+        "push-app",
+        "install-app"
+      ],
+      "source": "clio/Command/InstallApplicationOptions.cs",
+      "line": 39,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "install-dbhub",
+      "aliases": [],
+      "source": "clio/Command/InstallDbHubCommand.cs",
+      "line": 11,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "install-gate",
+      "aliases": [
+        "gate",
+        "update-gate",
+        "installgate"
+      ],
+      "source": "clio/Command/InstallGateCommand.cs",
+      "line": 13,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "install-knowledge",
+      "aliases": [],
+      "source": "clio/Command/KnowledgeCommands.cs",
+      "line": 15,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "install-nuget-pkg",
+      "aliases": [
+        "installng"
+      ],
+      "source": "clio/Command/InstallNugetPackageCommand.cs",
+      "line": 13,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "install-process-builder",
+      "aliases": [
+        "update-process-builder",
+        "installprocessbuilder"
+      ],
+      "source": "clio/Command/InstallProcessBuilderCommand.cs",
+      "line": 29,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "install-sql-schema",
+      "aliases": [
+        "sql-schema-install",
+        "execute-sql-schema"
+      ],
+      "source": "clio/Command/SqlSchemaInstall.cs",
+      "line": 9,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "install-toolkit",
+      "aliases": [
+        "install-skills"
+      ],
+      "source": "clio/Command/SkillCommands.cs",
+      "line": 59,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "last-compilation-log",
+      "aliases": [
+        "lcl"
+      ],
+      "source": "clio/Command/LastCompilationLogCommand.cs",
+      "line": 7,
+      "hidden": false,
+      "status": "implemented-partial",
+      "operation": "last-compilation-log",
+      "notes": "See docs/porting/README.md for behavior and parity limits; not full CLI/MCP equivalence."
+    },
+    {
+      "command": "link-core-src",
+      "aliases": [
+        "lcs"
+      ],
+      "source": "clio/Command/LinkCoreSrcCommand.cs",
+      "line": 24,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "link-from-repository",
+      "aliases": [
+        "l4r",
+        "link4repo"
+      ],
+      "source": "clio/Command/Link4RepoCommand.cs",
+      "line": 18,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "link-package-store",
+      "aliases": [
+        "lps"
+      ],
+      "source": "clio/Command/LinkPackageStoreCommand.cs",
+      "line": 15,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "link-to-repository",
+      "aliases": [
+        "l2r",
+        "link2repo"
+      ],
+      "source": "clio/Command/Link2RepoCommand.cs",
+      "line": 7,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "link-workspace-with-tide-repository",
+      "aliases": [
+        "linkw"
+      ],
+      "source": "clio/Command/TIDE/LinkWorkspaceWithTideRepositoryCommand.cs",
+      "line": 12,
+      "hidden": true,
+      "status": "pending"
+    },
+    {
+      "command": "list-app-sections",
+      "aliases": [],
+      "source": "clio/Command/ApplicationSectionGetListCommand.cs",
+      "line": 17,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "list-apps",
+      "aliases": [
+        "get-app-list",
+        "lia",
+        "apps",
+        "app-list",
+        "apps-list",
+        "list - installed - applications"
+      ],
+      "source": "clio/Command/ListInstalledApplications.cs",
+      "line": 11,
+      "hidden": false,
+      "status": "implemented-partial",
+      "operation": "list-apps",
+      "notes": "See docs/porting/README.md for behavior and parity limits; not full CLI/MCP equivalence."
+    },
+    {
+      "command": "list-entity-client-schemas",
+      "aliases": [
+        "migration-unit-resolve"
+      ],
+      "source": "clio/Command/ListEntityClientSchemasCommand.cs",
+      "line": 12,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "list-environments",
+      "aliases": [
+        "show-web-app-list",
+        "env",
+        "envs",
+        "show-web-app"
+      ],
+      "source": "clio/Command/ShowAppListCommand.cs",
+      "line": 48,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "list-knowledge-examples",
+      "aliases": [],
+      "source": "clio/Command/KnowledgeCommands.cs",
+      "line": 294,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "list-knowledge-sources",
+      "aliases": [],
+      "source": "clio/Command/KnowledgeCommands.cs",
+      "line": 282,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "list-packages",
+      "aliases": [
+        "get-pkg-list",
+        "packages"
+      ],
+      "source": "clio/Command/GetPkgListCommand.cs",
+      "line": 14,
+      "hidden": false,
+      "status": "implemented-partial",
+      "operation": "list-packages",
+      "notes": "See docs/porting/README.md for behavior and parity limits; not full CLI/MCP equivalence."
+    },
+    {
+      "command": "list-page-templates",
+      "aliases": [
+        "page-templates",
+        "page-templates-list"
+      ],
+      "source": "clio/Command/PageTemplatesListOptions.cs",
+      "line": 12,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "list-pages",
+      "aliases": [
+        "page-list"
+      ],
+      "source": "clio/Command/PageListOptions.cs",
+      "line": 10,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "list-printables",
+      "aliases": [],
+      "source": "clio/Command/ListPrintablesCommand.cs",
+      "line": 18,
+      "hidden": true,
+      "status": "pending"
+    },
+    {
+      "command": "list-themes",
+      "aliases": [
+        "get-themes"
+      ],
+      "source": "clio/Command/Theming/ListThemesCommand.cs",
+      "line": 14,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "listen",
+      "aliases": [],
+      "source": "clio/Command/ListenCommand.cs",
+      "line": 15,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "lock-package",
+      "aliases": [
+        "lp"
+      ],
+      "source": "clio/Command/LockPackageCommand.cs",
+      "line": 13,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "manage-windows-features",
+      "aliases": [
+        "mwf",
+        "mng-win-features"
+      ],
+      "source": "clio/ManageWindowsFeaturesCommand.cs",
+      "line": 9,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "mcp-http",
+      "aliases": [],
+      "source": "clio/Command/McpServer/McpHttpServerCommand.cs",
+      "line": 23,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "mcp-server",
+      "aliases": [
+        "mcp"
+      ],
+      "source": "clio/Command/McpServer/McpServerCommand.cs",
+      "line": 14,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "merge-creatio-artifact",
+      "aliases": [],
+      "source": "clio/Command/CreatioArtifactMergeCommand.cs",
+      "line": 14,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "merge-workspaces",
+      "aliases": [
+        "mergew"
+      ],
+      "source": "clio/Command/MergeWorkspacesCommand.cs",
+      "line": 13,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "mock-data",
+      "aliases": [
+        "data-mock"
+      ],
+      "source": "clio/Command/MockDataCommand.cs",
+      "line": 14,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "modify-entity-schema-column",
+      "aliases": [],
+      "source": "clio/Command/ModifyEntitySchemaColumnCommand.cs",
+      "line": 12,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "modify-user-task-parameters",
+      "aliases": [],
+      "source": "clio/Command/ModifyUserTaskParametersCommand.cs",
+      "line": 15,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "new-integration-test-project",
+      "aliases": [
+        "integration-test"
+      ],
+      "source": "clio/Command/CreateIntegrationTestProjectCommand.cs",
+      "line": 17,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "new-pkg",
+      "aliases": [
+        "init"
+      ],
+      "source": "clio/Command/NewPkgCommand.cs",
+      "line": 11,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "new-test-project",
+      "aliases": [
+        "unit-test",
+        "create-test-project"
+      ],
+      "source": "clio/Command/CreateTestProjectCommand.cs",
+      "line": 153,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "new-ui-project",
+      "aliases": [
+        "ui",
+        "create-ui-project",
+        "new-ui",
+        "createup",
+        "uiproject"
+      ],
+      "source": "clio/Command/CreateUiProjectCommand.cs",
+      "line": 12,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "open-k8-files",
+      "aliases": [
+        "cfg-k8f",
+        "cfg-k8s",
+        "cfg-k8"
+      ],
+      "source": "clio/Command/OpenInfrastructureCommand.cs",
+      "line": 8,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "open-settings",
+      "aliases": [
+        "conf",
+        "configuration",
+        "settings",
+        "os"
+      ],
+      "source": "clio/Command/OpenCfgCommand.cs",
+      "line": 7,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "open-web-app",
+      "aliases": [
+        "open"
+      ],
+      "source": "clio/Command/OpenAppCommand.cs",
+      "line": 12,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "pack-nuget-pkg",
+      "aliases": [
+        "pack"
+      ],
+      "source": "clio/Command/PackNuGetPackageCommand.cs",
+      "line": 16,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "pin-certificate",
+      "aliases": [],
+      "source": "clio/Command/PinCertificateCommand.cs",
+      "line": 16,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "ping-app",
+      "aliases": [
+        "ping"
+      ],
+      "source": "clio/Command/PingCommand.cs",
+      "line": 7,
+      "hidden": false,
+      "status": "implemented-partial",
+      "operation": "ping-app",
+      "notes": "See docs/porting/README.md for behavior and parity limits; not full CLI/MCP equivalence."
+    },
+    {
+      "command": "pkg-hotfix",
+      "aliases": [
+        "hotfix",
+        "hf"
+      ],
+      "source": "clio/Command/PackageHotFixCommand.cs",
+      "line": 6,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "pkg-to-db",
+      "aliases": [
+        "todb",
+        "2db"
+      ],
+      "source": "clio/Command/LoadPackagesToDbCommand.cs",
+      "line": 11,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "pkg-to-file-system",
+      "aliases": [
+        "tofs",
+        "2fs"
+      ],
+      "source": "clio/Command/LoadPackagesToFileSystemCommand.cs",
+      "line": 11,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "prune-db-templates",
+      "aliases": [],
+      "source": "clio/Command/PruneDbTemplatesCommand.cs",
+      "line": 13,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "publish-app",
+      "aliases": [
+        "publishw",
+        "publish-hub",
+        "ph",
+        "publish-workspace"
+      ],
+      "source": "clio/Command/PublishWorkspaceCommand.cs",
+      "line": 16,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "pull-pkg",
+      "aliases": [
+        "download"
+      ],
+      "source": "clio/Command/PackageCommand/DownloadPackageCommand.cs",
+      "line": 6,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "push-nuget-pkg",
+      "aliases": [
+        "push-n",
+        "push-nuget"
+      ],
+      "source": "clio/Command/PushNuGetPackagesCommand.cs",
+      "line": 8,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "push-pkg",
+      "aliases": [
+        "install",
+        "push"
+      ],
+      "source": "clio/Command/PushPackageCommand.cs",
+      "line": 13,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "push-workspace",
+      "aliases": [
+        "pushw"
+      ],
+      "source": "clio/Command/PushWorkspaceCommand.cs",
+      "line": 13,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "quiz",
+      "aliases": [],
+      "source": "clio/Command/QuizCommand.cs",
+      "line": 9,
+      "hidden": true,
+      "status": "pending"
+    },
+    {
+      "command": "read-data-binding-db",
+      "aliases": [
+        "get-data-binding-db"
+      ],
+      "source": "clio/Command/DataBindingDbCommand.cs",
+      "line": 65,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "ref-to",
+      "aliases": [],
+      "source": "clio/Command/ReferenceCommand.cs",
+      "line": 11,
+      "hidden": true,
+      "status": "pending"
+    },
+    {
+      "command": "reg-web-app",
+      "aliases": [
+        "reg",
+        "cfg"
+      ],
+      "source": "clio/Command/RegAppCommand.cs",
+      "line": 14,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "regenerate-identity-signing-key",
+      "aliases": [
+        "identity-regenerate-key"
+      ],
+      "source": "clio/Command/RegenerateIdentitySigningKeyCommand.cs",
+      "line": 12,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "register",
+      "aliases": [],
+      "source": "clio/Command/RegisterCommand.cs",
+      "line": 11,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "register-sso-provider",
+      "aliases": [
+        "sso-register-provider"
+      ],
+      "source": "clio/Command/RegisterSsoProviderCommand.cs",
+      "line": 15,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "remove-data-binding-row",
+      "aliases": [],
+      "source": "clio/Command/DataBindingCommand.cs",
+      "line": 68,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "remove-data-binding-row-db",
+      "aliases": [],
+      "source": "clio/Command/DataBindingDbCommand.cs",
+      "line": 50,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "remove-knowledge-source",
+      "aliases": [],
+      "source": "clio/Command/KnowledgeCommands.cs",
+      "line": 221,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "remove-package-dependency",
+      "aliases": [
+        "remove-pkg-dependency",
+        "remove-pkg-dep"
+      ],
+      "source": "clio/Command/RemovePackageDependencyCommand.cs",
+      "line": 14,
+      "hidden": false,
+      "status": "implemented-partial"
+    },
+    {
+      "command": "resolve-oauth-system-user",
+      "aliases": [],
+      "source": "clio/Command/OAuthAppConfiguration/ResolveOAuthSystemUserCommand.cs",
+      "line": 17,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "restart-web-app",
+      "aliases": [
+        "restart"
+      ],
+      "source": "clio/Command/RestartCommand.cs",
+      "line": 7,
+      "hidden": false,
+      "status": "implemented-partial",
+      "operation": "restart",
+      "notes": "See docs/porting/README.md for behavior and parity limits; not full CLI/MCP equivalence."
+    },
+    {
+      "command": "restore-configuration",
+      "aliases": [
+        "restore",
+        "rc"
+      ],
+      "source": "clio/Command/RestoreFromPackageBackupCommand.cs",
+      "line": 8,
+      "hidden": false,
+      "status": "implemented-partial",
+      "operation": "restore-configuration",
+      "notes": "See docs/porting/README.md for behavior and parity limits; not full CLI/MCP equivalence."
+    },
+    {
+      "command": "restore-db",
+      "aliases": [
+        "rdb"
+      ],
+      "source": "clio/Command/RestoreDb.cs",
+      "line": 18,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "restore-nuget-pkg",
+      "aliases": [
+        "rn",
+        "restore-nuget"
+      ],
+      "source": "clio/Command/RestoreNugetPackageCommand.cs",
+      "line": 8,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "restore-workspace",
+      "aliases": [
+        "restorew",
+        "pullw",
+        "pull-workspace"
+      ],
+      "source": "clio/Command/RestoreWorkspaceCommand.cs",
+      "line": 59,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "ring",
+      "aliases": [],
+      "source": "clio/Command/RingCommand.cs",
+      "line": 22,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "run",
+      "aliases": [
+        "scenario",
+        "run-scenario"
+      ],
+      "source": "clio/Command/ScenarioRunnerCommand.cs",
+      "line": 12,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "save-state",
+      "aliases": [
+        "state",
+        "save-manifest"
+      ],
+      "source": "clio/Command/SaveSettingsToManifestCommand.cs",
+      "line": 17,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "set-app-icon",
+      "aliases": [
+        "appicon",
+        "ai",
+        "set-icon"
+      ],
+      "source": "clio/Command/ApplicationCommand/SetApplicationIconCommand.cs",
+      "line": 6,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "set-app-version",
+      "aliases": [
+        "appversion"
+      ],
+      "source": "clio/Command/ApplicationCommand/SetApplicationVersionCommand.cs",
+      "line": 8,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "set-background-image",
+      "aliases": [],
+      "source": "clio/Command/Branding/SetBackgroundImageCommand.cs",
+      "line": 13,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "set-dev-mode",
+      "aliases": [
+        "dev",
+        "unlock"
+      ],
+      "source": "clio/Command/CommandLineOptions.cs",
+      "line": 277,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "set-entity-schema-properties",
+      "aliases": [],
+      "source": "clio/Command/SetEntitySchemaPropertiesCommand.cs",
+      "line": 16,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "set-feature",
+      "aliases": [
+        "feature"
+      ],
+      "source": "clio/Command/FeatureCommand.cs",
+      "line": 12,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "set-file-content-storage-connection-string",
+      "aliases": [
+        "set-fcs-connection-string"
+      ],
+      "source": "clio/Command/SetFileContentStorageConnectionStringCommand.cs",
+      "line": 9,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "set-fsm-config",
+      "aliases": [
+        "fsmc",
+        "sfsmc"
+      ],
+      "source": "clio/Command/SetFsmConfigCommand.cs",
+      "line": 59,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "set-logo",
+      "aliases": [],
+      "source": "clio/Command/Branding/SetLogoCommand.cs",
+      "line": 15,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "set-pkg-version",
+      "aliases": [
+        "spv"
+      ],
+      "source": "clio/Command/PackageCommand/SetPackageVersionCommand.cs",
+      "line": 14,
+      "hidden": false,
+      "status": "implemented-partial",
+      "operation": "set-pkg-version",
+      "notes": "See docs/porting/README.md for behavior and parity limits; not full CLI/MCP equivalence."
+    },
+    {
+      "command": "set-record-rights",
+      "aliases": [],
+      "source": "clio/Command/RecordRights/SetRecordRightsCommand.cs",
+      "line": 8,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "set-syssetting",
+      "aliases": [
+        "ss",
+        "syssetting",
+        "sys-setting",
+        "get-syssetting"
+      ],
+      "source": "clio/Command/SysSettingsCommand.cs",
+      "line": 17,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "set-user-theme",
+      "aliases": [
+        "apply-user-theme"
+      ],
+      "source": "clio/Command/Theming/SetUserThemeCommand.cs",
+      "line": 9,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "set-webservice-url",
+      "aliases": [
+        "swu",
+        "webservice"
+      ],
+      "source": "clio/SetWebServiceUrlCommand.cs",
+      "line": 15,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "show-diff",
+      "aliases": [
+        "diff",
+        "compare"
+      ],
+      "source": "clio/Command/ShowDiffEnvironmentsCommand.cs",
+      "line": 21,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "show-local-envs",
+      "aliases": [
+        "localenvs"
+      ],
+      "source": "clio/Command/ShowLocalEnvironmentsCommand.cs",
+      "line": 14,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "show-package-file-content",
+      "aliases": [
+        "show-files",
+        "files"
+      ],
+      "source": "clio/Command/ShowPackageFileContentCommand.cs",
+      "line": 15,
+      "hidden": false,
+      "status": "implemented-partial"
+    },
+    {
+      "command": "start",
+      "aliases": [
+        "start-server",
+        "start-creatio",
+        "sc"
+      ],
+      "source": "clio/Command/StartCommand.cs",
+      "line": 17,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "stop",
+      "aliases": [
+        "stop-creatio"
+      ],
+      "source": "clio/Command/StopCommand.cs",
+      "line": 19,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "switch-nuget-to-dll-reference",
+      "aliases": [
+        "nuget2dll"
+      ],
+      "source": "clio/Command/SwitchNugetToDllCommand.cs",
+      "line": 9,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "sync-dbhub",
+      "aliases": [],
+      "source": "clio/Command/SyncDbHubCommand.cs",
+      "line": 10,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "turn-farm-mode",
+      "aliases": [
+        "tfm",
+        "farm-mode"
+      ],
+      "source": "clio/Command/TurnFarmModeCommand.cs",
+      "line": 17,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "turn-fsm",
+      "aliases": [
+        "tfsm",
+        "fsm"
+      ],
+      "source": "clio/Command/TurnFsmCommand.cs",
+      "line": 8,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "uninstall-app-remote",
+      "aliases": [
+        "uninstall"
+      ],
+      "source": "clio/Command/UninstallAppCommand.cs",
+      "line": 7,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "uninstall-creatio",
+      "aliases": [
+        "uc"
+      ],
+      "source": "clio/Command/UninstallCreatio.cs",
+      "line": 83,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "unlock-package",
+      "aliases": [
+        "up"
+      ],
+      "source": "clio/Command/UnlockPackageCommand.cs",
+      "line": 12,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "unreg-web-app",
+      "aliases": [
+        "unreg"
+      ],
+      "source": "clio/Command/UnregAppCommand.cs",
+      "line": 13,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "unregister",
+      "aliases": [],
+      "source": "clio/Command/UnregisterCommand.cs",
+      "line": 8,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "update-app-section",
+      "aliases": [],
+      "source": "clio/Command/ApplicationSectionUpdateCommand.cs",
+      "line": 17,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "update-cli",
+      "aliases": [
+        "update"
+      ],
+      "source": "clio/Command/Update/UpdateCliCommand.cs",
+      "line": 14,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "update-client-unit-schema",
+      "aliases": [
+        "client-unit-schema-update"
+      ],
+      "source": "clio/Command/ClientUnitSchemaOptions.cs",
+      "line": 12,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "update-entity-schema",
+      "aliases": [],
+      "source": "clio/Command/UpdateEntitySchemaCommand.cs",
+      "line": 12,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "update-knowledge",
+      "aliases": [],
+      "source": "clio/Command/KnowledgeCommands.cs",
+      "line": 34,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "update-page",
+      "aliases": [
+        "page-update"
+      ],
+      "source": "clio/Command/PageUpdateOptions.cs",
+      "line": 14,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "update-schema",
+      "aliases": [
+        "schema-update"
+      ],
+      "source": "clio/Command/SourceCodeSchemaUpdate.cs",
+      "line": 9,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "update-sql-schema",
+      "aliases": [
+        "sql-schema-update"
+      ],
+      "source": "clio/Command/SqlSchemaUpdate.cs",
+      "line": 9,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "update-theme",
+      "aliases": [],
+      "source": "clio/Command/Theming/UpdateThemeCommand.cs",
+      "line": 10,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "update-toolkit",
+      "aliases": [
+        "update-skill"
+      ],
+      "source": "clio/Command/SkillCommands.cs",
+      "line": 67,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "upload-image",
+      "aliases": [],
+      "source": "clio/Command/UploadImageCommand.cs",
+      "line": 10,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "upload-license",
+      "aliases": [
+        "license",
+        "loadlicense",
+        "load-license"
+      ],
+      "source": "clio/Command/UploadLicenseCommand.cs",
+      "line": 10,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "upload-licenses",
+      "aliases": [
+        "lic"
+      ],
+      "source": "clio/Command/UploadLicensesOptions.cs",
+      "line": 5,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "upsert-data-binding-row-db",
+      "aliases": [],
+      "source": "clio/Command/DataBindingDbCommand.cs",
+      "line": 35,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "validation-pkg",
+      "aliases": [
+        "validation"
+      ],
+      "source": "clio/Command/PackageCommand/ValidationPackageCommand.cs",
+      "line": 9,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "verify-oauth-app",
+      "aliases": [],
+      "source": "clio/Command/OAuthAppConfiguration/VerifyOAuthAppCommand.cs",
+      "line": 13,
+      "hidden": false,
+      "status": "pending"
+    },
+    {
+      "command": "watch-compilation",
+      "aliases": [],
+      "source": "clio/Command/WatchCompilationCommand.cs",
+      "line": 14,
+      "hidden": true,
+      "status": "pending"
+    }
+  ]
+}

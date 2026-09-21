@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><IsPackable>false</IsPackable></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../../src/Cli/Clio10.Cli.csproj" />
+    <ProjectReference Include="../../../src/Mcp/Clio10.Mcp.csproj" />
+    <ProjectReference Include="../../../examples/Partner.Composition/Partner.Composition.csproj" />
+  </ItemGroup>
+</Project>

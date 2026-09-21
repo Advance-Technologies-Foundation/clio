@@ -1,0 +1,4 @@
+<Project Sdk="Microsoft.NET.Sdk">
+ <PropertyGroup><AssemblyName>Clio10.FeatureFixture</AssemblyName><AssemblyVersion>2.0.0.0</AssemblyVersion><IsPackable>false</IsPackable><DefineConstants>$(DefineConstants);RELEASE_V2</DefineConstants></PropertyGroup>
+ <ItemGroup><ProjectReference Include="../../../src/Contracts/Clio10.Contracts.csproj" /><Compile Include="../FeatureCapability.cs" /></ItemGroup>
+</Project>

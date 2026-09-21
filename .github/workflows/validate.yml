@@ -1,0 +1,23 @@
+name: Clio 10
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  validate:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - run: dotnet restore Clio10.slnx
+      - run: dotnet build Clio10.slnx -c Release --no-restore
+      - run: dotnet test Clio10.slnx -c Release --no-build
+      - run: dotnet pack src/Clio10/Clio10.csproj -c Release --no-build -o artifacts/packages
+      - run: dotnet tool install clio --version 10.0.0-preview.1 --tool-path artifacts/tool --configfile scripts/local-packages.config --add-source artifacts/packages
+      - run: ./artifacts/tool/clio --help

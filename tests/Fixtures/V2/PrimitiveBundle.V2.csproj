@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>Clio10.Primitives</AssemblyName>
+    <AssemblyVersion>10.1.0.0</AssemblyVersion>
+    <Version>10.1.0</Version>
+    <IsPackable>false</IsPackable>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <GenerateDependencyFile>true</GenerateDependencyFile>
+    <OutputPath>$(MSBuildThisFileDirectory)../../../artifacts/bundles/10.1.0.0/</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../../src/PrimitiveContracts/Clio10.PrimitiveContracts.csproj" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" /><PackageReference Include="creatio.client" />
+    <Compile Include="../../../src/Primitives/FileSystemPrimitive.cs" Link="FileSystemPrimitive.cs" /><Compile Include="../../../src/Primitives/HttpPrimitive.cs" Link="HttpPrimitive.cs" />
+    <Compile Include="../../../src/Primitives/FileHashPrimitive.cs" Link="FileHashPrimitive.cs" />
+    <Compile Include="../../../src/Primitives/DirectorySnapshotPrimitive.cs" Link="DirectorySnapshotPrimitive.cs" />
+    <Compile Include="../../../src/Primitives/FileWriterPrimitive.cs" Link="FileWriterPrimitive.cs" />
+    <Compile Include="../../../src/Primitives/ArchivePrimitive.cs" Link="ArchivePrimitive.cs" />
+    <Compile Include="../../../src/Primitives/ArchiveContainers.cs" Link="ArchiveContainers.cs" />
+    <Compile Include="../../../src/Primitives/HttpPrimitiveBundle.cs" Link="HttpPrimitiveBundle.cs" />
+  </ItemGroup>
+<Target Name="BundleManifest" AfterTargets="Build"><WriteLinesToFile File="$(OutputPath)bundle.json" Lines="{ &quot;Version&quot;: &quot;$(AssemblyVersion)&quot;, &quot;ContractVersion&quot;: 2, &quot;Assembly&quot;: &quot;Clio10.Primitives.dll&quot;, &quot;EntryType&quot;: &quot;Clio10.Primitives.HttpPrimitiveBundle&quot;, &quot;Capabilities&quot;: [&quot;http&quot;,&quot;filesystem&quot;,&quot;file-writer&quot;,&quot;archive&quot;,&quot;file-hash&quot;,&quot;directory-snapshot&quot;] }" Overwrite="true" /></Target></Project>

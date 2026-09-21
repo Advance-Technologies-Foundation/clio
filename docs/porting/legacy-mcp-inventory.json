@@ -1,0 +1,1413 @@
+{
+  "sourceCommit": "11293657cb326cb3b488c891ca9e973b5aea8c14",
+  "scope": "MCP attribute declarations; includes resident and bridged tools. Null names need manual resolution. Not a runtime catalog or parity claim.",
+  "tools": [
+    {
+      "tool": "StopAllCreatio",
+      "nameExpression": "\"StopAllCreatio\"",
+      "source": "clio/Command/McpServer/Tools/StopTool.cs",
+      "line": 52,
+      "status": "pending"
+    },
+    {
+      "tool": "add-custom-logging",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/AddCustomLoggingTool.cs",
+      "line": 21,
+      "status": "pending"
+    },
+    {
+      "tool": "add-data-binding-row",
+      "nameExpression": "AddDataBindingRowToolName",
+      "source": "clio/Command/McpServer/Tools/DataBindingTool.cs",
+      "line": 52,
+      "status": "pending"
+    },
+    {
+      "tool": "add-item-model",
+      "nameExpression": "AddItemModelToolName",
+      "source": "clio/Command/McpServer/Tools/AddItemModelTool.cs",
+      "line": 33,
+      "status": "pending"
+    },
+    {
+      "tool": "add-knowledge-source",
+      "nameExpression": "AddKnowledgeSourceToolName",
+      "source": "clio/Command/McpServer/Tools/KnowledgeManagementTools.cs",
+      "line": 63,
+      "status": "pending"
+    },
+    {
+      "tool": "add-package",
+      "nameExpression": "AddPackageToolName",
+      "source": "clio/Command/McpServer/Tools/WorkspacePackageTool.cs",
+      "line": 22,
+      "status": "pending"
+    },
+    {
+      "tool": "add-package-dependency",
+      "nameExpression": "AddPackageDependencyToolName",
+      "source": "clio/Command/McpServer/Tools/AddPackageDependencyTool.cs",
+      "line": 30,
+      "status": "pending"
+    },
+    {
+      "tool": "advise-theme-palette",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/AdviseThemePaletteTool.cs",
+      "line": 35,
+      "status": "pending"
+    },
+    {
+      "tool": "assert-infrastructure",
+      "nameExpression": "AssertInfrastructureToolName",
+      "source": "clio/Command/McpServer/Tools/AssertInfrastructureTool.cs",
+      "line": 34,
+      "status": "pending"
+    },
+    {
+      "tool": "build-theme",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/BuildThemeTool.cs",
+      "line": 86,
+      "status": "pending"
+    },
+    {
+      "tool": "check-auth-code-flow",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/IdentityAssertionTool.cs",
+      "line": 38,
+      "status": "pending"
+    },
+    {
+      "tool": "check-auth-code-flow",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/IdentityAssertionTool.cs",
+      "line": 75,
+      "status": "pending"
+    },
+    {
+      "tool": "check-auth-code-flow",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/IdentityAssertionTool.cs",
+      "line": 112,
+      "status": "pending"
+    },
+    {
+      "tool": "check-auth-code-flow",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/IdentityAssertionTool.cs",
+      "line": 150,
+      "status": "pending"
+    },
+    {
+      "tool": "check-settings-health",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/SettingsHealthTool.cs",
+      "line": 14,
+      "status": "pending"
+    },
+    {
+      "tool": "check-theming-access",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/CheckThemingAccessTool.cs",
+      "line": 26,
+      "status": "pending"
+    },
+    {
+      "tool": "clear-browser-session",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/ClearBrowserSessionTool.cs",
+      "line": 21,
+      "status": "pending"
+    },
+    {
+      "tool": "clear-redis-db-by-credentials",
+      "nameExpression": "ClearRedisByCredentialsToolName",
+      "source": "clio/Command/McpServer/Tools/ClearRedisTool.cs",
+      "line": 31,
+      "status": "pending"
+    },
+    {
+      "tool": "clear-redis-db-by-environment",
+      "nameExpression": "ClearRedisByEnvironmentName",
+      "source": "clio/Command/McpServer/Tools/ClearRedisTool.cs",
+      "line": 16,
+      "status": "pending"
+    },
+    {
+      "tool": "clear-themes-cache",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/ClearThemesCacheTool.cs",
+      "line": 24,
+      "status": "pending"
+    },
+    {
+      "tool": "clio-run-destructive",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/ClioRunTool.cs",
+      "line": 616,
+      "status": "pending"
+    },
+    {
+      "tool": "clio-run-destructive",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/ClioRunTool.cs",
+      "line": 643,
+      "status": "pending"
+    },
+    {
+      "tool": "compile-creatio",
+      "nameExpression": "CompileCreatioToolName",
+      "source": "clio/Command/McpServer/Tools/CompileCreatioTool.cs",
+      "line": 41,
+      "status": "pending"
+    },
+    {
+      "tool": "compile-status",
+      "nameExpression": "CompileStatusToolName",
+      "source": "clio/Command/McpServer/Tools/CompileStatusTool.cs",
+      "line": 25,
+      "status": "pending"
+    },
+    {
+      "tool": "configure-knowledge-feedback-policy",
+      "nameExpression": "ConfigureToolName",
+      "source": "clio/Command/McpServer/Tools/KnowledgeFeedbackPolicyTools.cs",
+      "line": 32,
+      "status": "pending"
+    },
+    {
+      "tool": "create-app",
+      "nameExpression": "ApplicationCreateToolName",
+      "source": "clio/Command/McpServer/Tools/ApplicationTool.cs",
+      "line": 154,
+      "status": "pending"
+    },
+    {
+      "tool": "create-app-section",
+      "nameExpression": "ApplicationSectionCreateToolName",
+      "source": "clio/Command/McpServer/Tools/ApplicationTool.cs",
+      "line": 297,
+      "status": "pending"
+    },
+    {
+      "tool": "create-business-process",
+      "nameExpression": "CreateBusinessProcessToolName",
+      "source": "clio/Command/McpServer/Tools/ProcessDesigner/CreateBusinessProcessTool.cs",
+      "line": 26,
+      "status": "pending"
+    },
+    {
+      "tool": "create-client-unit-schema",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/ClientUnitSchemaCreateTool.cs",
+      "line": 19,
+      "status": "pending"
+    },
+    {
+      "tool": "create-data-binding",
+      "nameExpression": "CreateDataBindingToolName",
+      "source": "clio/Command/McpServer/Tools/DataBindingTool.cs",
+      "line": 22,
+      "status": "pending"
+    },
+    {
+      "tool": "create-data-binding-db",
+      "nameExpression": "CreateDataBindingDbToolName",
+      "source": "clio/Command/McpServer/Tools/DataBindingDbTool.cs",
+      "line": 19,
+      "status": "pending"
+    },
+    {
+      "tool": "create-entity-schema",
+      "nameExpression": "CreateEntitySchemaToolName",
+      "source": "clio/Command/McpServer/Tools/EntitySchemaTool.cs",
+      "line": 59,
+      "status": "pending"
+    },
+    {
+      "tool": "create-lookup",
+      "nameExpression": "CreateLookupToolName",
+      "source": "clio/Command/McpServer/Tools/EntitySchemaTool.cs",
+      "line": 215,
+      "status": "pending"
+    },
+    {
+      "tool": "create-oauth-technical-user",
+      "nameExpression": "CreateOAuthTechnicalUserToolName",
+      "source": "clio/Command/McpServer/Tools/CreateOAuthTechnicalUserTool.cs",
+      "line": 31,
+      "status": "pending"
+    },
+    {
+      "tool": "create-page",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/PageCreateTool.cs",
+      "line": 19,
+      "status": "pending"
+    },
+    {
+      "tool": "create-page-business-rules",
+      "nameExpression": "BusinessRuleCreateToolName",
+      "source": "clio/Command/McpServer/Tools/BusinessRuleTool.cs",
+      "line": 32,
+      "status": "pending"
+    },
+    {
+      "tool": "create-page-business-rules",
+      "nameExpression": "BusinessRuleCreateToolName",
+      "source": "clio/Command/McpServer/Tools/BusinessRuleTool.cs",
+      "line": 630,
+      "status": "pending"
+    },
+    {
+      "tool": "create-related-page-addon",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/CreateRelatedPageAddonTool.cs",
+      "line": 22,
+      "status": "pending"
+    },
+    {
+      "tool": "create-schema",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/SchemaCreateTool.cs",
+      "line": 19,
+      "status": "pending"
+    },
+    {
+      "tool": "create-server-to-server-oauth-app",
+      "nameExpression": "CreateServerToServerOAuthAppToolName",
+      "source": "clio/Command/McpServer/Tools/CreateServerToServerOAuthAppTool.cs",
+      "line": 31,
+      "status": "pending"
+    },
+    {
+      "tool": "create-sql-schema",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/SqlSchemaCreateTool.cs",
+      "line": 19,
+      "status": "pending"
+    },
+    {
+      "tool": "create-sys-setting",
+      "nameExpression": "CreateSysSettingToolName",
+      "source": "clio/Command/McpServer/Tools/SysSettingsTool.cs",
+      "line": 73,
+      "status": "pending"
+    },
+    {
+      "tool": "create-theme",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/CreateThemeTool.cs",
+      "line": 62,
+      "status": "pending"
+    },
+    {
+      "tool": "create-user-task",
+      "nameExpression": "\"create-user-task\"",
+      "source": "clio/Command/McpServer/Tools/UserTaskTool.cs",
+      "line": 23,
+      "status": "pending"
+    },
+    {
+      "tool": "create-workspace",
+      "nameExpression": "CreateWorkspaceToolName",
+      "source": "clio/Command/McpServer/Tools/CreateWorkspaceTool.cs",
+      "line": 22,
+      "status": "pending"
+    },
+    {
+      "tool": "dataforge-context",
+      "nameExpression": "DataForgeContextToolName",
+      "source": "clio/Command/McpServer/Tools/DataForgeTool.cs",
+      "line": 160,
+      "status": "pending"
+    },
+    {
+      "tool": "dataforge-find-lookups",
+      "nameExpression": "DataForgeFindLookupsToolName",
+      "source": "clio/Command/McpServer/Tools/DataForgeTool.cs",
+      "line": 83,
+      "status": "pending"
+    },
+    {
+      "tool": "dataforge-find-tables",
+      "nameExpression": "DataForgeFindTablesToolName",
+      "source": "clio/Command/McpServer/Tools/DataForgeTool.cs",
+      "line": 58,
+      "status": "pending"
+    },
+    {
+      "tool": "dataforge-get-relations",
+      "nameExpression": "DataForgeGetRelationsToolName",
+      "source": "clio/Command/McpServer/Tools/DataForgeTool.cs",
+      "line": 108,
+      "status": "pending"
+    },
+    {
+      "tool": "dataforge-get-table-columns",
+      "nameExpression": "DataForgeGetTableColumnsToolName",
+      "source": "clio/Command/McpServer/Tools/DataForgeTool.cs",
+      "line": 134,
+      "status": "pending"
+    },
+    {
+      "tool": "dataforge-initialize",
+      "nameExpression": "DataForgeInitializeToolName",
+      "source": "clio/Command/McpServer/Tools/DataForgeTool.cs",
+      "line": 207,
+      "status": "pending"
+    },
+    {
+      "tool": "dataforge-status",
+      "nameExpression": "DataForgeStatusToolName",
+      "source": "clio/Command/McpServer/Tools/DataForgeTool.cs",
+      "line": 33,
+      "status": "pending"
+    },
+    {
+      "tool": "dataforge-update",
+      "nameExpression": "DataForgeUpdateToolName",
+      "source": "clio/Command/McpServer/Tools/DataForgeTool.cs",
+      "line": 231,
+      "status": "pending"
+    },
+    {
+      "tool": "delete-app",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/ApplicationDeleteTool.cs",
+      "line": 29,
+      "status": "pending"
+    },
+    {
+      "tool": "delete-app-section",
+      "nameExpression": "ApplicationSectionDeleteToolName",
+      "source": "clio/Command/McpServer/Tools/ApplicationTool.cs",
+      "line": 504,
+      "status": "pending"
+    },
+    {
+      "tool": "delete-knowledge",
+      "nameExpression": "DeleteKnowledgeToolName",
+      "source": "clio/Command/McpServer/Tools/KnowledgeManagementTools.cs",
+      "line": 56,
+      "status": "pending"
+    },
+    {
+      "tool": "delete-page-business-rules",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/BusinessRuleTool.cs",
+      "line": 743,
+      "status": "pending"
+    },
+    {
+      "tool": "delete-page-business-rules",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/BusinessRuleTool.cs",
+      "line": 787,
+      "status": "pending"
+    },
+    {
+      "tool": "delete-page-business-rules",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/BusinessRuleTool.cs",
+      "line": 830,
+      "status": "pending"
+    },
+    {
+      "tool": "delete-page-business-rules",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/BusinessRuleTool.cs",
+      "line": 890,
+      "status": "pending"
+    },
+    {
+      "tool": "delete-page-business-rules",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/BusinessRuleTool.cs",
+      "line": 950,
+      "status": "pending"
+    },
+    {
+      "tool": "delete-page-business-rules",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/BusinessRuleTool.cs",
+      "line": 1010,
+      "status": "pending"
+    },
+    {
+      "tool": "delete-schema",
+      "nameExpression": "DeleteSchemaToolName",
+      "source": "clio/Command/McpServer/Tools/DeleteSchemaTool.cs",
+      "line": 15,
+      "status": "pending"
+    },
+    {
+      "tool": "delete-theme",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/DeleteThemeTool.cs",
+      "line": 25,
+      "status": "pending"
+    },
+    {
+      "tool": "delete-toolkit",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/SkillManagementTool.cs",
+      "line": 20,
+      "status": "pending"
+    },
+    {
+      "tool": "delete-toolkit",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/SkillManagementTool.cs",
+      "line": 44,
+      "status": "pending"
+    },
+    {
+      "tool": "delete-toolkit",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/SkillManagementTool.cs",
+      "line": 68,
+      "status": "pending"
+    },
+    {
+      "tool": "deploy-creatio",
+      "nameExpression": "DeployCreatioToolName",
+      "source": "clio/Command/McpServer/Tools/InstallerCommandTool.cs",
+      "line": 39,
+      "status": "pending"
+    },
+    {
+      "tool": "deploy-identity",
+      "nameExpression": "DeployIdentityToolName",
+      "source": "clio/Command/McpServer/Tools/DeployIdentityTool.cs",
+      "line": 29,
+      "status": "pending"
+    },
+    {
+      "tool": "describe-business-process",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/ProcessDesigner/DescribeProcessTool.cs",
+      "line": 27,
+      "status": "pending"
+    },
+    {
+      "tool": "describe-environment",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/GetCreatioInfoTool.cs",
+      "line": 45,
+      "status": "pending"
+    },
+    {
+      "tool": "disable-knowledge-source",
+      "nameExpression": "DisableKnowledgeSourceToolName",
+      "source": "clio/Command/McpServer/Tools/KnowledgeManagementTools.cs",
+      "line": 97,
+      "status": "pending"
+    },
+    {
+      "tool": "download-configuration-by-build",
+      "nameExpression": "DownloadConfigurationByBuildToolName",
+      "source": "clio/Command/McpServer/Tools/DownloadConfigurationTool.cs",
+      "line": 42,
+      "status": "pending"
+    },
+    {
+      "tool": "download-configuration-by-environment",
+      "nameExpression": "DownloadConfigurationByEnvironmentToolName",
+      "source": "clio/Command/McpServer/Tools/DownloadConfigurationTool.cs",
+      "line": 27,
+      "status": "pending"
+    },
+    {
+      "tool": "enable-knowledge-source",
+      "nameExpression": "EnableKnowledgeSourceToolName",
+      "source": "clio/Command/McpServer/Tools/KnowledgeManagementTools.cs",
+      "line": 93,
+      "status": "pending"
+    },
+    {
+      "tool": "execute-esq",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/ExecuteEsqTool.cs",
+      "line": 31,
+      "status": "pending"
+    },
+    {
+      "tool": "experimental",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/ExperimentalTool.cs",
+      "line": 32,
+      "status": "pending"
+    },
+    {
+      "tool": "export-component-registry",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/ExportComponentRegistryTool.cs",
+      "line": 74,
+      "status": "pending"
+    },
+    {
+      "tool": "export-schema",
+      "nameExpression": "ExportSchemaToolName",
+      "source": "clio/Command/McpServer/Tools/ExportSchemaTool.cs",
+      "line": 28,
+      "status": "pending"
+    },
+    {
+      "tool": "find-app",
+      "nameExpression": "FindAppToolName",
+      "source": "clio/Command/McpServer/Tools/FindAppTool.cs",
+      "line": 31,
+      "status": "pending"
+    },
+    {
+      "tool": "find-empty-iis-port",
+      "nameExpression": "FindEmptyIisPortToolName",
+      "source": "clio/Command/McpServer/Tools/FindEmptyIisPortTool.cs",
+      "line": 37,
+      "status": "pending"
+    },
+    {
+      "tool": "find-entity-schema",
+      "nameExpression": "FindEntitySchemaToolName",
+      "source": "clio/Command/McpServer/Tools/EntitySchemaTool.cs",
+      "line": 514,
+      "status": "pending"
+    },
+    {
+      "tool": "finish-hotfix",
+      "nameExpression": "FinishHotfixToolName",
+      "source": "clio/Command/McpServer/Tools/PackageHotfixTool.cs",
+      "line": 31,
+      "status": "pending"
+    },
+    {
+      "tool": "generate-process-model",
+      "nameExpression": "GenerateProcessModelToolName",
+      "source": "clio/Command/McpServer/Tools/GenerateProcessModelTool.cs",
+      "line": 28,
+      "status": "pending"
+    },
+    {
+      "tool": "generate-source-code",
+      "nameExpression": "GenerateSourceCodeToolName",
+      "source": "clio/Command/McpServer/Tools/GenerateSourceCodeTool.cs",
+      "line": 29,
+      "status": "pending"
+    },
+    {
+      "tool": "get-app-info",
+      "nameExpression": "ApplicationGetInfoToolName",
+      "source": "clio/Command/McpServer/Tools/ApplicationTool.cs",
+      "line": 87,
+      "status": "pending"
+    },
+    {
+      "tool": "get-browser-session",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/GetBrowserSessionTool.cs",
+      "line": 23,
+      "status": "pending"
+    },
+    {
+      "tool": "get-classic-list-columns",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/GetClassicListColumnsTool.cs",
+      "line": 20,
+      "status": "pending"
+    },
+    {
+      "tool": "get-classic-page-sources",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/GetClassicPageSourcesTool.cs",
+      "line": 27,
+      "status": "pending"
+    },
+    {
+      "tool": "get-client-unit-schema",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/GetClientUnitSchemaTool.cs",
+      "line": 25,
+      "status": "pending"
+    },
+    {
+      "tool": "get-component-info",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/ComponentInfoTool.cs",
+      "line": 89,
+      "status": "pending"
+    },
+    {
+      "tool": "get-entity-schema-column-properties",
+      "nameExpression": "GetEntitySchemaColumnPropertiesToolName",
+      "source": "clio/Command/McpServer/Tools/EntitySchemaTool.cs",
+      "line": 549,
+      "status": "pending"
+    },
+    {
+      "tool": "get-entity-schema-properties",
+      "nameExpression": "GetEntitySchemaPropertiesToolName",
+      "source": "clio/Command/McpServer/Tools/EntitySchemaTool.cs",
+      "line": 439,
+      "status": "pending"
+    },
+    {
+      "tool": "get-fsm-mode",
+      "nameExpression": "GetFsmModeToolName",
+      "source": "clio/Command/McpServer/Tools/FsmModeTool.cs",
+      "line": 33,
+      "status": "pending"
+    },
+    {
+      "tool": "get-guidance",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/GuidanceGetTool.cs",
+      "line": 53,
+      "status": "pending"
+    },
+    {
+      "tool": "get-identity-service-config",
+      "nameExpression": "GetIdentityServiceConfigToolName",
+      "source": "clio/Command/McpServer/Tools/GetIdentityServiceConfigTool.cs",
+      "line": 31,
+      "status": "pending"
+    },
+    {
+      "tool": "get-knowledge-feedback-policy",
+      "nameExpression": "GetToolName",
+      "source": "clio/Command/McpServer/Tools/KnowledgeFeedbackPolicyTools.cs",
+      "line": 28,
+      "status": "pending"
+    },
+    {
+      "tool": "get-mobile-page-conversion-guide",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/MobilePageConverter/MobilePageConversionGuideTool.cs",
+      "line": 61,
+      "status": "pending"
+    },
+    {
+      "tool": "get-package-file",
+      "nameExpression": "GetPackageFileToolName",
+      "source": "clio/Command/McpServer/Tools/PackageFileTool.cs",
+      "line": 43,
+      "status": "pending"
+    },
+    {
+      "tool": "get-page",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/PageGetTool.cs",
+      "line": 20,
+      "status": "pending"
+    },
+    {
+      "tool": "get-page-hierarchy",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/PageHierarchyGetTool.cs",
+      "line": 23,
+      "status": "pending"
+    },
+    {
+      "tool": "get-process-signature",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/ProcessDesigner/GetProcessSignatureTool.cs",
+      "line": 24,
+      "status": "pending"
+    },
+    {
+      "tool": "get-record-rights",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/GetRecordRightsTool.cs",
+      "line": 21,
+      "status": "pending"
+    },
+    {
+      "tool": "get-related-page-addon",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/GetRelatedPageAddonTool.cs",
+      "line": 20,
+      "status": "pending"
+    },
+    {
+      "tool": "get-request-info",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/RequestInfoTool.cs",
+      "line": 87,
+      "status": "pending"
+    },
+    {
+      "tool": "get-schema",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/GetSchemaTool.cs",
+      "line": 24,
+      "status": "pending"
+    },
+    {
+      "tool": "get-schema-name-prefix",
+      "nameExpression": "GetSchemaNamePrefixToolName",
+      "source": "clio/Command/McpServer/Tools/SchemaNamePrefixTool.cs",
+      "line": 21,
+      "status": "pending"
+    },
+    {
+      "tool": "get-sql-schema",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/SqlSchemaGetTool.cs",
+      "line": 24,
+      "status": "pending"
+    },
+    {
+      "tool": "get-sys-setting",
+      "nameExpression": "GetSysSettingToolName",
+      "source": "clio/Command/McpServer/Tools/SysSettingsTool.cs",
+      "line": 16,
+      "status": "pending"
+    },
+    {
+      "tool": "get-target-package",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/GetTargetPackageTool.cs",
+      "line": 32,
+      "status": "pending"
+    },
+    {
+      "tool": "get-telemetry-consent",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/GetTelemetryConsentTool.cs",
+      "line": 32,
+      "status": "pending"
+    },
+    {
+      "tool": "get-tool-contract",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/ToolContractGetTool.cs",
+      "line": 69,
+      "status": "pending"
+    },
+    {
+      "tool": "get-user-culture",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/GetUserCultureTool.cs",
+      "line": 43,
+      "status": "pending"
+    },
+    {
+      "tool": "import-schema",
+      "nameExpression": "ImportSchemaToolName",
+      "source": "clio/Command/McpServer/Tools/ImportSchemaTool.cs",
+      "line": 25,
+      "status": "pending"
+    },
+    {
+      "tool": "info-knowledge",
+      "nameExpression": "InfoKnowledgeToolName",
+      "source": "clio/Command/McpServer/Tools/KnowledgeManagementTools.cs",
+      "line": 49,
+      "status": "pending"
+    },
+    {
+      "tool": "install-application",
+      "nameExpression": "InstallApplicationToolName",
+      "source": "clio/Command/McpServer/Tools/InstallApplicationTool.cs",
+      "line": 27,
+      "status": "pending"
+    },
+    {
+      "tool": "install-gate",
+      "nameExpression": "InstallGateToolName",
+      "source": "clio/Command/McpServer/Tools/InstallGateTool.cs",
+      "line": 25,
+      "status": "pending"
+    },
+    {
+      "tool": "install-knowledge",
+      "nameExpression": "InstallKnowledgeToolName",
+      "source": "clio/Command/McpServer/Tools/KnowledgeManagementTools.cs",
+      "line": 37,
+      "status": "pending"
+    },
+    {
+      "tool": "install-process-builder",
+      "nameExpression": "InstallProcessBuilderToolName",
+      "source": "clio/Command/McpServer/Tools/InstallProcessBuilderTool.cs",
+      "line": 70,
+      "status": "pending"
+    },
+    {
+      "tool": "install-sql-schema",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/SqlSchemaInstallTool.cs",
+      "line": 19,
+      "status": "pending"
+    },
+    {
+      "tool": "last-compilation-log",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/LastCompilationLogTool.cs",
+      "line": 35,
+      "status": "pending"
+    },
+    {
+      "tool": "link-from-repository-by-env-package-path",
+      "nameExpression": "LinkFromRepositoryByEnvPackagePathToolName",
+      "source": "clio/Command/McpServer/Tools/LinkFromRepositoryTool.cs",
+      "line": 73,
+      "status": "pending"
+    },
+    {
+      "tool": "link-from-repository-by-environment",
+      "nameExpression": "LinkFromRepositoryByEnvironmentToolName",
+      "source": "clio/Command/McpServer/Tools/LinkFromRepositoryTool.cs",
+      "line": 35,
+      "status": "pending"
+    },
+    {
+      "tool": "link-from-repository-unlocked",
+      "nameExpression": "LinkFromRepositoryUnlockedToolName",
+      "source": "clio/Command/McpServer/Tools/LinkFromRepositoryTool.cs",
+      "line": 109,
+      "status": "pending"
+    },
+    {
+      "tool": "list-app-sections",
+      "nameExpression": "ApplicationSectionGetListToolName",
+      "source": "clio/Command/McpServer/Tools/ApplicationTool.cs",
+      "line": 579,
+      "status": "pending"
+    },
+    {
+      "tool": "list-apps",
+      "nameExpression": "ApplicationGetListToolName",
+      "source": "clio/Command/McpServer/Tools/ApplicationTool.cs",
+      "line": 36,
+      "status": "pending"
+    },
+    {
+      "tool": "list-creatio-builds",
+      "nameExpression": "ListCreatioBuildsToolName",
+      "source": "clio/Command/McpServer/Tools/ListCreatioBuildsTool.cs",
+      "line": 43,
+      "status": "pending"
+    },
+    {
+      "tool": "list-db-templates",
+      "nameExpression": "ListDbTemplatesToolName",
+      "source": "clio/Command/McpServer/Tools/DbTemplatePruneTool.cs",
+      "line": 28,
+      "status": "pending"
+    },
+    {
+      "tool": "list-entity-client-schemas",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/ListEntityClientSchemasTool.cs",
+      "line": 19,
+      "status": "pending"
+    },
+    {
+      "tool": "list-environments",
+      "nameExpression": "ShowWebAppListToolName",
+      "source": "clio/Command/McpServer/Tools/ShowWebAppListTool.cs",
+      "line": 47,
+      "status": "pending"
+    },
+    {
+      "tool": "list-knowledge-examples",
+      "nameExpression": "ListKnowledgeExamplesToolName",
+      "source": "clio/Command/McpServer/Tools/KnowledgeManagementTools.cs",
+      "line": 105,
+      "status": "pending"
+    },
+    {
+      "tool": "list-knowledge-sources",
+      "nameExpression": "ListKnowledgeSourcesToolName",
+      "source": "clio/Command/McpServer/Tools/KnowledgeManagementTools.cs",
+      "line": 101,
+      "status": "pending"
+    },
+    {
+      "tool": "list-package-files",
+      "nameExpression": "ListPackageFilesToolName",
+      "source": "clio/Command/McpServer/Tools/PackageFileTool.cs",
+      "line": 21,
+      "status": "pending"
+    },
+    {
+      "tool": "list-packages",
+      "nameExpression": "GetPkgListToolName",
+      "source": "clio/Command/McpServer/Tools/GetPkgListTool.cs",
+      "line": 34,
+      "status": "pending"
+    },
+    {
+      "tool": "list-page-templates",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/PageTemplatesListTool.cs",
+      "line": 18,
+      "status": "pending"
+    },
+    {
+      "tool": "list-pages",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/PageListTool.cs",
+      "line": 41,
+      "status": "pending"
+    },
+    {
+      "tool": "list-printables",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/ListPrintablesTool.cs",
+      "line": 31,
+      "status": "pending"
+    },
+    {
+      "tool": "list-sys-settings",
+      "nameExpression": "ListSysSettingsToolName",
+      "source": "clio/Command/McpServer/Tools/SysSettingsTool.cs",
+      "line": 44,
+      "status": "pending"
+    },
+    {
+      "tool": "list-themes",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/ListThemesTool.cs",
+      "line": 27,
+      "status": "pending"
+    },
+    {
+      "tool": "list-user-tasks",
+      "nameExpression": "ListUserTasksToolName",
+      "source": "clio/Command/McpServer/Tools/ListUserTasksTool.cs",
+      "line": 24,
+      "status": "pending"
+    },
+    {
+      "tool": "merge-creatio-artifact",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/CreatioArtifactMergeTool.cs",
+      "line": 25,
+      "status": "pending"
+    },
+    {
+      "tool": "modify-business-process",
+      "nameExpression": "ModifyBusinessProcessToolName",
+      "source": "clio/Command/McpServer/Tools/ProcessDesigner/ModifyBusinessProcessTool.cs",
+      "line": 27,
+      "status": "pending"
+    },
+    {
+      "tool": "modify-entity-schema-column",
+      "nameExpression": "ModifyEntitySchemaColumnToolName",
+      "source": "clio/Command/McpServer/Tools/EntitySchemaTool.cs",
+      "line": 588,
+      "status": "pending"
+    },
+    {
+      "tool": "modify-user-task-parameters",
+      "nameExpression": "\"modify-user-task-parameters\"",
+      "source": "clio/Command/McpServer/Tools/UserTaskTool.cs",
+      "line": 60,
+      "status": "pending"
+    },
+    {
+      "tool": "new-integration-test-project",
+      "nameExpression": "\"new-integration-test-project\"",
+      "source": "clio/Command/McpServer/Tools/WorkspacePackageTool.cs",
+      "line": 86,
+      "status": "pending"
+    },
+    {
+      "tool": "new-test-project",
+      "nameExpression": "\"new-test-project\"",
+      "source": "clio/Command/McpServer/Tools/WorkspacePackageTool.cs",
+      "line": 59,
+      "status": "pending"
+    },
+    {
+      "tool": "new-ui-project",
+      "nameExpression": "CreateUiProjectToolName",
+      "source": "clio/Command/McpServer/Tools/CreateUiProjectTool.cs",
+      "line": 28,
+      "status": "pending"
+    },
+    {
+      "tool": "odata-create",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/ODataCreateTool.cs",
+      "line": 30,
+      "status": "pending"
+    },
+    {
+      "tool": "odata-delete",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/ODataDeleteTool.cs",
+      "line": 19,
+      "status": "pending"
+    },
+    {
+      "tool": "odata-read",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/ODataReadTool.cs",
+      "line": 61,
+      "status": "pending"
+    },
+    {
+      "tool": "odata-update",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/ODataUpdateTool.cs",
+      "line": 27,
+      "status": "pending"
+    },
+    {
+      "tool": "pkg-to-db",
+      "nameExpression": "\"pkg-to-db\"",
+      "source": "clio/Command/McpServer/Tools/LoadPackagesTool.cs",
+      "line": 38,
+      "status": "pending"
+    },
+    {
+      "tool": "pkg-to-file-system",
+      "nameExpression": "\"pkg-to-file-system\"",
+      "source": "clio/Command/McpServer/Tools/LoadPackagesTool.cs",
+      "line": 22,
+      "status": "pending"
+    },
+    {
+      "tool": "prune-db-templates",
+      "nameExpression": "PruneDbTemplatesToolName",
+      "source": "clio/Command/McpServer/Tools/DbTemplatePruneTool.cs",
+      "line": 36,
+      "status": "pending"
+    },
+    {
+      "tool": "push-workspace",
+      "nameExpression": "PushWorkspaceToolName",
+      "source": "clio/Command/McpServer/Tools/WorkspaceSyncTool.cs",
+      "line": 117,
+      "status": "pending"
+    },
+    {
+      "tool": "read-data-binding-db",
+      "nameExpression": "ReadDataBindingDbToolName",
+      "source": "clio/Command/McpServer/Tools/DataBindingDbTool.cs",
+      "line": 105,
+      "status": "pending"
+    },
+    {
+      "tool": "reg-web-app",
+      "nameExpression": "\"reg-web-app\"",
+      "source": "clio/Command/McpServer/Tools/RegWebAppTool.cs",
+      "line": 20,
+      "status": "pending"
+    },
+    {
+      "tool": "remove-data-binding-row",
+      "nameExpression": "RemoveDataBindingRowToolName",
+      "source": "clio/Command/McpServer/Tools/DataBindingTool.cs",
+      "line": 77,
+      "status": "pending"
+    },
+    {
+      "tool": "remove-data-binding-row-db",
+      "nameExpression": "RemoveDataBindingRowDbToolName",
+      "source": "clio/Command/McpServer/Tools/DataBindingDbTool.cs",
+      "line": 74,
+      "status": "pending"
+    },
+    {
+      "tool": "remove-knowledge-source",
+      "nameExpression": "RemoveKnowledgeSourceToolName",
+      "source": "clio/Command/McpServer/Tools/KnowledgeManagementTools.cs",
+      "line": 88,
+      "status": "pending"
+    },
+    {
+      "tool": "remove-package-dependency",
+      "nameExpression": "RemovePackageDependencyToolName",
+      "source": "clio/Command/McpServer/Tools/RemovePackageDependencyTool.cs",
+      "line": 30,
+      "status": "pending"
+    },
+    {
+      "tool": "resolve-oauth-system-user",
+      "nameExpression": "ResolveOAuthSystemUserToolName",
+      "source": "clio/Command/McpServer/Tools/ResolveOAuthSystemUserTool.cs",
+      "line": 31,
+      "status": "pending"
+    },
+    {
+      "tool": "restart-by-credentials",
+      "nameExpression": "RestartByCredentialsToolName",
+      "source": "clio/Command/McpServer/Tools/RestartTool.cs",
+      "line": 74,
+      "status": "pending"
+    },
+    {
+      "tool": "restart-by-environment-name",
+      "nameExpression": "RestartByEnvironmentNameToolName",
+      "source": "clio/Command/McpServer/Tools/RestartTool.cs",
+      "line": 39,
+      "status": "pending"
+    },
+    {
+      "tool": "restart-status",
+      "nameExpression": "RestartStatusToolName",
+      "source": "clio/Command/McpServer/Tools/RestartStatusTool.cs",
+      "line": 27,
+      "status": "pending"
+    },
+    {
+      "tool": "restore-db-by-credentials",
+      "nameExpression": "RestoreDbByCredentialsToolName",
+      "source": "clio/Command/McpServer/Tools/RestoreDbTool.cs",
+      "line": 59,
+      "status": "pending"
+    },
+    {
+      "tool": "restore-db-by-environment",
+      "nameExpression": "RestoreDbByEnvironmentToolName",
+      "source": "clio/Command/McpServer/Tools/RestoreDbTool.cs",
+      "line": 40,
+      "status": "pending"
+    },
+    {
+      "tool": "restore-db-to-local-server",
+      "nameExpression": "RestoreDbToLocalServerToolName",
+      "source": "clio/Command/McpServer/Tools/RestoreDbTool.cs",
+      "line": 81,
+      "status": "pending"
+    },
+    {
+      "tool": "restore-workspace",
+      "nameExpression": "RestoreWorkspaceToolName",
+      "source": "clio/Command/McpServer/Tools/WorkspaceSyncTool.cs",
+      "line": 147,
+      "status": "pending"
+    },
+    {
+      "tool": "run-process",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/ProcessDesigner/RunProcessTool.cs",
+      "line": 41,
+      "status": "pending"
+    },
+    {
+      "tool": "send-telemetry",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/SendTelemetryTool.cs",
+      "line": 35,
+      "status": "pending"
+    },
+    {
+      "tool": "set-background-image",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/SetBackgroundImageTool.cs",
+      "line": 37,
+      "status": "pending"
+    },
+    {
+      "tool": "set-entity-schema-properties",
+      "nameExpression": "SetEntitySchemaPropertiesToolName",
+      "source": "clio/Command/McpServer/Tools/EntitySchemaTool.cs",
+      "line": 474,
+      "status": "pending"
+    },
+    {
+      "tool": "set-fsm-mode",
+      "nameExpression": "SetFsmModeToolName",
+      "source": "clio/Command/McpServer/Tools/FsmModeTool.cs",
+      "line": 44,
+      "status": "pending"
+    },
+    {
+      "tool": "set-logo",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/SetLogoTool.cs",
+      "line": 44,
+      "status": "pending"
+    },
+    {
+      "tool": "set-record-rights",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/SetRecordRightsTool.cs",
+      "line": 21,
+      "status": "pending"
+    },
+    {
+      "tool": "set-user-theme",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/SetUserThemeTool.cs",
+      "line": 33,
+      "status": "pending"
+    },
+    {
+      "tool": "show-passing-infrastructure",
+      "nameExpression": "ShowPassingInfrastructureToolName",
+      "source": "clio/Command/McpServer/Tools/ShowPassingInfrastructureTool.cs",
+      "line": 34,
+      "status": "pending"
+    },
+    {
+      "tool": "start-creatio",
+      "nameExpression": "\"start-creatio\"",
+      "source": "clio/Command/McpServer/Tools/StartTool.cs",
+      "line": 18,
+      "status": "pending"
+    },
+    {
+      "tool": "stop-all-creatio",
+      "nameExpression": "\"stop-all-creatio\"",
+      "source": "clio/Command/McpServer/Tools/StopTool.cs",
+      "line": 34,
+      "status": "pending"
+    },
+    {
+      "tool": "stop-creatio",
+      "nameExpression": "\"stop-creatio\"",
+      "source": "clio/Command/McpServer/Tools/StopTool.cs",
+      "line": 18,
+      "status": "pending"
+    },
+    {
+      "tool": "sync-pages",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/PageSyncTool.cs",
+      "line": 45,
+      "status": "pending"
+    },
+    {
+      "tool": "sync-schemas",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/SchemaSyncTool.cs",
+      "line": 84,
+      "status": "pending"
+    },
+    {
+      "tool": "uninstall-creatio",
+      "nameExpression": "UninstallCreatioToolName",
+      "source": "clio/Command/McpServer/Tools/UninstallCreatioTool.cs",
+      "line": 29,
+      "status": "pending"
+    },
+    {
+      "tool": "unlock-for-hotfix",
+      "nameExpression": "UnlockForHotfixToolName",
+      "source": "clio/Command/McpServer/Tools/PackageHotfixTool.cs",
+      "line": 18,
+      "status": "pending"
+    },
+    {
+      "tool": "update-app-section",
+      "nameExpression": "ApplicationSectionUpdateToolName",
+      "source": "clio/Command/McpServer/Tools/ApplicationTool.cs",
+      "line": 403,
+      "status": "pending"
+    },
+    {
+      "tool": "update-client-unit-schema",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/ClientUnitSchemaUpdateTool.cs",
+      "line": 24,
+      "status": "pending"
+    },
+    {
+      "tool": "update-entity-schema",
+      "nameExpression": "UpdateEntitySchemaToolName",
+      "source": "clio/Command/McpServer/Tools/EntitySchemaTool.cs",
+      "line": 309,
+      "status": "pending"
+    },
+    {
+      "tool": "update-knowledge",
+      "nameExpression": "UpdateKnowledgeToolName",
+      "source": "clio/Command/McpServer/Tools/KnowledgeManagementTools.cs",
+      "line": 43,
+      "status": "pending"
+    },
+    {
+      "tool": "update-page",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/PageUpdateTool.cs",
+      "line": 75,
+      "status": "pending"
+    },
+    {
+      "tool": "update-schema",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/SchemaUpdateTool.cs",
+      "line": 20,
+      "status": "pending"
+    },
+    {
+      "tool": "update-sql-schema",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/SqlSchemaUpdateTool.cs",
+      "line": 19,
+      "status": "pending"
+    },
+    {
+      "tool": "update-sys-setting",
+      "nameExpression": "UpdateSysSettingToolName",
+      "source": "clio/Command/McpServer/Tools/SysSettingsTool.cs",
+      "line": 106,
+      "status": "pending"
+    },
+    {
+      "tool": "update-theme",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/UpdateThemeTool.cs",
+      "line": 33,
+      "status": "pending"
+    },
+    {
+      "tool": "upload-image",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/UploadImageTool.cs",
+      "line": 29,
+      "status": "pending"
+    },
+    {
+      "tool": "upsert-data-binding-row-db",
+      "nameExpression": "UpsertDataBindingRowDbToolName",
+      "source": "clio/Command/McpServer/Tools/DataBindingDbTool.cs",
+      "line": 47,
+      "status": "pending"
+    },
+    {
+      "tool": "validate-page",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/PageValidateTool.cs",
+      "line": 21,
+      "status": "pending"
+    },
+    {
+      "tool": "validate-process-graph",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/ProcessDesigner/ValidateProcessGraphTool.cs",
+      "line": 39,
+      "status": "pending"
+    },
+    {
+      "tool": "verify-oauth-app",
+      "nameExpression": "VerifyOAuthAppToolName",
+      "source": "clio/Command/McpServer/Tools/VerifyOAuthAppTool.cs",
+      "line": 31,
+      "status": "pending"
+    },
+    {
+      "tool": "watch-compilation",
+      "nameExpression": "WatchCompilationToolName",
+      "source": "clio/Command/McpServer/Tools/WatchCompilationTool.cs",
+      "line": 29,
+      "status": "pending"
+    },
+    {
+      "tool": "withdraw-telemetry-consent",
+      "nameExpression": "ToolName",
+      "source": "clio/Command/McpServer/Tools/WithdrawTelemetryConsentTool.cs",
+      "line": 32,
+      "status": "pending"
+    }
+  ]
+}

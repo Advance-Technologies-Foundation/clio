@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><AssemblyName>Clio10.Contracts</AssemblyName><AssemblyVersion>11.0.0.0</AssemblyVersion><IsPackable>false</IsPackable>
+    <OutputPath>$(MSBuildThisFileDirectory)../../../artifacts/contracts-future/</OutputPath><AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath></PropertyGroup>
+  <ItemGroup><Compile Include="../../../src/Contracts/*.cs" /></ItemGroup>
+</Project>

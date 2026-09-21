@@ -1,0 +1,4 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><AssemblyVersion>10.0.0.0</AssemblyVersion></PropertyGroup>
+  <ItemGroup><ProjectReference Include="../Contracts/Clio10.Contracts.csproj" /></ItemGroup>
+</Project>

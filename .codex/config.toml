@@ -1,35 +1,3 @@
-model_reasoning_effort = "medium"
-plan_mode_reasoning_effort = "high"
-personality = "pragmatic"
-
-[agents.reviewer]
-description = "Find security, correctness, and test risks in code."
-config_file = "./agents/reviewer.toml"
-
-[agents.explorer]
-description = "Fast codebase explorer for read-heavy tasks."
-config_file = "./agents/custom-explorer.toml"
-
-[agents.performance-review]
-description = "Find performance issues in the codebase."
-config_file = "./agents/performance-review.toml"
-
-[agents.security-reviewer]
-description = "Find security issues in the codebase."
-config_file = "./agents/security-reviewer.toml"
-
-[agents.code-quality-reviewer]
-description = "Find code quality issues in the codebase."
-config_file = "./agents/code-quality-reviewer.toml"
-
-[mcp_servers.clio]
-command = "clio"
-enabled = false
-
-[mcp_servers.dbhub]
-command = "npx"
-args = ["@bytebase/dbhub@latest", "--transport", "stdio", "--id", "d2", "--dsn","postgresql://postgres:Supervisor@localhost:5433/NoFs_n8"]
-
-[mcp_servers.RedisMCPServer]
-command = "uvx"
-args = ["--from", "redis-mcp-server@latest", "redis-mcp-server", "--url", "redis://localhost:6379/29"]
+[agents]
+enabled = true
+max_concurrent_threads_per_session = 8

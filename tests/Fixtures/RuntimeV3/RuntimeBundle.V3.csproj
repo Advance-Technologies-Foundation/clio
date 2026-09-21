@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>Clio10.RuntimeFixture</AssemblyName>
+    <AssemblyVersion>10.2.0.0</AssemblyVersion><Version>10.2.0.0</Version>
+    <DefineConstants>$(DefineConstants);RELEASE_V2;RELEASE_V3</DefineConstants>
+    <IsPackable>false</IsPackable><CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <GenerateDependencyFile>true</GenerateDependencyFile>
+    <OutputPath>$(MSBuildThisFileDirectory)../../../artifacts/runtimes/10.2.0.0/</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+  </PropertyGroup>
+  <ItemGroup><ProjectReference Include="../FeatureV3/FeatureV3.csproj" />
+    <ProjectReference Include="../../../src/Runtime/Clio10.Runtime.csproj" />
+    <Compile Include="../RuntimeFixture.cs" Link="RuntimeFixture.cs" />
+  </ItemGroup>
+  <Target Name="BundleManifest" AfterTargets="Build">
+    <WriteLinesToFile File="$(OutputPath)bundle.json" Lines="{ &quot;Version&quot;: &quot;$(AssemblyVersion)&quot;, &quot;ContractVersion&quot;: 2, &quot;RuntimeContractVersion&quot;: 1, &quot;Assembly&quot;: &quot;Clio10.RuntimeFixture.dll&quot;, &quot;EntryType&quot;: &quot;Clio10.RuntimeFixture.ReleaseBundle&quot;, &quot;Capabilities&quot;: [&quot;http&quot;,&quot;filesystem&quot;,&quot;file-writer&quot;,&quot;archive&quot;,&quot;file-hash&quot;,&quot;directory-snapshot&quot;,&quot;release-file&quot;] }" Overwrite="true" />
+  </Target>
+</Project>

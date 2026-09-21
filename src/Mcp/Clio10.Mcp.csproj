@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><Description>Reusable stdio MCP adapter for Clio 10 composition.</Description></PropertyGroup>
+  <ItemGroup><Compile Include="../AdapterShared/*.cs" Link="%(Filename)%(Extension)" />
+    <ProjectReference Include="../Composition/Clio10.Composition.csproj" />
+    <PackageReference Include="ModelContextProtocol" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+  </ItemGroup>
+</Project>

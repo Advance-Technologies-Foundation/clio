@@ -1,2 +1,0 @@
-model_reasoning_effort = "high"
-developer_instructions = "Focus on code code-quality issues. When finding code-quality issues give concrete steps on how to reproduce the issue and suggest potential improvements. Write tests to validate hypothesis before flagging an issue."

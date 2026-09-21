@@ -1,0 +1,27 @@
+<Solution>
+  <Folder Name="/examples/">
+    <Project Path="examples/Partner.Composition/Partner.Composition.csproj" />
+  </Folder>
+  <Folder Name="/src/"><Project Path="src/PrimitiveContracts/Clio10.PrimitiveContracts.csproj" />
+    <Project Path="src/Runtime/Clio10.Runtime.csproj" />
+    <Project Path="src/Contracts/Clio10.Contracts.csproj" />
+    <Project Path="src/Core/Clio10.Core.csproj" />
+    <Project Path="src/Primitives/Clio10.Primitives.csproj" />
+    <Project Path="src/Composition/Clio10.Composition.csproj" />
+    <Project Path="src/Cli/Clio10.Cli.csproj" />
+    <Project Path="src/Mcp/Clio10.Mcp.csproj" />
+    <Project Path="src/Clio10/Clio10.csproj" />
+  </Folder>
+  <Folder Name="/src/Cli/" />
+  <Folder Name="/src/Composition/" />
+  <Folder Name="/src/Mcp/" />
+  <Folder Name="/tests/">
+    <Project Path="tests/Clio10.Core.Tests/Clio10.Core.Tests.csproj" />
+    <Project Path="tests/Clio10.Product.Tests/Clio10.Product.Tests.csproj" />
+    <Project Path="tests/Clio10.Composition.Tests/Clio10.Composition.Tests.csproj" />
+    <Project Path="tests/Clio10.Primitives.Tests/Clio10.Primitives.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tests/Fixtures/">
+    <Project Path="tests/Fixtures/PartnerHost/PartnerHost.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <GenerateDependencyFile>true</GenerateDependencyFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Composition/Clio10.Composition.csproj" />
+    <ProjectReference Include="../Primitives/Clio10.Primitives.csproj" />
+  </ItemGroup>
+  <Target Name="BundleManifest" AfterTargets="Build">
+    <WriteLinesToFile File="$(OutputPath)bundle.json" Lines="{ &quot;Version&quot;: &quot;$(AssemblyVersion)&quot;, &quot;ContractVersion&quot;: 2, &quot;RuntimeContractVersion&quot;: 1, &quot;Assembly&quot;: &quot;Clio10.Runtime.dll&quot;, &quot;EntryType&quot;: &quot;Clio10.Runtime.RuntimeBundle&quot;, &quot;Capabilities&quot;: [&quot;http&quot;,&quot;filesystem&quot;,&quot;file-writer&quot;,&quot;archive&quot;,&quot;file-hash&quot;,&quot;directory-snapshot&quot;] }" Overwrite="true" />
+  </Target>
+  <Target Name="PublishBundleManifest" AfterTargets="Publish">
+    <Copy SourceFiles="$(OutputPath)bundle.json" DestinationFolder="$(PublishDir)" />
+  </Target>
+</Project>

@@ -1,1 +1,0 @@
-﻿set CLIO_WORKING_DIRECTORY=%~dp0

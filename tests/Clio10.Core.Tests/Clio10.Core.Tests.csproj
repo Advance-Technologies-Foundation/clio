@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><IsTestProject>true</IsTestProject><IsPackable>false</IsPackable></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/PrimitiveContracts/Clio10.PrimitiveContracts.csproj" />
+    <ProjectReference Include="../../src/Core/Clio10.Core.csproj" />
+    <ProjectReference Include="../Fixtures/V1/PrimitiveBundle.V1.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../Fixtures/V2/PrimitiveBundle.V2.csproj" ReferenceOutputAssembly="false" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="nunit" />
+    <PackageReference Include="NUnit3TestAdapter" />
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="NSubstitute" />
+  </ItemGroup>
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>BundleRoot</_Parameter1>
+      <_Parameter2>$(MSBuildProjectDirectory)/../../artifacts/bundles</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+</Project>

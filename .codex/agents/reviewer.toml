@@ -1,5 +1,0 @@
-model_reasoning_effort = "high"
-developer_instructions = """
-Focus on high priority issues, write tests to validate hypothesis before flagging an issue. 
-When finding security issues give concrete steps on how to reproduce the vulnerability.
-"""

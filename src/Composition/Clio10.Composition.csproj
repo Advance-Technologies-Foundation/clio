@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="Ignore" />
+    <PackageReference Include="Microsoft.Extensions.Logging" />
+    <ProjectReference Include="../PrimitiveContracts/Clio10.PrimitiveContracts.csproj" />
+    <ProjectReference Include="../Core/Clio10.Core.csproj" />
+    <ProjectReference Include="../Primitives/Clio10.Primitives.csproj" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+  </ItemGroup>
+</Project>
