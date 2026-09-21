@@ -267,6 +267,29 @@ public sealed class OperationLedger : IOperationLedger {
     }
 
     /// <inheritdoc />
+    public IReadOnlyCollection<string> UnresolvableOwners {
+        get {
+            lock (_swapLock) {
+                return _owners.Where(p => p.Value is not IOwnerLiveness).Select(p => p.Key).ToArray();
+            }
+        }
+    }
+
+    /// <inheritdoc />
+    public IReadOnlyCollection<string> ReferencedSnapshots {
+        get {
+            lock (_swapLock) {
+                ResolveOrphansCore();
+                return _owners.Keys
+                    .Select(id => _live.TryGetValue(id, out var r) ? r.ConfigurationSnapshot : null)
+                    .Where(snapshot => snapshot is not null)
+                    .Distinct(StringComparer.Ordinal)
+                    .ToArray()!;
+            }
+        }
+    }
+
+    /// <inheritdoc />
     public IReadOnlyCollection<string> UnpersistedOperations {
         get { lock (_swapLock) { return _unpersisted.Keys.ToArray(); } }
     }

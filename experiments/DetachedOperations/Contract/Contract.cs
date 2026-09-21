@@ -173,6 +173,34 @@ public interface IOperationLedger {
     IReadOnlyCollection<string> DegradedScopes { get; }
 
     /// <summary>
+    /// Operations this host can never resolve, because their owner cannot be asked whether it is there.
+    /// </summary>
+    /// <remarks>
+    /// An owner that does not implement <see cref="IOwnerLiveness"/> is skipped by orphan resolution, and
+    /// silently: the operation simply stays <see cref="OperationState.Running"/> and keeps retaining. The
+    /// failure only becomes visible as a drain that never finishes, which is the worst possible moment.
+    /// Found by @vladimir-nikonov, who wired the correction into his own harness and observed that
+    /// passing a bare <c>Process</c> changed nothing until it was wrapped.
+    /// <para>
+    /// So the ledger says so up front. A host about to drain a scope can see how many operations in it
+    /// are unresolvable BEFORE it starts waiting for them.
+    /// </para>
+    /// </remarks>
+    IReadOnlyCollection<string> UnresolvableOwners { get; }
+
+    /// <summary>
+    /// Configuration snapshots still referenced by a retained operation.
+    /// </summary>
+    /// <remarks>
+    /// The reference set for snapshot cleanup, derived rather than counted: a snapshot is referenced
+    /// exactly while some operation admitted under it is still retained. Orphan resolution releases the
+    /// reference with the retention, so a lost owner does not pin a snapshot forever — the same failure
+    /// shape as H3, in the settings lane. Requested shape for @vladimir-nikonov's cleanup requirement,
+    /// so he does not build a separate reference count that can disagree with this one.
+    /// </remarks>
+    IReadOnlyCollection<string> ReferencedSnapshots { get; }
+
+    /// <summary>
     /// Operations whose outcome is known in memory but is NOT on disk.
     /// </summary>
     /// <remarks>

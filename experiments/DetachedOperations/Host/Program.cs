@@ -811,6 +811,46 @@ foreach (Process owner in new[] { jOwnerOne, jOwnerTwo, jOwnerThree }) {
     try { owner.Kill(entireProcessTree: true); } catch (InvalidOperationException) { /* already gone */ }
 }
 
+
+// ── K: making the two silent failures loud ────────────────────────────────────────────────────────
+// Both found by @vladimir-nikonov wiring the liveness correction into his own harness: a bare Process
+// owner is skipped by resolution SILENTLY, and a snapshot reference set that counts unresolved owners
+// pins a snapshot forever. Neither shows up until a drain or a cleanup simply never finishes.
+string kEvidence = Path.Combine(work, "k-operations.jsonl");
+var kLedger = new OperationLedger(kEvidence);
+Process kWrapped = StartIdleOwner();
+Process kBare = StartIdleOwner();
+IOperationLease wrapped = kLedger.Begin("envK", "10.0.0.0", new ProcessOwner(kWrapped), "cfg-A");
+IOperationLease bare = kLedger.Begin("envK", "10.0.0.0", kBare, "cfg-B");   // the mistake, on purpose
+
+// K1: the ledger says which operations it can never resolve, before anyone waits on them.
+Check("K1 an owner that cannot be asked about liveness is reported, not silently skipped",
+    kLedger.UnresolvableOwners.Contains(bare.Id) && !kLedger.UnresolvableOwners.Contains(wrapped.Id),
+    new { unresolvable = kLedger.UnresolvableOwners.Count, bareListed = kLedger.UnresolvableOwners.Contains(bare.Id),
+          wrappedListed = kLedger.UnresolvableOwners.Contains(wrapped.Id),
+          note = "visible before the drain rather than as a drain that never ends" });
+
+// K2: killing both owners resolves only the one that can be asked — the bare owner stays Running,
+// which is exactly the behaviour K1 warns about, measured rather than described.
+kWrapped.Kill(entireProcessTree: true);
+kBare.Kill(entireProcessTree: true);
+await kWrapped.WaitForExitAsync();
+await kBare.WaitForExitAsync();
+var wrappedAfter = kLedger.Query(wrapped.Id);
+var bareAfter = kLedger.Query(bare.Id);
+Check("K2 only the owner that can be asked is resolved; the bare one is the warned-about failure",
+    wrappedAfter.State == OperationState.Unknown && bareAfter.State == OperationState.Running,
+    new { wrapped = wrappedAfter.State.ToString(), bare = bareAfter.State.ToString(),
+          note = "the warning in K1 is not hypothetical; this is what ignoring it costs" });
+
+// K3: snapshot cleanup is safe only against the RESOLVED reference set. cfg-A's owner died and was
+// resolved, so cfg-A is free; cfg-B is pinned by an operation nothing can ever resolve.
+var referenced = kLedger.ReferencedSnapshots;
+Check("K3 a resolved orphan releases its snapshot; an unresolvable one pins it forever",
+    !referenced.Contains("cfg-A") && referenced.Contains("cfg-B"),
+    new { referencedSnapshots = referenced,
+          note = "the cleanup reference set is derived from retention, so it cannot disagree with it" });
+
 fV1 = null!;
 fV1Ctx.Unload();
 

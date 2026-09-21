@@ -83,6 +83,14 @@ behaves this way):
   fails, the scope is marked degraded and the record joins `UnpersistedOperations`, exactly as any other
   failed evidence write does. Clause 5b still governs what happens to it.
 
+**And an owner that cannot be asked must be declared, not skipped.** Resolution ignores an owner that
+does not implement `IOwnerLiveness`, and it ignores it silently — @vladimir-nikonov wired this correction
+into his own harness and nothing changed until he wrapped the bare `Process` he was already passing. The
+failure then surfaces as a drain that never ends, at the worst possible moment. So `UnresolvableOwners`
+lists them up front: a host can see how many operations in a scope it can never resolve **before** it
+starts waiting (K1), and K2 measures what ignoring that costs — the wrapped owner resolves to `Unknown`,
+the bare one stays `Running`.
+
 Two consequences, both measured, and the second is the one that matters for a swap:
 
 - **`Unknown` is an admission, not a verdict.** A genuine outcome arriving afterwards — the owner's last
@@ -156,6 +164,10 @@ re-read:
   line already carries it (J4).
 - Nothing new crosses the boundary: the seam is a `string` and the contract assembly still references
   `System.Runtime` and `System.Collections` only (J3).
+- **`ReferencedSnapshots` is the cleanup set, derived and not counted.** A snapshot is referenced exactly
+  while some operation admitted under it is still retained, so it cannot drift from retention the way a
+  separate reference count would. Resolving an orphan releases its snapshot with its retention; an
+  *unresolvable* owner pins one forever, which is H3's failure shape arriving in the settings lane (K3).
 
 **One trap, found by breaking it rather than by thinking about it.** The seam was first added as an
 optional parameter on the existing `Begin`. That is source compatible and **binary incompatible**: every
