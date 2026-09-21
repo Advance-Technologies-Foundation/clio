@@ -431,11 +431,6 @@ public static class MobileActionTargetProbe {
 	}
 
 	/// <summary>
-	/// The per-call environment seam, threaded through the resolution passes as one value. Carrying the
-	/// resolver alongside the two clients it produced keeps every read on the SAME per-call container: a pass
-	/// that re-resolved from somewhere else could silently answer for a different tenant.
-	/// </summary>
-	/// <summary>
 	/// What the object tier did. <c>Answered</c> is what <see cref="MobileActionTargetProbeResult.ProbeOk"/>
 	/// reports, so a tier that performed NO read must say false however cleanly it returned — otherwise the
 	/// caller is told the object targets were verified when nothing was asked. <c>Note</c> is null only when
@@ -447,6 +442,11 @@ public static class MobileActionTargetProbe {
 	/// </summary>
 	private sealed record EntityTierOutcome(bool Answered, string Note);
 
+	/// <summary>
+	/// The per-call environment seam, threaded through the resolution passes as one value. Carrying the
+	/// resolver alongside the two clients it produced keeps every read on the SAME per-call container: a pass
+	/// that re-resolved from somewhere else could silently answer for a different tenant.
+	/// </summary>
 	private sealed record ProbeContext(
 		IToolCommandResolver Resolver, EnvironmentOptions Options,
 		IApplicationClient Client, IServiceUrlBuilder UrlBuilder,
