@@ -11,13 +11,14 @@ using Clio10.SettingsVersioning;
 // either half -- the ledger is the lifetime lane's, the settings owner is @vladimir-nikonov's, both
 // compiled from their own sources.
 if (args.Length >= 1 && args[0] == "idle") { Console.WriteLine("ready"); Console.Out.Flush(); Thread.Sleep(Timeout.Infinite); return 0; }
-if (args.Length < 4) {
-    Console.Error.WriteLine("usage: jointintegration <v1Dir> <v2Dir> <partnerDir> <workDir>");
+if (args.Length < 5) {
+    Console.Error.WriteLine("usage: jointintegration <v1Dir> <v2Dir> <partnerDir> <incompatibleDir> <workDir>");
     return 2;
 }
 string v1Dir = Path.GetFullPath(args[0]), v2Dir = Path.GetFullPath(args[1]);
 string partnerDir = Path.GetFullPath(args[2]);
-string work = Path.GetFullPath(args[3]);
+string incompatibleDir = Path.GetFullPath(args[3]);
+string work = Path.GetFullPath(args[4]);
 Directory.CreateDirectory(work);
 
 var observations = new List<object>();
@@ -115,6 +116,39 @@ Check("X4 negative control: with a liveness-capable owner the same snapshot IS r
     new { reclaimed = deletedWithWrappedOwner, cfg5Gone = !settings.Contains(cfg5.Id),
           stateOfDeadOwnersOperation = ledger.Query(resolvable.Id).State.ToString(),
           note = "same sequence, one difference: the owner could be asked" });
+
+// X5: @kirillkrylov's exact acceptance case -- settings prepared SUCCESSFULLY, then the runtime
+// activation FAILS. An admission afterwards must observe ONE COMMITTED PAIR, not one half of each.
+SettingsSnapshot committedPair = settings.Prepare("envW",
+    new Dictionary<string, string> { ["mode"] = "committed" }, 0);
+Process wOwner = StartIdleOwner();
+IOperationLease beforeFailedActivation = settings.Admit("envW", v1.Version, new ProcessOwner(wOwner), "envW");
+
+// The settings half succeeds first, exactly as a real staged update would do it.
+SettingsSnapshot preparedForV3 = settings.Prepare("envW",
+    new Dictionary<string, string> { ["mode"] = "with-v3" }, settings.CurrentVersion("envW"));
+
+// The runtime half is then refused: this release declares a contract generation the host cannot serve.
+bool activationFailed = false;
+try {
+    var (rejectedContext, rejected) = Load(incompatibleDir);
+    if (rejected.ContractVersion != 1) { activationFailed = true; rejectedContext.Unload(); }
+}
+catch (Exception) { activationFailed = true; }
+
+IOperationLease afterFailedActivation = settings.Admit("envW", v1.Version, new ProcessOwner(wOwner), "envW");
+var pairSeen = ledger.Query(afterFailedActivation.Id);
+Check("X5 a failed runtime activation leaves the committed runtime/configuration pair unchanged",
+    activationFailed
+        && pairSeen.RuntimeVersion == v1.Version
+        && pairSeen.ConfigurationSnapshot == committedPair.Id,
+    new { activationFailed, runtimeSeen = pairSeen.RuntimeVersion, snapshotSeen = pairSeen.ConfigurationSnapshot,
+          committedSnapshot = committedPair.Id, preparedButNeverActivated = preparedForV3.Id,
+          snapshotBeforeAttempt = ledger.Query(beforeFailedActivation.Id).ConfigurationSnapshot,
+          note = "Prepare activates on success, so a refused runtime leaves settings ahead of it" });
+beforeFailedActivation.Dispose();
+afterFailedActivation.Dispose();
+try { wOwner.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
 
 Console.WriteLine(JsonSerializer.Serialize(new {
     os = Environment.OSVersion.VersionString, framework = Environment.Version.ToString(),

@@ -48,6 +48,19 @@
         "stateOfDeadOwnersOperation": "Unknown",
         "note": "same sequence, one difference: the owner could be asked"
       }
+    },
+    {
+      "name": "X5 a failed runtime activation leaves the committed runtime/configuration pair unchanged",
+      "passed": false,
+      "detail": {
+        "activationFailed": true,
+        "runtimeSeen": "10.0.0.0",
+        "snapshotSeen": "cfg-8",
+        "committedSnapshot": "cfg-7",
+        "preparedButNeverActivated": "cfg-8",
+        "snapshotBeforeAttempt": "cfg-7",
+        "note": "Prepare activates on success, so a refused runtime leaves settings ahead of it"
+      }
     }
   ]
 }

@@ -27,6 +27,11 @@ T5_CleanupRespectsRetentionNotJustPin();
 T6_CredentialFreeSurface();
 T7_NoSentinelSecretInPersistedArtifacts();
 T8_IdleCurrentSnapshotSurvivesCleanup();
+T9_ConcurrentPrepareIsSerializedNotRaced();
+T10_AdmitIsSerializedAgainstCleanup();
+T11_MutatingCallersDictionaryAfterPrepareDoesNotReachTheSnapshot();
+T12_MigrateDetectsAnEditThatLandsAfterItsReadNotJustBeforeItsCommit();
+T13_ImmutableDictionaryRejectsMutationThroughEveryAlias();
 
 Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new { cases = observations },
     new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
@@ -263,6 +268,160 @@ void T7_NoSentinelSecretInPersistedArtifacts() {
         !opText.Contains(sentinel, StringComparison.Ordinal), new { path = opEvidence });
     Check("T7: the sentinel secret never appears in the settings store's persisted evidence file",
         !setText.Contains(sentinel, StringComparison.Ordinal), new { path = setEvidence });
+}
+
+void T9_ConcurrentPrepareIsSerializedNotRaced() {
+    // kirillkrylov: "prefer deterministic handshakes for actual overlap rather than sequential
+    // stale-version calls." T3's mutation control is sequential; this proves the fix under genuine
+    // concurrent callers, forcing the interleaving instead of hoping timing produces it.
+    var ledger = new OperationLedger(Path.Combine(workDir, "operations-t9.jsonl"));
+    var store = new SettingsStore(ledger, Path.Combine(workDir, "settings-t9.jsonl"));
+    SettingsSnapshot cfgA = store.Prepare("envT9", new Dictionary<string, string> { ["v"] = "0" }, 0);
+
+    using var aInsideLock = new ManualResetEventSlim(false);
+    using var releaseA = new ManualResetEventSlim(false);
+    store.OnPreparePassedCheckForTests = () => { aInsideLock.Set(); releaseA.Wait(); };
+
+    Task<SettingsSnapshot> taskA = Task.Run(() =>
+        store.Prepare("envT9", new Dictionary<string, string> { ["v"] = "from-A" }, cfgA.Version));
+    if (!aInsideLock.Wait(TimeSpan.FromSeconds(5)))
+        throw new TimeoutException("T9 setup: A never reached the critical section");
+
+    store.OnPreparePassedCheckForTests = null; // B must not also trip the hook
+    Task<ConcurrencyConflictException?> taskB = Task.Run(() => {
+        try {
+            store.Prepare("envT9", new Dictionary<string, string> { ["v"] = "from-B" }, cfgA.Version);
+            return (ConcurrencyConflictException?)null;
+        }
+        catch (ConcurrencyConflictException ex) { return ex; }
+    });
+    bool bFinishedWhileABlocked = taskB.Wait(TimeSpan.FromMilliseconds(300));
+
+    releaseA.Set();
+    SettingsSnapshot resultA = taskA.Result;
+    ConcurrencyConflictException? resultB = taskB.Result;
+
+    Check("T9: while A holds the lock mid-Prepare, a concurrent B cannot even begin its own check",
+        !bFinishedWhileABlocked, new { bFinishedBeforeReleasingA = bFinishedWhileABlocked });
+    Check("T9: after A completes, B's same-base call is correctly refused -- forced overlap, not a timing guess",
+        resultB is not null && store.CurrentSnapshotId("envT9") == resultA.Id,
+        new { aSucceeded = resultA.Id, bRefusedWith = resultB?.Message });
+}
+
+void T10_AdmitIsSerializedAgainstCleanup() {
+    // kirillkrylov: "activation and cleanup between those steps can delete the ID being admitted."
+    var ledger = new OperationLedger(Path.Combine(workDir, "operations-t10.jsonl"));
+    var store = new SettingsStore(ledger, Path.Combine(workDir, "settings-t10.jsonl"));
+    SettingsSnapshot cfgA = store.Prepare("envT10", new Dictionary<string, string> { ["k"] = "a" }, 0);
+    // Supersede so cfg-A is unpinned and unreferenced -- eligible for cleanup the instant nothing else
+    // protects it, exactly the window the race needs.
+    SettingsSnapshot cfgB = store.Prepare("envT10", new Dictionary<string, string> { ["k"] = "b" }, cfgA.Version);
+
+    using var admitInsideLock = new ManualResetEventSlim(false);
+    using var releaseAdmit = new ManualResetEventSlim(false);
+    store.OnAdmitReadSnapshotIdForTests = () => { admitInsideLock.Set(); releaseAdmit.Wait(); };
+
+    Task<IOperationLease> admitTask = Task.Run(() => store.Admit("envT10-op", "V1", new FakeOwner(), "envT10"));
+    if (!admitInsideLock.Wait(TimeSpan.FromSeconds(5)))
+        throw new TimeoutException("T10 setup: Admit never reached the critical section");
+
+    store.OnAdmitReadSnapshotIdForTests = null;
+    Task<IReadOnlyCollection<string>> cleanupTask = Task.Run(() => store.Cleanup());
+    bool cleanupFinishedWhileAdmitBlocked = cleanupTask.Wait(TimeSpan.FromMilliseconds(300));
+
+    releaseAdmit.Set();
+    IOperationLease lease = admitTask.Result;
+    IReadOnlyCollection<string> doomed = cleanupTask.Result;
+
+    Check("T10: cleanup cannot run while an admission is mid-flight between reading and registering",
+        !cleanupFinishedWhileAdmitBlocked, new { cleanupFinishedBeforeReleasingAdmit = cleanupFinishedWhileAdmitBlocked });
+    string admittedSnapshot = ledger.Query(lease.Id).ConfigurationSnapshot!;
+    Check("T10: cleanup, once it runs, still correctly reclaims what is genuinely unowned (cfg-A) without disturbing the admission (cfg-B)",
+        doomed.Contains(cfgA.Id) && admittedSnapshot == cfgB.Id && store.Contains(cfgB.Id),
+        new { doomed, admittedSnapshot });
+
+    lease.Complete(OperationState.Succeeded); lease.Dispose();
+}
+
+void T11_MutatingCallersDictionaryAfterPrepareDoesNotReachTheSnapshot() {
+    var ledger = new OperationLedger(Path.Combine(workDir, "operations-t11.jsonl"));
+    var store = new SettingsStore(ledger, Path.Combine(workDir, "settings-t11.jsonl"));
+    var callerOwned = new Dictionary<string, string> { ["k"] = "original" };
+    SettingsSnapshot cfgA = store.Prepare("envT11", callerOwned, 0);
+
+    callerOwned["k"] = "mutated-after-admission"; // the caller still holds this exact reference
+    callerOwned["new-key"] = "should-not-appear";
+
+    Check("T11: mutating the dictionary the caller originally passed does not change the pinned snapshot",
+        store.Values(cfgA.Id)["k"] == "original" && !store.Values(cfgA.Id).ContainsKey("new-key"),
+        new { pinned = store.Values(cfgA.Id), callerNow = callerOwned });
+}
+
+void T12_MigrateDetectsAnEditThatLandsAfterItsReadNotJustBeforeItsCommit() {
+    var ledger = new OperationLedger(Path.Combine(workDir, "operations-t12.jsonl"));
+    var store = new SettingsStore(ledger, Path.Combine(workDir, "settings-t12.jsonl"));
+    SettingsSnapshot cfgA = store.Prepare("envT12", new Dictionary<string, string> { ["k"] = "orig" }, 0);
+
+    using var migrateReadSource = new ManualResetEventSlim(false);
+    using var releaseMigrate = new ManualResetEventSlim(false);
+    Task<ConcurrencyConflictException?> migrateTask = Task.Run(() => {
+        try {
+            store.Migrate("envT12", values => {
+                migrateReadSource.Set(); // source + base revision already captured at this point
+                releaseMigrate.Wait();   // hold here so a genuinely intervening edit can land
+                return new Dictionary<string, string>(values) { ["k"] = "migrated" };
+            });
+            return (ConcurrencyConflictException?)null;
+        }
+        catch (ConcurrencyConflictException ex) { return ex; }
+    });
+    if (!migrateReadSource.Wait(TimeSpan.FromSeconds(5)))
+        throw new TimeoutException("T12 setup: Migrate's transform never started");
+
+    SettingsSnapshot interveningEdit = store.Prepare("envT12", new Dictionary<string, string> { ["k"] = "edited-concurrently" }, cfgA.Version);
+    releaseMigrate.Set();
+
+    ConcurrencyConflictException? refused = migrateTask.Result;
+    Check("T12: an edit landing after Migrate reads its source, before it commits, is detected -- not silently superseded",
+        refused is not null && store.CurrentSnapshotId("envT12") == interveningEdit.Id,
+        new { refusedWith = refused?.Message, stillActive = store.CurrentSnapshotId("envT12") });
+}
+
+void T13_ImmutableDictionaryRejectsMutationThroughEveryAlias() {
+    // kirillkrylov: an interface-only "read-only" guarantee (IReadOnlyDictionary over a plain
+    // Dictionary) does not survive a cast back to IDictionary. T11 only covered the ORIGINAL caller
+    // input; this covers the other two aliases he named: the value Values() returns, and the value a
+    // Migrate transform receives -- both now backed by ImmutableDictionary, which rejects a mutating
+    // call through any interface it satisfies rather than silently succeeding.
+    var ledger = new OperationLedger(Path.Combine(workDir, "operations-t13.jsonl"));
+    var store = new SettingsStore(ledger, Path.Combine(workDir, "settings-t13.jsonl"));
+    SettingsSnapshot cfgA = store.Prepare("envT13", new Dictionary<string, string> { ["k"] = "orig" }, 0);
+
+    // Alias 1: the returned value from Values().
+    NotSupportedException? returnedValueRejected = null;
+    try { ((IDictionary<string, string>)store.Values(cfgA.Id))["k"] = "mutated-via-returned-value"; }
+    catch (NotSupportedException ex) { returnedValueRejected = ex; }
+    Check("T13: casting Values()'s returned collection to a mutable interface and writing through it is rejected",
+        returnedValueRejected is not null && store.Values(cfgA.Id)["k"] == "orig",
+        new { rejectedWith = returnedValueRejected?.Message, stillOrig = store.Values(cfgA.Id)["k"] });
+
+    // Alias 2: the value a Migrate transform receives, mutated in place before the transform throws.
+    NotSupportedException? transformInputRejected = null;
+    InvalidOperationException? migrationThrew = null;
+    try {
+        store.Migrate("envT13", values => {
+            try { ((IDictionary<string, string>)values)["k"] = "mutated-via-transform-input"; }
+            catch (NotSupportedException ex) { transformInputRejected = ex; }
+            throw new InvalidOperationException("transform aborts after attempting a mutation");
+        });
+    }
+    catch (InvalidOperationException ex) { migrationThrew = ex; }
+    Check("T13: casting the transform's input to a mutable interface and writing through it is rejected",
+        transformInputRejected is not null,
+        new { rejectedWith = transformInputRejected?.Message });
+    Check("T13: after a mutating-then-throwing transform, V1's stored snapshot is exactly as it was",
+        migrationThrew is not null && store.Values(cfgA.Id)["k"] == "orig",
+        new { migrationThrew = migrationThrew?.Message, v1Now = store.Values(cfgA.Id) });
 }
 
 /// <summary>An in-memory owner whose liveness can be flipped without a real process, for settings-lane cases that don't need one.</summary>
