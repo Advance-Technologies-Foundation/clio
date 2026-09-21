@@ -6685,14 +6685,14 @@ public sealed class WebToMobileConversionServiceTests {
 		MobileActionTargetProbeResult probe = ProbeResult(
 			"OpenButton", "crt.OpenPageRequest", MobileActionTargetProbe.KindWebPage, "LegacyPage",
 			ActionTargetState.Missing,
-			note: "Only the first 8 object targets were checked; the rest are reported as unverified.");
+			note: "Only the first 32 object targets were checked; the rest are reported as unverified.");
 
 		// Act
 		MobilePageConversionGuide guide = AnalyzeTargets(bundle, probe);
 
 		// Assert
 		guide.RequestConversions!.TargetsProbed.Should().BeTrue(because: "the reads themselves succeeded");
-		guide.RequestConversions.TargetsNote.Should().StartWith("Only the first 8",
+		guide.RequestConversions.TargetsNote.Should().StartWith("Only the first 32",
 			because: "the caller cannot otherwise tell 'not asked' from 'asked, and the answer was no'");
 	}
 
