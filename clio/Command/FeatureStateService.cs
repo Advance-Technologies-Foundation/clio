@@ -101,6 +101,17 @@ internal sealed class FeatureStateService : IFeatureStateService {
 		}
 	}
 
+	/// <summary>
+	/// Raises the save failure the platform reported.
+	/// </summary>
+	/// <remarks>
+	/// The unsuccessful branch below is NOT dead code, but it is no longer reachable in production:
+	/// <c>ClassifyingDataProvider</c> wraps the DI-registered <c>IDataProvider</c> and throws on the
+	/// unsuccessful <c>BatchExecute</c> before <c>Save()</c> can return an unsuccessful
+	/// <c>ISaveResult</c>. The tests reach it directly through <c>RejectingSaveDataProvider</c> - see
+	/// docs/knowledge/Common/remotedataprovider-swallows-every-failure-into-success-false.md and
+	/// docs/knowledge/Tests/dataprovidermock-cannot-report-a-rejected-save.md. Do not delete it.
+	/// </remarks>
 	private static void ThrowIfSaveFailed(ISaveResult result, string action) {
 		if (result?.Success != true) {
 			throw new InvalidOperationException(

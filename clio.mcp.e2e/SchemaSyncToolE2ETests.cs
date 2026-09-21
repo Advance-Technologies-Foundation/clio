@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Allure.Net.Commons;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.EntitySchemaDesigner;
@@ -15,6 +16,7 @@ using Clio.Mcp.E2E.Support.Creatio;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
+using ModelContextProtocol;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using NUnit.Framework;
@@ -36,6 +38,229 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 	private const string ReadSchemaToolName = GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName;
 	private const string ReadColumnToolName = GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName;
 	private const string CurrentDateTimeSystemValueUId = "d7c295d3-3146-4ee1-ac49-3a7bd0edc45d";
+
+	[Test]
+	// LocalOnly classifies the whole fixture; keep this probe explicit, manual, and CI-guarded.
+	[Category("McpE2E.Manual")]
+	[Explicit("Publishes on an exclusively owned disposable Creatio instance.")]
+	[Description("Creates a DB-view entity through sync, replays it without mutation, and rejects a conflicting storage kind.")]
+	[AllureTag(ToolName)]
+	public async Task SchemaSync_ShouldPersistDbView_WhenCreatedAndReplayed() {
+		// Arrange
+		TeamCityRunGuard.IgnoreIfRunningUnderTeamCityOrGitHubActions("Requires an exclusive disposable instance.");
+		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: true);
+		CancellationToken token = context.CancellationTokenSource.Token;
+		Dictionary<string, object?> operation = new() {
+			["type"] = "create-entity", ["schema-name"] = context.EntitySchemaName,
+			["title-localizations"] = BuildLocalizations("View"), ["is-db-view"] = true
+		};
+		Dictionary<string, object?> args = new() { ["args"] = new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName, ["package-name"] = context.PackageName,
+			["operations"] = new[] { operation }
+		} };
+		// Act
+		JsonElement created = ExtractSchemaSyncResponse(await context.Session.CallToolAsync(ToolName, args, token));
+		EntitySchemaPropertiesInfo schema = await GetSchemaPropertiesAsync(context.Session,
+			context.EnvironmentName!, context.PackageName!, context.EntitySchemaName!, token);
+		JsonElement replayed = ExtractSchemaSyncResponse(await context.Session.CallToolAsync(ToolName, args, token));
+		operation["is-db-view"] = false;
+		JsonElement collision = ExtractSchemaSyncResponse(await context.Session.CallToolAsync(ToolName, args, token));
+		// Assert
+		AllureApi.Step("Verify native DB-view creation", () => {
+			created.GetProperty("success").GetBoolean().Should().BeTrue(because: FormatPayload(created));
+			GetMessageTypes(created.GetProperty("results")[0]).Should().Contain(LogDecoratorType.Info,
+				because: "successful creation reports publication evidence");
+			schema.DbView.Should().BeTrue(because: "sync must forward the DB-view flag into the native designer");
+		});
+		AllureApi.Step("Verify replay and conflict", () => {
+			replayed.GetProperty("results")[0].GetProperty("outcome").GetString().Should().Be("already-satisfied",
+				because: "a repeated DB-view request must not recreate the entity");
+			collision.GetProperty("success").GetBoolean().Should().BeFalse(because: "sync cannot implicitly change the storage kind");
+			collision.GetProperty("results")[0].GetProperty("outcome").GetString().Should().Be("collision",
+				because: "an explicit mismatch must be actionable rather than silently ignored");
+		});
+	}
+
+	[TestCase("Contact", false, false)]
+	[TestCase("Account", true, true)]
+	[Description("Creates and replays a replacing entity schema with inferred or explicit parent, preserving the base package.")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-schemas replacing schema creation and replay")]
+	public async Task SchemaSync_ShouldPersistReplacement_WhenBaseExistsInAnotherPackage(string schemaName, bool explicitParent, bool directCreate) {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: true);
+		CancellationToken token = context.CancellationTokenSource.Token;
+		CallToolResult dependency = await context.Session.CallToolAsync(AddPackageDependencyToolName,
+			new Dictionary<string, object?> { ["args"] = new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName, ["package-name"] = context.PackageName,
+				["dependencies"] = new[] { new { name = "Base" } }
+			} }, token);
+		AllureApi.Step("Verify Base dependency", () => McpCommandExecutionParser.Extract(dependency).ExitCode.Should()
+			.Be(0, because: "the new package must be able to replace a Base schema"));
+		EntitySchemaPropertiesInfo before = await GetSchemaPropertiesAsync(context.Session,
+			context.EnvironmentName!, "Base", schemaName, token);
+		string columnName = "UsrReplacement" + Guid.NewGuid().ToString("N")[..8];
+		Dictionary<string, object?> operation = new() {
+			["type"] = "create-entity", ["schema-name"] = schemaName, ["extend-parent"] = true,
+			["title-localizations"] = BuildLocalizations(schemaName),
+			["columns"] = new[] { new Dictionary<string, object?> {
+				["name"] = columnName, ["type"] = "Lookup", ["reference-schema-name"] = "Account",
+				["title-localizations"] = BuildLocalizations("Replacement lookup")
+			} }
+		};
+		if (explicitParent) {
+			operation["parent-schema-name"] = schemaName;
+		}
+		Dictionary<string, object?> args = new() { ["args"] = new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName, ["package-name"] = context.PackageName,
+			["operations"] = new[] { operation }
+		} };
+		// Act
+		if (directCreate) {
+			CallToolResult direct = await context.Session.CallToolAsync(CreateEntitySchemaTool.CreateEntitySchemaToolName,
+				new Dictionary<string, object?> { ["args"] = new Dictionary<string, object?> {
+					["environment-name"] = context.EnvironmentName, ["package-name"] = context.PackageName,
+					["schema-name"] = schemaName, ["title-localizations"] = BuildLocalizations(schemaName),
+					["parent-schema-name"] = schemaName, ["extend-parent"] = true, ["columns"] = operation["columns"]
+				} }, token);
+			CommandExecutionEnvelope directEnvelope = McpCommandExecutionParser.Extract(direct);
+			AllureApi.Step("Verify direct replacement creation", () => directEnvelope.ExitCode.Should()
+				.Be(0, because: "the direct create tool must support the same native replacing-schema path"));
+			AllureApi.Step("Verify direct publication log", () => directEnvelope.Output.Should()
+				.Contain(message => message.MessageType == LogDecoratorType.Info, because: "successful direct publication reports execution evidence"));
+		}
+		CallToolResult created = await context.Session.CallToolAsync(ToolName, args, token);
+		JsonElement first = ExtractSchemaSyncResponse(created);
+		// Assert
+		AllureApi.Step("Verify replacement creation", () => first.GetProperty("success").GetBoolean().Should()
+			.BeTrue(because: $"a same-name base schema is a replacement target: {FormatPayload(first)}"));
+		AllureApi.Step("Verify first batch outcome", () => first.GetProperty("results")[0].GetProperty("outcome").GetString().Should()
+			.Be(directCreate ? "already-satisfied" : "created", because: "the batch creates only when direct creation has not already satisfied the request"));
+		if (!directCreate) {
+			AllureApi.Step("Verify creation log", () => GetMessageTypes(first.GetProperty("results")[0]).Should()
+				.Contain(LogDecoratorType.Info, because: "successful publication reports execution evidence"));
+		}
+		EntitySchemaPropertiesInfo replacement = await GetSchemaPropertiesAsync(context.Session,
+			context.EnvironmentName!, context.PackageName!, schemaName, token);
+		AllureApi.Step("Verify replacement metadata", () => replacement.ExtendParent.Should()
+			.BeTrue(because: "the saved schema must extend its same-name parent"));
+		AllureApi.Step("Verify replacement parent", () => replacement.ParentSchemaName.Should()
+			.Be(schemaName, because: "the native same-name parent must persist"));
+		AllureApi.Step("Verify replacement column", () => replacement.Columns.Should()
+			.ContainSingle(column => column.Name == columnName && column.Source == "own" && column.Type == "Lookup",
+				because: "the requested lookup must persist on the replacing layer"));
+		CallToolResult replayed = await context.Session.CallToolAsync(ToolName, args, token);
+		JsonElement replay = ExtractSchemaSyncResponse(replayed);
+		AllureApi.Step("Verify replay succeeded", () => replay.GetProperty("success").GetBoolean().Should()
+			.BeTrue(because: $"replaying the same replacement must converge: {FormatPayload(replay)}"));
+		AllureApi.Step("Verify replay did no work", () => replay.GetProperty("results")[0].GetProperty("outcome").GetString().Should()
+			.Be("already-satisfied", because: "a replay must not recreate the replacing schema or column"));
+		CallToolResult ordinaryResult = await context.Session.CallToolAsync(CreateEntitySchemaTool.CreateEntitySchemaToolName,
+			new Dictionary<string, object?> { ["args"] = new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName, ["package-name"] = context.PackageName,
+				["schema-name"] = context.EntitySchemaName, ["title-localizations"] = BuildLocalizations("Ordinary entity")
+			} }, token);
+		AllureApi.Step("Prepare ordinary target schema", () => McpCommandExecutionParser.Extract(ordinaryResult).ExitCode.Should()
+			.Be(0, because: "the collision probe needs an editable ordinary schema, not a read-only package refusal"));
+		Dictionary<string, object?> ordinaryReplacement = new(operation) {
+			["schema-name"] = context.EntitySchemaName, ["parent-schema-name"] = context.EntitySchemaName
+		};
+		CallToolResult collisionResult = await context.Session.CallToolAsync(ToolName,
+			new Dictionary<string, object?> { ["args"] = new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName, ["package-name"] = context.PackageName,
+				["operations"] = new[] { ordinaryReplacement }
+			} }, token);
+		JsonElement collision = ExtractSchemaSyncResponse(collisionResult);
+		AllureApi.Step("Verify original schema is not a replacement", () => collision.GetProperty("success").GetBoolean().Should()
+			.BeFalse(because: "an ordinary schema must not receive replacement columns"));
+		AllureApi.Step("Verify original schema collision", () => collision.GetProperty("results")[0].GetProperty("outcome").GetString().Should()
+			.Be("collision", because: "an ordinary schema already in the target package cannot be reconciled as a replacement"));
+		EntitySchemaPropertiesInfo ordinaryAfter = await GetSchemaPropertiesAsync(context.Session,
+			context.EnvironmentName!, context.PackageName!, context.EntitySchemaName!, token);
+		AllureApi.Step("Verify ordinary schema unchanged", () => ordinaryAfter.Columns.Should()
+			.NotContain(column => column.Name == columnName, because: "a replacement collision must not apply any column changes"));
+		EntitySchemaPropertiesInfo after = await GetSchemaPropertiesAsync(context.Session,
+			context.EnvironmentName!, "Base", schemaName, token);
+		AllureApi.Step("Verify base columns unchanged", () => after.Columns.Select(column => column.Name).Should()
+			.BeEquivalentTo(before.Columns.Select(column => column.Name), because: "replacement writes must leave the base package untouched"));
+		CallToolResult duplicate = await context.Session.CallToolAsync(CreateEntitySchemaTool.CreateEntitySchemaToolName,
+			new Dictionary<string, object?> { ["args"] = new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName, ["package-name"] = context.PackageName,
+				["schema-name"] = schemaName, ["title-localizations"] = BuildLocalizations(schemaName), ["extend-parent"] = true
+			} }, token);
+		CommandExecutionEnvelope duplicateEnvelope = McpCommandExecutionParser.Extract(duplicate);
+		AllureApi.Step("Verify direct duplicate refused", () => duplicateEnvelope.ExitCode.Should()
+			.Be(1, because: "the create-only tool must not overwrite a replacement already in the target package"));
+		AllureApi.Step("Verify duplicate diagnostic", () => duplicateEnvelope.Output.Should()
+			.Contain(message => message.MessageType == LogDecoratorType.Error, because: "duplicate refusal must explain the failure"));
+	}
+
+	[Test]
+	[Explicit("Publishes schemas; requires an exclusively owned local Creatio sandbox.")]
+	// LocalOnly is a whole-fixture classification; this shared fixture also contains automatic tests.
+	// Keep this method explicit/manual and CI-guarded instead (pinned by McpFixturePolicyTests).
+	[Category("McpE2E.Manual")]
+	[Description("Date and Time aliases advertised by the batch contract persist and read back as DateTime on real Creatio.")]
+	[AllureTag(ToolName)]
+	[AllureTag(ReadSchemaToolName)]
+	[AllureName("sync-schemas temporal alias documentation matches Creatio")]
+	[AllureDescription("Reads the published MCP contract, creates and adds Date and Time columns through sync-schemas, and verifies all four persisted types through Creatio schema readback.")]
+	public async Task SchemaSync_ShouldReadBackDateTime_WhenTemporalAliasesAreWritten() {
+		// Arrange
+		TeamCityRunGuard.IgnoreIfRunningUnderTeamCityOrGitHubActions("Temporal alias schema publication requires an exclusive local sandbox.");
+		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: true);
+		CancellationToken token = context.CancellationTokenSource.Token;
+		CallToolResult contractResult = await context.Session.CallToolAsync(ToolContractGetTool.ToolName,
+			new Dictionary<string, object?> { ["args"] = new Dictionary<string, object?> {
+				["tool-names"] = new[] { ToolName }
+			} }, token);
+		ToolContractGetResponse contract = EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(contractResult);
+		string description = contract.Tools!.Single().InputSchema.Properties.Single(field => field.Name == "operations").Description;
+		AllureApi.Step("Verify the published alias caveat", () => description.Should().Contain("Date and Time are accepted but are aliases of DateTime",
+			because: "the caveat must reach agents over the real MCP transport before they write columns"));
+		AllureApi.Step("Verify explicit date picker guidance", () => description.Should().Contain("pickerType: \"date\"",
+			because: "the contract must explain how to preserve date-only UI intent"));
+
+		// Act
+		CallToolResult write = await context.Session.CallToolAsync(ToolName, new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["package-name"] = context.PackageName,
+				["operations"] = new object[] {
+					new Dictionary<string, object?> {
+						["type"] = "create-entity", ["schema-name"] = context.EntitySchemaName,
+						["title-localizations"] = BuildLocalizations("Temporal alias probe"),
+						["columns"] = new object[] {
+							new Dictionary<string, object?> { ["name"] = "UsrCreatedDate", ["type"] = "Date" },
+							new Dictionary<string, object?> { ["name"] = "UsrCreatedTime", ["type"] = "Time" }
+						}
+					},
+					new Dictionary<string, object?> {
+						["type"] = "update-entity", ["schema-name"] = context.EntitySchemaName,
+						["update-operations"] = new object[] {
+							new Dictionary<string, object?> { ["action"] = "add", ["column-name"] = "UsrAddedDate", ["type"] = "Date" },
+							new Dictionary<string, object?> { ["action"] = "add", ["column-name"] = "UsrAddedTime", ["type"] = "Time" }
+						}
+					}
+				}
+			}
+		}, token);
+
+		// Assert
+		AllureApi.Step("Verify the MCP call succeeded", () => write.IsError.Should().NotBeTrue(because: "both aliases are accepted on the schema write path"));
+		JsonElement response = ExtractSchemaSyncResponse(write);
+		AllureApi.Step("Verify both schema operations succeeded", () => response.GetProperty("success").GetBoolean().Should().BeTrue(because: $"both schema operations must succeed: {FormatPayload(response)}"));
+		foreach (JsonElement operation in response.GetProperty("results").EnumerateArray()) {
+			AllureApi.Step("Verify operation execution evidence", () => GetMessageTypes(operation).Should().Contain(LogDecoratorType.Info, because: "successful writes report execution evidence"));
+		}
+		EntitySchemaPropertiesInfo readback = await GetSchemaPropertiesAsync(context.Session,
+			context.EnvironmentName!, context.PackageName!, context.EntitySchemaName!, token);
+		foreach (string name in new[] { "UsrCreatedDate", "UsrCreatedTime", "UsrAddedDate", "UsrAddedTime" }) {
+			AllureApi.Step($"Verify {name} reads back as DateTime", () => readback.Columns.Should().ContainSingle(column => column.Name == name && column.Source == "own" && column.Type == "DateTime",
+				because: $"{name} must persist as the documented DateTime type after create/update alias conversion"));
+		}
+		TestContext.Out.WriteLine($"Creatio temporal alias readback: {context.EntitySchemaName}; Date/Time on create and update -> DateTime.");
+	}
 
 	// ENG-92459: one shared workspace+package+push for the whole fixture instead of one push-workspace
 	// round-trip per environment-bound test. Lazily initialized by the first requireEnvironment arrange so
@@ -140,14 +365,8 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: true);
 
 		// Act
-		CallToolResult callResult = await CallSchemaSyncAsync(
-			context.Session,
-			context.EnvironmentName!,
-			context.PackageName!,
-			context.EntitySchemaName!,
-			context.LookupSchemaName!,
-			context.LookupColumnName,
-			context.CancellationTokenSource.Token);
+		SharedCompositeBatch batch = await GetOrRunCompositeBatchAsync(context);
+		CallToolResult callResult = batch.CallResult;
 		callResult.IsError.Should().NotBeTrue(
 			because: "sync-schemas should return a structured success payload for a valid sandbox package");
 		JsonElement response = ExtractSchemaSyncResponse(callResult);
@@ -157,27 +376,27 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 			because: $"the composite batch should succeed on the reachable sandbox environment. Payload: {responsePayload}");
 		results.Should().HaveCount(4,
 			because: $"create-entity, create-lookup, seed-data, and update-entity should each produce one result. Payload: {responsePayload}");
-		JsonElement createLookupResult = FindResult(results, "create-lookup", context.LookupSchemaName!);
-		JsonElement seedResult = FindResult(results, "seed-data", context.LookupSchemaName!);
-		JsonElement updateResult = FindResult(results, "update-entity", context.EntitySchemaName!);
+		JsonElement createLookupResult = FindResult(results, "create-lookup", batch.LookupSchemaName);
+		JsonElement seedResult = FindResult(results, "seed-data", batch.LookupSchemaName);
+		JsonElement updateResult = FindResult(results, "update-entity", batch.EntitySchemaName);
 		string[] createLookupMessages = GetMessageValues(createLookupResult);
 		string[] seedMessages = GetMessageValues(seedResult);
 		string[] updateMessages = GetMessageValues(updateResult);
 		EntitySchemaPropertiesInfo lookupProperties = await GetSchemaPropertiesAsync(
 			context.Session,
-			context.EnvironmentName!,
-			context.PackageName!,
-			context.LookupSchemaName!,
+			batch.EnvironmentName,
+			batch.PackageName,
+			batch.LookupSchemaName,
 			context.CancellationTokenSource.Token);
 		LookupRegistrationSnapshot registrationSnapshot = LookupRegistrationProbe.Read(
-			context.EnvironmentName!,
-			context.PackageName!,
-			context.LookupSchemaName!);
+			batch.EnvironmentName,
+			batch.PackageName,
+			batch.LookupSchemaName);
 		EntitySchemaColumnPropertiesInfo columnProperties = await GetColumnPropertiesAsync(
 			context.Session,
-			context.EnvironmentName!,
-			context.PackageName!,
-			context.EntitySchemaName!,
+			batch.EnvironmentName,
+			batch.PackageName,
+			batch.EntitySchemaName,
 			context.LookupColumnName,
 			context.CancellationTokenSource.Token);
 
@@ -185,7 +404,7 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 		results.Select(result => result.GetProperty("type").GetString()).Should().OnlyContain(type =>
 				!string.IsNullOrWhiteSpace(type),
 			because: "sync-schemas should expose the canonical type field on every result");
-		createLookupMessages.Should().Contain(message => message.Contains(context.LookupSchemaName!, StringComparison.Ordinal),
+		createLookupMessages.Should().Contain(message => message.Contains(batch.LookupSchemaName, StringComparison.Ordinal),
 			because: "create-lookup should keep its schema creation message on its own result");
 		createLookupMessages.Should().NotContain(message => message.Contains("Created row:", StringComparison.Ordinal),
 			because: "seed-data messages must not leak into the create-lookup result");
@@ -199,7 +418,7 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 			because: "schema creation messages must not leak into the seed-data result");
 		seedMessages.Should().NotContain(message => message.Contains(context.LookupColumnName, StringComparison.Ordinal),
 			because: "update-entity messages must not leak into the seed-data result");
-		updateMessages.Should().Contain(message => message.Contains(context.EntitySchemaName!, StringComparison.Ordinal),
+		updateMessages.Should().Contain(message => message.Contains(batch.EntitySchemaName, StringComparison.Ordinal),
 			because: "update-entity should keep its column mutation message on its own result");
 		updateMessages.Should().Contain(message => message.Contains(context.LookupColumnName, StringComparison.Ordinal),
 			because: "update-entity should report the added lookup column");
@@ -233,43 +452,17 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 	[AllureName("sync-schemas streams per-operation stage markers")]
 	[AllureDescription("Runs sync-schemas with two operations through the real clio MCP server with an IProgress sink and asserts the client observed a per-operation stage marker naming the operation index and type — proving the tool-level progress path is wired end to end (ENG-93087). Batch success is asserted before the markers and the raw tool result is dumped, so an operation that failed on the environment is reported as that failure instead of as a missing marker.")]
 	public async Task SchemaSyncTool_Should_Stream_Per_Operation_Progress_Markers() {
-		// Arrange
+		// Arrange & Act — the composite batch this fixture already runs for its message-alignment test.
+		// The markers and the message alignment are two properties of ONE batch, so it is run once with a
+		// progress sink attached instead of twice. Its first two operations are still create-entity and
+		// create-lookup, in that order, which is what this test's marker expectations name.
 		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: true);
-		MessageCollectingProgress progress = new();
-
-		// Act — a two-operation batch; each operation must push a stage marker before it runs.
-		CallToolResult callResult = await context.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["environment-name"] = context.EnvironmentName!,
-					["package-name"] = context.PackageName!,
-					["operations"] = new object?[] {
-						new Dictionary<string, object?> {
-							["type"] = "create-entity",
-							["schema-name"] = context.EntitySchemaName!,
-							["title-localizations"] = BuildLocalizations("Schema Sync Entity"),
-							["columns"] = new object?[] {
-								new Dictionary<string, object?> {
-									["name"] = "UsrTitle",
-									["type"] = "Text",
-									["title-localizations"] = BuildLocalizations("Title")
-								}
-							}
-						},
-						new Dictionary<string, object?> {
-							["type"] = "create-lookup",
-							["schema-name"] = context.LookupSchemaName!,
-							["title-localizations"] = BuildLocalizations("Schema Sync Lookup")
-						}
-					}
-				}
-			},
-			progress,
-			context.CancellationTokenSource.Token);
+		SharedCompositeBatch batch = await GetOrRunCompositeBatchAsync(context);
+		CallToolResult callResult = batch.CallResult;
+		IReadOnlyList<string> progressMessages = batch.ProgressMessages;
 
 		// Diagnostic: surface the exact progress stream the client received (markers + heartbeats).
-		foreach (string progressMessage in progress.Messages) {
+		foreach (string progressMessage in progressMessages) {
 			TestContext.Out.WriteLine($"[progress] {progressMessage}");
 		}
 
@@ -291,13 +484,13 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 		// operation that actually broke instead of reporting a missing marker as if the progress path were at fault.
 		response.GetProperty("success").GetBoolean().Should().BeTrue(
 			because: $"every operation in the batch must succeed before the per-operation markers can be judged — a failed operation aborts the batch and suppresses the markers of the operations after it. Payload: {responsePayload}");
-		progress.Messages.Should().Contain(
+		progressMessages.Should().Contain(
 			message => message.Contains("1/", StringComparison.Ordinal) && message.Contains("create-entity", StringComparison.Ordinal),
 			because: $"sync-schemas must stream a per-operation stage marker naming the operation index and type so the client can show which operation is running. Payload: {responsePayload}");
-		progress.Messages.Should().Contain(
+		progressMessages.Should().Contain(
 			message => message.Contains("2/", StringComparison.Ordinal) && message.Contains("create-lookup", StringComparison.Ordinal),
 			because: $"sync-schemas must also stream a marker for the second operation naming its index and type. Payload: {responsePayload}");
-		List<string> orderedMessages = progress.Messages.ToList();
+		List<string> orderedMessages = progressMessages.ToList();
 		int firstOperationMarkerIndex = orderedMessages.FindIndex(message => message.Contains("1/", StringComparison.Ordinal));
 		int secondOperationMarkerIndex = orderedMessages.FindIndex(message => message.Contains("2/", StringComparison.Ordinal));
 		firstOperationMarkerIndex.Should().BeLessThan(secondOperationMarkerIndex,
@@ -400,6 +593,17 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 			because: "the caller must receive actionable guidance before any remote mutation");
 		result.GetProperty("error").GetString().Should().NotContain(invalidEnvironmentName,
 			because: "local validation must happen before environment resolution");
+		// The shape rejection hit the ONLY operation, so nothing is resubmittable as sent. The plan is still
+		// emitted with an EMPTY operations array rather than suppressed: `failed-operation` is what a
+		// recovering caller reads, and an absent `resume-plan` on an abort contradicts the served contract
+		// (PR #1354 review).
+		JsonElement virtualResumePlan = response.GetProperty("resume-plan");
+		virtualResumePlan.GetProperty("operations").GetArrayLength().Should().Be(0,
+			because: "the rejected operation is not resubmittable verbatim and nothing followed it");
+		virtualResumePlan.GetProperty("failed-operation").GetProperty("operation-index").GetInt32().Should().Be(0,
+			because: "the plan must still name which operation failed even when it lists no resubmittable operations");
+		virtualResumePlan.GetProperty("instruction").GetString().Should().Contain("FIELD SHAPE",
+			because: "the caller must be told to correct the field shape before resubmitting the operation itself");
 	}
 
 	[Test]
@@ -466,7 +670,7 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 	[Description("Emits a machine-readable resume plan when a batch aborts mid-way (ENG-93374).")]
 	[AllureTag(ToolName)]
 	[AllureName("sync-schemas emits a resume plan on a mid-batch abort")]
-	[AllureDescription("Starts the real MCP server without a reachable environment and submits a two-operation batch whose first operation fails local validation. Verifies the structured response separates completed/failed/not-run operations and carries a resume-plan whose operations echo the failed op plus the not-run op in re-submittable shape.")]
+	[AllureDescription("Starts the real MCP server without a reachable environment and submits a two-operation batch whose first operation fails local SEED-ROW validation (a content problem, not a field-shape one, so the op stays resubmittable verbatim). Verifies the structured response separates completed/failed/not-run operations and carries a resume-plan whose operations echo the failed op plus the not-run op in re-submittable shape.")]
 	public async Task SchemaSyncTool_Should_Emit_ResumePlan_On_MidBatch_Abort() {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: false);
@@ -480,18 +684,14 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 					["environment-name"] = invalidEnvironmentName,
 					["package-name"] = "UsrPkg",
 					["operations"] = new object?[] {
-						// Op 0 fails local validation (virtual entity cannot carry seed rows) before any
-						// environment resolution, so the batch aborts at index 0 and op 1 never runs.
+						// Op 0 fails local seed-row validation (a standalone seed-data with no rows) before
+						// any environment resolution, so the batch aborts at index 0 and op 1 never runs.
+						// A CONTENT failure like this stays resubmittable verbatim, unlike a field-shape
+						// rejection — see SchemaSyncTool_Should_Omit_ShapeRejected_Operation_From_ResumePlan
+						// for the counterpart contract (issue #1303).
 						new Dictionary<string, object?> {
-							["type"] = "create-entity",
-							["schema-name"] = "UsrVirtualItem",
-							["title-localizations"] = BuildLocalizations("Virtual item"),
-							["is-virtual"] = true,
-							["seed-rows"] = new object?[] {
-								new Dictionary<string, object?> {
-									["values"] = new Dictionary<string, object?> { ["Name"] = "Unavailable" }
-								}
-							}
+							["type"] = "seed-data",
+							["schema-name"] = "UsrGenre"
 						},
 						new Dictionary<string, object?> {
 							["type"] = "update-entity",
@@ -531,10 +731,364 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 		JsonElement[] resumeOperations = resumePlan.GetProperty("operations").EnumerateArray().ToArray();
 		resumeOperations.Should().HaveCount(2,
 			because: "the resume plan must carry the failed op followed by every not-run op");
-		resumeOperations[0].GetProperty("type").GetString().Should().Be("create-entity",
-			because: "the failed create-entity must be resubmittable as-is");
+		resumeOperations[0].GetProperty("type").GetString().Should().Be("seed-data",
+			because: "the failed seed-data op only needs its rows corrected, so it must be echoed back as resubmittable");
 		resumeOperations[1].GetProperty("type").GetString().Should().Be("update-entity",
 			because: "the not-run update-entity must be resubmittable as-is");
+	}
+
+	// ---------------------------------------------------------------------------------------------------
+	// issue #1303: field-shape rejection. Before the fix, System.Text.Json silently dropped every JSON field
+	// that did not bind, so a create-lookup carrying its rows under 'seed-data' reported outcome "created"
+	// and seeded nothing. Each test below runs with a deliberately unregistered environment name and asserts
+	// that name never appears in the diagnostic, proving the rejection happens BEFORE environment resolution.
+	// ---------------------------------------------------------------------------------------------------
+
+	[Test]
+	[Description("Rejects a top-level camelCase argument instead of running the whole batch against a null target (issue #1303).")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-schemas rejects an unbindable top-level argument with a rename hint")]
+	[AllureDescription("Starts the real MCP server, sends sync-schemas with camelCase environmentName/packageName, and verifies the batch is refused up front with a rename hint naming the canonical kebab-case fields, applying nothing.")]
+	public async Task SchemaSyncTool_Should_Reject_Unbindable_TopLevel_Argument_With_Rename_Hint() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: false);
+		string invalidEnvironmentName = $"missing-sync-schemas-env-{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environmentName"] = invalidEnvironmentName,
+					["packageName"] = "UsrPkg",
+					["operations"] = new object?[] {
+						new Dictionary<string, object?> {
+							["type"] = "create-lookup",
+							["schema-name"] = "UsrTodoStatus",
+							["title-localizations"] = BuildLocalizations("Todo Status")
+						}
+					}
+				}
+			},
+			context.CancellationTokenSource.Token);
+		JsonElement response = ExtractSchemaSyncResponse(callResult);
+		JsonElement result = response.GetProperty("results").EnumerateArray().Single();
+		string error = result.GetProperty("error").GetString()!;
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "an unbindable argument is a caller-actionable structured failure, not an MCP protocol error");
+		response.GetProperty("success").GetBoolean().Should().BeFalse(
+			because: "a batch whose target fields did not bind must never report success");
+		result.GetProperty("type").GetString().Should().Be("sync-schemas",
+			because: "a top-level argument rejection is attributed to the call itself, not to any single operation");
+		error.Should().Contain("'environmentName' -> 'environment-name'",
+			because: "the caller must be told the exact rename instead of having the field silently dropped");
+		error.Should().Contain("'packageName' -> 'package-name'",
+			because: "every unbound top-level field must be reported, not just the first one");
+		error.Should().Contain("Nothing was applied",
+			because: "the caller must know the batch had no server-side effect before retrying");
+		error.Should().NotContain(invalidEnvironmentName,
+			because: "the field-shape check must run before environment resolution");
+	}
+
+	[Test]
+	[Description("Rejects seed rows sent under the 'seed-data' field name and explains that seed-data is an operation type (issue #1303 A1).")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-schemas rejects rows sent under 'seed-data' with the operation-TYPE note")]
+	[AllureDescription("Starts the real MCP server and submits a create-lookup whose rows are keyed 'seed-data' instead of 'seed-rows'. Verifies the operation is refused with the rename hint plus the note that seed-data is an operation TYPE, instead of reporting a successful create that seeded nothing.")]
+	public async Task SchemaSyncTool_Should_Reject_SeedData_Field_With_OperationType_Note() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: false);
+		string invalidEnvironmentName = $"missing-sync-schemas-env-{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = invalidEnvironmentName,
+					["package-name"] = "UsrPkg",
+					["operations"] = new object?[] {
+						new Dictionary<string, object?> {
+							["type"] = "create-lookup",
+							["schema-name"] = "UsrTodoStatus",
+							["title-localizations"] = BuildLocalizations("Todo Status"),
+							["seed-data"] = new object?[] {
+								new Dictionary<string, object?> {
+									["values"] = new Dictionary<string, object?> { ["Name"] = "Open" }
+								}
+							}
+						}
+					}
+				}
+			},
+			context.CancellationTokenSource.Token);
+		JsonElement response = ExtractSchemaSyncResponse(callResult);
+		JsonElement result = response.GetProperty("results").EnumerateArray().Single();
+		string error = result.GetProperty("error").GetString()!;
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a mis-keyed operation field is a caller-actionable structured failure, not an MCP protocol error");
+		response.GetProperty("success").GetBoolean().Should().BeFalse(
+			because: "the pre-fix defect was exactly this: outcome 'created' while the rows were silently dropped");
+		error.Should().Contain("'seed-data' -> 'seed-rows'",
+			because: "the caller must be told which field name carries rows");
+		error.Should().Contain("operation TYPE",
+			because: "'seed-data' is a legitimate value of 'type', so an unqualified rename hint would read as 'the seed-data operation is gone'");
+		error.Should().Contain("Nothing was applied for this operation",
+			because: "the caller must know the lookup was not created before retrying");
+		error.Should().NotContain(invalidEnvironmentName,
+			because: "the field-shape check must run before environment resolution");
+	}
+
+	[Test]
+	[Description("Rejects an operation that names the schema with 'name' instead of 'schema-name' (issue #1303).")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-schemas rejects the 'name' alias with a rename hint")]
+	[AllureDescription("Starts the real MCP server and submits a create-lookup keyed 'name' instead of 'schema-name'. Verifies the operation is refused with the rename hint rather than binding an empty schema name.")]
+	public async Task SchemaSyncTool_Should_Reject_Name_Alias_With_Rename_Hint() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: false);
+		string invalidEnvironmentName = $"missing-sync-schemas-env-{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = invalidEnvironmentName,
+					["package-name"] = "UsrPkg",
+					["operations"] = new object?[] {
+						new Dictionary<string, object?> {
+							["type"] = "create-lookup",
+							["name"] = "UsrTodoStatus",
+							["title-localizations"] = BuildLocalizations("Todo Status")
+						}
+					}
+				}
+			},
+			context.CancellationTokenSource.Token);
+		JsonElement response = ExtractSchemaSyncResponse(callResult);
+		JsonElement result = response.GetProperty("results").EnumerateArray().Single();
+		string error = result.GetProperty("error").GetString()!;
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a mis-keyed operation field is a caller-actionable structured failure, not an MCP protocol error");
+		response.GetProperty("success").GetBoolean().Should().BeFalse(
+			because: "an operation whose schema name did not bind must never be reported as applied");
+		error.Should().Contain("'name' -> 'schema-name'",
+			because: "the caller must be told the canonical field name for the schema");
+		error.Should().NotContain(invalidEnvironmentName,
+			because: "the field-shape check must run before environment resolution");
+	}
+
+	[Test]
+	[Description("Rejects a genuinely unknown operation field and lists the valid field names (issue #1303).")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-schemas rejects an unknown operation field with a valid-field hint")]
+	[AllureDescription("Starts the real MCP server and submits a create-lookup carrying a field with no canonical counterpart. Verifies the operation is refused, the unknown field is quoted back, and the valid operation field names are listed.")]
+	public async Task SchemaSyncTool_Should_Reject_Unknown_Operation_Field_With_ValidField_Hint() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: false);
+		string invalidEnvironmentName = $"missing-sync-schemas-env-{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = invalidEnvironmentName,
+					["package-name"] = "UsrPkg",
+					["operations"] = new object?[] {
+						new Dictionary<string, object?> {
+							["type"] = "create-lookup",
+							["schema-name"] = "UsrTodoStatus",
+							["title-localizations"] = BuildLocalizations("Todo Status"),
+							["totally-made-up-field"] = "whatever"
+						}
+					}
+				}
+			},
+			context.CancellationTokenSource.Token);
+		JsonElement response = ExtractSchemaSyncResponse(callResult);
+		JsonElement result = response.GetProperty("results").EnumerateArray().Single();
+		string error = result.GetProperty("error").GetString()!;
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "an unknown operation field is a caller-actionable structured failure, not an MCP protocol error");
+		response.GetProperty("success").GetBoolean().Should().BeFalse(
+			because: "an operation carrying a field the tool cannot bind must never be reported as applied");
+		error.Should().Contain("Unknown args: 'totally-made-up-field'",
+			because: "the caller must see exactly which field could not be bound");
+		error.Should().Contain("Valid operation fields:",
+			because: "the caller must be able to correct the call without re-reading the whole contract");
+		error.Should().Contain("seed-rows",
+			because: "the valid-field hint must enumerate the real operation field names");
+		error.Should().NotContain(invalidEnvironmentName,
+			because: "the field-shape check must run before environment resolution");
+	}
+
+	[Test]
+	[Description("Rejects an operation with a blank schema-name in MCP terms, never leaking the find-entity-schema CLI switches (issue #1303 C2).")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-schemas rejects a blank schema-name without leaking CLI switch names")]
+	[AllureDescription("Starts the real MCP server and submits an update-entity with an empty schema-name. Verifies the failure names the kebab-case MCP field and does not surface the --search-pattern/--uid CLI message from find-entity-schema.")]
+	public async Task SchemaSyncTool_Should_Reject_Blank_SchemaName_Without_Leaking_Cli_Switches() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: false);
+		string invalidEnvironmentName = $"missing-sync-schemas-env-{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = invalidEnvironmentName,
+					["package-name"] = "UsrPkg",
+					["operations"] = new object?[] {
+						new Dictionary<string, object?> {
+							["type"] = "update-entity",
+							["schema-name"] = "   ",
+							["update-operations"] = new object?[] {
+								new Dictionary<string, object?> {
+									["action"] = "add",
+									["column-name"] = "UsrPages",
+									["type"] = "Integer"
+								}
+							}
+						}
+					}
+				}
+			},
+			context.CancellationTokenSource.Token);
+		JsonElement response = ExtractSchemaSyncResponse(callResult);
+		JsonElement result = response.GetProperty("results").EnumerateArray().Single();
+		string error = result.GetProperty("error").GetString()!;
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a missing required field is a caller-actionable structured failure, not an MCP protocol error");
+		response.GetProperty("success").GetBoolean().Should().BeFalse(
+			because: "an operation with no schema name cannot be applied");
+		error.Should().Contain("'schema-name' is required",
+			because: "the failure must name the exact kebab-case MCP field the caller has to fill in");
+		error.Should().NotContain("--search-pattern",
+			because: "an MCP caller never used a CLI switch, so find-entity-schema's message must not leak through");
+		error.Should().NotContain("--uid",
+			because: "an MCP caller never used a CLI switch, so find-entity-schema's message must not leak through");
+		error.Should().NotContain(invalidEnvironmentName,
+			because: "the required-field check must run before environment resolution");
+	}
+
+	[Test]
+	[Description("Omits a shape-rejected operation from resume-plan.operations so the caller is not told to replay the payload just rejected (issue #1303).")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-schemas omits a shape-rejected operation from the resume plan")]
+	[AllureDescription("Submits a two-operation batch whose first operation carries an unbindable field. Verifies resume-plan.operations carries ONLY the not-run second operation, that failed-operation still reports index 0, and that the instruction tells the caller to fix the field names first.")]
+	public async Task SchemaSyncTool_Should_Omit_ShapeRejected_Operation_From_ResumePlan() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: false);
+		string invalidEnvironmentName = $"missing-sync-schemas-env-{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = invalidEnvironmentName,
+					["package-name"] = "UsrPkg",
+					["operations"] = new object?[] {
+						// Op 0 is rejected for its FIELD SHAPE before any server call, so it must NOT be
+						// echoed back as resubmittable — the caller has to rename 'seed-data' first.
+						new Dictionary<string, object?> {
+							["type"] = "create-lookup",
+							["schema-name"] = "UsrTodoStatus",
+							["title-localizations"] = BuildLocalizations("Todo Status"),
+							["seed-data"] = new object?[] {
+								new Dictionary<string, object?> {
+									["values"] = new Dictionary<string, object?> { ["Name"] = "Open" }
+								}
+							}
+						},
+						new Dictionary<string, object?> {
+							["type"] = "update-entity",
+							["schema-name"] = "UsrBooks",
+							["update-operations"] = new object?[] {
+								new Dictionary<string, object?> {
+									["action"] = "add",
+									["column-name"] = "UsrPages",
+									["type"] = "Integer"
+								}
+							}
+						}
+					}
+				}
+			},
+			context.CancellationTokenSource.Token);
+		JsonElement response = ExtractSchemaSyncResponse(callResult);
+		JsonElement resumePlan = response.GetProperty("resume-plan");
+		JsonElement[] resumeOperations = resumePlan.GetProperty("operations").EnumerateArray().ToArray();
+
+		// Assert
+		response.GetProperty("success").GetBoolean().Should().BeFalse(
+			because: "the batch aborted on the shape-rejected first operation");
+		resumePlan.GetProperty("failed-operation").GetProperty("operation-index").GetInt32().Should().Be(0,
+			because: "the resume plan must still name the failed operation by its request index even when it is not resubmittable verbatim");
+		resumePlan.GetProperty("not-run-operation-indexes").EnumerateArray().Select(e => e.GetInt32())
+			.Should().Equal([1],
+			because: "the second operation never ran and must be listed as not-run");
+		resumeOperations.Should().HaveCount(1,
+			because: "only the not-run operation is resubmittable as-is; replaying the rejected payload verbatim would fail again");
+		resumeOperations[0].GetProperty("type").GetString().Should().Be("update-entity",
+			because: "the single resume operation must be the not-run update-entity, not the shape-rejected create-lookup");
+		resumePlan.GetProperty("instruction").GetString().Should().Contain("FIELD SHAPE",
+			because: "the instruction must explain why the failed operation is absent from the resubmit list");
+	}
+
+	[Test]
+	[Description("Keeps binding the legacy 'operation' key so the field-shape rejection does not break callers that spell the operation type the old way (issue #1303 regression guard).")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-schemas still accepts the legacy 'operation' key")]
+	[AllureDescription("Submits an operation that names its type with the legacy 'operation' key instead of 'type'. Verifies the new unknown-field rejection does NOT fire: the operation is consumed and fails later for an environment reason, not for its field shape.")]
+	public async Task SchemaSyncTool_Should_Still_Bind_Legacy_Operation_Key() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: false);
+		string invalidEnvironmentName = $"missing-sync-schemas-env-{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = invalidEnvironmentName,
+					["package-name"] = "UsrPkg",
+					["operations"] = new object?[] {
+						new Dictionary<string, object?> {
+							["operation"] = "create-lookup",
+							["schema-name"] = "UsrTodoStatus",
+							["title-localizations"] = BuildLocalizations("Todo Status")
+						}
+					}
+				}
+			},
+			context.CancellationTokenSource.Token);
+		JsonElement response = ExtractSchemaSyncResponse(callResult);
+		JsonElement result = response.GetProperty("results").EnumerateArray().Single();
+		string error = result.GetProperty("error").GetString() ?? string.Empty;
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "the legacy spelling must still travel through the normal structured MCP result envelope");
+		result.GetProperty("type").GetString().Should().Be("create-lookup",
+			because: "the tool must have READ the legacy 'operation' key to report the type back — this is the positive binding proof, not merely the absence of a rejection");
+		error.Should().NotContain("Unknown args: 'operation'",
+			because: "'operation' is consumed by the tool itself as the legacy spelling of 'type' and must never be reported as unbindable");
+		error.Should().NotContain("Valid operation fields:",
+			because: "the field-shape rejection must not fire for an operation the tool can still read");
 	}
 
 	[Test]
@@ -731,33 +1285,13 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 
 	private static async Task<string> ResolveReachableEnvironmentAsync(
 		McpE2ESettings settings,
-		CancellationToken cancellationToken) {
-		string? configuredEnvironmentName = settings.Sandbox.EnvironmentName;
-		if (!string.IsNullOrWhiteSpace(configuredEnvironmentName) &&
-			await CanReachEnvironmentAsync(settings, configuredEnvironmentName, cancellationToken)) {
-			return configuredEnvironmentName;
-		}
-
-		const string fallbackEnvironmentName = "d2";
-		if (await CanReachEnvironmentAsync(settings, fallbackEnvironmentName, cancellationToken)) {
-			return fallbackEnvironmentName;
-		}
-
-		Assert.Ignore(
-			$"sync-schemas MCP E2E requires a reachable environment. Configured sandbox environment '{configuredEnvironmentName}' was not reachable, and fallback environment '{fallbackEnvironmentName}' was also unavailable.");
-		return string.Empty;
-	}
-
-	private static async Task<bool> CanReachEnvironmentAsync(
-		McpE2ESettings settings,
-		string environmentName,
-		CancellationToken cancellationToken) {
-		ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(
+		CancellationToken cancellationToken) =>
+		// Destructive fixture: configured-only. The AllowDestructiveMcpTests opt-in authorizes writes to
+		// the disposable stand named in settings, never to a fallback environment that merely answers.
+		await ReachableSandboxEnvironment.ResolveConfiguredOrIgnoreAsync(
 			settings,
-			["ping-app", "-e", environmentName, "--timeout", "30000"],
-			cancellationToken: cancellationToken);
-		return result.ExitCode == 0;
-	}
+			$"sync-schemas MCP E2E requires the configured sandbox environment '{settings.Sandbox.EnvironmentName}' to be set and reachable.");
+
 
 	private static async Task CreateEmptyWorkspaceAsync(
 		McpE2ESettings settings,
@@ -801,6 +1335,67 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 			cancellationToken: cancellationToken);
 	}
 
+	/// <summary>
+	/// Runs the fixture's composite sync-schemas batch (create-entity, create-lookup with seed rows,
+	/// update-entity) once, with a progress sink attached, and hands the same result and progress stream to
+	/// every test that asserts on it.
+	/// </summary>
+	/// <remarks>
+	/// The per-operation progress markers and the per-operation message alignment are two properties of one
+	/// and the same batch, but each was verified by its own run against the stand — about 100s together on a
+	/// slow agent. Attaching the sink to the composite call costs nothing and lets the marker test read the
+	/// stream the message test already produced. The marker test keeps its own expectations: the composite
+	/// batch's first two operations are still create-entity and create-lookup, in that order.
+	/// </remarks>
+	private async Task<SharedCompositeBatch> GetOrRunCompositeBatchAsync(ArrangeContext context) {
+		if (_sharedCompositeBatch is not null) {
+			return _sharedCompositeBatch;
+		}
+		MessageCollectingProgress progress = new();
+		CallToolResult callResult = await CallSchemaSyncAsync(
+			context.Session,
+			context.EnvironmentName!,
+			context.PackageName!,
+			context.EntitySchemaName!,
+			context.LookupSchemaName!,
+			context.LookupColumnName,
+			context.CancellationTokenSource.Token,
+			progress);
+		// Waited for, not snapshotted. Progress delivery and call completion are independent SDK
+		// continuations, so a marker can land microseconds after the result — and the collector of this
+		// batch is the message-alignment test, which does not read progress at all. Freezing the list the
+		// instant the call returned would drop a late "2/4 create-lookup" permanently and fail the marker
+		// test with no regression behind it. An elapsed wait is not an error here: the condition is
+		// re-checked by the caller's own assertions, which report the real gap.
+		try {
+			await progress.WaitForMessagesAsync(
+				messages => messages.Any(m => m.Contains("1/", StringComparison.Ordinal))
+					&& messages.Any(m => m.Contains("2/", StringComparison.Ordinal)),
+				TimeSpan.FromSeconds(10),
+				context.CancellationTokenSource.Token);
+		} catch (OperationCanceledException) {
+		}
+		_sharedCompositeBatch = new SharedCompositeBatch(
+			callResult,
+			[.. progress.Messages],
+			context.EnvironmentName!,
+			context.PackageName!,
+			context.EntitySchemaName!,
+			context.LookupSchemaName!);
+		return _sharedCompositeBatch;
+	}
+
+	private SharedCompositeBatch? _sharedCompositeBatch;
+
+	/// <summary>One run of the fixture's composite sync-schemas batch, shared by the tests that assert on it.</summary>
+	private sealed record SharedCompositeBatch(
+		CallToolResult CallResult,
+		IReadOnlyList<string> ProgressMessages,
+		string EnvironmentName,
+		string PackageName,
+		string EntitySchemaName,
+		string LookupSchemaName);
+
 	private static async Task<CallToolResult> CallSchemaSyncAsync(
 		McpServerSession session,
 		string environmentName,
@@ -808,7 +1403,10 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 		string entitySchemaName,
 		string lookupSchemaName,
 		string lookupColumnName,
-		CancellationToken cancellationToken) {
+		CancellationToken cancellationToken,
+		// Required and non-nullable: the 4-arg CallToolAsync overload below takes a non-nullable progress,
+		// so an optional null default would let null flow into it from any future caller.
+		IProgress<ProgressNotificationValue> progress) {
 		IReadOnlyCollection<string> reachableToolNames = await session.ListReachableToolNamesAsync(cancellationToken);
 		reachableToolNames.Should().Contain(ToolName,
 			because: "sync-schemas must be discoverable via the get-tool-contract compact index before the end-to-end call can be executed");
@@ -866,6 +1464,7 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 					}
 				}
 			},
+			progress,
 			cancellationToken);
 	}
 
@@ -975,7 +1574,9 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 			return contentPayload;
 		}
 
-		throw new InvalidOperationException("Could not parse SchemaSyncResponse MCP result.");
+		throw new InvalidOperationException(
+			"Could not parse SchemaSyncResponse MCP result: "
+			+ McpResultDiagnostics.Describe(callResult));
 	}
 
 	private static bool TryExtractSchemaSyncResponse(object? value, out JsonElement payload) {
@@ -1644,8 +2245,14 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 				}
 			}
 		};
-		CallToolResult firstResult = await context.Session.CallToolAsync(
-			ToolName, batchArgs, context.CancellationTokenSource.Token);
+		// This first call is arrange, not the subject: the test is about what the REPLAY reports. An
+		// OData rebuild left running by an earlier test on the shared stand would fail it here for a
+		// reason that has nothing to do with replay semantics, so it goes through the retry gate. The
+		// batch is convergent by construction (no seed-rows), which is exactly what makes a repeat safe.
+		CallToolResult firstResult = await TransientPlatformConditionRetryGate.InvokeWithRetryAsync(
+			async attemptToken => await context.Session.CallToolAsync(ToolName, batchArgs, attemptToken),
+			reauthenticateAsync: null,
+			context.CancellationTokenSource.Token);
 		ExtractSchemaSyncResponse(firstResult).GetProperty("success").GetBoolean().Should().BeTrue(
 			because: "the initial convergent batch must apply before the identical replay");
 		EntitySchemaPropertiesInfo afterFirst = await GetSchemaPropertiesAsync(

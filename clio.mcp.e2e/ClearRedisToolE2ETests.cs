@@ -29,7 +29,7 @@ namespace Clio.Mcp.E2E;
 [TestFixture]
 [AllureNUnit]
 [AllureFeature("clear-redis-db")]
-public sealed class ClearRedisToolE2ETests {
+public sealed class ClearRedisToolE2ETests : McpContractFixtureBase {
 	private const string EnvironmentToolName = ClearRedisTool.ClearRedisByEnvironmentName;
 	private const string CredentialsToolName = ClearRedisTool.ClearRedisByCredentialsToolName;
 
@@ -98,7 +98,7 @@ public sealed class ClearRedisToolE2ETests {
 				RedisConnectionString: string.Empty,
 				DatabaseConnectionString: string.Empty);
 			CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
-			McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+			McpServerSession session = Session;
 			return new ClearRedisArrangeContext(sandboxContext, session, cancellationTokenSource);
 		});
 	}
@@ -199,9 +199,9 @@ public sealed class ClearRedisToolE2ETests {
 		SandboxEnvironmentContext SandboxContext,
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
+		public ValueTask DisposeAsync() {
 			CancellationTokenSource.Dispose();
+			return ValueTask.CompletedTask;
 		}
 	}
 

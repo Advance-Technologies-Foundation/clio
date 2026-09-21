@@ -78,6 +78,7 @@ build-theme:build-theme
 get-record-rights:get-record-rights
 set-record-rights:set-record-rights
 list-themes:list-themes,get-themes
+get-theme:get-theme
 create-theme:create-theme
 update-theme:update-theme
 delete-theme:delete-theme
@@ -118,6 +119,7 @@ info:info,get-version,i,ver
 install-application:install-application,install-app,push-app
 install-dbhub:install-dbhub
 install-gate:install-gate,gate,installgate,update-gate
+install-dashboards-migrator:install-dashboards-migrator,idm,installdashboardsmigrator,udm,update-dashboards-migrator
 install-process-builder:install-process-builder,installprocessbuilder,update-process-builder
 install-nuget-pkg:install-nuget-pkg,installng
 install-toolkit:install-toolkit
@@ -156,6 +158,7 @@ open-settings:open-settings,conf,configuration,os,settings
 open-web-app:open-web-app,open
 pack-nuget-pkg:pack-nuget-pkg,pack
 get-page:get-page,page-get
+get-process-page-facts:get-process-page-facts,page-facts
 get-page-hierarchy:get-page-hierarchy,page-hierarchy-get
 list-app-sections:list-app-sections
 list-entity-client-schemas:list-entity-client-schemas,migration-unit-resolve
@@ -196,6 +199,7 @@ set-file-content-storage-connection-string:set-file-content-storage-connection-s
 set-fsm-config:set-fsm-config,fsmc,sfsmc
 set-pkg-version:set-pkg-version,spv
 set-syssetting:set-syssetting,get-syssetting,ss,sys-setting,syssetting
+download-sys-setting-file:download-sys-setting-file
 set-webservice-url:set-webservice-url,swu,webservice
 show-diff:show-diff,compare,diff
 show-local-envs:show-local-envs,localenvs
@@ -209,6 +213,7 @@ turn-farm-mode:turn-farm-mode,farm-mode,tfm
 turn-fsm:turn-fsm,fsm,tfsm
 uninstall-app-remote:uninstall-app-remote,uninstall
 uninstall-creatio:uninstall-creatio,uc
+uninstall-identity:uninstall-identity
 unlock-package:unlock-package,up
 unreg-web-app:unreg-web-app,unreg
 unregister:unregister
@@ -228,3 +233,12 @@ get-identity-public-jwk:get-identity-public-jwk,identity-public-jwk
 regenerate-identity-signing-key:regenerate-identity-signing-key,identity-regenerate-key
 check-auth-code-flow:check-auth-code-flow,auth-code-flow
 register-sso-provider:register-sso-provider,sso-register-provider
+manage-user:manage-user
+manage-role:manage-role
+manage-access:manage-access
+manage-license:manage-license
+enroll-sequence-participants:enroll-sequence-participants
+get-sequence-context:get-sequence-context
+execute-dataservice-batch:execute-dataservice-batch
+create-user-task-page:create-user-task-page
+register-process-element:register-process-element

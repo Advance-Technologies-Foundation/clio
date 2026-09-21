@@ -52,10 +52,26 @@ public sealed class ManagerMapResolveDataIdTests {
 	[TestCase("userTask", ManagerMap.EventType.UserTask)]
 	[TestCase("emailTemplateUserTask", ManagerMap.EventType.UserTask)]
 	[TestCase("sendEmail", ManagerMap.EventType.UserTask)]
+	[TestCase("approvalUserTask", ManagerMap.EventType.UserTask)]
+	[TestCase("approval", ManagerMap.EventType.UserTask)]
+	[TestCase("openEditPageUserTask", ManagerMap.EventType.UserTask)]
+	// The dedicated build token, which does NOT end with the "usertask" suffix the fallback arm matches on — so a
+	// missing explicit entry would resolve a VALID graph to Unknown and validate-process-graph would reject it.
+	[TestCase("openEditPage", ManagerMap.EventType.UserTask)]
 	[TestCase("formulaTask", ManagerMap.EventType.FormulaTask)]
 	[TestCase("scriptTask", ManagerMap.EventType.ScriptTask)]
 	[TestCase("webService", ManagerMap.EventType.WebServiceTask)]
 	[TestCase("callActivity", ManagerMap.EventType.SubProcess)]
+	// The BUILD token for the same element, and the same trap as openEditPage above: "subprocess" does not end in
+	// the "usertask" suffix, so without an explicit arm a graph carrying an element create-business-process builds
+	// correctly resolves to Unknown and validate-process-graph reports a hard Error on it.
+	[TestCase("subProcess", ManagerMap.EventType.SubProcess)]
+	[TestCase("subprocess", ManagerMap.EventType.SubProcess)]
+	// The Pre-configured page build token, for the same reason: its data-id PreconfiguredPageUserTask resolves
+	// through the suffix arm while the token itself did not, so a graph containing an element the server
+	// builds happily was reported as UNKNOWN by validate-process-graph.
+	[TestCase("preconfiguredpage", ManagerMap.EventType.UserTask)]
+	[TestCase("preconfiguredPage", ManagerMap.EventType.UserTask)]
 	[TestCase("eventSubProcessExpanded", ManagerMap.EventType.EventSubProcess)]
 	public void ResolveDataId_ShouldReturnActivityEventType_WhenActivityDataId(string dataId, ManagerMap.EventType expected) {
 		// Act
@@ -126,6 +142,10 @@ public sealed class ManagerMapResolveDataIdTests {
 		[TestCase("StartEvent", ManagerMap.EventType.StartEvent)]         // case-insensitive vs the canvas data-id
 	[TestCase("ENDEVENT", ManagerMap.EventType.EndEvent)]             // case-insensitive
 	[TestCase("ReadDataUserTask", ManagerMap.EventType.UserTask)]     // *UserTask suffix, mixed case
+	[TestCase("readData", ManagerMap.EventType.UserTask)]            // build token: the data-id ends in UserTask, the token does not
+	[TestCase("changeData", ManagerMap.EventType.UserTask)]          // build token for the Modify data element
+	[TestCase("changeAccessRights", ManagerMap.EventType.UserTask)]  // build token for Change access rights (ENG-92717)
+	[TestCase("changeaccessrights", ManagerMap.EventType.UserTask)]  // lowercase build/describe spelling
 	public void ResolveDataId_ShouldAcceptBuildAndDescribeTokensCaseInsensitively_WhenVocabularyOrCaseDrifts(
 			string token, ManagerMap.EventType expected) {
 		// Act

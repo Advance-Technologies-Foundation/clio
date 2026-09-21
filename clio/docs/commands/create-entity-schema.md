@@ -17,11 +17,14 @@ The command saves the schema, applies the DB structure, and publishes the
 configuration, so the new schema is immediately visible to lookup pickers and
 sys-setting reference schema lists. No separate compile is required.
 
-When `--parent` is omitted the schema inherits `BaseEntity` by default. A parentless
+When `--parent` is omitted a non-replacement schema inherits `BaseEntity`. A parentless
 root schema gets a prefixed primary column (e.g. `UsrId` instead of `Id`) and is not
 reachable over OData in either direction, so `BaseEntity` is applied automatically to
 keep the entity usable. Pass `--parent` explicitly to inherit from a different schema;
-`--extend-parent` still requires an explicit `--parent`.
+with `--extend-parent`, the parent defaults to `--name`. An explicit replacement
+parent must match the schema name. The base schema may exist in another package,
+but an existing replacement in the target package is rejected. Use MCP
+`sync-schemas` to create or reconcile a replacement and its columns.
 
 Set `--is-virtual` when the schema must not have a physical database table.
 The option defaults to `false`, so existing calls continue to create persistent entities.
@@ -51,15 +54,17 @@ Schema name. Required.
 --title <VALUE>
 Schema title. Required.
 --parent <VALUE>
-Parent schema name. Defaults to `BaseEntity` when omitted (not applied with `--extend-parent`).
+Parent schema name. Defaults to the schema name for replacements, or `BaseEntity` otherwise.
 --extend-parent
-Create replacement schema
+Create a same-name replacement schema in the target package.
 --is-virtual
 Create a virtual entity schema without a physical database table. Default: false.
+--is-db-view <true|false>
+Set or clear the database-view flag; omission preserves inherited metadata. SQL views are provisioned separately.
 --column <VALUE>
 Column spec <name>:<type>[:<title>[:<refSchema>]] or JSON with
 name/type/title/reference-schema-name/required/default-value-source/default-value/default-value-config.
-Repeat the option for multiple columns.
+Repeat the option for multiple columns, pass multiple values after one option, or pass a non-empty JSON array of column objects. JSON punctuation is preserved. Invalid array entries fail before the schema is saved.
 Supported types include Guid, Text/ShortText/MediumText/LongText/MaxSizeText, Integer, Float,
 Boolean, Date/DateTime/Time, Lookup, Binary, Image, ImageLookup, File, SecureText, Email, and Color.
 `Color` stores a hex color string (e.g. `#RRGGBB`) and is not a text column — the text-only options
@@ -149,3 +154,22 @@ cliogate must be installed on the target Creatio environment.
 - `modify-entity-schema-column`
 
 - [Clio Command Reference](../../Commands.md#create-entity-schema)
+
+### Multiple columns (PowerShell or Bash)
+
+```shell
+clio create-entity-schema -e dev --package Custom --name UsrVehicle --title Vehicle --column 'Notes:Text' --column 'Amount:Integer'
+clio create-entity-schema -e dev --package Custom --name UsrInvoice --title Invoice --column '[{"name":"Notes","type":"Text"},{"name":"Amount","type":"Integer","required":true}]'
+```
+
+## Database views
+
+Use `--is-db-view true` to map an entity to a database view, or `--is-db-view false`
+to clear that flag. Omission preserves inherited/current metadata. Creatio skips table
+generation for DB-view entities. Provision the SQL view separately (for example with a
+package SQL script); this option neither creates a SQL view nor converts or drops an
+existing table. `is-virtual` is independent and is not changed.
+
+An explicit `--is-db-view` requires designer readback. If the designer returns HTML,
+creation reports an error even though the schema may already be saved. Inspect it
+with `get-entity-schema-properties` before retrying creation.

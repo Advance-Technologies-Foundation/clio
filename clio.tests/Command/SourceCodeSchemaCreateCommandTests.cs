@@ -41,6 +41,27 @@ public sealed class SourceCodeSchemaCreateCommandTests {
 			Substitute.For<Clio.Command.EntitySchemaDesigner.ICaptionCultureResolver>());
 	}
 
+	[TestCase(null, null, "schema-name is required; package-name is required")]
+	[TestCase(" ", "\t", "schema-name is required; package-name is required")]
+	[TestCase("1BadName", null, "schema-name must start with a letter and contain only letters, digits, or underscores; package-name is required")]
+	[TestCase(null, "Custom", "schema-name is required")]
+	[TestCase("UsrValid", null, "package-name is required")]
+	[Description("Collects independent create-schema name failures without making remote calls, preserving individual error wording.")]
+	public void TryCreate_ShouldReportAllInputErrors_WhenNamesAreInvalid(string schemaName, string packageName, string expected) {
+		// Arrange
+		var options = new SourceCodeSchemaCreateOptions { SchemaName = schemaName, PackageName = packageName };
+		_applicationClient.ClearReceivedCalls();
+
+		// Act
+		bool result = _command.TryCreate(options, out SourceCodeSchemaCreateResponse response);
+
+		// Assert
+		result.Should().BeFalse(because: "invalid inputs cannot create a schema");
+		response.Success.Should().BeFalse(because: "the response must retain its failure envelope");
+		response.Error.Should().Be(expected, because: "all independent input failures belong in the same response");
+		_applicationClient.ReceivedCalls().Should().BeEmpty(because: "validation must finish before contacting Creatio");
+	}
+
 	[Test]
 	public void TryCreate_Rejects_Missing_Schema_Name() {
 		var options = new SourceCodeSchemaCreateOptions { PackageName = "Custom" };
@@ -214,5 +235,28 @@ public sealed class SourceCodeSchemaCreateCommandTests {
 
 		_applicationClient.Received(1).ExecutePostRequest(SaveSchemaUrl,
 			Arg.Is<string>(s => s.Contains("Helper utilities")));
+	}
+
+	[Test]
+	[Description("An unanswerable duplicate-name check aborts create-schema instead of proceeding, so an empty SelectQuery body is never read as 'the schema does not exist'.")]
+	public void TryCreate_ShouldAbort_WhenDuplicateCheckCannotBeAnswered() {
+		// Arrange
+		var selectResponses = new Queue<string>([
+			$$"""{"success": true, "rows": [{"UId": "{{PackageUId}}"}]}""",
+			string.Empty
+		]);
+		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>())
+			.Returns(_ => selectResponses.Dequeue());
+		var options = new SourceCodeSchemaCreateOptions { SchemaName = "UsrMyHelper", PackageName = "Custom" };
+
+		// Act
+		bool result = _command.TryCreate(options, out SourceCodeSchemaCreateResponse response);
+
+		// Assert
+		result.Should().BeFalse("an unanswerable duplicate check is a failure, not a licence to create");
+		response.Error.Should().Contain("Could not check whether schema",
+				"the caller must be told the check failed rather than that the schema is absent")
+			.And.Contain("SelectQuery", "the caller must learn which request could not be answered");
+		_applicationClient.Received(0).ExecutePostRequest(CreateNewSchemaUrl, Arg.Any<string>());
 	}
 }

@@ -7,7 +7,7 @@ namespace Clio.Command.McpServer.Tools;
 
 /// <summary>
 /// Deterministic JavaScript syntax check applied to a Freedom UI page body before
-/// it reaches <see cref="PageBodySamplingService"/> and before it is persisted.
+/// it is persisted.
 ///
 /// Background (ENG-89796): the LLM-based semantic review covers cross-section
 /// references but does NOT check syntax. A real production incident wrote a body
@@ -31,8 +31,8 @@ internal static class PageBodySyntaxValidator {
 
 	// Acornima.Parser instances are documented as not thread-safe. Validate is invoked
 	// from BOTH (a) the McpToolExecutionLock-guarded write section AND (b) the pre-write
-	// MCP handler body that runs OUTSIDE that lock (e.g. PageSyncTool's pre-sampling
-	// syntax pass and PageUpdateTool's pre-ValidateBody check). A static singleton
+	// MCP handler body that runs OUTSIDE that lock (e.g. PageSyncTool's pre-pass
+	// syntax check and PageUpdateTool's pre-ValidateBody check). A static singleton
 	// would race in path (b). A ThreadLocal slot gives every calling thread its own
 	// reusable Parser — zero contention, allocation amortised across calls on the
 	// same thread, and correct under any concurrency the MCP server may introduce.

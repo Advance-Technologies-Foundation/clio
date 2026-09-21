@@ -255,11 +255,19 @@ public sealed class PageMetadataInfo {
 	public string SchemaUId { get; init; }
 
 	/// <summary>
-	/// Gets or sets the owning package name.
+	/// Gets or sets the current hierarchy leaf's package name, which may identify a read-only vendor package.
 	/// </summary>
 	[JsonProperty("packageName")]
 	[JsonPropertyName("packageName")]
 	public string PackageName { get; init; }
+
+	/// <summary>
+	/// Gets the current hierarchy leaf's package name. Explicit alias of <see cref="PackageName"/>;
+	/// it identifies the read source, not the destination of a subsequent write.
+	/// </summary>
+	[JsonProperty("currentLeafPackageName")]
+	[JsonPropertyName("currentLeafPackageName")]
+	public string CurrentLeafPackageName => PackageName;
 
 	/// <summary>
 	/// Gets or sets the owning package identifier.
@@ -288,8 +296,8 @@ public sealed class PageMetadataInfo {
 
 	/// <summary>
 	/// Gets or sets the design package identifier that subsequent <c>update-page</c> writes
-	/// will target when <c>mode</c> is not explicitly overridden. Equals the value returned by
-	/// <c>ApplicationPackagesService.svc/GetDesignPackageUId</c> for this schema.
+	/// resolve when no target-package override is supplied. Reads can fall back to the leaf if
+	/// design resolution fails; writes resolve the destination independently and fail closed.
 	/// </summary>
 	[JsonProperty("designPackageUId")]
 	[JsonPropertyName("designPackageUId")]
@@ -297,8 +305,8 @@ public sealed class PageMetadataInfo {
 	public string DesignPackageUId { get; init; }
 
 	/// <summary>
-	/// Gets or sets the design package name for <see cref="DesignPackageUId"/>. May be empty
-	/// for virtual packages that have not yet been materialized in the database.
+	/// Gets or sets the stored or virtual design package name for <see cref="DesignPackageUId"/>.
+	/// May be empty when the optional package metadata lookup is unavailable.
 	/// </summary>
 	[JsonProperty("designPackageName")]
 	[JsonPropertyName("designPackageName")]
@@ -306,10 +314,8 @@ public sealed class PageMetadataInfo {
 	public string DesignPackageName { get; init; }
 
 	/// <summary>
-	/// When <c>true</c>, <see cref="DesignPackageUId"/> differs from <see cref="PackageUId"/>
-	/// which means a subsequent write will materialize a NEW replacing schema in the design
-	/// package. Callers should warn the user because the edit may land in a different app than
-	/// the one currently shown at runtime when multiple apps replace the same platform page.
+	/// Gets whether a subsequent default write needs to create a replacing schema in the design
+	/// package. The package itself may already exist or may be virtual until that first save.
 	/// </summary>
 	[JsonProperty("willCreateReplacingInDesignPackage")]
 	[JsonPropertyName("willCreateReplacingInDesignPackage")]
@@ -334,6 +340,18 @@ public sealed class PageMetadataInfo {
 	[JsonPropertyName("schema-type")]
 	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
 	public string SchemaType { get; init; }
+
+	/// <summary>
+	/// Gets or sets the RAW numeric <c>ClientUnitSchemaType</c> the hierarchy service reported, before the
+	/// web/mobile/unknown collapse — null when the service omitted it. The label above folds "present but neither
+	/// web nor mobile" (a Classic page, a module) and "absent" into one <c>unknown</c>, and a consumer that must
+	/// tell those apart (the process-page-facts guard) needs the difference: a PRESENT non-web value is a positive
+	/// identification, an absent one is not.
+	/// </summary>
+	[JsonProperty("schema-type-value", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("schema-type-value")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+	public int? SchemaTypeValue { get; init; }
 }
 
 /// <summary>
@@ -703,24 +721,166 @@ public sealed class PageParameterInfo {
 }
 
 /// <summary>
-/// Represents the result of an AI semantic review performed before saving a page body.
+/// What an append merge would do — or did — to a page's <c>viewConfigDiff</c> array.
 /// </summary>
-public sealed class PageSamplingReview {
+/// <remarks>
+/// Exists so <c>--dry-run</c> can answer "what will this write change?" before the write happens
+/// (GitHub #1150: the dry run reported <c>success</c> and named nothing). Produced as a by-product of
+/// the one real merge in <c>PageBodyMerger</c>, never by a second predictor that could drift from the
+/// merge's identity rules.
+/// <para>
+/// THREE distinct loss channels, because the fix differs for each: <see cref="DroppedOperations"/>
+/// (the server body's), <see cref="CollapsedIncomingOperations"/> (the caller's own fragment), and
+/// <see cref="ViewConfigDiffApplied"/> (the merged array never reaches the body at all). Do not read
+/// any one of them as the whole story — an earlier version of this type claimed the dropped set was
+/// the only way an append loses an operation, and that was false.
+/// </para>
+/// <para>
+/// Scoped to <c>viewConfigDiff</c> deliberately: it is the only section merged by operation identity,
+/// and the only one this projection speaks for. The sibling <c>*_DIFF</c> arrays append
+/// unconditionally, so they cannot lose a current entry. Handlers are a different case and NOT covered
+/// — say so rather than implying otherwise: converters key on property name and replace, but
+/// <c>MergeHandlersRaw</c> drops EVERY current handler whose <c>request</c> appears in the fragment, so
+/// a current body carrying that request twice keeps neither and the fragment contributes one. That is
+/// the same shape of quiet loss this projection exists to report, in a section it does not read.
+/// Widening it means giving the raw handler-text merge a structured identity first; until then,
+/// reporting zeros for handlers would read as coverage.
+/// </para>
+/// </remarks>
+[DataContract]
+public sealed class PageAppendProjection {
 
-	[JsonPropertyName("ok")]
-	public bool Ok { get; init; }
+	/// <summary>
+	/// Gets the number of <c>viewConfigDiff</c> operations in the schema's current body.
+	/// </summary>
+	[DataMember(Name = "currentOperationCount")]
+	[JsonProperty("currentOperationCount")]
+	[JsonPropertyName("currentOperationCount")]
+	public int CurrentOperationCount { get; init; }
 
-	[JsonPropertyName("issues")]
+	/// <summary>
+	/// Gets the number of <c>viewConfigDiff</c> operations in the incoming fragment.
+	/// </summary>
+	[DataMember(Name = "incomingOperationCount")]
+	[JsonProperty("incomingOperationCount")]
+	[JsonPropertyName("incomingOperationCount")]
+	public int IncomingOperationCount { get; init; }
+
+	/// <summary>
+	/// Gets the number of <c>viewConfigDiff</c> operations the merged body carries. NOT necessarily
+	/// current + incoming: an incoming entry that replaces a current one adds nothing to the total, a
+	/// dropped or collapsed entry subtracts from it, and an entry with no usable identity is carried
+	/// without being counted as added. This is the number to compare against the one you expect.
+	/// </summary>
+	[DataMember(Name = "projectedOperationCount")]
+	[JsonProperty("projectedOperationCount")]
+	[JsonPropertyName("projectedOperationCount")]
+	public int ProjectedOperationCount { get; init; }
+
+	/// <summary>
+	/// Gets the number of incoming operations that add a new identity rather than replace a current one.
+	/// </summary>
+	[DataMember(Name = "addedOperationCount")]
+	[JsonProperty("addedOperationCount")]
+	[JsonPropertyName("addedOperationCount")]
+	public int AddedOperationCount { get; init; }
+
+	/// <summary>
+	/// Gets the current operations the incoming fragment replaces in place, as <c>verb name</c> labels.
+	/// NOT a loss — the operation survives carrying the caller's values instead of the server's. Capped
+	/// in length; <see cref="ReplacedOperationCount"/> is exact.
+	/// </summary>
+	[DataMember(Name = "replacedOperations")]
+	[JsonProperty("replacedOperations", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("replacedOperations")]
 	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public IReadOnlyList<string> Issues { get; init; }
+	public IReadOnlyList<string> ReplacedOperations { get; init; }
 
-	[JsonPropertyName("warnings")]
+	/// <summary>
+	/// Gets the exact number of replaced operations, which may exceed <see cref="ReplacedOperations"/>.
+	/// </summary>
+	[DataMember(Name = "replacedOperationCount")]
+	[JsonProperty("replacedOperationCount")]
+	[JsonPropertyName("replacedOperationCount")]
+	public int ReplacedOperationCount { get; init; }
+
+	/// <summary>
+	/// Gets the CURRENT operations the merge would not carry over: a FURTHER current entry of an identity
+	/// the fragment already superseded, dropped rather than re-applied after the replacement. Empty for
+	/// the overwhelming majority of appends. Capped in length; <see cref="DroppedOperationCount"/> is
+	/// exact, and <see cref="SupersededDropWarnings"/> carries the actionable sentence per identity.
+	/// </summary>
+	[DataMember(Name = "droppedOperations")]
+	[JsonProperty("droppedOperations", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("droppedOperations")]
 	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public IReadOnlyList<string> Warnings { get; init; }
+	public IReadOnlyList<string> DroppedOperations { get; init; }
 
-	[JsonPropertyName("skipped")]
-	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
-	public bool Skipped { get; init; }
+	/// <summary>
+	/// Gets the exact number of dropped operations, which may exceed <see cref="DroppedOperations"/>.
+	/// </summary>
+	[DataMember(Name = "droppedOperationCount")]
+	[JsonProperty("droppedOperationCount")]
+	[JsonPropertyName("droppedOperationCount")]
+	public int DroppedOperationCount { get; init; }
+
+	/// <summary>
+	/// Gets the INCOMING operations the fragment supersedes with a later entry of the same identity, so
+	/// the earlier one never reaches the merged body. Capped in length;
+	/// <see cref="CollapsedIncomingOperationCount"/> is exact.
+	/// </summary>
+	/// <remarks>
+	/// The caller-side mirror of <see cref="DroppedOperations"/>, and the one people are most likely to
+	/// hit: these are the CALLER'S OWN operations, lost to their own fragment carrying one identity
+	/// twice. Reported here but deliberately NOT warned about — the fragment is the caller's own and they
+	/// can read it, so a warning would be noise. It is counted because without it the totals above cannot
+	/// be reconciled and a real loss stays invisible (GitHub #1150).
+	/// </remarks>
+	[DataMember(Name = "collapsedIncomingOperations")]
+	[JsonProperty("collapsedIncomingOperations", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("collapsedIncomingOperations")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<string> CollapsedIncomingOperations { get; init; }
+
+	/// <summary>
+	/// Gets the exact number of collapsed incoming operations, which may exceed
+	/// <see cref="CollapsedIncomingOperations"/>.
+	/// </summary>
+	[DataMember(Name = "collapsedIncomingOperationCount")]
+	[JsonProperty("collapsedIncomingOperationCount")]
+	[JsonPropertyName("collapsedIncomingOperationCount")]
+	public int CollapsedIncomingOperationCount { get; init; }
+
+	/// <summary>
+	/// Gets a value indicating whether the merged <c>viewConfigDiff</c> array actually reaches the body
+	/// that would be written. <c>false</c> means EVERY count above describes an array the write discards.
+	/// </summary>
+	/// <remarks>
+	/// Only a web body can be <c>false</c> here, and only when it carries no
+	/// <c>SCHEMA_VIEW_CONFIG_DIFF</c> marker pair for the merge to write back into: the write is a
+	/// single-match regex replace over a marker PAIR, and with no pair it returns the body untouched.
+	/// Nothing upstream rejects such a body — marker-integrity validation is skipped in append mode and
+	/// only ever inspected the incoming fragment.
+	/// </remarks>
+	[DataMember(Name = "viewConfigDiffApplied")]
+	[JsonProperty("viewConfigDiffApplied")]
+	[JsonPropertyName("viewConfigDiffApplied")]
+	public bool ViewConfigDiffApplied { get; init; }
+
+	/// <summary>
+	/// Gets one ready-made, actionable sentence per IDENTITY whose further current entries were dropped
+	/// (GH-1132 AC4). One per identity, not per entry: three carried occurrences would otherwise emit two
+	/// byte-identical sentences, and <c>CombineWarnings</c> does not dedupe.
+	/// </summary>
+	/// <remarks>
+	/// Deliberately NOT serialized. These are the sentences the command copies into the response's
+	/// top-level <c>warnings</c>; emitting them inside <c>appendProjection</c> as well would report the
+	/// same loss twice in one response. The structured, machine-readable view of the same facts is
+	/// <see cref="DroppedOperations"/> and <see cref="DroppedOperationCount"/>.
+	/// </remarks>
+	[Newtonsoft.Json.JsonIgnore]
+	[System.Text.Json.Serialization.JsonIgnore]
+	public IReadOnlyList<string> SupersededDropWarnings { get; init; }
 }
 
 /// <summary>
@@ -728,6 +888,31 @@ public sealed class PageSamplingReview {
 /// </summary>
 [DataContract]
 public sealed class PageUpdateResponse {
+
+	/// <summary>
+	/// Marks a FAILED response as the outcome of a dry run, so it stays distinguishable from a failed real
+	/// save. A no-op on success and on a real save.
+	/// </summary>
+	/// <remarks>
+	/// Lives on the response rather than in either caller because there are TWO entry points with their own
+	/// failure exits - <c>PageUpdateCommand.TryUpdatePage</c> for the CLI, and the MCP <c>update-page</c>
+	/// tool, which returns from its own pre-execution validation (body-file load, empty body, the full-config
+	/// append rejection, JS syntax, content rules, AST lint) BEFORE the command is ever called. Stamping only
+	/// the first left the MCP path returning `dryRun: false` for exactly the failure the tool contract
+	/// promises carries `dryRun: true`, which is the shape a caller uses to decide whether anything was
+	/// written. One helper, called at both exits, is what keeps that promise true on both surfaces.
+	/// </remarks>
+	/// <param name="dryRun">Whether the originating call was a dry run.</param>
+	/// <param name="schemaName">Schema name to fill in when the failure envelope carries none.</param>
+	/// <returns>The same instance, so it can be returned inline.</returns>
+	public PageUpdateResponse MarkDryRunFailure(bool dryRun, string schemaName) {
+		if (Success || !dryRun) {
+			return this;
+		}
+		DryRun = true;
+		SchemaName ??= schemaName;
+		return this;
+	}
 	/// <summary>
 	/// Gets or sets a value indicating whether the request succeeded.
 	/// </summary>
@@ -776,15 +961,22 @@ public sealed class PageUpdateResponse {
 	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
 	public List<string> RegisteredResourceKeys { get; set; }
 
-	[JsonProperty("samplingReview", NullValueHandling = NullValueHandling.Ignore)]
-	[JsonPropertyName("samplingReview")]
-	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
-	public PageSamplingReview SamplingReview { get; set; }
-
 	[JsonProperty("warnings", NullValueHandling = NullValueHandling.Ignore)]
 	[JsonPropertyName("warnings")]
 	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
 	public IReadOnlyList<string> Warnings { get; set; }
+
+	/// <summary>
+	/// Gets or sets what the append merge did to the page's <c>viewConfigDiff</c> array. Populated for
+	/// <c>mode: append</c> whenever a merge actually ran — <c>null</c> for <c>replace</c>, which writes
+	/// the body verbatim, and <c>null</c> when the stored body is empty, because then the fragment is
+	/// written as is and there is no merge to project. On a dry run this is the whole point of the call:
+	/// it reports the outcome before the write (GitHub #1150).
+	/// </summary>
+	[JsonProperty("appendProjection", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("appendProjection")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+	public PageAppendProjection AppendProjection { get; set; }
 
 	/// <summary>
 	/// Gets or sets a value indicating whether this failure came from the SKIPPABLE half of the

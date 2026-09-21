@@ -32,9 +32,12 @@ public sealed class CheckThemingAccessTool(
 		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false),
 	 Description("Check whether the caller can manage custom themes on a registered environment. " +
-		"Requires Creatio " + ThemeServiceRequirement.MinVersion + " or later on the target environment. " +
+		"Runs on ANY Creatio version — it reads only the RightsService/LicenseService endpoints, so it is safe " +
+		"as the first step of the branding flow. Note that the theme WRITE commands (create/update/delete-theme) " +
+		"still require Creatio " + ThemeServiceRequirement.MinVersion + " or later, which this tool reports back " +
+		"as themeServiceMinVersion. " +
 		"Probes the CanManageThemes system operation and the CanCustomizeBranding license. " +
-		"Returns { success, canManageThemes, canCustomizeBranding, error? }. " +
+		"Returns { success, canManageThemes, canCustomizeBranding, themeServiceMinVersion, error? }. " +
 		"Advisory only: run it before the no-code / server theme flow (create/update/delete-theme), " +
 		"but create-theme is the authoritative access test. " +
 		"For the theme workflow, read get-guidance theming first.")]
@@ -103,12 +106,22 @@ public sealed record ThemingAccessResult {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string Error { get; init; }
 
+	/// <summary>
+	/// The minimum Creatio version that ships the native <c>ThemeService</c> the theme WRITE commands need.
+	/// Reported on every success so a caller on an older core learns the floor from the advisory answer
+	/// instead of from a hard refusal on the first call (issue #1303 C5). Omitted on failure.
+	/// </summary>
+	[JsonPropertyName("themeServiceMinVersion")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string ThemeServiceMinVersion { get; init; }
+
 	/// <summary>Creates a success result from the two independent checks.</summary>
 	public static ThemingAccessResult Successful(bool canManageThemes, bool canCustomizeBranding) {
 		return new ThemingAccessResult {
 			Success = true,
 			CanManageThemes = canManageThemes,
-			CanCustomizeBranding = canCustomizeBranding
+			CanCustomizeBranding = canCustomizeBranding,
+			ThemeServiceMinVersion = ThemeServiceRequirement.MinVersion
 		};
 	}
 

@@ -8,6 +8,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command.IdentityServiceDeployment;
+using Clio.Command.OAuthAppConfiguration;
 using Clio.Common;
 using Clio.Common.IIS;
 using Clio.UserEnvironment;
@@ -22,10 +23,25 @@ namespace Clio.Tests.Command.IdentityServiceDeployment;
 [Property("Module", "Command")]
 public sealed class IdentityServiceDeploymentServiceTests
 {
-	[Test]
-	[Description("Deploy uses the persisted registered environment so EnvironmentPath survives option filling and ConnectionStrings.config can be read.")]
+	/// <summary>
+	/// Resolves the temporary directory to its physical path so no ancestor is a filesystem link.
+	/// </summary>
+	/// <remarks>
+	/// On macOS <c>/var</c> is a symlink to <c>/private/var</c>, so every path built under
+	/// <see cref="Path.GetTempPath"/> sits inside a reparse point and
+	/// <c>IdentityServiceDeploymentService.EnsurePathHasNoReparsePoints</c> correctly refuses it.
+	/// The production guard must stay strict, so the fixture supplies an already-resolved root
+	/// (the equivalent of <c>pwd -P</c>) instead.
+	/// </remarks>
+	private static readonly string RealTempPath = ResolveRealPath(Path.GetTempPath());
+
+	[TestCase(true, 200)]
+	[TestCase(true, 401)]
+	[TestCase(true, 403)]
+	[TestCase(false, 0)]
+	[Description("Deploy verifies the newly issued token against the persisted environment before saving OAuth credentials.")]
 	[Platform("Win", Reason = "deploy-identity performs Windows-only IIS deployment (DeploymentStrategyFactory throws PlatformNotSupportedException off-Windows); skipped on non-Windows")]
-	public void Deploy_Should_Use_Persisted_Environment_When_Resolving_Identity_Path_And_Db_Connection()
+	public void Deploy_ShouldPersistCredentialsOnlyWhenVerified_WhenTokenAndCrmChecksComplete(bool tokenAcquired, int crmStatus)
 	{
 		// Arrange
 		string environmentPath = CreateCreatioEnvironmentPath();
@@ -46,6 +62,7 @@ public sealed class IdentityServiceDeploymentServiceTests
 		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
 		settingsRepository.GetActualEnvironmentName("bank").Returns("bank");
 		settingsRepository.FindEnvironment("bank").Returns(persistedEnvironment);
+		settingsRepository.FindCurrentEnvironment("bank").Returns(persistedEnvironment);
 		settingsRepository.GetEnvironment(Arg.Any<DeployIdentityOptions>()).Returns(filledEnvironmentWithoutPath);
 		IIdentityServiceArchiveResolver archiveResolver = Substitute.For<IIdentityServiceArchiveResolver>();
 		archiveResolver.Resolve(Arg.Any<string>(), Arg.Any<string>()).Returns(identityArchivePath);
@@ -64,18 +81,23 @@ public sealed class IdentityServiceDeploymentServiceTests
 		IAvailableIisPortService availableIisPortService = Substitute.For<IAvailableIisPortService>();
 		IIdentityServiceRoleGrantService roleGrantService = Substitute.For<IIdentityServiceRoleGrantService>();
 		IDeploymentTargetReservation targetReservation = CreateTargetReservation();
+		IIdentityServerProbe probe = CreateProbe();
+		probe.AcquireClientCredentialsToken(Arg.Any<string>(), "client-id", "client-secret")
+			.Returns(tokenAcquired ? "test-token" : string.Empty);
+		probe.RunBearerDataServiceSmokeTest(persistedEnvironment, Arg.Any<string>(), "test-token").Returns(crmStatus);
 		IdentityServiceDeploymentService service = new(
 			settingsRepository,
 			archiveResolver,
 			creatioClient,
-			new StubHttpClientFactory(HttpStatusCode.OK),
+			probe,
+			Substitute.For<IServiceUrlBuilder>(),
 			sysSettingsManager,
 			processExecutor,
 			availableIisPortService,
 			roleGrantService,
 			systemUserResolver,
 			targetReservation,
-			Substitute.For<ILogger>());
+			Substitute.For<ILogger>(), Substitute.For<IIdentityServiceLifecycle>());
 		DeployIdentityOptions options = new() {
 			Environment = "bank",
 			ZipFile = identityArchivePath,
@@ -86,11 +108,23 @@ public sealed class IdentityServiceDeploymentServiceTests
 		settingsRepository.ClearReceivedCalls();
 
 		// Act
+		if (!tokenAcquired || crmStatus != 200) {
+			Action act = () => service.Deploy(options);
+
+			// Assert
+			act.Should().Throw<InvalidOperationException>(because: "failed OAuth verification must stop deployment success");
+			settingsRepository.DidNotReceive().ConfigureEnvironment(Arg.Any<string>(), Arg.Any<EnvironmentSettings>());
+			if (!tokenAcquired) {
+				probe.DidNotReceive().RunBearerDataServiceSmokeTest(Arg.Any<EnvironmentSettings>(), Arg.Any<string>(), Arg.Any<string>());
+			}
+			return;
+		}
 		IdentityServiceDeploymentResult result = service.Deploy(options);
 
 		// Assert
 		result.Success.Should().BeTrue(
 			because: "a persisted EnvironmentPath should let deploy-identity read ConnectionStrings.config and complete");
+		probe.Received(1).RunBearerDataServiceSmokeTest(persistedEnvironment, Arg.Any<string>(), "test-token");
 		settingsRepository.DidNotReceive().GetEnvironment(Arg.Any<DeployIdentityOptions>());
 		settingsRepository.Received(1).ConfigureEnvironment(
 			"bank",
@@ -120,6 +154,7 @@ public sealed class IdentityServiceDeploymentServiceTests
 		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
 		settingsRepository.GetActualEnvironmentName("bank").Returns("bank");
 		settingsRepository.FindEnvironment("bank").Returns(persistedEnvironment);
+		settingsRepository.FindCurrentEnvironment("bank").Returns(persistedEnvironment);
 		IIdentityServiceArchiveResolver archiveResolver = Substitute.For<IIdentityServiceArchiveResolver>();
 		archiveResolver.Resolve(discoveredArchivePath, "IdentityService.zip").Returns(identityArchivePath);
 		IIdentityServiceCreatioClient creatioClient = Substitute.For<IIdentityServiceCreatioClient>();
@@ -148,14 +183,15 @@ public sealed class IdentityServiceDeploymentServiceTests
 			settingsRepository,
 			archiveResolver,
 			creatioClient,
-			new StubHttpClientFactory(HttpStatusCode.OK),
+			CreateProbe(),
+			Substitute.For<IServiceUrlBuilder>(),
 			sysSettingsManager,
 			processExecutor,
 			availableIisPortService,
 			roleGrantService,
 			systemUserResolver,
 			CreateTargetReservation(),
-			Substitute.For<ILogger>());
+			Substitute.For<ILogger>(), Substitute.For<IIdentityServiceLifecycle>());
 		DeployIdentityOptions options = new() {
 			Environment = "bank",
 			IdentityPath = CreateIdentityTargetPath(),
@@ -415,7 +451,7 @@ public sealed class IdentityServiceDeploymentServiceTests
 	public void ExtractIdentityService_Should_Preserve_Recognized_Target_When_Staging_Fails()
 	{
 		// Arrange
-		string archivePath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.zip");
+		string archivePath = Path.Combine(RealTempPath, $"{Guid.NewGuid():N}.zip");
 		using (ZipArchive archive = ZipFile.Open(archivePath, ZipArchiveMode.Create)) {
 			archive.CreateEntry("conflict");
 			archive.CreateEntry("conflict/file.txt");
@@ -443,7 +479,7 @@ public sealed class IdentityServiceDeploymentServiceTests
 	public void ExtractIdentityService_Should_Preserve_Recognized_Target_When_Archive_Is_Unrelated()
 	{
 		// Arrange
-		string archivePath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.zip");
+		string archivePath = Path.Combine(RealTempPath, $"{Guid.NewGuid():N}.zip");
 		using (ZipArchive archive = ZipFile.Open(archivePath, ZipArchiveMode.Create)) {
 			archive.CreateEntry("unrelated.txt");
 		}
@@ -471,7 +507,7 @@ public sealed class IdentityServiceDeploymentServiceTests
 	public void ExtractIdentityService_Should_Preserve_Recognized_Target_When_AppSettings_Is_Malformed()
 	{
 		// Arrange
-		string archivePath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.zip");
+		string archivePath = Path.Combine(RealTempPath, $"{Guid.NewGuid():N}.zip");
 		using (ZipArchive archive = ZipFile.Open(archivePath, ZipArchiveMode.Create)) {
 			archive.CreateEntry("IdentityService.dll");
 			ZipArchiveEntry appsettings = archive.CreateEntry("appsettings.json");
@@ -504,7 +540,7 @@ public sealed class IdentityServiceDeploymentServiceTests
 		if (!OperatingSystem.IsWindows()) {
 			Assert.Ignore("Windows directory-link credential redirection is Windows-specific.");
 		}
-		string rootPath = Path.Combine(Path.GetTempPath(), $"identity-link-{Guid.NewGuid():N}");
+		string rootPath = Path.Combine(RealTempPath, $"identity-link-{Guid.NewGuid():N}");
 		string externalPath = Path.Combine(rootPath, "external");
 		string targetPath = Path.Combine(rootPath, "target");
 		Directory.CreateDirectory(externalPath);
@@ -537,9 +573,34 @@ public sealed class IdentityServiceDeploymentServiceTests
 		}
 	}
 
+	[Test]
+	[Description("Resolves the temp root to a path whose every ancestor, including the filesystem root, can be inspected without throwing.")]
+	public void ResolveRealPath_Should_Resolve_Temp_Root_On_Every_Supported_Platform()
+	{
+		// Arrange
+		string tempPath = Path.GetTempPath();
+
+		// Act
+		string resolvedPath = ResolveRealPath(tempPath);
+
+		// Assert
+		Path.IsPathRooted(resolvedPath).Should().BeTrue(
+			because: "the resolved temp root must stay an absolute path usable as a deployment target");
+		Directory.Exists(resolvedPath).Should().BeTrue(
+			because: "resolving links must yield the same existing directory, not a path that was never created");
+		EnumerateSelfAndAncestors(resolvedPath).Should().OnlyContain(
+			ancestorPath => !File.GetAttributes(ancestorPath).HasFlag(FileAttributes.ReparsePoint),
+			because: "the resolved root must satisfy the production guard's own predicate — on macOS the raw "
+				+ "temp path fails it because /var is a link to /private/var");
+		Action act = () => ResolveRealPath(Path.GetPathRoot(resolvedPath)!);
+		act.Should().NotThrow(
+			because: "the walk reaches the filesystem root, where Windows raises DirectoryNotFoundException "
+				+ "for a drive root that is not a link");
+	}
+
 	private static string CreateCreatioEnvironmentPath(string? connectionStrings = null)
 	{
-		string path = Path.Combine(Path.GetTempPath(), $"creatio-env-{Guid.NewGuid():N}");
+		string path = Path.Combine(RealTempPath, $"creatio-env-{Guid.NewGuid():N}");
 		Directory.CreateDirectory(path);
 		File.WriteAllText(Path.Combine(path, "ConnectionStrings.config"),
 			connectionStrings ?? """
@@ -562,7 +623,7 @@ public sealed class IdentityServiceDeploymentServiceTests
 
 	private static string CreateIdentityArchive()
 	{
-		string archivePath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.zip");
+		string archivePath = Path.Combine(RealTempPath, $"{Guid.NewGuid():N}.zip");
 		using ZipArchive archive = ZipFile.Open(archivePath, ZipArchiveMode.Create);
 		ZipArchiveEntry appsettings = archive.CreateEntry("appsettings.json");
 		using (StreamWriter writer = new(appsettings.Open())) {
@@ -584,6 +645,7 @@ public sealed class IdentityServiceDeploymentServiceTests
 		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
 		settingsRepository.GetActualEnvironmentName("bank").Returns("bank");
 		settingsRepository.FindEnvironment("bank").Returns(persistedEnvironment);
+		settingsRepository.FindCurrentEnvironment("bank").Returns(persistedEnvironment);
 		return settingsRepository;
 	}
 
@@ -592,7 +654,8 @@ public sealed class IdentityServiceDeploymentServiceTests
 		IIdentityServiceArchiveResolver? archiveResolver = null,
 		IIdentityServiceCreatioClient? creatioClient = null,
 		IIdentityServiceRoleGrantService? roleGrantService = null,
-		IIdentityServiceSystemUserResolver? systemUserResolver = null)
+		IIdentityServiceSystemUserResolver? systemUserResolver = null,
+		IIdentityServiceLifecycle? lifecycle = null)
 	{
 		ISysSettingsManager sysSettingsManager = Substitute.For<ISysSettingsManager>();
 		sysSettingsManager.UpdateSysSetting(Arg.Any<string>(), Arg.Any<object>(), Arg.Any<string>()).Returns(true);
@@ -604,14 +667,50 @@ public sealed class IdentityServiceDeploymentServiceTests
 			settingsRepository ?? CreateSettingsRepository(),
 			archiveResolver ?? Substitute.For<IIdentityServiceArchiveResolver>(),
 			creatioClient ?? Substitute.For<IIdentityServiceCreatioClient>(),
-			new StubHttpClientFactory(HttpStatusCode.OK),
+			CreateProbe(),
+			Substitute.For<IServiceUrlBuilder>(),
 			sysSettingsManager,
 			processExecutor,
 			availableIisPortService,
 			roleGrantService ?? Substitute.For<IIdentityServiceRoleGrantService>(),
 			systemUserResolver ?? Substitute.For<IIdentityServiceSystemUserResolver>(),
 			CreateTargetReservation(),
-			Substitute.For<ILogger>());
+			Substitute.For<ILogger>(), lifecycle ?? Substitute.For<IIdentityServiceLifecycle>());
+	}
+
+	[TestCase(false), TestCase(true)]
+	[Platform("Win", Reason = "Identity deployment supports IIS on Windows")]
+	[Description("Deployment records its resolved target before extraction even for no-app or extraction failure.")]
+	public void Deploy_ShouldRecordTargetBeforeArtifacts_WhenNoAppOrExtractionFails(bool corruptArchive) {
+		// Arrange
+		string crmPath = CreateCreatioEnvironmentPath();
+		string archive = CreateIdentityArchive();
+		if (corruptArchive) { File.WriteAllText(archive, "invalid archive"); }
+		string target = CreateIdentityTargetPath();
+		ISettingsRepository settings = CreateSettingsRepository(new EnvironmentSettings { EnvironmentPath = crmPath,
+			Uri = "http://localhost:40085", Login = "Supervisor", Password = "Supervisor", IsNetCore = true });
+		IIdentityServiceArchiveResolver resolver = Substitute.For<IIdentityServiceArchiveResolver>();
+		resolver.Resolve(archive, "IdentityService.zip").Returns(archive);
+		IIdentityServiceCreatioClient client = Substitute.For<IIdentityServiceCreatioClient>();
+		client.GetDesignerClientSecret().Returns("test-secret");
+		IIdentityServiceLifecycle lifecycle = Substitute.For<IIdentityServiceLifecycle>();
+		IdentityServiceAttachment recorded = null;
+		bool artifactsExistedWhenRecorded = true;
+		lifecycle.When(service => service.RecordDeployment("bank", Arg.Any<IdentityServiceAttachment>(), true)).Do(call => {
+			recorded = call.ArgAt<IdentityServiceAttachment>(1);
+			artifactsExistedWhenRecorded = File.Exists(Path.Combine(target, "IdentityService.dll"));
+		});
+		IdentityServiceDeploymentService sut = CreateService(settings, resolver, client, lifecycle: lifecycle);
+		// Act
+		Action act = () => sut.Deploy(new DeployIdentityOptions { Environment = "bank", ZipFile = archive,
+			IdentitySitePort = 40086, IdentitySiteName = "chosen-identity", IdentityPath = target, Overwrite = true, NoApp = true });
+		// Assert
+		if (corruptArchive) { act.Should().Throw<InvalidDataException>(because: "the deliberately corrupt archive cannot be extracted"); }
+		else { act.Should().NotThrow(because: "no-app deployment still records its target"); }
+		recorded.Should().NotBeNull(because: "failure recovery must have a recorded attachment before extraction starts");
+		recorded.EnvironmentPath.Should().Be(target, because: "cleanup uses the resolved explicit path");
+		recorded.IisTarget.Should().Be("chosen-identity", because: "custom names must not be reconstructed from the environment");
+		artifactsExistedWhenRecorded.Should().BeFalse(because: "recording precedes creation of identity artifacts");
 	}
 
 	private static string CreateIdentityArchive(string directory)
@@ -622,33 +721,69 @@ public sealed class IdentityServiceDeploymentServiceTests
 		return archivePath;
 	}
 
-	private static string CreateIdentityTargetPath() =>
-		Path.Combine(Path.GetTempPath(), $"identity-target-{Guid.NewGuid():N}");
-
-	private sealed class StubHttpClientFactory : IHttpClientFactory
-	{
-		private readonly HttpStatusCode _statusCode;
-
-		public StubHttpClientFactory(HttpStatusCode statusCode) {
-			_statusCode = statusCode;
+	private static IEnumerable<string> EnumerateSelfAndAncestors(string path) {
+		for (string? currentPath = path; currentPath is not null; currentPath = Path.GetDirectoryName(currentPath)) {
+			yield return currentPath;
 		}
-
-		public HttpClient CreateClient(string name) => new(new StubHandler(_statusCode));
 	}
 
-	private sealed class StubHandler : HttpMessageHandler
-	{
-		private readonly HttpStatusCode _statusCode;
-
-		public StubHandler(HttpStatusCode statusCode) {
-			_statusCode = statusCode;
+	private static string ResolveRealPath(string path) {
+		string currentPath = Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+		for (int depth = 0; depth < 64; depth++) {
+			string? linkedAncestor = null;
+			string? linkTarget = null;
+			for (string? ancestor = currentPath;
+				ancestor is not null;
+				ancestor = Path.GetDirectoryName(ancestor)) {
+				string? target = TryResolveLinkTarget(ancestor);
+				if (target is null) {
+					continue;
+				}
+				linkedAncestor = ancestor;
+				linkTarget = target;
+				break;
+			}
+			if (linkedAncestor is null || linkTarget is null) {
+				return currentPath;
+			}
+			currentPath = Path.TrimEndingDirectorySeparator(Path.GetFullPath(
+				string.Equals(currentPath, linkedAncestor, StringComparison.Ordinal)
+					? linkTarget
+					: Path.Combine(linkTarget, Path.GetRelativePath(linkedAncestor, currentPath))));
 		}
+		return currentPath;
+	}
 
-		protected override Task<HttpResponseMessage> SendAsync(
-			HttpRequestMessage request,
-			CancellationToken cancellationToken) =>
-			Task.FromResult(new HttpResponseMessage(_statusCode) {
-				Content = new StringContent("{}")
-			});
+	/// <summary>
+	/// Returns the final target of a directory link, or <see langword="null"/> when the path is not a link.
+	/// </summary>
+	/// <remarks>
+	/// <see cref="FileSystemInfo.ResolveLinkTarget"/> throws for paths it cannot inspect as a link —
+	/// on Windows a drive root such as <c>C:\</c> raises <see cref="DirectoryNotFoundException"/> —
+	/// and the fixture must treat every such path as an ordinary directory instead of failing.
+	/// A link cycle or a broken link raises <see cref="IOException"/> too and is therefore also treated
+	/// as an ordinary directory; the path then stays inside the link and the production guard rejects it,
+	/// which is acceptable because the temp root this fixture resolves always exists.
+	/// </remarks>
+	private static string? TryResolveLinkTarget(string path) {
+		try {
+			return new DirectoryInfo(path).ResolveLinkTarget(returnFinalTarget: true)?.FullName;
+		}
+		catch (Exception exception)
+			when (exception is IOException or UnauthorizedAccessException
+				or ArgumentException or NotSupportedException) {
+			return null;
+		}
+	}
+
+	private static string CreateIdentityTargetPath() =>
+		Path.Combine(RealTempPath, $"identity-target-{Guid.NewGuid():N}");
+
+	private static IIdentityServerProbe CreateProbe() {
+		IIdentityServerProbe probe = Substitute.For<IIdentityServerProbe>();
+		probe.IsDiscoveryReachable(Arg.Any<string>()).Returns(true);
+		probe.AcquireClientCredentialsToken(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>()).Returns("test-token");
+		probe.RunBearerDataServiceSmokeTest(Arg.Any<EnvironmentSettings>(), Arg.Any<string>(), "test-token").Returns(200);
+		return probe;
 	}
 }

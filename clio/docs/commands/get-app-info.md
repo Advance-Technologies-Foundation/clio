@@ -64,6 +64,7 @@ manual field translation:
 | `reference-schema` | Legacy alias of `reference-schema-name`, retained for backward compatibility |
 | `required` | Whether the column is required |
 | `caption` | Localized column caption |
+| `default-value-config` | Typed column default (`source`, `value`, `value-source`, `sequence-prefix`, `sequence-number-of-chars`); omitted when the column has no default. A lookup `Const` default's `value` is the stable record GUID. Send the object back as-is to re-apply the default, or set `source` to `None` to remove it |
 
 To modify or remove a column you read, send the same object back inside a `sync-schemas`
 `update-operations` entry and add the `action` verb (`modify`/`remove`). To add columns, place

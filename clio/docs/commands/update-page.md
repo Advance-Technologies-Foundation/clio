@@ -1,4 +1,4 @@
-# update-page
+﻿# update-page
 
 ## Command Type
 
@@ -11,6 +11,20 @@ update-page - Update the raw schema body of a Freedom UI page
 **Aliases:** `page-update`
 
 ## Description
+
+`--resources` adds missing keys and updates the `en-US` value of existing keys.
+Resource identities, other cultures, and omitted keys are preserved. The
+`resourcesRegistered` count includes only newly declared keys, not value updates.
+
+Resource saves return a warning about workspace capture: `update-page` saves
+through the server designer; it does not synchronize an independent local workspace.
+A later `push-workspace` using stale metadata or culture XML can revert the change.
+Preserve local edits, capture the affected package with `restore-workspace`
+(`pull-workspace`), then review the schema metadata and resource XML before pushing.
+Follow the workspace's capture instructions for linked FSM packages, where the
+native designer can already write into linked source files. Check the diff rather
+than assuming either server success or a JavaScript body file is a complete capture.
+
 
 The update-page command validates and saves the raw JavaScript body of a
 Freedom UI page schema. Pass the full body string directly, typically
@@ -101,6 +115,13 @@ name instead of trying to edit a non-existent local `insert`.
     Scaffold with no content, so on a page built from it those slots may be empty, the merge would apply, and
     clio still refuses — it validates `viewConfigDiff` against an empty base and cannot see which case a body is
     in. Author the child with an `insert` there too rather than reaching for `validate: false`.
+  - **Rejected — a second `crt.Scaffold`.** An `insert`/`set` that declares `crt.Scaffold` ANYWHERE in its
+    `values` subtree — a nested child authors the same second root as a top-level one — or an `insert` of an
+    element NAMED `Scaffold` whatever type it declares, since the template already owns that element name.
+    Every mobile template provides the Scaffold root and it is the page's only permitted one: a second one
+    shadows the native element, so the top navigation bar and the page body silently come from the wrong
+    element. A `merge` onto `Scaffold` is the SUPPORTED way to patch the template's own root and is left
+    alone here — the merge-slot rules above own what may go inside it.
   - **Warned — a `merge` that authors child elements in any other slot.** Same mechanism, different odds: a
     slot the target does not carry (`menuItems` on a `crt.Button` or `crt.FloatingActionButton`, `items` on
     `crt.QuickFilterGroup`, `crt.Sort`, `crt.Timeline`) is *created* by the merge and the authoring works.
@@ -115,6 +136,10 @@ name instead of trying to edit a non-existent local `insert`.
     renders, as the `values` copy. Two identical types are accepted silently.
   - **Warned — an operation whose letter case does not match** the differ's exact-case dispatch
     (`"Insert"`): the whole operation is discarded, so it authors nothing.
+  - **Warned — a component type in NEITHER the mobile nor the web registry.** The type may be a custom
+    mobile component registered in your own package, in which case ignore it; it is equally what a typo
+    looks like. Confirm with `get-component-info` using `schema-type: "mobile"`. Advisory because clio
+    cannot tell a custom registration from a mistake, and refusing would block legitimate packages.
   - **Warned — a `crt.Button` inserted into the Scaffold `actions` slot** (`parentName: "Scaffold"`,
     `propertyName: "actions"`). ENG-95429: the save succeeds, but a button placed there does not appear on the
     Freedom UI mobile designer canvas, so nobody can see or edit it there. Place it as an item of a page
@@ -133,7 +158,11 @@ name instead of trying to edit a non-existent local `insert`.
   column captions and validator messages) and register the key's default-language value through
   `--resources`. Binding expressions (any `$`-prefixed value) and non-string values (e.g.
   `placeholder: false`) are not literals and pass. Call `clio get-guidance --name page-schema-resources`
-  for the full rule.
+  for the full rule. Gallery's `itemConfig.templateValuesMapping` is excluded: values such as
+  `caption: "GalleryDS_Name"` name projected record attributes. Keep those identifiers unchanged;
+  captions elsewhere on the Gallery or its children still require localization. For a standalone
+  `merge` that patches this mapping, include `type: "crt.Gallery"` unless another entry in the
+  same body declares that node's type. Designer-only `_designOptions` mappings are also excluded.
   A **component's own data descriptor is exempt**: a `data` object that carries the platform's
   `typeName` marker, on a node declaring a component `type`, is component metadata (uId, schemaType,
   typeName and the caption the platform stamped on it) rather than page-authored text, so a literal
@@ -181,32 +210,196 @@ Pass `--force` to deliberately overwrite the external changes instead.
 After a successful save with a baseline in play, the response carries `newChecksum`,
 `newModifiedOn`, and `savedSchemaUId` so the caller can refresh its stored baseline.
 
-Successful saves may also return a `warnings` entry about the live Designer Presence
-push. Treat that warning as informational only: the schema save already succeeded.
+Successful saves may also return `warnings`. Every entry is informational only — the
+schema save already succeeded, so never retry on a warning. Today they cover the live
+Designer Presence push, a component whose `insert` the submitted body replaced with a
+`merge`/`move`/`remove`, an operation the differ will drop because another operation
+for the same component name cancels it (see "Write modes"), and — on `append` — an
+existing operation the merge could not preserve because your fragment superseded an
+identity the page carried more than once. That last one names the component and tells you
+to re-read with `get-page`, because it is the one case where appending removes something
+you did not send.
 
 Baseline sources: both the CLI verb and the MCP `update-page` tool arm this check
 automatically from the baseline that a previous `get-page` stores in
 `.clio-pages/{schema-name}/meta.json` (matching environment required) — so AI-agent CLI
 flows that read a page with `get-page` and then save it with `update-page` are protected
 without extra flags. `--expected-checksum` overrides the on-disk baseline when passed
-explicitly. After a successful save the on-disk baseline is refreshed automatically, so
-consecutive updates in the same session do not false-conflict. A small race window
-between the check and the save remains (last write wins).
+explicitly. Over MCP the same baseline is supplied as the `checksum` argument — pass the
+`editable.checksum` that `get-page` returned for the body you edited. Doing so makes the
+comparison run against what you actually fetched, instead of against a `.clio-pages`
+baseline that may be stale or anchored to a different directory and would then report a
+conflict that never happened. After a successful save with an armed baseline the on-disk
+baseline is refreshed automatically, so consecutive updates in the same session do not
+false-conflict. A small race window between the check and the save remains (last write
+wins). A save redirected with `--target-package-uid` / `--target-schema-uid` is the
+exception on both counts: nothing is armed from `.clio-pages` and nothing is written back
+to it (see below).
 
 If you pass `--expected-checksum` while an on-disk baseline is also present, the explicit
-value wins and the auto-armed baseline is ignored — so supplying a stale checksum by hand
-can report a conflict against a page that has not actually changed. This edge fails safe
-(it blocks the save rather than overwriting), but if you mix the two, keep
-`--expected-checksum` current or omit it and let the on-disk baseline drive the check.
+value wins the CHECKSUM comparison and the auto-armed baseline's checksum is ignored — so
+supplying a stale checksum by hand can report a conflict against a page that has not
+actually changed. This edge fails safe (it blocks the save rather than overwriting), but if
+you mix the two, keep `--expected-checksum` current or omit it and let the on-disk baseline
+drive the check. On a pinned save neither of the on-disk baseline's identity fields is
+armed. The *schema UId* is not, because the checksum comparison already runs against the
+schema the save resolved to: a pin that matches means the caller read exactly that content,
+so a stale on-disk UId must not veto it. A genuine identity change is still refused — its
+checksum differs, and the conflict comes back as `checksum-mismatch` rather than
+`schema-uid-mismatch`. The *schema-absent* marker is not armed either, because a pinned
+checksum asserts that an editable schema existed, and a stale `editableSchemaExists: false`
+would otherwise veto a pin that matches the server exactly. `schema-deleted-externally`
+still fires on a pinned, non-redirected save: there the resolution says a replacing schema
+must be CREATED while the caller pinned a checksum for an existing one. The unpinned path is
+unchanged — checksum, schema UId and absent marker are all armed from disk.
+
+Two scope limits worth knowing before you rely on the pin:
+
+- **`sync-pages` does not accept a checksum** — a standing scope limit of this change, not a
+  defect on this page. It is the canonical page write path and `update-page` is documented as the
+  fallback, but `PageSyncPageInput` has no `checksum` member, so every `sync-pages` write
+  compares against the `.clio-pages` baseline and has `--force` as its only escape. The
+  remedy on this page is `update-page`-only.
+- **A redirected save skips only the on-disk baseline.** When `update-page` is called with
+  `--target-package-uid` or `--target-schema-uid`, the write goes to a schema other than the
+  automatically resolved editable one, while both baseline sources describe that resolved
+  schema: `get-page` has no target arguments, so the `.clio-pages` baseline — and any
+  `checksum` copied out of a `get-page` response — is about the schema clio would have
+  written without the redirect. The guard therefore reads no baseline and arms no disk-derived
+  identity. An explicit `checksum` is retained and compared with the resolved target after
+  hierarchy resolution; a mismatch is refused as a conflict, which protects a target-package-uid
+  save that names an existing package and fails safe when the pin came from another schema. The
+  response carries a warning that the disk baseline was skipped. With no explicit pin the save is
+  unchecked, so there is no "re-run get-page and retry" loop and no reason to reach for `--force`.
+  Because nothing from disk is armed, the post-save
+  refresh leaves `meta.json` alone as well: writing the redirected schema's UId and checksum
+  into a baseline keyed by schema name corrupted the non-redirected schema's baseline and
+  produced a false `schema-uid-mismatch` on the next ordinary save.
+
+A `checksum-mismatch` response returns the server's current value as
+`conflictDetails.actualChecksum`. Re-sending that value as `--expected-checksum` /
+`checksum` is **not** a resolution — it silently discards the out-of-band change exactly
+like `--force`, and needs the same explicit confirmation from the user. Re-run `get-page`
+and re-apply your edit on the fresh body instead.
 
 ## Write modes
 
 `--mode replace` (default) saves the body verbatim. `--mode append` loads the current
-schema body from the server and merges your incoming fragment into it — `viewConfigDiff`
-entries dedupe by `name`, handlers dedupe by `request`, and `SCHEMA_CONVERTERS` and
-`SCHEMA_VALIDATORS` entries dedupe by type key (incoming wins). After the append merge,
-the final web body is rejected if a custom validator reference has no matching
+schema body from the server and merges your incoming fragment into it.
+
+An append body is a **fragment of a page body**, not a bare list of operations. It may omit
+sections — that is the point of append, and full marker integrity is deliberately not required —
+but it must carry **at least one** section marker pair, for example
+`/**SCHEMA_VIEW_CONFIG_DIFF*/[ ... ]/**SCHEMA_VIEW_CONFIG_DIFF*/`. A body carrying none is
+rejected. It used to be accepted: a bare JSON array is valid JavaScript, so it cleared the syntax
+gate, then every section read as empty, the merge became a no-op, and the call reported `success`
+with `incomingOperationCount: 0` — silently discarding the whole fragment while looking clean.
+
+A `viewConfigDiff` entry is replaced only when **both** `operation` and `name` match one of
+yours — and, for a `remove` or a `set`, whether it targets `properties`. Incoming wins, and the replacement
+keeps the existing entry's position. Every other existing operation is preserved verbatim and in
+place, including a second operation on a component you already target (a `move` and a `merge` for
+one name are both valid and both survive the merge — though "survive" means kept in the body, not
+necessarily applied; see the group-ordering caveat below).
+
+There is one exception. If your fragment supersedes an identity that the page carries **twice**,
+only the first occurrence is replaced and the later one is dropped — keeping it would re-apply its
+stale values *after* your replacement. When those two entries set disjoint keys, the later entry's
+keys go with it. Handlers dedupe by `request`.
+
+`SCHEMA_CONVERTERS` and `SCHEMA_VALIDATORS` entries merge by type key, and incoming wins. The final merged web body is rejected when a custom validator reference has no matching
 `SCHEMA_VALIDATORS` declaration. Built-in `crt.*` validators need no local declaration.
+
+For an undeclared field binding, use `merge` in `viewConfigDiff` only if the component itself comes from a parent
+schema. For an own-body field, submit its complete original `insert` with the edited values and
+the attribute declaration in `viewModelConfigDiff`, even if that declaration is already stored.
+Append replaces a matching insert as a whole, so retain its other values and placement properties.
+`viewModelConfigDiff` concatenates entries: resubmitting an unchanged declaration adds a duplicate
+merge with the same effective values. A second append cannot remove that duplicate.
+
+**Preserved is not the same as applied**, and this part is not about append at all — it is how the
+platform differ resolves any final body, so a hand-authored `--mode replace` body produces it too.
+Operations are applied in whole **groups** in a fixed order (merges, then removes/inserts/moves,
+`set` last), never in array order. So a `merge`, `move`, or element `remove` that ends up beside an
+`insert` for the same `name` resolves against a base that does not contain the component yet and is
+silently dropped; likewise a `move` for a name the same body also element-`remove`s, which the
+differ filters out before applying anything. The same applies wherever one operation's group runs
+after another's for one name: a `merge` beside an element `remove` or a `set` (the remove deletes,
+or the set replaces wholesale, what the merge just patched); a property `remove` beside an
+element `remove` (the element is gone before property removals run — unless an `insert` re-creates
+it, which makes the property removal effective again); and a property `remove` beside a `set` (the
+property group runs first, then the set rebuilds the element from its own `values`, so the strip
+contributes nothing). The save still succeeds and the
+response carries an advisory `warnings` entry naming the component and the dead operation. Fix it by folding the transform's values into the
+`insert` itself, or by using `set`, which runs after the insert — not by reordering the array, which
+changes nothing.
+
+The warning is advisory because it reads one schema body and cannot see the replacing chain: a
+parent schema that inserts the same name puts the component in the base and can make the transform
+apply after all. A `--dry-run` reports it too, against the body that would actually be written — so
+in append mode it sees pairs formed between your fragment and the server's body, not only pairs
+inside your fragment.
+
+### What a `--dry-run` tells you about an append
+
+In append mode a dry run resolves the current server body and computes the merge, then returns
+without saving. It reports the outcome as `appendProjection`:
+
+| Field | Meaning |
+|---|---|
+| `currentOperationCount` | `viewConfigDiff` operations in the page's own body today |
+| `incomingOperationCount` | operations in your fragment |
+| `projectedOperationCount` | operations the merged body would carry — **compare this against the number you expect** |
+| `addedOperationCount` | incoming entries that introduce a new identity |
+| `replacedOperations` / `replacedOperationCount` | existing entries your fragment replaces in place; not a loss, the operation survives with your values |
+| `droppedOperations` / `droppedOperationCount` | entries from the **server** body the merge would not carry over — the further-duplicate exception above |
+| `collapsedIncomingOperations` / `collapsedIncomingOperationCount` | entries from **your own fragment** that a later entry in the same fragment supersedes — reported as data, never warned about |
+| `viewConfigDiffApplied` | `false` when the current body has no `SCHEMA_VIEW_CONFIG_DIFF` marker pair, so every count above describes an array the write discards |
+
+Three distinct loss channels, kept separate because the fix differs for each. **Two of them warn.**
+
+- A **dropped server entry** raises one advisory `warnings` entry per affected component, naming it
+  and telling you to re-read with `get-page`. Fix it by folding both entries into one incoming
+  operation.
+- An **unapplied section** (`viewConfigDiffApplied: false`) warns too, and is the one that makes a
+  clean-looking projection dangerous: every count above it describes an array the write throws away.
+  It is not a merge problem at all — use `--mode replace` with a body that carries the marker pair.
+- A **collapsed incoming entry** is reported as data only, with no warning. It is a real loss, but the
+  fragment is yours and you can read it, so a warning about your own input would be noise. It is
+  counted because without it the totals cannot be reconciled and the loss stays invisible.
+
+The named lists are capped in length; every count is always exact.
+
+`collapsedIncomingOperations` is the one most people will hit. Operations merge by
+`(operation, name, targets-properties)`, so a fragment that carries the same identity twice keeps only
+the last spelling — the earlier one is discarded with its values, and before this it went unreported
+anywhere.
+
+Three consequences worth knowing:
+
+- An append dry run runs the **same body checks the save runs, against the same body** — including the
+  save's own widget-caption gate, reported as a warning rather than a refusal. A dry run and a save
+  therefore cannot disagree about a caption, which they previously could in both directions.
+- An append whose real save could not merge — a full-config current body, for instance — now **fails
+  the dry run** with the same error, instead of reporting `success` and failing on the write. Every
+  dry-run failure carries `dryRun: true`, so it stays distinguishable from a failed real save.
+- `--mode replace` is unaffected: it writes the body verbatim, so there is nothing to merge and
+  `appendProjection` is absent. Be precise about what it skips, because it is **not** an offline
+  check — do not plan a workflow around it running without a server. Resolving the schema context
+  happens before either mode is chosen and still queries `SysSchema`, the design package and the
+  parent schemas. What a replace dry run skips is the **designer `GetSchema` fetch of the current
+  body**, which is what `TryUpdatePage_WhenDryRun_SkipsDesignerServiceCalls` asserts. The trade-off
+  is that its caption check can only resolve against the resources you pass, so it is weaker than
+  the save's — the one place a replace dry run can still differ from its save.
+
+The same `appendProjection` is returned on a real append save, for the caller who skipped the dry
+run.
+
+`appendProjection` speaks for `viewConfigDiff` only. The sibling `*_DIFF` arrays append
+unconditionally and cannot lose an entry, so they have nothing to report. Handlers are **not**
+covered: they dedupe by `request`, and the merge drops every current handler whose `request` appears
+in your fragment — so a current body that carries one `request` twice keeps neither and your fragment
+contributes one. Check the handlers section by hand when that shape is possible.
 
 Append requires the **diff form**. A full-config body — the `SCHEMA_VIEW_MODEL_CONFIG` /
 `SCHEMA_MODEL_CONFIG` markers (mobile: top-level `viewModelConfig` / `modelConfig`) instead
@@ -267,6 +460,21 @@ checksum differs
 
 --force                            Skip the external-modification check and
 deliberately overwrite out-of-band changes
+
+--target-package-uid               Explicit target package UId for the replacing
+schema (overrides automatic design-package
+resolution). A redirected save skips only the
+on-disk baseline; an explicit checksum is still
+compared with the resolved target, and a mismatch
+remains a conflict. With no explicit pin the save
+proceeds unchecked and warns
+
+--target-schema-uid                Explicit schema UId to save into (bypasses
+hierarchy resolution). A redirected save skips only
+the on-disk baseline; an explicit checksum is still
+compared with the resolved target, and a mismatch
+remains a conflict. With no explicit pin the save
+proceeds unchecked and warns
 
 --uri                    -u       Application uri
 

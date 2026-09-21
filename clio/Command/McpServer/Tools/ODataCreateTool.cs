@@ -1,6 +1,7 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Linq;
 using System.ComponentModel.DataAnnotations;
 using System.Diagnostics;
 using System.Text.Json;
@@ -15,7 +16,10 @@ namespace Clio.Command.McpServer.Tools;
 /// MCP tool for creating one or more Creatio records via OData v4 (HTTP POST) in a single call.
 /// </summary>
 [McpServerToolType]
-public sealed class ODataCreateTool(IToolCommandResolver commandResolver, IODataFileContract fileContract) {
+public sealed class ODataCreateTool(
+	IToolCommandResolver commandResolver,
+	IOperationCorrelationIdProvider correlationIds,
+	IODataFileContract fileContract) {
 
 	//File I/O is behaviour, so it arrives through DI rather than being reached statically: that is what lets
 	//a failure-path test substitute a file-contract fake instead of driving the production write plumbing.
@@ -116,18 +120,37 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver, IOData
 		"The batch stops when it exceeds its wall-clock budget; the first row that was not attempted is then " +
 		"reported with record-created=false and the reason. " +
 		"Returns a created/failed summary and a per-row result array with each created record's Id. " +
+		"A date-time value without a UTC designator or offset (e.g. '2024-01-01T04:00:00') fails its row before any " +
+		"request - send '...Z' or '...+02:00' instead. " +
 		"CRITICAL for failed rows — read 'record-created' before reacting: true inserted, false definitely not " +
 		"inserted (rejected locally, safe to fix and re-send), null UNKNOWN. Null means Creatio failed the call " +
 		"but may already have written the record, which happens when a post-insert entity event handler throws; " +
 		"re-sending such a row DUPLICATES it. On null, read the entity back and re-send only if absent — the " +
 		"row's 'retry-guidance' says so too, and the batch's 'unverified' count is how many rows are in that " +
 		"state. " +
+		"A response this tool returns - success or failure - carries a correlation-id, which matches this call to clio's own log lines; " +
+		"an exception that escapes the batch is answered by the MCP error envelope instead and carries none. " +
 		"Call get-tool-contract for odata-create to see usage examples and discovery workflow hints.")]
 	public ODataCreateBatchResponse Create(
 		[Description("Parameters: entity, rows or rows-file, environment-name (required); stop-on-error (optional).")]
 		[Required]
 		ODataCreateArgs args,
 		CancellationToken cancellationToken = default) {
+		//Minted once and stamped on the single exit, so every response carries the correlation-id
+		//core-rules promises - request-level refusals included.
+		string correlationId = correlationIds.New();
+		ODataCreateBatchResponse result = CreateCore(args, cancellationToken);
+		return result with {
+			CorrelationId = correlationId,
+			Diagnostic = result.Error is null ? null : DataWriteDiagnostic.Create("insert", args.Entity, null, false, false, false, result.Error),
+			Results = result.Results.Select(row => row with {
+				Diagnostic = DataWriteDiagnostic.Create("insert", args.Entity, row.Index, row.RecordCreated != false,
+					row.ResponseReceived, row.Success, row.Error)
+			}).ToArray()
+		};
+	}
+
+	private ODataCreateBatchResponse CreateCore(ODataCreateArgs args, CancellationToken cancellationToken) {
 		//Runs before the payload is resolved, before the environment is resolved and before any POST: an
 		//unbound file-source key such as rows_file would otherwise be dropped silently and the inline rows
 		//sent instead, which is the ambiguous request this rejects.
@@ -155,14 +178,27 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver, IOData
 		IServiceUrlBuilder urlBuilder;
 		try {
 			EnvironmentOptions options = new() { Environment = args.EnvironmentName };
-			client = commandResolver.Resolve<IApplicationClient>(options);
-			urlBuilder = commandResolver.Resolve<IServiceUrlBuilder>(options);
+			// ONE resolution for both, for the reason ODataKeyedWrite.ResolveTarget states: every
+			// resolution re-reads the settings, so an environment repointed between two of them would pair
+			// this client's authenticated session with the other environment's url - and odata-create uses
+			// the pair for a metadata read AND the POSTs that follow it.
+			(client, urlBuilder) = commandResolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(options);
 		} catch (Exception ex) {
 			return ODataCreateBatchResponse.RequestError(SensitiveErrorTextRedactor.Redact(ex.Message));
 		}
 
 		string url = urlBuilder.Build(ODataKeyFormatter.CollectionPath(args.Entity));
-		return ODataCreateBatchResponse.From(PostRows(client, url, rows, args.StopOnError, cancellationToken));
+		// The metadata read is at most ONE per batch, and only when some row actually carries a
+		// date-time-shaped literal: the service-root CSDL is a multi-megabyte document, and a batch of
+		// plain rows would otherwise pay that download for a guard that cannot fire. It only ever types
+		// the value guard - odata-create does not validate field NAMES - so an unresolved metadata
+		// endpoint must never fail the insert; the guard then falls back to the literal's shape alone.
+		IReadOnlyDictionary<string, string> propertyTypes =
+			rows.EnumerateArray().Any(ODataDateTimeGuard.HasZoneLessCandidate)
+				? ODataFieldValidation.TryGetPropertyTypes(client, urlBuilder, args.Entity.Trim())
+				: null;
+		return ODataCreateBatchResponse.From(
+			PostRows(client, url, rows, args.StopOnError, propertyTypes, cancellationToken));
 	}
 
 	/// <summary>
@@ -173,6 +209,7 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver, IOData
 	/// <param name="url">Collection endpoint every row is posted to.</param>
 	/// <param name="rows">Validated non-empty JSON array of row objects.</param>
 	/// <param name="stopOnError">Whether the first failed row aborts the rest.</param>
+	/// <param name="propertyTypes">Entity property types for the date-time guard, or null when unavailable.</param>
 	/// <param name="cancellationToken">Caller token; the MCP host cancels it when it disconnects.</param>
 	/// <returns>Outcomes for every ATTEMPTED row, plus the first unattempted row when the batch stopped early.</returns>
 	private static List<ODataRowResult> PostRows(
@@ -180,6 +217,7 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver, IOData
 		string url,
 		JsonElement rows,
 		bool stopOnError,
+		IReadOnlyDictionary<string, string> propertyTypes,
 		CancellationToken cancellationToken) {
 		List<ODataRowResult> results = [];
 		int index = 0;
@@ -206,7 +244,8 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver, IOData
 			}
 			// Cap the per-row timeout to what is left of the batch budget, so the LAST row cannot overshoot
 			// the deadline by a further full timeout.
-			ODataRowResult result = CreateRow(client, url, row, index, Math.Min(RowRequestTimeoutMs, remainingMs));
+			ODataRowResult result = CreateRow(
+				client, url, row, index, Math.Min(RowRequestTimeoutMs, remainingMs), propertyTypes);
 			results.Add(result);
 			if (!result.Success && stopOnError) {
 				break;
@@ -275,7 +314,9 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver, IOData
 	}
 
 	private static ODataRowResult CreateRow(
-		IApplicationClient client, string url, JsonElement row, int index, int requestTimeoutMs) {
+		IApplicationClient client, string url, JsonElement row, int index, int requestTimeoutMs,
+		IReadOnlyDictionary<string, string> propertyTypes) {
+		bool received = false;
 		try {
 			if (row.ValueKind != JsonValueKind.Object || !row.EnumerateObject().MoveNext()) {
 				return new ODataRowResult {
@@ -286,14 +327,29 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver, IOData
 					Error = "row must be a non-empty object of field/value pairs."
 				};
 			}
-			string responseJson = client.ExecutePostRequest(url, row.GetRawText(), requestTimeoutMs);
-			return ParseCreated(responseJson, index);
+			string zoneLessDateTime = ODataDateTimeGuard.FindZoneLessDateTime(row, propertyTypes);
+			if (zoneLessDateTime is not null) {
+				return new ODataRowResult {
+					Index = index,
+					Success = false,
+					// Rejected locally before any POST, so not-inserted is KNOWN for this row.
+					RecordCreated = false,
+					Error = zoneLessDateTime
+				};
+			}
+			// Declared a write: automatic re-authentication must never re-issue this POST, or a
+			// false-positive expired-session classification of the OData echo creates the record
+			// twice (GitHub #1313).
+			string responseJson = client.ExecuteNonReplayablePostRequest(url, row.GetRawText(), requestTimeoutMs);
+			received = true;
+			return ParseCreated(responseJson, index) with { ResponseReceived = true };
 		} catch (Exception ex) {
 			// The request may have reached Creatio and been applied before the failure surfaced here, so the
 			// side effect is unknown - never report not-inserted from a transport-level failure.
 			return new ODataRowResult {
 				Index = index,
 				Success = false,
+				ResponseReceived = received,
 				RecordCreated = null,
 				RetryGuidance = UnknownSideEffectGuidance,
 				Error = SensitiveErrorTextRedactor.Redact(ex.Message)
@@ -331,15 +387,13 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver, IOData
 			if (string.IsNullOrEmpty(id)) {
 				// A successful OData create always echoes the new record with its Id; its absence
 				// means the body is not a created record (an unrecognized error or empty payload).
-				// Redact: an unrecognized error shape reaching this fallback embeds up to 500 raw
-				// response characters, which can carry the absolute request URI or other host detail —
-				// keep redaction parity with the TryDetect and exception paths in this method.
+				// Do not echo an unrecognized response payload into the tool result.
 				return new ODataRowResult {
 					Index = index,
 					Success = false,
 					RecordCreated = null,
 					RetryGuidance = UnknownSideEffectGuidance,
-					Error = $"OData create did not return a record Id. Response: {CreatioResponseError.Truncate(SensitiveErrorTextRedactor.Redact(json))}"
+					Error = "OData create did not return a record Id. The response was not a recognized creation acknowledgement; verify the target before retrying."
 				};
 			}
 			return new ODataRowResult { Index = index, Success = true, RecordCreated = true, Id = id };
@@ -376,6 +430,8 @@ public sealed record ODataCreateArgs {
 		ODataCreateTool.RowCountLimitDescription + " " +
 		"Use dataforge-get-table-columns to discover field names. " +
 		"Set lookup fields via their <Field>Id column with a GUID (e.g. AccountId), not the display name. " +
+		"Date-time values MUST carry a UTC designator or offset ('2024-01-01T04:00:00Z' or '2024-01-01T04:00:00+02:00'); " +
+		"a zone-less literal fails that row before any request, because the platform may silently store 0001-01-01. " +
 		"Example: [ { \"Name\": \"Acme\", \"TypeId\": \"8ecab4a1-0ca3-4515-9399-efe0a19390bd\" }, { \"Name\": \"Globex\" } ] " +
 		"Exactly one of rows or rows-file is required; supplying both is rejected.")]
 	public JsonElement? Rows { get; init; }

@@ -1,3 +1,4 @@
+using Clio.Common;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -138,10 +139,9 @@ public sealed class ClioRunExecutor(
 		if (!toolRegistry.TryGetTool(toolName, out McpServerTool tool)) {
 			// The long tail clio-run targets is hidden from tools/list, so agents frequently GUESS the
 			// name and miss by a typo. Append a "did you mean" shortlist of the nearest REAL tool names so
-			// the agent can self-correct without an extra discovery round-trip. Only the RANKING (Levenshtein
-			// distance then ordinal) matches the BuildSuggestions helper in ToolContractGetTool. The candidate
-			// SOURCE SET is caller-specific and intentionally divergent — here it is the registry's invokable
-			// names + the reflection catalog (the hidden long tail clio-run targets), deduped case-insensitively.
+			// the agent can self-correct without an extra discovery round-trip. Ranking is shared with
+			// contract lookup: exact set/update subject matches, then edit distance and name. Candidates
+			// come only from the live invokable registry, which includes the enabled hidden long tail.
 			IReadOnlyList<string> suggestions = BuildSuggestions(toolName);
 			string didYouMean = suggestions.Count > 0
 				? $" Did you mean: {string.Join(", ", suggestions)}?"
@@ -274,7 +274,14 @@ public sealed class ClioRunExecutor(
 		callContext.Params = childParams;
 		callContext.MatchedPrimitive = tool;
 		try {
-			if (McpToolErrorFilter.TryCreateArgumentDeserializationError(
+			// Only the checks that read an argument's JSON value kind run here. The trial
+			// deserialization that produces the precise per-argument diagnostic moved into the catch
+			// below, because it binds the same JSON the SDK is about to bind: on the success path this
+			// dispatch deserialized every nested argument twice, roughly doubling binding CPU and
+			// large-object allocation for a big composite payload. A failed bind throws out of
+			// InvokeAsync before the tool body runs, so the caller still gets the same message and the
+			// tool still does not execute.
+			if (McpToolErrorFilter.TryCreateArgumentShapeError(
 				callContext,
 				out CallToolResult? argumentErrorResult)) {
 				return argumentErrorResult;
@@ -287,6 +294,20 @@ public sealed class ClioRunExecutor(
 			throw;
 		}
 		catch (Exception ex) when (!McpExceptionPolicy.IsUnrecoverable(ex)) {
+			// An argument the SDK could not bind throws from InvokeAsync (before the tool body runs), and
+			// only here is the trial deserialization worth paying for: it reproduces the failure and turns
+			// it into the same precise invalid-parameter-type diagnostic this dispatch returned when the
+			// trial ran up front. The cost moved rather than vanished - a call that FAILS to bind now binds
+			// twice (the SDK's failed attempt plus this trial) instead of once - which is the deliberate
+			// trade: the extra pass is spent only on a call that is already failing. The call self-gates -
+			// well-formed arguments deserialize, it returns false, and a JsonException raised by the tool
+			// BODY falls through to the generic redacted message below exactly as before.
+			// Deliberately NOT gated on the exception type: an SDK that
+			// starts wrapping its binding failure would silently revert the diagnostic to that generic text.
+			// The trial is a DIAGNOSTIC, never a second failure mode - see TryDiagnoseBindingFailure.
+			if (TryDiagnoseBindingFailure(callContext) is { } bindingErrorResult) {
+				return bindingErrorResult;
+			}
 			// Without this catch the exception escapes to the outer McpToolErrorFilter, which the agent
 			// sees as a generic "An error occurred invoking '<tool>'" with no detail — so it cannot
 			// self-correct. Surface the real (inner-most) message as a structured Error result instead
@@ -299,6 +320,31 @@ public sealed class ClioRunExecutor(
 		finally {
 			callContext.Params = originalParams;
 			callContext.MatchedPrimitive = originalPrimitive;
+		}
+	}
+
+	/// <summary>
+	/// Reproduces a binding failure the SDK threw out of <c>InvokeAsync</c> as the precise
+	/// <c>invalid-parameter-type</c> diagnostic, or <see langword="null"/> when the arguments bind
+	/// cleanly (the failure came from the tool body) or the trial itself could not run.
+	/// </summary>
+	/// <remarks>
+	/// The trial is a diagnostic, never a second failure mode. Its own exception is turned into "no
+	/// diagnostic available" rather than propagated, so the caller still receives the tool's real
+	/// failure redacted by the dispatch: a raw reflection or converter error escaping from here would
+	/// both bypass <c>SensitiveErrorTextRedactor</c> and replace the failure the agent needs to see.
+	/// </remarks>
+	private static CallToolResult? TryDiagnoseBindingFailure(
+		RequestContext<CallToolRequestParams> callContext) {
+		try {
+			return McpToolErrorFilter.TryCreateArgumentDeserializationError(
+				callContext, out CallToolResult? bindingErrorResult)
+				? bindingErrorResult
+				: null;
+		}
+		catch (Exception diagnosticFailure) when (!McpExceptionPolicy.IsUnrecoverable(diagnosticFailure)) {
+			//Handled by producing no diagnostic: the caller falls through to the original exception.
+			return null;
 		}
 	}
 
@@ -478,7 +524,12 @@ public sealed class ClioRunExecutor(
 	// Matched case-insensitively.
 	private static readonly System.Collections.Generic.HashSet<string> FailureFieldNames =
 		new(StringComparer.OrdinalIgnoreCase) {
-			"error", "message", "detail", "details", "errorInfo", "exception", "stackTrace", "reason"
+			"error", "message", "detail", "details", "errorInfo", "exception", "stackTrace", "reason",
+			// "cause" carries the actionable half of every SysSettingFailure-shaped result (the sys-settings
+			// tools and get-schema-name-prefix), so it is failure-bearing in exactly the sense this set is
+			// about. Registering it is the MCP maintenance policy: an agent-visible failure field the
+			// backstop does not know about is contract drift, whatever the field happens to hold today.
+			"cause"
 		};
 
 	private static bool IsErrorFieldName(string key) => FailureFieldNames.Contains(key);
@@ -567,59 +618,28 @@ public sealed class ClioRunExecutor(
 	// A complex args parameter is a non-string reference/record type (e.g. SchemaSyncArgs) that the
 	// tool expects to receive as a single bound argument object; scalars (string, bool, numbers, enums)
 	// are not, so a single scalar parameter is bound by name from the args object's matching key.
-	private static bool IsComplexArgsParameter(Type type) {
-		Type underlying = Nullable.GetUnderlyingType(type) ?? type;
-		return underlying != typeof(string) && !underlying.IsValueType;
-	}
+	// ENG-95885: the definition now lives in McpToolArgumentSupport so this executor and
+	// McpToolErrorFilter's flat-argument normalizer share ONE notion of "single composite args
+	// parameter" and can never drift into fighting over the same payload.
+	private static bool IsComplexArgsParameter(Type type) =>
+		McpToolArgumentSupport.IsCompositeArgsParameter(type);
 
 	// Parameters the SDK injects from the request context (RequestContext, CancellationToken,
 	// IServiceProvider, McpServer, etc.) are not bound from the arguments object, so they are excluded
-	// when deciding whether a tool exposes a single user-supplied parameter.
-	private static bool IsBindableToolParameter(ParameterInfo parameter) {
-		Type type = parameter.ParameterType;
-		if (type == typeof(CancellationToken) || type == typeof(IServiceProvider) ||
-			typeof(ModelContextProtocol.Server.McpServer).IsAssignableFrom(type)) {
-			return false;
-		}
-		return !(type.IsGenericType && type.GetGenericTypeDefinition() == typeof(RequestContext<>));
-	}
+	// when deciding whether a tool exposes a single user-supplied parameter. Shared definition — see
+	// McpToolArgumentSupport.IsBindableToolParameter.
+	private static bool IsBindableToolParameter(ParameterInfo parameter) =>
+		McpToolArgumentSupport.IsBindableToolParameter(parameter);
 
-	// Top-3 nearest real tool names for an unknown `command`, ordered by Levenshtein distance to the
-	// requested name then ordinally by name — the same ranking the BuildSuggestions helper in
-	// ToolContractGetTool uses. The candidate source set here is caller-specific (intentionally divergent):
-	// it is the FULL invokable name
-	// set — the registry's invokable names (the hidden long tail clio-run targets) unioned with the
-	// reflection catalog — deduped case-insensitively. The executor names themselves are excluded so a
-	// near-miss never suggests re-entering clio-run / clio-run-destructive.
+	// Use only the live invokable registry: reflection also includes feature-disabled tools.
 	private IReadOnlyList<string> BuildSuggestions(string requestedName) =>
 		BuildSuggestions(requestedName, toolRegistry);
 
-	// Upper bound on the requested-name length fed into the O(n·m) Levenshtein ranking. This is a cold
-	// error path (only reached on an unknown tool), but the requested name is caller-supplied and could be
-	// arbitrarily long, so it is capped before ranking — mirroring the same 64-char cap the durable handler
-	// applies when sanitizing the name for prose reflection.
-	private const int MaxRequestedNameLengthForRanking = 64;
-
-	// Static form shared with the durable (forgiving) call-tool handler, so both callers rank the same
-	// candidate set with the same algorithm and never drift apart.
-	internal static IReadOnlyList<string> BuildSuggestions(string requestedName, IMcpToolInvokerRegistry registry) {
-		// Cap the caller-supplied name before it drives the per-candidate Levenshtein computation, so an
-		// oversized name cannot inflate the cost of the ranking on this cold error path.
-		string rankingName = requestedName is { Length: > MaxRequestedNameLengthForRanking }
-			? requestedName[..MaxRequestedNameLengthForRanking]
-			: requestedName;
-		return registry.ToolNames
-			.Concat(McpToolSchemaCatalog.RegisteredToolNames)
-			.Where(name => !string.IsNullOrWhiteSpace(name)
-				&& !string.Equals(name, ClioRunTool.ToolName, StringComparison.OrdinalIgnoreCase)
-				&& !string.Equals(name, ClioRunDestructiveTool.ToolName, StringComparison.OrdinalIgnoreCase))
-			.Distinct(StringComparer.OrdinalIgnoreCase)
-			.OrderBy(name => McpToolArgumentSupport.LevenshteinDistance(rankingName, name))
-			.ThenBy(name => name, StringComparer.OrdinalIgnoreCase)
-			.Take(3)
-			.ToArray();
-	}
-
+	// Shared with the durable handler; never suggest re-entering either executor.
+	internal static IReadOnlyList<string> BuildSuggestions(string requestedName, IMcpToolInvokerRegistry registry) =>
+		McpToolArgumentSupport.SuggestToolNames(requestedName, registry.ToolNames.Where(name =>
+			!string.Equals(name, ClioRunTool.ToolName, StringComparison.OrdinalIgnoreCase)
+			&& !string.Equals(name, ClioRunDestructiveTool.ToolName, StringComparison.OrdinalIgnoreCase)));
 
 	private static CallToolResult Error(string message) =>
 		new() {

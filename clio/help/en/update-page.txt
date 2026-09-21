@@ -8,6 +8,14 @@ ALIASES
     page-update
 
 DESCRIPTION
+    --resources adds missing keys and updates supplied en-US values. It preserves
+    resource identity, other cultures, and omitted keys. resourcesRegistered counts
+    new keys only. Resource saves warn that a stale push-workspace can revert them:
+    preserve local edits, capture the affected package with restore-workspace
+    (pull-workspace), and review metadata and culture XML before pushing. Follow
+    workspace instructions for linked FSM packages; check the native designer's
+    source diff before deciding another capture is needed.
+
     The update-page command validates and saves the raw JavaScript body of a
     Freedom UI page schema. Pass the full body string directly, typically
     after reading raw.body from get-page.
@@ -46,6 +54,13 @@ DESCRIPTION
     If the control is inherited from a parent schema and there is no local
     entry for it in viewConfigDiff, add a local merge for that control
     name instead of editing a non-existent local insert.
+
+    For an own-body field with an undeclared binding, keep the complete insert,
+    edit its values, and include its attribute declaration in viewModelConfigDiff
+    even when already stored. Append replaces a matching insert as a whole;
+    a separate merge does not patch the insert.
+    viewModelConfigDiff concatenates entries, so an unchanged declaration is
+    appended again with the same effective values. Another append cannot remove it.
 
     VALIDATION RULES:
     - SCHEMA_CONVERTERS keys (object form) must follow VendorPrefix.Name
@@ -93,6 +108,21 @@ DESCRIPTION
       then one "insert" per child. Both are merge-only: for insert/set
       the values object becomes the element, so children declared there
       are created.
+    - Rejected: an "insert"/"set" that declares crt.Scaffold ANYWHERE in
+      its values subtree (a nested child authors the same second root as
+      a top-level one), or an "insert" of an element NAMED Scaffold
+      whatever type it declares. Every mobile template provides the
+      Scaffold root and it is the page's only permitted one; a second
+      shadows the native element, so the top navigation bar and the page
+      body silently come from the wrong one. A "merge" onto Scaffold is
+      the SUPPORTED way to patch the template's own root and is allowed.
+    - Warned: a component type in NEITHER the mobile nor the web
+      registry. It may be a custom mobile component registered in your
+      own package, in which case ignore it; it is equally what a typo
+      looks like. Confirm with get-component-info using
+      schema-type "mobile". Advisory because clio cannot tell a custom
+      registration from a mistake, and refusing would block legitimate
+      packages.
     - Warned: no type anywhere while values carries element properties;
       two DIFFERENT types (the element still renders, as the values
       copy); an operation whose letter case does not match the differ's
@@ -108,6 +138,11 @@ DESCRIPTION
       viewConfigDiff must be a localizable-string binding, not an inline
       literal. Bind via #ResourceString(<Key>)# and register the key's
       default-language value with --resources. Inline literals are rejected.
+      Gallery itemConfig.templateValuesMapping values name record attributes
+      (e.g. caption: "GalleryDS_Name") and must stay unchanged. Other captions
+      still require localization. For a standalone merge, repeat type:
+      "crt.Gallery" unless the same body declares that node's type elsewhere.
+      Designer-only _designOptions mappings are also excluded.
       A component's own data descriptor is exempt: a "data" object carrying the
       platform's "typeName" marker, on any node that declares a component type
       and at any depth, is component metadata (uId, schemaType, typeName and
@@ -122,6 +157,9 @@ DESCRIPTION
       is not registered via --resources and is not Usr*/DS-bound. A metric title
       #ResourceString(IndicatorWidget_<slug>_title)# is registered only when you
       pass it in --resources; otherwise it renders raw.
+    - Resource keys already stored on the schema count as registered: a later save
+      of the same page does NOT have to repeat every key that an earlier save
+      registered. --resources is additions/overrides on top of what is persisted.
     A malformed VendorPrefix.Name causes a Creatio runtime error:
       "Error when register X. Type property should have format VendorPrefix.TypeName"
     - Call `clio get-guidance --name page-schema-converters` for converter details
@@ -138,7 +176,9 @@ DESCRIPTION
         are needed — this is what protects AI-agent CLI flows that read a page
         with get-page and then save it with update-page.
       - explicitly, from --expected-checksum (takes precedence over the on-disk
-        baseline).
+        baseline). Over MCP the same value is passed as the `checksum` argument,
+        which should carry the `editable.checksum` returned by the get-page call
+        the edit is based on.
     Before saving, the baseline is compared against the current
     SysSchema.Checksum of the editable schema. On a mismatch the save is blocked
     with a structured conflict response (conflict: true + conflictDetails)
@@ -147,22 +187,95 @@ DESCRIPTION
     deliberately overwrite. After a successful save the on-disk baseline is
     refreshed automatically, so consecutive updates in the same session do not
     false-conflict. A small race window between the check and the save remains
-    (last write wins).
+	(last write wins).
 
-    WRITE MODES:
+	A write redirected with --target-package-uid or --target-schema-uid skips the
+	on-disk baseline and does not refresh meta.json. A caller-supplied checksum is
+	still compared with the resolved target; a mismatch remains a conflict. With no
+	explicit checksum, the redirected write proceeds unchecked and reports a warning.
+
+	WRITE MODES:
     --mode replace (default) saves the body verbatim. --mode append loads the
-    current schema body from the server and merges your incoming fragment into
-    it (viewConfigDiff dedupes by name, handlers by request, and
-    SCHEMA_CONVERTERS / SCHEMA_VALIDATORS by type key; incoming wins). The final
-    merged web body is rejected when a custom validator reference lacks a matching
-    SCHEMA_VALIDATORS declaration; built-in crt.* validators need no local entry.
-    Append requires the
-    diff form: a full-config body (the SCHEMA_VIEW_MODEL_CONFIG / SCHEMA_MODEL_CONFIG
-    markers, instead of the *_DIFF markers) cannot be merged and is rejected with
-    an actionable hint — use --mode replace for such a body. The message names which
-    body is full-config: convert your own incoming body to the diff form, but if the
-    current page on the server is full-config (every create-app-section page is), append
-    is not supported against it — use --mode replace.
+    current schema body from the server and merges your incoming fragment into it.
+    An append body is a FRAGMENT OF A PAGE BODY, not a bare list of operations: it
+    may omit sections, but it must carry at least one section marker pair, e.g.
+    /**SCHEMA_VIEW_CONFIG_DIFF*/[ ... ]/**SCHEMA_VIEW_CONFIG_DIFF*/. A body with no
+    marker pair at all is rejected - every section would read as empty and the
+    merge would discard everything you sent while reporting success.
+    A viewConfigDiff entry is replaced only when both operation and name match one
+    of yours - and, for a remove or a set, whether it targets properties. Incoming
+    wins and keeps the existing entry's position; every other existing operation
+    is preserved verbatim, including a second operation on a component you already
+    target. One exception: if your fragment supersedes an identity the page
+    carries TWICE, only the first is replaced and the later one is dropped, since
+    keeping it would re-apply stale values after your replacement. Handlers
+    dedupe by request.
+    SCHEMA_CONVERTERS and SCHEMA_VALIDATORS entries merge by type key and
+    incoming wins. The merged web body is rejected when a custom
+    validator reference lacks a matching SCHEMA_VALIDATORS declaration;
+    built-in crt.* validators need no local entry.
+    Preserved is not the same as applied, and this is not specific to append - it
+    is how the platform differ resolves any final body, so a hand-authored
+    --mode replace body produces it too. Operations run in whole GROUPS in a fixed
+    order (merges, then removes/inserts/moves, set last), never in array order.
+    - Warned: a merge, move or element remove sitting beside an insert for the
+      same name. It resolves against a base that lacks the component and is
+      dropped. Same for a move whose name the body also element-removes; a
+      merge whose name the body also element-removes or sets; and a property
+      remove whose name the body also sets, or also element-removes unless an
+      insert re-creates the element. Fold the values into the insert, or use set,
+      which runs after it. Reordering the array changes nothing. The save
+      still succeeds; --dry-run reports it too, against the body that would
+      actually be written - so in append mode it also catches a pair formed
+      between your fragment and the server's body.
+      Advisory only: a parent schema inserting the same name can make the
+      transform apply after all, and clio cannot see the replacing chain.
+
+    APPEND DRY RUN:
+    In append mode --dry-run resolves the current server body, computes the
+    merge and returns without saving, reporting the outcome as appendProjection:
+    currentOperationCount, incomingOperationCount, projectedOperationCount
+    (compare it against the number you expect), addedOperationCount,
+    and replacedOperations / replacedOperationCount (replaced in place - not a
+    loss). Three DISTINCT loss channels, each with its own fix; two of them warn:
+      - droppedOperations: entries from the SERVER body not carried over (the
+        further-duplicate exception above). WARNS, one entry per component.
+      - viewConfigDiffApplied=false: the current body has no
+        SCHEMA_VIEW_CONFIG_DIFF marker pair, so every count describes an array
+        the write discards. WARNS; use --mode replace.
+      - collapsedIncomingOperations: entries from YOUR OWN fragment that a later
+        entry in the same fragment supersedes, since only the last spelling of an
+        identity survives. Reported as DATA ONLY, no warning - the fragment is
+        yours to read, so warning about your own input would be noise. Counted so
+        the totals can be reconciled.
+    Named lists are capped; counts are exact.
+    An append dry run also runs the SAME body checks as the save, against the
+    same body, including the save's widget-caption gate - reported as a warning
+    rather than a refusal, so a dry run and a save cannot disagree about a
+    caption. Two consequences: an append whose real save could not merge now
+    FAILS the dry run with the same error instead of reporting success (every
+    dry-run failure carries dryRun: true, so it stays distinguishable from a
+    failed real save); and --mode replace
+    is unaffected - it writes verbatim, so there is nothing to project. It is
+    NOT an offline check: resolving the schema context still queries the server
+    before either mode is chosen. What it skips is the designer GetSchema fetch
+    of the current body. Trade-off: its caption
+    check resolves only against the resources you pass, so it is weaker than
+    the save's. The same projection is returned on a real append
+    save.
+    appendProjection speaks for viewConfigDiff only. The sibling *_DIFF arrays
+    append unconditionally and cannot lose an entry. Handlers are NOT covered:
+    they dedupe by request, and the merge drops every current handler whose
+    request appears in your fragment - so a current body carrying one request
+    twice keeps neither and your fragment contributes one. Check handlers by
+    hand when that shape is possible.
+    Append requires the diff form: a full-config body (the SCHEMA_VIEW_MODEL_CONFIG
+    / SCHEMA_MODEL_CONFIG markers, instead of the *_DIFF markers) cannot be merged
+    and is rejected with an actionable hint — use --mode replace for such a body.
+    The message names which body is full-config: convert your own incoming body to
+    the diff form, but if the current page on the server is full-config (every
+    create-app-section page is), append is not supported against it — use
+    --mode replace.
 
 SYNOPSIS
     clio update-page [options]

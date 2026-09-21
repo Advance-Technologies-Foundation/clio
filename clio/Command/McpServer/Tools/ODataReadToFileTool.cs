@@ -17,7 +17,7 @@ namespace Clio.Command.McpServer.Tools;
 /// MCP safety annotations and the durable read routing are static per tool: an optional output-file would have
 /// made every ordinary query write-capable, costing it both raw-name compatibility and the bounded retry-safe
 /// read semantics. The query itself is not duplicated - both tools build and parse through
-/// <see cref="ODataReadQuery"/>.
+/// <see cref="ODataReadTool"/>, whose validator, query builder and identity checks both paths share.
 /// </remarks>
 [McpServerToolType]
 public sealed class ODataReadToFileTool(IToolCommandResolver commandResolver, IODataFileContract fileContract) {
@@ -37,7 +37,7 @@ public sealed class ODataReadToFileTool(IToolCommandResolver commandResolver, IO
 	private static readonly IReadOnlyDictionary<string, string> ArgumentAliases = BuildArgumentAliases();
 
 	private static IReadOnlyDictionary<string, string> BuildArgumentAliases() {
-		Dictionary<string, string> aliases = new(ODataReadQuery.SharedArgumentAliases, StringComparer.Ordinal) {
+		Dictionary<string, string> aliases = new(ODataReadTool.ArgumentAliases, StringComparer.Ordinal) {
 			["outputFile"] = "output-file",
 			["output_file"] = "output-file"
 		};
@@ -76,14 +76,17 @@ public sealed class ODataReadToFileTool(IToolCommandResolver commandResolver, IO
 		ODataReadToFileArgs args,
 		CancellationToken cancellationToken = default) {
 		try {
-			string argumentError = ODataReadQuery.ValidateArguments(args, ArgumentAliases, ValidArgumentsHint)
-				?? ODataReadQuery.ValidateTarget(args);
+			string argumentError = ODataReadTool.ValidateAndNormalizeArguments(
+					args, ArgumentAliases, ValidArgumentsHint,
+					out string[] selectColumns, out string[] expandColumns)
+				?? ODataReadTool.ValidateTarget(args);
 			if (argumentError is not null) {
-				return ODataReadResponse.Failure(argumentError);
+				return ODataReadResponse.Failure(argumentError, ODataReadErrorCodes.Argument);
 			}
 			if (string.IsNullOrWhiteSpace(args.OutputFile)) {
 				return ODataReadResponse.Failure(
-					"output-file is required. Use odata-read when the response should be returned inline.");
+					"output-file is required. Use odata-read when the response should be returned inline.",
+					ODataReadErrorCodes.Argument);
 			}
 
 			EnvironmentOptions options = new() { Environment = args.EnvironmentName };
@@ -93,12 +96,13 @@ public sealed class ODataReadToFileTool(IToolCommandResolver commandResolver, IO
 			// Confine the output path BEFORE the fetch: a rejected path should not cost a full (possibly large)
 			// OData response first.
 			if (!_fileContract.TryResolveOutputPath(args.OutputFile, out string outputPath, out string pathError)) {
-				return ODataReadResponse.Failure(pathError);
+				return ODataReadResponse.Failure(pathError, ODataReadErrorCodes.Argument);
 			}
 
-			string url = urlBuilder.Build(ODataReadQuery.BuildRequestPath(args));
+			string url = urlBuilder.Build(ODataReadTool.BuildRequestPath(args, selectColumns, expandColumns));
 			if (!TryFetch(client, url, cancellationToken, out byte[] responseUtf8, out string fetchError)) {
-				return ODataReadResponse.Failure(fetchError);
+				return ODataReadResponse.Failure(fetchError, ODataReadErrorCodes.Transport,
+					entity: args.Entity.Trim());
 			}
 			// Checked AFTER the fetch and BEFORE anything is published: the transport may well finish an
 			// abandoned request, and a file appearing for a call the caller was told nothing about is worse
@@ -113,8 +117,8 @@ public sealed class ODataReadToFileTool(IToolCommandResolver commandResolver, IO
 			// file is published only after that pass accepts the body.
 			if (!_fileContract.TryWriteReadResponse(
 				outputPath, responseUtf8, args.Entity, args.Count,
-				out ODataReadFileSummary summary, out string fileError)) {
-				return ODataReadResponse.Failure(fileError);
+				out ODataReadFileSummary summary, out string fileError, out string fileErrorCode)) {
+				return ODataReadResponse.Failure(fileError, fileErrorCode, entity: args.Entity.Trim());
 			}
 			return new ODataReadResponse(
 				true,
@@ -123,16 +127,19 @@ public sealed class ODataReadToFileTool(IToolCommandResolver commandResolver, IO
 				null,
 				summary.NextLink,
 				summary.TotalCount,
-				outputPath,
-				summary.RowCount,
-				summary.ColumnSizes);
+				OutputFile: outputPath,
+				RowCount: summary.RowCount,
+				ColumnSizes: summary.ColumnSizes);
 		} catch (OperationCanceledException) {
 			// The caller went away. Nothing has been written - the file is published only after the body is
 			// fully received and accepted - so there is nothing to clean up, and the failure says why.
 			return ODataReadResponse.Failure(
-				"The call was cancelled before the response was received; no output file was written.");
+				"The call was cancelled before the response was received; no output file was written.",
+				ODataReadErrorCodes.Transport);
 		} catch (Exception ex) {
-			return ODataReadResponse.Failure(SensitiveErrorTextRedactor.Redact(ex.Message));
+			return ODataReadResponse.Failure(
+				SensitiveErrorTextRedactor.Redact(ex.Message), ODataReadErrorCodes.Transport,
+				entity: string.IsNullOrWhiteSpace(args.Entity) ? null : args.Entity.Trim());
 		}
 	}
 

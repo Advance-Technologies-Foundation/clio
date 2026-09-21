@@ -321,7 +321,16 @@ public sealed class ApplicationToolE2ETests {
 		}
 
 		TestConfiguration.EnsureSandboxIsConfigured(settings);
-		await using ApplicationArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(10));
+		// Budget raised from 10 to 15 minutes because ActCreateAsync now retries a KNOWN transient
+		// platform answer (issue #1106) and this one CancellationTokenSource covers the whole test. The
+		// gate's window is additive, not free. Its OverallDeadline is WALL-CLOCK and counts the attempts
+		// themselves, so the real cost is bounded by 3 minutes rather than by attempt count: a fast
+		// create-app spends most of that on the fixed waits, a slow one on one or two extra full attempts.
+		// An exhausted token does NOT degrade gracefully - Task.Delay and
+		// CallToolAsync throw OperationCanceledException instead of the gate returning its last answer,
+		// losing both the documented "the test's own assertions still decide" property and the payload
+		// diagnostics. 15 minutes matches the sibling gated test above and leaves headroom over that ceiling.
+		await using ApplicationArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(15));
 		string suffix = Guid.NewGuid().ToString("N")[..8];
 		string createdApplicationCode = $"UsrCodex{suffix}";
 		string applicationName = $"Codex E2E {suffix}";
@@ -389,7 +398,17 @@ public sealed class ApplicationToolE2ETests {
 		}
 
 		TestConfiguration.EnsureSandboxIsConfigured(settings);
-		await using ApplicationArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(10));
+		// Arrange budget raised above the 10 minutes the other create-app tests use, because THIS test wraps
+		// its create in TransientPlatformConditionRetryGate and ArrangeAsync creates a single
+		// CancellationTokenSource covering the whole test — session start, tool listing, every create-app
+		// attempt and the ProgressDeliveryTimeout wait all share it. The gate's retry window is additive on
+		// top of the create-app calls themselves, not free: up to (MaxAttempts - 1) x RetryDelay = 120s of
+		// waiting, bounded by its own 3-minute OverallDeadline. 15 minutes therefore leaves 5 minutes of
+		// headroom over that hard ceiling. It matters because an exhausted CTS does NOT degrade gracefully
+		// here: Task.Delay / CallToolAsync would throw OperationCanceledException instead of the gate
+		// returning its last answer, so the documented "the test's own assertions still decide" property —
+		// and the [payload] / [progress] diagnostics printed below — would both be lost.
+		await using ApplicationArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(15));
 		string suffix = Guid.NewGuid().ToString("N")[..8];
 		string createdApplicationCode = $"UsrCodex{suffix}";
 		string applicationName = $"Codex E2E {suffix}";
@@ -399,23 +418,64 @@ public sealed class ApplicationToolE2ETests {
 		reachableToolNames.Should().Contain(CreateToolName,
 			because: "the create-app MCP tool must be discoverable via the get-tool-contract compact index before the progress-marker call can run");
 
+		Dictionary<string, object?> createArgs = new() {
+			["args"] = BuildCreateArgs(
+				arrangeContext.EnvironmentName,
+				applicationName,
+				createdApplicationCode,
+				description: null,
+				ApplicationTemplateCode,
+				ApplicationIconId,
+				ApplicationIconBackground,
+				optionalTemplateDataJson: null)
+		};
+
 		// Act — invoke create-app through the progress-capable overload so the client observes the
-		// service-level stage markers the tool streams as notifications/progress.
-		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			CreateToolName,
-			new Dictionary<string, object?> {
-				["args"] = BuildCreateArgs(
-					arrangeContext.EnvironmentName,
-					applicationName,
-					createdApplicationCode,
-					description: null,
-					ApplicationTemplateCode,
-					ApplicationIconId,
-					ApplicationIconBackground,
-					optionalTemplateDataJson: null)
-			},
-			progress,
-			arrangeContext.CancellationTokenSource.Token);
+		// service-level stage markers the tool streams as notifications/progress. Wrapped in the
+		// transient-platform-condition retry gate (issue #1381 part 2): a KNOWN transient platform
+		// answer (the OData-rebuild window, an HTML/login-page redirect, or a rejected implicit login)
+		// is retried instead of failing the test outright. Every retry attempt gets its own progress
+		// sink so the marker assertions below see exactly one attempt's stream, never a mix of a failed
+		// attempt's partial markers and the successful attempt's full set. A login rejection is retried
+		// against a freshly-started MCP session (a fresh clio process, hence a fresh login) rather than
+		// blindly repeating the call against the same stale session; the replacement session is disposed
+		// in the `finally` below regardless of outcome.
+		// Assumption this retry relies on: a retried create-app resubmits the SAME application name and
+		// code as the original attempt. That is safe only because the platform's own idempotency is what
+		// protects us — a genuine duplicate create is rejected outright with a business-rule error instead
+		// of silently succeeding twice — and TransientPlatformConditionRetryGate explicitly excludes the
+		// one case where the create is known to have already happened: ApplicationCreateService's
+		// "was created but its metadata could not be loaded" failure (see
+		// TransientPlatformConditionRetryGate.ApplicationAlreadyCreatedMarker), which is never retried.
+		McpServerSession? reauthenticatedSession = null;
+		CallToolResult callResult;
+		try {
+			callResult = await TransientPlatformConditionRetryGate.InvokeWithRetryAsync(
+				async attemptToken => {
+					McpServerSession activeSession = reauthenticatedSession ?? arrangeContext.Session;
+					progress = new MessageCollectingProgress();
+					return await activeSession.CallToolAsync(CreateToolName, createArgs, progress, attemptToken);
+				},
+				async reauthToken => {
+					// Null the field BEFORE disposing the previous session and BEFORE starting the
+					// replacement: if StartAsync throws, the `finally` below must not see a still-set
+					// field pointing at an already-disposed session (McpServerSession.DisposeAsync has no
+					// disposed-guard, so disposing it twice would replace the real re-authentication
+					// failure with a disposal exception).
+					McpServerSession? previousSession = reauthenticatedSession;
+					reauthenticatedSession = null;
+					if (previousSession is not null) {
+						await previousSession.DisposeAsync();
+					}
+					reauthenticatedSession = await McpServerSession.StartAsync(settings, reauthToken);
+				},
+				arrangeContext.CancellationTokenSource.Token);
+		}
+		finally {
+			if (reauthenticatedSession is not null) {
+				await reauthenticatedSession.DisposeAsync();
+			}
+		}
 
 		// Diagnostic: dump the raw result BEFORE parsing it. A create that fails on the environment (or
 		// returns the over-deadline "in-progress, poll" envelope) leaves IsError unset, so without the
@@ -479,24 +539,9 @@ public sealed class ApplicationToolE2ETests {
 		}
 
 		TestConfiguration.EnsureSandboxIsConfigured(settings);
-		await using ApplicationArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(10));
-		string suffix = Guid.NewGuid().ToString("N")[..8];
-		string createdApplicationCode = $"UsrWeb{suffix}";
-		string applicationName = $"Web Only E2E {suffix}";
 
 		// Act
-		ApplicationInfoActResult actResult = await ActCreateAsync(
-			arrangeContext.Session,
-			arrangeContext.CancellationTokenSource.Token,
-			arrangeContext.EnvironmentName,
-			applicationName,
-			createdApplicationCode,
-			description: null,
-			ApplicationTemplateCode,
-			ApplicationIconId,
-			ApplicationIconBackground,
-			optionalTemplateDataJson: null,
-			withMobilePages: false);
+		ApplicationInfoActResult actResult = await GetOrCreateWebOnlyAutoIconApplicationAsync(settings);
 
 		// Assert
 		actResult.CallResult.IsError.Should().NotBeTrue(
@@ -535,7 +580,16 @@ public sealed class ApplicationToolE2ETests {
 		}
 
 		TestConfiguration.EnsureSandboxIsConfigured(settings);
-		await using ApplicationArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(10));
+		// Budget raised from 10 to 15 minutes because ActCreateAsync now retries a KNOWN transient
+		// platform answer (issue #1106) and this one CancellationTokenSource covers the whole test. The
+		// gate's window is additive, not free. Its OverallDeadline is WALL-CLOCK and counts the attempts
+		// themselves, so the real cost is bounded by 3 minutes rather than by attempt count: a fast
+		// create-app spends most of that on the fixed waits, a slow one on one or two extra full attempts.
+		// An exhausted token does NOT degrade gracefully - Task.Delay and
+		// CallToolAsync throw OperationCanceledException instead of the gate returning its last answer,
+		// losing both the documented "the test's own assertions still decide" property and the payload
+		// diagnostics. 15 minutes matches the sibling gated test above and leaves headroom over that ceiling.
+		await using ApplicationArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(15));
 		string suffix = Guid.NewGuid().ToString("N")[..8];
 		string createdApplicationCode = $"UsrCodex{suffix}";
 		string applicationName = $"Codex E2E {suffix}";
@@ -626,6 +680,21 @@ public sealed class ApplicationToolE2ETests {
 			because: "get-app-info must include the virtual schema created in the application's primary package");
 		virtualEntity!.Virtual.Should().BeTrue(
 			because: "get-app-info must preserve the runtime virtual state for a real schema created through sync-schemas");
+		ApplicationColumnEnvelope? addedColumn = canonicalMainEntity.Columns
+			.FirstOrDefault(column => string.Equals(column.Name, addedColumnName, StringComparison.OrdinalIgnoreCase));
+		addedColumn.Should().NotBeNull(
+			because: "the column added by sync-schemas must appear in the get-app-info readback");
+		addedColumn!.DefaultValueConfig.Should().NotBeNull(
+			because: "a column default written through sync-schemas default-value-config must be reported by the get-app-info read shape (issue #969)");
+		addedColumn.DefaultValueConfig!.Source.Should().Be("Const",
+			because: "the readback must report the default source used at write time");
+		JsonElement? defaultValue = addedColumn.DefaultValueConfig.Value;
+		defaultValue.Should().NotBeNull(
+			because: "a Const default must carry its value in the readback");
+		defaultValue.Value.ValueKind.Should().Be(JsonValueKind.String,
+			because: "a scalar Text Const default is stored as a string value");
+		defaultValue.Value.GetString().Should().Be("Default status",
+			because: "the readback default value must round-trip unchanged to what sync-schemas wrote");
 	}
 
 	[Category("McpE2E.Sandbox")]
@@ -799,21 +868,9 @@ public sealed class ApplicationToolE2ETests {
 		}
 
 		TestConfiguration.EnsureSandboxIsConfigured(settings);
-		await using ApplicationArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(10));
-		string suffix = Guid.NewGuid().ToString("N")[..8];
 
 		// Act
-		ApplicationInfoActResult actResult = await ActCreateAsync(
-			arrangeContext.Session,
-			arrangeContext.CancellationTokenSource.Token,
-			arrangeContext.EnvironmentName,
-			name: $"Codex Auto Icon {suffix}",
-			code: $"UsrAutoIcon{suffix}",
-			description: null,
-			templateCode: ApplicationTemplateCode,
-			iconId: "auto",
-			iconBackground: ApplicationIconBackground,
-			optionalTemplateDataJson: null);
+		ApplicationInfoActResult actResult = await GetOrCreateWebOnlyAutoIconApplicationAsync(settings);
 		// Diagnostic: dump the create payload before anything asserts on it, so a create that failed on the
 		// environment is visible in the run output even when the assertion below is the first thing to notice.
 		TestContext.Out.WriteLine($"[create payload] {DescribeCallResult(actResult.CallResult)}");
@@ -838,39 +895,46 @@ public sealed class ApplicationToolE2ETests {
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		CancellationTokenSource cancellationTokenSource = new(timeout);
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		McpServerSession session = await GetOrStartSharedSessionAsync(settings, cancellationTokenSource.Token);
 		return new ApplicationArrangeContext(environmentName, session, cancellationTokenSource);
 	}
 
-	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
-		string? configuredEnvironmentName = settings.Sandbox.EnvironmentName;
-		if (!string.IsNullOrWhiteSpace(configuredEnvironmentName) &&
-			await CanReachEnvironmentAsync(settings, configuredEnvironmentName)) {
-			return configuredEnvironmentName;
-		}
+	/// <summary>
+	/// Returns this fixture's single MCP server process, starting it on first use.
+	/// </summary>
+	/// <remarks>
+	/// Every test here used to start its own child server: 16 process lifecycles for one fixture, each
+	/// costing roughly 1.8 s to start and 0.5 s to tear down, none of which TeamCity bills to a test.
+	/// The tests share a read/create workload against one environment and none of them mutates server
+	/// state at startup, so one process serves them all. The fixture is <c>[NonParallelizable]</c>, so
+	/// the lazy start needs no lock. Started lazily rather than in <c>[OneTimeSetUp]</c> on purpose: an
+	/// <c>Assert.Ignore</c> raised from one-time setup skips the WHOLE fixture, which would hide the
+	/// tests that need no reachable stand.
+	/// </remarks>
+	/// <param name="settings">Settings for the child process.</param>
+	/// <param name="cancellationToken">Bounds the start.</param>
+	/// <returns>The shared session.</returns>
+	private static async Task<McpServerSession> GetOrStartSharedSessionAsync(
+		McpE2ESettings settings,
+		CancellationToken cancellationToken) =>
+		_sharedSession ??= await McpServerSession.StartAsync(settings, cancellationToken);
 
-		const string fallbackEnvironmentName = "d2";
-		if (await CanReachEnvironmentAsync(settings, fallbackEnvironmentName)) {
-			return fallbackEnvironmentName;
-		}
+	private static McpServerSession? _sharedSession;
 
-		Assert.Ignore(
-			$"application MCP E2E requires a reachable environment. Configured sandbox environment '{configuredEnvironmentName}' was not reachable, and fallback environment '{fallbackEnvironmentName}' was also unavailable.");
-		return string.Empty;
+	[OneTimeTearDown]
+	public static async Task StopSharedSessionAsync() {
+		if (_sharedSession is not null) {
+			await _sharedSession.DisposeAsync();
+			_sharedSession = null;
+		}
 	}
 
-	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {
-		using CancellationTokenSource cts = new(TimeSpan.FromSeconds(30));
-		try {
-			ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(
-				settings,
-				["ping-app", "-e", environmentName],
-				cancellationToken: cts.Token);
-			return result.ExitCode == 0;
-		} catch (OperationCanceledException) {
-			return false;
-		}
-	}
+	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) =>
+		// Destructive fixture: configured-only. The AllowDestructiveMcpTests opt-in authorizes writes to
+		// the disposable stand named in settings, never to a fallback environment that merely answers.
+		await ReachableSandboxEnvironment.ResolveConfiguredOrIgnoreAsync(
+			settings,
+			$"application MCP E2E requires the configured sandbox environment '{settings.Sandbox.EnvironmentName}' to be set and reachable.");
 
 	private static async Task<ApplicationListActResult> ActListAsync(
 		McpServerSession session,
@@ -935,9 +999,12 @@ public sealed class ApplicationToolE2ETests {
 					return candidate;
 				}
 			}
-			catch (InvalidOperationException) {
+			catch (InvalidOperationException exception) {
 				// get-app-info can transiently fail to read the just-recompiled schema while the
-				// server is still settling after sync-schemas; keep polling within the window.
+				// server is still settling after sync-schemas; keep polling within the window. Each
+				// attempt writes a payload dump, so discard it here - otherwise one settling window
+				// leaves a dump per poll in the published TestResults artifact.
+				PayloadDumpReader.DeleteIfPresent(exception.Message);
 			}
 
 			await Task.Delay(CanonicalMainEntityReadbackPollInterval, cancellationToken);
@@ -974,18 +1041,35 @@ public sealed class ApplicationToolE2ETests {
 		string? iconBackground,
 		string? optionalTemplateDataJson,
 		bool withMobilePages = true) {
-		CallToolResult callResult = await CallCreateAsync(
-			session,
-			cancellationToken,
-			environmentName,
-			name,
-			code,
-			description,
-			templateCode,
-			iconId,
-			iconBackground,
-			optionalTemplateDataJson,
-			withMobilePages);
+		// Wrapped in the transient-platform-condition retry gate (issue #1106). Every muted flake this
+		// helper produced answered with one of the three shapes the gate already classifies — the
+		// OData-rebuild window, an HTML/login-page redirect, or a rejected implicit login — and the gate
+		// existed but was wired into ONE unrelated test only. No re-authentication seam is supplied: this
+		// helper receives a session it does not own and so cannot replace it. A plain retry still recovers
+		// from a rejected login, by a different mechanism than the implicit one: Login() assigns a FRESH,
+		// EMPTY CookieContainer before it sends, so after a rejection the cookie field is non-null and
+		// InitAuthCookie's null check will NOT log in again - recovery comes from ReauthExecutor detecting
+		// the login page / 401 on the retried request and re-authenticating there. The sibling gated test
+		// above restarts the whole MCP session for this case; it can, because it owns the session it
+		// started. This helper does not, and the cheaper path is sufficient.
+		// A retried create-app resubmits the SAME name and code; that is safe for the same two reasons the
+		// progress-marker test documents — the platform rejects a genuine duplicate create outright, and
+		// the gate excludes the two "the create may already have happened" prefixes.
+		CallToolResult callResult = await TransientPlatformConditionRetryGate.InvokeWithRetryAsync(
+			attemptToken => CallCreateAsync(
+				session,
+				attemptToken,
+				environmentName,
+				name,
+				code,
+				description,
+				templateCode,
+				iconId,
+				iconBackground,
+				optionalTemplateDataJson,
+				withMobilePages),
+			reauthenticateAsync: null,
+			cancellationToken);
 		ApplicationContextResponseEnvelope result;
 		try {
 			result = ApplicationResultParser.ExtractInfo(callResult);
@@ -1136,7 +1220,13 @@ public sealed class ApplicationToolE2ETests {
 									["action"] = "add",
 									["column-name"] = addedColumnName,
 									["type"] = "Text",
-									["title-localizations"] = BuildLocalizations("Status")
+									["title-localizations"] = BuildLocalizations("Status"),
+									// A Const default written through the structured field — the readback below must
+									// surface it as default-value-config, proving the #969 round trip end to end.
+									["default-value-config"] = new Dictionary<string, object?> {
+										["source"] = "Const",
+										["value"] = "Default status"
+									}
 								}
 							}
 						},
@@ -1205,7 +1295,9 @@ public sealed class ApplicationToolE2ETests {
 			return contentPayload;
 		}
 
-		throw new InvalidOperationException("Could not parse SchemaSyncResponse MCP result.");
+		throw new InvalidOperationException(
+			"Could not parse SchemaSyncResponse MCP result: "
+			+ McpResultDiagnostics.Describe(callResult));
 	}
 
 	private static bool TryExtractSchemaSyncResponse(object? value, out JsonElement payload) {
@@ -1315,14 +1407,18 @@ public sealed class ApplicationToolE2ETests {
 		});
 	}
 
-
 	private sealed record ApplicationArrangeContext(
 		string EnvironmentName,
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
+		/// <summary>
+		/// Releases only what this test owns. The session is the fixture's, shared by every test here and
+		/// disposed once in <c>[OneTimeTearDown]</c>; disposing it per test is what made the fixture pay
+		/// 16 process lifecycles.
+		/// </summary>
+		public ValueTask DisposeAsync() {
 			CancellationTokenSource.Dispose();
+			return ValueTask.CompletedTask;
 		}
 	}
 
@@ -1333,4 +1429,60 @@ public sealed class ApplicationToolE2ETests {
 	private sealed record ApplicationInfoActResult(
 		CallToolResult CallResult,
 		ApplicationContextResponseEnvelope Result);
+
+	/// <summary>
+	/// Creates — once for this fixture — one application with <c>icon-id='auto'</c> and
+	/// <c>with-mobile-pages=false</c>, and returns that single create's result to every test that asserts
+	/// on it.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// The auto-icon test and the web-only test each used to create an application of their own. A
+	/// create-app is a real Creatio compile — roughly 40 s each on CI — and the two options are
+	/// orthogonal: resolving an icon has nothing to do with suppressing mobile pages, so one create
+	/// carrying both exercises both paths without weakening either assertion. The tests stay separate,
+	/// so a failure still names which property broke.
+	/// </para>
+	/// <para>
+	/// Lazy rather than <c>[OneTimeSetUp]</c>: the destructive-tests gate and the sandbox check are
+	/// per-test <c>Assert.Ignore</c>s, and an ignore raised from one-time setup would skip the whole
+	/// fixture. The fixture is <c>[NonParallelizable]</c>, so the lazy create needs no lock.
+	/// </para>
+	/// </remarks>
+	/// <param name="settings">Settings for the MCP session.</param>
+	/// <returns>The shared create-app result.</returns>
+	private static async Task<ApplicationInfoActResult> GetOrCreateWebOnlyAutoIconApplicationAsync(
+		McpE2ESettings settings) {
+		if (_webOnlyAutoIconApplication is not null) {
+			return _webOnlyAutoIconApplication;
+		}
+		// Budget raised from 10 to 15 minutes because ActCreateAsync now retries a KNOWN transient
+		// platform answer (issue #1106) and this one CancellationTokenSource covers the whole create. The
+		// gate's window is additive, not free. Its OverallDeadline is WALL-CLOCK and counts the attempts
+		// themselves, so the real cost is bounded by 3 minutes rather than by attempt count. An exhausted
+		// token does NOT degrade gracefully - Task.Delay and CallToolAsync throw OperationCanceledException
+		// instead of the gate returning its last answer, losing both the documented "the test's own
+		// assertions still decide" property and the payload diagnostics. 15 minutes matches the sibling
+		// gated tests and leaves headroom over that ceiling.
+		ApplicationArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(15));
+		await using (arrangeContext) {
+			string suffix = Guid.NewGuid().ToString("N")[..8];
+			_webOnlyAutoIconApplication = await ActCreateAsync(
+				arrangeContext.Session,
+				arrangeContext.CancellationTokenSource.Token,
+				arrangeContext.EnvironmentName,
+				name: $"Codex Auto Icon Web Only {suffix}",
+				code: $"UsrAutoIconWeb{suffix}",
+				description: null,
+				templateCode: ApplicationTemplateCode,
+				iconId: "auto",
+				iconBackground: ApplicationIconBackground,
+				optionalTemplateDataJson: null,
+				withMobilePages: false);
+		}
+		return _webOnlyAutoIconApplication;
+	}
+
+	private static ApplicationInfoActResult? _webOnlyAutoIconApplication;
+
 }

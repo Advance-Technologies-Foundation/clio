@@ -2,75 +2,50 @@
 
 ## Command Type
 
-    Development commands
-
-## Name
-
-create-sql-schema - Create a new SQL script schema on a remote Creatio environment
-
-**Aliases:** `sql-schema-create`
+Development commands
 
 ## Description
 
-The create-sql-schema command creates a new SQL script schema on a remote Creatio environment
-via ScriptSchemaDesignerService. The schema is saved directly to the server; no local
-workspace files are created.
+Creates an empty package SQL script on a remote Creatio environment using the native
+`SqlScriptSchemaDesignerService/SaveSchema` operation. No local workspace files are created.
+SQL scripts belong to `VwSysSqlScriptInPackage`, not `SysSchema` or a script schema manager.
 
-The schema-name must start with a letter and contain only letters, digits, or underscores.
-The name must be unique within the environment.
-
-## Synopsis
-
-```bash
-clio create-sql-schema [options]
-```
+**Alias:** `sql-schema-create`.
 
 ## Options
 
-```bash
---schema-name                      New SQL schema name (required)
+| Option | Meaning |
+|---|---|
+| `--schema-name` | Required unique name, starting with a letter and containing letters, digits or underscores. |
+| `--package-name` | Required editable destination package. |
+| `--db-engine-type` | Optional: 0 MSSql, 1 Oracle, 2 PostgreSql. Omit to detect the target engine. If detection is unavailable on an older host, supply it explicitly. |
+| `--install-type` | 0 before package, 1 after package (default), 2 after schema data, 3 uninstall app. |
+| `-e`, `--environment` | Registered environment. Direct `--uri`, `--login`, `--password` are also supported. |
 
---package-name                     Target package name that will own the new schema (required)
-
---caption                          Optional display caption; defaults to schema-name
-
---description                      Optional schema description
-
---caption-culture                  Override the culture for the generated schema
-                                   caption (e.g. en-US, uk-UA). Precedence:
-                                   override > the connected user's profile
-                                   culture (see get-user-culture) > en-US.
-
---uri                    -u       Application uri
-
---Password               -p       User password
-
---Login                  -l       User login (administrator permission required)
-
---Environment            -e       Environment name
-
---Maintainer             -m       Maintainer name
-```
+The legacy `--caption`, `--description`, and `--caption-culture` options remain recognized but
+nonempty values are rejected: native package SQL scripts do not persist these fields.
+Use `--schema-name` as the script display name.
 
 ## Example
 
 ```bash
 clio create-sql-schema --schema-name UsrCleanupStaleRows --package-name Custom -e dev
-# Create UsrCleanupStaleRows in the Custom package on the dev environment
-
-clio create-sql-schema --schema-name UsrCleanupStaleRows --package-name Custom --caption "Cleanup stale rows" -e dev
-# Create with a display caption
-
-clio sql-schema-create --schema-name UsrCleanupStaleRows --package-name Custom --description "Nightly cleanup" -e dev
-# Create with a description using the alias
+clio update-sql-schema --schema-name UsrCleanupStaleRows --body-file /work/cleanup.sql -e dev
+clio get-sql-schema --schema-name UsrCleanupStaleRows -e dev
+clio install-sql-schema --schema-name UsrCleanupStaleRows -e dev
 ```
 
-## Notes
+Creation saves an empty body without executing SQL. Updating saves the body while preserving the
+script identity, engine, installation phase and dependencies. Installation executes the saved SQL.
+Normal package export/deployment carries the script; use the existing workspace/package workflow
+when maintaining it in source control.
 
-- The schema caption is stored under the resolved culture (`--caption-culture` override > the connected user's profile culture > `en-US`). A caption whose script does not match a Latin-script culture (for example Cyrillic under `en-US`) is rejected with an actionable error; pass `--caption-culture` to author the caption in a specific language.
+## Failure handling
 
-## Reporting Bugs
+Invalid names are reported together. Duplicate or ambiguous names are rejected without saving.
+Missing native services produce a named endpoint diagnostic. The synchronous transport does not
+expose HTTP status, so an empty response is not falsely classified as a proven 404.
+An unusable save response triggers a readback: success requires this attempt's generated UId.
+Automatic authentication replay is disabled for SQL saves and execution.
 
-    https://github.com/Advance-Technologies-Foundation/clio
-
-- [Clio Command Reference](../../Commands.md#create-sql-schema)
+[Command index](../../Commands.md#create-sql-schema)

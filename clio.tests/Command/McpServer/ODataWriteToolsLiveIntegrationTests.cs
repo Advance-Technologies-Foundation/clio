@@ -1,9 +1,10 @@
-using System;
+﻿using System;
 using System.Text.Json;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using NSubstitute;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command.McpServer;
@@ -37,10 +38,10 @@ public sealed class ODataWriteToolsLiveIntegrationTests {
 	public void Create_Read_Update_Delete_RoundTrip() {
 		IToolCommandResolver resolver = BuildResolver();
 		ODataFileContract fileContract = new(new System.IO.Abstractions.FileSystem(), new Clio.Common.ConfinedFileAccess());
-		ODataCreateTool create = new(resolver, fileContract);
-		ODataReadTool read = new(resolver);
-		ODataUpdateTool update = new(resolver, fileContract);
-		ODataDeleteTool delete = new(resolver);
+		ODataCreateTool create = new(resolver, new OperationCorrelationIdProvider(), fileContract);
+		ODataReadTool read = new(resolver, new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
+		ODataUpdateTool update = new(resolver, new OperationCorrelationIdProvider(), fileContract);
+		ODataDeleteTool delete = new(resolver, new OperationCorrelationIdProvider());
 		string name = $"clio-crud-it-{Guid.NewGuid():N}";
 		string? id = null;
 
@@ -93,7 +94,7 @@ public sealed class ODataWriteToolsLiveIntegrationTests {
 	private static ODataReadArgs ReadById(string id) => new() {
 		EnvironmentName = "live",
 		Entity = "Contact",
-		Select = ["Id", "Name"],
+		Select = JsonSerializer.SerializeToElement(new[] { "Id", "Name" }),
 		Filters = new ODataFilters {
 			All = [new ODataFilterCondition { Field = "Id", Op = "eq", Value = Obj($"\"{id}\"") }]
 		},
@@ -105,6 +106,10 @@ public sealed class ODataWriteToolsLiveIntegrationTests {
 		public TCommand Resolve<TCommand>(EnvironmentOptions options) {
 			LastResolvedTenantKey = GetTenantKey(options);
 			return serviceProvider.GetRequiredService<TCommand>();
+		}
+		public (TFirst First, TSecond Second) ResolvePair<TFirst, TSecond>(EnvironmentOptions options) {
+			LastResolvedTenantKey = GetTenantKey(options);
+			return (serviceProvider.GetRequiredService<TFirst>(), serviceProvider.GetRequiredService<TSecond>());
 		}
 		public TCommand ResolveWithoutEnvironment<TCommand>(EnvironmentOptions options) =>
 			serviceProvider.GetRequiredService<TCommand>();

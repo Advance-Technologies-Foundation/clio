@@ -928,3 +928,164 @@ docs/knowledge/Common/requirespackage-version-floor-survives-convergence-degrade
 Impact: an environment older than 1.3.1.1 is refused outright on create/modify — not warned — even when
 convergence has degraded; every newly documented performer contract shape is exercised live on both entry
 points. Command+Common 4975 green.
+
+## 2026-09-06 17:35 – ENG-92713 Copilot round 4: bounded derivation, and docs describing our own output
+Context: Fourth Copilot round on crt-process-builder PR 43. Four findings, all valid; a sweep of the two
+recurring claim families turned up two more in a file Copilot had not named.
+Decision: Floor stays 1.4.12.0 while the bundle moves to 1.4.13.0 — Top(1) is an optimisation and the
+narrowed macro check is a no-op today, so neither is behaviour clio depends on or advertises. The guard
+fixture asserting "satisfies" rather than "equals" is what makes that split expressible.
+Discovery: A Top() added over an OrderByAsc has to be checked against the dialect builders, not assumed —
+the unit suite mocks DBExecutor and proves nothing about SQL. MSSQL emits TOP in BuildBeforeColumnsSqlText
+and PostgreSql in BuildAfterQuerySqlText; both order before bounding, so determinism survives. Also:
+rebundle-process-builder.ps1 refuses a dirty package repo and updates the pins itself, so the order is
+commit source -> rebundle -> commit the descriptor bump it makes -> commit clio.
+Files: crt-process-builder a077e25 + cddd4fd, clio eb358755e, clio.tests/Common/BundledProcessBuilderPackageTests.cs
+Impact: The read-vs-write shape asymmetry is now stated in DescribeContracts at both levels it was wrong at,
+which is the claim that produced three separate review rounds.
+
+## 2026-09-07 12:05 – ENG-92713 DescribeShaped flagged half-translated approval blocks
+Context: r-sadovskyi on clio PR 1341 — a block with a correct nested approver PLUS a leftover flat
+approverType was reported as unconfigured, though the approver had landed.
+Decision: Narrow only the approverType disjunct to "nested approver absent". The notification markers stay
+as they are, pinned by a test.
+Discovery: The three DescribeShaped markers are not symmetric, and that is the whole rule. notifyApprover /
+notifyAuthor share ONE key between read and write shapes (boolean vs object), so they cannot coexist and a
+JsonValue proves nothing bound. The approver uses TWO keys (approverType read, approver write), so both can
+appear — which is exactly a half-translated block. Verified from package source: approverType is on the read
+contract only, and no write contract implements IExtensibleDataObject, so DataContractJsonSerializer drops
+the unknown member unread. Also: RequiresPackage throws, so behind the floor the other ApprovalDropKinds are
+the net for installed-but-not-compiled, not normal-operation paths — this marker is the one that fires.
+Files: clio/Command/ProcessModel/ApprovalBlockExpectation.cs, clio.tests/Command/ProcessModel/ApprovalBlockExpectationTests.cs
+Impact: A marker that short-circuits before the read-back is consulted must be proven, not merely suggestive —
+nothing downstream can correct it.
+## 2026-08-26 - ENG-92715 Open edit page element: clio side
+Context: clio consumer surface for the new `openEditPage` element type shipped by CrtProcessBuilder (see the cli-process-builder diary entry of the same date for the server half and the platform discoveries behind it).
+Decision: declare the describe block as a TYPED DTO rather than leaving it to the element's extension bag. Note the inconsistency this exposes - the Modify data `changeData` block is still undeclared and reaches callers through `[JsonExtensionData]`; worth aligning, deliberately out of this story's scope.
+Discovery:
+- `ManagerMap.ResolveDataId` needed the token listed EXPLICITLY: "openeditpage" does NOT end with the "usertask" suffix the fallback arm matches on, so without an entry a VALID graph resolves to EventType.Unknown and validate-process-graph rejects it. Pinned by two test cases - one for the camelCase data-id (covered by the suffix) and one for the build token (needs the explicit entry). The same trap already applies to "sendemail".
+- ClioRing compatibility reviewed: no Ring-consumed contract changed. Inspected clio-ring/ClioRing.Ipc, clio-ring/ClioRing and clio-ring/ClioRing.Desktop (incl. actions.json) - none reference create/modify/describe-business-process or the openEditPage block; Ring's actions only carry environment entries. ClioRing.Tests 156/156 green against the changed contract.
+- The mandatory NativeAOT publish gate could NOT be completed on this machine: `dotnet publish clio-ring/ClioRing.Desktop -r win-x64 -p:PublishAot=true` fails at the NATIVE LINK step with "Platform linker not found ... Desktop Development for C++ workload". The managed/ILC stage DID run and produced the assembly with ZERO IL2026/IL3050 (zero IL#### diagnostics at all), so nothing indicates an AOT regression - but the gate stays formally incomplete until it is run where the C++ toolchain exists (or in CI).
+Files: clio/Command/ProcessModel/Schema.cs, clio/Command/ProcessModel/IProcessDescriber.cs, clio/Command/McpServer/Tools/ProcessDesigner/{Create,Modify,Describe}BusinessProcessTool.cs, clio/Command/McpServer/Prompts/ProcessDesigner/{Create,Modify,Describe}*Prompt.cs, spec/ai-business-process-generation/ai-bp-element-catalog.md, clio.tests/Command/ProcessModel/{ManagerMapResolveDataIdTests,ServerProcessDescriberTests}.cs, clio.mcp.e2e/{Create,Modify}BusinessProcessToolE2ETests.cs
+Impact: clio unit suites green (7291 passed across the Command/McpServer modules; ServerProcessDescriber 24/24; ManagerMap 53/53). Four E2E tests written and compiling but NOT RUN - they are gated and, more importantly, cannot pass until the package is REBUNDLED into clio (the install path reads the archive from build output, so an un-rebundled clio ships the old archive and the server rejects the element type). Still open in this repo: rebundle + SHA-256/ModifiedOnUtc/version pins + [RequiresPackage] floors, then run the four E2E on a stand - that run is also the only proof of the page-candidate ESQ and the SysSchema name resolution, which the unit tests substitute away.
+
+## 2026-08-26 – openEditPage performer on the clio side
+Context: the Open edit page element gained "Who performs the task?" / "Show page automatically" (ENG-92715, field
+moved in from ENG-94917 by reusing the Send email machinery server-side).
+Decision: added `DescribedOpenEditPagePerformer` as its OWN DTO rather than reusing `DescribedEmailPerformer` — the
+two elements document different rules (Send email offers the field only in manual mode), so a shared DTO would make
+the read-back's doc comments wrong for one of them.
+Discovery: `performer: null` in a read-back means UNASSIGNED — the designer's own initial state — not "the server
+does not support it"; the tool `[Description]` and the guidance article both say so explicitly, because the
+ambiguity would otherwise push a caller into writing an assignment nobody asked for.
+Files: clio/Command/ProcessModel/IProcessDescriber.cs,
+clio/Command/McpServer/Tools/ProcessDesigner/{Create,Modify,Describe}*.cs,
+clio/Command/McpServer/Prompts/ProcessDesigner/CreateBusinessProcessPrompt.cs,
+spec/ai-business-process-generation/ai-bp-element-catalog.md,
+clio.tests/Command/ProcessModel/ServerProcessDescriberTests.cs,
+clio.mcp.e2e/CreateBusinessProcessToolE2ETests.cs
+Impact: describe/create/modify all carry the field; validated with
+`dotnet test --filter "Category=Unit&(Module=Command|Module=McpServer)"` (7291 passed).
+
+## 2026-08-26 – openEditPage logActivity on the clio side
+Context: the Open edit page element gained the "Log activity" block (three scheduling pairs + the gate + the
+calendar flag). `ActivityPriority` stays out until GHE PR 36 relaxes the Lookup-constant validator.
+Decision: `DescribedActivityInterval` reports `value`, the decoded `unit` AND the raw `period`. The raw integer
+travels so an unrecognized period stays visible instead of being swallowed into a null unit.
+Discovery (test-filter trap): `ServerProcessDescriberTests` carries `[Property("Module", "ProcessModel")]`, so the
+usual `Module=Command|Module=McpServer` filter does NOT run it — two earlier "7291 passed" runs never exercised the
+describer tests they were quoted as validating. Correct filter for process-designer work:
+`Category=Unit&(Module=Command|Module=McpServer|Module=ProcessModel)` — 7405 passed.
+Sequencing recorded here so it is not rediscovered: the rebundle must WAIT for clio PR #1190 (it moves
+`ExpectedArchiveVersion` to 1.3.0.5 plus the SHA-256/ModifiedOnUtc pins this branch also moves — same three
+constants, guaranteed conflict), and clio-knowledge PR #90 edits the same `process-modeling.md` adding an
+"Element: Perform task" section.
+Files: clio/Command/ProcessModel/IProcessDescriber.cs,
+clio/Command/McpServer/Tools/ProcessDesigner/{Create,Modify,Describe}*.cs,
+clio/Command/McpServer/Prompts/ProcessDesigner/CreateBusinessProcessPrompt.cs,
+spec/ai-business-process-generation/ai-bp-element-catalog.md,
+clio.tests/Command/ProcessModel/ServerProcessDescriberTests.cs,
+clio.mcp.e2e/CreateBusinessProcessToolE2ETests.cs
+Impact: create/modify/describe carry the block; the E2E is the only proof both members of each pair actually land.
+
+## 2026-08-27 – Priority was NOT blocked; corrected
+Context: I had deferred the activity `Priority` to GHE PR 36 (the Lookup-constant validator relaxation). Challenged
+on it, the claim did not survive inspection.
+Discovery: the block was a CONSISTENCY argument, not a technical one, and it was wrong twice over.
+(1) Binders never go through `ProcessParameterValueValidator` — `AssignConstValue` writes `SourceValue` directly, and
+already does so for `PageSchemaId`/`ObjectSchemaId`. The validator guards the generic `addMapping`/`setParameter`
+paths only.
+(2) The package ALREADY stores two different lookup encodings by design: `RoleId` as a `[#Lookup…#]` Script macro
+(the performer card reads a macro) and, now, `ActivityPriority` as a BARE record Guid ConstValue. The decisive
+evidence is the designer's own card: `ProcessUserTaskActivityEditSchema.js` `_initActivityPriority` reads the raw
+parameter value and matches it against the `ActivityPriority` record Ids, so a macro matches nothing and the REQUIRED
+field renders empty. The runtime is indifferent — `OpenEditPageUserTask.cs` just feeds it to
+`UserTaskActivityInfo.PriorityId`. The ConstValue-only sensitivity ENG-91846 hit is specific to `ActivityCategory`,
+whose allowed-results derivation reads `SourceValue.Value`.
+Rule recorded on the constant: each lookup is stored the way the CARD that displays it reads it back — not one
+package-wide convention.
+Files: packages/CrtProcessBuilder/Files/src/cs/Elements/ActivityLogBinder.cs, ProcessDesignConstants.cs,
+Contracts/{ProcessDescriptorContracts,DescribeContracts}.cs,
+tests/CrtProcessBuilder/Elements/OpenEditPageConfigBinderTests.cs
+Impact: 864 package tests green. Nothing in this feature now waits on PR 36.
+
+## 2026-08-27 – Page-element routing: Open edit page is the DEFAULT, not one of three equals
+Context: an E2E scenario (recruiter fills in a new employee's card) turns on the agent choosing Open edit page over
+Pre-configured page / Auto-generated page. The existing routing rule listed the three symmetrically — one sentence
+each, no priority, no tie-breaker — which is exactly the shape that loses a coin-flip.
+Decision: rewrote it as a single question with a default. "Is a user filling in COLUMNS of a record?" → Open edit
+page, no further deliberation; the other two require a POSITIVE signal (no record whose columns are edited / a
+specific named page). Two consequences stated because neither is inferable:
+(1) the alternatives are NOT buildable, so mis-routing produces no process at all rather than a different one —
+    the failure is total, not stylistic;
+(2) the element choice must NOT be handed back as a question (the scenario's baseline AC forbids it); asking which
+    OBJECT or COLUMN is meant stays fine, and a defensible tie is resolved by picking Open edit page and stating the
+    interpretation in one line.
+Added a further tell: a request that also wants a note/hint shown on the page is Open edit page — `recommendation`
+and `hint` exist nowhere else in this contract.
+Files: clio-knowledge guidance/mcp/guides/processes/process-modeling.md,
+clio/Command/McpServer/Tools/ProcessDesigner/CreateBusinessProcessTool.cs,
+clio/Command/McpServer/Prompts/ProcessDesigner/CreateBusinessProcessPrompt.cs,
+spec/ai-business-process-generation/ai-bp-element-catalog.md (both alternative rows now marked NOT buildable)
+Impact: 7406 unit tests + the 7 WorkspaceTemplateGuidanceDrift guards green. Env note: a partial .NET update landed
+mid-session (AspNetCore 10.0.11 without NETCore.App 10.0.11) and aborted every test run until the runtime finished
+installing — not a code failure, worth recognizing rather than re-diagnosing.
+
+## 2026-08-27 – First real E2E run: three test defects, one of them hiding a contract defect
+Context: the eleven openEditPage E2E tests had never been executed. Deployed the package to eng-92715-0905 and ran
+them: 8/11.
+1. A modify test died with NullReference because `setElement` had been REFUSED and the test read it as success.
+   Root cause worth remembering: clio-run reports a refused edit with exit-code 1 INSIDE the payload while
+   `isError` stays null, so `result.IsError.Should().NotBeTrue()` passes for a refusal. This file already had
+   `ModifyExpectingSuccessAsync`, which asserts the "edited (" line — every new test now goes through it. Never
+   assert MCP success through IsError alone.
+   The refusal it hid was a real contract defect, fixed in the package: an object-bound block could not be set on
+   an update without re-sending the page.
+2. An assertion matched "Supply 'defaultValues'" while the tool envelope escapes apostrophes as ' — the
+   refusal was correct and the assertion could never match. Match quote-free fragments, and assert the reason as
+   well as the field.
+3. A create-side test still expected showPage true for a ROLE performer — stale since the semantics changed to
+   "showPage follows the performer". Corrected with the reason.
+Also: `McpE2E.Sandbox.EnvironmentName` in clio.mcp.e2e/appsettings.json is how the suite picks its environment.
+The file is TRACKED, so it was set for the run and reverted — a machine-specific env name does not belong in the
+repo. Re-set it before any future run.
+Result: 11/11 green on the stand.
+
+## 2026-09-07 14:20 – ENG-92713 Three-repo conflict resolution against master
+Context: master moved substantially in all three repos while ENG-92713 was in review; all three PRs went dirty.
+Decision: Nearly every conflict was the UNION, not a choice — master added the openEditPage element (and a
+guidance split) in exactly the places this branch added approval. Resolved by stripping conflict regions rather
+than `git checkout --theirs`, which discards a side's cleanly auto-merged additions.
+Discovery: Three traps worth remembering. (1) Constructor-parameter conflicts must be unioned because the BODY
+auto-merges and assigns both — the compiler catches it, but only after call sites in files that merged CLEANLY
+also need the new parameter INSERTED at its slot, not appended. (2) A conflict boundary can cut a class
+mid-member: keeping both sides then leaves one class unclosed, because its extension bag and brace lived in the
+shared tail the other side reused. (3) A mechanical word-merge of long prose leaves dangling fragments — scan
+for doubled words/punctuation afterwards; it left a stray "flows;" in McpCapabilityMap.
+Also: the same wrong claim ("branching on the approval outcome needs gateways, which are not buildable") sat in
+FOUR places across two repos. It is wrong three ways — no gateway is involved, conditional branches ARE
+buildable via setFlowCondition, and an element output parameter is referenceable as
+[#[Element:{uid}].[Parameter:{uid}]#]. Corrected everywhere.
+Files: clio-knowledge d909592, crt-process-builder 07659d3 + 042d3b9, clio b7dddb260 + 9262af2eb
+Impact: A guard in the other repo's suite (ProcessGuides_ShouldNameTheOwningArticle) caught what the resolution
+missed — run the merged repo's OWN tests before believing a documentation merge is complete.

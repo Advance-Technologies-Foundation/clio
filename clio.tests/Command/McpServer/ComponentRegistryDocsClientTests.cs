@@ -1,5 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.IO.Abstractions;
+using System.IO.Abstractions.TestingHelpers;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -16,9 +19,17 @@ namespace Clio.Tests.Command.McpServer;
 [TestFixture]
 [Category("Unit")]
 [Property("Module", "McpServer")]
+[NonParallelizable] // mutates the process-wide CLIO_*_LOCAL_FILE environment variables
 public sealed class ComponentRegistryDocsClientTests {
 	private const string CdnBaseUrl = "https://cdn.test/api/mcp/";
 	private const string SamplePayload = "# Sample doc\n\nHello.";
+
+	/// <summary>
+	/// Root of the simulated producer output directory (registry JSON plus its docs tree).
+	/// Built with <see cref="Path.Combine(string, string)"/> from a rooted temp path so the
+	/// containment check and the assertions run identically on Windows, macOS and Linux.
+	/// </summary>
+	private static readonly string WorkingCopyRoot = Path.Combine(Path.GetTempPath(), "clio-1361-working-copy");
 
 	[Test]
 	[Description("A fresh cache hit returns the cached markdown without touching the network.")]
@@ -28,9 +39,11 @@ public sealed class ComponentRegistryDocsClientTests {
 		FakeHttpHandler handler = new();
 		ComponentRegistryDocsClient client = CreateClient(cache, handler);
 
-		string? content = await client.GetDocAsync("8.2.1", "docs/sample.md");
+		ComponentDocumentationFetchResult result = await client.GetDocAsync("8.2.1", "docs/sample.md");
 
-		content.Should().Be(SamplePayload, because: "a fresh cache entry must satisfy the request");
+		result.Content.Should().Be(SamplePayload, because: "a fresh cache entry must satisfy the request");
+		result.Source.Should().Be(ComponentDocumentationSource.FileCache,
+			because: "the response must name the tier that served it so mixed provenance is visible");
 		handler.Requests.Should().BeEmpty(because: "no HTTP traffic on a cache hit");
 	}
 
@@ -47,10 +60,12 @@ public sealed class ComponentRegistryDocsClientTests {
 		ComponentRegistryDocsClient client = CreateClient(cache, handler);
 
 		// Act
-		string? content = await client.GetDocAsync("8.2.1", "docs/sample.md");
+		ComponentDocumentationFetchResult result = await client.GetDocAsync("8.2.1", "docs/sample.md");
 
 		// Assert
-		content.Should().Be(freshContent,
+		result.Source.Should().Be(ComponentDocumentationSource.Cdn,
+			because: "a successful revalidation is a CDN read, not a cache read");
+		result.Content.Should().Be(freshContent,
 			because: "a stale doc must be revalidated against the CDN so the agent gets the current guide, not an outdated cached copy (ENG-91135)");
 		handler.Requests.Should().ContainSingle(
 			because: "exactly one synchronous CDN fetch is issued to refresh the stale entry");
@@ -70,10 +85,12 @@ public sealed class ComponentRegistryDocsClientTests {
 		ComponentRegistryDocsClient client = CreateClient(cache, handler);
 
 		// Act
-		string? content = await client.GetDocAsync("8.2.1", "docs/sample.md");
+		ComponentDocumentationFetchResult result = await client.GetDocAsync("8.2.1", "docs/sample.md");
 
 		// Assert
-		content.Should().Be(staleContent,
+		result.Source.Should().Be(ComponentDocumentationSource.FileCache,
+			because: "the stale fallback is served from disk, so the reported tier must say cache");
+		result.Content.Should().Be(staleContent,
 			because: "when revalidation fails the stale copy is still more useful to the agent than no documentation at all");
 		handler.Requests.Should().ContainSingle(
 			because: "a 4xx revalidation result is permanent — the stale fallback kicks in without retrying");
@@ -87,9 +104,11 @@ public sealed class ComponentRegistryDocsClientTests {
 		handler.Enqueue("8.2.1/docs/sample.md", HttpStatusCode.OK, SamplePayload);
 		ComponentRegistryDocsClient client = CreateClient(cache, handler);
 
-		string? content = await client.GetDocAsync("8.2.1", "docs/sample.md");
+		ComponentDocumentationFetchResult result = await client.GetDocAsync("8.2.1", "docs/sample.md");
 
-		content.Should().Be(SamplePayload, because: "the CDN payload is the response body");
+		result.Content.Should().Be(SamplePayload, because: "the CDN payload is the response body");
+		result.Source.Should().Be(ComponentDocumentationSource.Cdn,
+			because: "a cold-cache download is a CDN read");
 		cache.Written.Should().ContainKey(("8.2.1", "docs/sample.md"),
 			because: "successful CDN downloads must populate the cache for the next call");
 	}
@@ -102,9 +121,13 @@ public sealed class ComponentRegistryDocsClientTests {
 		handler.EnqueueAlways(HttpStatusCode.NotFound, body: null);
 		ComponentRegistryDocsClient client = CreateClient(cache, handler);
 
-		string? content = await client.GetDocAsync("8.2.1", "docs/missing.md");
+		ComponentDocumentationFetchResult result = await client.GetDocAsync("8.2.1", "docs/missing.md");
 
-		content.Should().BeNull(because: "the caller will skip the missing doc and keep any successfully-fetched siblings");
+		result.Content.Should().BeNull(because: "the caller will skip the missing doc and keep any successfully-fetched siblings");
+		result.Source.Should().Be(ComponentDocumentationSource.None,
+			because: "nothing was served, and the tier must say so rather than being guessed by the caller");
+		result.LocalOverrideVariable.Should().BeNull(
+			because: "no local override is active, so there is no override to point the developer at");
 		handler.Requests.Should().HaveCount(1,
 			because: "4xx is treated as permanent — no exponential-backoff retries");
 	}
@@ -116,19 +139,152 @@ public sealed class ComponentRegistryDocsClientTests {
 		FakeHttpHandler handler = new();
 		ComponentRegistryDocsClient client = CreateClient(cache, handler);
 
-		string? content = await client.GetDocAsync("8.2.1", "../etc/passwd.md");
+		ComponentDocumentationFetchResult result = await client.GetDocAsync("8.2.1", "../etc/passwd.md");
 
-		content.Should().BeNull(because: "the producer contract forbids this path");
+		result.Content.Should().BeNull(because: "the producer contract forbids this path");
+		result.Source.Should().Be(ComponentDocumentationSource.None,
+			because: "a rejected path served nothing");
 		handler.Requests.Should().BeEmpty(because: "the validator runs ahead of any side-effect");
 	}
 
-	private static ComponentRegistryDocsClient CreateClient(FakeDocsCacheStore cache, FakeHttpHandler handler) {
+	[Test]
+	[Description("With CLIO_COMPONENT_REGISTRY_LOCAL_FILE set, a docs/ file is served from the directory of the override file, ahead of a fresh cache entry, and is never written to the cache.")]
+	public async Task GetDocAsync_Serves_Doc_From_Local_Override_Directory() {
+		// Arrange
+		const string localMarkdown = "# Local doc\n\nEdited in the working copy.";
+		string registryPath = Path.Combine(WorkingCopyRoot, "ComponentRegistry.json");
+		string docPath = Path.Combine(WorkingCopyRoot, "docs", "sample.md");
+		MockFileSystem fs = new();
+		fs.AddFile(registryPath, new MockFileData("[]"));
+		fs.AddFile(docPath, new MockFileData(localMarkdown));
+		FakeDocsCacheStore cache = new();
+		cache.Seed("8.2.1", "docs/sample.md", SamplePayload, isFresh: true);
+		FakeHttpHandler handler = new();
+		ComponentRegistryDocsClient client = CreateClient(cache, handler, fs);
+		using EnvironmentVariableScope envScope = new(RegistryFlavor.Web.LocalFileEnvironmentVariable, registryPath);
+
+		// Act
+		ComponentDocumentationFetchResult result = await client.GetDocAsync("8.2.1", "docs/sample.md");
+
+		// Assert
+		result.Content.Should().Be(localMarkdown,
+			because: "the whole point of the override is that the developer reads their own edit, not the published copy");
+		result.Source.Should().Be(ComponentDocumentationSource.Local,
+			because: "the response must declare that documentation came from the working copy");
+		handler.Requests.Should().BeEmpty(
+			because: "a local hit must short-circuit the network exactly as the registry-JSON override does");
+		cache.Written.Should().BeEmpty(
+			because: "writing an unpublished draft into the docs cache would poison the next env-unset call");
+		result.LocalOverrideVariable.Should().BeNull(
+			because: "a served result is never a miss, so the loader must not be able to render a 'not found' warning for it");
+	}
+
+	[Test]
+	[Description("A declared doc that is absent from the working copy returns source None with the expected path, and never substitutes the published CDN copy.")]
+	public async Task GetDocAsync_Does_Not_Fall_Back_To_Cdn_When_Local_Override_Lacks_The_Doc() {
+		// Arrange
+		string registryPath = Path.Combine(WorkingCopyRoot, "ComponentRegistry.json");
+		MockFileSystem fs = new();
+		fs.AddFile(registryPath, new MockFileData("[]"));
+		FakeDocsCacheStore cache = new();
+		cache.Seed("8.2.1", "docs/sample.md", SamplePayload, isFresh: true);
+		FakeHttpHandler handler = new();
+		handler.EnqueueAlways(HttpStatusCode.OK, SamplePayload);
+		ComponentRegistryDocsClient client = CreateClient(cache, handler, fs);
+		using EnvironmentVariableScope envScope = new(RegistryFlavor.Web.LocalFileEnvironmentVariable, registryPath);
+
+		// Act
+		ComponentDocumentationFetchResult result = await client.GetDocAsync("8.2.1", "docs/sample.md");
+
+		// Assert
+		result.Content.Should().BeNull(
+			because: "silently substituting published prose for a missing local file is the defect being fixed (issue #1361)");
+		result.Source.Should().Be(ComponentDocumentationSource.None,
+			because: "the caller needs to tell 'not generated locally' apart from 'served'");
+		result.LocalOverrideVariable.Should().Be(RegistryFlavor.Web.LocalFileEnvironmentVariable,
+			because: "the warning must name the override that captured the path, without echoing the resolved host path onto the wire");
+		handler.Requests.Should().BeEmpty(
+			because: "with the override active the CDN must not be consulted at all");
+	}
+
+	[Test]
+	[Description("A declared doc that exists in the working copy but is still an empty generator stub is a local hit, not a local miss.")]
+	public async Task GetDocAsync_Treats_An_Empty_Local_File_As_A_Local_Hit() {
+		// Arrange
+		string registryPath = Path.Combine(WorkingCopyRoot, "ComponentRegistry.json");
+		MockFileSystem fs = new();
+		fs.AddFile(registryPath, new MockFileData("[]"));
+		fs.AddFile(Path.Combine(WorkingCopyRoot, "docs", "sample.md"), new MockFileData(string.Empty));
+		FakeDocsCacheStore cache = new();
+		FakeHttpHandler handler = new();
+		ComponentRegistryDocsClient client = CreateClient(cache, handler, fs);
+		using EnvironmentVariableScope envScope = new(RegistryFlavor.Web.LocalFileEnvironmentVariable, registryPath);
+
+		// Act
+		ComponentDocumentationFetchResult result = await client.GetDocAsync("8.2.1", "docs/sample.md");
+
+		// Assert
+		result.Source.Should().Be(ComponentDocumentationSource.Local,
+			because: "the file exists in the working copy — it was served, it is simply empty");
+		result.LocalOverrideVariable.Should().BeNull(
+			because: "telling the developer to generate a file they already have is the diagnostic defect being fixed");
+	}
+
+	[Test]
+	[Description("A docs namespace whose flavour override is unset keeps using the cache/CDN chain even while another flavour's override is active.")]
+	public async Task GetDocAsync_Ignores_Override_Of_A_Different_Flavour() {
+		// Arrange
+		string registryPath = Path.Combine(WorkingCopyRoot, "MobileComponentRegistry.json");
+		MockFileSystem fs = new();
+		fs.AddFile(registryPath, new MockFileData("[]"));
+		FakeDocsCacheStore cache = new();
+		cache.Seed("8.2.1", "docs/sample.md", SamplePayload, isFresh: true);
+		FakeHttpHandler handler = new();
+		ComponentRegistryDocsClient client = CreateClient(cache, handler, fs);
+		using EnvironmentVariableScope envScope = new(RegistryFlavor.Mobile.LocalFileEnvironmentVariable, registryPath);
+
+		// Act
+		ComponentDocumentationFetchResult result = await client.GetDocAsync("8.2.1", "docs/sample.md");
+
+		// Assert
+		result.Source.Should().Be(ComponentDocumentationSource.FileCache,
+			because: "'docs/' belongs to the web flavour, whose override is unset — the mobile override must not capture it");
+		result.Content.Should().Be(SamplePayload,
+			because: "the untouched flavour keeps its existing cache/CDN behaviour");
+	}
+
+	[Test]
+	[Description("Each documentation namespace resolves to the registry flavour that publishes it, longest prefix first.")]
+	public void TryResolveFlavor_Maps_Each_Documentation_Namespace_To_Its_Flavour() {
+		// Arrange
+		(string Path, RegistryFlavor Expected)[] cases = [
+			("docs/a.md", RegistryFlavor.Web),
+			("mobile-docs/a.md", RegistryFlavor.Mobile),
+			("request-docs/a.md", RegistryFlavor.Requests),
+			("mobile-request-docs/a.md", RegistryFlavor.MobileRequests)
+		];
+
+		foreach ((string path, RegistryFlavor expected) in cases) {
+			// Act
+			bool resolved = ComponentRegistryDocsPath.TryResolveFlavor(path, out RegistryFlavor? flavor);
+
+			// Assert
+			resolved.Should().BeTrue(because: $"'{path}' uses a documentation namespace clio publishes");
+			flavor.Should().BeSameAs(expected,
+				because: $"'{path}' must consult {expected.LocalFileEnvironmentVariable}, otherwise the wrong working copy is read");
+		}
+	}
+
+	private static ComponentRegistryDocsClient CreateClient(
+		FakeDocsCacheStore cache, FakeHttpHandler handler, IFileSystem? fileSystem = null) {
 		return new ComponentRegistryDocsClient(
 			new FakeHttpClientFactory(handler),
 			cache,
+			fileSystem ?? new MockFileSystem(),
 			NullLogger<ComponentRegistryDocsClient>.Instance,
 			CdnBaseUrl);
 	}
+
 
 	private sealed class FakeHttpClientFactory(FakeHttpHandler handler) : IHttpClientFactory {
 		public HttpClient CreateClient(string name) => new(handler) { Timeout = TimeSpan.FromSeconds(5) };

@@ -1,148 +1,255 @@
 namespace Clio.Tests.Command;
 
-using System.Collections.Generic;
+using System;
 using Clio.Command;
 using Clio.Common;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
+using Newtonsoft.Json.Linq;
 using NSubstitute;
 using NUnit.Framework;
 
 [TestFixture]
-[Category("Unit")]
 [Property("Module", "Command")]
-public sealed class SqlSchemaCreateCommandTests {
-	private const string TestBase = "http://test";
-	private const string SelectQueryUrl = TestBase + "/DataService/json/SyncReply/SelectQuery";
-	private const string CreateNewSchemaUrl = TestBase + "/ServiceModel/ScriptSchemaDesignerService.svc/CreateNewSchema";
-	private const string SaveSchemaUrl = TestBase + "/ServiceModel/ScriptSchemaDesignerService.svc/SaveSchema";
+public sealed class SqlSchemaCreateCommandTests : BaseCommandTests<SqlSchemaCreateOptions> {
 	private const string PackageUId = "aa000000-0000-0000-0000-000000000001";
-	private const string GeneratedSchemaUId = "bb000000-0000-0000-0000-000000000002";
-
-	private static string SchemaPayloadJson =>
-		"""{"success": true, "schema": {"uId": "SCHEMA_UID", "name": "UsrSqlScript1", "body": " ", "caption": [], "description": []}}"""
-		.Replace("SCHEMA_UID", GeneratedSchemaUId);
-
-	private IApplicationClient _applicationClient;
-	private IServiceUrlBuilder _serviceUrlBuilder;
-	private ILogger _logger;
+	private IApplicationClient _client;
 	private SqlSchemaCreateCommand _command;
+	private JObject _saved;
+	private string _saveResponse;
+	private string _scriptRows;
+
+	protected override void AdditionalRegistrations(IServiceCollection services) {
+		_client = Substitute.For<IApplicationClient>();
+		services.AddSingleton(_client);
+	}
 
 	[SetUp]
-	public void SetUp() {
-		_applicationClient = Substitute.For<IApplicationClient>();
-		_serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
-		_logger = Substitute.For<ILogger>();
-		_serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns(SelectQueryUrl);
-		_serviceUrlBuilder.Build("ServiceModel/ScriptSchemaDesignerService.svc/CreateNewSchema").Returns(CreateNewSchemaUrl);
-		_serviceUrlBuilder.Build("ServiceModel/ScriptSchemaDesignerService.svc/SaveSchema").Returns(SaveSchemaUrl);
-		_command = new SqlSchemaCreateCommand(_applicationClient, _serviceUrlBuilder, _logger,
-			Substitute.For<Clio.Command.EntitySchemaDesigner.ICaptionCultureResolver>());
+	public void ArrangeCommand() {
+		_command = Container.GetRequiredService<SqlSchemaCreateCommand>();
+		_saved = null;
+		_saveResponse = "{\"success\":true}";
+		_scriptRows = "[]";
+		_client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>()).Returns(call => {
+			string url = call.ArgAt<string>(0);
+			if (url.EndsWith("GetSystemEnvironmentInfo", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"dbEngineType\":\"PostgreSql\"}";
+			}
+			JObject request = JObject.Parse(call.ArgAt<string>(1));
+			string rows = request["rootSchemaName"]?.ToString() == "SysPackage"
+				? $"[{{\"UId\":\"{PackageUId}\"}}]" : _scriptRows;
+			return $"{{\"success\":true,\"rows\":{rows}}}";
+		});
+		_client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>()).Returns(call => {
+			_saved = JObject.Parse(call.ArgAt<string>(1));
+			return _saveResponse;
+		});
+	}
+
+	[TearDown]
+	public void ClearCalls() => _client.ClearReceivedCalls();
+
+	[Test]
+	[Description("Native SQL creation saves a package script directly with detected engine and default installation phase.")]
+	public void TryCreate_ShouldSaveNativeDescriptor_WhenInputIsValid() {
+		// Arrange
+		SqlSchemaCreateOptions options = new() { SchemaName = "UsrSql", PackageName = "Custom" };
+		// Act
+		bool result = _command.TryCreate(options, out SqlSchemaCreateResponse response);
+		// Assert
+		result.Should().BeTrue(because: "the native save accepted the new script");
+		Guid.TryParse(response.SchemaUId, out _).Should().BeTrue(because: "creation assigns a stable script identity");
+		_saved["package"]["uId"].Value<string>().Should().Be(PackageUId, because: "the descriptor belongs to the requested package");
+		_saved["dbEngineType"].Value<int>().Should().Be(2, because: "PostgreSQL must not inherit the UI's MSSql default");
+		_saved["installType"].Value<int>().Should().Be(1, because: "the default is after-package");
+		_saved["dependOnSqlScripts"].Should().BeOfType<JArray>(because: "native save requires a dependency collection");
+		_client.Received(1).ExecuteNonReplayablePostRequest(
+			Arg.Is<string>(u => u.EndsWith("SqlScriptSchemaDesignerService.svc/SaveSchema")), Arg.Any<string>());
+		_client.DidNotReceive().ExecutePostRequest(Arg.Is<string>(u => u.Contains("CreateNewSchema")), Arg.Any<string>());
+	}
+
+	[TestCase(0, 0)]
+	[TestCase(1, 2)]
+	[TestCase(2, 3)]
+	[Description("Explicit engine and installation phase override defaults without an environment-info request.")]
+	public void TryCreate_ShouldPreserveExplicitOptions_WhenSupplied(int engine, int phase) {
+		// Arrange
+		SqlSchemaCreateOptions options = new() { SchemaName = "UsrSql", PackageName = "Custom", DbEngineType = engine, InstallType = phase };
+		// Act
+		bool result = _command.TryCreate(options, out _);
+		// Assert
+		result.Should().BeTrue(because: "all native engine and phase values are supported");
+		_saved["dbEngineType"].Value<int>().Should().Be(engine, because: "explicit dialect selection is authoritative");
+		_saved["installType"].Value<int>().Should().Be(phase, because: "installation must preserve the selected phase");
+		_client.DidNotReceive().ExecutePostRequest(Arg.Is<string>(u => u.EndsWith("GetSystemEnvironmentInfo")), Arg.Any<string>());
+	}
+
+	[TestCase(null, null)]
+	[TestCase("1Bad", "Custom")]
+	[TestCase("UsrSql", null)]
+	[Description("Invalid names are rejected before a network request.")]
+	public void TryCreate_ShouldRejectNames_WhenInvalid(string name, string package) {
+		// Arrange
+		SqlSchemaCreateOptions options = new() { SchemaName = name, PackageName = package };
+		_client.ClearReceivedCalls();
+		// Act
+		bool result = _command.TryCreate(options, out _);
+		// Assert
+		result.Should().BeFalse(because: "invalid names cannot be persisted");
+		_client.ReceivedCalls().Should().BeEmpty(because: "input validation is local");
+	}
+
+	[TestCase(-1, 1)]
+	[TestCase(3, 1)]
+	[TestCase(2, -1)]
+	[TestCase(2, 4)]
+	[Description("Out-of-range native enum values fail before networking.")]
+	public void TryCreate_ShouldRejectEnums_WhenInvalid(int engine, int phase) {
+		// Arrange
+		SqlSchemaCreateOptions options = new() { SchemaName = "UsrSql", PackageName = "Custom", DbEngineType = engine, InstallType = phase };
+		_client.ClearReceivedCalls();
+		// Act
+		bool result = _command.TryCreate(options, out _);
+		// Assert
+		result.Should().BeFalse(because: "undefined native enum values cannot be sent");
+		_client.ReceivedCalls().Should().BeEmpty(because: "input validation is local");
 	}
 
 	[Test]
-	public void TryCreate_Rejects_Missing_Schema_Name() {
-		var options = new SqlSchemaCreateOptions { PackageName = "Custom" };
-
+	[Description("Unsupported schema captions are not silently reported as persisted package SQL metadata.")]
+	public void TryCreate_ShouldRejectCaption_WhenSupplied() {
+		// Arrange
+		SqlSchemaCreateOptions options = new() { SchemaName = "UsrSql", PackageName = "Custom", Caption = "Caption" };
+		// Act
 		bool result = _command.TryCreate(options, out SqlSchemaCreateResponse response);
+		// Assert
+		result.Should().BeFalse(because: "the SQL DTO has no caption member");
+		response.Error.Should().Contain("no caption", because: "the caller needs an actionable compatibility message");
+		_saved.Should().BeNull(because: "unsupported metadata must not cause a partial create");
+	}
 
-		result.Should().BeFalse();
-		response.Error.Should().Contain("schema-name");
+	[TestCase("[{\"UId\":\"existing\"}]", "already exists")]
+	[TestCase("[{\"UId\":\"one\"},{\"UId\":\"two\"}]", "ambiguous")]
+	[Description("Existing or ambiguous names cannot cause an overwrite.")]
+	public void TryCreate_ShouldRefuseName_WhenAlreadyPresent(string rows, string expected) {
+		// Arrange
+		_scriptRows = rows;
+		// Act
+		bool result = _command.TryCreate(new() { SchemaName = "UsrSql", PackageName = "Custom" }, out SqlSchemaCreateResponse response);
+		// Assert
+		result.Should().BeFalse(because: "create may only use a free name");
+		response.Error.Should().Contain(expected, because: "the reason must distinguish ambiguity from a duplicate");
+		_saved.Should().BeNull(because: "a failed preflight must not save");
+	}
+
+	[TestCase("")]
+	[TestCase("<html>stub-session-token</html>")]
+	[Description("Unusable native save responses remain named, sanitized failures when readback finds no script.")]
+	public void TryCreate_ShouldReportNamedFailure_WhenSaveCannotBeVerified(string responseBody) {
+		// Arrange
+		_saveResponse = responseBody;
+		// Act
+		bool result = _command.TryCreate(new() { SchemaName = "UsrSql", PackageName = "Custom" }, out SqlSchemaCreateResponse response);
+		// Assert
+		result.Should().BeFalse(because: "readback did not find a saved script");
+		response.Error.Should().Contain("SqlScriptSchemaDesignerService SaveSchema", because: "the failed native operation must be identifiable");
+		response.Error.Should().NotContain("stub-session-token", because: "response markup may contain credentials");
+	}
+	[TestCase(true)]
+	[TestCase(false)]
+	[Description("Unknown save success requires this attempt's generated UId, not an unrelated same-named script.")]
+	public void TryCreate_ShouldVerifyIdentity_WhenSaveResponseIsLost(bool sameIdentity) {
+		// Arrange
+		_saveResponse = string.Empty;
+		_client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>()).Returns(call => {
+			_saved = JObject.Parse(call.ArgAt<string>(1));
+			string uid = sameIdentity ? _saved["uId"].Value<string>().ToUpperInvariant() : Guid.NewGuid().ToString();
+			_scriptRows = new JArray(new JObject { ["UId"] = uid }).ToString();
+			return string.Empty;
+		});
+		// Act
+		bool result = _command.TryCreate(new() { SchemaName = "UsrSql", PackageName = "Custom" }, out _);
+		// Assert
+		result.Should().Be(sameIdentity, because: "only this save's script proves the create committed");
+	}
+
+	[TestCase(false)]
+	[TestCase(true)]
+	[Description("An unanswered lookup aborts preflight or reports unknown readback without asserting absence.")]
+	public void TryCreate_ShouldPreserveUncertainty_WhenLookupFails(bool afterSave) {
+		// Arrange
+		_saveResponse = string.Empty;
+		_client.ExecutePostRequest(Arg.Any<string>(), Arg.Is<string>(s => s.Contains("VwSysSqlScriptInPackage")))
+			.Returns(_ => afterSave && _saved is null ? "{\"success\":true,\"rows\":[]}"
+				: "{\"success\":false,\"errorInfo\":{\"message\":\"permission denied\"}}");
+		// Act
+		bool result = _command.TryCreate(new() { SchemaName = "UsrSql", PackageName = "Custom" }, out SqlSchemaCreateResponse response);
+		// Assert
+		result.Should().BeFalse(because: "an unanswered query cannot prove absence or success");
+		response.Error.Should().Contain("permission denied", because: "the actual read failure must remain visible");
+		(_saved is not null).Should().Be(afterSave, because: "failed preflight must not write while failed readback follows the single save");
 	}
 
 	[Test]
-	public void TryCreate_Rejects_Malformed_Schema_Name() {
-		var options = new SqlSchemaCreateOptions { SchemaName = "1Invalid", PackageName = "Custom" };
-
-		bool result = _command.TryCreate(options, out SqlSchemaCreateResponse response);
-
-		result.Should().BeFalse();
-		response.Error.Should().Contain("schema-name must start with a letter");
+	[Description("A transport exception at save still triggers identity readback rather than a replay.")]
+	public void TryCreate_ShouldReadBack_WhenTransportThrowsAfterSave() {
+		// Arrange
+		_client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>()).Returns(call => {
+			_saved = JObject.Parse(call.ArgAt<string>(1));
+			_scriptRows = new JArray(new JObject { ["UId"] = _saved["uId"] }).ToString();
+			throw new System.Net.Http.HttpRequestException("connection reset");
+		});
+		// Act
+		bool result = _command.TryCreate(new() { SchemaName = "UsrSql", PackageName = "Custom" }, out _);
+		// Assert
+		result.Should().BeTrue(because: "the readback proves the original save committed");
+		_client.Received(1).ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>());
 	}
 
 	[Test]
-	public void TryCreate_Rejects_Missing_Package_Name() {
-		var options = new SqlSchemaCreateOptions { SchemaName = "UsrMySqlScript" };
-
-		bool result = _command.TryCreate(options, out SqlSchemaCreateResponse response);
-
-		result.Should().BeFalse();
-		response.Error.Should().Contain("package-name");
+	[Description("A second connection failure during readback preserves the uncertain save outcome.")]
+	public void TryCreate_ShouldPreserveSaveWarning_WhenSaveAndReadbackThrow() {
+		// Arrange
+		_client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>()).Returns(call => {
+			_saved = JObject.Parse(call.ArgAt<string>(1));
+			throw new System.Net.Http.HttpRequestException("save connection lost");
+		});
+		_client.ExecutePostRequest(Arg.Any<string>(), Arg.Is<string>(s => s.Contains("VwSysSqlScriptInPackage")))
+			.Returns(_ => _saved is null ? "{\"success\":true,\"rows\":[]}"
+				: throw new System.Net.Http.HttpRequestException("read connection lost"));
+		// Act
+		bool result = _command.TryCreate(new() { SchemaName = "UsrSql", PackageName = "Custom" }, out SqlSchemaCreateResponse response);
+		// Assert
+		result.Should().BeFalse(because: "neither response proves the saved state");
+		response.Error.Should().Contain("SaveSchema transport failed", because: "the initial uncertain write must remain visible");
+		response.Error.Should().Contain("exists before retrying", because: "creation may already have committed");
 	}
 
 	[Test]
-	public void TryCreate_Rejects_Missing_Package() {
-		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>())
-			.Returns("""{"success": true, "rows": []}""");
-		var options = new SqlSchemaCreateOptions { SchemaName = "UsrMySqlScript", PackageName = "DoesNotExist" };
-
-		bool result = _command.TryCreate(options, out SqlSchemaCreateResponse response);
-
-		result.Should().BeFalse();
-		response.Error.Should().Contain("DoesNotExist").And.Contain("not found");
+	[Description("Engine discovery preserves the server diagnostic when its request is rejected.")]
+	public void TryCreate_ShouldReportEngineError_WhenDiscoveryIsRejected() {
+		// Arrange
+		_client.ExecutePostRequest(Arg.Is<string>(s => s.EndsWith("GetSystemEnvironmentInfo")), Arg.Any<string>())
+			.Returns("{\"success\":false,\"errorInfo\":{\"message\":\"permission denied\"}}");
+		// Act
+		bool result = _command.TryCreate(new() { SchemaName = "UsrSql", PackageName = "Custom" }, out SqlSchemaCreateResponse response);
+		// Assert
+		result.Should().BeFalse(because: "the engine cannot be inferred from a rejected response");
+		response.Error.Should().Contain("permission denied", because: "the server reason is actionable");
+		_saved.Should().BeNull(because: "engine discovery must finish before writing");
 	}
 
 	[Test]
-	public void TryCreate_Rejects_Duplicate_Schema_Name() {
-		var selectResponses = new Queue<string>([
-			$$"""{"success": true, "rows": [{"UId": "{{PackageUId}}"}]}""",
-			"""{"success": true, "rows": [{"UId": "11111111-2222-3333-4444-555555555555"}]}"""
-		]);
-		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>())
-			.Returns(_ => selectResponses.Dequeue());
-		var options = new SqlSchemaCreateOptions { SchemaName = "UsrExisting", PackageName = "Custom" };
-
-		bool result = _command.TryCreate(options, out SqlSchemaCreateResponse response);
-
-		result.Should().BeFalse();
-		response.Error.Should().Contain("already exists");
+	[Description("Unknown engines with JSON-null errorInfo retain the explicit engine-selection diagnostic.")]
+	public void TryCreate_ShouldExplainUnknownEngine_WhenErrorInfoIsJsonNull() {
+		// Arrange
+		_client.ExecutePostRequest(Arg.Is<string>(s => s.EndsWith("GetSystemEnvironmentInfo")), Arg.Any<string>())
+			.Returns("{\"success\":true,\"dbEngineType\":\"Unknown\",\"errorInfo\":null}");
+		// Act
+		bool result = _command.TryCreate(new() { SchemaName = "UsrSql", PackageName = "Custom" }, out SqlSchemaCreateResponse response);
+		// Assert
+		result.Should().BeFalse(because: "an unknown dialect cannot be saved safely");
+		response.Error.Should().Contain("Supply db-engine-type explicitly", because: "JSON null must not replace the useful diagnostic with a parser error");
 	}
 
-	[Test]
-	public void TryCreate_Happy_Path_Calls_CreateNewSchema_Then_SaveSchema() {
-		var selectResponses = new Queue<string>([
-			$$"""{"success": true, "rows": [{"UId": "{{PackageUId}}"}]}""",
-			"""{"success": true, "rows": []}"""
-		]);
-		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>())
-			.Returns(_ => selectResponses.Dequeue());
-		_applicationClient.ExecutePostRequest(CreateNewSchemaUrl, Arg.Any<string>()).Returns(SchemaPayloadJson);
-		_applicationClient.ExecutePostRequest(SaveSchemaUrl, Arg.Any<string>()).Returns("""{"success": true}""");
-		var options = new SqlSchemaCreateOptions {
-			SchemaName = "UsrMySqlScript",
-			PackageName = "Custom",
-			Caption = "My SQL Script"
-		};
-
-		bool result = _command.TryCreate(options, out SqlSchemaCreateResponse response);
-
-		result.Should().BeTrue();
-		response.Success.Should().BeTrue();
-		response.SchemaName.Should().Be("UsrMySqlScript");
-		response.SchemaUId.Should().Be(GeneratedSchemaUId);
-		response.PackageUId.Should().Be(PackageUId);
-		response.Caption.Should().Be("My SQL Script");
-		_applicationClient.Received(1).ExecutePostRequest(CreateNewSchemaUrl,
-			Arg.Is<string>(s => s.Contains(PackageUId)));
-		_applicationClient.Received(1).ExecutePostRequest(SaveSchemaUrl,
-			Arg.Is<string>(s => s.Contains("UsrMySqlScript") && s.Contains("My SQL Script")));
-	}
-
-	[Test]
-	public void TryCreate_Surfaces_SaveSchema_Error() {
-		var selectResponses = new Queue<string>([
-			$$"""{"success": true, "rows": [{"UId": "{{PackageUId}}"}]}""",
-			"""{"success": true, "rows": []}"""
-		]);
-		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>())
-			.Returns(_ => selectResponses.Dequeue());
-		_applicationClient.ExecutePostRequest(CreateNewSchemaUrl, Arg.Any<string>()).Returns(SchemaPayloadJson);
-		_applicationClient.ExecutePostRequest(SaveSchemaUrl, Arg.Any<string>())
-			.Returns("""{"success": false, "errorInfo": {"message": "script conflict"}}""");
-		var options = new SqlSchemaCreateOptions { SchemaName = "UsrMySqlScript", PackageName = "Custom" };
-
-		bool result = _command.TryCreate(options, out SqlSchemaCreateResponse response);
-
-		result.Should().BeFalse();
-		response.Error.Should().Be("script conflict");
-	}
 }

@@ -7,7 +7,7 @@ NAME
 DESCRIPTION
     Creates a server-to-server (client_credentials) OAuth app in Creatio through the platform
     OAuthConfigService/AddClient endpoint over REST, binding it to a system user. Supply
-    --system-user-id (from resolve-oauth-system-user or create-oauth-technical-user) or
+    --system-user-id (from resolve-oauth-system-user) or
     --system-user by name (defaults to Supervisor).
 
     The returned client id and client secret are surfaced ONLY in the structured command result.
@@ -25,8 +25,7 @@ OPTIONS
         Required. Registered Creatio environment.
 
     --system-user-id ID
-        System user id to bind the OAuth app to. Resolve it first with resolve-oauth-system-user
-        or create-oauth-technical-user.
+        System user id to bind the OAuth app to. Resolve it first with resolve-oauth-system-user.
 
     --system-user NAME
         System user name to bind the OAuth app to when --system-user-id is omitted.
@@ -52,8 +51,7 @@ EXAMPLES
     clio create-server-to-server-oauth-app -e c-dev --system-user-id 410006e1-ca4e-4502-a9ec-e54d922d2c00
 
 NOTES
-    This command is experimental and hidden by default. Enable it before use:
-        clio experimental --name deploy-identity --enable
+    Available by default in CLI and MCP. No Creatio server filesystem or database access is required.
 
     This command mutates Creatio (creates an OAuth client). The generated client secret is
     returned only in the structured result and is never logged.

@@ -26,6 +26,11 @@ internal sealed class ReauthExecutor : IReauthExecutor {
 	/// </summary>
 	private const int MaxBodyScanCharacters = 4096;
 
+	/// <summary>
+	/// UTF-8 byte-order mark, which <see cref="char.IsWhiteSpace(char)"/> does not report as whitespace.
+	/// </summary>
+	private const char ByteOrderMark = '\uFEFF';
+
 	#endregion
 
 	#region Fields: Private
@@ -65,7 +70,7 @@ internal sealed class ReauthExecutor : IReauthExecutor {
 	#region Methods: Public
 
 	/// <inheritdoc />
-	public T Execute<T>(Func<T> call, Func<T, bool> isUnauthorized) {
+	public T Execute<T>(Func<T> call, Func<T, bool> isUnauthorized, bool replayAllowed) {
 		if (call is null) {
 			throw new ArgumentNullException(nameof(call));
 		}
@@ -84,6 +89,11 @@ internal sealed class ReauthExecutor : IReauthExecutor {
 			// the retry also throws, the exception propagates to the caller unchanged.
 			int observedVersion = Volatile.Read(ref _loginVersion);
 			TryReauthenticate(observedVersion);
+			if (!replayAllowed) {
+				// A write must not be issued twice. The session is refreshed for whatever the caller
+				// does next, but this request is not repeated; the original failure surfaces instead.
+				throw;
+			}
 			return call();
 		}
 		if (!isUnauthorized(result)) {
@@ -98,6 +108,16 @@ internal sealed class ReauthExecutor : IReauthExecutor {
 		// the reauth lock — exactly the parallel-burst case the dedupe is designed for.
 		int sessionObservedVersion = Volatile.Read(ref _loginVersion);
 		TryReauthenticate(sessionObservedVersion);
+		if (!replayAllowed) {
+			// GitHub #1313. The predicate is body-based, so it cannot distinguish "the server
+			// rejected the write unauthenticated" from "the write committed and its legitimate
+			// response happens to contain a login-page marker". For a non-idempotent call the
+			// second reading is unrecoverable — a replay would commit the write a second time —
+			// so the write is never repeated. Re-login still happened above, so the caller's next
+			// request works; this response is returned verbatim and the caller classifies it
+			// (call-service reports it as an expired session and exits non-zero).
+			return result;
+		}
 		// At most one retry, regardless of the retry's outcome. The caller observes the
 		// second response as-is; if it is still the login page (Login failed, or the
 		// session was invalidated again between Login and retry) the caller decides.
@@ -146,7 +166,14 @@ internal sealed class ReauthExecutor : IReauthExecutor {
 			return false;
 		}
 		int start = 0;
-		while (start < body.Length && char.IsWhiteSpace(body[start])) {
+		// A byte-order mark is skipped alongside whitespace, and char.IsWhiteSpace does NOT report one.
+		// Creatio's WCF endpoints demonstrably emit it: the GetSchemaDesignItem error page captured from a
+		// 10.1.725 stand begins U+FEFF "<?xml ...". Without this a BOM-prefixed sign-in page leaves the
+		// first character neither '<' nor '{', the predicate returns false, and every caller loses the
+		// classification - automatic re-authentication never fires, and the entity-schema designer attaches
+		// a missing-dependency diagnosis to what is actually an authentication failure.
+		while (start < body.Length
+			&& (char.IsWhiteSpace(body[start]) || body[start] == ByteOrderMark)) {
 			start++;
 		}
 		if (start >= body.Length) {
@@ -157,7 +184,10 @@ internal sealed class ReauthExecutor : IReauthExecutor {
 			return IsHtmlAuthRedirect(body, start);
 		}
 		if (first == '{') {
-			return IsJsonAuthFailureEnvelope(body);
+			// Sliced at the first real character: Newtonsoft refuses to parse a body whose first character is
+			// a byte-order mark, so passing the raw body here would lose the JSON arm on exactly the shape the
+			// skip loop above was widened for.
+			return IsJsonAuthFailureEnvelope(start == 0 ? body : body[start..]);
 		}
 		// JSON arrays, quoted strings, and plain-text bodies cannot be a session-expired
 		// response — they are never produced by Creatio's auth-rejection path.

@@ -21,7 +21,7 @@ Parameters can be added during schema creation with --parameter. Separate
 multiple parameter definitions with |.
 Supported parameter types are Boolean, Date, DateTime, Float, Guid,
 Unique identifier, Integer, Lookup, Money, Serializable list of composite
-values, Text, and Time.
+values, Text, Unlimited text (alias MaxSizeText), and Time.
 
 Child items can be added to parameters of type Serializable list of
 composite values with --parameter-item. Separate multiple item definitions
@@ -35,6 +35,15 @@ route does not persist parameter direction:
 3. Patch Schemas/<SchemaName>/metadata.json and set parameter L12
 4. Load workspace packages to the database
 5. Build the package again
+
+Step 4 requires file system development mode (FSM) to be enabled on the
+environment. When it fails, the command stops with exit code 1 and skips
+step 5, because building from an unchanged database copy would report
+directions as applied while nothing on the environment changed. Steps 1-2
+have already run at that point: the user task schema EXISTS on the
+environment and only the directions are missing, so do not re-run
+add-user-task. Enable FSM (clio turn-fsm on) and finish with
+'clio pkg-to-db' followed by 'clio compile-package <PACKAGE>'.
 
 ## Synopsis
 
@@ -100,6 +109,12 @@ multiple item definitions with |
 --timeout                  Request timeout in milliseconds
 ```
 
+Use `type=Unlimited text` (alias `MaxSizeText`) for an unlimited-length string,
+for example an `ErrorMessage` output. `Text` and `String` retain their existing type.
+
+```text
+code=ErrorMessage;title=Error message;type=Unlimited text;direction=Out;resulting=true;serializable=true
+```
 ## Example
 
 ```bash

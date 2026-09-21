@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using Clio.Common;
@@ -45,13 +46,19 @@ public interface IODataFileContract {
 	/// <param name="countRequested">Whether the caller asked for a verified total count.</param>
 	/// <param name="summary">Row/column summary when the method returns <see langword="true"/>.</param>
 	/// <param name="error">Caller-facing error when the method returns <see langword="false"/>.</param>
+	/// <param name="errorCode">
+	/// Machine-readable code for <paramref name="error"/>, from <c>ODataReadErrorCodes</c>. File mode
+	/// classifies a rejected body exactly as the inline read does, so a caller can branch on the code
+	/// rather than on the wording, whichever read path produced it.
+	/// </param>
 	bool TryWriteReadResponse(
 		string resolvedPath,
 		byte[] responseUtf8,
 		string entityName,
 		bool countRequested,
 		out ODataReadFileSummary summary,
-		out string error);
+		out string error,
+		out string errorCode);
 }
 
 /// <inheritdoc cref="IODataFileContract"/>
@@ -223,15 +230,18 @@ public sealed class ODataFileContract(IFileSystem fileSystem, IConfinedFileAcces
 		string entityName,
 		bool countRequested,
 		out ODataReadFileSummary summary,
-		out string error) {
+		out string error,
+		out string errorCode) {
 		summary = null;
 		error = null;
+		errorCode = null;
 		try {
 			// The ceiling is enforced by the caller WHILE the body arrives, which is the only place it can
 			// actually bound anything; by here the payload is already in memory and within it.
-			(ODataReadFileSummary built, string summaryError) =
+			(ODataReadFileSummary built, string summaryError, string summaryErrorCode) =
 				BuildSummary(responseUtf8 ?? [], entityName, countRequested);
 			if (summaryError is not null) {
+				errorCode = summaryErrorCode;
 				return Fail(summaryError, out error);
 			}
 			// The bytes go to disk exactly as they arrived - no decode to UTF-16 and re-encode, which would
@@ -241,6 +251,7 @@ public sealed class ODataFileContract(IFileSystem fileSystem, IConfinedFileAcces
 			return true;
 		} catch (Exception ex) {
 			summary = null;
+			errorCode = ODataReadErrorCodes.Transport;
 			return Fail(SensitiveErrorTextRedactor.Redact($"Failed to write output-file: {ex.Message}"), out error);
 		}
 	}
@@ -250,63 +261,98 @@ public sealed class ODataFileContract(IFileSystem fileSystem, IConfinedFileAcces
 		return false;
 	}
 
-	private static (ODataReadFileSummary summary, string error) BuildSummary(byte[] json, string entityName,
-		bool countRequested) {
+	/// <summary>
+	/// Classifies the response and, when it is a genuine OData body for the entity that was requested,
+	/// builds its compact summary. Nothing is written for a body this rejects.
+	/// </summary>
+	/// <remarks>
+	/// The classification is the INLINE read's, reached through <see cref="ODataReadTool"/>: the same
+	/// <c>@odata.context</c> identity test, in the same order, with the same fixed diagnostics. A
+	/// file-mode-only "is it an object or an array" test accepted bodies the inline read refuses - an
+	/// authentication page shaped as <c>{"detail":"authentication required"}</c>, and an <c>Account</c>
+	/// collection answered to a read of <c>Contact</c> - and published them as a successful export.
+	/// </remarks>
+	private static (ODataReadFileSummary summary, string error, string errorCode) BuildSummary(byte[] json,
+		string entityName, bool countRequested) {
+		string entity = entityName?.Trim() ?? string.Empty;
 		JsonDocument document;
 		try {
 			document = JsonDocument.Parse(json);
 		} catch (JsonException) {
 			// The parser's own message ("'<' is an invalid start of a value") names the symptom and not the
-			// cause, and it is the same body the INLINE read already classifies properly - an IIS 404 page
+			// cause, and it is the same body the INLINE read already classifies properly - an IIS error page
 			// for an entity set with no OData controller is by far the most common one, and the actionable
 			// answer is to use execute-esq instead. Answering the file mode with a raw parser message left
 			// the two paths giving different diagnostics for the same server response; a real stand returned
 			// exactly that for an unknown entity. The exception message is dropped rather than appended: the
 			// fixed diagnostics are locally authored on purpose, so nothing server-controlled is echoed.
 			string body = Encoding.UTF8.GetString(json);
-			return CreatioResponseError.TryDescribeMissingEntitySet(body, entityName, out string missingEntitySet)
-				? (null, missingEntitySet)
-				: (null, CreatioResponseError.DescribeNonJsonReadResponse());
+			if (CreatioResponseError.TryClassifyMarkupError(body, out int? markupStatusCode)) {
+				return (null, ODataReadTool.DescribeMarkupError(entity, markupStatusCode),
+					markupStatusCode == (int)HttpStatusCode.NotFound
+						? ODataReadErrorCodes.EntityNotFound
+						: ODataReadErrorCodes.Transport);
+			}
+			return (null, CreatioResponseError.DescribeNonJsonReadResponse(),
+				ODataReadErrorCodes.NonJsonResponse);
 		}
 		using (document) {
 			JsonElement root = document.RootElement;
-			string contentError = RejectNonODataContent(root);
+			(string contentError, string contentErrorCode) = RejectNonODataContent(root, entity);
 			if (contentError is not null) {
-				return (null, contentError);
+				return (null, contentError, contentErrorCode);
 			}
 			(JsonElement rows, string nextLink, long? totalCount) = ReadEnvelope(root);
 			if (countRequested && !totalCount.HasValue) {
-				return (null, ODataReadQuery.MissingCountMessage);
+				return (null,
+					"Creatio did not return @odata.count for count=true; total count cannot be verified.",
+					ODataReadErrorCodes.IncompleteResponse);
 			}
 			int recordCount = rows.ValueKind == JsonValueKind.Array ? rows.GetArrayLength() : 1;
 			(int rowCount, Dictionary<string, long> columnSizes) = SummarizeRows(rows);
-			return (new ODataReadFileSummary(rowCount, columnSizes, recordCount, nextLink, totalCount), null);
+			return (new ODataReadFileSummary(rowCount, columnSizes, recordCount, nextLink, totalCount), null, null);
 		}
 	}
 
 	/// <summary>
-	/// Rejects a body that is not OData content at all, before anything about it is summarized or written.
+	/// Rejects a body that is not an OData read of the REQUESTED entity, before anything about it is
+	/// summarized or written.
 	/// </summary>
 	/// <param name="root">Parsed response root.</param>
-	/// <returns><c>null</c> when the body may be summarized, otherwise the caller-facing error.</returns>
-	private static string RejectNonODataContent(JsonElement root) {
-		// Classified, not quoted. TryDetect hands back the server's own message, and an OData error body is
-		// allowed the whole 64 MiB response ceiling: running the redactor over a multi-megabyte message
-		// allocated several times its size and then copied all of it into the MCP transcript - the exact
-		// context pressure file mode exists to avoid. The fixed diagnostic is bounded by construction, and it
-		// carries no server-controlled prose, tokens or line breaks into content a model reads as trusted.
-		if (CreatioResponseError.TryClassify(root, CreatioResponseContext.ODataPayload,
+	/// <param name="entityName">Trimmed entity set the caller asked for.</param>
+	/// <returns><c>(null, null)</c> when the body may be summarized, otherwise the caller-facing error and its code.</returns>
+	private static (string error, string errorCode) RejectNonODataContent(JsonElement root, string entityName) {
+		// Identity FIRST, exactly as the inline read orders it: a response whose @odata.context proves it is
+		// the requested top-level entity is that entity, whatever its columns are called. Running the error
+		// heuristics first rejected a genuine record holding a legal column named ExceptionMessage.
+		bool hasMatchingIdentity = ODataReadTool.HasMatchingODataIdentity(root, entityName);
+		// Classified, not quoted. The richer overload hands back the server's own message, and an OData error
+		// body is allowed the whole 64 MiB response ceiling: running the redactor over a multi-megabyte
+		// message allocated several times its size and then copied all of it into the MCP transcript - the
+		// exact context pressure file mode exists to avoid. The fixed diagnostic is bounded by construction,
+		// and it carries no server-controlled prose, tokens or line breaks into content a model reads as
+		// trusted; that is also why the cheap `out bool` overload is the right one here.
+		if (!hasMatchingIdentity && CreatioResponseError.TryClassify(root, CreatioResponseContext.ODataPayload,
 				out bool isUnregisteredEntity)) {
 			// Nothing is written for an error body: a file named after a successful read that holds a
 			// server error is worse than no file at all.
-			return CreatioResponseError.DescribeServerReportedReadError(isUnregisteredEntity);
+			return (CreatioResponseError.DescribeServerReportedReadError(
+					isUnregisteredEntity ? ODataErrorKind.UnregisteredEntity : ODataErrorKind.ServerError),
+				isUnregisteredEntity
+					? ODataReadErrorCodes.EntityNotFound
+					: ODataReadErrorCodes.ServerReportedError);
 		}
-		// Only an object or an array is OData content. A scalar body - null, true, 42, "Unauthorized" -
-		// is what a proxy, an auth redirect or a misrouted request returns; persisting one as the raw
-		// response reported a successful read of a file holding no records at all.
-		return root.ValueKind is JsonValueKind.Object or JsonValueKind.Array
-			? null
-			: ODataReadQuery.DescribeNonODataContent(root.ValueKind);
+		// Only a body that identifies ITSELF as the requested entity set may be published. An object or an
+		// array alone was not enough: a proxy or auth body ({"detail":"authentication required"}), and an
+		// Account collection answered to a read of Contact, both satisfied that test and were written out as
+		// a successful export of one row.
+		bool isODataRead = root.ValueKind == JsonValueKind.Object
+			&& (root.TryGetProperty("value", out JsonElement value) && value.ValueKind == JsonValueKind.Array
+				? ODataReadTool.IsCollectionResponse(root, entityName)
+				: ODataReadTool.IsSingleEntityResponse(root, entityName));
+		return isODataRead
+			? (null, null)
+			: (CreatioResponseError.DescribeNonJsonReadResponse(), ODataReadErrorCodes.NonJsonResponse);
 	}
 
 	/// <summary>
@@ -338,6 +384,15 @@ public sealed class ODataFileContract(IFileSystem fileSystem, IConfinedFileAcces
 		return (rows, nextLink, totalCount);
 	}
 
+	/// <summary>
+	/// Whether a response property is an OData control annotation rather than a data column. Any
+	/// <c>@odata.*</c> member belongs to the envelope, and a single-entity response carries
+	/// <c>@odata.context</c> alongside the real fields.
+	/// </summary>
+	/// <param name="name">Property name from the response object.</param>
+	private static bool IsODataAnnotation(string name) =>
+		name.StartsWith("@odata.", StringComparison.Ordinal);
+
 	/// <summary>Counts object rows and totals each column's UTF-8 byte size across them.</summary>
 	/// <param name="rows">Row array, or a single entity object.</param>
 	private static (int rowCount, Dictionary<string, long> columnSizes) SummarizeRows(JsonElement rows) {
@@ -355,7 +410,7 @@ public sealed class ODataFileContract(IFileSystem fileSystem, IConfinedFileAcces
 				// Envelope annotations are not columns. A single-entity response carries @odata.context
 				// beside its real fields, so the summary reported a data column the inline read never
 				// surfaces - the same body described two different ways by the two read paths.
-				if (ODataReadQuery.IsODataAnnotation(property.Name)) {
+				if (IsODataAnnotation(property.Name)) {
 					continue;
 				}
 				long size = Encoding.UTF8.GetByteCount(property.Value.GetRawText());

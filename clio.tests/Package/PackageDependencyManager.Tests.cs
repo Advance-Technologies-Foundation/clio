@@ -24,6 +24,9 @@ public class PackageDependencyManagerTests
 	private const string TargetPackageName = "MyApp";
 	private const string DependencyPackageName = "CrtLeadOppMgmtApp";
 
+	/// <summary>Bound the schema-designer diagnosis puts on this read; any positive value proves it travels.</summary>
+	private const int DiagnosticTimeoutMs = 30_000;
+
 	#endregion
 
 	#region Fields: Private
@@ -64,7 +67,7 @@ public class PackageDependencyManagerTests
 		new(new PackageDescriptor { Name = name, UId = uId, PackageVersion = version }, string.Empty, []);
 
 	private void ArrangeInstalledPackages() {
-		_packageListProvider.GetPackages("{}").Returns([
+		_packageListProvider.GetPackages("{}", Arg.Any<int>()).Returns([
 			CreatePackageInfo(TargetPackageName, _targetUId, "1.0.0.0"),
 			CreatePackageInfo(DependencyPackageName, _dependencyUId, "8.2.1.999")
 		]);
@@ -74,6 +77,20 @@ public class PackageDependencyManagerTests
 		_applicationClient
 			.ExecutePostRequest<PackagePropertiesResponse>(
 				Arg.Any<string>(), Arg.Do<string>(body => _loadRequestBody = body))
+			.Returns(new PackagePropertiesResponse { Success = true, Package = package });
+	}
+
+	/// <summary>
+	/// Same as <see cref="ArrangeGetPackageProperties(WorkspacePackageDto)"/> for the bounded read, whose
+	/// explicit timeout argument the default-argument stub above does not match.
+	/// </summary>
+	/// <param name="package">Package properties the server answers with.</param>
+	/// <param name="requestTimeoutMs">Timeout the call under test is expected to pass.</param>
+	private void ArrangeGetPackageProperties(WorkspacePackageDto package, int requestTimeoutMs) {
+		_applicationClient
+			.ExecutePostRequest<PackagePropertiesResponse>(
+				Arg.Any<string>(), Arg.Do<string>(body => _loadRequestBody = body), requestTimeoutMs,
+				Arg.Any<int>(), Arg.Any<int>())
 			.Returns(new PackagePropertiesResponse { Success = true, Package = package });
 	}
 
@@ -151,7 +168,7 @@ public class PackageDependencyManagerTests
 	[Description("Throws a descriptive error when the target package is not installed in the environment.")]
 	public void AddDependencies_ShouldThrow_WhenTargetPackageNotFound() {
 		// Arrange
-		_packageListProvider.GetPackages("{}").Returns([
+		_packageListProvider.GetPackages("{}", Arg.Any<int>()).Returns([
 			CreatePackageInfo(DependencyPackageName, _dependencyUId, "8.2.1.999")
 		]);
 
@@ -168,7 +185,7 @@ public class PackageDependencyManagerTests
 	[Description("Throws a descriptive error when a requested dependency package is not installed.")]
 	public void AddDependencies_ShouldThrow_WhenDependencyPackageNotFound() {
 		// Arrange
-		_packageListProvider.GetPackages("{}").Returns([
+		_packageListProvider.GetPackages("{}", Arg.Any<int>()).Returns([
 			CreatePackageInfo(TargetPackageName, _targetUId, "1.0.0.0")
 		]);
 		ArrangeGetPackageProperties(new WorkspacePackageDto { UId = _targetUId, Name = TargetPackageName });
@@ -393,7 +410,7 @@ public class PackageDependencyManagerTests
 	[Description("Throws a descriptive error when the target package is not installed in the environment (ENG-91314).")]
 	public void RemoveDependencies_ShouldThrow_WhenTargetPackageNotFound() {
 		// Arrange
-		_packageListProvider.GetPackages("{}").Returns([
+		_packageListProvider.GetPackages("{}", Arg.Any<int>()).Returns([
 			CreatePackageInfo(DependencyPackageName, _dependencyUId, "8.2.1.999")
 		]);
 
@@ -418,6 +435,140 @@ public class PackageDependencyManagerTests
 		// Assert
 		act.Should().Throw<ArgumentException>(
 			because: "at least one non-empty dependency name must be specified to remove");
+	}
+
+	[Test]
+	[Description("Reads the declared dependencies of a package without saving anything, so the schema-designer diagnosis can filter candidates it would be pointless to propose.")]
+	public void GetDependencies_ShouldReturnDeclaredNames_WhenPackageExists() {
+		// Arrange
+		ArrangeInstalledPackages();
+		ArrangeGetPackageProperties(new WorkspacePackageDto {
+			UId = _targetUId,
+			Name = TargetPackageName,
+			DependsOnPackages = [
+				new WorkspacePackageDto { UId = _dependencyUId, Name = DependencyPackageName, Version = "8.2.1.999" }
+			]
+		});
+
+		// Act
+		IReadOnlyList<string> dependencies = _manager.GetDependencies(TargetPackageName);
+
+		// Assert
+		dependencies.Should().Equal([DependencyPackageName],
+			because: "the declared dependency names are what the caller filters candidate packages against");
+		_applicationClient.DidNotReceiveWithAnyArgs()
+			.ExecutePostRequest<SavePackagePropertiesResponse>(default, default);
+	}
+
+	[Test]
+	[Description("Falls back to the dependency UId when the server sends a dependency row without a name, so a nameless row is reported rather than silently dropped.")]
+	public void GetDependencies_ShouldFallBackToUId_WhenDependencyRowHasNoName() {
+		// Arrange
+		ArrangeInstalledPackages();
+		ArrangeGetPackageProperties(new WorkspacePackageDto {
+			UId = _targetUId,
+			Name = TargetPackageName,
+			DependsOnPackages = [new WorkspacePackageDto { UId = _dependencyUId, Name = null }]
+		});
+
+		// Act
+		IReadOnlyList<string> dependencies = _manager.GetDependencies(TargetPackageName);
+
+		// Assert
+		dependencies.Should().Equal([_dependencyUId.ToString()],
+			because: "a nameless dependency row must still be reported, by its identifier, rather than disappearing from the list");
+	}
+
+	[Test]
+	[Description("Reports an empty dependency list, not a failure, when the package declares no dependencies at all.")]
+	public void GetDependencies_ShouldReturnEmpty_WhenPackageDeclaresNoDependencies() {
+		// Arrange
+		ArrangeInstalledPackages();
+		ArrangeGetPackageProperties(new WorkspacePackageDto {
+			UId = _targetUId,
+			Name = TargetPackageName,
+			DependsOnPackages = null
+		});
+
+		// Act
+		IReadOnlyList<string> dependencies = _manager.GetDependencies(TargetPackageName);
+
+		// Assert
+		dependencies.Should().BeEmpty(
+			because: "a package with no declared dependencies is an ordinary state, not an error");
+	}
+
+	[Test]
+	[Description("Reads the declared dependencies straight from the package identity the caller already holds, without the installed-package listing, so the schema-designer diagnosis costs one round-trip instead of two (issue #1461).")]
+	public void GetDependenciesByUId_ShouldSkipThePackageListing_WhenTheCallerSuppliesTheIdentity() {
+		// Arrange
+		ArrangeInstalledPackages();
+		ArrangeGetPackageProperties(new WorkspacePackageDto {
+			UId = _targetUId,
+			Name = TargetPackageName,
+			DependsOnPackages = [
+				new WorkspacePackageDto { UId = _dependencyUId, Name = DependencyPackageName, Version = "8.2.1.999" }
+			]
+		}, DiagnosticTimeoutMs);
+
+		// Act
+		IReadOnlyList<string> dependencies =
+			_manager.GetDependencies(_targetUId, TargetPackageName, DiagnosticTimeoutMs);
+
+		// Assert
+		dependencies.Should().Equal([DependencyPackageName],
+			because: "the by-UId read must return the same declared dependency names as the by-name read");
+		_packageListProvider.DidNotReceiveWithAnyArgs().GetPackages(default, default);
+		_loadRequestBody.Should().Be(JsonConvert.SerializeObject(_targetUId),
+			because: "the properties request must carry the identity the caller supplied, unchanged");
+	}
+
+	[Test]
+	[Description("Refuses an empty package UId instead of asking the server about it, because GetPackageProperties answers that with a generic failure naming neither the mistake nor the package (issue #1461).")]
+	public void GetDependenciesByUId_ShouldThrow_WhenTheUIdIsEmpty() {
+		// Arrange
+		ArrangeGetPackageProperties(new WorkspacePackageDto { UId = _targetUId, Name = TargetPackageName },
+			DiagnosticTimeoutMs);
+
+		// Act
+		Action act = () => _manager.GetDependencies(Guid.Empty, TargetPackageName, DiagnosticTimeoutMs);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(
+			because: "an empty identifier is a caller mistake, and this overload exists to enrich an error message rather than add an unhelpful one");
+		_applicationClient.DidNotReceiveWithAnyArgs()
+			.ExecutePostRequest<PackagePropertiesResponse>(default, default);
+	}
+
+	[Test]
+	[Description("Applies the caller's timeout to the by-UId dependency read, so an environment that accepts the connection and then stops answering costs a bounded wait (issue #1461).")]
+	public void GetDependenciesByUId_ShouldBoundTheRead_WhenATimeoutIsSupplied() {
+		// Arrange
+		ArrangeGetPackageProperties(new WorkspacePackageDto { UId = _targetUId, Name = TargetPackageName },
+			DiagnosticTimeoutMs);
+
+		// Act
+		_manager.GetDependencies(_targetUId, TargetPackageName, DiagnosticTimeoutMs);
+
+		// Assert
+		_applicationClient.Received(1).ExecutePostRequest<PackagePropertiesResponse>(
+			Arg.Any<string>(), Arg.Any<string>(), DiagnosticTimeoutMs, Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("Fails loudly when the requested package is not installed in the environment, so a typo is not read as 'this package has no dependencies'.")]
+	public void GetDependencies_ShouldThrow_WhenPackageIsNotInstalled() {
+		// Arrange
+		ArrangeInstalledPackages();
+
+		// Act
+		Action act = () => _manager.GetDependencies("UsrNotInstalled");
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+				because: "an unknown package name must not degrade to an empty dependency list, which reads as a fact about the package")
+			.WithMessage("*UsrNotInstalled*",
+				because: "the message must name the package the caller asked for");
 	}
 
 }

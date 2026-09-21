@@ -1,4 +1,4 @@
-namespace Clio.Command.McpServer.Tools.MobilePageConverter;
+﻿namespace Clio.Command.McpServer.Tools.MobilePageConverter;
 
 using System.Collections.Generic;
 using System.Text.Json;
@@ -22,12 +22,43 @@ public sealed class WebToMobilePageConversionRules {
 	public IReadOnlyList<TemplateMappingRule> Templates { get; init; } = [];
 
 	/// <summary>
+	/// The mobile template to recommend when the source page's web template matches NO
+	/// <see cref="Templates"/> entry — a custom or unrecognised web template.
+	/// </summary>
+	/// <remarks>
+	/// Without it such a page got no mobile template at all, and the consequence was not just a missing
+	/// recommendation: with no template to read, clio had no base to diff the data sections against, so both
+	/// diffs degraded to a single root merge (ENG-95827). A generic mobile base is a far better answer than
+	/// none — it gives `create-page` a target and gives the differ a real base. The fallback deliberately
+	/// carries NO container or component correspondence: for an unrecognised web template clio knows no
+	/// name twins, and inventing them would misplace elements rather than leave them where the walk puts them.
+	/// </remarks>
+	[JsonPropertyName("defaultMobileTemplate")]
+	public string DefaultMobileTemplate { get; init; }
+	/// MOBILE base page templates that are edit/form (record) pages — e.g. <c>BaseMobilePageTemplate</c>,
+	/// <c>MobilePageWithTabsFreedomTemplate</c>. A converted page is a form page when the mobile template its
+	/// <see cref="Templates"/> rule targets is listed here; a list/section/blank target is simply absent. Kept
+	/// at the root, keyed by the MOBILE template, because form-ness is a property of the page the conversion
+	/// PRODUCES, not of each web→mobile pair — several web templates map onto one mobile template and they all
+	/// share its answer. Exists only to tailor the read-only section-registration advice (the default mobile
+	/// edit page is a manual step), never to drive container/component mapping. See
+	/// <see cref="MobilePageConversionGuideTool.IsFormPage"/>. Empty or absent (an OLD CDN copy of the rules
+	/// file) does NOT switch the advice off: the bundled list is used instead, the way
+	/// <see cref="ContentContainerTypes"/> falls back.
+	/// </summary>
+	[JsonPropertyName("mobileFormPageTemplates")]
+	public IReadOnlyList<string> MobileFormPageTemplates { get; init; } = [];
+
+	/// <summary>
 	/// Group: equivalent components. An entry is EITHER a type-equivalence (web↔mobile mapping that is not a
 	/// same-type match, e.g. crt.Checkbox→crt.Toggle) OR a template group (<c>filters</c> naming the source
 	/// elements it applies to plus the <c>viewConfigTemplates</c> that produce their mobile values, e.g. the
 	/// grid→list row). Both shapes live in one array because they answer the same question — "what does this
 	/// web component become on mobile" — and a template group also carries its own target type in
-	/// <c>viewConfigTemplates[].value.type</c>, so it needs no separate web/mobile pair.
+	/// <c>viewConfigTemplates[].value.type</c>, so it needs no separate web/mobile pair. ONE template serves both
+	/// paths: on an insert it shapes the new element's values; when the source element instead MERGES onto an
+	/// element the mobile template already provides, the same template is rendered and DIFFED against that element,
+	/// and only what the template lacks is merged — onto the twin, or by slot onto a sub-element it provides.
 	/// </summary>
 	[JsonPropertyName("components")]
 	public IReadOnlyList<ComponentEquivalenceRule> Components { get; init; } = [];
@@ -170,8 +201,92 @@ public sealed class TemplateMappingRule {
 	[JsonPropertyName("components")]
 	public IReadOnlyList<ComponentMappingRule> Components { get; init; } = [];
 
+	/// <summary>
+	/// Elements the rule DECLARES on top of the mobile template — any mobile component or container the
+	/// template lacks but the conversion needs (a receiver such as one more tab in a converted tab strip, or a
+	/// plain component the mobile page should always carry). COMPONENT-AGNOSTIC: the mobile type, the parent
+	/// slot, the position, the values and the optional caption all come from the entry; the converter adds no
+	/// type-specific behaviour of its own (a declared <c>crt.TabContainer</c> gets the tab body only because the
+	/// type-driven <c>tabAreaLayers</c> pass treats every inserted tab alike). Each entry is inserted into the
+	/// mobile page as if the template already had it, and a <see cref="Containers"/> pair may name it as its
+	/// <c>mobile</c> side; the web content mapped onto it then walks into it by merge-by-name, exactly like a
+	/// template-provided twin. A declared layout container that receives no surviving content is removed like
+	/// any other empty converter-created container; a declared leaf component is kept as declared.
+	/// </summary>
+	[JsonPropertyName("declaredElements")]
+	public IReadOnlyList<DeclaredElementRule> DeclaredElements { get; init; } = [];
+
+	/// <summary>
+	/// AUTHORING documentation for whoever edits this rules file — which web template this pair covers and
+	/// why. Deliberately has no reader: it is not projected onto the response, and must not become one. A
+	/// rules file resolves at runtime (env var → cache → CDN), so text from it reaching the wire would make
+	/// a rules author the writer of the calling agent's instructions.
+	/// </summary>
 	[JsonPropertyName("note")]
 	public string Note { get; init; }
+}
+
+/// <summary>
+/// One element a template rule declares on top of the mobile template (see
+/// <see cref="TemplateMappingRule.DeclaredElements"/>): its fixed element name, mobile component type (any
+/// registered mobile component or container), the parent slot it is inserted into (a probed mobile template
+/// element, OR another declaration of this same rule, e.g. the declared tab strip when the mobile template has
+/// none) and the mobile <c>values</c> it carries.
+/// </summary>
+public sealed class DeclaredElementRule {
+	/// <summary>Fixed mobile element name (e.g. "RightPanelTab"); <c>containers[].mobile</c> may reference it.</summary>
+	[JsonPropertyName("name")]
+	public string Name { get; init; }
+
+	/// <summary>Mobile component type (e.g. "crt.TabContainer", "crt.GridContainer", "crt.Label").</summary>
+	[JsonPropertyName("type")]
+	public string Type { get; init; }
+
+	/// <summary>
+	/// Mobile parent element name: either a probed mobile template element, or another declaration of this SAME
+	/// rule (e.g. "Tabs") — never a name that exists only on a specific page.
+	/// </summary>
+	[JsonPropertyName("parentName")]
+	public string ParentName { get; init; }
+
+	/// <summary>Parent child-collection slot; defaults to <c>items</c>.</summary>
+	[JsonPropertyName("propertyName")]
+	public string PropertyName { get; init; } = "items";
+
+	/// <summary>Optional 0-based position within the parent's slot; appended when omitted.</summary>
+	[JsonPropertyName("index")]
+	public int? Index { get; init; }
+
+	/// <summary>
+	/// Extra mobile values carried verbatim onto the inserted element (e.g. <c>iconPosition</c>). The
+	/// <c>type</c> and the caption token are added by the converter; a child collection is never declared here.
+	/// </summary>
+	[JsonPropertyName("values")]
+	public IReadOnlyDictionary<string, JsonElement> Values { get; init; } = new Dictionary<string, JsonElement>();
+
+	/// <summary>
+	/// Optional localizable text: the element gets <c>&lt;property&gt;: #ResourceString(key)#</c> (property
+	/// <c>caption</c> unless the entry says otherwise — a field would use <c>label</c>) and the guide's
+	/// <c>resourceStrings</c> carries key → value so the caller registers it on the mobile page.
+	/// </summary>
+	[JsonPropertyName("captionResource")]
+	public DeclaredElementCaptionRule CaptionResource { get; init; }
+
+	[JsonPropertyName("note")]
+	public string Note { get; init; }
+}
+
+/// <summary>Localizable text of a declared element: resource key, its text and the property that references it.</summary>
+public sealed class DeclaredElementCaptionRule {
+	[JsonPropertyName("key")]
+	public string Key { get; init; }
+
+	[JsonPropertyName("value")]
+	public string Value { get; init; }
+
+	/// <summary>Element property that carries the resource token; defaults to <c>caption</c>.</summary>
+	[JsonPropertyName("property")]
+	public string Property { get; init; } = "caption";
 }
 
 /// <summary>
@@ -228,9 +343,10 @@ public sealed class ComponentMappingRule {
 	/// DELTA over the web-template baseline is carried automatically — a property the page left at the
 	/// template default is omitted so the mobile element keeps its own default (no <c>type</c> is emitted — a
 	/// merge targets an element the template already owns). A twin whose web type has no mobile equivalent (a structural conversion, e.g.
-	/// <c>DataTable → List</c>, crt.DataGrid → crt.List) carries nothing and stays an advisory merge, with
-	/// the grid→row how-to left to the caller per <c>componentSuggestions</c>. Without a twin the web node
-	/// (inherited template chrome) is pruned and its values are lost.
+	/// <c>DataTable → List</c>, crt.DataGrid → crt.List) carries no delta of its own; what it does carry is what
+	/// its TYPE's conversion template shapes and the mobile template does not already provide (the grid's row onto
+	/// the template's list item) — see <see cref="WebToMobilePageConversionRules.Components"/>. Without a twin the
+	/// web node (inherited template chrome) is pruned and its values are lost.
 	/// </summary>
 	[JsonPropertyName("carryProperties")]
 	public IReadOnlyList<string> CarryProperties { get; init; } = [];
@@ -458,7 +574,7 @@ public sealed class ExcludedComponentFilterRule {
 	/// Mobile type of the HOST element the search is confined to (e.g. <c>"crt.ExpansionPanel"</c>). The
 	/// host is found STRUCTURALLY, at any depth: an <c>elementMap</c> entry whose resolved <c>MobileType</c>
 	/// matches ANY ancestor on the banned entry's <c>parentName</c> chain (primary shape), or any
-	/// array-element object with this <c>type</c> nested anywhere inside an entry's <c>mobileValues</c>
+	/// array-element object with this <c>type</c> nested anywhere inside an entry's <c>values</c>
 	/// (fallback shape — a host buried in a verbatim-carried property, with no entry of its own). This is NOT
 	/// a direct-JSON-parent check either way: <see cref="Type"/> may sit several levels deeper inside one of
 	/// the host's properties.
@@ -524,6 +640,34 @@ public sealed class RequestMappingRule {
 	[JsonPropertyName("paramMap")]
 	public IReadOnlyDictionary<string, string> ParamMap { get; init; } = new Dictionary<string, string>();
 
+	/// <summary>
+	/// Name of the <c>params</c> key carrying this request's NAVIGATION TARGET — the page or object the
+	/// action opens (e.g. <c>schemaName</c> for <c>crt.OpenPageRequest</c>, <c>entityName</c> for
+	/// <c>crt.CreateRecordRequest</c>). Null/absent means the request navigates nowhere and its target is
+	/// never checked. Paired with <see cref="TargetKind"/>: BOTH must be present for a check to run.
+	/// </summary>
+	/// <remarks>
+	/// This is data rather than code on purpose: a request whose target should be verified (today
+	/// <c>crt.OpenPageRequest</c> / <c>crt.CreateRecordRequest</c> / <c>crt.UpdateRecordRequest</c>, tomorrow
+	/// possibly <c>crt.ImportDataRequest</c> or <c>crt.AddNextStepRequest</c>) can be added by a CDN rules
+	/// push without a clio release — the same discipline <see cref="ParamMap"/> already follows.
+	/// </remarks>
+	[JsonPropertyName("targetParam")]
+	public string TargetParam { get; init; }
+
+	/// <summary>
+	/// What <see cref="TargetParam"/>'s value NAMES, so clio knows how to verify the target exists on mobile:
+	/// <c>web-page</c> (a WEB page schema, which the Creatio Mobile app cannot open at all) or
+	/// <c>entity-default-mobile-page</c> (an object that must have a default mobile edit page). Null/absent
+	/// means no check.
+	/// </summary>
+	/// <remarks>
+	/// An UNRECOGNIZED value is also "no check", never a failed check — a rules file naming a future kind
+	/// must degrade to silence on an older binary rather than reporting every such action as unresolvable.
+	/// </remarks>
+	[JsonPropertyName("targetKind")]
+	public string TargetKind { get; init; }
+
 	[JsonPropertyName("note")]
 	public string Note { get; init; }
 }
@@ -582,9 +726,9 @@ public sealed class ComponentEquivalenceRule {
 
 	/// <summary>
 	/// Template-group entries only: the mobile values produced for a matching element, as data. Each template's
-	/// own <c>value.type</c> declares the target mobile type — which is also what gates it and, for an entry with
-	/// no <see cref="Mobile"/>, what the converter derives the element's mobile type from. Empty on a plain
-	/// type-equivalence entry.
+	/// own <c>value.type</c> declares the target mobile type — which is also what gates it (on both paths) and, for
+	/// an entry with no <see cref="Mobile"/>, what the converter derives the element's mobile type from. Empty on a
+	/// plain type-equivalence entry.
 	/// </summary>
 	[JsonPropertyName("viewConfigTemplates")]
 	public IReadOnlyList<ViewConfigTemplateRule> ViewConfigTemplates { get; init; } = [];
@@ -651,6 +795,18 @@ public sealed class ElementFilterRule {
 /// MainHeader button → <c>FloatingActionButton.menuItems</c>). A template that declares neither field, or only
 /// echoes, changes nothing. When a retarget names a parent the target mobile template does not provide, the
 /// converter drops the element with a diagnostic rather than emitting an unresolvable insert.
+/// </para>
+/// <para>
+/// The same template serves the MERGE path. When the source element is not inserted but merged onto an element the
+/// mobile template already provides (a <c>containers</c> pair, a name-mapped component twin, an automatic same-name
+/// twin), the template is rendered exactly as for an insert and then DIFFED against that element: a key the element
+/// already carries with the same value is left alone; a differing or missing key is merged onto the twin; a nested
+/// component the template shapes (the grid's row under <c>itemLayout</c>) is diffed against the element the mobile
+/// template provides in that SAME slot and merged onto it by name — the row lands on the template's
+/// <c>crt.ListItem</c>, not inside the List. A slot the mobile template does not provide gets nothing: the converter
+/// merges only onto elements that exist. Identity (<c>name</c>/<c>type</c>), the <c>items</c> binding and
+/// <c>layoutConfig</c> are never diffed — the template owns them. So a type never describes its mobile shape twice:
+/// there is no separate merge template to keep in step with this one.
 /// </para>
 /// </remarks>
 public sealed class ViewConfigTemplateRule {

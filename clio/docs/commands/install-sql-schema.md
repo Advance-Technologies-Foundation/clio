@@ -13,7 +13,7 @@ install-sql-schema - Execute a SQL script schema on a remote Creatio environment
 ## Description
 
 The install-sql-schema command executes an existing SQL script schema on a remote Creatio
-environment via `ScriptSchemaDesignerService.svc/ExecuteScript`. The schema is resolved by
+environment via `WorkspaceExplorerService.svc/InstallSqlScripts`. The schema is resolved by
 name and its current body is executed directly against the configured database.
 
 ## Warning
@@ -66,3 +66,7 @@ clio execute-sql-schema --schema-name UsrCleanupStaleRows -e dev
     https://github.com/Advance-Technologies-Foundation/clio
 
 - [Clio Command Reference](../../Commands.md#install-sql-schema)
+
+## Native package SQL
+
+Uses WorkspaceExplorerService/InstallSqlScripts with the selected package SQL script UId. Execution is never automatically replayed; verify database effects before retrying an unknown outcome.

@@ -18,7 +18,7 @@ It reports:
 
 - `tokenAcquired` - whether a `client_credentials` access token was acquired
 - `dataServiceStatus` - the HTTP status of the bearer DataService smoke request (`0` when skipped)
-- `ok` - whether the token was acquired **and** `dataServiceStatus` is `200`
+- `ok` - whether the token was acquired and the CRM returned HTTP `200` with a successful DataService JSON response
 - `identityServerUrl` - the IdentityService base URL used for the token request
 
 The access token text is never returned or logged.
@@ -26,7 +26,7 @@ The access token text is never returned or logged.
 ## Synopsis
 
 ```
-clio verify-oauth-app -e ENVIRONMENT --client-id ID --client-secret SECRET [OPTIONS]
+clio verify-oauth-app -e ENVIRONMENT [OPTIONS]
 ```
 
 ## Options
@@ -34,13 +34,14 @@ clio verify-oauth-app -e ENVIRONMENT --client-id ID --client-secret SECRET [OPTI
 | Option | Required | Description |
 |---|---|---|
 | `-e, --environment` | Yes | Registered Creatio environment. |
-| `--client-id` | Yes | OAuth client id to verify. |
-| `--client-secret` | Yes | OAuth client secret to verify. Never returned or logged. |
-| `--identity-server-url` | No | Explicit IdentityService base URL. Defaults to the `OAuth20IdentityServerUrl` setting, then a derived `-is` host. |
+| `--client-id` | No | OAuth client id override; supply together with `--client-secret`. Defaults to registered credentials. |
+| `--client-secret` | No | OAuth client secret override; supply together with `--client-id`. Never returned or logged. |
+| `--identity-server-url` | No | Explicit IdentityService base URL. Defaults to registered `AuthAppUri`, then the `OAuth20IdentityServerUrl` setting, then a derived `-is` host. |
 
 ## Examples
 
 ```
+clio verify-oauth-app -e DEV
 clio verify-oauth-app -e c-dev --client-id my-client --client-secret my-secret
 clio verify-oauth-app -e c-dev --client-id my-client --client-secret my-secret \
     --identity-server-url https://c-dev-is.creatio.com
@@ -48,10 +49,10 @@ clio verify-oauth-app -e c-dev --client-id my-client --client-secret my-secret \
 
 ## Notes
 
-This command is experimental and hidden by default. Enable it before use:
-
-```
-clio experimental --name deploy-identity --enable
-```
+This command is available by default in both CLI and MCP. It operates through remote APIs and does not require access to the Creatio server filesystem or database.
 
 This command is read-only; it does not modify Creatio. The access token is never logged.
+
+Verification reads existing credentials and does not change settings or create an OAuth app.
+A nonempty bearer token and a successful DataService JSON response are required; HTTP 200 alone is insufficient.
+The CRM request uses only the newly issued token, without falling back to username/password. Exit code is 0 on success and 1 on failure.

@@ -29,15 +29,47 @@ internal sealed record ObservedWorker(int ProcessId, long StartTimeUtcTicks) {
 			long recordedSeconds = StartTimeUtcTicks / TimeSpan.TicksPerSecond;
 			long observedSeconds = process.StartTime.ToUniversalTime().Ticks / TimeSpan.TicksPerSecond;
 			return recordedSeconds == observedSeconds;
-		} catch (ArgumentException) {
-			// No process carries that identifier any more.
-			return false;
-		} catch (InvalidOperationException) {
-			// The process exited between the lookup and the read.
+		} catch (Exception exception) when (IsProcessInspectionFailure(exception)) {
+			// ArgumentException: no process carries that identifier any more. InvalidOperationException: it
+			// exited between the lookup and the read. Win32Exception: "Access is denied" — BOTH HasExited
+			// and StartTime throw it for a pid recycled by a process owned by another user or running
+			// elevated. That last one was previously uncaught, so it escaped and failed the run with an
+			// error about a stranger's process; waiting on release makes it likelier by widening the window
+			// in which a pid can be recycled. Every one of them answers "no", and soundly rather than
+			// conveniently: identity here is pid AND recorded start time, so a pid that cannot be read
+			// cannot be CONFIRMED as this worker — and the realistic reason it cannot be read is that it
+			// belongs to somebody else.
 			return false;
 		}
 	}
+
+	// Mirrors WorkerProcessSupervisor.IsProcessInspectionFailure deliberately. The product decides which
+	// reaches into another process mean "gone, or never ours" rather than "defect", and an instrument that
+	// disagreed with the code under test would fail a run on a case that code treats as ordinary.
+	private static bool IsProcessInspectionFailure(Exception exception) =>
+		exception is ArgumentException
+			or InvalidOperationException
+			or NotSupportedException
+			or System.ComponentModel.Win32Exception
+			or IOException
+			or UnauthorizedAccessException;
 }
+
+/// <summary>
+/// What <see cref="WorkerSpawnObserver.WaitUntilWorkersAreReleased"/> saw when it stopped waiting.
+/// </summary>
+/// <param name="RegistryRead">
+/// Whether the final registry read actually observed the file. FALSE means the instrument failed, which
+/// is a different statement from "no worker is recorded" and must never be asserted as that one.
+/// </param>
+/// <param name="StillRecorded">Entries the final read found in the registry.</param>
+/// <param name="StillRunning">Observed identities whose process was still alive at the final check.</param>
+/// <param name="Waited">How long the wait actually took, for the assertion diagnostics.</param>
+internal sealed record WorkerReleaseObservation(
+	bool RegistryRead,
+	IReadOnlyList<ObservedWorker> StillRecorded,
+	IReadOnlyList<ObservedWorker> StillRunning,
+	TimeSpan Waited);
 
 /// <summary>
 /// Watches the MCP host's on-disk worker registry so a test can OBSERVE that child processes were
@@ -97,6 +129,63 @@ internal sealed class WorkerSpawnObserver : IAsyncDisposable {
 	internal IReadOnlyList<ObservedWorker> ReadCurrent() => ReadRegistry(out _);
 
 	/// <summary>
+	/// Polls until every worker seen during the run is released — absent from the on-disk registry AND
+	/// no longer running — or until <paramref name="timeout"/> elapses. Returns what was still there.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// <b>Both halves are waited for, because neither is implied by the call answering and neither
+	/// implies the other.</b> A tool whose declared lifetime is <c>PerCall</c> — which is every caller of
+	/// this method today — is served by <c>McpWorkerCallDispatcher.DispatchPerCallAsync</c>, whose
+	/// <c>finally</c> disposes the lease inline, before the result reaches the client. So the removal is
+	/// ATTEMPTED before the answer. The sticky path (<c>StickyWorkerRegistry</c> and its unawaited
+	/// <c>ReleaseInBackground</c>) serves only <c>Sticky</c>-lifetime tools and is NOT involved; do not
+	/// reason about a per-call worker from it.
+	/// </para>
+	/// <para>
+	/// <b>Attempted is not achieved, and that is the whole reason for the wait.</b>
+	/// <c>WorkerProcessSupervisor.UnregisterWorker</c> routes the removal through the
+	/// <c>workers.lock</c> interprocess gate and SWALLOWS <c>TimeoutException</c>, <c>IOException</c> and
+	/// <c>UnauthorizedAccessException</c> with a warning, leaving the entry in <c>workers.json</c> while
+	/// the call answers normally. A contended gate can also hold the attempt for the gate's own timeout
+	/// before it succeeds. On a loaded agent — several workers, two of them overlapping, sharing one lock
+	/// file — that is how a worker stays RECORDED after its call returned.
+	/// </para>
+	/// <para>
+	/// <b>The registry is NOT the stronger condition.</b> <c>SupervisedWorkerLease.Dispose</c> calls
+	/// <c>ReleaseLease</c> — and so <c>UnregisterWorker</c> — as soon as <c>Terminate()</c> returns
+	/// anything but <c>Failed</c>, and <c>Terminate()</c> is <c>TerminateJobObject</c> on Windows and
+	/// <c>kill(2)</c> on Unix: a request, not a wait. Only the failed-kill path
+	/// (<c>ReleaseWhenExitConfirmed</c>) waits for exit first, and that path deliberately RETAINS the
+	/// entry. So a drained registry means the kill was ISSUED, never that the process is gone — which is
+	/// why process liveness is polled here rather than inferred from the registry.
+	/// </para>
+	/// <para>
+	/// The timeout is what still tells "slow to release" apart from "leaked": nothing retries a swallowed
+	/// removal, so an entry left behind by a failed unregister never drains, the wait expires and the
+	/// assertion fails — which is the case TC-E-601b exists to catch.
+	/// </para>
+	/// </remarks>
+	/// <param name="timeout">How long to keep waiting before reporting what survived.</param>
+	/// <returns>The final observation, including whether the registry was actually read.</returns>
+	internal WorkerReleaseObservation WaitUntilWorkersAreReleased(TimeSpan timeout) {
+		Stopwatch elapsed = Stopwatch.StartNew();
+		while (true) {
+			// ReadRegistry, not ReadCurrent: the `read` flag is the difference between "the registry holds
+			// no worker" and "the registry could not be read", and only the first may end this wait. Losing
+			// that distinction would let a single unlucky read during the host's own atomic replace of
+			// workers.json certify a leak as a clean release — the loop would poll until it FOUND an empty
+			// answer rather than until the registry was empty.
+			IReadOnlyList<ObservedWorker> recorded = ReadRegistry(out bool read);
+			IReadOnlyList<ObservedWorker> running = [.. Observed.Where(worker => worker.IsStillRunning())];
+			if ((read && recorded.Count == 0 && running.Count == 0) || elapsed.Elapsed >= timeout) {
+				return new WorkerReleaseObservation(read, recorded, running, elapsed.Elapsed);
+			}
+			Thread.Sleep(PollInterval);
+		}
+	}
+
+	/// <summary>
 	/// Gets registry reads that failed for a reason other than the file being absent or half-written. A
 	/// broken reader would make every observation empty — the same shape as "no worker ever ran" — so the
 	/// instrument reports its own failures rather than letting them read as a result.
@@ -109,10 +198,29 @@ internal sealed class WorkerSpawnObserver : IAsyncDisposable {
 		}
 	}
 
-	/// <summary>A single-line summary of what was observed, for assertion diagnostics.</summary>
-	internal string Describe() {
+	/// <summary>
+	/// A single-line summary of what was observed, for assertion diagnostics, taking a FRESH registry read.
+	/// </summary>
+	/// <remarks>
+	/// Use the overload taking a snapshot whenever the caller is asserting on one it already holds — see
+	/// <see cref="Describe(IReadOnlyList{ObservedWorker})"/> for why the difference matters.
+	/// </remarks>
+	internal string Describe() => Describe(ReadCurrent());
+
+	/// <summary>
+	/// A single-line summary of what was observed, rendering the caller's OWN snapshot rather than taking
+	/// a fresh read.
+	/// </summary>
+	/// <remarks>
+	/// The parameterless overload reads the registry again, so a caller that asserts on one snapshot and
+	/// describes with another can produce a failure message that contradicts the failure — most
+	/// confusingly "still-recorded=0" attached to "Expected collection to be empty", when the registry
+	/// merely drained in the milliseconds between the two reads. For a defect that only reproduces on CI
+	/// this message is the entire evidence, so the described state has to be the asserted state.
+	/// </remarks>
+	/// <param name="current">The registry snapshot the caller is reasoning about.</param>
+	internal string Describe(IReadOnlyList<ObservedWorker> current) {
 		IReadOnlyList<ObservedWorker> observed = Observed;
-		IReadOnlyList<ObservedWorker> current = ReadCurrent();
 		string failures = ReadFailures.Count == 0 ? string.Empty : $", read-failures=[{string.Join(" | ", ReadFailures)}]";
 		return $"registry={_registryPath}, workers-seen={observed.Count} "
 			+ $"[{string.Join(", ", observed.Select(worker => worker.ProcessId))}], "
@@ -152,6 +260,11 @@ internal sealed class WorkerSpawnObserver : IAsyncDisposable {
 		read = false;
 		try {
 			if (!File.Exists(_registryPath)) {
+				// An ABSENT registry is an authoritative observation of "no worker recorded", not a failed
+				// read: the host creates the file on the first registration and WriteUnguarded persists an
+				// empty array rather than deleting it, so absence here means nothing ever registered — a
+				// state AssertWorkersWereSpawned has already ruled out by the time anything waits on this.
+				read = true;
 				return [];
 			}
 			// Shared read: the host rewrites this file under its own interprocess gate, and a test must

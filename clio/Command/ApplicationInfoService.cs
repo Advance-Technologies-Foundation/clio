@@ -7,6 +7,7 @@ using Clio.Common;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Package;
 using Clio.UserEnvironment;
+using Terrasoft.Core.Entities;
 using static Clio.Package.SelectQueryHelper;
 
 namespace Clio.Command;
@@ -84,60 +85,6 @@ public sealed class ApplicationInfoService(
 			[2] = "Settings",
 			[3] = "SystemValue",
 			[4] = "Sequence"
-		};
-
-	private static readonly IReadOnlyDictionary<int, string> DataValueTypeNames =
-		new Dictionary<int, string>
-		{
-			[0] = "Guid",
-			[1] = "Text",
-			[4] = "Integer",
-			[5] = "Float",
-			[6] = "Money",
-			[7] = "DateTime",
-			[8] = "Date",
-			[9] = "Time",
-			[10] = "Lookup",
-			[11] = "Enum",
-			[12] = "Boolean",
-			[13] = "Blob",
-			[14] = "Image",
-			[15] = "CUSTOM_OBJECT",
-			[16] = "IMAGELOOKUP",
-			[17] = "COLLECTION",
-			[18] = "Color",
-			[19] = "LOCALIZABLE_STRING",
-			[20] = "ENTITY",
-			[21] = "ENTITY_COLLECTION",
-			[22] = "ENTITY_COLUMN_MAPPING_COLLECTION",
-			[23] = "HASH_TEXT",
-			[24] = "SECURE_TEXT",
-			[25] = "FILE",
-			[26] = "MAPPING",
-			[27] = "SHORT_TEXT",
-			[28] = "MEDIUM_TEXT",
-			[29] = "MAXSIZE_TEXT",
-			[30] = "LONG_TEXT",
-			[31] = "FLOAT1",
-			[32] = "FLOAT2",
-			[33] = "FLOAT3",
-			[34] = "FLOAT4",
-			[35] = "LOCALIZABLE_PARAMETER_VALUES_LIST",
-			[36] = "METADATA_TEXT",
-			[37] = "STAGE_INDICATOR",
-			[38] = "OBJECT_LIST",
-			[39] = "COMPOSITE_OBJECT_LIST",
-			[40] = "FLOAT8",
-			[41] = "FILE_LOCATOR",
-			[42] = "PHONE_TEXT",
-			[43] = "RICH_TEXT",
-			[44] = "WEB_TEXT",
-			[45] = "EMAIL_TEXT",
-			[46] = "COMPOSITE_OBJECT",
-			[47] = "FLOAT0",
-			[48] = "MONEY0",
-			[49] = "MONEY1",
-			[50] = "MONEY3"
 		};
 
 	/// <inheritdoc />
@@ -391,17 +338,44 @@ public sealed class ApplicationInfoService(
 				? sourceName
 				: null;
 		object? defaultValue = GetDefaultValue(column.DefaultValue);
+		EntitySchemaDefaultValueConfig? defaultValueConfig = CreateDefaultValueConfig(column.DefaultValue);
 
 		return new ApplicationColumnInfoResult(
 			name,
 			ResolveLocalizedText(column.Caption, designColumn?.Caption, name),
-			DataValueTypeNames.TryGetValue(column.DataValueType, out string? dataValueTypeName)
-				? dataValueTypeName
-				: column.DataValueType.ToString(),
+			// GetDisplayName, NOT GetNameOrOrdinal: this tool ships the platform client-enum spelling
+			// (SHORT_TEXT, FLOAT1) and its output must stay byte-identical (ENG-93202).
+			CreatioDataValueType.GetDisplayName(column.DataValueType),
 			column.ReferenceSchemaName,
 			defaultValueSource,
 			defaultValue,
+			defaultValueConfig,
 			column.IsRequired);
+	}
+
+	/// <summary>
+	/// Builds the typed default-value config from the runtime <c>defValue</c> through the shared designer
+	/// mapping, so the read shape carries exactly the fields the sync-schemas write path accepts:
+	/// a Const keeps the stable lookup record GUID (or scalar) verbatim, a Sequence keeps its
+	/// prefix and char count, a None source reads back as "no default" (null).
+	/// </summary>
+	/// <param name="defValue">The runtime default-value payload for the column, or <see langword="null"/>.</param>
+	/// <returns>The typed config, or <see langword="null"/> when the column has no default.</returns>
+	private static EntitySchemaDefaultValueConfig? CreateDefaultValueConfig(DefaultValueDto? defValue)
+	{
+		if (defValue is null)
+		{
+			return null;
+		}
+
+		return EntitySchemaDesignerSupport.CreateDefaultValueConfig(new EntitySchemaColumnDefValueDto
+		{
+			ValueSourceType = (EntitySchemaColumnDefSource)defValue.ValueSourceType,
+			Value = ConvertJsonElement(defValue.Value),
+			ValueSource = ConvertJsonElement(defValue.ValueSource) as string ?? string.Empty,
+			SequencePrefix = defValue.SequencePrefix ?? string.Empty,
+			SequenceNumberOfChars = defValue.SequenceNumberOfChars
+		});
 	}
 
 	private static DesignSchemaColumnDto? GetDesignColumn(
@@ -916,6 +890,12 @@ public sealed class ApplicationInfoService(
 
 		[JsonPropertyName("valueSource")]
 		public JsonElement? ValueSource { get; set; }
+
+		[JsonPropertyName("sequencePrefix")]
+		public string? SequencePrefix { get; set; }
+
+		[JsonPropertyName("sequenceNumberOfChars")]
+		public int SequenceNumberOfChars { get; set; }
 	}
 }
 
@@ -973,6 +953,9 @@ public sealed record ApplicationEntityInfoResult(
 /// <param name="ReferenceSchema">Optional lookup reference schema.</param>
 /// <param name="DefaultValueSource">Optional default-value source name.</param>
 /// <param name="DefaultValue">Optional default-value payload.</param>
+/// <param name="DefaultValueConfig">Typed default-value config in the sync-schemas write vocabulary
+/// (source plus value / value-source / sequence fields) when the column has a default; null means no
+/// default. Round-trips verbatim into a sync-schemas column.</param>
 /// <param name="Required">Whether the runtime column is required.</param>
 public sealed record ApplicationColumnInfoResult(
 	string Name,
@@ -981,4 +964,5 @@ public sealed record ApplicationColumnInfoResult(
 	string? ReferenceSchema = null,
 	object? DefaultValueSource = null,
 	object? DefaultValue = null,
+	EntitySchemaDefaultValueConfig? DefaultValueConfig = null,
 	bool Required = false);

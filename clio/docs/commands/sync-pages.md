@@ -1,4 +1,4 @@
-# sync-pages
+﻿# sync-pages
 
 Updates multiple Freedom UI page schemas in a single MCP call. For each page: validates the
 body client-side (optional), saves to Creatio, and verifies the update (optional). Continues
@@ -42,6 +42,10 @@ When `validate` is `true` (the default), the body is checked client-side before 
     clio validates `viewConfigDiff` against an empty base and cannot see the target, so a page built from
     `BlankMobilePageTemplate` — a bare Scaffold whose slots may be empty — is refused as well, even though the
     merge would have applied there.
+  - **Rejected** — a second `crt.Scaffold`: an `insert`/`set` declaring that type anywhere in its `values`
+    subtree, or an `insert` of an element named `Scaffold` whatever its type. The template already provides
+    the only permitted Scaffold root, and a second one shadows it so the navigation bar and body come from
+    the wrong element. A `merge` onto `Scaffold` is the supported way to patch the template's root.
   - **Warned** — the same authoring in any other slot. There the target may legitimately lack the slot, in
     which case the merge creates it and the authoring works; clio validates against an empty base and cannot
     distinguish the two. Both are `merge`-only — for `insert`/`set` the `values` object becomes the element,
@@ -50,7 +54,9 @@ When `validate` is `true` (the default), the body is checked client-side before 
     element still renders, as the `values` copy); and an operation whose letter case does not match the
     differ's exact-case dispatch; and a `crt.Button` inserted into `parentName: "Scaffold"`,
     `propertyName: "actions"`, which saves but does not appear on the mobile designer canvas (ENG-95429) —
-    place it in a page container's `items` with a `layoutConfig` instead.
+    place it in a page container's `items` with a `layoutConfig` instead; and a component type in NEITHER
+    the mobile nor the web registry, which is either a custom component registered in your package or a
+    typo — confirm with `get-component-info` and `schema-type: "mobile"`.
   - **Not enforced** — the same type-placement and merge-slot defects break **web** pages identically and are not checked
     there, and `validate: false` skips these checks along with every other one, re-opening the
     silent-persist path; do not use it to get past a rejection.
@@ -95,7 +101,9 @@ Each entry in the `pages` array must have:
 |---|---|---|
 | `schema-name` | Yes | Freedom UI page schema name |
 | `body` | Yes | Full JavaScript page body |
-| `resources` | No | JSON object string with resource key-value pairs for `#ResourceString(key)#` macros |
+| `resources` | No | JSON object string with resource key-value pairs. Adds missing keys and updates supplied `en-US` values, preserving identity, other cultures, and omitted keys. Capture and review workspace metadata/XML before pushing. |
+| `optional-properties` | No | JSON array of `{key, value}` objects merged into the schema's `optionalProperties` |
+| `checksum` | No | The `editable.checksum` from the `get-page` this page's edit is based on. Becomes the authoritative conflict baseline for **this page** |
 | `force` | No | Skip the external-modification (checksum) conflict check for this page and deliberately overwrite out-of-band changes. Default `false` |
 
 ## Example
@@ -175,10 +183,32 @@ being sent to Creatio:
 Validation failures prevent the page from being saved and are reported in the response.
 This replaces the need for separate dry-run calls.
 
+Advisory findings are different: they appear in each page's `validation.warnings` and never
+prevent a save. `sync-pages` forwards every warning `update-page` produces, so a page can come
+back successful with a warning that one of its `viewConfigDiff` operations is silently dropped at
+apply time because another operation for the same component name cancels it — the differ applies
+whole operation groups in a fixed order, not in array order. See
+[`update-page`](update-page.md) for the shapes and the remedies.
+
 When a page body contains `#ResourceString(key)#` macros, `sync-pages` forwards each page's
 optional `resources` JSON object string to `update-page`. The response returns
 `resources-registered` for each page so callers can see how many child-schema resources
 were added during save.
+
+`resources` supplies additions and `en-US` value updates, not the full registered set. A key registered by one save
+is written into the page schema's `localizableStrings` and stays there, so it resolves at runtime
+whether or not a later save repeats it — and re-sending it answers `resources-registered: 0`,
+because the count covers new declarations, not value updates. Other cultures and resource identities
+are preserved. The validation gate honours this: a label bound to
+a key that is only persisted on the schema is accepted without being repeated. The lookup costs one
+extra schema read and is paid ONLY when a label-resource check has already rejected the body, so a
+clean page pays nothing. If that read fails (an unreachable environment, a refused schema read), the
+stricter verdict stands and the page result carries a warning naming the reason.
+
+Resource saves also return a workspace-capture warning. Preserve local edits, capture the affected
+package with `restore-workspace` (`pull-workspace`), and review metadata and culture XML before
+`push-workspace`, which can revert uncaptured changes. Follow linked FSM workspace instructions;
+the native designer may already have written the linked source files. See `update-page` for details.
 
 When `verify` is `true`, each successful page result also returns:
 
@@ -187,11 +217,18 @@ When `verify` is `true`, each successful page result also returns:
 
 ## Conflict Detection (external modifications)
 
-When the MCP `get-page` tool previously stored a checksum baseline in
-`.clio-pages/{schema-name}/meta.json` for the **same environment**, each page write first
-compares the stored `SysSchema.Checksum` against the server. A page whose schema was
-modified outside the current session (e.g. edited in the Creatio designer) fails with a
-per-page conflict — the rest of the batch continues:
+Pass the per-page `checksum` — the `editable.checksum` from the `get-page` that page's edit is based
+on — on every save that follows a `get-page`. It becomes the authoritative baseline for that page,
+so the comparison runs against the body the caller actually read.
+
+Without it the check falls back to the baseline the MCP `get-page` tool stored in
+`.clio-pages/{schema-name}/meta.json` for the **same environment**. That baseline is keyed by
+(anchor directory, schema name) only, so it can be present, environment-matched, and still describe a
+different body — a different working directory between the `get-page` and the save is enough to
+produce a conflict nothing external caused.
+
+Either way, a page whose schema was modified outside the current session (e.g. edited in the Creatio
+designer) fails with a per-page conflict — the rest of the batch continues:
 
 ```jsonc
 {
@@ -205,7 +242,9 @@ per-page conflict — the rest of the batch continues:
 
 Recovery: re-run `get-page` for the conflicted schema, re-apply the change on top of the
 fresh body, then retry — or set the per-page `force: true` after the user explicitly
-confirms overwriting the external changes.
+confirms overwriting the external changes. Re-sending the conflict response's `actualChecksum`
+as the page's `checksum` is **not** a recovery: it discards the external change exactly like
+`force: true` and needs the same explicit confirmation.
 
 Baseline maintenance after a successful save:
 
@@ -215,8 +254,9 @@ Baseline maintenance after a successful save:
   checksum; if fresh metadata could not be obtained, the baseline is removed so the next
   write skips the check instead of reporting a false conflict.
 
-Pages without a baseline (no prior MCP `get-page`, legacy `meta.json`, or a different
-environment) are saved without the check — fully backward compatible.
+Pages with neither a `checksum` nor a baseline (no prior MCP `get-page`, legacy `meta.json`, or a
+different environment) are saved without the check — fully backward compatible. A pinned save that no
+local baseline corroborates still runs the check, and says so in that page's warnings.
 
 ## Error Handling
 

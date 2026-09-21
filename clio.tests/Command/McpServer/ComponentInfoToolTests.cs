@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -885,6 +885,31 @@ public sealed class ComponentInfoToolTests {
 	}
 
 	[Test]
+	[Description("ENG-96840: the environment-scoped resolver must be awaited INSIDE its using — a non-async caller that returned the resolve Task unawaited disposed the owned application client while the probe was still running on its Task.Run thread, so every call degraded to probe-error.")]
+	public async Task ComponentInfoTool_Should_Not_Dispose_Resolver_Before_Async_Probe_Completes() {
+		// Arrange
+		ComponentInfoCatalog catalog = new(new InMemoryRegistryClient(TestRegistryJson));
+		InMemoryMobileCatalog mobileCatalog = new(TestMobileRegistryJson);
+		AsyncDisposalTrackingResolver resolver = new(
+			new PlatformVersionResolution("8.2.1", VersionResolutionSource.Environment));
+		IPlatformVersionResolverFactory factory = Substitute.For<IPlatformVersionResolverFactory>();
+		factory.Create(Arg.Any<EnvironmentSettings>()).Returns(resolver);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>())
+			.Returns(new EnvironmentSettings { Uri = "http://prod-stand" });
+		ComponentInfoTool tool = new(catalog, mobileCatalog, new FakeDocsClient(), factory, commandResolver);
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(EnvironmentName: "prod-stand"));
+
+		// Assert
+		resolver.DisposedBeforeResolveCompleted.Should().BeFalse(
+			because: "the owned application client must stay alive until the async probe completes; disposing it mid-probe made every environment-scoped get-component-info throw ObjectDisposedException and degrade to probe-error (ENG-96840)");
+		response.ResolvedFrom.Should().Be("environment",
+			because: "with the resolver alive through the probe, the environment version resolves cleanly instead of latest-fallback");
+	}
+
+	[Test]
 	[Description("AC-02: passing uri (with no environment-name) is also a hasEnvironment call — it routes version resolution through IToolCommandResolver.Resolve<EnvironmentSettings>, not just the environment-name spelling.")]
 	public async Task ComponentInfoTool_Should_Resolve_Version_From_Passed_Uri() {
 		// Arrange
@@ -1305,6 +1330,49 @@ public sealed class ComponentInfoToolTests {
 	}
 
 	[Test]
+	[Description("container is TRI-STATE on the wire and the distinction is carried by WhenWritingNull, so it can only be asserted on the SERIALIZED response. A published false must reach the caller as container:false; an absent key must omit the field. The projection changed from `entry.Container ? true : null` to `entry.Container` in this branch and no assertion could see it: the two existing checks are BeTrue() and NotBe(false), which pass identically under bool? whether the field ships or is dropped, and no live registry entry publishes the key at all.")]
+	[TestCase(true, "\"container\":true", TestName = "Container_PublishedTrue_ReachesTheWire")]
+	[TestCase(false, "\"container\":false", TestName = "Container_PublishedFalse_ReachesTheWire")]
+	public void ComponentInfoTool_Detail_Should_Carry_APublishedContainerFlag_OntoTheWire(
+		bool published, string expected) {
+		// Arrange
+		ComponentRegistryEntry entry = new() { ComponentType = "crt.Probe", Container = published };
+
+		// Act
+		ComponentInfoResponse response = ComponentInfoTool.CreateDetailResponse(
+			entry, resolvedTargetVersion: "latest", resolvedFrom: "latest-fallback",
+			documentation: null, globalReferences: null);
+		string json = JsonSerializer.Serialize(response);
+
+		// Assert
+		response.Container.Should().Be(published,
+			because: "the projection passes the entry's own value straight through");
+		json.Replace(" ", string.Empty).Should().Contain(expected,
+			because: "a published false is a FACT about the component - that it is not a container - and "
+				+ "dropping it made it indistinguishable from a registry that says nothing, which is what "
+				+ "the caller has to branch on");
+	}
+
+	[Test]
+	[Description("The other half of the tri-state, and the half that cannot be asserted from the typed response alone: an entry that publishes no container key must OMIT the field rather than ship a default. Without this the test above passes on a wire that always writes container.")]
+	public void ComponentInfoTool_Detail_Should_OmitContainer_WhenTheRegistryPublishesNoFlag() {
+		// Arrange
+		ComponentRegistryEntry entry = new() { ComponentType = "crt.Probe" };
+
+		// Act
+		ComponentInfoResponse response = ComponentInfoTool.CreateDetailResponse(
+			entry, resolvedTargetVersion: "latest", resolvedFrom: "latest-fallback",
+			documentation: null, globalReferences: null);
+		string json = JsonSerializer.Serialize(response);
+
+		// Assert
+		response.Container.Should().BeNull(because: "the registry said nothing, so the response says nothing");
+		json.Should().NotContain("\"container\"",
+			because: "WhenWritingNull is what makes the three states distinguishable on the wire; a field "
+				+ "written as null or as a defaulted false would collapse 'unknown' into 'no'");
+	}
+
+	[Test]
 	[Description("Detail of a composite-only component surfaces compositeOnly:true plus the actionable hint steering to the composite. Calls CreateDetailResponse directly (like the snapshot test) so the assertion targets the projection, not the version-resolution pipeline.")]
 	public void ComponentInfoTool_Detail_Should_Surface_CompositeOnly_And_Hint() {
 		ComponentRegistryEntry entry = new() {
@@ -1678,6 +1746,68 @@ public sealed class ComponentInfoToolTests {
 	}
 
 	[Test]
+	[Description("A detail response threads the documentation provenance onto documentationSource, and names every locally missing file plus the override variable in documentationWarning.")]
+	public async Task ComponentInfoTool_Detail_Should_Surface_Documentation_Provenance() {
+		// Arrange
+		const string registryJson = """
+		{
+		  "components": [
+		    { "componentType": "crt.WithDocs", "category": "display", "properties": {},
+		      "references": { "docs": ["docs/with-docs.intro.md", "docs/with-docs.missing.md"] } }
+		  ]
+		}
+		""";
+		FakeDocsClient docs = new FakeDocsClient()
+			.Seed("latest", "docs/with-docs.intro.md", "# Intro", ComponentDocumentationSource.Local)
+			.SeedLocalMiss("latest", "docs/with-docs.missing.md", RegistryFlavor.Web.LocalFileEnvironmentVariable);
+		ComponentInfoTool tool = BuildTool(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(registryJson)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson),
+			docs);
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("crt.WithDocs"));
+
+		// Assert
+		response.DocumentationSource.Should().Be("local",
+			because: "the only tier that served anything was the developer working copy");
+		response.DocumentationWarning.Should().Contain("docs/with-docs.missing.md",
+			because: "with the override active nothing substitutes the published copy, so the missing file has to be named");
+		response.DocumentationWarning.Should().Contain(RegistryFlavor.Web.LocalFileEnvironmentVariable,
+			because: "the developer needs to know which override captured the path");
+		response.DocumentationWarning.Should().NotContain("Not found locally: 'docs/with-docs.intro.md'",
+			because: "a file that WAS served must never appear in the missing list");
+	}
+
+	[Test]
+	[Description("A composite detail response threads the same provenance fields as a component detail response.")]
+	public async Task ComponentInfoTool_Composite_Detail_Should_Surface_Documentation_Provenance() {
+		// Arrange
+		const string json = """
+		{
+		  "components": [ { "componentType": "crt.X", "properties": {} } ],
+		  "composites": [
+		    { "caption": "Multi", "description": "Multi-doc composite.", "docs": ["docs/multi.a.md"] }
+		  ]
+		}
+		""";
+		FakeDocsClient docs = new FakeDocsClient()
+			.Seed("latest", "docs/multi.a.md", "# Part A", ComponentDocumentationSource.FileCache);
+		ComponentInfoTool tool = BuildTool(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(json)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson),
+			docs);
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(Composite: "Multi"));
+
+		// Assert
+		response.DocumentationSource.Should().Be("cache",
+			because: "the composite surface must report provenance exactly as the component surface does");
+		response.DocumentationWarning.Should().BeNull(because: "nothing was missing");
+	}
+
+	[Test]
 	[Description("Components without a references.docs[] block produce a detail response with documentation omitted entirely (null, JsonIgnore strips it from the wire).")]
 	public async Task ComponentInfoTool_Should_Omit_Documentation_When_No_Docs_Are_Listed() {
 		ComponentInfoTool tool = CreateTool();
@@ -1686,6 +1816,9 @@ public sealed class ComponentInfoToolTests {
 
 		response.Documentation.Should().BeNull(
 			because: "the curated registry entry has no references.docs[] so the docs client must not be called");
+		response.DocumentationSource.Should().BeNull(
+			because: "an absent documentationSource must mean 'no documentation exists', not 'provenance unknown'");
+		response.DocumentationWarning.Should().BeNull(because: "there is no declared file to be missing");
 	}
 
 	[Test]
@@ -1997,6 +2130,36 @@ public sealed class ComponentInfoToolTests {
 		public void Dispose() { }
 	}
 
+	/// <summary>
+	/// ENG-96840 regression double: its <see cref="ResolveAsync"/> completes ASYNCHRONOUSLY (it yields),
+	/// mirroring the real resolver whose probe runs on a <c>Task.Run</c> thread. If the
+	/// caller returns the resolve Task unawaited from inside its <c>using</c>, <see cref="Dispose"/> runs
+	/// before the continuation, and <see cref="DisposedBeforeResolveCompleted"/> latches <c>true</c> —
+	/// the exact premature-disposal race that made the real owned CreatioClient throw ObjectDisposedException.
+	/// </summary>
+	private sealed class AsyncDisposalTrackingResolver(PlatformVersionResolution resolution)
+		: IOwnedPlatformVersionResolver {
+		private volatile bool _resolveCompleted;
+
+		public bool DisposedBeforeResolveCompleted { get; private set; }
+
+		public async Task<PlatformVersionResolution> ResolveAsync(CancellationToken cancellationToken = default) {
+			// Task.Yield forces an asynchronous return: a buggy caller that returns this Task unawaited
+			// from inside its using disposes us at this point, before the line below runs.
+			await Task.Yield();
+			_resolveCompleted = true;
+			return resolution;
+		}
+
+		// Deterministic, timing-free: being disposed while the resolve has not completed means the
+		// caller returned the resolve Task unawaited from inside its using — the ENG-96840 race.
+		public void Dispose() {
+			if (!_resolveCompleted) {
+				DisposedBeforeResolveCompleted = true;
+			}
+		}
+	}
+
 	/// <summary>Test double that always reports a different resolved version than was requested.</summary>
 	private sealed class FallbackRegistryClient(string registryJson, string fallbackVersion) : IComponentRegistryClient {
 		private readonly byte[] _payload = Encoding.UTF8.GetBytes(registryJson);
@@ -2054,21 +2217,33 @@ public sealed class ComponentInfoToolTests {
 
 	/// <summary>
 	/// Test double for the docs client. Returns a pre-seeded markdown blob for the
-	/// matching (version, path) tuple or <see langword="null"/> otherwise — matching
+	/// matching (version, path) tuple or a <c>None</c>-sourced result otherwise — matching
 	/// the contract that the real client uses to signal "skip this doc".
 	/// </summary>
 	private sealed class FakeDocsClient : IComponentRegistryDocsClient {
-		private readonly Dictionary<(string Version, string DocPath), string> _docs = new();
+		private readonly Dictionary<(string Version, string DocPath), ComponentDocumentationFetchResult> _docs = new();
 		public List<(string Version, string DocPath)> Requests { get; } = new();
 
-		public FakeDocsClient Seed(string version, string docPath, string content) {
-			_docs[(version, docPath)] = content;
+		public FakeDocsClient Seed(
+			string version,
+			string docPath,
+			string content,
+			ComponentDocumentationSource source = ComponentDocumentationSource.Cdn) {
+			_docs[(version, docPath)] = new ComponentDocumentationFetchResult(content, source);
 			return this;
 		}
 
-		public Task<string?> GetDocAsync(string version, string docPath, CancellationToken cancellationToken = default) {
+		public FakeDocsClient SeedLocalMiss(string version, string docPath, string overrideVariable) {
+			_docs[(version, docPath)] = new ComponentDocumentationFetchResult(
+				Content: null, ComponentDocumentationSource.None, overrideVariable);
+			return this;
+		}
+
+		public Task<ComponentDocumentationFetchResult> GetDocAsync(string version, string docPath, CancellationToken cancellationToken = default) {
 			Requests.Add((version, docPath));
-			return Task.FromResult(_docs.TryGetValue((version, docPath), out string? value) ? value : null);
+			return Task.FromResult(_docs.TryGetValue((version, docPath), out ComponentDocumentationFetchResult? value)
+				? value
+				: ComponentDocumentationFetchResult.Missing);
 		}
 	}
 }

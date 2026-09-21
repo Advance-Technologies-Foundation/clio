@@ -27,6 +27,47 @@ Read it before touching any of:
 The asymmetry matters for review: a changed `cliogate.gz` can be checked by rebuilding it from in-repo
 sources, a changed `CrtProcessBuilder.gz` cannot. That is why the latter carries pins (below).
 
+## The third package — `CrtDashboardsMigratorApp`
+
+Added after the two above and deliberately closer to `cliogate` than to the process builder: it ships
+**prebuilt**, and the archive IS the package's SDLC (Jenkins) build — the package `.gz` inside the build zip,
+carrying `Files/Bin/CrtDashboardsMigratorApp.dll` (net472) and `Files/Bin/netstandard/CrtDashboardsMigratorApp.dll`
+(.NET). The target loads the assembly for its runtime instead of compiling the package; its configuration build
+for the package's schemas and the restart still happen. It goes through the same install command as the
+process builder (`install-dashboards-migrator`, `InstallBundledPackageCommand`), so the downgrade refusals,
+the restart wait and the ungated `Ping` outcome check (`/rest/DashboardsMigratorPingService/Ping`) apply unchanged.
+
+**Its version comes from the app, not from clio.** This package is a composable app, so it declares its
+version in `Files/app-descriptor.json` — the number Marketplace and the App Hub show (1.1.3, 1.1.4). clio
+reports that number and pins it, the same way it reports the version a knowledge bundle or a toolkit plugin
+declares for itself. Nothing stamps `PackageVersion` into the package descriptor; the process builder, which
+is a plain package and not an app, still carries one and is read from there.
+
+**Prebuilt is a requirement here, not a preference.** The package carries an `InstallScripts.AfterInstall`
+entry that seeds the `DashboardMigrationLog` column rights, and the platform resolves an install script's class
+from the package's OWN assembly: `PackageInstallUtilities.ResolveInstallScriptAssemblyPath` looks for
+`<package>.dll` and throws `AssemblyPathNotFound` ("Please compile package") when it is absent. Install scripts
+run before the configuration build, so a source-only archive has no assembly to run them from — observed on a
+stand as a failed install. An archive of this package without `Files/Bin` therefore installs without ever
+applying the rights, which is why the guard fixture requires both the assemblies and the install script.
+
+Nothing is built on the bundling machine, so the procedure below — build, tests, `git archive`, stripping
+`Files/Bin` — does NOT apply to it. Its whole procedure is one script:
+
+```powershell
+pwsh ./rebundle-dashboards-migrator.ps1 -BuildZip '\\tscrm.com\dfs-ts\ComposableApps\CrtDashboardsMigratorApp\<X.Y.Z>\CrtDashboardsMigratorApp_<X.Y.Z>.zip'
+```
+
+It unpacks the build, reads the app version from `Files/app-descriptor.json` and refuses a build whose app
+version is lower than the one clio ships, packs with `--skip-pdb`, verifies the inventory (exactly the two
+package assemblies, `Data/` allowed because its bound rows only register the migration page and its permission,
+no `SqlScripts/`, the `DashboardsMigratorPingService` schema present),
+rewrites the pins in `clio.tests/Common/BundledDashboardsMigratorPackageTests.cs` and rebuilds clio. The
+provenance pin is the SHA-256 of the build zip (`ExpectedSourceBuildSha256`); the commit is on the build's page
+in the SDLC app. Facts 1–3 below (UId, `ModifiedOnUtc`, installed-vs-serving) hold for it exactly as for the
+process builder; the package-side contract (Ping route and answer, both assemblies) is
+listed in that repository's `RELEASE.md`, step 8.
+
 ## Platform facts you must know first
 
 Three separate decisions, often confused. Getting them mixed up is what makes a rebundle fail silently.
@@ -99,10 +140,42 @@ environment recorded; that comparison is the entire delivery mechanism. So:
   environment's recorded version and will not move it backwards without `--force`. So a rebundle that
   lowers the version, or an older clio pointed at a stand that already carries a newer package, is turned
   away on every such environment;
-- **raising it costs nothing to maintain.** Nothing on the clio side has to be kept in step with it. That
-  used to be false: the version was also the `[RequiresPackage]` floor, so raising it forced a refusal on
-  every environment until upgraded, which is why the old guidance reserved it for contract changes. Both
-  the floor and that reason are gone.
+- **raising it costs nothing to MAINTAIN, and that is not the same as costing nothing.** Nothing on the
+  clio side has to be kept in step with it — no constant, no literal. What used to be true and is
+  half-true again is the delivery cost: the version was once also the `[RequiresPackage]` floor, and the
+  floor is gone, but `IBundledPackageConvergence` reintroduced the same refusal with a narrower blast
+  radius. `RequiredPackageChecker` **throws** on a convergence refusal (`PackageRequirementException`),
+  after the requirement gate has already passed — so an environment below the bundled version cannot run
+  the affected commands until it reinstalls, and for a source-shipped package like `CrtProcessBuilder`
+  that reinstall is a configuration build plus an instance restart, measured in minutes.
+
+  The gate is **TRIGGERED requirements, not decorated commands**, and the difference is worth the clause
+  because "decorated" invites a `grep` for the attribute and a wrong conclusion. `RequiredPackageChecker`
+  reflects first and evaluates convergence only inside its per-requirement loop, so a command with no
+  triggered requirement returns before touching the package list at all — no HTTP, no convergence. And
+  `CollectTriggeredRequirements` adds a PROPERTY-level requirement only when its bool flag is `true`, so
+  a conditionally-decorated command invoked without that flag is equally unaffected. Everything else
+  keeps working, which is the whole of the difference from the old floor.
+
+  **So rebundle when the archive's BEHAVIOUR changes, and once more at the end for everything else.**
+  A comment, a docblock or a renamed local still moves the archive bytes (this package ships as SOURCE),
+  and the provenance sentence in the commit message only has to be true at the cut — so batching those
+  into the last rebundle before the pull request produces the same archive, the same true sentence, and
+  one recompile instead of one per review round.
+
+  Be precise about who pays, because it is easy to overstate. Versions cut on an unpushed branch reach no
+  user: everyone jumps from what they had straight to the final one and recompiles ONCE however many times
+  the branch bumped. The environment that pays per bump is the STAND the branch is being tested on —
+  which is real, is where manual verification happens, and is exactly where an extra five minutes lands
+  on the person doing it.
+
+  **And it lands on whoever is VERIFYING the branch, not only on whoever cut the version.** Observed
+  rather than predicted: a rebundle to `1.4.0.63` left a reviewer's clio carrying .63 against a stand
+  still on .61, and convergence refused `describe-business-process` outright — *"This clio carries
+  CrtProcessBuilder 1.4.0.63, but the target environment has 1.4.0.61."* They finished the check through
+  OData, which carries no `[RequiresPackage]` and therefore no gate. So a rebundle mid-review breaks the
+  review, and the person it breaks is not the person who chose to cut. If someone is verifying against a
+  stand, either reinstall it in the same breath or tell them the version moved.
 
 An explicit `[RequiresPackage("CrtProcessBuilder", "X.Y.Z.W")]` literal is a separate and much rarer thing:
 add one in the commit where a command starts calling an operation an older server does not have. It states
@@ -283,7 +356,12 @@ one and an install run from them ships it. It names them all at the end.
 What it does beyond running the steps below:
 
 - refreshes all four pins in the same run, so "the pins are stale" stops being a
-  reachable state;
+  reachable state — **with one deliberate exception: under `-SkipTests` the SHA pin is left alone**
+  (`rebundle-process-builder.ps1:623-634`, and the run says so in yellow). Refreshing it is what makes a
+  rebundle reviewable by diff, and refreshing it after a run that skipped the package's own gate tests
+  would leave nothing red anywhere — so the stale pin IS the signal. Set it by hand from
+  `shasum -a 256 clio/CrtProcessBuilder/CrtProcessBuilder.gz` (uppercase) once you have run those tests
+  yourself, and say in the commit message what you ran;
 - reads the archive back and checks the inventory — exactly two DLLs and both from `Files/Libs`, the compile
   marker present, the package's own assembly absent, and nothing outside the allowed top-level set (in
   particular no `SqlScripts/` or `Data/`, which the target EXECUTES at install time). The guard fixture now
@@ -296,11 +374,28 @@ What it does beyond running the steps below:
 It deliberately does NOT commit. Step 8 — committing both repositories and naming the producing commit
 in the clio message — is a judgement call and stays with you.
 
+### On macOS
+
+Three things the script needs that a Mac does not have by default. None is a reason to fall back to the
+manual steps — all three were settled on 2026-09-16 and the script then ran end to end.
+
+- **`pwsh` installs as a .NET global tool**: `dotnet tool install --global --version 7.4.6 PowerShell`
+  (the unpinned install fails with *"Settings file 'DotnetToolSettings.xml' was not found"*). So "a host
+  without PowerShell" is rarely the real situation on a Mac.
+- **Point PATH at an SDK that reads `.slnx`** (9.0.200+) before invoking it, or step 1 dies on
+  `MSBuild4068: The element <Solution> is unrecognized` while building the package solution.
+- **Step 1 builds and tests the PACKAGE**, and on a Mac that step needs the package repo's
+  `.application/<tfm>/core-bin` populated — see that repository's `CLAUDE.md`, which also records that the
+  suite runs under `-c dev-n8` (net8.0) and not under `-c dev-nf` (net472 → Mono → 1577 of 1729 fixtures
+  die in SetUp). If you run the suite yourself in that configuration, `-SkipTests` here is honest; say so
+  in the commit message along with what you ran instead.
+
 ### Without the script
 
-The script requires `pwsh`. The steps below are what it runs, and they are the fallback on a host without
-PowerShell — the same arrangement `AGENTS.md` uses for `cliogate`'s `build.ps1`. Read them anyway: they
-carry the REASONS, and a script that fails is only useful to someone who knows what each step protects.
+The script requires `pwsh` (see above — on macOS it is one `dotnet tool install`). The steps below are
+what it runs, and they are the fallback on a host without PowerShell — the same arrangement `AGENTS.md`
+uses for `cliogate`'s `build.ps1`. Read them anyway: they carry the REASONS, and a script that fails is
+only useful to someone who knows what each step protects.
 
 > **`X.Y.Z.W` means four plain numbers — no `-rc`, no `-dev`, no suffix of any kind.** The script cannot emit
 > one (`[version]::TryParse` rejects it); by hand you can, so the rule is enforced twice more downstream:
@@ -367,11 +462,30 @@ git -C <ProcessBuilder> commit -m "<ticket> rebundle to X.Y.Z.W"
 #    which installs, satisfies the gate, and then 404s on the other runtime.
 Remove-Item packages/CrtProcessBuilder/Files/Bin -Recurse -Force
 
-# 4. Pack straight into the clio checkout. --skip-pdb matches what the script passes: today step 3 has
+# 3b. Export the sources from the PRODUCING COMMIT, and pack THAT - never the working tree.
+#    This is what makes the SHA pin reproducible. Packing a working tree makes the hash depend on the line
+#    endings of the machine that packed it: a file just written by a tool is LF in the tree, and the same
+#    file after a clean checkout on Windows (core.autocrlf=true, or `* text=auto`) is CRLF. Same commit,
+#    same content, different bytes, different SHA-256 - so a reviewer following this recipe got a hash that
+#    did not match the pin, with nothing to say whether the archive had been tampered with or just repacked.
+#    It happened twice: once with nine files, once with thirteen.
+#
+#    The two -c flags are NOT optional and are the whole point. `git archive` runs the same working-tree
+#    conversion a checkout does, so without them it emits CRLF wherever core.autocrlf=true and the hash is
+#    machine-dependent again. With them it hands back blob bytes - LF - on every platform and every git
+#    configuration, which is what lets anyone verify the pin from the commit id alone.
+git -c core.autocrlf=false -c core.eol=lf -C <ProcessBuilder> archive --format=zip `
+  -o <tmp>/package.zip <ExpectedProducingCommit> -- packages/CrtProcessBuilder
+Expand-Archive <tmp>/package.zip -DestinationPath <tmp>/export
+#    descriptor.json is the ONE file that cannot come from the commit: the restamp is in the tree, and by
+#    contract the pin names the PRE-restamp commit. Overlay it.
+Copy-Item packages/CrtProcessBuilder/descriptor.json <tmp>/export/packages/CrtProcessBuilder/descriptor.json
+
+# 4. Pack the EXPORT into the clio checkout. --skip-pdb matches what the script passes: today step 3 has
 #    already removed the only .pdb there is, so the flag changes nothing about the output - but the archive
 #    is pinned BYTE-FOR-BYTE by SHA-256, and the two paths have to produce the same bytes for that pin to
 #    mean anything. Any .pdb that ever appears outside Files/Bin would otherwise make them diverge.
-dotnet <clio>/clio/bin/Debug/net8.0/clio.dll compress ./packages/CrtProcessBuilder --skip-pdb `
+dotnet <clio>/clio/bin/Debug/net8.0/clio.dll compress <tmp>/export/packages/CrtProcessBuilder --skip-pdb `
   -d <clio>/clio/CrtProcessBuilder/CrtProcessBuilder.gz
 
 # 5. VERIFY the archive rather than trusting step 3 - its failure is silent.
@@ -394,12 +508,36 @@ target's configuration build. Lose it and the package installs, the gate reports
 
 ### In this repository, in ONE commit
 
-| Update | Where |
-|---|---|
-| `ExpectedArchiveSha256` | `clio.tests/Common/BundledProcessBuilderPackageTests.cs` |
-| `ExpectedDescriptorModifiedOnUtc` | same file |
-| `ExpectedArchiveVersion` | same file |
-| `ExpectedProducingCommit` | same file — `git rev-parse HEAD` of the PACKAGE repo, before the restamp |
+| Update | Where | Written by |
+|---|---|---|
+| `ExpectedArchiveSha256` | `clio.tests/Common/BundledProcessBuilderPackageTests.cs` | the script |
+| `ExpectedDescriptorModifiedOnUtc` | same file | the script |
+| `ExpectedArchiveVersion` | same file | the script |
+| `ExpectedProducingCommit` | same file — `git rev-parse HEAD` of the PACKAGE repo, before the restamp | the script |
+| `ExpectedSchemaDescriptorModifiedOnUtc` | same file — the COMPILE-MARKER schema's stamp; `set-pkg-version` does not touch schema descriptors (step 2b) | **BY HAND** |
+| `ExpectedOperationContractCount` | same file — `[OperationContract]` methods the shipped service exposes | **BY HAND** |
+| `ExpectedAuthorizationGateCallSites` | same file — live `_guard.EnsureCanManageProcessDesign()` call sites | **BY HAND** |
+
+**The last three are not written by anything.** The script refreshes the four provenance pins and knows
+nothing about the other three, so a rebundle that changed the service surface meets them as a red test with
+no explanation attached. That is what the two security counts are for, and why they are named here rather
+than only in the fixture: they are the ONLY reviewability a committed binary has on this boundary, because
+`ExpectedArchiveSha256` proves the bytes changed and says nothing about what they now contain.
+
+- `ExpectedOperationContractCount` is EXACT, not a floor: a floor cannot notice a new operation arriving
+  WITHOUT a gate, since the count simply rises and still clears it. Move it together with
+  `UngatedOperations`, in the same commit, or not at all.
+- `ExpectedAuthorizationGateCallSites` is the number of live gate calls, which is NOT one per operation —
+  `ProcessDesigner.Execute` is a shared boundary for the read operations. The constant's own remarks carry
+  the arithmetic; edit them with the number, because a derivation that no longer totals the pin gives the
+  next maintainer a documented reason to LOWER it, and a lowered pin accepts an archive with operations
+  de-gated.
+- **Which side moves first:** the package repository. Both counts are properties of the shipped sources, so
+  they cannot be computed until the archive exists — add the operation and its gate there, land its
+  guard-deny test there (a call-site count cannot tell a gate that MOVED from one that is present but off
+  the execution path), then cut the archive and move both pins here. The ADR's pre-implementation checklist
+  states the same rule: operation-contract count and authorization-gate call sites move together, on both
+  sides.
 
 **No PRODUCTION constant to update** — that is the point of the current design: clio reads the shipped
 version from the archive, so nothing in the product can fall out of step with it. `ExpectedArchiveVersion`
@@ -411,11 +549,17 @@ is the `-Version` argument, canonicalised — deliberately not read back, for th
 that line. `ExpectedDescriptorModifiedOnUtc` is read from the package repository's `descriptor.json` AFTER
 the restamp. And `ExpectedProducingCommit` is that repository's HEAD BEFORE it, so the pin names the commit
 whose descriptor still carries the OLD version — by design, and unavoidably, since the script does not
-commit. Reproducing the bytes is therefore: check out the pin, re-run `set-pkg-version` with the pinned
-version, hand-set `ModifiedOnUtc` to the pinned value, then pack. That third step is not optional:
-`set-pkg-version` writes `DateTime.Now` and takes no timestamp argument, so re-running it stamps the present
-and the bytes differ every time — which is what `ExpectedDescriptorModifiedOnUtc` is for. And even then the
-hash matches only on a host rendering the same line endings and path separator. Forgetting the producing-commit
+commit. Reproducing the bytes is therefore: export the pinned commit with the two `-c` flags of step 3b, re-run
+`set-pkg-version` with the pinned version, hand-set `ModifiedOnUtc` to the pinned value, overlay that
+`descriptor.json` onto the export, then pack. The timestamp step is not optional: `set-pkg-version` writes
+`DateTime.Now` and takes no timestamp argument, so re-running it stamps the present and the bytes differ
+every time — which is what `ExpectedDescriptorModifiedOnUtc` is for.
+
+Nothing in that recipe depends on the verifier's machine any more, and that is a recent change. Exporting
+from the commit with `core.autocrlf=false` and `core.eol=lf` yields blob bytes on every host, so the hash no
+longer varies with an editor setting or a git configuration — the property the previous wording had to admit
+it lacked. What is still host-dependent is the PATH SEPARATOR the archive records per entry, so cut and
+verify on Windows. Forgetting the producing-commit
 pin on the manual path is worse than forgetting the others. A stale SHA turns the fixture red. A stale producing
 commit stays 40 hex characters, passes every test, and points confidently at the wrong commit, which is
 the failure the constant was added to remove.

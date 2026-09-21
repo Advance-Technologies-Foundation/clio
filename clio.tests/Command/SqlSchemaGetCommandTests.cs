@@ -13,7 +13,7 @@ using NUnit.Framework;
 public sealed class SqlSchemaGetCommandTests {
 	private const string TestBase = "http://test";
 	private const string SelectQueryUrl = TestBase + "/DataService/json/SyncReply/SelectQuery";
-	private const string GetSchemaUrl = TestBase + "/ServiceModel/ScriptSchemaDesignerService.svc/GetSchema";
+	private const string GetSchemaUrl = TestBase + "/ServiceModel/SqlScriptSchemaDesignerService.svc/GetSchema";
 	private const string SchemaUId = "aa000000-0000-0000-0000-000000000001";
 
 	private static string SchemaFoundJson =>
@@ -43,8 +43,8 @@ public sealed class SqlSchemaGetCommandTests {
 		_applicationClient = Substitute.For<IApplicationClient>();
 		_serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		_logger = Substitute.For<ILogger>();
-		_serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns(SelectQueryUrl);
-		_serviceUrlBuilder.Build("ServiceModel/ScriptSchemaDesignerService.svc/GetSchema").Returns(GetSchemaUrl);
+		_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select).Returns(SelectQueryUrl);
+		_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetSqlScriptSchema).Returns(GetSchemaUrl);
 		_command = new SqlSchemaGetCommand(
 			_applicationClient, _serviceUrlBuilder, new System.IO.Abstractions.FileSystem(), _logger);
 	}
@@ -121,6 +121,50 @@ public sealed class SqlSchemaGetCommandTests {
 		bool result = _command.TryGetSchema(options, out SqlSchemaGetResponse response);
 
 		result.Should().BeFalse();
-		response.Error.Should().Contain("UsrSqlScript").And.Contain("ScriptSchemaDesignerService");
+		response.Error.Should().Contain("UsrSqlScript").And.Contain("SqlScriptSchemaDesignerService");
+	}
+
+	[Test]
+	[Description("An empty GetSchema body is reported as a classified, service-named failure rather than the raw Newtonsoft parser message (issue #1322).")]
+	public void TryGetSchema_ShouldReportClassifiedFailure_WhenGetSchemaReturnsEmptyBody() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>()).Returns(SchemaFoundJson);
+		_applicationClient.ExecutePostRequest(GetSchemaUrl, Arg.Any<string>()).Returns(string.Empty);
+		var options = new SqlSchemaGetOptions { SchemaName = "UsrSqlScript" };
+
+		// Act
+		bool result = _command.TryGetSchema(options, out SqlSchemaGetResponse response);
+
+		// Assert
+		result.Should().BeFalse("an empty designer answer carries no schema");
+		response.Error.Should().Contain("SqlScriptSchemaDesignerService GetSchema",
+				"the caller must learn which service and operation answered with nothing")
+			.And.Contain(GetSchemaUrl, "the endpoint URL is what makes a missing route diagnosable")
+			.And.NotContain("Error reading JObject",
+				"the bare Newtonsoft parser message is exactly what issue #1322 reported as unactionable");
+	}
+
+	[Test]
+	[Description("An HTML page from GetSchema is classified as such, names the service and URL, and its markup is never echoed back.")]
+	public void TryGetSchema_ShouldNotEchoMarkup_WhenGetSchemaReturnsHtmlPage() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>()).Returns(SchemaFoundJson);
+		_applicationClient.ExecutePostRequest(GetSchemaUrl, Arg.Any<string>())
+			.Returns("<!DOCTYPE html><html><body>Login<input value=\"topsecret\"/></body></html>");
+		var options = new SqlSchemaGetOptions { SchemaName = "UsrSqlScript" };
+
+		// Act
+		bool result = _command.TryGetSchema(options, out SqlSchemaGetResponse response);
+
+		// Assert
+		result.Should().BeFalse("an HTML page is not a designer payload");
+		response.Error.Should().Contain("SqlScriptSchemaDesignerService GetSchema",
+				"the caller must learn which service and operation answered with a page")
+			.And.Contain(GetSchemaUrl, "the endpoint URL is what makes a redirected request diagnosable")
+			.And.Contain("HTML page instead of JSON", "the cause must be classified, not guessed at")
+			.And.NotContain("topsecret",
+				"a login or error page can carry session tokens, so the body is never echoed back")
+			.And.NotContain("Error reading JObject",
+				"the bare Newtonsoft parser message is exactly what issue #1322 reported as unactionable");
 	}
 }

@@ -60,8 +60,9 @@ internal sealed class SyntheticKnowledgeGitHubReleaseFixture : IDisposable {
 	}
 
 	/// <summary>Publishes a correctly signed release the consumer must accept.</summary>
-	internal SyntheticReleaseEvidence PublishValid(string tag, ulong sequence, string revision) =>
-		Publish(tag, sequence, revision, corruptSignature: false, corruptDigest: false);
+	internal SyntheticReleaseEvidence PublishValid(string tag, ulong sequence, string revision,
+		IReadOnlyList<string>? requiredTools = null) =>
+		Publish(tag, sequence, revision, corruptSignature: false, corruptDigest: false, requiredTools);
 
 	/// <summary>Publishes a newer release whose signature does not verify.</summary>
 	internal SyntheticReleaseEvidence PublishInvalidSignature(string tag, ulong sequence, string revision) =>
@@ -84,7 +85,8 @@ internal sealed class SyntheticKnowledgeGitHubReleaseFixture : IDisposable {
 		ulong sequence,
 		string revision,
 		bool corruptSignature,
-		bool corruptDigest) {
+		bool corruptDigest,
+		IReadOnlyList<string>? requiredTools = null) {
 		SyntheticBundle bundle = SyntheticKnowledgeBundleFactory.Create(new SyntheticBundleRequest(
 			LibraryId,
 			tag,
@@ -99,7 +101,7 @@ internal sealed class SyntheticKnowledgeGitHubReleaseFixture : IDisposable {
 			new Dictionary<string, string>(StringComparer.Ordinal) {
 				[SelectedGuideName] = SelectedGuideLegacyUri
 			},
-			corruptSignature));
+			corruptSignature, requiredTools));
 		string digest = corruptDigest
 			? new string('0', 64)
 			: Convert.ToHexString(SHA256.HashData(bundle.Bytes)).ToLowerInvariant();

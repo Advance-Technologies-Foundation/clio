@@ -136,30 +136,32 @@ public sealed class OAuthConfigurationToolsE2ETests : McpContractFixtureBase
 				because: "resolve-oauth-system-user requires only the environment name; name and id are optional");
 
 		ContractOf(contracts, VerifyOAuthAppTool.VerifyOAuthAppToolName).InputSchema.Required
-			.Should().BeEquivalentTo(["environment-name", "client-id", "client-secret"],
-				because: "verify-oauth-app requires the environment plus the client credentials to verify");
+			.Should().BeEquivalentTo(["environment-name"],
+				because: "verify-oauth-app defaults to the registered environment credentials");
 	}
 
-	[Test]
+	[TestCase(false)]
+	[TestCase(true)]
 	[Description("Invokes verify-oauth-app through the real MCP server and proves the acquired bearer token reaches the Creatio DataService smoke request.")]
 	[AllureTag(VerifyOAuthAppTool.VerifyOAuthAppToolName)]
 	[AllureName("verify-oauth-app completes token acquisition and bearer smoke test end to end")]
 	[AllureDescription("Uses a loopback IdentityService and Creatio surface to verify the real MCP command acquires a client_credentials token and sends it through CreatioClient to DataService.")]
-	public async Task VerifyOAuthApp_Should_AcquireToken_And_RunBearerSmokeTest_WhenEndpointsAcceptCredentials()
+	public async Task VerifyOAuthApp_Should_AcquireToken_And_RunBearerSmokeTest_WhenEndpointsAcceptCredentials(bool explicitCredentials)
 	{
 		// Arrange
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
+		Dictionary<string, object?> args = new() { ["environment-name"] = StubEnvironmentName };
+		if (explicitCredentials) {
+			args["client-id"] = "client-id";
+			args["client-secret"] = "client-secret";
+			args["identity-server-url"] = _stub!.BaseUri;
+		}
 
 		// Act
 		CallToolResult callResult = await context.Session.CallToolAsync(
 			VerifyOAuthAppTool.VerifyOAuthAppToolName,
 			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["environment-name"] = StubEnvironmentName,
-					["client-id"] = "client-id",
-					["client-secret"] = "client-secret",
-					["identity-server-url"] = _stub!.BaseUri
-				}
+				["args"] = args
 			},
 			context.CancellationTokenSource.Token);
 		VerifyOAuthAppResponse response =
@@ -174,7 +176,7 @@ public sealed class OAuthConfigurationToolsE2ETests : McpContractFixtureBase
 			because: "the tool must return its end-to-end verification result");
 		response.Result!.Ok.Should().BeTrue(
 			because: "both token acquisition and the bearer DataService probe succeeded");
-		_stub.TokenRequestBody.Should().Contain("client_id=client-id",
+		_stub!.TokenRequestBody.Should().Contain("client_id=client-id",
 			because: "the requested OAuth application must be the one verified");
 		_stub.AuthorizationHeader.Should().Be("Bearer stub-access-token",
 			because: "CreatioClient must carry the acquired token into the DataService request");
@@ -183,6 +185,36 @@ public sealed class OAuthConfigurationToolsE2ETests : McpContractFixtureBase
 			because: "the acquired access token is secret and must never cross the MCP response boundary");
 		serializedResult.Should().NotContain("client-secret",
 			because: "the supplied client secret must never be echoed by the tool");
+	}
+
+	[TestCase("invalid-token", false, 0)]
+	[TestCase("rejected-token", true, 401)]
+	[Description("The real MCP path fails verification for invalid token responses and tokens rejected by CRM.")]
+	[AllureTag(VerifyOAuthAppTool.VerifyOAuthAppToolName)]
+	[AllureName("OAuth verification rejects invalid responses and CRM authentication failure")]
+	[AllureDescription("Exercises the real server with saved credentials and failing loopback endpoints, without exposing secrets.")]
+	public async Task VerifyOAuthApp_ShouldReportFailure_WhenVerificationFails(string scenario, bool tokenAcquired, int status) {
+		// Arrange
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(VerifyOAuthAppTool.VerifyOAuthAppToolName,
+			new Dictionary<string, object?> { ["args"] = new Dictionary<string, object?> {
+				["environment-name"] = StubEnvironmentName,
+				["identity-server-url"] = _stub!.BaseUri + "/" + scenario
+			} }, context.CancellationTokenSource.Token);
+		VerifyOAuthAppResponse response = EntitySchemaStructuredResultParser.Extract<VerifyOAuthAppResponse>(callResult);
+
+		// Assert
+		Allure.Net.Commons.AllureApi.Step("Verify failed check results", () => {
+			response.Result.Should().NotBeNull(because: "a completed check reports its verification result");
+			response.Result!.Ok.Should().BeFalse(because: "token acquisition alone is not proof of CRM acceptance");
+			response.Result.TokenAcquired.Should().Be(tokenAcquired, because: "the result identifies whether token acquisition succeeded");
+			response.Result.DataServiceStatus.Should().Be(status, because: "the CRM status is retained without permission interpretation");
+		});
+		Allure.Net.Commons.AllureApi.Step("Verify secrets are absent", () => {
+			JsonSerializer.Serialize(callResult).Should().NotContain("client-secret", because: "verification never returns stored secrets");
+		});
 	}
 
 	[OneTimeTearDown]
@@ -241,6 +273,9 @@ public sealed class OAuthConfigurationToolsE2ETests : McpContractFixtureBase
 			      "Uri": "{{_stub.BaseUri}}",
 			      "Login": "Supervisor",
 			      "Password": "Supervisor",
+			      "ClientId": "client-id",
+			      "ClientSecret": "client-secret",
+			      "AuthAppUri": "{{_stub.BaseUri}}/connect/token",
 			      "IsNetCore": true
 			    }
 			  }
@@ -330,6 +365,10 @@ public sealed class OAuthConfigurationToolsE2ETests : McpContractFixtureBase
 					|| !TokenRequestBody.Contains("client_secret=client-secret", StringComparison.Ordinal)) {
 					context.Response.StatusCode = (int)HttpStatusCode.BadRequest;
 					bytes = Encoding.UTF8.GetBytes("{\"error\":\"invalid_client\"}");
+				} else if (path.StartsWith("/invalid-token/", StringComparison.Ordinal)) {
+					bytes = Encoding.UTF8.GetBytes("{}");
+				} else if (path.StartsWith("/rejected-token/", StringComparison.Ordinal)) {
+					bytes = Encoding.UTF8.GetBytes("{\"access_token\":\"rejected\",\"token_type\":\"Bearer\"}");
 				} else {
 					bytes = Encoding.UTF8.GetBytes("{\"access_token\":\"stub-access-token\",\"token_type\":\"Bearer\"}");
 				}

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text.Json;
@@ -19,7 +20,7 @@ namespace Clio.Command.OAuthAppConfiguration;
 public interface IIdentityServerProbe
 {
 	/// <summary>
-	/// Issues a GET against the OpenID discovery document and reports whether it returns a success status.
+	/// Checks that OpenID discovery succeeds and contains an issuer and valid endpoint URLs.
 	/// </summary>
 	/// <param name="identityServerBaseUrl">IdentityService base URL.</param>
 	/// <returns><see langword="true"/> when the discovery document is reachable.</returns>
@@ -85,12 +86,28 @@ public sealed class IdentityServerProbe : IIdentityServerProbe
 			return false;
 		}
 		try {
-			HttpClient client = _httpClientFactory.CreateClient();
-			HttpResponseMessage response = Task.Run(() =>
+			using HttpClient client = _httpClientFactory.CreateClient();
+			using HttpResponseMessage response = Task.Run(() =>
 					client.GetAsync($"{identityServerBaseUrl.TrimEnd('/')}/.well-known/openid-configuration"))
 				.GetAwaiter()
 				.GetResult();
-			return response.IsSuccessStatusCode;
+			if (!response.IsSuccessStatusCode) {
+				return false;
+			}
+			using JsonDocument document = JsonDocument.Parse(response.Content.ReadAsStringAsync().GetAwaiter().GetResult());
+			return document.RootElement.ValueKind == JsonValueKind.Object
+				&& document.RootElement.TryGetProperty("issuer", out JsonElement issuer)
+				&& issuer.ValueKind == JsonValueKind.String
+				&& !string.IsNullOrWhiteSpace(issuer.GetString())
+				&& new[] { "token_endpoint", "jwks_uri", "authorization_endpoint" }.All(name =>
+					document.RootElement.TryGetProperty(name, out JsonElement value)
+					&& value.ValueKind == JsonValueKind.String
+					&& Uri.TryCreate(value.GetString(), UriKind.Absolute, out Uri uri)
+					&& uri.Scheme is "http" or "https"
+					&& string.IsNullOrEmpty(uri.UserInfo));
+		}
+		catch (JsonException) {
+			return false;
 		}
 		catch (HttpRequestException) {
 			return false;
@@ -107,22 +124,30 @@ public sealed class IdentityServerProbe : IIdentityServerProbe
 			|| string.IsNullOrWhiteSpace(clientSecret)) {
 			return string.Empty;
 		}
-		HttpClient client = _httpClientFactory.CreateClient();
-		using FormUrlEncodedContent content = new(new Dictionary<string, string> {
-			["grant_type"] = "client_credentials",
-			["client_id"] = clientId,
-			["client_secret"] = clientSecret
-		});
-		content.Headers.ContentType = new MediaTypeHeaderValue("application/x-www-form-urlencoded");
-		HttpResponseMessage response = Task.Run(() =>
-				client.PostAsync($"{identityServerBaseUrl.TrimEnd('/')}/connect/token", content))
-			.GetAwaiter()
-			.GetResult();
-		if (!response.IsSuccessStatusCode) {
-			return string.Empty;
+		try {
+			using HttpClient client = _httpClientFactory.CreateClient();
+			using FormUrlEncodedContent content = new(new Dictionary<string, string> {
+				["grant_type"] = "client_credentials",
+				["client_id"] = clientId,
+				["client_secret"] = clientSecret
+			});
+			content.Headers.ContentType = new MediaTypeHeaderValue("application/x-www-form-urlencoded");
+			using HttpResponseMessage response = Task.Run(() =>
+					client.PostAsync($"{identityServerBaseUrl.TrimEnd('/')}/connect/token", content))
+				.GetAwaiter()
+				.GetResult();
+			if (!response.IsSuccessStatusCode) {
+				return string.Empty;
+			}
+			string body = Task.Run(() => response.Content.ReadAsStringAsync()).GetAwaiter().GetResult();
+			return ExtractAccessToken(body);
 		}
-		string body = Task.Run(() => response.Content.ReadAsStringAsync()).GetAwaiter().GetResult();
-		return ExtractAccessToken(body);
+		catch (HttpRequestException) {
+			throw new InvalidOperationException("OAuth token request failed. Check the IdentityService URL and connectivity.");
+		}
+		catch (TaskCanceledException) {
+			throw new InvalidOperationException("OAuth token request timed out. Check IdentityService connectivity.");
+		}
 	}
 
 	/// <inheritdoc />
@@ -142,21 +167,51 @@ public sealed class IdentityServerProbe : IIdentityServerProbe
 			return 0;
 		}
 		ArgumentNullException.ThrowIfNull(environmentSettings);
-		using IOwnedApplicationClient client = _applicationClientFactory.CreateBearerEnvironmentClient(
-			environmentSettings, accessToken);
-		using HttpResponseMessage response = client.ExecutePostRequestAsync(
-			selectQueryUrl, ContactTop1SelectQuery).GetAwaiter().GetResult();
-		return (int)response.StatusCode;
+		try {
+			using IOwnedApplicationClient client = _applicationClientFactory.CreateBearerEnvironmentClient(
+				environmentSettings, accessToken);
+			using HttpResponseMessage response = client.ExecutePostRequestAsync(
+				selectQueryUrl, ContactTop1SelectQuery).GetAwaiter().GetResult();
+			if (response.StatusCode == System.Net.HttpStatusCode.OK) {
+				using JsonDocument document = JsonDocument.Parse(response.Content.ReadAsStringAsync().GetAwaiter().GetResult());
+				if (document.RootElement.ValueKind != JsonValueKind.Object
+					|| !document.RootElement.TryGetProperty("success", out JsonElement success)
+					|| success.ValueKind != JsonValueKind.True) {
+					throw new InvalidOperationException("CRM OAuth smoke request did not return a successful DataService response.");
+				}
+			}
+			return (int)response.StatusCode;
+		}
+		catch (JsonException) {
+			throw new InvalidOperationException("CRM OAuth smoke request returned invalid JSON.");
+		}
+		catch (HttpRequestException) {
+			throw new InvalidOperationException("CRM OAuth smoke request failed. Check the target URL and connectivity.");
+		}
+		catch (TaskCanceledException) {
+			throw new InvalidOperationException("CRM OAuth smoke request timed out. Check target connectivity.");
+		}
 	}
 
 	private static string ExtractAccessToken(string tokenResponseJson) {
 		if (string.IsNullOrWhiteSpace(tokenResponseJson)) {
 			return string.Empty;
 		}
-		using JsonDocument document = JsonDocument.Parse(tokenResponseJson);
-		return document.RootElement.TryGetProperty("access_token", out JsonElement tokenElement)
-			&& tokenElement.ValueKind == JsonValueKind.String
-				? tokenElement.GetString() ?? string.Empty
-				: string.Empty;
+		try {
+			using JsonDocument document = JsonDocument.Parse(tokenResponseJson);
+			if (document.RootElement.ValueKind != JsonValueKind.Object
+				|| !document.RootElement.TryGetProperty("token_type", out JsonElement type)
+				|| type.ValueKind != JsonValueKind.String
+				|| !string.Equals(type.GetString(), "Bearer", StringComparison.OrdinalIgnoreCase)
+				|| !document.RootElement.TryGetProperty("access_token", out JsonElement token)
+				|| token.ValueKind != JsonValueKind.String) {
+				return string.Empty;
+			}
+			string value = token.GetString();
+			return string.IsNullOrWhiteSpace(value) || value.Any(c => char.IsWhiteSpace(c) || char.IsControl(c)) ? string.Empty : value;
+		}
+		catch (JsonException) {
+			return string.Empty;
+		}
 	}
 }

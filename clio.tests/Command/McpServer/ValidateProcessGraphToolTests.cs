@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text.Json;
 using System.Linq;
 using System.Reflection;
 using Clio;
@@ -123,24 +124,462 @@ public sealed class ValidateProcessGraphToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("R14: a default flow with no sibling conditional (conditional/default flow-kinds are parsed) surfaces an error.")]
-	public void Validate_ShouldSurfaceR14Error_WhenDefaultFlowHasNoSiblingConditional() {
+	[Description("R14: a default flow with no sibling conditional surfaces an error where the source actually BRANCHES. The source here is an activity with two outgoing flows, not a gateway, so the finding is R14's own and not the or-gateway flow-kind rule's.")]
+	public void Validate_ShouldSurfaceR14Error_WhenDivergingSourceHasADefaultWithNoConditional() {
 		// Arrange
-		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("g", "exclusiveGateway"), N("a", "activityUserTask"), N("e", "endEvent")];
-		List<ProcessGraphEdgeArg> edges = [E("s", "g"), E("g", "a", "default"), E("a", "e")];
+		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("a", "activityUserTask"), N("b", "activityUserTask"),
+			N("c", "activityUserTask"), N("e", "endEvent")];
+		List<ProcessGraphEdgeArg> edges = [E("s", "a"), E("a", "b", "default"), E("a", "c"), E("b", "e"), E("c", "e")];
 
 		// Act
 		ValidateProcessGraphResponse response = Validate(nodes, edges);
 
 		// Assert
-		response.Findings.Should().Contain(f => f.RuleId == "R14" && f.Severity == "error",
-			because: "a lone default flow violates R14 — and proves the 'default' flow-kind was parsed");
+		response.Findings.Should().Contain(
+			f => f.RuleId == "R14" && f.Severity == "error" && f.Message.Contains("sibling conditional"),
+			because: "a default branch says 'taken when nothing else matched', so with no conditional sibling "
+				+ "there is nothing for it to be the fallback of - and this also proves the 'default' "
+				+ "flow-kind was parsed. R14 now reports two different defects, so the message is what says "
+				+ "which one fired");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("R13: a conditional flow from a start event surfaces an error (proves the 'conditional' flow-kind was parsed).")]
-	public void Validate_ShouldSurfaceR13Error_WhenConditionalFlowFromStart() {
+	[Description("R14 is scoped by ARITY, and that scope is the fix rather than a refinement. A CONVERGING or-gateway's single outgoing flow is a default flow by construction: the designer's allowed-outgoing list for an or-gateway is conditional + default with no plain sequence flow at all, so there is no other kind it could have. Unscoped, this rule called 45 shipped gateways invalid - 40 exclusive and 5 inclusive, among them BulkFileManagement/DeleteFilesInTable and CaseService/RunSendEmailToCaseGroup.")]
+	public void Validate_ShouldNotSurfaceR14_ForAConvergingGatewayWithOneDefaultFlow() {
+		// Arrange: two branches merge into one exclusive gateway, whose single outgoing flow is the default.
+		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("split", "exclusiveGateway"),
+			N("a", "activityUserTask"), N("b", "activityUserTask"), N("merge", "exclusiveGateway"), N("e", "endEvent")];
+		List<ProcessGraphEdgeArg> edges = [E("s", "split"),
+			new ProcessGraphEdgeArg("split", "a", "conditional", "1 > 0"),
+			E("split", "b", "default"), E("a", "merge", "default"), E("b", "merge", "default"),
+			E("merge", "e", "default")];
+
+		// Act
+		ValidateProcessGraphResponse response = Validate(nodes, edges);
+
+		// Assert
+		response.Findings.Should().NotContain(f => f.RuleId == "R14" && f.NodeName == "merge",
+			because: "a converging gateway has exactly one way out and the designer cannot draw a plain flow "
+				+ "there, so its single default flow is the only shape available - calling it invalid rejects "
+				+ "content the designer itself produces");
+		response.HasErrors.Should().BeFalse(
+			because: "the whole graph is a canonical conditional+default split feeding a converging gateway - "
+				+ "the shape the designer produces - so asserting the WHOLE error surface rather than one "
+				+ "rule id is what stops a future rule from rejecting it by another name");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("R14 does not fire when a plain sibling leads into a GATEWAY. That is not an unexpressed decision, it is the decision living one element further on, and the platform says so: ProcessSchemaFlowNode.GetOutgoingsDefFlows, with no conditional flow present, recurses into a sequence flow whose target is a gateway and collects THAT gateway's default flows. This is the shape of CrtLeadOppMgmtApp/LeadDistribution's ReadDataUserTask1 - the ONE shipped process the arity fix still rejected, which is how 45 became 1 rather than 0.")]
+	public void Validate_ShouldNotSurfaceR14_WhenAPlainSiblingLeadsIntoAGateway() {
+		// Arrange: a read-data task with a default branch and a plain flow into a gateway.
+		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("read", "readDataUserTask"),
+			N("a", "activityUserTask"), N("gw", "exclusiveGateway"), N("b", "activityUserTask"),
+			N("c", "activityUserTask"), N("e", "endEvent")];
+		List<ProcessGraphEdgeArg> edges = [E("s", "read"), E("read", "a", "default"), E("read", "gw"),
+			new ProcessGraphEdgeArg("gw", "b", "conditional", "1 > 0"), E("gw", "c", "default"),
+			E("a", "e"), E("b", "e"), E("c", "e")];
+
+		// Act
+		ValidateProcessGraphResponse response = Validate(nodes, edges);
+
+		// Assert
+		response.Findings.Should().NotContain(f => f.RuleId == "R14" && f.NodeName == "read",
+			because: "the default branch has something to be the fallback OF - the conditions are inside the "
+				+ "gateway the plain sibling leads to, and the platform walks into it to find them");
+		response.HasErrors.Should().BeFalse(
+			because: "this is a shipped, running process, and the rule that rejected it is the one this "
+				+ "change exists to scope correctly");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("R14: at most one default flow per source. The default is the branch taken when nothing matched, so two make that undecidable; the platform does not refuse it and picks by collection order, which leaves the second one dead metadata that reads like a live branch. Zero sources in the shipped corpus carry two.")]
+	public void Validate_ShouldSurfaceR14Error_WhenASourceHasTwoDefaultFlows() {
+		// Arrange
+		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("g", "exclusiveGateway"),
+			N("a", "activityUserTask"), N("b", "activityUserTask"), N("e", "endEvent")];
+		List<ProcessGraphEdgeArg> edges = [E("s", "g"), E("g", "a", "default"), E("g", "b", "default"),
+			E("a", "e"), E("b", "e")];
+
+		// Act
+		ValidateProcessGraphResponse response = Validate(nodes, edges);
+
+		// Assert
+		response.Findings.Should().Contain(
+			f => f.RuleId == "R14" && f.Severity == "error" && f.Message.Contains("2 default flows"),
+			because: "two fallbacks out of one element make 'the branch taken when nothing matched' undecidable");
+		response.Findings.Should().NotContain(f => f.Message.Contains("sibling conditional"),
+			because: "the sibling-conditional half of R14 is scoped to exactly ONE default, and this is what "
+				+ "that clause decides: with two of them the source's problem is the second default, not a "
+				+ "missing condition, and reporting both would send the caller to add a conditional flow "
+				+ "beside a fallback that is already ambiguous. Without this assertion the clause can be "
+				+ "deleted with the suite green");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("R7: a DIVERGING exclusive gateway carrying a plain sequence flow is WARNED about, not refused - the mirror of R11, softened by measurement. The designer offers conditional and default only out of an or-gateway and removes the plain connection from the menu, so the flow says nothing about how its branch is chosen; but seven shipped or-gateways are in exactly that shape and they run, because the runtime takes any non-conditional outgoing as the default branch.")]
+	public void Validate_ShouldWarnR7_WhenADivergingGatewayHasAPlainFlow() {
+		// Arrange
+		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("g", "exclusiveGateway"),
+			N("a", "activityUserTask"), N("b", "activityUserTask"), N("e", "endEvent")];
+		List<ProcessGraphEdgeArg> edges = [E("s", "g"),
+			new ProcessGraphEdgeArg("g", "a", "conditional", "1 > 0"), E("g", "b"), E("a", "e"), E("b", "e")];
+
+		// Act
+		ValidateProcessGraphResponse response = Validate(nodes, edges);
+
+		// Assert
+		response.Findings.Should().Contain(
+			f => f.RuleId == "R7" && f.Severity == "warning" && f.Message.Contains("plain sequence flow"),
+			because: "the diagram should say which branch is the fallback - but a WARNING, because seven "
+				+ "shipped or-gateways are diverging and carry a plain flow, and they run: the runtime takes "
+				+ "any non-conditional outgoing as the default. An error here would reject real content, "
+				+ "which is the defect the R14 arity scope in this same change exists to undo");
+		response.HasErrors.Should().BeFalse(
+			because: "a shape the shipped corpus contains seven times over must not fail validation");
+		response.Findings.Should().Contain(f => f.RuleId == "R7" && f.NodeName == "g").Which.Message
+			.Should().Contain("plain sequence flow",
+				because: "EXACTLY ONE R7 finding on this gateway, and it is the plain-flow one. Both R7 "
+					+ "warnings name the same node, so an absence assertion alone cannot say which fired - "
+					+ "and `Contain` on a single match is what fails if the scoping ever lets both through");
+		response.Findings.Should().NotContain(f => f.Message.Contains("None of the conditions were met"),
+			because: "the no-default warning promises the instance STOPS and the log says nothing matched, and "
+				+ "on this shape that is false - FlowConditionalGateway takes any non-conditional outgoing as "
+				+ "the default, so the plain flow runs. Firing both warnings here would tell an author their "
+				+ "process breaks at run time when it does not, on all seven shipped gateways of this shape. "
+				+ "Keyed on the SAME fragment the positive test asserts, deliberately: this used to key on "
+				+ "'has no default flow' while the positive keyed on the log line, so re-wording the prefix "
+				+ "made this assertion vacuous and left the scoping decision unguarded");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The or-gateway flow-kind rule is arity-scoped like R14: 14 shipped exclusive gateways carry a single plain sequence flow, all of them with exactly ONE outgoing - legacy converging gateways from an older designer, tolerated on read.")]
+	public void Validate_ShouldNotSurfaceR7Error_ForALegacyConvergingGatewayWithOnePlainFlow() {
+		// Arrange
+		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("split", "exclusiveGateway"),
+			N("a", "activityUserTask"), N("b", "activityUserTask"), N("merge", "exclusiveGateway"), N("e", "endEvent")];
+		List<ProcessGraphEdgeArg> edges = [E("s", "split"),
+			new ProcessGraphEdgeArg("split", "a", "conditional", "1 > 0"),
+			E("split", "b", "default"), E("a", "merge"), E("b", "merge"), E("merge", "e")];
+
+		// Act
+		ValidateProcessGraphResponse response = Validate(nodes, edges);
+
+		// Assert
+		response.Findings.Should().NotContain(f => f.RuleId == "R7" && f.NodeName == "merge",
+			because: "a gateway with one way out is not choosing anything, so the flow-kind rule has nothing "
+				+ "to say about it");
+		response.HasErrors.Should().BeFalse(
+			because: "14 shipped exclusive gateways carry exactly this single plain flow, so the whole graph "
+				+ "must come back clean and not merely free of one rule id");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("R7 names the run-time outcome the OPERATOR can search for, not the internal exception type. The rule used to promise MismatchItemsCountException, read out of FlowConditionalGateway.OnVisited; a manual run on a stand saw validate-process-graph say that and the resulting SysProcessLog entry say 'None of the conditions were met after the element ...' instead - and record the instance as SUSPENDED, not failed. Stays a WARNING, because 65 shipped exclusive gateways deliberately have two conditional flows and no default.")]
+	public void Validate_ShouldWarnR7_NamingTheProcessLogLine_WhenADivergingGatewayHasNoDefault() {
+		// Arrange
+		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("g", "exclusiveGateway"),
+			N("a", "activityUserTask"), N("b", "activityUserTask"), N("e", "endEvent")];
+		List<ProcessGraphEdgeArg> edges = [E("s", "g"),
+			new ProcessGraphEdgeArg("g", "a", "conditional", "1 > 0"),
+			new ProcessGraphEdgeArg("g", "b", "conditional", "2 > 1"), E("a", "e"), E("b", "e")];
+
+		// Act
+		ValidateProcessGraphResponse response = Validate(nodes, edges);
+
+		// Assert
+		response.Findings.Should().Contain(
+			f => f.RuleId == "R7" && f.Severity == "warning"
+				&& f.Message.Contains("None of the conditions were met after the element"),
+			because: "the consequence is specific and findable, and naming it is what lets a reader search for "
+				+ "it - 'dead-ends' names nothing");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A diverging gateway that HAS a default flow raises no R7. Its own test rather than an "
+		+ "appendix to the no-default case, which is where it lived: a second Act inside an Assert block "
+		+ "cannot say which of the two scenarios broke, and this one is load-bearing - the guard that asks "
+		+ "whether a default exists was unfalsifiable until it was written.")]
+	public void Validate_ShouldNotWarnR7_WhenADivergingGatewayHasADefaultFlow() {
+		// Arrange - the canonical conditional+default split.
+		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("split", "exclusiveGateway"),
+			N("x", "activityUserTask"), N("y", "activityUserTask"), N("e", "endEvent")];
+		List<ProcessGraphEdgeArg> edges = [E("s", "split"),
+			new ProcessGraphEdgeArg("split", "x", "conditional", "1 > 0"),
+			E("split", "y", "default"), E("x", "e"), E("y", "e")];
+
+		// Act
+		ValidateProcessGraphResponse response = Validate(nodes, edges);
+
+		// Assert
+		response.Findings.Should().NotContain(f => f.RuleId == "R7" && f.NodeName == "split",
+			because: "replacing the default-exists guard with `if (true)` left the whole suite green while "
+				+ "the warning fired on every diverging gateway, this canonical split included");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("R15: a flow from an element to itself is refused. The designer refuses to DRAW one while tolerating the three that exist in the shipped corpus on re-save; this tool only ever sees a PLANNED graph, so only the authoring half applies. At run time a self-looping task re-executes on every completion, and nothing on the diagram shows it, because the layout engine skips self-loops.")]
+	public void Validate_ShouldSurfaceR15Error_ForASelfLoop() {
+		// Arrange
+		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("a", "activityUserTask"), N("e", "endEvent")];
+		List<ProcessGraphEdgeArg> edges = [E("s", "a"), E("a", "a"), E("a", "e")];
+
+		// Act
+		ValidateProcessGraphResponse response = Validate(nodes, edges);
+
+		// Assert
+		response.Findings.Should().Contain(
+			f => f.RuleId == "R15" && f.Severity == "error" && f.Message.Contains("to itself"),
+			because: "a self-loop either never runs or runs forever, and it is invisible on the diagram");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("R13: a conditional flow whose condition is supplied but EMPTY is an error. Reached outside the build path the platform does not report it - it substitutes the literal 'true', producing a branch that looks conditional and always fires. ZERO shipped flows store an empty string, out of 1367 - an earlier count of 7 was wrong and was attributed to this case. (The warning half is separate and larger: 344 flows have no CI3 text, but 337 of those branch on an activity RESULT stored in GV2, leaving 7 with nothing at all.) So the error rests on the shape being indefensible rather than on corpus frequency: nobody types whitespace while deferring predicates. The rule needs the optional 'condition' field, which is why it could not exist before.")]
+	public void Validate_ShouldSurfaceR13Error_ForAConditionalFlowWithAnEmptyCondition() {
+		// Arrange
+		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("g", "exclusiveGateway"),
+			N("a", "activityUserTask"), N("b", "activityUserTask"), N("e", "endEvent")];
+		List<ProcessGraphEdgeArg> edges = [E("s", "g"),
+			new ProcessGraphEdgeArg("g", "a", "conditional", "   "),
+			E("g", "b", "default"), E("a", "e"), E("b", "e")];
+
+		// Act
+		ValidateProcessGraphResponse response = Validate(nodes, edges);
+
+		// Assert
+		response.Findings.Should().Contain(
+			f => f.RuleId == "R13" && f.Severity == "error" && f.Message.Contains("literal 'true'")
+				&& f.Source == "g" && f.Target == "a",
+			because: "a branch that always fires is the opposite of the branch the author described - and the "
+				+ "source/target are how an agent finds the offending flow, so they are asserted rather than "
+				+ "assumed");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An OMITTED condition raises a WARNING and never an error. Silence was the contract until ENG-91853 and it hid a certain build refusal; an error would block the shape-only check the optional field exists for. Note that 'the builder refuses it' does not on its own decide the severity here - EnsureConditionMatchesKind tests IsNullOrWhiteSpace, so the builder refuses a BLANK condition too. What separates them is that omission has a legitimate reading before any predicate exists and whitespace does not.")]
+	public void Validate_ShouldNotSurfaceR13Error_WhenTheConditionIsSimplyOmitted() {
+		// Arrange
+		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("g", "exclusiveGateway"),
+			N("a", "activityUserTask"), N("b", "activityUserTask"), N("e", "endEvent")];
+		List<ProcessGraphEdgeArg> edges = [E("s", "g"), E("g", "a", "conditional"), E("g", "b", "default"),
+			E("a", "e"), E("b", "e")];
+
+		// Act
+		ValidateProcessGraphResponse response = Validate(nodes, edges);
+
+		// Assert
+		response.Findings.Should().NotContain(f => f.RuleId == "R13" && f.Message.Contains("literal 'true'"),
+			because: "omitting an optional field is not the same as supplying an empty one - the literal-'true' "
+				+ "error belongs to a BLANK condition only");
+		response.Findings.Should().Contain(f => f.RuleId == "R13" && f.Severity == "warning"
+				&& f.Message.Contains("the BUILD path refuses it"),
+			because: "silence was the old contract and it hid a guaranteed build refusal: "
+				+ "EnsureConditionMatchesKind rejects a conditional flow with no condition, so the caller has "
+				+ "to be told. A WARNING rather than an error because `condition` is optional on the wire so a "
+				+ "graph's SHAPE can be checked before any predicate exists, and an error would block that. "
+				+ "The MESSAGE is asserted because it is the whole deliverable - a finding that said only "
+				+ "'R13 violated' would leave the caller exactly as stuck as silence did");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("R8 (warning): a parallel join whose incoming branches come from a common exclusive split can deadlock. The join proceeds only when EVERY incoming branch has delivered a token, and an exclusive split takes one - so the instance hangs in Running with no exception and no log line, which is the failure mode with no diagnostic at all.")]
+	public void Validate_ShouldWarnR8_WhenAParallelJoinMergesBranchesOfAnExclusiveSplit() {
+		// Arrange: xor splits to a and b, both of which run into an AND join.
+		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("xor", "exclusiveGateway"),
+			N("a", "activityUserTask"), N("b", "activityUserTask"), N("and", "parallelGateway"), N("e", "endEvent")];
+		List<ProcessGraphEdgeArg> edges = [E("s", "xor"),
+			new ProcessGraphEdgeArg("xor", "a", "conditional", "1 > 0"),
+			E("xor", "b", "default"), E("a", "and"), E("b", "and"), E("and", "e")];
+
+		// Act
+		ValidateProcessGraphResponse response = Validate(nodes, edges);
+
+		// Assert
+		response.Findings.Should().Contain(
+			f => f.RuleId == "R8" && f.Severity == "warning" && f.NodeName == "and"
+				&& f.Message.Contains("hang in Running"),
+			because: "an AND join behind an XOR split waits for a branch that will never run, and nothing "
+				+ "anywhere reports it - the finding names the JOIN, which is the element to change");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("R8 fires when the or-gateway feeds the parallel join DIRECTLY. One arm goes through an activity and the other jumps straight to the join - the commonest hand-authored deadlock of the family, and the one shape the rule missed, because the backward walk started at the inbound edge's SOURCE and so never contained the inbound edge itself. The direct branch projected to nothing at the gateway and was discarded before any pair could form.")]
+	public void Validate_ShouldWarnR8_WhenAnOrGatewayFeedsTheJoinDirectly() {
+		// Arrange: xor picks ONE arm; the join waits for both.
+		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("xor", "exclusiveGateway"),
+			N("a", "activityUserTask"), N("join", "parallelGateway"), N("e", "endEvent")];
+		List<ProcessGraphEdgeArg> edges = [E("s", "xor"),
+			new ProcessGraphEdgeArg("xor", "a", "conditional", "1 > 0"), E("xor", "join", "default"),
+			E("a", "join"), E("join", "e")];
+
+		// Act
+		ValidateProcessGraphResponse response = Validate(nodes, edges);
+
+		// Assert
+		response.Findings.Should().Contain(
+			f => f.RuleId == "R8" && f.Severity == "warning" && f.NodeName == "join"
+				&& f.Message.Contains("xor"),
+			because: "the two branches leave 'xor' by different flows and the gateway takes only one, so "
+				+ "whichever way it goes the join is still waiting for the other - the instance hangs in "
+				+ "Running with no error, which is why the warning has to name the gateway");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("R8 must NOT fire when a parallel section sits downstream of a choice. Both branches of the fork run whenever the choice reaches it, and when the choice goes the other way no token reaches the join at all - there is no deadlock in either case. This is the graph that proves the rule compares DIVERGENCE and not ancestry: for a genuine AND fork the two backward walks are identical from the fork upward, so they contain every or-gateway in the process behind it, and a node-level intersection warns on almost any real graph.")]
+	public void Validate_ShouldNotWarnR8_WhenAParallelForkSitsBelowAChoice() {
+		// Arrange: xor picks between a parallel section and a plain branch.
+		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("xor", "exclusiveGateway"),
+			N("fork", "parallelGateway"), N("a", "activityUserTask"), N("b", "activityUserTask"),
+			N("join", "parallelGateway"), N("other", "activityUserTask"), N("e", "endEvent")];
+		List<ProcessGraphEdgeArg> edges = [E("s", "xor"),
+			new ProcessGraphEdgeArg("xor", "fork", "conditional", "1 > 0"), E("xor", "other", "default"),
+			E("fork", "a"), E("fork", "b"), E("a", "join"), E("b", "join"), E("join", "e"), E("other", "e")];
+
+		// Act
+		ValidateProcessGraphResponse response = Validate(nodes, edges);
+
+		// Assert
+		response.Findings.Should().NotContain(f => f.RuleId == "R8",
+			because: "both arms of the fork reach the join through the SAME flow out of the xor, so the xor "
+				+ "never chooses between them - warning here would tell an agent to replace a correct AND "
+				+ "join with an XOR one, which fires everything downstream twice");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("R8 must NOT fire when a CONVERGING or-gateway sits upstream of a parallel section. The gateway has one way out, so it chooses nothing; this is the 45-shipped-gateway shape, and it is what the rule's own or-gateway arity guard exists to exempt.")]
+	public void Validate_ShouldNotWarnR8_WhenAConvergingGatewayFeedsAParallelFork() {
+		// Arrange
+		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("merge", "exclusiveGateway"),
+			N("fork", "parallelGateway"), N("a", "activityUserTask"), N("b", "activityUserTask"),
+			N("join", "parallelGateway"), N("e", "endEvent")];
+		List<ProcessGraphEdgeArg> edges = [E("s", "merge"), E("merge", "fork", "default"),
+			E("fork", "a"), E("fork", "b"), E("a", "join"), E("b", "join"), E("join", "e")];
+
+		// Act
+		ValidateProcessGraphResponse response = Validate(nodes, edges);
+
+		// Assert
+		response.Findings.Should().NotContain(f => f.RuleId == "R8",
+			because: "a gateway with one way out picks nothing, so it cannot starve a join");
+		response.HasErrors.Should().BeFalse(
+			because: "this is a shape the designer itself produces, so no rule may call it invalid");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("R8 must NOT fire on a retry loop. The backward walk follows the back-edge, so the loop's own exclusive gateway ends up behind BOTH branches of any parallel section inside the loop - ancestry again, not divergence. Back-edges are in 15% of real gateway processes.")]
+	public void Validate_ShouldNotWarnR8_ForAParallelSectionInsideARetryLoop() {
+		// Arrange: fork/join inside a loop whose exit is decided by an exclusive gateway.
+		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("fork", "parallelGateway"),
+			N("a", "activityUserTask"), N("b", "activityUserTask"), N("join", "parallelGateway"),
+			N("retry", "exclusiveGateway"), N("e", "endEvent")];
+		List<ProcessGraphEdgeArg> edges = [E("s", "fork"), E("fork", "a"), E("fork", "b"),
+			E("a", "join"), E("b", "join"), E("join", "retry"),
+			new ProcessGraphEdgeArg("retry", "fork", "conditional", "1 > 0"), E("retry", "e", "default")];
+
+		// Act
+		ValidateProcessGraphResponse response = Validate(nodes, edges);
+
+		// Assert
+		response.Findings.Should().NotContain(f => f.RuleId == "R8",
+			because: "both arms re-enter the loop through the same flow out of the retry gateway");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The INCLUSIVE gateway's half of every rule this change touches, in one graph: R9 rather than R7 is the rule id, the no-default warning names the runtime exception, and the arity scope holds for a converging inclusive gateway too. Without this the 'R7 : R9' selector, the inclusive arm of the or-gateway guard and the inclusive arm of the R14 arity scope are all unexecuted - and 5 of the 45 shipped counter-examples are inclusive gateways.")]
+	public void Validate_ShouldSurfaceR9_ForAnInclusiveGateway_AndScopeItByArity() {
+		// Arrange
+		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("split", "inclusiveGateway"),
+			N("a", "activityUserTask"), N("b", "activityUserTask"), N("merge", "inclusiveGateway"),
+			N("e", "endEvent")];
+		List<ProcessGraphEdgeArg> edges = [E("s", "split"),
+			new ProcessGraphEdgeArg("split", "a", "conditional", "1 > 0"),
+			new ProcessGraphEdgeArg("split", "b", "conditional", "2 > 1"),
+			E("a", "merge"), E("b", "merge"), E("merge", "e", "default")];
+
+		// Act
+		ValidateProcessGraphResponse response = Validate(nodes, edges);
+
+		// Assert
+		response.Findings.Should().Contain(
+			f => f.RuleId == "R9" && f.Severity == "warning" && f.NodeName == "split"
+				&& f.Message.Contains("None of the conditions were met after the element"),
+			because: "an inclusive gateway reports R9, not R7, and the warning quotes the process-log line the "
+				+ "operator will actually read rather than an exception type they cannot search for");
+		response.Findings.Should().NotContain(f => f.NodeName == "merge",
+			because: "the converging inclusive gateway has one way out, so every arity-scoped rule leaves "
+				+ "it alone - the same exemption the exclusive one gets");
+		response.HasErrors.Should().BeFalse(
+			because: "two conditional branches with no default is legal - 65 shipped exclusive gateways are "
+				+ "in exactly that shape, which is why R7/R9 is a warning");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An omitted flow-kind is a plain SEQUENCE flow, and the graph is diverging so the answer is discriminating. The previous arrangement was a straight chain, where one outgoing flow per node makes sequence, conditional and default indistinguishable - the R14 arity scope this change introduced is what took that test's discriminating power away.")]
+	public void Validate_ShouldTreatAnOmittedFlowKindAsSequence_OnADivergingSource() {
+		// Arrange
+		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("a", "activityUserTask"),
+			N("e1", "endEvent"), N("e2", "endEvent")];
+		List<ProcessGraphEdgeArg> edges = [E("s", "a"),
+			new ProcessGraphEdgeArg("a", "e1"), new ProcessGraphEdgeArg("a", "e2")];
+
+		// Act
+		ValidateProcessGraphResponse response = Validate(nodes, edges);
+
+		// Assert
+		response.HasErrors.Should().BeFalse(
+			because: "two plain flows out of an activity are an implicit parallel split, which is legal - "
+				+ "read as DEFAULT they would be two default flows and two R14 errors");
+		response.Findings.Should().Contain(f => f.RuleId == "R12" && f.Severity == "warning",
+			because: "R12 warns about the implicit parallel split, and it fires only for SEQUENCE flows - "
+				+ "read as conditional there would be no finding at all");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A genuine AND split joined by an AND gateway raises no deadlock warning - the shape the rule must not punish, since both branches really do run.")]
+	public void Validate_ShouldNotWarnR8_ForAGenuineParallelSplitAndJoin() {
+		// Arrange
+		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("fork", "parallelGateway"),
+			N("a", "activityUserTask"), N("b", "activityUserTask"), N("join", "parallelGateway"), N("e", "endEvent")];
+		List<ProcessGraphEdgeArg> edges = [E("s", "fork"), E("fork", "a"), E("fork", "b"),
+			E("a", "join"), E("b", "join"), E("join", "e")];
+
+		// Act
+		ValidateProcessGraphResponse response = Validate(nodes, edges);
+
+		// Assert
+		response.Findings.Should().NotContain(f => f.RuleId == "R8",
+			because: "both branches of an AND split always run, so the join always completes");
+		response.Findings.Should().BeEmpty(
+			because: "a plain AND fork and join is the shape parallel gateways exist FOR, so the whole rule set "
+				+ "must stay silent on it. Asserting only 'no R8' let the or-gateway type filter in "
+				+ "CheckDefaultFlowRules be deleted with every test still green: R7/R9 would then fire on this "
+				+ "parallel gateway and nothing in the suite was looking");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("R13: a conditional flow from a start event surfaces a WARNING (proves the 'conditional' "
+		+ "flow-kind was parsed - which is this test's purpose, and it does not depend on the severity). The "
+		+ "severity changed: four shipped conditional flows leave an event and run, so an error told an agent "
+		+ "the platform's own content is invalid.")]
+	public void Validate_ShouldSurfaceR13Warning_WhenConditionalFlowFromStart() {
 		// Arrange
 		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("a", "activityUserTask"), N("e", "endEvent")];
 		List<ProcessGraphEdgeArg> edges = [E("s", "a", "conditional"), E("a", "e")];
@@ -149,8 +588,14 @@ public sealed class ValidateProcessGraphToolTests {
 		ValidateProcessGraphResponse response = Validate(nodes, edges);
 
 		// Assert
-		response.Findings.Should().Contain(f => f.RuleId == "R13" && f.Severity == "error",
-			because: "a conditional flow may originate only from a gateway or activity (R13)");
+		response.Findings.Should().Contain(f => f.RuleId == "R13" && f.Severity == "warning",
+			because: "the flow-kind reached the validator - a dropped kind yields no R13 finding at all. Not a pin on "
+				+ "the source-role clause: E() omits the condition, so this graph raises the omitted-condition "
+				+ "warning too and either one satisfies this predicate. Proving the KIND was parsed is the "
+				+ "purpose here and both warnings prove it; the source-role clause is pinned in the validator "
+				+ "fixture, where the condition is supplied");
+		response.Findings.Should().NotContain(f => f.RuleId == "R13" && f.Severity == "error",
+			because: "the source-role clause is advisory now, and the surfaced severity must follow it");
 	}
 
 	[Test]
@@ -277,14 +722,14 @@ public sealed class ValidateProcessGraphToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("When the requested environment is unknown the resolver throws InvalidOperationException; the tool surfaces that message as success=false and does not validate the graph.")]
+	[Description("When the requested environment is unknown the resolver throws EnvironmentResolutionException - which derives from Exception, NOT from InvalidOperationException. The tool surfaces that message verbatim. Before the dedicated catch arm existed this fell through to the catch-all and came back as \"validate-process-graph failed: ... Expected args: {nodes:[...]}\" - an environment error wearing a graph-JSON example, which is the blames-the-caller failure this ticket exists to remove. The old test threw InvalidOperationException and so could never see it.")]
 	public void Validate_ShouldReturnFailureAndSkipValidation_WhenEnvironmentIsUnknown() {
 		// Arrange
 		IProcessGraphValidator validator = Substitute.For<IProcessGraphValidator>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		const string message = "Environment 'ghost' was not found.";
 		resolver.Resolve<IRequiredPackageChecker>(Arg.Any<EnvironmentOptions>())
-			.Returns(_ => throw new InvalidOperationException(message));
+			.Returns(_ => throw new EnvironmentResolutionException(message));
 		ValidateProcessGraphTool tool = new(validator, resolver);
 
 		// Act
@@ -294,5 +739,338 @@ public sealed class ValidateProcessGraphToolTests {
 		response.Success.Should().BeFalse(because: "an unknown environment must fail the call cleanly");
 		response.Error.Should().Be(message, because: "the resolver's friendly environment-not-found message must surface verbatim");
 		validator.DidNotReceive().Validate(Arg.Any<ProcessGraph>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The wire keys on ProcessGraphEdgeArg bind from JSON. Nothing executable covered this: "
+		+ "the fixture builds the record POSITIONALLY in C#, so renaming or mistyping a JsonPropertyName "
+		+ "would leave every field null and the suite green, and the only wire-level coverage is an e2e "
+		+ "case that Assert.Ignores without a sandbox and has never run. `condition` is the field this "
+		+ "ticket added and R13 is the only rule that reads it, so a silent null there means the tool "
+		+ "answers about a graph with no conditions in it. Deserialized with DEFAULT options, which are "
+		+ "case-SENSITIVE while the SDK binder is not - so on source/target/condition this test is "
+		+ "stricter than the wire and would fail a rename the binder would still tolerate. `flow-kind` is "
+		+ "the one key that cannot bind under any casing policy without its attribute, and it is the one "
+		+ "that matters: unbound, every edge validates as a plain sequence flow.")]
+	public void ProcessGraphEdgeArg_ShouldBindEveryWireKey_FromJson() {
+		// Arrange - exactly the shape the MCP layer receives.
+		const string json = """
+			{ "source": "Check", "target": "Approve", "flow-kind": "conditional", "condition": "[#Amount#] > 100" }
+			""";
+
+		// Act
+		ProcessGraphEdgeArg edge = JsonSerializer.Deserialize<ProcessGraphEdgeArg>(json);
+
+		// Assert
+		edge.Source.Should().Be("Check", because: "`source` is the first half of the only handle a caller has on a flow");
+		edge.Target.Should().Be("Approve", because: "and `target` is the other half");
+		edge.FlowKind.Should().Be("conditional",
+			because: "the hyphenated key is the one that would break silently under a rename - a C#-cased "
+				+ "`flowKind` would bind nothing and every edge would validate as a plain sequence flow");
+		edge.Condition.Should().Be("[#Amount#] > 100",
+			because: "this is the field ENG-91853 added, and R13 is the only rule that reads it: bound to "
+				+ "null, an empty-condition error and the omitted-condition warning both go silent while "
+				+ "the tool reports on a graph that has no conditions at all");
+	}
+	/// <summary>
+	/// Builds args carrying an overflow bag, the shape the SDK produces for a WRAPPED payload whose inner
+	/// object holds a key no declared argument matches.
+	/// </summary>
+	private static ValidateProcessGraphArgs ArgsWithUnknown(string key, string value,
+			List<ProcessGraphNodeArg> nodes = null)
+		=> new(EnvName, nodes, null) {
+			ExtensionData = new Dictionary<string, JsonElement> {
+				[key] = JsonDocument.Parse($"\"{value}\"").RootElement
+			}
+		};
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-98566: an unrecognized argument is NAMED back to the caller instead of being dropped at "
+		+ "bind time. The measured failure was 'process-name' - the key an agent carries over from "
+		+ "describe-business-process - producing a byte-identical answer to a call that supplied nothing at "
+		+ "all. The response must refuse, not report findings, because a finding about a graph the tool was "
+		+ "never given reads as authoritative and was acted on twice.")]
+	public void Validate_ShouldRefuseAnUnknownArgument_AndNameIt() {
+		// Arrange
+		ValidateProcessGraphArgs args = ArgsWithUnknown("process-name", "UsrOrder_Handle");
+
+		// Act
+		ValidateProcessGraphResponse response = _tool.Validate(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "an argument the tool cannot bind is a caller mistake, not a validated graph");
+		response.Error.Should().Contain("'process-name'",
+			because: "naming the offending key is the whole remedy - the caller cannot see the drop otherwise");
+		response.Error.Should().Contain(ValidateProcessGraphTool.ValidArgsHint,
+			because: "the canonical field list is what lets the caller fix the call without guessing again");
+		response.Findings.Should().BeNull(
+			because: "no graph was validated, so any finding here would be about something the tool never read");
+		response.HasErrors.Should().BeNull(
+			because: "has-errors is absent on every path where the graph was never validated");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-98566: the unknown-argument refusal happens BEFORE the required-package check, so a "
+		+ "malformed call is answered without touching Creatio at all. Ordering matters beyond speed: a "
+		+ "caller whose environment lacks CrtProcessBuilder would otherwise be told about the package and "
+		+ "never learn that their argument was also wrong.")]
+	public void Validate_ShouldNotResolveThePackageChecker_WhenAnArgumentIsUnknown() {
+		// Arrange
+		// A REAL graph is essential: with nodes left null the no-graph guard returns before the resolver is
+		// touched, so the test would pass with the argument guard moved AFTER the package check - it could
+		// not fail for the proposition its description states.
+		ValidateProcessGraphArgs args = ArgsWithUnknown("process-name", "UsrOrder_Handle",
+			[N("s", "startEvent"), N("e", "endEvent")]);
+
+		// Act
+		_tool.Validate(args);
+
+		// Assert
+		_commandResolver.ReceivedCalls().Should().BeEmpty(
+			because: "a caller mistake must be answered without resolving the environment at all - "
+				+ "NSubstitute's DidNotReceive carries no because, so the call log is asserted instead");
+		_checker.ReceivedCalls().Should().BeEmpty(
+			because: "the package requirement is an environment round-trip, and a mis-keyed call has not "
+				+ "earned one");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A known camelCase mis-spelling of environment-name produces a RENAME hint rather than the "
+		+ "generic unknown-argument list, because the caller's intent is unambiguous there and the shared "
+		+ "EnvironmentNameAliases map exists to say so in one sentence.")]
+	public void Validate_ShouldReportARenameHint_ForAKnownEnvironmentNameAlias() {
+		// Arrange
+		ValidateProcessGraphArgs args = ArgsWithUnknown("environmentName", "dev");
+
+		// Act
+		ValidateProcessGraphResponse response = _tool.Validate(args);
+
+		// Assert
+		response.Success.Should().BeFalse(because: "a mis-spelled required argument bound to nothing");
+		response.Error.Should().Contain("'environmentName' -> 'environment-name'",
+			because: "a recognized alias deserves the exact rename rather than being listed as unknown");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-98566: a call that supplies NO nodes is a missing argument, not a graph that fails R3. "
+		+ "Running the rules over an empty node set returned 'Process has no start event.' - a real rule id "
+		+ "and a plausible message about a process the tool never read, which is the single worst finding to "
+		+ "fabricate because it reads as a structural defect in the CALLER's process.")]
+	public void Validate_ShouldRefuseTheCall_WhenNoNodesAreSupplied() {
+		// Arrange
+		ValidateProcessGraphArgs args = new(EnvName, null, null);
+
+		// Act
+		ValidateProcessGraphResponse response = _tool.Validate(args);
+
+		// Assert
+		response.Success.Should().BeFalse(because: "there is no graph to validate, so nothing succeeded");
+		response.Error.Should().Be(ValidateProcessGraphTool.NoGraphSuppliedError,
+			because: "the refusal must say no graph was supplied, in the tool's own words");
+		response.Error.Should().Contain("describe-business-process",
+			because: "the caller who omits nodes is usually reaching for the tool that DOES read a process");
+		response.Findings.Should().BeNull(
+			because: "R3 over an empty node set is exactly the false statement this change removes");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An explicitly EMPTY nodes array is refused identically to an omitted one. Both say the same "
+		+ "thing - there is no graph here - and distinguishing them would only let one of the two spellings "
+		+ "reach the rules and answer about nothing.")]
+	public void Validate_ShouldRefuseTheCall_WhenNodesIsAnEmptyList() {
+		// Arrange
+		ValidateProcessGraphArgs args = new(EnvName, [], []);
+
+		// Act
+		ValidateProcessGraphResponse response = _tool.Validate(args);
+
+		// Assert
+		response.Success.Should().BeFalse(because: "an empty node set describes no graph");
+		response.Error.Should().Be(ValidateProcessGraphTool.NoGraphSuppliedError,
+			because: "omitted and empty are the same caller state and must not diverge");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The guard must not cost the rule its reach: a graph that REALLY has no start event still "
+		+ "returns R3. This is the half of the acceptance criteria that keeps the change from being a "
+		+ "silencer - only the empty-input path stopped producing R3, never a described graph.")]
+	public void Validate_ShouldStillReportR3_ForADescribedGraphWithNoStartEvent() {
+		// Arrange
+		List<ProcessGraphNodeArg> nodes = [N("r", "readDataUserTask"), N("e", "endEvent")];
+		List<ProcessGraphEdgeArg> edges = [E("r", "e")];
+
+		// Act
+		ValidateProcessGraphResponse response = Validate(nodes, edges);
+
+		// Assert
+		response.Success.Should().BeTrue(because: "a described graph is validated, however wrong it is");
+		response.HasErrors.Should().BeTrue(because: "a process with no start event violates R3");
+		response.Findings.Should().Contain(f => f.RuleId == "R3" && f.Severity == "error",
+			because: "R3 keeps firing for the shape it was written for - a real graph that lacks a start");
+	}
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-98566 / Sonar S2259: a call carrying no argument object is refused with a named reason "
+		+ "rather than reaching a field read. Here the dereference sat inside the try, so it degraded into "
+		+ "'validate-process-graph failed: Object reference not set...' - a message that blames the caller's "
+		+ "graph JSON for a binder outcome.")]
+	public void Validate_ShouldRefuseANullArgumentObject() {
+		// Arrange
+		// Nothing to arrange beyond SetUp: the point is the ABSENCE of an argument object.
+
+		// Act
+		ValidateProcessGraphResponse response = _tool.Validate(null);
+
+		// Assert
+		response.Success.Should().BeFalse(because: "there are no arguments, so nothing was validated");
+		response.Error.Should().Contain("args is required",
+			because: "the refusal must name what is missing instead of surfacing a null-reference message");
+		response.Findings.Should().BeNull(because: "no graph was read, so no finding can be about one");
+		_commandResolver.ReceivedCalls().Should().BeEmpty(
+			because: "a call with no arguments cannot have earned an environment resolution");
+	}
+	[Test]
+	[Category("Unit")]
+	[Description("Review finding 1: a NULL ENTRY inside nodes is refused by name. It used to reach the "
+		+ "projection and surface as 'Object reference not set to an instance of an object' - the exact "
+		+ "misleading diagnosis this ticket exists to remove, reached through the array rather than the "
+		+ "argument object.")]
+	public void Validate_ShouldRefuseANullNodeEntry_ByName() {
+		// Arrange
+		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), null];
+
+		// Act
+		ValidateProcessGraphResponse response = Validate(nodes, []);
+
+		// Assert
+		response.Success.Should().BeFalse(because: "a null entry describes no element");
+		response.Error.Should().Contain("nodes[1]",
+			because: "naming the INDEX is what lets the caller find the offending entry");
+		response.Error.Should().NotContain("Object reference",
+			because: "a null-reference message blames the caller's graph for a shape the tool can name");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Review finding 2: an unrecognised NESTED key on a node is named back. This is this "
+		+ "ticket's own defect one level down - the serializer drops a mis-keyed nested key exactly as it "
+		+ "dropped a mis-keyed top-level one, leaving the tool to report findings about a graph the caller "
+		+ "never described. 'nodeType' binds nothing, so type arrives null and the graph reads as UNKNOWN.")]
+	public void Validate_ShouldRefuseAnUnknownNodeKey_AndNameIt() {
+		// Arrange
+		ProcessGraphNodeArg miskeyed = new("s", null) {
+			ExtensionData = new Dictionary<string, JsonElement> {
+				["nodeType"] = JsonDocument.Parse("\"startEvent\"").RootElement
+			}
+		};
+
+		// Act
+		ValidateProcessGraphResponse response = Validate([miskeyed], []);
+
+		// Assert
+		response.Success.Should().BeFalse(because: "a key the tool cannot bind is a caller mistake");
+		response.Error.Should().Contain("nodes[0]", because: "the offending entry must be locatable");
+		response.Error.Should().Contain("'nodeType' -> 'type'",
+			because: "nodeType is a known mis-spelling, so it earns a rename hint rather than a bare unknown");
+		response.Findings.Should().BeNull(
+			because: "reporting UNKNOWN about an element whose type was silently dropped is the defect");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Review finding 2, edge half: an unrecognised key on an EDGE is named back with its index. "
+		+ "'from'/'to' are what an agent writes when thinking in BPMN rather than in this tool's vocabulary.")]
+	public void Validate_ShouldRefuseAnUnknownEdgeKey_AndNameIt() {
+		// Arrange
+		ProcessGraphEdgeArg miskeyed = new(null, null) {
+			ExtensionData = new Dictionary<string, JsonElement> {
+				["from"] = JsonDocument.Parse("\"s\"").RootElement
+			}
+		};
+
+		// Act
+		ValidateProcessGraphResponse response = Validate([N("s", "startEvent"), N("e", "endEvent")], [miskeyed]);
+
+		// Assert
+		response.Success.Should().BeFalse(because: "a key the tool cannot bind is a caller mistake");
+		response.Error.Should().Contain("edges[0]", because: "the offending entry must be locatable");
+		response.Error.Should().Contain("'from' -> 'source'",
+			because: "from is a known mis-spelling of source and earns the rename");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A well-formed graph is unaffected by the entry guards - they must refuse malformed entries "
+		+ "without narrowing what a correct call can express.")]
+	public void Validate_ShouldStillAcceptAWellFormedGraph_AfterTheEntryGuards() {
+		// Arrange
+		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("r", "readDataUserTask"), N("e", "endEvent")];
+		List<ProcessGraphEdgeArg> edges = [E("s", "r"), E("r", "e")];
+
+		// Act
+		ValidateProcessGraphResponse response = Validate(nodes, edges);
+
+		// Assert
+		response.Success.Should().BeTrue(because: "the entry guards must not refuse a correct graph");
+		response.HasErrors.Should().BeFalse(because: "this graph violates no connection rule");
+	}
+	[Test]
+	[Category("Unit")]
+	[Description("Final-gate finding: a blank environment-name is answered with the family's own sentence "
+		+ "rather than the resolver's generic one. The mechanism is worth stating because three reviews got "
+		+ "it wrong: a blank name does NOT reach a default environment - the resolver builds an empty "
+		+ "EnvironmentSettings, finds no Uri and throws. What this guard fixes is the wording, not targeting.")]
+	public void Validate_ShouldRefuseABlankEnvironmentName() {
+		// Arrange
+		ValidateProcessGraphArgs args = new("   ", [N("s", "startEvent"), N("e", "endEvent")], []);
+
+		// Act
+		ValidateProcessGraphResponse response = _tool.Validate(args);
+
+		// Assert
+		response.Success.Should().BeFalse(because: "no environment was named, so nothing could be validated");
+		response.Error.Should().Contain("environment-name is required",
+			because: "every other environment-requiring member of the family answers with this sentence");
+		_commandResolver.ReceivedCalls().Should().BeEmpty(
+			because: "the refusal must precede the environment resolve, as the comment in the tool promises");
+	}
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-99086, filed independently during the ENG-98559 QA pass and closed as a duplicate of "
+		+ "this ticket. The report floated a SECOND hypothesis - that the tool does not recognise signalStart "
+		+ "as a start event at all - which would have been an adjacent defect this fix does not touch. It is "
+		+ "not so: ResolveDataId maps 'signalstart' to StartSignalEvent and that maps to the Start role, so a "
+		+ "two-signal-start graph passed as nodes/edges validates clean. The only way to reach 'Process has no "
+		+ "start event' on that graph is an EMPTY node set - which is what a descriptor sent under an "
+		+ "undeclared key (their 'graph') produces. Same root cause, confirmed by execution rather than by "
+		+ "reading the map.")]
+	public void Validate_ShouldAcceptTheMultiSignalStartGraphFromEng99086() {
+		// Arrange - the reporter's own shape: two signal starts, each reaching the end event
+		List<ProcessGraphNodeArg> nodes = [
+			N("RequestFiledSignal", "signalStart"),
+			N("RequestChangedSignal", "signalStart"),
+			N("EndRequestHandled", "endEvent")
+		];
+		List<ProcessGraphEdgeArg> edges = [
+			E("RequestFiledSignal", "EndRequestHandled"),
+			E("RequestChangedSignal", "EndRequestHandled")
+		];
+
+		// Act
+		ValidateProcessGraphResponse response = Validate(nodes, edges);
+
+		// Assert
+		response.Success.Should().BeTrue(because: "the graph is well formed and was actually supplied");
+		response.Findings.Should().NotContain(f => f.RuleId == "R3",
+			because: "signalStart resolves to the Start role and several triggered starts are legal since "
+				+ "ENG-98559, so the reported R3 could only have come from an empty node set");
 	}
 }

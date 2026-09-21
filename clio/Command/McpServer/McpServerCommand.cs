@@ -62,6 +62,7 @@ public class McpServerCommand(ModelContextProtocol.Server.McpServer server,
 	Common.McpWorker.IWorkerProcessSupervisor workerProcessSupervisor,
 	Common.McpWorker.IWorkerTempResidueSweeper workerTempResidueSweeper,
 	Relay.ISharedResourceReservation sharedResourceReservation,
+	IMcpHostPresenceRegistry mcpHostPresenceRegistry,
 	ILogger logger) : Command<McpServerCommandOptions>{
 	internal static readonly TimeSpan CuratedKnowledgeBootstrapTimeout = TimeSpan.FromMilliseconds(
 		CuratedKnowledgeSourceDefaults.StartupInstallDeadlineMilliseconds);
@@ -109,10 +110,16 @@ public class McpServerCommand(ModelContextProtocol.Server.McpServer server,
 
 		Console.CancelKeyPress += onCancelKeyPress;
 		AppDomain.CurrentDomain.ProcessExit += onProcessExit;
+		// Announce this host to any clio CLI process that starts while it is resident, so a background
+		// self-update does not replace the binaries and appsettings.json under it (issue #1462). Written
+		// INSIDE the try whose finally removes it: a startup step that throws between the write and the
+		// try would otherwise leave a marker behind for a process that never served anything.
+		string presenceMarkerPath = null;
 		// Drain the telemetry spool left over from previous sessions; fire-and-forget,
 		// the server starts serving immediately.
 		ScheduleStartupTelemetryFlush(options, flushScheduler);
 		try {
+			presenceMarkerPath = RegisterHostPresence(options, mcpHostPresenceRegistry);
 			server.RunAsync(cts.Token).GetAwaiter().GetResult();
 		} catch (OperationCanceledException) {
 			// Ctrl+C / ProcessExit path: the triggered token makes RunAsync throw here. A plain
@@ -133,9 +140,26 @@ public class McpServerCommand(ModelContextProtocol.Server.McpServer server,
 			// stale indefinitely. The two drains run concurrently so shutdown stays bounded at
 			// ~10 seconds.
 			DrainHostBackgroundWork(options, flushScheduler);
+			mcpHostPresenceRegistry.Unregister(presenceMarkerPath);
 			McpLogNotifier.Reset();
 		}
 		return 0;
+	}
+
+	/// <summary>
+	/// Records this process as a resident MCP host unless it is a worker.
+	/// </summary>
+	/// <remarks>
+	/// HOST only, like every other <c>ForHost</c> step: a worker outlives nothing, and one marker per
+	/// spawned worker would defer clio updates for reasons that vanish a second later. The marker the
+	/// CLI has to see is the long-lived host's.
+	/// </remarks>
+	/// <param name="options">The parsed command options; skipped under <c>--worker</c>.</param>
+	/// <param name="registry">The presence registry.</param>
+	/// <returns>The marker path to remove at shutdown, or <see langword="null"/> when none was written.</returns>
+	internal static string RegisterHostPresence(McpServerCommandOptions options,
+		IMcpHostPresenceRegistry registry) {
+		return options.Worker ? null : registry.Register();
 	}
 
 	/// <summary>
@@ -339,21 +363,12 @@ public class McpServerCommand(ModelContextProtocol.Server.McpServer server,
 	/// </remarks>
 	/// <param name="message">The warning text.</param>
 	/// <param name="logger">The host logger.</param>
-	private static void WarnDuringStartup(string message, ILogger logger) {
-		string safeMessage = TextUtilities.SanitizeForDisplay(
-			SensitiveErrorTextRedactor.Redact(message),
-			maxLength: 1_000);
-		logger.WriteWarning(safeMessage);
-		if (Program.IsMcpServerMode) {
-			try {
-				Console.Error.WriteLine($"[WAR] {safeMessage}");
-			} catch (IOException) {
-				// Stderr is an advisory host channel and may be closed by a detached launcher.
-			} catch (ObjectDisposedException) {
-				// Losing the advisory sink must never prevent the MCP transport from starting.
-			}
-		}
-	}
+	private static void WarnDuringStartup(string message, ILogger logger) =>
+		// ENG-95885 review round 4: the redact / bound / log / mirror-to-stderr / swallow-a-dead-sink
+		// sequence this method used to spell out inline now lives in McpAdvisoryLog, shared with
+		// McpToolErrorFilter.ReportArgumentShape. The behaviour is unchanged; the copy is not.
+		McpAdvisoryLog.Emit(
+			logger, message, isWarning: true, mirrorToStandardError: Program.IsMcpServerMode);
 
 	/// <summary>
 	/// Repairs and installs the curated source before the MCP transport starts accepting requests.

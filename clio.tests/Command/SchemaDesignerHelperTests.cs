@@ -150,7 +150,7 @@ public sealed class SchemaDesignerHelperTests {
 		error.Should().Contain("Access to SysSchema is denied",
 			because: "the underlying failure reason is carried so the caller can diagnose the permission problem");
 		error.Should().NotContain("not found",
-			because: "a permission failure must not be reported as the schema being absent (which would corrupt SchemaNameExists)");
+			because: "a permission failure must not be reported as the schema being absent (which would license a duplicate create)");
 	}
 
 	[Test]
@@ -423,21 +423,21 @@ public sealed class SchemaDesignerHelperTests {
 	}
 
 	[Test]
-	[Description("ResolveSchemaUId for a non-ClientUnit kind (SqlScript) keeps the pre-PR single-row behavior and returns rows[0].UId, NOT the highest-hierarchy-level row.")]
-	public void ResolveSchemaUId_ShouldReturnFirstRowUId_WhenKindIsSqlScript() {
-		// Arrange — rows[0] is deliberately NOT the highest-hierarchy-level row, to distinguish the two behaviors
+	[Description("Package SQL names shared by multiple rows fail closed rather than selecting an arbitrary script.")]
+	public void ResolveSchemaUId_ShouldRejectAmbiguousName_WhenKindIsSqlScript() {
+		// Arrange
 		(IApplicationClient client, IServiceUrlBuilder urlBuilder) = MakeSelectQueryClient(NamedLayersResponse(
 			("uid-first", "UsrSqlScript", "CrtUIv2", 115),
 			("uid-highest", "UsrSqlScript", "SalesEnterprise", 438)));
-
+		urlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select).Returns("http://host/0/DataService/json/SyncReply/SelectQuery");
 		// Act
 		(string uId, string error) = SchemaDesignerHelper.ResolveSchemaUId(
 			client, urlBuilder, "UsrSqlScript", SchemaDesignerKind.SqlScript);
-
 		// Assert
-		error.Should().BeNull(because: "a resolvable SqlScript schema must not report an error");
-		uId.Should().Be("uid-first",
-			because: "SqlScript/SourceCode kinds keep the pre-PR single-row pick (rows[0].UId), scoped away from top-layer resolution");
+		error.Should().Contain("ambiguous", because: "a package or dialect collision must not target an arbitrary script");
+		uId.Should().BeNull(because: "an ambiguous lookup must not yield an executable target");
+		client.Received(1).ExecutePostRequest("http://host/0/DataService/json/SyncReply/SelectQuery",
+			Arg.Is<string>(body => body.Contains("VwSysSqlScriptInPackage") && !body.Contains("ManagerName")));
 	}
 
 	[Test]
@@ -516,5 +516,26 @@ public sealed class SchemaDesignerHelperTests {
 			});
 		}
 		return new JObject { ["rows"] = array }.ToString();
+	}
+
+	[Test]
+	[Description("EnumerateSchemaLayers reports an empty SelectQuery body as a classified failure labelled SelectQuery instead of the raw Newtonsoft parser message (issue #1322).")]
+	public void EnumerateSchemaLayers_ShouldReportClassifiedFailure_WhenSelectQueryBodyIsEmpty() {
+		// Arrange
+		(IApplicationClient client, IServiceUrlBuilder urlBuilder) = MakeSelectQueryClient(string.Empty);
+
+		// Act
+		(System.Collections.Generic.IReadOnlyList<SchemaLayer> layers, string error) =
+			SchemaDesignerHelper.EnumerateSchemaLayers(
+				client, urlBuilder, "ContactPageV2", SchemaDesignerKind.ClientUnit);
+
+		// Assert
+		layers.Should().BeEmpty(because: "an unanswered query yields no layers");
+		error.Should().StartWith("SelectQuery",
+				because: "the caller must learn which request could not be answered")
+			.And.Contain("http://host/0/DataService/json/SyncReply/SelectQuery",
+				because: "the endpoint URL is what makes the failed request diagnosable")
+			.And.NotContain("Error reading JObject",
+				because: "the bare Newtonsoft parser message is exactly what issue #1322 reported as unactionable");
 	}
 }

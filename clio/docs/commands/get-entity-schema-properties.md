@@ -45,6 +45,7 @@ Structured output includes `virtual`, which is `true` when the schema has no phy
                        all-packages view; supply only to inspect a single
                        package layer's slice.
 --schema-name          Entity schema name (required)
+--required-only        Return only columns marked required (default false)
 
 Environment options are also available:
 -e, --Environment      Environment name from the registered configuration
@@ -59,11 +60,20 @@ Environment options are also available:
 # Read the merged/effective schema across all packages (recommended for column discovery)
 clio get-entity-schema-properties -e dev --schema-name Account
 
+# Read only required columns
+clio get-entity-schema-properties -e dev --schema-name Contact --required-only
+
 # Read a single package layer's slice
 clio get-entity-schema-properties -e dev --package Custom --schema-name UsrVehicle
 ```
 
 ## Notes
+
+- `--required-only` filters the column list using the schema metadata `required` flag.
+  Own/inherited column counts remain unfiltered totals. This does not evaluate dynamic
+  business rules or determine whether a required column already has a default value.
+- MCP accepts the boolean `required-only` (default `false`) and rejects unknown arguments
+  with a list of valid fields. Use `get-tool-contract` for the current input schema.
 
 - output is human-readable text, not JSON
 - the report includes own and inherited column counts plus grouped column lists

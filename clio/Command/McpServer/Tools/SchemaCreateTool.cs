@@ -7,6 +7,7 @@ using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
 
+/// <summary>Creates C# schemas after validating all independent name arguments locally.</summary>
 [McpServerToolType]
 public sealed class SchemaCreateTool(
 	SourceCodeSchemaCreateCommand command,
@@ -15,7 +16,13 @@ public sealed class SchemaCreateTool(
 	: BaseTool<SourceCodeSchemaCreateOptions>(command, logger, commandResolver) {
 
 	internal const string ToolName = "create-schema";
+	internal const string ValidArgumentsHint =
+		". Valid arguments: schema-name, package-name (required); body, body-file, caption, description (optional); " +
+		"environment-name or uri/login/password.";
 
+	/// <summary>Reports all name validation errors before resolving the target environment.</summary>
+	/// <param name="args">Schema metadata and connection arguments.</param>
+	/// <returns>The created schema metadata or an actionable validation failure.</returns>
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
@@ -24,13 +31,15 @@ public sealed class SchemaCreateTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Create a new C# source-code schema on a remote Creatio environment. The schema is saved directly to the server — no local workspace files are created. Prefer `environment-name`; keep direct connection args only for bootstrap flows.")]
+	[Description("Create a new C# source-code schema on a remote Creatio environment. Optional body or body-file supplies the initial C# source; body-file takes precedence and is read on the MCP server host. Omit both to keep the platform's blank template. The schema is saved directly to the server — no local workspace files are created. Prefer `environment-name`; keep direct connection args only for bootstrap flows.")]
 	public SourceCodeSchemaCreateResponse CreateSchema(
-		[Description("Parameters: schema-name, package-name (required); caption, description (optional); environment-name preferred; uri/login/password emergency fallback only.")]
+		[Description("Parameters: schema-name, package-name (required); body, body-file, caption, description (optional); environment-name preferred; uri/login/password emergency fallback only.")]
 		[Required] SchemaCreateArgs args) {
 		SourceCodeSchemaCreateOptions options = new() {
 			SchemaName = args.SchemaName,
 			PackageName = args.PackageName,
+			Body = args.Body,
+			BodyFile = args.BodyFile,
 			Caption = args.Caption,
 			Description = args.Description,
 			Environment = args.EnvironmentName,
@@ -38,16 +47,11 @@ public sealed class SchemaCreateTool(
 			Login = args.Login,
 			Password = args.Password
 		};
-		if (string.IsNullOrWhiteSpace(options.SchemaName)) {
+		string validationError = SchemaDesignerHelper.ValidateCreateInput(options.SchemaName, options.PackageName);
+		if (validationError is not null) {
 			return new SourceCodeSchemaCreateResponse {
 				Success = false,
-				Error = "schema-name is required"
-			};
-		}
-		if (!PageSchemaMetadataHelper.IsValidSchemaName(options.SchemaName)) {
-			return new SourceCodeSchemaCreateResponse {
-				Success = false,
-				Error = PageSchemaMetadataHelper.SchemaNameFormatError
+				Error = validationError + ValidArgumentsHint
 			};
 		}
 		return ExecuteWithCleanLog(options, () => {
@@ -63,6 +67,9 @@ public sealed class SchemaCreateTool(
 	}
 }
 
+/// <summary>Metadata and connection arguments for creating a C# source-code schema.</summary>
+/// <param name="SchemaName">The new schema's canonical name.</param>
+/// <param name="PackageName">The package that will own the schema.</param>
 public sealed record SchemaCreateArgs(
 	[property: JsonPropertyName("schema-name")]
 	[property: Description("New C# source-code schema name, e.g. 'UsrMyHelper'. Must start with a letter; letters, digits and underscores only.")]
@@ -73,4 +80,14 @@ public sealed record SchemaCreateArgs(
 	[property: Description("Target package name that will own the new schema.")]
 	[property: Required]
 	string PackageName
-) : SchemaCreateBaseArgs;
+) : SchemaCreateBaseArgs {
+	/// <summary>Gets the optional initial C# source body.</summary>
+	[JsonPropertyName("body")]
+	[Description("Optional initial C# source. Must not be empty when supplied; omit both body inputs to keep the platform template.")]
+	public string? Body { get; init; }
+
+	/// <summary>Gets a source-file path on the MCP server host; its content takes precedence over Body.</summary>
+	[JsonPropertyName("body-file")]
+	[Description("Optional absolute path to a UTF-8 C# file on the MCP server host. Takes precedence over body. Missing, unreadable, or empty files fail before schema creation.")]
+	public string? BodyFile { get; init; }
+}

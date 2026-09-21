@@ -1,9 +1,10 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.IO;
+using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using Clio.Mcp.E2E;
+using Clio.Mcp.E2E.Support;
 using Clio.Tests.Command;
 using Clio.Tests.Command.ProcessModel;
 using Clio.Tests.Common;
@@ -31,7 +32,6 @@ public sealed class McpFixturePolicyTests {
 	/// </summary>
 	private static readonly string RepositoryRoot =
 		Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", ".."));
-
 
 	[Test]
 	[Description("Verifies that every fixture containing Sandbox tests is class-level NonParallelizable.")]
@@ -111,6 +111,25 @@ public sealed class McpFixturePolicyTests {
 		// Assert
 		misconfigured.Should().BeEmpty(
 			because: "the feature owner requires all Creatio merge E2E coverage to remain outside automatic GitHub and TeamCity execution");
+	}
+
+	[TestCase(typeof(SchemaSyncToolE2ETests), nameof(SchemaSyncToolE2ETests.SchemaSync_ShouldReadBackDateTime_WhenTemporalAliasesAreWritten))]
+	[TestCase(typeof(SchemaSyncToolE2ETests), nameof(SchemaSyncToolE2ETests.SchemaSync_ShouldPersistDbView_WhenCreatedAndReplayed))]
+	[TestCase(typeof(EntitySchemaToolE2ETests), nameof(EntitySchemaToolE2ETests.EntitySchema_ShouldPersistDbView_WhenCreatedAndUpdated))]
+	[Description("Keeps schema-publishing probes explicit and manual without disabling shared fixtures automatic tests.")]
+	public void PublishingProbe_ShouldStayExplicitAndManual_WhenSharingAnAutomaticFixture(Type fixture, string methodName) {
+		// Arrange
+		MethodInfo method = fixture.GetMethod(methodName)!;
+
+		// Act
+		ExplicitAttribute? explicitGuard = method.GetCustomAttribute<ExplicitAttribute>();
+		string[] categories = method.GetCustomAttributes<CategoryAttribute>().Select(attribute => attribute.Name).ToArray();
+
+		// Assert
+		explicitGuard.Should().NotBeNull(because: "schema publication must require an explicitly selected local run");
+		categories.Should().Contain("McpE2E.Manual", because: "the publishing probe must remain outside automatic test lanes");
+		fixture.GetCustomAttribute<ExplicitAttribute>().Should().BeNull(because: "existing automatic sync-schemas coverage must remain enabled");
+		FixtureHasCategory(fixture, "McpE2E.Sandbox").Should().BeTrue(because: "the probe still requires an exclusively owned Creatio sandbox");
 	}
 
 	[Test]
@@ -223,32 +242,120 @@ public sealed class McpFixturePolicyTests {
 	}
 
 	[Test]
-	[Description("Proves the DB-first data-binding arrange consults the destructive opt-in before it resolves the environment or runs any clio command, so a hand-selected fixture cannot mutate the stand while the opt-in is false.")]
-	public void DataBindingDbArrange_ShouldCheckDestructiveOptIn_BeforeItRunsAnyCommand() {
+	[Description("Proves the DB-first data-binding arrange wires the real destructive-opt-in decision and NUnit's ignore into the gate, so the injectable seam cannot be wired to something that always authorizes.")]
+	public void DataBindingDbArrange_ShouldWireTheRealAuthorizationDecision() {
+		// Arrange
+		MethodInfo? productionSteps = typeof(DataBindingDbFixtureBase)
+			.GetMethod("ProductionArrangeSteps", BindingFlags.Static | BindingFlags.NonPublic);
+		productionSteps.Should().NotBeNull(
+			because: "the arrange step reaches the stand only through the gate's seam; a rename must fail here rather than leave this guard pinning nothing");
+
+		// Act
+		DestructiveArrangeSteps steps = (DestructiveArrangeSteps)productionSteps!.Invoke(null, null)!;
+
+		// Assert
+		steps.IsAuthorized.Method.Should().BeSameAs(
+			typeof(DestructiveStandAuthorization).GetMethod(nameof(DestructiveStandAuthorization.IsAuthorized)),
+			because: "the seam must carry the real decision; wiring it to a delegate that always returns true would let a hand-selected fixture mutate the stand with the opt-in off");
+		Assert.Throws<IgnoreException>(() => steps.Deny("denied"),
+			"the deny hook must still end the run the way NUnit skips a test, not return and let the caller continue");
+		//The resolvers are deliberately not invoked here: one builds clio, the other pings the stand.
+	}
+
+	[Test]
+	[Description("Keeps the DB-first data-binding arrange free of any stand-touching call of its own, so everything it does to a Creatio stand goes through the destructive-opt-in gate whose ordering McpDestructiveArrangeGateTests proves.")]
+	public void DataBindingDbArrange_ShouldDelegateEveryStandTouchToTheGate() {
 		// Arrange
 		string fixtureSourcePath = Path.Combine(
 			RepositoryRoot, "clio.mcp.e2e", "DataBindingDbFixtureBase.cs");
 		File.Exists(fixtureSourcePath).Should().BeTrue(
 			because: $"this guard reads the arrange step from {fixtureSourcePath}; a moved file must fail here rather than pass on a missing source");
-		string source = File.ReadAllText(fixtureSourcePath);
 
 		// Act
-		int authorizationIndex = source.IndexOf(
-			nameof(DestructiveStandAuthorization) + "." + nameof(DestructiveStandAuthorization.IsAuthorized),
-			StringComparison.Ordinal);
-		int[] standTouchingIndexes = [
-			source.IndexOf("ResolveReachableEnvironmentAsync(settings)", StringComparison.Ordinal),
-			source.IndexOf("ClioCliCommandRunner.RunAndAssertSuccessAsync", StringComparison.Ordinal),
-			source.IndexOf("ResolveFreshClioProcessPath", StringComparison.Ordinal)
+		string arrangeBody = ReadMethodBodyWithoutComments(fixtureSourcePath,
+			"private protected async Task<DataBindingDbArrangeContext> ArrangeAsync(bool requireEnvironment) {");
+		string[] standTouchingCalls = [
+			"ResolveReachableEnvironmentAsync",
+			"ResolveFreshClioProcessPath",
+			"ClioCliCommandRunner."
 		];
 
 		// Assert
-		authorizationIndex.Should().BeGreaterThan(-1,
-			because: "the arrange step must consult DestructiveStandAuthorization.IsAuthorized; without it a hand-selected fixture pushes a package and publishes a schema on the configured stand with the opt-in off");
-		standTouchingIndexes.Should().OnlyContain(index => index > -1,
-			because: "this guard pins the order against the calls that actually reach the stand; if they were renamed the guard would silently pin nothing");
-		standTouchingIndexes.Should().OnlyContain(index => index > authorizationIndex,
-			because: "the opt-in has to be checked before the environment is resolved and before the first clio process is spawned, otherwise the guard runs after the damage");
+		arrangeBody.Should().Contain("DestructiveArrangeGate.RunAsync(",
+			because: "the arrange step must hand its work to the gate; without that call the gate's own tests guard a seam nobody uses");
+		standTouchingCalls.Should().OnlyContain(call => !arrangeBody.Contains(call, StringComparison.Ordinal),
+			because: "a stand-touching call made by the arrange step itself would bypass the opt-in, and unlike the previous guard this one reads the method body with its comments stripped, so a comment can no longer satisfy it");
+	}
+
+	/// <summary>
+	/// Returns the body of the method whose declaration line is <paramref name="declaration"/>, with
+	/// <c>//</c> comment lines removed, so a guard over it cannot be satisfied by prose.
+	/// </summary>
+	private static string ReadMethodBodyWithoutComments(string sourcePath, string declaration) {
+		string[] lines = File.ReadAllLines(sourcePath);
+		int declarationIndex = Array.FindIndex(lines, line => line.Trim() == declaration);
+		declarationIndex.Should().BeGreaterThan(-1,
+			because: $"the guard locates the method by its declaration '{declaration}'; a changed signature must fail here rather than scan nothing");
+
+		List<string> body = [];
+		int depth = 0;
+		for (int index = declarationIndex; index < lines.Length; index++) {
+			string line = lines[index];
+			depth += line.Count(character => character == '{') - line.Count(character => character == '}');
+			if (index > declarationIndex && !line.TrimStart().StartsWith("//", StringComparison.Ordinal)) {
+				body.Add(line);
+			}
+			if (index > declarationIndex && depth == 0) {
+				break;
+			}
+		}
+		return string.Join(Environment.NewLine, body);
+	}
+
+	[Test]
+	[Description("Pins the destructive-target decision: a fixture that gates on McpE2E:AllowDestructiveMcpTests must resolve its environment configured-only, never through the resolver that falls back to another registered stand.")]
+	public void DestructiveFixtures_ShouldResolveTheConfiguredEnvironment_NotTheFallback() {
+		// Arrange
+		string e2eProjectDirectory = Path.Combine(RepositoryRoot, "clio.mcp.e2e");
+		Directory.Exists(e2eProjectDirectory).Should().BeTrue(
+			because: $"this guard reads fixture sources from {e2eProjectDirectory}; a moved project must fail here rather than pass on an empty set");
+		string[] fixtureSourcePaths = Directory
+			.GetFiles(e2eProjectDirectory, "*E2ETests.cs", SearchOption.TopDirectoryOnly)
+			.OrderBy(path => path, StringComparer.Ordinal)
+			.ToArray();
+
+		// Act
+		// The scan is deliberately narrowed to the per-fixture ResolveReachableEnvironmentAsync helper.
+		// A read-only test may legitimately take the fallback inline - sync-pages has three that reject a
+		// body before any remote save - and pinning the whole file would forbid that too.
+		string[] offenders = fixtureSourcePaths
+			.Where(path => {
+				string source = File.ReadAllText(path);
+				if (!source.Contains("AllowDestructiveMcpTests", StringComparison.Ordinal)) {
+					return false;
+				}
+				int helperIndex = source.IndexOf(
+					"Task<string> ResolveReachableEnvironmentAsync", StringComparison.Ordinal);
+				if (helperIndex < 0) {
+					return false;
+				}
+				int nextMemberIndex = source.IndexOf("\n\tprivate static ", helperIndex + 1, StringComparison.Ordinal);
+				string helperBody = nextMemberIndex < 0
+					? source[helperIndex..]
+					: source[helperIndex..nextMemberIndex];
+				return helperBody.Contains(
+					"ReachableSandboxEnvironment.ResolveOrIgnoreAsync", StringComparison.Ordinal);
+			})
+			.Select(Path.GetFileName)
+			.ToArray()!;
+
+		// Assert
+		fixtureSourcePaths.Should().NotBeEmpty(
+			because: "an empty fixture set would make this guard pin nothing while still reporting green");
+		offenders.Should().BeEmpty(
+			because: "the destructive opt-in authorizes writes to the disposable stand named in McpE2E:Sandbox:EnvironmentName, "
+				+ "not to whatever other registered environment happens to answer; a fallback here lands persistent state "
+				+ "on an unrelated stand and nothing reports an error. Offenders: " + string.Join(", ", offenders));
 	}
 
 	private static bool HasCategory(IEnumerable<CategoryAttribute> attributes, string category) =>

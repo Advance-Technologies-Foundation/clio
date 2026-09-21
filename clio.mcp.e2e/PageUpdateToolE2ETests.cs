@@ -1,5 +1,6 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using System.Text.RegularExpressions;
+using Allure.Net.Commons;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio;
@@ -8,11 +9,13 @@ using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using Clio.Common.BrowserSession;
 using Clio.Mcp.E2E.Support.Configuration;
+using Clio.Mcp.E2E.Support.Creatio;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
+using Newtonsoft.Json.Linq;
 
 namespace Clio.Mcp.E2E;
 
@@ -26,6 +29,44 @@ namespace Clio.Mcp.E2E;
 [NonParallelizable]
 public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 	private const string ToolName = PageUpdateTool.ToolName;
+
+	[Test]
+	[Description("GH-1189: the real update-page validation response gives safe remediation for an own-body field insert with an undeclared binding.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page preserves own-body inserts in binding remediation")]
+	public async Task UpdatePage_ShouldExplainInsertPreservation_WhenBindingIsUndeclared() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		const string body = """
+			define("UsrBindingRemediation", [], function() { return {
+				viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[
+					{"operation":"insert","name":"NameField","values":{"type":"crt.Input","control":"$PDS_Name","label":"$Resources.Strings.PDS_Name"}}
+				]/**SCHEMA_VIEW_CONFIG_DIFF*/,
+				viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/,
+				modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/
+			}; });
+			""";
+
+		// Act
+		CallToolResult result = await context.Session.CallToolAsync(ToolName,
+			new Dictionary<string, object?> { ["args"] = new Dictionary<string, object?> {
+				["schema-name"] = "UsrBindingRemediation", ["body"] = body,
+				["mode"] = "append", ["dry-run"] = true,
+				["environment-name"] = "missing-binding-remediation-environment"
+			} }, context.CancellationTokenSource.Token);
+		PageUpdateResponse response = EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(result);
+
+		// Assert
+		result.IsError.Should().NotBeTrue(because: "validation errors use the structured response envelope");
+		response.Success.Should().BeFalse(because: "the missing binding must remain a validation failure");
+		response.Error.Should().Contain("component itself is introduced by a parent schema",
+			because: "attribute ownership alone does not make a merge safe");
+		response.Error.Should().Contain("keep its complete 'insert' operation",
+			because: "the proposed correction must preserve an own-body component");
+		response.Error.Should().Contain("include the attribute declaration",
+			because: "the corrected fragment must satisfy the self-contained binding check");
+	}
+
 	private const string MinimalMarkerPageBody = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
 		"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
 		"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
@@ -98,6 +139,45 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("The served update-page contract exposes the caller-supplied conflict `checksum` argument and states that `resources` is additions/overrides on top of the keys already persisted on the schema — the two contract changes for issue #1320, asserted over the real MCP surface rather than only in unit reflection.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page contract exposes the caller checksum baseline and additive resources")]
+	[AllureDescription("Fetches the update-page contract via get-tool-contract over the real clio MCP server and asserts the served input schema carries the checksum conflict-baseline field and the additive-resources wording introduced for issue #1320.")]
+	public async Task PageUpdateTool_Contract_Should_Expose_Checksum_And_Additive_Resources() {
+		// Arrange
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult contractResult = await arrangeContext.Session.CallToolAsync(
+			ToolContractGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["tool-names"] = new[] { ToolName }
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		ToolContractGetResponse contracts =
+			EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(contractResult);
+
+		// Assert
+		ToolContractDefinition contract = contracts.Tools!.Single(definition => definition.Name == ToolName);
+		contract.InputSchema.Properties.Should().Contain(field => field.Name == "checksum",
+			because: "without a checksum argument the caller's get-page baseline was silently dropped and the conflict check fell back to a possibly stale on-disk baseline (issue #1320)");
+		contract.InputSchema.Properties.Single(field => field.Name == "checksum").Description
+			.Should().Contain("get-page",
+				because: "the served contract must tell the caller which value to pass as the conflict baseline");
+		// The contract must expose both value updates and the required workspace capture.
+		string servedResourcesDescription = contract.InputSchema.Properties
+			.Single(field => field.Name == "resources").Description;
+		servedResourcesDescription.Should().Contain("updates supplied en-US values",
+			because: "the served contract must name the payload semantics - a caller who reads it as a full replacement set re-sends every key on every save, which is the behavior issue #1320 reports");
+		servedResourcesDescription.Should().Contain("restore-workspace",
+			because: "a successful server save must not imply that workspace metadata and XML were captured");
+		servedResourcesDescription.Should().NotContain("replaces the full set",
+			because: "no wording that promises replacement semantics is acceptable for an additive payload");
+	}
+
+	[Test]
 	[Description("update-page fails fast at the JavaScript-syntax gate before any remote call when the body contains an `await X = Y` (the actual production incident body), and the structured response carries the {line, column, message} per the AC.")]
 	[AllureTag(ToolName)]
 	[AllureName("update-page fails fast on JavaScript syntax error before any remote call")]
@@ -139,7 +219,7 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		response.Success.Should().BeFalse(
 			because: "the incident body must be rejected end-to-end via the real MCP transport — the unit test alone is not enough per AGENTS.md MCP e2e rule");
 		response.Error.Should().Contain("JavaScript syntax error",
-			because: "the agent-facing error must name the actual class of problem (parser rejection) so the caller does not chase a phantom environment / marker / sampling failure");
+			because: "the agent-facing error must name the actual class of problem (parser rejection) so the caller does not chase a phantom environment or marker failure");
 		response.Error.Should().Contain("NOT sent to Creatio",
 			because: "the operator must know the broken body did not reach the server without inspecting logs, even when the failure surfaces through the MCP wire");
 	}
@@ -190,6 +270,223 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("GitHub #1132: the update-page contract served over the real MCP transport describes the append merge identity as (operation, name) and promises existing operations are preserved. update-page is non-resident, so this curated string is the ENTIRE description an agent receives — the tool's [Description] attribute is never merged in.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page contract states the (operation, name) append merge identity")]
+	[AllureDescription("Starts the real clio MCP server, fetches the update-page contract through get-tool-contract, and verifies the served 'mode' field description states that a viewConfigDiff entry is replaced only on an (operation, name) match and that every other existing operation is preserved. Guards against the contract rotting back to the pre-#1132 'dedupe by name' claim, which described behaviour that silently dropped an existing move operation. No environment-name is supplied: contract resolution must not touch an environment.")]
+	public async Task PageUpdateTool_Contract_Should_State_Operation_And_Name_Merge_Identity() {
+		// Arrange
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult contractResult = await arrangeContext.Session.CallToolAsync(
+			ToolContractGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["tool-names"] = new[] { ToolName }
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		ToolContractGetResponse contracts =
+			EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(contractResult);
+
+		// Assert
+		contractResult.IsError.Should().NotBeTrue(
+			because: "resolving a tool contract is a structured read, not an MCP transport error");
+		ToolContractField modeField = contracts.Tools!.Single(definition => definition.Name == ToolName)
+			.InputSchema.Properties.Single(field => field.Name == "mode");
+		modeField.Description.Should().Contain("`operation` and `name`",
+			because: "the append merge identity an agent plans against must reach it end-to-end through the real MCP transport, per the AGENTS.md MCP e2e rule");
+		modeField.Description.Should().Contain("does not collide with is preserved",
+			because: "the safety guarantee the issue disputed — an unrelated append never drops an existing operation — must be stated on the wire");
+		modeField.Description.Should().Contain("The one exception",
+			because: "the caller must also learn the one case where an existing entry IS dropped, or the contract repeats #1132 by promising more than the code delivers");
+		modeField.Description.Should().NotContain("dedupe by `name`",
+			because: "the pre-#1132 claim describes behaviour the merger no longer has, and shipping it would keep steering agents into the data-loss assumption");
+	}
+
+	[Test]
+	[Description("GitHub #1240: the update-page contract served over the real MCP transport discloses that the differ applies whole operation GROUPS in a fixed order, so an operation preserved beside another for one component name can be silently dropped — and declares the `warnings` array that reports it. update-page is non-resident, so this curated string is the ENTIRE description an agent receives.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page contract discloses that a transform beside an insert never applies")]
+	[AllureDescription("Starts the real clio MCP server, fetches the update-page contract through get-tool-contract, and verifies the served 'mode' field states that the differ applies whole operation groups in a fixed order — never in viewConfigDiff array order — so a transform beside an insert for one name is silently dropped, that this is not append-specific, and that the output envelope declares the advisory 'warnings' array carrying the finding. #1132 shipped a merger that PRESERVES both operations, which reads as 'both take effect'; it does not, and the contract has to say so on the wire. No environment-name is supplied: contract resolution must not touch an environment.")]
+	public async Task PageUpdateTool_Contract_Should_Disclose_ApplyOrder_Inertness_And_Warnings_Envelope() {
+		// Arrange
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult contractResult = await arrangeContext.Session.CallToolAsync(
+			ToolContractGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["tool-names"] = new[] { ToolName }
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		ToolContractGetResponse contracts =
+			EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(contractResult);
+
+		// Assert
+		contractResult.IsError.Should().NotBeTrue(
+			because: "resolving a tool contract is a structured read, not an MCP transport error");
+		ToolContractDefinition pageUpdate = contracts.Tools!.Single(definition => definition.Name == ToolName);
+		ToolContractField modeField = pageUpdate.InputSchema.Properties.Single(field => field.Name == "mode");
+		modeField.Description.Should().Contain("whole operation GROUPS in a fixed order",
+			because: "an agent that believes the viewConfigDiff array is applied in order will keep authoring a transform beside an insert and keep wondering why nothing happened");
+		modeField.Description.Should().Contain("silently dropped",
+			because: "preserved-but-inert is exactly the confusion #1240 filed, and naming the outcome on the wire is what makes the warning actionable");
+		modeField.Description.Should().Contain("not append-specific",
+			because: "the inertness comes from the differ rather than the merger, so a hand-authored 'replace' body produces it too — scoping the caveat to append would mislead");
+		ToolContractField warningsField = pageUpdate.OutputContract.Fields.Single(field => field.Name == "warnings");
+		warningsField.Description.Should().Contain("never retry on a warning",
+			because: "the save already succeeded; an agent that reads an advisory finding as a failure will re-save and can trip conflict detection");
+	}
+
+	[Test]
+	[Description("GitHub #1150: the update-page contract served over the real MCP transport states that an append dry run projects the merge and returns `appendProjection`, and declares that field in the output envelope. update-page is non-resident, so this curated string is the ENTIRE description an agent receives — the tool's [Description] attribute is never merged in.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page contract states that an append dry run projects the merge")]
+	[AllureDescription("Starts the real clio MCP server, fetches the update-page contract through get-tool-contract, and verifies the served 'dry-run' field states that append mode is not an offline check — it runs the real merge and returns appendProjection — and that the output envelope declares appendProjection with its projected count and dropped-operation fields. Guards against the contract rotting back to the bare 'Validate without saving', the claim the issue reported as useless: a dry run that names nothing the write would change. No environment-name is supplied: contract resolution must not touch an environment.")]
+	public async Task PageUpdateTool_Contract_Should_State_That_An_Append_DryRun_Projects_The_Merge() {
+		// Arrange
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult contractResult = await arrangeContext.Session.CallToolAsync(
+			ToolContractGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["tool-names"] = new[] { ToolName }
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		ToolContractGetResponse contracts =
+			EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(contractResult);
+
+		// Assert
+		contractResult.IsError.Should().NotBeTrue(
+			because: "resolving a tool contract is a structured read, not an MCP transport error");
+		ToolContractDefinition pageUpdate = contracts.Tools!.Single(definition => definition.Name == ToolName);
+		ToolContractField dryRunField = pageUpdate.InputSchema.Properties.Single(field => field.Name == "dry-run");
+		dryRunField.Description.Should().Contain("appendProjection",
+			because: "an agent has to know a dry run answers what the write would change, or it will keep treating success as the whole answer — the #1150 report");
+		dryRunField.Description.Should().Contain("not an offline check",
+			because: "an append dry run now costs a schema fetch and can fail, and a caller planning around a free local validation must be told on the wire");
+		ToolContractField projectionField =
+			pageUpdate.OutputContract.Fields.Single(field => field.Name == "appendProjection");
+		projectionField.Description.Should().Contain("projectedOperationCount",
+			because: "the count the reporter compared against their expected total is the field that makes the projection actionable");
+		projectionField.Description.Should().Contain("droppedOperations",
+			because: "a loss from the server body must be named in the envelope, not left for the caller to derive from the counts");
+		projectionField.Description.Should().Contain("collapsedIncomingOperations",
+			because: "the caller-side loss channel must reach an agent end-to-end through the real MCP transport, per the AGENTS.md MCP e2e rule");
+		projectionField.Description.Should().Contain("viewConfigDiffApplied",
+			because: "the case where every count describes a discarded array is the one that makes a confident projection dangerous");
+	}
+
+	[Test]
+	[Description("GitHub #1150 behavioural coverage: an append dry-run over the real MCP transport returns a populated appendProjection for a seeded page and leaves the body untouched. Pins the wire serialization of the nested object (reflection-based; no JsonSerializerContext entry exists) and the no-write invariant that the unit suite can only assert against a substitute.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page append dry-run returns a projection and writes nothing")]
+	[AllureDescription("Reads the seeded page ClioMcp_BlankPageToSave with get-page, submits a one-operation append fragment through update-page with mode=append and dry-run=true, and verifies the structured response carries appendProjection with the seeded page's own operation count plus one, dryRun=true, and no error. Then re-reads the page and asserts the stored body is byte-identical, proving the dry run wrote nothing end-to-end rather than only against a mocked application client. Non-destructive by construction: a dry run never reaches TrySaveSchema, so this needs no AllowDestructiveMcpTests opt-in.")]
+	public async Task PageUpdateTool_Should_Return_AppendProjection_For_An_Append_DryRun_Without_Writing() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+		const string savePage = "ClioMcp_BlankPageToSave";
+		string bodyBefore = await ReadRawBodyAsync(arrangeContext, environmentName, savePage);
+		int operationsBefore = CountViewConfigDiffOperations(bodyBefore);
+		string fragment = BuildAppendFragment(savePage);
+
+		// Act
+		CallToolResult updateResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = savePage,
+					["body"] = fragment,
+					["mode"] = "append",
+					["dry-run"] = true,
+					["environment-name"] = environmentName
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		PageUpdateResponse response =
+			EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(updateResult);
+
+		// Assert
+		updateResult.IsError.Should().NotBeTrue(
+			because: "an append dry run against a seeded diff-form page is a structured read, not a transport error");
+		response.Success.Should().BeTrue(
+			because: $"the fragment is a valid append against '{savePage}'. Error: {response.Error}");
+		response.DryRun.Should().BeTrue(because: "the caller asked for validation only");
+		response.AppendProjection.Should().NotBeNull(
+			because: "GH-1150: the whole point is that an append dry run reports what the write would change, and this is the only test proving the nested object survives MCP serialization");
+		response.AppendProjection.CurrentOperationCount.Should().Be(operationsBefore,
+			because: "the projection must describe the page's real stored body, which only a live fetch can supply");
+		response.AppendProjection.ProjectedOperationCount.Should().Be(operationsBefore + 1,
+			because: "the fragment adds one uniquely named operation, so the projected total is the current count plus one");
+		response.AppendProjection.AddedOperationCount.Should().Be(1,
+			because: "the fragment's single entry introduces a new identity rather than replacing one");
+		response.AppendProjection.ViewConfigDiffApplied.Should().BeTrue(
+			because: "a seeded diff-form page carries the marker pair, so the merged array would reach the written body");
+
+		// Assert the dry run wrote nothing, read back over the same transport
+		string bodyAfter = await ReadRawBodyAsync(arrangeContext, environmentName, savePage);
+		bodyAfter.Should().Be(bodyBefore,
+			because: "a dry run must never reach TrySaveSchema; a unit test can only assert this against a substitute, so the wire path needs its own proof");
+	}
+
+	/// <summary>Reads a page's raw stored body through <c>get-page</c> and returns its text.</summary>
+	private static async Task<string> ReadRawBodyAsync(
+			ArrangeContext arrangeContext, string environmentName, string schemaName) {
+		CallToolResult getResult = await arrangeContext.Session.CallToolAsync(
+			PageGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = schemaName,
+					["environment-name"] = environmentName
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		PageGetResponse getResponse = EntitySchemaStructuredResultParser.Extract<PageGetResponse>(getResult);
+		getResponse.Success.Should().BeTrue(
+			because: $"the append projection can only be checked against a page get-page can read. Error: {getResponse.Error}");
+		getResponse.Files?.BodyFile.Should().NotBeNullOrWhiteSpace(
+			because: "get-page must materialize the raw body so the projection can be compared against it");
+		return await File.ReadAllTextAsync(getResponse.Files!.BodyFile);
+	}
+
+	/// <summary>
+	/// Counts the <c>viewConfigDiff</c> operations in a raw web body, so the expected projection is derived
+	/// from the seeded page rather than hardcoded against a fixture that can drift.
+	/// </summary>
+	private static int CountViewConfigDiffOperations(string body) {
+		Match match = Regex.Match(
+			body,
+			@"/\*\*SCHEMA_VIEW_CONFIG_DIFF\*/(?<content>[\s\S]*?)/\*\*SCHEMA_VIEW_CONFIG_DIFF\*/",
+			RegexOptions.CultureInvariant,
+			TimeSpan.FromSeconds(5));
+		match.Success.Should().BeTrue(
+			because: "the seeded page must be in diff form for an append to be meaningful");
+		return JArray.Parse(match.Groups["content"].Value.Trim()).Count;
+	}
+
+	/// <summary>Builds a minimal diff-form append fragment adding one uniquely named container.</summary>
+	private static string BuildAppendFragment(string schemaName) =>
+		"define(\"" + schemaName + "\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
+		"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrClioE2EProjectionProbe\"," +
+		"\"parentName\":\"MainContainer\",\"propertyName\":\"items\",\"index\":0," +
+		"\"values\":{\"type\":\"crt.FlexContainer\",\"direction\":\"column\",\"items\":[]}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+		"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+		"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+		"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+		"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+		"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+
+	[Test]
 	[Description("update-page fails fast at the AST lint gate when a custom converter uses the reserved `crt.*` prefix — the lint rule `converter-crt-prefix-reserved` is unique to the AST pass (the regex layer treats `crt.*` as a valid vendor prefix), so this body is what proves the lint pass surfaces through the real MCP transport.")]
 	[AllureTag(ToolName)]
 	[AllureName("update-page fails fast on converter-crt-prefix-reserved lint error before any remote call")]
@@ -230,11 +527,97 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		response.Success.Should().BeFalse(
 			because: "the reserved `crt.*` namespace is for Creatio built-in converters; the lint gate must catch the custom-name usage end-to-end via the real MCP transport per AGENTS.md MCP rule");
 		response.Error.Should().Contain("Page body lint failed",
-			because: "the canonical lint error prefix is the contract surface the agent keys on to distinguish lint rejection from syntax / sampling rejection");
+			because: "the canonical lint error prefix is the contract surface the agent keys on to distinguish lint rejection from syntax rejection");
 		response.Error.Should().Contain("converter-crt-prefix-reserved",
 			because: "the rule id must be visible in the wire response so the agent can map the failure back to the guidance doc that describes the anti-pattern");
 		response.Error.Should().Contain("NOT sent to Creatio",
 			because: "the operator must know the body did not reach the server without inspecting logs, mirroring the syntax-gate tail");
+	}
+
+	[Test]
+	[Description("A NON-dry-run update-page of a body whose handler calls a conditionally declared helper fails at the lint gate and leaves the page on the stand byte-identical — dry-run scenarios make 'nothing was persisted' trivially true, so the real save path is what proves the gate actually blocks the write.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page blocks a non-dry-run save on undefined-section-call and leaves the page unchanged")]
+	[AllureDescription("Against the seeded page ClioMcp_BlankPageToSave: captures the body with get-page, submits a marker-complete body whose returned handler calls a helper declared only inside an `if (false)` block through the real save path (no dry-run), asserts the lint gate rejects it, then re-reads the page and asserts the stored body is unchanged.")]
+	public async Task PageUpdateTool_Should_Block_Real_Save_And_Leave_Page_Unchanged_When_HelperIsConditionallyDeclared() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("AllowDestructiveMcpTests is false — skipping the real-save lint-gate test.");
+		}
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
+		const string savePage = "ClioMcp_BlankPageToSave";
+		string baselineDir = Directory.CreateTempSubdirectory("clio-e2e-lint-gate-before-").FullName;
+		string readbackDir = Directory.CreateTempSubdirectory("clio-e2e-lint-gate-after-").FullName;
+		string originalBody = null;
+		bool restoreNeeded = false;
+		try {
+			PageGetResponse baseline = await GetPageAsync(arrangeContext, savePage, environmentName, baselineDir);
+			baseline.Success.Should().BeTrue(
+				because: $"get-page must succeed for the seeded page '{savePage}' before the gate can be proven. Error: {baseline.Error}");
+			originalBody = await File.ReadAllTextAsync(baseline.Files.BodyFile);
+
+			// Act
+			PageUpdateResponse response = await UpdatePageAsync(
+				arrangeContext,
+				savePage,
+				PageLintProbeBodies.ConditionallyDeclaredHelper(savePage),
+				environmentName,
+				baselineDir);
+			PageGetResponse readback = await GetPageAsync(arrangeContext, savePage, environmentName, readbackDir);
+			string bodyAfter = readback.Success ? await File.ReadAllTextAsync(readback.Files.BodyFile) : null;
+			//A readback that did not come back cannot show the page is intact, and the write it was
+			//supposed to check may well have landed - so that case restores too.
+			restoreNeeded = bodyAfter is null || bodyAfter != originalBody;
+
+			// Assert
+			response.Success.Should().BeFalse(
+				because: "the handler calls a helper whose only declaration sits in a branch that never runs, so the page would throw a TypeError on open");
+			response.Error.Should().Contain("Page body lint failed",
+				because: "the canonical lint prefix is what tells the agent this was a lint rejection rather than a syntax or transport failure");
+			response.Error.Should().Contain("undefined-section-call",
+				because: "the rule id must reach the wire so the agent can map the refusal back to the authoring rule");
+			readback.Success.Should().BeTrue(
+				because: $"the page must still be readable after the refused write. Error: {readback.Error}");
+			bodyAfter.Should().Be(originalBody,
+				because: "a refused write must leave the stand untouched — this is the assertion a dry-run scenario cannot make");
+		} finally {
+			if (restoreNeeded) {
+				//Only reached when the gate let the probe body through, which is the failure this test
+				//exists to catch. The page is shared by the rest of the suite, so it is put back rather
+				//than left holding a body that throws on open.
+				//Through readbackDir, not baselineDir: update-page compares the body on the stand against
+				//the baseline in its output directory, and only readbackDir holds one taken AFTER the
+				//probe write landed. Restoring against the stale baseline would be refused as a conflict.
+				await TryRestorePageBodyAsync(arrangeContext, savePage, originalBody, environmentName,
+					readbackDir);
+			}
+			TryDeleteDirectory(baselineDir);
+			TryDeleteDirectory(readbackDir);
+		}
+	}
+
+	/// <summary>
+	/// Best-effort restore of a shared fixture page's body. A failure here is reported to the console
+	/// and swallowed: it must not replace the assertion failure that made the restore necessary.
+	/// </summary>
+	private static async Task TryRestorePageBodyAsync(ArrangeContext context, string schemaName,
+		string body, string environmentName, string outputDirectory) {
+		try {
+			PageUpdateResponse restored =
+				await UpdatePageAsync(context, schemaName, body, environmentName, outputDirectory);
+			if (!restored.Success) {
+				//A refused save comes back in the envelope rather than as an exception, so without this
+				//the shared fixture page would be left holding a body that throws on open, silently.
+				TestContext.Progress.WriteLine(
+					$"Failed to restore the body of '{schemaName}': {restored.Error}");
+			}
+		} catch (Exception restoreFailure) {
+			TestContext.Progress.WriteLine(
+				$"Failed to restore the body of '{schemaName}': {restoreFailure.Message}");
+		}
 	}
 
 	[Test]
@@ -1132,6 +1515,260 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("AC-1 behavioural round trip (PR #1356 review): get-page's `editable.checksum` is passed verbatim as update-page's `checksum` on two consecutive pinned saves, both of which must report conflict:false, and the checksum get-page returns after a save must be byte-identical to the `newChecksum` that save reported. The stale first baseline is then re-sent and must be refused with reason `checksum-mismatch` without landing a save. This is the exact reproduction in issue #1320; the contract test above only asserts that the served description mentions `checksum`.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page round-trips get-page's checksum through two consecutive pinned saves")]
+	[AllureDescription("Against the seeded page ClioMcp_BlankPageToSave on a real stand: (1) get-page captures editable.checksum; (2) update-page pins that value via `checksum` and must save with conflict:false; (3) get-page again and its editable.checksum must equal the newChecksum the save reported - the byte-for-byte equality between the value get-page hands out and the value the update comparison performs StringComparison.Ordinal against; (4) a second update-page pinned to the fresh checksum must also save with conflict:false, which no existing test drives; (5) re-sending the now-stale first baseline must fail with conflict:true / checksum-mismatch and must not change the server checksum. The original body is restored with force=true in cleanup.")]
+	public async Task PageUpdateTool_Should_RoundTrip_GetPage_Checksum_Through_Consecutive_Pinned_Saves() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("AllowDestructiveMcpTests is false — skipping destructive update-page checksum round-trip test.");
+		}
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
+		const string savePage = "ClioMcp_BlankPageToSave";
+		string sessionDir = Directory.CreateTempSubdirectory("clio-e2e-checksum-roundtrip-").FullName;
+		string? originalBody = null;
+		try {
+			PageGetResponse firstGet = await GetPageAsync(arrangeContext, savePage, environmentName, sessionDir);
+			firstGet.Success.Should().BeTrue(
+				because: $"get-page must load the seeded page '{savePage}' before the round trip. Error: {firstGet.Error}");
+			firstGet.Editable.Should().NotBeNull(
+				because: "the editable state carries the checksum this whole test round-trips");
+			string firstChecksum = firstGet.Editable.Checksum;
+			firstChecksum.Should().NotBeNullOrWhiteSpace(
+				because: "an empty baseline would make every pinned assertion below vacuous");
+			originalBody = await File.ReadAllTextAsync(firstGet.Files.BodyFile);
+
+			// Act 1: pin the checksum get-page just returned, verbatim.
+			PageUpdateResponse firstSave = await UpdatePageAsync(
+				arrangeContext, savePage, BodyWithContainer(originalBody, "UsrE2ERoundTripContainerA"),
+				environmentName, sessionDir, checksum: firstChecksum);
+
+			// Assert 1: the value get-page handed out is accepted as the baseline by the save that pins it.
+			firstSave.Success.Should().BeTrue(
+				because: $"the checksum came straight from get-page, so the pinned save must go through. Error: {firstSave.Error}");
+			firstSave.Conflict.Should().BeFalse(
+				because: "a baseline that matches the server state is not a conflict");
+			firstSave.NewChecksum.Should().NotBeNullOrWhiteSpace(
+				because: "the post-save query must report the fresh checksum for the next pinned save to use");
+			firstSave.NewChecksum.Should().NotBe(firstChecksum,
+				because: "SaveSchema must bump SysSchema.Checksum, otherwise the pin cannot detect anything (assumption A-01)");
+
+			// Act 2: read the page back and compare what get-page returns against what the save reported.
+			PageGetResponse secondGet = await GetPageAsync(arrangeContext, savePage, environmentName, sessionDir);
+			secondGet.Success.Should().BeTrue(
+				because: $"get-page must read the saved page back. Error: {secondGet.Error}");
+			secondGet.Editable.Should().NotBeNull(
+				because: "the read-back must carry an editable state for its checksum to be comparable");
+			string secondChecksum = secondGet.Editable.Checksum;
+
+			// Assert 2: byte-for-byte equality of the two baselines - the subject of issue #1320.
+			secondChecksum.Should().Be(firstSave.NewChecksum,
+				because: "the value get-page returns as editable.checksum must be byte-identical to the value the " +
+					"update comparison performs StringComparison.Ordinal against; any divergence here is issue #1320");
+
+			// Act 3: a second consecutive pinned save, on the fresh baseline.
+			PageUpdateResponse secondSave = await UpdatePageAsync(
+				arrangeContext, savePage, BodyWithContainer(originalBody, "UsrE2ERoundTripContainerB"),
+				environmentName, sessionDir, checksum: secondChecksum);
+
+			// Assert 3: two consecutive pinned saves both succeed - the reported #1320 symptom is gone.
+			secondSave.Success.Should().BeTrue(
+				because: $"the second save pins the checksum the first save produced, so it must not conflict. Error: {secondSave.Error}");
+			secondSave.Conflict.Should().BeFalse(
+				because: "a chain of pinned saves each carrying the previous save's checksum must never report a conflict");
+			secondSave.NewChecksum.Should().NotBeNullOrWhiteSpace(
+				because: "the second save's fresh checksum is the evidence the no-save-landed check below relies on");
+
+			// Act 4: non-vacuity - re-send the now two-generations-stale first baseline.
+			PageUpdateResponse staleSave = await UpdatePageAsync(
+				arrangeContext, savePage, BodyWithContainer(originalBody, "UsrE2ERoundTripContainerC"),
+				environmentName, sessionDir, checksum: firstChecksum);
+
+			// Assert 4: the pin actually bites, so the two successes above are not "the check never runs".
+			staleSave.Success.Should().BeFalse(
+				because: "a pin naming a superseded checksum must be refused, otherwise the two successes prove nothing");
+			staleSave.Conflict.Should().BeTrue(
+				because: "the refusal must carry the machine-readable conflict marker through the real MCP transport");
+			staleSave.ConflictDetails.Should().NotBeNull(
+				because: "the conflict must explain itself with structured details");
+			staleSave.ConflictDetails.Reason.Should().Be(PageConflictReasons.ChecksumMismatch,
+				because: "the stale pin differs from the server checksum, which is precisely the checksum-mismatch reason");
+
+			// Assert 5: the refused save must not have landed.
+			PageGetResponse thirdGet = await GetPageAsync(arrangeContext, savePage, environmentName, sessionDir);
+			thirdGet.Success.Should().BeTrue(
+				because: $"get-page must confirm the server state after the refusal. Error: {thirdGet.Error}");
+			thirdGet.Editable.Checksum.Should().Be(secondSave.NewChecksum,
+				because: "a refused save must leave the schema exactly as the last accepted save left it");
+		} finally {
+			if (!string.IsNullOrWhiteSpace(originalBody)) {
+				PageUpdateResponse restore = await UpdatePageAsync(
+					arrangeContext, savePage, originalBody, environmentName, sessionDir, force: true);
+				restore.Success.Should().BeTrue(
+					because: $"the E2E test must restore the seeded page body. Error: {restore.Error}");
+			}
+			TryDeleteDirectory(sessionDir);
+		}
+	}
+
+	[Test]
+	[Description("AC-2 behavioural pin (PR #1356 review): a label resource key registered through `resources` on a first real save does NOT have to be repeated on the second save - the persisted-key rescue in the tool's pre-execution gate resolves it from the schema. The same body carrying a key that was never registered anywhere is refused, so the acceptance is not just 'the validator never looked'.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page accepts a persisted label resource that a later save omits")]
+	[AllureDescription("Against the seeded page ClioMcp_BlankPageToSave on a real stand: (1) a body whose inserted field labels itself with a resource key while its control binds to a differently named attribute (so the platform cannot auto-provide the caption) is refused when the key is registered nowhere - the non-vacuity probe; (2) the same shape saves once with the key supplied via `resources`, which persists it on the schema; (3) a second save of the same body omits `resources` entirely and must still succeed, which is the additive behaviour the tool contract advertises and issue #1320's second symptom. The original body is restored with force=true in cleanup.")]
+	public async Task PageUpdateTool_Should_Accept_Persisted_Label_Resource_Omitted_By_A_Later_Save() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("AllowDestructiveMcpTests is false — skipping destructive update-page persisted-resource test.");
+		}
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
+		const string savePage = "ClioMcp_BlankPageToSave";
+		// Both probe keys are UNIQUE PER RUN. Registration is additive - ResourceStringHelper.CleanAndMerge
+		// copies every existing entry before adding - so re-sending a key this test already persisted on the
+		// shared seeded page answers resourcesRegistered: 0, and Assert 2 below (which requires the key in
+		// RegisteredResourceKeys) would fail on every run after the first. The cleanup block can only restore
+		// the BODY; a localizableStrings entry cannot be removed through update-page, so a fresh key per run
+		// is what keeps the only behavioural AC-2 proof re-runnable. Accepted cost: each run leaves one
+		// unreferenced resource string on ClioMcp_BlankPageToSave.
+		string runId = Guid.NewGuid().ToString("N")[..8];
+		string persistedKey = $"UsrE2EPersistedLabel{runId}";
+		string neverRegisteredKey = $"UsrE2ENeverRegisteredLabel{runId}";
+		string sessionDir = Directory.CreateTempSubdirectory("clio-e2e-persisted-resource-").FullName;
+		string? originalBody = null;
+		try {
+			PageGetResponse firstGet = await GetPageAsync(arrangeContext, savePage, environmentName, sessionDir);
+			firstGet.Success.Should().BeTrue(
+				because: $"get-page must load the seeded page '{savePage}' before the resource probes. Error: {firstGet.Error}");
+			originalBody = await File.ReadAllTextAsync(firstGet.Files.BodyFile);
+
+			// Act 1: non-vacuity probe - a key registered nowhere must be refused.
+			PageUpdateResponse unregistered = await UpdatePageAsync(
+				arrangeContext, savePage, BodyWithLabelResource(originalBody, neverRegisteredKey),
+				environmentName, sessionDir, force: true);
+
+			// Assert 1: without this refusal the acceptance below would prove nothing.
+			unregistered.Success.Should().BeFalse(
+				because: "the label binds a resource key that is neither supplied nor persisted, so the caption cannot resolve");
+			unregistered.Error.Should().Contain(neverRegisteredKey,
+				because: "the diagnostic must name the key that could not be resolved");
+
+			// Act 2: register the key on a real save.
+			PageUpdateResponse registeringSave = await UpdatePageAsync(
+				arrangeContext, savePage, BodyWithLabelResource(originalBody, persistedKey),
+				environmentName, sessionDir, force: true,
+				resources: $"{{\"{persistedKey}\":\"E2E persisted label\"}}");
+
+			// Assert 2: the save lands and reports the key it registered.
+			registeringSave.Success.Should().BeTrue(
+				because: $"the key is supplied in `resources`, so the save must go through. Error: {registeringSave.Error}");
+			registeringSave.RegisteredResourceKeys.Should().Contain(persistedKey,
+				because: "the response must report the key it persisted on the schema for the omission below to be meaningful");
+			registeringSave.Warnings.Should().Contain(PageUpdateCommand.ResourceWorkspaceCaptureWarning,
+				because: "the real MCP response must warn about a stale workspace push");
+
+			// Act: change an existing value through the real MCP save, then read native resources back.
+			PageUpdateResponse updated = await UpdatePageAsync(
+				arrangeContext, savePage, BodyWithLabelResource(originalBody, persistedKey),
+				environmentName, sessionDir, force: true,
+				resources: $"{{\"{persistedKey}\":\"E2E updated label\"}}");
+			PageGetResponse updatedReadback = await GetPageAsync(arrangeContext, savePage, environmentName, sessionDir);
+
+			// Assert
+			AllureApi.Step("Existing caption updates without registering another key", () => {
+				updated.Success.Should().BeTrue(because: "native SaveSchema must accept the changed value");
+				updated.ResourcesRegistered.Should().Be(0, because: "updating a value preserves declaration identity");
+				updated.Warnings.Should().Contain(PageUpdateCommand.ResourceWorkspaceCaptureWarning,
+					because: "value updates need the same capture warning as new keys");
+			});
+			await AllureApi.Step("Readback contains the new English caption", async () => {
+				updatedReadback.Success.Should().BeTrue(because: "server readback is required to prove the save");
+				JObject bundle = JObject.Parse(await File.ReadAllTextAsync(updatedReadback.Files.BundleFile));
+				bundle["resources"]?[persistedKey]?["en-US"]?.Value<string>().Should().Be("E2E updated label",
+					because: "a successful save alone previously hid an ignored resource update");
+			});
+
+			// Act 3: the same body, `resources` omitted entirely.
+			PageUpdateResponse omittingSave = await UpdatePageAsync(
+				arrangeContext, savePage, BodyWithLabelResource(originalBody, persistedKey),
+				environmentName, sessionDir, force: true);
+
+			// Assert 3: the persisted-key rescue resolves the key from the schema.
+			omittingSave.Success.Should().BeTrue(
+				because: $"the key is already persisted on the schema, so it does not have to be repeated. Error: {omittingSave.Error}");
+		} finally {
+			if (!string.IsNullOrWhiteSpace(originalBody)) {
+				PageUpdateResponse restore = await UpdatePageAsync(
+					arrangeContext, savePage, originalBody, environmentName, sessionDir, force: true);
+				restore.Success.Should().BeTrue(
+					because: $"the E2E test must restore the seeded page body. Error: {restore.Error}");
+			}
+			TryDeleteDirectory(sessionDir);
+		}
+	}
+
+	/// <summary>
+	/// Returns <paramref name="originalBody"/> with a single container insert placed into its (empty)
+	/// <c>SCHEMA_VIEW_CONFIG_DIFF</c>, so consecutive saves submit genuinely different bodies and each one
+	/// bumps <c>SysSchema.Checksum</c>. Throws when the marker was not empty, rather than silently returning a
+	/// body identical to the input and turning the caller's checksum assertions vacuous.
+	/// </summary>
+	private static string BodyWithContainer(string originalBody, string containerName) => ReplaceEmptyMarker(
+		originalBody,
+		"SCHEMA_VIEW_CONFIG_DIFF",
+		"[{\"operation\":\"insert\",\"name\":\"" + containerName +
+		"\",\"values\":{\"type\":\"crt.FlexContainer\",\"direction\":\"row\",\"items\":[]}," +
+		"\"parentName\":\"Main\",\"propertyName\":\"items\",\"index\":0}]");
+
+	/// <summary>
+	/// Returns <paramref name="originalBody"/> with an inserted field whose label points at
+	/// <paramref name="resourceKey"/> while its control binds to a DIFFERENTLY named declared attribute, so the
+	/// platform cannot auto-provide the caption: the body is accepted only when the key is supplied in
+	/// <c>resources</c> or already persisted on the schema.
+	/// </summary>
+	private static string BodyWithLabelResource(string originalBody, string resourceKey) {
+		string withField = ReplaceEmptyMarker(
+			originalBody,
+			"SCHEMA_VIEW_CONFIG_DIFF",
+			"[{\"operation\":\"insert\",\"name\":\"UsrE2EResourceField\"," +
+			"\"values\":{\"type\":\"crt.Input\",\"label\":\"$Resources.Strings." + resourceKey +
+			"\",\"control\":\"$UsrE2EResourceAttribute\"}," +
+			"\"parentName\":\"Main\",\"propertyName\":\"items\",\"index\":0}]");
+		return ReplaceEmptyMarker(
+			withField,
+			"SCHEMA_VIEW_MODEL_CONFIG_DIFF",
+			"[{\"operation\":\"merge\",\"path\":[\"attributes\"]," +
+			"\"values\":{\"UsrE2EResourceAttribute\":{\"value\":\"\"}}}]");
+	}
+
+	/// <summary>
+	/// Substitutes <paramref name="content"/> between the named marker pair, accepting only an empty current
+	/// content (<c>[]</c>, <c>{}</c> or nothing) so the helper never discards authoring the seeded page already
+	/// carries. Throws an explicit diagnostic instead of returning the body unchanged - a silent no-op here
+	/// would make the caller assert against the wrong body and report an unrelated cause.
+	/// </summary>
+	private static string ReplaceEmptyMarker(string body, string markerName, string content) {
+		string marker = $"/**{markerName}*/";
+		Match match = Regex.Match(
+			body,
+			$@"{Regex.Escape(marker)}\s*(\[\s*\]|\{{\s*\}})?\s*{Regex.Escape(marker)}",
+			RegexOptions.CultureInvariant);
+		if (!match.Success) {
+			throw new InvalidOperationException(
+				$"The seeded page body has no empty '{markerName}' marker pair to fill, so this fixture cannot " +
+				"build its probe body. Re-seed the page from BlankPageTemplate, or update the helper for the new shape.");
+		}
+		return body.Remove(match.Index, match.Length)
+			.Insert(match.Index, marker + content + marker);
+	}
+
+	[Test]
 	[Description("A successful update-page save pushes a Designer Presence save event that a second session can receive for the page sender.")]
 	[AllureTag(ToolName)]
 	[AllureName("update-page publishes Designer Presence save event")]
@@ -1235,6 +1872,85 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		}
 	}
 
+	[TestCase(PageUpdateTool.ToolName)]
+	[TestCase(PageSyncTool.ToolName)]
+	[Description("Saves Gallery and Playbook attribute mappings with validation enabled and verifies the persisted identifiers through get-page on the explicitly configured sandbox.")]
+	[AllureTag(PageUpdateTool.ToolName, PageSyncTool.ToolName)]
+	[AllureName("Page writers preserve Gallery and Playbook mappings")]
+	[AllureDescription("Creates a unique blank page in Custom, saves both mapping shapes with validation enabled, and reads it back to prove the identifiers were not localized or removed.")]
+	public async Task PageWriters_ShouldPreserveMappings_WhenValidationEnabled(string toolName) {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("AllowDestructiveMcpTests is false — skipping sandbox page writes.");
+		}
+		string environmentName = settings.Sandbox.EnvironmentName!;
+		environmentName.Should().NotBeNullOrWhiteSpace(because: "this test must never fall back to a shared environment");
+		string schemaName = "UsrMapping" + Guid.NewGuid().ToString("N")[..12];
+		string outputDirectory = CreateFixtureDirectory("page-mapping-roundtrip");
+		await using var context = Arrange(TimeSpan.FromMinutes(5));
+		await AllureApi.Step("Create a uniquely named sandbox page", async () => {
+			CallToolResult created = await context.Session.CallToolAsync(PageCreateTool.ToolName,
+				new Dictionary<string, object?> { ["args"] = new Dictionary<string, object?> {
+					["schema-name"] = schemaName, ["template"] = "BlankPageTemplate",
+					["package-name"] = "Custom", ["environment-name"] = environmentName
+				} }, context.CancellationTokenSource.Token);
+			EntitySchemaStructuredResultParser.Extract<PageCreateResponse>(created).Success.Should().BeTrue(
+				because: "a fresh page isolates this test from existing sandbox content");
+		});
+		PageGetResponse original = await GetPageAsync(context, schemaName, environmentName, outputDirectory);
+		original.Success.Should().BeTrue(because: "the new page must be readable before editing");
+		string originalBody = await File.ReadAllTextAsync(original.Files.BodyFile);
+		const string mappingDiff = """
+			[{"operation":"insert","name":"GalleryProbe","parentName":"Main","propertyName":"items","values":{"type":"crt.Gallery","itemConfig":{"templateValuesMapping":{"caption":"GalleryDS_Name","description":"GalleryDS_Description","image":"GalleryDS_Image","id":"GalleryDS_Id"}}}},
+			{"operation":"insert","name":"PlaybookProbe","parentName":"Main","propertyName":"items","values":{"type":"crt.Playbook","_designOptions":{"templateValuesMapping":{"caption":"PlaybookDS_Name"}}}}]
+			""";
+		string body = Regex.Replace(originalBody,
+			@"/\*\*SCHEMA_VIEW_CONFIG_DIFF\*/[\s\S]*?/\*\*SCHEMA_VIEW_CONFIG_DIFF\*/",
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/" + mappingDiff + "/**SCHEMA_VIEW_CONFIG_DIFF*/",
+			RegexOptions.None, TimeSpan.FromSeconds(1));
+		body.Should().NotBe(originalBody, because: "the probe must actually add both mapping shapes");
+
+		// Act
+		await AllureApi.Step("Save with content validation enabled", async () => {
+			if (toolName == PageUpdateTool.ToolName) {
+				PageUpdateResponse saved = await UpdatePageAsync(context, schemaName, body, environmentName, outputDirectory);
+				saved.Success.Should().BeTrue(because: $"valid mappings must save through update-page: {saved.Error}");
+			} else {
+				CallToolResult saved = await context.Session.CallToolAsync(PageSyncTool.ToolName,
+					new Dictionary<string, object?> { ["args"] = new Dictionary<string, object?> {
+						["environment-name"] = environmentName, ["validate"] = true,
+						["output-directory"] = outputDirectory,
+						["pages"] = new[] { new Dictionary<string, object?> { ["schema-name"] = schemaName, ["body"] = body } }
+					} }, context.CancellationTokenSource.Token);
+				PageSyncResponse response = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(saved);
+				response.Success.Should().BeTrue(because: $"valid mappings must save through sync-pages: {string.Join("; ", response.Pages.Select(page => page.Error))}");
+			}
+		});
+
+		// Assert
+		PageGetResponse readback = await AllureApi.Step("Read the saved schema from Creatio", async () =>
+			await GetPageAsync(context, schemaName, environmentName, outputDirectory));
+		readback.Success.Should().BeTrue(because: "a save response alone does not prove persistence");
+		string persisted = await File.ReadAllTextAsync(readback.Files.BodyFile);
+		string persistedDiff = Regex.Match(persisted,
+			@"/\*\*SCHEMA_VIEW_CONFIG_DIFF\*/(?<diff>[\s\S]*?)/\*\*SCHEMA_VIEW_CONFIG_DIFF\*/",
+			RegexOptions.None, TimeSpan.FromSeconds(1)).Groups["diff"].Value;
+		using JsonDocument actual = JsonDocument.Parse(persistedDiff);
+		using JsonDocument expected = JsonDocument.Parse(mappingDiff);
+		foreach (JsonElement expectedNode in expected.RootElement.EnumerateArray()) {
+			string nodeName = expectedNode.GetProperty("name").GetString()!;
+			JsonElement actualNode = actual.RootElement.EnumerateArray().Single(node => node.GetProperty("name").GetString() == nodeName);
+			string configProperty = nodeName == "GalleryProbe" ? "itemConfig" : "_designOptions";
+			Dictionary<string, string?> actualMapping = actualNode.GetProperty("values").GetProperty(configProperty)
+				.GetProperty("templateValuesMapping").EnumerateObject().ToDictionary(property => property.Name, property => property.Value.GetString());
+			Dictionary<string, string?> expectedMapping = expectedNode.GetProperty("values").GetProperty(configProperty)
+				.GetProperty("templateValuesMapping").EnumerateObject().ToDictionary(property => property.Name, property => property.Value.GetString());
+			AllureApi.Step($"Verify {nodeName} mapping values and paths are unchanged", () => actualMapping.Should().BeEquivalentTo(expectedMapping,
+				because: "mapping slots must retain plain record identifiers at their original paths, without resource prefixes"));
+		}
+	}
+
 	private static async Task<PageGetResponse> GetPageAsync(
 		ArrangeContext arrangeContext, string schemaName, string environmentName, string outputDirectory) {
 		CallToolResult result = await arrangeContext.Session.CallToolAsync(
@@ -1259,19 +1975,26 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		string environmentName,
 		string outputDirectory,
 		bool? force = null,
-		string? mode = null) {
+		string? mode = null,
+		string? checksum = null,
+		string? resources = null) {
 		Dictionary<string, object?> args = new() {
 			["schema-name"] = schemaName,
 			["body"] = body,
 			["environment-name"] = environmentName,
-			["output-directory"] = outputDirectory,
-			["skip-sampling"] = true
+			["output-directory"] = outputDirectory
 		};
 		if (force == true) {
 			args["force"] = true;
 		}
 		if (!string.IsNullOrWhiteSpace(mode)) {
 			args["mode"] = mode;
+		}
+		if (checksum is not null) {
+			args["checksum"] = checksum;
+		}
+		if (resources is not null) {
+			args["resources"] = resources;
 		}
 		CallToolResult result = await arrangeContext.Session.CallToolAsync(
 			ToolName,
@@ -1292,22 +2015,12 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		}
 	}
 
-	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
-		string? configuredEnvironmentName = settings.Sandbox.EnvironmentName;
-		if (!string.IsNullOrWhiteSpace(configuredEnvironmentName) &&
-			await CanReachEnvironmentAsync(settings, configuredEnvironmentName)) {
-			return configuredEnvironmentName;
-		}
-
-		const string fallbackEnvironmentName = "d2";
-		if (await CanReachEnvironmentAsync(settings, fallbackEnvironmentName)) {
-			return fallbackEnvironmentName;
-		}
-
-		Assert.Ignore(
-			$"update-page MCP E2E requires a reachable environment. Configured sandbox environment '{configuredEnvironmentName}' was not reachable, and fallback environment '{fallbackEnvironmentName}' was also unavailable.");
-		return string.Empty;
-	}
+	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) =>
+		// Destructive fixture: configured-only. The AllowDestructiveMcpTests opt-in authorizes writes to
+		// the disposable stand named in settings, never to a fallback environment that merely answers.
+		await ReachableSandboxEnvironment.ResolveConfiguredOrIgnoreAsync(
+			settings,
+			$"update-page MCP E2E requires the configured sandbox environment '{settings.Sandbox.EnvironmentName}' to be set and reachable.");
 
 	[Test]
 	[Description("Rejects a mobile JSON body that contains a 'validators' section without making any remote call.")]
@@ -1469,19 +2182,6 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 			because: "a valid mobile body should produce a structured result even when dry-run fails because the schema doesn't exist");
 		response.Error.Should().NotContain("SCHEMA_",
 			because: "AMD marker errors must not appear when the body is a mobile JSON object");
-	}
-
-	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {
-		using CancellationTokenSource cts = new(TimeSpan.FromSeconds(30));
-		try {
-			ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(
-				settings,
-				["ping-app", "-e", environmentName],
-				cancellationToken: cts.Token);
-			return result.ExitCode == 0;
-		} catch (OperationCanceledException) {
-			return false;
-		}
 	}
 
 	private sealed class DesignerPresenceListener : IAsyncDisposable {

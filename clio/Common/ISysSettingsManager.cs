@@ -2,8 +2,11 @@
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
-using System.Security.Authentication;
+using System.Net;
+using System.Net.Http;
+using System.Net.Sockets;
 using System.Text.Json;
+using System.Security.Authentication;
 using System.Text.Json.Serialization;
 using ATF.Repository;
 using ATF.Repository.Providers;
@@ -86,6 +89,23 @@ public interface ISysSettingsManager
 	/// </summary>
 	(string Value, string ValueTypeName) GetAllUsersDefaultWithType(string code);
 
+	/// <summary>
+	/// Creates a sys-setting definition on the environment through the DataService
+	/// <c>InsertSysSettingRequest</c> endpoint.
+	/// </summary>
+	/// <param name="name">Display name of the setting.</param>
+	/// <param name="code">The unique code identifier of the system setting.</param>
+	/// <param name="valueTypeName">Creatio value-type-name (Text, Boolean, Integer, Lookup, ...).</param>
+	/// <param name="cached">Whether the platform may cache the value.</param>
+	/// <param name="description">Optional description stored with the definition.</param>
+	/// <param name="valueForCurrentUser">Whether the setting is personal rather than shared.</param>
+	/// <param name="referenceSchemaUId">Reference entity schema for a Lookup setting; ignored otherwise.</param>
+	/// <returns>The platform's parsed response, never <see langword="null"/>.</returns>
+	/// <exception cref="SessionRejectedException">The response body proves Creatio rejected the session.</exception>
+	/// <exception cref="NonJsonWriteResponseException">
+	/// The endpoint answered with something that is not a usable DataService JSON response - an HTML
+	/// login/gateway page, an empty body, or text no parser accepts (issue #1378).
+	/// </exception>
 	SysSettingsManager.InsertSysSettingResponse InsertSysSetting(string name, string code, string valueTypeName,
 		bool cached = true, string description = "", bool valueForCurrentUser = false,
 		Guid? referenceSchemaUId = null);
@@ -101,6 +121,28 @@ public interface ISysSettingsManager
 	/// <param name="code">The unique code identifier of the system setting.</param>
 	(string ValueTypeName, string? ReferenceSchemaName)? GetSysSettingTypeByCode(string code);
 
+	/// <summary>
+	/// Writes the All-Users value of a sys-setting through the DataService
+	/// <c>PostSysSettingsValues</c> endpoint.
+	/// </summary>
+	/// <param name="code">The unique code identifier of the system setting.</param>
+	/// <param name="value">The value to write; converted according to the resolved value-type-name.</param>
+	/// <param name="valueTypeName">
+	/// Fallback value-type-name, used only when the setting's own type cannot be resolved.
+	/// </param>
+	/// <returns>
+	/// <see langword="true"/> when the environment acknowledged the write. <see langword="false"/> means
+	/// the request was REFUSED - clio rejected the value (an invalid code, an unparseable number or date,
+	/// an oversized Binary payload) or the platform answered with an unsuccessful save result. It does NOT
+	/// cover a missing or unusable acknowledgement: since issue #1378 that raises
+	/// <see cref="NonJsonWriteResponseException"/> instead, because reporting it as a refusal claimed the
+	/// setting did not exist or the value did not match its type, which such a body does not support.
+	/// </returns>
+	/// <exception cref="SessionRejectedException">A response body proves Creatio rejected the session.</exception>
+	/// <exception cref="NonJsonWriteResponseException">
+	/// The write endpoint, or the lookup-value resolution it performs first, answered with something that
+	/// is not a usable DataService JSON response.
+	/// </exception>
 	bool UpdateSysSetting(string code, object value, string valueTypeName = "Text");
 
 	/// <summary>
@@ -133,53 +175,26 @@ public interface ISysSettingsManager
 
 public class SysSettingsManager : ISysSettingsManager
 {
-	private const string AuthenticatedReadinessQuery =
-		"{\"rootSchemaName\":\"SysSettings\",\"operationType\":0," +
-		"\"columns\":{\"items\":{\"Id\":{\"expression\":{\"expressionType\":0," +
-		"\"columnPath\":\"Id\"}}}},\"rowCount\":1}";
+	/// <summary>
+	/// Cap on the neutralized response excerpt any write-path failure carries on its
+	/// <see cref="IServerDetailCarrier.ServerDetail"/> - a rejected session (issue #1333) and, since
+	/// issue #1378, an answer that is not the expected DataService response. Both classes answer with a
+	/// whole page, so an uncapped excerpt would flood every sink it reaches.
+	/// <para>
+	/// It bounds DISPLAY only. <see cref="TextUtilities.SanitizeForDisplay"/> may overshoot it by up to
+	/// two characters rather than split a surrogate pair, and appends an ellipsis, so a produced excerpt
+	/// can be slightly longer than this number. It is never a classification budget - the classifier
+	/// bounds its own input, because a marker past this offset must still be recognised.
+	/// </para>
+	/// </summary>
+	private const int MaxRejectedResponseDetailLength = 300;
 
 	/// <summary>
-	/// Depth cap for the recursive walk over the probe response. The body is server-controlled, so an
-	/// unbounded walk over a pathologically nested payload would raise an uncatchable
-	/// <see cref="StackOverflowException"/>. DataService fault envelopes nest a handful of levels at most.
+	/// Depth bound for every exception-chain walk in this class, matching the sibling walkers in
+	/// <see cref="AuthenticationFailureClassifier"/> and <c>SysSettingsCommand</c>. A self-referencing
+	/// chain would otherwise loop forever.
 	/// </summary>
-	private const int MaxAuthProbeJsonDepth = 20;
-
-	/// <summary>
-	/// Finite timeout for the authentication preflight, in milliseconds. The probe now runs before every
-	/// create/update and before every ambiguous empty read, and the default overload uses
-	/// <see cref="Timeout.Infinite"/> - so a half-open endpoint would hang the command forever before its
-	/// real operation ever started. One SelectQuery that returns a single Id is a small read; a minute is
-	/// generous for it and still terminates.
-	/// </summary>
-	private const int AuthProbeRequestTimeoutMilliseconds = 60_000;
-
-	/// <summary>
-	/// Attempts for the authentication preflight. Exactly one: the probe reads nothing and changes nothing,
-	/// but a retry loop in front of every write multiplies the stall a half-open endpoint can cause.
-	/// </summary>
-	private const int AuthProbeMaxAttempts = 1;
-
-	/// <summary>Delay between preflight attempts, in seconds. Unused at one attempt; passed for clarity.</summary>
-	private const int AuthProbeRetryDelaySeconds = 1;
-
-	/// <summary>Cap on the server-controlled detail embedded in an authentication exception message.</summary>
-	private const int MaxAuthenticationDetailLength = 300;
-
-	/// <summary>
-	/// Creatio's authentication-rejection messages, matched by <b>equality</b> rather than substring — the
-	/// same contract <see cref="ReauthExecutor.IsSessionExpiredResponse" /> deliberately uses. A business-rule
-	/// error whose text merely embeds one of these phrases (for example
-	/// <c>"User authentication failed validation for field X"</c>) is not a credential failure and must not
-	/// block the operation.
-	/// </summary>
-	private static readonly HashSet<string> AuthenticationFailureMessages =
-		new(StringComparer.OrdinalIgnoreCase) {
-			"Authentication failed.",
-			"Authentication failed",
-			"Your password has expired.",
-			"Your password has expired"
-		};
+	private const int MaxExceptionUnwrapDepth = 16;
 
 	#region Fields: Private
 
@@ -190,12 +205,6 @@ public class SysSettingsManager : ISysSettingsManager
 	private readonly IFileSystem _filesystem;
 	private readonly IAbstractionsFileSystem _abstractionsFileSystem;
 	private readonly ILogger _logger;
-
-	/// <summary>
-	/// Set once the authenticated DataService probe has been confirmed for this instance. The manager is
-	/// resolved per command invocation, so a confirmed session stays valid for its whole lifetime.
-	/// </summary>
-	private volatile bool _authProbeSucceeded;
 
 	private readonly JsonSerializerOptions _jsonSerializerOptions = new() {
 		WriteIndented = false,
@@ -324,8 +333,14 @@ public class SysSettingsManager : ISysSettingsManager
 		parameterObj["value"] = optsValue;
 
 		string selectQueryUrl = _serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery");
-		string responseJson = _creatioClient.ExecutePostRequest(selectQueryUrl, requestBody.ToString(NewtonsoftJson.Formatting.None));
-		JObject json = JObject.Parse(responseJson);
+		string responseJson = ExecuteWriteRequest(selectQueryUrl,
+			requestBody.ToString(NewtonsoftJson.Formatting.None), "resolving a lookup value");
+		//Issue #1378: same treatment as the two write endpoints, because this call is REACHED from the
+		//write path (a Lookup value given as a display name) and holds the raw body just as they do. The
+		//parser here is Newtonsoft, so its failure is a JsonReaderException that does not derive from
+		//System.Text.Json.JsonException - it matched no arm of SysSettingFailureClassifier.Categorize and
+		//was reported as an uncategorised Unknown with "no cause could be determined".
+		JObject json = ParseLookupResponse(responseJson, "resolving a lookup value");
 		JArray rows = json["rows"] as JArray;
 		if (rows is null || rows.Count == 0) {
 			return Guid.Empty;
@@ -403,18 +418,284 @@ public class SysSettingsManager : ISysSettingsManager
 
 	#endregion
 
+	/// <summary>
+	/// Fails the operation when a RAW write/read response proves Creatio rejected the session.
+	/// </summary>
+	/// <remarks>
+	/// The write path posts through <see cref="IApplicationClient"/> and therefore still HOLDS the response
+	/// body - which is more evidence than <see cref="ClassifyingDataProvider"/> can ever have on the read
+	/// path, where ATF's provider keeps only the exception text. So a login page here is a DEFINITE
+	/// authentication failure (<c>ReauthExecutor.IsSessionExpiredResponse</c> matches the platform's
+	/// auth-routing markers in the body), not the ambiguous non-JSON page a message alone describes.
+	/// <para>
+	/// Without this check, a rejected session on a write reached the caller as
+	/// "Failed creating sys-setting." / "... is not updated. Invalid response format.": the login page is
+	/// not JSON, so the deserializer threw a <see cref="JsonException"/> that
+	/// <c>SysSettingFailureClassifier.Categorize</c> has no arm for. The genuinely-malformed-JSON path below is
+	/// unaffected, because it is only reached once this check has passed.
+	/// </para>
+	/// </remarks>
+	/// <param name="rawResponse">The response body exactly as the platform returned it.</param>
+	/// <param name="operationLabel">The sys-settings operation, used in the diagnostic.</param>
+	/// <exception cref="AuthenticationException">Creatio rejected the credentials.</exception>
+	private static void ThrowIfSessionRejected(string rawResponse, string operationLabel) {
+		//CLASSIFIED on the RAW body, DISPLAYED from the capped one - two different budgets, deliberately.
+		//The runaway-regex concern is real but belongs inside the classifier, and that is where it now
+		//lives: IsAuthenticationFailureResponse / DescribeAuthenticationCause bound the text themselves at
+		//MaxClassifiedBodyLength before any scan. Pre-capping the input HERE at the DISPLAY cap (300 chars)
+		//used that number as a classification budget as well, and Creatio's auth-routing markers (/Login/,
+		//NuiLogin, SimpleLogin, ClientUnauthorizedRequest) and an ErrorCode:5 envelope routinely sit past a
+		//doctype/meta/script preamble or a proxy interstitial - so a marker beyond 300 bytes made this
+		//method return normally, the login page was then parsed as JSON, and the rejected session went
+		//undetected.
+		if (!AuthenticationFailureClassifier.IsAuthenticationFailureResponse(rawResponse)) {
+			return;
+		}
+		// REDACTED BEFORE THE CAP. SanitizeForDisplay performs no redaction at all - it neutralizes
+		// display-hostile characters and caps length - so the excerpt this builds still carried the first
+		// bytes of a Creatio login page (anti-forgery/bootstrap markers, internal hostnames, absolute URLs)
+		// into ServerDetail and every sink that records it. Redaction has to run FIRST because the redactor
+		// matches a token as a whole unit: capping first can split one and leave the visible half in the
+		// clear. Same order as ServiceResponseJsonGuard.BuildPreview.
+		string cappedResponse = TextUtilities.SanitizeForDisplay(
+			UntrustedText.Scrub(rawResponse),
+			MaxRejectedResponseDetailLength);
+		//Issue #1333: the body is a login page or an ErrorCode:5 envelope - server-authored text that can
+		//carry a token, a user's e-mail, bidi controls, or a sentence shaped like an instruction to an
+		//agent. It used to be embedded here and therefore reached the CLI output, the log and the MCP
+		//envelope. Only a FIXED local sentence goes into the message now; the excerpt rides along on
+		//ServerDetail, which a handler writes at debug verbosity beside the correlation ID.
+		throw new SessionRejectedException(
+			$"Authentication failed while {operationLabel}: "
+			+ $"{AuthenticationFailureClassifier.DescribeAuthenticationCause(rawResponse)} "
+			+ "Verify the environment credentials (for an expired password, repair the registered profile) "
+			+ "and retry.",
+			cappedResponse);
+	}
+
+	/// <summary>
+	/// Reads a RAW write-endpoint body into <typeparamref name="TResponse"/>, turning every answer that is
+	/// not the DataService response this operation expects into a diagnosed
+	/// <see cref="NonJsonWriteResponseException"/>.
+	/// </summary>
+	/// <remarks>
+	/// Issue #1378. <see cref="ThrowIfSessionRejected"/> fires only when the body PROVES a rejected
+	/// session, so a proxy page, a WAF interstitial and a 404 error page all fell straight through to
+	/// <see cref="JsonSerializer"/>. The bare <see cref="JsonException"/> that raised names a byte offset
+	/// and nothing else - so the write path, which HOLDS the body, reported strictly less than the read
+	/// path's <c>NonJsonPage</c> verdict, which has only the provider's error text and still names both
+	/// causes and keeps the excerpt.
+	/// <para>
+	/// SYNTAX IS SEPARATED FROM SHAPE by parsing with <see cref="JsonDocument"/> first.
+	/// <see cref="JsonSerializer"/> raises the SAME <see cref="JsonException"/> for a body that is not
+	/// JSON and for valid JSON that does not fit the contract (a <c>null</c> where the record needs a
+	/// <see cref="Guid"/>, a <c>saveResult</c> that is not a map). Diagnosing the second as "a proxy,
+	/// gateway or WAF page" sends the operator to inspect a gateway that is working correctly, so the two
+	/// carry different fixed sentences and different <see cref="NonJsonWriteResponseKind"/> values.
+	/// </para>
+	/// <para>
+	/// The <see langword="null"/> document is the write-path counterpart of
+	/// <c>ClassifyingDataProvider.EnsureSuccess</c>'s no-response check: a literal <c>null</c> body parses
+	/// successfully into <see langword="null"/>, and <c>CreateSysSettingIfNotExists</c>'s switch then
+	/// raised a <see cref="System.Runtime.CompilerServices.SwitchExpressionException"/> - every arm
+	/// pattern-matches on a property, so none of them matches <see langword="null"/>.
+	/// </para>
+	/// <para>
+	/// NOT <c>Clio.Package.ServiceResponseJsonGuard.Deserialize</c>, which does the same parse: its
+	/// message embeds the endpoint URL and a bounded preview of the body, and it has nowhere to put a
+	/// <see cref="NonJsonWriteResponseException.ServerDetail"/>. Issue #1333 requires the opposite policy
+	/// here - no server-authored text in the message at all, the excerpt on the debug-only channel - so
+	/// the two cannot share a composition. What IS shared is the predicate,
+	/// <see cref="TextUtilities.LooksLikeMarkup"/>.
+	/// </para>
+	/// <para>
+	/// What the message may say is fixed by issue #1333: a login/proxy/WAF page is text a third party
+	/// chose, so NONE of it is embedded - the same rule, and the same
+	/// <c>Scrub</c>-then-<c>SanitizeForDisplay</c> order, that <see cref="ThrowIfSessionRejected"/> applies
+	/// to its own excerpt. Redaction runs BEFORE the cap because the redactor matches a token as a whole
+	/// unit and capping first can split one and leave the visible half in the clear.
+	/// </para>
+	/// </remarks>
+	/// <typeparam name="TResponse">The DataService response contract to read the body into.</typeparam>
+	/// <param name="rawResponse">The response body exactly as the platform returned it.</param>
+	/// <param name="operationLabel">The sys-settings operation, used in the diagnostic.</param>
+	/// <returns>The deserialized response, never <see langword="null"/>.</returns>
+	/// <exception cref="SessionRejectedException">The body proves Creatio rejected the session.</exception>
+	/// <exception cref="NonJsonWriteResponseException">The body is not the expected DataService response.</exception>
+	/// <summary>
+	/// Runs a DataService POST and converts a JsonException raised INSIDE the client into the same
+	/// diagnosed <see cref="NonJsonWriteResponseException"/> the body-parsing path produces.
+	/// </summary>
+	/// <remarks>
+	/// Creatio.Client parses the response itself on some paths and throws <see cref="JsonException"/>
+	/// rather than returning the body - which is exactly what an upload or a re-authenticated call
+	/// answered with a login page does (<c>SysSettingsCommand</c> keeps its own <c>JsonException</c> arm
+	/// for that reason). On master the enclosing <c>catch (JsonException)</c> turned that into
+	/// <c>false</c>; once the deserialize half moved to <see cref="NonJsonWriteResponseException"/> the
+	/// client-raised one had nothing left to catch it and escaped as a bare <see cref="JsonException"/>,
+	/// past callers that now catch only the new type (PR #1488 review). Converting it here keeps ONE exit
+	/// shape for "the answer was not a DataService response", whichever layer noticed first.
+	/// <para>
+	/// The raw body is unavailable in this case - the client consumed it - so the excerpt is empty and
+	/// the clause names only what is actually known.
+	/// </para>
+	/// </remarks>
+	/// <param name="url">The DataService endpoint.</param>
+	/// <param name="requestBody">The serialized request.</param>
+	/// <param name="operationLabel">The sys-settings operation, used in the diagnostic.</param>
+	/// <returns>The raw response body.</returns>
+	/// <exception cref="NonJsonWriteResponseException">The client could not read the answer as JSON.</exception>
+	private string ExecuteWriteRequest(string url, string requestBody, string operationLabel) {
+		try {
+			return _creatioClient.ExecutePostRequest(url, requestBody);
+		} catch (JsonException clientFailure) {
+			throw BuildNotJsonFailure(rawResponse: null, operationLabel,
+				"a response the client could not read as JSON", clientFailure);
+		}
+	}
+
+	private TResponse DeserializeWriteResponse<TResponse>(string rawResponse, string operationLabel)
+		where TResponse : class {
+		ThrowIfSessionRejected(rawResponse, operationLabel);
+		if (string.IsNullOrWhiteSpace(rawResponse)) {
+			throw BuildNotJsonFailure(rawResponse, operationLabel, EmptyBodyClause, innerException: null);
+		}
+		try {
+			using JsonDocument document = JsonDocument.Parse(rawResponse);
+			if (document.RootElement.ValueKind == JsonValueKind.Null) {
+				throw BuildNotJsonFailure(rawResponse, operationLabel, NullBodyClause, innerException: null);
+			}
+		} catch (JsonException syntaxFailure) {
+			throw BuildNotJsonFailure(rawResponse, operationLabel, DescribeUnparseableBody(rawResponse),
+				syntaxFailure);
+		}
+		try {
+			//Reached only for a document that already parsed, so any JsonException here is a CONTRACT
+			//mismatch, not a syntax error.
+			return JsonSerializer.Deserialize<TResponse>(rawResponse, _jsonSerializerOptions)
+				?? throw BuildNotJsonFailure(rawResponse, operationLabel, NullBodyClause,
+					innerException: null);
+		} catch (JsonException shapeFailure) {
+			throw BuildUnexpectedShapeFailure(rawResponse, operationLabel, shapeFailure);
+		}
+	}
+
+	/// <summary>
+	/// The Newtonsoft counterpart of <see cref="DeserializeWriteResponse{TResponse}"/>, for the SelectQuery
+	/// body the lookup-value resolution parses as a dynamic <see cref="JObject"/>.
+	/// </summary>
+	/// <remarks>
+	/// A separate method rather than a shared generic, because <c>JObject.Parse</c> raises Newtonsoft's
+	/// <c>JsonReaderException</c>, which does NOT derive from <see cref="JsonException"/> - a single
+	/// <c>catch (JsonException)</c> would let it escape. It makes the same syntax/shape distinction, and
+	/// gives a <c>null</c> document the same verdict as its sibling: parsing to
+	/// <c>JTokenType.Null</c> is the <see cref="NullBodyClause"/> case, and a valid array or scalar where
+	/// an object is required is the shape case.
+	/// </remarks>
+	/// <param name="rawResponse">The response body exactly as the platform returned it.</param>
+	/// <param name="operationLabel">The sys-settings operation, used in the diagnostic.</param>
+	/// <returns>The parsed response object, never <see langword="null"/>.</returns>
+	/// <exception cref="SessionRejectedException">The body proves Creatio rejected the session.</exception>
+	/// <exception cref="NonJsonWriteResponseException">The body is not the expected DataService response.</exception>
+	private static JObject ParseLookupResponse(string rawResponse, string operationLabel) {
+		ThrowIfSessionRejected(rawResponse, operationLabel);
+		if (string.IsNullOrWhiteSpace(rawResponse)) {
+			throw BuildNotJsonFailure(rawResponse, operationLabel, EmptyBodyClause, innerException: null);
+		}
+		NewtonsoftJson.Linq.JToken token;
+		try {
+			token = NewtonsoftJson.Linq.JToken.Parse(rawResponse);
+		} catch (NewtonsoftJson.JsonException parseException) {
+			throw BuildNotJsonFailure(rawResponse, operationLabel, DescribeUnparseableBody(rawResponse),
+				parseException);
+		}
+		if (token.Type == NewtonsoftJson.Linq.JTokenType.Null) {
+			throw BuildNotJsonFailure(rawResponse, operationLabel, NullBodyClause, innerException: null);
+		}
+		return token as JObject
+			?? throw BuildUnexpectedShapeFailure(rawResponse, operationLabel, innerException: null);
+	}
+
+	/// <summary>The clause naming what the environment answered with, when the body was empty.</summary>
+	private const string EmptyBodyClause = "an empty body";
+
+	/// <summary>The clause for a body that parses but carries no response object (a literal <c>null</c>).</summary>
+	private const string NullBodyClause = "a JSON document carrying no response object";
+
+	/// <summary>
+	/// Names the SHAPE of an unparseable body without quoting it. Markup is called out separately because
+	/// it is the diagnosis-bearing case - a login redirect, a proxy page or a gateway error page - while a
+	/// truncated or garbage body says only that the answer never was a DataService response.
+	/// </summary>
+	/// <param name="rawResponse">The raw, non-empty response body.</param>
+	private static string DescribeUnparseableBody(string rawResponse) =>
+		TextUtilities.LooksLikeMarkup(rawResponse)
+			? "an HTML/XML page"
+			: "a body that is not valid JSON";
+
+	/// <summary>
+	/// Composes the not-JSON diagnostic: a FIXED local sentence naming the operation, what arrived and
+	/// BOTH causes it can have, with the neutralized excerpt kept off the message and on
+	/// <see cref="NonJsonWriteResponseException.ServerDetail"/>.
+	/// </summary>
+	/// <remarks>
+	/// Names both causes for the same reason <c>ClassifyingDataProvider.NonJsonPageMessage</c> does: the
+	/// body did not prove a rejected session, so claiming one would send the operator to repair working
+	/// credentials whenever the real problem was a proxy, a gateway or a wrong path.
+	/// <para>
+	/// It does NOT tell the reader to rerun with <c>--debug</c> for the excerpt (PR review): only a
+	/// handler that mints a correlation ID and writes <c>ServerDetail</c> can honour that, and half the
+	/// callers of these endpoints - <c>UnlockPackageCommand</c>, <c>ApplyEnvironmentManifestCommand</c>,
+	/// <c>SetBackgroundImageCommand</c>, <c>IdentityServiceDeploymentService</c> - do neither, so the
+	/// advice would be false there. It lives in <c>SysSettingsFailureTexts.NonJsonResponseRecovery</c>,
+	/// on the path where it is true.
+	/// </para>
+	/// </remarks>
+	/// <param name="rawResponse">The response body exactly as the platform returned it.</param>
+	/// <param name="operationLabel">The sys-settings operation, used in the diagnostic.</param>
+	/// <param name="whatArrivedClause">What the environment answered with, in local prose.</param>
+	/// <param name="innerException">The parser failure, when there was one.</param>
+	private static NonJsonWriteResponseException BuildNotJsonFailure(string rawResponse,
+		string operationLabel, string whatArrivedClause, Exception innerException) =>
+		new($"Failed {operationLabel}: the environment answered with {whatArrivedClause} where a "
+			+ "DataService JSON response was expected - either the session was rejected (expired password "
+			+ "/ login redirect) or the URL does not reach Creatio (proxy, gateway, wrong path).",
+			NonJsonWriteResponseKind.NotJson,
+			BuildServerDetail(rawResponse),
+			innerException);
+
+	/// <summary>
+	/// Composes the wrong-shape diagnostic: the body IS valid JSON, so nothing here may suggest a gateway
+	/// intercepted the request.
+	/// </summary>
+	/// <param name="rawResponse">The response body exactly as the platform returned it.</param>
+	/// <param name="operationLabel">The sys-settings operation, used in the diagnostic.</param>
+	/// <param name="innerException">The deserializer failure, when there was one.</param>
+	private static NonJsonWriteResponseException BuildUnexpectedShapeFailure(string rawResponse,
+		string operationLabel, Exception innerException) =>
+		new($"Failed {operationLabel}: the environment answered with JSON of an unexpected shape - it "
+			+ "parsed, but it does not match the DataService response this operation expects. The request "
+			+ "reached something that answers JSON; the endpoint, the Creatio version or the service "
+			+ "behind the URL may not be the expected one.",
+			NonJsonWriteResponseKind.UnexpectedShape,
+			BuildServerDetail(rawResponse),
+			innerException);
+
+	/// <summary>
+	/// The neutralized, capped excerpt that rides on the exception for debug verbosity only - redacted
+	/// BEFORE the cap, so a token straddling the boundary cannot be split into a still-visible prefix.
+	/// </summary>
+	/// <param name="rawResponse">The response body exactly as the platform returned it.</param>
+	private static string BuildServerDetail(string rawResponse) =>
+		TextUtilities.SanitizeForDisplay(UntrustedText.Scrub(rawResponse), MaxRejectedResponseDetailLength);
+
 	#region Methods: Public
 
 	public string GetSysSettingValueByCode(string code){
-		string providerValue = _dataProvider.GetSysSettingValue<string>(code);
+		string providerValue = ReadThroughCliogateOrFallBack(code);
 		if (!string.IsNullOrEmpty(providerValue)) {
 			return providerValue;
 		}
-		//An empty provider value is also what a rejected read looks like, so the credentials must be
-		//verified before that emptiness is handed back as a legitimate answer. Without this, legacy
-		//get-syssetting exited 0 with no value and get-schema-name-prefix reported success:true with
-		//an empty prefix on expired credentials.
-		EnsureAuthenticatedDataServiceResponse("reading sys-setting");
 		SysSettings sysSetting = GetSysSettingByCodeWithValues(code);
 		if (sysSetting?.SysSettingsValues is null || sysSetting.SysSettingsValues.Count == 0) {
 			return providerValue ?? string.Empty;
@@ -438,6 +719,97 @@ public class SysSettingsManager : ISysSettingsManager
 	}
 
 	/// <summary>
+	/// Reads the setting through the cliogate short-circuit, returning <see cref="string.Empty"/> when
+	/// that endpoint cannot answer, so the caller falls through to the DataService read.
+	/// </summary>
+	/// <remarks>
+	/// The cliogate call is an OPTIMIZATION, not the contract: an environment without cliogate installed
+	/// answers it with a 404 whose body is not JSON, and ATF's provider does not catch on this method - so
+	/// the parser failure (a Newtonsoft <c>JsonReaderException</c>, which no arm of
+	/// <c>SysSettingFailureClassifier.Categorize</c> recognises) escaped as an uncategorised Unknown and the
+	/// SelectQuery path below never ran. That made every reader of this method - get-schema-name-prefix
+	/// above all - report "no cause could be determined" for an environment the DataService path could
+	/// have answered, or could have diagnosed properly as a rejected session.
+	/// <para>
+	/// A PROVEN credential rejection is rethrown rather than swallowed: falling back after one would run
+	/// the same rejected session through a second endpoint and report the second failure instead of the
+	/// diagnosis already established.
+	/// </para>
+	/// </remarks>
+	private string ReadThroughCliogateOrFallBack(string code) {
+		try {
+			return _dataProvider.GetSysSettingValue<string>(code);
+		} catch (SessionRejectedException) {
+			throw;
+		} catch (AuthenticationException) {
+			throw;
+		} catch (OperationCanceledException) {
+			throw;
+		} catch (Exception exception) when (!IsConnectionLevelFailure(exception)) {
+			return string.Empty;
+		}
+	}
+
+	/// <summary>
+	/// True when the request never reached the server at all (refused connection, unresolvable host,
+	/// broken TLS handshake) - as opposed to a server that answered with a status or an unparseable body.
+	/// </summary>
+	/// <remarks>
+	/// Only these failures are rethrown from the cliogate short-circuit instead of falling back. The
+	/// fallback exists for an environment that ANSWERS the cliogate endpoint badly - a 404 whose body is
+	/// not JSON when cliogate is not installed - and for that case the DataService read below is a real
+	/// second chance. When the host itself is unreachable, the second read goes to the same dead endpoint
+	/// and can only fail again; the cost of trying is that the typed exception is lost. ATF's provider
+	/// catches on the DataService path and returns <c>Success == false</c>, so the retry surfaces as a
+	/// <see cref="DataProviderFailureException"/> carrying prose and no inner fault - and every consumer
+	/// that classifies by exception TYPE (ApplicationSectionCreateCommand's transport/server-error split
+	/// above all) then has nothing left to read and reports an unclassified failure. Rethrowing here keeps
+	/// the <see cref="SocketException"/> / <see cref="WebException"/> / <see cref="HttpRequestException"/>
+	/// those consumers match on. A <see cref="HttpRequestException"/> that DOES carry a status code came
+	/// from a server that answered, so it keeps falling back.
+	/// <para>
+	/// UNWRAPS the way <see cref="AuthenticationFailureClassifier"/> does - fanning out over
+	/// <see cref="AggregateException.InnerExceptions"/> as well as following
+	/// <see cref="Exception.InnerException"/>, bounded by <see cref="MaxExceptionUnwrapDepth"/>. The
+	/// Creatio client reaches transport faults through <c>Task.Result</c>, which wraps them in an
+	/// <see cref="AggregateException"/> whose <c>InnerException</c> is only the FIRST inner fault, so a
+	/// walk that follows <c>InnerException</c> alone misses the wrapping this repository documents as the
+	/// norm. A non-matching <see cref="WebException"/> status must not end the walk either: a reset
+	/// connection arrives as <c>ConnectionClosed</c>/<c>ReceiveFailure</c>/<c>SendFailure</c> wrapping the
+	/// deciding <see cref="SocketException"/>, so the arm returns <see langword="true"/> on a match and
+	/// otherwise keeps unwrapping. The depth bound stops a self-referencing chain from looping forever.
+	/// </para>
+	/// </remarks>
+	private static bool IsConnectionLevelFailure(Exception exception) =>
+		IsConnectionLevelFailure(exception, depth: 0);
+
+	private static bool IsConnectionLevelFailure(Exception exception, int depth) {
+		if (exception is null || depth >= MaxExceptionUnwrapDepth) {
+			return false;
+		}
+		// An aggregate is a container, not a fault: every fault it holds is examined, because
+		// InnerException would surface only the first one.
+		if (exception is AggregateException aggregate) {
+			return aggregate.InnerExceptions.Any(inner => IsConnectionLevelFailure(inner, depth + 1));
+		}
+		switch (exception) {
+			case SocketException:
+				return true;
+			case WebException {
+				Status: WebExceptionStatus.ConnectFailure
+					or WebExceptionStatus.NameResolutionFailure
+					or WebExceptionStatus.ProxyNameResolutionFailure
+					or WebExceptionStatus.SecureChannelFailure
+					or WebExceptionStatus.TrustFailure
+			}:
+				return true;
+			case HttpRequestException { StatusCode: null }:
+				return true;
+		}
+		return IsConnectionLevelFailure(exception.InnerException, depth + 1);
+	}
+
+	/// <summary>
 	/// Returns the All-Users default value of a sys-setting (never a personal/current-user override).
 	/// This is the contract the MCP get-sys-setting tool advertises; legacy
 	/// <see cref="GetSysSettingValueByCode(string)"/> short-circuits through the data provider which
@@ -447,7 +819,6 @@ public class SysSettingsManager : ISysSettingsManager
 
 	/// <inheritdoc cref="ISysSettingsManager.GetAllUsersDefaultWithType" />
 	public (string Value, string ValueTypeName) GetAllUsersDefaultWithType(string code) {
-		EnsureAuthenticatedDataServiceResponse("reading sys-setting");
 		SysSettings sysSetting = GetSysSettingByCodeWithValues(code);
 		if (sysSetting is null) {
 			return (string.Empty, null);
@@ -493,9 +864,8 @@ public class SysSettingsManager : ISysSettingsManager
 		string json = sysSetting.ToString();
 		const string endpoint = "DataService/json/SyncReply/InsertSysSettingRequest";
 		string url = _serviceUrlBuilder.Build(endpoint);
-		EnsureAuthenticatedDataServiceResponse("creating sys-setting");
-		string response = _creatioClient.ExecutePostRequest(url, json);
-		return JsonSerializer.Deserialize<InsertSysSettingResponse>(response, _jsonSerializerOptions);
+		string response = ExecuteWriteRequest(url, json, "creating sys-setting");
+		return DeserializeWriteResponse<InsertSysSettingResponse>(response, "creating sys-setting");
 	}
 
 	public bool UpdateSysSetting(string code, object value, string valueTypeName = "Text"){
@@ -603,36 +973,47 @@ public class SysSettingsManager : ISysSettingsManager
 				$"SysSettings with code: {code} is not updated. Unsupported value-type-name '{optionsType}'.");
 			return false;
 		}
-		EnsureAuthenticatedDataServiceResponse("updating sys-setting");
 		string requestData = JsonSerializer.Serialize(new Dictionary<string, object> {
 			["isPersonal"] = false,
 			["sysSettingsValues"] = new Dictionary<string, object> { [code] = payloadValue }
 		}, _jsonSerializerOptions);
 		string postSysSettingsValuesUrl
 			= _serviceUrlBuilder.Build("DataService/json/SyncReply/PostSysSettingsValues");
-		try {
-
-			string result = _creatioClient.ExecutePostRequest(postSysSettingsValuesUrl, requestData);
-			if (string.IsNullOrWhiteSpace(result)) {
-				_logger.WriteError($"SysSettings with code: {code} is not updated. Empty response received.");
-				return false;
-			}
-			UpdateSysSettingResponse response =
-				JsonSerializer.Deserialize<UpdateSysSettingResponse>(result, _jsonSerializerOptions);
-			if (response?.SaveResult is not null
-				&& response.SaveResult.TryGetValue(code, out bool perCodeOk)
-				&& perCodeOk) {
-				return true;
-			}
-			string errMsg = response?.ResponseStatus?.Message;
-			_logger.WriteError(
-				$"SysSettings with code: {code} is not updated. " +
-				(string.IsNullOrWhiteSpace(errMsg) ? "Platform reported a failed update." : errMsg));
-			return false;
-		} catch (JsonException) {
-			_logger.WriteError($"SysSettings with code: {code} is not updated. Invalid response format.");
-			return false;
+		string result = ExecuteWriteRequest(postSysSettingsValuesUrl, requestData, "updating sys-setting");
+		//Issue #1378: the deserialize is wrapped, and the empty-body check folded in, so every answer
+		//that is not a DataService JSON response leaves here as a diagnosed NonJsonWriteResponseException
+		//rather than as a bare JsonException or a `false` that says the setting was refused.
+		//It ESCAPES rather than being caught and turned into `false`, exactly like the
+		//SessionRejectedException raised from the same spot already did: the two command entry points
+		//(TryUpdateSysSetting) catch every exception and route it through ISysSettingFailureClassifier.Categorize, which mints
+		//the correlation ID and writes ServerDetail at debug verbosity. Returning `false` instead would
+		//report RefusedUpdateCause - "the setting may not exist, or the value did not match its type" -
+		//for a gateway page, and the excerpt would have no sink at all. The bool contract is unchanged
+		//for what it actually describes: a refusal, or a value clio itself rejects.
+		UpdateSysSettingResponse response =
+			DeserializeWriteResponse<UpdateSysSettingResponse>(result, "updating sys-setting");
+		//NOT null-conditional: DeserializeWriteResponse guarantees a non-null response - a body that
+		//parses to null is itself one of the answers it diagnoses.
+		if (response.SaveResult is not null
+			&& response.SaveResult.TryGetValue(code, out bool perCodeOk)
+			&& perCodeOk) {
+			return true;
 		}
+		//Issue #1333: ResponseStatus.Message is server-authored prose. It is the platform's own
+		//validation text ("Column 'Name' is required"), so it cannot be replaced by a fixed sentence
+		//without destroying the diagnosis - but it is scrubbed, flattened and capped before it is
+		//printed, so a token, an address or an instruction-shaped sentence cannot ride out on this
+		//line.
+		//CONSOLE rendering, not the fenced one (PR #1374 review): this is _logger.WriteError for
+		//`clio set-syssetting`, so its only reader is a person at a terminal. The fenced form is for
+		//a field a model reads; printing "[untrusted-source-text begin] Column 'Name' is required.
+		//[untrusted-source-text end]" for an ordinary platform validation failure has no audience
+		//here and reads as clio malfunctioning.
+		string errMsg = UntrustedText.ForConsole(response.ResponseStatus?.Message);
+		_logger.WriteError(
+			$"SysSettings with code: {code} is not updated. " +
+			(errMsg is null ? "Platform reported a failed update." : errMsg));
+		return false;
 	}
 	
 	public void CreateSysSettingIfNotExists(string optsCode, string code, string optsType){
@@ -680,12 +1061,6 @@ public class SysSettingsManager : ISysSettingsManager
 		var sysSettings = includeBinary
 			? models.ToList()
 			: models.Where(s => s.ValueTypeName != "Binary").ToList();
-		// RemoteDataProvider represents an authentication failure as an empty model collection. Probe only
-		// after that signal so provider-backed unit tests and legitimate non-empty reads stay side-effect free.
-		if (sysSettings.Count == 0) {
-			EnsureAuthenticatedDataServiceResponse("listing sys-settings");
-		}
-
 		var sysSettingsValues = AppDataContextFactory.GetAppDataContext(_dataProvider)
 			.Models<SysSettingsValue>()
 			.ToList();
@@ -697,190 +1072,6 @@ public class SysSettingsManager : ISysSettingsManager
 		}
 		return sysSettings;
 	}
-
-	/// <summary>
-	/// Probes the authenticated DataService surface used by the repository provider before a sys-settings
-	/// operation. The provider exposes authentication failures as an unsuccessful empty collection, so a
-	/// raw response must be inspected before a provider result is trusted.
-	/// </summary>
-	/// <param name="operationLabel">The sys-settings operation used in the diagnostic.</param>
-	/// <exception cref="AuthenticationException">Thrown when Creatio rejects the credentials.</exception>
-	private void EnsureAuthenticatedDataServiceResponse(string operationLabel) {
-		// The probe answers one question — "are these credentials accepted?" — and the answer cannot change
-		// within the lifetime of a manager instance (SysSettingsManager is resolved per command invocation).
-		// Re-probing on every helper call would add one DataService round-trip per read; GetFileSecurityPolicy
-		// alone performs three sequential reads, so the flag removes 2/3 of that avoidable latency.
-		if (_authProbeSucceeded) {
-			return;
-		}
-		string url = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select);
-		string response;
-		try {
-			response = _creatioClient.ExecutePostRequest(url, AuthenticatedReadinessQuery,
-				AuthProbeRequestTimeoutMilliseconds, AuthProbeMaxAttempts, AuthProbeRetryDelaySeconds);
-		} catch (Exception exception) when (IsAuthenticationException(exception)) {
-			throw new AuthenticationException(
-				$"Authentication failed while {operationLabel}. Verify the environment credentials and retry.",
-				exception);
-		}
-		if (string.IsNullOrWhiteSpace(response)) {
-			//A DataService SelectQuery that was accepted always answers with a JSON envelope. An
-			//empty body is an indeterminate transport or session failure, so treating it as proof of
-			//authentication brought back the silent empty-success result and let every later write
-			//skip the probe through the cached flag.
-			throw new AuthenticationException(
-				$"Failed {operationLabel}: the environment returned an empty DataService response, which does "
-				+ "not confirm the credentials were accepted. Verify the environment credentials and retry.");
-		}
-		if (ReauthExecutor.IsSessionExpiredResponse(response)) {
-			throw new AuthenticationException(
-				$"Authentication failed while {operationLabel}: Creatio returned a login redirect. " +
-				"Verify the environment credentials (for an expired password, repair the registered profile) and retry.");
-		}
-		try {
-			using JsonDocument document = JsonDocument.Parse(response);
-			if (ContainsAuthenticationFailure(document.RootElement)) {
-				string detail = FindStringProperty(document.RootElement, "message") ?? "Creatio rejected the credentials.";
-				throw new AuthenticationException(
-					$"Authentication failed while {operationLabel}: {SanitizeAuthenticationDetail(detail)} " +
-					"Verify the environment credentials and retry.");
-			}
-			//The rejection scan is bounded, and a payload deeper than the bound is unexamined rather than
-			//clean - so it must not become permanent proof either.
-			if (ExceedsProbeDepth(document.RootElement)) {
-				throw new InvalidOperationException(
-					$"Failed {operationLabel}: the environment returned a DataService response nested deeper than "
-					+ $"{MaxAuthProbeJsonDepth} levels, which this preflight cannot examine, so the credentials "
-					+ "were not confirmed.");
-			}
-			//Proof of authentication has to be POSITIVE. "No rejection marker found" is also true of {}, [],
-			//null, {"success":false} and a gateway's {"error":"502"} - and each of those used to set
-			//_authProbeSucceeded permanently, so every later operation skipped the probe and an
-			//authentication-collapsed empty provider read was returned as a valid empty result again. Only a
-			//DataService envelope proves the request was authenticated AND executed, which is the same rule
-			//ServerReadinessWaiter applies to this proxy/gateway failure mode.
-			if (!ServerReadinessWaiter.IsGenuineAuthenticatedJsonAnswer(response)
-				|| !IsCoherentDataServiceEnvelope(document.RootElement)) {
-				throw new InvalidOperationException(
-					$"Failed {operationLabel}: the environment answered with JSON that is not a DataService "
-					+ "response envelope, so the credentials were not confirmed. Verify the environment URL "
-					+ "points at Creatio rather than at a proxy or gateway, and retry.");
-			}
-			_authProbeSucceeded = true;
-		} catch (JsonException) {
-			throw new InvalidOperationException(
-				$"Failed {operationLabel}: the environment returned a non-JSON response instead of a DataService response.");
-		}
-	}
-
-	/// <summary>
-	/// True when the probe answer is a COMPLETE DataService envelope rather than a single marker property.
-	/// </summary>
-	/// <remarks>
-	/// <see cref="ServerReadinessWaiter.IsGenuineAuthenticatedJsonAnswer"/> accepts any one contract marker,
-	/// which is the right rule for a readiness poll but too weak for proof of authentication: a bare
-	/// <c>{"success":false}</c> or <c>{"success":true}</c> from a proxy qualified, and that answer then cached
-	/// <c>_authProbeSucceeded</c> for the rest of the manager's life, so every later read or write skipped the
-	/// probe. A real answer carries the payload the operation produced (<c>rows</c>, <c>rowsAffected</c>,
-	/// <c>saveResult</c>); a real refusal carries the error envelope beside the flag. Neither shape can be
-	/// produced by an intermediary that only knows the word <c>success</c>. The stricter rule stays local
-	/// because the readiness poll has its own, looser contract.
-	/// </remarks>
-	private static bool IsCoherentDataServiceEnvelope(JsonElement root) {
-		if (root.ValueKind != JsonValueKind.Object) {
-			return false;
-		}
-		string[] payloadMarkers = ["rows", "rowsAffected", "saveResult", "errorInfo", "responseStatus"];
-		return payloadMarkers.Any(marker => root.TryGetProperty(marker, out JsonElement _));
-	}
-
-	/// <summary>
-	/// True when the payload nests deeper than the rejection scan examines. The scan answers "no failure"
-	/// on overflow, so without this check an over-deep payload would be cached as proof of authentication.
-	/// </summary>
-	private static bool ExceedsProbeDepth(JsonElement element, int depth = 0) {
-		if (depth > MaxAuthProbeJsonDepth) {
-			return true;
-		}
-		return element.ValueKind switch {
-			JsonValueKind.Object => element.EnumerateObject().Any(property => ExceedsProbeDepth(property.Value, depth + 1)),
-			JsonValueKind.Array => element.EnumerateArray().Any(item => ExceedsProbeDepth(item, depth + 1)),
-			var _ => false
-		};
-	}
-
-	private static bool ContainsAuthenticationFailure(JsonElement element, int depth = 0) {
-		if (depth > MaxAuthProbeJsonDepth) {
-			return false;
-		}
-		return element.ValueKind switch {
-			JsonValueKind.Object => element.EnumerateObject().Any(property => IsAuthenticationFailureProperty(property, depth + 1)),
-			JsonValueKind.Array => element.EnumerateArray().Any(item => ContainsAuthenticationFailure(item, depth + 1)),
-			_ => false
-		};
-	}
-
-	private static bool IsAuthenticationFailureProperty(JsonProperty property, int depth) =>
-		IsAuthenticationErrorCode(property)
-		|| IsAuthenticationFailureMessage(property)
-		|| ContainsAuthenticationFailure(property.Value, depth);
-
-	private static bool IsAuthenticationErrorCode(JsonProperty property) =>
-		string.Equals(property.Name, "ErrorCode", StringComparison.OrdinalIgnoreCase)
-		&& string.Equals(property.Value.ToString(), "5", StringComparison.OrdinalIgnoreCase);
-
-	private static bool IsAuthenticationFailureMessage(JsonProperty property) {
-		if (!string.Equals(property.Name, "Message", StringComparison.OrdinalIgnoreCase)
-			|| property.Value.ValueKind != JsonValueKind.String) {
-			return false;
-		}
-		string message = property.Value.GetString();
-		return message is not null && AuthenticationFailureMessages.Contains(message.Trim());
-	}
-
-	private static string FindStringProperty(JsonElement element, string propertyName, int depth = 0) {
-		if (depth > MaxAuthProbeJsonDepth) {
-			return null;
-		}
-		if (element.ValueKind == JsonValueKind.Object) {
-			foreach (JsonProperty property in element.EnumerateObject()) {
-				if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase)
-					&& property.Value.ValueKind == JsonValueKind.String) {
-					return property.Value.GetString();
-				}
-				string nested = FindStringProperty(property.Value, propertyName, depth + 1);
-				if (nested is not null) {
-					return nested;
-				}
-			}
-		}
-		return element.ValueKind == JsonValueKind.Array
-			? element.EnumerateArray().Select(item => FindStringProperty(item, propertyName, depth + 1))
-				.FirstOrDefault(value => value is not null)
-			: null;
-	}
-
-	/// <summary>
-	/// Normalizes a server-controlled detail before it is embedded in an exception message: every control
-	/// character is dropped (not just CR/LF, so NUL, TAB and escape sequences cannot corrupt terminal output
-	/// or a log pipeline) and the result is capped so a pathological multi-megabyte payload cannot be
-	/// amplified into every downstream log sink.
-	/// </summary>
-	private static string SanitizeAuthenticationDetail(string detail) {
-		string cleaned = new string(detail.Where(character => !char.IsControl(character)).ToArray()).Trim();
-		return cleaned.Length > MaxAuthenticationDetailLength
-			? cleaned[..MaxAuthenticationDetailLength] + "…"
-			: cleaned;
-	}
-
-	/// <summary>
-	/// Delegates to the one shared classifier. This used to be a second, prose-only implementation whose
-	/// bare Contains("401") ran BEFORE the command layer's typed-status-first version on the real preflight
-	/// path - so a refused connection to port 40124, or a correlation id containing 401, was wrapped as an
-	/// AuthenticationException and the corrected classifier never saw the original exception.
-	/// </summary>
-	private static bool IsAuthenticationException(Exception exception) =>
-		AuthenticationFailureClassifier.IsAuthenticationFailure(exception);
 
 	// Platform-fixed FileSecurityMode lookup ids (constants in Terrasoft.Web.FileSecurity.FileSecurityModeProvider).
 	private static readonly Guid FileSecurityModeDisabledId = new("9801C625-FAFB-4ED3-9383-C3C942A5C1E3");

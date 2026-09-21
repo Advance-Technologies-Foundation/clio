@@ -24,6 +24,19 @@ public sealed class RunProcessTool(
 
 	internal const string ToolName = "run-process";
 
+	/// <summary>The canonical field list echoed back when an unknown argument key is refused (ENG-98566).</summary>
+	internal const string ValidArgsHint = "Valid: environment-name, process-name, parameters, result-parameters, timeout, uri, login, password.";
+
+	/// <summary>
+	/// Refusal for a call whose whole argument object is absent (ENG-98566, Sonar S2259).
+	/// </summary>
+	/// <remarks>
+	/// Stays inline rather than moving into the shared helper: it has to run before any field can be read,
+	/// and that is what lets the analyser prove no field read is reached with null (csharpsquid:S2259). See
+	/// <see cref="McpToolArgumentSupport.BuildUnknownArgumentError"/>.
+	/// </remarks>
+	internal const string NullArgsError = "args is required: the call carried no argument object. " + ValidArgsHint;
+
 	internal const string StillRunningStatus = "still-running";
 
 	// Test seam; null in production, where the default deadline applies.
@@ -53,7 +66,15 @@ public sealed class RunProcessTool(
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[Description(
 		"Run (launch) a Creatio business process; resolve its CODE and parameter codes with get-process-signature "
-		+ "first, and read the outcome from `status`.")]
+		+ "first, and read the outcome from `status`. VERSIONS: a code names ONE version, because every saved "
+		+ "version is a separate schema with its own code, and the version the platform's own triggers and "
+		+ "schedules execute is the family's ACTIVE version - which is usually NOT the family root you reach by "
+		+ "the base name. Before launching a process that has versions, read `isActiveVersion` from "
+		+ "describe-business-process and launch the code it reports in `activeVersionName`. Whether this endpoint "
+		+ "itself folds a non-active code onto the active version is NOT established, so do not rely on it: pass "
+		+ "the active version's code explicitly. A display caption is still refused - launching must name a code "
+		+ "- but the refusal names the code it resolved to, and that IS the active version's code, so the refusal "
+		+ "message is the short path to the right one.")]
 	public async Task<RunProcessResponse> RunProcess(
 		[Description("run-process parameters")]
 		[Required]
@@ -61,6 +82,17 @@ public sealed class RunProcessTool(
 		global::ModelContextProtocol.Server.McpServer server = null,
 		RequestContext<CallToolRequestParams> requestContext = null,
 		CancellationToken cancellationToken = default) {
+		if (args is null) {
+			return new RunProcessResponse { Error = NullArgsError };
+		}
+
+		// The only unknown-key defence this tool has; the helper's docs say why. ENG-98566.
+		string argumentError = McpToolArgumentSupport.BuildUnknownArgumentError(
+			args.ExtensionData, ValidArgsHint);
+		if (!string.IsNullOrWhiteSpace(argumentError)) {
+			return new RunProcessResponse { Error = argumentError };
+		}
+
 		RunProcessOptions options = new() {
 			ProcessName = args.ProcessName,
 			Parameters = args.Parameters,
@@ -121,10 +153,20 @@ public sealed class RunProcessTool(
 
 public sealed record RunProcessArgs {
 
+	/// <summary>
+	/// Overflow bag for top-level keys the SDK could not bind to a declared argument (ENG-98566).
+	/// Inspected by the tool so a mis-keyed argument is named back to the caller; a bag that is
+	/// never read is the failure mode, not the fix.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
+
 	[JsonPropertyName("process-name")]
-	[Description("Process CODE (schema Name), e.g. 'MigrateDashboardsProcess'. A display caption is rejected, "
-		+ "naming the code it resolved to — captions are not unique, so launching by one could start the wrong "
-		+ "process.")]
+	[Description("Process CODE (schema Name), e.g. 'MigrateDashboardsProcess', naming ONE version of a "
+		+ "process. A display caption is rejected, naming the code it resolved to - the ACTIVE version's code "
+		+ "when the caption belongs to one version family, since a caption is shared by every member; a caption "
+		+ "shared by several distinct processes is refused with the candidates, because launching by one could "
+		+ "start the wrong process.")]
 	[Required]
 	public required string ProcessName { get; init; }
 

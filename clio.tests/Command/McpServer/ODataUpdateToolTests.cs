@@ -50,6 +50,8 @@ public sealed class ODataUpdateToolTests {
 		        <Property Name="Id" Type="Edm.Guid" Nullable="false" />
 		        <Property Name="CreatedOn" Type="Edm.DateTimeOffset" />
 		        <Property Name="ModifiedOn" Type="Edm.DateTimeOffset" />
+		        <Property Name="BaseNote" Type="Edm.String" />
+		        <Property Name="DueDate" Type="Edm.String" />
 		      </EntityType>
 		      <EntityType Name="Contact" BaseType="Terrasoft.Configuration.OData.BaseEntity">
 		        <Key><PropertyRef Name="Id" /></Key>
@@ -57,6 +59,7 @@ public sealed class ODataUpdateToolTests {
 		        <Property Name="Name" Type="Edm.String" />
 		        <Property Name="JobTitle" Type="Edm.String" />
 		        <Property Name="SomeGuid" Type="Edm.Guid" />
+		        <Property Name="DueDate" Type="Edm.DateTimeOffset" />
 		        <Property Name="AccountId" Type="Edm.Guid" />
 		        <NavigationProperty Name="Account" Type="Terrasoft.Configuration.OData.Account">
 		          <ReferentialConstraint Property="AccountId" ReferencedProperty="Id" />
@@ -136,7 +139,25 @@ public sealed class ODataUpdateToolTests {
 			Resolver = Substitute.For<IToolCommandResolver>();
 			Resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(Client);
 			Resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(UrlBuilder);
-			Tool = new ODataUpdateTool(Resolver, EmptyFileContract());
+			Resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+				.Returns((Client, UrlBuilder));
+			Tool = new ODataUpdateTool(Resolver, new OperationCorrelationIdProvider(), EmptyFileContract());
+		}
+
+		/// <summary>
+		/// Fixture around an ALREADY configured client, for the cases whose stub answers differ per
+		/// attempt rather than per URL (the bounded-retry tests).
+		/// </summary>
+		public Fixture(IApplicationClient client) {
+			Client = client;
+			UrlBuilder = Substitute.For<IServiceUrlBuilder>();
+			UrlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://creatio/{call.Arg<string>()}");
+			Resolver = Substitute.For<IToolCommandResolver>();
+			Resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(Client);
+			Resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(UrlBuilder);
+			Resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+				.Returns((Client, UrlBuilder));
+			Tool = new ODataUpdateTool(Resolver, new OperationCorrelationIdProvider(), EmptyFileContract());
 		}
 
 		public IApplicationClient Client { get; }
@@ -254,7 +275,7 @@ public sealed class ODataUpdateToolTests {
 		// Assert
 		response.Success.Should().BeTrue(because: response.Error);
 		f.Client.Received(1).ExecuteGetRequest(MetadataUrl, ODataFieldValidation.RequestTimeoutMs,
-			ODataFieldValidation.TransientAttempts, ODataFieldValidation.TransientDelaySec);
+			ODataFieldValidation.TransportAttempts, ODataFieldValidation.TransientDelaySec);
 		f.Client.DidNotReceive().ExecuteGetRequest(
 			Arg.Is<string>(url => url.Contains("?$select=", StringComparison.Ordinal)),
 			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>()
@@ -262,6 +283,187 @@ public sealed class ODataUpdateToolTests {
 		);
 		f.Client.Received(1).ExecutePatchRequest(KeyUrl, """{"Name":"New"}""", 30000);
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Retries the pre-write metadata read when the transport answers with an empty body, and writes once the retry returns the CSDL (issue #1315 item 1).")]
+	public void Update_Should_Retry_The_Metadata_Read_After_An_Empty_Body() {
+		// Arrange - an empty body is how the pinned creatio.client reports a transient transport failure:
+		// its synchronous ExecuteGetRequest swallows HttpRequestException / TaskCanceledException into
+		// string.Empty and passes the literal 1 into its own send loop, so the transport can never retry.
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(string.Empty, CsdL());
+		client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>()).Returns(string.Empty);
+		Fixture f = FixtureFor(client);
+
+		// Act
+		ODataWriteResponse response = Update(f, """{"Name":"New"}""");
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "the second attempt returned the CSDL, so the payload is verified and the write proceeds");
+		client.Received(2).ExecuteGetRequest(MetadataUrl, Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		client.Received(1).ExecutePatchRequest(KeyUrl, """{"Name":"New"}""", 30000);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Exhausts the bounded retry when every pre-write attempt answers with an empty body, then fails unverified without writing, spending only ONE probe attempt because the metadata leg already proved the target silent (issue #1315 item 1).")]
+	public void Update_Should_Exhaust_The_Bounded_Retry_And_Refuse_To_Write() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(string.Empty);
+		Fixture f = FixtureFor(client);
+
+		// Act
+		ODataWriteResponse response = Update(f, """{"Name":"New"}""");
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "an outcome the tool could neither confirm nor refute must never be reported as a write");
+		response.Error!.Should().Contain("could not be verified",
+			because: "the caller has to be able to tell an unverifiable pre-write from a rejected field");
+		client.Received(ODataFieldValidation.TransientAttempts)
+			.ExecuteGetRequest(MetadataUrl, Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		// because: the metadata leg already spent the full budget on a target that answered nothing, so a
+		// second full budget on the same dead target would push the refusal past the MCP client's ceiling
+		client.Received(ODataFieldValidation.ExhaustedTransportProbeAttempts).ExecuteGetRequest(
+			Arg.Is<string>(url => url.Contains("?$select=", StringComparison.Ordinal)),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		client.DidNotReceiveWithAnyArgs().ExecutePatchRequest(null, null, 0);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Keeps the probe's full retry budget when the metadata leg ended with an ANSWER rather than silence: the transport is proven alive, so an empty probe body is still worth retrying (issue #1315 item 1).")]
+	public void Update_Should_Keep_The_Full_Probe_Budget_After_An_Answered_Metadata_Read() {
+		// Arrange - the metadata endpoint answers with JSON that is neither CSDL nor a recognized Creatio
+		// fault, so the type stays unresolved and the call degrades to the $select probe; that answer is
+		// proof the target is reachable, which an empty body is not.
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(call => call.ArgAt<string>(0).EndsWith("/$metadata", StringComparison.Ordinal)
+				? "{\"unrelated\":1}"
+				: string.Empty);
+		Fixture f = FixtureFor(client);
+
+		// Act
+		ODataWriteResponse response = Update(f, ODataUpdateToolTests.NameUpdate);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "an empty probe body proves nothing about the field names, and unverified is never a write");
+		// because: a JSON answer is definitive - a second identical request cannot turn it into CSDL
+		client.Received(1).ExecuteGetRequest(MetadataUrl, Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		// because: the transport answered the metadata read, so the probe keeps the full budget the
+		// flaky-stand class needs - the dead-target shortcut must not fire on a live target
+		client.Received(ODataFieldValidation.TransientAttempts).ExecuteGetRequest(
+			Arg.Is<string>(url => url.Contains("?$select=", StringComparison.Ordinal)),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		client.DidNotReceiveWithAnyArgs().ExecutePatchRequest(null, null, 0);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Does not retry a definitive pre-write answer: a CSDL that resolves the type is read once (issue #1315 item 1).")]
+	public void Update_Should_Not_Retry_A_Definitive_Metadata_Answer() {
+		// Arrange
+		Fixture f = CsdLFixture();
+		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>()).Returns(string.Empty);
+
+		// Act
+		ODataWriteResponse response = Update(f, """{"Name":"New"}""");
+
+		// Assert
+		response.Success.Should().BeTrue(because: response.Error);
+		f.Client.Received(1).ExecuteGetRequest(MetadataUrl, Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Abandons a CSDL whose BaseType chain is longer than the supported inheritance depth, fails the payload as unverified and writes nothing instead of walking the chain (issue #1315 item 4).")]
+	public void Update_Should_Refuse_A_Metadata_Inheritance_Chain_Deeper_Than_The_Cap() {
+		// Arrange - the chain is server-authored and acyclic, so the cycle guard admits it; only a depth
+		// bound stops the walk. A recursive walk over a chain long enough to exhaust the stack would take
+		// the whole shared MCP process down with an uncatchable StackOverflowException, which no test can
+		// observe from inside the process - so this asserts the cap fires, not the crash it prevents.
+		Fixture f = new(DeeplyInheritedCsdl(200),
+			_ => throw new InvalidOperationException("the probe must not run: the metadata answer is terminal"));
+
+		// Act
+		ODataWriteResponse response = Update(f, """{"Name":"New"}""");
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a type the walk refused to resolve leaves the field names unverified, and unverified is not a write");
+		response.Error!.Should().Contain("could not be verified",
+			because: "the caller must read this as an unverifiable pre-write, the same as any other one");
+		response.Error!.Should().Contain("No write was performed",
+			because: "the caller has to learn the record is untouched so it can safely retry");
+		f.Client.DidNotReceiveWithAnyArgs().ExecutePatchRequest(null, null, 0);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A BaseType chain within the supported depth is still walked end to end: a property declared only on the deepest base type is accepted (issue #1315 item 4).")]
+	public void Update_Should_Still_Walk_A_Chain_Within_The_Depth_Cap() {
+		// Arrange
+		Fixture f = new(DeeplyInheritedCsdl(5), _ => throw new InvalidOperationException("probe must not run"));
+		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>()).Returns(string.Empty);
+
+		// Act
+		ODataWriteResponse response = Update(f, """{"RootOnly":"x"}""");
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "RootOnly is declared on the last type of the chain, so bounding the walk must not shorten it");
+		f.Client.Received(1).ExecutePatchRequest(KeyUrl, """{"RootOnly":"x"}""", 30000);
+	}
+
+	/// <summary>
+	/// CSDL whose Contact derives through a chain of <paramref name="depth"/> generated base types. The
+	/// LAST type of the chain declares RootOnly, so a walk that stops early is visible as a rejected field
+	/// rather than as a silently shorter property set.
+	/// </summary>
+	private static string DeeplyInheritedCsdl(int depth) {
+		System.Text.StringBuilder types = new();
+		for (int i = 0; i < depth; i++) {
+			string baseType = i + 1 < depth
+				? $" BaseType=\"Terrasoft.Configuration.OData.Base{i + 1}\""
+				: string.Empty;
+			string rootOnly = i + 1 < depth ? string.Empty : "<Property Name=\"RootOnly\" Type=\"Edm.String\" />";
+			types.Append($"""
+				      <EntityType Name="Base{i}"{baseType}>
+				        <Key><PropertyRef Name="Id" /></Key>
+				        <Property Name="Id" Type="Edm.Guid" Nullable="false" />
+				        {rootOnly}
+				      </EntityType>
+
+				""");
+		}
+		return $"""
+			<?xml version="1.0" encoding="utf-8" standalone="no"?>
+			<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+			  <edmx:DataServices>
+			    <Schema Namespace="Terrasoft.Configuration.OData" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+			      <EntityType Name="Contact" BaseType="Terrasoft.Configuration.OData.Base0">
+			        <Key><PropertyRef Name="Id" /></Key>
+			        <Property Name="Id" Type="Edm.Guid" Nullable="false" />
+			        <Property Name="Name" Type="Edm.String" />
+			      </EntityType>
+			{types}    </Schema>
+			  </edmx:DataServices>
+			</edmx:Edmx>
+			""";
+	}
+
+	/// <summary>Fixture built around an already-configured client (the retry cases stub it per attempt).</summary>
+	private static Fixture FixtureFor(IApplicationClient client) => new(client);
+
+	/// <summary>The one-field payload the retry-budget tests write; its name exists on the CSDL fixture.</summary>
+	private const string NameUpdate = "{\"Name\":\"New\"}";
 
 	[Test]
 	[Category("Unit")]
@@ -367,6 +569,32 @@ public sealed class ODataUpdateToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Routes an HTML pre-write probe response through the same markup classification the read path uses, so the HTTP status the page states and the async-gap hint reach the caller instead of a bare \"was not JSON\".")]
+	public void Update_Should_Report_The_Http_Status_Of_An_Html_Probe_Response() {
+		// Arrange
+		Fixture f = new(HtmlPage, _ => HtmlPage);
+
+		// Act
+		ODataWriteResponse response = Update(f, """{"Name":"New"}""");
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "an HTML error page proves the probe never reached a Creatio OData controller");
+		response.Error!.Should()
+			.Contain("HTTP 404",
+				because: "the status is the only thing that separates an entity whose OData controller is still "
+					+ "being rebuilt from one that will never have one, and the transport exposes no status")
+			.And.Contain(CreatioResponseError.UnregisteredEntityHint,
+				because: "the 404 probe and the 404 read are the same condition and must share the one hint")
+			.And.Contain("No write was performed",
+				because: "an unverified outcome must stay unverified regardless of how well it is diagnosed")
+			.And.NotContain("error</body>",
+				because: "no fragment of the proxy page may reach an MCP transcript, only the status digits");
+		f.Client.DidNotReceiveWithAnyArgs().ExecutePatchRequest(null, null, 0);
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Refuses on an unrecognized OData error from the pre-write requests without writing, and without echoing the server's own wording.")]
 	public void Update_Should_Reject_Before_Writing_When_Probe_Hits_Different_OData_Error() {
 		// Arrange
@@ -420,6 +648,9 @@ public sealed class ODataUpdateToolTests {
 
 		// Assert
 		response.Success.Should().BeFalse(because: "a transport failure on the PATCH is not a successful write");
+		response.Diagnostic!.WriteAttempted.Should().BeTrue(because: "the transport threw after entering the write call");
+		response.Diagnostic.TransportOutcome.Should().Be("unknown", because: "no response was received");
+		response.Diagnostic.SideEffect.Should().Be("unknown", because: "transport failure does not prove rollback");
 		response.Error!.Should()
 			.Contain("[redacted-path]")
 			.And.NotContain("/home/depot",
@@ -592,10 +823,10 @@ public sealed class ODataUpdateToolTests {
 		// Color is reported.
 		f.Client.Received(1).ExecuteGetRequest(
 			$"{KeyUrl}?$select=Id,Name,JobTitle,Color",
-			ODataFieldValidation.RequestTimeoutMs, ODataFieldValidation.TransientAttempts, ODataFieldValidation.TransientDelaySec);
+			ODataFieldValidation.RequestTimeoutMs, ODataFieldValidation.TransportAttempts, ODataFieldValidation.TransientDelaySec);
 		f.Client.Received(2).ExecuteGetRequest(
 			Arg.Is<string>(url => url.Contains("?$select=", StringComparison.Ordinal)),
-			ODataFieldValidation.FollowUpProbeTimeoutMs, ODataFieldValidation.TransientAttempts, ODataFieldValidation.TransientDelaySec);
+			ODataFieldValidation.FollowUpProbeTimeoutMs, ODataFieldValidation.TransportAttempts, ODataFieldValidation.TransientDelaySec);
 		f.Client.DidNotReceiveWithAnyArgs().ExecutePatchRequest(null, null, 0);
 	}
 
@@ -618,8 +849,8 @@ public sealed class ODataUpdateToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Sends the bounded retry parameters (30s timeout, 3 attempts, 1s delay) for the pre-write requests.")]
-	public void Update_Should_Use_Bounded_Retry_For_PreWrite_Requests() {
+	[Description("Calls the transport with ONE attempt and the 30s pre-write timeout: the retry lives above the body classification (see the retry tests), because the pinned transport discards its own maxAttempts argument.")]
+	public void Update_Should_Call_The_Transport_With_A_Single_Attempt() {
 		// Arrange
 		Fixture f = CsdLFixture();
 		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
@@ -631,8 +862,10 @@ public sealed class ODataUpdateToolTests {
 		// Assert
 		response.Success.Should().BeTrue(because: response.Error);
 		f.Client.Received(1).ExecuteGetRequest(MetadataUrl, ODataFieldValidation.RequestTimeoutMs,
-			ODataFieldValidation.TransientAttempts, ODataFieldValidation.TransientDelaySec)
-			// because: the retry budget must stay bounded so a dead metadata endpoint cannot hang the tool
+			ODataFieldValidation.TransportAttempts, ODataFieldValidation.TransientDelaySec)
+			// because: the per-request budget must stay bounded so a dead metadata endpoint cannot hang the
+			// tool, and asking the transport for more than one attempt would only inflate that budget - it
+			// cannot produce a second request
 		;
 	}
 
@@ -889,7 +1122,9 @@ public sealed class ODataUpdateToolTests {
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
 			.Returns(firstRoot, repointedRoot);
-		ODataUpdateTool tool = new(resolver, EmptyFileContract());
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, firstRoot));
+		ODataUpdateTool tool = new(resolver, new OperationCorrelationIdProvider(), EmptyFileContract());
 
 		// Act
 		ODataWriteResponse response = tool.Update(new ODataUpdateArgs {
@@ -902,7 +1137,9 @@ public sealed class ODataUpdateToolTests {
 
 		// Assert
 		response.Success.Should().BeTrue();
-		resolver.Received(1).Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>());
+		resolver.Received(1).ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>());
+		resolver.DidNotReceive().Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>());
+		resolver.DidNotReceive().Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>());
 		repointedRoot.DidNotReceiveWithAnyArgs().Build(null);
 		client.Received(1).ExecuteGetRequest(MetadataUrl, Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 		client.Received(1).ExecutePatchRequest(KeyUrl, """{"Name":"New"}""", 30000);
@@ -926,9 +1163,11 @@ public sealed class ODataUpdateToolTests {
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
 
 		// Act
-		ODataWriteResponse response = new ODataUpdateTool(resolver, FileContract(fileSystem)).Update(new ODataUpdateArgs {
+		ODataWriteResponse response = new ODataUpdateTool(resolver, new OperationCorrelationIdProvider(), FileContract(fileSystem)).Update(new ODataUpdateArgs {
 			EnvironmentName = "dev", Entity = "Contact", Id = Guid, RowsFile = rowsFile, Confirm = true
 		});
 
@@ -953,7 +1192,7 @@ public sealed class ODataUpdateToolTests {
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 
 		// Act
-		ODataWriteResponse response = new ODataUpdateTool(resolver, FileContract(fileSystem)).Update(new ODataUpdateArgs {
+		ODataWriteResponse response = new ODataUpdateTool(resolver, new OperationCorrelationIdProvider(), FileContract(fileSystem)).Update(new ODataUpdateArgs {
 			EnvironmentName = "dev", Entity = "Contact", Id = Guid, RowsFile = rowsFile, Confirm = true
 		});
 
@@ -980,7 +1219,7 @@ public sealed class ODataUpdateToolTests {
 			$$"""{"environment-name":"dev","entity":"Contact","id":"{{Guid}}","data":{"Name":"Inline"},"confirm":true,"rows_file":"C:/payload.json"}""")!;
 
 		// Act
-		ODataWriteResponse response = new ODataUpdateTool(resolver, FileContract(fileSystem)).Update(args);
+		ODataWriteResponse response = new ODataUpdateTool(resolver, new OperationCorrelationIdProvider(), FileContract(fileSystem)).Update(args);
 
 		// Assert
 		response.Success.Should().BeFalse(
@@ -1005,7 +1244,7 @@ public sealed class ODataUpdateToolTests {
 			$$"""{"environment-name":"dev","entity":"Contact","id":"{{Guid}}","data":{"Name":"Inline"},"confirm":true,"dryRun":true}""")!;
 
 		// Act
-		ODataWriteResponse response = new ODataUpdateTool(resolver, FileContract(fileSystem)).Update(args);
+		ODataWriteResponse response = new ODataUpdateTool(resolver, new OperationCorrelationIdProvider(), FileContract(fileSystem)).Update(args);
 
 		// Assert
 		response.Success.Should().BeFalse(
@@ -1029,7 +1268,7 @@ public sealed class ODataUpdateToolTests {
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 
 		// Act
-		ODataWriteResponse response = new ODataUpdateTool(resolver, FileContract(fileSystem)).Update(new ODataUpdateArgs {
+		ODataWriteResponse response = new ODataUpdateTool(resolver, new OperationCorrelationIdProvider(), FileContract(fileSystem)).Update(new ODataUpdateArgs {
 			EnvironmentName = "dev", Entity = "Contact", Id = Guid,
 			Data = Obj("{\"Name\":\"Inline\"}"), RowsFile = rowsFile, Confirm = true
 		});
@@ -1055,7 +1294,7 @@ public sealed class ODataUpdateToolTests {
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 
 		// Act
-		ODataWriteResponse response = new ODataUpdateTool(resolver, FileContract(fileSystem)).Update(new ODataUpdateArgs {
+		ODataWriteResponse response = new ODataUpdateTool(resolver, new OperationCorrelationIdProvider(), FileContract(fileSystem)).Update(new ODataUpdateArgs {
 			EnvironmentName = "dev", Entity = "Contact", Id = Guid, RowsFile = rowsFile, Confirm = false
 		});
 
@@ -1081,7 +1320,7 @@ public sealed class ODataUpdateToolTests {
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 
 		// Act
-		ODataWriteResponse response = new ODataUpdateTool(resolver, FileContract(fileSystem)).Update(new ODataUpdateArgs {
+		ODataWriteResponse response = new ODataUpdateTool(resolver, new OperationCorrelationIdProvider(), FileContract(fileSystem)).Update(new ODataUpdateArgs {
 			EnvironmentName = "dev", Entity = "Contact", Id = Guid, RowsFile = rowsFile, Confirm = true
 		});
 
@@ -1107,7 +1346,7 @@ public sealed class ODataUpdateToolTests {
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 
 		// Act
-		ODataWriteResponse response = new ODataUpdateTool(resolver, FileContract(fileSystem)).Update(new ODataUpdateArgs {
+		ODataWriteResponse response = new ODataUpdateTool(resolver, new OperationCorrelationIdProvider(), FileContract(fileSystem)).Update(new ODataUpdateArgs {
 			EnvironmentName = "dev", Entity = "Contact", Id = Guid, RowsFile = rowsFile, Confirm = true
 		});
 
@@ -1121,4 +1360,254 @@ public sealed class ODataUpdateToolTests {
 	}
 
 	#endregion
+
+	[Test]
+	[Category("Unit")]
+	[Description("A date-time value without a UTC designator or offset is refused before the PATCH, and the refusal names the field, the value and both accepted forms (GitHub issue #1369).")]
+	public void Update_Should_Reject_A_DateTime_Without_A_Zone() {
+		// Arrange
+		Fixture f = CsdLFixture();
+
+		// Act
+		ODataWriteResponse response = Update(f, "{\"DueDate\":\"2024-01-01T04:00:00.000\"}");
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "the platform either rejects such a literal opaquely or stores DateTime.MinValue while "
+				+ "reporting success, so clio must fail the call itself");
+		response.Error.Should().Contain("DueDate",
+			because: "the caller can only fix the payload when the refusal names the offending field");
+		response.Error.Should().Contain("2024-01-01T04:00:00.000",
+			because: "naming the rejected value distinguishes it from the other fields in the same payload");
+		response.Error.Should().Contain("2024-01-01T04:00:00Z",
+			because: "the refusal must spell out the accepted UTC form; a bare 'Z' assertion is also satisfied by "
+				+ "the MinValue text the message quotes, so it would pass without the guidance being present");
+		response.Error.Should().Contain("+02:00",
+			because: "an explicit offset is equally accepted and the caller must learn that too");
+		f.Client.DidNotReceiveWithAnyArgs()
+			.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A date-time value carrying a UTC designator is written unchanged.")]
+	public void Update_Should_Write_A_DateTime_With_A_Utc_Designator() {
+		// Arrange
+		Fixture f = CsdLFixture();
+		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>()).Returns(string.Empty);
+
+		// Act
+		ODataWriteResponse response = Update(f, "{\"DueDate\":\"2024-01-01T04:00:00.000Z\"}");
+
+		// Assert
+		response.Success.Should().BeTrue(because: "a zoned literal is exactly what the OData endpoint accepts");
+		f.Client.Received(1).ExecutePatchRequest(KeyUrl, "{\"DueDate\":\"2024-01-01T04:00:00.000Z\"}", 30_000);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A date-time value carrying an explicit offset is written unchanged.")]
+	public void Update_Should_Write_A_DateTime_With_An_Explicit_Offset() {
+		// Arrange
+		Fixture f = CsdLFixture();
+		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>()).Returns(string.Empty);
+
+		// Act
+		ODataWriteResponse response = Update(f, "{\"DueDate\":\"2024-01-01T04:00:00+02:00\"}");
+
+		// Assert
+		response.Success.Should().BeTrue(because: "an explicit offset states the instant unambiguously");
+		f.Client.Received(1).ExecutePatchRequest(KeyUrl, Arg.Any<string>(), 30_000);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A date-shaped string bound to an Edm.String column is written unchanged: the guard is gated on the declared Edm type.")]
+	public void Update_Should_Not_Reject_A_Date_Shaped_String_On_A_Text_Column() {
+		// Arrange
+		Fixture f = CsdLFixture();
+		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>()).Returns(string.Empty);
+
+		// Act
+		ODataWriteResponse response = Update(f, "{\"Name\":\"2024-01-01T04:00:00\"}");
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "$metadata declares Name as Edm.String, so a date-shaped text value is a legitimate write "
+				+ "and a purely textual rule would have made that column unwritable");
+		f.Client.Received(1).ExecutePatchRequest(KeyUrl, Arg.Any<string>(), 30_000);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A date-only value is written unchanged: Creatio publishes date columns as Edm.DateTimeOffset too, so rejecting it would break ordinary date writes.")]
+	public void Update_Should_Not_Reject_A_Date_Only_Value() {
+		// Arrange
+		Fixture f = CsdLFixture();
+		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>()).Returns(string.Empty);
+
+		// Act
+		ODataWriteResponse response = Update(f, "{\"DueDate\":\"2024-01-01\"}");
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "the platform accepts a date-only literal and stores it in the server's local zone - a shift, "
+				+ "not the data loss this guard exists to stop");
+		f.Client.Received(1).ExecutePatchRequest(KeyUrl, Arg.Any<string>(), 30_000);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("With $metadata unavailable the guard still fires on the literal's shape alone, so an unreadable metadata endpoint never silently disables it.")]
+	public void Update_Should_Reject_A_Zoneless_DateTime_On_The_Fallback_Path() {
+		// Arrange - $metadata is empty, so name validation degrades to the $select probe and no Edm type is known.
+		Fixture f = new(string.Empty, ProbeOkForUrl);
+
+		// Act
+		ODataWriteResponse response = Update(f, "{\"DueDate\":\"2024-01-01T04:00:00\"}");
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "fail-closed on the shape is the only honest answer when the declared type cannot be read");
+		f.Client.DidNotReceiveWithAnyArgs()
+			.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Null and non-date string values pass the date-time guard untouched.")]
+	public void Update_Should_Pass_Null_And_Non_Date_Values() {
+		// Arrange
+		Fixture f = CsdLFixture();
+		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>()).Returns(string.Empty);
+
+		// Act
+		ODataWriteResponse response = Update(f, "{\"DueDate\":null,\"JobTitle\":\"CEO\"}");
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "clearing a date and writing ordinary text must stay unaffected by a value guard aimed at "
+				+ "zone-less date-time literals");
+		f.Client.Received(1).ExecutePatchRequest(KeyUrl, Arg.Any<string>(), 30_000);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Every zone-less field is reported in one refusal, so a payload with three of them costs one refused round-trip and not three (GitHub issue #1369).")]
+	public void Update_Should_Report_All_ZoneLess_Fields_At_Once() {
+		// Arrange
+		Fixture f = CsdLFixture();
+
+		// Act
+		ODataWriteResponse response = Update(
+			f, "{\"DueDate\":\"2024-01-01T04:00:00\",\"CreatedOn\":\"2024-02-02T05:00:00\",\"ModifiedOn\":\"2024-03-03T06:00:00\"}");
+
+		// Assert
+		response.Success.Should().BeFalse(because: "each of the three literals lacks a zone");
+		response.Error.Should().Contain("DueDate", because: "the first offending field must be named");
+		response.Error.Should().Contain("CreatedOn",
+			because: "reporting only the first field forces the caller into one refused call per field");
+		response.Error.Should().Contain("ModifiedOn",
+			because: "the caller can fix the whole payload in one edit only when every offender is listed");
+		f.Client.DidNotReceiveWithAnyArgs()
+			.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>());
+	}
+
+	[TestCase("2024-01-01 04:00:00", TestName = "Space separator")]
+	[TestCase("2024-01-01t04:00:00", TestName = "Lowercase t separator")]
+	[TestCase("2024-01-01T04:00", TestName = "Hours and minutes only")]
+	[TestCase(" 2024-01-01T04:00:00 ", TestName = "Whitespace padded")]
+	[Category("Unit")]
+	[Description("Every zone-less ISO-8601 shape the guard admits is refused before the PATCH, including the whitespace-padded one that would otherwise defeat the anchors.")]
+	public void Update_Should_Reject_Every_ZoneLess_Shape(string value) {
+		// Arrange
+		Fixture f = CsdLFixture();
+
+		// Act
+		ODataWriteResponse response = Update(f, "{\"DueDate\":\"" + value + "\"}");
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "the shape carries a time component and no zone, whatever separator or padding it uses");
+		response.Error.Should().Contain("DueDate", because: "the refusal must name the offending field");
+		f.Client.DidNotReceiveWithAnyArgs()
+			.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>());
+	}
+
+	[TestCase("2024-01-01T04:00:00.000z", TestName = "Lowercase utc designator")]
+	[TestCase("2024-01-01T04:00:00+0200", TestName = "Basic form offset without a colon")]
+	[Category("Unit")]
+	[Description("A literal that already states its zone is written unchanged, including the ISO-8601 lowercase 'z' designator and the basic '+hhmm' offset form.")]
+	public void Update_Should_Write_A_DateTime_Whose_Zone_Is_Stated_In_An_Alternative_Form(string value) {
+		// Arrange
+		Fixture f = CsdLFixture();
+		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>()).Returns(string.Empty);
+
+		// Act
+		ODataWriteResponse response = Update(f, "{\"DueDate\":\"" + value + "\"}");
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "ISO 8601 accepts both spellings, so refusing them would reject a perfectly explicit instant");
+		f.Client.Received(1).ExecutePatchRequest(KeyUrl, "{\"DueDate\":\"" + value + "\"}", 30_000);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An Edm type INHERITED through BaseType reaches the value guard: a date-shaped string on an inherited text column is written unchanged.")]
+	public void Update_Should_Write_A_Date_Shaped_String_On_An_Inherited_Text_Column() {
+		// Arrange
+		Fixture f = CsdLFixture();
+		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>()).Returns(string.Empty);
+
+		// Act
+		ODataWriteResponse response = Update(f, "{\"BaseNote\":\"2024-01-01T04:00:00\"}");
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "BaseNote is Edm.String on the BaseEntity Contact derives from, and the inherited type map "
+				+ "must reach the guard or every inherited column would fall back to the shape alone");
+		f.Client.Received(1).ExecutePatchRequest(KeyUrl, "{\"BaseNote\":\"2024-01-01T04:00:00\"}", 30_000);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A property redeclared on the derived type keeps the DERIVED Edm type: Contact's DueDate is Edm.DateTimeOffset even though BaseEntity declares it as Edm.String.")]
+	public void Update_Should_Prefer_The_Derived_Edm_Type_Over_The_Inherited_One() {
+		// Arrange
+		Fixture f = CsdLFixture();
+
+		// Act
+		ODataWriteResponse response = Update(f, "{\"DueDate\":\"2024-01-01T04:00:00\"}");
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "the inherited Edm.String must not overwrite Contact's own Edm.DateTimeOffset declaration - "
+				+ "if it did, every redeclared temporal column would silently lose the guard");
+		f.Client.DidNotReceiveWithAnyArgs()
+			.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>());
+	}
+
+	[TestCase(true, TestName = "Update_Should_Carry_A_Correlation_Id_On_Success")]
+	[TestCase(false, TestName = "Update_Should_Carry_A_Correlation_Id_On_A_Refusal")]
+	[Category("Unit")]
+	[Description("Every odata-update response carries the correlation-id core-rules promises, including the unconfirmed refusal that never reaches the environment.")]
+	public void Update_Should_Carry_A_Correlation_Id(bool confirm) {
+		// Arrange
+		Fixture fixture = CsdLFixture();
+
+		// Act
+		ODataWriteResponse response = fixture.Tool.Update(new ODataUpdateArgs {
+			EnvironmentName = "dev",
+			Entity = "Contact",
+			Id = "11111111-1111-1111-1111-111111111111",
+			Data = JsonDocument.Parse("{\"Name\":\"Jane\"}").RootElement.Clone(),
+			Confirm = confirm
+		});
+
+		// Assert
+		response.CorrelationId.Should().NotBeNullOrWhiteSpace(
+			because: "the id is minted before the work and stamped on the single exit, so a refusal that never reaches Creatio is traceable too");
+	}
+
 }

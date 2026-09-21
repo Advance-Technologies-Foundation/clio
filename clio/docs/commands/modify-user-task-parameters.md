@@ -25,7 +25,14 @@ definitions with |.
 Supported parameter types include Guid and its designer label
 Unique identifier.
 
-When parameter direction is added or changed, clio persists it through the
+Existing explicit directions are read from the linked workspace before saving and
+restored for retained parameters. Removing and re-adding a parameter gives it the
+new definition's direction; `--set-direction` takes precedence over preserved values.
+This also makes FSM necessary for an unrelated edit when retained workspace parameters
+already have explicit directions. Clio reports a failed import rather than claiming
+those directions were preserved on the server.
+
+When parameter direction is present, added or changed, clio persists it through the
 workspace file design mode flow because the current Creatio SaveSchema
 route does not persist parameter direction:
 1. Save the schema through the designer service
@@ -33,6 +40,15 @@ route does not persist parameter direction:
 3. Patch Schemas/<SchemaName>/metadata.json and set parameter L12
 4. Load workspace packages to the database
 5. Build the package again
+
+Step 4 requires file system development mode (FSM) to be enabled on the
+environment. When it fails, the command stops with exit code 1 and skips
+step 5, because building from an unchanged database copy would report
+directions as applied while nothing on the environment changed. Steps 1-2
+have already run at that point: the other parameter changes ARE saved and
+built on the environment and only the directions are missing. Enable FSM
+(clio turn-fsm on) and finish with 'clio pkg-to-db' followed by
+'clio compile-package <PACKAGE>'.
 
 This command must be executed from a workspace directory.
 
@@ -94,6 +110,12 @@ Default: en-US
 --timeout                  Request timeout in milliseconds
 ```
 
+Use `type=Unlimited text` (alias `MaxSizeText`) for an unlimited-length string,
+for example an `ErrorMessage` output. `Text` and `String` retain their existing type.
+
+```text
+code=ErrorMessage;title=Error message;type=Unlimited text;direction=Out;resulting=true;serializable=true
+```
 ## Example
 
 ```bash

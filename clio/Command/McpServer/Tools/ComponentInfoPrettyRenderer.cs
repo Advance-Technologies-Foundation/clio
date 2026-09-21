@@ -126,7 +126,7 @@ public static class ComponentInfoPrettyRenderer {
 		if (response.DocumentationUnavailable == true) {
 			sb.AppendLine().AppendLine("(documentation is declared for this composite but could not be loaded)");
 		}
-		AppendDocumentation(sb, response.Documentation);
+		AppendDocumentation(sb, response);
 	}
 
 	private static void AppendDetail(StringBuilder sb, ComponentInfoResponse response) {
@@ -156,7 +156,7 @@ public static class ComponentInfoPrettyRenderer {
 		AppendBindings(sb, "outputs", response.Outputs);
 		AppendTypeDefinitions(sb, response.References?.TypeDefinitions);
 		AppendExample(sb, response.Example);
-		AppendDocumentation(sb, response.Documentation);
+		AppendDocumentation(sb, response);
 	}
 
 	/// <summary>
@@ -325,12 +325,23 @@ public static class ComponentInfoPrettyRenderer {
 	}
 
 	/// <summary>
-	/// Appends the long-form documentation block when the response carries one. The
-	/// payload is markdown concatenated from every successfully-fetched <c>content.docs[]</c>
-	/// file; the renderer indents it under a labelled header so the operator can tell
-	/// the block apart from the structured metadata above.
+	/// Appends the long-form documentation block when the response carries one, preceded by
+	/// its provenance. The payload is markdown concatenated from every successfully-fetched
+	/// <c>content.docs[]</c> file; the renderer indents it under a labelled header so the
+	/// operator can tell the block apart from the structured metadata above.
+	/// <c>documentationSource</c> and <c>documentationWarning</c> are rendered even when no
+	/// markdown was served — with a local-file override active that warning is the only
+	/// signal the operator gets, and the <c>--pretty</c> form is the surface the documented
+	/// developer inner loop uses (issue #1361).
 	/// </summary>
-	private static void AppendDocumentation(StringBuilder sb, string? documentation) {
+	private static void AppendDocumentation(StringBuilder sb, ComponentInfoResponse response) {
+		string? documentation = response.Documentation;
+		if (!string.IsNullOrWhiteSpace(response.DocumentationSource)) {
+			sb.AppendLine().Append("documentationSource:  ").AppendLine(response.DocumentationSource);
+		}
+		if (!string.IsNullOrWhiteSpace(response.DocumentationWarning)) {
+			sb.Append("documentationWarning: ").AppendLine(response.DocumentationWarning);
+		}
 		if (string.IsNullOrWhiteSpace(documentation)) {
 			return;
 		}

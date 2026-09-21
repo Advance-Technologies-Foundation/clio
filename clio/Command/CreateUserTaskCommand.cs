@@ -175,8 +175,11 @@ public class CreateUserTaskCommand : RemoteCommand<CreateUserTaskOptions> {
 
 		Logger.WriteInfo($"Applying direction metadata for {directionsByParameterName.Count} parameter(s) on '{schemaName}'...");
 		_userTaskMetadataDirectionApplier.ApplyDirections(packageName, schemaName, directionsByParameterName);
-		Logger.WriteInfo("Loading workspace packages to database to apply direction metadata changes...");
-		_fileDesignModePackages.LoadPackagesToDb();
+		UserTaskSchemaSupport.LoadWorkspacePackagesToDatabase(_fileDesignModePackages, Logger, schemaName,
+			$"The user task schema '{schemaName}' has already been created and built on the environment, so do not " +
+			"re-run add-user-task: enable file system development mode (clio turn-fsm on) and run " +
+			$"'clio pkg-to-db' followed by 'clio compile-package {packageName}' to finish applying " +
+			"the directions.");
 		BuildPackage(packageName);
 	}
 
@@ -550,6 +553,46 @@ internal sealed record UserTaskParameterTypeDefinition(int TypeId, string Icon);
 internal sealed record UserTaskParameterItemDefinition(string ParentParameterName, UserTaskParameterDto Parameter);
 
 internal static class UserTaskSchemaSupport {
+	private const string TextIcon = "data-type-text-icon.svg";
+
+	/// <summary>
+	/// Loads the workspace packages into the configuration database so that direction metadata written
+	/// to the workspace metadata file reaches the environment, and throws when that load did not happen.
+	/// </summary>
+	/// <remarks>
+	/// Fail instead of warn: the direction values were written to the workspace metadata file only.
+	/// Without a successful load into the configuration database the following build compiles the
+	/// unchanged database copy, so a warning would leave the caller believing the directions were
+	/// applied when nothing on the environment changed.
+	/// </remarks>
+	/// <param name="fileDesignModePackages">Loader used to import the workspace packages.</param>
+	/// <param name="logger">Command output logger.</param>
+	/// <param name="schemaName">Name of the user task schema whose directions were written.</param>
+	/// <param name="recoveryHint">
+	/// Sentence naming what already exists on the environment and how to finish the operation, so the
+	/// caller does not retry a command whose earlier steps already succeeded.
+	/// </param>
+	/// <exception cref="InvalidOperationException">Thrown when the load did not complete.</exception>
+	internal static void LoadWorkspacePackagesToDatabase(IFileDesignModePackages fileDesignModePackages,
+		ILogger logger, string schemaName, string recoveryHint) {
+		logger.WriteInfo("Loading workspace packages to database to apply direction metadata changes...");
+		FileDesignModeLoadResult loadResult = fileDesignModePackages.LoadPackagesToDb();
+		if (loadResult == FileDesignModeLoadResult.Completed) {
+			return;
+		}
+
+		string reason = loadResult switch {
+			FileDesignModeLoadResult.FileDesignModeDisabled =>
+				"file system development mode is disabled on the environment",
+			FileDesignModeLoadResult.FileDesignModeUnknown =>
+				"the file system development mode state of the environment could not be read",
+			_ => "the platform refused to load the workspace packages"
+		};
+		throw new InvalidOperationException(
+			$"Parameter direction metadata for user task '{schemaName}' was written to the workspace but not " +
+			$"applied on the environment: {reason}. " + recoveryHint);
+	}
+
 	private const int CompositeSerializableListTypeId = 39;
 	private const int CompositeListUniqueIdentifierTypeId = 0;
 	private const int GuidTypeId = 11;
@@ -566,6 +609,7 @@ internal static class UserTaskSchemaSupport {
 		"Unique identifier",
 		"Serializable list of composite values",
 		"Text",
+		"Unlimited text",
 		"Time"
 	];
 
@@ -589,8 +633,10 @@ internal static class UserTaskSchemaSupport {
 			["SerializableListOfCompositeValues"] = new(CompositeSerializableListTypeId, "data-type-other-icon.svg"),
 			["SerializableCompositeValueList"] = new(CompositeSerializableListTypeId, "data-type-other-icon.svg"),
 			["CompositeValueList"] = new(CompositeSerializableListTypeId, "data-type-other-icon.svg"),
-			["Text"] = new(1, "data-type-text-icon.svg"),
-			["String"] = new(1, "data-type-text-icon.svg"),
+			["Text"] = new(1, TextIcon),
+			["String"] = new(1, TextIcon),
+			["Unlimited text"] = new(29, TextIcon),
+			["MaxSizeText"] = new(29, TextIcon),
 			["Time"] = new(9, "data-type-time-icon.svg")
 		};
 
