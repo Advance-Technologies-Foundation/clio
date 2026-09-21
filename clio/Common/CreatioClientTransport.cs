@@ -94,9 +94,9 @@ internal sealed class CreatioClientTransport : ICreatioClientTransport {
 		Client.DownloadFile(url, filePath, requestData);
 
 	/// <inheritdoc />
-	public Task DownloadFileByGetAsync(string url, string filePath, int requestTimeout,
-			CancellationToken cancellationToken) =>
-		Client.DownloadFileByGetAsync(url, filePath, requestTimeout, cancellationToken);
+	public Task<HttpResponseMessage> DownloadFileByGetBoundedAsync(string url, string filePath, long maxBytes,
+			int requestTimeout, CancellationToken cancellationToken) =>
+		Client.DownloadFileByGetBoundedAsync(url, filePath, maxBytes, requestTimeout, cancellationToken);
 
 	/// <inheritdoc />
 	public string ExecuteDeleteRequest(string url, string requestData, int requestTimeout, int maxAttempts,
