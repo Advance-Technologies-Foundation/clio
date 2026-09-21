@@ -5,7 +5,7 @@ measured it says so. Claims that were published and later narrowed are listed wi
 because a reader who only sees the surviving version cannot tell which parts were tested by someone
 disagreeing.
 
-**Status at `a3092fe2e426`: 66/66 on macOS, 66/66 on Windows from a clean clone.** Raw output in
+**Status at `a5706381ea8d`: 67/67 on macOS, 67/67 on Windows from a clean clone.** Raw output in
 `macos-results.json` and `windows-results.json`. Reproduce with the commands in `README.md`; the run
 needs no environment, no network and no Creatio.
 

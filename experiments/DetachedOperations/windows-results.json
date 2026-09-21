@@ -1,7 +1,7 @@
 {
   "os": "Microsoft Windows NT 10.0.26200.0",
   "framework": "10.0.11",
-  "workDirectory": "C:\\Temp\\detached-ops-uj1hhg0g.32v",
+  "workDirectory": "C:\\Temp\\detached-ops-yuvsjgxq.c1a",
   "cases": [
     {
       "name": "A1a the original operation still answers after a newer runtime is activated",
@@ -156,19 +156,19 @@
       "passed": true,
       "detail": {
         "Violations": 0,
-        "Admitted": 41,
-        "Refused": 76,
-        "Windows": 12
+        "Admitted": 59,
+        "Refused": 64,
+        "Windows": 10
       }
     },
     {
       "name": "A5i mutation control: the same regression detects a deliberately split admission",
       "passed": true,
       "detail": {
-        "Violations": 20,
-        "Admitted": 23,
-        "Refused": 79,
-        "Windows": 15,
+        "Violations": 10,
+        "Admitted": 25,
+        "Refused": 75,
+        "Windows": 14,
         "note": "non-zero here is the point: it shows A5h can fail"
       }
     },
@@ -387,7 +387,7 @@
         "busyWhenReserved": true,
         "reservedImmediately": true,
         "drained": true,
-        "drainMs": 154,
+        "drainMs": 124,
         "note": "new admissions are refused under the reservation, so in-flight work is finite"
       }
     },
@@ -398,7 +398,7 @@
         "reserved": true,
         "drainedWithinBudget": false,
         "hungStillRunning": true,
-        "reservationHeldMs": 623,
+        "reservationHeldMs": 625,
         "note": "the hung operation was neither killed nor completed; the update defers again"
       }
     },
@@ -629,10 +629,19 @@
       "name": "K3 a resolved orphan releases its snapshot; an unresolvable one pins it forever",
       "passed": true,
       "detail": {
-        "referencedSnapshots": [
+        "operationHeldSnapshots": [
           "cfg-B"
         ],
-        "note": "the cleanup reference set is derived from retention, so it cannot disagree with it"
+        "note": "derived from retention, so it cannot disagree with ownership"
+      }
+    },
+    {
+      "name": "K4 an idle current snapshot is absent from the held set, so this set alone must not drive deletion",
+      "passed": true,
+      "detail": {
+        "absentWhileIdle": true,
+        "stillTheNextConfiguration": true,
+        "note": "the ledger knows retention; it does not know current, candidate or rollback"
       }
     }
   ]
