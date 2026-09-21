@@ -668,9 +668,11 @@ parameter name and `inSync: false` — it is the one read that does reveal the s
 measured it. Against an uncompiled caller it falls back to the design instance, converges, and reports
 `inSync: true`, so the reassurance is real but conditional. The DESIGNER half stands as written and is
 what makes the procedural rule worth keeping. Recorded in guidance (`process-parameters`) and as
-`docs/knowledge/platform/subprocess-designer-card-hides-stale-state.md`, with the rule stated
-procedurally: re-save every caller after any change to a called process's parameters, because the callee
-changed — not because something looked wrong.
+`docs/knowledge/platform/subprocess-designer-card-hides-stale-state.md` (what the card SHOWS) and
+`docs/knowledge/platform/subprocess-card-reattaches-mappings-by-name.md` (what OPENING it does), with the
+rule stated procedurally: re-save every caller after any change to a called process's parameters,
+because the callee changed — not because something looked wrong, and through the API rather than by
+opening the designer.
 
 **The decision that is NOT mine.** A real drift report needs the STORED metadata: read the `SysSchema`
 body before a design-time load touches it, and diff the element's parameter set against the converged
@@ -793,6 +795,8 @@ CAPTION and never its code"; corrected 2026-09-21 — that label is `getCaption(
 back to the NAME when a parameter has no caption, so an uncaptioned one DOES show the rename; and the
 row's label opens an edit page carrying a populated `Name` field.) The authoritative table now lives in
 `docs/knowledge/platform/subprocess-designer-card-hides-stale-state.md` — the DQ-25 copy is superseded.
+The write-side mechanism lives beside it in
+`docs/knowledge/platform/subprocess-card-reattaches-mappings-by-name.md`.
 
 **What did NOT change.** DQ-10 stands for the re-synchronization report itself: the modify path does
 converge, so the drift is still unobservable from there, and the dangling-reference scan is still how
