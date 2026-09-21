@@ -138,6 +138,16 @@ That direction distribution is `FillCollectionParameters`' routing, visible in l
 three `Out` items only on the output side. It confirms platform-facts §1.6 and §3 from the wire rather than
 from source.
 
+**The two readings agree on everything except the field under investigation.** The reference measurement
+recorded "exactly the five root parameters — three `Integer/Out` counters, `InputRecordCollection`
+`CompositeObjectList/In` with its `Script` mapping, `OutputRecordCollection` `CompositeObjectList/Out` —
+and `subProcess: { multiInstance: true, inSync: false, process: "ChecksLicensesForNotificationProcess" }`".
+Today's read reproduces that **field for field**, down to the three counters' `source: None` and the input
+collection's `Script` value `[#[IsOwnerSchema:false].[IsSchema:false].[Element:{d2a1c1a5-…}]…#]`. So the
+difference is not a different process, a different element, a different element version, or a different
+serialization: it is exactly and only the nested collection content. That isolation is what makes the
+diagnosis a diagnosis rather than a second opinion.
+
 ### Instrument B3 — the control the story did not ask for
 
 A **second** describe, in the **same** worker process, 85 seconds later: byte-identical `itemProperties`
