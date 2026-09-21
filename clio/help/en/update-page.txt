@@ -8,6 +8,14 @@ ALIASES
     page-update
 
 DESCRIPTION
+    --resources adds missing keys and updates supplied en-US values. It preserves
+    resource identity, other cultures, and omitted keys. resourcesRegistered counts
+    new keys only. Resource saves warn that a stale push-workspace can revert them:
+    preserve local edits, capture the affected package with restore-workspace
+    (pull-workspace), and review metadata and culture XML before pushing. Follow
+    workspace instructions for linked FSM packages; check the native designer's
+    source diff before deciding another capture is needed.
+
     The update-page command validates and saves the raw JavaScript body of a
     Freedom UI page schema. Pass the full body string directly, typically
     after reading raw.body from get-page.

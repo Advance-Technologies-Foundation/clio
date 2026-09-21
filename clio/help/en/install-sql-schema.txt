@@ -12,7 +12,7 @@ SYNOPSIS
 
 DESCRIPTION
     Executes an existing SQL script schema on a remote Creatio environment via
-    ScriptSchemaDesignerService.svc/ExecuteScript. The schema is resolved by
+    WorkspaceExplorerService.svc/InstallSqlScripts. The schema is resolved by
     name and its current body is executed directly against the configured
     database.
 
@@ -56,3 +56,6 @@ SEE ALSO
     get-sql-schema - Read body and metadata of a SQL script schema
     update-sql-schema - Replace the body of a SQL script schema
     create-sql-schema - Create a new SQL script schema
+
+NOTES
+    Uses WorkspaceExplorerService/InstallSqlScripts with the selected package SQL script UId. Execution is never automatically replayed; verify database effects before retrying an unknown outcome.

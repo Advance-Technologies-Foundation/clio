@@ -356,7 +356,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="client-unit-schema-create"></a>
 - [`create-client-unit-schema`](docs/commands/create-client-unit-schema.md) - Create a new JavaScript (ClientUnit) schema on a remote Creatio environment, `client-unit-schema-create`
 <a id="create-entity-schema"></a>
-- [`create-entity-schema`](docs/commands/create-entity-schema.md) - Create a persistent, virtual, or same-name replacing entity schema in a remote Creatio package; columns accept repeated flags or a JSON array
+- [`create-entity-schema`](docs/commands/create-entity-schema.md) - Create a persistent, virtual, DB-view, or same-name replacing entity schema in a remote Creatio package; columns accept repeated flags or a JSON array
 <a id="create-lookup"></a>
 - [`create-lookup`](docs/commands/create-lookup.md) - Create a lookup entity schema in a remote Creatio package
 <a id="create-schema"></a>
@@ -364,7 +364,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`create-schema`](docs/commands/create-schema.md) - Create a new C# source-code schema on a remote Creatio environment with aggregate name validation and optional `--body` or `--body-file`, `schema-create`
 <a id="create-sql-schema"></a>
 <a id="sql-schema-create"></a>
-- [`create-sql-schema`](docs/commands/create-sql-schema.md) - Create a new SQL script schema on a remote Creatio environment with aggregate name validation, `sql-schema-create`
+- [`create-sql-schema`](docs/commands/create-sql-schema.md) - Create an empty native package SQL script with target engine detection and installation phase selection, `sql-schema-create`
 <a id="dataservice"></a>
 <a id="ds"></a>
 - [`dataservice`](docs/commands/dataservice.md) - Send a Creatio DataService request, `ds`
@@ -408,7 +408,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="get-entity-schema-properties"></a>
 - [`get-entity-schema-properties`](docs/commands/get-entity-schema-properties.md) - Get properties from a remote Creatio entity schema (`--required-only` filters required columns; omit `--package` for the merged all-packages view, including custom columns from other packages)
 <a id="set-entity-schema-properties"></a>
-- [`set-entity-schema-properties`](docs/commands/set-entity-schema-properties.md) - Set schema-level properties (the primary-display column, and the schema caption per culture via `--title` / `--title-localizations`) on a remote Creatio entity schema
+- [`set-entity-schema-properties`](docs/commands/set-entity-schema-properties.md) - Set schema-level properties (the database-view flag, primary-display column, and schema caption per culture via `--title` / `--title-localizations`) on a remote Creatio entity schema
 <a id="get-process-signature"></a>
 <a id="gps"></a>
 - [`get-process-signature`](docs/commands/get-process-signature.md) - Read the parameter signature (codes, types, direction) of a Creatio business process, `gps`
@@ -480,7 +480,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`update-client-unit-schema`](docs/commands/update-client-unit-schema.md) - Update the raw body of a client unit schema, `client-unit-schema-update`
 <a id="update-page"></a>
 <a id="page-update"></a>
-- [`update-page`](docs/commands/update-page.md) - Update Freedom UI page schema body with best-effort Designer Presence save push, `page-update`
+- [`update-page`](docs/commands/update-page.md) - Update Freedom UI page body and en-US resource values; warns to capture workspace resources before pushing, `page-update`
 <a id="create-page"></a>
 <a id="page-create"></a>
 - [`create-page`](docs/commands/create-page.md) - Create a new Freedom UI page from a supported template, `page-create`

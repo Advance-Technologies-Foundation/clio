@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Allure.Net.Commons;
 using Allure.NUnit;
@@ -9,6 +9,7 @@ using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using Clio.Common.BrowserSession;
 using Clio.Mcp.E2E.Support.Configuration;
+using Clio.Mcp.E2E.Support.Creatio;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
@@ -165,16 +166,13 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		contract.InputSchema.Properties.Single(field => field.Name == "checksum").Description
 			.Should().Contain("get-page",
 				because: "the served contract must tell the caller which value to pass as the conflict baseline");
-		// "repeated" is a single generic word that a rewrite can keep while dropping the guarantee. Assert
-		// the two load-bearing halves of the additive wording instead: that the payload is additions ONLY -
-		// CleanAndMerge never updates an already-stored key, so promising overrides would report a silent
-		// no-op as success - and that an already-stored key stays registered without being re-sent.
+		// The contract must expose both value updates and the required workspace capture.
 		string servedResourcesDescription = contract.InputSchema.Properties
 			.Single(field => field.Name == "resources").Description;
-		servedResourcesDescription.Should().Contain("Additions only",
+		servedResourcesDescription.Should().Contain("updates supplied en-US values",
 			because: "the served contract must name the payload semantics - a caller who reads it as a full replacement set re-sends every key on every save, which is the behavior issue #1320 reports");
-		servedResourcesDescription.Should().Contain("NOT updated by re-sending",
-			because: "a key already stored on the schema is never rewritten by CleanAndMerge, so a contract that promises overrides turns a corrected caption into a silent no-op reported as success (issue #1320)");
+		servedResourcesDescription.Should().Contain("restore-workspace",
+			because: "a successful server save must not imply that workspace metadata and XML were captured");
 		servedResourcesDescription.Should().NotContain("replaces the full set",
 			because: "no wording that promises replacement semantics is acceptable for an additive payload");
 	}
@@ -534,6 +532,92 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 			because: "the rule id must be visible in the wire response so the agent can map the failure back to the guidance doc that describes the anti-pattern");
 		response.Error.Should().Contain("NOT sent to Creatio",
 			because: "the operator must know the body did not reach the server without inspecting logs, mirroring the syntax-gate tail");
+	}
+
+	[Test]
+	[Description("A NON-dry-run update-page of a body whose handler calls a conditionally declared helper fails at the lint gate and leaves the page on the stand byte-identical — dry-run scenarios make 'nothing was persisted' trivially true, so the real save path is what proves the gate actually blocks the write.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page blocks a non-dry-run save on undefined-section-call and leaves the page unchanged")]
+	[AllureDescription("Against the seeded page ClioMcp_BlankPageToSave: captures the body with get-page, submits a marker-complete body whose returned handler calls a helper declared only inside an `if (false)` block through the real save path (no dry-run), asserts the lint gate rejects it, then re-reads the page and asserts the stored body is unchanged.")]
+	public async Task PageUpdateTool_Should_Block_Real_Save_And_Leave_Page_Unchanged_When_HelperIsConditionallyDeclared() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("AllowDestructiveMcpTests is false — skipping the real-save lint-gate test.");
+		}
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
+		const string savePage = "ClioMcp_BlankPageToSave";
+		string baselineDir = Directory.CreateTempSubdirectory("clio-e2e-lint-gate-before-").FullName;
+		string readbackDir = Directory.CreateTempSubdirectory("clio-e2e-lint-gate-after-").FullName;
+		string originalBody = null;
+		bool restoreNeeded = false;
+		try {
+			PageGetResponse baseline = await GetPageAsync(arrangeContext, savePage, environmentName, baselineDir);
+			baseline.Success.Should().BeTrue(
+				because: $"get-page must succeed for the seeded page '{savePage}' before the gate can be proven. Error: {baseline.Error}");
+			originalBody = await File.ReadAllTextAsync(baseline.Files.BodyFile);
+
+			// Act
+			PageUpdateResponse response = await UpdatePageAsync(
+				arrangeContext,
+				savePage,
+				PageLintProbeBodies.ConditionallyDeclaredHelper(savePage),
+				environmentName,
+				baselineDir);
+			PageGetResponse readback = await GetPageAsync(arrangeContext, savePage, environmentName, readbackDir);
+			string bodyAfter = readback.Success ? await File.ReadAllTextAsync(readback.Files.BodyFile) : null;
+			//A readback that did not come back cannot show the page is intact, and the write it was
+			//supposed to check may well have landed - so that case restores too.
+			restoreNeeded = bodyAfter is null || bodyAfter != originalBody;
+
+			// Assert
+			response.Success.Should().BeFalse(
+				because: "the handler calls a helper whose only declaration sits in a branch that never runs, so the page would throw a TypeError on open");
+			response.Error.Should().Contain("Page body lint failed",
+				because: "the canonical lint prefix is what tells the agent this was a lint rejection rather than a syntax or transport failure");
+			response.Error.Should().Contain("undefined-section-call",
+				because: "the rule id must reach the wire so the agent can map the refusal back to the authoring rule");
+			readback.Success.Should().BeTrue(
+				because: $"the page must still be readable after the refused write. Error: {readback.Error}");
+			bodyAfter.Should().Be(originalBody,
+				because: "a refused write must leave the stand untouched — this is the assertion a dry-run scenario cannot make");
+		} finally {
+			if (restoreNeeded) {
+				//Only reached when the gate let the probe body through, which is the failure this test
+				//exists to catch. The page is shared by the rest of the suite, so it is put back rather
+				//than left holding a body that throws on open.
+				//Through readbackDir, not baselineDir: update-page compares the body on the stand against
+				//the baseline in its output directory, and only readbackDir holds one taken AFTER the
+				//probe write landed. Restoring against the stale baseline would be refused as a conflict.
+				await TryRestorePageBodyAsync(arrangeContext, savePage, originalBody, environmentName,
+					readbackDir);
+			}
+			TryDeleteDirectory(baselineDir);
+			TryDeleteDirectory(readbackDir);
+		}
+	}
+
+	/// <summary>
+	/// Best-effort restore of a shared fixture page's body. A failure here is reported to the console
+	/// and swallowed: it must not replace the assertion failure that made the restore necessary.
+	/// </summary>
+	private static async Task TryRestorePageBodyAsync(ArrangeContext context, string schemaName,
+		string body, string environmentName, string outputDirectory) {
+		try {
+			PageUpdateResponse restored =
+				await UpdatePageAsync(context, schemaName, body, environmentName, outputDirectory);
+			if (!restored.Success) {
+				//A refused save comes back in the envelope rather than as an exception, so without this
+				//the shared fixture page would be left holding a body that throws on open, silently.
+				TestContext.Progress.WriteLine(
+					$"Failed to restore the body of '{schemaName}': {restored.Error}");
+			}
+		} catch (Exception restoreFailure) {
+			TestContext.Progress.WriteLine(
+				$"Failed to restore the body of '{schemaName}': {restoreFailure.Message}");
+		}
 	}
 
 	[Test]
@@ -1586,6 +1670,29 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 				because: $"the key is supplied in `resources`, so the save must go through. Error: {registeringSave.Error}");
 			registeringSave.RegisteredResourceKeys.Should().Contain(persistedKey,
 				because: "the response must report the key it persisted on the schema for the omission below to be meaningful");
+			registeringSave.Warnings.Should().Contain(PageUpdateCommand.ResourceWorkspaceCaptureWarning,
+				because: "the real MCP response must warn about a stale workspace push");
+
+			// Act: change an existing value through the real MCP save, then read native resources back.
+			PageUpdateResponse updated = await UpdatePageAsync(
+				arrangeContext, savePage, BodyWithLabelResource(originalBody, persistedKey),
+				environmentName, sessionDir, force: true,
+				resources: $"{{\"{persistedKey}\":\"E2E updated label\"}}");
+			PageGetResponse updatedReadback = await GetPageAsync(arrangeContext, savePage, environmentName, sessionDir);
+
+			// Assert
+			AllureApi.Step("Existing caption updates without registering another key", () => {
+				updated.Success.Should().BeTrue(because: "native SaveSchema must accept the changed value");
+				updated.ResourcesRegistered.Should().Be(0, because: "updating a value preserves declaration identity");
+				updated.Warnings.Should().Contain(PageUpdateCommand.ResourceWorkspaceCaptureWarning,
+					because: "value updates need the same capture warning as new keys");
+			});
+			await AllureApi.Step("Readback contains the new English caption", async () => {
+				updatedReadback.Success.Should().BeTrue(because: "server readback is required to prove the save");
+				JObject bundle = JObject.Parse(await File.ReadAllTextAsync(updatedReadback.Files.BundleFile));
+				bundle["resources"]?[persistedKey]?["en-US"]?.Value<string>().Should().Be("E2E updated label",
+					because: "a successful save alone previously hid an ignored resource update");
+			});
 
 			// Act 3: the same body, `resources` omitted entirely.
 			PageUpdateResponse omittingSave = await UpdatePageAsync(

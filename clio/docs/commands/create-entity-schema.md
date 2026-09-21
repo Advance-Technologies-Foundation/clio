@@ -59,6 +59,8 @@ Parent schema name. Defaults to the schema name for replacements, or `BaseEntity
 Create a same-name replacement schema in the target package.
 --is-virtual
 Create a virtual entity schema without a physical database table. Default: false.
+--is-db-view <true|false>
+Set or clear the database-view flag; omission preserves inherited metadata. SQL views are provisioned separately.
 --column <VALUE>
 Column spec <name>:<type>[:<title>[:<refSchema>]] or JSON with
 name/type/title/reference-schema-name/required/default-value-source/default-value/default-value-config.
@@ -159,3 +161,15 @@ cliogate must be installed on the target Creatio environment.
 clio create-entity-schema -e dev --package Custom --name UsrVehicle --title Vehicle --column 'Notes:Text' --column 'Amount:Integer'
 clio create-entity-schema -e dev --package Custom --name UsrInvoice --title Invoice --column '[{"name":"Notes","type":"Text"},{"name":"Amount","type":"Integer","required":true}]'
 ```
+
+## Database views
+
+Use `--is-db-view true` to map an entity to a database view, or `--is-db-view false`
+to clear that flag. Omission preserves inherited/current metadata. Creatio skips table
+generation for DB-view entities. Provision the SQL view separately (for example with a
+package SQL script); this option neither creates a SQL view nor converts or drops an
+existing table. `is-virtual` is independent and is not changed.
+
+An explicit `--is-db-view` requires designer readback. If the designer returns HTML,
+creation reports an error even though the schema may already be saved. Inspect it
+with `get-entity-schema-properties` before retrying creation.

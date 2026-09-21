@@ -448,6 +448,117 @@ public sealed class ServerProcessDescriberTests {
 	}
 
 	[Test]
+	[Description("Deserializes the whole subProcess block - every one of its five members by name. A member the DTO does not declare, or one whose JsonPropertyName drifts from the server's DataMember, is dropped SILENTLY on re-serialize, so each name is asserted individually rather than by spot check. Before this element the read-back carried no reference to the called process at all.")]
+	public void Describe_ShouldReadTheSubProcessBlock_WhenServerReportsIt() {
+		// Arrange - a call activity reported the way CrtProcessBuilder writes it
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"SubProcess1\","
+			+ "\"type\":\"ProcessSchemaSubProcess\",\"buildType\":\"subprocess\","
+			+ "\"subProcess\":{\"process\":\"UsrOrderApproval\","
+			+ "\"processUId\":\"5f2b0f6a-2b1e-4f0e-9f9d-2a1c4b7e8d90\","
+			+ "\"processCaption\":\"Order approval\",\"multiInstance\":false,\"inSync\":true},"
+			+ "\"parameters\":[{\"name\":\"OrderId\",\"uid\":\"p1\",\"type\":\"Guid\","
+			+ "\"direction\":\"In\",\"isRequired\":true,\"source\":\"None\"}]}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedSubProcess block = result.Value.Elements[0].SubProcess;
+		block.Should().NotBeNull(
+			because: "a null here is the silent-drop signature: the describe output is re-serialized from this "
+				+ "model, so a block the model does not declare reaches nobody");
+		block.Process.Should().Be("UsrOrderApproval",
+			because: "the schema NAME is what a caller passes back to re-select the process unambiguously");
+		block.ProcessUId.Should().Be("5f2b0f6a-2b1e-4f0e-9f9d-2a1c4b7e8d90",
+			because: "the UId is what a caller round-tripping a describe straight back in already has");
+		block.ProcessCaption.Should().Be("Order approval",
+			because: "the caption is what a human recognises, and it comes from the server rather than being derived");
+		block.MultiInstance.Should().BeFalse(
+			because: "the flag that tells a caller the element is refused by every configuring write path has to "
+				+ "survive the round trip");
+		block.InSync.Should().BeTrue(
+			because: "inSync is the one field that says whether a re-synchronization is owed");
+		result.Value.Elements[0].Parameters[0].IsRequired.Should().BeTrue(
+			because: "requiredness is never validated for a sub-process call on either side, so reporting it is "
+				+ "the only way a caller learns a required input is unmapped");
+	}
+
+	[Test]
+	[Description("TC-26: the subProcess block and isRequired survive RE-SERIALIZATION under the describe command's own options, which is what the caller actually receives. An inbound-only assertion cannot see a JsonPropertyName that drifted from the server's DataMember, because the same wrong name reads and writes consistently.")]
+	public void Describe_ShouldReserializeTheSubProcessBlock_UnderTheCommandsOwnOptions() {
+		// Arrange - the same payload the inbound test reads, so a drift shows up as a difference between the two
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"SubProcess1\","
+			+ "\"type\":\"ProcessSchemaSubProcess\",\"buildType\":\"subprocess\","
+			+ "\"subProcess\":{\"process\":\"UsrOrderApproval\","
+			+ "\"processUId\":\"5f2b0f6a-2b1e-4f0e-9f9d-2a1c4b7e8d90\","
+			+ "\"processCaption\":\"Order approval\",\"multiInstance\":false,\"inSync\":true,"
+			+ "\"futureSubProcessFact\":\"kept\"},"
+			+ "\"parameters\":[{\"name\":\"OrderId\",\"uid\":\"p1\",\"type\":\"Guid\","
+			+ "\"direction\":\"In\",\"isRequired\":true,\"source\":\"None\"}]}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act - the command's OWN options object, not a copy: a hand-made copy stops the assertion seeing a
+		// change to DescribeProcessCommand.OutputOptions, which is the mistake the connections test records.
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+		string reserialized = JsonSerializer.Serialize(result.Value, DescribeProcessCommand.OutputOptions);
+
+		// Assert
+		JsonNode output = JsonNode.Parse(reserialized);
+		JsonNode block = output["elements"]![0]!["subProcess"]!;
+		block["process"]!.GetValue<string>().Should().Be("UsrOrderApproval",
+			because: "the wire NAME is what the caller reads and what they pass back to re-select the process; a "
+				+ "JsonPropertyName that drifted from the server's DataMember reads and writes consistently, so "
+				+ "only the outbound side can catch it");
+		block["processUId"]!.GetValue<string>().Should().Be("5f2b0f6a-2b1e-4f0e-9f9d-2a1c4b7e8d90",
+			because: "the UId is the unambiguous half of the round trip");
+		block["processCaption"]!.GetValue<string>().Should().Be("Order approval",
+			because: "the caption is what a human recognises in the output");
+		block["multiInstance"]!.GetValue<bool>().Should().BeFalse(
+			because: "the flag that says every configuring write path refuses this element has to reach the reader");
+		block["inSync"]!.GetValue<bool>().Should().BeTrue(
+			because: "inSync is the field a caller decides a re-synchronization on");
+		block["futureSubProcessFact"]!.GetValue<string>().Should().Be("kept",
+			because: "the block carries the overflow bag every server-built block here carries, and capturing an "
+				+ "undeclared field is only half of it - it has to come back out");
+		output["elements"]![0]!["parameters"]![0]!["isRequired"]!.GetValue<bool>().Should().BeTrue(
+			because: "requiredness is reported for this element kind precisely so a caller can see an unmapped "
+				+ "required input, and it reaches them only through the serialized output");
+	}
+
+	[Test]
+	[Description("Leaves the subProcess block and isRequired unset (null) when an older server omits them, so an element of another kind - and an older package - serialize away cleanly rather than surfacing an empty block.")]
+	public void Describe_ShouldLeaveTheSubProcessBlockNull_WhenServerOmitsIt() {
+		// Arrange - an ordinary user task from a package that predates the element
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"task1\","
+			+ "\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"usertask\","
+			+ "\"parameters\":[{\"name\":\"PResult\",\"uid\":\"p1\",\"type\":\"Guid\",\"source\":\"None\"}]}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "an older package omitting the block is not an error");
+		result.Value.Elements[0].SubProcess.Should().BeNull(
+			because: "an absent block must stay null so it serializes away, rather than surfacing as an empty "
+				+ "configuration on every element of every other kind");
+		result.Value.Elements[0].Parameters[0].IsRequired.Should().BeNull(
+			because: "nullable defensively: an omitted flag must not read as 'not required', which is the answer a "
+				+ "non-nullable bool would have given");
+	}
+
+	[Test]
 	[Description("Leaves direction/isResult unset (null) when an older server omits them, so the absent fields serialize away cleanly.")]
 	public void Describe_ShouldLeaveDirectionAndIsResultNull_WhenServerOmitsThem() {
 		// Arrange — an older CrtProcessBuilder that does not report direction/isResult on parameters

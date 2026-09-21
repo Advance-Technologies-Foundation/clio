@@ -4090,6 +4090,30 @@ stories:
       - story-eng-91853-gateways-and-flows-2
     blocks: []
 
+  - id: story-eng-92707-sub-process-element-1
+    title: "Sub-process element: select the called process and synchronize its parameters"
+    feature: "eng-92707-sub-process-element"
+    repo: "cli-process-builder + clio + clio-knowledge"
+    size: M
+    status: review
+    jira: ENG-92707
+    file: spec/eng-92707-sub-process-element/eng-92707-sub-process-element-plan.md
+    test_plan: spec/eng-92707-sub-process-element/eng-92707-sub-process-element-test-plan.md
+    note: >-
+      Three repositories in a forced order: CrtProcessBuilder (the element handler, identity, reader,
+      applier, contracts and tests), clio (the ManagerMap arm, the DescribedSubProcess DTO, the
+      agent-facing texts, the e2e fixture and the rebundled archive) and clio-knowledge (the five
+      articles that documented callActivity as read-only). The re-sync is NOT a second algorithm: the
+      platform diffs the called process's parameters when SchemaUId is assigned and re-runs on every
+      design-time read, so the package supplies ordering, guards and a report around it.
+      S1 measured the three open probes and TWO came back against the analysis - T-26 does not
+      reproduce and T-25 is the platform's own idempotent refresh rather than data loss - both
+      recorded in ...-deferred-questions.md and corrected in the traps document and the knowledge
+      records. Decisions taken alone during the run are in that same deferred file, DQ-1 to DQ-9;
+      they are the agenda for the reviewer.
+      Still open at hand-off: the AC-4 designer capture is corpus-mined and the live single-example
+      diff (plan V1) is owed, and V1-V8 have not been run on a stand.
+
   - id: story-sequence-enrollment-1
     status: in-progress
     description: Native bounded enrollment for clio issue 1576
@@ -4123,5 +4147,11 @@ stories:
   - id: story-sequence-workflow-acceptance-1
     status: in-progress
     description: Sequence workflow and efficiency acceptance for clio issue 1580
+    depends_on: []
+    blocks: []
+
+  - id: story-entity-db-view-1
+    status: done
+    description: Native entity DB-view flag support for clio issue 1618
     depends_on: []
     blocks: []
