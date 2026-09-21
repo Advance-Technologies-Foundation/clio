@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>Clio10.DetachedRuntimeFixture</AssemblyName>
+    <RootNamespace>Clio10.DetachedOperationsFixture</RootNamespace>
+    <AssemblyVersion>10.0.0.0</AssemblyVersion><Version>10.0.0.0</Version>
+    <DefineConstants>$(DefineConstants);RELEASE_V1</DefineConstants>
+    <IsPackable>false</IsPackable>
+    <OutputPath>$(MSBuildThisFileDirectory)../../../artifacts/detached/10.0.0.0/</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Contract/Contract.csproj" />
+    <Compile Include="../DetachedRuntimeFixture.cs" Link="DetachedRuntimeFixture.cs" />
+  </ItemGroup>
+</Project>

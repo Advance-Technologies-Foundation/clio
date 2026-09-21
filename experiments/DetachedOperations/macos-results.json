@@ -1,0 +1,116 @@
+{
+  "os": "Unix 27.0.0",
+  "framework": "10.0.12",
+  "workDirectory": "/var/folders/xk/pl1m8g6d1w55jscyxzg0wjkc0000gn/T/detached-ops-4tdryN",
+  "cases": [
+    {
+      "name": "A1a the original operation still answers after a newer runtime is activated",
+      "passed": true,
+      "detail": {
+        "started": "Running",
+        "afterActivation": "Running",
+        "ownedBy": "10.0.0.0",
+        "activated": "10.1.0.0"
+      }
+    },
+    {
+      "name": "A1b quiescence is scoped per target while the operation runs",
+      "passed": true,
+      "detail": {
+        "envA": false,
+        "envB": true,
+        "global": false
+      }
+    },
+    {
+      "name": "A2a the terminal state is truthful and the external effect happened exactly once",
+      "passed": true,
+      "detail": {
+        "state": "Succeeded",
+        "code": "v1-executed-by-10.0.0.0",
+        "effectLines": [
+          "v1-executed-by-10.0.0.0"
+        ]
+      }
+    },
+    {
+      "name": "A2b the target is quiescent once the operation terminates",
+      "passed": true,
+      "detail": {
+        "envA": true,
+        "global": true
+      }
+    },
+    {
+      "name": "R1 the V1 release becomes collectible once no lease retains it",
+      "passed": true,
+      "detail": {
+        "collected": true
+      }
+    },
+    {
+      "name": "A3a a failing operation reports Failed, not silence",
+      "passed": true,
+      "detail": {
+        "state": "Failed",
+        "code": "v2-executed-by-10.1.0.0-failed"
+      }
+    },
+    {
+      "name": "A3b a cancelled operation reports Cancelled, not silence",
+      "passed": true,
+      "detail": {
+        "state": "Cancelled",
+        "code": "v2-executed-by-10.1.0.0-cancelled"
+      }
+    },
+    {
+      "name": "A3c neither the failure nor the cancellation added an external effect",
+      "passed": true,
+      "detail": {
+        "effectLines": 1
+      }
+    },
+    {
+      "name": "A4a an operation lost with its process reports Unknown, with its target preserved",
+      "passed": true,
+      "detail": {
+        "state": "Unknown",
+        "code": "history-unavailable",
+        "target": "envA",
+        "ownedBy": "10.0.0.0"
+      }
+    },
+    {
+      "name": "A4b an identifier that was never issued is still reported as NotFound",
+      "passed": true,
+      "detail": {
+        "state": "NotFound"
+      }
+    },
+    {
+      "name": "A4c the recovered host surfaces the lost operation rather than reporting a clean slate",
+      "passed": true,
+      "detail": {
+        "recoveredUnknown": 1
+      }
+    },
+    {
+      "name": "C1 control: a host with no evidence answers NotFound for the very same lost operation",
+      "passed": true,
+      "detail": {
+        "withEvidence": "Unknown",
+        "withoutEvidence": "NotFound",
+        "note": "this is the clio 8 behaviour the experiment exists to replace"
+      }
+    },
+    {
+      "name": "C2 control: the release is retained while its operation runs, and only then collectible",
+      "passed": true,
+      "detail": {
+        "aliveWhileRunning": true,
+        "collectedAfter": true
+      }
+    }
+  ]
+}

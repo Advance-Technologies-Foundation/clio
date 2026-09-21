@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>Clio10.DetachedOperations.Host</AssemblyName>
+    <RootNamespace>Clio10.DetachedOperations.Host</RootNamespace>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Contract/Contract.csproj" />
+  </ItemGroup>
+</Project>
