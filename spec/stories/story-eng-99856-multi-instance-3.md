@@ -156,6 +156,22 @@ collections with no direction at all (`Terrasoft.Core.Tests/Process/ProcessSchem
 it needs a live system connection; stamp `CreatedInSchemaUId = ModifiedInSchemaUId = ProcessSchema.UId`
 (the **caller's** schema, `:443-444`) exactly as the platform does.
 
+> **Found during story 2's review, and it lands squarely on AC-07.** That `SystemUserConnection` is the
+> FIRST line of `CreateIntegerParameter` (`ProcessSchemaActivity.cs:430-431`), and a `TestProcessSchema`
+> built on the substituted `ProcessSchemaManager` that `SubProcessTestSupport.SetupSchemaManager` wires up
+> does **not** supply one. So an AC-07 test that builds a counterless element (story 2 gave the helper a
+> `includeCounters: false` variant for exactly this) and then calls `SynchronizeParameters()` to watch the
+> counters self-heal will throw a `NullReferenceException` **inside the platform** rather than observe the
+> self-heal. Plan for it: either stand a system connection up on the test schema, or assert AC-07 at the
+> applier's own boundary (it must not REFUSE a two-root-parameter element) and leave the platform's
+> synthesis to the stand. Do not discover this at the end of the story.
+
+> **Second one, same source.** `JsonDataWriter.Close()` is **not idempotent** and `Dispose` calls it
+> (`Terrasoft.Common/JsonDataWriter.cs:194-196`, `:227-232`), so wrapping a writer in `using` *and* calling
+> `Close()` throws `JsonWriterException: No token to close`. The platform's own
+> `MetaDataSerializer.Serialize` wraps and never calls `Close()`. Relevant to any metadata round trip this
+> story's tests write.
+
 ### One consequence to carry into story 7
 
 Because `CreateIntegerParameter` stamps the caller's schema, all three counters are **dynamic** by

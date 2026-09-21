@@ -282,9 +282,13 @@ prompts, `docs/McpCapabilityMap.md`, and the published guidance library (`clio-k
 - [ ] **AC-14** (G3 counter-metric/FR-17): Given an element whose `JE5` names a UId that does not resolve,
   when `describe-business-process` runs, then that role reports `null`, the call succeeds, and no exception
   escapes.
-- [ ] **AC-15** (G3/FR-18): Given `ExpireLicenseNotificationProcess`, when `describe-business-process` reads
+- [x] **AC-15** (G3/FR-18): Given `ExpireLicenseNotificationProcess`, when `describe-business-process` reads
   `SubProcess2`, then `InputRecordCollection` reports **4** item properties and `OutputRecordCollection`
-  reports **6** — both report zero today.
+  reports **6**. **MET as written, measured 2026-09-21** —
+  [the gate outcome](../eng-99856-multi-instance/eng-99856-multi-instance-describe-gate-outcome.md).
+  The clause "both report zero today" that used to close this line is **retracted**: it rested on a reading
+  that does not reproduce, and a cold-worker read returns 4 and 6, matching the environment's own stored
+  `SysSchema.MetaData`.
 - [ ] **AC-16** (FR-16): Given an activity that is not a Sub-process but carries a `BP6`, when any applier
   processes it, then it is refused rather than reaching an applier that discards its flat parameters.
 - [ ] **AC-17** (FR-10): Given a process authored entirely through the toolkit with per-item mappings, when

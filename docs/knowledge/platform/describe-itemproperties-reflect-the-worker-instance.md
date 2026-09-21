@@ -27,19 +27,35 @@ exactly those counts, so the environment never disagreed with the shipped metada
 did. A second describe in the same worker, 85 seconds later, was identical — so describe does **not**
 flatten its own cache, and the instability is strictly *between* worker processes, never within one.
 
-**Why it is this way** — the reason a particular worker held a stripped instance is **not established**.
-Two things are known about it. The obvious candidate is ruled out: the rebuild that empties both
-`ItemProperties` in place (`Terrasoft.Core/Process/ProcessSchemaActivity.cs:387-388`, reached from
-`ProcessSchemaSubProcess.SchemaUId`'s setter) acts on an ACTIVITY's parameters, and cannot explain a
-reading in which the PROCESS-level `CheckedLicenses` was empty too. A compiled instance is ruled out as
-well: neither `ProcessSchemaGenerator.cs` nor `ProcessSchemaGeneratorNew.cs` so much as names
-`MultiInstanceOptions`, so a compiled instance could not have answered `multiInstance: true`, which that
-reading did.
+**Why it is this way** — the reason a particular worker held a stripped instance is **not established**,
+and two candidates commonly reached for do not fit.
 
-What is left is a global property of that worker. The leading suspicion, unproven, is a worker still
-serving or reloading a configuration from before the push: a package install does not by itself replace the
-assembly a running `.NET Framework` worker has loaded, and `list-packages` reads the database row rather
-than the serving assembly.
+The activity rebuild does not fit, on SCOPE. `SynchronizeParametersInternal`
+(`Terrasoft.Core/Process/ProcessSchemaActivity.cs:373-395`, reached from
+`ProcessSchemaSubProcess.SchemaUId`'s setter) acts only on an ACTIVITY's parameters, so it cannot explain a
+reading in which the PROCESS-level `CheckedLicenses` was empty too. It is also weaker than it is usually
+described: `:387-388` clear the `ItemProperties` of CLONES taken at `:378-379`, and `:390`
+`FillCollectionParameters` refills them — what mutates the cached graph in place is `Parameters.Clear()` at
+`:385` and `:391`. The collections come back empty only if the diff at `:389` left `Parameters` empty,
+which is what happens when the callee does not resolve.
+
+A COMPILED instance fits the shape perfectly — the generators strip `ItemProperties` from every parameter
+initializer they emit (`ProcessSchemaGenerator.cs:1637`, `:1725`, `:1783`,
+`ProcessSchemaGeneratorNew.cs:1852`, `:2057`) while leaving `SourceValue` alone — and is ruled out by one
+field only. `MultiInstanceOptions` is `[MetaTypeProperty]`, writable, and NOT in the generator's deny-list
+(`WriteSchemaContainer`, `ProcessSchemaGenerator.cs:1515-1516`), and `GenerateProperties` emits
+reflectively over `GetProperties()` — so "the generator source never names it" proves nothing. What does:
+`GenerateValue` falls through to `value.ToString()` for an unhandled type (`GeneratorUtilities.cs:490`) and
+`ProcessSchemaMultiInstanceOptions` has no `ToString` override, so a generated schema carrying one would
+not compile. A compiled instance therefore cannot answer `multiInstance: true`, and that reading did.
+
+The best-scoped candidate nobody has checked is
+`Terrasoft.Core.ServiceModel/Designers/Mappers/DtoToSchema/SchemaParametersDtoApplier.cs:104-107`:
+`ApplyNestedParameters` calls `parameter.ItemProperties.Clear()` whenever the incoming DTO carries no
+nested parameters, generically over parameter kind — so it reaches a process-level parameter, which is the
+scope the evidence demands. A second, unproven suspicion is a worker still serving or reloading a
+configuration from before a package push: an install does not by itself replace the assembly a running
+`.NET Framework` worker has loaded, and `list-packages` reads the database row, not the serving assembly.
 
 **What breaks if you ignore it** — you conclude that clio cannot report a callee's contract, and you scope
 work to add what already ships. That is exactly what happened: a research pass recorded "describe returns

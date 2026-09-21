@@ -33,7 +33,7 @@ Consequences, applying story 1's own gate table:
 | **Story 10** takes its Outcome-1 shape | a regression test pinning nested reporting through the **real** describe path, plus a documented statement that a described `itemProperties` reflects the instance the server holds |
 | **Story 9** is unblocked | the `multiInstanceOptions` read block lands beside a projection that already works |
 | **Story 12** is unblocked | nothing about the rebundle depends on a contingent describe member |
-| **The `calleeContract` view** | dropped from scope. It existed only as the Outcome-2 fallback |
+| **The `calleeContract` view** | dropped from scope — per the ADR's own gate table and story 1's, where it is the Outcome-2 fallback. Note the ADR states **D0-b unconditionally** in its decision list, on a rationale that does not depend on the gate ("different facts with different truth conditions"). This document resolves that ambiguity in favour of the gate tables; an owner who meant D0-b unconditionally should say so |
 
 ---
 
@@ -120,7 +120,10 @@ PushExpiredLicensesNotificationSubProcess  OutputRecordCollection   itemProperti
 
 `SubProcess2`'s block reads `{"process": "ChecksLicensesForNotificationProcess", "processUId":
 "5905d1ab-20b1-43f5-ab65-e9cc65652e01", "multiInstance": true, "inSync": false}` — the same block the
-reference measurement reported.
+reference measurement reported. Read `inSync: false` as nothing at all here: `MirrorsCallee` compares only
+**root** parameter names, and a multi-instance element's callee names live one level down inside the
+collections, so it is false by construction for every such element. It is not evidence that anything is
+stale.
 
 The items themselves, which is what makes this a contract and not a count:
 
@@ -138,15 +141,22 @@ That direction distribution is `FillCollectionParameters`' routing, visible in l
 three `Out` items only on the output side. It confirms platform-facts §1.6 and §3 from the wire rather than
 from source.
 
-**The two readings agree on everything except the field under investigation.** The reference measurement
-recorded "exactly the five root parameters — three `Integer/Out` counters, `InputRecordCollection`
-`CompositeObjectList/In` with its `Script` mapping, `OutputRecordCollection` `CompositeObjectList/Out` —
-and `subProcess: { multiInstance: true, inSync: false, process: "ChecksLicensesForNotificationProcess" }`".
-Today's read reproduces that **field for field**, down to the three counters' `source: None` and the input
-collection's `Script` value `[#[IsOwnerSchema:false].[IsSchema:false].[Element:{d2a1c1a5-…}]…#]`. So the
-difference is not a different process, a different element, a different element version, or a different
-serialization: it is exactly and only the nested collection content. That isolation is what makes the
-diagnosis a diagnosis rather than a second opinion.
+**The two readings agree on everything except the field under investigation** — and that is worth stating
+precisely, because it is easy to over-read. The reference measurement recorded "exactly the five root
+parameters — three `Integer/Out` counters, `InputRecordCollection` `CompositeObjectList/In` with its
+`Script` mapping, `OutputRecordCollection` `CompositeObjectList/Out` — and `subProcess: { multiInstance:
+true, inSync: false, process: "ChecksLicensesForNotificationProcess" }`". Today's read reproduces that
+**field for field**, down to the three counters' `source: None` and the input collection's `Script` value
+`[#[IsOwnerSchema:false].[IsSchema:false].[Element:{d2a1c1a5-…}]…#]` (the block also carries
+`processCaption: "Checks licenses for notification"`, which the reference quote omitted).
+
+So the difference is not a different process, element, element version or serialization — only the nested
+collection content. **What that agreement does NOT do is discriminate between the candidate causes.** A
+compiled instance would reproduce every one of those fields too: the generators exclude `ItemProperties`
+from the parameter initializers they emit but do **not** exclude `SourceValue`
+(`ProcessSchemaGenerator.cs:1725`, `:1783` list `DataValueType`, `Manager`, `Caption`, `Position`,
+`ContainerItemIndex`, `ManagerItemUId`, `ItemProperties`, `BackgroundModePriority` — and no `SourceValue`).
+The agreement narrows *what* differs; it says nothing about *why*.
 
 ### Instrument B3 — the control the story did not ask for
 
@@ -170,23 +180,74 @@ difference is a property of the **worker process** each read reached.
 **AC-06 asks which earlier operation flattens the cached instance. It is not established, and the
 mechanism the ADR named cannot be the whole answer.** The reasoning is short and worth keeping:
 
-- The ADR's mechanism is `SynchronizeParametersInternal` emptying both `ItemProperties` **in place**
-  (`Terrasoft.Core/Process/ProcessSchemaActivity.cs:387-388`), reached from
-  `ProcessSchemaSubProcess.SchemaUId`'s setter. That operates on an **activity's** `Parameters`.
+- The ADR's mechanism is `SynchronizeParametersInternal`, reached from
+  `ProcessSchemaSubProcess.SchemaUId`'s setter. It operates on an **activity's** `Parameters`, and it is
+  weaker than "it empties the item properties" suggests. Read line by line
+  (`Terrasoft.Core/Process/ProcessSchemaActivity.cs:373-395`): `:378-379` take **clones** of the two
+  collections (`GetClonedInputCollectionParameter` `:453-456`, `GetClonedOutputCollectionParameter`
+  `:448-451`); `:387-388` clear the **clones'** `ItemProperties`; `:390` `FillCollectionParameters`
+  **refills them** from the synchronized `Parameters`; `:393-394` attach the clones. What mutates the
+  cached graph in place is `Parameters.Clear()` at `:385` and `:391` — not the two lines usually cited.
+  The rebuild does not leave a collection empty; it rebuilds it.
+
+  That correction sharpens the residual rather than closing it: the collections come back empty **only if
+  `SynchronizeParameters()` at `:389` left `Parameters` empty** — which is what happens when the callee
+  does not resolve. That is a testable proposition, and a better lead than "unknown".
 - The reference measurement also reported no `itemProperties` on the **process-level** `CheckedLicenses`,
   which is a parameter of `ProcessSchema` itself. No element rebuild touches it.
 - One mechanism that empties an element's collections therefore cannot explain a reading in which a
   process-level collection was empty too. Whatever the earlier worker held, it was **globally** without
   item properties, not an element that had been rebuilt.
 
-The compiled-instance explanation stays eliminated, and for the reason ADR D0 gives:
-`ProcessSchemaGenerator.cs` and `ProcessSchemaGeneratorNew.cs` contain **no reference to
-`MultiInstanceOptions`** (verified again here — the only `Terrasoft.Core` files that name it are
-`BaseFlowSchemaGenerator`, `FlowSchemaGenerator`, `MultiInstanceParameters`,
-`ProcessParameterValueProvider`, `ProcessSchemaActivity` and `ProcessSchemaMultiInstanceOptions`), so a
-compiled instance could not have answered `multiInstance: true`.
+**The compiled instance is the hypothesis that fits best, and eliminating it takes more than the sentence
+this document first carried.** It has to be said properly, because a compiled instance is globally without
+item properties *by construction* — which is exactly the shape the `CheckedLicenses` evidence demands:
 
-The leading hypothesis, **labelled as a hypothesis because nothing here proves it**: the reference
+- The generators strip `ItemProperties` from **every** parameter initializer they emit — process-level at
+  `ProcessSchemaGenerator.cs:1637` and `ProcessSchemaGeneratorNew.cs:1852`, element parameters at
+  `ProcessSchemaGenerator.cs:1725`, `:1783` and `ProcessSchemaGeneratorNew.cs:2057`, each passing
+  `nameof(ProcessSchemaParameter.ItemProperties)` into `GeneratorUtilities.GenerateProperties`'s exclusion
+  list, which really does skip them (`GeneratorUtilities.cs:531-537`).
+
+The first version of this document eliminated the hypothesis by observing that neither generator file so
+much as names `MultiInstanceOptions`. **That argument does not hold.** `GenerateProperties` emits
+*reflectively* over `metaItemType.GetProperties()` against a deny-list, so a property need never appear in
+generator source to be emitted; `MultiInstanceOptions` is `[MetaTypeProperty]`-decorated and writable
+(`ProcessSchemaActivity.cs:121-122`) and is **not** in the element path's deny-list, which is only
+`ManagerItem, Manager, Parameters, ImageList, ImageName, ParentSchema`
+(`WriteSchemaContainer`, `ProcessSchemaGenerator.cs:1515-1516`).
+
+The step that actually carries it is the one the ADR gives and this document had dropped: `GenerateValue`
+handles `Color`, `Point`, `Size` and a short list of platform types and otherwise falls through to
+`value.ToString()` (`GeneratorUtilities.cs:490`; `GenerateExtendedTypeValue`,
+`ProcessSchemaGenerator.cs:111-130`). `ProcessSchemaMultiInstanceOptions` is a plain `MetaItem` with **no
+`ToString` override** (`ProcessSchemaMultiInstanceOptions.cs:25`), so emitting it would write the literal
+type name into a property initializer and the generated schema would not compile. A compiled instance
+carrying `MultiInstanceOptions` therefore cannot exist — which is what makes `multiInstance: true` in the
+reference reading decisive.
+
+**And that is a dependency worth naming out loud:** the elimination rests on a single field of the very
+reading this document calls unreproducible. It is the strongest available argument, not a closed one.
+
+**A second named candidate, and it has the scope the evidence demands.**
+`Terrasoft.Core.ServiceModel/Designers/Mappers/DtoToSchema/SchemaParametersDtoApplier.cs:104-107`:
+
+```csharp
+private void ApplyNestedParameters(List<SchemaParameterDto> parameters, T parameter) {
+    if (parameters == null || parameters.Count == 0) {
+        parameter.ItemProperties.Clear();
+        return;
+    }
+```
+
+That runs generically over parameter kind, so it can flatten a **process-level** parameter — exactly the
+reach the `CheckedLicenses` evidence requires and which no activity rebuild has. A save whose DTO omitted
+the nested parameters would produce the observed shape across the whole schema. Note the scope this
+widens: the ADR's F6 counted "only two lines in all of `Terrasoft.Core`", which is true as stated — this
+one is in `Terrasoft.Core.ServiceModel`. The earlier negative was therefore stated more broadly than the
+search behind it. **This is the next thing to check**, not a residual unknown.
+
+The other hypothesis, **labelled as a hypothesis because nothing here proves it**: the reference
 measurement was taken minutes after `CrtProcessBuilder` was pushed from 1.6.3.14 to 1.6.3.31, and on a
 `.NET Framework` environment a package install does not by itself replace the assembly a running worker is
 serving. `list-packages` reads the database row, not the serving assembly — which is exactly the trap the
@@ -261,6 +322,6 @@ the warm second read is reported separately as the control it is.
 | AC-03 — the stored `SysSchema.MetaData` read directly, with counts | **met** — 4 and 6, beside the shipped file's 4 and 6 |
 | AC-04 — the gate names exactly one outcome | **met** — Outcome 1 |
 | AC-05 — the AC-15 disposition in one sentence | **met** — met as written (4 and 6); no `calleeContract` member, nothing for the owner to sign off |
-| AC-06 — the flattening operation, and D0-a restated | **partly met** — D0-a restated; the specific operation is **not** identified, and the ADR's named mechanism is shown to be insufficient on its own. Recorded as a residual unknown rather than guessed |
+| AC-06 — the flattening operation, and D0-a restated | **met on the AC's own terms; partly met on a stricter reading.** AC-06's antecedent is "Given Outcome 1 **with a stale-cache cause**", and this document argues the cause is probably *not* a stale cache — the self-inflicted cache mechanism is removed by measurement. On that antecedent only D0-a is owed, and it is restated. Read unconditionally the first clause is unmet: the operation is not identified, the ADR's named mechanism is shown insufficient, and two named candidates are left for whoever continues |
 | AC-07 — production code untouched | **met** — the package diff is three test files |
-| AC-ERR | n/a — the stand was reachable and the reading was taken |
+| AC-ERR | **one of its two triggers DID fire** — the app pool could not be cycled (the session's permission layer refused `appcmd recycle`). Nothing was substituted for it: the worker was independently cold, and its PID, start time and complete read-only request history are recorded. The stand was reachable and the reading was taken, so the story did not stop |

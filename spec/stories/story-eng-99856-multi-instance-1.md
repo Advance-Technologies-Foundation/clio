@@ -45,9 +45,11 @@ What D0 already settled, so it is not re-derived here:
 
 So for the measured element the instance *should* have carried `L18`, and the two remaining shapes are:
 a **stale cached instance** (`FindInstanceFromMetaData` caches in `MetaItems` for the process lifetime,
-`SchemaManager.cs:3245-3254`, and the rebuild empties both `ItemProperties` **in place** at
-`Terrasoft.Core/Process/ProcessSchemaActivity.cs:387-388`), or a **stored blob that differs from the file
-the 4/6 counts were read from** (`PackageStore/CrtBase/branches/7.8.0/…/metadata.json` vs the
+`SchemaManager.cs:3245-3254`, and the rebuild clears both `ItemProperties` at
+`Terrasoft.Core/Process/ProcessSchemaActivity.cs:387-388` — **corrected 2026-09-21: those two lines clear
+CLONES taken at `:378-379`, and `:390` `FillCollectionParameters` refills them; what mutates the cached
+graph in place is `Parameters.Clear()` at `:385` and `:391`**), or a **stored blob that differs from the
+file the 4/6 counts were read from** (`PackageStore/CrtBase/branches/7.8.0/…/metadata.json` vs the
 environment's own `SysSchema.MetaData`, `ProcessSchemaManager.cs:331-336`).
 
 ## As a
@@ -177,10 +179,15 @@ Test naming: `MethodName_ShouldBehavior_WhenCondition` — e.g.
     opposite orders, client and server, in one process.
   - Added an unasked-for control: a second describe in the **same** worker process reports identically, so
     describe does not flatten its own cache. That removes the one self-inflicted mechanism.
-  - **AC-06 is only partly met, deliberately.** The specific flattening operation is not identified, and
-    the ADR's named mechanism cannot be the whole answer: the reference reading also lacked
-    `itemProperties` on the PROCESS-level `CheckedLicenses`, which no element rebuild touches. Recorded as
-    a residual unknown with the leading hypothesis labelled as one, rather than guessed. D0-a is restated.
+  - **AC-06: met on its own antecedent, partly met read unconditionally.** The AC says "Given Outcome 1
+    **with a stale-cache cause**", and the gate argues the cause is probably not a stale cache — so only
+    D0-a is owed, and it is restated. Read unconditionally the first clause is unmet: the operation is not
+    identified. Two things were established instead of guessing. The ADR's named mechanism cannot be the
+    whole answer, because the reference reading also lacked `itemProperties` on the PROCESS-level
+    `CheckedLicenses`, which no element rebuild touches — and that mechanism is weaker than its usual
+    description anyway (`:387-388` clears CLONES, `:390` refills them). And a better-scoped candidate is
+    named: `SchemaParametersDtoApplier.ApplyNestedParameters` (`:104-107`) clears `ItemProperties`
+    generically over parameter kind, so it does reach a process-level parameter.
   - AC-02's cold pool was obtained without cycling anything: an `appcmd recycle` was refused by the
     session's permission layer, but the worker process had been started by this session's own first
     request after an idle timeout. PID, start time and the full (read-only) request history are recorded,
