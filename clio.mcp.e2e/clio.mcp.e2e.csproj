@@ -37,6 +37,15 @@
 	</ItemGroup>
 
 	<ItemGroup>
+		<!-- The environment-free guards over this project's fixture-support helpers live in clio.tests,
+		     because the always-on GitHub unit lane runs clio.tests only; this project is driven from
+		     TeamCity and needs a stood-up stand, so it does not gate every pull request. -->
+		<AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+			<_Parameter1>clio.tests</_Parameter1>
+		</AssemblyAttribute>
+	</ItemGroup>
+
+	<ItemGroup>
 		<ProjectReference Include="..\clio\clio.csproj" />
 		<ProjectReference Include="..\clio.process.fixture\clio.process.fixture.csproj" ReferenceOutputAssembly="false" />
 	</ItemGroup>
