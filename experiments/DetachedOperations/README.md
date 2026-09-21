@@ -51,12 +51,39 @@ would almost never be globally idle and a global-only predicate would be correct
 | A5a | **control** — reading quiescence does not hold it: work starts in the check-then-act gap |
 | A5b | a swap window is refused while the target has work in flight |
 | A5c | holding a swap window closes the gap for its scope and leaves other targets alone |
-| A5d | the scope accepts work again once the window is released |
+| A5d | the scope accepts real work again once the window is released |
+| A5e | a target window is refused while a global window is held |
+| A5f | a global window is refused while a target window is held |
+| A5g | the terminal record is already on disk when a window is granted |
+| A5h | under contention, no operation is admitted for a scope whose window is held |
 | R1 | the V1 release becomes collectible once no lease retains it |
 | C1 | **control** — a host with no evidence answers `NotFound` for the very same lost operation |
 | C2 | **control** — the release is retained while its operation runs, and only then collectible |
 
-A5 was added after @vladimir-nikonov pointed out, while scoping the composition probe, that
+### Barrier repair, after @kirillkrylov's cross-review
+
+The first version of the barrier had four defects, all found by review of the published source and all
+now repaired with regression cases:
+
+1. **Split admission.** `Begin` checked the held scopes, released the lock, then registered the record.
+   A window could be granted in that gap and work accepted underneath it. Admission and registration are
+   now one critical section (A5h).
+2. **One-directional exclusion.** A target window was granted while a global window was held. Exclusion
+   is now checked both ways (A5e, A5f).
+3. **Completion boundary.** `Complete` published the terminal state before writing its evidence, so a
+   window could be granted while the end record was still unwritten — and a replacement acting on that
+   window would lose it. The write now happens before the state is published and inside the same lock
+   (A5g). The cost is that a completion serialises against window acquisition, including its fsync; a
+   production ledger would likely want a two-phase commit instead.
+4. **A5d tested the wrong thing.** It re-acquired a window instead of starting work after release, and
+   leaked the handle. It now starts real work and waits for it to succeed.
+
+A5h's `refused` count is reported but deliberately not asserted: whether a start lands inside a held
+window is timing-dependent, and asserting it would turn an invariant test into a flaky one. The pass
+condition is zero violations plus evidence that both sides ran. Observed on macOS across four runs:
+~155 windows, ~145 refusals, 6-15 admissions, 0 violations.
+
+A5 was originally added after @vladimir-nikonov pointed out, while scoping the composition probe, that
 `IsQuiescent(target)` is only an observation: reading it and then swapping is check-then-act, and an
 operation can begin in the gap. A5a measures that the gap is real; `TryEnterSwapWindow(target)` takes
 quiescence and holds it in one step, and A5c measures that it closes the gap for its scope without
@@ -89,7 +116,7 @@ temporary directory and writes nothing outside it.
 
 ## macOS observations, 2026-09-21
 
-macOS 27.0.0 (arm64), .NET 10.0.12. **17/17 passed, exit 0.**
+macOS 27.0.0 (arm64), .NET 10.0.12. **21/21 passed, exit 0, four consecutive runs.**
 
 - The operation started on `10.0.0.0` kept answering `Running` and stayed owned by `10.0.0.0` after
   `10.1.0.0` was activated mid-flight.
@@ -108,8 +135,9 @@ safe and this probe does not claim it does.
 Retention in C2 comes from both the ledger's owner reference and the detached work's own closure; the
 probe shows the release outlives the update, not which of the two references achieves it.
 
-Not covered: multi-threaded contention on the swap window itself (A5 exercises the sequence, not a
-concurrent storm of callers racing for the same scope), native libraries or resources, real
+Not covered: contention beyond two threads (A5h runs one starter against one swapper, not a storm),
+fairness or starvation under sustained pressure — A5h shows admissions can be starved when a swapper
+polls aggressively, and there is no wait-budget policy — native libraries or resources, real
 Creatio/DI dependencies, GC timing guarantees, multi-process coordination, server-side reconciliation
 (asking Creatio what is actually running), and any integration with `UpdatingComposition` — this probe
 loads releases through its own collectible context rather than through Core, deliberately, so it cannot

@@ -49,7 +49,11 @@ public sealed class OperationLedger : IOperationLedger {
         _live.Where(p => p.Value.State == OperationState.Running).Select(p => p.Key).ToArray();
 
     /// <inheritdoc />
-    public bool IsQuiescent(string? target = null) => !_live.Values.Any(r =>
+    public bool IsQuiescent(string? target = null) {
+        lock (_swapLock) { return IsQuiescentCore(target); }
+    }
+
+    private bool IsQuiescentCore(string? target) => !_live.Values.Any(r =>
         r.State == OperationState.Running &&
         (target is null || string.Equals(r.Target, target, StringComparison.Ordinal)));
 
@@ -57,19 +61,15 @@ public sealed class OperationLedger : IOperationLedger {
     public IDisposable? TryEnterSwapWindow(string? target = null) {
         string scope = target ?? string.Empty;
         lock (_swapLock) {
-            // Taking the window and observing quiescence must be one step, or the caller is back to
-            // check-then-act with a smaller gap rather than no gap.
-            if (_heldScopes.Contains(scope)) return null;
+            // Exclusion is checked in BOTH directions. A global window excludes every target window, and
+            // any held scope excludes a global one; granting a target window under a held global window
+            // would let work start on the very host the global window is protecting.
+            if (_heldScopes.Contains(string.Empty)) return null;
             if (target is null && _heldScopes.Count > 0) return null;
-            if (!IsQuiescent(target)) return null;
+            if (_heldScopes.Contains(scope)) return null;
+            if (!IsQuiescentCore(target)) return null;
             _heldScopes.Add(scope);
             return new SwapWindow(this, scope);
-        }
-    }
-
-    private bool IsScopeHeld(string target) {
-        lock (_swapLock) {
-            return _heldScopes.Contains(target) || _heldScopes.Contains(string.Empty);
         }
     }
 
@@ -81,13 +81,19 @@ public sealed class OperationLedger : IOperationLedger {
     public IOperationLease Begin(string target, string runtimeVersion, object owner) {
         ArgumentNullException.ThrowIfNull(owner);
         ArgumentException.ThrowIfNullOrWhiteSpace(target);
-        // Refused, not queued: a swap is holding this scope precisely so nothing new starts under it.
-        if (IsScopeHeld(target)) throw new SwapWindowHeldException(target);
         string id = Guid.NewGuid().ToString("n");
         var record = new OperationRecord(id, target, DateTimeOffset.UtcNow, runtimeVersion, OperationState.Running);
-        _live[id] = record;
-        _owners[id] = owner;                       // retention: the runtime cannot be retired under it
-        Append("begin", record);
+        lock (_swapLock) {
+            // Admission and registration are ONE critical section. Splitting them — checking the window,
+            // releasing the lock, then inserting the record — leaves a gap in which a swap observes
+            // quiescence and is granted a window that this operation then runs underneath.
+            if (_heldScopes.Contains(string.Empty) || _heldScopes.Contains(target)) {
+                throw new SwapWindowHeldException(target);   // refused, not queued
+            }
+            _live[id] = record;
+            _owners[id] = owner;                   // retention: the runtime cannot be retired under it
+            Append("begin", record);               // persisted before the lock is released
+        }
         return new Lease(this, id);
     }
 
@@ -102,14 +108,25 @@ public sealed class OperationLedger : IOperationLedger {
     private void Complete(string id, OperationState state, string? code) {
         if (state is OperationState.Running or OperationState.NotFound)
             throw new ArgumentOutOfRangeException(nameof(state), state, "A terminal state is required.");
-        var updated = _live.AddOrUpdate(id,
-            _ => new OperationRecord(id, string.Empty, DateTimeOffset.UtcNow, string.Empty, state,
-                DateTimeOffset.UtcNow, code),
-            (_, existing) => existing.State == OperationState.Running
-                ? existing with { State = state, FinishedUtc = DateTimeOffset.UtcNow, Code = code }
-                : existing);                        // exactly once; a second report never overwrites
-        if (updated.State == state && updated.Code == code) Append("end", updated);
-        _owners.TryRemove(id, out _);               // release retention so the runtime may be retired
+        lock (_swapLock) {
+            // Exactly once: a record that already reached a terminal state is never rewritten.
+            if (!_live.TryGetValue(id, out var existing) || existing.State != OperationState.Running) return;
+            var updated = existing with { State = state, FinishedUtc = DateTimeOffset.UtcNow, Code = code };
+
+            // Evidence is written BEFORE the state becomes visible as terminal, and the whole transition
+            // happens inside the window lock. Both orderings matter:
+            //  - persist-then-publish, because a crash after publishing but before persisting would leave
+            //    disk holding only the begin record, so a completed operation would be recovered as
+            //    Unknown;
+            //  - all of it under the lock, because otherwise a swap window can be granted the instant the
+            //    state flips, while the terminal record is still unwritten, and a replacement acting on
+            //    that window loses the evidence entirely.
+            // The cost is that a completion serialises against window acquisition, including its fsync.
+            // Acceptable here; a production ledger would likely want a two-phase commit instead.
+            Append("end", updated);
+            _live[id] = updated;
+            _owners.TryRemove(id, out _);           // release retention so the runtime may be retired
+        }
     }
 
     private void Append(string kind, OperationRecord record) {

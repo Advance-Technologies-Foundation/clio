@@ -101,8 +101,81 @@ Check("A5c holding a swap window closes the gap for its scope and leaves other t
     windowTaken && newWorkRefused && otherTargetUnaffected,
     new { windowTaken, newWorkRefused, otherTargetUnaffected });
 
-Check("A5d the scope accepts work again once the window is released",
-    ledger.TryEnterSwapWindow("envD") is not null, new { reacquired = true });
+// A5d tests the behaviour it is named for: real work, started after release, that actually completes.
+string afterReleaseId = v2.StartDetached(ledger, "envD", raceEffect, 150, "succeed", CancellationToken.None);
+var afterRelease = await WaitTerminal(ledger, afterReleaseId, TimeSpan.FromSeconds(20));
+Check("A5d the scope accepts real work again once the window is released",
+    afterRelease.State == OperationState.Succeeded,
+    new { state = afterRelease.State.ToString() });
+
+// A5e: exclusion must hold in both directions, not only global-blocks-global.
+using (IDisposable? globalWindow = ledger.TryEnterSwapWindow()) {
+    Check("A5e a target window is refused while a global window is held",
+        globalWindow is not null && ledger.TryEnterSwapWindow("envD") is null,
+        new { globalTaken = globalWindow is not null, targetGranted = false });
+}
+using (IDisposable? targetWindow = ledger.TryEnterSwapWindow("envD")) {
+    Check("A5f a global window is refused while a target window is held",
+        targetWindow is not null && ledger.TryEnterSwapWindow() is null,
+        new { targetTaken = targetWindow is not null, globalGranted = false });
+}
+
+// A5g: a window must never be granted while a terminal record is still unwritten.
+string evidenceId = v2.StartDetached(ledger, "envG", raceEffect, 150, "succeed", CancellationToken.None);
+await WaitTerminal(ledger, evidenceId, TimeSpan.FromSeconds(20));
+bool endPersisted;
+using (IDisposable? window = ledger.TryEnterSwapWindow("envG")) {
+    string[] lines = File.ReadAllLines(evidence);
+    endPersisted = lines.Any(l => l.Contains(evidenceId, StringComparison.Ordinal)
+        && l.Contains("\"kind\":\"end\"", StringComparison.Ordinal));
+    Check("A5g the terminal record is already on disk when a window is granted",
+        window is not null && endPersisted, new { windowTaken = window is not null, endPersisted });
+}
+
+// A5h: the admission barrier under contention — the invariant is that no Running record for a scope
+// can exist while that scope's window is held. This is the race Begin's split critical section allowed.
+int violations = 0, admitted = 0, refused = 0, windows = 0;
+using (var stress = new CancellationTokenSource(TimeSpan.FromSeconds(2))) {
+    Task starter = Task.Run(async () => {
+        while (!stress.IsCancellationRequested) {
+            // Short work with gaps between starts, so the scope is genuinely idle some of the time and
+            // the swapper can actually win a window — otherwise the contention never happens.
+            // Work must be SHORTER than the gap between starts, or the scope is never idle and the
+            // swapper never wins a window — then the test measures nothing.
+            try { v2.StartDetached(ledger, "envR", raceEffect, 3, "succeed", CancellationToken.None);
+                  Interlocked.Increment(ref admitted); }
+            catch (SwapWindowHeldException) { Interlocked.Increment(ref refused); }
+            await Task.Delay(12);
+        }
+    });
+    Task swapper = Task.Run(async () => {
+        while (!stress.IsCancellationRequested) {
+            // Scoped block, NOT a using-statement: a statement-scoped using would hold the window
+            // until the end of the loop body, across the delay below, so the scope would be held
+            // almost continuously and nothing would ever be admitted.
+            using (IDisposable? window = ledger.TryEnterSwapWindow("envR")) {
+                if (window is not null) {
+                    Interlocked.Increment(ref windows);
+                    if (ledger.Running.Select(ledger.Query).Any(r => r.Target == "envR")) {
+                        Interlocked.Increment(ref violations);
+                    }
+                    await Task.Delay(3);              // hold it long enough to collide with a start
+                }
+            }
+            // Longer than the starter's period on purpose. A shorter gap is self-reinforcing: every
+            // refusal leaves the scope idle, so the swapper wins the next window too and nothing is
+            // ever admitted — the counters then look busy while only one side is exercised.
+            await Task.Delay(8);
+        }
+    });
+    await Task.WhenAll(starter, swapper);
+}
+// The pass condition is the INVARIANT plus evidence that both sides ran. `refused` is reported but
+// deliberately not asserted: whether a start happens to land inside a held window is timing-dependent,
+// and making it a pass condition would turn a real invariant test into a flaky one.
+Check("A5h under contention, no operation is ever admitted for a scope whose window is held",
+    violations == 0 && admitted > 0 && windows > 0,
+    new { violations, admitted, refused, windows });
 
 // ── C1: the negative control. Without durable evidence the same question gets today's wrong answer ──
 var withoutEvidence = new OperationLedger(Path.Combine(work, "no-evidence.jsonl"));
