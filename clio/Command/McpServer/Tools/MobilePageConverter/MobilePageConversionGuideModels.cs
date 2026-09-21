@@ -465,8 +465,8 @@ public static class ReasonCodes {
 /// <summary>
 /// Caption/resource convention for a newly inserted named element. <see cref="Key"/> is UNIQUE to the
 /// element (<c>&lt;mobileName&gt;_caption</c>) — never the web element's inherited key — so it cannot collide
-/// with a caption key the mobile template already owns (a collision would be silently dropped by update-page,
-/// which does not overwrite an existing key). The caller registers <see cref="Key"/> = <see cref="SourceValue"/>
+/// with a caption key the mobile template already owns or change other elements sharing that key.
+/// The caller registers <see cref="Key"/> = <see cref="SourceValue"/>
 /// (the web caption's resolved en-US text) via <c>update-page resources</c>; the inserted element's caption
 /// token references the same <see cref="Key"/>.
 /// <para>

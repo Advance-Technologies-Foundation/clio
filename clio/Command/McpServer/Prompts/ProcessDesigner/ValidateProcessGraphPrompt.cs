@@ -17,6 +17,10 @@ public static class ValidateProcessGraphPrompt {
 	/// <param name="goal">The plain-language automation the user described.</param>
 	/// <returns>The prompt text.</returns>
 	[McpServerPrompt(Name = "validate-process-graph")]
+	// The buildable slice is deliberately NOT restated in the prompt text below: one list, in
+	// ValidateProcessGraphTool's own [Description]. A second copy is what went stale - this prompt told
+	// the agent to warn about designs "the builder cannot create yet" while the list it warned from was
+	// two element kinds short.
 	[Description("Returns the canonical validate-then-drive flow for designing a Creatio business process from a plain-language goal.")]
 	public static string ProcessDesignGuidance(
 		[Description("The plain-language automation the user wants (e.g. 'when a contact is added, read it and send an email').")]
@@ -43,11 +47,19 @@ public static class ValidateProcessGraphPrompt {
 		   existing one with `modify-business-process`) — clio builds and saves it server-side in one call.
 		   Then verify with `describe-business-process`.
 		Note: a clean validation does NOT mean every node is buildable — the rules cover the full BPMN
-		catalog, while the builder creates startEvent/signalStart/endEvent/userTask/sendEmail elements
-		plus exclusiveGateway and parallelGateway, and all three flow kinds declaratively
-		(`flows[].kind` with `flows[].condition`). Still out of reach: inclusiveGateway,
-		eventBasedGateway, timer/message starts, intermediate events, sub-processes, formula and script
-		tasks, and branching on an activity RESULT rather than a formula. Check the buildable slice in
+		catalog, while the builder creates the slice `validate-process-graph`'s own tool description
+		publishes, joined by all three flow kinds declaratively (`flows[].kind` with
+		`flows[].condition`). Still out of reach:
+		inclusiveGateway, eventBasedGateway, timer/message starts, intermediate events, and formula and
+		script tasks. Branching on an activity RESULT is NOT on that list any more: it is declared as the
+		edge's `results`, exactly as step 3 above says, and a formula on such a connector is refused by
+		the build. The Sub-process element
+		(`callActivity` here, `subProcess` in a descriptor) IS buildable; the EVENT and EXPANDED
+		sub-processes are not, and neither is one that runs the called process once per item of a
+		collection. R16 - the called process must begin with a Simple start event - cannot be checked
+		here either, because a planned graph carries no reference to that process; the build path
+		refuses it, and `execute-esq` over `VwProcessLib` answers it in advance through
+		`HasStartEvent`. Check the buildable slice in
 		`get-guidance name=process-modeling` before promising a build, and tell the user when the
 		validated design needs elements the builder cannot create yet.
 		Two rules worth carrying into the design rather than discovering at build time: out of a
