@@ -414,6 +414,19 @@ public sealed class OperationLedger : IOperationLedger {
     }
 
     /// <inheritdoc />
+    public IReadOnlyCollection<string> SelectedSnapshots {
+        get {
+            lock (_swapLock) {
+                return _selections.Values
+                    .Select(selection => selection.ConfigurationSnapshot)
+                    .Where(snapshot => snapshot is not null)
+                    .Distinct(StringComparer.Ordinal)
+                    .ToArray()!;
+            }
+        }
+    }
+
+    /// <inheritdoc />
     public OperationRecord Query(string id) {
         lock (_swapLock) { ResolveOrphansCore(); }
         bool mutateSnapshot = Environment.GetEnvironmentVariable("MUTATE_SNAPSHOT_AT_QUERY") == "1"

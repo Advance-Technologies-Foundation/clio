@@ -117,6 +117,25 @@ public interface IOperationLedger {
     /// </remarks>
     IOperationLease BeginFromSelection(string target, object owner);
 
+    /// <summary>
+    /// Configuration snapshots named by a committed selection, whether or not anything is running.
+    /// </summary>
+    /// <remarks>
+    /// <b>A fourth ownership reason for snapshot cleanup, and I argued against it before it was
+    /// needed</b> (@kirillkrylov). I proposed instead that any activation republishes the pair, so the
+    /// selected and the pinned snapshot are always equal and no extra reason is required. That rule is
+    /// right and it is not sufficient: committing a pair takes the settings store's lock and then the
+    /// ledger's, and in the window between them the store is already pinned to the new snapshot while
+    /// the selection still names the old one. A cleanup landing there sees the old snapshot as neither
+    /// pinned, nor held, nor retained — and an admission in the same window is registered under it.
+    /// <para>
+    /// This is not a second source of truth about what is current. It answers only "is this snapshot
+    /// named by a committed selection", which the settings store cannot know and the ledger cannot
+    /// interpret.
+    /// </para>
+    /// </remarks>
+    IReadOnlyCollection<string> SelectedSnapshots { get; }
+
     /// <summary>Answers for an identifier, including for operations this process did not start.</summary>
     OperationRecord Query(string id);
 

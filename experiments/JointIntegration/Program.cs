@@ -293,6 +293,42 @@ coordinated.Dispose();
 stale.Dispose();
 try { cOwner.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
 
+// ── X8/X9: the handoff window @kirillkrylov named ────────────────────────────────────────────────
+// "The committed selection must retain its snapshot until admission has acquired operation ownership."
+// Committing a pair takes the settings store's lock and then the ledger's. Between them the store is
+// already pinned to the new snapshot while the selection still names the old one, so my republish rule
+// narrows the window but does not remove it. Driven deterministically here rather than raced for.
+const string handoffScope = "envH0";
+SettingsSnapshot hFirst = settings.PrepareAndActivate(handoffScope,
+    new Dictionary<string, string> { ["mode"] = "h1" }, 0);
+ledger.TryPublishSelection(handoffScope, v1.Version, hFirst.Id, 0);
+Process hOwner = StartIdleOwner();
+SettingsSnapshot hSecond = settings.Prepare(handoffScope,
+    new Dictionary<string, string> { ["mode"] = "h2" }, settings.CurrentVersion(handoffScope));
+
+settings.Activate(handoffScope, hSecond.Id, settings.CurrentVersion(handoffScope));
+// --- inside the window: the store is pinned to hSecond, the selection still names hFirst ---
+bool stillSelected = ledger.SelectedSnapshots.Contains(hFirst.Id);
+CleanupResult windowCleanup = settings.Cleanup();
+IOperationLease inWindow = ledger.BeginFromSelection(handoffScope, new ProcessOwner(hOwner));
+string? admittedInWindow = ledger.Query(inWindow.Id).ConfigurationSnapshot;
+
+Check("X8 a cleanup inside the commit window reclaims the snapshot the selection still names",
+    windowCleanup.Reclaimed.Contains(hFirst.Id)
+        && admittedInWindow == hFirst.Id && !settings.Contains(hFirst.Id),
+    new { reclaimed = windowCleanup.Reclaimed, admittedUnder = admittedInWindow,
+          stillExists = settings.Contains(hFirst.Id), pinnedInStore = settings.CurrentSnapshotId(handoffScope),
+          note = "passing here is the gap, not the fix: the republish rule narrows this window, not closes it" });
+
+Check("X9 the ledger already knows the answer cleanup needs: the snapshot was still selected",
+    stillSelected && ledger.SelectedSnapshots.Contains(
+        ledger.CurrentSelection(handoffScope).ConfigurationSnapshot ?? ""),
+    new { selectedAtCleanupTime = stillSelected, selectedNow = ledger.SelectedSnapshots,
+          note = "one ownership reason short: Cleanup consults held and pinned and retained, not selected" });
+
+inWindow.Dispose();
+try { hOwner.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
+
 Console.WriteLine(JsonSerializer.Serialize(new {
     os = Environment.OSVersion.VersionString, framework = Environment.Version.ToString(),
     ledgerFrom = "DetachedOperations (lifetime lane)", settingsFrom = "SettingsVersioning (settings lane)",

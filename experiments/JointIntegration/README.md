@@ -31,8 +31,10 @@ dotnet run --project experiments/JointIntegration/JointIntegration.csproj -c Rel
 | X5d | **mutation control** — reading the halves separately admits a pair that was never current |
 | X6 | after a settings-only activation through the coordinator, admission lands on a live snapshot |
 | X7 | **mutation control** — skipping the republication admits under a snapshot cleanup reclaimed |
+| X8 | a cleanup inside the commit window reclaims the snapshot the selection still names |
+| X9 | the ledger already knows the answer cleanup needs: the snapshot was still selected |
 
-**10/10 on macOS.** Exact build target: this branch, plus `experiments/SettingsVersioning` taken from
+**12/12 on macOS.** Exact build target: this branch, plus `experiments/SettingsVersioning` taken from
 `nikonov/supervisor-quiescence-probe@f70f454d4365`. Both are in this tree, so the branch builds and runs
 without mixing incompatible sources.
 
@@ -88,3 +90,29 @@ place that owns both halves.
 The alternative was to make the published selection a fourth ownership reason for cleanup. It would work
 and it is worse: it makes the settings store depend on the ledger's selection, and it leaves two places
 that can disagree about what is current.
+
+## The handoff window, and the reason I was wrong to refuse a fourth ownership reason
+
+@kirillkrylov: *the committed selection must retain its snapshot until admission has acquired operation
+ownership.* I had argued that the republish rule made that unnecessary, because selected and pinned end
+up equal. The rule is right and it is **not sufficient**.
+
+Committing a pair takes the settings store's lock and then the ledger's. In the window between them the
+store is already pinned to the new snapshot while the selection still names the old one. A cleanup
+landing there sees the old snapshot as neither pinned, nor held, nor retained:
+
+```
+X8 {"reclaimed": ["cfg-16"], "admittedUnder": "cfg-16",
+    "stillExists": false, "pinnedInStore": "cfg-17"}
+X9 {"selectedAtCleanupTime": true}
+```
+
+The republish rule narrows the window; it does not close it. So the fourth ownership reason is needed
+after all, and X9 shows the information already exists on the ledger side:
+`IOperationLedger.SelectedSnapshots` — the snapshots named by a committed selection, whether or not
+anything is running.
+
+This is not a second source of truth about what is *current*. It answers one question the settings store
+cannot answer for itself and the ledger cannot interpret: **is this snapshot named by a committed
+selection.** The change on the store side is one more reason in `Cleanup`, next to pinned, held and
+retained.

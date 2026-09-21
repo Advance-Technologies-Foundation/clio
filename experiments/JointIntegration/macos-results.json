@@ -122,6 +122,36 @@
         "pinnedInStore": "cfg-15",
         "note": "passing here is the point: it shows what X6\u0027s rule prevents"
       }
+    },
+    {
+      "name": "X8 a cleanup inside the commit window reclaims the snapshot the selection still names",
+      "passed": true,
+      "detail": {
+        "reclaimed": [
+          "cfg-16"
+        ],
+        "admittedUnder": "cfg-16",
+        "stillExists": false,
+        "pinnedInStore": "cfg-17",
+        "note": "passing here is the gap, not the fix: the republish rule narrows this window, not closes it"
+      }
+    },
+    {
+      "name": "X9 the ledger already knows the answer cleanup needs: the snapshot was still selected",
+      "passed": true,
+      "detail": {
+        "selectedAtCleanupTime": true,
+        "selectedNow": [
+          "cfg-2",
+          "cfg-3",
+          "cfg-5",
+          "cfg-11",
+          "cfg-13",
+          "cfg-14",
+          "cfg-16"
+        ],
+        "note": "one ownership reason short: Cleanup consults held and pinned and retained, not selected"
+      }
     }
   ]
 }
