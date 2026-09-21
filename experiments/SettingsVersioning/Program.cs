@@ -22,9 +22,11 @@ T1_CoexistWithV2();
 T2_FailedMigrationLeavesV1Usable();
 T3_ConcurrentEditIsRefusedNotOverwritten();
 T4_RollbackRestoresExactlyAndRefusesAgainstNewerEdit();
+T4b_RollbackRetentionSurvivesCleanup();
 T5_CleanupRespectsRetentionNotJustPin();
 T6_CredentialFreeSurface();
 T7_NoSentinelSecretInPersistedArtifacts();
+T8_IdleCurrentSnapshotSurvivesCleanup();
 
 Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new { cases = observations },
     new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
@@ -123,6 +125,58 @@ void T4_RollbackRestoresExactlyAndRefusesAgainstNewerEdit() {
     Check("T4: a rollback based on a stale version is refused rather than clobbering a newer legitimate edit",
         refused is not null && store.CurrentSnapshotId("envT4") == legitimateEdit.Id,
         new { refusedWith = refused?.Message, stillActive = store.CurrentSnapshotId("envT4") });
+}
+
+void T4b_RollbackRetentionSurvivesCleanup() {
+    // Without explicit retention: a superseded snapshot with zero references is reclaimable, and a
+    // later rollback attempt against it genuinely fails -- kirillkrylov's "retained rollback
+    // configuration" gap, reproduced rather than assumed.
+    var ledgerBare = new OperationLedger(Path.Combine(workDir, "operations-t4b-bare.jsonl"));
+    var storeBare = new SettingsStore(ledgerBare, Path.Combine(workDir, "settings-t4b-bare.jsonl"));
+    SettingsSnapshot cfgA = storeBare.Prepare("envT4b", new Dictionary<string, string> { ["schema"] = "v1" }, 0);
+    storeBare.Prepare("envT4b", new Dictionary<string, string> { ["schema"] = "v2" }, cfgA.Version);
+    IReadOnlyCollection<string> doomed = storeBare.Cleanup();
+    KeyNotFoundException? failedRollback = null;
+    try { storeBare.Rollback("envT4b", cfgA.Id, storeBare.CurrentVersion("envT4b")); }
+    catch (KeyNotFoundException ex) { failedRollback = ex; }
+    Check("T4b MUTATION: without RetainForRollback, cleanup reclaims the prior snapshot and rollback to it genuinely fails",
+        doomed.Contains(cfgA.Id) && failedRollback is not null,
+        new { doomed, rollbackFailed = failedRollback?.Message });
+
+    // With explicit retention: the same sequence, but the caller marks cfg-A' as a rollback target
+    // before cleanup runs. It survives, and rollback to it succeeds.
+    var ledgerRetained = new OperationLedger(Path.Combine(workDir, "operations-t4b-retained.jsonl"));
+    var storeRetained = new SettingsStore(ledgerRetained, Path.Combine(workDir, "settings-t4b-retained.jsonl"));
+    SettingsSnapshot cfgA2 = storeRetained.Prepare("envT4b", new Dictionary<string, string> { ["schema"] = "v1" }, 0);
+    storeRetained.RetainForRollback(cfgA2.Id);
+    storeRetained.Prepare("envT4b", new Dictionary<string, string> { ["schema"] = "v2" }, cfgA2.Version);
+    IReadOnlyCollection<string> doomed2 = storeRetained.Cleanup();
+    storeRetained.Rollback("envT4b", cfgA2.Id, storeRetained.CurrentVersion("envT4b"));
+    Check("T4b: with RetainForRollback, cleanup leaves the prior snapshot alone and rollback to it succeeds",
+        !doomed2.Contains(cfgA2.Id) && storeRetained.CurrentSnapshotId("envT4b") == cfgA2.Id,
+        new { doomed = doomed2, activeAfterRollback = storeRetained.CurrentSnapshotId("envT4b") });
+
+    // Explicit operator decision, mirrors AcceptLoss/RepairDegraded: release the retention, then
+    // supersede cfg-A2 so it is no longer the pinned snapshot either -- now nothing protects it.
+    storeRetained.ReleaseRollbackRetention(cfgA2.Id);
+    storeRetained.Prepare("envT4b", new Dictionary<string, string> { ["schema"] = "v3" }, storeRetained.CurrentVersion("envT4b"));
+    IReadOnlyCollection<string> doomed3 = storeRetained.Cleanup();
+    Check("T4b: releasing retention makes the snapshot reclaimable again once nothing else protects it",
+        doomed3.Contains(cfgA2.Id),
+        new { doomed = doomed3 });
+}
+
+void T8_IdleCurrentSnapshotSurvivesCleanup() {
+    // kirillkrylov: "a snapshot may have zero active operations and still be the current configuration
+    // for the next admission" -- ReferencedSnapshots alone would miss this; Cleanup() must not.
+    var ledger = new OperationLedger(Path.Combine(workDir, "operations-t8.jsonl"));
+    var store = new SettingsStore(ledger, Path.Combine(workDir, "settings-t8.jsonl"));
+    SettingsSnapshot cfgX = store.Prepare("envT8", new Dictionary<string, string> { ["k"] = "x" }, 0);
+    // Deliberately no Admit() call: this snapshot has never been referenced by any operation.
+    IReadOnlyCollection<string> doomed = store.Cleanup();
+    Check("T8: a current snapshot with zero admitted operations survives cleanup",
+        !doomed.Contains(cfgX.Id) && store.Contains(cfgX.Id) && !ledger.ReferencedSnapshots.Contains(cfgX.Id),
+        new { doomed, referencedByLedger = ledger.ReferencedSnapshots, note = "protected by 'pinned', not by ReferencedSnapshots" });
 }
 
 void T5_CleanupRespectsRetentionNotJustPin() {

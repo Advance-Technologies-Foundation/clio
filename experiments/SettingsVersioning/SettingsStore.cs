@@ -118,16 +118,38 @@ public sealed class SettingsStore {
     public IOperationLease Admit(string target, string runtimeVersion, object owner, string scope) =>
         _ledger.Begin(target, runtimeVersion, owner, CurrentSnapshotId(scope));
 
+    private readonly ConcurrentDictionary<string, byte> _rollbackRetained = new(StringComparer.Ordinal);
+
     /// <summary>
-    /// Deletes every snapshot that is neither a scope's currently pinned snapshot NOR referenced by a
-    /// retained operation. The retained-operation half is the ledger's own <see cref="IOperationLedger.ReferencedSnapshots"/>,
-    /// consumed rather than recomputed -- a second reference count would eventually disagree with
-    /// retention (Alexandr-Kravchuk's point, taken directly).
+    /// Explicitly keeps <paramref name="snapshotId"/> alive across <see cref="Cleanup"/> even once it has
+    /// no referencing operation and is no longer any scope's current snapshot -- kirillkrylov's third
+    /// ownership reason (a "retained rollback configuration"), deliberately explicit rather than automatic:
+    /// how many generations back a rollback target must survive is an operator policy this fixture does
+    /// not get to assume.
+    /// </summary>
+    public void RetainForRollback(string snapshotId) {
+        if (!_snapshots.ContainsKey(snapshotId)) throw new KeyNotFoundException(snapshotId);
+        _rollbackRetained[snapshotId] = 0;
+    }
+
+    /// <summary>Explicit operator decision to stop protecting a rollback-retained snapshot from cleanup.</summary>
+    public void ReleaseRollbackRetention(string snapshotId) => _rollbackRetained.TryRemove(snapshotId, out _);
+
+    /// <summary>
+    /// Deletes every snapshot not covered by one of three explicit ownership reasons: a scope's currently
+    /// pinned snapshot, a snapshot a retained operation still references (the ledger's own
+    /// <see cref="IOperationLedger.ReferencedSnapshots"/>, consumed rather than recomputed -- a second
+    /// reference count would eventually disagree with retention), or a snapshot explicitly
+    /// <see cref="RetainForRollback"/>ed. A snapshot with zero active operations is not, on its own,
+    /// eligible -- kirillkrylov's point: <c>ReferencedSnapshots</c> is the operation-held set, not the
+    /// entire set eligible for deletion.
     /// </summary>
     public IReadOnlyCollection<string> Cleanup() {
         var referenced = new HashSet<string>(_ledger.ReferencedSnapshots, StringComparer.Ordinal);
         var pinned = new HashSet<string>(_activeSnapshotId.Values, StringComparer.Ordinal);
-        string[] doomed = _snapshots.Keys.Where(id => !referenced.Contains(id) && !pinned.Contains(id)).ToArray();
+        string[] doomed = _snapshots.Keys
+            .Where(id => !referenced.Contains(id) && !pinned.Contains(id) && !_rollbackRetained.ContainsKey(id))
+            .ToArray();
         foreach (string id in doomed) _snapshots.TryRemove(id, out _);
         return doomed;
     }
