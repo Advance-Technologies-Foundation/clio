@@ -30,7 +30,7 @@ mechanism:
 
 | State | Owner | Ends when |
 |---|---|---|
-| Operation records and durable evidence | ledger | never — a persisted record outlives the process that wrote it |
+| Operation records and durable evidence | ledger | a retention policy decides — **not** "never". A persisted record survives the process that wrote it; how long it is then kept is a policy this probe does not set and does not implement |
 | Un-persisted outcomes (`UnpersistedOperations`) | ledger, in memory only | repaired, explicitly abandoned, or **lost** with the memory that held them |
 | Retention, and whether an owner still exists | ledger | lease disposal, or the owner ceasing to exist |
 | The committed `(runtime, configuration)` selection | ledger | replaced by the next successful publication |
@@ -61,8 +61,11 @@ library share it:
   the same pair, and a failure means no publication happened at all.
 - **Any activation of either half republishes the pair**, so the selected and the pinned snapshot are
   equal outside the commit window. Inside that window they are not, which is why the next point exists.
-- **A snapshot named by a committed selection is retained.** `SelectedSnapshots` is an ownership reason
-  for cleanup alongside pinned, held and rollback-retained. Without it a cleanup landing in the commit
+- **A snapshot named by a committed selection is retained.** This is a **required invariant of the
+  joint flow, and it is satisfied by the settings store consuming `SelectedSnapshots` as an ownership
+  reason** alongside pinned, held and rollback-retained
+  (`nikonov/supervisor-quiescence-probe@62fb98e05736`). The ledger exposes the fact; it cannot enforce
+  it, because cleanup is not the ledger's. Without that consumption a cleanup landing in the commit
   window reclaims a snapshot an admission is about to use — X10 switches the reason off and the window
   reopens exactly as it was first measured.
 - **Ownership ends at disposal, or at the owner ceasing to exist.** A cross-process owner is asked
@@ -77,10 +80,17 @@ library share it:
 Work succeeds. The evidence write fails.
 
 The outcome is published as `Succeeded` with its own code, because successful work must not become failed
-or retryable work merely because a disk write failed. The scope is marked degraded, the record joins
-`UnpersistedOperations`, and automatic retirement of the release is refused — retiring it would destroy
-the only place that outcome still exists. The record still names the configuration it ran under, which is
-exactly when that is most useful.
+or retryable work merely because a disk write failed. The scope is marked degraded and the record joins
+`UnpersistedOperations`. The record still names the configuration it ran under, which is exactly when
+that is most useful.
+
+Automatic retirement of the release is refused while the scope is degraded. **That is a conservative
+policy, not a necessity, and an earlier version of this document overstated it.** Retiring a release does
+not destroy the outcome: the record lives in the ledger, and the ledger is not inside the release. What
+actually endangers an un-persisted outcome is replacing the process that *holds the ledger* — a different
+event from retiring a release, and, in a supervised host, a different event from swapping a backend. The
+refusal exists because degradation is a signal that something about this scope is already not working,
+not because retirement would take the evidence with it.
 
 Two honest endings, and no third:
 
