@@ -26,6 +26,24 @@ namespace Clio10.SettingsVersioning;
 /// </remarks>
 public sealed record SettingsSnapshot(string Id, string Scope, int Version, ImmutableDictionary<string, string> Values);
 
+/// <summary>
+/// Result of one <see cref="SettingsStore.Cleanup"/> pass.
+/// </summary>
+/// <param name="Reclaimed">Snapshots actually deleted this pass.</param>
+/// <param name="HeldByOwnerWithoutLiveness">
+/// Snapshots this pass could NOT even consider reclaiming, because a currently retained operation holding
+/// them has an owner the ledger reports in <see cref="IOperationLedger.OwnersWithoutLiveness"/> -- an
+/// owner it structurally cannot ask whether it is still there, as opposed to one it asked and got a live
+/// answer from. Alexandr-Kravchuk's X3 finding: the ledger correctly reports what it cannot resolve, the
+/// settings store correctly consumed <see cref="IOperationLedger.OperationHeldSnapshots"/>, and the leak
+/// was in the gap between the two -- a snapshot pinned by an unresolvable owner looked identical to one
+/// legitimately still in use, and cleanup returned an empty reclaim list either way with no way to tell
+/// them apart. This field exists so it no longer does.
+/// </param>
+public sealed record CleanupResult(
+    IReadOnlyCollection<string> Reclaimed,
+    IReadOnlyCollection<string> HeldByOwnerWithoutLiveness);
+
 /// <summary>Raised when an edit or rollback is based on a revision that is no longer current.</summary>
 /// <remarks>
 /// The same check backs both an edit race and a rollback racing a newer legitimate edit -- kirillkrylov's
@@ -84,10 +102,18 @@ public sealed class SettingsStore {
     /// <summary>
     /// Test-only: invoked synchronously inside <see cref="Prepare"/>'s critical section, after the
     /// revision check passes and before anything is written, still holding <see cref="_gate"/>. Lets a
-    /// regression test force a deterministic interleaving window instead of relying on timing -- see
-    /// <c>Program.T9</c>.
+    /// regression test force a deterministic interleaving window instead of relying on timing.
     /// </summary>
     public Action? OnPreparePassedCheckForTests { get; set; }
+
+    /// <summary>
+    /// Test-only: invoked synchronously inside <see cref="Activate"/>'s critical section, after the
+    /// revision check passes and before anything is written, still holding <see cref="_gate"/>. This is
+    /// where <see cref="PrepareAndActivate"/>'s actual exclusivity lives -- <see cref="Prepare"/> alone
+    /// does not reserve anything, so a deterministic-handshake test for "two concurrent callers can't both
+    /// win" must pause here, not inside <see cref="Prepare"/> -- see <c>Program.T9</c>.
+    /// </summary>
+    public Action? OnActivatePassedCheckForTests { get; set; }
 
     /// <summary>
     /// Test-only: invoked synchronously inside <see cref="Admit"/>, after the current snapshot id is read
@@ -110,13 +136,19 @@ public sealed class SettingsStore {
 
     public ImmutableDictionary<string, string> Values(string snapshotId) => _snapshots[snapshotId].Values;
 
+    private readonly ConcurrentDictionary<string, byte> _pendingCandidates = new(StringComparer.Ordinal);
+
     /// <summary>
-    /// Prepares and activates a new snapshot for <paramref name="scope"/>. A concurrent edit based on a
-    /// stale <paramref name="expectedBaseRevision"/> is refused, not merged and not silently overwritten
-    /// -- and, unlike the first cut of this method, genuinely refused under real concurrent callers, not
-    /// only under sequential stale-revision calls: the whole check-compute-persist-publish sequence runs
-    /// under <see cref="_gate"/>, so a second caller cannot even read the revision until the first has
-    /// either committed or thrown. <paramref name="values"/> is frozen into an
+    /// Builds and persists a new snapshot for <paramref name="scope"/> without activating it -- Alexandr-Kravchuk's
+    /// X5: a paired activation (a runtime half and a settings half that must commit together or not at
+    /// all) needs its settings half preparable ahead of the runtime attempt, and committed only if that
+    /// attempt actually succeeds. <see cref="Prepare"/> alone used to activate immediately, which is
+    /// exactly what let a refused runtime release leave settings pointed at a pair that was never
+    /// committed. The candidate is protected from <see cref="Cleanup"/> while pending -- see
+    /// <see cref="Activate"/> and <see cref="AbandonCandidate"/> for how that window ends.
+    /// <paramref name="expectedBaseRevision"/> is validated against what the candidate is built on, not
+    /// reserved: multiple candidates can be prepared against the same base without conflicting each other,
+    /// since only <see cref="Activate"/> is exclusive. <paramref name="values"/> is frozen into an
     /// <see cref="ImmutableDictionary{TKey,TValue}"/> before being stored -- not merely copied into another
     /// mutable dictionary typed as read-only, which a cast back to <c>IDictionary</c> would still defeat.
     /// </summary>
@@ -127,29 +159,79 @@ public sealed class SettingsStore {
                 throw new ConcurrencyConflictException(scope, expectedBaseRevision, current);
             OnPreparePassedCheckForTests?.Invoke();
             ImmutableDictionary<string, string> frozen = values.ToImmutableDictionary(StringComparer.Ordinal);
-            int newRevision = current + 1;
-            var snapshot = new SettingsSnapshot($"cfg-{Interlocked.Increment(ref _nextId)}", scope, newRevision, frozen);
+            var snapshot = new SettingsSnapshot($"cfg-{Interlocked.Increment(ref _nextId)}", scope, current + 1, frozen);
             Persist("prepare", snapshot);
             _snapshots[snapshot.Id] = snapshot;
-            _activeSnapshotId[scope] = snapshot.Id;
-            _scopeRevision[scope] = newRevision;
+            _pendingCandidates[snapshot.Id] = 0;
             return snapshot;
         }
     }
 
     /// <summary>
+    /// Commits a previously <see cref="Prepare"/>d candidate as <paramref name="scope"/>'s current
+    /// snapshot. Same explicit-conflict semantics as <see cref="Rollback"/>: a stale
+    /// <paramref name="expectedCurrentRevision"/> is refused, not silently overridden, and the scope's
+    /// revision counter moves strictly forward regardless of the candidate's own informational
+    /// <see cref="SettingsSnapshot.Version"/>. The caller orders a paired activation as: prepare the
+    /// settings candidate, activate the runtime half, then call this only if that succeeded -- a refused
+    /// runtime never reaches this call, and the candidate is reclaimed by <see cref="Cleanup"/> instead of
+    /// silently becoming current.
+    /// </summary>
+    public void Activate(string scope, string candidateId, int expectedCurrentRevision) {
+        lock (_gate) {
+            int current = CurrentVersion(scope);
+            if (!SkipConcurrencyCheckForTests && current != expectedCurrentRevision)
+                throw new ConcurrencyConflictException(scope, expectedCurrentRevision, current);
+            OnActivatePassedCheckForTests?.Invoke();
+            SettingsSnapshot candidate = _snapshots[candidateId];
+            if (!string.Equals(candidate.Scope, scope, StringComparison.Ordinal))
+                throw new InvalidOperationException($"snapshot '{candidateId}' does not belong to scope '{scope}'");
+            Persist("activate", candidate);
+            _activeSnapshotId[scope] = candidateId;
+            _scopeRevision[scope] = current + 1;
+            _pendingCandidates.TryRemove(candidateId, out _);
+        }
+    }
+
+    /// <summary>
+    /// Explicit release for a prepared candidate that will never be activated -- the "runtime activation
+    /// failed, do not commit the paired settings change" path. Only lifts the pending-cleanup protection;
+    /// the candidate itself is reclaimed on the next <see cref="Cleanup"/> pass, same as every other
+    /// explicit release in this store (<see cref="ReleaseRollbackRetention"/>).
+    /// </summary>
+    public void AbandonCandidate(string candidateId) {
+        lock (_gate) { _pendingCandidates.TryRemove(candidateId, out _); }
+    }
+
+    /// <summary>
+    /// Prepares and immediately activates a snapshot in one step -- the ordinary case, for callers that
+    /// don't need <see cref="Prepare"/>/<see cref="Activate"/>'s paired-activation split. Two separate lock
+    /// acquisitions, not one critical section spanning both calls, which is safe rather than merely
+    /// convenient: <see cref="Activate"/> re-validates <paramref name="expectedBaseRevision"/> against
+    /// whatever is current at that moment, so a caller that races with this one gets a correct
+    /// <see cref="ConcurrencyConflictException"/> instead of either call silently winning.
+    /// </summary>
+    public SettingsSnapshot PrepareAndActivate(string scope, IReadOnlyDictionary<string, string> values, int expectedBaseRevision) {
+        SettingsSnapshot candidate = Prepare(scope, values, expectedBaseRevision);
+        Activate(scope, candidate.Id, expectedBaseRevision);
+        return candidate;
+    }
+
+    /// <summary>
     /// Migrates <paramref name="scope"/>'s current values through <paramref name="transform"/>. The
-    /// transformed result is built entirely in memory before <see cref="Prepare"/> ever persists anything,
-    /// so a transform that throws -- or <see cref="FailMigrationForTests"/> -- leaves the prior snapshot
-    /// exactly as it was, and <see cref="Prepare"/> freezes the result independently, so even a transform
+    /// transformed result is built entirely in memory before <see cref="PrepareAndActivate"/> ever
+    /// persists anything, so a transform that throws -- or <see cref="FailMigrationForTests"/> -- leaves
+    /// the prior snapshot exactly as it was, and the freeze happens independently, so even a transform
     /// that mutates its own return value afterward cannot reach the stored snapshot. The source snapshot
     /// and the revision it was read at are captured together, under the same lock acquisition, and that
-    /// captured revision -- not a freshly re-read one -- is what <see cref="Prepare"/> checks: an edit
-    /// landing after the read but before the migration commits is therefore detected as a conflict instead
-    /// of being silently superseded by a migration that never actually saw it. <paramref name="transform"/>
+    /// captured revision -- not a freshly re-read one -- is what activation checks: an edit landing after
+    /// the read but before the migration commits is therefore detected as a conflict instead of being
+    /// silently superseded by a migration that never actually saw it. <paramref name="transform"/>
     /// receives the source as <see cref="ImmutableDictionary{TKey,TValue}"/>, so a transform that casts it
     /// to a mutable interface to edit V1's live data in place -- rather than building a new result -- gets
-    /// an exception at the mutating call, not a silently corrupted V1.
+    /// an exception at the mutating call, not a silently corrupted V1. Migrate always commits atomically
+    /// (prepare-and-activate); it has no staged/candidate form of its own -- use <see cref="Prepare"/>
+    /// directly for that.
     /// </summary>
     public SettingsSnapshot Migrate(string scope, Func<ImmutableDictionary<string, string>, IReadOnlyDictionary<string, string>> transform) {
         ImmutableDictionary<string, string> source;
@@ -162,7 +244,7 @@ public sealed class SettingsStore {
         // only needs to cover the read that establishes what "based on" means.
         if (FailMigrationForTests) throw new InvalidOperationException("injected migration failure");
         IReadOnlyDictionary<string, string> migrated = transform(source);
-        return Prepare(scope, migrated, baseRevision);
+        return PrepareAndActivate(scope, migrated, baseRevision);
     }
 
     /// <summary>
@@ -224,25 +306,44 @@ public sealed class SettingsStore {
     }
 
     /// <summary>
-    /// Deletes every snapshot not covered by one of three explicit ownership reasons: a scope's currently
+    /// Deletes every snapshot not covered by one of four explicit ownership reasons: a scope's currently
     /// pinned snapshot, a snapshot a retained operation still references (the ledger's own
     /// <see cref="IOperationLedger.OperationHeldSnapshots"/>, consumed rather than recomputed -- a second
-    /// reference count would eventually disagree with retention), or a snapshot explicitly
-    /// <see cref="RetainForRollback"/>ed. A snapshot with zero active operations is not, on its own,
-    /// eligible -- kirillkrylov's point: <c>OperationHeldSnapshots</c> is the operation-held set, not the
-    /// entire set eligible for deletion. Runs under the same <see cref="_gate"/> as every other mutating
-    /// method here, so it cannot observe a snapshot as unowned in a window where <see cref="Admit"/> or
-    /// <see cref="RetainForRollback"/> is mid-flight establishing ownership or retention over it.
+    /// reference count would eventually disagree with retention), a snapshot explicitly
+    /// <see cref="RetainForRollback"/>ed, or a candidate still pending <see cref="Activate"/>. A snapshot
+    /// with zero active operations is not, on its own, eligible -- kirillkrylov's point:
+    /// <c>OperationHeldSnapshots</c> is the operation-held set, not the entire set eligible for deletion.
+    /// Runs under the same <see cref="_gate"/> as every other mutating method here, so it cannot observe a
+    /// snapshot as unowned in a window where <see cref="Admit"/>, <see cref="RetainForRollback"/> or
+    /// <see cref="Prepare"/> is mid-flight establishing ownership, retention or pending status over it.
+    /// <para>
+    /// <b>X3 (Alexandr-Kravchuk).</b> A snapshot held by an operation whose owner has no liveness support
+    /// at all is held forever, silently indistinguishable from one legitimately still in use: the ledger
+    /// can never resolve that operation to a terminal state, so it never leaves
+    /// <c>OperationHeldSnapshots</c>, and cleanup correctly -- but silently -- keeps its snapshot every
+    /// time. Cross-referencing <see cref="IOperationLedger.OwnersWithoutLiveness"/> against each held
+    /// snapshot's holder surfaces this in <see cref="CleanupResult.HeldByOwnerWithoutLiveness"/> instead
+    /// of leaving it indistinguishable from ordinary retention.
+    /// </para>
     /// </summary>
-    public IReadOnlyCollection<string> Cleanup() {
+    public CleanupResult Cleanup() {
         lock (_gate) {
             var referenced = new HashSet<string>(_ledger.OperationHeldSnapshots, StringComparer.Ordinal);
             var pinned = new HashSet<string>(_activeSnapshotId.Values, StringComparer.Ordinal);
             string[] doomed = _snapshots.Keys
-                .Where(id => !referenced.Contains(id) && !pinned.Contains(id) && !_rollbackRetained.ContainsKey(id))
+                .Where(id => !referenced.Contains(id) && !pinned.Contains(id)
+                             && !_rollbackRetained.ContainsKey(id) && !_pendingCandidates.ContainsKey(id))
                 .ToArray();
             foreach (string id in doomed) _snapshots.TryRemove(id, out _);
-            return doomed;
+
+            string[] heldByUnresolvable = _ledger.OwnersWithoutLiveness
+                .Select(opId => _ledger.Query(opId).ConfigurationSnapshot)
+                .Where(snapshotId => snapshotId is not null && _snapshots.ContainsKey(snapshotId))
+                .Select(snapshotId => snapshotId!)
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+
+            return new CleanupResult(doomed, heldByUnresolvable);
         }
     }
 
