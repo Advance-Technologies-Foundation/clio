@@ -26,7 +26,8 @@ legitimate in-progress reply. Guidance cannot be un-sent; only a later reader ca
 |---|---|---|---|
 | I1 | An answered response never implies a completed execution. The two are recorded separately. | the `create-app-section` A/B | a caller treating "accepted" as "done" |
 | I2 | Every operation that outlives its response reaches **exactly one** terminal state. Silence is not a terminal state. | A3a, A3b; the lease records a terminal on dispose rather than leaving a record at `Running` | an operation polled forever |
-| I3 | An operation's owning release is retained until the operation terminates, and only then becomes collectible. | C2, R1 | a release retired out from under live work |
+| I3 | An operation's owning release is retained until the operation terminates. **Termination releases the ledger's retention; it does not make the release collectible.** | C2, R1, **O1** | a release retired out from under live work |
+| I9 | A value crossing back to a caller must be host-owned portable data. A runtime-defined type retains its release for as long as any caller holds an instance. | O1 | a release that can never be reclaimed because a DTO escaped |
 | I4 | Terminal evidence is durable **before** the terminal state is observable. | A5g; write-then-publish inside the window lock | a replacement acting on a state whose record was never written |
 | I5 | A host that cannot establish an outcome reports **uncertainty**, never absence. | A4a, A4b, and control C1 which produces today's false `NotFound` | "no compile was started" while one is running |
 | I6 | Quiescence is **taken and held**, never merely observed. | control A5a shows the check-then-act gap; A5h/A5i show the barrier and that the test detects its absence | work admitted into a scope a swap already decided was idle |
@@ -59,8 +60,28 @@ why those two lists differ.
 
 ## Cleanup and release
 
-A release may be retired only when no lease retains it. That is I3, and C2 is its control: the release is
-*not* collectible while its work is in flight, and is immediately after.
+A release may be retired only when no lease retains it **and nothing it defined has escaped**. C2 is the
+control for the first half: the release is not collectible while its work is in flight, and is
+immediately after.
+
+**My first version stopped there, and it was wrong.** @kirillkrylov found the expensive boundary:
+`OperationResult.Payload` is `object`, partner workflows return their own DTOs, and
+`UpdatingComposition` passes them back unchanged — so a caller holding such a value holds the release
+that defined its type. Case **O1** measures it against my own invariant:
+
+```
+O1  aliveWhileResultHeld=true   collectedAfterResultDropped=true
+    escapedType=Clio10.DetachedOperationsFixture.DetachedRuntime+ReleasePayload
+```
+
+The ledger had already reported a terminal state and released its own retention. The escaped value had
+not. Reclamation therefore depends on something the lifetime contract does not control — which is why
+I9 exists, and why "execution completed" is not a sufficient condition for retirement.
+
+The consequence for the boundary: results that cross a replaceable-runtime edge have to be host-owned
+portable data, the same rule `OperationRecord` already follows. Typed feature DTOs remain fine for static
+embedding, where nothing is ever unloaded. That matches @kirillkrylov's proposal; O1 is the measurement
+under it.
 
 Retirement therefore follows **ownership**, not filesystem behaviour. Whether assemblies were loaded by
 path or from bytes does not decide whether deleting a release is safe — established by @kirillkrylov's

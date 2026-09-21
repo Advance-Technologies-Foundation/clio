@@ -136,4 +136,15 @@ public interface IDetachedRuntime {
     /// <param name="cancellationToken">Cancels the detached work.</param>
     string StartDetached(IOperationLedger ledger, string target, string effectPath, int workMilliseconds,
         string outcome, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Returns a value whose TYPE is declared by this release, handed back as <see cref="object"/>.
+    /// </summary>
+    /// <remarks>
+    /// Models <c>OperationResult.Payload</c>, which is <see cref="object"/> and carries runtime-defined
+    /// DTOs back to callers unchanged. Raised by @kirillkrylov in discussion #1643: a caller retaining
+    /// such a value also retains the release that defined its type, so terminal status is not sufficient
+    /// for reclamation. Case O1 measures it.
+    /// </remarks>
+    object CreateRuntimeDefinedResult();
 }

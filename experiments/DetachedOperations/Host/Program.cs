@@ -226,6 +226,22 @@ Check("P1 gap: a failed terminal write leaves the operation Running and its scop
           windowObtainable = false,
           note = "the work finished; only its evidence write failed. Exactly-once has been consumed, so no later report can rescue it" });
 
+// ── O1: terminal status is NOT sufficient for reclamation ──────────────────────────────────────────
+// @kirillkrylov's returned-value-ownership finding, measured against my own invariant I3. A caller that
+// holds a runtime-defined result also holds the release that defined its type, however finished the
+// operation is and however empty the ledger's retention.
+var (o1Weak, escaped) = await PhaseEscapedResult(ledger, v1Dir, Path.Combine(work, "o1-effect.log"));
+for (int i = 0; i < 20 && o1Weak.IsAlive; i++) { GC.Collect(); GC.WaitForPendingFinalizers(); await Task.Delay(50); }
+bool aliveWhileHeld = o1Weak.IsAlive;
+string escapedType = escaped.GetType().FullName ?? "?";
+escaped = null!;                                   // drop the only remaining reference
+for (int i = 0; i < 40 && o1Weak.IsAlive; i++) { GC.Collect(); GC.WaitForPendingFinalizers(); await Task.Delay(50); }
+Check("O1 a runtime-defined result held by the caller keeps the release alive after the operation ended",
+    aliveWhileHeld && !o1Weak.IsAlive,
+    new { aliveWhileResultHeld = aliveWhileHeld, collectedAfterResultDropped = !o1Weak.IsAlive,
+          escapedType,
+          note = "the ledger reported a terminal state and released its own retention; the escaped value did not" });
+
 GC.KeepAlive(v2Ctx);
 Console.WriteLine(JsonSerializer.Serialize(new {
     os = Environment.OSVersion.VersionString,
@@ -236,6 +252,21 @@ Console.WriteLine(JsonSerializer.Serialize(new {
 return failed ? 1 : 0;
 
 // ────────────────────────────────────────────────────────────────────────────────────────────────────
+
+// Runs an operation to completion, then lets ONE runtime-defined value escape to the caller. The
+// release is unloaded before returning, so anything keeping it alive afterwards is that value.
+[MethodImpl(MethodImplOptions.NoInlining)]
+static async Task<(WeakReference Weak, object Escaped)> PhaseEscapedResult(
+    OperationLedger ledger, string releaseDirectory, string effectPath) {
+    var (context, runtime) = Load(releaseDirectory);
+    string id = runtime.StartDetached(ledger, "envO", effectPath, 100, "succeed", CancellationToken.None);
+    await WaitTerminal(ledger, id, TimeSpan.FromSeconds(20));
+    object escaped = runtime.CreateRuntimeDefinedResult();
+    var weak = new WeakReference(context, trackResurrection: true);
+    runtime = null!;
+    context.Unload();
+    return (weak, escaped);
+}
 
 // Shared contention harness: one starter against one swapper, so the repaired and the deliberately
 // broken ledger are measured by identical code rather than by two hand-written loops.

@@ -20,6 +20,12 @@ public sealed class DetachedRuntime : IDetachedRuntime {
 #endif
 
     /// <inheritdoc />
+    public object CreateRuntimeDefinedResult() => new ReleasePayload(Version);
+
+    /// <summary>A DTO whose type lives in this release, exactly like a partner workflow's own result.</summary>
+    public sealed record ReleasePayload(string ProducedBy);
+
+    /// <inheritdoc />
     public string StartDetached(IOperationLedger ledger, string target, string effectPath, int workMilliseconds,
         string outcome, CancellationToken cancellationToken) {
         IOperationLease lease = ledger.Begin(target, Version, this);
