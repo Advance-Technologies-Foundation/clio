@@ -31,5 +31,17 @@ descriptor, and read every business byte written afterwards. Reasoning that "the
 `fchmod` returns" answers the bytes and not the handle. Removing the staging directory, or creating
 it with anything wider than `0700`, reopens that. It fails silently: every assertion made on the
 FINISHED file still passes, because the published inode is owner-only either way. Only
-`WriteNew_ShouldStageInsideAnOwnerOnlyDirectory_CreatedAtomically` catches it, by reading the
+`WriteNew_ShouldStageInsideAnOwnerOnlyDirectory_BeforeWritingAnyByte` catches it, by reading the
 directory's mode from inside the write, while the payload stream is still open.
+
+**A known limit, deliberately not closed in code.** The reopen of the staging directory is
+`O_NOFOLLOW | O_DIRECTORY`, so a symlink substituted for the name is refused — but it does not prove
+the directory it got back is the same INODE `mkdirat` just created. An account with write access to
+the parent could remove the empty directory and put its own there in between. Traced to the end, that
+buys nothing: the staged file is still created `O_EXCL`, owned by clio and narrowed to `0600` before
+the first byte, and `linkat`'s destination is the already-fixed parent descriptor, so neither the
+payload nor the publish is reachable — the worst outcome is a failed call. It also needs a parent
+directory writable by another account, which the OS temp root is not (sticky bit). Closing it would
+mean an `fstat` P/Invoke whose `struct stat` layout differs per platform and per architecture — the
+same class of ABI hazard this record is about. If you add one, prove it on Linux x64, Linux arm64 and
+Apple silicon, or it will fail in the direction that reads as success.
