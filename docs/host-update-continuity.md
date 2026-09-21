@@ -435,50 +435,65 @@ gap already flagged as open (A5h) and now has a second, independent cause.
 **Converged recommendation (supersedes "Flow A first" below).**
 [kirillkrylov asked directly](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18544959)
 for one mechanism and its limitations, not two flows kept alive as a standing
-question. Answering that plainly, against everything measured this round:
+question, then
+[recorded this as the joint recommendation](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18545092)
+**for the long-lived MCP product host specifically** — reusable Core/Composition and
+static embedding stay independent of this choice; an embedding application does not
+acquire a mandatory supervisor just to use the libraries. Answering the rest against
+everything measured this round:
 
-**Flow B — supervisor-managed backend replacement — for the combined runtime+settings
-pair, with hung operations and supervisor self-update named as explicit, un-closed
-limitations rather than hidden inside "further work needed."**
+**Flow B + resolvable ownership — supervisor-managed backend replacement, one
+published runtime+settings selection, one admission path reading it — for the
+long-lived MCP product host, with hung operations and supervisor self-update named as
+explicit, un-closed limitations.**
 
-What changed my own prior "Flow A first" position: the two gaps that separated
-"happy path measured" from "safe to ship" when I wrote that recommendation are
-narrower now than they were, and the standing cost side of the ledger didn't grow.
-Concretely:
-- The forced-swap correctness gap Alexandr found in my own MCP client probe
-  ([discussioncomment-18543950](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18543950))
-  is fixed and reproduced both ways (`IOwnerLiveness`, `nikonov/supervisor-quiescence-probe@72d776064`):
-  a backend killed with work genuinely in flight now resolves to `Unknown` from the
-  first poll over a real, never-reconnected MCP connection, not an eternal `Running`.
-- Transport continuity through a full swap is no longer a design description — it's
-  measured against a real `ModelContextProtocol` client and server
-  (`McpClientProbe`/`McpHost`), one connection, never reconnected: an id issued before
-  a drain-then-swap resolves correctly after it (BASELINE), a swap with work
-  genuinely in flight correctly defers rather than interrupting it (MUTATION A), and a
-  forced swap correctly reports the truthful outcome (MUTATION B).
-- The settings lane now has the same "failed activation leaves the previous
-  selection usable" property the runtime lane needs, independently measured: `Prepare`
-  builds a candidate without activating it, `Activate` commits explicitly, a refused
-  or failed activation never leaves an admission observing an uncommitted pair, and
-  cleanup neither drops a pending candidate nor a rollback target
-  (`SettingsStore`, X5/T15/T16, `3960c66a5`..`334d0dcf2`).
+The "+ resolvable ownership" is
+[Alexandr's correction, and it's his to state](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18545078):
+Flow B is safe only *while the ledger can resolve owners*. Reserve-then-drain makes
+Flow B safe rather than lucky, but a drain only terminates if every retained
+operation can eventually stop retaining — with owner liveness disabled, H3 measures
+`afterLiveOwnerFinished: false` **permanently**: a drain after a lost owner never
+finishes, the reservation can only expire, and the update never lands. Flow B
+without `IOwnerLiveness` is not a slower Flow B; it stops updating the first time a
+backend dies. Not two items — one.
 
-**What remains genuinely unclosed, stated as a limitation rather than deferred
-quietly:** the hung-operation case Alexandr measured against the reservation itself
-([discussioncomment-18543530](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18543530)) —
+**One selection, one admission path, not two independently-read halves.** The
+admitted runtime/configuration pair is a single published unit, and admission reads
+both halves from that one publication — not runtime-then-settings or
+settings-then-runtime as two separate reads. [Alexandr's counterexample](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18545078)
+is the reason: a caller reading the halves separately can admit `(10.1.0.0, cfg-11)`,
+a pair that was never current together, even though each half was individually
+correct at the moment it was read. That is why the boundary has to be a publication,
+not an ordering of two calls. On my side of that boundary: `SettingsStore.Admit` is
+removed (`nikonov/supervisor-quiescence-probe@f70f454d4`) — it read this store's own
+current snapshot and admitted with it, a second admission path once a joint selection
+exists. Admission now belongs entirely to the ledger's `BeginFromSelection`, on the
+joint branch; `SettingsStore` owns snapshots, revisions, candidates and rollback
+retention, and nothing about what an operation is admitted under.
+
+**What remains genuinely unclosed, named rather than smoothed over — and narrowed per
+kirillkrylov's correction to how I first framed it.** The hung-operation case
+Alexandr measured against the reservation itself
+([discussioncomment-18543530](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18543530)):
 a reservation held for its full budget, the operation still `Running` when the budget
-expires, neither killed nor completed. `IOwnerLiveness` does not touch this: the
-owner is alive, just not finishing. This is a different failure than owner-loss, and
-nothing built this round closes it. It is the one place this recommendation is
-incomplete, not merely under-tested.
+expires, neither killed nor completed. `IOwnerLiveness` does not touch this — the
+owner is alive, just not finishing. But
+[this does not invalidate a safe defer policy](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18545092):
+safety can hold while update progress is not guaranteed. The correct shape is defer,
+plus a visible reason surfaced to whoever is watching, plus a *separate*, explicit
+cancellation/restart action where one is supported — never an automatic termination
+or replay invented to force progress past a hung operation. What's genuinely
+undesigned is that visible-reason-plus-explicit-action path, not the safety of
+deferring itself.
 
 Answering kirillkrylov's four questions directly:
 
 - **What updates inside a running host, no restart.** A new settings snapshot
   (`Prepare`+`Activate`) — always, transparent to any in-flight admission, which keeps
   the `ConfigurationSnapshot` it was admitted under. The backend/runtime process
-  itself, via reserve-then-drain (`TryReserveAdmission`), for finite, terminating
-  work — bounded, safe, and now proven over a real client connection.
+  itself, via reserve-then-drain (`TryReserveAdmission`) with resolvable ownership,
+  for finite, terminating work — bounded, safe, and now proven over a real client
+  connection.
 - **What requires a full (supervisor) restart.** The supervisor itself. Nothing built
   this round, or proposed here, lets the pipe-owning process update itself while
   running — Flow B trades the reconnect gap for exactly this standing cost
@@ -488,14 +503,22 @@ Answering kirillkrylov's four questions directly:
   lifecycle — nothing feature-shaped) specifically so its own updates stay rare enough
   that "restart the supervisor" is an acceptable, infrequent event, same as today.
   Solving supervisor self-update is out of scope by design, not by omission.
-- **What the MCP client actually experiences.** Zero reconnects, ever (measured: 1.0s
-  macOS / 1.3s Windows for a full backend swap). An operation id issued before a swap
-  stays valid and queryable after it. If work is genuinely in flight, the swap defers
-  rather than interrupting it, bounded by a caller-supplied drain budget — not a
-  hardcoded constant. If an operator forces a swap anyway, the client gets a truthful
-  `Unknown` for that operation, never an eternal `Running`. A failed or refused
-  runtime/settings activation is invisible to a new admission: it still observes the
-  previously committed pair, never a partially-updated one.
+- **What the MCP client actually experiences.** Zero reconnects through a backend
+  swap **while the supervisor process itself stays alive** — that qualifier matters,
+  per kirillkrylov's correction: measured 1.0s macOS / 1.3s Windows describes the
+  swap path specifically, not an unconditional "ever"; a supervisor restart is the
+  separate, named case above, and does reconnect the client. An operation id issued
+  before a swap stays valid and queryable after it. If work is genuinely in flight,
+  the swap defers rather than interrupting it, bounded by a caller-supplied drain
+  budget — not a hardcoded constant. If an operator forces a swap anyway, the client
+  gets a truthful `Unknown` for that operation, never an eternal `Running`. A failed
+  or refused runtime/settings activation is invisible to a new admission — it still
+  observes the previously committed pair. That preservation property is a **joint-flow
+  claim**, not something `SettingsStore.Activate` establishes alone: `Activate` only
+  guarantees its own half (the settings snapshot doesn't move without an explicit,
+  successful commit); the paired guarantee — that the runtime half and the settings
+  half either both move or neither does — is the selection/admission boundary's,
+  on the joint branch.
 - **Failed readiness or exhausted drain budget.** Exhausted drain budget:
   `TriggerSwapAsync` returns `"deferred"`; the old backend keeps running, nothing is
   killed, the update simply does not happen this attempt — S8/S9's measured behavior,
@@ -508,12 +531,26 @@ Answering kirillkrylov's four questions directly:
   `Activate` throws before publishing anything; the previous pair remains active; a
   retry against the same prepared candidate is safe (T16).
 
-**Integration delta this recommendation implies, scoped to my lane** (per today's
-reassignment: Alex owns the integrated runtime/settings selection and admission
-boundary in the joint branch; I own settings/host integration into that same flow):
-`SettingsStore`'s `Prepare`/`Activate`/`AbandonCandidate` seam is the piece Alex's
-joint boundary composes with — deliberately not duplicated there. What I have not
-built, and don't think I should build separately from his integration: a second,
+**Persistence and retention, named explicitly per kirillkrylov's correction rather
+than implied.** The ledger owns operation records and their persistence health, but
+"the ledger owns evidence" is not "evidence lives forever": a record that persisted
+successfully survives process replacement (that's the whole point — it's what a
+swap's other side reads back); a record whose persistence itself failed is
+memory-only and does not survive one (`UnpersistedOperations`, degraded scopes,
+`RepairDegraded`/`AcceptLoss` as the only two ways out — repair it or explicitly
+accept the loss, never a silent third option). The recovery boundary is: durable
+evidence survives a swap, un-persisted evidence does not, and which case a given
+record is in is always visible, never inferred.
+
+**Integration delta this recommendation implies, scoped to my lane** (per
+[kirillkrylov's reassignment](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18545092)
+and [Alexandr's acceptance of the selection/admission boundary](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18545078)):
+`SettingsStore`'s `Prepare`/`Activate`/`AbandonCandidate` seam, with `Admit` now
+removed, is the piece the joint boundary composes with — deliberately not duplicated
+there. `PrepareAndActivate` (the atomic one-step convenience) is fine for a
+settings-only change; it must not appear in a paired runtime+settings activation,
+where the two steps have to straddle the runtime half. What I have not built, and
+don't think I should build separately from the joint integration: a second,
 standalone "paired activation" orchestrator. The composition belongs in the one place
 that owns both halves.
 
