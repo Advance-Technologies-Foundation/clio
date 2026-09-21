@@ -456,15 +456,12 @@ public static class MobileActionTargetProbe {
 		string Name, ActionTargetState State, Guid? CandidatePageUId, Exception CandidateFailure);
 
 	/// <summary>
-	/// Resolves every <see cref="KindEntityDefaultMobilePage"/> target: one batched <c>SysSchema</c> read for
-	/// the objects' base-row UIds, then one <c>MobileRelatedPage</c> add-on read per object (capped by
-	/// <see cref="MaxEntityAddonProbes"/>, run concurrently up to <see cref="MaxEntityProbeParallelism"/> at a
-	/// time). That add-on is
-	/// what the Creatio Mobile app resolves for a create/update-record action, and it is the same add-on
-	/// <c>create-related-page-addon --schema-type mobile</c> writes at the end of a conversion. For the
-	/// objects verified missing, the candidate WEB page is resolved as one web add-on read per object (also
-	/// concurrent, in the same pass) plus ONE batched name lookup for all of them
-	/// (<see cref="ResolveCandidateNames"/>).
+	/// Resolves every <see cref="KindEntityDefaultMobilePage"/> target in three phases —
+	/// <see cref="PartitionByEntityRow"/> (the one batched <c>SysSchema</c> read plus the budget clip),
+	/// <see cref="ProbeBudgeted"/> (the concurrent per-object add-on reads), and
+	/// <see cref="CollectOutcomes"/> (recording verdicts and batching the candidate name lookup). That add-on
+	/// is what the Creatio Mobile app resolves for a create/update-record action, and it is the same add-on
+	/// <c>create-related-page-addon --schema-type mobile</c> writes at the end of a conversion.
 	/// </summary>
 	/// <returns>Whether the tier answered, and what limited it — see <see cref="EntityTierOutcome"/>.</returns>
 	private static EntityTierOutcome ResolveEntityTargets(
@@ -485,14 +482,28 @@ public static class MobileActionTargetProbe {
 				"Object action targets were not verified (the source page package could not be resolved).");
 		}
 
+		(List<(string Name, string EntityUId)> budgeted, bool budgetExhausted) =
+			PartitionByEntityRow(context, names, into);
+		EntityProbeOutcome[] outcomes = ProbeBudgeted(context, budgeted, packageUId);
+		return CollectOutcomes(context, outcomes, budgetExhausted, into);
+	}
+
+	/// <summary>
+	/// Phase 1 of <see cref="ResolveEntityTargets"/> — the only phase that reads anything: one batched
+	/// <c>SysSchema</c> read for <paramref name="names"/>' base-row UIds, then a purely sequential split by
+	/// whether the object even HAS a row to probe. A name with no row is recorded directly (see the inline
+	/// reasoning below) and never competes for the budget; what remains is clipped to
+	/// <see cref="MaxEntityAddonProbes"/>, in the same first-seen order <paramref name="names"/> walks in, so
+	/// the budget consumes candidates in a deterministic, input-order sequence before any concurrency enters
+	/// the picture in <see cref="ProbeBudgeted"/>.
+	/// </summary>
+	/// <returns>The budgeted (name, entityUId) pairs to probe, and whether the budget clipped anything.</returns>
+	private static (List<(string Name, string EntityUId)> Budgeted, bool BudgetExhausted) PartitionByEntityRow(
+		ProbeContext context, IReadOnlyList<string> names, IDictionary<string, ActionTargetResolution> into) {
 		var uIdByName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 		var seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		bool truncated = ReadEntitySchemaRows(context, names, uIdByName, seenNames);
 
-		// Phase 1 (no reads, sequential): split by whether the object even HAS a row to probe. This is what
-		// decides which names compete for the budget, in the same first-seen order the sequential version
-		// walked `names` in, so the budget still consumes candidates in a deterministic, input-order sequence
-		// before any read — and therefore before any concurrency — enters the picture.
 		var toProbe = new List<(string Name, string EntityUId)>();
 		foreach (string name in names) {
 			if (!uIdByName.TryGetValue(name, out string entityUId)) {
@@ -518,15 +529,21 @@ public static class MobileActionTargetProbe {
 				Record(into, KindEntityDefaultMobilePage, name, ActionTargetState.Unknown);
 			}
 		}
+		return (budgeted, budgetExhausted);
+	}
 
-		// Phase 2 (the reads, concurrent): each entry's classify-then-candidate sequence is independent of
-		// every other entry's, so it runs on its own task, bounded by MaxEntityProbeParallelism. Both
-		// DefaultPageAddonReader.ReadMobileState and ReadWebDefaultPageUId already fail open inside their own
-		// try/catch; the outer try/catch here is a second, structural guarantee that no single object's
-		// failure can escape the parallel body and take any other object's result down with it. Writing into
-		// a PRE-SIZED, per-index array — never a shared mutable collection — keeps the result order
-		// deterministic (byte-for-byte identical to the sequential version) no matter which read finishes
-		// first or slowest.
+	/// <summary>
+	/// Phase 2 of <see cref="ResolveEntityTargets"/>: each budgeted entry's classify-then-candidate sequence is
+	/// independent of every other entry's, so it runs on its own task, bounded by
+	/// <see cref="MaxEntityProbeParallelism"/>. Both <see cref="DefaultPageAddonReader.ReadMobileState"/> and
+	/// <see cref="DefaultPageAddonReader.ReadWebDefaultPageUId"/> already fail open inside their own
+	/// try/catch; the outer try/catch here is a second, structural guarantee that no single object's failure
+	/// can escape the parallel body and take any other object's result down with it. Writing into a
+	/// PRE-SIZED, per-index array — never a shared mutable collection — keeps the result order deterministic
+	/// (byte-for-byte identical to a sequential version) no matter which read finishes first or slowest.
+	/// </summary>
+	private static EntityProbeOutcome[] ProbeBudgeted(
+		ProbeContext context, IReadOnlyList<(string Name, string EntityUId)> budgeted, Guid packageUId) {
 		var outcomes = new EntityProbeOutcome[budgeted.Count];
 		Parallel.For(0, budgeted.Count,
 			new ParallelOptions { MaxDegreeOfParallelism = MaxEntityProbeParallelism },
@@ -547,17 +564,24 @@ public static class MobileActionTargetProbe {
 					outcomes[i] = new EntityProbeOutcome(name, ActionTargetState.Unknown, null, null);
 				}
 			});
+		return outcomes;
+	}
 
-		int candidateFailures = 0;
-		Exception firstCandidateFailure = null;
-		// Verified-missing objects whose web add-on named a default page. The UIds are resolved to schema
-		// NAMES in one batched select after the loop (ResolveCandidateNames) instead of one by-UId round
-		// trip per object — the add-on read stays per object, the name lookup does not.
+	/// <summary>
+	/// Phase 3 of <see cref="ResolveEntityTargets"/>: records every outcome's verdict, batches the
+	/// verified-missing objects' candidate UId→NAME resolution in one call
+	/// (<see cref="ResolveCandidateNames"/>) instead of one by-UId round trip per object, and composes the
+	/// tier's final note from <paramref name="budgetExhausted"/> plus whatever candidate failures were
+	/// accumulated along the way.
+	/// </summary>
+	private static EntityTierOutcome CollectOutcomes(
+		ProbeContext context, IReadOnlyList<EntityProbeOutcome> outcomes, bool budgetExhausted,
+		IDictionary<string, ActionTargetResolution> into) {
+		var candidateFailures = new CandidateFailureAccumulator();
 		var pendingCandidates = new List<(string Name, Guid PageUId)>();
 		foreach (EntityProbeOutcome outcome in outcomes) {
 			if (outcome.CandidateFailure is not null) {
-				candidateFailures++;
-				firstCandidateFailure ??= outcome.CandidateFailure;
+				candidateFailures.Record(outcome.CandidateFailure);
 			}
 			if (outcome.CandidatePageUId is not null) {
 				pendingCandidates.Add((outcome.Name, outcome.CandidatePageUId.Value));
@@ -565,25 +589,56 @@ public static class MobileActionTargetProbe {
 			// Candidate stays null here; ResolveCandidateNames re-records the entries that resolve a name.
 			RecordEntityResolution(into, outcome.Name, outcome.State, null);
 		}
-		ResolveCandidateNames(context, pendingCandidates, into, ref candidateFailures, ref firstCandidateFailure);
-		// A candidate-resolution failure never demotes the STATE (it was already settled above) and never
-		// aborts the batch — the other objects' candidates stand. It only costs the NOTE, so a caller can
-		// tell "the read failed" apart from "the object genuinely has no default web page" instead of both
-		// silently reaching the wire as the same null.
-		string candidateNote = candidateFailures > 0
-			? Describe(
-				$"Could not resolve a candidate web page for {candidateFailures} object(s)", firstCandidateFailure)
-			: null;
-		// Both notes can fire in the same call (some objects never probed, others probed but failed to
-		// resolve a candidate) — neither may silently replace the other.
-		string budgetNote = budgetExhausted
-			? $"Only the first {MaxEntityAddonProbes} object targets were checked; the rest are reported as "
-				+ "unverified. Check them manually."
-			: null;
-		string note = budgetNote is null ? candidateNote : budgetNote + (candidateNote is null ? "" : " " + candidateNote);
+		ResolveCandidateNames(context, pendingCandidates, into, candidateFailures);
 		// Answered either way: the reads that ran did succeed. The note is what says some were never asked
 		// and/or that a candidate lookup failed.
-		return new EntityTierOutcome(true, note);
+		return new EntityTierOutcome(true, candidateFailures.ComposeNote(budgetExhausted));
+	}
+
+	/// <summary>
+	/// Accumulates candidate-web-page-lookup failures across <see cref="ProbeBudgeted"/>'s per-object reads
+	/// and <see cref="ResolveCandidateNames"/>'s batched name lookup, replacing the <c>ref int, ref
+	/// Exception</c> pair the two used to thread through by hand. Only the COUNT and the FIRST failure are
+	/// kept — the composed note names how many objects failed and quotes one representative reason, never
+	/// all of them. A candidate-resolution failure never demotes a STATE already settled in
+	/// <see cref="CollectOutcomes"/>, and never aborts the batch — the other objects' candidates stand; it
+	/// only costs the note, so a caller can tell "the read failed" apart from "the object genuinely has no
+	/// default web page" instead of both silently reaching the wire as the same null.
+	/// </summary>
+	private sealed class CandidateFailureAccumulator {
+		private int _count;
+		private Exception _first;
+
+		/// <summary>Records one candidate-lookup failure.</summary>
+		internal void Record(Exception failure) {
+			_count++;
+			_first ??= failure;
+		}
+
+		/// <summary>
+		/// Records <paramref name="count"/> failures that all share one <paramref name="failure"/> — the
+		/// batched UId→name resolver throwing and failing every candidate pending in that call at once.
+		/// </summary>
+		internal void RecordBatch(int count, Exception failure) {
+			_count += count;
+			_first ??= failure;
+		}
+
+		/// <summary>
+		/// Composes the tier's degradation note from <paramref name="budgetExhausted"/> plus whatever
+		/// candidate failures were accumulated. Both can fire in the same call (some objects never probed,
+		/// others probed but failed to resolve a candidate) — neither may silently replace the other.
+		/// </summary>
+		internal string ComposeNote(bool budgetExhausted) {
+			string candidateNote = _count > 0
+				? Describe($"Could not resolve a candidate web page for {_count} object(s)", _first)
+				: null;
+			string budgetNote = budgetExhausted
+				? $"Only the first {MaxEntityAddonProbes} object targets were checked; the rest are reported as "
+					+ "unverified. Check them manually."
+				: null;
+			return budgetNote is null ? candidateNote : budgetNote + (candidateNote is null ? "" : " " + candidateNote);
+		}
 	}
 
 	/// <summary>
@@ -656,8 +711,7 @@ public static class MobileActionTargetProbe {
 	/// </summary>
 	private static void ResolveCandidateNames(
 		ProbeContext context, IReadOnlyList<(string Name, Guid PageUId)> pending,
-		IDictionary<string, ActionTargetResolution> into,
-		ref int candidateFailures, ref Exception firstCandidateFailure) {
+		IDictionary<string, ActionTargetResolution> into, CandidateFailureAccumulator candidateFailures) {
 		if (pending.Count == 0) {
 			return;
 		}
@@ -666,16 +720,14 @@ public static class MobileActionTargetProbe {
 		try {
 			resolved = SchemaNameResolver.ResolveNames(context, pageUIds);
 		} catch (Exception ex) {
-			candidateFailures += pending.Count;
-			firstCandidateFailure ??= ex;
+			candidateFailures.RecordBatch(pending.Count, ex);
 			return;
 		}
 		foreach ((string name, Guid pageUId) in pending) {
 			SchemaNameResolver.Result result = resolved[pageUId];
 			if (result.Status == SchemaNameResolver.Status.RowMissing) {
-				candidateFailures++;
-				firstCandidateFailure ??= new InvalidOperationException(
-					$"Page schema '{pageUId}' could not be resolved to a name.");
+				candidateFailures.Record(new InvalidOperationException(
+					$"Page schema '{pageUId}' could not be resolved to a name."));
 				continue;
 			}
 			if (result.Status == SchemaNameResolver.Status.Resolved) {
