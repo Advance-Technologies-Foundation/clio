@@ -1,7 +1,7 @@
 {
   "os": "Microsoft Windows NT 10.0.26200.0",
   "framework": "10.0.11",
-  "workDirectory": "C:\\Temp\\detached-ops-gxyx00ir.y0d",
+  "workDirectory": "C:\\Temp\\detached-ops-2n4xsqfa.lyw",
   "cases": [
     {
       "name": "A1a the original operation still answers after a newer runtime is activated",
@@ -156,8 +156,8 @@
       "passed": true,
       "detail": {
         "Violations": 0,
-        "Admitted": 71,
-        "Refused": 52,
+        "Admitted": 73,
+        "Refused": 50,
         "Windows": 8
       }
     },
@@ -165,10 +165,10 @@
       "name": "A5i mutation control: the same regression detects a deliberately split admission",
       "passed": true,
       "detail": {
-        "Violations": 33,
-        "Admitted": 15,
-        "Refused": 94,
-        "Windows": 20,
+        "Violations": 23,
+        "Admitted": 36,
+        "Refused": 54,
+        "Windows": 12,
         "note": "non-zero here is the point: it shows A5h can fail"
       }
     },
@@ -218,13 +218,24 @@
       }
     },
     {
-      "name": "P1 gap: a failed terminal write leaves the operation Running and its scope permanently blocked",
+      "name": "P1 a failed evidence write does NOT rewrite the execution outcome",
       "passed": true,
       "detail": {
-        "state": "Running",
-        "quiescent": false,
-        "windowObtainable": false,
-        "note": "the work finished; only its evidence write failed. Exactly-once has been consumed, so no later report can rescue it"
+        "state": "Succeeded",
+        "note": "the work succeeded; only its record failed to persist"
+      }
+    },
+    {
+      "name": "P2 the scope is visibly degraded and automatic retirement is refused",
+      "passed": true,
+      "detail": {
+        "degradedScopes": [
+          "envP"
+        ],
+        "quiescent": true,
+        "targetWindow": "refused",
+        "globalWindow": "refused",
+        "note": "quiescent because nothing runs, yet unswappable because the outcome exists only in memory"
       }
     },
     {
