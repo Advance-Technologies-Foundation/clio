@@ -166,6 +166,50 @@ Check("C2 control: the release is retained while its operation runs, and only th
     aliveWhileRunning && collectedAfter,
     new { aliveWhileRunning, collectedAfter });
 
+// ── N: what reconciliation does NOT give you ───────────────────────────────────────────────────────
+// Raised by @kirillkrylov: "artifact identity is not request attribution". These are controlled models
+// of the INFERENCE, not measurements of Creatio. Each shows the naive rule — "the artefact I asked for
+// is present, therefore my operation completed" — returning the wrong answer, while the ledger does not.
+
+// N1: the artefact pre-exists. Nothing this operation did put it there.
+string n1Effect = Path.Combine(work, "n1-effect.log");
+await File.WriteAllTextAsync(n1Effect, "v1-executed-by-10.0.0.0" + Environment.NewLine);
+string n1Lost = await StartThenKillChild(v1Dir, Path.Combine(work, "n1.jsonl"), n1Effect);
+var n1Ledger = new OperationLedger(Path.Combine(work, "n1.jsonl"));
+bool n1NaiveSaysDone = File.ReadAllLines(n1Effect).Any(l => l.StartsWith("v1-", StringComparison.Ordinal));
+var n1Record = n1Ledger.Query(n1Lost);
+Check("N1 a pre-existing artefact makes presence a FALSE positive for attribution",
+    n1NaiveSaysDone && n1Record.State == OperationState.Unknown,
+    new { naivePresenceCheck = n1NaiveSaysDone ? "done" : "not done",
+          ledger = n1Record.State.ToString(),
+          note = "the artefact was written before the operation started and the operation was killed" });
+
+// N2: the operation half-finished. Its first artefact exists; it did not complete.
+string n2Effect = Path.Combine(work, "n2-effect.log");
+string n2Id = v2.StartDetached(ledger, "envN2", n2Effect, 100, "partial", CancellationToken.None);
+var n2Terminal = await WaitTerminal(ledger, n2Id, TimeSpan.FromSeconds(20));
+bool n2NaiveSaysDone = File.Exists(n2Effect)
+    && File.ReadAllLines(n2Effect).Any(l => l.Contains("-part1", StringComparison.Ordinal));
+Check("N2 a partially completed operation makes presence a FALSE positive",
+    n2NaiveSaysDone && n2Terminal.State == OperationState.Failed,
+    new { naivePresenceCheck = n2NaiveSaysDone ? "done" : "not done",
+          ledger = n2Terminal.State.ToString(), code = n2Terminal.Code });
+
+// N3: an intervening operation. A dies; B runs and completes; a "last result" read answers about B.
+string n3Effect = Path.Combine(work, "n3-effect.log");
+string n3Lost = await StartThenKillChild(v1Dir, Path.Combine(work, "n3.jsonl"), n3Effect);
+string n3Later = v2.StartDetached(ledger, "envN3", n3Effect, 100, "succeed", CancellationToken.None);
+await WaitTerminal(ledger, n3Later, TimeSpan.FromSeconds(20));
+string[] n3Lines = File.Exists(n3Effect) ? File.ReadAllLines(n3Effect) : [];
+string? n3LastResult = n3Lines.LastOrDefault();
+var n3Record = new OperationLedger(Path.Combine(work, "n3.jsonl")).Query(n3Lost);
+Check("N3 an intervening operation makes a last-result read answer about the wrong one",
+    n3LastResult is not null && n3LastResult.StartsWith("v2-", StringComparison.Ordinal)
+        && n3Record.State == OperationState.Unknown,
+    new { lastResultSays = n3LastResult, askedAbout = "the killed v1 operation",
+          ledger = n3Record.State.ToString(),
+          note = "attributing the last result to the interrupted operation would report v2's outcome as v1's" });
+
 GC.KeepAlive(v2Ctx);
 Console.WriteLine(JsonSerializer.Serialize(new {
     os = Environment.OSVersion.VersionString,

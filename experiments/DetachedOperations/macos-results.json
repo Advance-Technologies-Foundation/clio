@@ -1,7 +1,7 @@
 {
   "os": "Unix 27.0.0",
   "framework": "10.0.12",
-  "workDirectory": "/var/folders/xk/pl1m8g6d1w55jscyxzg0wjkc0000gn/T/detached-ops-SvFT7c",
+  "workDirectory": "/var/folders/xk/pl1m8g6d1w55jscyxzg0wjkc0000gn/T/detached-ops-jJeHgr",
   "cases": [
     {
       "name": "A1a the original operation still answers after a newer runtime is activated",
@@ -156,19 +156,19 @@
       "passed": true,
       "detail": {
         "Violations": 0,
-        "Admitted": 48,
-        "Refused": 95,
-        "Windows": 95
+        "Admitted": 49,
+        "Refused": 96,
+        "Windows": 96
       }
     },
     {
       "name": "A5i mutation control: the same regression detects a deliberately split admission",
       "passed": true,
       "detail": {
-        "Violations": 24,
-        "Admitted": 48,
-        "Refused": 92,
-        "Windows": 97,
+        "Violations": 10,
+        "Admitted": 41,
+        "Refused": 87,
+        "Windows": 80,
         "note": "non-zero here is the point: it shows A5h can fail"
       }
     },
@@ -187,6 +187,34 @@
       "detail": {
         "aliveWhileRunning": true,
         "collectedAfter": true
+      }
+    },
+    {
+      "name": "N1 a pre-existing artefact makes presence a FALSE positive for attribution",
+      "passed": true,
+      "detail": {
+        "naivePresenceCheck": "done",
+        "ledger": "Unknown",
+        "note": "the artefact was written before the operation started and the operation was killed"
+      }
+    },
+    {
+      "name": "N2 a partially completed operation makes presence a FALSE positive",
+      "passed": true,
+      "detail": {
+        "naivePresenceCheck": "done",
+        "ledger": "Failed",
+        "code": "v2-executed-by-10.1.0.0-partial"
+      }
+    },
+    {
+      "name": "N3 an intervening operation makes a last-result read answer about the wrong one",
+      "passed": true,
+      "detail": {
+        "lastResultSays": "v2-executed-by-10.1.0.0",
+        "askedAbout": "the killed v1 operation",
+        "ledger": "Unknown",
+        "note": "attributing the last result to the interrupted operation would report v2\u0027s outcome as v1\u0027s"
       }
     }
   ]

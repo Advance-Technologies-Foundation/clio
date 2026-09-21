@@ -57,6 +57,9 @@ would almost never be globally idle and a global-only predicate would be correct
 | A5g | the terminal record is already on disk when a window is granted |
 | A5h | under contention, no operation is admitted for a scope whose window is held |
 | A5i | **mutation control** — the same regression detects a deliberately split admission |
+| N1 | **counterexample** — a pre-existing artefact makes presence a false positive |
+| N2 | **counterexample** — a partially completed operation makes presence a false positive |
+| N3 | **counterexample** — an intervening operation makes a last-result read answer about the wrong one |
 | R1 | the V1 release becomes collectible once no lease retains it |
 | C1 | **control** — a host with no evidence answers `NotFound` for the very same lost operation |
 | C2 | **control** — the release is retained while its operation runs, and only then collectible |
@@ -135,7 +138,7 @@ temporary directory and writes nothing outside it.
 
 ## macOS observations, 2026-09-21
 
-macOS 27.0.0 (arm64), .NET 10.0.12. **22/22 passed, exit 0, three consecutive runs.**
+macOS 27.0.0 (arm64), .NET 10.0.12. **25/25 passed, exit 0.**
 
 - The operation started on `10.0.0.0` kept answering `Running` and stayed owned by `10.0.0.0` after
   `10.1.0.0` was activated mid-flight.

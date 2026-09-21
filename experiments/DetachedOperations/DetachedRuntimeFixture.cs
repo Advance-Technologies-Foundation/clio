@@ -34,6 +34,14 @@ public sealed class DetachedRuntime : IDetachedRuntime {
                     lease.Complete(OperationState.Failed, Signature + "-failed");
                     return;
                 }
+                if (outcome == "partial") {
+                    // Models a multi-step operation that writes its first artefact and then fails: the
+                    // artefact a naive presence check looks for exists, and the operation did not finish.
+                    await File.AppendAllTextAsync(effectPath, Signature + "-part1" + Environment.NewLine,
+                        CancellationToken.None).ConfigureAwait(false);
+                    lease.Complete(OperationState.Failed, Signature + "-partial");
+                    return;
+                }
                 // The single external effect. Written once, after the work, by the owning release.
                 await File.AppendAllTextAsync(effectPath, Signature + Environment.NewLine, CancellationToken.None)
                     .ConfigureAwait(false);

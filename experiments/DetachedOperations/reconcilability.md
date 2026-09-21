@@ -19,7 +19,21 @@ Everything that can outlive its response goes through the over-deadline heartbea
 The useful split is not reconcilable versus not. It is whether the server can answer **what its state is**
 and, separately, whether that state can be **attributed to your operation**.
 
-### Tier 1 — attributable: the request names the artefact, so its presence is the answer
+### Tier 1 — desired-state verifiable. **Not** attributable
+
+**Narrowed after @kirillkrylov's review, and the narrowing is measured.** My first version called this
+tier "attributable" and treated artefact presence as proof that the invocation completed. It is not, and
+the probe now carries three counterexamples (N1-N3) that make the naive rule produce the wrong answer:
+
+| case | what happens | naive presence check | ledger |
+|---|---|---|---|
+| N1 | the artefact already existed before the operation started; the operation was then killed | "done" | `Unknown` |
+| N2 | a multi-step operation wrote its first artefact and then failed | "done" | `Failed` |
+| N3 | operation A was killed, operation B then ran and completed; a last-result read is taken | answers about **B** | `Unknown` for A |
+
+So what this tier actually supports is **desired-state verification** — "is the world in the shape I
+wanted?" — which is a different and weaker guarantee than "did my invocation complete?". It is still
+useful, and it is not attribution.
 
 | class | reconciled by | evidence |
 |---|---|---|
@@ -27,8 +41,8 @@ and, separately, whether that state can be **attributed to your operation**.
 | package installs (`install-process-builder`, `install-dashboards-migrator`, `push-pkg`) | package name + version | measured: `list-packages` returns `cliogate 2.0.0.48` — a request for a named version is answered exactly |
 | `sync-pages` / schema writes | schema content, by name | not separately measured here; the checksum-conflict path already reads schemas back for this purpose |
 
-A fresh process with no memory can answer "did this happen?" because the question contains its own key.
-**A swap does not need to wait for these.** It needs to reconcile afterwards and say something truthful.
+A fresh process with no memory can check whether the world matches what was asked for. It cannot
+establish that *this* invocation did it, that it did all of it, or that nothing else did it in between.
 
 ### Tier 2 — state-reconcilable, not attributable: the server knows its state, not whose operation caused it
 
@@ -78,9 +92,13 @@ exactly one (`api/ConfigurationStatus/GetLastCompilationResult`), and I did not 
 restart would move**. A server that restarted successfully and a server that was never restarted are
 indistinguishable through this surface.
 
-clio already treats restart-by-credentials as deliberately unreportable. This measurement says the
-limitation is broader: for restart there is no external answer to recover, so after a process loss
-`Unknown` is not a temporary embarrassment, it is the permanent truth.
+clio already treats restart-by-credentials as deliberately unreportable.
+
+**Scope of that claim, narrowed.** What is measured is that the surface clio inspects carries no restart
+evidence. That is a limitation of `get-info`, not proof that no platform signal exists anywhere — the
+same overreach I made about path-loading earlier in this thread. IIS, the event log or a platform
+endpoint may well expose a start time; I did not look. Read tier 3 as "no answer through the surface
+clio uses today", not "permanently unanswerable".
 
 `StartTool` belongs here for the same reason on the local side. `RunProcessTool` is **untested**: Creatio
 keeps process instances with identity, so it plausibly sits in tier 1, but I have not measured it and am
@@ -90,13 +108,19 @@ not classifying it on that basis.
 
 | tier | must a swap wait? | after a process loss |
 |---|---|---|
-| 1 | no — reconcile afterwards by the artefact's key | recoverable: read the target |
+| 1 | a policy choice, not a technical consequence | desired state verifiable; completion not establishable |
 | 2 | yes, in practice — nothing available establishes that a given build ended | recoverable only if the process survived the work; otherwise uncertain, like tier 3 |
 | 3 | yes — waiting is the only honest option | permanently `Unknown` |
 
-So a single global quiescence gate is stronger than tier 1 needs, and tier 2 and tier 3 both need it.
-The gate's cost is not uniform across classes, which is the useful part; but tier 2 does **not** convert
-for free, and my first version of this document said it did.
+**A further correction.** My first version wrote that tier 1 means "a swap does not need to wait". That
+conflated two things. Being able to report afterwards that an interrupted operation did not finish does
+not preserve it, and it does not make destroying it acceptable — whether to interrupt work you can later
+describe is an **interruption-policy decision**, not a consequence of truthful reconciliation. The table
+above now says so.
+
+What survives: the *cost* of a global gate is not uniform across classes, and the classes differ in what
+they can honestly report afterwards. That is worth knowing. It does not by itself license skipping the
+drain for any class.
 
 ## What this does not claim
 
