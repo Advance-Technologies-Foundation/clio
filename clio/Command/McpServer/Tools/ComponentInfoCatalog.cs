@@ -357,10 +357,16 @@ public sealed record ComponentCatalogState(
 	public IReadOnlyList<CompositeDefinition> Composites { get; init; } = [];
 
 	/// <summary>
-	/// The mobile runtime build this payload was introspected from, or null when the payload is not the
-	/// runtime-derived mobile generation (every versioned mobile path today, the legacy array shape, and
-	/// the web registry). Half of the converter prune's enablement gate — see
+	/// The mobile runtime build this payload was introspected from, or null when the payload does not carry
+	/// the marker — which today is EVERY payload, including <c>latest</c>.
+	/// <para>
+	/// Nothing in production reads this. It is mapped and surfaced so the marker does not fall into
+	/// <see cref="EnvelopeExtensions"/> and so <c>ComponentRegistrySnapshotTests</c> can assert its SHAPE
+	/// whenever the producer publishes it again. Do not delete it as dead code: dropping the mapping is what
+	/// turns a re-published marker back into a silently swallowed unknown field. It is deliberately NOT part
+	/// of the converter's prune gate — see
 	/// <see cref="ComponentRegistryEnvelope.MobileRuntimeVersion"/>.
+	/// </para>
 	/// </summary>
 	public MobileRuntimeVersion? MobileRuntimeVersion { get; init; }
 

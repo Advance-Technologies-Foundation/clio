@@ -170,9 +170,10 @@ Four working operations; two reach the wire.
   has). On any other stand THE PRUNE is a no-op — but note that is scoped to the prune: the three property
   names ENG-96589 corrected in the bundled conversion RULES reach every stand, because rules resolve through
   their own catalog (the CDN rules file is unpublished, so the embedded copy is the source of truth) and
-  rule-declared elements are exempt from the prune regardless of the gate. The
-  `mobileRuntimeVersion` marker is reported as provenance when present but is NOT part of the gate — see the knowledge
-  record on the registry generations.
+  rule-declared elements are exempt from the prune regardless of the gate. Whether the prune ran is reported
+  as `propertyPruneApplied`, a plain bool; the catalog's `mobileRuntimeVersion` marker is neither part of the
+  gate nor echoed in the response — it is absent from every published catalog, so a field carrying it would
+  read as "the prune was off" on every conversion. See the knowledge record on the registry generations.
 - A merge with nothing to apply carries `{}` — never `null`, never absent. `JsonDiffApplier` requires `values` on `merge`
   and validates every operation before applying any.
 - `name` is not unique: two operations may target one element (`Tabs → Tabs` and `CardToggleTabPanel → Tabs`). Apply in

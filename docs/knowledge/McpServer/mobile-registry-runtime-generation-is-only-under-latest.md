@@ -79,3 +79,9 @@ ABOVE `10.0.0` and prunes the very generation the floor is named after.
 
 When versioned runtime-derived files start being published, no condition needs changing — the floor only
 ever admits versions that did not exist while the old generation was current.
+
+The marker is also not SURFACED anywhere: the conversion guide reports `propertyPruneApplied` and nothing
+else about the prune's provenance. Echoing a field that is absent from every published catalog would hand
+callers a signal that reads as "the prune did not run" on every conversion. If the producer starts publishing
+it dependably, `ComponentCatalogState.MobileRuntimeVersion` still carries it — that mapping is kept for
+exactly that, and so the marker cannot silently fall into the unmapped-fields bucket again.

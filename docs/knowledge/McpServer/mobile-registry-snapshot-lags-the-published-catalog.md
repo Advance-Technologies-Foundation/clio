@@ -19,9 +19,10 @@ The live catalog is what runs in production: `MobilePageConversionGuideTool` bui
 `_mobileCatalog.LoadAsync(...)` (cache → CDN → `latest`), never from this fixture. The fixture exists only for
 `ComponentRegistrySnapshotTests`, whose guard checks for UNMAPPED FIELDS.
 
-Partial mitigation since ENG-96589: that guard now also asserts a COUNT FLOOR (`> 60`) and the presence of the
-`mobileRuntimeVersion` marker, so a wholesale regression to an older, smaller pin fails. A floor is not a
-freshness check — the producer adding a 67th component still trips nothing.
+Partial mitigation since ENG-96589: that guard now also asserts a COUNT FLOOR (`> 60`), so a wholesale
+regression to an older, smaller pin fails. A floor is not a freshness check — the producer adding one more
+component still trips nothing. The guard does NOT require the `mobileRuntimeVersion` marker: the producer
+dropped it from `latest` on 2026-09-17, so requiring it would fail on the current file.
 
 **Why it is this way** — the snapshot is refreshed by hand (`curl … > <fixture>`) when someone notices a
 producer-side schema change. Nothing refreshes it when the producer merely ADDS components, because adding a
@@ -39,6 +40,8 @@ If you need a realistic mobile type set in a test, either declare it explicitly 
 and confirm the entry count moved; do not assume the pin is current.
 
 A second consumer now depends on this fixture being the RUNTIME-DERIVED generation, not merely current:
-`WebToMobilePropertyPruneTests` drives the ENG-96589 prune from it, and the prune's own gate switches itself
-off against a catalog with no `mobileRuntimeVersion`. A pin that regressed to the old generation would leave
-that whole fixture passing while asserting nothing, which is why it opens with an explicit generation check.
+`WebToMobilePropertyPruneTests` drives the ENG-96589 prune from it, and the prune's gate switches itself off
+against a catalog whose `references.baseInputs` is not the Flutter inherited surface. A pin that regressed to
+the old generation would leave that whole fixture passing while asserting nothing, which is why it opens with
+an explicit generation check — one that reads CONTENT, since the `mobileRuntimeVersion` marker is absent from
+the current file too.

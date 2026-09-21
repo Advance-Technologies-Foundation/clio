@@ -35,7 +35,7 @@ public sealed class WebToMobilePropertyPruneTests {
 	// ---------------------------------------------------------------- enablement gate
 
 	[Test]
-	[Description("With no registry generation supplied at all — every pre-existing caller — nothing is pruned and the guide reports no runtime version. This is the compatibility contract the optional parameter exists for.")]
+	[Description("With no registry generation supplied at all — every pre-existing caller — nothing is pruned and the guide says so. This is the compatibility contract the optional parameter exists for.")]
 	public void Analyze_WithoutGeneration_ShouldPruneNothing() {
 		// Arrange
 		PageBundleInfo bundle = TabContainerCarryingIcons();
@@ -73,25 +73,6 @@ public sealed class WebToMobilePropertyPruneTests {
 			because: "the gate refused, so there is nothing to report");
 	}
 
-	[Test]
-	[Description("The mobileRuntimeVersion marker is NOT required to prune. The producer republished latest without it on 2026-09-17 while the content stayed runtime-derived, so a feature gated on it would have switched itself off; the generation is decided by the version floor plus the inherited surface instead.")]
-	public void Analyze_WhenMarkerIsAbsentButContentIsRuntimeDerived_ShouldStillPrune() {
-		// Arrange
-		PageBundleInfo bundle = TabContainerCarryingIcons();
-
-		// Act — exactly the published payload today: no marker, Flutter baseInputs.
-		MobilePageConversionGuide guide = Analyze(
-			bundle, generation: Generation(LatestVersion, runtimeDerived: false));
-
-		// Assert
-		Values(guide, "HelpTab").Should().NotContainKey("icon",
-			because: "the catalog IS the runtime-derived generation regardless of whether the producer stamped its provenance");
-		guide.PropertyPruneApplied.Should().BeTrue(
-			because: "the prune RAN, and that fact must be reported independently of whether the producer stamped provenance");
-		guide.MobileRuntimeVersion.Should().BeNull(
-			because: "provenance is reported only when the producer actually publishes it — and its absence must NOT be readable as 'the prune did not run'");
-	}
-
 	[TestCase("8.3.0")]
 	[TestCase("8.3.4")]
 	[TestCase("8.3.5")]
@@ -120,7 +101,7 @@ public sealed class WebToMobilePropertyPruneTests {
 	[TestCase("10.0.1")]
 	[TestCase("10.1.0")]
 	[TestCase("11.0.0")]
-	[Description("`latest` and every version strictly above the 10.0.0 floor prune, and the guide names the runtime build the prune was measured against so the caller can audit it.")]
+	[Description("`latest` and every version strictly above the 10.0.0 floor prune, and the guide reports that it did. The fixture carries no mobileRuntimeVersion marker — exactly like the published catalog since 2026-09-17 — so these cases also prove the prune never depended on it.")]
 	public void Analyze_WhenEnvironmentIsAboveTheFloor_ShouldPrune(string environmentVersion) {
 		// Arrange
 		PageBundleInfo bundle = TabContainerCarryingIcons();
@@ -134,9 +115,7 @@ public sealed class WebToMobilePropertyPruneTests {
 		guide.PrunedProperties.Should().NotBeNull(
 			because: "an undeclared property was carried, so the removal must be reported rather than done silently");
 		guide.PropertyPruneApplied.Should().BeTrue(
-			because: "the gate opened, so the caller-facing flag must say so");
-		guide.MobileRuntimeVersion!.Commit.Should().NotBeNullOrWhiteSpace(
-			because: "this generation record carries provenance, so it must be echoed for the caller to audit");
+			because: "the gate opened, so the caller-facing flag must say so — it is the only prune signal the response carries");
 	}
 
 	[Test]
@@ -155,7 +134,7 @@ public sealed class WebToMobilePropertyPruneTests {
 		guide.PrunedProperties.Should().BeNull(
 			because: "the gate refused, so there is nothing to report");
 		guide.PropertyPruneApplied.Should().BeFalse(
-			because: "a degraded probe must leave the caller-facing flag false, not merely omit provenance");
+			because: "a degraded probe must leave the caller-facing flag false — it is the only prune signal the response carries, so a caller reading it as true would treat a survivor as a defect");
 	}
 
 	[Test]
@@ -638,11 +617,10 @@ public sealed class WebToMobilePropertyPruneTests {
 	/// </summary>
 	private static WebToMobileAnalysisService.MobileRegistryGeneration Generation(
 		string requestedVersion,
-		bool runtimeDerived = true,
 		bool versionKnown = true,
 		IReadOnlyDictionary<string, JsonElement> baseInputs = null,
 		bool omitBaseInputs = false) =>
-		new(requestedVersion, versionKnown, runtimeDerived, "main", "d7a0c3bb6796a1cde204ab8762b04d8940e38726",
+		new(requestedVersion, versionKnown,
 			omitBaseInputs ? null : baseInputs ?? LiveMobileCatalog().GlobalReferences?.BaseInputs);
 
 	/// <summary>

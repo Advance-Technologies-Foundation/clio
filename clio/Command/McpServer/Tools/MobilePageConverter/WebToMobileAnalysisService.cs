@@ -266,8 +266,9 @@ public static partial class WebToMobileAnalysisService {
 		// reports a prune on an element the page will not have. It runs BEFORE BuildRequestConversionInfo so
 		// a pruned event binding can still be reclassified in the collectors below, and before every
 		// converter-authored write further down (adaptive, positional, child slots, property overrides,
-		// placements) so the converter never prunes its own output. A no-op unless the loaded registry is
-		// runtime-derived AND the environment is above the version floor — see MobileRegistryGeneration.
+		// placements) so the converter never prunes its own output. A no-op unless the environment's version is
+		// positively known and above the floor AND the loaded payload carries the Flutter inherited surface,
+		// which is how the runtime-derived generation is recognised — see MobileRegistryGeneration.
 		DeclaredPropertyIndex declaredProps =
 			DeclaredPropertyIndex.Build(mobileByType, mobileRegistryGeneration);
 		PropertyPruneResult propertyPrune = PruneUndeclaredProperties(
@@ -413,21 +414,12 @@ public static partial class WebToMobileAnalysisService {
 			TabAreaLayers = tabAreaLayers.Count > 0 ? tabAreaLayers : null,
 			Normalizations = BuildNormalizations(componentPropertyOverrides),
 			PrunedProperties = propertyPrune.IsEmpty ? null : propertyPrune.Entries,
-			// Whether the prune RAN — the only honest signal, and deliberately independent of provenance:
-			// the producer publishes the marker irregularly, so a caller that inferred "the prune was off"
-			// from an absent mobileRuntimeVersion would be wrong on every conversion against today's catalog.
+			// Whether the prune RAN — the response's only prune signal, and deliberately not derived from the
+			// catalog's mobileRuntimeVersion marker: the producer publishes that irregularly (absent from
+			// `latest` since 2026-09-17), so a field carrying it would be missing on every conversion against
+			// today's catalog and a caller would read the gap as "the prune was off". Which catalog was
+			// served is already reported by `resolvedFrom`.
 			PropertyPruneApplied = declaredProps.Enabled,
-			// Provenance, reported only when the producer actually published it — the marker is not required
-			// to prune and is currently absent from the published catalog, so emitting an empty object would
-			// advertise a measurement nobody can trace.
-			MobileRuntimeVersion = declaredProps.Enabled && mobileRegistryGeneration is { RuntimeDerived: true }
-				&& !(string.IsNullOrWhiteSpace(mobileRegistryGeneration.Release)
-					&& string.IsNullOrWhiteSpace(mobileRegistryGeneration.Commit))
-				? new MobileRuntimeVersionInfo {
-					Release = mobileRegistryGeneration.Release,
-					Commit = mobileRegistryGeneration.Commit,
-				}
-				: null,
 			ResourceStrings = resourceStrings.Count > 0 ? resourceStrings : null,
 
 			GuidanceArticle = GuidanceArticleName,

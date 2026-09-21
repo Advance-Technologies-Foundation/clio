@@ -41,20 +41,6 @@ public static partial class WebToMobileAnalysisService {
 	/// is served the <c>latest</c> catalog and would be pruned against a runtime it does not run.
 	/// </para>
 	/// </param>
-	/// <param name="RuntimeDerived">
-	/// True when the loaded payload carries the top-level <c>mobileRuntimeVersion</c> marker. REPORTED, not
-	/// required: the marker is provenance the caller can audit when the producer publishes it, and it is
-	/// deliberately NOT part of <see cref="PruneEnabled"/>.
-	/// <para>
-	/// It was the gate's second condition until the producer republished <c>latest</c> without it
-	/// (2026-09-17 14:15 GMT, ~2h after it was first observed) while the CONTENT stayed runtime-derived —
-	/// same <c>baseInputs</c>, same component contracts. A field that can vanish within hours of appearing
-	/// is not a contract to gate a feature on; the generation is decided by the version floor plus the
-	/// inherited-surface check in <see cref="DeclaredPropertyIndex.Build"/> instead.
-	/// </para>
-	/// </param>
-	/// <param name="Release">Release branch of the runtime the catalog was generated from.</param>
-	/// <param name="Commit">Commit SHA of that runtime.</param>
 	/// <param name="BaseInputs">
 	/// The registry's root <c>references.baseInputs</c> — the surface every component inherits. It is the
 	/// SOLE declaration site of <c>visible</c> and <c>layoutConfig</c>: NO component declares either in its
@@ -64,9 +50,6 @@ public static partial class WebToMobileAnalysisService {
 	public sealed record MobileRegistryGeneration(
 		string RequestedVersion,
 		bool VersionKnown,
-		bool RuntimeDerived,
-		string Release,
-		string Commit,
 		IReadOnlyDictionary<string, JsonElement> BaseInputs) {
 
 		/// <summary>
@@ -94,8 +77,12 @@ public static partial class WebToMobileAnalysisService {
 		/// floor cannot tell the two apart on its own and <see cref="VersionKnown"/> must.
 		/// </para>
 		/// <para>
-		/// The <c>mobileRuntimeVersion</c> marker is deliberately NOT consulted here — see
-		/// <see cref="RuntimeDerived"/> for why. The case it used to cover, a version above the floor served
+		/// The payload's <c>mobileRuntimeVersion</c> marker is deliberately NOT consulted — not here and
+		/// nowhere else in the converter, which is also why this record no longer carries it. It WAS the
+		/// gate's second condition until the producer republished <c>latest</c> without it (2026-09-17
+		/// 14:15 GMT, ~2h after it was first observed) while the CONTENT stayed runtime-derived — same
+		/// <c>baseInputs</c>, same component contracts. A field that can vanish within hours of appearing is
+		/// not a contract to gate a feature on. The case it used to cover, a version above the floor served
 		/// in the OLD web-derived generation, is covered by the inherited-surface check in
 		/// <see cref="DeclaredPropertyIndex.Build"/>: that generation's <c>baseInputs</c> carry the Angular
 		/// element attributes (<c>classes</c>, <c>shape</c>, <c>tabIndex</c>) and no <c>layoutConfig</c>.

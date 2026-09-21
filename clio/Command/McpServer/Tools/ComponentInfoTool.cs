@@ -1149,12 +1149,14 @@ public sealed class ComponentRegistryEnvelope {
 	/// Absent from the web-derived generation that every VERSIONED mobile path still serves today
 	/// (8.3.0/8.3.3/8.3.4/10.0.0), and absent from the web registry.
 	/// <para>
-	/// It is PROVENANCE ONLY and gates nothing: the producer republished <c>latest</c> without it on
+	/// It gates nothing and is reported nowhere: the producer republished <c>latest</c> without it on
 	/// 2026-09-17 while the catalog content stayed runtime-derived, so a feature gated on it switched itself
 	/// off with nothing failing. The converter's property prune (ENG-96589) is gated on the platform version
 	/// plus the inherited <c>baseInputs</c> surface instead — see
-	/// <c>WebToMobileAnalysisService.MobileRegistryGeneration</c>. Reported when published so a caller can
-	/// audit which runtime build a conversion was measured against.
+	/// <c>WebToMobileAnalysisService.MobileRegistryGeneration</c> — and the conversion guide reports
+	/// <c>propertyPruneApplied</c> rather than this marker, because a field that is absent from every
+	/// published catalog cannot tell a caller whether anything ran. Mapped here so the marker stays out of
+	/// <see cref="UnmappedExtensions"/> and the snapshot guard keeps checking its shape.
 	/// </para>
 	/// </summary>
 	[JsonPropertyName("mobileRuntimeVersion")]
@@ -1174,8 +1176,9 @@ public sealed class ComponentRegistryEnvelope {
 
 /// <summary>
 /// Which mobile runtime build the registry payload was introspected from. Published only by the
-/// runtime-derived mobile registry generation; see
-/// <see cref="ComponentRegistryEnvelope.MobileRuntimeVersion"/> for why its presence is load-bearing.
+/// runtime-derived mobile registry generation, and not published at all since 2026-09-17; see
+/// <see cref="ComponentRegistryEnvelope.MobileRuntimeVersion"/> for why nothing gates on it or reports it,
+/// and why it is nonetheless mapped rather than deleted.
 /// </summary>
 public sealed class MobileRuntimeVersion {
 	/// <summary>Release branch the runtime was built from, e.g. <c>"main"</c>.</summary>

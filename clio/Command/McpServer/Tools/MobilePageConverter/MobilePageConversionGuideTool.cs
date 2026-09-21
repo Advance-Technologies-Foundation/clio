@@ -165,9 +165,6 @@ public class MobilePageConversionGuideTool {
 			// cases where the version is a POSITIVE statement about the target. A LatestFallback reports the
 			// literal string "latest" because the probe FAILED, which says nothing about how new the stand is.
 			VersionKnown: versionResolution.Source == VersionResolutionSource.Environment,
-			RuntimeDerived: mobileState.MobileRuntimeVersion is not null,
-			Release: mobileState.MobileRuntimeVersion?.Release,
-			Commit: mobileState.MobileRuntimeVersion?.Commit,
 			BaseInputs: mobileState.GlobalReferences?.BaseInputs);
 
 		WebToMobilePageConversionRules rules = await _rulesCatalog.GetRulesAsync(version, cancellationToken).ConfigureAwait(false);

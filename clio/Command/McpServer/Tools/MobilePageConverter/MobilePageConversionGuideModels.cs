@@ -1234,29 +1234,21 @@ public sealed class MobilePageConversionGuide {
 	public IReadOnlyList<PrunedPropertyEntry> PrunedProperties { get; init; }
 
 	/// <summary>
-	/// Whether the property prune RAN for this conversion. This is the field to branch on, not
-	/// <see cref="MobileRuntimeVersion"/>: false means the gate refused (the platform version could not be
-	/// positively determined, is at/below the prune floor, or the loaded catalog is not the runtime-derived
-	/// generation), so an undeclared property surviving is EXPECTED rather than a defect. True with an
-	/// absent <see cref="PrunedProperties"/> means the page simply carried nothing undeclared.
+	/// Whether the property prune RAN for this conversion. False means the gate refused (the platform
+	/// version could not be positively determined, is at/below the prune floor, or the loaded catalog is not
+	/// the runtime-derived generation), so an undeclared property surviving is EXPECTED rather than a
+	/// defect. True with an absent <see cref="PrunedProperties"/> means the page simply carried nothing
+	/// undeclared.
+	/// <para>
+	/// This is the ONLY prune signal the response carries, and it is a plain bool so a caller can branch on
+	/// it in every response. The catalog's own <c>mobileRuntimeVersion</c> marker is deliberately not echoed
+	/// here: the producer publishes it irregularly (absent from <c>latest</c> since 2026-09-17), so a field
+	/// derived from it would be missing on every conversion against today's catalog and a caller would read
+	/// the gap as "the prune did not run". Which catalog was served is reported by <c>resolvedFrom</c>.
+	/// </para>
 	/// </summary>
 	[JsonPropertyName("propertyPruneApplied")]
 	public bool PropertyPruneApplied { get; init; }
-
-	/// <summary>
-	/// The mobile RUNTIME build the prune was measured against — PROVENANCE ONLY, and published
-	/// irregularly by the producer, so its absence says NOTHING about whether the prune ran
-	/// (<see cref="PropertyPruneApplied"/> says that). Null whenever the catalog carried no
-	/// <c>mobileRuntimeVersion</c> marker, which is the normal case today.
-	/// <para>
-	/// Read it with <c>resolvedFrom</c>: an environment whose platform version has no published versioned
-	/// mobile registry falls back to <c>latest</c>, so a catalog NEWER than the stand's own runtime can be
-	/// served. That is why this field is reported rather than assumed.
-	/// </para>
-	/// </summary>
-	[JsonPropertyName("mobileRuntimeVersion")]
-	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public MobileRuntimeVersionInfo MobileRuntimeVersion { get; init; }
 
 	/// <summary>
 	/// Every localized string the converted body references, keyed by resource name and resolved to its
@@ -1498,24 +1490,6 @@ public sealed class PrunedPropertyEntry {
 	[JsonPropertyName("bindings")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public IReadOnlyList<string> Bindings { get; init; }
-}
-
-/// <summary>
-/// The mobile runtime build a conversion's property prune was measured against. Deliberately a separate
-/// type from the registry-side <c>MobileRuntimeVersion</c> it is copied from: that one carries a
-/// <c>[JsonExtensionData]</c> bucket for unmapped producer fields, which must not leak onto this
-/// caller-facing contract. Do not "unify" them.
-/// </summary>
-public sealed class MobileRuntimeVersionInfo {
-	/// <summary>Release branch the runtime was built from, e.g. <c>"main"</c>.</summary>
-	[JsonPropertyName("release")]
-	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public string Release { get; init; }
-
-	/// <summary>Commit SHA of the runtime the mobile catalog was introspected from.</summary>
-	[JsonPropertyName("commit")]
-	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public string Commit { get; init; }
 }
 
 /// <summary>A request carried to mobile from a component's event binding.</summary>

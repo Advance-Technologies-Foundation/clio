@@ -1207,9 +1207,9 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		}
 		guide.PropertyPruneApplied.Should().BeTrue(
 			because: $"'{convertedSchemaName}' was converted against version=latest, which serves the runtime-derived "
-				+ "catalog, so the gate must have opened. NOT asserted: mobileRuntimeVersion — that marker is "
-				+ "provenance the producer publishes irregularly, and reading its absence as 'the prune did not "
-				+ "run' is exactly the mistake propertyPruneApplied exists to prevent");
+				+ "catalog, so the gate must have opened. This flag is the response's only prune signal — the "
+				+ "catalog's mobileRuntimeVersion marker is published irregularly and is not echoed, precisely so "
+				+ "nobody reads its absence as 'the prune did not run'");
 		guide.MobileContracts.Should().NotBeEmpty(
 			because: "the pruned keys below are cross-checked against these contracts");
 
@@ -1241,7 +1241,7 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	[Description("Against a version at the compatibility floor (version=10.0.0, which still serves the web-derived catalog), nothing is pruned at all. This is the backward-compatibility guarantee: a real stand on 8.3.x / 10.0.0 must convert exactly as it did before ENG-96589, and this is the only coverage that proves it through the real version-resolution and CDN chain.")]
 	[AllureTag(ToolName)]
 	[AllureName("get-mobile-page-conversion-guide does not prune against a pre-runtime-derived registry version")]
-	[AllureDescription("Converts a seeded page pinned to version=10.0.0 through the real clio MCP server and asserts that neither mobileRuntimeVersion nor prunedProperties is present — proving the enablement gate holds end to end over PlatformVersionResolver, MobileComponentRegistryClient and the versioned CDN path, where the served catalog describes WEB components and membership in it is not a valid support test.")]
+	[AllureDescription("Converts a seeded page pinned to version=10.0.0 through the real clio MCP server and asserts that propertyPruneApplied is false and prunedProperties absent — proving the enablement gate holds end to end over PlatformVersionResolver, MobileComponentRegistryClient and the versioned CDN path, where the served catalog describes WEB components and membership in it is not a valid support test.")]
 	public async Task MobilePageConversionGuideTool_Should_Not_Prune_When_Version_Is_Below_The_Floor() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -1276,8 +1276,6 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		guide.PropertyPruneApplied.Should().BeFalse(
 			because: $"'{convertedSchemaName}' was converted at {FloorRegistryVersion}, which is AT the floor, so the "
 				+ "gate must have refused — this is the flag a caller branches on");
-		guide.MobileRuntimeVersion.Should().BeNull(
-			because: "no prune was measured, so no provenance may be advertised either");
 		guide.PrunedProperties.Should().BeNull(
 			because: "pruning against a catalog that describes WEB components would strip genuinely supported mobile "
 				+ "properties — on that generation crt.Feed declares only primaryColumnValue — so a stand at or below "
