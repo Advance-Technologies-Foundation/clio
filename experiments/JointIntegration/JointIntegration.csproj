@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>Clio10.JointIntegration</AssemblyName>
+    <RootNamespace>Clio10.JointIntegration</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../DetachedOperations/Contract/Contract.csproj" />
+    <!-- Both halves as their authors publish them: the ledger from the lifetime lane, the settings
+         owner from the settings lane. Neither is reimplemented here; that is the point of the case. -->
+    <Compile Include="../DetachedOperations/Host/OperationLedger.cs" Link="OperationLedger.cs" />
+    <Compile Include="../SettingsVersioning/SettingsStore.cs" Link="SettingsStore.cs" />
+  </ItemGroup>
+</Project>

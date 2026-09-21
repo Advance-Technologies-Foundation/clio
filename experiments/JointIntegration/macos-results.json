@@ -1,0 +1,53 @@
+{
+  "os": "Unix 27.0.0",
+  "framework": "10.0.12",
+  "ledgerFrom": "DetachedOperations (lifetime lane)",
+  "settingsFrom": "SettingsVersioning (settings lane)",
+  "cases": [
+    {
+      "name": "X1 a partner stays on its pinned release and snapshot while a new release and new settings arrive",
+      "passed": true,
+      "detail": {
+        "partnerRanAgainst": "10.0.0.0",
+        "pinnedSnapshot": "cfg-1",
+        "newRelease": "10.1.0.0",
+        "newSnapshot": "cfg-2",
+        "note": "release and configuration are pinned by the same rule, and neither moved under it"
+      }
+    },
+    {
+      "name": "X2 a failed evidence write degrades the scope without touching the outcome or losing the snapshot",
+      "passed": true,
+      "detail": {
+        "outcome": "Succeeded",
+        "code": "work-really-succeeded",
+        "degraded": true,
+        "snapshotStillKnown": "cfg-1",
+        "note": "successful work must not become failed work because a disk write failed"
+      }
+    },
+    {
+      "name": "X3 a snapshot held by an owner with no liveness is never reclaimed, and cleanup gives no signal",
+      "passed": true,
+      "detail": {
+        "reclaimed": [],
+        "cfg3SurvivedCleanup": true,
+        "listedByLedger": true,
+        "stateOfDeadOwnersOperation": "Running",
+        "note": "Cleanup consults OperationHeldSnapshots only; the warning lives in OwnersWithoutLiveness"
+      }
+    },
+    {
+      "name": "X4 negative control: with a liveness-capable owner the same snapshot IS reclaimed",
+      "passed": true,
+      "detail": {
+        "reclaimed": [
+          "cfg-5"
+        ],
+        "cfg5Gone": true,
+        "stateOfDeadOwnersOperation": "Unknown",
+        "note": "same sequence, one difference: the owner could be asked"
+      }
+    }
+  ]
+}
