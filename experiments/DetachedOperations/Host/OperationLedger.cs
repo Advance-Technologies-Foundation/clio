@@ -34,9 +34,25 @@ public sealed class OperationLedger : IOperationLedger {
     private readonly object _swapLock = new();
     private readonly HashSet<string> _heldScopes = new(StringComparer.Ordinal);
 
+    private readonly bool _splitAdmissionForTests;
+
     /// <summary>Opens a ledger over an evidence file, recovering any prior process's unfinished operations.</summary>
-    public OperationLedger(string evidencePath) {
+    public OperationLedger(string evidencePath) : this(evidencePath, false) {
+    }
+
+    /// <summary>
+    /// Test-only constructor that can reproduce the original split-admission defect on demand.
+    /// </summary>
+    /// <param name="evidencePath">Evidence file.</param>
+    /// <param name="splitAdmissionForTests">
+    /// <see langword="true"/> restores the pre-repair behaviour: check the held scopes, release the lock,
+    /// then register. This exists so the regression can be shown to FAIL against a deliberately broken
+    /// ledger — a concurrency test that has never been seen to fail proves nothing about the code it
+    /// guards. Nothing in the probe's normal path sets it.
+    /// </param>
+    public OperationLedger(string evidencePath, bool splitAdmissionForTests) {
         _evidencePath = evidencePath;
+        _splitAdmissionForTests = splitAdmissionForTests;
         _recovered = Recover(evidencePath);
     }
 
@@ -83,6 +99,23 @@ public sealed class OperationLedger : IOperationLedger {
         ArgumentException.ThrowIfNullOrWhiteSpace(target);
         string id = Guid.NewGuid().ToString("n");
         var record = new OperationRecord(id, target, DateTimeOffset.UtcNow, runtimeVersion, OperationState.Running);
+        if (_splitAdmissionForTests) {
+            // The defect, on purpose: check, release, then register. The sleep only widens a gap that
+            // exists either way, so the mutation is observable in a two-second run instead of rarely.
+            lock (_swapLock) {
+                if (_heldScopes.Contains(string.Empty) || _heldScopes.Contains(target)) {
+                    throw new SwapWindowHeldException(target);
+                }
+            }
+            Thread.Sleep(1);
+            lock (_swapLock) {
+                _live[id] = record;
+                _owners[id] = owner;
+                Append("begin", record);
+            }
+            return new Lease(this, id);
+        }
+
         lock (_swapLock) {
             // Admission and registration are ONE critical section. Splitting them — checking the window,
             // releasing the lock, then inserting the record — leaves a gap in which a swap observes

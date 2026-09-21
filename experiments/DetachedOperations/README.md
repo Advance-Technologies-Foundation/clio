@@ -56,6 +56,7 @@ would almost never be globally idle and a global-only predicate would be correct
 | A5f | a global window is refused while a target window is held |
 | A5g | the terminal record is already on disk when a window is granted |
 | A5h | under contention, no operation is admitted for a scope whose window is held |
+| A5i | **mutation control** — the same regression detects a deliberately split admission |
 | R1 | the V1 release becomes collectible once no lease retains it |
 | C1 | **control** — a host with no evidence answers `NotFound` for the very same lost operation |
 | C2 | **control** — the release is retained while its operation runs, and only then collectible |
@@ -77,6 +78,24 @@ now repaired with regression cases:
    production ledger would likely want a two-phase commit instead.
 4. **A5d tested the wrong thing.** It re-acquired a window instead of starting work after release, and
    leaked the handle. It now starts real work and waits for it to succeed.
+
+### Proving A5h can fail, after @kirillkrylov's second qualification
+
+He pointed out that A5h sampled the invariant once, immediately on acquiring the window, and so would
+miss an admission that slipped in later during the hold — and that closure rested on source inspection
+rather than on the test being known to detect the defect. Both are now addressed:
+
+- the invariant is sampled **throughout** the hold, not once on acquisition;
+- `OperationLedger` has a test-only constructor flag that restores the original split admission, and
+  **A5i runs the identical harness against it**. A concurrency test that has never been seen to fail
+  proves nothing about the code it guards.
+
+Measured on macOS, three consecutive runs, near-identical traffic in both arms:
+
+| arm | violations | admitted | refused | windows |
+|---|---|---|---|---|
+| A5h repaired | **0, 0, 0** | 47-50 | 94-100 | 94-100 |
+| A5i split admission | **40, 15, 24** | 47-52 | 90-92 | 95-98 |
 
 A5h's `refused` count is reported but deliberately not asserted: whether a start lands inside a held
 window is timing-dependent, and asserting it would turn an invariant test into a flaky one. The pass
@@ -116,7 +135,7 @@ temporary directory and writes nothing outside it.
 
 ## macOS observations, 2026-09-21
 
-macOS 27.0.0 (arm64), .NET 10.0.12. **21/21 passed, exit 0, four consecutive runs.**
+macOS 27.0.0 (arm64), .NET 10.0.12. **22/22 passed, exit 0, three consecutive runs.**
 
 - The operation started on `10.0.0.0` kept answering `Running` and stayed owned by `10.0.0.0` after
   `10.1.0.0` was activated mid-flight.
@@ -135,7 +154,8 @@ safe and this probe does not claim it does.
 Retention in C2 comes from both the ledger's owner reference and the detached work's own closure; the
 probe shows the release outlives the update, not which of the two references achieves it.
 
-Not covered: contention beyond two threads (A5h runs one starter against one swapper, not a storm),
+Not covered: contention beyond two threads (A5h/A5i run one starter against one swapper, not a storm),
+disk-write failure handling, post-`Complete` task cleanup,
 fairness or starvation under sustained pressure — A5h shows admissions can be starved when a swapper
 polls aggressively, and there is no wait-budget policy — native libraries or resources, real
 Creatio/DI dependencies, GC timing guarantees, multi-process coordination, server-side reconciliation

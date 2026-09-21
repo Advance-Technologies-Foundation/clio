@@ -132,50 +132,25 @@ using (IDisposable? window = ledger.TryEnterSwapWindow("envG")) {
         window is not null && endPersisted, new { windowTaken = window is not null, endPersisted });
 }
 
-// A5h: the admission barrier under contention — the invariant is that no Running record for a scope
-// can exist while that scope's window is held. This is the race Begin's split critical section allowed.
-int violations = 0, admitted = 0, refused = 0, windows = 0;
-using (var stress = new CancellationTokenSource(TimeSpan.FromSeconds(2))) {
-    Task starter = Task.Run(async () => {
-        while (!stress.IsCancellationRequested) {
-            // Short work with gaps between starts, so the scope is genuinely idle some of the time and
-            // the swapper can actually win a window — otherwise the contention never happens.
-            // Work must be SHORTER than the gap between starts, or the scope is never idle and the
-            // swapper never wins a window — then the test measures nothing.
-            try { v2.StartDetached(ledger, "envR", raceEffect, 3, "succeed", CancellationToken.None);
-                  Interlocked.Increment(ref admitted); }
-            catch (SwapWindowHeldException) { Interlocked.Increment(ref refused); }
-            await Task.Delay(12);
-        }
-    });
-    Task swapper = Task.Run(async () => {
-        while (!stress.IsCancellationRequested) {
-            // Scoped block, NOT a using-statement: a statement-scoped using would hold the window
-            // until the end of the loop body, across the delay below, so the scope would be held
-            // almost continuously and nothing would ever be admitted.
-            using (IDisposable? window = ledger.TryEnterSwapWindow("envR")) {
-                if (window is not null) {
-                    Interlocked.Increment(ref windows);
-                    if (ledger.Running.Select(ledger.Query).Any(r => r.Target == "envR")) {
-                        Interlocked.Increment(ref violations);
-                    }
-                    await Task.Delay(3);              // hold it long enough to collide with a start
-                }
-            }
-            // Longer than the starter's period on purpose. A shorter gap is self-reinforcing: every
-            // refusal leaves the scope idle, so the swapper wins the next window too and nothing is
-            // ever admitted — the counters then look busy while only one side is exercised.
-            await Task.Delay(8);
-        }
-    });
-    await Task.WhenAll(starter, swapper);
-}
-// The pass condition is the INVARIANT plus evidence that both sides ran. `refused` is reported but
-// deliberately not asserted: whether a start happens to land inside a held window is timing-dependent,
-// and making it a pass condition would turn a real invariant test into a flaky one.
+// A5h: the admission barrier under contention. The invariant is that no Running record may exist for
+// a scope while that scope's window is held, sampled THROUGHOUT the hold rather than once on
+// acquisition — an admission that slips in later is exactly what a single sample misses.
+var repaired = await StressAdmission(ledger, v2, raceEffect, "envR", TimeSpan.FromSeconds(2));
+// `refused` is reported but deliberately not asserted: whether a start lands inside a held window is
+// timing-dependent, and asserting it would turn an invariant test into a flaky one.
 Check("A5h under contention, no operation is ever admitted for a scope whose window is held",
-    violations == 0 && admitted > 0 && windows > 0,
-    new { violations, admitted, refused, windows });
+    repaired.Violations == 0 && repaired.Admitted > 0 && repaired.Windows > 0,
+    new { repaired.Violations, repaired.Admitted, repaired.Refused, repaired.Windows });
+
+// A5i: the mutation control. A concurrency test that has never been seen to fail proves nothing, so the
+// same harness runs against a ledger that deliberately restores the original split admission.
+var brokenLedger = new OperationLedger(Path.Combine(work, "split.jsonl"), splitAdmissionForTests: true);
+var mutated = await StressAdmission(brokenLedger, v2, Path.Combine(work, "split-effect.log"), "envS",
+    TimeSpan.FromSeconds(2));
+Check("A5i mutation control: the same regression detects a deliberately split admission",
+    mutated.Violations > 0,
+    new { mutated.Violations, mutated.Admitted, mutated.Refused, mutated.Windows,
+          note = "non-zero here is the point: it shows A5h can fail" });
 
 // ── C1: the negative control. Without durable evidence the same question gets today's wrong answer ──
 var withoutEvidence = new OperationLedger(Path.Combine(work, "no-evidence.jsonl"));
@@ -201,6 +176,46 @@ Console.WriteLine(JsonSerializer.Serialize(new {
 return failed ? 1 : 0;
 
 // ────────────────────────────────────────────────────────────────────────────────────────────────────
+
+// Shared contention harness: one starter against one swapper, so the repaired and the deliberately
+// broken ledger are measured by identical code rather than by two hand-written loops.
+static async Task<(int Violations, int Admitted, int Refused, int Windows)> StressAdmission(
+    OperationLedger ledger, IDetachedRuntime runtime, string effectPath, string target, TimeSpan duration) {
+    int violations = 0, admitted = 0, refused = 0, windows = 0;
+    using var stress = new CancellationTokenSource(duration);
+    Task starter = Task.Run(async () => {
+        while (!stress.IsCancellationRequested) {
+            // Work must be SHORTER than the gap between starts, or the scope is never idle and the
+            // swapper never wins a window — then the test measures nothing.
+            try {
+                runtime.StartDetached(ledger, target, effectPath, 3, "succeed", CancellationToken.None);
+                Interlocked.Increment(ref admitted);
+            }
+            catch (SwapWindowHeldException) { Interlocked.Increment(ref refused); }
+            await Task.Delay(12);
+        }
+    });
+    Task swapper = Task.Run(async () => {
+        while (!stress.IsCancellationRequested) {
+            // Scoped block, NOT a using-statement: a statement-scoped using would hold the window until
+            // the end of the loop body, across the delay below, so nothing would ever be admitted.
+            using (IDisposable? window = ledger.TryEnterSwapWindow(target)) {
+                if (window is not null) {
+                    Interlocked.Increment(ref windows);
+                    for (int sample = 0; sample < 6; sample++) {
+                        if (ledger.Running.Select(ledger.Query).Any(r => r.Target == target)) {
+                            Interlocked.Increment(ref violations);
+                        }
+                        await Task.Delay(1);
+                    }
+                }
+            }
+            await Task.Delay(8);
+        }
+    });
+    await Task.WhenAll(starter, swapper);
+    return (violations, admitted, refused, windows);
+}
 
 // Owns the V1 release for exactly as long as the operation does, then releases and unloads it. Kept in
 // its own non-inlined frame so the caller holds no reference that would defeat the collectibility check.
