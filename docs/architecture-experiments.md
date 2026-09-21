@@ -90,3 +90,11 @@ After the E3 barrier repairs and E4 composition probe are published, independent
 - [Vladimir continuity matrix](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18540359)
 - [Per-target quiescence proposal](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18540446)
 - [E3 independent Windows reproduction, counterexamples and repair handoff](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18540898)
+
+## S6 arrived during the 14:56 review
+
+Vladimir published 86c1f64232ad96c00db6ee73a2c87be3f9165a8a (18541428): real respawn, global window through readiness, pressure attempts and failure cleanup. Codex independently reproduced 6/6 Windows/.NET10.0.12; the earlier missing-respawn finding is superseded for S6.
+
+However a one-line mutation changing the actual post-handover operation from succeed to fail still passes 6/6. The backend correctly omits that operation's effect, but the supervisor marks every done as Succeeded and accepts the separate readiness effect from the same V2 PID. Evidence and exact reproduction: krylov/supervisor-s6-review, experiments/SupervisorQuiescenceComposition/codex-s6-review.md and raw JSON. Source restored byte-for-byte; no implementation fix by Codex. Vladimir owns tightening the oracle to exact target/operation ID/PID plus terminal result and retaining this negative control.
+
+Vladimir also adopted Alex's reconciliation table (18541433). That is participant agreement, not confirmation of attribution or approval to skip drain. The pre-existing-artifact and intervening-compilation counterexamples above remain unresolved; no weaker activation policy is approved.
