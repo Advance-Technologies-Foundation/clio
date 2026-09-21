@@ -69,6 +69,8 @@ public sealed class ApplicationSectionDeleteService(
 	private const string ApplicationSectionSchemaName = "ApplicationSection";
 	private const string SysModuleSchemaName = "SysModule";
 	private const string SysModuleLczSchemaName = "SysModuleLcz";
+	private const string SectionSchemaUIdColumn = "SectionSchemaUId";
+	private const string CardSchemaUIdColumn = "CardSchemaUId";
 	private const int EntitySchemaItemType = 3;
 	private const int ClientUnitSchemaItemType = 4;
 	private static readonly JsonSerializerOptions JsonOptions = new() {
@@ -176,8 +178,8 @@ public sealed class ApplicationSectionDeleteService(
 				new SelectQueryHelper.SelectQueryColumnDefinition("Description", "Description"),
 				new SelectQueryHelper.SelectQueryColumnDefinition("EntitySchemaName", "EntitySchemaName"),
 				new SelectQueryHelper.SelectQueryColumnDefinition("PackageId", "PackageId"),
-				new SelectQueryHelper.SelectQueryColumnDefinition("SectionSchemaUId", "SectionSchemaUId"),
-				new SelectQueryHelper.SelectQueryColumnDefinition("CardSchemaUId", "CardSchemaUId"),
+				new SelectQueryHelper.SelectQueryColumnDefinition(SectionSchemaUIdColumn, SectionSchemaUIdColumn),
+				new SelectQueryHelper.SelectQueryColumnDefinition(CardSchemaUIdColumn, CardSchemaUIdColumn),
 				new SelectQueryHelper.SelectQueryColumnDefinition("SysModuleEntityId", "SysModuleEntityId"),
 				new SelectQueryHelper.SelectQueryColumnDefinition("LogoId", "LogoId"),
 				new SelectQueryHelper.SelectQueryColumnDefinition("IconBackground", "IconBackground"),
@@ -240,7 +242,7 @@ public sealed class ApplicationSectionDeleteService(
 
 	private HashSet<Guid> LoadRegisteredEditPages(IApplicationClient client, EnvironmentSettings settings) {
 		object query = SelectQueryHelper.BuildSelectQuery("SysModuleEdit",
-			[new("CardSchemaUId", "CardSchemaUId"), new("MiniPageSchemaUId", "SectionSchemaUId"),
+			[new(CardSchemaUIdColumn, CardSchemaUIdColumn), new("MiniPageSchemaUId", SectionSchemaUIdColumn),
 				new("SearchRowSchemaUId", "SearchRowSchemaUId")], []);
 		string body = client.ExecutePostRequest(serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select, settings),
 			JsonSerializer.Serialize(query, JsonOptions));
@@ -259,8 +261,8 @@ public sealed class ApplicationSectionDeleteService(
 	private List<SectionReferenceDto> LoadSectionReferences(IApplicationClient client, EnvironmentSettings settings) {
 		object query = SelectQueryHelper.BuildSelectQuery(SysModuleSchemaName,
 			[
-				new("Id", "Id"), new("SectionSchemaUId", "SectionSchemaUId"),
-				new("CardSchemaUId", "CardSchemaUId"), new("SysModuleEntity.Id", "SysModuleEntityId"),
+				new("Id", "Id"), new(SectionSchemaUIdColumn, SectionSchemaUIdColumn),
+				new(CardSchemaUIdColumn, CardSchemaUIdColumn), new("SysModuleEntity.Id", "SysModuleEntityId"),
 				new("SysModuleEntity.SysEntitySchemaUId", "EntitySchemaUId")
 			], []);
 		string body = client.ExecutePostRequest(serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select, settings),
@@ -281,6 +283,20 @@ public sealed class ApplicationSectionDeleteService(
 		if (collection.Items is null || collection.Success == false) {
 			throw new InvalidOperationException("Cannot determine section schemas: GetWorkspaceItems failed or omitted its items.");
 		}
+		List<WorkspaceSchemaItemDto> selected = SelectDeclaredPages(collection.Items, section);
+		if (deleteEntitySchema) {
+			List<WorkspaceSchemaItemDto> entities = collection.Items.Where(item =>
+				item.Type == EntitySchemaItemType && !string.IsNullOrWhiteSpace(section.EntitySchemaName)
+				&& string.Equals(item.Name, section.EntitySchemaName, StringComparison.OrdinalIgnoreCase)).ToList();
+			if (entities.Count != 1 || entities[0].UId == Guid.Empty) {
+				throw new InvalidOperationException($"Cannot uniquely resolve entity '{section.EntitySchemaName}'. No artifacts were deleted.");
+			}
+			selected.Add(entities[0]);
+		}
+		return selected;
+	}
+
+	private static List<WorkspaceSchemaItemDto> SelectDeclaredPages(List<WorkspaceSchemaItemDto> items, ApplicationSectionRecord section) {
 		// Names (including conventional suffixes) are not ownership. Only the section's
 		// declared page identities are eligible; retain auxiliary schemas with no explicit link.
 		List<WorkspaceSchemaItemDto> selected = [];
@@ -294,22 +310,13 @@ public sealed class ApplicationSectionDeleteService(
 			if (uId == Guid.Empty) {
 				continue;
 			}
-			List<WorkspaceSchemaItemDto> matches = collection.Items.Where(item => item.UId == uId).ToList();
+			List<WorkspaceSchemaItemDto> matches = items.Where(item => item.UId == uId).ToList();
 			if (matches.Count > 1 || matches.Any(item => item.Type != ClientUnitSchemaItemType)) {
 				throw new InvalidOperationException($"Ambiguous or non-page schema '{uId}'. No artifacts were deleted.");
 			}
 			if (matches.Count == 1 && selected.All(item => item.UId != uId)) {
 				selected.Add(matches[0]);
 			}
-		}
-		if (deleteEntitySchema) {
-			List<WorkspaceSchemaItemDto> entities = collection.Items.Where(item =>
-				item.Type == EntitySchemaItemType && !string.IsNullOrWhiteSpace(section.EntitySchemaName)
-				&& string.Equals(item.Name, section.EntitySchemaName, StringComparison.OrdinalIgnoreCase)).ToList();
-			if (entities.Count != 1 || entities[0].UId == Guid.Empty) {
-				throw new InvalidOperationException($"Cannot uniquely resolve entity '{section.EntitySchemaName}'. No artifacts were deleted.");
-			}
-			selected.Add(entities[0]);
 		}
 		return selected;
 	}

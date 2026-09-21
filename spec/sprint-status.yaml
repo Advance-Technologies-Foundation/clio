@@ -4157,7 +4157,7 @@ stories:
     blocks: []
 
   - id: story-section-delete-safety-1
-    status: in-progress
+    status: review
     description: Preserve unrelated schemas during section deletion for clio issue 1634
     depends_on: []
     blocks: []
