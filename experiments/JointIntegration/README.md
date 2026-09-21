@@ -29,9 +29,11 @@ dotnet run --project experiments/JointIntegration/JointIntegration.csproj -c Rel
 | X5b | a settings commit failure after the runtime half leaves the previous pair usable |
 | X5c | an admission held at the boundary observes one whole pair, never a mixture |
 | X5d | **mutation control** — reading the halves separately admits a pair that was never current |
+| X6 | after a settings-only activation through the coordinator, admission lands on a live snapshot |
+| X7 | **mutation control** — skipping the republication admits under a snapshot cleanup reclaimed |
 
-**8/8 on macOS.** Exact build target: this branch, plus `experiments/SettingsVersioning` taken from
-`nikonov/supervisor-quiescence-probe@334d0dcf28b4`. Both are in this tree, so the branch builds and runs
+**10/10 on macOS.** Exact build target: this branch, plus `experiments/SettingsVersioning` taken from
+`nikonov/supervisor-quiescence-probe@f70f454d4365`. Both are in this tree, so the branch builds and runs
 without mixing incompatible sources.
 
 ## Why the pair is published, not ordered
@@ -61,3 +63,28 @@ of liveness is a **capability**, not evidence that anything is wrong.
 What X3 does show is narrower and still worth having: a **cross-process** owner registered without its
 wrapper holds its snapshot indefinitely, and before this round nothing said so. `Cleanup()` now reports
 it as a diagnostic without changing what it reclaims, and X4 remains the positive process-loss case.
+
+## The rule the removal of `SettingsStore.Admit` exposed
+
+@vladimir-nikonov removed `Admit` at my request and named exactly what left with it: its lock-protected
+read-then-register kept a two-step admission from straddling a concurrent `Cleanup`. That guarantee is
+now `BeginFromSelection`'s, which holds it.
+
+Checking that surfaced a larger gap. The published pair can go **stale**. A settings-only activation
+moves the store's current snapshot; if the pair is not republished, the selection still names the
+previous snapshot, which is then neither pinned nor held nor retained — so `Cleanup()` legitimately
+reclaims it, and the next admission is registered under a snapshot that no longer exists:
+
+```
+X7 {"reclaimed": ["cfg-14"], "admittedUnder": "cfg-14",
+    "snapshotStillExists": false, "pinnedInStore": "cfg-15"}
+```
+
+**The rule: any activation of either half republishes the pair.** Then selected and pinned are the same
+snapshot by construction, and the question of whether cleanup should know about the selection never
+arises. `ActivationCoordinator` is where that rule lives — one method, no state of its own, in the one
+place that owns both halves.
+
+The alternative was to make the published selection a fourth ownership reason for cleanup. It would work
+and it is worse: it makes the settings store depend on the ledger's selection, and it leaves two places
+that can disagree about what is current.

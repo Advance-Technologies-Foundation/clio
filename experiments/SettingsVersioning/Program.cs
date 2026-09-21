@@ -28,7 +28,7 @@ T6_CredentialFreeSurface();
 T7_NoSentinelSecretInPersistedArtifacts();
 T8_IdleCurrentSnapshotSurvivesCleanup();
 T9_ConcurrentPrepareIsSerializedNotRaced();
-T10_AdmitIsSerializedAgainstCleanup();
+T10_UnguardedTwoStepAdmissionCanRaceCleanupNowThatAdmitIsGone();
 T11_MutatingCallersDictionaryAfterPrepareDoesNotReachTheSnapshot();
 T12_MigrateDetectsAnEditThatLandsAfterItsReadNotJustBeforeItsCommit();
 T13_ImmutableDictionaryRejectsMutationThroughEveryAlias();
@@ -45,11 +45,11 @@ void T1_CoexistWithV2() {
     var store = new SettingsStore(ledger, settingsEvidence);
     SettingsSnapshot cfgA = store.PrepareAndActivate("envT1", new Dictionary<string, string> { ["schema"] = "v1" }, 0);
     var ownerA = new FakeOwner();
-    IOperationLease leaseA = store.Admit("envT1", "V1", ownerA, "envT1");
+    IOperationLease leaseA = ledger.Begin("envT1", "V1", ownerA, store.CurrentSnapshotId("envT1"));
 
     SettingsSnapshot cfgB = store.PrepareAndActivate("envT1", new Dictionary<string, string> { ["schema"] = "v2" }, cfgA.Version);
     var ownerB = new FakeOwner();
-    IOperationLease leaseB = store.Admit("envT1", "V2", ownerB, "envT1");
+    IOperationLease leaseB = ledger.Begin("envT1", "V2", ownerB, store.CurrentSnapshotId("envT1"));
 
     OperationRecord recA = ledger.Query(leaseA.Id);
     OperationRecord recB = ledger.Query(leaseB.Id);
@@ -68,7 +68,7 @@ void T2_FailedMigrationLeavesV1Usable() {
     var ledger = new OperationLedger(Path.Combine(workDir, "operations-t2.jsonl"));
     var store = new SettingsStore(ledger, Path.Combine(workDir, "settings-t2.jsonl"));
     SettingsSnapshot cfgA = store.PrepareAndActivate("envT2", new Dictionary<string, string> { ["schema"] = "v1", ["k"] = "orig" }, 0);
-    IOperationLease lease = store.Admit("envT2", "V1", new FakeOwner(), "envT2");
+    IOperationLease lease = ledger.Begin("envT2", "V1", new FakeOwner(), store.CurrentSnapshotId("envT2"));
 
     store.FailMigrationForTests = true;
     InvalidOperationException? caught = null;
@@ -193,7 +193,7 @@ void T5_CleanupRespectsRetentionNotJustPin() {
 
     // cfg-C: no longer pinned (a later snapshot is active) but still referenced by a retained operation.
     SettingsSnapshot cfgC = store.PrepareAndActivate("envT5", new Dictionary<string, string> { ["k"] = "c" }, 0);
-    IOperationLease leaseUnderC = store.Admit("envT5-op", "V1", new FakeOwner(), "envT5");
+    IOperationLease leaseUnderC = ledger.Begin("envT5-op", "V1", new FakeOwner(), store.CurrentSnapshotId("envT5"));
     SettingsSnapshot cfgD = store.PrepareAndActivate("envT5", new Dictionary<string, string> { ["k"] = "d" }, cfgC.Version);
 
     IReadOnlyCollection<string> doomed1 = store.Cleanup().Reclaimed;
@@ -210,9 +210,9 @@ void T5_CleanupRespectsRetentionNotJustPin() {
     // K3 shape: a resolved orphan releases its snapshot; an unresolvable (bare) owner pins one forever.
     SettingsSnapshot cfgF = store.PrepareAndActivate("envT5", new Dictionary<string, string> { ["k"] = "f" }, store.CurrentVersion("envT5"));
     var wrappedOwner = new FakeOwner();
-    IOperationLease leaseF = store.Admit("envT5-wrapped", "V1", wrappedOwner, "envT5");
+    IOperationLease leaseF = ledger.Begin("envT5-wrapped", "V1", wrappedOwner, store.CurrentSnapshotId("envT5"));
     SettingsSnapshot cfgG = store.PrepareAndActivate("envT5", new Dictionary<string, string> { ["k"] = "g" }, cfgF.Version);
-    IOperationLease leaseG = store.Admit("envT5-bare", "V1", new object(), "envT5"); // deliberately unresolvable
+    IOperationLease leaseG = ledger.Begin("envT5-bare", "V1", new object(), store.CurrentSnapshotId("envT5")); // deliberately unresolvable
     SettingsSnapshot cfgH = store.PrepareAndActivate("envT5", new Dictionary<string, string> { ["k"] = "h" }, cfgG.Version); // moves the pin off F and G
 
     wrappedOwner.Kill();
@@ -254,7 +254,7 @@ void T7_NoSentinelSecretInPersistedArtifacts() {
     var ledger = new OperationLedger(opEvidence);
     var store = new SettingsStore(ledger, setEvidence);
     SettingsSnapshot cfgA = store.PrepareAndActivate("envT7", new Dictionary<string, string> { ["endpoint"] = "https://example.invalid" }, 0);
-    IOperationLease lease = store.Admit("envT7", "V1", new FakeOwner(), "envT7");
+    IOperationLease lease = ledger.Begin("envT7", "V1", new FakeOwner(), store.CurrentSnapshotId("envT7"));
     store.Migrate("envT7", values => new Dictionary<string, string>(values) { ["endpoint"] = "https://example2.invalid" });
     store.Rollback("envT7", cfgA.Id, store.CurrentVersion("envT7"));
     lease.Complete(OperationState.Succeeded); lease.Dispose();
@@ -313,37 +313,35 @@ void T9_ConcurrentPrepareIsSerializedNotRaced() {
         new { aSucceeded = resultA.Id, bRefusedWith = resultB?.Message });
 }
 
-void T10_AdmitIsSerializedAgainstCleanup() {
-    // kirillkrylov: "activation and cleanup between those steps can delete the ID being admitted."
+void T10_UnguardedTwoStepAdmissionCanRaceCleanupNowThatAdmitIsGone() {
+    // Alexandr-Kravchuk: SettingsStore.Admit read this store's own current snapshot and admitted an
+    // operation with it -- a second admission path once a joint runtime+settings selection exists, and
+    // exactly the duplicate source of truth the selection boundary is meant to prevent. Removed (see the
+    // note in SettingsStore.cs where it used to live). That removal also gives up something real:
+    // kirillkrylov's original finding -- reading the current snapshot id and registering ownership must
+    // not straddle a concurrent Cleanup -- is no longer this store's job to guarantee. This case makes
+    // that gap concrete rather than leaving it implicit: a caller that does the naive two-step
+    // read-then-Begin itself, unguarded, can admit against a snapshot Cleanup has already reclaimed.
+    // Closing this is BeginFromSelection's responsibility on the joint branch, not a regression to fix
+    // here.
     var ledger = new OperationLedger(Path.Combine(workDir, "operations-t10.jsonl"));
     var store = new SettingsStore(ledger, Path.Combine(workDir, "settings-t10.jsonl"));
     SettingsSnapshot cfgA = store.PrepareAndActivate("envT10", new Dictionary<string, string> { ["k"] = "a" }, 0);
-    // Supersede so cfg-A is unpinned and unreferenced -- eligible for cleanup the instant nothing else
-    // protects it, exactly the window the race needs.
-    SettingsSnapshot cfgB = store.PrepareAndActivate("envT10", new Dictionary<string, string> { ["k"] = "b" }, cfgA.Version);
 
-    using var admitInsideLock = new ManualResetEventSlim(false);
-    using var releaseAdmit = new ManualResetEventSlim(false);
-    store.OnAdmitReadSnapshotIdForTests = () => { admitInsideLock.Set(); releaseAdmit.Wait(); };
+    // Caller reads the snapshot id first, the way Admit used to internally, but with no lock held across
+    // the gap to the eventual Begin call below.
+    string snapshotIdReadEarly = store.CurrentSnapshotId("envT10");
 
-    Task<IOperationLease> admitTask = Task.Run(() => store.Admit("envT10-op", "V1", new FakeOwner(), "envT10"));
-    if (!admitInsideLock.Wait(TimeSpan.FromSeconds(5)))
-        throw new TimeoutException("T10 setup: Admit never reached the critical section");
+    // Something else supersedes and reclaims cfg-A before the caller gets to Begin.
+    store.PrepareAndActivate("envT10", new Dictionary<string, string> { ["k"] = "b" }, cfgA.Version);
+    CleanupResult cleanup = store.Cleanup();
 
-    store.OnAdmitReadSnapshotIdForTests = null;
-    Task<IReadOnlyCollection<string>> cleanupTask = Task.Run(() => store.Cleanup().Reclaimed);
-    bool cleanupFinishedWhileAdmitBlocked = cleanupTask.Wait(TimeSpan.FromMilliseconds(300));
+    IOperationLease lease = ledger.Begin("envT10-op", "V1", new FakeOwner(), snapshotIdReadEarly);
+    OperationRecord record = ledger.Query(lease.Id);
 
-    releaseAdmit.Set();
-    IOperationLease lease = admitTask.Result;
-    IReadOnlyCollection<string> doomed = cleanupTask.Result;
-
-    Check("T10: cleanup cannot run while an admission is mid-flight between reading and registering",
-        !cleanupFinishedWhileAdmitBlocked, new { cleanupFinishedBeforeReleasingAdmit = cleanupFinishedWhileAdmitBlocked });
-    string admittedSnapshot = ledger.Query(lease.Id).ConfigurationSnapshot!;
-    Check("T10: cleanup, once it runs, still correctly reclaims what is genuinely unowned (cfg-A) without disturbing the admission (cfg-B)",
-        doomed.Contains(cfgA.Id) && admittedSnapshot == cfgB.Id && store.Contains(cfgB.Id),
-        new { doomed, admittedSnapshot });
+    Check("T10: an unguarded two-step admission can register an operation under a snapshot id Cleanup already reclaimed",
+        cleanup.Reclaimed.Contains(cfgA.Id) && record.ConfigurationSnapshot == cfgA.Id && !store.Contains(cfgA.Id),
+        new { reclaimed = cleanup.Reclaimed, admittedUnder = record.ConfigurationSnapshot, snapshotStillInStore = store.Contains(cfgA.Id) });
 
     lease.Complete(OperationState.Succeeded); lease.Dispose();
 }
@@ -439,7 +437,7 @@ void T14_CleanupSurfacesSnapshotsHeldByUnresolvableOwners() {
     var ledger = new OperationLedger(Path.Combine(workDir, "operations-t14.jsonl"));
     var store = new SettingsStore(ledger, Path.Combine(workDir, "settings-t14.jsonl"));
     SettingsSnapshot cfgA = store.PrepareAndActivate("envT14", new Dictionary<string, string> { ["k"] = "a" }, 0);
-    IOperationLease bareLease = store.Admit("envT14-op", "V1", new object(), "envT14"); // an ordinary bare owner, not a defective one
+    IOperationLease bareLease = ledger.Begin("envT14-op", "V1", new object(), store.CurrentSnapshotId("envT14")); // an ordinary bare owner, not a defective one
     store.PrepareAndActivate("envT14", new Dictionary<string, string> { ["k"] = "b" }, cfgA.Version); // supersede
 
     CleanupResult result = store.Cleanup();
@@ -450,7 +448,7 @@ void T14_CleanupSurfacesSnapshotsHeldByUnresolvableOwners() {
     // Control: a live, liveness-capable owner is also retained (correctly), but must never appear in the
     // diagnostic set -- the signal is specifically about owners the ledger can never ask, not "still in use."
     var aliveOwner = new FakeOwner();
-    IOperationLease wrappedLease = store.Admit("envT14-op2", "V1", aliveOwner, "envT14");
+    IOperationLease wrappedLease = ledger.Begin("envT14-op2", "V1", aliveOwner, store.CurrentSnapshotId("envT14"));
     CleanupResult result2 = store.Cleanup();
     Check("T14 (X3 control): a live, liveness-capable owner's snapshot is retained but never flagged as unresolvable",
         !result2.HeldByOwnerWithoutLiveness.Contains(store.CurrentSnapshotId("envT14")),
@@ -484,7 +482,7 @@ void T15_PairedActivationCommitsOnlyIfBothHalvesSucceed() {
     if (runtimeActivationSucceeded) store.Activate("envT15", candidate.Id, store.CurrentVersion("envT15"));
     else store.AbandonCandidate(candidate.Id);
 
-    IOperationLease lease = store.Admit("envT15-op", "V1", new FakeOwner(), "envT15");
+    IOperationLease lease = ledger.Begin("envT15-op", "V1", new FakeOwner(), store.CurrentSnapshotId("envT15"));
     string observedSnapshot = ledger.Query(lease.Id).ConfigurationSnapshot!;
     Check("T15 (X5): a refused runtime activation never commits its paired settings candidate",
         store.CurrentSnapshotId("envT15") == committed.Id && observedSnapshot == committed.Id,

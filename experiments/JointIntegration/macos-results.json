@@ -98,6 +98,30 @@
         "everCurrentTogether": false,
         "note": "this is what BeginFromSelection exists to prevent; it fails here on purpose"
       }
+    },
+    {
+      "name": "X6 after a settings-only activation through the coordinator, admission lands on a live snapshot",
+      "passed": true,
+      "detail": {
+        "admittedUnder": "cfg-13",
+        "stillExists": true,
+        "selected": "cfg-13",
+        "pinned": "cfg-13",
+        "note": "the rule is that any activation republishes the pair, so selected and pinned are equal"
+      }
+    },
+    {
+      "name": "X7 mutation control: skipping the republication admits under a snapshot cleanup reclaimed",
+      "passed": true,
+      "detail": {
+        "reclaimed": [
+          "cfg-14"
+        ],
+        "admittedUnder": "cfg-14",
+        "snapshotStillExists": false,
+        "pinnedInStore": "cfg-15",
+        "note": "passing here is the point: it shows what X6\u0027s rule prevents"
+      }
     }
   ]
 }

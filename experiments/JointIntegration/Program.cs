@@ -4,6 +4,7 @@ using System.Runtime.Loader;
 using System.Text.Json;
 using Clio10.DetachedOperations;
 using Clio10.DetachedOperations.Host;
+using Clio10.JointIntegration;
 using Clio10.SettingsVersioning;
 
 // The joint proof @kirillkrylov assigned: a partner workflow pinned to one release while another
@@ -32,6 +33,14 @@ var ledger = new OperationLedger(Path.Combine(work, "operations.jsonl"));
 var settings = new SettingsStore(ledger, Path.Combine(work, "settings.jsonl"));
 string effect = Path.Combine(work, "effect.log");
 
+// Admission goes through the published pair, never through two separate reads. SettingsStore.Admit was
+// removed this round at my request precisely so there is one path and not two.
+IOperationLease AdmitOn(string scope, string runtimeVersion, string snapshotId, object owner) {
+    ActivationSelection selection = ledger.CurrentSelection(scope);
+    ledger.TryPublishSelection(scope, runtimeVersion, snapshotId, selection.Generation);
+    return ledger.BeginFromSelection(scope, owner);
+}
+
 // cfg-1 is prepared and becomes current; V1 is the activated release.
 SettingsSnapshot cfg1 = settings.PrepareAndActivate("envX", new Dictionary<string, string> { ["mode"] = "one" }, 0);
 var (v1Context, v1) = Load(v1Dir);
@@ -42,7 +51,7 @@ IPartnerWorkflow partner = LoadPartner(partnerDir);
 var composed = partner.Compose(v1);
 
 Process owner = StartIdleOwner();
-IOperationLease pinned = settings.Admit("envX", v1.Version, new ProcessOwner(owner), "envX");
+IOperationLease pinned = AdmitOn("envX", v1.Version, cfg1.Id, new ProcessOwner(owner));
 var (v2Context, v2) = Load(v2Dir);                      // the new release arrives
 SettingsSnapshot cfg2 = settings.PrepareAndActivate("envX", new Dictionary<string, string> { ["mode"] = "two" },
     settings.CurrentVersion("envX"));                   // and the new settings
@@ -53,7 +62,7 @@ pinned.Complete(OperationState.Succeeded, "work-really-succeeded");
 ledger.FailEndPersistenceForTests = false;
 var afterFailure = ledger.Query(pinned.Id);
 
-IOperationLease onNew = settings.Admit("envX", v2.Version, new ProcessOwner(owner), "envX");
+IOperationLease onNew = AdmitOn("envX", v2.Version, cfg2.Id, new ProcessOwner(owner));
 var newAdmission = ledger.Query(onNew.Id);
 
 Check("X1 a partner stays on its pinned release and snapshot while a new release and new settings arrive",
@@ -85,7 +94,7 @@ onNew.Dispose();
 settings.RetainForRollback(cfg1.Id);
 Process bareOwner = StartIdleOwner();
 SettingsSnapshot cfg3 = settings.PrepareAndActivate("envY", new Dictionary<string, string> { ["mode"] = "three" }, 0);
-IOperationLease unresolvable = settings.Admit("envY", v1.Version, bareOwner, "envY");   // bare, on purpose
+IOperationLease unresolvable = AdmitOn("envY", v1.Version, cfg3.Id, bareOwner);   // bare, on purpose
 SettingsSnapshot cfg4 = settings.PrepareAndActivate("envY", new Dictionary<string, string> { ["mode"] = "four" },
     settings.CurrentVersion("envY"));
 bareOwner.Kill(entireProcessTree: true);
@@ -107,7 +116,7 @@ Check("X3 a cross-process owner registered without liveness holds its snapshot, 
 // about the missing liveness and not about cleanup being broken.
 Process wrappedOwner = StartIdleOwner();
 SettingsSnapshot cfg5 = settings.PrepareAndActivate("envZ", new Dictionary<string, string> { ["mode"] = "five" }, 0);
-IOperationLease resolvable = settings.Admit("envZ", v1.Version, new ProcessOwner(wrappedOwner), "envZ");
+IOperationLease resolvable = AdmitOn("envZ", v1.Version, cfg5.Id, new ProcessOwner(wrappedOwner));
 SettingsSnapshot cfg6 = settings.PrepareAndActivate("envZ", new Dictionary<string, string> { ["mode"] = "six" },
     settings.CurrentVersion("envZ"));
 wrappedOwner.Kill(entireProcessTree: true);
@@ -231,6 +240,58 @@ afterRefusal.Dispose();
 afterCommitFailure.Dispose();
 naive.Dispose();
 try { wOwner.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
+
+// ── X6/X7: the requirement the removal of SettingsStore.Admit put on this boundary ───────────────
+// @vladimir-nikonov removed Admit at my request and named precisely what moved with it: Admit's
+// lock-protected read-then-register kept a two-step admission from straddling a concurrent Cleanup.
+// That guarantee is now BeginFromSelection's. Checking it surfaced a second, larger gap: the published
+// pair can go STALE, and then the guarantee protects the wrong snapshot.
+const string coordScope = "envC";
+var coordinator = new ActivationCoordinator(ledger, settings);
+SettingsSnapshot cFirst = settings.PrepareAndActivate(coordScope,
+    new Dictionary<string, string> { ["mode"] = "c1" }, 0);
+ledger.TryPublishSelection(coordScope, v1.Version, cFirst.Id, 0);
+Process cOwner = StartIdleOwner();
+
+// X6: a settings-only change goes through the coordinator, so selected and pinned stay equal and an
+// admission can never land on a snapshot cleanup has reclaimed.
+SettingsSnapshot cSecond = settings.Prepare(coordScope,
+    new Dictionary<string, string> { ["mode"] = "c2" }, settings.CurrentVersion(coordScope));
+coordinator.TryCommitSettingsOnly(coordScope, cSecond.Id);
+settings.Cleanup();
+IOperationLease coordinated = ledger.BeginFromSelection(coordScope, new ProcessOwner(cOwner));
+string? coordinatedSnapshot = ledger.Query(coordinated.Id).ConfigurationSnapshot;
+Check("X6 after a settings-only activation through the coordinator, admission lands on a live snapshot",
+    coordinatedSnapshot == cSecond.Id && settings.Contains(coordinatedSnapshot!),
+    new { admittedUnder = coordinatedSnapshot, stillExists = settings.Contains(coordinatedSnapshot!),
+          selected = ledger.CurrentSelection(coordScope).ConfigurationSnapshot,
+          pinned = settings.CurrentSnapshotId(coordScope),
+          note = "the rule is that any activation republishes the pair, so selected and pinned are equal" });
+
+// X7 MUTATION CONTROL: the same settings-only change driven directly, bypassing the coordinator. The
+// selection still names the OLD snapshot, which is then neither pinned nor held nor retained, so
+// Cleanup reclaims it -- and the next admission is registered under a snapshot that no longer exists.
+const string staleScope = "envS";
+SettingsSnapshot sFirst = settings.PrepareAndActivate(staleScope,
+    new Dictionary<string, string> { ["mode"] = "s1" }, 0);
+ledger.TryPublishSelection(staleScope, v1.Version, sFirst.Id, 0);
+SettingsSnapshot sSecond = settings.Prepare(staleScope,
+    new Dictionary<string, string> { ["mode"] = "s2" }, settings.CurrentVersion(staleScope));
+settings.Activate(staleScope, sSecond.Id, settings.CurrentVersion(staleScope));   // no republication
+CleanupResult staleCleanup = settings.Cleanup();
+IOperationLease stale = ledger.BeginFromSelection(staleScope, new ProcessOwner(cOwner));
+string? staleSnapshot = ledger.Query(stale.Id).ConfigurationSnapshot;
+Check("X7 mutation control: skipping the republication admits under a snapshot cleanup reclaimed",
+    staleCleanup.Reclaimed.Contains(sFirst.Id) && staleSnapshot == sFirst.Id
+        && !settings.Contains(staleSnapshot!),
+    new { reclaimed = staleCleanup.Reclaimed, admittedUnder = staleSnapshot,
+          snapshotStillExists = settings.Contains(staleSnapshot!),
+          pinnedInStore = settings.CurrentSnapshotId(staleScope),
+          note = "passing here is the point: it shows what X6's rule prevents" });
+
+coordinated.Dispose();
+stale.Dispose();
+try { cOwner.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
 
 Console.WriteLine(JsonSerializer.Serialize(new {
     os = Environment.OSVersion.VersionString, framework = Environment.Version.ToString(),
