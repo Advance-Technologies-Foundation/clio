@@ -91,7 +91,9 @@ A degraded scope means one or more outcomes exist **only in memory**. Three fact
   abandoned deliberately and later readers are told `Unknown` rather than given a guess.
 
 `UnpersistedOperations` is the list that matters; `DegradedScopes` is derived from it. A scope's mark
-lifts when its list empties — by repair or by explicit loss, never by the fault merely going away. — hook only, policy is @vladimir-nikonov's
+lifts when its list empties — by repair or by explicit loss, never by the fault merely going away.
+
+## 6. Configuration snapshot identity — hook only, policy is @vladimir-nikonov's
 
 The lifetime side needs exactly one thing: whatever identifies a configuration snapshot must be portable
 data under clause 3, so a record naming it survives the release and the process. It is a string as far as
