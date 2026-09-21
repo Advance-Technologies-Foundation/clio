@@ -1,7 +1,7 @@
 {
   "os": "Unix 27.0.0",
   "framework": "10.0.12",
-  "workDirectory": "/var/folders/xk/pl1m8g6d1w55jscyxzg0wjkc0000gn/T/detached-ops-uoGvb3",
+  "workDirectory": "/var/folders/xk/pl1m8g6d1w55jscyxzg0wjkc0000gn/T/detached-ops-8FMuQn",
   "cases": [
     {
       "name": "A1a the original operation still answers after a newer runtime is activated",
@@ -156,17 +156,17 @@
       "passed": true,
       "detail": {
         "Violations": 0,
-        "Admitted": 48,
-        "Refused": 94,
-        "Windows": 94
+        "Admitted": 49,
+        "Refused": 95,
+        "Windows": 95
       }
     },
     {
       "name": "A5i mutation control: the same regression detects a deliberately split admission",
       "passed": true,
       "detail": {
-        "Violations": 25,
-        "Admitted": 47,
+        "Violations": 12,
+        "Admitted": 49,
         "Refused": 90,
         "Windows": 93,
         "note": "non-zero here is the point: it shows A5h can fail"
@@ -387,7 +387,7 @@
         "busyWhenReserved": true,
         "reservedImmediately": true,
         "drained": true,
-        "drainMs": 105,
+        "drainMs": 104,
         "note": "new admissions are refused under the reservation, so in-flight work is finite"
       }
     },
@@ -398,7 +398,7 @@
         "reserved": true,
         "drainedWithinBudget": false,
         "hungStillRunning": true,
-        "reservationHeldMs": 622,
+        "reservationHeldMs": 623,
         "note": "the hung operation was neither killed nor completed; the update defers again"
       }
     },
@@ -502,6 +502,53 @@
         ],
         "offending": [],
         "note": "checked on the assembly that actually crosses the boundary, not on the host"
+      }
+    },
+    {
+      "name": "H1 an operation whose owner process is gone resolves to Unknown, not Running",
+      "passed": true,
+      "detail": {
+        "beforeKill": "Running",
+        "afterKill": "Unknown",
+        "code": "owner-lost",
+        "note": "a killed process disposes nothing, so disposal cannot be what ends ownership"
+      }
+    },
+    {
+      "name": "H2 the Unknown resolution is written to evidence, not only held in memory",
+      "passed": true,
+      "detail": {
+        "evidenceLines": 3,
+        "unknownPersisted": true,
+        "note": "a resolution only in memory would be lost by the very replacement that caused it"
+      }
+    },
+    {
+      "name": "H3 an orphaned operation stops blocking quiescence, so a drain can finish",
+      "passed": true,
+      "detail": {
+        "withLiveOwnerStillRunning": false,
+        "afterLiveOwnerFinished": true,
+        "note": "the only thing still retaining was the live owner; the orphan released itself"
+      }
+    },
+    {
+      "name": "H4 negative control: an operation whose owner process is alive is left Running",
+      "passed": true,
+      "detail": {
+        "state": "Running",
+        "stillRetains": true,
+        "note": "the sweep resolves absence, it does not resolve everything"
+      }
+    },
+    {
+      "name": "H5 a genuine late outcome supersedes Unknown, but disposal alone does not",
+      "passed": true,
+      "detail": {
+        "lateOutcome": "Succeeded",
+        "lateCode": "late-truth",
+        "afterDisposalAlone": "Unknown",
+        "note": "Unknown is an admission, so knowledge replaces it and a fabricated Failed does not"
       }
     }
   ]

@@ -106,12 +106,48 @@ public sealed class OperationLedger : IOperationLedger {
     /// holding its lease for owned cleanup is absent from here and still retained, so it still refuses
     /// retirement — measured by P5. Quiescence follows ownership; this property follows the outcome.
     /// </remarks>
-    public IReadOnlyCollection<string> Running =>
-        _live.Where(p => p.Value.State == OperationState.Running).Select(p => p.Key).ToArray();
+    public IReadOnlyCollection<string> Running {
+        get {
+            lock (_swapLock) { ResolveOrphansCore(); }
+            return _live.Where(p => p.Value.State == OperationState.Running).Select(p => p.Key).ToArray();
+        }
+    }
 
     /// <inheritdoc />
     public bool IsQuiescent(string? target = null) {
-        lock (_swapLock) { return IsQuiescentCore(target); }
+        lock (_swapLock) {
+            ResolveOrphansCore();
+            return IsQuiescentCore(target);
+        }
+    }
+
+    /// <summary>
+    /// Resolves operations whose owner is gone. Caller holds <see cref="_swapLock"/>.
+    /// </summary>
+    /// <remarks>
+    /// An owner that reports itself not alive can never publish an outcome and can never run cleanup, so
+    /// leaving its operation Running is not caution — it is a lie that an agent will wait on forever.
+    /// Retention is dropped here rather than at a Dispose that is never coming, so a drain can finish.
+    /// </remarks>
+    private void ResolveOrphansCore() {
+        foreach (string id in _owners.Keys.ToArray()) {
+            if (!_owners.TryGetValue(id, out object? owner)) continue;
+            if (owner is not IOwnerLiveness liveness || liveness.IsAlive) continue;
+            if (!_live.TryGetValue(id, out var record) || record.State != OperationState.Running) {
+                _owners.TryRemove(id, out _);       // outcome known, owner gone: nothing left to retain
+                continue;
+            }
+            var resolved = record with {
+                State = OperationState.Unknown, FinishedUtc = DateTimeOffset.UtcNow, Code = "owner-lost"
+            };
+            try { Append("end", resolved); }
+            catch (Exception) {
+                _degradedScopes.Add(record.Target);
+                _unpersisted[id] = resolved;
+            }
+            _live[id] = resolved;
+            _owners.TryRemove(id, out _);
+        }
     }
 
     // Quiescence follows RETENTION, not the published outcome. An operation may report Succeeded and
@@ -267,21 +303,32 @@ public sealed class OperationLedger : IOperationLedger {
 
     /// <inheritdoc />
     public OperationRecord Query(string id) {
+        lock (_swapLock) { ResolveOrphansCore(); }
         if (_live.TryGetValue(id, out var live)) return live;
         if (_recovered.TryGetValue(id, out var prior)) return prior;
         // Truthful: no evidence this identifier was ever issued. Distinct from "started, outcome unknown".
         return new OperationRecord(id, string.Empty, default, string.Empty, OperationState.NotFound);
     }
 
-    private void Complete(string id, OperationState state, string? code) {
+    private void Complete(string id, OperationState state, string? code) =>
+        Complete(id, state, code, fromDisposal: false);
+
+    private void Complete(string id, OperationState state, string? code, bool fromDisposal) {
         if (state is OperationState.Running or OperationState.NotFound)
             throw new ArgumentOutOfRangeException(nameof(state), state, "A terminal state is required.");
         if (CompleteDelayMsForTests > 0) {
             Thread.Sleep(CompleteDelayMsForTests);
         }
         lock (_swapLock) {
-            // Exactly once: a record that already reached a terminal state is never rewritten.
-            if (!_live.TryGetValue(id, out var existing) || existing.State != OperationState.Running) return;
+            // Exactly once, with ONE exception. A record that already reached a terminal state is never
+            // rewritten -- except Unknown, which is not a verdict but an admission that the host does not
+            // know. A genuine outcome arriving afterwards (the owner's last output still sitting in a pipe
+            // buffer when it was declared gone) is knowledge replacing the absence of it, and both lines
+            // stay in the evidence. Disposal is NOT knowledge, so its fallback never supersedes Unknown:
+            // that would turn "I do not know" into a fabricated Failed.
+            if (!_live.TryGetValue(id, out var existing)) return;
+            bool supersedingUnknown = existing.State == OperationState.Unknown && !fromDisposal;
+            if (existing.State != OperationState.Running && !supersedingUnknown) return;
             var updated = existing with { State = state, FinishedUtc = DateTimeOffset.UtcNow, Code = code };
 
             // Evidence is written BEFORE the state becomes visible as terminal, and the whole transition
@@ -463,7 +510,8 @@ public sealed class OperationLedger : IOperationLedger {
         public void Dispose() {
             lock (_gate) {
                 if (!_reported) {
-                    _ledger.Complete(Id, OperationState.Failed, "lease-disposed-without-terminal");
+                    _ledger.Complete(Id, OperationState.Failed, "lease-disposed-without-terminal",
+                        fromDisposal: true);
                     _reported = true;
                 }
                 if (!_released) {

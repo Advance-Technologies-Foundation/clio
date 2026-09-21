@@ -64,6 +64,24 @@ Quiescence follows **ownership**, not the outcome — measured by P5, where an o
 
 A release may be retired only when no lease retains it **and** nothing it defined has escaped (clause 3).
 
+**When the owner is a process, disposal is the wrong event.** The three events above assume an
+in-process owner that something will eventually dispose. A killed process disposes nothing, so the lease
+stays open and the ledger keeps answering `Running` for work that has no process — measured on
+@vladimir-nikonov's MCP host: eight polls over eight seconds for five seconds of work, `Running` every
+time. A cross-process owner implements `IOwnerLiveness` and is **asked** instead, and an owner that is
+gone resolves its operations to `Unknown` and stops retaining (H1, H2).
+
+Two consequences, both measured, and the second is the one that matters for a swap:
+
+- **`Unknown` is an admission, not a verdict.** A genuine outcome arriving afterwards — the owner's last
+  output still in a pipe buffer when it was declared gone — supersedes it, and both lines stay in the
+  evidence. Disposal alone never supersedes it, because disposal is not knowledge; that would turn "I do
+  not know" into a fabricated `Failed` (H5).
+- **Without this, a drain after a lost owner never finishes.** The orphan retains forever, so the scope
+  never reaches quiescence and the reservation can only expire. Mutation control with liveness disabled:
+  H3's `afterLiveOwnerFinished` is `false`, permanently. Reserve-then-drain does not survive losing an
+  owner unless the ledger can resolve one.
+
 ## 5. Admission reservation — settled, mechanism and policy
 
 ```csharp

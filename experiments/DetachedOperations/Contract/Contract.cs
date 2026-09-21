@@ -171,6 +171,28 @@ public sealed class SwapWindowHeldException(string scope)
 }
 
 /// <summary>
+/// An owner whose continued existence can be checked, rather than one that promises to release itself.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Ownership normally ends when the lease is disposed. That silently assumes the owner is an in-process
+/// object which something will eventually dispose. When the owner is a separate process, a killed process
+/// disposes nothing: the lease stays open and the ledger keeps answering <see cref="OperationState.Running"/>
+/// for work that has no process. Measured on @vladimir-nikonov's MCP host in discussion #1643 — eight
+/// seconds of polling for five seconds of work, `Running` every time, forever.
+/// </para>
+/// <para>
+/// So a cross-process owner is asked whether it is still there. An owner that is gone cannot report an
+/// outcome and cannot perform cleanup, so its operations resolve to <see cref="OperationState.Unknown"/>
+/// and stop retaining anything.
+/// </para>
+/// </remarks>
+public interface IOwnerLiveness {
+    /// <summary>Whether this owner can still report an outcome.</summary>
+    bool IsAlive { get; }
+}
+
+/// <summary>
 /// A workflow supplied by a third party, composed from vendor capability it does not reference.
 /// </summary>
 /// <remarks>

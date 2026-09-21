@@ -89,6 +89,11 @@ would almost never be globally idle and a global-only predicate would be correct
 | F2 | an incompatible release is rejected before activation without disturbing V1 |
 | F3 | a partner workflow composes the pinned release and returns portable data only |
 | F4 | the shared contract assembly references no CLI or MCP dependency |
+| H1 | an operation whose owner process is gone resolves to Unknown, not Running |
+| H2 | the Unknown resolution is written to evidence, not only held in memory |
+| H3 | an orphaned operation stops blocking quiescence, so a drain can finish |
+| H4 | **negative control** — an operation whose owner process is alive is left Running |
+| H5 | a genuine late outcome supersedes Unknown, but disposal alone does not |
 | O1 | **counterexample to I3** — a runtime-defined result held by the caller keeps the release alive |
 | R1 | the V1 release becomes collectible once no lease retains it |
 | C1 | **control** — a host with no evidence answers `NotFound` for the very same lost operation |
@@ -168,7 +173,7 @@ temporary directory and writes nothing outside it.
 
 ## macOS observations, 2026-09-21
 
-macOS 27.0.0 (arm64), .NET 10.0.12. **53/53 passed, exit 0.** The contract derived from these cases is in
+macOS 27.0.0 (arm64), .NET 10.0.12. **58/58 passed, exit 0.** The contract derived from these cases is in
 [`execution-lifetime-contract.md`](execution-lifetime-contract.md).
 
 - The operation started on `10.0.0.0` kept answering `Running` and stayed owned by `10.0.0.0` after

@@ -9,6 +9,7 @@ using Clio10.DetachedOperations.Host;
 // Two modes. "child" exists only so the parent can kill a process that genuinely has an operation
 // in flight; everything else runs in "run".
 if (args.Length >= 2 && args[0] == "child") { Child(args[1]); return 0; }
+if (args.Length >= 1 && args[0] == "idle") { Console.WriteLine("ready"); Console.Out.Flush(); Thread.Sleep(Timeout.Infinite); return 0; }
 if (args.Length < 3) { Console.Error.WriteLine("usage: host run <v1dir> <v2dir>"); return 2; }
 
 string v1Dir = Path.GetFullPath(args[1]), v2Dir = Path.GetFullPath(args[2]);
@@ -650,6 +651,85 @@ Check("F4 the shared contract assembly references no CLI or MCP dependency",
     new { referenced = partnerRefs, offending,
           note = "checked on the assembly that actually crosses the boundary, not on the host" });
 
+
+// ── H: cross-process ownership — an owner that is gone cannot report, so say so ───────────────────
+// Ownership normally ends at Dispose. When the owner is a PROCESS, a kill disposes nothing, and the
+// ledger keeps answering Running for work that has no process. Measured on @vladimir-nikonov's MCP
+// host in #1643 before it was measured here: eight polls, eight Running, forever.
+string hEffect = Path.Combine(work, "h-effect.log");
+string hEvidence = Path.Combine(work, "h-operations.jsonl");
+var hLedger = new OperationLedger(hEvidence);
+
+// H1: the owner process is killed while its operation is in flight.
+Process aliveOwner = StartIdleOwner();
+Process doomedOwner = StartIdleOwner();
+IOperationLease keptLease = hLedger.Begin("envH", "10.0.0.0", new ProcessOwner(aliveOwner));
+IOperationLease orphanLease = hLedger.Begin("envH", "10.0.0.0", new ProcessOwner(doomedOwner));
+string beforeKill = hLedger.Query(orphanLease.Id).State.ToString();
+doomedOwner.Kill(entireProcessTree: true);
+await doomedOwner.WaitForExitAsync();
+var orphaned = hLedger.Query(orphanLease.Id);
+Check("H1 an operation whose owner process is gone resolves to Unknown, not Running",
+    beforeKill == "Running" && orphaned.State == OperationState.Unknown && orphaned.Code == "owner-lost",
+    new { beforeKill, afterKill = orphaned.State.ToString(), code = orphaned.Code,
+          note = "a killed process disposes nothing, so disposal cannot be what ends ownership" });
+
+// H2: the resolution is durable, so a later reader is told the same thing.
+string[] hLines = File.ReadAllLines(hEvidence);
+bool durable = hLines.Any(l => l.Contains(orphanLease.Id, StringComparison.Ordinal)
+    && l.Contains("\"state\":\"Unknown\"", StringComparison.Ordinal));
+Check("H2 the Unknown resolution is written to evidence, not only held in memory",
+    durable,
+    new { evidenceLines = hLines.Length, unknownPersisted = durable,
+          note = "a resolution only in memory would be lost by the very replacement that caused it" });
+
+// H3: the orphan stops retaining, so a drain can actually finish. Without this a swap can never
+// complete after an owner dies — the scope is blocked by an operation that can never report.
+bool quiescentWithLiveOwner = hLedger.IsQuiescent("envH");
+keptLease.Complete(OperationState.Succeeded, "done");
+keptLease.Dispose();
+bool quiescentAfter = hLedger.IsQuiescent("envH");
+Check("H3 an orphaned operation stops blocking quiescence, so a drain can finish",
+    !quiescentWithLiveOwner && quiescentAfter,
+    new { withLiveOwnerStillRunning = quiescentWithLiveOwner, afterLiveOwnerFinished = quiescentAfter,
+          note = "the only thing still retaining was the live owner; the orphan released itself" });
+
+// H4 negative control: a live owner is NOT resolved. Without this, H1 passes for a sweep that simply
+// marks everything Unknown.
+Process survivingOwner = StartIdleOwner();
+IOperationLease survivingLease = hLedger.Begin("envH4", "10.0.0.0", new ProcessOwner(survivingOwner));
+var stillRunning = hLedger.Query(survivingLease.Id);
+Check("H4 negative control: an operation whose owner process is alive is left Running",
+    stillRunning.State == OperationState.Running && !hLedger.IsQuiescent("envH4"),
+    new { state = stillRunning.State.ToString(), stillRetains = !hLedger.IsQuiescent("envH4"),
+          note = "the sweep resolves absence, it does not resolve everything" });
+
+// H5: a genuine outcome arriving after the resolution supersedes it — the owner's last output can
+// still be in a pipe buffer when the process is declared gone. Disposal alone must NOT supersede it,
+// because disposal is not knowledge.
+orphanLease.Complete(OperationState.Succeeded, "late-truth");
+var superseded = hLedger.Query(orphanLease.Id);
+IOperationLease disposeOnlyLease = hLedger.Begin("envH5", "10.0.0.0", new ProcessOwner(survivingOwner));
+Process doomedTwo = StartIdleOwner();
+IOperationLease disposeOnly = hLedger.Begin("envH5b", "10.0.0.0", new ProcessOwner(doomedTwo));
+doomedTwo.Kill(entireProcessTree: true);
+await doomedTwo.WaitForExitAsync();
+hLedger.Query(disposeOnly.Id);                       // resolve it to Unknown
+disposeOnly.Dispose();                               // disposal must not turn "I do not know" into Failed
+var afterDispose = hLedger.Query(disposeOnly.Id);
+Check("H5 a genuine late outcome supersedes Unknown, but disposal alone does not",
+    superseded.State == OperationState.Succeeded && superseded.Code == "late-truth"
+        && afterDispose.State == OperationState.Unknown,
+    new { lateOutcome = superseded.State.ToString(), lateCode = superseded.Code,
+          afterDisposalAlone = afterDispose.State.ToString(),
+          note = "Unknown is an admission, so knowledge replaces it and a fabricated Failed does not" });
+
+foreach (Process owner in new[] { aliveOwner, survivingOwner }) {
+    try { owner.Kill(entireProcessTree: true); } catch (InvalidOperationException) { /* already gone */ }
+}
+survivingLease.Dispose();
+disposeOnlyLease.Dispose();
+
 fV1 = null!;
 fV1Ctx.Unload();
 
@@ -915,6 +995,19 @@ static async Task<string> StartThenKillChild(string releaseDirectory, string evi
     return id;
 }
 
+/// <summary>Starts a real process whose only job is to exist until it is killed.</summary>
+static Process StartIdleOwner() {
+    var start = new ProcessStartInfo(Environment.ProcessPath!) { RedirectStandardOutput = true };
+    if (string.Equals(Path.GetFileNameWithoutExtension(Environment.ProcessPath), "dotnet",
+            StringComparison.OrdinalIgnoreCase)) {
+        start.ArgumentList.Add(Assembly.GetEntryAssembly()!.Location);
+    }
+    start.ArgumentList.Add("idle");
+    Process owner = Process.Start(start)!;
+    owner.StandardOutput.ReadLine();                 // wait until it is genuinely up
+    return owner;
+}
+
 static void Child(string packed) {
     string[] parts = packed.Split('|');
     var ledger = new OperationLedger(parts[1]);
@@ -940,4 +1033,9 @@ file sealed class ReleaseContext(string directory) : AssemblyLoadContext(isColle
 sealed class IncompatibleReleaseException(string version, int declared)
     : InvalidOperationException($"release {version} declares contract generation {declared}") {
     public int Declared { get; } = declared;
+}
+
+/// <summary>A real operating-system process as an operation owner; liveness is the process itself.</summary>
+file sealed class ProcessOwner(Process process) : IOwnerLiveness {
+    public bool IsAlive => !process.HasExited;
 }
