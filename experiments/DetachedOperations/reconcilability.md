@@ -10,9 +10,48 @@ does, and after a process loss even waiting no longer helps.
 
 ## The operation classes
 
-Everything that can outlive its response goes through the over-deadline heartbeat. In clio 8 that is:
-`ApplicationTool` (create-app-section), `CompileCreatioTool`, `RestartTool`, `SchemaSyncTool`,
-`InstallProcessBuilderTool`, `InstallDashboardsMigratorTool`, `RunProcessTool`, `StartTool`.
+Operations with an external *server* effect that can outlive their response go through the over-deadline
+heartbeat. In clio 8 that is: `ApplicationTool` (create-app-section), `CompileCreatioTool`, `RestartTool`,
+`SchemaSyncTool`, `InstallProcessBuilderTool`, `InstallDashboardsMigratorTool`, `RunProcessTool`,
+`StartTool`.
+
+**Self-correction — my first version said "everything that can outlive its response", and that is false.**
+I went looking for a counterexample to my own claim rather than waiting for one, and found it:
+`ComponentRegistryClient.ScheduleBackgroundRefresh` detaches work with a bare `Task.Run`, outside the
+heartbeat entirely. Its effect is a local cache write rather than a server mutation, so it does not
+change the classification — but the enumeration was wrong as stated and is now scoped to server effects.
+
+### Two things that finding turned up, both worth more than the correction
+
+**1. clio already drains detached work at shutdown — just not this kind.** `McpServerCommand`'s
+`DrainHostBackgroundWork` awaits exactly two things with a 10 s budget:
+
+```csharp
+Task.WhenAll(
+    ComponentRegistryClient.DrainAsync(TimeSpan.FromSeconds(10)),
+    flushScheduler.DrainAsync(TimeSpan.FromSeconds(10)))
+```
+
+Background cache refreshes and telemetry. **Nothing drains the heartbeat-detached operations** — the
+compile, the section creation, the restart. So the host drains its own housekeeping on the way out and
+abandons the work that mutates a customer's Creatio instance. The drain-before-exit pattern this thread
+has been proposing already exists in clio; it simply does not cover the class that matters.
+
+**2. The heartbeat already knows its detached work dies, and guards the case it can.** From
+`McpProgressHeartbeat.cs:331-334`:
+
+> *"on server shutdown the detached `Task.Run` dies with the process, so the 'work continues, keep
+> polling' guidance would be false. Propagate cancellation distinctly instead of fabricating a 150 s
+> deadline."*
+
+This is a fairer picture than my earlier framing gave. clio does **not** blindly promise that work
+continues: when shutdown is known at the moment the deadline is evaluated, it deliberately refuses to
+emit the polling guidance. What it cannot guard is the case I measured — a legitimate in-progress reply
+is sent, correctly, and the process is killed *afterwards*. Nothing retroactively corrects guidance that
+was true when issued.
+
+That is precisely the gap durable evidence fills: the guidance cannot be un-sent, but a later reader can
+be told the outcome is unknown instead of being told nothing was started.
 
 ## Three tiers, not two
 
