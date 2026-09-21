@@ -2,14 +2,17 @@
 
 Discussion: [#1643](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643).
 
-**Round status:** this review round is closed as of
-[kirillkrylov's closing checkpoint](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18542373) —
-decisions handed to Kirill; this document's own recommendation (Flow A first, per
-above) aligns with that checkpoint's "keep... conservative defaults" framing. The
-[canonical round-conclusion record](https://github.com/Advance-Technologies-Foundation/clio/blob/089de2a75/docs/architecture-experiments.md#round-conclusion-for-kirill-1613)
-lists this document's supervisor-handover cases (S1-S7) under measured support. No
-further probe work is planned this round; this document stands as written unless new
-feedback arrives.
+**Round status:** superseded.
+[kirillkrylov reopened this](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18544959),
+asking for a converged host-update recommendation rather than further isolated
+cases, now that the runtime-lifetime and settings-lane work has matured
+(`IOwnerLiveness`, `OperationHeldSnapshots`/`OwnersWithoutLiveness`, the real MCP
+client probe, and the settings `Prepare`/`Activate` paired-activation seam). See
+**Converged recommendation** at the top of [Recommendation](#recommendation) below —
+it supersedes the "Flow A first" position this document held under the prior,
+now-closed round. The reasoning that produced "Flow A first" is kept below it for
+provenance: the recommendation changed because the evidence did, not because the
+reasoning was wrong at the time.
 
 ## Scope
 
@@ -428,6 +431,105 @@ for a window that structurally cannot open, which is exactly the wait-budget/sta
 gap already flagged as open (A5h) and now has a second, independent cause.
 
 ### Recommendation
+
+**Converged recommendation (supersedes "Flow A first" below).**
+[kirillkrylov asked directly](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18544959)
+for one mechanism and its limitations, not two flows kept alive as a standing
+question. Answering that plainly, against everything measured this round:
+
+**Flow B — supervisor-managed backend replacement — for the combined runtime+settings
+pair, with hung operations and supervisor self-update named as explicit, un-closed
+limitations rather than hidden inside "further work needed."**
+
+What changed my own prior "Flow A first" position: the two gaps that separated
+"happy path measured" from "safe to ship" when I wrote that recommendation are
+narrower now than they were, and the standing cost side of the ledger didn't grow.
+Concretely:
+- The forced-swap correctness gap Alexandr found in my own MCP client probe
+  ([discussioncomment-18543950](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18543950))
+  is fixed and reproduced both ways (`IOwnerLiveness`, `nikonov/supervisor-quiescence-probe@72d776064`):
+  a backend killed with work genuinely in flight now resolves to `Unknown` from the
+  first poll over a real, never-reconnected MCP connection, not an eternal `Running`.
+- Transport continuity through a full swap is no longer a design description — it's
+  measured against a real `ModelContextProtocol` client and server
+  (`McpClientProbe`/`McpHost`), one connection, never reconnected: an id issued before
+  a drain-then-swap resolves correctly after it (BASELINE), a swap with work
+  genuinely in flight correctly defers rather than interrupting it (MUTATION A), and a
+  forced swap correctly reports the truthful outcome (MUTATION B).
+- The settings lane now has the same "failed activation leaves the previous
+  selection usable" property the runtime lane needs, independently measured: `Prepare`
+  builds a candidate without activating it, `Activate` commits explicitly, a refused
+  or failed activation never leaves an admission observing an uncommitted pair, and
+  cleanup neither drops a pending candidate nor a rollback target
+  (`SettingsStore`, X5/T15/T16, `3960c66a5`..`334d0dcf2`).
+
+**What remains genuinely unclosed, stated as a limitation rather than deferred
+quietly:** the hung-operation case Alexandr measured against the reservation itself
+([discussioncomment-18543530](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18543530)) —
+a reservation held for its full budget, the operation still `Running` when the budget
+expires, neither killed nor completed. `IOwnerLiveness` does not touch this: the
+owner is alive, just not finishing. This is a different failure than owner-loss, and
+nothing built this round closes it. It is the one place this recommendation is
+incomplete, not merely under-tested.
+
+Answering kirillkrylov's four questions directly:
+
+- **What updates inside a running host, no restart.** A new settings snapshot
+  (`Prepare`+`Activate`) — always, transparent to any in-flight admission, which keeps
+  the `ConfigurationSnapshot` it was admitted under. The backend/runtime process
+  itself, via reserve-then-drain (`TryReserveAdmission`), for finite, terminating
+  work — bounded, safe, and now proven over a real client connection.
+- **What requires a full (supervisor) restart.** The supervisor itself. Nothing built
+  this round, or proposed here, lets the pipe-owning process update itself while
+  running — Flow B trades the reconnect gap for exactly this standing cost
+  ([discussioncomment-18539699](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18539699)).
+  Recommendation: don't build a mechanism to avoid this restart. Keep the supervisor's
+  own surface deliberately minimal (pipe ownership, admission bookkeeping, process
+  lifecycle — nothing feature-shaped) specifically so its own updates stay rare enough
+  that "restart the supervisor" is an acceptable, infrequent event, same as today.
+  Solving supervisor self-update is out of scope by design, not by omission.
+- **What the MCP client actually experiences.** Zero reconnects, ever (measured: 1.0s
+  macOS / 1.3s Windows for a full backend swap). An operation id issued before a swap
+  stays valid and queryable after it. If work is genuinely in flight, the swap defers
+  rather than interrupting it, bounded by a caller-supplied drain budget — not a
+  hardcoded constant. If an operator forces a swap anyway, the client gets a truthful
+  `Unknown` for that operation, never an eternal `Running`. A failed or refused
+  runtime/settings activation is invisible to a new admission: it still observes the
+  previously committed pair, never a partially-updated one.
+- **Failed readiness or exhausted drain budget.** Exhausted drain budget:
+  `TriggerSwapAsync` returns `"deferred"`; the old backend keeps running, nothing is
+  killed, the update simply does not happen this attempt — S8/S9's measured behavior,
+  unchanged by anything this round. Failed readiness (new backend starts but fails its
+  handshake): bounded fallback attempts with a definite `Unavailable` terminal — the
+  "kill-then-restart-fallback" ordering in the
+  [three-way comparison](#failed-startup--rollback-behavior-both-flows) below, chosen
+  over unbounded-outage-risk (naive kill, no fallback) and over
+  both-generations-coexist (no proven need for it here). Failed settings commit:
+  `Activate` throws before publishing anything; the previous pair remains active; a
+  retry against the same prepared candidate is safe (T16).
+
+**Integration delta this recommendation implies, scoped to my lane** (per today's
+reassignment: Alex owns the integrated runtime/settings selection and admission
+boundary in the joint branch; I own settings/host integration into that same flow):
+`SettingsStore`'s `Prepare`/`Activate`/`AbandonCandidate` seam is the piece Alex's
+joint boundary composes with — deliberately not duplicated there. What I have not
+built, and don't think I should build separately from his integration: a second,
+standalone "paired activation" orchestrator. The composition belongs in the one place
+that owns both halves.
+
+**Explicitly not recommending the in-process `AssemblyLoadContext` alternative**
+(`krylov/clio-10-experiment`) for this host-layer question. Process-level replacement
+gives a real compatibility boundary — crash isolation, no shared-heap corruption risk
+between runtime generations — that in-process ALC swapping cannot give as cleanly,
+and nothing measured this round demonstrates the ALC path's operation-continuity
+story to the standard Flow B now has (a real MCP client, one connection, never
+reconnected, through a forced swap). This is a statement about what has been
+measured, not a claim that ALC swapping is unworkable in principle.
+
+---
+
+**Prior recommendation, kept for provenance — reasoning below reflects the round
+before the evidence above existed.**
 
 **Flow A first, for host-layer changes specifically — runtime-layer changes
 (Composition/Primitives) are a separately solved case and this recommendation does
