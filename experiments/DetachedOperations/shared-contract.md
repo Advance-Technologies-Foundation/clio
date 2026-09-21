@@ -71,6 +71,18 @@ stays open and the ledger keeps answering `Running` for work that has no process
 time. A cross-process owner implements `IOwnerLiveness` and is **asked** instead, and an owner that is
 gone resolves its operations to `Unknown` and stops retaining (H1, H2).
 
+**What losing an owner does and does not establish** (@kirillkrylov's narrowing, and the code already
+behaves this way):
+
+- It establishes that **this local executor is gone**. It does not establish failure, and it does not
+  roll anything back. Work that reached a Creatio environment may well have landed; `Unknown` says the
+  host cannot establish the outcome, never that nothing happened, and it authorizes no replay.
+- **A published terminal state is preserved.** An operation that already reported `Succeeded` is not
+  downgraded because its worker later exited; only a record still `Running` is resolved.
+- **Cleaning up a dead executor is not permission to discard evidence.** If persisting the resolution
+  fails, the scope is marked degraded and the record joins `UnpersistedOperations`, exactly as any other
+  failed evidence write does. Clause 5b still governs what happens to it.
+
 Two consequences, both measured, and the second is the one that matters for a swap:
 
 - **`Unknown` is an admission, not a verdict.** A genuine outcome arriving afterwards — the owner's last

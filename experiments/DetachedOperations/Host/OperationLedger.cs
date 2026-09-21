@@ -128,6 +128,13 @@ public sealed class OperationLedger : IOperationLedger {
     /// An owner that reports itself not alive can never publish an outcome and can never run cleanup, so
     /// leaving its operation Running is not caution — it is a lie that an agent will wait on forever.
     /// Retention is dropped here rather than at a Dispose that is never coming, so a drain can finish.
+    /// <para>
+    /// The resolution is deliberately narrow. Losing the owner establishes that the LOCAL EXECUTOR is
+    /// gone — not that the work failed, and not that anything it already did was undone. So the state is
+    /// <see cref="OperationState.Unknown"/> and never <see cref="OperationState.Failed"/>, a record that
+    /// already published a terminal state is left exactly as it is, and a failure to persist the
+    /// resolution degrades the scope rather than dropping the record.
+    /// </para>
     /// </remarks>
     private void ResolveOrphansCore() {
         foreach (string id in _owners.Keys.ToArray()) {
