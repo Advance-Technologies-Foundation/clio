@@ -210,6 +210,22 @@ Check("N3 an intervening operation makes a last-result read answer about the wro
           ledger = n3Record.State.ToString(),
           note = "attributing the last result to the interrupted operation would report v2's outcome as v1's" });
 
+// ── P1: the persistence-failure gap, measured rather than described ────────────────────────────────
+// If the terminal evidence write fails, the state is never published and the owner never released, so
+// the operation stays Running for the life of the process and its scope is blocked forever. This is a
+// defect in the probe, named in the contract as a decision that has to be made rather than a design.
+var faultLedger = new OperationLedger(Path.Combine(work, "fault.jsonl")) { FailEndPersistenceForTests = true };
+string faultId = v2.StartDetached(faultLedger, "envP", Path.Combine(work, "p1-effect.log"), 100,
+    "succeed", CancellationToken.None);
+await Task.Delay(1500);
+var stuck = faultLedger.Query(faultId);
+bool scopeBlocked = !faultLedger.IsQuiescent("envP") && faultLedger.TryEnterSwapWindow("envP") is null;
+Check("P1 gap: a failed terminal write leaves the operation Running and its scope permanently blocked",
+    stuck.State == OperationState.Running && scopeBlocked,
+    new { state = stuck.State.ToString(), quiescent = faultLedger.IsQuiescent("envP"),
+          windowObtainable = false,
+          note = "the work finished; only its evidence write failed. Exactly-once has been consumed, so no later report can rescue it" });
+
 GC.KeepAlive(v2Ctx);
 Console.WriteLine(JsonSerializer.Serialize(new {
     os = Environment.OSVersion.VersionString,

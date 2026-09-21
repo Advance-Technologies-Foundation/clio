@@ -36,6 +36,12 @@ public sealed class OperationLedger : IOperationLedger {
 
     private readonly bool _splitAdmissionForTests;
 
+    /// <summary>
+    /// Test-only: makes the terminal evidence write fail, so the consequence of a persistence failure
+    /// can be measured instead of described. Nothing in the probe's normal path sets it.
+    /// </summary>
+    public bool FailEndPersistenceForTests { get; set; }
+
     /// <summary>Opens a ledger over an evidence file, recovering any prior process's unfinished operations.</summary>
     public OperationLedger(string evidencePath) : this(evidencePath, false) {
     }
@@ -156,6 +162,9 @@ public sealed class OperationLedger : IOperationLedger {
             //    that window loses the evidence entirely.
             // The cost is that a completion serialises against window acquisition, including its fsync.
             // Acceptable here; a production ledger would likely want a two-phase commit instead.
+            if (FailEndPersistenceForTests) {
+                throw new IOException("injected evidence-write failure");
+            }
             Append("end", updated);
             _live[id] = updated;
             _owners.TryRemove(id, out _);           // release retention so the runtime may be retired

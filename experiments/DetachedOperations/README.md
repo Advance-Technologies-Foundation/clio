@@ -60,6 +60,7 @@ would almost never be globally idle and a global-only predicate would be correct
 | N1 | **counterexample** — a pre-existing artefact makes presence a false positive |
 | N2 | **counterexample** — a partially completed operation makes presence a false positive |
 | N3 | **counterexample** — an intervening operation makes a last-result read answer about the wrong one |
+| P1 | **gap, measured** — a failed terminal write leaves the operation Running and its scope blocked |
 | R1 | the V1 release becomes collectible once no lease retains it |
 | C1 | **control** — a host with no evidence answers `NotFound` for the very same lost operation |
 | C2 | **control** — the release is retained while its operation runs, and only then collectible |
@@ -138,7 +139,8 @@ temporary directory and writes nothing outside it.
 
 ## macOS observations, 2026-09-21
 
-macOS 27.0.0 (arm64), .NET 10.0.12. **25/25 passed, exit 0.**
+macOS 27.0.0 (arm64), .NET 10.0.12. **26/26 passed, exit 0.** The contract derived from these cases is in
+[`execution-lifetime-contract.md`](execution-lifetime-contract.md).
 
 - The operation started on `10.0.0.0` kept answering `Running` and stayed owned by `10.0.0.0` after
   `10.1.0.0` was activated mid-flight.

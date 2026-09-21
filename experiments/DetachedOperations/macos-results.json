@@ -1,7 +1,7 @@
 {
   "os": "Unix 27.0.0",
   "framework": "10.0.12",
-  "workDirectory": "/var/folders/xk/pl1m8g6d1w55jscyxzg0wjkc0000gn/T/detached-ops-jJeHgr",
+  "workDirectory": "/var/folders/xk/pl1m8g6d1w55jscyxzg0wjkc0000gn/T/detached-ops-hDXJKV",
   "cases": [
     {
       "name": "A1a the original operation still answers after a newer runtime is activated",
@@ -157,18 +157,18 @@
       "detail": {
         "Violations": 0,
         "Admitted": 49,
-        "Refused": 96,
-        "Windows": 96
+        "Refused": 91,
+        "Windows": 91
       }
     },
     {
       "name": "A5i mutation control: the same regression detects a deliberately split admission",
       "passed": true,
       "detail": {
-        "Violations": 10,
-        "Admitted": 41,
-        "Refused": 87,
-        "Windows": 80,
+        "Violations": 35,
+        "Admitted": 49,
+        "Refused": 86,
+        "Windows": 93,
         "note": "non-zero here is the point: it shows A5h can fail"
       }
     },
@@ -215,6 +215,16 @@
         "askedAbout": "the killed v1 operation",
         "ledger": "Unknown",
         "note": "attributing the last result to the interrupted operation would report v2\u0027s outcome as v1\u0027s"
+      }
+    },
+    {
+      "name": "P1 gap: a failed terminal write leaves the operation Running and its scope permanently blocked",
+      "passed": true,
+      "detail": {
+        "state": "Running",
+        "quiescent": false,
+        "windowObtainable": false,
+        "note": "the work finished; only its evidence write failed. Exactly-once has been consumed, so no later report can rescue it"
       }
     }
   ]
