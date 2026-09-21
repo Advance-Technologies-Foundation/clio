@@ -169,7 +169,7 @@ conflict with the retirement branch.
 ## Windows observations, 2026-09-21
 
 Windows 10.0.26200, .NET 10.0.11 (a different patch from the macOS run, which used 10.0.12).
-**22/22 passed, exit 0**, from a clean clone of this branch at `573175bc529c` — nothing modified.
+**25/25 passed, exit 0**, from a clean clone of this branch at `c4bead704125` — nothing modified.
 The mutation control discriminates here too (repaired 0 violations, split admission 22), but on fewer
 samples: Windows produced 11-14 windows against macOS's ~95, because of coarser timer granularity. The
 Windows arm is therefore weaker evidence for A5h/A5i than the macOS arm, not equal evidence.
