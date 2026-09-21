@@ -113,9 +113,12 @@ public sealed class ODataFileContract(IFileSystem fileSystem, IConfinedFileAcces
 			// measured afterwards has already cost whatever the file contained, which is the exhaustion the
 			// bound exists to prevent.
 			using Stream stream = _confinedFileAccess.OpenRead(resolvedPath, MaxPayloadBytes);
-			long length = stream.Length;
-			byte[] payload = new byte[(int)length];
-			stream.ReadExactly(payload, 0, payload.Length);
+			// Sizing the allocation from stream.Length would reopen the hole the ceiling closes: on Unix the
+			// open checks the descriptor length once and hands back a LIVE stream, so a writer that grows that
+			// same inode before this line is reached gets its new length allocated and read in full. Copy
+			// through a bounded loop instead - the buffer never exceeds the ceiling, and the first byte past it
+			// is the same typed error the open raises, whatever the file became after it was opened.
+			byte[] payload = ReadBounded(stream, MaxPayloadBytes);
 			//Decode explicitly rather than through a StreamReader: a StreamReader detects the byte-order mark
 			//and a UTF-16 BOM SELECTS UTF-16, so the payload decodes happily and the strict UTF-8 encoding is
 			//never consulted - a UTF-16 JSON file would then be POSTed despite the UTF-8-only contract. Here a
@@ -140,6 +143,35 @@ public sealed class ODataFileContract(IFileSystem fileSystem, IConfinedFileAcces
 			error = SensitiveErrorTextRedactor.Redact($"Failed to read {optionName}: {ex.Message}");
 			return false;
 		}
+	}
+
+	/// <summary>Reads the whole stream, refusing at the first byte past <paramref name="maxBytes"/>.</summary>
+	/// <param name="stream">Stream opened under the confinement; read to its end or to the ceiling.</param>
+	/// <param name="maxBytes">Ceiling the result may not exceed.</param>
+	/// <returns>The bytes read, never more than <paramref name="maxBytes"/>.</returns>
+	/// <exception cref="InputFileTooLargeException">The stream carried more than the ceiling allows.</exception>
+	/// <remarks>
+	/// The ceiling is enforced HERE rather than from a length read beforehand, because the length a stream
+	/// reports is a fact about the moment it was read, not a promise about the bytes that follow: the file
+	/// behind an already-open descriptor can grow. Reading one byte past the ceiling is what proves the file is
+	/// over it, so the buffer is sized to that one extra byte and never to whatever the file claims to be.
+	/// </remarks>
+	private static byte[] ReadBounded(Stream stream, long maxBytes) {
+		byte[] buffer = new byte[maxBytes + 1];
+		int total = 0;
+		while (total < buffer.Length) {
+			int read = stream.Read(buffer, total, buffer.Length - total);
+			if (read == 0) {
+				break;
+			}
+			total += read;
+		}
+		if (total > maxBytes) {
+			throw new InputFileTooLargeException(total, maxBytes);
+		}
+		byte[] payload = new byte[total];
+		Array.Copy(buffer, payload, total);
+		return payload;
 	}
 
 	/// <summary>

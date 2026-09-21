@@ -48,6 +48,40 @@ public sealed class ODataCreateToolTests {
 	}
 	[Test]
 	[Category("Unit")]
+	[Description("Refuses a rows-file that passed the open-time ceiling check and then grew, instead of allocating and reading whatever it became.")]
+	public void Create_Should_Reject_A_RowsFile_That_Grew_After_It_Was_Opened() {
+		// Arrange
+		//The open checks the descriptor length ONCE and hands back a live stream. On Unix another writer can
+		//grow that same inode afterwards, so a read sized from a length taken after the open walks straight
+		//past the ceiling. This double reproduces exactly that: the ceiling check passes on the size the file
+		//had, and the stream then carries one byte more than the ceiling allows.
+		MockFileSystem fileSystem = new();
+		string rowsFile = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(), $"odata-create-grown-{System.Guid.NewGuid():N}.json");
+		fileSystem.AddFile(rowsFile, new MockFileData("[{\"Name\":\"Acme\"}]", Encoding.UTF8));
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		ODataCreateTool tool = new(
+			resolver,
+			new ODataFileContract(fileSystem, new GrowingConfinedFileAccess(ODataFileContract.MaxPayloadBytes + 1)));
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "Account", RowsFile = rowsFile
+		});
+
+		// Assert
+		response.Created.Should().Be(0,
+			because: "a file that grew past the ceiling after it was opened is over the ceiling, whatever its length said at open time");
+		response.Error.Should().Contain(ODataFileContract.MaxPayloadBytes.ToString(),
+			because: "the growth case has to report the same limit as the size case, not a different failure");
+		resolver.DidNotReceive().Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>());
+		client.DidNotReceiveWithAnyArgs().ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Rejects a rows-file larger than the 10 MiB payload bound with the byte-count diagnostic, before the environment is resolved and before any POST.")]
 	public void Create_Should_Reject_A_RowsFile_Over_The_Payload_Bound_Before_Any_Post() {
 		// Arrange
