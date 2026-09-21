@@ -151,6 +151,15 @@ No name is ever synthesised, so the runtime's case-**sensitive** binding
 
 ### The measurement
 
+> **SUPERSEDED 2026-09-21 by story 1's gate — [eng-99856-multi-instance-describe-gate-outcome.md](eng-99856-multi-instance-describe-gate-outcome.md).**
+> The measurement quoted below **does not reproduce**. On the same stand, at the same package version
+> (1.6.3.31), with clio from this branch, `describe-business-process` reports `itemProperties` on all five
+> parameters that carry them — `SubProcess2`'s collections at **4** and **6**, matching the environment's
+> own stored `SysSchema.MetaData` exactly. The outcome is **Outcome 1** and **AC-15 is met as written**.
+> What the reading below measured was the instance one worker process happened to hold; which operation
+> put it in that state is a residual unknown, and the ADR's named mechanism is shown to be insufficient on
+> its own. The reasoning in this section stays valid as reasoning — only its premise is retracted.
+
 MEASURED 2026-09-21 against the live stand `Creatio` (`http://d_krestov_n.tscrm.com:40001`), with
 `CrtProcessBuilder 1.6.3.31` installed for the purpose and confirmed by `list-packages`, driven by a clio
 built from `origin/master` `01c8b677a`. `describe-business-process` on `ExpireLicenseNotificationProcess`

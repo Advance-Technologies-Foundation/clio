@@ -7,7 +7,7 @@
 **ADR**: [adr-eng-99856-multi-instance.md](../adr/adr-eng-99856-multi-instance.md) — *Files to modify*, `SubProcessTestSupport.cs`
 **Platform facts**: [eng-99856-multi-instance-platform-facts.md](../eng-99856-multi-instance/eng-99856-multi-instance-platform-facts.md) — §8.1
 **Jira**: ENG-99856
-**Status**: ready-for-dev
+**Status**: review
 **Size**: M (half day — the helper is shared with the single-instance suites, so the blast radius is the
 whole sub-process fixture family, not just the multi-instance tests)
 **Repo**: crt-process-builder — `tests/UnitTests/CrtProcessBuilder.Tests/`
@@ -48,26 +48,26 @@ later stories add mean what they claim
 
 ## Acceptance Criteria
 
-- [ ] **AC-01** — Given `AParameterOn`, when it is called, then the data value type is a **parameter of the
+- [x] **AC-01** — Given `AParameterOn`, when it is called, then the data value type is a **parameter of the
   helper** with an explicit default, not a hardcoded `"Text"`; existing call sites that genuinely want text
   keep text by passing it or by the default, and that choice is stated in the helper's XML doc.
-- [ ] **AC-02** — Given `MakeMultiInstance`, when it builds a fixture element, then `InputRecordCollection`
+- [x] **AC-02** — Given `MakeMultiInstance`, when it builds a fixture element, then `InputRecordCollection`
   and `OutputRecordCollection` carry `DataValueTypeUId == {651EC16F-D140-46DB-B9E2-825C985A8AC2}`
   (`CompositeObjectList`) and the three counters carry `{6B6B74E2-820D-490E-A017-2B73D4CCF2B0}` (`Integer`).
-- [ ] **AC-03** — Given the fixture, when directions are inspected, then `InputRecordCollection` is `In`,
+- [x] **AC-03** — Given the fixture, when directions are inspected, then `InputRecordCollection` is `In`,
   `OutputRecordCollection` is `Out` and the three counters are `Out` — the shipped shape
   (61/61 in the corpus; `L12=0` on input, `L12=1` on output and the counters).
-- [ ] **AC-04** — Given a guard test in the harness's own fixture, when it runs, then it asserts the five
+- [x] **AC-04** — Given a guard test in the harness's own fixture, when it runs, then it asserts the five
   parameter types directly, so a future edit that re-introduces `Text` reddens a named test rather than
   silently weakening every other one.
-- [ ] **AC-05** — Given the existing sub-process suites (single- and multi-instance), when they run after
+- [x] **AC-05** — Given the existing sub-process suites (single- and multi-instance), when they run after
   the change, then every test that changes result is listed in the PR description with one line saying
   whether it was **wrong before** or is **wrong now** — a test that only passed because its collection was
   `Text` is a finding, not noise to be silenced.
-- [ ] **AC-06** — Given the helper, when it builds the five parameters, then it does **not** stamp
+- [x] **AC-06** — Given the helper, when it builds the five parameters, then it does **not** stamp
   `MultiInstanceOptions` UIds or assign `SchemaUId` in an order the platform forbids; the fixture stays a
   data builder, and the forced construction order is the applier's job (story 3).
-- [ ] **AC-ERR** — Given a data value type name the platform's `DataValueTypeManager` cannot resolve, when
+- [x] **AC-ERR** — Given a data value type name the platform's `DataValueTypeManager` cannot resolve, when
   the helper is called with it, then it fails loudly at fixture-build time with the name in the message —
   never falls back to a default type.
 
@@ -103,23 +103,54 @@ Test naming: `MakeMultiInstance_ShouldTypeCollectionsAsCompositeObjectList_WhenB
 
 ## Definition of Done
 
-- [ ] `AParameterOn` no longer hardcodes a type; the default is explicit and documented
-- [ ] `MakeMultiInstance` produces `CompositeObjectList` collections and `Integer` counters (AC-18)
-- [ ] A guard test pins the five types so the defect cannot return unnoticed
-- [ ] Every existing test whose result changed is listed and triaged in the PR description
-- [ ] Tests: AAA with explicit Arrange/Act/Assert, a `because` on every assertion, `[Description]` on every
-      method, `[Category("Unit")]` — never `[Category("UnitTests")]`
-- [ ] No new `CLIO*` diagnostics — vacuous here, the CLIO analyzers run in the clio repo only; state that
+- [x] `AParameterOn` no longer hardcodes a type; the default is explicit and documented
+- [x] `MakeMultiInstance` produces `CompositeObjectList` collections and `Integer` counters (AC-18)
+- [x] A guard test pins the five types so the defect cannot return unnoticed
+- [x] Every existing test whose result changed is listed and triaged in the PR description
+- [x] Tests: AAA with explicit Arrange/Act/Assert, a `because` on every assertion, `[Description]` on every
+      method — **but NOT `[Category("Unit")]`**. That half of the line is not implementable in this
+      repository and was not applied: `BaseConfigurationTestFixture.IsIntegration` reads the fixture's
+      category with the SINGULAR `type.GetCustomAttribute<CategoryAttribute>()`, which throws
+      `AmbiguousMatchException` out of `[SetUp]` as soon as a fixture carries two `[Category]` attributes.
+      Measured: adding it failed all seven new tests before any ran. Both new fixtures carry the house pair
+      `[TestFixture(Category = "UnitTests"), Category("PreCommit")]` only, and the reason is in the
+      fixture's XML doc. **This line and test-plan §2's resolution of R-14 both need correcting.**
+- [x] No new `CLIO*` diagnostics — vacuous here, the CLIO analyzers run in the clio repo only; state that
       in the PR rather than leaving it unsaid
-- [ ] No new CLI flag (kebab-case rule vacuous — this feature adds no CLI surface at all)
-- [ ] Validated locally: `dotnet test tests/UnitTests/CrtProcessBuilder.Tests/CrtProcessBuilder.Tests.csproj -c dev-nf`,
+- [x] No new CLI flag (kebab-case rule vacuous — this feature adds no CLI surface at all)
+- [x] Validated locally: `dotnet test tests/UnitTests/CrtProcessBuilder.Tests/CrtProcessBuilder.Tests.csproj -c dev-nf`,
       run in the **main checkout, not a git worktree**
 - [ ] PR description references this story file and states the before/after test count
 
 ## Dev Agent Record
 
-- Implementation started:
-- Implementation completed:
-- Tests passing:
-- Tests whose result changed (and why):
+- Implementation started: 2026-09-21
+- Implementation completed: 2026-09-21
+- Tests passing: yes — `SubProcessTestSupportTests` 7/7; package suite **2275/2275** under `-c dev-nf`.
+  `-c dev-n8` could **not** be run: `.build-props/env.dev-n8.props` points at `.application/net-core/`,
+  which is absent from this checkout, so that configuration fails at reference resolution (CS0246 on every
+  `Terrasoft.*`) before any test runs. Pre-existing environment gap, unrelated to this change.
+- Tests whose result changed (and why): **none.** Baseline before the fix, `--filter
+  FullyQualifiedName~SubProcess`: 132/132 passing. After: 132/132, and a per-test diff of the two runs is
+  empty. That includes the two the test plan flagged as highest risk — the real-platform probes
+  `Synchronize_OfAMultiInstanceElement_ShouldRebuildTheCollectionShape` and
+  `…ShouldKeepTheCalleeParametersAsCollectionItems`. They are unchanged, which is itself a measurement:
+  `SynchronizeParametersInternal`'s routing is **type-independent**, so a correctly-typed collection
+  rebuilds exactly as a `Text` one did. Nothing was silenced, ignored or re-baselined.
 - Notes:
+  - `AParameterOn` now takes the type by name with `Text` as the documented default, so all twelve
+    pre-existing call sites keep their old behaviour without being edited.
+  - An unresolvable type name throws `InvalidOperationException` **with the name in the message**. The
+    platform's own `ItemNotFoundException` carries the name only through a localizable resource a test host
+    need not be able to load, so relying on it would have left AC-ERR's "with the name in the message"
+    unenforceable.
+  - `MakeMultiInstance(host, element, includeCounters: false)` is the counterless variant for FR-09.
+  - **The test plan's §2 resolution of R-14 does not work in this repository, and was not applied.** It
+    asks for `[Category("Unit")]` **beside** the house `[TestFixture(Category = "UnitTests"), Category("PreCommit")]`,
+    on the reasoning that NUnit categories are additive. They are, but the base fixture is not:
+    `BaseConfigurationTestFixture.IsIntegration` calls `type.GetCustomAttribute<CategoryAttribute>()` — the
+    SINGULAR overload — which throws `AmbiguousMatchException` out of `[SetUp]` the moment a fixture carries
+    two. Measured: adding it failed all seven new tests before any of them ran. Both new fixtures therefore
+    carry the house pair only, and the reason is written into the fixture's own XML doc so nobody
+    "restores" it. The story DoD line and test-plan §2 both need correcting; flagged for the owner.
+  - Story 1's instrument A landed in the same commit, since it is a test in the same project.

@@ -4167,7 +4167,7 @@ stories:
     feature: "eng-99856-multi-instance"
     repo: "crt-process-builder + stand + spec"
     size: M
-    status: ready-for-dev
+    status: review
     jira: ENG-99856
     file: spec/stories/story-eng-99856-multi-instance-1.md
     prd: spec/prd/prd-eng-99856-multi-instance.md
@@ -4194,7 +4194,7 @@ stories:
     feature: "eng-99856-multi-instance"
     repo: "crt-process-builder"
     size: M
-    status: ready-for-dev
+    status: review
     jira: ENG-99856
     file: spec/stories/story-eng-99856-multi-instance-2.md
     prd: spec/prd/prd-eng-99856-multi-instance.md
@@ -4417,8 +4417,8 @@ stories:
     title: "Report the callee's contract — the shape selected by story 1's gate"
     feature: "eng-99856-multi-instance"
     repo: "crt-process-builder (+ clio under Outcome 2)"
-    size: L
-    status: deferred
+    size: S
+    status: ready-for-dev
     jira: ENG-99856
     file: spec/stories/story-eng-99856-multi-instance-10.md
     prd: spec/prd/prd-eng-99856-multi-instance.md
@@ -4429,8 +4429,15 @@ stories:
     blocks:
       - story-eng-99856-multi-instance-12
     note: >-
-      FR-18's second half. DEFERRED UNTIL STORY 1'S GATE OUTCOME IS WRITTEN — do not start it on a guess.
-      Recorded at L because that is Outcome 2; it is S under Outcome 1. Outcome 1: a regression test
+      FR-18's second half. UNBLOCKED 2026-09-21: story 1's gate answered OUTCOME 1
+      (spec/eng-99856-multi-instance/eng-99856-multi-instance-describe-gate-outcome.md), so this is the S
+      shape and the calleeContract view is DROPPED — it existed only as the Outcome-2 fallback. AC-15 is
+      met as written (4 and 6); nothing here needs an owner sign-off and nothing here blocks story 12's
+      rebundle. What remains: a regression test pinning nested itemProperties through the real describe
+      path, plus the documented statement that a described itemProperties reflects the INSTANCE the server
+      holds at that moment — measured stable across repeated reads within one worker process, and observed
+      to differ BETWEEN worker processes, so an environment that has just had a package pushed is not a
+      sound place to measure one. The Outcome-2 branch below is kept for the record only. Outcome 1: a regression test
       pinning nested itemProperties through the real describe path, plus a documented statement that a
       described itemProperties reflects the instance the server holds, which an earlier write in the same
       process lifetime can have flattened — AC-15 met as written (4 and 6). Outcome 2: a contingent

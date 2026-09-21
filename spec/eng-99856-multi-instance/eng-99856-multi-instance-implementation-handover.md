@@ -28,10 +28,16 @@ the Jira description as evidence for a platform behaviour.
 
 Two stories depend on none of the seven open owner decisions and can begin immediately:
 
-- **Story 1 — the describe diagnosis.** It is not a feature. Its only production change is a committed
-  test; its deliverable is a written gate document. It blocks stories 9, 10 and 12, and until it exists
-  AC-15 has no answer and story 10's shape is unchosen (it is `deferred` in the tracker for that reason).
-- **Story 2 — the test harness.** `SubProcessTestSupport.AParameterOn` hardcodes
+- **Story 1 — the describe diagnosis.** **DONE 2026-09-21 — Outcome 1.** The gate is written to
+  [eng-99856-multi-instance-describe-gate-outcome.md](eng-99856-multi-instance-describe-gate-outcome.md).
+  `describe-business-process` DOES report a multi-instance element's `itemProperties` (4 and 6, matching
+  the environment's own stored metadata read directly); **AC-15 is met as written**, the `calleeContract`
+  view is dropped, and stories 9, 10 and 12 are unblocked — story 10 moves `deferred` → `ready-for-dev` at
+  size S.
+- **Story 2 — the test harness.** **DONE 2026-09-21.** No existing test changed result: 132/132 on the
+  sub-process filter before and after, per-test diff empty, including the two real-platform probes the plan
+  flagged as highest risk — so `SynchronizeParametersInternal`'s routing is type-independent.
+  The original description follows, for the reasoning. `SubProcessTestSupport.AParameterOn` hardcodes
   `DataValueType = "Text"` (`:265`) and `MakeMultiInstance` (`:211-233`) builds both collections *and* all
   three counters through it. Until this is fixed, no result from those fixtures is evidence. Six call
   sites; each test whose result changes must be triaged in writing as *wrong before* or *wrong now*.
@@ -107,8 +113,16 @@ mappings.
   stdio JSON-RPC and nest the arguments under an `args` key. Working probe scripts were used for the
   measurements in the facts document; re-creating one is ~40 lines of Python.
 - **The package test-category vocabulary is `Category = "UnitTests"`, not `Category("Unit")`** — 92 fixtures
-  to zero. The test plan carries both deliberately (NUnit categories are additive); do not "fix" it either
-  way without reading §2 of the plan.
+  to zero. The test plan's §2 says to carry BOTH, on the reasoning that NUnit categories are additive.
+  **CORRECTED 2026-09-21 by measurement: you cannot.** NUnit is additive but this package's base fixture is
+  not — `BaseConfigurationTestFixture.IsIntegration` reads the fixture's category with the SINGULAR
+  `type.GetCustomAttribute<CategoryAttribute>()`, which throws `AmbiguousMatchException` out of `[SetUp]`
+  the moment a fixture carries two `[Category]` attributes. Adding `Category("Unit")` beside
+  `Category("PreCommit")` failed all seven tests of a new fixture before any of them ran.
+  `TestFixture(Category = "UnitTests")` is a property of the fixture attribute, not a second
+  `CategoryAttribute`, which is why that one does not collide. Carry the house pair
+  `[TestFixture(Category = "UnitTests"), Category("PreCommit")]` and nothing else. Test-plan §2 and the
+  per-story DoD lines both need correcting.
 - **Process-designer E2E is excluded at the RUNNER level**, not merely non-blocking:
   `clio.mcp.e2e/TestSelection/mcp-e2e-selection.json` sets
   `"baseFilter": "TestCategory!=McpE2E.ProcessDesigner&TestCategory!=McpE2E.Manual"`, which is the TeamCity
@@ -116,7 +130,16 @@ mappings.
 - **All seven `subprocess-*` knowledge records** list the bundled archive in `applies-to`, and the rebundle
   changes it — so `make check-knowledge` will report all seven, not the two the ADR names.
 
-## The one thing most likely to be re-derived wrongly
+## The one thing most likely to be re-derived wrongly — ANSWERED 2026-09-21
+
+> **This section is SUPERSEDED by story 1's gate —
+> [eng-99856-multi-instance-describe-gate-outcome.md](eng-99856-multi-instance-describe-gate-outcome.md).**
+> The source-only reading it calls wrong turns out to be **right**: describe DOES report a multi-instance
+> element's `itemProperties`, and the measurement below does not reproduce on a worker process whose
+> request history is known. Outcome **1**; AC-15 **met as written**; story 10 takes its S shape and the
+> `calleeContract` view is dropped. Keep the section for the reasoning, not for its conclusion.
+
+## The measurement that did not reproduce
 
 Reading `ProcessDescriber.ReadElementParameters` (it short-circuits the provenance filter for a sub-process
 element) together with `ProcessParameterService.ToDescribeParameter` (it recurses `ItemProperties`) makes it

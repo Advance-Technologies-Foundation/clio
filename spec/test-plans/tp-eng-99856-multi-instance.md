@@ -29,6 +29,13 @@ that looks green mean nothing.
 
 ### C1 — AC-15 is UNRESOLVED, and this plan does not pretend otherwise
 
+> **RESOLVED 2026-09-21 — [the gate outcome](../eng-99856-multi-instance/eng-99856-multi-instance-describe-gate-outcome.md)
+> names OUTCOME 1.** `describe-business-process` DOES report a multi-instance element's `itemProperties`
+> (4 and 6 on `SubProcess2`, matching the environment's own stored `SysSchema.MetaData` read directly), so
+> **AC-15 is met as written**. TC-U-75 and TC-U-76 are the live cases; **TC-U-77..TC-U-80 are dropped** —
+> they were the Outcome-2 `calleeContract` view, which is no longer in scope. TC-M-01 and TC-M-02 are
+> recorded in the gate document. The paragraphs below are kept for the reasoning that selected the gate.
+
 Story 1 is a **diagnosis with a written gate**, not a feature. `describe-business-process` returns no
 `itemProperties` for a multi-instance element; ADR Decision 0 refuted the load-path explanation **in source**
 (both `LoadForDescribe` branches funnel into one `CreateSchemaInstance` fork that sits *below* them), and three
@@ -167,11 +174,23 @@ Consequences this plan enforces:
 **Package side** (`cli-process-builder`, `tests/UnitTests/CrtProcessBuilder.Tests/`) — measured, not assumed:
 
 - The house style is `[TestFixture(Category = "UnitTests"), Category("PreCommit")]` on **92** fixtures; zero use
-  `[Category("Unit")]`. NUnit categories are additive, so a new fixture carries the house categories **and**
-  `[Category("Unit")]`. That satisfies the stories' DoD line without making the new tests invisible to a
-  `PreCommit` filter, and it does not import clio's vocabulary into a repository that does not use it.
-  *This is a deliberate deviation from a literal reading of the story DoD; it is recorded here so a reviewer
-  does not "fix" it in either direction.*
+  `[Category("Unit")]`.
+
+  > **CORRECTED 2026-09-21 by measurement.** This section used to say: NUnit categories are additive, so a
+  > new fixture carries the house categories **and** `[Category("Unit")]`. NUnit is additive, but **this
+  > package's base fixture is not.** `BaseConfigurationTestFixture.IsIntegration` reads the fixture's
+  > category with the SINGULAR `type.GetCustomAttribute<CategoryAttribute>()`, which throws
+  > `AmbiguousMatchException` out of `[SetUp]` as soon as a fixture carries two `[Category]` attributes.
+  > Adding `Category("Unit")` beside `Category("PreCommit")` failed all seven tests of
+  > `SubProcessTestSupportTests` before any of them ran.
+  >
+  > **The rule for this repository is therefore: carry the house pair
+  > `[TestFixture(Category = "UnitTests"), Category("PreCommit")]` and NOTHING else.**
+  > `TestFixture(Category = ...)` is a property of the fixture attribute rather than a second
+  > `CategoryAttribute`, which is why that one does not collide. Every per-story DoD line reading
+  > "`[Category("Unit")]` — never `[Category("UnitTests")]`" is unimplementable in the package repo and
+  > needs correcting; the clio three-tier rule still governs `clio.tests` / `clio.mcp.e2e`. Recorded here so
+  > a reviewer does not "fix" it back.
 - AAA, `because:` on every assertion, `[Description]` on every method,
   `MethodName_ShouldBehavior_WhenCondition` — these travel, and the package suite already follows them.
 - A new case must pass under **both** `-c dev-nf` (net472) and `-c dev-n8` (net8.0).

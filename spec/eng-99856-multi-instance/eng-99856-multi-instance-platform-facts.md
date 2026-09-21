@@ -33,6 +33,23 @@ a sub-process element and passes **every** parameter through `ToDescribeParamete
 (`clio/Command/ProcessModel/IProcessDescriber.cs:1750`, `Schema.cs:379-380` and `:420-421`
 @`origin/master`). Therefore, the argument goes, the callee's contract already comes back.
 
+> **SUPERSEDED 2026-09-21 by story 1's gate — [eng-99856-multi-instance-describe-gate-outcome.md](eng-99856-multi-instance-describe-gate-outcome.md).**
+> The refutation below **does not reproduce**, and the entry has now been wrong in both directions. On the
+> same stand, the same package version (1.6.3.31), clio from this branch, a read taken on a worker process
+> whose whole request history is known reports `itemProperties` on all five parameters that carry them:
+> `SubProcess2` at **4** and **6**, `PushExpiredLicensesNotificationSubProcess` at 10 and 10, and the
+> process-level `CheckedLicenses` at 4 — matching the environment's own stored `SysSchema.MetaData`, read
+> directly, entry for entry. So the source-only derivation this entry calls "seductive" is in fact
+> **right**, the gate outcome is **Outcome 1**, and **AC-15 is met as written**.
+>
+> The correction the entry was written to carry survives in a weaker and more useful form: a described
+> `itemProperties` reflects the INSTANCE the server is holding, which is stable across repeated reads
+> within one worker process and was observed to differ BETWEEN worker processes. An environment that has
+> just had a package pushed is not a sound place to measure one.
+>
+> **Consequence for scope, restated:** reporting the callee's contract for a multi-instance element is
+> NOT new work — it already ships. What ships with it is the sentence above.
+
 **It does not.** MEASURED 2026-09-21 against the live stand `Creatio`
 (`http://d_krestov_n.tscrm.com:40001`) carrying `CrtProcessBuilder 1.6.3.31` (installed for this
 measurement and verified by `list-packages`), driven by a clio built from `origin/master` `01c8b677a`:

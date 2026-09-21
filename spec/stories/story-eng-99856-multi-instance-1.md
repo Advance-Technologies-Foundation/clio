@@ -7,7 +7,7 @@
 **Contract**: [eng-99856-multi-instance-contract-answers.md](../eng-99856-multi-instance/eng-99856-multi-instance-contract-answers.md) — Q3
 **Platform facts**: [eng-99856-multi-instance-platform-facts.md](../eng-99856-multi-instance/eng-99856-multi-instance-platform-facts.md) — §1.1
 **Jira**: ENG-99856
-**Status**: ready-for-dev
+**Status**: review
 **Size**: M (half day — the stand half needs a cold app pool and must run sequentially)
 **Repo**: crt-process-builder (one test) + the stand + `spec/` (the written gate)
 **Depends on**: nothing. **This story runs first.**
@@ -68,32 +68,32 @@ stories 9 and 10 commit to the right shape, and AC-15 is either confirmed or ren
 
 ## Acceptance Criteria
 
-- [ ] **AC-01** — Given a package unit test that deserializes a schema whose parameter carries `L18`,
+- [x] **AC-01** — Given a package unit test that deserializes a schema whose parameter carries `L18`,
   when `ToDescribeParameter` (`Files/src/cs/Parameters/ProcessParameterService.cs:152-154`) projects it,
   then the test asserts nested `itemProperties` end to end and is **committed either way** — it is the
   capability pin that separates a code defect from an environment state, so a red result is a finding, not
   a reason to delete the test.
-- [ ] **AC-02** — Given the stand, when one read is run **sequentially** against a **cold** app pool on a
+- [x] **AC-02** — Given the stand, when one read is run **sequentially** against a **cold** app pool on a
   schema untouched by any write in that process lifetime, then the reading is recorded with environment
   name, package version, clio commit, timestamp, and the exact element and parameter names.
-- [ ] **AC-03** — Given the same schema, when its stored `SysSchema.MetaData` is read directly, then the
+- [x] **AC-03** — Given the same schema, when its stored `SysSchema.MetaData` is read directly, then the
   presence or absence of `L18` on `InputRecordCollection` / `OutputRecordCollection` is recorded with the
   entry counts, alongside the 4 and 6 read from the shipped file.
-- [ ] **AC-04** — Given both instruments, when the gate is written to
+- [x] **AC-04** — Given both instruments, when the gate is written to
   `spec/eng-99856-multi-instance/eng-99856-multi-instance-describe-gate-outcome.md`, then it names
   **exactly one** of Outcome 1 (a cold instance reports them) or Outcome 2 (the package's reachable load
   path never reports them), and quotes the evidence that selects it.
-- [ ] **AC-05** — Given the outcome, when the document states the AC-15 disposition, then it says either
+- [x] **AC-05** — Given the outcome, when the document states the AC-15 disposition, then it says either
   "AC-15 met as written (4 and 6)" **or** "AC-15 cannot be met as written", with the proposed renegotiated
   wording and the owner named as the person who must sign off on the added `calleeContract` member.
   **This story asserts neither in advance.**
-- [ ] **AC-06** — Given Outcome 1 with a stale-cache cause, when the document is written, then it records
+- [~] **AC-06 (partly — the flattening operation is NOT identified; see the gate document)** — Given Outcome 1 with a stale-cache cause, when the document is written, then it records
   which earlier operation flattens the cached instance, and restates D0-a: describe will **not** invalidate
   the manager cache, because that gives a read a write's blast radius on shared process-lifetime state.
-- [ ] **AC-07** — Given this story, when its diff is reviewed, then the only production-code change is the
+- [x] **AC-07** — Given this story, when its diff is reviewed, then the only production-code change is the
   committed test: no change to `LoadForDescribe`, no cache invalidation on a read path, no projection
   change.
-- [ ] **AC-ERR** — Given a stand that is unreachable, or an app pool that cannot be cycled, when the
+- [x] **AC-ERR (n/a — the stand was reachable and the reading was taken)** — Given a stand that is unreachable, or an app pool that cannot be cycled, when the
   measurement cannot be taken, then the story **stops** and records the blocker in the same document; a
   warm-pool reading is not substituted and the outcome is not guessed.
 
@@ -140,23 +140,48 @@ Test naming: `MethodName_ShouldBehavior_WhenCondition` — e.g.
 
 ## Definition of Done
 
-- [ ] The gate document exists, names one outcome, and carries the evidence for it
-- [ ] The AC-15 disposition is stated in one sentence and, under Outcome 2, addressed to the owner by name
-- [ ] Instrument A is committed and runs in the package suite (green or red, with the finding recorded)
-- [ ] No production code path changed: `git diff --stat` shows tests + `spec/` only
-- [ ] Stand work was sequential and the app pool state at read time is recorded
-- [ ] Tests: AAA with explicit Arrange/Act/Assert, a `because` on every assertion, `[Description]` on every
-      method, `[Category("Unit")]` — never `[Category("UnitTests")]`
-- [ ] Validated locally: `dotnet test tests/UnitTests/CrtProcessBuilder.Tests/CrtProcessBuilder.Tests.csproj -c dev-nf`
+- [x] The gate document exists, names one outcome, and carries the evidence for it
+- [x] The AC-15 disposition is stated in one sentence and, under Outcome 2, addressed to the owner by name
+- [x] Instrument A is committed and runs in the package suite (green or red, with the finding recorded)
+- [x] No production code path changed: `git diff --stat` shows tests + `spec/` only
+- [x] Stand work was sequential and the app pool state at read time is recorded
+- [x] Tests: AAA with explicit Arrange/Act/Assert, a `because` on every assertion, `[Description]` on every
+      method — **but NOT `[Category("Unit")]`**: `BaseConfigurationTestFixture.IsIntegration` reads the
+      fixture category with the SINGULAR `GetCustomAttribute<CategoryAttribute>()` and throws
+      `AmbiguousMatchException` on a second one. See story 2's DoD for the measurement
+- [x] Validated locally: `dotnet test tests/UnitTests/CrtProcessBuilder.Tests/CrtProcessBuilder.Tests.csproj -c dev-nf`
       run in the **main checkout, not a git worktree** (a worktree lacks the untracked core-bin tree and
       yields ~1355 spurious assembly-resolution failures that read as a code regression)
 - [ ] PR description references this story file and quotes the gate outcome in its first paragraph
 
 ## Dev Agent Record
 
-- Implementation started:
-- Implementation completed:
-- Tests passing:
-- Gate outcome (1 or 2):
-- AC-15 disposition:
+- Implementation started: 2026-09-21
+- Implementation completed: 2026-09-21
+- Tests passing: yes — `ProcessParameterServiceItemPropertiesTests` 3/3; package suite 2275/2275 under
+  `-c dev-nf`. `-c dev-n8` could **not** be run: `.build-props/env.dev-n8.props` points at
+  `.application/net-core/`, which is absent from this checkout, so that configuration fails at reference
+  resolution before any test runs. Pre-existing environment gap, unrelated to this change.
+- Gate outcome (1 or 2): **Outcome 1** — a cold instance reports them. Written to
+  [eng-99856-multi-instance-describe-gate-outcome.md](../eng-99856-multi-instance/eng-99856-multi-instance-describe-gate-outcome.md)
+- AC-15 disposition: **met as written (4 and 6)**. No `calleeContract` member; nothing for the owner to
+  sign off; story 10 takes its S shape and is moved `deferred` → `ready-for-dev`.
 - Notes:
+  - The reference measurement is **not reproducible**. Same stand, same package version (1.6.3.31), clio
+    from this branch (= master's describe path): five parameters report `itemProperties`, with the counts
+    the stored blob carries (4, 6, 10, 10, 4).
+  - AC-03 eliminated the second candidate cause by measurement: the environment's own
+    `SysSchema.MetaData` carries `L18` with exactly 4 and 6 on `SubProcess2`'s two collections. The column
+    is plain JSON, not compressed. The same file carries a **second** multi-instance element
+    (`PushExpiredLicensesNotificationSubProcess`, 10 and 10) — and the two serialize their `BP2` in
+    opposite orders, client and server, in one process.
+  - Added an unasked-for control: a second describe in the **same** worker process reports identically, so
+    describe does not flatten its own cache. That removes the one self-inflicted mechanism.
+  - **AC-06 is only partly met, deliberately.** The specific flattening operation is not identified, and
+    the ADR's named mechanism cannot be the whole answer: the reference reading also lacked
+    `itemProperties` on the PROCESS-level `CheckedLicenses`, which no element rebuild touches. Recorded as
+    a residual unknown with the leading hypothesis labelled as one, rather than guessed. D0-a is restated.
+  - AC-02's cold pool was obtained without cycling anything: an `appcmd recycle` was refused by the
+    session's permission layer, but the worker process had been started by this session's own first
+    request after an idle timeout. PID, start time and the full (read-only) request history are recorded,
+    so the substance of AC-02 holds and AC-ERR did not fire.
