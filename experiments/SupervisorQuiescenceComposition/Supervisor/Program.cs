@@ -43,6 +43,15 @@ Check("S4 a global gate protects every target the host owns",
     s4.Effects.Contains("envA") && s4.Effects.Contains("envB"),
     new { effects = s4.Effects, swapMs = s4.SwapMs, waitedMs = s4.WaitMs });
 
+// ── S5: work arriving DURING the handover must be refused, not silently admitted — the case ────────────
+// kirillkrylov's review found the admission barrier failed on, now checked against the repaired ledger
+// (Alexandr-Kravchuk/detached-operation-probe@551f25c92538) through this probe's own composed path,
+// not just directly against the ledger the way E3's own A5b/A5h already do.
+var s5 = await RunHandoverScenario(backendPath, "envA", 300);
+Check("S5 a new operation for the gated scope is refused while the window is held, and admitted again once released",
+    s5.RefusedDuringWindow && s5.AdmittedAfterRelease,
+    new { refusedDuringWindow = s5.RefusedDuringWindow, admittedAfterRelease = s5.AdmittedAfterRelease });
+
 Console.WriteLine(JsonSerializer.Serialize(new {
     os = Environment.OSVersion.VersionString,
     framework = Environment.Version.ToString(),
@@ -112,6 +121,61 @@ static async Task<ScenarioResult> RunScenario(string backendPath, GateMode mode,
     return new ScenarioResult(effects, swapMs, waitMs);
 }
 
+static async Task<HandoverResult> RunHandoverScenario(string backendPath, string target, int workMs) {
+    string work = Directory.CreateTempSubdirectory("supervisor-handover-").FullName;
+    string effectPath = Path.Combine(work, "effect.log");
+    var ledger = new OperationLedger(Path.Combine(work, "operations.jsonl"));
+
+    using var backend = StartBackend(backendPath, effectPath);
+    var accepted = new ConcurrentDictionary<string, byte>();
+    var leases = new ConcurrentDictionary<string, IOperationLease>();
+    using var readerCts = new CancellationTokenSource();
+    Task readerTask = PumpBackendOutput(backend, leases, accepted, readerCts.Token);
+
+    IOperationLease lease = ledger.Begin(target, "V1", backend);
+    leases[lease.Id] = lease;
+    await backend.StandardInput.WriteLineAsync($"start {target} {lease.Id} {workMs} succeed");
+    await backend.StandardInput.FlushAsync();
+
+    var ackDeadline = DateTime.UtcNow.AddSeconds(5);
+    while (accepted.Count < 1 && DateTime.UtcNow < ackDeadline) await Task.Delay(10);
+
+    IDisposable? window = null;
+    var waitClock = Stopwatch.StartNew();
+    while ((window = ledger.TryEnterSwapWindow(null)) is null) {
+        await Task.Delay(25);
+        if (waitClock.ElapsedMilliseconds > 20_000) throw new TimeoutException("swap window never opened");
+    }
+
+    // The moment being tested: a new request for the gated target arrives while the window is held —
+    // it must be refused, not queued silently and not admitted underneath the swap decision.
+    bool refusedDuringWindow;
+    try {
+        ledger.Begin(target, "handover-attempt", backend);
+        refusedDuringWindow = false;
+    }
+    catch (SwapWindowHeldException) { refusedDuringWindow = true; }
+
+    window.Dispose();
+
+    bool admittedAfterRelease;
+    try {
+        IOperationLease postLease = ledger.Begin(target, "V2", backend);
+        postLease.Complete(OperationState.Succeeded);
+        admittedAfterRelease = true;
+    }
+    catch (SwapWindowHeldException) { admittedAfterRelease = false; }
+
+    backend.Kill(entireProcessTree: true);
+    try { await backend.WaitForExitAsync(); }
+    catch (InvalidOperationException) { /* already exited */ }
+    readerCts.Cancel();
+    try { await readerTask; }
+    catch (OperationCanceledException) { }
+
+    return new HandoverResult(refusedDuringWindow, admittedAfterRelease);
+}
+
 static Process StartBackend(string backendDllPath, string effectPath) {
     var start = new ProcessStartInfo("dotnet") {
         RedirectStandardInput = true,
@@ -146,3 +210,5 @@ static async Task PumpBackendOutput(Process backend, ConcurrentDictionary<string
 enum GateMode { None, Global, PerTarget }
 
 sealed record ScenarioResult(HashSet<string> Effects, long SwapMs, long WaitMs);
+
+sealed record HandoverResult(bool RefusedDuringWindow, bool AdmittedAfterRelease);

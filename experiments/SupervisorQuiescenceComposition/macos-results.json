@@ -7,7 +7,7 @@
       "passed": true,
       "detail": {
         "effects": [],
-        "swapMs": 17,
+        "swapMs": 18,
         "waitedMs": 0
       }
     },
@@ -18,8 +18,8 @@
         "effects": [
           "envA"
         ],
-        "swapMs": 1254,
-        "waitedMs": 1222
+        "swapMs": 1251,
+        "waitedMs": 1223
       }
     },
     {
@@ -29,8 +29,8 @@
         "effects": [
           "envA"
         ],
-        "swapMs": 333,
-        "waitedMs": 311
+        "swapMs": 328,
+        "waitedMs": 308
       }
     },
     {
@@ -41,8 +41,16 @@
           "envA",
           "envB"
         ],
-        "swapMs": 1250,
-        "waitedMs": 1221
+        "swapMs": 1225,
+        "waitedMs": 1198
+      }
+    },
+    {
+      "name": "S5 a new operation for the gated scope is refused while the window is held, and admitted again once released",
+      "passed": true,
+      "detail": {
+        "refusedDuringWindow": true,
+        "admittedAfterRelease": true
       }
     }
   ]
