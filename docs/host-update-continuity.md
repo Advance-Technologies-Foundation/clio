@@ -532,15 +532,35 @@ Answering kirillkrylov's four questions directly:
   retry against the same prepared candidate is safe (T16).
 
 **Persistence and retention, named explicitly per kirillkrylov's correction rather
-than implied.** The ledger owns operation records and their persistence health, but
-"the ledger owns evidence" is not "evidence lives forever": a record that persisted
-successfully survives process replacement (that's the whole point — it's what a
-swap's other side reads back); a record whose persistence itself failed is
-memory-only and does not survive one (`UnpersistedOperations`, degraded scopes,
-`RepairDegraded`/`AcceptLoss` as the only two ways out — repair it or explicitly
-accept the loss, never a silent third option). The recovery boundary is: durable
-evidence survives a swap, un-persisted evidence does not, and which case a given
-record is in is always visible, never inferred.
+than implied — including a correction to my own first pass at this paragraph.** I
+originally wrote "unpersisted evidence does not survive a swap," which conflates two
+things that are only the same event in some deployments: unpersisted evidence is lost
+when the process **owning the ledger** is replaced — not necessarily on every
+runtime/backend swap, because whether those are the same event depends on where the
+ledger actually lives.
+
+For the supervised host this recommendation is for: the ledger lives in the
+**supervisor**, not the backend. In `SupervisorState`
+(`experiments/SupervisorQuiescenceComposition/McpHost/SupervisorState.cs`), `_ledger`
+is constructed once, in the constructor, and `TriggerSwapAsync` only ever replaces
+`_backend`/`_readerCts`/`_readerTask` — the ledger's owning process never changes
+across a backend swap. So for this deployment shape, ordinary backend swaps put
+*no* unpersisted evidence at risk at all; only a **supervisor restart** does, which is
+already the one restart case this recommendation names. For a reusable-library /
+static-embedding deployment with no supervisor, there is no separate swap event to
+distinguish from process replacement in the first place — the ledger's owning process
+*is* the only process, so "evidence survives unless the process is replaced" applies
+directly and trivially.
+
+That is the shared lifetime contract, stated without pretending the two deployments
+have identical process boundaries: **unpersisted evidence is lost exactly when the
+process holding the ledger is replaced**, and which events count as "the ledger's
+process is replaced" differs by deployment (never, for an ordinary backend swap under
+Flow B; the whole point, for a bare embedded process) rather than being one universal
+answer. Durable evidence survives regardless — that's what
+`UnpersistedOperations`/degraded scopes/`RepairDegraded`/`AcceptLoss` exist to
+distinguish (repair it or explicitly accept the loss, never a silent third option) —
+and which case a given record is in is always visible, never inferred.
 
 **Integration delta this recommendation implies, scoped to my lane** (per
 [kirillkrylov's reassignment](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18545092)
