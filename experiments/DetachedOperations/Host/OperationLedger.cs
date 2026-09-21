@@ -49,6 +49,12 @@ public sealed class OperationLedger : IOperationLedger {
     /// </summary>
     public bool FailBeginPersistenceForTests { get; set; }
 
+    /// <summary>
+    /// Test-only: widens the window inside outcome recording so the lease's serialisation property can
+    /// be observed deterministically instead of raced for. Nothing in the probe's normal path sets it.
+    /// </summary>
+    public int CompleteDelayMsForTests { get; set; }
+
     /// <summary>Opens a ledger over an evidence file, recovering any prior process's unfinished operations.</summary>
     public OperationLedger(string evidencePath) : this(evidencePath, false) {
     }
@@ -73,7 +79,14 @@ public sealed class OperationLedger : IOperationLedger {
     public IReadOnlyCollection<string> RecoveredUnknown =>
         _recovered.Where(p => p.Value.State == OperationState.Unknown).Select(p => p.Key).ToArray();
 
-    /// <inheritdoc />
+    /// <summary>
+    /// Identifiers whose OUTCOME has not been published yet.
+    /// </summary>
+    /// <remarks>
+    /// Not the same set as "blocks quiescence". An operation that published its outcome while still
+    /// holding its lease for owned cleanup is absent from here and still retained, so it still refuses
+    /// retirement — measured by P5. Quiescence follows ownership; this property follows the outcome.
+    /// </remarks>
     public IReadOnlyCollection<string> Running =>
         _live.Where(p => p.Value.State == OperationState.Running).Select(p => p.Key).ToArray();
 
@@ -175,6 +188,9 @@ public sealed class OperationLedger : IOperationLedger {
     private void Complete(string id, OperationState state, string? code) {
         if (state is OperationState.Running or OperationState.NotFound)
             throw new ArgumentOutOfRangeException(nameof(state), state, "A terminal state is required.");
+        if (CompleteDelayMsForTests > 0) {
+            Thread.Sleep(CompleteDelayMsForTests);
+        }
         lock (_swapLock) {
             // Exactly once: a record that already reached a terminal state is never rewritten.
             if (!_live.TryGetValue(id, out var existing) || existing.State != OperationState.Running) return;
@@ -272,25 +288,56 @@ public sealed class OperationLedger : IOperationLedger {
         }
     }
 
-    private sealed class Lease(OperationLedger ledger, string id) : IOperationLease {
-        private int _reported;
-        private int _released;
+    // Ownership release and outcome recording are serialised through one gate, and validation happens
+    // BEFORE the single report is consumed. Two hazards made both necessary, both found by review:
+    //  - a concurrent Dispose could observe the "already reported" flag that Complete had set on its
+    //    way in, skip completion and release ownership while the outcome was still unrecorded;
+    //  - an invalid Complete(Running/NotFound) consumed the flag before validation threw, after which
+    //    nothing could ever complete the operation.
+    private sealed class Lease : IOperationLease {
+        private readonly OperationLedger _ledger;
+        private readonly object _gate = new();
+        private bool _reported;
+        private bool _released;
 
-        public string Id { get; } = id;
+        internal Lease(OperationLedger ledger, string id) {
+            _ledger = ledger;
+            Id = id;
+        }
+
+        public string Id { get; }
 
         /// <summary>Publishes the outcome. Does not end ownership — see <see cref="Dispose"/>.</summary>
         public void Complete(OperationState state, string? code = null) {
-            if (Interlocked.Exchange(ref _reported, 1) == 0) ledger.Complete(Id, state, code);
+            // Validated first: a rejected call must not burn the one report this lease is allowed.
+            if (state is OperationState.Running or OperationState.NotFound) {
+                throw new ArgumentOutOfRangeException(nameof(state), state, "A terminal state is required.");
+            }
+            lock (_gate) {
+                if (_reported) {
+                    return;
+                }
+                _ledger.Complete(Id, state, code);   // recorded BEFORE the flag moves
+                _reported = true;
+            }
         }
 
         /// <summary>
-        /// Ends ownership. Disposing without having published an outcome is a defect, not a silent
-        /// success, so a terminal is recorded rather than leaving a caller polling a record that will
-        /// never move.
+        /// Ends ownership. Disposing without a published outcome is a defect, not a silent success, so
+        /// a terminal is recorded first — under the same gate, so a concurrent completion cannot be
+        /// skipped and then have its ownership pulled out from under it.
         /// </summary>
         public void Dispose() {
-            Complete(OperationState.Failed, "lease-disposed-without-terminal");
-            if (Interlocked.Exchange(ref _released, 1) == 0) ledger.ReleaseOwnership(Id);
+            lock (_gate) {
+                if (!_reported) {
+                    _ledger.Complete(Id, OperationState.Failed, "lease-disposed-without-terminal");
+                    _reported = true;
+                }
+                if (!_released) {
+                    _ledger.ReleaseOwnership(Id);
+                    _released = true;
+                }
+            }
         }
     }
 }

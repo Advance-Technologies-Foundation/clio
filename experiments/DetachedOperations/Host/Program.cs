@@ -273,6 +273,39 @@ Check("P5 retirement is refused while owned cleanup is held, and allowed once ow
           idleAfterRelease = idleAfter, windowGrantedAfter = windowAfter,
           note = "the outcome was Succeeded throughout; only ownership changed" });
 
+// ── L1/L2: lease hazards found by review of the published source ───────────────────────────────────
+// Both had the same root: the "already reported" flag moved before the work it guarded.
+
+// L1: a concurrent Dispose must not release ownership while an outcome is still being recorded.
+// The delay makes the window deterministic rather than something to race for; the property asserted is
+// that Dispose cannot RETURN before the outcome exists.
+var leaseLedger = new OperationLedger(Path.Combine(work, "lease.jsonl")) { CompleteDelayMsForTests = 300 };
+object leaseOwner = new();
+IOperationLease raceLease = leaseLedger.Begin("envL", "10.0.0.0", leaseOwner);
+Task completing = Task.Run(() => raceLease.Complete(OperationState.Succeeded, "l1"));
+await Task.Delay(60);                                  // let Complete get inside the delayed window
+raceLease.Dispose();
+var atDisposeReturn = leaseLedger.Query(raceLease.Id);
+await completing;
+Check("L1 a concurrent disposal cannot release ownership before the outcome is recorded",
+    atDisposeReturn.State == OperationState.Succeeded && leaseLedger.IsQuiescent("envL"),
+    new { stateWhenDisposeReturned = atDisposeReturn.State.ToString(),
+          quiescentAfter = leaseLedger.IsQuiescent("envL"),
+          note = "Dispose blocks on the lease gate until the in-flight completion has recorded its outcome" });
+
+// L2: a rejected completion must not consume the one report the lease is allowed.
+IOperationLease rejectLease = leaseLedger.Begin("envL2", "10.0.0.0", leaseOwner);
+bool rejected = false;
+try { rejectLease.Complete(OperationState.Running, "invalid"); }
+catch (ArgumentOutOfRangeException) { rejected = true; }
+rejectLease.Complete(OperationState.Succeeded, "l2");
+var afterReject = leaseLedger.Query(rejectLease.Id);
+rejectLease.Dispose();
+Check("L2 a rejected completion does not burn the report; the operation can still finish",
+    rejected && afterReject.State == OperationState.Succeeded,
+    new { rejectedInvalidState = rejected, finalState = afterReject.State.ToString(),
+          note = "validation happens before the single report is consumed" });
+
 // ── O1: terminal status is NOT sufficient for reclamation ──────────────────────────────────────────
 // @kirillkrylov's returned-value-ownership finding, measured against my own invariant I3. A caller that
 // holds a runtime-defined result also holds the release that defined its type, however finished the
