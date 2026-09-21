@@ -1,7 +1,7 @@
 {
   "os": "Microsoft Windows NT 10.0.26200.0",
   "framework": "10.0.11",
-  "workDirectory": "C:\\Temp\\detached-ops-y34wqyzs.rue",
+  "workDirectory": "C:\\Temp\\detached-ops-juwrg3rt.br4",
   "cases": [
     {
       "name": "A1a the original operation still answers after a newer runtime is activated",
@@ -156,19 +156,19 @@
       "passed": true,
       "detail": {
         "Violations": 0,
-        "Admitted": 52,
-        "Refused": 66,
-        "Windows": 10
+        "Admitted": 47,
+        "Refused": 74,
+        "Windows": 11
       }
     },
     {
       "name": "A5i mutation control: the same regression detects a deliberately split admission",
       "passed": true,
       "detail": {
-        "Violations": 29,
-        "Admitted": 19,
-        "Refused": 85,
-        "Windows": 18,
+        "Violations": 20,
+        "Admitted": 27,
+        "Refused": 72,
+        "Windows": 14,
         "note": "non-zero here is the point: it shows A5h can fail"
       }
     },
@@ -328,6 +328,27 @@
         "finalState": "Succeeded",
         "effectLines": 1,
         "note": "deferred rather than applied; no implicit kill, and the work completed normally"
+      }
+    },
+    {
+      "name": "D1 disproof: polling for an idle moment starves against a continuously busy scope",
+      "passed": true,
+      "detail": {
+        "loadEstablished": true,
+        "windowEverGranted": false,
+        "observedFor": "2s under continuous load",
+        "note": "this is the case that would overturn 'defer, never kill' \u2014 deferral that never ends"
+      }
+    },
+    {
+      "name": "D2 reserving first and draining second ends the wait under the same load",
+      "passed": true,
+      "detail": {
+        "busyWhenReserved": true,
+        "reservedImmediately": true,
+        "drained": true,
+        "drainMs": 151,
+        "note": "new admissions are refused under the reservation, so in-flight work is finite"
       }
     },
     {
