@@ -180,6 +180,12 @@ public sealed class ODataReadToFileTool(IToolCommandResolver commandResolver, IO
 				.GetAwaiter()
 				.GetResult();
 			return true;
+		} catch (UnreadableBoundedResponseException unreadable) {
+			// Authored by clio end to end, so it is surfaced verbatim rather than redacted: it quotes no url,
+			// no path and no server text. Without this branch the caller was handed a FileNotFoundException
+			// about clio's own scratch file, which is what a stand read of an unexposed entity produced.
+			error = unreadable.Message;
+			return false;
 		} catch (ResponseTooLargeException tooLarge) {
 			error = DescribeTooLarge(tooLarge.ObservedBytes);
 			return false;

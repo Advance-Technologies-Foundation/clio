@@ -295,6 +295,14 @@ public class CreatioClientAdapter : IOwnedApplicationClient {
 			if (observed > maxBytes) {
 				throw new ResponseTooLargeException(observed, maxBytes);
 			}
+			// An ABSENT scratch file is not an internal fault: it is how this transport reports a final
+			// non-success status, because it writes only successful bodies. Reading the path anyway raised a
+			// FileNotFoundException naming clio's own temporary file - measured on a stand for an entity with
+			// no OData controller - which tells the caller nothing about the server. See
+			// UnreadableBoundedResponseException for why the status itself cannot be recovered here.
+			if (!File.Exists(scratch)) {
+				throw new UnreadableBoundedResponseException();
+			}
 			return await File.ReadAllBytesAsync(scratch, cancellationToken).ConfigureAwait(false);
 		}
 		// The ceiling trips the same source the deadline does, so the oversize case is separated FIRST -
