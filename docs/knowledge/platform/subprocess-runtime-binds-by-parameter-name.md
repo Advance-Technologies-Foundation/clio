@@ -4,7 +4,7 @@ applies-to:
   - clio/CrtProcessBuilder/CrtProcessBuilder.gz
   - spec/eng-92707-sub-process-element/
 ticket: ENG-92707
-date: 2026-09-16
+date: 2026-09-21
 ---
 
 **What is true** — both directions run through the same method, so it is one rule:
@@ -29,7 +29,13 @@ element on either side.
 
 **Why it is this way** — the element's parameters are a copy derived from the callee, and the only
 thing the two sides reliably share at run time is the parameter's name. Element parameter UIds are
-freshly generated and never equal the callee's, so a UId-based binding was never available.
+freshly generated and never equal the callee's (`Terrasoft.generateGUID()` in
+`parametrized-process-schema-element.js:142-149`, client source), so a UId-based binding was never
+available. DESIGN time inherits the same constraint and resolves it the same way: the designer's
+sub-process card re-attaches stored values through `findParameterByNameOrByUId`
+(`process-activity-schema.js:519-521`), whose UId branch is dead for exactly this reason, leaving NAME
+as the only key there too. Verified in client source 2026-09-21. What that means for what the card
+SHOWS is a separate record: `subprocess-designer-card-hides-stale-state.md`.
 
 **What breaks if you ignore it** — a sub-process whose callee lost or renamed a parameter keeps
 running and quietly delivers nothing. This is the opposite of the loud failure you get from

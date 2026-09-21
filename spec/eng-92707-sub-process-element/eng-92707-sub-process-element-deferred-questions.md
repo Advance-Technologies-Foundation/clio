@@ -550,28 +550,62 @@ there was rename code, open designer, read card, then rename the caption too. So
 `inSync` and runtime are the earlier pass's, and they stand as evidence of the BEHAVIOUR while saying
 nothing about this build.
 
-The card renders the CAPTION and never the code, so it cannot display code staleness under any
-convergence behaviour. F2 does not depend on the design-instance question at all — the earlier write-up
-reached the right conclusion from the wrong premise. In the state where the mapping is intact the name is
-the OLD caption; in the state where the name is new the mapping is empty. There is no state in which the
-card shows both a new name and an intact mapping.
+The parameter ROW has no code column — `ProcessSchemaParameterViewConfig.js:41-159` builds a type icon, a
+direction icon, a label and a `Terrasoft.MappingEdit`, and the code is not among them — so it cannot
+display code staleness under any convergence behaviour. F2 does not depend on the design-instance question
+at all — the earlier write-up reached the right conclusion from the wrong premise. In the state where the
+mapping is intact the name is the OLD caption; in the state where the name is new the mapping is empty.
+There is no state in which the card shows both a new name and an intact mapping.
 
-**The empty row is a FALSE ALARM, and this was the question worth asking.** I flagged the third row as
+**Corrected 2026-09-21 against client source.** This paragraph read "the card renders the CAPTION and
+never the code", and that is too strong twice over. The label is `getDisplayValue()`
+(`ProcessFlowElementPropertiesPage.js:767`) = `getCaption() || getName()` (`base-schema.js:122-124`), so a
+parameter with NO caption shows its CODE; and the row's label opens `ProcessSchemaParameterEditPage`,
+which renders a populated (disabled) `Name` field, so the code is reachable in one click. The accurate
+claim is the narrow one: no code column on the ROW a person scans. The measurements are unaffected.
+
+**The empty row is a FALSE ALARM about the STORED schema, and this was the question worth asking.** I flagged the third row as
 possible silent data loss — a cosmetic callee edit destroying caller configuration — and asked for the
-SCHEMA rather than the card. It is benign: `describe` on the caller in exactly that state returns the
-parameter byte-identical to the healthy baseline (same `uid`, `source`, `value`, `valueDisplay`), so the
-mapping is present and the card simply fails to render it. The platform fact holds — the element
-parameter and its source are paired through the mapping row, not by name.
+SCHEMA rather than the card. It is benign ON DISK: `describe` on the caller in exactly that state returns
+the parameter byte-identical to the healthy baseline (same `uid`, `source`, `value`, `valueDisplay`), so
+the STORED mapping is present. The platform fact holds — the element parameter and its source are paired
+through the mapping row, not by name.
 
-So the card misleads in BOTH directions and neither is data loss: it reassures on a code-only rename and
-alarms without cause when the caption moves too.
+So the card misleads in BOTH directions: it reassures on a code-only rename and alarms without cause when
+the caption moves too. *This paragraph originally added "and neither is data loss", and explained the
+empty row as the card "simply failing to render" the mapping. Source refutes the explanation — see the
+`clearParameters()` note below — and narrows the verdict: no data loss in the stored schema, and none
+unless you SAVE from that card.*
 
-**One hypothesis fits all three rows** — the card pairs the caller's stored parameter to the callee's by
-CAPTION, so an unchanged caption matches and a changed one does not. **Inference, not measured.** It
-predicts the caption-only row would also render empty; that is the cheap check that confirms or kills it,
-and it is the one cell in the table still blank. It needs somebody SIGNED IN on the stand — the pass lost
-its Supervisor session to the 1.6.3.10 app restarts, and a session that will not type credentials into a
-login form is behaving correctly, not failing.
+**A hypothesis was floated here and it is DEAD — settled in source 2026-09-21.** It said the card pairs the
+caller's stored parameter to the callee's by CAPTION, and was marked "inference, not measured"; the
+caption-only row then falsified its prediction, and source now names the real key. Opening the card runs
+`SubProcessPropertiesPage.synchronizeActualSchemaParameters`: it snapshots the stored parameters,
+re-derives them from the callee, and re-attaches each stored value through `findParameterByNameOrByUId`
+(`process-activity-schema.js:519-521`) = `findParameterByName(name) || findParameterByUId(uId)`. The UId
+branch cannot match, because every re-derived copy is given a fresh GUID
+(`parametrized-process-schema-element.js:142-149`, via `createElementParameter` → `clone()` at `:172-176`).
+**The carry-over is keyed on NAME**, and there is no fallback: `_synchronizeSchemaParameter`
+(`RootUserTaskPropertiesPage.js:631-634`, inherited) opens with
+`if (!newParameter || newParameter.dataValueType !== oldParameter.dataValueType) { return; }` — no
+positional match and no preservation. That second clause is a drift case nobody has written down: a
+callee changing a parameter's TYPE under an unchanged name drops the carry-over the same way.
+(The class does have a `findParameterByCaption` at `:298-301` — likely why the caption guess felt right —
+but nothing on this path calls it.)
+
+That mechanism explains rows 1 and 3 but NOT row 2: keyed on name, any code rename should miss and empty
+the row, yet the code-only card looked healthy. The likely confound is instance freshness — the sequence
+was rename code → open designer → read card → rename the caption too, so the first open may have
+re-derived from a callee instance that had not yet picked up the rename. **Candidate, not finding.** The
+row is a real reading and is not rewritten to fit; re-run it with the callee instance known-fresh, and if
+it reproduces the mechanism is incomplete.
+
+**Also from the same source pass, and it changes the data-loss verdict:** the re-derivation begins with
+`clearParameters()` (`parametrized-process-schema-element.js:427-434`), which removes the element's
+mapping rows from the parent schema IN MEMORY before rebuilding them. Closing the card discards that;
+**saving the caller from it persists the removal.** So the empty row is not the "rendering artefact" the
+paragraph above calls it — the stored schema is intact (that measurement stands), but the open card really
+has dropped the mapping, and one save makes it real.
 
 **A separate thing the same pass established:** `inSync` does not see a CAPTION. The caller keeps its own
 copy and reports `true` while the callee's differs; only a code change flips it. That is the right half
@@ -714,8 +748,11 @@ and the second is the one that matters. First: the classic designer IS reachable
 earlier "would not load" was the renderer intermittently freezing; the DOM stays readable throughout, so
 a card can be read even while screenshots time out. No design-time claim on this stand is blocked, and
 that sentence was on its way to becoming the reason AC-4 stayed open. Second: F2 holds, but its CAUSE is
-not the one predicted. The card renders the parameter CAPTION and never its code, so it cannot show a
-code rename under any convergence behaviour — see the table in DQ-25.
+not the one predicted. The parameter ROW has no code column — a type icon, a direction icon, a
+`getDisplayValue()` label and a mapping editor — so it cannot show a code rename under any convergence
+behaviour. (Written here as "renders the parameter CAPTION and never its code"; corrected 2026-09-21 —
+that label falls back to the NAME when a parameter has no caption, and the row's label opens an edit page
+carrying a populated `Name` field.) See the table in DQ-25.
 
 **What did NOT change.** DQ-10 stands for the re-synchronization report itself: the modify path does
 converge, so the drift is still unobservable from there, and the dangling-reference scan is still how
@@ -857,8 +894,13 @@ is about was still confirmed at Stored level: `inSync: true` coexisted with a re
 really did cut `BP2` from `['Alpha','Beta']` to `['Alpha']` and `BK15` from two rows to one.
 
 **3. The card does NOT pair by caption.** My hypothesis predicted a caption-only rename would empty the
-mapping row. It does not: NEW caption, mapped value KEPT. The hypothesis is dead and **no mechanism
-replaces it** — three readings, no model. Do not guess a fourth time.
+mapping row. It does not: NEW caption, mapped value KEPT. The hypothesis is dead. *This entry then said
+"no mechanism replaces it — three readings, no model. Do not guess a fourth time." That was right as a
+standing order against a fourth guess, and it is now superseded by MEASUREMENT of a different kind:
+client source, 2026-09-21. The card re-attaches stored values through `findParameterByNameOrByUId`
+(`process-activity-schema.js:519-521`) whose UId branch cannot match a freshly-GUIDed re-derived copy
+(`parametrized-process-schema-element.js:142-149`) — **the key is NAME.** It explains rows 1 and 3 and
+NOT the code-only row, and that tension is recorded in DQ-25 rather than smoothed away.*
 
 **Not defects, checked and closed:** `BL8` on designer-made elements is `CreatedInOwnerSchemaUId`, written
 as `Guid.Empty`, omitted by `JsonDataWriter` at default, read only through a getter short-circuited on an
