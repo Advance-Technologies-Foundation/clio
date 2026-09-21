@@ -26,7 +26,10 @@ namespace Clio.Mcp.E2E;
 [NonParallelizable]
 public sealed class ODataFileModeSuccessE2ETests {
 
-	private const string EchoEntity = "labClientStatus";
+	// The SAME literal the stub's byte-pinned collection body claims in its @odata.context: both read paths
+	// verify a response identifies itself as the entity that was requested, so two literals drifting apart
+	// would turn every echo-stub read into a non-OData rejection.
+	private const string EchoEntity = RuntimeDetectionStubServer.ODataEchoEntityName;
 	private const string PatchMarker = "e2e-patch-marker";
 	private const string RecordId = "8ecab4a1-0ca3-4515-9399-efe0a19390bd";
 

@@ -103,9 +103,25 @@ internal sealed class RuntimeDetectionStubServer : IAsyncDisposable {
 	/// <see cref="RuntimeDetectionStubServerConfiguration.ODataEchoEntity"/>. Held as a single constant so a
 	/// file-mode test can assert the persisted bytes are byte-for-byte the response, not a re-serialization.
 	/// </summary>
+	/// <remarks>
+	/// The <c>@odata.context</c> is not decoration: both read paths verify that a body identifies itself as
+	/// the entity set that was REQUESTED before they accept it, so a collection without it is refused as
+	/// non-OData content - which is the whole point of that check, and what a real Creatio response always
+	/// carries. The entity name is spelled out rather than interpolated because the constant has to stay a
+	/// compile-time literal for the byte-for-byte assertion; it must match
+	/// <c>ODataFileModeSuccessE2ETests.EchoEntity</c>.
+	/// </remarks>
 	public const string ODataEchoCollectionBody =
-		"{\"@odata.count\":2,\"value\":[{\"Id\":\"11111111-1111-1111-1111-111111111111\",\"Name\":\"Alpha\"},"
+		"{\"@odata.context\":\"http://127.0.0.1/odata/$metadata#" + ODataEchoEntityName + "\","
+		+ "\"@odata.count\":2,\"value\":[{\"Id\":\"11111111-1111-1111-1111-111111111111\",\"Name\":\"Alpha\"},"
 		+ "{\"Id\":\"22222222-2222-2222-2222-222222222222\",\"Name\":\"Beta\"}]}";
+
+	/// <summary>
+	/// The entity set <see cref="ODataEchoCollectionBody"/> claims to be. Public so the test that configures
+	/// the echo endpoint uses the SAME name, instead of two literals that can drift apart into a body the
+	/// identity check refuses.
+	/// </summary>
+	public const string ODataEchoEntityName = "labClientStatus";
 
 	/// <summary>
 	/// Issue #1378. The secret-shaped text the sys-settings WRITE endpoints hide inside their gateway
