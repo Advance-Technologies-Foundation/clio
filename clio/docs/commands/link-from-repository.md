@@ -26,6 +26,15 @@ and link only those. This requires -e or -u for API connection. Supports both
 flat repo structure (repo/PackageName/) and versioned PackageStore structure
 (repo/PackageName/branch/version/).
 
+Once packages are linked, do not run 'clio pkg-to-file-system' or 'clio turn-fsm on'
+against this environment without unlinking them first: the export writes generated
+files into whatever the package folder currently is, including through a symlink,
+so it writes straight into the linked repository instead of the environment. Unlink
+before exporting and re-link afterward. Compiling a linked package also regenerates
+its `.csproj` on every build, which shows up as repository churn — mark it with
+`git update-index --skip-worktree` and add the package's `Assemblies/` output folder
+to `.gitignore` before compiling a linked workspace.
+
 When packages are incomplete in the Pkg folder, the --packages flow automatically
 prepares them before linking:
 1. Maintainer check - ensures the site's Maintainer sys setting matches the
