@@ -235,9 +235,7 @@ internal sealed class WindowsConfinedFileAccess : IConfinedFileAccess {
 			File.Move(temporaryPath, canonicalPath, overwrite: false);
 		}
 		catch (IOException) when (File.Exists(canonicalPath) && !File.Exists(temporaryPath)) {
-			throw new IOException(
-				$"output-file '{canonicalPath}' already exists; refusing to overwrite it. Choose a different "
-				+ "path or remove the existing file.");
+			throw new OutputFileAlreadyExistsException(canonicalPath);
 		}
 		catch {
 			DeleteQuietly(temporaryPath);

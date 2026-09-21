@@ -36,9 +36,7 @@ internal sealed class MockConfinedFileAccess(IFileSystem fileSystem) : IConfined
 			_fileSystem.Directory.CreateDirectory(directory);
 		}
 		if (_fileSystem.File.Exists(canonicalPath)) {
-			throw new IOException(
-				$"output-file '{canonicalPath}' already exists; refusing to overwrite it. Choose a different "
-				+ "path or remove the existing file.");
+			throw new OutputFileAlreadyExistsException(canonicalPath);
 		}
 		_fileSystem.File.WriteAllBytes(canonicalPath, content);
 	}

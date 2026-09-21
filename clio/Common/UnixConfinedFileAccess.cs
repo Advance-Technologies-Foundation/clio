@@ -132,9 +132,7 @@ internal sealed class UnixConfinedFileAccess : IConfinedFileAccess {
 			if (Interop.LinkAt(staging.Value, StagedFileName, directory.Value, fileName, 0) != 0) {
 				int error = Marshal.GetLastWin32Error();
 				if (error == FileAlreadyExists) {
-					throw new IOException(
-						$"output-file '{canonicalPath}' already exists; refusing to overwrite it. Choose a "
-						+ "different path or remove the existing file.");
+					throw new OutputFileAlreadyExistsException(canonicalPath);
 				}
 				throw LastError(canonicalPath, "publish");
 			}

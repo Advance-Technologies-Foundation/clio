@@ -296,9 +296,7 @@ internal static class OutputPathConfinement {
 		}
 		catch (IOException) when (fileSystem.File.Exists(resolvedPath)) {
 			DeleteTemporaryFile(fileSystem, temporaryPath);
-			throw new IOException(
-				$"output-file '{resolvedPath}' already exists; refusing to overwrite it. Choose a different " +
-				"path or remove the existing file.");
+			throw new OutputFileAlreadyExistsException(resolvedPath);
 		}
 		catch {
 			DeleteTemporaryFile(fileSystem, temporaryPath);

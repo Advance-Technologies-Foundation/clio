@@ -264,7 +264,7 @@ public sealed class ODataFileContract(IFileSystem fileSystem, IConfinedFileAcces
 			_confinedFileAccess.WriteNew(resolvedPath, responseUtf8);
 			summary = built;
 			return true;
-		} catch (IOException alreadyExists) when (IsAlreadyPublished(alreadyExists)) {
+		} catch (OutputFileAlreadyExistsException alreadyExists) {
 			// The name was taken between the pre-fetch confinement check and the publish - two concurrent
 			// calls naming one output-file, which the linkat test-and-create is there to make safe. It is an
 			// ARGUMENT failure, not a transport one: the response arrived whole and the request is fine,
@@ -282,16 +282,6 @@ public sealed class ODataFileContract(IFileSystem fileSystem, IConfinedFileAcces
 			return false;
 		}
 	}
-
-	/// <summary>Whether the write failed because the target name was already taken.</summary>
-	/// <remarks>
-	/// Matched on the locally authored sentence the confined writers raise, not on an errno: both the Unix
-	/// and the Windows implementation turn their platform's "already exists" into that one message, and it
-	/// is the only IOException either of them raises for a name collision.
-	/// </remarks>
-	/// <param name="exception">The write failure.</param>
-	private static bool IsAlreadyPublished(IOException exception) =>
-		exception.Message.Contains("already exists; refusing to overwrite it", StringComparison.Ordinal);
 
 	/// <summary>
 	/// Classifies the response and, when it is a genuine OData body for the entity that was requested,
