@@ -1,0 +1,49 @@
+{
+  "os": "Unix 26.6.2",
+  "framework": "10.0.4",
+  "cases": [
+    {
+      "name": "S1 naive swap loses the detached operation\u0027s effect (control, reproduces the known failure)",
+      "passed": true,
+      "detail": {
+        "effects": [],
+        "swapMs": 17,
+        "waitedMs": 0
+      }
+    },
+    {
+      "name": "S2 a globally gated swap preserves the detached operation\u0027s effect",
+      "passed": true,
+      "detail": {
+        "effects": [
+          "envA"
+        ],
+        "swapMs": 1254,
+        "waitedMs": 1222
+      }
+    },
+    {
+      "name": "S3 a per-target gate on envA does not protect envB\u0027s in-flight work on the same host",
+      "passed": true,
+      "detail": {
+        "effects": [
+          "envA"
+        ],
+        "swapMs": 333,
+        "waitedMs": 311
+      }
+    },
+    {
+      "name": "S4 a global gate protects every target the host owns",
+      "passed": true,
+      "detail": {
+        "effects": [
+          "envA",
+          "envB"
+        ],
+        "swapMs": 1250,
+        "waitedMs": 1221
+      }
+    }
+  ]
+}
