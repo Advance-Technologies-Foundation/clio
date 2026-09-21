@@ -29,6 +29,7 @@ legitimate in-progress reply. Guidance cannot be un-sent; only a later reader ca
 | I2b | **Publishing an outcome and relinquishing ownership are different events.** `Complete` does the first; disposing the lease does the second. Quiescence follows ownership, not the outcome. | P5 | a release retired while owned cleanup is still running |
 | I2c | Admission persists its evidence **before** registering. A failed admission write starts no work and leaves no registered operation. | P4 | a scope blocked forever by an operation that never began |
 | I3 | An operation's owning release is retained until the operation terminates. **Termination releases the ledger's retention; it does not make the release collectible.** | C2, R1, **O1** | a release retired out from under live work |
+| I10 | A deferral policy must **close the scope before waiting**. Polling for quiescence can starve indefinitely under continuous load; reserving admission first makes the drain finite. | D1, D2 | an update that defers forever and never reaches the user |
 | I9 | **Anything** crossing back to a caller must be host-owned portable data — returned DTOs, thrown exception types, and delegates alike. A runtime-defined type retains its release for as long as any caller holds an instance of it. | O1 (measured for returned DTOs; exceptions and delegates are the same mechanism, **not separately measured**) | a release that can never be reclaimed because a value escaped |
 | I4 | Terminal evidence is durable **before** the terminal state is observable. | A5g; write-then-publish inside the window lock | a replacement acting on a state whose record was never written |
 | I5 | A host that cannot establish an outcome reports **uncertainty**, never absence. | A4a, A4b, and control C1 which produces today's false `NotFound` | "no compile was started" while one is running |
@@ -176,6 +177,30 @@ value can escape to a caller.
 The dividing line is that Core stores and orders; it never interprets. The record carries portable data
 only — no delegates, no runtime objects — which is what lets it be written to evidence and outlive the
 release that produced it.
+
+## Deferral needs a reservation, not a poll — I disproved my own first mechanism
+
+My recommendation is "defer, never kill". I also named the case that would overturn it: a continuously
+busy scope where the deferral never ends. Rather than leave that as a caveat, I measured it.
+
+```
+D1  loadEstablished=true   windowEverGranted=false   (2s under continuous load)
+D2  busyWhenReserved=true  reservedImmediately=true  drained=true  drainMs=106-134
+```
+
+**D1 is my own mechanism failing.** `TryEnterSwapWindow` requires quiescence *before* it grants anything,
+so an updater polling it against overlapping work is starved — and "defer" stops meaning "the update
+waits" and starts meaning "the update never happens", which is the outcome this whole discussion exists
+to prevent.
+
+**D2 is the repair.** `TryReserveAdmission` closes the scope to new work *without* requiring it to be idle
+first. Nothing new is admitted, so the in-flight set is finite and necessarily drains — measured at
+~130 ms under the same load that starved the poll.
+
+So the policy survives and the mechanism did not. The cost moves rather than disappearing: a reservation
+refuses legitimate work for the whole drain, so an unbounded drain is worse than a deferred update. A
+caller must bound it and release the reservation when the bound expires. That bound is a policy number
+this contract does not pick.
 
 ## Gaps that need a decision rather than an implementation
 

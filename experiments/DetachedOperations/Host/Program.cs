@@ -379,6 +379,54 @@ Check("M4 an update that cannot take its window defers, leaving the work untouch
           finalState = busyTerminal.State.ToString(), effectLines = deferLines.Length,
           note = "deferred rather than applied; no implicit kill, and the work completed normally" });
 
+// D1/D2: attacking my own recommendation. "Defer, never kill" is only a policy if the deferral ends.
+// A continuously busy scope is the case that would overturn it, so it is measured rather than named.
+using (var load = new CancellationTokenSource(TimeSpan.FromSeconds(4))) {
+    string loadEffect = Path.Combine(work, "load-effect.log");
+    Task pressure = Task.Run(async () => {
+        while (!load.IsCancellationRequested) {
+            try { v2.StartDetached(ledger, "envS", loadEffect, 120, "succeed", CancellationToken.None); }
+            catch (SwapWindowHeldException) { }
+            await Task.Delay(40);                 // overlapping work: the scope is never idle
+        }
+    });
+
+    // Establish the load first. Polling before the scope is actually busy measures a test artifact:
+    // the first poll wins on an empty scope and the case proves nothing.
+    DateTime loadDeadline = DateTime.UtcNow.AddSeconds(2);
+    while (DateTime.UtcNow < loadDeadline && ledger.IsQuiescent("envS")) {
+        await Task.Delay(20);
+    }
+    bool loadEstablished = !ledger.IsQuiescent("envS");
+
+    // D1: poll for an idle moment, the way TryEnterSwapWindow alone requires.
+    DateTime pollUntil = DateTime.UtcNow.AddSeconds(2);
+    bool everIdle = false;
+    while (DateTime.UtcNow < pollUntil) {
+        using IDisposable? w = ledger.TryEnterSwapWindow("envS");
+        if (w is not null) { everIdle = true; break; }
+        await Task.Delay(25);
+    }
+    Check("D1 disproof: polling for an idle moment starves against a continuously busy scope",
+        loadEstablished && !everIdle,
+        new { loadEstablished, windowEverGranted = everIdle, observedFor = "2s under continuous load",
+              note = "this is the case that would overturn 'defer, never kill' — deferral that never ends" });
+
+    // D2: reserve first, then drain. Nothing new is admitted, so the scope necessarily empties.
+    bool busyBeforeReserving = !ledger.IsQuiescent("envS");
+    var reserveStart = DateTime.UtcNow;
+    using (IDisposable? reservation = ledger.TryReserveAdmission("envS")) {
+        bool reserved = reservation is not null;
+        bool drained = await WaitQuiescent(ledger, "envS", TimeSpan.FromSeconds(5));
+        Check("D2 reserving first and draining second ends the wait under the same load",
+            busyBeforeReserving && reserved && drained,
+            new { busyWhenReserved = busyBeforeReserving, reservedImmediately = reserved, drained,
+                  drainMs = (int)(DateTime.UtcNow - reserveStart).TotalMilliseconds,
+                  note = "new admissions are refused under the reservation, so in-flight work is finite" });
+    }
+    await pressure;
+}
+
 // ── O1: terminal status is NOT sufficient for reclamation ──────────────────────────────────────────
 // @kirillkrylov's returned-value-ownership finding, measured against my own invariant I3. A caller that
 // holds a runtime-defined result also holds the release that defined its type, however finished the

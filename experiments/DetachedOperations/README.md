@@ -71,6 +71,8 @@ would almost never be globally idle and a global-only predicate would be correct
 | M2 | a torn terminal write keeps the outcome in memory and is never recovered as terminal |
 | M3 | degradation clears only on an explicit action, and normal operation resumes after it |
 | M4 | an update that cannot take its window defers, leaving the work untouched |
+| D1 | **disproof of my own mechanism** — polling for an idle moment starves under continuous load |
+| D2 | reserving admission first makes the drain finite under that same load |
 | O1 | **counterexample to I3** — a runtime-defined result held by the caller keeps the release alive |
 | R1 | the V1 release becomes collectible once no lease retains it |
 | C1 | **control** — a host with no evidence answers `NotFound` for the very same lost operation |
@@ -150,7 +152,7 @@ temporary directory and writes nothing outside it.
 
 ## macOS observations, 2026-09-21
 
-macOS 27.0.0 (arm64), .NET 10.0.12. **37/37 passed, exit 0, three consecutive runs.** The contract derived from these cases is in
+macOS 27.0.0 (arm64), .NET 10.0.12. **39/39 passed, exit 0, three consecutive runs.** The contract derived from these cases is in
 [`execution-lifetime-contract.md`](execution-lifetime-contract.md).
 
 - The operation started on `10.0.0.0` kept answering `Running` and stayed owned by `10.0.0.0` after

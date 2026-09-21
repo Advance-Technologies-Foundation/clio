@@ -1,7 +1,7 @@
 {
   "os": "Unix 27.0.0",
   "framework": "10.0.12",
-  "workDirectory": "/var/folders/xk/pl1m8g6d1w55jscyxzg0wjkc0000gn/T/detached-ops-0BQTUZ",
+  "workDirectory": "/var/folders/xk/pl1m8g6d1w55jscyxzg0wjkc0000gn/T/detached-ops-xqShja",
   "cases": [
     {
       "name": "A1a the original operation still answers after a newer runtime is activated",
@@ -156,18 +156,18 @@
       "passed": true,
       "detail": {
         "Violations": 0,
-        "Admitted": 49,
-        "Refused": 91,
-        "Windows": 91
+        "Admitted": 47,
+        "Refused": 92,
+        "Windows": 92
       }
     },
     {
       "name": "A5i mutation control: the same regression detects a deliberately split admission",
       "passed": true,
       "detail": {
-        "Violations": 19,
-        "Admitted": 49,
-        "Refused": 85,
+        "Violations": 34,
+        "Admitted": 51,
+        "Refused": 83,
         "Windows": 90,
         "note": "non-zero here is the point: it shows A5h can fail"
       }
@@ -328,6 +328,27 @@
         "finalState": "Succeeded",
         "effectLines": 1,
         "note": "deferred rather than applied; no implicit kill, and the work completed normally"
+      }
+    },
+    {
+      "name": "D1 disproof: polling for an idle moment starves against a continuously busy scope",
+      "passed": true,
+      "detail": {
+        "loadEstablished": true,
+        "windowEverGranted": false,
+        "observedFor": "2s under continuous load",
+        "note": "this is the case that would overturn \u0027defer, never kill\u0027 \u2014 deferral that never ends"
+      }
+    },
+    {
+      "name": "D2 reserving first and draining second ends the wait under the same load",
+      "passed": true,
+      "detail": {
+        "busyWhenReserved": true,
+        "reservedImmediately": true,
+        "drained": true,
+        "drainMs": 132,
+        "note": "new admissions are refused under the reservation, so in-flight work is finite"
       }
     },
     {

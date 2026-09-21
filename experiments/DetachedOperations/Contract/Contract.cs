@@ -112,6 +112,29 @@ public interface IOperationLedger {
     IDisposable? TryEnterSwapWindow(string? target = null);
 
     /// <summary>
+    /// Closes a scope to NEW work without requiring it to be idle first, so in-flight work can drain
+    /// under the reservation.
+    /// </summary>
+    /// <param name="target">Scope to close, or <see langword="null"/> for the whole process.</param>
+    /// <returns>A handle held until disposed, or <see langword="null"/> when the scope is already held.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Why this exists.</b> <see cref="TryEnterSwapWindow"/> demands quiescence before it grants
+    /// anything, so an updater polling it against a continuously busy target can be starved forever —
+    /// the deferral policy then stops being "the update waits" and becomes "the update never happens".
+    /// Reserving first and draining second removes that possibility: nothing new is admitted, so the
+    /// scope necessarily empties.
+    /// </para>
+    /// <para>
+    /// <b>The cost is real and belongs to the caller.</b> A reservation refuses legitimate work for the
+    /// whole drain, so a long-running operation delays every new call on that scope. That is a worse
+    /// failure than a deferred update if the drain is unbounded, which is why a caller must bound it and
+    /// release the reservation when the bound expires.
+    /// </para>
+    /// </remarks>
+    IDisposable? TryReserveAdmission(string? target = null);
+
+    /// <summary>
     /// Scopes whose evidence storage failed. Their operations' outcomes are still authoritative; what is
     /// degraded is the host's ability to record them.
     /// </summary>

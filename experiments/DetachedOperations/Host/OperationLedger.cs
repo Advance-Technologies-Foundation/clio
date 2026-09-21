@@ -141,6 +141,19 @@ public sealed class OperationLedger : IOperationLedger {
         }
     }
 
+    /// <inheritdoc />
+    public IDisposable? TryReserveAdmission(string? target = null) {
+        string scope = target ?? string.Empty;
+        lock (_swapLock) {
+            if (_heldScopes.Contains(string.Empty)) return null;
+            if (target is null && _heldScopes.Count > 0) return null;
+            if (_heldScopes.Contains(scope)) return null;
+            // Deliberately NOT gated on quiescence: closing the scope is what makes the drain finite.
+            _heldScopes.Add(scope);
+            return new SwapWindow(this, scope);
+        }
+    }
+
     private void ReleaseScope(string scope) {
         lock (_swapLock) { _heldScopes.Remove(scope); }
     }
