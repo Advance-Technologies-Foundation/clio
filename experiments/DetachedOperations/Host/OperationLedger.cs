@@ -43,6 +43,12 @@ public sealed class OperationLedger : IOperationLedger {
     /// </summary>
     public bool FailEndPersistenceForTests { get; set; }
 
+    /// <summary>
+    /// Test-only: makes the admission evidence write fail, so the stranded-admission repair has a
+    /// deterministic regression. Nothing in the probe's normal path sets it.
+    /// </summary>
+    public bool FailBeginPersistenceForTests { get; set; }
+
     /// <summary>Opens a ledger over an evidence file, recovering any prior process's unfinished operations.</summary>
     public OperationLedger(string evidencePath) : this(evidencePath, false) {
     }
@@ -76,8 +82,11 @@ public sealed class OperationLedger : IOperationLedger {
         lock (_swapLock) { return IsQuiescentCore(target); }
     }
 
-    private bool IsQuiescentCore(string? target) => !_live.Values.Any(r =>
-        r.State == OperationState.Running &&
+    // Quiescence follows RETENTION, not the published outcome. An operation may report Succeeded and
+    // still hold its lease while owned cleanup finishes; retiring the release then would pull the floor
+    // out from under that cleanup. Ownership ends at Dispose, not at Complete.
+    private bool IsQuiescentCore(string? target) => !_owners.Keys.Any(id =>
+        _live.TryGetValue(id, out var r) &&
         (target is null || string.Equals(r.Target, target, StringComparison.Ordinal)));
 
     /// <inheritdoc />
@@ -141,9 +150,16 @@ public sealed class OperationLedger : IOperationLedger {
             if (_heldScopes.Contains(string.Empty) || _heldScopes.Contains(target)) {
                 throw new SwapWindowHeldException(target);   // refused, not queued
             }
+            // Evidence FIRST, then registration. The reverse order strands admission: a failed write
+            // left a Running record with no lease to complete it, so the scope was blocked forever by an
+            // operation that never started. A throw here registers nothing and starts no work; a
+            // partially durable line is recovered as Unknown, which is truthful.
+            if (FailBeginPersistenceForTests) {
+                throw new IOException("injected admission-evidence failure");
+            }
+            Append("begin", record);
             _live[id] = record;
             _owners[id] = owner;                   // retention: the runtime cannot be retired under it
-            Append("begin", record);               // persisted before the lock is released
         }
         return new Lease(this, id);
     }
@@ -188,8 +204,13 @@ public sealed class OperationLedger : IOperationLedger {
                 _degradedScopes.Add(existing.Target);
             }
             _live[id] = updated;
-            _owners.TryRemove(id, out _);           // release retention so the runtime may be retired
+            // Retention is NOT released here. Publishing an outcome and relinquishing ownership are
+            // different events; the lease's Dispose is the second one.
         }
+    }
+
+    private void ReleaseOwnership(string id) {
+        lock (_swapLock) { _owners.TryRemove(id, out _); }
     }
 
     private void Append(string kind, OperationRecord record) {
@@ -253,15 +274,23 @@ public sealed class OperationLedger : IOperationLedger {
 
     private sealed class Lease(OperationLedger ledger, string id) : IOperationLease {
         private int _reported;
+        private int _released;
 
         public string Id { get; } = id;
 
+        /// <summary>Publishes the outcome. Does not end ownership — see <see cref="Dispose"/>.</summary>
         public void Complete(OperationState state, string? code = null) {
             if (Interlocked.Exchange(ref _reported, 1) == 0) ledger.Complete(Id, state, code);
         }
 
-        // Disposing without a terminal state is a defect, not a silent success: record it as such
-        // rather than leaving the caller polling a Running record that will never move.
-        public void Dispose() => Complete(OperationState.Failed, "lease-disposed-without-terminal");
+        /// <summary>
+        /// Ends ownership. Disposing without having published an outcome is a defect, not a silent
+        /// success, so a terminal is recorded rather than leaving a caller polling a record that will
+        /// never move.
+        /// </summary>
+        public void Dispose() {
+            Complete(OperationState.Failed, "lease-disposed-without-terminal");
+            if (Interlocked.Exchange(ref _released, 1) == 0) ledger.ReleaseOwnership(Id);
+        }
     }
 }

@@ -29,6 +29,7 @@ public sealed class DetachedRuntime : IDetachedRuntime {
     public string StartDetached(IOperationLedger ledger, string target, string effectPath, int workMilliseconds,
         string outcome, CancellationToken cancellationToken) {
         IOperationLease lease = ledger.Begin(target, Version, this);
+        bool holdCleanup = outcome == "cleanup";
 
         // Detached exactly like an over-deadline tool: the caller gets the id now, the work continues.
         // CancellationToken.None on the task itself; cancellation is observed inside, so the operation
@@ -52,12 +53,20 @@ public sealed class DetachedRuntime : IDetachedRuntime {
                 await File.AppendAllTextAsync(effectPath, Signature + Environment.NewLine, CancellationToken.None)
                     .ConfigureAwait(false);
                 lease.Complete(OperationState.Succeeded, Signature);
+                if (holdCleanup) {
+                    // Owned cleanup after the outcome is known: the lease is deliberately still held,
+                    // so the release must not be retired yet.
+                    await Task.Delay(1500, CancellationToken.None).ConfigureAwait(false);
+                }
             }
             catch (OperationCanceledException) {
                 lease.Complete(OperationState.Cancelled, Signature + "-cancelled");
             }
             catch (Exception error) {
                 lease.Complete(OperationState.Failed, error.GetType().Name);
+            }
+            finally {
+                lease.Dispose();                     // ownership ends here, never at Complete
             }
         }, CancellationToken.None);
 

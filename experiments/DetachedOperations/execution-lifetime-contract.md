@@ -26,8 +26,10 @@ legitimate in-progress reply. Guidance cannot be un-sent; only a later reader ca
 |---|---|---|---|
 | I1 | An answered response never implies a completed execution. The two are recorded separately. | the `create-app-section` A/B | a caller treating "accepted" as "done" |
 | I2 | Every operation that outlives its response reaches **exactly one** terminal state. Silence is not a terminal state. | A3a, A3b; the lease records a terminal on dispose rather than leaving a record at `Running` | an operation polled forever |
+| I2b | **Publishing an outcome and relinquishing ownership are different events.** `Complete` does the first; disposing the lease does the second. Quiescence follows ownership, not the outcome. | P5 | a release retired while owned cleanup is still running |
+| I2c | Admission persists its evidence **before** registering. A failed admission write starts no work and leaves no registered operation. | P4 | a scope blocked forever by an operation that never began |
 | I3 | An operation's owning release is retained until the operation terminates. **Termination releases the ledger's retention; it does not make the release collectible.** | C2, R1, **O1** | a release retired out from under live work |
-| I9 | A value crossing back to a caller must be host-owned portable data. A runtime-defined type retains its release for as long as any caller holds an instance. | O1 | a release that can never be reclaimed because a DTO escaped |
+| I9 | **Anything** crossing back to a caller must be host-owned portable data — returned DTOs, thrown exception types, and delegates alike. A runtime-defined type retains its release for as long as any caller holds an instance of it. | O1 (measured for returned DTOs; exceptions and delegates are the same mechanism, **not separately measured**) | a release that can never be reclaimed because a value escaped |
 | I4 | Terminal evidence is durable **before** the terminal state is observable. | A5g; write-then-publish inside the window lock | a replacement acting on a state whose record was never written |
 | I5 | A host that cannot establish an outcome reports **uncertainty**, never absence. | A4a, A4b, and control C1 which produces today's false `NotFound` | "no compile was started" while one is running |
 | I6 | Quiescence is **taken and held**, never merely observed. | control A5a shows the check-then-act gap; A5h/A5i show the barrier and that the test detects its absence | work admitted into a scope a swap already decided was idle |
@@ -37,8 +39,13 @@ legitimate in-progress reply. Guidance cannot be un-sent; only a later reader ca
 ## Cancellation
 
 A cancelled operation still owes its caller a terminal state (I2). It must not write its external effect
-after cancellation is observed — measured by A3c, which asserts the effect file is unchanged after both
-the failure and the cancellation paths.
+after cancellation is observed.
+
+**Narrowed to what was measured.** A3b/A3c cancel during the operation's own delay, *before* its effect
+is written, and assert the effect file is unchanged. That is cancellation preventing an effect that had
+not happened yet. It says nothing about rolling back an effect already applied to a remote system, and
+nothing about cancelling work already in flight on the server — neither is measured here and neither
+should be read into the contract.
 
 Cancellation of the **caller** is not cancellation of the **operation**. A client that stopped waiting
 has not decided that the work should stop; clio 8 already draws this line explicitly in
@@ -59,6 +66,17 @@ the work that mutates a customer's environment. Any answer to "what counts as fi
 why those two lists differ.
 
 ## Cleanup and release
+
+**The rule, chosen rather than inherited.** `Complete` publishes the outcome; disposing the lease ends
+ownership. They are deliberately separate, because a runtime may legitimately know its result before its
+owned cleanup has finished. Retirement waits on ownership, not on the outcome — P5 measures both halves:
+
+```
+P5  outcomePublished=Succeeded  refusedDuringCleanup=true
+    idleAfterRelease=true       windowGrantedAfter=true
+```
+
+The outcome was `Succeeded` throughout. Only ownership changed, and only ownership moved the gate.
 
 A release may be retired only when no lease retains it **and nothing it defined has escaped**. C2 is the
 control for the first half: the release is not collectible while its work is in flight, and is

@@ -85,6 +85,7 @@ Check("A5b a swap window is refused while the target has work in flight",
     ledger.TryEnterSwapWindow("envD") is null, new { held = false });
 
 await WaitTerminal(ledger, raceId, TimeSpan.FromSeconds(20));
+await WaitQuiescent(ledger, "envD", TimeSpan.FromSeconds(10));
 
 // Now the same sequence with the window held.
 bool windowTaken, newWorkRefused = false, otherTargetUnaffected;
@@ -104,11 +105,13 @@ Check("A5c holding a swap window closes the gap for its scope and leaves other t
 // A5d tests the behaviour it is named for: real work, started after release, that actually completes.
 string afterReleaseId = v2.StartDetached(ledger, "envD", raceEffect, 150, "succeed", CancellationToken.None);
 var afterRelease = await WaitTerminal(ledger, afterReleaseId, TimeSpan.FromSeconds(20));
+await WaitQuiescent(ledger, "envD", TimeSpan.FromSeconds(10));
 Check("A5d the scope accepts real work again once the window is released",
     afterRelease.State == OperationState.Succeeded,
     new { state = afterRelease.State.ToString() });
 
 // A5e: exclusion must hold in both directions, not only global-blocks-global.
+await WaitQuiescent(ledger, null, TimeSpan.FromSeconds(10));
 using (IDisposable? globalWindow = ledger.TryEnterSwapWindow()) {
     Check("A5e a target window is refused while a global window is held",
         globalWindow is not null && ledger.TryEnterSwapWindow("envD") is null,
@@ -123,6 +126,7 @@ using (IDisposable? targetWindow = ledger.TryEnterSwapWindow("envD")) {
 // A5g: a window must never be granted while a terminal record is still unwritten.
 string evidenceId = v2.StartDetached(ledger, "envG", raceEffect, 150, "succeed", CancellationToken.None);
 await WaitTerminal(ledger, evidenceId, TimeSpan.FromSeconds(20));
+await WaitQuiescent(ledger, "envG", TimeSpan.FromSeconds(10));
 bool endPersisted;
 using (IDisposable? window = ledger.TryEnterSwapWindow("envG")) {
     string[] lines = File.ReadAllLines(evidence);
@@ -242,6 +246,33 @@ Check("P3 retiring the runtime does not destroy degraded evidence; only replacin
           stillDegraded = faultLedger.DegradedScopes.Contains("envP"),
           note = "OperationRecord is a host-contract type held in a host collection, so it survives the release that produced it" });
 
+// P4: a failed ADMISSION write must admit nothing — no work, no unfinishable live owner.
+var admitFail = new OperationLedger(Path.Combine(work, "admit.jsonl")) { FailBeginPersistenceForTests = true };
+string p4Effect = Path.Combine(work, "p4-effect.log");
+bool p4Threw = false;
+try { v2.StartDetached(admitFail, "envQ", p4Effect, 100, "succeed", CancellationToken.None); }
+catch (IOException) { p4Threw = true; }
+await Task.Delay(400);
+Check("P4 a failed admission write starts no work and leaves no unfinishable owner",
+    p4Threw && admitFail.Running.Count == 0 && admitFail.IsQuiescent("envQ") && !File.Exists(p4Effect),
+    new { threw = p4Threw, running = admitFail.Running.Count, quiescent = admitFail.IsQuiescent("envQ"),
+          effectWritten = File.Exists(p4Effect),
+          note = "evidence is written before registration, so nothing is registered when it fails" });
+
+// P5: owned cleanup held after the outcome is published. Ownership ends at Dispose, not at Complete.
+string p5Id = v2.StartDetached(ledger, "envC2", Path.Combine(work, "p5-effect.log"), 100, "cleanup",
+    CancellationToken.None);
+var p5Terminal = await WaitTerminal(ledger, p5Id, TimeSpan.FromSeconds(20));
+bool duringCleanup = !ledger.IsQuiescent("envC2") && ledger.TryEnterSwapWindow("envC2") is null;
+bool idleAfter = await WaitQuiescent(ledger, "envC2", TimeSpan.FromSeconds(10));
+bool windowAfter;
+using (IDisposable? w = ledger.TryEnterSwapWindow("envC2")) { windowAfter = w is not null; }
+Check("P5 retirement is refused while owned cleanup is held, and allowed once ownership is released",
+    p5Terminal.State == OperationState.Succeeded && duringCleanup && idleAfter && windowAfter,
+    new { outcomePublished = p5Terminal.State.ToString(), refusedDuringCleanup = duringCleanup,
+          idleAfterRelease = idleAfter, windowGrantedAfter = windowAfter,
+          note = "the outcome was Succeeded throughout; only ownership changed" });
+
 // ── O1: terminal status is NOT sufficient for reclamation ──────────────────────────────────────────
 // @kirillkrylov's returned-value-ownership finding, measured against my own invariant I3. A caller that
 // holds a runtime-defined result also holds the release that defined its type, however finished the
@@ -298,6 +329,17 @@ static async Task<(OperationLedger Ledger, string Id, WeakReference Weak)> Phase
     runtime = null!;
     context.Unload();
     return (ledger, id, weak);
+}
+
+// Quiescence now trails the published outcome: ownership ends at Dispose, not at Complete. Anything
+// asserting "idle after it finished" has to wait for that, or it races the cleanup window by design.
+static async Task<bool> WaitQuiescent(IOperationLedger ledger, string? target, TimeSpan budget) {
+    DateTime deadline = DateTime.UtcNow + budget;
+    while (DateTime.UtcNow < deadline) {
+        if (ledger.IsQuiescent(target)) return true;
+        await Task.Delay(25);
+    }
+    return ledger.IsQuiescent(target);
 }
 
 // Shared contention harness: one starter against one swapper, so the repaired and the deliberately
@@ -373,9 +415,10 @@ static async Task<(WeakReference V1Weak, AssemblyLoadContext V2Context, IDetache
             && effectLines[0].StartsWith("v1-", StringComparison.Ordinal),
         new { state = terminal.State.ToString(), code = terminal.Code, effectLines });
 
-    check("A2b the target is quiescent once the operation terminates",
-        ledger.IsQuiescent("envA") && ledger.IsQuiescent(),
-        new { envA = ledger.IsQuiescent("envA"), global = ledger.IsQuiescent() });
+    bool a2bIdle = await WaitQuiescent(ledger, "envA", TimeSpan.FromSeconds(10));
+    check("A2b the target is quiescent once the operation releases ownership",
+        a2bIdle && ledger.IsQuiescent(),
+        new { envA = a2bIdle, global = ledger.IsQuiescent() });
 
     var weak = new WeakReference(v1Context, trackResurrection: true);
     v1Context.Unload();
