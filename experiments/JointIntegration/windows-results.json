@@ -111,29 +111,38 @@
       }
     },
     {
-      "name": "X7 mutation control: skipping the republication admits under a snapshot cleanup reclaimed",
+      "name": "X7 a stale selection no longer admits under a reclaimed snapshot, because selected is retained",
       "passed": true,
       "detail": {
-        "reclaimed": [
-          "cfg-14"
-        ],
+        "reclaimed": [],
         "admittedUnder": "cfg-14",
-        "snapshotStillExists": false,
+        "snapshotStillExists": true,
         "pinnedInStore": "cfg-15",
-        "note": "passing here is the point: it shows what X6's rule prevents"
+        "note": "was reproducible until the selected-snapshot reason landed; kept as the acceptance case"
       }
     },
     {
-      "name": "X8 a cleanup inside the commit window reclaims the snapshot the selection still names",
+      "name": "X8 a cleanup inside the commit window no longer reclaims the snapshot the selection names",
+      "passed": true,
+      "detail": {
+        "reclaimed": [],
+        "admittedUnder": "cfg-16",
+        "stillExists": true,
+        "pinnedInStore": "cfg-17",
+        "note": "the handoff @kirillkrylov required: the selection retains its snapshot across admission"
+      }
+    },
+    {
+      "name": "X10 mutation control: ignoring the selected-snapshot reason reopens the window",
       "passed": true,
       "detail": {
         "reclaimed": [
-          "cfg-16"
+          "cfg-18",
+          "cfg-14"
         ],
-        "admittedUnder": "cfg-16",
+        "stillSelected": true,
         "stillExists": false,
-        "pinnedInStore": "cfg-17",
-        "note": "passing here is the gap, not the fix: the republish rule narrows this window, not closes it"
+        "note": "observed failing the guarantee, not merely applied"
       }
     },
     {
@@ -143,12 +152,13 @@
         "selectedAtCleanupTime": true,
         "selectedNow": [
           "cfg-2",
-          "cfg-3",
-          "cfg-5",
+          "cfg-4",
+          "cfg-6",
           "cfg-11",
           "cfg-13",
           "cfg-14",
-          "cfg-16"
+          "cfg-16",
+          "cfg-18"
         ],
         "note": "one ownership reason short: Cleanup consults held and pinned and retained, not selected"
       }

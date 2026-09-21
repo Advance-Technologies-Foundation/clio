@@ -4,8 +4,8 @@ Discussion #1643. This is the integrated narrative for the part I own — the ru
 selection and the admission boundary — written so the design can be understood without reading the
 thread. Evidence is at the end, not throughout.
 
-**Tested at `4f6c04e62fcf`: 12/12 on macOS, 12/12 on Windows from a clean clone.** The settings half is
-`nikonov/supervisor-quiescence-probe@f70f454d4365`, linked rather than copied. Neither half is
+**Tested at `4f31da748308`: 13/13 on macOS, 13/13 on Windows from a clean clone.** The settings half is
+`nikonov/supervisor-quiescence-probe@62fb98e05736`, linked rather than copied. Neither half is
 reimplemented here.
 
 ---
@@ -61,9 +61,10 @@ library share it:
   the same pair, and a failure means no publication happened at all.
 - **Any activation of either half republishes the pair**, so the selected and the pinned snapshot are
   equal outside the commit window. Inside that window they are not, which is why the next point exists.
-- **A snapshot named by a committed selection is retained.** `SelectedSnapshots` is the fourth ownership
-  reason for cleanup, next to pinned, held and retained. Without it a cleanup landing in the commit
-  window reclaims a snapshot an admission is about to use.
+- **A snapshot named by a committed selection is retained.** `SelectedSnapshots` is an ownership reason
+  for cleanup alongside pinned, held and rollback-retained. Without it a cleanup landing in the commit
+  window reclaims a snapshot an admission is about to use — X10 switches the reason off and the window
+  reopens exactly as it was first measured.
 - **Ownership ends at disposal, or at the owner ceasing to exist.** A cross-process owner is asked
   (`IOwnerLiveness`) rather than trusted to dispose itself. An owner that cannot be asked is *reported*,
   never assumed dead.
@@ -118,7 +119,7 @@ A partner builds against that contract assembly alone and composes whichever rel
 
 ## 7. Evidence
 
-`macos-results.json`, `windows-results.json`, both at `4f6c04e62fcf`.
+`macos-results.json`, `windows-results.json`, both at `4f31da748308`.
 
 | | |
 |---|---|

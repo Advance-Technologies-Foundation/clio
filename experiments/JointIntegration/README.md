@@ -39,7 +39,7 @@ dotnet run --project experiments/JointIntegration/JointIntegration.csproj -c Rel
 | X10 | **mutation control** — ignoring the selected-snapshot reason reopens the window |
 | X9 | the ledger already knows the answer cleanup needs: the snapshot was still selected |
 
-**13/13 on macOS.** Exact build target: this branch, plus `experiments/SettingsVersioning` taken from
+**13/13 on macOS, 13/13 on Windows from a clean clone at `4f31da748308`.** Exact build target: this branch, plus `experiments/SettingsVersioning` taken from
 `nikonov/supervisor-quiescence-probe@62fb98e05736`. Both are in this tree, so the branch builds and runs
 without mixing incompatible sources.
 
