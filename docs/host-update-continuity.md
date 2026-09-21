@@ -190,6 +190,14 @@ a clean, quiescent shutdown.
   composed path (kill/respawn/pressure sequencing — only the outcome oracle has one
   now, via S7); concurrency beyond one swapper and one pressure loop is untested.
 
+- **Owner liveness for a killed cross-process backend** — was an unfalsified gap in
+  the client-correlation probe (see the Retraction under Flow B below), now closed
+  there with [Alexandr-Kravchuk's `IOwnerLiveness`](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18543950)
+  wired through a `ProcessOwner` wrapper, confirmed both ways (fails without the
+  wrapper, passes with it). **Not** propagated to `Supervisor/Program.cs`'s S1-S10 —
+  those scenarios pass bare `Process` owners, so `AcquireDrainedWindow` under owner
+  loss remains genuinely untested, not merely undemonstrated.
+
 ~~A small counterexample probe demonstrating "idle transport ≠ idle process"~~ —
 **superseded.** [Alexandr-Kravchuk pointed out](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18540612)
 this is already exactly the `create-app-section` A/B plus E3's control C2; a third
@@ -261,15 +269,37 @@ now drives a real MCP server ([`McpHost`](https://github.com/Advance-Technologie
 same pattern as the shipping `Clio10.Mcp` adapter) through the same reserve-then-drain
 swap: start an operation over MCP, query it mid-flight (`Running`), trigger a real
 V1→V2 swap over MCP, query the **same opaque id on the same never-reconnected
-connection** afterward (`Succeeded`), confirm a real PID change. 4/4 on first run,
-3/3 consecutive runs. **Architectural finding, not yet closed:** the third of the
-three required outcomes (`Unknown`, alongside `Running`/`Succeeded`) needs the
-MCP *pipe-owning* process itself to be lost while the client stays connected —
-`McpHost` cannot produce that, because it owns both the pipe and the ledger in one
-process. Demonstrating `Unknown` honestly needs the genuine three-tier split Flow B
-describes elsewhere in this document (client → thin pipe-owning supervisor →
-separately replaceable backend/ledger owner) — a different architecture, not a
-missing test case on the current one.
+connection** afterward, confirm a real PID change.
+
+**Retraction.** The claim that used to sit here — that `Unknown` needs a genuine
+three-tier split because `McpHost` owns both the pipe and the ledger in one process —
+was wrong, and [Alexandr found why](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18543950):
+my probe's own work (800ms) was always shorter than its drain budget (20s), so the
+reserve-then-drain swap always waited for natural completion and never actually
+killed a backend with work outstanding. The claim was never exercised, not confirmed.
+When he forced a genuine kill-while-in-flight through the same one-process `McpHost`,
+the ledger answered `Running` forever — not because the architecture needs a third
+tier, but because `_ledger.Begin(target, "V1", _backend)` passes a bare `Process` as
+`owner`, and ownership release was disposal-based; a killed process disposes nothing.
+His fix, [`IOwnerLiveness`](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18543950)
+(`bool IsAlive { get; }`, checked by a new `ResolveOrphansCore()` on every `Running`/
+`IsQuiescent`/`Query`), lets the ledger ask a cross-process owner directly instead of
+waiting on a `Dispose` that a killed process will never call. Wrapping `_backend` in a
+`ProcessOwner : IOwnerLiveness` (`IsAlive => !process.HasExited`) and re-running the
+same one-process `McpHost` now produces `Unknown` — first poll, not eventually — for a
+forced swap with work genuinely in flight, confirmed 3/3 runs, with the regression
+observed both ways: reverting the wrapper alone reproduces the original failure
+(`Running`, 8/8 polls, exit code 1) against the same build. One process was always
+enough; what was missing was asking the owner instead of waiting for it. Integrated on
+[`nikonov/supervisor-quiescence-probe`](https://github.com/Advance-Technologies-Foundation/clio/tree/nikonov/supervisor-quiescence-probe).
+
+**Still open, correctly scoped now:** `Supervisor/Program.cs` (S1-S10) passes bare
+`Process` owners to `Begin` and is untouched by this fix, so `ResolveOrphansCore`
+no-ops for it. That probe's `AcquireDrainedWindow` — shared by S2/S4/S6-S10 — has not
+been shown to hang under owner loss, but has not been shown *not to* either now that
+the mechanism that would resolve it is known to exist and simply isn't wired there.
+Not claiming H3 applies; claiming it's untested, which is different from claiming
+Flow B needs a different architecture.
 
 *What remains running.* A **second, permanent process** — the supervisor itself. It
 becomes [its own compatibility boundary that must stay stable and can never update
