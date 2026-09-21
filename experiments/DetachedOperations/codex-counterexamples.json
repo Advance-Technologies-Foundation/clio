@@ -1,0 +1,11 @@
+{
+  "sourceCommit": "e3138962cec2aad53918e791c1fc7d219d38a43d",
+  "os": "Microsoft Windows NT 10.0.26200.0",
+  "framework": "10.0.12",
+  "targetGrantedUnderGlobal": true,
+  "windowBeforeCompletionPersisted": true,
+  "writerBlocked": true,
+  "evidenceLinesWhileBlocked": 1,
+  "evidenceLinesAfterCompletion": 2,
+  "interpretation": "Exit 0 means both defects reproduced, NOT that the admission barrier is safe. No restart/kill is performed."
+}
