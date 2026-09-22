@@ -59,6 +59,26 @@ internal sealed class ExternalAccessSessionProviderTests {
 		}
 	}
 
+	// Unlike ScriptedHandler, this one is shared across every request the provider makes and records
+	// all of them, so a test can tell an aliveness probe from an exchange instead of counting handler
+	// constructions - which the probe and the exchange both trigger.
+	private sealed class RecordingHandler : HttpMessageHandler {
+		private readonly Func<HttpRequestMessage, HttpResponseMessage> _respond;
+
+		public RecordingHandler(Func<HttpRequestMessage, HttpResponseMessage> respond) => _respond = respond;
+
+		public List<(HttpMethod Method, string Uri)> Requests { get; } = [];
+
+		protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,
+			CancellationToken cancellationToken) {
+			Requests.Add((request.Method, request.RequestUri.ToString()));
+			return Task.FromResult(_respond(request));
+		}
+
+		public bool PostedTheToken => Requests.Any(r => r.Method == HttpMethod.Post
+			&& r.Uri.EndsWith(ExternalAccessSessionProvider.OAuthTokenLoginPath, StringComparison.Ordinal));
+	}
+
 	#endregion
 
 	#region Methods: Private
@@ -232,7 +252,7 @@ internal sealed class ExternalAccessSessionProviderTests {
 
 		// Assert
 		cache.Received(1).Write(
-			Arg.Is<string>(key => key == "env-key_ea_62821f5d-8af8-492a-8a82-03b575a94e69"),
+			Arg.Is<string>(key => key == "env-key_ea_62821f5d8af8492a8a8203b575a94e69"),
 			Arg.Is<string>(json => json.Contains(ExternalAccessSessionProvider.AuthCookieName)),
 			Arg.Any<string>());
 	}
@@ -267,10 +287,15 @@ internal sealed class ExternalAccessSessionProviderTests {
 			"{\"cookies\":[{\"name\":\".ASPXAUTH\",\"value\":\"stale\",\"domain\":\"target.creatio.com\","
 			+ "\"path\":\"/\",\"httpOnly\":true,\"secure\":true,\"sameSite\":\"Lax\",\"expires\":-1}],\"origins\":[]}");
 		int exchanges = 0;
+		List<RecordingHandler> handlers = [];
 		ExternalAccessSessionProvider sut = new(
-			cookies => {
+			_ => {
 				exchanges++;
-				return new ScriptedHandler(cookies, HttpStatusCode.Unauthorized, "{}", Array.Empty<Cookie>());
+				RecordingHandler handler = new(_ => new HttpResponseMessage(HttpStatusCode.Unauthorized) {
+					Content = new StringContent("{}", Encoding.UTF8, "application/json")
+				});
+				handlers.Add(handler);
+				return handler;
 			},
 			cache, fileSystem);
 
@@ -281,9 +306,51 @@ internal sealed class ExternalAccessSessionProviderTests {
 		act.Should().Throw<ExternalAccessLoginException>(
 			because: "the cached session was rejected and the exchange that followed was rejected too, so "
 				+ "there is no session to hand back");
-		cache.Received(1).Delete("env-key_ea_62821f5d-8af8-492a-8a82-03b575a94e69");
+		cache.Received(1).Delete("env-key_ea_62821f5d8af8492a8a8203b575a94e69");
 		exchanges.Should().BeGreaterThan(1,
 			because: "a dead cached session must not be reused — the probe and the exchange are two "
 				+ "separate requests, so the provider went on to try the token");
+		handlers.Should().Contain(h => h.PostedTheToken,
+			because: "counting handler constructions cannot tell a probe from an exchange — only a POST to "
+				+ ExternalAccessSessionProvider.OAuthTokenLoginPath + " proves the token was actually tried");
+	}
+
+	[Test]
+	[Description("Session reuse is why the feature works at all: the token lives about 120 seconds and the session much longer, so a cached entry whose aliveness probe passes must be handed back WITHOUT a second exchange. This also exercises the StorageStateJson round trip, including the Expires -1 <-> DateTime.MinValue conversion, which nothing else asserts.")]
+	public void GetSession_ShouldReuseTheCachedSession_WhenTheProbeSucceeds() {
+		// Arrange — the cached file holds a live auth cookie and the shell probe answers normally.
+		IBrowserSessionCache cache = Substitute.For<IBrowserSessionCache>();
+		cache.BuildKey(Arg.Any<EnvironmentSettings>()).Returns("env-key");
+		cache.TryRead(Arg.Any<string>(), out Arg.Any<string>())
+			.Returns(call => { call[1] = "/cached/session.json"; return true; });
+		Clio.Common.IFileSystem fileSystem = Substitute.For<Clio.Common.IFileSystem>();
+		fileSystem.ReadAllText("/cached/session.json").Returns(
+			"{\"cookies\":[{\"name\":\".ASPXAUTH\",\"value\":\"cached-session\","
+			+ "\"domain\":\"target.creatio.com\",\"path\":\"/\",\"httpOnly\":true,\"secure\":true,"
+			+ "\"sameSite\":\"Lax\",\"expires\":-1}],\"origins\":[]}");
+		List<RecordingHandler> handlers = [];
+		ExternalAccessSessionProvider sut = new(
+			_ => {
+				RecordingHandler handler = new(_ => new HttpResponseMessage(HttpStatusCode.OK) {
+					Content = new StringContent("<html>Shell</html>", Encoding.UTF8, "text/html")
+				});
+				handlers.Add(handler);
+				return handler;
+			},
+			cache, fileSystem);
+
+		// Act
+		IReadOnlyList<CreatioSessionCookie> session =
+			sut.GetSession(Environment(), GrantToken("62821f5d-8af8-492a-8a82-03b575a94e69"));
+
+		// Assert
+		session.Should().ContainSingle(cookie => cookie.Name == ExternalAccessSessionProvider.AuthCookieName
+			&& cookie.Value == "cached-session",
+			because: "the cached cookies are what the caller reuses — a mapping bug here would silently "
+				+ "demand a freshly minted token for every command");
+		handlers.Should().NotContain(h => h.PostedTheToken,
+			because: "a live cached session must cost no exchange at all; the token is long gone by then");
+		cache.DidNotReceive().Delete(Arg.Any<string>());
+		cache.DidNotReceive().Write(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>());
 	}
 }

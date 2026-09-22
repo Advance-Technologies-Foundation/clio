@@ -1441,6 +1441,7 @@ public class BindingsModule {
 	// consumed via the dedicated bearer ctor and must never reach the login/password path
 	// (multi-tenant safety, ENG-93208 B1). Login/password are passed as-is (no Supervisor default).
 	private static RemoteDataProvider BuildRemoteDataProvider(EnvironmentSettings settings) {
+		Clio.Common.ExternalAccess.ExternalAccessSettingsGuard.Validate(settings);
 		// ATF.Repository has no session-cookie constructor, so an external-access session cannot back a
 		// data provider. Fail closed and name the reason: falling through would build a provider from the
 		// login/password branch below - with no credentials present that is the "Supervisor" default, a
@@ -1465,6 +1466,10 @@ public class BindingsModule {
 	// bearer ctor and must never reach the "Supervisor" fallback (multi-tenant safety, ENG-93208 B1).
 	// The Supervisor/localhost default stays reachable ONLY for the no-credential bootstrap case.
 	private static CreatioClient BuildCreatioClient(EnvironmentSettings settings) {
+		// Same rule as the application-client factory and Program, asked in one place: a token the
+		// caller combined with an access token or an OAuth client must be refused here too, not
+		// silently preferred over the identity they named.
+		Clio.Common.ExternalAccess.ExternalAccessSettingsGuard.Validate(settings);
 		// External access first: the session is established by exchanging the token, and the resulting
 		// cookies are imported into a client with NO credentials, so creatio.client treats it as already
 		// authenticated and never attempts a login. Falling through to the branches below would connect

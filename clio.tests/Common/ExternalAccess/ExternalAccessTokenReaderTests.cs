@@ -39,7 +39,7 @@ internal sealed class ExternalAccessTokenReaderTests {
 		ExternalAccessGrant result = ExternalAccessTokenReader.Read(token);
 
 		// Assert
-		result.AccessId.Should().Be("62821f5d-8af8-492a-8a82-03b575a94e69",
+		result.AccessId.Should().Be("62821f5d8af8492a8a8203b575a94e69",
 			because: "the access id keys the session cache and identifies the grant to the caller");
 		result.OwnerClientId.Should().Be("4bua",
 			because: "the owner client id names the customer site the grant belongs to");
@@ -95,5 +95,78 @@ internal sealed class ExternalAccessTokenReaderTests {
 		// Assert
 		result.Should().NotBeNull(
 			because: "a token copied out of an Authorization header carries the scheme and must still parse");
+	}
+
+	[Test]
+	[Description("The access id becomes part of the session-cache FILE NAME, and the payload is never signature-checked, so a claim that is not a plain grant id must be refused here rather than sanitized downstream. A traversal segment would otherwise let an attacker-chosen token read, overwrite and delete another environment's cached session — and re-home its live cookies onto the attacker's host.")]
+	[TestCase("x/../../sessions/prod-creatio-com_ab12cd34ef5678", TestName = "TraversalSegment")]
+	[TestCase("../../../etc/passwd", TestName = "ParentDirectory")]
+	[TestCase("a\\b", TestName = "WindowsSeparator")]
+	[TestCase("not-a-guid", TestName = "PlainText")]
+	[TestCase("", TestName = "Empty")]
+	public void Read_ShouldReturnNull_WhenTheAccessIdIsNotAGrantId(string accessId) {
+		// Arrange
+		string token = BuildToken("{\"prop:ResourceId\":\"" + accessId + "\"}");
+
+		// Act
+		ExternalAccessGrant result = ExternalAccessTokenReader.Read(token);
+
+		// Assert
+		result.Should().BeNull(
+			because: "an unusable grant id must degrade to \"no cache entry, go straight to the exchange\", "
+				+ "never to a cache key carrying a path separator");
+	}
+
+	[Test]
+	[Description("A GUID in any accepted spelling normalizes to the same cache key, so braces or upper case cannot produce a second cached session for one grant.")]
+	[TestCase("62821f5d-8af8-492a-8a82-03b575a94e69", TestName = "Dashed")]
+	[TestCase("{62821F5D-8AF8-492A-8A82-03B575A94E69}", TestName = "BracedUpperCase")]
+	[TestCase("62821f5d8af8492a8a8203b575a94e69", TestName = "Compact")]
+	public void Read_ShouldNormalizeTheAccessId_WhateverTheGuidSpelling(string accessId) {
+		// Arrange
+		string token = BuildToken("{\"prop:ResourceId\":\"" + accessId + "\"}");
+
+		// Act
+		ExternalAccessGrant result = ExternalAccessTokenReader.Read(token);
+
+		// Assert
+		result.AccessId.Should().Be("62821f5d8af8492a8a8203b575a94e69");
+		result.AccessId.Should().NotContainAny(["/", "\\", "..", ":"],
+			because: "the value is concatenated into a session-cache file name");
+	}
+
+	[Test]
+	[Description("Read is documented to return null for an unreadable token, and the session provider depends on that. A payload that is not a JSON object, a claim of the wrong JSON type, or a millisecond-based exp must not throw a stack trace at the operator before the site is ever contacted.")]
+	[TestCase("[1,2,3]", TestName = "PayloadIsAnArray")]
+	[TestCase("\"scalar\"", TestName = "PayloadIsAScalar")]
+	[TestCase("{\"prop:ResourceId\":12345}", TestName = "AccessIdIsANumber")]
+	[TestCase("{\"prop:ResourceId\":\"62821f5d-8af8-492a-8a82-03b575a94e69\",\"prop:OwnerClientId\":7}",
+		TestName = "OwnerClientIdIsANumber")]
+	public void Read_ShouldNotThrow_WhenThePayloadHasAnUnexpectedShape(string payload) {
+		// Arrange
+		string token = BuildToken(payload);
+
+		// Act
+		Func<ExternalAccessGrant> act = () => ExternalAccessTokenReader.Read(token);
+
+		// Assert
+		act.Should().NotThrow(
+			because: "an unverified payload is attacker-shaped, and Read documents null rather than an exception");
+	}
+
+	[Test]
+	[Description("A millisecond-based exp parses as a long and then makes FromUnixTimeSeconds throw. The grant still reads; only the expiry is unknown.")]
+	public void Read_ShouldIgnoreAnOutOfRangeExpiry_WithoutThrowing() {
+		// Arrange
+		string token = BuildToken(
+			"{\"prop:ResourceId\":\"62821f5d-8af8-492a-8a82-03b575a94e69\",\"exp\":1789651713000}");
+
+		// Act
+		ExternalAccessGrant result = ExternalAccessTokenReader.Read(token);
+
+		// Assert
+		result.Should().NotBeNull(because: "an unreadable expiry is not a reason to refuse the grant itself");
+		result.TokenExpiresOnUtc.Should().BeNull(
+			because: "a value outside the Unix-seconds range says nothing about when the token expires");
 	}
 }

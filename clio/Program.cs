@@ -1030,6 +1030,7 @@ internal class Program {
 	/// <param name="settings">The resolved environment.</param>
 	/// <returns>A client the caller owns and must dispose.</returns>
 	private static IOwnedApplicationClient CreateRemoteCommandClient(EnvironmentSettings settings){
+		Clio.Common.ExternalAccess.ExternalAccessSettingsGuard.Validate(settings);
 		if (!string.IsNullOrEmpty(settings.ExternalAccessToken)) {
 			return Resolve<IApplicationClientFactory>().CreateOwnedEnvironmentClient(settings);
 		}

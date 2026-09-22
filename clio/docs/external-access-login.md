@@ -61,7 +61,7 @@ Every run names the grant it is working under, so a later permission failure is 
 | | |
 |---|---|
 | **The session cannot be renewed.** | clio has no way to mint a replacement token, so when the session ends the command fails and names external access as the reason, instead of silently trying a login with credentials that do not exist. Request a fresh token and run the command again. |
-| **It cannot be combined with `--access-token`.** | The two are different authentication models. clio refuses the combination rather than picking one. |
+| **It cannot be combined with `--access-token` or an OAuth client (`--clientId`/`--clientSecret`).** | They are different authentication models against different identities. clio refuses the combination on every dispatch path rather than picking one. A registered environment that stores a `--clientId` counts here too: name the identity you mean, or register the environment without one. |
 | **Commands that read through ATF.Repository are unavailable.** | That library accepts a login and password, an OAuth client, or an API token — but not session cookies. Such a command fails with that reason named. |
 | **A restricted grant produces permission errors.** | A grant issued with data access or configuration access denied yields a session that the site restricts accordingly. clio reads both flags out of the token and prints them at the start of every run. |
 

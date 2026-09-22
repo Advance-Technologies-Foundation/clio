@@ -15,6 +15,13 @@ namespace Clio.Common.ExternalAccess;
 /// identity service it trusts, and refuses the exchange otherwise. These claims are used only to key
 /// the session cache and to tell the caller which grant they are working under, so a forged token
 /// buys nothing: it still fails at the exchange.
+/// <para>
+/// Because the payload is unauthenticated, every value taken from it is constrained HERE rather than
+/// where it is consumed. <see cref="ExternalAccessGrant.AccessId"/> keys the session cache and so
+/// becomes part of a file name: it must parse as a GUID and is carried on in its normalized "N"
+/// form. A payload that does not satisfy that reads as <see langword="null"/>, which the session
+/// provider already handles as "no cache entry, go straight to the exchange".
+/// </para>
 /// </remarks>
 public static class ExternalAccessTokenReader {
 	private const string AccessIdClaim = "prop:ResourceId";
@@ -27,22 +34,36 @@ public static class ExternalAccessTokenReader {
 	/// <param name="token">The external-access token, with or without a "Bearer " prefix.</param>
 	/// <returns>The grant terms, or <see langword="null"/> when the token is not a readable JWT.</returns>
 	public static ExternalAccessGrant Read(string token) {
-		JsonNode payload = TryReadPayload(token);
-		if (payload is null) {
+		// Every claim read below is guarded, not just the decode: the payload is attacker-shaped, so
+		// a JSON array where an object is expected, or a claim that is a number where a string is
+		// expected, must read as "not a usable token" rather than throw a stack trace at the operator
+		// before the site is ever contacted.
+		try {
+			if (TryReadPayload(token) is not JsonObject payload) {
+				return null;
+			}
+			// The access id keys the session cache, so it reaches a file name. prop:ResourceId is an
+			// ExternalAccess row id; anything that is not a GUID is refused here rather than
+			// sanitized, so no separator or traversal segment can reach BrowserSessionCache.GetPath.
+			if (!Guid.TryParse(ReadString(payload, AccessIdClaim), out Guid grantId)) {
+				return null;
+			}
+			return new ExternalAccessGrant(
+				grantId.ToString("N"),
+				ReadString(payload, OwnerClientIdClaim) ?? string.Empty,
+				ReadBoolean(payload, DataIsolationClaim),
+				ReadBoolean(payload, SystemOperationsClaim),
+				ReadDate(payload, GrantExpirationClaim),
+				ReadUnixSeconds(payload, "exp"));
+		} catch (Exception ex) when (ex is FormatException or JsonException or ArgumentException
+			or InvalidOperationException) {
 			return null;
 		}
-		string accessId = payload[AccessIdClaim]?.GetValue<string>();
-		if (string.IsNullOrWhiteSpace(accessId)) {
-			return null;
-		}
-		return new ExternalAccessGrant(
-			accessId,
-			payload[OwnerClientIdClaim]?.GetValue<string>() ?? string.Empty,
-			ReadBoolean(payload, DataIsolationClaim),
-			ReadBoolean(payload, SystemOperationsClaim),
-			ReadDate(payload, GrantExpirationClaim),
-			ReadUnixSeconds(payload, "exp"));
 	}
+
+	// ToString() rather than GetValue<string>(): the platform's claim types are inconsistent, and a
+	// claim that arrives as a number or a boolean must not throw.
+	private static string ReadString(JsonObject payload, string claim) => payload[claim]?.ToString();
 
 	private static JsonNode TryReadPayload(string token) {
 		if (string.IsNullOrWhiteSpace(token)) {
@@ -70,20 +91,24 @@ public static class ExternalAccessTokenReader {
 		return Convert.FromBase64String(padded.PadRight(padded.Length + (3 - (padded.Length + 3) % 4) % 4, '='));
 	}
 
-	private static bool ReadBoolean(JsonNode payload, string claim) {
+	private static bool ReadBoolean(JsonObject payload, string claim) {
 		// The platform writes these as the strings "True"/"False", not as JSON booleans.
-		string value = payload[claim]?.ToString();
+		string value = ReadString(payload, claim);
 		return bool.TryParse(value, out bool parsed) && parsed;
 	}
 
-	private static DateTimeOffset? ReadDate(JsonNode payload, string claim) =>
-		DateTimeOffset.TryParse(payload[claim]?.GetValue<string>(), CultureInfo.InvariantCulture,
+	private static DateTimeOffset? ReadDate(JsonObject payload, string claim) =>
+		DateTimeOffset.TryParse(ReadString(payload, claim), CultureInfo.InvariantCulture,
 			DateTimeStyles.None, out DateTimeOffset parsed)
 			? parsed
 			: null;
 
-	private static DateTimeOffset? ReadUnixSeconds(JsonNode payload, string claim) =>
-		long.TryParse(payload[claim]?.ToString(), out long seconds)
+	// The range check is not decoration: a millisecond-based `exp` parses as a long and then makes
+	// FromUnixTimeSeconds throw, which the operator would see as a stack trace.
+	private static DateTimeOffset? ReadUnixSeconds(JsonObject payload, string claim) =>
+		long.TryParse(ReadString(payload, claim), out long seconds)
+			&& seconds >= DateTimeOffset.MinValue.ToUnixTimeSeconds()
+			&& seconds <= DateTimeOffset.MaxValue.ToUnixTimeSeconds()
 			? DateTimeOffset.FromUnixTimeSeconds(seconds)
 			: null;
 }

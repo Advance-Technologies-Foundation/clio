@@ -156,16 +156,10 @@ internal class ApplicationClientFactory : IApplicationClientFactory{
 	}
 
 
-	// An external-access token and an API access token are different authentication models against
-	// different endpoints. Picking one silently would hide a caller mistake and produce a session
-	// belonging to the wrong identity, so the combination is refused instead.
-	private static void GuardExternalAccessSettings(EnvironmentSettings settings) {
-		if (!string.IsNullOrEmpty(settings.AccessToken)) {
-			throw new NotSupportedException(
-				"An external-access token and an access token cannot be used together: the first is "
-				+ "exchanged for a session, the second is sent on every request. Supply exactly one.");
-		}
-	}
+	// The rule itself lives in ExternalAccessSettingsGuard so that BindingsModule and Program ask the
+	// same question; this call stays as a cheap defence-in-depth assert on the programmatic path.
+	private static void GuardExternalAccessSettings(EnvironmentSettings settings) =>
+		Clio.Common.ExternalAccess.ExternalAccessSettingsGuard.Validate(settings);
 
 	// Validates the bearer-passthrough settings. Errors are caller-actionable and NEVER echo the
 	// secret token value (FR-12): a blank url is named explicitly, and an unsupported token type
