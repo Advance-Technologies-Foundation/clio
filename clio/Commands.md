@@ -49,7 +49,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="update-app-section"></a>
 - [`update-app-section`](docs/commands/update-app-section.md) - Update metadata of a section inside an existing installed application
 <a id="delete-app-section"></a>
-- [`delete-app-section`](docs/commands/delete-app-section.md) - Delete a section and its artifacts from an existing installed application
+- [`delete-app-section`](docs/commands/delete-app-section.md) - Delete a section and its explicitly referenced pages from an existing installed application
 <a id="list-app-sections"></a>
 - [`list-app-sections`](docs/commands/list-app-sections.md) - List sections of an existing installed application
 <a id="idp-list"></a>
