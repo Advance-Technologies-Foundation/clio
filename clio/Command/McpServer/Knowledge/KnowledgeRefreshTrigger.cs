@@ -206,7 +206,7 @@ internal sealed class KnowledgeRefreshTrigger : IKnowledgeRefreshTrigger {
 	/// and <see cref="ILogger.WriteDebug"/> is a no-op without <c>--debug</c>, which a service task does
 	/// not have. A refused candidate arrives here as <c>Success=false</c>, not as an exception, so the
 	/// per-source diagnostics travel with that warning: they are the part that says WHICH source failed
-	/// and why, and a rejected signature reads differently from an unreachable publisher. A settings
+	/// and why, and a rejected signature reads differently from an unreachable publisher.
 	/// A settings-write refusal (<see cref="SettingsShapeMismatchException"/>, raised when a member of
 	/// <c>appsettings.json</c> cannot be bound so no write is allowed) is deliberately NOT special-cased
 	/// here: the general branch already reports it with the exception's own message, and reproducing

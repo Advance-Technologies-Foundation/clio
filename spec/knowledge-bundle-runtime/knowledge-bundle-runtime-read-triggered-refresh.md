@@ -103,9 +103,13 @@ the publisher really moved.
   per-source diagnostics (`Success=false` is how a refused signature or an unreachable publisher
   arrives, not an exception); every later one drops to a debug line, so an operator with no network does
   not collect one warning per window. Plain `WriteDebug` alone would have been invisible: it is a no-op
-  without `--debug`, which a service task does not have. A settings-write refusal is warned separately
-  and always, sharing `Program.SettingsWriteRefusalReported` so the operator hears it once per process
-  whichever path hit it.
+  without `--debug`, which a service task does not have. A settings-write refusal
+  (`SettingsShapeMismatchException`, raised when a member of `appsettings.json` cannot be bound so no
+  write is allowed) is deliberately NOT special-cased: it goes through the same first-failure latch
+  with the exception's own message. Reproducing `Program.RunIfDue`'s `SettingsWriteRefusalReported`
+  latch here would put a write to the entry point's mutable static inside a knowledge component and
+  split one policy across two files. The cost is stated rather than hidden: after an earlier refresh
+  failure in the same process, a settings-write refusal arrives as a debug line, not a second warning.
 
 ## Alternatives rejected
 
