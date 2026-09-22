@@ -645,6 +645,30 @@ public sealed class ProcessGraphValidatorTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("TC-24: a graph containing a Sub-process element - by either of its two tokens - and a Pre-configured page element validates clean. The prescribed flow is validate-then-build, so an UNKNOWN on a token the server builds correctly refuses a graph that would have worked, and reads to the agent as 'that element is not supported'.")]
+	[TestCase("subProcess")]
+	[TestCase("callActivity")]
+	[TestCase("preconfiguredpage")]
+	public void Validate_ShouldReportNoUnknown_WhenNodeCarriesABuildToken(string dataId) {
+		// Arrange
+		List<ProcessGraphNode> nodes = [Node("s", "startEvent"), Node("x", dataId), Node("e", "endEvent")];
+		List<ProcessGraphEdge> edges = [Seq("s", "x"), Seq("x", "e")];
+
+		// Act
+		ProcessGraphValidationResult result = Validate(nodes, edges);
+
+		// Assert
+		result.Findings.Should().NotContain(f => f.RuleId == "UNKNOWN",
+			because: "ManagerMap has to know the BUILD token and not only the diagram data-id: neither 'subprocess' "
+				+ "nor 'preconfiguredpage' ends in the 'usertask' suffix the catch-all arm matches, so a missing "
+				+ "arm turns a buildable graph into a hard validator Error");
+		result.Findings.Should().NotContain(f => f.Severity == ProcessGraphSeverity.Error,
+			because: "the whole graph is a supported one - start, one activity, end - so nothing else may fire "
+				+ "either, or the UNKNOWN assertion above would pass while the tool still refused the design");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("AC-08: a node with an unrecognized data-id is surfaced as a finding (never crashes).")]
 	public void Validate_ShouldSurfaceUnknownFinding_WhenNodeTypeIsUnrecognized() {
 		// Arrange
