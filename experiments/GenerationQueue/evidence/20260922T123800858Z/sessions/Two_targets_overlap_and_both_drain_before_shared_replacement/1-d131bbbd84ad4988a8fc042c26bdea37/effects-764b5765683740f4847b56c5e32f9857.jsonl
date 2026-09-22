@@ -1,0 +1,4 @@
+{"Id":"b-running","Target":"B","Generation":"V1","Configuration":"cfg-1","Pid":106208,"Value":"mixed"}
+{"Id":"b-queued","Target":"B","Generation":"V1","Configuration":"cfg-1","Pid":106208,"Value":"mixed"}
+{"Id":"a-running","Target":"A","Generation":"V1","Configuration":"cfg-1","Pid":106208,"Value":"mixed"}
+{"Id":"a-queued","Target":"A","Generation":"V1","Configuration":"cfg-1","Pid":106208,"Value":"mixed"}

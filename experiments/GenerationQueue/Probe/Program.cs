@@ -33,12 +33,12 @@ internal sealed class Wire : IWire {
 internal sealed record Command(string Kind, string? Request = null, string? Id = null,
     string? Generation = null, string? Contract = null, string? Payload = null,
     bool HoldWork = false, bool HoldCleanup = false, int DeadlineMs = 0, int BudgetMs = 0,
-    bool HoldOutcome = false);
+    bool HoldOutcome = false, string Target = "A");
 internal sealed record BackendEvent(int Epoch, string Kind, string? Id = null, int Pid = 0, string? Error = null);
 internal sealed record Envelope(Command? Command = null, BackendEvent? Backend = null,
     string? Timer = null, int Epoch = 0, string? Id = null);
 internal sealed record Snapshot(string Id, string Generation, string Configuration, string Contract,
-    string Payload, string Status, bool Owns, int? WorkerPid, string? Reason);
+    string Payload, string Status, bool Owns, int? WorkerPid, string? Reason, string Target);
 internal sealed class Entry(Command command, string generation) {
     internal readonly Command Command = command;
     internal readonly string Generation = generation;
@@ -50,7 +50,7 @@ internal sealed class Entry(Command command, string generation) {
     internal int? WorkerPid;
     internal string? Reason;
     internal Snapshot Snapshot() => new(Command.Id!, Generation, Configuration, Command.Contract!,
-        Command.Payload!, Status, Owns, WorkerPid, Reason);
+        Command.Payload!, Status, Owns, WorkerPid, Reason, Command.Target);
 }
 
 internal interface IBackendFactory {
@@ -91,7 +91,7 @@ internal sealed class Supervisor(Options options, IWire wire, IBackendFactory fa
     private readonly List<string> queue = [];
     private Process? worker;
     private string active = "V1", accepting = "V1", phase = "Starting";
-    private string? running;
+    private readonly HashSet<string> running = [];
     private int epoch, updateEpoch;
     private bool update;
     private readonly int capacity = int.Parse(options.Value("--capacity", "16"));
@@ -168,16 +168,19 @@ internal sealed class Supervisor(Options options, IWire wire, IBackendFactory fa
                 if (string.IsNullOrWhiteSpace(c.Id) || c.Payload is null || c.Contract is null || c.Generation is null) {
                     await ReplyAsync(c, "invalid-request"); break;
                 }
+                if (c.Target is not ("A" or "B")) { await ReplyAsync(c, "unknown-target"); break; }
                 if (entries.ContainsKey(c.Id)) { await ReplyAsync(c, "duplicate-id"); break; }
                 if (phase is "Unavailable" or "Starting" or "Fallback") { await ReplyAsync(c, "unavailable"); break; }
                 if (c.Generation != accepting || c.Contract != Contract(accepting)) {
-                    await ReplyAsync(c, "incompatible-generation"); break;
+                    await ReplyAsync(c, "incompatible-generation", new {
+                        Accepting = accepting, Contract = Contract(accepting), Recovery = "Use current contract before resubmitting"
+                    }); break;
                 }
                 if (queue.Count >= capacity) { await ReplyAsync(c, "queue-full"); break; }
                 var entry = new Entry(c, accepting);
                 entries.Add(c.Id, entry);
                 queue.Add(c.Id);
-                await ReplyAsync(c, "queued-volatile", entry.Snapshot());
+                await ReplyAsync(c, "accepted-until-supervisor-exit", entry.Snapshot());
                 await EmitAsync("Queued", entry.Snapshot());
                 if (c.DeadlineMs > 0) Timer("deadline", c.DeadlineMs, 0, c.Id);
                 break;
@@ -198,7 +201,7 @@ internal sealed class Supervisor(Options options, IWire wire, IBackendFactory fa
             case "query":
                 await ReplyAsync(c, "ok", entries.Values.Select(e => e.Snapshot()).ToArray()); break;
             case "release-work": case "release-cleanup": case "release-outcome":
-                if (c.Id != running || worker is null) { await ReplyAsync(c, "not-running"); break; }
+                if (c.Id is null || !running.Contains(c.Id) || worker is null) { await ReplyAsync(c, "not-running"); break; }
                 await SendWorkerAsync(c); await ReplyAsync(c, "signalled"); break;
             case "crash":
                 if (worker is not null && !worker.HasExited) worker.Kill(entireProcessTree: true);
@@ -212,21 +215,25 @@ internal sealed class Supervisor(Options options, IWire wire, IBackendFactory fa
         catch (IOException error) { inbox.Writer.TryWrite(new(Backend: new(epoch, "Exited", Error: error.Message))); }
     }
     private async Task PumpAsync() {
-        if (running is not null || phase is not ("Ready" or "Draining")) return;
-        var id = queue.FirstOrDefault(id => entries[id].Generation == active);
-        if (id is not null) {
+        if (phase is not ("Ready" or "Draining")) return;
+        // One owner per target; independent targets can have overlapping operations in this same worker.
+        foreach (var id in queue.ToArray()) {
             var entry = entries[id];
+            if (entry.Generation != active || running.Any(r => entries[r].Command.Target == entry.Command.Target)) continue;
+            // Negative control: serialize all targets and let the overlap oracle expose it.
+            if (options.Has("--serialize-targets") && running.Count > 0) continue;
             if (entry.Deadline is { } deadline && DateTimeOffset.UtcNow >= deadline) {
                 await FinishQueuedAsync(entry, "Expired");
-                await PumpAsync();
-                return;
+                continue;
             }
             queue.Remove(id);
-            running = id; entry.Status = "Dispatched"; entry.Owns = true; entry.WorkerPid = worker!.Id;
+            running.Add(id); entry.Status = "Dispatched"; entry.Owns = true; entry.WorkerPid = worker!.Id;
             await EmitAsync("Dispatched", entry.Snapshot());
             await SendWorkerAsync(entry.Command with { Kind = "execute", Generation = entry.Generation });
         }
-        else if (update) {
+        // Negative control omits B's ownership from the shared retirement decision.
+        bool hasOwners = running.Any(id => !options.Has("--ignore-b-drain") || entries[id].Command.Target != "B");
+        if (update && !hasOwners && !queue.Any(id => entries[id].Generation == active)) {
             await EmitAsync("OldDrained");
             await StopAsync();
             phase = "StartingV2";
@@ -240,11 +247,11 @@ internal sealed class Supervisor(Options options, IWire wire, IBackendFactory fa
             await EmitAsync("Ready", new { Generation = active, WorkerPid = e.Pid });
         }
         else if (e.Kind == "Exited") await LostAsync(e.Error ?? "backend-exited");
-        else if (e.Id == running && entries.TryGetValue(e.Id!, out var entry)) {
+        else if (e.Id is not null && running.Contains(e.Id) && entries.TryGetValue(e.Id, out var entry)) {
             if (e.Kind == "Started") entry.Status = "Running";
             if (e.Kind == "Outcome") entry.Status = "Succeeded";
             if (e.Kind == "Rejected") { entry.Status = "NotStarted"; entry.Reason = "backend-contract-rejected"; }
-            if (e.Kind == "Released") { entry.Owns = false; running = null; }
+            if (e.Kind == "Released") { entry.Owns = false; running.Remove(e.Id); }
             await EmitAsync(e.Kind, entry.Snapshot());
         }
     }
@@ -272,10 +279,10 @@ internal sealed class Supervisor(Options options, IWire wire, IBackendFactory fa
         string previous = phase;
         // Ignore duplicate exit notifications after reaching a terminal unavailable state.
         if (previous == "Unavailable") return;
-        if (running is { } id) {
+        foreach (var id in running.ToArray()) {
             var entry = entries[id];
             if (entry.Status is "Dispatched" or "Running") entry.Status = "Unknown";
-            entry.Owns = false; entry.Reason = "ExecutorLost"; running = null;
+            entry.Owns = false; entry.Reason = "ExecutorLost"; running.Remove(id);
             await EmitAsync("ExecutorLost", entry.Snapshot());
         }
         await StopAsync();
@@ -294,46 +301,55 @@ internal sealed class Supervisor(Options options, IWire wire, IBackendFactory fa
 }
 
 internal interface IWorker { Task RunAsync(); }
+internal sealed class WorkState(Command command) {
+    internal readonly Command Command = command;
+    internal bool Completed, Effected;
+}
 internal sealed class Worker(Options options, IWire wire) : IWorker {
-    private Command? current;
-    private bool completed, effected;
+    private readonly Dictionary<string, WorkState> operations = [];
     public async Task RunAsync() {
         if (options.Has("--fail-start")) return;
-        await EventAsync("Ready");
+        await EventAsync("Ready", null);
         while (await Console.In.ReadLineAsync() is { } line) {
             var command = JsonSerializer.Deserialize<Command>(line)!;
             if (command.Kind == "execute") {
-                current = command; completed = false; effected = false;
+                var state = new WorkState(command);
+                operations.Add(command.Id!, state);
                 string generation = options.Value("--generation", "V1");
                 if (command.Generation != generation || command.Contract != (generation == "V1" ? "write/v1" : "write/v2")) {
-                    await EventAsync("Rejected"); await ReleaseAsync(); continue;
+                    await EventAsync("Rejected", command); await ReleaseAsync(state); continue;
                 }
-                await EventAsync("Started");
-                if (!command.HoldWork) await CompleteAsync();
+                await EventAsync("Started", command);
+                if (!command.HoldWork) await CompleteAsync(state);
             }
-            else if (command.Id == current?.Id && command.Kind == "release-work" && !effected) await CompleteAsync();
-            else if (command.Id == current?.Id && command.Kind == "release-outcome" && effected && !completed) await PublishAsync();
-            else if (command.Id == current?.Id && command.Kind == "release-cleanup" && completed) await ReleaseAsync();
+            else if (command.Id is not null && operations.TryGetValue(command.Id, out var state)) {
+                if (command.Kind == "release-work" && !state.Effected) await CompleteAsync(state);
+                else if (command.Kind == "release-outcome" && state.Effected && !state.Completed) await PublishAsync(state);
+                else if (command.Kind == "release-cleanup" && state.Completed) await ReleaseAsync(state);
+            }
         }
     }
-    private Task EventAsync(string kind) => wire.SendAsync(new BackendEvent(0, kind, current?.Id, Environment.ProcessId));
-    private async Task CompleteAsync() {
-        var c = current!;
+    private Task EventAsync(string kind, Command? command) => wire.SendAsync(new BackendEvent(0, kind, command?.Id, Environment.ProcessId));
+    private async Task CompleteAsync(WorkState state) {
+        var c = state.Command;
         string generation = options.Value("--generation", "V1");
         // Independent side-effect witness. V2 intentionally has different behavior for the same payload.
         await File.AppendAllTextAsync(options.Value("--effects", "effects.jsonl"), JsonSerializer.Serialize(new {
-            c.Id, Generation = generation, Configuration = generation == "V1" ? "cfg-1" : "cfg-2",
+            c.Id, c.Target, Generation = generation, Configuration = generation == "V1" ? "cfg-1" : "cfg-2",
             Pid = Environment.ProcessId, Value = generation == "V1" ? c.Payload : c.Payload!.ToUpperInvariant()
         }) + Environment.NewLine);
-        effected = true;
+        state.Effected = true;
         // Test-only handshake: this is not an authoritative outcome and never advances ledger status.
-        await EventAsync("EffectWritten");
-        if (!c.HoldOutcome) await PublishAsync();
+        await EventAsync("EffectWritten", c);
+        if (!c.HoldOutcome) await PublishAsync(state);
     }
-    private async Task PublishAsync() {
-        completed = true;
-        await EventAsync("Outcome");
-        if (!current!.HoldCleanup) await ReleaseAsync();
+    private async Task PublishAsync(WorkState state) {
+        state.Completed = true;
+        await EventAsync("Outcome", state.Command);
+        if (!state.Command.HoldCleanup) await ReleaseAsync(state);
     }
-    private async Task ReleaseAsync() { await EventAsync("Released"); current = null; }
+    private async Task ReleaseAsync(WorkState state) {
+        await EventAsync("Released", state.Command);
+        operations.Remove(state.Command.Id!);
+    }
 }

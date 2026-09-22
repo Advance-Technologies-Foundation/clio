@@ -7,7 +7,7 @@ namespace GenerationQueue.Tests;
 
 /// <summary>Black-box scenarios using a persistent client pipe and real backend processes.</summary>
 [TestFixture, NonParallelizable]
-public sealed class QueueTests {
+public sealed partial class QueueTests {
     private Session session = null!;
 
     /// <summary>Starts a fresh, exclusively owned supervisor per scenario.</summary>
@@ -224,7 +224,7 @@ public sealed class QueueTests {
         await session.EventAsync("Released", "next-v2");
         // Assert
         repeated.GetProperty("Code").GetString().Should().Be("update-unavailable", because: "one pending transition cannot be overwritten by another");
-        next.GetProperty("Code").GetString().Should().Be("queued-volatile", because: "cancellation frees capacity while the old generation drains");
+        next.GetProperty("Code").GetString().Should().Be("accepted-until-supervisor-exit", because: "cancellation frees capacity while the old generation drains without promising durability");
         session.Effects().Select(e => e.GetProperty("Id").GetString()).Should().Equal(["held", "next-v2"], because: "cancelled future work is not dispatched after readiness");
     }
 
@@ -252,7 +252,8 @@ internal sealed class Session(string name) : IAsyncDisposable {
             RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
         foreach (var arg in new[] { dll, "--effects", effects }.Concat(flags)) start.ArgumentList.Add(arg);
         // A real mutation arm executes the same suite with one safety rule disabled.
-        if (Environment.GetEnvironmentVariable("QUEUE_PROBE_MUTATION") == "unsafe-fallback") start.ArgumentList.Add("--unsafe-fallback");
+        string? mutation = Environment.GetEnvironmentVariable("QUEUE_PROBE_MUTATION");
+        if (mutation is "unsafe-fallback" or "serialize-targets" or "ignore-b-drain") start.ArgumentList.Add("--" + mutation);
         process = Process.Start(start)!;
         await File.WriteAllTextAsync(Path.Combine(directory, "supervisor-pid.txt"), process.Id.ToString());
         errors = process.StandardError.ReadToEndAsync();
@@ -266,14 +267,14 @@ internal sealed class Session(string name) : IAsyncDisposable {
         await EventAsync("Ready");
     }
     internal async Task RestartAsync(params string[] flags) { await DisposeAsync(); lock(sync) messages.Clear(); await StartAsync(flags); }
-    internal Task<JsonElement> SubmitAsync(string id, string generation, bool holdWork = false, bool holdCleanup = false, int deadlineMs = 0) =>
-        CallAsync("submit", id, generation, generation == "V1" ? "write/v1" : "write/v2", "mixed", holdWork, holdCleanup, deadlineMs);
+    internal Task<JsonElement> SubmitAsync(string id, string generation, bool holdWork = false, bool holdCleanup = false, int deadlineMs = 0, string target = "A") =>
+        CallAsync("submit", id, generation, generation == "V1" ? "write/v1" : "write/v2", "mixed", holdWork, holdCleanup, deadlineMs, target: target);
     internal async Task<JsonElement> CallAsync(string kind, string? id = null, string? generation = null, string? contract = null,
-        string? payload = null, bool holdWork = false, bool holdCleanup = false, int deadlineMs = 0, int budgetMs = 0, bool holdOutcome = false) {
+        string? payload = null, bool holdWork = false, bool holdCleanup = false, int deadlineMs = 0, int budgetMs = 0, bool holdOutcome = false, string target = "A") {
         string key = (++request).ToString();
         await process!.StandardInput.WriteLineAsync(JsonSerializer.Serialize(new { Kind = kind, Request = key, Id = id,
             Generation = generation, Contract = contract, Payload = payload, HoldWork = holdWork, HoldCleanup = holdCleanup,
-            DeadlineMs = deadlineMs, BudgetMs = budgetMs, HoldOutcome = holdOutcome }));
+            DeadlineMs = deadlineMs, BudgetMs = budgetMs, HoldOutcome = holdOutcome, Target = target }));
         await process.StandardInput.FlushAsync();
         return await WaitAsync(e => e.GetProperty("Type").GetString() == "reply" && e.GetProperty("Request").GetString() == key);
     }

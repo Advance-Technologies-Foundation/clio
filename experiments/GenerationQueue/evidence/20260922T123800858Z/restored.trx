@@ -1,0 +1,38 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="197115a5-de40-4dd3-8462-d91b0cf449c1" name="k.krylov@K-KRYLOV-NB 2026-09-22 14:38:20" runUser="TSCRM\k.krylov" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-09-22T14:38:20.5801483+02:00" queuing="2026-09-22T14:38:20.5801488+02:00" start="2026-09-22T14:38:18.7684271+02:00" finish="2026-09-22T14:38:21.1684562+02:00" />
+  <TestSettings name="default" id="38065350-6dbb-4b6b-81be-d633cc31a3c4">
+    <Deployment runDeploymentRoot="k.krylov_K-KRYLOV-NB_2026-09-22_14_38_20" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="d2aec894-5d65-4aa9-97a1-c79e695cd80a" testId="67b89eec-3618-6926-1c20-2616d624bf51" testName="Drain_timeout_does_not_retag_new_requests" computerName="K-KRYLOV-NB" duration="00:00:01.2367770" startTime="2026-09-22T14:38:19.2503573+02:00" endTime="2026-09-22T14:38:20.4871022+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="d2aec894-5d65-4aa9-97a1-c79e695cd80a" />
+    <UnitTestResult executionId="9cc2f690-c879-4224-b914-a6336e110746" testId="71fa1724-64f4-8c62-09c7-e55f03cd9979" testName="Two_targets_overlap_and_both_drain_before_shared_replacement" computerName="K-KRYLOV-NB" duration="00:00:00.6291720" startTime="2026-09-22T14:38:20.4880642+02:00" endTime="2026-09-22T14:38:21.1172397+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="9cc2f690-c879-4224-b914-a6336e110746" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="Drain_timeout_does_not_retag_new_requests" storage="c:\projects\clio-generation-queue-probe\experiments\generationqueue\tests\bin\release\net10.0\tests.dll" id="67b89eec-3618-6926-1c20-2616d624bf51">
+      <Execution id="d2aec894-5d65-4aa9-97a1-c79e695cd80a" />
+      <TestMethod codeBase="C:\Projects\clio-generation-queue-probe\experiments\GenerationQueue\Tests\bin\Release\net10.0\Tests.dll" adapterTypeName="executor://nunit3testexecutor/" className="GenerationQueue.Tests.QueueTests" name="Drain_timeout_does_not_retag_new_requests" />
+    </UnitTest>
+    <UnitTest name="Two_targets_overlap_and_both_drain_before_shared_replacement" storage="c:\projects\clio-generation-queue-probe\experiments\generationqueue\tests\bin\release\net10.0\tests.dll" id="71fa1724-64f4-8c62-09c7-e55f03cd9979">
+      <Execution id="9cc2f690-c879-4224-b914-a6336e110746" />
+      <TestMethod codeBase="C:\Projects\clio-generation-queue-probe\experiments\GenerationQueue\Tests\bin\Release\net10.0\Tests.dll" adapterTypeName="executor://nunit3testexecutor/" className="GenerationQueue.Tests.QueueTests" name="Two_targets_overlap_and_both_drain_before_shared_replacement" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="67b89eec-3618-6926-1c20-2616d624bf51" executionId="d2aec894-5d65-4aa9-97a1-c79e695cd80a" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="71fa1724-64f4-8c62-09c7-e55f03cd9979" executionId="9cc2f690-c879-4224-b914-a6336e110746" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="Results Not in a List" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="All Loaded Results" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Completed">
+    <Counters total="2" executed="2" passed="2" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>NUnit Adapter 1.0.0.0: Test execution started&#xD;
+Running selected tests in C:\Projects\clio-generation-queue-probe\experiments\GenerationQueue\Tests\bin\Release\net10.0\Tests.dll&#xD;
+   NUnit3TestExecutor discovered 2 of 2 NUnit test cases using Current Discovery mode, Non-Explicit run&#xD;
+</StdOut>
+    </Output>
+  </ResultSummary>
+</TestRun>

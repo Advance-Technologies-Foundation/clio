@@ -30,8 +30,23 @@ try {
         throw 'Mutation was not rejected by the intended queue-state oracle.'
     }
 
+    foreach ($control in @(
+        @{ Name = 'serialize-targets'; Oracle = 'B must be dispatched while A is explicitly held' },
+        @{ Name = 'ignore-b-drain'; Oracle = 'B cleanup must block shared retirement' }
+    )) {
+        $env:QUEUE_PROBE_MUTATION = $control.Name
+        $log = Join-Path $bundle ($control.Name + '.log')
+        dotnet test $project -c Release --no-build --filter 'Name=Two_targets_overlap_and_both_drain_before_shared_replacement' --logger "trx;LogFileName=$($control.Name).trx" --results-directory $bundle *> $log
+        $exitCodes[$control.Name] = $LASTEXITCODE
+        [xml]$controlResult = Get-Content -LiteralPath (Join-Path $bundle ($control.Name + '.trx')) -Raw
+        if ($exitCodes[$control.Name] -eq 0 -or $controlResult.TestRun.ResultSummary.Counters.failed -ne '1' -or
+            $controlResult.TestRun.Results.UnitTestResult.Output.ErrorInfo.Message -notmatch $control.Oracle) {
+            throw "Negative control $($control.Name) did not fail at its intended architectural oracle."
+        }
+    }
+
     Remove-Item Env:\QUEUE_PROBE_MUTATION
-    dotnet test $project -c Release --no-build --filter 'Name=Drain_timeout_does_not_retag_new_requests' --logger 'trx;LogFileName=restored.trx' --results-directory $bundle *> (Join-Path $bundle 'restored.log')
+    dotnet test $project -c Release --no-build --filter 'Name=Drain_timeout_does_not_retag_new_requests|Name=Two_targets_overlap_and_both_drain_before_shared_replacement' --logger 'trx;LogFileName=restored.trx' --results-directory $bundle *> (Join-Path $bundle 'restored.log')
     $exitCodes.restored = $LASTEXITCODE
     if ($exitCodes.restored -ne 0) { throw 'Restored safety rule did not pass.' }
 }
@@ -50,11 +65,13 @@ finally {
     $sourceFiles = @('Directory.Build.props', 'Directory.Packages.props',
         'experiments/GenerationQueue/Probe/Probe.csproj', 'experiments/GenerationQueue/Probe/Program.cs',
         'experiments/GenerationQueue/Tests/Tests.csproj', 'experiments/GenerationQueue/Tests/QueueTests.cs',
-        'experiments/GenerationQueue/verify.ps1', 'experiments/GenerationQueue/README.md')
+        'experiments/GenerationQueue/Tests/MultiEnvironmentTests.cs',
+        'experiments/GenerationQueue/verify.ps1', 'experiments/GenerationQueue/README.md',
+        'experiments/GenerationQueue/MULTI-ENVIRONMENT.md')
     $sourceFiles | ForEach-Object {
         [pscustomobject]@{ Path = $_; SHA256 = (Get-FileHash -LiteralPath (Join-Path $repoRoot $_) -Algorithm SHA256).Hash }
     } | ConvertTo-Json | Set-Content (Join-Path $bundle 'source-hashes.json')
     Pop-Location
     Write-Output "Evidence: $bundle"
 }
-Write-Output 'PASS: normal suite, rejected mutation, restored rule; see raw logs and transcripts.'
+Write-Output 'PASS: normal suite, three rejected mutations, restored rules; see raw logs and transcripts.'

@@ -1,0 +1,6 @@
+{"Id":"b-running","Target":"B","Generation":"V1","Configuration":"cfg-1","Pid":106760,"Value":"mixed"}
+{"Id":"b-queued","Target":"B","Generation":"V1","Configuration":"cfg-1","Pid":106760,"Value":"mixed"}
+{"Id":"a-running","Target":"A","Generation":"V1","Configuration":"cfg-1","Pid":106760,"Value":"mixed"}
+{"Id":"a-queued","Target":"A","Generation":"V1","Configuration":"cfg-1","Pid":106760,"Value":"mixed"}
+{"Id":"a-new","Target":"A","Generation":"V2","Configuration":"cfg-2","Pid":17900,"Value":"MIXED"}
+{"Id":"b-new","Target":"B","Generation":"V2","Configuration":"cfg-2","Pid":17900,"Value":"MIXED"}

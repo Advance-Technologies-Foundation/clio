@@ -1,0 +1,33 @@
+Test run for C:\Projects\clio-generation-queue-probe\experiments\GenerationQueue\Tests\bin\Release\net10.0\Tests.dll (.NETCoreApp,Version=v10.0)
+A total of 1 test files matched the specified pattern.
+  Failed Drain_timeout_does_not_retag_new_requests [1 s]
+  Error Message:
+   Expected Status(state, "v2") to be the same string because an incompatible accepted request needs a truthful exit when activation is deferred, but they differ at index 0:
+   ↓ (actual)
+  "Queued"
+  "NotStarted"
+   ↑ (expected).
+  Stack Trace:
+     at FluentAssertions.Execution.LateBoundTestFramework.Throw(String message)
+   at FluentAssertions.Execution.TestFrameworkProvider.Throw(String message)
+   at FluentAssertions.Execution.DefaultAssertionStrategy.HandleFailure(String message)
+   at FluentAssertions.Execution.AssertionScope.FailWith(Func`1 failReasonFunc)
+   at FluentAssertions.Execution.AssertionScope.FailWith(Func`1 failReasonFunc)
+   at FluentAssertions.Execution.AssertionScope.FailWith(String message, Object[] args)
+   at FluentAssertions.Primitives.StringEqualityStrategy.ValidateAgainstMismatch(IAssertionScope assertion, String subject, String expected)
+   at FluentAssertions.Primitives.StringValidator.Validate(String subject, String expected)
+   at FluentAssertions.Primitives.StringAssertions`1.Be(String expected, String because, Object[] becauseArgs)
+   at GenerationQueue.Tests.QueueTests.Drain_timeout_does_not_retag_new_requests() in C:\Projects\clio-generation-queue-probe\experiments\GenerationQueue\Tests\QueueTests.cs:line 77
+   at NUnit.Framework.Internal.TaskAwaitAdapter.GenericAdapter`1.BlockUntilCompleted()
+   at NUnit.Framework.Internal.MessagePumpStrategy.NoMessagePumpStrategy.WaitForCompletion(AwaitAdapter awaiter)
+   at NUnit.Framework.Internal.AsyncToSyncAdapter.Await[TResult](TestExecutionContext context, Func`1 invoke)
+   at NUnit.Framework.Internal.AsyncToSyncAdapter.Await(TestExecutionContext context, Func`1 invoke)
+   at NUnit.Framework.Internal.Commands.TestMethodCommand.RunTestMethod(TestExecutionContext context)
+   at NUnit.Framework.Internal.Commands.TestMethodCommand.Execute(TestExecutionContext context)
+   at NUnit.Framework.Internal.Commands.BeforeAndAfterTestCommand.<>c__DisplayClass1_0.<Execute>b__0()
+   at NUnit.Framework.Internal.Commands.DelegatingTestCommand.RunTestMethodInThreadAbortSafeZone(TestExecutionContext context, Action action)
+
+
+Results File: C:\Projects\clio-generation-queue-probe\experiments\GenerationQueue\evidence\20260922T123800858Z\mutation.trx
+
+Failed!  - Failed:     1, Passed:     0, Skipped:     0, Total:     1, Duration: 1 s - Tests.dll (net10.0)

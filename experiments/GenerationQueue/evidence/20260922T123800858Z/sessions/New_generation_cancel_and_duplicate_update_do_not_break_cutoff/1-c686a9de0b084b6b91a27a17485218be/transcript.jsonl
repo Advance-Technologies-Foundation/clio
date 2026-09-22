@@ -1,0 +1,2 @@
+{"Type":"event","Kind":"Starting","Sequence":1,"SupervisorPid":90780,"Data":{"Generation":"V1","Epoch":1,"WorkerPid":36964}}
+{"Type":"event","Kind":"Ready","Sequence":2,"SupervisorPid":90780,"Data":{"Generation":"V1","WorkerPid":36964}}
