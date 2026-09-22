@@ -1,0 +1,86 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="15b47a7e-64f3-478c-a691-dffb0f1193cf" name="k.krylov@K-KRYLOV-NB 2026-09-22 13:42:22" runUser="TSCRM\k.krylov" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-09-22T13:42:22.9015057+02:00" queuing="2026-09-22T13:42:22.9015061+02:00" start="2026-09-22T13:42:21.0072561+02:00" finish="2026-09-22T13:42:28.3307115+02:00" />
+  <TestSettings name="default" id="642b91c9-2a54-477b-aba4-5c1ac781bc08">
+    <Deployment runDeploymentRoot="k.krylov_K-KRYLOV-NB_2026-09-22_13_42_22" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="4d5f20e5-2986-451b-a328-85045fbf40a4" testId="c2dab99f-8329-2839-0d8a-948b6c0b033d" testName="Failed_candidate_resolves_queue_and_falls_back" computerName="K-KRYLOV-NB" duration="00:00:00.7939900" startTime="2026-09-22T13:42:23.8581450+02:00" endTime="2026-09-22T13:42:24.6521444+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="4d5f20e5-2986-451b-a328-85045fbf40a4" />
+    <UnitTestResult executionId="7779c109-3e7f-4514-8528-240bce6568c5" testId="5c7cb71e-be38-a505-24f5-02bc6d634c8c" testName="Generation_cutoff_drains_queue_and_cleanup_before_replacement" computerName="K-KRYLOV-NB" duration="00:00:00.6093070" startTime="2026-09-22T13:42:25.3847061+02:00" endTime="2026-09-22T13:42:25.9940202+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="7779c109-3e7f-4514-8528-240bce6568c5" />
+    <UnitTestResult executionId="c72a75e0-38e0-47bb-a804-eb8c504d2163" testId="e5628795-ca28-a34b-7d7e-6929e9b47da4" testName="Effect_without_published_outcome_remains_unknown" computerName="K-KRYLOV-NB" duration="00:00:00.3760770" startTime="2026-09-22T13:42:23.4820216+02:00" endTime="2026-09-22T13:42:23.8581025+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="c72a75e0-38e0-47bb-a804-eb8c504d2163" />
+    <UnitTestResult executionId="d338807e-4166-4f7a-80df-fb7d9d41c23a" testId="29039639-a082-cf3a-605a-827a167ec49d" testName="Crash_does_not_infer_failure_or_replay" computerName="K-KRYLOV-NB" duration="00:00:00.3912109" startTime="2026-09-22T13:42:21.9254797+02:00" endTime="2026-09-22T13:42:22.3166953+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="d338807e-4166-4f7a-80df-fb7d9d41c23a" />
+    <UnitTestResult executionId="ab69603c-3fa3-42cc-b314-81c099e694cc" testId="88e14cd7-1394-7637-03be-a4d75c9a42df" testName="Queue_limits_and_waiting_cancellation_are_real" computerName="K-KRYLOV-NB" duration="00:00:01.1554870" startTime="2026-09-22T13:42:27.1116908+02:00" endTime="2026-09-22T13:42:28.2671925+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="ab69603c-3fa3-42cc-b314-81c099e694cc" />
+    <UnitTestResult executionId="25101ccd-2946-49d2-944e-97a32cf0ac15" testId="67b89eec-3618-6926-1c20-2616d624bf51" testName="Drain_timeout_does_not_retag_new_requests" computerName="K-KRYLOV-NB" duration="00:00:01.1652050" startTime="2026-09-22T13:42:22.3167530+02:00" endTime="2026-09-22T13:42:23.4819726+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="25101ccd-2946-49d2-944e-97a32cf0ac15" />
+    <UnitTestResult executionId="4fddea83-6957-4be6-8dbb-d942ccd1dbf2" testId="64b982f2-b691-5b80-2cbd-426f30a8e075" testName="Contract_and_identity_are_checked_at_receipt" computerName="K-KRYLOV-NB" duration="00:00:00.3600080" startTime="2026-09-22T13:42:21.5647073+02:00" endTime="2026-09-22T13:42:21.9246804+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="4fddea83-6957-4be6-8dbb-d942ccd1dbf2" />
+    <UnitTestResult executionId="12bf1f28-d9f2-4722-803b-6b4b836fb0ed" testId="b54a461b-c0f3-d302-c12e-bca7d8a67623" testName="Known_success_survives_executor_loss" computerName="K-KRYLOV-NB" duration="00:00:00.3474290" startTime="2026-09-22T13:42:25.9940649+02:00" endTime="2026-09-22T13:42:26.3414977+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="12bf1f28-d9f2-4722-803b-6b4b836fb0ed" />
+    <UnitTestResult executionId="15702ef7-cc4a-4e05-80a8-7adfd6bf3844" testId="b6c64119-9268-a18b-05d3-82af4d06018d" testName="Failed_fallback_is_explicitly_unavailable" computerName="K-KRYLOV-NB" duration="00:00:00.7324460" startTime="2026-09-22T13:42:24.6522020+02:00" endTime="2026-09-22T13:42:25.3846565+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="15702ef7-cc4a-4e05-80a8-7adfd6bf3844" />
+    <UnitTestResult executionId="d5b9310f-45ba-4960-8534-c6be343fd929" testId="1c63380d-8f01-a3d4-a946-9903d923036b" testName="New_generation_cancel_and_duplicate_update_do_not_break_cutoff" computerName="K-KRYLOV-NB" duration="00:00:00.7700770" startTime="2026-09-22T13:42:26.3415515+02:00" endTime="2026-09-22T13:42:27.1116374+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="d5b9310f-45ba-4960-8534-c6be343fd929" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="Known_success_survives_executor_loss" storage="c:\projects\clio-generation-queue-probe\experiments\generationqueue\tests\bin\release\net10.0\tests.dll" id="b54a461b-c0f3-d302-c12e-bca7d8a67623">
+      <Execution id="12bf1f28-d9f2-4722-803b-6b4b836fb0ed" />
+      <TestMethod codeBase="C:\Projects\clio-generation-queue-probe\experiments\GenerationQueue\Tests\bin\Release\net10.0\Tests.dll" adapterTypeName="executor://nunit3testexecutor/" className="GenerationQueue.Tests.QueueTests" name="Known_success_survives_executor_loss" />
+    </UnitTest>
+    <UnitTest name="Drain_timeout_does_not_retag_new_requests" storage="c:\projects\clio-generation-queue-probe\experiments\generationqueue\tests\bin\release\net10.0\tests.dll" id="67b89eec-3618-6926-1c20-2616d624bf51">
+      <Execution id="25101ccd-2946-49d2-944e-97a32cf0ac15" />
+      <TestMethod codeBase="C:\Projects\clio-generation-queue-probe\experiments\GenerationQueue\Tests\bin\Release\net10.0\Tests.dll" adapterTypeName="executor://nunit3testexecutor/" className="GenerationQueue.Tests.QueueTests" name="Drain_timeout_does_not_retag_new_requests" />
+    </UnitTest>
+    <UnitTest name="Crash_does_not_infer_failure_or_replay" storage="c:\projects\clio-generation-queue-probe\experiments\generationqueue\tests\bin\release\net10.0\tests.dll" id="29039639-a082-cf3a-605a-827a167ec49d">
+      <Execution id="d338807e-4166-4f7a-80df-fb7d9d41c23a" />
+      <TestMethod codeBase="C:\Projects\clio-generation-queue-probe\experiments\GenerationQueue\Tests\bin\Release\net10.0\Tests.dll" adapterTypeName="executor://nunit3testexecutor/" className="GenerationQueue.Tests.QueueTests" name="Crash_does_not_infer_failure_or_replay" />
+    </UnitTest>
+    <UnitTest name="New_generation_cancel_and_duplicate_update_do_not_break_cutoff" storage="c:\projects\clio-generation-queue-probe\experiments\generationqueue\tests\bin\release\net10.0\tests.dll" id="1c63380d-8f01-a3d4-a946-9903d923036b">
+      <Execution id="d5b9310f-45ba-4960-8534-c6be343fd929" />
+      <TestMethod codeBase="C:\Projects\clio-generation-queue-probe\experiments\GenerationQueue\Tests\bin\Release\net10.0\Tests.dll" adapterTypeName="executor://nunit3testexecutor/" className="GenerationQueue.Tests.QueueTests" name="New_generation_cancel_and_duplicate_update_do_not_break_cutoff" />
+    </UnitTest>
+    <UnitTest name="Contract_and_identity_are_checked_at_receipt" storage="c:\projects\clio-generation-queue-probe\experiments\generationqueue\tests\bin\release\net10.0\tests.dll" id="64b982f2-b691-5b80-2cbd-426f30a8e075">
+      <Execution id="4fddea83-6957-4be6-8dbb-d942ccd1dbf2" />
+      <TestMethod codeBase="C:\Projects\clio-generation-queue-probe\experiments\GenerationQueue\Tests\bin\Release\net10.0\Tests.dll" adapterTypeName="executor://nunit3testexecutor/" className="GenerationQueue.Tests.QueueTests" name="Contract_and_identity_are_checked_at_receipt" />
+    </UnitTest>
+    <UnitTest name="Failed_fallback_is_explicitly_unavailable" storage="c:\projects\clio-generation-queue-probe\experiments\generationqueue\tests\bin\release\net10.0\tests.dll" id="b6c64119-9268-a18b-05d3-82af4d06018d">
+      <Execution id="15702ef7-cc4a-4e05-80a8-7adfd6bf3844" />
+      <TestMethod codeBase="C:\Projects\clio-generation-queue-probe\experiments\GenerationQueue\Tests\bin\Release\net10.0\Tests.dll" adapterTypeName="executor://nunit3testexecutor/" className="GenerationQueue.Tests.QueueTests" name="Failed_fallback_is_explicitly_unavailable" />
+    </UnitTest>
+    <UnitTest name="Failed_candidate_resolves_queue_and_falls_back" storage="c:\projects\clio-generation-queue-probe\experiments\generationqueue\tests\bin\release\net10.0\tests.dll" id="c2dab99f-8329-2839-0d8a-948b6c0b033d">
+      <Execution id="4d5f20e5-2986-451b-a328-85045fbf40a4" />
+      <TestMethod codeBase="C:\Projects\clio-generation-queue-probe\experiments\GenerationQueue\Tests\bin\Release\net10.0\Tests.dll" adapterTypeName="executor://nunit3testexecutor/" className="GenerationQueue.Tests.QueueTests" name="Failed_candidate_resolves_queue_and_falls_back" />
+    </UnitTest>
+    <UnitTest name="Generation_cutoff_drains_queue_and_cleanup_before_replacement" storage="c:\projects\clio-generation-queue-probe\experiments\generationqueue\tests\bin\release\net10.0\tests.dll" id="5c7cb71e-be38-a505-24f5-02bc6d634c8c">
+      <Execution id="7779c109-3e7f-4514-8528-240bce6568c5" />
+      <TestMethod codeBase="C:\Projects\clio-generation-queue-probe\experiments\GenerationQueue\Tests\bin\Release\net10.0\Tests.dll" adapterTypeName="executor://nunit3testexecutor/" className="GenerationQueue.Tests.QueueTests" name="Generation_cutoff_drains_queue_and_cleanup_before_replacement" />
+    </UnitTest>
+    <UnitTest name="Effect_without_published_outcome_remains_unknown" storage="c:\projects\clio-generation-queue-probe\experiments\generationqueue\tests\bin\release\net10.0\tests.dll" id="e5628795-ca28-a34b-7d7e-6929e9b47da4">
+      <Execution id="c72a75e0-38e0-47bb-a804-eb8c504d2163" />
+      <TestMethod codeBase="C:\Projects\clio-generation-queue-probe\experiments\GenerationQueue\Tests\bin\Release\net10.0\Tests.dll" adapterTypeName="executor://nunit3testexecutor/" className="GenerationQueue.Tests.QueueTests" name="Effect_without_published_outcome_remains_unknown" />
+    </UnitTest>
+    <UnitTest name="Queue_limits_and_waiting_cancellation_are_real" storage="c:\projects\clio-generation-queue-probe\experiments\generationqueue\tests\bin\release\net10.0\tests.dll" id="88e14cd7-1394-7637-03be-a4d75c9a42df">
+      <Execution id="ab69603c-3fa3-42cc-b314-81c099e694cc" />
+      <TestMethod codeBase="C:\Projects\clio-generation-queue-probe\experiments\GenerationQueue\Tests\bin\Release\net10.0\Tests.dll" adapterTypeName="executor://nunit3testexecutor/" className="GenerationQueue.Tests.QueueTests" name="Queue_limits_and_waiting_cancellation_are_real" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="c2dab99f-8329-2839-0d8a-948b6c0b033d" executionId="4d5f20e5-2986-451b-a328-85045fbf40a4" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="5c7cb71e-be38-a505-24f5-02bc6d634c8c" executionId="7779c109-3e7f-4514-8528-240bce6568c5" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="e5628795-ca28-a34b-7d7e-6929e9b47da4" executionId="c72a75e0-38e0-47bb-a804-eb8c504d2163" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="29039639-a082-cf3a-605a-827a167ec49d" executionId="d338807e-4166-4f7a-80df-fb7d9d41c23a" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="88e14cd7-1394-7637-03be-a4d75c9a42df" executionId="ab69603c-3fa3-42cc-b314-81c099e694cc" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="67b89eec-3618-6926-1c20-2616d624bf51" executionId="25101ccd-2946-49d2-944e-97a32cf0ac15" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="64b982f2-b691-5b80-2cbd-426f30a8e075" executionId="4fddea83-6957-4be6-8dbb-d942ccd1dbf2" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="b54a461b-c0f3-d302-c12e-bca7d8a67623" executionId="12bf1f28-d9f2-4722-803b-6b4b836fb0ed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="b6c64119-9268-a18b-05d3-82af4d06018d" executionId="15702ef7-cc4a-4e05-80a8-7adfd6bf3844" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1c63380d-8f01-a3d4-a946-9903d923036b" executionId="d5b9310f-45ba-4960-8534-c6be343fd929" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="Results Not in a List" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="All Loaded Results" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Completed">
+    <Counters total="10" executed="10" passed="10" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>NUnit Adapter 1.0.0.0: Test execution started&#xD;
+Running all tests in C:\Projects\clio-generation-queue-probe\experiments\GenerationQueue\Tests\bin\Release\net10.0\Tests.dll&#xD;
+   NUnit3TestExecutor discovered 10 of 10 NUnit test cases using Current Discovery mode, Non-Explicit run&#xD;
+</StdOut>
+    </Output>
+  </ResultSummary>
+</TestRun>
