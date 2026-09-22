@@ -120,7 +120,9 @@ cannot tell you which branch or how many iterations ran, and a root row with no 
 
 - Implementation started: 2026-09-22
 - Implementation completed: 2026-09-22
-- A-02 / A-03 / A-04 / A-05 verdicts: **confirmed / confirmed / confirmed (with a finding) / not reached**
+- A-02 / A-03 / A-04 / A-05 verdicts: **confirmed / confirmed / confirmed (with a finding) / confirmed**
+  (A-05 was first recorded as *not reached*; a one-variable experiment on 2026-09-22 completed the
+  gesture and the record was rewritten — see the note below)
 - Record: [eng-99856-multi-instance-stand-verification-2026-09-22.md](../eng-99856-multi-instance/eng-99856-multi-instance-stand-verification-2026-09-22.md)
 - Notes:
   - **A-02** — the designer's own properties panel renders the applier-built element in full
@@ -137,16 +139,26 @@ cannot tell you which branch or how many iterations ran, and a root row with no 
   - **A-04** — `Parallel` + `useBackgroundMode: true` (the majority shape) runs and preserves input
     order, but the iterations DO NOT OVERLAP on this stand: they are spaced ~300 ms apart through the
     background job queue, and the element took 1282 ms against 105 ms for Sequential.
-  - **A-05** — both gates are open (`UseMultiInstanceSubProcess` evaluates true in the running designer;
-    `UseForceCompile`/`BK31` is absent from our processes and from the shipped one alike), and the
-    conversion route is identified in platform source: there is NO dedicated control, the conversion is a
-    side effect of `collectionMappingSet` (`ProcessFlowElementPropertiesPage.js`). The gesture itself was
-    not completed — the Select parameter dialog reported "There are no parameters of required type" for a
-    Text target although the collection does carry item properties. Recorded, not explained.
+  - **A-05 — CONFIRMED, after a correction.** Both gates are open (`UseMultiInstanceSubProcess`
+    evaluates true in the running designer; `UseForceCompile`/`BK31` is absent from our processes and
+    from the shipped one alike), and the conversion route is identified in platform source: there is NO
+    dedicated control, the conversion is a side effect of `collectionMappingSet`
+    (`ProcessFlowElementPropertiesPage.js`).
+    The first attempt failed — the Select parameter dialog reported "There are no parameters of required
+    type" — and that failure turned out to be a **Read data** defect, not a multi-instance one: clio sets
+    `IsResult = true` on BOTH of a Read data element's collection outputs where the platform sets it on
+    neither, and the designer client throws on more than one. A package cut with those two lines removed
+    and nothing else made both pickers list "Collection of records → Full name", and selecting it
+    converted the element to multi-instance on the spot. Tracked as
+    [ENG-99967](https://creatio.atlassian.net/browse/ENG-99967), which also carries the second defect the
+    fix exposes (`describe` reports a Read data element's collections only when they are flagged, so it
+    has never reported them for a designer-built element).
   - **Two by-products.** (1) The designer sets `useBackgroundMode = true` on EVERY conversion and back to
-    false on de-conversion; clio's converted element carries `false`. Given the owner's "как в дизайнере"
-    ruling this is a decision to take, not a defect — matching the designer costs an order of magnitude
-    in wall clock. (2) A multi-instance input collection binds from a Read data element's
+    false on de-conversion; clio's converted element carries `false`. MEASURED, not merely read from
+    source: the element converted by hand describes back with `useBackgroundMode: True`, and is otherwise
+    IDENTICAL to a clio-built one — same five parameters, same item properties, same
+    `multiInstanceOptions`, `calleeInSync: true`. Given the owner's "как в дизайнере" ruling this is a
+    decision to take, not a defect — matching the designer costs an order of magnitude in wall clock. (2) A multi-instance input collection binds from a Read data element's
     `ResultCompositeObjectList`, never `ResultEntityCollection`; only the former shares the
     `651ec16f-...` type.
   - **Why the counters are read by branching.** A completed element's `SysProcessElementData` row is

@@ -194,7 +194,12 @@ the inference that would have been made without the measurement.
 
 **A-04 confirmed** — the majority shape runs, completes, and preserves order.
 
-## A-05 — can a multi-instance element be built **by hand** in this designer? **NOT REACHED**
+## A-05 — can a multi-instance element be built **by hand** in this designer? **CONFIRMED**
+
+> **This section was rewritten on 2026-09-22, after the first run recorded "not reached".** The
+> gesture failed for a reason that had nothing to do with multi-instance, and a one-variable
+> experiment then completed it. Both the original finding and the correction are kept below,
+> because the reason the first attempt failed is the whole value of the story.
 
 Both gates at `process-subprocess-schema.js:201` are **open** on this stand:
 
@@ -224,21 +229,52 @@ So the hand gesture is: open a single-instance sub-process element and give one 
 collection-valued source. That was attempted on `UsrEng99856CallerHand`, which carries a Read data
 element in `collection` mode beside a single-instance sub-process.
 
-**The gesture was not completed.** The element's panel offers `ItemName` and `Echoed` with *Select
-value*; the value picker offers *Process parameter / System setting / Formula*; choosing *Process
-parameter* opens the **Select parameter** dialog, which lists `Read three contacts` under PROCESS
-ELEMENTS and then reports, stably:
+**The first attempt failed, and the failure was the finding.** The element's panel offers `ItemName`
+and `Echoed` with *Select value*; the value picker offers *Process parameter / System setting /
+Formula*; choosing *Process parameter* opens the **Select parameter** dialog, which lists
+`Read three contacts` under PROCESS ELEMENTS and then reports, stably:
 
 > There are no parameters of required type
 
-The obvious explanation was ruled out: the collection is not empty. `describe-business-process` reports
-`ReadData1.ResultCompositeObjectList` as `CompositeObjectList` with `itemProperties: ['Name']`, so
-`hasNestedParameters()` should hold and `BaseParametersMappingPage._validateCompositeParameter` should
-be reached — and with `IsMultiInstanceSupportedByElement` true (it is assigned
-`processElement.getIsMultiInstanceSupported()` in `MappingEditMixin`) that method returns `true` for an
-enumerable source. Why the dialog nevertheless offered nothing was not established within this run.
+The *Formula* dialog on the same element lists only "Resulting collection" (`ResultEntityCollection`)
+and never "Collection of records" (`ResultCompositeObjectList`) with its columns. Beside a Read data
+element built **in the designer**, both dialogs show the opposite — "Collection of records" and its
+columns, and not "Resulting collection". The visibility is exactly inverted, which is what pointed at
+the Read data element rather than at anything multi-instance.
 
-**Verdict: not reached** — gates measured open, route identified in source, gesture not reproduced.
+### Root cause — a Read data defect, not a multi-instance one
+
+`ReadDataConfigBinder.WriteMode` sets `IsResult = true` on **both** collection outputs. The platform
+sets it on neither:
+
+| Read data element in collection mode | parameters with `IsResult = true` |
+|---|---|
+| built in the designer (`UsrProcess_d32c1e8`) | **0** |
+| shipped `ExpireLicenseNotificationProcess` (two elements) | **0** and **0** |
+| built by clio | **2** |
+
+and the designer client throws on more than one
+(`parametrized-process-schema-element.js:334`, `getResultParameter` →
+`Terrasoft.InvalidObjectState`).
+
+### The experiment that completed the gesture
+
+A package was cut with those two `plan.Outputs.Add` calls removed and **nothing else**, deployed as
+1.6.6.1, and `UsrEng99856HandExp` created with it from the same descriptor. On the same stand, in the
+same designer session:
+
+- the *Formula* dialog lists **Collection of records → Full name**;
+- the *Select parameter* dialog lists the same, instead of "There are no parameters of required type";
+- selecting *Full name* **converts the element to multi-instance on the spot** — the `≡` marker
+  appears, the panel grows `Execution mode = Sequential`, and the binding reads
+  `[#Read three contacts.Collection of records:Full name#]`.
+
+**Verdict: confirmed** — a multi-instance element can be built by hand on this stand. Both gates are
+open, the route is "map a collection into one of the element's parameters", and the only thing that
+blocked it was clio's own Read data element. Tracked as
+[ENG-99967](https://creatio.atlassian.net/browse/ENG-99967); the ticket also carries the second defect
+the fix exposes (`describe` reports a Read data element's collections only when they are flagged, so it
+has never reported them for a designer-built element).
 
 ### Where that goes (AC-07)
 
@@ -327,4 +363,4 @@ element log is the route that works, and it is what `UsrEng99856CallerBranch` do
 | **A-02** designer opens and renders an applier-built element | **confirmed** | panel "Sub-process (Call activity)" fully rendered; per-item source shown in the designer's own notation; no console exception |
 | **A-03** it iterates; output collection fills; counters land | **confirmed** | 3 sub-process element-log rows; 3 callee process runs; second iterator ran 3× over the output collection; counter branch `completed=3 total=3 terminated=0`; 3/3 probes saw the delivered value |
 | **A-04** `Parallel` + `useBackgroundMode` | **confirmed, with a finding** | runs and completes in input order; iterations do **not** overlap; 1282 ms vs 105 ms sequential |
-| **A-05** a multi-instance element can be hand-built here | **not reached** | both gates measured open; conversion route identified in source; the picker offered no source and the gesture was not completed |
+| **A-05** a multi-instance element can be hand-built here | **confirmed** | both gates measured open; the gesture completed once clio stopped flagging the Read data collection outputs (ENG-99967) — the element converted in the designer with `Execution mode = Sequential` and the per-item binding |

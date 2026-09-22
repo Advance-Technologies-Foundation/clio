@@ -4485,12 +4485,16 @@ stories:
       3/3 that the per-item value really arrived — the ContainerUId backfill validated at run time).
       A-04 confirmed WITH A FINDING: parallel + background preserves order but does NOT overlap on this
       stand — iterations are ~300 ms apart through the job queue and the element took 1282 ms against
-      105 ms sequential. A-05 NOT REACHED: both gates measured open, and the conversion has NO dedicated
-      control (it is a side effect of collectionMappingSet in ProcessFlowElementPropertiesPage.js), but
-      the gesture was not completed — the Select parameter dialog offered nothing for a Text target. That
-      does NOT block story 13: its fixture was always clio-built, and this run proves clio can build one
-      that runs and that the designer renders. What story 13 must carry is narrower — there is no
-      hand-built control group on this stand. TWO BY-PRODUCTS FOR THE OWNER: the designer sets
+      105 ms sequential. A-05 CONFIRMED, after a correction: both gates measured open, and the conversion
+      has NO dedicated control (it is a side effect of collectionMappingSet in
+      ProcessFlowElementPropertiesPage.js). The first attempt failed and the failure WAS the finding - it
+      was a READ DATA defect, not a multi-instance one. clio sets IsResult=true on BOTH of a Read data
+      element's collection outputs where the platform sets it on neither, and the designer client throws
+      on more than one, so the collection is hidden from every mapping picker. A package cut with those
+      two lines removed and NOTHING else made both pickers list "Collection of records -> Full name", and
+      selecting it converted the element to multi-instance on the spot. Tracked as ENG-99967, which also
+      carries the second defect the fix exposes: describe reports a Read data element's collections only
+      when they are flagged, so it has never reported them for a designer-built element. TWO BY-PRODUCTS FOR THE OWNER: the designer sets
       useBackgroundMode=true on EVERY conversion (and false on de-conversion) while clio's element carries
       false — a divergence from the "как в дизайнере" ruling that is a decision, not a defect, since
       matching it costs an order of magnitude in wall clock; and a multi-instance input collection binds
