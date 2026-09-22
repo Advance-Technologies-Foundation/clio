@@ -44,6 +44,11 @@ public class MobilePageConversionGuideTool {
 	private readonly IPlatformVersionResolverFactory _versionResolverFactory;
 	private readonly ISettingsRepository _settingsRepository;
 
+	[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+		Justification = "The tool resolves three registry catalogs, the rules catalog and three ambient services; " +
+			"the mobile request catalog joined them when request support stopped coming from a bundled constant. " +
+			"Grouping independent DI collaborators into a parameter object would hide the contract without " +
+			"reducing behavior.")]
 	public MobilePageConversionGuideTool(
 		IToolCommandResolver commandResolver,
 		ILogger logger,
