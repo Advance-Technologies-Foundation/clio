@@ -4579,7 +4579,7 @@ stories:
     feature: "eng-99856-multi-instance"
     repo: "clio + crt-process-builder + clio-knowledge"
     size: L
-    status: ready-for-dev
+    status: review
     jira: ENG-99856
     file: spec/stories/story-eng-99856-multi-instance-14.md
     prd: spec/prd/prd-eng-99856-multi-instance.md
@@ -4599,3 +4599,16 @@ stories:
       direct function of OQ-01, OQ-02, OQ-03 and OQ-04, so if any of the four is decided against the
       working assumption this story is rewritten, not patched. docs/knowledge/ is internal repository
       knowledge and is a SEPARATE sweep from the shipped guidance library — the two are not the same thing.
+      DONE 2026-09-22. clio-knowledge PR branch feature/ENG-99856-multi-instance @ 25c013f:
+      five files, ten statements, libraryVersion 1.15.51 -> 1.15.52, sequence DERIVED (1015052000), bundle
+      tests 202/202. THE COUNT MOVED and the reason is recorded: CrtProcessBuilder's predicted eleven were
+      already retracted by the behaviour stories as the code was rewritten (verified by reading each, incl.
+      both user-visible run-time messages), and two clio statements turned out to be still TRUE and were
+      removed from the inventory rather than edited. Three retracted in clio: IProcessDescriber's
+      "what stays refused is a RETARGET ... and a re-synchronization" (the file contradicted itself twenty
+      lines later), the unscoped "tag = the column UId" claim about itemProperties (0 of 407 multi-instance
+      item properties carry one), and the knowledge record that said the element is refused. AC-09 wrote NO
+      new record on purpose - both facts were already recorded. curated-knowledge-names re-pinned to
+      1.15.52 with availableNames UNCHANGED (no article added or renamed); WorkspaceTemplateGuidanceDrift
+      green. The two PRs are COUPLED: the guidance must land before or with the clio release, and a failed
+      update-knowledge keeps serving the old article with no error.
