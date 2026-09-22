@@ -8,7 +8,7 @@
 **Contract**: [eng-99856-multi-instance-contract-answers.md](../eng-99856-multi-instance/eng-99856-multi-instance-contract-answers.md) — Q4
 **Platform facts**: [eng-99856-multi-instance-platform-facts.md](../eng-99856-multi-instance/eng-99856-multi-instance-platform-facts.md) — §1.6, §3, §5
 **Jira**: ENG-99856
-**Status**: ready-for-dev
+**Status**: review
 **Size**: M (half day)
 **Repo**: crt-process-builder — `packages/CrtProcessBuilder/Files/src/cs/Mappings/`
 **Depends on**: stories 2, 5 (the refusal has to recognise a target *at any depth*, which needs the dotted

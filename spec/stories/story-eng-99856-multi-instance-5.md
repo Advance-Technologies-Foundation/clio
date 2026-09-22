@@ -8,7 +8,7 @@
 **Contract**: [eng-99856-multi-instance-contract-answers.md](../eng-99856-multi-instance/eng-99856-multi-instance-contract-answers.md) — Q2
 **Platform facts**: [eng-99856-multi-instance-platform-facts.md](../eng-99856-multi-instance/eng-99856-multi-instance-platform-facts.md) — §5, §6
 **Jira**: ENG-99856
-**Status**: ready-for-dev
+**Status**: review
 **Size**: M (half day — one resolver method, one reuse, and the stamp test that guards the most expensive
 failure mode in this feature)
 **Repo**: crt-process-builder — `packages/CrtProcessBuilder/Files/src/cs/`
