@@ -487,6 +487,17 @@ public class ModifyBusinessProcessToolTests {
 	}
 
 	[Test]
+	[Description("The unknown-argument hint lists confirm-layout-change. It is what an agent reads to recover "
+		+ "from a rejected argument, and the call that needs recovering is the re-send after a layout refusal "
+		+ "the user has already agreed to - an agent told the flag is not valid cannot act on that consent.")]
+	public void ValidArgsHint_ShouldNameTheConfirmationArgument() {
+		// Assert
+		ModifyBusinessProcessTool.ValidArgsHint.Should().Contain("confirm-layout-change",
+			because: "the hint is the only place an agent learns which spelling binds, and the two-spellings "
+				+ "hazard is exactly what strands a re-send the user already approved");
+	}
+
+	[Test]
 	[Category("Unit")]
 	[Description("The consent flag binds from the name the tool DECLARES, and does not bind from the wire name the server uses. Every other fixture here builds the args record positionally in C#, so the kebab-case attribute was bound nowhere - and that is not hypothetical: the refusal message relayed to an agent used to name the server's camelCase spelling, the agent sent that, it deserialized to null, coalesced to false, and the user who had already agreed received the identical refusal with nothing to tell them why. The gate exists to collect that consent; this is the assertion that it is not dropped.")]
 	public void ConfirmLayoutChange_ShouldBindFromTheDeclaredName_AndNotFromTheServersWireName() {

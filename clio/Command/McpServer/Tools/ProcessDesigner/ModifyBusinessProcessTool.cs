@@ -19,7 +19,13 @@ public class ModifyBusinessProcessTool(
 	internal const string ModifyBusinessProcessToolName = "modify-business-process";
 
 	/// <summary>The canonical field list echoed back when an unknown argument key is refused (ENG-98566).</summary>
-	internal const string ValidArgsHint = "Valid: environment-name, process-name, process-uid, operations.";
+	// Lists confirm-layout-change although it is optional, because this hint is what an agent reads to
+	// RECOVER from a rejected argument - and the one call that needs recovering is the re-send after a
+	// layout refusal the user has already agreed to. An agent that reaches for the server's own wire
+	// spelling (confirmLayoutChange) lands in ExtensionData, is told the argument is unknown, and reads
+	// here that the flag it needs does not exist - so the consent the user gave cannot be acted on.
+	internal const string ValidArgsHint =
+		"Valid: environment-name, process-name, process-uid, operations, confirm-layout-change.";
 
 	/// <summary>
 	/// Refusal for a call whose whole argument object is absent (ENG-98566, Sonar S2259).
