@@ -206,7 +206,8 @@ Whether a dead request removes the whole ELEMENT is decided by type, and the set
 because dropping it would lose valid UI. `RemoveDeadActions` then covers the two things the walk cannot see — a menu item
 carried VERBATIM inside its button's `values` (the normal shape, since the registry does not declare `crt.MenuItem`, so it
 never reaches `ProcessEventBindings` at all), and a button left with no surviving menu item and no click request of its
-own (`drop-action-no-request`). "No click request" is read off the SOURCE node, never off the converted values: a button
+own. Both carry `drop-unsupported-request` — the owner's removal chains back to the very requests its menu items were
+dropped for, so it is one cause, not two. "No click request" is read off the SOURCE node, never off the converted values: a button
 whose `clicked` was stripped for a missing target also has none left, and ENG-94839 decided that button stays.
 
 The two traversal shapes must report IDENTICALLY. Which one runs depends on whether the published registry declares
@@ -231,7 +232,6 @@ two spellings; the `drop-` prefix is not asserted — `flag-` and `skip-` are fi
 ```
 NOT LOSS          drop-inherited-chrome  drop-excluded-by-rule  drop-parent-excluded
                   drop-empty-container   drop-container-no-mobile-equivalent
-                  drop-action-no-request
 GENUINE LOSS      drop-unsupported-request  drop-unknown-request  drop-type-not-in-mobile-registry
 RULES DEFECT      drop-target-missing
 IN SCOPE          drop-no-rule-in-scope  drop-not-an-action-in-scope  drop-non-converting-scope
@@ -247,7 +247,6 @@ Pairs to keep distinct:
 - `drop-unsupported-request` — the **element** is gone · `drop-request-unsupported` — the element survives, its binding was removed.
 - `drop-container-no-mobile-equivalent` — a **container**, flattened, children preserved · `drop-type-not-in-mobile-registry` — a **leaf**, genuine loss.
 - `drop-unsupported-request` — clio can ASSERT the request is unavailable (the rules file clears its target) · `drop-unknown-request` — clio has never seen it, so the developer may well re-add the action. Both paths make this distinction; the leaf one used to answer both with the stronger code.
-- `drop-action-no-request` — a **button or menu item** with nothing to do, not dropped for a request of its own · `drop-empty-container` — a **layout container** whose `items` received no child.
 
 ### 8.2 `params`
 

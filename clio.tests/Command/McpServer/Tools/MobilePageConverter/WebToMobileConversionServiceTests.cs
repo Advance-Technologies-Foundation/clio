@@ -2945,7 +2945,7 @@ public sealed class WebToMobileConversionServiceTests {
 		guide.ViewConfigDiff.Should().NotContain(operation => operation.Name == "SettingsButton",
 			because: "a button that opens an empty menu is chrome the user can press to no effect");
 		DroppedElement button = Dropped(guide, "SettingsButton");
-		Codes(button).Should().Equal([ReasonCodes.DropActionNoRequest],
+		Codes(button).Should().Equal([ReasonCodes.DropUnsupportedRequest],
 			because: "neither neighbouring code fits: drop-unsupported-request would blame a request the button "
 				+ "never had, and drop-empty-container would call a button a layout shell");
 		button.Reason![0].Params.Should().BeNull(
@@ -3062,7 +3062,7 @@ public sealed class WebToMobileConversionServiceTests {
 		DroppedNames(carried).Should().Contain(["ExportItem", "MoreMenu", "SettingsButton"],
 			because: "the dead leaf takes the submenu that held it, and the submenu takes the button — one "
 				+ "pass, bottom-up, because each node is judged after its own subtree has been pruned");
-		Codes(Dropped(carried, "MoreMenu")).Should().Equal([ReasonCodes.DropActionNoRequest],
+		Codes(Dropped(carried, "MoreMenu")).Should().Equal([ReasonCodes.DropUnsupportedRequest],
 			because: "the submenu bound no action itself; it is gone because nothing is left inside it");
 		carried.ViewConfigDiff.Should().NotContain(operation => operation.Name == "SettingsButton",
 			because: "an empty menu behind an empty menu is still a control the user can press to no effect");
@@ -3238,9 +3238,12 @@ public sealed class WebToMobileConversionServiceTests {
 				  "clicked": { "request": "crt.ExportDataGridToExcelRequest" } } ] }
 			""")];
 
-		// Act
-		WebToMobileAnalysisService.RemoveDeadActions(mixed, MenuRequestMap());
-		WebToMobileAnalysisService.RemoveDeadActions(allDead, MenuRequestMap());
+		// Act — no source facts: the owner rule is insert-only, so a merge host never consults them, and
+		// passing an empty table proves the carried strip below does not depend on them either.
+		var noSourceFacts = new Dictionary<string, WebToMobileAnalysisService.SourceActionFacts>(
+			StringComparer.OrdinalIgnoreCase);
+		WebToMobileAnalysisService.RemoveDeadActions(mixed, MenuRequestMap(), noSourceFacts);
+		WebToMobileAnalysisService.RemoveDeadActions(allDead, MenuRequestMap(), noSourceFacts);
 
 		// Assert
 		mixed.Should().Contain(e => e.WebName == "ExportItem" && e.Operation == ElementMapOperations.Drop,
@@ -3280,7 +3283,7 @@ public sealed class WebToMobileConversionServiceTests {
 		// Assert
 		Codes(Dropped(guide, "SaveItem")).Should().Equal([ReasonCodes.DropExcludedByRule],
 			because: "the rule is what removed it — its request converts perfectly well");
-		Codes(Dropped(guide, "SettingsButton")).Should().Equal([ReasonCodes.DropActionNoRequest],
+		Codes(Dropped(guide, "SettingsButton")).Should().Equal([ReasonCodes.DropUnsupportedRequest],
 			because: "the button is left with no menu item whatever emptied it, so the dead-action pass has "
 				+ "to run AFTER the exclusion to see that");
 	}

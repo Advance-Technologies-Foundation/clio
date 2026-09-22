@@ -39,6 +39,25 @@ using JsonObject = System.Text.Json.Nodes.JsonObject;
 public static partial class WebToMobileAnalysisService {
 
 	/// <summary>
+	/// What the SOURCE node said, for one element, captured during the walk because the finished element map
+	/// cannot answer either question. Working state: it never reaches the wire.
+	/// </summary>
+	/// <param name="HadClickRequest">
+	/// Whether the node authored a <c>clicked</c> binding, whatever became of it. An action-only component
+	/// reaches this pass with no <c>clicked</c> in its values for two reasons that must be treated
+	/// differently: it never had one (a <c>clickMode: "menu"</c> dropdown, dead once its last menu item goes),
+	/// or it had one that conversion stripped because the navigation target cannot exist on mobile. ENG-94839
+	/// decided the second case STAYS on the converted page, so collapsing the two reverses that silently.
+	/// </param>
+	/// <param name="ChildComponentNames">
+	/// The names of the nested components it offered — its menu. NAMES rather than a count, because a menu
+	/// item can survive by being RE-PARENTED (a header action flattens into the FAB) rather than by staying
+	/// put, and a parent-graph answer would report the button as having lost a menu that is still on the page.
+	/// </param>
+	internal sealed record SourceActionFacts(
+		bool HadClickRequest, IReadOnlyCollection<string> ChildComponentNames);
+
+	/// <summary>
 	/// Depth bound for the verbatim-carry walk. A page bundle is external input, so the walk is bounded — but
 	/// the bound is the JSON readers' OWN ceiling rather than a number chosen here, which is what makes
 	/// abandoning a branch unreachable rather than merely unlikely: a document deep enough to exhaust it could
@@ -63,6 +82,9 @@ public static partial class WebToMobileAnalysisService {
 	/// <param name="elementMap">The finished element map; entries are replaced in place, never deleted.</param>
 	/// <param name="requestMap">
 	/// The versioned request rules — the first tier of <see cref="IsRequestSupported"/>.
+	/// </param>
+	/// <param name="sourceActionFacts">
+	/// What each source node said, by web name — see <see cref="CaptureActionFacts"/>.
 	/// </param>
 	/// <remarks>
 	/// <para>
@@ -98,9 +120,10 @@ public static partial class WebToMobileAnalysisService {
 	/// </remarks>
 	internal static HashSet<string> RemoveDeadActions(
 		List<ElementMapEntry> elementMap,
-		IReadOnlyDictionary<string, RequestMappingRule> requestMap) {
+		IReadOnlyDictionary<string, RequestMappingRule> requestMap,
+		IReadOnlyDictionary<string, SourceActionFacts> sourceActionFacts) {
 		PruneCarriedDeadActions(elementMap, requestMap);
-		return RemoveActionsWithNothingToDo(elementMap);
+		return RemoveActionsWithNothingToDo(elementMap, sourceActionFacts);
 	}
 
 	/// <summary>
@@ -255,7 +278,7 @@ public static partial class WebToMobileAnalysisService {
 		// No re-parenting caveat here, unlike the entry-graph rule: a carried node is by construction one the
 		// walk could not re-emit, so nothing can have moved it elsewhere on the page.
 		return offeredAMenu && !CarriesComponents(member, depth) && !CarriesEventBinding(member)
-			? Reason(ReasonCodes.DropActionNoRequest)
+			? DeadOwnerReason()
 			: null;
 	}
 
@@ -284,7 +307,9 @@ public static partial class WebToMobileAnalysisService {
 	/// a submenu entry whose own children all went becomes dead next round, and <c>occupied</c> is re-derived
 	/// each round so it sees that.
 	/// </summary>
-	private static HashSet<string> RemoveActionsWithNothingToDo(List<ElementMapEntry> elementMap) {
+	private static HashSet<string> RemoveActionsWithNothingToDo(
+		List<ElementMapEntry> elementMap,
+		IReadOnlyDictionary<string, SourceActionFacts> sourceActionFacts) {
 		var removedMobileNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		bool removedThisRound = true;
 		while (removedThisRound) {
@@ -301,11 +326,11 @@ public static partial class WebToMobileAnalysisService {
 			}
 			for (int i = 0; i < elementMap.Count; i++) {
 				ElementMapEntry entry = elementMap[i];
-				if (!IsDeadActionCandidate(entry)
-					|| entry.SourceChildComponentNames.Any(surviving.Contains)) {
+				if (!IsDeadActionCandidate(entry, sourceActionFacts, out SourceActionFacts facts)
+					|| facts.ChildComponentNames.Any(surviving.Contains)) {
 					continue;
 				}
-				elementMap[i] = Drop(entry.WebName, entry.WebType, Reason(ReasonCodes.DropActionNoRequest));
+				elementMap[i] = Drop(entry.WebName, entry.WebType, DeadOwnerReason());
 				removedMobileNames.Add(entry.Name);
 				removedThisRound = true;
 			}
@@ -323,13 +348,13 @@ public static partial class WebToMobileAnalysisService {
 	/// <c>merge</c> that a drop cannot un-create, and a synthesized or rule-declared entry is not an action.
 	/// </para>
 	/// <para>
-	/// <see cref="ElementMapEntry.SourceChildComponentNames"/> is what keeps this to the defect it was opened
-	/// for. The rule is "the control LOST its menu", not "the control has no action": one that never offered a
-	/// menu and never bound a click is a different, pre-existing condition, and widening to it drops buttons
-	/// across pages this ticket never looked at.
+	/// <see cref="SourceActionFacts.ChildComponentNames"/> is what keeps this to the defect it was opened for.
+	/// The rule is "the control LOST its menu", not "the control has no action": one that never offered a menu
+	/// and never bound a click is a different, pre-existing condition, and widening to it drops buttons across
+	/// pages this ticket never looked at.
 	/// </para>
 	/// <para>
-	/// <see cref="ElementMapEntry.SourceHadClickRequest"/> rather than the absence of <c>clicked</c> from the
+	/// <see cref="SourceActionFacts.HadClickRequest"/> rather than the absence of <c>clicked</c> from the
 	/// values, because the two differ exactly where it matters: a button whose click request was STRIPPED
 	/// because its navigation target cannot exist on mobile also has no <c>clicked</c> left, and ENG-94839
 	/// decided that button STAYS on the converted page. Reading the values alone would silently reverse that.
@@ -340,16 +365,39 @@ public static partial class WebToMobileAnalysisService {
 	/// record can be left describing an element this pass removed.
 	/// </para>
 	/// </remarks>
-	private static bool IsDeadActionCandidate(ElementMapEntry entry) =>
-		IsInsert(entry)
-		&& entry.WebName is { Length: > 0 }
-		&& entry.Name is { Length: > 0 }
-		&& IsActionOnlyType(entry.MobileType)
-		&& entry.SourceChildComponentNames is { Count: > 0 }
-		&& !entry.SourceHadClickRequest
-		&& entry.Values is JsonObject values
-		&& !CarriesEventBinding(values)
-		&& !CarriesComponents(values, depth: 0);
+	private static bool IsDeadActionCandidate(
+		ElementMapEntry entry,
+		IReadOnlyDictionary<string, SourceActionFacts> sourceActionFacts,
+		out SourceActionFacts facts) {
+		facts = null;
+		return IsInsert(entry)
+			&& entry.WebName is { Length: > 0 }
+			&& entry.Name is { Length: > 0 }
+			&& IsActionOnlyType(entry.MobileType)
+			&& sourceActionFacts.TryGetValue(entry.WebName, out facts)
+			&& facts.ChildComponentNames is { Count: > 0 }
+			&& !facts.HadClickRequest
+			&& entry.Values is JsonObject values
+			&& !CarriesEventBinding(values)
+			&& !CarriesComponents(values, depth: 0);
+	}
+
+	/// <summary>
+	/// The reason a control is removed for having nothing left to do. Deliberately the SAME code the walk
+	/// mints for an action whose request does not convert, rather than one of its own.
+	/// </summary>
+	/// <remarks>
+	/// The cause chains back to an unsupported request every time it fires today: this control is only ever
+	/// removed because the menu items it held were, and the only thing that removes those is a request the
+	/// Mobile app cannot fire. Giving the owner a separate code would split one cause across two entries the
+	/// caller has to rejoin.
+	/// <para>
+	/// It carries NO params, unlike every other emission of this code, because the control has no request of
+	/// its own to name — <see cref="Reason"/> drops a null value, so the entry arrives as the bare code. Read
+	/// the menu items listed beside it for what was actually lost.
+	/// </para>
+	/// </remarks>
+	private static ReasonCode DeadOwnerReason() => Reason(ReasonCodes.DropUnsupportedRequest);
 
 	/// <summary>True when the values carry any <c>{ request, params }</c> event binding.</summary>
 	private static bool CarriesEventBinding(JsonObject values) =>

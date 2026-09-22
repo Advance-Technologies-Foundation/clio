@@ -296,7 +296,7 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	private static void AssertDeadActionsLeftTheCanvas(MobilePageConversionGuide guide) {
 		string[] removedNames = [.. (guide.DroppedElements ?? [])
 			.Where(dropped => IsRemovedMenuItem(dropped)
-				|| (dropped.Reason ?? []).Any(reason => reason.Code == ReasonCodes.DropActionNoRequest))
+				|| (dropped.Reason ?? []).Any(reason => reason.Code == ReasonCodes.DropUnsupportedRequest))
 			.Select(dropped => dropped.WebName!)
 			.Where(name => !string.IsNullOrEmpty(name))];
 		removedNames.Should().NotBeEmpty(

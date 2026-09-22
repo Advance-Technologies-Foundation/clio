@@ -37,7 +37,9 @@ fix the reported defect.
 The gap is not only about REPORTING a dead request, either. Every rule the entry graph applies has to be
 restated for the carried shape, because the two share no code path: "the owner is dead once its menu is
 gone" has an entry-graph form (an element-map candidate) and a carried form (a post-order test inside the
-values walk), and shipping only the first leaves a nested carried submenu on the page, empty.
+values walk), and shipping only the first leaves a nested carried submenu on the page, empty. The same goes
+for the FACTS each form needs: the entry-graph one reads a walk-time side table (`CaptureActionFacts`), which
+a carried node has no entry in, so its form has to re-derive the same two facts from the node itself.
 
 Letting the two shapes report DIFFERENTLY is the mirror failure. Whether `crt.MenuItem` resolves is a fact
 about the published registry — it can change when the producer ships a catalog, with no clio release and no

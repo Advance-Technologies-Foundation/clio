@@ -191,6 +191,9 @@ public static partial class WebToMobileAnalysisService {
 		var flaggedRequests = new List<FlaggedRequest>();
 		var sourceLayouts = new Dictionary<string, JObject>(StringComparer.OrdinalIgnoreCase);
 		var gridContainerColumns = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+		// What each source node said about its own actions, for the dead-action pass — a side table beside the
+		// two above rather than fields on the wire contract (see CaptureActionFacts).
+		var sourceActionFacts = new Dictionary<string, SourceActionFacts>(StringComparer.OrdinalIgnoreCase);
 		// Positional placement: a web anchor container (e.g. CardContentWrapper) whose siblings above it go
 		// above the mobile anchor (Tabs) and below it go below — realized by inserting those siblings into the
 		// mobile anchor's PARENT container with an index. Resolve each web anchor to that mobile parent.
@@ -214,6 +217,7 @@ public static partial class WebToMobileAnalysisService {
 		List<ElementMapEntry> elementMap = BuildElementMap(
 			tree, map, componentMap, mobileTypes, mobileByType, webByType, rules, attrToColumn, resources,
 			requestMap, convertedRequests, droppedRequests, flaggedRequests, sourceLayouts, gridContainerColumns,
+			sourceActionFacts,
 			positionalParentByAnchor, positionalAnchorByWebAnchor,
 			mobileTypesByName, mobileTemplateNodesByName, webBaselineNodes, webTemplateResources,
 			declaredElements,
@@ -251,7 +255,8 @@ public static partial class WebToMobileAnalysisService {
 		// names BECAUSE their removals are layout cleanup, and if WalkConsumers ever learns to descend
 		// menuItems (see the excluded-components-phase-b knowledge record, which anticipates exactly that),
 		// a dead action's attributes SHOULD go with it — that removal is genuine loss.
-		HashSet<string> deadActionRemovedMobileNames = RemoveDeadActions(elementMap, requestMap);
+		HashSet<string> deadActionRemovedMobileNames =
+			RemoveDeadActions(elementMap, requestMap, sourceActionFacts);
 
 		// Deterministic empty-container removal: a converter-created layout container whose items
 		// receive NO surviving child is converted to a drop, bottom-up so emptiness cascades. Deliberately
@@ -2043,6 +2048,7 @@ public static partial class WebToMobileAnalysisService {
 		List<FlaggedRequest> FlaggedRequests,
 		Dictionary<string, JObject> SourceLayouts,
 		Dictionary<string, int> GridContainerColumns,
+		Dictionary<string, SourceActionFacts> SourceActionFacts,
 		IReadOnlyDictionary<string, string> PositionalParentByAnchor,
 		IReadOnlyDictionary<string, string> PositionalAnchorByWebAnchor,
 		IReadOnlyDictionary<string, string> MobileTypesByName,
@@ -2090,6 +2096,7 @@ public static partial class WebToMobileAnalysisService {
 		List<FlaggedRequest> flaggedRequests,
 		Dictionary<string, JObject> sourceLayouts,
 		Dictionary<string, int> gridContainerColumns,
+		Dictionary<string, SourceActionFacts> sourceActionFacts,
 		IReadOnlyDictionary<string, string> positionalParentByAnchor,
 		IReadOnlyDictionary<string, string> positionalAnchorByWebAnchor,
 		IReadOnlyDictionary<string, string> mobileTypesByName,
@@ -2109,6 +2116,7 @@ public static partial class WebToMobileAnalysisService {
 			webByType ?? new Dictionary<string, ComponentRegistryEntry>(),
 			rules, attrToColumn, resources, RelocateTargetFor(map), [],
 			requestMap, convertedRequests, droppedRequests, flaggedRequests, sourceLayouts, gridContainerColumns,
+			sourceActionFacts,
 			positionalParentByAnchor ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
 			positionalAnchorByWebAnchor ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
 			mobileTypesByName ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
@@ -2516,6 +2524,12 @@ public static partial class WebToMobileAnalysisService {
 				continue;
 			}
 
+			// Two facts about the SOURCE node that no later pass can recover from the finished map. Captured HERE,
+			// at the top of the loop, rather than on each insert: every branch below either emits an entry for
+			// this element or drops it, and a branch that forgot to record them would leave the dead-action pass
+			// silently blind to that element (see CaptureActionFacts).
+			CaptureActionFacts(ctx, name, node);
+
 			// A non-converting scope container (declared in `nonConvertingScopeContainers`, e.g. MainHeader): it
 			// produces NO mobile element of its own, but its subtree is walked in "scope" mode — a matching header
 			// action retargets (e.g. into FloatingActionButton.menuItems) and everything else is dropped, so the
@@ -2579,9 +2593,7 @@ public static partial class WebToMobileAnalysisService {
 					ctx.Out.Add(new ElementMapEntry {
 						WebName = name, WebType = Nz(type), Operation = ElementMapOperations.Insert, Name = name, MobileType = scopedType,
 						ParentName = target.Parent, PropertyName = target.Property, Index = null,
-						CaptionResource = scopedCaption, Values = scopedValues,
-						SourceHadClickRequest = SourceActionFacts(node).HadClick,
-						SourceChildComponentNames = SourceActionFacts(node).ChildNames
+						CaptionResource = scopedCaption, Values = scopedValues
 					});
 				} else {
 					ReasonCode dropReason = ScopeDropReason(
@@ -2859,8 +2871,6 @@ public static partial class WebToMobileAnalysisService {
 					CaptionResource = containerCaption,
 					Values = containerValues,
 					PositionalAnchor = isPositional && !containerRetargeted ? place.Anchor : null,
-					SourceHadClickRequest = SourceActionFacts(node).HadClick,
-					SourceChildComponentNames = SourceActionFacts(node).ChildNames
 				});
 				IReadOnlyList<string> containerChildAncestors = Append(sourceAncestors, name);
 				if (items is not null) {
@@ -2954,9 +2964,7 @@ public static partial class WebToMobileAnalysisService {
 				Index = leafIndex,
 				CaptionResource = leafCaption,
 				Values = leafValues,
-				PositionalAnchor = isPositional && !leafRetargeted ? place.Anchor : null,
-				SourceHadClickRequest = SourceActionFacts(node).HadClick,
-				SourceChildComponentNames = SourceActionFacts(node).ChildNames
+				PositionalAnchor = isPositional && !leafRetargeted ? place.Anchor : null
 			});
 			// A leaf can still own nested child-element arrays (e.g. a crt.Button's menuItems) — descend so their
 			// components are converted rather than carried verbatim inside the leaf's values. When the leaf itself
@@ -4565,13 +4573,32 @@ public static partial class WebToMobileAnalysisService {
 	private static bool HasClickRequest(JObject node) => IsEventBinding(node?["clicked"]);
 
 	/// <summary>
-	/// The two source facts every WEB-SOURCED insert records for the dead-action pass, taken together because
-	/// they are always read together and always come from the same node. One call rather than two field
-	/// initializers at each of the three construction sites: a fourth site that copied only half of the pair
-	/// would leave a real dead button shipping with no drop entry, and nothing would fail.
+	/// Captures the two facts about a SOURCE node that the dead-action pass needs and the finished element map
+	/// cannot answer: whether it authored a <c>clicked</c>, and the names of the nested components it offered.
 	/// </summary>
-	private static (bool HadClick, IReadOnlyCollection<string> ChildNames) SourceActionFacts(JObject node) =>
-		(HasClickRequest(node), ChildComponentNames(node));
+	/// <remarks>
+	/// <para>
+	/// A SIDE TABLE keyed by web name, exactly like <see cref="CaptureSource"/>'s layout and column capture
+	/// beside it, rather than fields on <see cref="ElementMapEntry"/>. That type is the guide's WIRE contract;
+	/// working state belongs with the other working state, where it also costs one capture site instead of one
+	/// per construction site.
+	/// </para>
+	/// <para>
+	/// Recorded for every named element the walk meets, whatever becomes of it, because the reader only looks up
+	/// entries it has already filtered — capturing more than is needed is free, and capturing less is the
+	/// failure mode: an element whose facts are missing reads as "offered no menu" and is silently never a
+	/// candidate.
+	/// </para>
+	/// </remarks>
+	private static void CaptureActionFacts(ElementMapContext ctx, string name, JObject node) {
+		IReadOnlyCollection<string> childNames = ChildComponentNames(node);
+		bool hadClick = HasClickRequest(node);
+		// Nothing to say about an element that neither bound a click nor offered a menu, and the reader treats
+		// an absent entry as exactly that — so the table stays the size of the page's action surface.
+		if (childNames is { Count: > 0 } || hadClick) {
+			ctx.SourceActionFacts[name] = new SourceActionFacts(hadClick, childNames);
+		}
+	}
 
 	/// <summary>
 	/// The NAMES of the nested components the SOURCE node carries — recorded onto every web-sourced insert as

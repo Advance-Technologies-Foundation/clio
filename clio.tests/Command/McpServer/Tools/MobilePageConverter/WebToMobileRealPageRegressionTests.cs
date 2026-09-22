@@ -759,7 +759,7 @@ public sealed class WebToMobileRealPageRegressionTests {
 					+ "only say it does not know them — the stronger code would tell the developer not to re-add "
 					+ "an action that may well work on mobile");
 		(guide.DroppedElements ?? []).Where(d => DeadMenuButtons.Contains(d.WebName))
-			.Should().OnlyContain(d => d.Reason!.Any(r => r.Code == ReasonCodes.DropActionNoRequest),
+			.Should().OnlyContain(d => d.Reason!.Any(r => r.Code == ReasonCodes.DropUnsupportedRequest),
 				because: "the button is not dropped for a request of its own and is not an empty layout "
 					+ "container either, so it needs the code that says what actually happened to it");
 
@@ -767,7 +767,7 @@ public sealed class WebToMobileRealPageRegressionTests {
 		// pass that swept every action-less button off the page would satisfy every one of them. These two
 		// close it by EQUALITY, so over-removal fails as loudly as under-removal.
 		(guide.DroppedElements ?? [])
-			.Where(d => d.Reason!.Any(r => r.Code == ReasonCodes.DropActionNoRequest))
+			.Where(d => d.Reason!.Any(r => r.Code == ReasonCodes.DropUnsupportedRequest))
 			.Select(d => d.WebName).Should().BeEquivalentTo(DeadMenuButtons,
 				because: "these six are the only controls on the page that offered a menu, lost all of it, and "
 					+ "never bound a click of their own — a seventh means the SourceChildComponentNames "

@@ -283,24 +283,6 @@ public static class ReasonCodes {
 	public const string DropEmptyContainer = "drop-empty-container";
 
 	/// <summary>
-	/// An action-only component — a <c>crt.Button</c> or a <c>crt.MenuItem</c> — left with nothing to do: it never
-	/// authored a click request of its own, and every menu item under it was removed. It would render on the mobile
-	/// page as a control the user can press to no effect. No params: the record's own <c>webName</c> and
-	/// <c>webType</c> name it, and each removed menu item carries its own entry saying why it went.
-	/// </summary>
-	/// <remarks>
-	/// Distinct from its two neighbours, and the difference is what the caller acts on.
-	/// <see cref="DropEmptyContainer"/> is a LAYOUT container whose <c>items</c> received no child — re-adding it
-	/// would be re-adding an empty shell. <see cref="DropUnsupportedRequest"/> is an element dropped over its OWN
-	/// request, which the caller may be able to re-wire. This code is neither: the element is intact and its own
-	/// wiring was never the problem, so the thing to look at is the menu items listed beside it. A button whose
-	/// click request was merely STRIPPED (a navigation target that cannot exist on mobile,
-	/// <see cref="DropRequestTargetMissing"/>) is deliberately NOT reported here — ENG-94839 decided it stays on
-	/// the page.
-	/// </remarks>
-	public const string DropActionNoRequest = "drop-action-no-request";
-
-	/// <summary>
 	/// A container with no mobile equivalent: it is NOT recreated, and its children were reparented to
 	/// <c>params.newParent</c> (each carries that parent in its own operation, so there is nothing to
 	/// apply). Params: <c>newParent</c>.
@@ -338,12 +320,9 @@ public static class ReasonCodes {
 	public const string DropTargetMissing = "drop-target-missing";
 
 	/// <summary>
-	/// A component whose request the Mobile app does not support — an ACTION-ONLY component (a
-	/// <c>crt.Button</c> or a <c>crt.MenuItem</c>) on the element path, or any action inside a
-	/// non-converting scope container. Params: <c>request</c>, <c>scope</c> (<c>scope</c> absent on the
-	/// element path). Emitted only where clio can ASSERT the request is unavailable, which is when the
-	/// versioned rules file clears its mobile target; a request it has simply never seen gets
-	/// <see cref="DropUnknownRequest"/> instead, on both paths. Not to be confused with
+	/// A component whose request the Mobile app does not support — a <c>crt.Button</c> on the element path,
+	/// or any action inside a non-converting scope container. Params: <c>request</c>, <c>scope</c>
+	/// (<c>scope</c> absent on the element path). Not to be confused with
 	/// <see cref="DropRequestUnsupported"/>: there the element SURVIVES and only its binding is removed.
 	/// </summary>
 	public const string DropUnsupportedRequest = "drop-unsupported-request";
@@ -370,9 +349,8 @@ public static class ReasonCodes {
 
 	/// <summary>
 	/// A request absent from the conversion map — CUSTOM or unknown, not known-unsupported. clio cannot
-	/// assert it is unavailable on mobile, only that it does not know it, so re-adding the action by hand
-	/// is a reasonable thing for the developer to do. Params: <c>request</c>, <c>scope</c> (<c>scope</c>
-	/// absent on the element path).
+	/// assert it is unavailable on mobile, only that it does not know it. Params: <c>request</c>,
+	/// <c>scope</c>.
 	/// </summary>
 	public const string DropUnknownRequest = "drop-unknown-request";
 
@@ -720,45 +698,6 @@ public sealed class ElementMapEntry {
 	/// </summary>
 	[JsonIgnore]
 	internal bool DeclaredByRule { get; init; }
-
-	/// <summary>
-	/// Whether the SOURCE node authored a <c>clicked</c> event binding, whatever became of it. Working state, not
-	/// part of the guide contract.
-	/// </summary>
-	/// <remarks>
-	/// Recorded at walk time because the finished <see cref="Values"/> cannot answer the question the dead-action
-	/// pass asks. An action-only component reaches that pass with no <c>clicked</c> in its values for two reasons
-	/// that must be treated differently: it never had one (a <c>clickMode: "menu"</c> dropdown, which is dead once
-	/// its last menu item goes), or it had one that conversion stripped because the navigation target cannot exist
-	/// on mobile. ENG-94839 decided the second case STAYS on the converted page, so collapsing the two would
-	/// silently reverse that decision. Absent on a synthesized or rule-declared entry, which have no source node —
-	/// neither is a dead-action candidate anyway.
-	/// </remarks>
-	[JsonIgnore]
-	internal bool SourceHadClickRequest { get; init; }
-
-	/// <summary>
-	/// The names of the nested components the SOURCE node offered — its menu. Null when it offered none.
-	/// Working state, not part of the guide contract.
-	/// </summary>
-	/// <remarks>
-	/// <para>
-	/// Presence is what scopes the dead-action pass to the defect it was opened for. "Remove the button when no
-	/// menu item is left" is the cleanup of a button that LOST its menu; a button that never had one and never
-	/// had a click request is a different, pre-existing condition, and the suite already pins that such a button
-	/// converts (<c>Analyze_ShouldConvertToolsButtons_AndKeepTheirPanel</c>,
-	/// <c>Analyze_ShouldCarryEmptyChildArray_Verbatim</c>). An authored-but-EMPTY array does not count: the same
-	/// suite treats <c>menuItems: []</c> as a legitimate collection carried so a mobile diff can clear a
-	/// template default.
-	/// </para>
-	/// <para>
-	/// The NAMES, not a count, because a menu item can survive by being re-parented rather than by staying put —
-	/// see <c>ChildComponentNames</c> for why a parent-graph answer would make the drop reason assert a loss
-	/// that did not happen.
-	/// </para>
-	/// </remarks>
-	[JsonIgnore]
-	internal IReadOnlyCollection<string> SourceChildComponentNames { get; init; }
 
 	/// <summary>
 	/// The prebuilt, ready-to-paste mobile component <c>values</c>. For an <c>insert</c> it carries the
@@ -1188,13 +1127,10 @@ public sealed class MobilePageConversionGuide {
 	/// <c>clicked</c>, a field's <c>valueChange</c>/<c>updated</c>), deterministically converted for
 	/// mobile. Supported requests are remapped in-place inside the affected element's
 	/// <c>viewConfigDiff[].values</c>. An unsupported or unknown/custom request is handled by component
-	/// type: on an ACTION-ONLY component — a <c>crt.Button</c> or a <c>crt.MenuItem</c> — the whole element
-	/// is DROPPED, read in <see cref="DroppedElement"/> under
-	/// <see cref="ReasonCodes.DropUnsupportedRequest"/> or <see cref="ReasonCodes.DropUnknownRequest"/>,
-	/// which is the only place such a leaf's loss is reported; on any other component type the binding is
-	/// kept verbatim and flagged for manual review (the component stays). A button left with no surviving
-	/// menu item and no click request of its own follows its menu out under
-	/// <see cref="ReasonCodes.DropActionNoRequest"/>. <c>droppedRequests</c> reports a
+	/// type: on a <c>crt.Button</c> the whole element is DROPPED — a dead button, read in
+	/// <see cref="DroppedElement"/> under <see cref="ReasonCodes.DropUnsupportedRequest"/>, which is the
+	/// only place a plain leaf button's loss is reported; on any other component type the binding is kept
+	/// verbatim and flagged for manual review (the component stays). <c>droppedRequests</c> reports a
 	/// BINDING: one lost while its element survived, and one lost on the paths that place or remove the
 	/// element itself (retarget onto a native, missing retarget target, non-converting scope, empty
 	/// container, exclusion). This section is an advisory SUMMARY — every actionable body change is
