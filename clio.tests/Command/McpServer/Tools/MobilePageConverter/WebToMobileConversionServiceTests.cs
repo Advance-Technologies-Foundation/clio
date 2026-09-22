@@ -6420,38 +6420,22 @@ public sealed class WebToMobileConversionServiceTests {
 	#region UnknownMobileRequestTargets (rules targets the mobile request registry does not publish)
 
 	/// <summary>
-	/// The mobile targets the shipped <c>WebToMobilePageConversionRules.json</c> names, enumerated HERE rather
-	/// than read back off the rules so the guard is not tautological: a rules entry gaining a target the mobile
-	/// runtime does not publish fails the test until someone confirms the runtime publishes it and adds it here.
+	/// The request types the mobile runtime publishes, read from
+	/// <c>MobileRequestRegistry.published-types.json</c>: the live CDN registry's type set captured for
+	/// MEMBERSHIP CHECKS ONLY, which is why it deliberately carries no descriptions, parameters or doc links.
+	/// It is NOT the curated <c>MobileRequestRegistry.live-snapshot.json</c>, whose annotated entries pin
+	/// request CONTENT and must not be conflated with this list. Read from a fixture rather than enumerated
+	/// here because a hand-written list of the rules file's own targets makes the guard below assert the
+	/// rules against themselves.
 	/// </summary>
-	private static readonly IReadOnlySet<string> ShippedRulesMobileTargets =
-		new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
-			"crt.AddCommunicationOptionsRequest",
-			"crt.CancelRecordChangesRequest",
-			"crt.ClosePageRequest",
-			"crt.CopyRecordRequest",
-			"crt.CreateCommunicationOptionRequest",
-			"crt.CreateListItemRequest",
-			"crt.CreateRecordRequest",
-			"crt.DeleteFileRequest",
-			"crt.DeleteListItemRequest",
-			"crt.DeleteRecordRequest",
-			"crt.ExecuteExpressionRequest",
-			"crt.LoadDataRequest",
-			"crt.OpenAddressOnMapRequest",
-			"crt.OpenCustomWebViewPageRequest",
-			"crt.OpenLookupPageRequest",
-			"crt.OpenPageRequest",
-			"crt.QuickFilterRequest",
-			"crt.RemoveCommunicationOptionRequest",
-			"crt.RunBusinessProcessRequest",
-			"crt.SaveRecordRequest",
-			"crt.SetAttributeFromBarcodeRequest",
-			"crt.ShowDialogRequest",
-			"crt.UpdateListItemRequest",
-			"crt.UpdateRecordRequest",
-			"crt.UploadFileRequest"
-		};
+	private static IReadOnlySet<string> PublishedMobileRequestTypes() {
+		string fixturePath = Path.Combine(
+			TestContext.CurrentContext.TestDirectory,
+			"Command/McpServer/Fixtures/MobileRequestRegistry.published-types.json");
+		using FileStream stream = File.OpenRead(fixturePath);
+		RequestCatalogState state = RequestInfoCatalog.LoadFromStream(stream);
+		return new HashSet<string>(state.Entries.Select(entry => entry.RequestType), StringComparer.OrdinalIgnoreCase);
+	}
 
 	[Test]
 	[Description("A rules entry whose mobile target the registry does not list is reported as a \"web -> mobile\" pair. Such an entry rewrites a binding into a request the runtime cannot dispatch and the failure is silent on the page, so losing this report would let a rules-file edit ship a dead action with nothing to notice it.")]
@@ -6476,14 +6460,14 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("Every mobile target in the SHIPPED rules file is one the registry publishes. This is the regression guard on the data, not the code: all 25 entries pass today, and an edit that points an entry at a request the mobile runtime does not publish would otherwise ship silently.")]
+	[Description("Every mobile target in the SHIPPED rules file is one the published mobile request registry lists. This is the regression guard on the data, not the code: the registry side comes from the captured published type set, so an edit that points an entry at a request the mobile runtime does not publish fails here instead of shipping silently. Driving it off a hand-written list of the rules' own targets would assert the rules against themselves and catch nothing.")]
 	public void UnknownMobileRequestTargets_ShouldReturnEmpty_WhenEveryShippedRulesTargetIsInTheRegistry() {
 		// Arrange
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+		IReadOnlySet<string> registry = PublishedMobileRequestTypes();
 
 		// Act
-		IReadOnlyList<string> unknown = WebToMobileAnalysisService.UnknownMobileRequestTargets(
-			rules, ShippedRulesMobileTargets);
+		IReadOnlyList<string> unknown = WebToMobileAnalysisService.UnknownMobileRequestTargets(rules, registry);
 
 		// Assert
 		unknown.Should().BeEmpty(

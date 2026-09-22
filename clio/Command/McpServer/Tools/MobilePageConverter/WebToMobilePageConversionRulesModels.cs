@@ -615,8 +615,8 @@ public sealed class ExcludedComponentFilterRule {
 /// Maps a web request (action) to its mobile counterpart. A request is dispatched declaratively from a
 /// component's event binding (<c>clicked</c> / <c>valueChange</c> / <c>updated</c>) as
 /// <c>{ "request": "crt.X", "params": { ... } }</c>. An empty/null <see cref="Mobile"/> means the
-/// request is NOT supported on mobile. A request absent from this map falls back to the bundled offline
-/// supported set; one absent from BOTH is unknown/custom. Support decides handling by component type: a
+/// request is NOT supported on mobile. A request absent from this map falls back to the mobile request
+/// registry; one absent from BOTH is unknown/custom. Support decides handling by component type: a
 /// <c>crt.Button</c> whose clicked request is unsupported or unknown is DROPPED (a dead button), while
 /// any other component type keeps the binding verbatim and flags it for manual review.
 /// </summary>

@@ -1265,6 +1265,11 @@ public sealed class MobilePageConversionGuideResponse {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string ResolvedFromReason { get; init; }
 
+	/// <summary>Caveat when a conversion-rules entry names a mobile request type the mobile request registry does not publish; null when every entry resolves.</summary>
+	[JsonPropertyName("rulesWarning")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string RulesWarning { get; init; }
+
 	[JsonPropertyName("error")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string Error { get; init; }

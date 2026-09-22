@@ -3017,8 +3017,8 @@ public static class WebToMobileAnalysisService {
 		/// matching the leaf policy (<see cref="UnsupportedRequestOf"/> gates on <c>crt.Button</c>) and the tool
 		/// contract.</summary>
 		Unsupported,
-		/// <summary>The clicked request is supported on mobile (mapped to a mobile target, or present in the bundled
-		/// supported set), OR the node is not a <c>crt.Button</c> (an unsupported clicked on another component type is
+		/// <summary>The clicked request is supported on mobile (mapped to a mobile target, or published by the mobile
+		/// request registry), OR the node is not a <c>crt.Button</c> (an unsupported clicked on another component type is
 		/// kept and flagged, not dropped) — the action converts.</summary>
 		Convertible
 	}
@@ -3159,7 +3159,7 @@ public static class WebToMobileAnalysisService {
 		}
 		if (clicked == ClickedConvertibility.Unsupported) {
 			// Distinguish a KNOWN-unsupported request (the versioned map clears its mobile target) from an
-			// UNKNOWN/custom one (absent from both the versioned map and the bundled fallback set). clio can assert
+			// UNKNOWN/custom one (absent from both the versioned map and the mobile request registry). clio can assert
 			// "not supported" only for the former; for the latter it can merely say it does not know it, so the
 			// developer can re-add the action manually if that custom request IS implemented on mobile.
 			bool knownUnsupported = ctx.RequestMap.TryGetValue(request, out RequestMappingRule rule)
@@ -4455,6 +4455,18 @@ public static class WebToMobileAnalysisService {
 	/// file does not cover falls back to the mobile request registry — the set the mobile runtime itself
 	/// publishes — so anything absent from both, an unknown <c>crt.*</c> or a custom <c>usr.*</c> request, is
 	/// unsupported.
+	/// <para>
+	/// Widening the fallback from the deleted 14-entry constant to the registry was measured, not incidental:
+	/// 38 types gain support (the registry-plus-rules union minus the constant-plus-rules union, against a
+	/// 65-entry registry) and none is lost. Of those 38, 12 are ALSO declared as web request types in
+	/// creatio-ui — ComboboxLoadData, CreateCalendarRecord, CreateRecordFromLookup,
+	/// HandleViewModelAttributeChange, HandleViewModelInit, PhoneLinkClick, SaveAttributeToProfile,
+	/// SearchFilter, SelectFile, SetViewModelAttribute, UploadImage, WidgetDrilldown — measured over the 427
+	/// types declared there via <c>@CrtRequest</c>; the other 26 are mobile-runtime-internal and cannot appear
+	/// in a web page schema being converted, so they are inert in practice. Residual risk, accepted: because the
+	/// fallback is now a 65-entry set rather than a 14-entry one, a future web request whose name coincides with
+	/// a mobile-internal one would be treated as supported — the short constant blocked that by being short.
+	/// </para>
 	/// </summary>
 	private static bool IsRequestSupported(ElementMapContext ctx, string webRequest) =>
 		ctx.RequestMap.TryGetValue(webRequest, out RequestMappingRule rule)
