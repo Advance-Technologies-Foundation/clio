@@ -20,6 +20,14 @@ in the metadata, invisible in `describe`, and undocumented on Academy. The sourc
 collection is **not** in this chain either — it appears zero times in `FlowSchemaGenerator` — so
 reasoning about precedence from `Outgoings` gives an answer that happens to be right until it is not.
 
+**The diagram now shows it, with one deliberate exception.** Since ENG-95890 the generated layout draws
+a split's branches top to bottom in this order, so the picture finally records what no field does - except
+that the DEFAULT branch keeps the split's own row whatever its index, because it is the path that runs
+when nothing matched and it is what a reader follows across the diagram. So the conditional branches read
+downward in evaluation order and the default sits on the spine. One consequence for a writer: a gateway
+that GAINS a default branch later moves its existing branches down a row, which is the only edit that
+reorders a split's arms.
+
 **Why it is this way** — the generator was written to preserve authoring order and nothing was ever
 added to override it. Since the designer inserts a new flow at the end, a human drawing branches
 top-to-bottom gets precedence matching the drawing, and the absence of a field never surfaced.

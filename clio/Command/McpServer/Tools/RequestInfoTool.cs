@@ -259,6 +259,8 @@ public sealed class RequestInfoTool(
 			Count = 1,
 			RequestType = entry.RequestType,
 			Description = string.IsNullOrWhiteSpace(entry.Description) ? null : entry.Description,
+			Deprecated = entry.Deprecated,
+			DeprecationReason = string.IsNullOrWhiteSpace(entry.DeprecationReason) ? null : entry.DeprecationReason,
 			Parameters = entry.Parameters,
 			BaseParameters = globalReferences?.BaseParameters is { Count: > 0 } baseParameters ? baseParameters : null,
 			References = typeDefinitions is null ? null : new RequestReferencesResponse { TypeDefinitions = typeDefinitions },
@@ -361,7 +363,9 @@ public sealed class RequestInfoTool(
 			.OrderBy(entry => entry.RequestType, StringComparer.OrdinalIgnoreCase)
 			.Select(entry => new RequestInfoListItem {
 				RequestType = entry.RequestType,
-				Description = string.IsNullOrWhiteSpace(entry.Description) ? null : entry.Description
+				Description = string.IsNullOrWhiteSpace(entry.Description) ? null : entry.Description,
+				Deprecated = entry.Deprecated,
+				DeprecationReason = string.IsNullOrWhiteSpace(entry.DeprecationReason) ? null : entry.DeprecationReason
 			})
 			.ToArray();
 	}
@@ -522,6 +526,27 @@ public sealed class RequestInfoResponse {
 	[JsonPropertyName("description")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string? Description { get; init; }
+
+	/// <summary>
+	/// Emitted as <c>true</c> when the request type itself is deprecated at the class level
+	/// (as opposed to a single deprecated parameter). Steers the agent away from authoring
+	/// new schemas against it; existing schemas that already reference it keep working.
+	/// Absent (null) on non-deprecated requests. Mirrors
+	/// <see cref="RequestRegistryEntry.Deprecated"/>.
+	/// </summary>
+	[JsonPropertyName("deprecated")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public bool? Deprecated { get; init; }
+
+	/// <summary>
+	/// Human-readable reason and, when applicable, the replacement request the agent should
+	/// reach for instead (e.g. <c>"Use crt.OpenSelectionWindowRequest instead."</c>). Only
+	/// meaningful when <see cref="Deprecated"/> is <c>true</c>. Mirrors
+	/// <see cref="RequestRegistryEntry.DeprecationReason"/>.
+	/// </summary>
+	[JsonPropertyName("deprecationReason")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? DeprecationReason { get; init; }
 
 	/// <summary>
 	/// Gets or sets the request's authorable parameters — the only keys a page schema may
@@ -687,4 +712,22 @@ public sealed class RequestInfoListItem {
 	[JsonPropertyName("description")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string? Description { get; init; }
+
+	/// <summary>
+	/// Surfaced in list mode so the agent can rule a request out at browse time instead of
+	/// learning it is deprecated only after opening the detail response. Absent (null) on
+	/// non-deprecated requests. Mirrors <see cref="RequestRegistryEntry.Deprecated"/>.
+	/// </summary>
+	[JsonPropertyName("deprecated")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public bool? Deprecated { get; init; }
+
+	/// <summary>
+	/// Human-readable reason and, when applicable, the replacement request the agent should
+	/// reach for instead. Only meaningful when <see cref="Deprecated"/> is <c>true</c>.
+	/// Mirrors <see cref="RequestRegistryEntry.DeprecationReason"/>.
+	/// </summary>
+	[JsonPropertyName("deprecationReason")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? DeprecationReason { get; init; }
 }
