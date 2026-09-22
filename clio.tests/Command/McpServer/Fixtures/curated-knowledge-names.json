@@ -1,7 +1,7 @@
 {
   "library": "com.creatio.clio",
-  "libraryVersion": "1.15.54",
-  "sequence": 1015054000,
+  "libraryVersion": "1.15.55",
+  "sequence": 1015055000,
   "availableNames": [
     "administration",
     "agent-execution",

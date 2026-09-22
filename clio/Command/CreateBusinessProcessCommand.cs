@@ -212,7 +212,7 @@ namespace Clio.Command;
 // deployed server may not have", which is exactly this raise. 1.6.2.1 is the archive cut from the
 // producing commit that carries the mode (crt-process-builder fe18ff3); every in-flight branch numbered
 // below it at the time of the cut.
-// Raised to 1.6.6.5 by ENG-99856: `subProcess.multiInstanceOptions`, the dotted per-item path on
+// Raised to 1.6.6.6 by ENG-99856: `subProcess.multiInstanceOptions`, the dotted per-item path on
 // `elementParameter` / `sourceElementParameter`, and the refusals that go with them. The rule is the one
 // that produced the 1.6.2.1 raise - it moves when clio starts ADVERTISING behaviour the deployed server
 // may not have - and the failure mode here is the worse of the two shapes this contract knows: a new
@@ -221,8 +221,8 @@ namespace Clio.Command;
 // "success", and has an ordinary single-call element with nothing anywhere saying a block was dropped.
 // The dotted path fails differently and just as quietly: an older server resolves `elementParameter` flat
 // only, finds no parameter of that name and refuses - loudly, but naming a parameter rather than the
-// package. 1.6.6.5 is the archive cut from crt-process-builder 981e24f.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.5",
+// package. 1.6.6.6 is the archive cut from crt-process-builder 4914d95.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.6",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class CreateBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Inline JSON process descriptor (name, caption, packageName, elements[], flows[], parameters[], mappings[]).</summary>
