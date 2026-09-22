@@ -1,4 +1,4 @@
-using System.Linq;
+﻿using System.Linq;
 using System.Reflection;
 using Clio.Command;
 using Clio.Command.McpServer.Prompts;
@@ -214,6 +214,75 @@ public sealed class DescribeProcessToolTests {
 		prompt.Should().Contain("nothing to redirect to",
 			because: "the branch with no activeVersionSchemaUId is reachable, and without it the prompt tells the agent to redirect by a field that is not there");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The describe tool contract documents the multiInstanceOptions read block and routes the "
+		+ "caller to calleeInSync. inSync is FALSE BY CONSTRUCTION on a multi-instance element - it compares "
+		+ "the callee against the element's ROOT parameters, which there are the five service ones - so an "
+		+ "agent told only 'inSync is false' reports permanent drift on a healthy element. calleeInSync is "
+		+ "the field that answers the question one level down, and it is a SEPARATE field precisely so that "
+		+ "no deserializer, schema check or version negotiation has to notice a redefinition.")]
+	public void DescribeProcess_ShouldDocumentMultiInstanceOptions_WhenToolContractIsRead() {
+		// Arrange
+		string toolText = ReadDescribeToolDescription();
+
+		// Act
+		// (nothing to act on - the contract is the attribute itself)
+
+		// Assert
+		toolText.Should().Contain("multiInstanceOptions",
+			because: "the block is reported on every multi-instance element and an agent that cannot find "
+				+ "its name here cannot ask for it");
+		toolText.Should().Contain("calleeInSync",
+			because: "it is the only field that answers whether the callee's contract is still carried, and "
+				+ "inSync cannot answer it on a multi-instance element");
+		toolText.Should().Contain("FALSE BY CONSTRUCTION",
+			because: "an agent must be told WHY inSync is false there, or it reports a healthy element as "
+				+ "drifted");
+		foreach (string parameterName in new[] {
+				"inputCollection", "outputCollection", "completedIterationsCount",
+				"terminatedIterationsCount", "totalIterationsCount" }) {
+			toolText.Should().Contain(parameterName,
+				because: $"'{parameterName}' is one of the five names a converted element carries instead of "
+					+ "the callee's parameters, and a mapping is written in terms of it");
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("THE RETRACTION SWEEP. Three clio-owned agent-facing surfaces used to state that a "
+		+ "multi-instance element cannot be built or re-synchronized. Both claims are now false - the "
+		+ "element is buildable through subProcess.multiInstanceOptions and a re-synchronization is "
+		+ "subProcess.resync:true - and a false sentence left beside a true one is worse than silence, "
+		+ "because an agent that reads the stale half stops looking. This sweeps all three in one test so "
+		+ "the correction cannot be applied to one surface and forgotten on the others.")]
+	public void AgentFacingSurfaces_ShouldNotClaimMultiInstanceIsUnsupported_WhenSwept() {
+		// Arrange
+		string toolText = ReadDescribeToolDescription();
+		string validatePrompt = ValidateProcessGraphPrompt.ProcessDesignGuidance();
+
+		// Act
+		// (the surfaces are the subject; nothing is invoked)
+
+		// Assert
+		toolText.Should().NotContain("re-sync is REFUSED",
+			because: "a re-synchronization IS available on a multi-instance element - subProcess.resync:true "
+				+ "de-converts, re-synchronizes and re-converts it, which is what the process designer does "
+				+ "for the same edit");
+		validatePrompt.Should().NotContain("neither is one that runs the called process once per item",
+			because: "such an element is buildable now, and this prompt is what tells an agent which slice "
+				+ "of the palette it may plan with");
+		validatePrompt.Should().Contain("multiInstanceOptions",
+			because: "removing the refusal is only half the correction - the prompt has to name the member "
+				+ "that replaced it, or an agent learns only that its previous knowledge was wrong");
+	}
+
+	/// <summary>Reads the describe tool's own [Description] - the agent-facing contract under test.</summary>
+	private static string ReadDescribeToolDescription() =>
+		((System.ComponentModel.DescriptionAttribute)typeof(DescribeProcessTool)
+			.GetMethod(nameof(DescribeProcessTool.DescribeProcess))!
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false).Single()).Description;
 
 	private sealed class FakeDescribeProcessCommand : DescribeProcessCommand {
 		public DescribeProcessOptions CapturedOptions { get; private set; }
