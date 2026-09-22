@@ -197,7 +197,7 @@ public class BundledProcessBuilderPackageTests {
 	/// equal version numbers mean nothing, which the convergence check cannot see through.</para>
 	/// <para>
 	/// This cut did NOT run under <c>-SkipTests</c>: the script built the package sources and ran their suite
-	/// on the producing commit before packing anything — 2499 passed, 0 failed, 0 skipped, measured on this cut
+	/// on the producing commit before packing anything — 2507 passed, 0 failed, 0 skipped, measured on this cut
 	/// and not carried over from a previous one. That matters beyond hygiene, because <c>-SkipTests</c> is the
 	/// ONE path that can reach the coarse failure the two security counts below exist to catch. The script also
 	/// verified the archive inventory it produced (209 entries, 2 DLLs, both under <c>Files/Libs</c>, compile
@@ -271,7 +271,7 @@ public class BundledProcessBuilderPackageTests {
 	/// <para>
 	/// The entry-by-entry byte audit (every archive entry compared against
 	/// <c>git show &lt;ExpectedProducingCommit&gt;:&lt;path&gt;</c>; last measured on the 1.6.1.2 cut as 157 entries,
-	/// 156 byte-identical, the 157th being the restamped <c>descriptor.json</c>) was NOT re-run for the 1.6.6.7 cut.
+	/// 156 byte-identical, the 157th being the restamped <c>descriptor.json</c>) was NOT re-run for the 1.6.6.8 cut.
 	/// Its reproducibility rests on the export flags above, which are what made the earlier audit come out clean;
 	/// a reviewer can repeat the audit from the producing commit alone.
 	/// The INVARIANT, which is what this paragraph is for and the only part that cannot go stale: every entry in
@@ -287,7 +287,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"DE7B71B78E0CC9D5E03037B3FEF47E69A3EC7FFCDFD1C50E742A518DDD3A3C22";
+		"E3C5E8B8ECB1798E1DF861B5CEB72387B96676CADCF8997BB71BA8A906A77B0B";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -315,7 +315,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.6.7";
+	private const string ExpectedArchiveVersion = "1.6.6.8";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, written by
@@ -327,7 +327,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "512d7aa65b4a5a8e531c21f90626d0a0d92cf4a0";
+	private const string ExpectedProducingCommit = "01a2e3ffe8581989bd618c3eee7c8ed93ee7999f";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -353,7 +353,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1790080814000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1790088138000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
@@ -911,7 +911,7 @@ public class BundledProcessBuilderPackageTests {
 				+ $"a gate and {nameof(ProcessBuilderGatedTypes)} moves in the same commit, so a lost "
 				+ "declaration cannot pass as slack and a new one cannot arrive unreviewed");
 		// The loop EXECUTES today: four of the seven carry a version literal, and they do NOT all agree with
-		// each other — create, modify and modify-as-new-version at 1.6.6.7 since ENG-99856 (create and modify had
+		// each other — create, modify and modify-as-new-version at 1.6.6.8 since ENG-99856 (create and modify had
 		// diverged before, when modify's page-change reconciliation promise needed a newer archive than create's;
 		// the new-version route followed because it shares the operations vocabulary and runs no read-back), and
 		// set-active-version at the 1.6.1.0 its operation first ships in. That spread is the reason the assertion counts literals
