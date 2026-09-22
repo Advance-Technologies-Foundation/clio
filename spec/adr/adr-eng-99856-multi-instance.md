@@ -1,4 +1,4 @@
-# ADR: Sub-process element — MULTI-INSTANCE (run the callee once per item of a collection)
+﻿# ADR: Sub-process element — MULTI-INSTANCE (run the callee once per item of a collection)
 
 **Status**: Proposed
 **Author**: Architect Agent
@@ -415,12 +415,51 @@ the remaining five are still open, and no story may assume an answer to those.
 | # | Question | Trade-off | Recommendation |
 |---|---|---|---|
 | OQ-01 | ~~**Does de-conversion (`enabled: false`) ship in v1?**~~ **DECIDED 2026-09-21: YES, it ships.** | FOR: the mechanism is cheap and bounded, and the platform has the operation (`convertToSingleInstance`, `process-activity-schema.js:601-609`, pinned by the platform's own Jasmine spec). Without it the only route back is `removeElement` + `addElement`, which changes the element UId and drops its flows and mappings. AGAINST: it is a destructive write an agent can issue, and the designer's own operation is lossy in the same way — the XOR'd `Variable` twin is discarded | **Shipped**, classified destructive, behind the same explicit-intent rule as every other destructive write. The alternative route is strictly more destructive, and the lossiness objection is weak on inspection: the XOR twin is DERIVED (`UId = originalUId XOR outputCollectionUId`) and is re-minted by `FillCollectionParameters` on the next conversion, so discarding it loses nothing a re-conversion does not restore. FR-25 moves from Could to Must; story 8 stays |
-| OQ-02 | **What happens when the callee is retargeted on a multi-instance element?** | Refuse, or reproduce the designer, which **de-converts unconditionally** when the callee changes while the server would retarget and stay multi-instance. The same caller intent yields two different elements depending on the choice | **Refuse**, naming both supported routes. Silently de-converting on a retarget is a state change the caller did not ask for |
-| OQ-03 | **Is `inSync` redefined** to ask the mirror question against the two collections' item properties instead of the five top-level parameters? | It changes what a **shipped** field means for a whole population with **no wire change** — no deserializer, no schema check and no version negotiation can see it — and it requires a `[RequiresPackage]` floor on describe (FR-24), which today has **none** | **Freeze `inSync`; add a differently-named field.** A silent meaning change on a shipped field is the one kind of break no consumer can detect |
-| OQ-04 | **Output-collection strictness: refuse, or accept-and-warn?** | Refuse: 0 of 170 shipped output item properties carry a value, and the platform wipes them on every synchronization. Accept-and-warn keeps a caller unblocked at the cost of a write that reports success and vanishes | **Refuse** (D6). This is the load-bearing refusal of the feature |
-| OQ-05 | **Does `validate-process-graph` grow any rule at all?** | It cannot see multi-instance today: the node model is `ProcessGraphNode(string Name, string Type)` (`clio/Command/ProcessModel/IProcessGraphValidator.cs:10`) with no multi-instance field, and there is **no package-side validator** — the tool's only server round-trip is a package-presence check, and all 869 lines of rules live in clio's `ProcessGraphValidator`. Any rule here is **new surface** | **Not in v1.** The refusals live where the write happens; a graph rule would duplicate them in a validator that cannot see the element's real state |
+| OQ-02 | ~~**What happens when the callee is retargeted on a multi-instance element?**~~ **DECIDED 2026-09-22: reproduce the designer.** And the description below is WRONG about what that means — corrected in Decision 7a. The designer does NOT leave the element de-converted: `resetParameters` (`process-activity-schema.js:580-596`) saves the five parameters, de-converts, runs the work, and RE-converts from the same five objects. A retarget therefore SUCCEEDS and the element STAYS multi-instance with its five UIds intact. The same decision adds scope no story carried: the designer reaches that method from its RE-SYNCHRONIZATION path (`SubProcessPropertiesPage.synchronizeActualSchemaParameters:113`), so `resync: true` must work on such an element too. Original framing follows.<br><br>~~What happens when the callee is retargeted on a multi-instance element?~~ | Refuse, or reproduce the designer, which **de-converts unconditionally** when the callee changes while the server would retarget and stay multi-instance. The same caller intent yields two different elements depending on the choice | **Refuse**, naming both supported routes. Silently de-converting on a retarget is a state change the caller did not ask for |
+| OQ-03 | ~~**Is `inSync` redefined**~~ **DECIDED 2026-09-22: no — `inSync` is FROZEN and a separate `calleeInSync` is added** to the `multiInstanceOptions` describe block. The decision turned on a question the OQ did not ask: a field that reports "a re-sync is owed" is only worth having if there is a re-sync to ask for, and for a multi-instance element there was none until OQ-02 was answered. With that operation in place the signal earns its place — as a new field, because redefining a shipped one changes its meaning with no wire change at all. FR-24 does NOT activate; no floor is added to describe. Original framing follows.<br><br>~~Is `inSync` redefined~~ to ask the mirror question against the two collections' item properties instead of the five top-level parameters? | It changes what a **shipped** field means for a whole population with **no wire change** — no deserializer, no schema check and no version negotiation can see it — and it requires a `[RequiresPackage]` floor on describe (FR-24), which today has **none** | **Freeze `inSync`; add a differently-named field.** A silent meaning change on a shipped field is the one kind of break no consumer can detect |
+| OQ-04 | ~~**Output-collection strictness: refuse, or accept-and-warn?**~~ **DECIDED 2026-09-22: refuse**, per the designer — `getEditableParameters` (`process-activity-schema.js:634-648`) leaves only the INPUT collection editable in ordinary mode, so the designer offers no way to write into the output side at all. Original framing follows.<br><br>~~Output-collection strictness~~ | Refuse: 0 of 170 shipped output item properties carry a value, and the platform wipes them on every synchronization. Accept-and-warn keeps a caller unblocked at the cost of a write that reports success and vanishes | **Refuse** (D6). This is the load-bearing refusal of the feature |
+| OQ-05 | ~~**Does `validate-process-graph` grow any rule at all?**~~ **DECIDED 2026-09-22: no rule**, per the designer — it has no such validator; its checks live where the write happens. Original framing follows.<br><br>~~Does `validate-process-graph` grow any rule at all?~~ | It cannot see multi-instance today: the node model is `ProcessGraphNode(string Name, string Type)` (`clio/Command/ProcessModel/IProcessGraphValidator.cs:10`) with no multi-instance field, and there is **no package-side validator** — the tool's only server round-trip is a package-presence check, and all 869 lines of rules live in clio's `ProcessGraphValidator`. Any rule here is **new surface** | **Not in v1.** The refusals live where the write happens; a graph rule would duplicate them in a validator that cannot see the element's real state |
 | OQ-06 | ~~**Is in-place update of `executionMode` / `ignoreErrors`** supported on an already-multi-instance element?~~ **DECIDED 2026-09-21: YES, in place.** | In-place is the obvious ergonomics and matches the describe round trip; requiring a de-convert/re-convert cycle makes every mode change a destructive operation. The coupling with OQ-01 is not the dependency the earlier draft stated — in-place update does not need de-conversion to exist. The real coupling is that answering **both** OQ-01 and OQ-06 "no" would leave `executionMode` **unchangeable once set**, with `removeElement` + `addElement` the only route | **In place.** `enabled: true` on an element that already carries `MultiInstanceOptions` updates the mode fields and does NOT re-convert. Omitted on update means "left as is, never reset"; omitted on create means Sequential / false, both suppressed at their defaults. A different collection source in the same call is still refused — that is a retarget of the iteration, not a mode change. Cost accepted: one field (`enabled`) carries two behaviours, create and update |
-| OQ-07 | **Is a collection SHAPE check in scope?** | `ParameterTypeCompatibility` compares only `DataValueTypeUId`, so two `CompositeObjectList` parameters with entirely different item properties validate today. Whether the platform then fails at run time or silently yields empty items is **not established** | **Out of v1**, and record the known unknown. Do not add a check whose failure mode nobody has measured |
+| OQ-07 | ~~**Is a collection SHAPE check in scope?**~~ **DECIDED 2026-09-22: out of v1**, per the designer, and the reason is now measured rather than unknown. The shipped `ExpireLicenseNotificationProcess` → `SubProcess2` maps a source collection whose items are `Id, Name` onto a contract of `LicenseProductName, LicensePackage, ExpireDate, NextExpireDay` — **zero overlap**, in product content that runs. A shape check would refuse it. The source collection supplies the ITERATION COUNT and the per-iteration `CompositeObject`; the values come from each item property's OWN mapping, which can point at another element, at a process parameter, or at nothing (`NextExpireDay` has `Source=None`). Form is not a contract to match. Original framing follows.<br><br>~~Is a collection SHAPE check in scope?~~ | `ParameterTypeCompatibility` compares only `DataValueTypeUId`, so two `CompositeObjectList` parameters with entirely different item properties validate today. Whether the platform then fails at run time or silently yields empty items is **not established** | **Out of v1**, and record the known unknown. Do not add a check whose failure mode nobody has measured |
+
+---
+
+## Decision 7a — what "reproduce the designer" actually means for a retarget
+
+**Added 2026-09-22, and it corrects this document.** OQ-02's framing above offered "refuse" or
+"reproduce the designer, which **de-converts unconditionally**". The second option misdescribes the
+designer, and story 7 repeated the error.
+
+`resetParameters` (`Terrasoft.Nui/.../process-activity-schema.js:580-596`):
+
+```js
+const inputCollectionParameter = this._getInputCollectionParameter();   // saves all five
+…
+this._convertToSingleInstanceElementParameters();   // de-convert
+callback.call(scope);                               // the retarget or the re-sync
+this._fillCollectionParameters(inputCollectionParameter, outputCollectionParameter);
+this._fillIterationsCountParameters(completed, terminated, total);      // RE-convert
+```
+
+The de-conversion is **transient, inside the operation**. `_fillCollectionParameters` and
+`_fillIterationsCountParameters` receive the SAME parameter objects — same UIds — so the element ends
+up multi-instance with its five parameters unchanged and its collections re-derived from the new
+callee. A caller holding those UIds from a describe still holds valid ones.
+
+**Two consequences the stories did not carry:**
+
+1. A retarget on a multi-instance element **succeeds and stays multi-instance**. It is still
+   destructive in one direction — a per-item mapping onto a parameter the new callee does not declare
+   goes with that parameter — and the notice says so.
+2. The designer reaches `resetParameters` from `synchronizeActualSchemaParameters`
+   (`CrtProcessDesigner/.../SubProcessPropertiesPage.js:113`), which is its **re-synchronization**
+   path. So retarget and re-sync are ONE operation for such an element, and `resync: true` must work
+   on it. Before this decision neither did.
+
+Implemented as `IMultiInstanceApplier.AroundResynchronization`, a wrapper rather than a step: the
+ordinary sub-process applier refuses a multi-instance element, and de-converting first is what makes
+it applicable — and what makes the platform's diff run against the callee's parameters rather than
+against two collections and three counters.
 
 ---
 

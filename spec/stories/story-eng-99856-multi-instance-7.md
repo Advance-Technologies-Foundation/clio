@@ -7,7 +7,7 @@
 **ADR**: [adr-eng-99856-multi-instance.md](../adr/adr-eng-99856-multi-instance.md) — OQ-02, *Files to modify*
 **Platform facts**: [eng-99856-multi-instance-platform-facts.md](../eng-99856-multi-instance/eng-99856-multi-instance-platform-facts.md) — §8.2, §9
 **Jira**: ENG-99856
-**Status**: ready-for-dev
+**Status**: review
 **Size**: S (< 2h — one parameter type, one refusal, two comments; the value is in the tests and the
 wording, not the volume)
 **Repo**: crt-process-builder — `packages/CrtProcessBuilder/Files/src/cs/`
@@ -35,15 +35,24 @@ reader is not misled by text that was true only while multi-instance was refused
 
 ## Owner decision this story assumes
 
-**OQ-02 — retargeting the callee on a multi-instance element.** Working assumption: **refuse**, naming
-both supported routes.
-The two behaviours are genuinely different: the designer **de-converts unconditionally** when the callee
-changes (`process-activity-schema.js` `resetParameters` `:560-595` — de-convert, re-sync, re-convert),
-while the server would retarget and stay multi-instance. The same caller intent yields two different
-elements depending on which is chosen, so silently picking one is the wrong move.
-*If the owner decides to reproduce the designer instead*, AC-03/AC-04 invert: the retarget succeeds and
-de-converts, that behaviour becomes a documented destructive write (and it then depends on OQ-01/story 8
-shipping), and the guidance in story 14 says so.
+**OQ-02 — retargeting the callee on a multi-instance element. DECIDED 2026-09-22: reproduce the
+designer.** AC-03/AC-04 invert accordingly.
+
+**And the sentence this story used to carry about the designer was wrong.** It said the designer
+"de-converts unconditionally when the callee changes". It does not: `resetParameters`
+(`process-activity-schema.js:580-596`) saves the five parameters, de-converts, runs the work, and
+**re-converts from the same five objects**. The de-conversion is transient, inside the operation, and
+the element ends up multi-instance with its five UIds intact and its collections re-derived.
+
+So the delivered behaviour is: **the retarget succeeds, the element stays multi-instance, the five UIds
+survive.** It is destructive in one direction — a per-item mapping onto a parameter the new callee does
+not declare goes with that parameter — and the notice says so.
+
+**Scope this decision added, which this story did not carry.** The designer reaches `resetParameters`
+from `SubProcessPropertiesPage.synchronizeActualSchemaParameters:113` — its RE-SYNCHRONIZATION path. So
+retarget and re-sync are one operation for such an element, and `resync: true` now works on it; before,
+neither did. That is what makes `calleeInSync` (story 9) worth reporting at all: a field saying "a
+re-sync is owed" needs a re-sync to ask for.
 
 ## Acceptance Criteria
 

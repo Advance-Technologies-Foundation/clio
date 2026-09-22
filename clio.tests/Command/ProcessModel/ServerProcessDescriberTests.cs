@@ -2009,6 +2009,58 @@ public sealed class ServerProcessDescriberTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("calleeInSync deserializes as a typed nullable bool, and it is the field to read on a multi-instance element - inSync there is false by construction and answers nothing.")]
+	public void Describe_ShouldReadCalleeInSync_WhenServerReportsIt() {
+		// Arrange - a multi-instance element whose callee has drifted
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"SubProcess1\","
+			+ "\"type\":\"ProcessSchemaSubProcess\",\"buildType\":\"subprocess\","
+			+ "\"subProcess\":{\"process\":\"UsrOrderApproval\",\"multiInstance\":true,\"inSync\":false,"
+			+ "\"multiInstanceOptions\":{\"enabled\":true,\"calleeInSync\":false}},"
+			+ "\"parameters\":[]}],\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		DescribedSubProcess block = result.Value.Elements[0].SubProcess;
+		block.MultiInstanceOptions.CalleeInSync.Should().BeFalse(
+			because: "a re-synchronization is owed, and on a multi-instance element this is the only field that "
+				+ "can say so - the run time binds per-item values BY NAME and delivers nothing for a name the "
+				+ "element does not carry, with no exception and no log line");
+		block.InSync.Should().BeFalse(
+			because: "inSync keeps its old meaning - it compares against the element ROOT parameters, which here "
+				+ "are the five service ones, so it is false by construction. Redefining it would have changed a "
+				+ "shipped field silently; the two coexist instead");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("calleeInSync stays null when an older CrtProcessBuilder omits it, which is indistinguishable from a callee that could not be read - and both mean do not act on it.")]
+	public void Describe_ShouldLeaveCalleeInSyncNull_WhenServerOmitsIt() {
+		// Arrange
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"SubProcess1\","
+			+ "\"type\":\"ProcessSchemaSubProcess\",\"buildType\":\"subprocess\","
+			+ "\"subProcess\":{\"process\":\"UsrOrderApproval\",\"multiInstance\":true,"
+			+ "\"multiInstanceOptions\":{\"enabled\":true}},"
+			+ "\"parameters\":[]}],\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.Value.Elements[0].SubProcess.MultiInstanceOptions.CalleeInSync.Should().BeNull(
+			because: "a nullable bool is what lets absence stay absent - a non-nullable one would deserialize to "
+				+ "false and tell every caller on an older package that a re-synchronization is owed");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Story 9 AC-05: the block survives RE-SERIALIZATION under the describe command's own options, which is what the caller actually receives. An inbound-only assertion cannot see a JsonPropertyName that drifted from the server's DataMember, because the same wrong name reads and writes consistently.")]
 	public void Describe_ShouldReserializeTheMultiInstanceOptionsBlock_UnderTheCommandsOwnOptions() {
 		// Arrange - the same payload plus an undeclared field, so the overflow bag is exercised too

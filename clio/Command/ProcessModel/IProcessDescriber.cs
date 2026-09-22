@@ -1135,8 +1135,10 @@ public sealed class DescribedSubProcess {
 	/// the callee".</para>
 	/// <para>On a MULTI-INSTANCE element <c>false</c> is PERMANENT and is not drift. Such an element carries an
 	/// input collection, an output collection and three iteration counters INSTEAD of the callee's parameters, so
-	/// the test can never be satisfied - and the re-synchronization <c>false</c> would otherwise call for is
-	/// REFUSED on it. Read this flag together with <see cref="DescribedSubProcess.MultiInstance"/>, never alone.</para>
+	/// this test can never be satisfied there. It is no longer the end of the story, though: read
+	/// <see cref="DescribedMultiInstanceOptions.CalleeInSync"/> instead, which asks the same question one level
+	/// down, and a re-synchronization IS available on such an element (<c>subProcess.resync: true</c>). Read this
+	/// flag together with <see cref="DescribedSubProcess.MultiInstance"/>, never alone.</para>
 	/// </summary>
 	[JsonPropertyName("inSync")]
 	public bool? InSync { get; set; }
@@ -1228,6 +1230,29 @@ public sealed class DescribedMultiInstanceOptions {
 	/// <summary>The name of the counter the run time writes the total-iteration count into.</summary>
 	[JsonPropertyName("totalIterationsCount")]
 	public string TotalIterationsCount { get; set; }
+
+	/// <summary>
+	/// Whether the two collections still carry every parameter the called process declares — the question
+	/// <see cref="DescribedSubProcess.InSync"/> asks for a single-instance element, asked one level down where a
+	/// multi-instance element's contract actually lives.
+	/// <para>Read THIS one on a multi-instance element, not <c>inSync</c>. <c>inSync</c> compares the callee
+	/// against the element's ROOT parameters, which here are the five service ones, so it is <c>false</c> by
+	/// construction and says nothing. The two are separate fields on purpose: redefining <c>inSync</c> would have
+	/// changed what a shipped field means with no wire change at all — same name, same type, same JSON — and no
+	/// deserializer, schema check or version negotiation could have seen it.</para>
+	/// <para><c>false</c> means a re-synchronization is owed, and there is one to ask for: send
+	/// <c>subProcess.resync: true</c>. The element is de-converted, re-synchronized and re-converted around the
+	/// same five parameters, which is what the process designer does for the same edit; the five keep their UIds
+	/// and the collection-level mapping survives. What does not survive is a per-item mapping onto a parameter
+	/// the callee no longer declares — the item goes with the parameter.</para>
+	/// <para>ONE-DIRECTIONAL, like <c>inSync</c>: it asks whether everything the callee declares is present, so a
+	/// callee that ADDS a parameter flips it to <c>false</c> while one that REMOVES a parameter leaves it
+	/// <c>true</c>. <c>null</c> means the called process could not be read — UNKNOWN, never "out of sync".</para>
+	/// <para>Absent on a CrtProcessBuilder that predates the field, which deserializes to <c>null</c> and is
+	/// therefore indistinguishable from "could not read the callee". Both mean: do not act on it.</para>
+	/// </summary>
+	[JsonPropertyName("calleeInSync")]
+	public bool? CalleeInSync { get; set; }
 
 	/// <summary>
 	/// Anything the server reports inside this block that this model does not declare - the same reason every
