@@ -767,6 +767,7 @@ public class BindingsModule {
 		services.AddSingleton<IKnowledgeReferenceExampleParser, KnowledgeReferenceExampleParser>();
 		services.AddSingleton<IKnowledgeReferenceExampleService, KnowledgeReferenceExampleService>();
 		services.AddSingleton<IKnowledgeBundleActivator, KnowledgeMultiSourceActivator>();
+		services.AddSingleton<IKnowledgeRefreshTrigger, KnowledgeRefreshTrigger>();
 		services.AddSingleton<IKnowledgeGuidanceSource, KnowledgeGuidanceSource>();
 		services.AddSingleton<IKnowledgeGuidanceResourceAdapter, KnowledgeGuidanceResourceAdapter>();
 		services.AddTransient<InstallKnowledgeCommand>();

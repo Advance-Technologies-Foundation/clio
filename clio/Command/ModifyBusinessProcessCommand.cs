@@ -179,6 +179,12 @@ public sealed class ModifyBusinessProcessOptions : EnvironmentOptions {
 
 	/// <summary>Inline JSON operations array ([{op:addElement|removeElement|addFlow|removeFlow, …}]).</summary>
 	public string OperationsJson { get; set; } = string.Empty;
+
+	/// <summary>
+	/// Says that re-drawing the diagram is intended. Without it the server REFUSES an edit that would
+	/// re-draw the process rather than extend it, and answers with what it would have done instead.
+	/// </summary>
+	public bool ConfirmLayoutChange { get; set; }
 }
 
 /// <summary>
@@ -236,6 +242,14 @@ public sealed class ModifyBusinessProcessService(
 			requestObject["uid"] = request.ProcessUid;
 		}
 		requestObject["operations"] = ParseOperations(request.OperationsJson);
+		// ALWAYS sent, true or false, because the server reads its ABSENCE as a third answer. A caller that
+		// omits the member is one built before the gate existed and unable to answer a refusal, so the server
+		// applies the edit rather than blocking a client that cannot respond; sending false is how this client
+		// says it can. Omitting it when the user has not confirmed would therefore switch the gate off for
+		// clio - the edit would be applied unasked, which is the one outcome the gate exists to prevent. An
+		// older CrtProcessBuilder has no such member and DROPS it silently, which stays harmless: that server
+		// never refuses on layout either.
+		requestObject["confirmLayoutChange"] = request.ConfirmLayoutChange;
 
 		// Same reason as the build path: an invented button or data-source name survives every server-side check
 		// and only shows itself at run time, as a step that never completes. The retarget path needs it most —
@@ -290,8 +304,13 @@ public sealed class ModifyBusinessProcessService(
 			string refusedBy = result.FailedOperationIndex.HasValue
 				? $" The operation at index {result.FailedOperationIndex.Value} is the one that refused."
 				: string.Empty;
+			// A layout refusal is not a failure to fix, it is a question to relay, so it leaves by the same
+			// throw wearing the answer's shape: the elements it is about, and the one word that makes it
+			// re-sendable. Without the element list a caller has the server's sentence and no way to tell the
+			// user WHICH parts of their diagram move.
+			string layoutChange = result.LayoutChange?.RelaySentence() ?? string.Empty;
 			throw new InvalidOperationException(
-				(result.ErrorMessage ?? "ModifyProcess failed.") + refusedBy);
+				(result.ErrorMessage ?? "ModifyProcess failed.") + refusedBy + layoutChange);
 		}
 
 		return new ModifyBusinessProcessResult(result.SchemaName, result.SchemaUId, result.AppliedOperations,
@@ -351,6 +370,13 @@ public sealed class ModifyBusinessProcessService(
 		// Absent on an older CrtProcessBuilder, which is why it stays nullable rather than defaulting to empty.
 		[JsonPropertyName("warnings")]
 		public List<string>? Warnings { get; set; }
+
+		// Declared for the same reason as warnings: an undeclared member is dropped without a trace, and this
+		// one carries the only actionable part of a layout refusal - which elements the caller has to show the
+		// user. Absent on a CrtProcessBuilder that does not gate layout changes, which reads as "no question
+		// was asked" and is exactly right there.
+		[JsonPropertyName("layoutChange")]
+		public LayoutChangeRelay? LayoutChange { get; set; }
 	}
 
 	#endregion
@@ -386,7 +412,8 @@ public class ModifyBusinessProcessCommand(
 
 			ModifyBusinessProcessResult result = modifyBusinessProcessService.ModifyProcess(
 				options.Environment,
-				new ModifyBusinessProcessRequest(options.ProcessName, options.ProcessUid, options.OperationsJson));
+				new ModifyBusinessProcessRequest(options.ProcessName, options.ProcessUid, options.OperationsJson,
+					options.ConfirmLayoutChange));
 			logger.WriteInfo(
 				$"Process '{result.SchemaName}' edited ({result.AppliedOperations} operation(s) applied; UId: {result.SchemaUId}).");
 			// Written as WARNINGS on a SUCCESSFUL edit, deliberately. These are outcomes that applied and are not
@@ -503,7 +530,12 @@ public class ModifyBusinessProcessCommand(
 /// <param name="ProcessName">Process code (schema Name) to edit.</param>
 /// <param name="ProcessUid">Process schema UId to edit.</param>
 /// <param name="OperationsJson">The JSON operations array content.</param>
-public sealed record ModifyBusinessProcessRequest(string ProcessName, string ProcessUid, string OperationsJson);
+/// <param name="ConfirmLayoutChange">
+/// Says that re-drawing the diagram is intended; without it the server refuses such an edit and reports what
+/// it would have changed.
+/// </param>
+public sealed record ModifyBusinessProcessRequest(string ProcessName, string ProcessUid, string OperationsJson,
+	bool ConfirmLayoutChange = false);
 
 /// <summary>
 /// Structured result of a business-process edit.

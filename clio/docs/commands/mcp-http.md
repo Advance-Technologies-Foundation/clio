@@ -31,8 +31,17 @@ budget before HTTP startup completes, so mandatory first-request guidance is ava
 bounded bootstrap succeeds. A cached activation marker whose installation or
 last clean successful publisher check is more than **3 days** old is logged as a warning naming that
 marker's `libraryVersion` and the `update-knowledge --source creatio-curated` call that checks for a
-newer release. A warm start never contacts the publisher, so this is the only staleness signal available;
-startup still proceeds.
+newer release. A warm start never contacts the publisher, so startup itself never waits on it.
+
+The cache is refreshed by a **guidance read**, not by startup and not by a timer: when the cached
+generation is due for verification, a `get-guidance` lookup answers from the active generation and
+starts the publisher check beside the answer (stale-while-revalidate, the same shape
+`get-component-info` uses for the component registry). The operator's `autoupdate.knowledge` policy
+decides whether it may run — `"knowledge": { "enabled": false }` stops it, `frequency-minutes` (60 by
+default) sets the cadence, and `next-run` is shared with the CLI path. In the ordinary case it costs
+one conditional metadata request: the release transport compares the published tag against the active
+revision and stops, with no download. This host commonly runs for weeks as a service task, which is
+the case the read-triggered refresh exists for — its agents are exactly the ones asking for guidance.
 The source cannot be removed;
 disable it with `clio disable-knowledge-source --alias creatio-curated`. A bootstrap retrieval
 failure or timeout is logged as a warning and does not prevent the HTTP host from starting.
