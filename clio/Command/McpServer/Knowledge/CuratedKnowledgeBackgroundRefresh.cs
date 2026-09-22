@@ -10,6 +10,7 @@ namespace Clio.Command.McpServer.Knowledge;
 /// Runs the knowledge autoupdate schedule inside a long-running MCP host.
 /// </summary>
 /// <remarks>
+/// <para>
 /// clio already updates knowledge on a schedule — <c>autoupdate.knowledge</c>, enabled by default —
 /// but that check runs at the start of an ordinary CLI command and is deliberately skipped for the MCP
 /// verbs, and a warm MCP start activates its cached generation without contacting the publisher. An
@@ -19,6 +20,16 @@ namespace Clio.Command.McpServer.Knowledge;
 /// operator's <c>enabled</c> and <c>frequency-minutes</c> settings govern it exactly as they govern the
 /// CLI path, and the persisted <c>next-run</c> keeps concurrent clio processes from each running their
 /// own update.
+/// </para>
+/// <para>
+/// A failed attempt is bounded by the SCHEDULE, not by the wake-up: <c>TryScheduleAutoupdate</c>
+/// advances and persists <c>next-run</c> as part of answering true, and nothing rolls it back when the
+/// update that follows fails, so the retry lands on the next scheduled window — about an hour on the
+/// defaults, not five minutes. Because the 3-day staleness warning is emitted once, at startup, a host
+/// that has been resident for weeks has no other signal, so a run of
+/// <see cref="CuratedKnowledgeSourceDefaults.BackgroundRefreshFailuresBeforeWarning"/> consecutive
+/// failures is reported as a warning here.
+/// </para>
 /// </remarks>
 public interface ICuratedKnowledgeBackgroundRefresh {
 	/// <summary>
@@ -42,6 +53,9 @@ internal sealed class CuratedKnowledgeBackgroundRefresh(
 		CuratedKnowledgeSourceDefaults.BackgroundRefreshStartDelaySeconds);
 	private static readonly TimeSpan PollInterval = TimeSpan.FromMinutes(
 		CuratedKnowledgeSourceDefaults.BackgroundRefreshPollIntervalMinutes);
+
+	/// <summary>Consecutive failed refresh attempts; reset by the first success.</summary>
+	private int _consecutiveFailures;
 
 	public Task Start(CancellationToken cancellationToken) =>
 		// CancellationToken.None on purpose: the token ends the LOOP from the inside, through the
@@ -92,10 +106,13 @@ internal sealed class CuratedKnowledgeBackgroundRefresh(
 	/// </para>
 	/// <para>
 	/// Non-throwing by construction: this runs unattended beside a serving transport, so a settings or
-	/// transport fault must leave the cached generation serving and try again on the next wake-up rather
-	/// than tear anything down. A failure is recorded as a debug line, not a warning — an operator with
-	/// no network would otherwise get one every wake-up, and the startup staleness warning still reports
-	/// a cache that stayed behind.
+	/// transport fault must leave the cached generation serving and try again rather than tear anything
+	/// down. Note that <see cref="IKnowledgeSourceManagementService.Update"/> reports a transport failure
+	/// by RETURNING <c>Success: false</c>; it does not throw, so both shapes are counted as failures here.
+	/// A single failure stays a debug line — the next scheduled window retries it — but a run of
+	/// <see cref="CuratedKnowledgeSourceDefaults.BackgroundRefreshFailuresBeforeWarning"/> is warned once,
+	/// because the schedule slot the failed attempt consumed is gone and the startup staleness warning
+	/// cannot fire again inside a process that has been serving for weeks.
 	/// </para>
 	/// </remarks>
 	/// <param name="cancellationToken">Stops the update operation at shutdown.</param>
@@ -111,12 +128,39 @@ internal sealed class CuratedKnowledgeBackgroundRefresh(
 			KnowledgeSourceBatchResult result = sourceManagementService.Update(
 				sourceAlias: null, cancellationToken);
 			logger.WriteDebug($"Background knowledge refresh: {result.Message}");
+			if (result.Success) {
+				_consecutiveFailures = 0;
+				return;
+			}
+			RecordFailure(result.Message);
 		} catch (OperationCanceledException) {
 			// Shutdown during the update; the cached generation keeps serving until the process ends.
 		} catch (Exception exception) when (exception is not OutOfMemoryException) {
-			logger.WriteDebug(
-				"Background knowledge refresh did not run: "
-				+ SensitiveErrorTextRedactor.Redact(exception.Message));
+			string reason = SensitiveErrorTextRedactor.Redact(exception.Message);
+			logger.WriteDebug("Background knowledge refresh did not run: " + reason);
+			RecordFailure(reason);
 		}
+	}
+
+	/// <summary>
+	/// Counts a failed attempt and warns once when the run of failures stops looking transient.
+	/// </summary>
+	/// <remarks>
+	/// The warning is emitted on exactly the Nth consecutive failure rather than on every one after it:
+	/// a host that stays cut off for weeks is one operator-visible line, not one per wake-up, which is
+	/// what kept the original implementation silent. A success resets the run, so a later outage is
+	/// reported again.
+	/// </remarks>
+	/// <param name="reason">The failure text, already redacted for logging.</param>
+	private void RecordFailure(string reason) {
+		_consecutiveFailures++;
+		if (_consecutiveFailures != CuratedKnowledgeSourceDefaults.BackgroundRefreshFailuresBeforeWarning) {
+			return;
+		}
+		logger.WriteWarning(
+			$"Knowledge autoupdate has failed {_consecutiveFailures} times in a row and the cached "
+			+ "generation is no longer being refreshed; the next attempt is the next scheduled window "
+			+ "(autoupdate.knowledge frequency-minutes, 60 by default). Last failure: "
+			+ reason);
 	}
 }

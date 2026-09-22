@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command;
+using Clio.Command.McpServer;
 using Clio.Command.McpServer.Knowledge;
 using Clio.Common;
 using Clio.UserEnvironment;
@@ -31,11 +32,7 @@ public sealed class CuratedKnowledgeBackgroundRefreshTests {
 		_delay = new ScriptedDelay();
 		_management.Update(
 			Arg.Any<string>(),
-			Arg.Any<CancellationToken>()).Returns(new KnowledgeSourceBatchResult(
-				true,
-				"Knowledge source 'creatio-curated' was updated.",
-				[new KnowledgeSourceOperationResult(
-					CuratedKnowledgeSourceDefaults.Alias, true, "updated", "updated")]));
+			Arg.Any<CancellationToken>()).Returns(SuccessResult());
 	}
 
 	[TearDown]
@@ -147,6 +144,71 @@ public sealed class CuratedKnowledgeBackgroundRefreshTests {
 	}
 
 	[Test]
+	[Description("The real no-network shape - Update RETURNS a failed result rather than throwing - keeps the loop alive too.")]
+	public async Task Start_ShouldKeepRunning_WhenTheUpdateReturnsAFailedResult() {
+		// Arrange - this, not an exception, is what a blocked publisher produces in production.
+		ScheduleDueOn(1, 2);
+		UpdateReturnsFailure();
+
+		// Act
+		Task loop = await RunTicks(2);
+
+		// Assert
+		loop.IsCompletedSuccessfully.Should().BeTrue(
+			because: "a returned failure is the ordinary no-network outcome, not a reason to end the loop");
+		_management.Received(2).Update(null, Arg.Any<CancellationToken>());
+	}
+
+	[Test]
+	[Description("A run of failed refreshes is reported once, because a resident host never re-emits the startup staleness warning.")]
+	public async Task Start_ShouldWarnOnce_AfterConsecutiveFailedRefreshes() {
+		// Arrange
+		ScheduleDueAlways();
+		UpdateReturnsFailure();
+
+		// Act - two ticks past the threshold, so a per-wake-up warning would show up as extra calls.
+		await RunTicks(CuratedKnowledgeSourceDefaults.BackgroundRefreshFailuresBeforeWarning + 2);
+
+		// Assert
+		_logger.Received(1).WriteWarning(Arg.Is<string>(message =>
+			message.Contains("Knowledge autoupdate has failed")
+			&& message.Contains("next scheduled window")));
+	}
+
+	[Test]
+	[Description("A single failure is not warned about: the next scheduled window retries it, so an operator between networks gets no noise.")]
+	public async Task Start_ShouldNotWarn_BeforeTheFailureRunIsLongEnough() {
+		// Arrange
+		ScheduleDueAlways();
+		UpdateReturnsFailure();
+
+		// Act
+		await RunTicks(CuratedKnowledgeSourceDefaults.BackgroundRefreshFailuresBeforeWarning - 1);
+
+		// Assert
+		_logger.DidNotReceive().WriteWarning(Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("A successful refresh resets the failure run, so a later outage is reported again instead of being swallowed.")]
+	public async Task Start_ShouldResetTheFailureRun_AfterASuccessfulRefresh() {
+		// Arrange - fail up to one short of the threshold, succeed, then fail once more.
+		int warningThreshold = CuratedKnowledgeSourceDefaults.BackgroundRefreshFailuresBeforeWarning;
+		ScheduleDueAlways();
+		int attempts = 0;
+		_management.Update(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(_ => {
+			attempts++;
+			return attempts == warningThreshold - 1 ? SuccessResult() : FailureResult();
+		});
+
+		// Act
+		await RunTicks(warningThreshold);
+
+		// Assert
+		_logger.DidNotReceive().WriteWarning(Arg.Any<string>());
+	}
+
+	[Test]
 	[Description("A settings file that cannot be read pauses the refresh without killing the loop.")]
 	public async Task Start_ShouldKeepRunning_WhenTheScheduleCannotBeRead() {
 		// Arrange
@@ -182,24 +244,53 @@ public sealed class CuratedKnowledgeBackgroundRefreshTests {
 	}
 
 	[Test]
-	[Description("A loop whose token is cancelled and whose source is then disposed still completes normally.")]
-	public async Task Start_ShouldComplete_WhenTheCancelledSourceIsDisposedUnderIt() {
-		// Arrange - the host's shutdown ordering: cancel, then dispose the using-scoped source.
+	[Description("The host cancels the shutdown token BEFORE disposing its source, so a loop parked in the real wait is released first.")]
+	public async Task Start_ShouldLeaveTheParkedWait_WhenTheHostRequestsShutdownBeforeDisposing() {
+		// Arrange - the REAL delay, so the loop actually parks on cts.Token.WaitHandle for its 30 s
+		// start delay, which is the state McpServerCommand's finally has to get it out of. Nothing
+		// here shortens that wait; only the cancel below can end it inside the timeout asserted on.
 		ScheduleDueOn(1);
 		CancellationTokenSource shutdown = new();
-		_delay.CancelOnWait(1, shutdown);
-		Task loop = NewRefresh().Start(shutdown.Token);
-		await loop;
+		ICuratedKnowledgeBackgroundRefresh refresh = new CuratedKnowledgeBackgroundRefresh(
+			_settings, _management, new CancellableDelay(), _clock, _logger);
+		Task loop = refresh.Start(shutdown.Token);
 
-		// Act
-		Action dispose = shutdown.Dispose;
+		// Act - exactly what the command's finally does on the stdin-EOF path: cancel, then dispose.
+		McpServerCommand.RequestShutdown(shutdown);
+		Func<Task> awaitTheLoop = () => loop.WaitAsync(TimeSpan.FromSeconds(10));
 
 		// Assert
+		await awaitTheLoop.Should().NotThrowAsync(
+			because: "without that cancel the loop would still be parked on the token's wait handle when the source is disposed");
+		Action dispose = shutdown.Dispose;
 		dispose.Should().NotThrow(
-			because: "the loop has already ended, so disposing the source cannot reach a parked wait");
+			because: "the loop left the wait before the dispose, so nothing can touch a disposed handle");
 		loop.IsCompletedSuccessfully.Should().BeTrue(
 			because: "the loop must never leave an unobserved faulted task behind at shutdown");
+		_settings.DidNotReceive().TryScheduleAutoupdate(
+			Arg.Any<AutoUpdateTarget>(), Arg.Any<DateTimeOffset>());
 	}
+
+	private static KnowledgeSourceBatchResult SuccessResult() => new(
+		true,
+		"Knowledge source 'creatio-curated' was updated.",
+		[new KnowledgeSourceOperationResult(
+			CuratedKnowledgeSourceDefaults.Alias, true, "updated", "updated")]);
+
+	/// <summary>The shape a blocked or unreachable publisher really produces: a returned failure.</summary>
+	private static KnowledgeSourceBatchResult FailureResult() => new(
+		false,
+		"Knowledge source 'creatio-curated' could not be updated.",
+		[new KnowledgeSourceOperationResult(
+			CuratedKnowledgeSourceDefaults.Alias, false, "failed", "No such host is known.")]);
+
+	private void UpdateReturnsFailure() =>
+		_management.Update(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(_ => FailureResult());
+
+	/// <summary>Makes every schedule check report "due", the way a host that keeps failing sees it.</summary>
+	private void ScheduleDueAlways() =>
+		_settings.TryScheduleAutoupdate(AutoUpdateTarget.Knowledge, Arg.Any<DateTimeOffset>())
+			.Returns(true);
 
 	private ICuratedKnowledgeBackgroundRefresh NewRefresh() =>
 		new CuratedKnowledgeBackgroundRefresh(_settings, _management, _delay, _clock, _logger);

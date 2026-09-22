@@ -33,7 +33,10 @@ a knowledge update is due and runs it when it is (ENG-99899). Without it, an ins
 through MCP would never refresh its guidance — a warm start activates the cached generation without
 contacting the publisher. It is the same policy, so `"knowledge": { "enabled": false }` stops the
 in-host refresh as well, `frequency-minutes` sets its cadence, and the persisted `next-run` keeps a
-CLI command and a resident host from each running their own update.
+CLI command and a resident host from each running their own update. A slot claimed by a failed
+in-host attempt is not rolled back — `next-run` is advanced and persisted when the schedule reports
+"due", before the update runs — so its retry is the next scheduled window rather than the next
+five-minute wake-up, and three consecutive failures are logged as a warning.
 
 ```json
 "autoupdate": {

@@ -69,10 +69,15 @@ involved.
 - **Every enabled source, not just the built-in one.** `Update(null)` is what the CLI autoupdate path
   runs; refreshing only `creatio-curated` would give one setting two meanings and leave a partner
   library behind.
-- **Failures stay quiet.** A failed check writes a debug line, keeps the cached generation serving and
-  retries on the next wake-up. An operator with no network would otherwise collect one warning every
-  five minutes, and the 3-day staleness warning at startup remains the signal that a host stayed
-  behind.
+- **A single failure stays quiet; a run of them does not.** A failed check writes a debug line and
+  keeps the cached generation serving, but it does not cost nothing: `TryScheduleAutoupdate` advances
+  and persists `next-run` as part of answering "due", before the update runs, and nothing rolls it
+  back — so the retry is the next scheduled window (~60 minutes on the defaults), not the next
+  five-minute wake-up. Warning on the first failure would give an operator with no network one line
+  per window; warning on none of them is what the first draft did, and it left a host behind a
+  blocking proxy refreshing nothing forever with no signal, since the 3-day staleness warning is
+  emitted once per process at startup and a resident host never re-emits it. Three consecutive
+  failures are therefore warned once, and a success resets the run.
 - **The loop is non-throwing end to end** and runs on a dedicated long-running thread: it is
   fire-and-forget, so a fault would surface only as an unobserved exception at collection time, and
   its wait blocks its thread for the whole host lifetime.

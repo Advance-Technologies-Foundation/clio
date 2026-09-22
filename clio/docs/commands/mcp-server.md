@@ -93,11 +93,17 @@ it is. Nothing here is a second policy: `"knowledge": { "enabled": false }` in `
 `frequency-minutes` (60 by default) sets its cadence, and the persisted `next-run` is shared with the
 CLI path, so concurrent clio processes cost one update between them. A newly published release
 therefore reaches a running host within the configured frequency plus at most five minutes — about an
-hour on the defaults — and within about half a minute of the next restart; it activates on the next
+hour on the defaults. Restarting the host shortens that only when `next-run` has already passed: the
+restarted host then refreshes about half a minute after it starts serving, while a host restarted
+inside the frequency window refreshes nothing at +30 s. A newer generation activates on the next
 guidance lookup, with no restart. The startup path is untouched, so a warm start still performs no
 network request and its budget is unchanged. A check that fails — no network, an unreachable
-publisher — changes nothing: the cached generation keeps serving, the next wake-up retries, and the
-3-day staleness warning above remains the signal that a host has stayed behind.
+publisher — leaves the cached generation serving, but it does not cost nothing: the schedule slot
+is already spent, because `next-run` is advanced and persisted when the schedule reports "due", before
+the update runs, and nothing rolls it back. The retry is therefore the next scheduled window — about an
+hour on the defaults, not the next five-minute wake-up. The 3-day staleness warning above is a
+*startup* signal and cannot re-fire inside a host that has been resident for weeks, so a run of three
+consecutive failed refreshes is logged as its own warning instead.
 
 Every `get-guidance` article additionally carries the served `libraryVersion`, so an agent session can
 record or compare the active generation without shelling out to `info-knowledge --json`. An entry left by an

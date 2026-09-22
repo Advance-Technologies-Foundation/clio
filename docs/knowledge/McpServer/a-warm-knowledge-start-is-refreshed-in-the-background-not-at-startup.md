@@ -21,6 +21,13 @@ evaluated from inside the serving process. Three facts that are easy to get wron
   operator's `enabled` flag and `frequency-minutes` and advances the persisted `next-run`.
 - `next-run` lives in `appsettings.json`, so the rate limit is per MACHINE: several MCP hosts, or a
   host plus a CLI command, produce one update between them.
+- A FAILED refresh still consumes its slot. `TryScheduleAutoupdate` advances and persists `next-run`
+  as part of answering "due", before the update runs, and the loop does not roll it back — the same
+  advance-then-update shape `Program.RunIfDue` has, kept deliberately so the two paths stay one
+  policy. The retry bound after a failure is therefore a full frequency window (~60 min), not the
+  5-minute wake-up. And `DescribeStaleCache()` is called only from `Bootstrap()`, once per process,
+  so the 3-day staleness warning is NOT a signal a resident host can emit; a run of
+  `BackgroundRefreshFailuresBeforeWarning` (3) consecutive failures is warned by the loop instead.
 
 A newer generation activates on the next `get-guidance` call, with no restart, because
 `KnowledgeMultiSourceActivator.EnsureActivated` re-reads the activation marker on every uncontended

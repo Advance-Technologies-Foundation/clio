@@ -36,8 +36,12 @@ DESCRIPTION
     Setting autoupdate.knowledge enabled=false stops it; frequency-minutes (60 by default)
     sets its cadence. A newly published release reaches a running host within the
     configured frequency plus at most five minutes. A failed check leaves the cached
-    generation serving until the next wake-up. This host commonly runs for weeks as a
-    service task, which is the case the in-host schedule exists for.
+    generation serving, but the schedule slot it claimed is already spent: next-run is
+    advanced and persisted before the update runs, so the retry is the next scheduled
+    window (about an hour on the defaults), not the next wake-up. This host commonly runs
+    for weeks as a service task - the case the in-host schedule exists for - so the
+    startup staleness warning cannot re-fire for it; three consecutive failed refreshes
+    are logged as a warning instead.
 
     The source
     cannot be removed; use disable-knowledge-source --alias creatio-curated.

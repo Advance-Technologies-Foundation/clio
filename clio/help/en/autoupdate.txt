@@ -15,6 +15,16 @@ DESCRIPTION
     "next-run" is optional: a policy that has never claimed a slot carries no
     "next-run" at all, and is due the next time clio starts.
 
+    The MCP verbs (mcp-server, mcp-http) are excluded from the startup check, so the
+    "knowledge" policy is additionally evaluated from INSIDE a running MCP host: thirty
+    seconds after the transport starts serving, and every five minutes afterwards, the
+    host asks this same schedule whether a knowledge update is due. It is the same
+    policy, not a second one - enabled=false stops the in-host refresh too,
+    frequency-minutes sets its cadence, and the persisted next-run is shared, so a CLI
+    command and a resident host cost one update between them. A slot claimed by a failed
+    in-host attempt is not rolled back, so its retry is the next scheduled window; three
+    consecutive failures are logged as a warning.
+
     The clio self-update is DEFERRED while an MCP host (mcp-server or mcp-http)
     is resident for this user, because replacing the binaries and
     appsettings.json underneath a running host breaks it for the rest of its

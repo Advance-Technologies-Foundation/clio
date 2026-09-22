@@ -38,10 +38,12 @@ Once the endpoint is serving, the cached generation is kept current by the **sam
 (ENG-99899). Thirty seconds after startup, and every five minutes afterwards, the host asks that
 schedule whether a knowledge update is due and runs it when it is; `"knowledge": { "enabled": false }`
 stops it and `frequency-minutes` (60 by default) sets its cadence. A newly published release reaches a
-running host within the configured frequency plus at most five minutes. A failed check changes
-nothing: the cached generation keeps serving and the next wake-up retries. This host commonly runs for
-weeks as a service task, so the in-host schedule is what keeps its agents off a months-old guidance
-generation.
+running host within the configured frequency plus at most five minutes. A failed check leaves the
+cached generation serving, but the schedule slot it claimed is already spent — `next-run` is advanced
+and persisted before the update runs — so the retry is the next scheduled window (about an hour on the
+defaults), not the next five-minute wake-up. This host commonly runs for weeks as a service task, so
+the startup staleness warning cannot re-fire for it; a run of three consecutive failed refreshes is
+logged as a warning instead, which is the signal that this host has stopped being refreshed.
 
 The source cannot be removed;
 disable it with `clio disable-knowledge-source --alias creatio-curated`. A bootstrap retrieval

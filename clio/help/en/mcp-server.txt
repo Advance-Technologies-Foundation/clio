@@ -73,8 +73,13 @@ DESCRIPTION
     persisted next-run is shared with the CLI path. A newly published release therefore
     reaches a running host within the configured frequency plus at most five minutes, and
     activates on the next guidance lookup with no restart. The startup path is unchanged:
-    a warm start still performs no network request. A check that fails changes nothing -
-    the cached generation keeps serving and the next wake-up retries. get-guidance
+    a warm start still performs no network request. A check that fails leaves the cached
+    generation serving, but the schedule slot it claimed is already spent: next-run is
+    advanced and persisted before the update runs, so the retry is the next scheduled
+    window (about an hour on the defaults), not the next five-minute wake-up. The 3-day
+    staleness warning is emitted at startup only and cannot re-fire inside a resident
+    host, so three consecutive failed refreshes are logged as a warning instead.
+    get-guidance
     also reports the served libraryVersion on every article, so an agent session can
     read it without calling info-knowledge. An entry left by an earlier version under a different alias or
     the former Git transport is migrated in place, preserving an operator's

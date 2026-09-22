@@ -84,6 +84,18 @@ internal static class CuratedKnowledgeSourceDefaults {
 	/// </remarks>
 	internal const int BackgroundRefreshPollIntervalMinutes = 5;
 
+	/// <summary>
+	/// How many consecutive failed background refresh attempts are reported as a warning.
+	/// </summary>
+	/// <remarks>
+	/// A single failed attempt is ordinary — a laptop between networks, a publisher blip — and the next
+	/// scheduled window retries it, so warning on the first one would be noise. A run of three means the
+	/// host has been unable to reach the publisher for roughly three frequency windows (about three hours
+	/// on the defaults), which no longer looks transient and which nothing else on a resident host would
+	/// report: the startup staleness warning is emitted once per process and never again.
+	/// </remarks>
+	internal const int BackgroundRefreshFailuresBeforeWarning = 3;
+
 	internal static KnowledgeSourceConfiguration CreateConfiguration() => new() {
 		LibraryId = LibraryId,
 		Type = KnowledgeSourceType.GitHubRelease,
