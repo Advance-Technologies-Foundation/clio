@@ -19,7 +19,7 @@ namespace Clio.Mcp.E2E;
 /// <summary>
 /// End-to-end coverage for the MULTI-INSTANCE Sub-process element (ENG-99856) over the real MCP path. NOT in
 /// CI - run manually, gated on the <c>process-designer</c> feature and a reachable environment carrying a
-/// CrtProcessBuilder of at least 1.6.6.6.
+/// CrtProcessBuilder of at least 1.6.6.7.
 /// <para>What only a live server can prove here is the PLATFORM's rebuild. Assigning <c>SchemaUId</c> on a
 /// converted element makes the platform clear the element's parameters and re-derive them, and every unit
 /// test drives that against a substituted schema manager. This is the only place the real
@@ -292,7 +292,7 @@ public sealed class SubProcessMultiInstanceToolE2ETests {
 		string? environmentName = settings.Sandbox.EnvironmentName;
 		if (string.IsNullOrWhiteSpace(environmentName)) {
 			Assert.Ignore(
-				"Configure McpE2E:Sandbox:EnvironmentName (with a CrtProcessBuilder of at least 1.6.6.6) to run "
+				"Configure McpE2E:Sandbox:EnvironmentName (with a CrtProcessBuilder of at least 1.6.6.7) to run "
 				+ "the multi-instance Sub-process MCP E2E tests.");
 		}
 
