@@ -67,7 +67,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 			Arg.Is<Guid>(g => g == Guid.Parse(Grantee)),
 			Arg.Is<IReadOnlyCollection<ObjectOperation>>(ops =>
 				ops.Count == 2 && ops.Contains(ObjectOperation.Read) && ops.Contains(ObjectOperation.Edit)),
-			false,
+			Arg.Is(false),
 			Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>());
 	}
 
@@ -85,7 +85,8 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		// Assert
 		exitCode.Should().Be(0, because: "a successful revoke returns exit code 0");
 		_rightsWriter.Received(1).SetObjectRights("UsrPortalSpike", Arg.Any<Guid>(),
-			Arg.Any<IReadOnlyCollection<ObjectOperation>>(), true, Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>());
+			Arg.Any<IReadOnlyCollection<ObjectOperation>>(), Arg.Is(true), Arg.Any<bool>(),
+			Arg.Any<CreatioRequestOptions>());
 	}
 
 	[Test]
@@ -104,9 +105,11 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		// Assert
 		exitCode.Should().Be(0, because: "granting root and its connected objects succeeds");
 		_rightsWriter.Received(1).SetObjectRights("UsrPortalSpike", Arg.Any<Guid>(),
-			Arg.Any<IReadOnlyCollection<ObjectOperation>>(), false, Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>());
+			Arg.Any<IReadOnlyCollection<ObjectOperation>>(), Arg.Is(false), Arg.Any<bool>(),
+			Arg.Any<CreatioRequestOptions>());
 		_rightsWriter.Received(1).SetObjectRights("UsrPSCategory", Arg.Any<Guid>(),
-			Arg.Any<IReadOnlyCollection<ObjectOperation>>(), false, Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>());
+			Arg.Any<IReadOnlyCollection<ObjectOperation>>(), Arg.Is(false), Arg.Any<bool>(),
+			Arg.Any<CreatioRequestOptions>());
 	}
 
 	[Test]
@@ -224,7 +227,8 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		// Assert
 		exitCode.Should().Be(0, because: "the caller asked for the widening, so applying it is a success");
 		_rightsWriter.Received(1).SetObjectRights("UsrPortalSpike", Arg.Any<Guid>(),
-			Arg.Any<IReadOnlyCollection<ObjectOperation>>(), true, true, Arg.Any<CreatioRequestOptions>());
+			Arg.Any<IReadOnlyCollection<ObjectOperation>>(), Arg.Is(true), Arg.Is(true),
+			Arg.Any<CreatioRequestOptions>());
 		_logger.Received().WriteInfo(Arg.Is<string>(m => m.Contains("available to ALL internal users")));
 	}
 }
