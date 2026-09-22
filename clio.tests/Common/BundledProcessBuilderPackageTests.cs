@@ -123,7 +123,7 @@ public class BundledProcessBuilderPackageTests {
 	/// guards with the union of a frozen pre-batch capture and a fresh live re-scan, so neither a dependent cleared
 	/// nor one added mid-batch escapes detection. Every PATCH digit over 1.6.2.5 fixes something a review or a
 	/// live-test run found, and each is raised so a stand still carrying an earlier one is DETECTABLY behind.</para>
-	/// <para>1.6.5.11 (THIS cut, from <c>feature/ENG-95890-ENG-98448-layout-and-connector-geometry</c>): the
+	/// <para>1.6.5.12 (THIS cut, from <c>feature/ENG-95890-ENG-98448-layout-and-connector-geometry</c>): the
 	/// band layout and connector geometry (ENG-95890, ENG-98448), and on top of them the second review round's
 	/// four fixes. The one that decides whether this archive may ship at all is
 	/// <c>ModifyProcessRequest.ConfirmLayoutChange</c> becoming NULLABLE. This version changed which arm of a
@@ -285,7 +285,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"7078441C540A284FFF1098243E0E257DD568216A204025B16D012781885345D6";
+		"D1C96FAA0BD8F4C164CBBF04C6715C5363C0224BDD5517C94A7E10C1BF584F71";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -313,7 +313,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.5.11";
+	private const string ExpectedArchiveVersion = "1.6.5.12";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, written by
@@ -325,7 +325,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "7ba252e3d0cdb068da59cc75991de9b340b600e0";
+	private const string ExpectedProducingCommit = "a69f0aafa3cb9197d9fc04af65887a40a741c29b";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -351,7 +351,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1790056717000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1790058029000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
