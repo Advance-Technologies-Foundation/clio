@@ -145,7 +145,7 @@ internal sealed class KnowledgeRefreshTrigger : IKnowledgeRefreshTrigger {
 	/// <inheritdoc/>
 	public Task? TriggerIfDue() {
 		if (!IsEligibleProcess()) {
-			return null;
+			return null; // NOSONAR: null is the documented "no refresh started" signal of Task? TriggerIfDue; the read-path caller discards it and never awaits it
 		}
 		DateTimeOffset now = _timeProvider.GetUtcNow();
 		long nextProbeAtUtcTicks = Volatile.Read(ref _nextProbeAtUtcTicks);
@@ -153,10 +153,10 @@ internal sealed class KnowledgeRefreshTrigger : IKnowledgeRefreshTrigger {
 		// treating it as due beats suppressing every refresh until the clock catches up.
 		if (now.UtcTicks < nextProbeAtUtcTicks
 				&& nextProbeAtUtcTicks - now.UtcTicks <= ProbeInterval.Ticks) {
-			return null;
+			return null; // NOSONAR: null is the documented "no refresh started" signal of Task? TriggerIfDue; the read-path caller discards it and never awaits it
 		}
 		if (Interlocked.CompareExchange(ref _probeInFlight, 1, 0) != 0) {
-			return null;
+			return null; // NOSONAR: null is the documented "no refresh started" signal of Task? TriggerIfDue; the read-path caller discards it and never awaits it
 		}
 		// Set BEFORE the refresh starts, not in its continuation: a refresh that completes in
 		// milliseconds would otherwise leave the next lookup free to start another one immediately.
