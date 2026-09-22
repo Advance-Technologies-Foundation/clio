@@ -4612,3 +4612,10 @@ stories:
       1.15.52 with availableNames UNCHANGED (no article added or renamed); WorkspaceTemplateGuidanceDrift
       green. The two PRs are COUPLED: the guidance must land before or with the clio release, and a failed
       update-knowledge keeps serving the old article with no error.
+      SUPERSEDED BY REVIEW ROUND 5 (2026-09-22): the library is at 1.15.62, not 1.15.52 - the note above
+      records the generation this story published and the number moved four more times since (a floor
+      re-pin, two rebundles and the round-5 corrections). Round 5 also found that four names had gone
+      MISSING from curated-knowledge-names.json between the 1.15.48 master pin and 1.15.61
+      (`creatio.external-organizations`, `creatio.portal-service-routing` and their bare aliases) while
+      bundle-source.json still carries both articles - a re-pin artifact, not an article removal. Restored,
+      so "availableNames UNCHANGED" is true again against master.

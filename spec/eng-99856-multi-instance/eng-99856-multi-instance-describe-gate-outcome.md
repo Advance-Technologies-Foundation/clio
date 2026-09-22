@@ -122,8 +122,11 @@ PushExpiredLicensesNotificationSubProcess  OutputRecordCollection   itemProperti
 "5905d1ab-20b1-43f5-ab65-e9cc65652e01", "multiInstance": true, "inSync": false}` — the same block the
 reference measurement reported. Read `inSync: false` as nothing at all here: `MirrorsCallee` compares only
 **root** parameter names, and a multi-instance element's callee names live one level down inside the
-collections, so it is false by construction for every such element. It is not evidence that anything is
-stale.
+collections. It is not evidence that anything is stale. Nor is a `true` there: the test is an `All` over
+the CALLEE's parameters, so a callee declaring none is vacuously mirrored and any element reports `true`
+against it. "False by construction for every such element", written here first, is wrong in the one
+direction a caller would act on - see
+`docs/knowledge/platform/insync-is-vacuously-true-against-a-parameterless-callee.md`.
 
 The items themselves, which is what makes this a contract and not a count:
 

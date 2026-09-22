@@ -19,7 +19,7 @@ namespace Clio.Mcp.E2E;
 /// <summary>
 /// End-to-end coverage for the MULTI-INSTANCE Sub-process element (ENG-99856) over the real MCP path. NOT in
 /// CI - run manually, gated on the <c>process-designer</c> feature and a reachable environment carrying a
-/// CrtProcessBuilder of at least 1.6.6.9.
+/// CrtProcessBuilder of at least 1.6.6.11.
 /// <para>What only a live server can prove here is the PLATFORM's rebuild. Assigning <c>SchemaUId</c> on a
 /// converted element makes the platform clear the element's parameters and re-derive them, and every unit
 /// test drives that against a substituted schema manager. This is the only place the real
@@ -27,10 +27,13 @@ namespace Clio.Mcp.E2E;
 /// show the five service parameters actually replacing the callee's, the callee's contract actually landing
 /// one level down as the input collection's item properties, and a dotted per-item mapping actually
 /// surviving the save-and-read round trip.</para>
-/// <para>The two cases are deliberately asymmetric in what they are FOR. The happy path proves the shape;
+/// <para>The three cases are deliberately asymmetric in what they are FOR. The happy path proves the shape;
 /// the refusal proves the one write that would be silently erased is stopped at the door, because a value
 /// written into the OUTPUT collection is cleared by the platform on the next synchronization with no error
-/// anywhere - the failure mode the whole refusal exists for.</para>
+/// anywhere - the failure mode the whole refusal exists for; and the DE-CONVERSION proves the destructive
+/// direction, which every other test in this feature drives against a substituted applier. It is the only
+/// place the round trip is closed against a real saved schema: the five go away, the callee's contract
+/// comes back to the root, and the value a caller mapped per item comes back WITH it.</para>
 /// </summary>
 [TestFixture]
 [AllureNUnit]
@@ -41,6 +44,7 @@ public sealed class SubProcessMultiInstanceToolE2ETests {
 
 	private const string ToolName = CreateBusinessProcessTool.CreateBusinessProcessToolName;
 	private const string DescribeToolName = DescribeProcessTool.ToolName;
+	private const string ModifyToolName = ModifyBusinessProcessTool.ModifyBusinessProcessToolName;
 
 	#region Methods: Tests
 
@@ -134,6 +138,67 @@ public sealed class SubProcessMultiInstanceToolE2ETests {
 				+ "type mismatch or a 'no such parameter' would all quote it back - and this assertion is the "
 				+ "only thing standing between 'the right refusal reached the caller over the real MCP path' "
 				+ "and 'the build failed for some reason and the name happened to appear'");
+	}
+
+	[Test]
+	[Description("Over the real MCP path, modify-business-process de-converts a multi-instance element back to a single call, and describe reads the restored shape. The DESTRUCTIVE direction is the half no unit test can show: every multi-instance fixture substitutes ISubProcessApplier, so the platform's own re-derivation never runs, and this is the only place it does. Two things are asserted because two things were claimed and one of them was wrong: the callee's parameters come back to the ROOT, and a value mapped per item comes back WITH them - the guidance said it did not survive the round trip while the server's own notice said it did.")]
+	[AllureTag(ModifyToolName)]
+	[AllureName("modify-business-process de-converts a multi-instance sub-process and describe reads it back")]
+	public async Task ModifyBusinessProcess_Should_DeconvertAMultiInstanceSubProcess_AndRestoreTheCalleeContract() {
+		// Arrange - the SAME graph the happy path builds, so anything that differs below is the de-conversion.
+		await using ArrangeContext context = await ArrangeAsync();
+		string calleeName = $"UsrClioBpMiDeCallee{Guid.NewGuid():N}";
+		string callerName = $"UsrClioBpMiDeCaller{Guid.NewGuid():N}";
+		await ArrangeProcessAsync(context, BuildCalleeDescriptor(calleeName), "called process");
+		await ArrangeProcessAsync(context, BuildMultiInstanceCallerDescriptor(callerName, calleeName),
+			"multi-instance caller");
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, ModifyToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = callerName,
+			["operations"] = """
+				[
+				  { "op": "setElement", "elementName": "SubProcess1",
+				    "elementUpdate": { "subProcess": { "multiInstanceOptions": { "enabled": false } } } }
+				]
+				"""
+		});
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a de-conversion is an ordinary edit and must not fail at the transport");
+		JsonSerializer.Serialize(callResult).Should().NotContain("\"success\":false",
+			because: "the edit has to LAND - a refused de-conversion would leave the element multi-instance and "
+				+ "every assertion below would then be about the arrange rather than about this operation");
+
+		DescribedElement element = (await DescribeAsync(context, callerName)).Elements
+			.Single(candidate => candidate.Name == "SubProcess1");
+		element.SubProcess.Should().NotBeNull(
+			because: "the element still calls the same process - only how many times changed");
+		element.SubProcess!.MultiInstance.Should().Be(false,
+			because: "THE acceptance criterion for this direction. Asserted against FALSE rather than falsy so "
+				+ "that a server which stopped reporting the field at all fails here");
+		element.SubProcess.MultiInstanceOptions.Should().BeNull(
+			because: "the options block is emitted on a multi-instance element only, so a block beside "
+				+ "multiInstance:false is a read describing an element that no longer exists in that shape");
+
+		IReadOnlyCollection<string> parameterNames = element.Parameters.Select(parameter => parameter.Name).ToList();
+		parameterNames.Should().Contain("ItemName",
+			because: "the callee's contract comes back to the ROOT - that is what de-conversion means, and it "
+				+ "is where a mapping addresses it again");
+		parameterNames.Should().NotContain("InputRecordCollection",
+			because: "the five service parameters go away with the mode. One left behind is the half-finished "
+				+ "de-conversion this case exists to catch - and the arm that restores an element after a "
+				+ "failed re-synchronization once left the opposite residue, the callee's parameters beside the "
+				+ "five, which saved and was invisible to every shape assertion this suite had");
+
+		element.Parameters.Single(parameter => parameter.Name == "ItemName").Value
+			.Should().NotBeNullOrWhiteSpace(
+				because: "the value mapped per item comes back WITH the parameter - the mapping row pairs source "
+					+ "and target by UId and the de-conversion clones the item properties back out with theirs. "
+					+ "The shipped guidance asserted the opposite while the server's own notice asserted this, "
+					+ "and only a real save-and-read can say which");
 	}
 
 	#endregion
@@ -292,7 +357,7 @@ public sealed class SubProcessMultiInstanceToolE2ETests {
 		string? environmentName = settings.Sandbox.EnvironmentName;
 		if (string.IsNullOrWhiteSpace(environmentName)) {
 			Assert.Ignore(
-				"Configure McpE2E:Sandbox:EnvironmentName (with a CrtProcessBuilder of at least 1.6.6.9) to run "
+				"Configure McpE2E:Sandbox:EnvironmentName (with a CrtProcessBuilder of at least 1.6.6.11) to run "
 				+ "the multi-instance Sub-process MCP E2E tests.");
 		}
 

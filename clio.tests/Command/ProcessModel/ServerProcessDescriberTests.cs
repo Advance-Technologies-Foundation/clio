@@ -2009,7 +2009,7 @@ public sealed class ServerProcessDescriberTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("calleeInSync deserializes as a typed nullable bool, and it is the field to read on a multi-instance element - inSync there is false by construction and answers nothing.")]
+	[Description("calleeInSync deserializes as a typed nullable bool, and it is the field to read on a multi-instance element - inSync there carries no information in either direction and answers nothing.")]
 	public void Describe_ShouldReadCalleeInSync_WhenServerReportsIt() {
 		// Arrange - a multi-instance element whose callee has drifted
 		IApplicationClient client = ClientReturning(
@@ -2032,8 +2032,10 @@ public sealed class ServerProcessDescriberTests {
 				+ "element does not carry, with no exception and no log line");
 		block.InSync.Should().BeFalse(
 			because: "inSync keeps its old meaning - it compares against the element ROOT parameters, which here "
-				+ "are the five service ones, so it is false by construction. Redefining it would have changed a "
-				+ "shipped field silently; the two coexist instead");
+				+ "are the five service ones, so it carries no information: false whenever the callee declares "
+				+ "anything, and vacuously TRUE when it declares nothing, since the test is an All over the "
+				+ "callee's parameters. Redefining it would have changed a shipped field silently; the two "
+				+ "coexist instead");
 	}
 
 	[Test]

@@ -28,10 +28,10 @@ namespace Clio.Command;
 // thing standing between the caller and a silently wrong version. The lockout argument that kept it at 1.6.1.0
 // for one review round (refusing the whole versioning route on a 1.6.1.x environment for a field most
 // operations arrays never carry) no longer buys anything: BundledPackageConvergence already refuses every
-// environment below the archive clio ships (1.6.6.9 today, 1.6.2.1 when this was written) on this same
+// environment below the archive clio ships (1.6.6.11 today, 1.6.2.1 when this was written) on this same
 // command, so the raise adds no refusal in
 // normal mode and is the one fail-closed refusal left in convergence's degraded warn-and-allow modes.
-// Raised to 1.6.6.9 by ENG-99856: `subProcess.multiInstanceOptions`, the dotted per-item path on
+// Raised to 1.6.6.11 by ENG-99856: `subProcess.multiInstanceOptions`, the dotted per-item path on
 // `elementParameter` / `sourceElementParameter`, and the refusals that go with them. The rule is the one
 // that produced the 1.6.2.1 raise - it moves when clio starts ADVERTISING behaviour the deployed server
 // may not have - and the failure mode here is the worse of the two shapes this contract knows: a new
@@ -40,8 +40,8 @@ namespace Clio.Command;
 // "success", and has an ordinary single-call element with nothing anywhere saying a block was dropped.
 // The dotted path fails differently and just as quietly: an older server resolves `elementParameter` flat
 // only, finds no parameter of that name and refuses - loudly, but naming a parameter rather than the
-// package. 1.6.6.9 is the archive cut from crt-process-builder 241246e.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.9",
+// package. 1.6.6.11 is the archive cut from crt-process-builder 8be2929.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.11",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class ModifyProcessAsNewVersionOptions : EnvironmentOptions {
 	/// <summary>Process code (schema Name) of the SOURCE. Provide exactly one of <see cref="ProcessName"/> or <see cref="ProcessUid"/>.</summary>
