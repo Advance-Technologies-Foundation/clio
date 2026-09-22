@@ -31,9 +31,11 @@ public static class DescribeProcessPrompt {
 		1. Call `describe-business-process` with `environment-name` and exactly one of `process-name` /
 		   `process-uid` / `process-caption`. It returns a STRUCTURED graph: `elements`
 		   (name, uid, caption, type, buildType, userTaskName, parameters; `signal` for a signal start, and a
-		   configuration block for a configured element - `email`, `readData`, `changeData`, `openEditPage`),
+		   configuration block for a configured element - `email`, `readData`, `changeData`, `addData`,
+		   `deleteData`, `openEditPage`),
 		   `flows` (name, source, target, kind, `label`, `geometry`, and on a branch its `condition` plus
-		   `branchesOnActivityResult`, `results` and `resultsActivity`), and process `parameters` — not raw metadata.
+		   `branchesOnActivityResult`, `results` and `resultsActivity`), and process `parameters` — not raw
+		   metadata.
 		   Each element also carries its diagram placement as `position` (the shape's TOP-LEFT corner) and
 		   `size`; each flow carries `geometry` - `start`, `points[]`, `end`, `exitSide`, `entrySide` - which
 		   is where the connector runs and the only way to answer a question about the PICTURE. Read `size`
