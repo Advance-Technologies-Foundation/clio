@@ -4538,7 +4538,7 @@ stories:
     feature: "eng-99856-multi-instance"
     repo: "clio"
     size: L
-    status: ready-for-dev
+    status: review
     jira: ENG-99856
     file: spec/stories/story-eng-99856-multi-instance-13.md
     prd: spec/prd/prd-eng-99856-multi-instance.md
@@ -4560,6 +4560,19 @@ stories:
       near zero (Ring consumes three tool names and six nested clio-run commands, none process-designer)
       but the statement "ClioRing compatibility reviewed, no Ring-consumed contract changed" with the
       inspected paths is mandatory. validate-process-graph is deliberately unchanged (OQ-05).
+      DONE 2026-09-22 with THREE acceptance criteria REROUTED. The describe contract, the capability map
+      and ValidateProcessGraphPrompt all carried the retired claim that a multi-instance element cannot be
+      built or re-synchronized; all three are corrected and pinned by a retraction SWEEP test. E2E added
+      and RUN against the live stand (2 passed). ClioRing compatibility reviewed, no Ring-consumed contract
+      changed - Ring names exactly one tool literally (get-tool-contract), binds only Name/Purpose/
+      ContractAvailable from the catalog and treats a full contract as opaque text; tests 157/157 and the
+      Windows x64 NativeAOT publish both green. AC-01 and the write-tool halves of AC-04/AC-05 could NOT
+      land: ToolContractPayloadBudgetTests caps a get-tool-contract payload at 34816 bytes and
+      create-business-process sits at that ceiling with ZERO headroom, while nothing false about
+      multi-instance lives in either write description to delete in exchange. Owner decision: the write
+      contract goes to the process-sub-process guidance article. Story 14 inherits it, plus a pointer
+      reconciliation - create says process-element-catalog owns the subProcess block, modify says
+      process-sub-process; both articles exist and the second is the specific one.
 
   - id: story-eng-99856-multi-instance-14
     title: "Retract the 19 statements that promise multi-instance is refused, and publish the guidance"
