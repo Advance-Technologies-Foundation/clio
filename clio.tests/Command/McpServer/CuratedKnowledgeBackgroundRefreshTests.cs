@@ -22,12 +22,16 @@ public sealed class CuratedKnowledgeBackgroundRefreshTests {
 	private ILogger _logger = null!;
 	private RefreshClock _clock = null!;
 	private ScriptedDelay _delay = null!;
+	private List<string> _warnings = null!;
 
 	[SetUp]
 	public void SetUp() {
 		_settings = Substitute.For<ISettingsRepository>();
 		_management = Substitute.For<IKnowledgeSourceManagementService>();
 		_logger = Substitute.For<ILogger>();
+		_warnings = [];
+		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
+			.Do(call => _warnings.Add(call.Arg<string>()));
 		_clock = new RefreshClock();
 		_delay = new ScriptedDelay();
 		_management.Update(
@@ -170,9 +174,11 @@ public sealed class CuratedKnowledgeBackgroundRefreshTests {
 		await RunTicks(CuratedKnowledgeSourceDefaults.BackgroundRefreshFailuresBeforeWarning + 2);
 
 		// Assert
-		_logger.Received(1).WriteWarning(Arg.Is<string>(message =>
-			message.Contains("Knowledge autoupdate has failed")
-			&& message.Contains("next scheduled window")));
+		_warnings.Should().ContainSingle(
+			because: "a host cut off for weeks is worth one line, not one per wake-up")
+			.Which.Should().Contain("Knowledge autoupdate has failed")
+			.And.Contain("next scheduled window",
+				because: "the operator needs the real retry bound, not the 5-minute poll cadence");
 	}
 
 	[Test]
@@ -186,7 +192,8 @@ public sealed class CuratedKnowledgeBackgroundRefreshTests {
 		await RunTicks(CuratedKnowledgeSourceDefaults.BackgroundRefreshFailuresBeforeWarning - 1);
 
 		// Assert
-		_logger.DidNotReceive().WriteWarning(Arg.Any<string>());
+		_warnings.Should().BeEmpty(
+			because: "an operator between networks must get no noise before the run is long enough");
 	}
 
 	[Test]
@@ -205,7 +212,8 @@ public sealed class CuratedKnowledgeBackgroundRefreshTests {
 		await RunTicks(warningThreshold);
 
 		// Assert
-		_logger.DidNotReceive().WriteWarning(Arg.Any<string>());
+		_warnings.Should().BeEmpty(
+			because: "the success in the middle resets the run, so the threshold is never reached");
 	}
 
 	[Test]
