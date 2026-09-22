@@ -320,9 +320,12 @@ public static class ReasonCodes {
 	public const string DropTargetMissing = "drop-target-missing";
 
 	/// <summary>
-	/// A component whose request the Mobile app does not support — a <c>crt.Button</c> on the element path,
-	/// or any action inside a non-converting scope container. Params: <c>request</c>, <c>scope</c>
-	/// (<c>scope</c> absent on the element path). Not to be confused with
+	/// A component whose request the Mobile app does not support — a <c>crt.Button</c> or a
+	/// <c>crt.MenuItem</c> on the element path, or any action inside a non-converting scope container.
+	/// Params: <c>request</c>, <c>scope</c> — <c>scope</c> is absent on the element path, and BOTH are
+	/// absent in one case: a button or menu item removed for having no surviving menu item and no click
+	/// request of ITS own has no request to name, so the entry arrives as the bare code and what was lost
+	/// is the menu items reported beside it. Not to be confused with
 	/// <see cref="DropRequestUnsupported"/>: there the element SURVIVES and only its binding is removed.
 	/// </summary>
 	public const string DropUnsupportedRequest = "drop-unsupported-request";
@@ -1127,10 +1130,13 @@ public sealed class MobilePageConversionGuide {
 	/// <c>clicked</c>, a field's <c>valueChange</c>/<c>updated</c>), deterministically converted for
 	/// mobile. Supported requests are remapped in-place inside the affected element's
 	/// <c>viewConfigDiff[].values</c>. An unsupported or unknown/custom request is handled by component
-	/// type: on a <c>crt.Button</c> the whole element is DROPPED — a dead button, read in
-	/// <see cref="DroppedElement"/> under <see cref="ReasonCodes.DropUnsupportedRequest"/>, which is the
-	/// only place a plain leaf button's loss is reported; on any other component type the binding is kept
-	/// verbatim and flagged for manual review (the component stays). <c>droppedRequests</c> reports a
+	/// type: on a <c>crt.Button</c> or a <c>crt.MenuItem</c> — the two kinds that exist only to fire an
+	/// action — the whole element is DROPPED, read in <see cref="DroppedElement"/> under
+	/// <see cref="ReasonCodes.DropUnsupportedRequest"/>, which is the only place such a leaf's loss is
+	/// reported; on any other component type the binding is kept verbatim and flagged for manual review
+	/// (the component stays), because it has a purpose beyond the action. A button left with no surviving
+	/// menu item and no click request of its own follows its menu out under the same code.
+	/// <c>droppedRequests</c> reports a
 	/// BINDING: one lost while its element survived, and one lost on the paths that place or remove the
 	/// element itself (retarget onto a native, missing retarget target, non-converting scope, empty
 	/// container, exclusion). This section is an advisory SUMMARY — every actionable body change is
