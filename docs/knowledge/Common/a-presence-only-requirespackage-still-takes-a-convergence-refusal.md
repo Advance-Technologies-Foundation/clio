@@ -31,9 +31,9 @@ ones carrying a literal:
 
 | site | floor | refuses a behind environment |
 |---|---|---|
-| `CreateBusinessProcessOptions` (CreateBusinessProcessCommand.cs) | `1.6.6.8` | yes |
-| `ModifyBusinessProcessOptions` (ModifyBusinessProcessCommand.cs) | `1.6.6.8` | yes |
-| `ModifyProcessAsNewVersionOptions` (ModifyProcessAsNewVersionCommand.cs) | `1.6.6.8` | yes |
+| `CreateBusinessProcessOptions` (CreateBusinessProcessCommand.cs) | `1.6.6.9` | yes |
+| `ModifyBusinessProcessOptions` (ModifyBusinessProcessCommand.cs) | `1.6.6.9` | yes |
+| `ModifyProcessAsNewVersionOptions` (ModifyProcessAsNewVersionCommand.cs) | `1.6.6.9` | yes |
 | `SetActiveProcessVersionOptions` (SetActiveProcessVersionCommand.cs) | `1.6.1.0` | yes |
 | `DescribeProcessOptions` (DescribeProcessCommand.cs) | none — `Hint` only | **yes** |
 | `ListUserTasksOptions` (ListUserTasksCommand.cs) | none — `Hint` only | **yes** |
