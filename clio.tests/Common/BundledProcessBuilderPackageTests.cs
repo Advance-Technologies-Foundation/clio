@@ -74,12 +74,11 @@ public class BundledProcessBuilderPackageTests {
 	/// SHA-256 of the committed archive. Produced by <c>rebundle-process-builder.ps1</c> at
 	/// <see cref="ExpectedArchiveVersion"/> from
 	/// the <c>ProcessBuilder</c> repository (<c>packages/CrtProcessBuilder</c>, branch
-	/// <c>feature/ENG-96503-read-data-count-aggregation</c>, merged from <c>nitro/sprint-3-release</c> — the
-	/// branch therefore also carries the ENG-95986 Send-email template-mode work and everything
-	/// <c>nitro/sprint-3-release</c> had accumulated by then (including the earlier ENG-91853 flow-labels and
-	/// ENG-94374 process-versioning work that branch itself carries), at the commit recorded mechanically in
-	/// <c>feature/ENG-92707-sub-process-element</c>), at the commit
-	/// recorded mechanically in
+	/// <c>feature/ENG-99856-multi-instance</c>, merged from <c>main</c> — so the cut also carries everything
+	/// <c>main</c> had accumulated by then, including the ENG-95890/ENG-98448 branch-band layout and connector
+	/// geometry that landed there while this branch was open, and, transitively, the ENG-95986 Send-email
+	/// template-mode work and the earlier ENG-91853 flow-labels and ENG-94374 process-versioning work), at the
+	/// commit recorded mechanically in
 	/// <see cref="ExpectedProducingCommit"/> — the script captures <c>git rev-parse HEAD</c> and refuses to cut
 	/// from a tree with uncommitted changes, so this reference is no longer a sentence anyone has to keep true
 	/// by hand. Many numbers below the current one are burned rather than reused — some because two branches drew
@@ -160,12 +159,15 @@ public class BundledProcessBuilderPackageTests {
 	/// collided at write time the same way an exact duplicate does. Switched to <c>OrdinalIgnoreCase</c>,
 	/// matching the sibling existing-parameter conflict check right below it and <c>ResolveButtons</c>' own
 	/// duplicate check.</para>
-	/// <para>What THIS cut carries, over the 1.6.3.16 this file previously pinned: the Sub-process element
-	/// (ENG-92707) - the BPMN call activity,
-	/// selecting the called process and letting the platform copy that process's parameters onto the element,
-	/// with the guards the platform does not have (self-reference, a retarget with live dependents, a callee with
-	/// no Simple start event, an ambiguous caption, and any multi-instance element) and a drift report around the
-	/// synchronization.</para>
+	/// <para>What THIS cut carries, over the 1.6.5.14 this file previously pinned: MULTI-INSTANCE on the
+	/// Sub-process element (ENG-99856) - running the called process once per item of a collection, through
+	/// <c>subProcess.multiInstanceOptions</c>. It REMOVES a refusal rather than adding one: the Sub-process
+	/// element shipped in ENG-92707 refused any multi-instance element outright, and the paragraph that said so
+	/// is gone with it. A converted element stops carrying the callee's parameters and carries two collections
+	/// and three iteration counters instead, with the callee's contract one level down in the input collection's
+	/// item properties - which is why a per-item value is addressed by a DOTTED name and a write into the output
+	/// collection is refused at any depth. Also in the cut, from the <c>main</c> merge: the ENG-95890/ENG-98448
+	/// branch-band layout and connector geometry.</para>
 	/// <para>The FOURTH digit moves here: the third already stood at 1.6.3 when this branch started, so this cut
 	/// continues that line rather than opening one. The paragraph below records why the third digit was moved by
 	/// the cut that opened it, which is the case that was the OPPOSITE of the rule stated above, and the reason is
@@ -183,12 +185,12 @@ public class BundledProcessBuilderPackageTests {
 	/// each is raised so a stand still carrying an earlier one is DETECTABLY behind — same-version re-cuts make
 	/// equal version numbers mean nothing, which the convergence check cannot see through.</para>
 	/// <para>
-	/// This cut DID run under <c>-SkipTests</c>. The package's suite is green on the producing commit
-	/// (1871 of 1872 with the CI filter) except for
-	/// <c>CiContractGuardTests.FeatureToggling_LoadedIdentityMatchesThePlatformDemandAndTheTestKit</c>, which
-	/// fails on this machine because the local <c>.application/net-framework/core-bin</c> binds an older
-	/// <c>Creatio.FeatureToggling</c> than the test project references — a stale local dependency set, not a
-	/// defect in the cut. The script verified the archive inventory it produced. The byte-for-byte comparison of
+	/// This cut did NOT run under <c>-SkipTests</c>: the script built the package sources and ran their suite
+	/// on the producing commit before packing anything — 2492 passed, 0 failed, 0 skipped, measured on this cut
+	/// and not carried over from a previous one. That matters beyond hygiene, because <c>-SkipTests</c> is the
+	/// ONE path that can reach the coarse failure the two security counts below exist to catch. The script also
+	/// verified the archive inventory it produced (209 entries, 2 DLLs, both under <c>Files/Libs</c>, compile
+	/// marker present, no own assembly, nothing that executes on install). The byte-for-byte comparison of
 	/// every archive entry
 	/// against the commit's CHECKOUT rendering was NOT re-run here, and the clean-tree refusal does NOT cover
 	/// it: a clean TREE and a clean CHECKOUT are different states. `git add` normalises to LF in the INDEX while
@@ -258,7 +260,7 @@ public class BundledProcessBuilderPackageTests {
 	/// <para>
 	/// The entry-by-entry byte audit (every archive entry compared against
 	/// <c>git show &lt;ExpectedProducingCommit&gt;:&lt;path&gt;</c>; last measured on the 1.6.1.2 cut as 157 entries,
-	/// 156 byte-identical, the 157th being the restamped <c>descriptor.json</c>) was NOT re-run for the 1.6.2.3 cut.
+	/// 156 byte-identical, the 157th being the restamped <c>descriptor.json</c>) was NOT re-run for the 1.6.6.5 cut.
 	/// Its reproducibility rests on the export flags above, which are what made the earlier audit come out clean;
 	/// a reviewer can repeat the audit from the producing commit alone.
 	/// The INVARIANT, which is what this paragraph is for and the only part that cannot go stale: every entry in
@@ -274,7 +276,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"72D931CEA7E6071B5BDBC673FAE82C1978D7E790C681792553924F771497731D";
+		"93188BA00C48AE05532668E6D3DFCF86E44965323D98F911365D3FD33C0D4EFB";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -302,7 +304,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.6.4";
+	private const string ExpectedArchiveVersion = "1.6.6.5";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, written by
@@ -314,7 +316,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "bf9fb3c2456cc68d5328bbe608e8e87138d2ca27";
+	private const string ExpectedProducingCommit = "981e24f911f7b46bdbbe3c0ba0238b689b5068dc";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -340,7 +342,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1790075765000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1790077456000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
@@ -892,7 +894,7 @@ public class BundledProcessBuilderPackageTests {
 				+ $"a gate and {nameof(ProcessBuilderGatedTypes)} moves in the same commit, so a lost "
 				+ "declaration cannot pass as slack and a new one cannot arrive unreviewed");
 		// The loop EXECUTES today: four of the seven carry a version literal, and they do NOT all agree with
-		// each other — create, modify and modify-as-new-version at 1.6.2.1 since ENG-95986 (create and modify had
+		// each other — create, modify and modify-as-new-version at 1.6.6.5 since ENG-99856 (create and modify had
 		// diverged before, when modify's page-change reconciliation promise needed a newer archive than create's;
 		// the new-version route followed because it shares the operations vocabulary and runs no read-back), and
 		// set-active-version at the 1.6.1.0 its operation first ships in. That spread is the reason the assertion counts literals
