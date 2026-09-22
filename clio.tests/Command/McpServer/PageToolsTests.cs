@@ -2257,6 +2257,8 @@ public class PageToolsTests
 			because: "the explicit resource referenced by the mobile body should be registered");
 		response.RegisteredResourceKeys.Should().Equal(["UsrMobileTitle"],
 			because: "the response should report the resource key registered during save");
+		response.Warnings.Should().Contain(PageUpdateCommand.ResourceWorkspaceCaptureWarning,
+			because: "server resource registration must warn that a stale workspace push can revert it");
 		savedPayload.Should().Contain("\"name\":\"UsrMobileTitle\"",
 			because: "the saved schema payload should include the new localizable string");
 		savedPayload.Should().Contain("\"value\":\"Mobile title\"",

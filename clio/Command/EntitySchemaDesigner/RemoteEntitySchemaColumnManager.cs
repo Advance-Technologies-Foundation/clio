@@ -189,6 +189,9 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		PackageInfo package = ResolvePackage(options.Package);
 		EntityDesignSchemaDto schema = LoadSchema(options.SchemaName, package.Descriptor.UId,
 			package.Descriptor.Name, options, DependencyDiagnosis.Report);
+		if (options.IsDBView.HasValue) {
+			schema.IsDBView = options.IsDBView.Value;
+		}
 		string requestedColumnName = string.IsNullOrWhiteSpace(options.PrimaryDisplayColumn)
 			? null
 			: options.PrimaryDisplayColumn.Trim();
@@ -217,6 +220,13 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 				"The target environment may not support setting the primary-display column through this API.");
 		}
 		VerifySchemaCaption(reloadedSchema, requestedTitles, options.SchemaName);
+		if (options.IsDBView.HasValue) {
+			if (reloadedSchema.IsDBView != options.IsDBView.Value) {
+				throw new EntitySchemaDesignerException(
+					$"Database-view flag was not persisted for schema '{schema.Name}'.");
+			}
+			_logger.WriteInfo($"Database-view flag set to '{options.IsDBView.Value}' for schema '{schema.Name}'.");
+		}
 		if (requestedColumnName != null) {
 			_logger.WriteInfo(
 				$"Primary-display column set to '{requestedColumnName}' for schema '{options.SchemaName}'.");

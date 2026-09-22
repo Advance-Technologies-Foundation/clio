@@ -20,7 +20,10 @@ DESCRIPTION
     Supported parameter types include Guid and its designer label
     Unique identifier.
 
-    When parameter direction is added or changed, clio persists it through the
+    Existing explicit directions are preserved from linked workspace metadata
+    for retained parameters. --set-direction overrides the preserved value.
+
+    When parameter direction is present, added or changed, clio persists it through the
     workspace file design mode flow because the current Creatio SaveSchema
     route does not persist parameter direction:
     1. Save the schema through the designer service
@@ -119,6 +122,11 @@ EXAMPLE
         --remove-parameter "ObsoleteFlag|LegacyResult"
         -e docker_fix2
         add two parameters, remove two parameters, and rebuild the owning package
+
+PARAMETER TYPES
+    Use type=Unlimited text (or MaxSizeText) for an unlimited-length string, such as an
+    ErrorMessage output. Text and String keep their existing plain-text type.
+    Example parameter: code=ErrorMessage;title=Error message;type=Unlimited text;direction=Out;resulting=true;serializable=true
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio

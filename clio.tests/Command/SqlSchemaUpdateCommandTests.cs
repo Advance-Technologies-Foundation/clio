@@ -13,8 +13,8 @@ using NUnit.Framework;
 public sealed class SqlSchemaUpdateCommandTests {
 	private const string TestBase = "http://test";
 	private const string SelectQueryUrl = TestBase + "/DataService/json/SyncReply/SelectQuery";
-	private const string GetSchemaUrl = TestBase + "/ServiceModel/ScriptSchemaDesignerService.svc/GetSchema";
-	private const string SaveSchemaUrl = TestBase + "/ServiceModel/ScriptSchemaDesignerService.svc/SaveSchema";
+	private const string GetSchemaUrl = TestBase + "/ServiceModel/SqlScriptSchemaDesignerService.svc/GetSchema";
+	private const string SaveSchemaUrl = TestBase + "/ServiceModel/SqlScriptSchemaDesignerService.svc/SaveSchema";
 	private const string SchemaUId = "aa000000-0000-0000-0000-000000000001";
 
 	private static string SchemaFoundJson =>
@@ -33,9 +33,9 @@ public sealed class SqlSchemaUpdateCommandTests {
 		_applicationClient = Substitute.For<IApplicationClient>();
 		_serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		_logger = Substitute.For<ILogger>();
-		_serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns(SelectQueryUrl);
-		_serviceUrlBuilder.Build("ServiceModel/ScriptSchemaDesignerService.svc/GetSchema").Returns(GetSchemaUrl);
-		_serviceUrlBuilder.Build("ServiceModel/ScriptSchemaDesignerService.svc/SaveSchema").Returns(SaveSchemaUrl);
+		_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select).Returns(SelectQueryUrl);
+		_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetSqlScriptSchema).Returns(GetSchemaUrl);
+		_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.SaveSqlScriptSchema).Returns(SaveSchemaUrl);
 		_command = new SqlSchemaUpdateCommand(_applicationClient, _serviceUrlBuilder, _logger);
 	}
 
@@ -81,14 +81,14 @@ public sealed class SqlSchemaUpdateCommandTests {
 			File.WriteAllText(tempFile, "-- from file");
 			_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>()).Returns(SchemaFoundJson);
 			_applicationClient.ExecutePostRequest(GetSchemaUrl, Arg.Any<string>()).Returns(GetSchemaSuccessJson);
-			_applicationClient.ExecutePostRequest(SaveSchemaUrl, Arg.Any<string>()).Returns("""{"success": true}""");
+			_applicationClient.ExecuteNonReplayablePostRequest(SaveSchemaUrl, Arg.Any<string>()).Returns("""{"success": true}""");
 			var options = new SqlSchemaUpdateOptions { SchemaName = "UsrSqlScript", BodyFile = tempFile };
 
 			bool result = _command.TryUpdateSchema(options, out SqlSchemaUpdateResponse response);
 
 			result.Should().BeTrue();
 			response.Success.Should().BeTrue();
-			_applicationClient.Received(1).ExecutePostRequest(SaveSchemaUrl,
+			_applicationClient.Received(1).ExecuteNonReplayablePostRequest(SaveSchemaUrl,
 				Arg.Is<string>(s => s.Contains("from file")));
 		}
 		finally {
@@ -111,14 +111,14 @@ public sealed class SqlSchemaUpdateCommandTests {
 		response.Success.Should().BeTrue();
 		response.DryRun.Should().BeTrue();
 		_applicationClient.DidNotReceive().ExecutePostRequest(GetSchemaUrl, Arg.Any<string>());
-		_applicationClient.DidNotReceive().ExecutePostRequest(SaveSchemaUrl, Arg.Any<string>());
+		_applicationClient.DidNotReceive().ExecuteNonReplayablePostRequest(SaveSchemaUrl, Arg.Any<string>());
 	}
 
 	[Test]
 	public void TryUpdateSchema_Happy_Path_Calls_GetSchema_Then_SaveSchema() {
 		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>()).Returns(SchemaFoundJson);
 		_applicationClient.ExecutePostRequest(GetSchemaUrl, Arg.Any<string>()).Returns(GetSchemaSuccessJson);
-		_applicationClient.ExecutePostRequest(SaveSchemaUrl, Arg.Any<string>()).Returns("""{"success": true}""");
+		_applicationClient.ExecuteNonReplayablePostRequest(SaveSchemaUrl, Arg.Any<string>()).Returns("""{"success": true}""");
 		var options = new SqlSchemaUpdateOptions {
 			SchemaName = "UsrSqlScript",
 			Body = "SELECT 2;"
@@ -133,7 +133,7 @@ public sealed class SqlSchemaUpdateCommandTests {
 		response.DryRun.Should().BeFalse();
 		_applicationClient.Received(1).ExecutePostRequest(GetSchemaUrl,
 			Arg.Is<string>(s => s.Contains(SchemaUId)));
-		_applicationClient.Received(1).ExecutePostRequest(SaveSchemaUrl,
+		_applicationClient.Received(1).ExecuteNonReplayablePostRequest(SaveSchemaUrl,
 			Arg.Is<string>(s => s.Contains("SELECT 2;")));
 	}
 
@@ -141,7 +141,7 @@ public sealed class SqlSchemaUpdateCommandTests {
 	public void TryUpdateSchema_Surfaces_SaveSchema_Error() {
 		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>()).Returns(SchemaFoundJson);
 		_applicationClient.ExecutePostRequest(GetSchemaUrl, Arg.Any<string>()).Returns(GetSchemaSuccessJson);
-		_applicationClient.ExecutePostRequest(SaveSchemaUrl, Arg.Any<string>())
+		_applicationClient.ExecuteNonReplayablePostRequest(SaveSchemaUrl, Arg.Any<string>())
 			.Returns("""{"success": false, "errorInfo": {"message": "sql error"}}""");
 		var options = new SqlSchemaUpdateOptions { SchemaName = "UsrSqlScript", Body = "BAD" };
 
@@ -157,7 +157,7 @@ public sealed class SqlSchemaUpdateCommandTests {
 		// Arrange
 		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>()).Returns(SchemaFoundJson);
 		_applicationClient.ExecutePostRequest(GetSchemaUrl, Arg.Any<string>()).Returns(GetSchemaSuccessJson);
-		_applicationClient.ExecutePostRequest(SaveSchemaUrl, Arg.Any<string>()).Returns(string.Empty);
+		_applicationClient.ExecuteNonReplayablePostRequest(SaveSchemaUrl, Arg.Any<string>()).Returns(string.Empty);
 		var options = new SqlSchemaUpdateOptions { SchemaName = "UsrSqlScript", Body = "SELECT 1;" };
 
 		// Act
@@ -165,7 +165,7 @@ public sealed class SqlSchemaUpdateCommandTests {
 
 		// Assert
 		result.Should().BeFalse("an unusable save answer is not a successful update");
-		response.Error.Should().Contain("ScriptSchemaDesignerService SaveSchema",
+		response.Error.Should().Contain("SqlScriptSchemaDesignerService SaveSchema",
 				"the caller must learn which service and operation answered with nothing")
 			.And.Contain(SaveSchemaUrl, "the endpoint URL is what makes a missing route diagnosable")
 			.And.Contain(SchemaDesignerHelper.SaveOutcomeUnknownNote,
@@ -173,4 +173,37 @@ public sealed class SqlSchemaUpdateCommandTests {
 			.And.NotContain("Error reading JObject",
 				"the bare Newtonsoft parser message is exactly what issue #1322 reported as unactionable");
 	}
+	[Test]
+	[Description("A body-only update preserves package, dialect, phase, dependencies and compatibility confirmation.")]
+	public void TryUpdateSchema_ShouldPreserveNativeMetadata_WhenReplacingBody() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>()).Returns(SchemaFoundJson);
+		_applicationClient.ExecutePostRequest(GetSchemaUrl, Arg.Any<string>()).Returns(
+			"""{"success":true,"schema":{"uId":"stable","body":"old","dbEngineType":2,"installType":3,"package":{"uId":"package"},"dependOnSqlScripts":[{"uId":"dependency"}],"backwardCompatibilityConfirmed":true}}""");
+		_applicationClient.ExecuteNonReplayablePostRequest(SaveSchemaUrl, Arg.Any<string>()).Returns("""{"success":true}""");
+		// Act
+		bool result = _command.TryUpdateSchema(new() { SchemaName = "UsrSql", Body = "SELECT 2;" }, out _);
+		// Assert
+		result.Should().BeTrue(because: "the native save accepted the replacement body");
+		_applicationClient.Received(1).ExecuteNonReplayablePostRequest(SaveSchemaUrl,
+			Arg.Is<string>(body => Newtonsoft.Json.Linq.JToken.DeepEquals(Newtonsoft.Json.Linq.JToken.Parse(body),
+				Newtonsoft.Json.Linq.JToken.Parse("""{"uId":"stable","body":"SELECT 2;","dbEngineType":2,"installType":3,"package":{"uId":"package"},"dependOnSqlScripts":[{"uId":"dependency"}],"backwardCompatibilityConfirmed":true}"""))));
+	}
+
+	[Test]
+	[Description("Transport failures during SQL update report the unknown outcome once.")]
+	public void TryUpdateSchema_ShouldNotDuplicateWarning_WhenTransportFails() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>()).Returns(SchemaFoundJson);
+		_applicationClient.ExecutePostRequest(GetSchemaUrl, Arg.Any<string>()).Returns(GetSchemaSuccessJson);
+		_applicationClient.ExecuteNonReplayablePostRequest(SaveSchemaUrl, Arg.Any<string>())
+			.Returns(_ => throw new IOException("connection lost"));
+		// Act
+		bool result = _command.TryUpdateSchema(new() { SchemaName = "UsrSqlScript", Body = "SELECT 1;" }, out SqlSchemaUpdateResponse response);
+		// Assert
+		result.Should().BeFalse(because: "a lost response cannot prove success");
+		response.Error.Split(SchemaDesignerHelper.SaveOutcomeUnknownNote).Length.Should().Be(2,
+			because: "the same uncertainty sentence should appear exactly once");
+	}
+
 }
