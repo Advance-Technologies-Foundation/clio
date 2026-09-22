@@ -303,30 +303,38 @@ function Add-WholeFileAttribution([string] $Relative, [string] $Text, $Declarati
     return ,$declaredAll
 }
 
-function Add-TopLevelDeclarations([string] $Relative, [string] $Text, $DeclarationMatches, [int] $TopIndent, $InterfaceTypes, $BaseList, $TypeBody, $TypeFiles) {
-    $tops = @($DeclarationMatches | Where-Object { $_.Groups[1].Value.Length -eq $TopIndent })
-    foreach ($top in $tops) {
+function Add-BaseListEntries($Tops, $InterfaceTypes, $BaseList) {
+    foreach ($top in $Tops) {
         if ($top.Groups[2].Value -eq 'interface') { [void]$InterfaceTypes.Add($top.Groups[3].Value) }
-        if ($top.Groups[4].Success) {
-            $baseNames = @([regex]::Matches($top.Groups[4].Value, '(?<![\w.])([A-Za-z_]\w*)') | ForEach-Object { $_.Groups[1].Value })
-            if (-not $BaseList.ContainsKey($top.Groups[3].Value)) { $BaseList[$top.Groups[3].Value] = New-Object System.Collections.Generic.HashSet[string] }
-            foreach ($baseName in $baseNames) { [void]$BaseList[$top.Groups[3].Value].Add($baseName) }
-        }
+        if (-not $top.Groups[4].Success) { continue }
+        $baseNames = @([regex]::Matches($top.Groups[4].Value, '(?<![\w.])([A-Za-z_]\w*)') | ForEach-Object { $_.Groups[1].Value })
+        if (-not $BaseList.ContainsKey($top.Groups[3].Value)) { $BaseList[$top.Groups[3].Value] = New-Object System.Collections.Generic.HashSet[string] }
+        foreach ($baseName in $baseNames) { [void]$BaseList[$top.Groups[3].Value].Add($baseName) }
     }
-    # Usings, the namespace and file-level attributes precede every type and can carry a reference
-    # that belongs to all of them.
-    $preamble = $Text.Substring(0, $tops[0].Index)
+}
+
+# Usings, the namespace and file-level attributes precede every type and can carry a reference
+# that belongs to all of them.
+function Add-TypeBodySpans([string] $Relative, [string] $Text, $Tops, $TypeBody, $TypeFiles) {
+    $preamble = $Text.Substring(0, $Tops[0].Index)
     $declared = New-Object System.Collections.Generic.List[string]
-    for ($i = 0; $i -lt $tops.Count; $i++) {
-        $name = $tops[$i].Groups[3].Value
-        $from = $tops[$i].Index
-        $to = if ($i + 1 -lt $tops.Count) { $tops[$i + 1].Index } else { $Text.Length }
+    for ($i = 0; $i -lt $Tops.Count; $i++) {
+        $name = $Tops[$i].Groups[3].Value
+        $from = $Tops[$i].Index
+        $to = if ($i + 1 -lt $Tops.Count) { $Tops[$i + 1].Index } else { $Text.Length }
         if (-not $TypeBody.ContainsKey($name)) { $TypeBody[$name] = New-Object System.Text.StringBuilder }
         [void]$TypeBody[$name].Append($preamble).Append($Text.Substring($from, $to - $from))
         if (-not $TypeFiles.ContainsKey($name)) { $TypeFiles[$name] = New-Object System.Collections.Generic.HashSet[string] }
         [void]$TypeFiles[$name].Add($Relative)
         if (-not $declared.Contains($name)) { $declared.Add($name) }
     }
+    return ,$declared
+}
+
+function Add-TopLevelDeclarations([string] $Relative, [string] $Text, $DeclarationMatches, [int] $TopIndent, $InterfaceTypes, $BaseList, $TypeBody, $TypeFiles) {
+    $tops = @($DeclarationMatches | Where-Object { $_.Groups[1].Value.Length -eq $TopIndent })
+    Add-BaseListEntries $tops $InterfaceTypes $BaseList
+    $declared = Add-TypeBodySpans $Relative $Text $tops $TypeBody $TypeFiles
     return ,$declared
 }
 
@@ -692,29 +700,38 @@ function Test-ProductFileFullRunReason([string] $FileRelative, $Graph, [ref] $Re
     return $false
 }
 
+# An MCP resource or prompt reached THROUGH the closure is an entry point just as a tool file is.
+# Rooting it only when it is the changed file left a file consumed by a resource resolving to
+# "nothing observes this", although the fixtures assert on it through that resource.
+function Add-ClosureOwnerReach([string] $Type, $Graph, [string] $RootFileRelative, $ToolFiles, $EntryPointFiles) {
+    foreach ($owner in $Graph.TypeFiles[$Type]) {
+        if ($owner.StartsWith($manifest.toolSourceRoot) -and $owner.EndsWith('.cs')) { [void]$ToolFiles.Add($owner) }
+        if ($owner -ne $RootFileRelative -and $owner.EndsWith('.cs') -and (Test-McpEntryPointFile $owner)) { [void]$EntryPointFiles.Add($owner) }
+    }
+}
+
+function Add-ClosureVerbReach([string] $Type, $Graph, $Selected) {
+    if (-not $Graph.VerbsByType.ContainsKey($Type)) { return 0 }
+    $verbCount = 0
+    foreach ($verb in $Graph.VerbsByType[$Type]) {
+        $verbFixtures = @(Select-FixturesForVerb $verb)
+        if ($verbFixtures.Count -gt 0) { $verbCount++ }
+        foreach ($n in $verbFixtures) { [void]$Selected.Add($n) }
+    }
+    return $verbCount
+}
+
 # Walks the consumer closure once and buckets what it reaches: the tool files and MCP resource/prompt
 # files consumed transitively, and how many covered CLI verbs the closure's types declare. The verb
 # fixtures are resolved here too, since Select-FixturesForVerb is cached and cheapest to call inline.
 function Get-ClosureReachability($Closure, $Graph, [string] $RootFileRelative) {
     $selected = New-Object System.Collections.Generic.HashSet[string]
     $toolFiles = New-Object System.Collections.Generic.HashSet[string]
-    # An MCP resource or prompt reached THROUGH the closure is an entry point just as a tool file is.
-    # Rooting it only when it is the changed file left a file consumed by a resource resolving to
-    # "nothing observes this", although the fixtures assert on it through that resource.
     $entryPointFiles = New-Object System.Collections.Generic.HashSet[string]
     $verbCount = 0
     foreach ($type in $Closure) {
-        foreach ($owner in $Graph.TypeFiles[$type]) {
-            if ($owner.StartsWith($manifest.toolSourceRoot) -and $owner.EndsWith('.cs')) { [void]$toolFiles.Add($owner) }
-            if ($owner -ne $RootFileRelative -and $owner.EndsWith('.cs') -and (Test-McpEntryPointFile $owner)) { [void]$entryPointFiles.Add($owner) }
-        }
-        if ($Graph.VerbsByType.ContainsKey($type)) {
-            foreach ($verb in $Graph.VerbsByType[$type]) {
-                $verbFixtures = @(Select-FixturesForVerb $verb)
-                if ($verbFixtures.Count -gt 0) { $verbCount++ }
-                foreach ($n in $verbFixtures) { [void]$selected.Add($n) }
-            }
-        }
+        Add-ClosureOwnerReach $type $Graph $RootFileRelative $toolFiles $entryPointFiles
+        $verbCount += Add-ClosureVerbReach $type $Graph $selected
     }
     return @{ Selected = $selected; ToolFiles = $toolFiles; EntryPointFiles = $entryPointFiles; VerbCount = $verbCount }
 }
