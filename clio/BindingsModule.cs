@@ -1427,8 +1427,8 @@ public class BindingsModule {
 	/// <returns>A poller reading that environment.</returns>
 	private static ICompilationHistoryPoller BuildEnvironmentScopedCompilationHistoryPoller(
 		EnvironmentSettings envSettings, IOAuthAuthorizationCodeService oauthService) =>
-		new CompilationHistoryPoller(BuildRemoteDataProvider(envSettings, oauthService), ConsoleLogger.Instance,
-			TimeProvider.System, new CancellableDelay());
+		new CompilationHistoryPoller(new LazyDataProvider(() => BuildRemoteDataProvider(envSettings, oauthService)),
+			ConsoleLogger.Instance, TimeProvider.System, new CancellableDelay());
 
 	// Builds an ATF RemoteDataProvider for the environment. Bearer-first: an AccessToken is
 	// consumed via the dedicated bearer ctor and must never reach the login/password path

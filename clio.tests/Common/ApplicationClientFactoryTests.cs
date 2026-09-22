@@ -14,11 +14,39 @@ internal sealed class ApplicationClientFactoryTests {
 
 	#region Methods: Private
 
-	private static ApplicationClientFactory CreateFactory() {
+	private static ApplicationClientFactory CreateFactory(IOAuthAuthorizationCodeService oauthService = null) {
 		// The passthrough executor is substituted; the factory only forwards it into the adapter's
 		// bearer branch and never invokes it during construction (the CreatioClient is lazy).
 		IReauthExecutor noReauthExecutor = Substitute.For<IReauthExecutor>();
-		return new ApplicationClientFactory(noReauthExecutor);
+		return new ApplicationClientFactory(noReauthExecutor, oauthService);
+	}
+
+	private static EnvironmentSettings AuthorizationCodeEnvironment() => new() {
+		Uri = "https://sso.creatio.com",
+		ClientId = "clio-client",
+		AuthFlow = OAuthFlow.AuthorizationCode,
+		IsNetCore = true
+	};
+
+	private static void ForceClientCreation(IApplicationClient client) {
+		System.Reflection.FieldInfo transportField = client.GetType().GetField("_transport",
+			System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+		transportField.Should().NotBeNull(
+			because: "CreatioClientAdapter._transport is what defers the client construction");
+		object transport = transportField!.GetValue(client);
+		try {
+			transport.GetType().GetMethod("EnsureCreated")!.Invoke(transport, null);
+		} catch (System.Reflection.TargetInvocationException e) when (e.InnerException is not null) {
+			throw e.InnerException;
+		}
+	}
+
+	private static IOAuthAuthorizationCodeService SubstituteOAuthService() {
+		IOAuthAuthorizationCodeService service = Substitute.For<IOAuthAuthorizationCodeService>();
+		service.ResolveAsync(Arg.Any<EnvironmentSettings>(), Arg.Any<System.Threading.CancellationToken>())
+			.Returns(new OAuthTokenSet("sso-access", "sso-refresh", DateTimeOffset.UtcNow.AddHours(1),
+				"https://id.example/connect/token", "clio-client", DateTimeOffset.UtcNow));
+		return service;
 	}
 
 	#endregion
@@ -193,6 +221,41 @@ internal sealed class ApplicationClientFactoryTests {
 		act.Should().Throw<ArgumentException>()
 			.Which.Message.Should().Contain("login and password",
 				because: "forms authentication must fail closed before CreatioClient can attempt an empty login");
+	}
+
+	[Test]
+	[Description("An authorization-code environment resolves through the OAuth service on BOTH entry points, and the token is read lazily: constructing the client must cost no token-store read and no refresh round-trip, because a client is often built and never used.")]
+	public void AuthorizationCodeEnvironment_ShouldResolveTheTokenLazily_OnBothEntryPoints() {
+		// Arrange
+		IOAuthAuthorizationCodeService oauthService = SubstituteOAuthService();
+		ApplicationClientFactory sut = CreateFactory(oauthService);
+
+		// Act
+		IApplicationClient client = sut.CreateClient(AuthorizationCodeEnvironment());
+		IApplicationClient environmentClient = sut.CreateEnvironmentClient(AuthorizationCodeEnvironment());
+
+		// Assert
+		client.Should().BeOfType<CreatioClientAdapter>();
+		environmentClient.Should().BeOfType<CreatioClientAdapter>();
+		oauthService.DidNotReceive().ResolveAsync(Arg.Any<EnvironmentSettings>(),
+			Arg.Any<System.Threading.CancellationToken>());
+	}
+
+	[Test]
+	[Description("Without the OAuth service the factory must fail with a named reason instead of silently producing an unauthenticated client. The parameter is optional for older call sites, so nothing else catches this.")]
+	public void AuthorizationCodeEnvironment_ShouldFail_WhenTheOAuthServiceIsNotRegistered() {
+		// Arrange
+		ApplicationClientFactory sut = CreateFactory();
+		IApplicationClient client = sut.CreateEnvironmentClient(AuthorizationCodeEnvironment());
+
+		// Act
+		// Force the deferred client creation the same way the adapter does on first use, without
+		// reaching the network.
+		Action act = () => ForceClientCreation(client);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>()
+			.Which.Message.Should().Contain("OAuth authorization-code service is not registered");
 	}
 
 	[TestCase(null)]

@@ -30,10 +30,17 @@ public interface IOAuthTokenStore
 /// <summary>Owner-only, atomic OAuth token storage under the clio home directory.</summary>
 public sealed class OAuthTokenStore : IOAuthTokenStore
 {
+    private readonly IFileSystem _fileSystem;
     private readonly IFileSecurityHardening _hardening;
+    // Resolved lazily so a CLIO_HOME override (honored by AppSettingsFolderPath) takes effect,
+    // which is also how tests point the store at a temp directory.
     private static string Root => Path.Combine(SettingsRepository.AppSettingsFolderPath, "tokens");
 
-    public OAuthTokenStore(IFileSecurityHardening hardening) => _hardening = hardening;
+    public OAuthTokenStore(IFileSystem fileSystem, IFileSecurityHardening hardening)
+    {
+        _fileSystem = fileSystem;
+        _hardening = hardening;
+    }
 
     public string BuildKey(EnvironmentSettings environment)
     {
@@ -49,19 +56,14 @@ public sealed class OAuthTokenStore : IOAuthTokenStore
     {
         string path = GetPath(environment);
         tokenSet = null;
-        if (!File.Exists(path)) return false;
-        if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
+        if (!_fileSystem.ExistsFile(path)) return false;
+        if (!_hardening.IsOwnerOnly(path))
         {
-            UnixFileMode mode = File.GetUnixFileMode(path);
-            if ((mode & (UnixFileMode.GroupRead | UnixFileMode.GroupWrite | UnixFileMode.GroupExecute |
-                UnixFileMode.OtherRead | UnixFileMode.OtherWrite | UnixFileMode.OtherExecute)) != 0)
-            {
-                throw new UnauthorizedAccessException("OAuth token file has permissions wider than owner-only access.");
-            }
+            throw new UnauthorizedAccessException("OAuth token file has permissions wider than owner-only access.");
         }
         try
         {
-            PersistedToken token = JsonSerializer.Deserialize<PersistedToken>(File.ReadAllText(path));
+            PersistedToken token = JsonSerializer.Deserialize<PersistedToken>(_fileSystem.ReadAllText(path));
             if (token is null || string.IsNullOrWhiteSpace(token.access_token) || string.IsNullOrWhiteSpace(token.refresh_token)
                 || !string.Equals(token.client_id, environment.ClientId, StringComparison.Ordinal)
                 || !Uri.TryCreate(token.token_endpoint, UriKind.Absolute, out _)) return false;
@@ -74,23 +76,18 @@ public sealed class OAuthTokenStore : IOAuthTokenStore
 
     public void Write(EnvironmentSettings environment, OAuthTokenSet tokenSet)
     {
-        Directory.CreateDirectory(Root);
+        _fileSystem.CreateDirectoryIfNotExists(Root);
         _hardening.HardenDirectory(Root);
         string target = GetPath(environment);
-        string temp = target + "." + Guid.NewGuid().ToString("N") + ".tmp";
         PersistedToken value = new(tokenSet.AccessToken, tokenSet.RefreshToken, tokenSet.ExpiresAt,
             tokenSet.TokenEndpoint, tokenSet.ClientId, tokenSet.ObtainedAt, tokenSet.Identity);
-        using (FileStream stream = new(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None,
-            4096, FileOptions.SequentialScan))
-        {
-            if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS()) File.SetUnixFileMode(temp, UnixFileMode.UserRead | UnixFileMode.UserWrite);
-            JsonSerializer.Serialize(stream, value);
-        }
-        try { File.Move(temp, target, true); } finally { if (File.Exists(temp)) File.Delete(temp); }
+        // Owner-only at creation time and replaced in one indivisible step: a concurrent reader sees
+        // either the whole old token or the whole new one, never a truncated prefix.
+        _fileSystem.WriteOwnerOnlyTextToFileAtomic(target, JsonSerializer.Serialize(value));
         _hardening.HardenFile(target);
     }
 
-    public void Delete(EnvironmentSettings environment) { string path = GetPath(environment); if (File.Exists(path)) File.Delete(path); }
+    public void Delete(EnvironmentSettings environment) => _fileSystem.DeleteFileIfExists(GetPath(environment));
     private string GetPath(EnvironmentSettings environment) => Path.Combine(Root, BuildKey(environment) + ".json");
     private static string StripScheme(string value)
     {
@@ -174,6 +171,8 @@ public sealed class OAuthAuthorizationCodeService : IOAuthAuthorizationCodeServi
     private readonly IServiceUrlBuilder _serviceUrlBuilder;
     private readonly IProcessExecutor _processExecutor;
     private readonly ConcurrentDictionary<string, DiscoveryDocument> _discovery = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, OAuthTokenSet> _tokens = new(StringComparer.Ordinal);
+    private readonly SemaphoreSlim _refreshGate = new(1, 1);
     public OAuthAuthorizationCodeService(IHttpClientFactory httpClientFactory, IOAuthTokenStore store, ILogger logger,
         IServiceUrlBuilder serviceUrlBuilder, IProcessExecutor processExecutor)
     {
@@ -182,8 +181,27 @@ public sealed class OAuthAuthorizationCodeService : IOAuthAuthorizationCodeServi
 
     public async Task<OAuthTokenSet> ResolveAsync(EnvironmentSettings environment, CancellationToken cancellationToken = default)
     {
+        string cacheKey = _store.BuildKey(environment);
+        if (_tokens.TryGetValue(cacheKey, out OAuthTokenSet cached) && IsFresh(cached)) return cached;
+        // One refresh at a time: N concurrent resolutions would otherwise mean N token round-trips and
+        // N file writes, and with refresh-token rotation the losers persist a token the server rotated away.
+        await _refreshGate.WaitAsync(cancellationToken);
+        try
+        {
+            if (_tokens.TryGetValue(cacheKey, out cached) && IsFresh(cached)) return cached;
+            OAuthTokenSet resolved = await ResolveCoreAsync(environment, cancellationToken);
+            _tokens[cacheKey] = resolved;
+            return resolved;
+        }
+        finally { _refreshGate.Release(); }
+    }
+
+    private static bool IsFresh(OAuthTokenSet token) => token.ExpiresAt - DateTimeOffset.UtcNow >= TimeSpan.FromSeconds(60);
+
+    private async Task<OAuthTokenSet> ResolveCoreAsync(EnvironmentSettings environment, CancellationToken cancellationToken)
+    {
         if (!_store.TryRead(environment, out OAuthTokenSet token)) throw MissingToken(environment);
-        if (token.ExpiresAt - DateTimeOffset.UtcNow >= TimeSpan.FromSeconds(60)) return token;
+        if (IsFresh(token)) return token;
         using HttpClient client = _httpClientFactory.CreateClient();
         using HttpRequestMessage request = new(HttpMethod.Post, token.TokenEndpoint)
         {
@@ -193,11 +211,11 @@ public sealed class OAuthAuthorizationCodeService : IOAuthAuthorizationCodeServi
         string body = await response.Content.ReadAsStringAsync(cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
-            if (IsTerminalRefreshFailure(response.StatusCode, body)) _store.Delete(environment);
+            if (IsTerminalRefreshFailure(response.StatusCode, body)) DeleteToken(environment);
             throw new InvalidOperationException(DescribeOAuthFailure("OAuth token refresh failed", body));
         }
         OAuthResponse refreshed = JsonSerializer.Deserialize<OAuthResponse>(body) ?? throw MissingToken(environment);
-        if (string.IsNullOrWhiteSpace(refreshed.access_token) || refreshed.expires_in < 0) { _store.Delete(environment); throw MissingToken(environment); }
+        if (string.IsNullOrWhiteSpace(refreshed.access_token) || refreshed.expires_in < 0) { DeleteToken(environment); throw MissingToken(environment); }
         OAuthTokenSet updated = ToToken(refreshed, token.TokenEndpoint, token.ClientId, token.RefreshToken);
         _store.Write(environment, updated); return updated;
     }
@@ -220,13 +238,31 @@ public sealed class OAuthAuthorizationCodeService : IOAuthAuthorizationCodeServi
                 ? $"http://127.0.0.1:{port}/callback"
                 : ReplacePort(configuredRedirect, port);
         }
-        if (string.IsNullOrWhiteSpace(redirect)) throw new InvalidOperationException("OAuth authorization requires a registered --redirect-uri.");
+        else if (string.IsNullOrWhiteSpace(redirect) && environment.RedirectPort is > 0)
+        {
+            // The documented registration is --redirect-port only, so derive the same loopback
+            // redirect here instead of hard-failing on the paste-back path.
+            redirect = $"http://127.0.0.1:{environment.RedirectPort.Value}/callback";
+        }
+        if (string.IsNullOrWhiteSpace(redirect)) throw new InvalidOperationException("OAuth authorization requires a registered --redirect-uri or --redirect-port.");
         string auth = BuildAuthorizationUrl(discovery.authorization_endpoint, environment.ClientId, redirect, state, verifier);
         if (!noBrowser && TryOpenBrowser(auth)) _logger.WriteInfo("Complete sign-in in the browser; waiting for the callback..."); else _logger.WriteInfo($"Open this authorization URL: {auth}");
         string callback;
         try
         {
-            callback = useLoopback ? await ReceiveCallbackAsync(listener, timeoutMs, cancellationToken) : (Console.ReadLine() ?? string.Empty);
+            if (useLoopback)
+            {
+                callback = await ReceiveCallbackAsync(listener, timeoutMs, cancellationToken);
+            }
+            else if (noBrowser)
+            {
+                callback = Console.ReadLine() ?? string.Empty;
+            }
+            else
+            {
+                throw new InvalidOperationException(
+                    $"Redirect '{redirect}' is not a loopback address, so clio cannot receive the callback. Retry with --no-browser and paste the full redirect URL.");
+            }
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -235,6 +271,7 @@ public sealed class OAuthAuthorizationCodeService : IOAuthAuthorizationCodeServi
         (string code, _) = OAuthAuthorizationCodeProtocol.ParseCallback(callback, state);
         OAuthTokenSet result = await ExchangeCodeAsync(discovery.token_endpoint, environment.ClientId, code, redirect, verifier, cancellationToken);
         _store.Write(environment, result);
+        _tokens[_store.BuildKey(environment)] = result;
         return result;
     }
 
@@ -279,7 +316,13 @@ public sealed class OAuthAuthorizationCodeService : IOAuthAuthorizationCodeServi
                 new FormUrlEncodedContent(new Dictionary<string, string> { { "token", token.RefreshToken }, { "token_type_hint", "refresh_token" }, { ClientIdParameter, token.ClientId } }), cancellationToken);
             if (!response.IsSuccessStatusCode) throw new InvalidOperationException("OAuth token revocation failed.");
         }
-        finally { _store.Delete(environment); }
+        finally { DeleteToken(environment); }
+    }
+
+    private void DeleteToken(EnvironmentSettings environment)
+    {
+        _tokens.TryRemove(_store.BuildKey(environment), out _);
+        _store.Delete(environment);
     }
 
     private async Task<DiscoveryDocument> DiscoverAsync(EnvironmentSettings environment, CancellationToken ct)
@@ -288,14 +331,26 @@ public sealed class OAuthAuthorizationCodeService : IOAuthAuthorizationCodeServi
         using HttpClient client = _httpClientFactory.CreateClient(); string url = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.OpenIdConfiguration, environment);
         string body = await client.GetStringAsync(url, ct); DiscoveryDocument doc = JsonSerializer.Deserialize<DiscoveryDocument>(body) ?? throw new InvalidOperationException("OpenID configuration is invalid.");
         if (string.IsNullOrWhiteSpace(doc.authorization_endpoint) || string.IsNullOrWhiteSpace(doc.token_endpoint)) throw new InvalidOperationException("OpenID configuration lacks authorization_endpoint or token_endpoint.");
+        EnsureHttpsEndpoint(doc.authorization_endpoint, nameof(doc.authorization_endpoint));
+        EnsureHttpsEndpoint(doc.token_endpoint, nameof(doc.token_endpoint));
+        if (!string.IsNullOrWhiteSpace(doc.revocation_endpoint)) EnsureHttpsEndpoint(doc.revocation_endpoint, nameof(doc.revocation_endpoint));
         _discovery[key] = doc; return doc;
     }
-	private static bool IsTerminalRefreshFailure(HttpStatusCode statusCode, string body) =>
-		(statusCode >= HttpStatusCode.BadRequest && statusCode < HttpStatusCode.InternalServerError)
-			&& (string.Equals(ReadError(body), "invalid_grant", StringComparison.OrdinalIgnoreCase)
-				|| string.Equals(ReadError(body), "invalid_client", StringComparison.OrdinalIgnoreCase)
-				|| string.Equals(ReadError(body), "unauthorized_client", StringComparison.OrdinalIgnoreCase)
-				|| string.IsNullOrWhiteSpace(ReadError(body)));
+	internal static void EnsureHttpsEndpoint(string endpoint, string name)
+	{
+		if (!Uri.TryCreate(endpoint, UriKind.Absolute, out Uri uri) || uri.Scheme != Uri.UriSchemeHttps)
+		{
+			throw new InvalidOperationException($"OpenID configuration {name} must be an absolute https URL.");
+		}
+	}
+	private static bool IsTerminalRefreshFailure(HttpStatusCode statusCode, string body)
+	{
+		if (statusCode is not (HttpStatusCode.BadRequest or HttpStatusCode.Unauthorized)) return false;
+		string error = ReadError(body);
+		return string.Equals(error, "invalid_grant", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(error, "invalid_client", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(error, "unauthorized_client", StringComparison.OrdinalIgnoreCase);
+	}
 	private static string DescribeOAuthFailure(string prefix, string body)
 	{
 		string error = ReadError(body);
@@ -316,24 +371,11 @@ public sealed class OAuthAuthorizationCodeService : IOAuthAuthorizationCodeServi
     private static void ValidateTokenResponse(OAuthResponse response) { if (string.IsNullOrWhiteSpace(response.access_token) || string.IsNullOrWhiteSpace(response.refresh_token) || response.expires_in < 0) throw new InvalidOperationException("OAuth token exchange returned an incomplete token response."); }
 	private static string BuildAuthorizationUrl(string endpoint, string clientId, string redirect, string state, string verifier) => endpoint + "?" + string.Join("&", new Dictionary<string, string> { { "response_type", "code" }, { ClientIdParameter, clientId }, { "redirect_uri", redirect }, { "state", state }, { "code_challenge", OAuthAuthorizationCodeProtocol.CreateCodeChallenge(verifier) }, { "code_challenge_method", "S256" }, { "scope", "offline_access" } }.Select(p => $"{Uri.EscapeDataString(p.Key)}={Uri.EscapeDataString(p.Value)}"));
     private static bool IsLoopbackRedirect(string redirect) => Uri.TryCreate(redirect, UriKind.Absolute, out Uri uri)
-        && uri.Scheme == Uri.UriSchemeHttp && uri.Host == IPAddress.Loopback.ToString();
+        && uri.Scheme == Uri.UriSchemeHttp && uri.IsLoopback;
     private static string ReplacePort(string redirect, int port) { UriBuilder builder = new(redirect); builder.Port = port; return builder.Uri.ToString().TrimEnd('/'); }
-	private bool TryOpenBrowser(string url)
-	{
-		try
-		{
-			string file = OperatingSystem.IsMacOS() ? "open" : "xdg-open";
-			string[] args = [url];
-			if (OperatingSystem.IsWindows())
-			{
-				file = "cmd.exe";
-				args = ["/c", "start", "", url];
-			}
-			ProcessExecutionResult result = _processExecutor.ExecuteAndCaptureAsync(new ProcessExecutionOptions(file, string.Empty) { ArgumentList = args }).GetAwaiter().GetResult();
-			return result.Started;
-		}
-		catch { return false; }
-	}
+	// The url reaches the platform handler as one opaque operand: routing it through cmd.exe /c start
+	// would let an unquoted '&' in a discovery-supplied authorization endpoint start a second command.
+	private bool TryOpenBrowser(string url) => _processExecutor.OpenWithDefaultHandler(url);
     private static async Task<string> ReceiveCallbackAsync(TcpListener listener, int timeout, CancellationToken ct)
     {
         using CancellationTokenSource timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(ct);

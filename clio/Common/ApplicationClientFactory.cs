@@ -28,7 +28,7 @@ internal class ApplicationClientFactory : IApplicationClientFactory{
 
 	public IApplicationClient CreateClient(EnvironmentSettings settings) {
 		if (settings.AuthFlow == OAuthFlow.AuthorizationCode) {
-			return CreateBearerEnvironmentClient(settings, ResolveOAuthToken(settings).AccessToken);
+			return CreateBearerEnvironmentClient(settings, () => ResolveOAuthToken(settings).AccessToken);
 		}
 		// Credential-passthrough bearer branch (FR-01/FR-18): an ephemeral EnvironmentSettings
 		// carrying an opaque access token resolves to a pre-authenticated client that NEVER
@@ -57,7 +57,7 @@ internal class ApplicationClientFactory : IApplicationClientFactory{
 
 	public IApplicationClient CreateEnvironmentClient(EnvironmentSettings settings) {
 		if (settings.AuthFlow == OAuthFlow.AuthorizationCode) {
-			return CreateBearerEnvironmentClient(settings, ResolveOAuthToken(settings).AccessToken);
+			return CreateBearerEnvironmentClient(settings, () => ResolveOAuthToken(settings).AccessToken);
 		}
 		// Credential-passthrough bearer branch (FR-01/FR-18): see CreateClient. The service-url
 		// builder is still wired so environment-relative routes resolve; only the reauth path
@@ -100,15 +100,31 @@ internal class ApplicationClientFactory : IApplicationClientFactory{
 	public IOwnedApplicationClient CreateBearerEnvironmentClient(EnvironmentSettings environment,
 		string accessToken) {
 		ArgumentNullException.ThrowIfNull(environment);
-		EnvironmentSettings bearerSettings = new() {
+		GuardBearerSettings(new EnvironmentSettings {
 			Uri = environment.Uri,
 			IsNetCore = environment.IsNetCore,
 			AccessToken = accessToken,
 			AccessTokenType = AuthenticationScheme.Bearer
-		};
-		GuardBearerSettings(bearerSettings);
-		Lazy<CreatioClient> client = new(() => new CreatioClient(environment.Uri, accessToken,
-			useUntrustedSsl: false, environment.IsNetCore));
+		});
+		return CreateBearerEnvironmentClient(environment, () => accessToken);
+	}
+
+	// Token-accessor overload: the value is read inside the Lazy closure, so constructing the client
+	// costs nothing. Resolving eagerly used to run a token-store read and, inside the pre-expiry
+	// window, a blocking refresh POST plus a file rewrite at construction time - even when the
+	// client was never used.
+	private IOwnedApplicationClient CreateBearerEnvironmentClient(EnvironmentSettings environment,
+		Func<string> accessTokenAccessor) {
+		Lazy<CreatioClient> client = new(() => {
+			string accessToken = accessTokenAccessor();
+			GuardBearerSettings(new EnvironmentSettings {
+				Uri = environment.Uri,
+				IsNetCore = environment.IsNetCore,
+				AccessToken = accessToken,
+				AccessTokenType = AuthenticationScheme.Bearer
+			});
+			return new CreatioClient(environment.Uri, accessToken, useUntrustedSsl: false, environment.IsNetCore);
+		});
 		return new CreatioClientAdapter(client, new ServiceUrlBuilder(environment), _noReauthExecutor,
 			ownsClient: true);
 	}

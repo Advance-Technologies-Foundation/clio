@@ -272,6 +272,20 @@ public interface IProcessExecutor{
 	/// <returns>Execution result with captured output and exit metadata.</returns>
 	Task<ProcessExecutionResult> ExecuteWithRealtimeOutputAsync(ProcessExecutionOptions options);
 
+	/// <summary>
+	/// Opens a url or file with the operating system's registered handler.
+	/// </summary>
+	/// <param name="target">Absolute url or file path.</param>
+	/// <returns>True when the handler was started.</returns>
+	/// <remarks>
+	/// The target is handed to the shell-open verb as ONE opaque operand. This is deliberately not
+	/// expressible through <see cref="ProcessExecutionOptions"/>: every other path here sets
+	/// <c>UseShellExecute = false</c> so no command interpreter ever sees the arguments, and naming
+	/// cmd.exe as the program to get "start" back would reintroduce one - an unquoted '&amp;' in a
+	/// remotely-supplied url would then start a second command.
+	/// </remarks>
+	bool OpenWithDefaultHandler(string target);
+
 	#endregion
 }
 
@@ -282,6 +296,24 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 	private readonly ILogger _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
 	#region Methods: Public
+
+	/// <inheritdoc />
+	public bool OpenWithDefaultHandler(string target) {
+		target.CheckArgumentNullOrWhiteSpace(nameof(target));
+		try {
+			if (OperatingSystem.IsWindows()) {
+				using Process started = Process.Start(new ProcessStartInfo(target) { UseShellExecute = true });
+				return started is not null;
+			}
+			string program = OperatingSystem.IsMacOS() ? "open" : "xdg-open";
+			ProcessExecutionResult result = ExecuteAndCaptureAsync(
+				new ProcessExecutionOptions(program, string.Empty) { ArgumentList = [target] }).GetAwaiter().GetResult();
+			return result.Started;
+		} catch (Exception e) {
+			_logger.WriteWarning($"Could not open '{target}' with the default handler: {e.Message}");
+			return false;
+		}
+	}
 
 	/// <inheritdoc />
 	public string Execute(string program, string arguments, bool waitForExit, string workingDirectory = null,

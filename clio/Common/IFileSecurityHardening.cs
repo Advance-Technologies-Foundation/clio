@@ -19,4 +19,14 @@ public interface IFileSecurityHardening {
 	/// </summary>
 	/// <param name="directoryPath">Absolute path to an existing directory.</param>
 	void HardenDirectory(string directoryPath);
+
+	/// <summary>
+	/// Reports whether <paramref name="filePath"/> is readable by its owner only.
+	/// </summary>
+	/// <param name="filePath">Absolute path to an existing file.</param>
+	/// <returns>
+	/// False when group or other hold any permission on the file. Always true on Windows, where the
+	/// per-user profile ACL is the mechanism (see the class summary on <see cref="FileSecurityHardening"/>).
+	/// </returns>
+	bool IsOwnerOnly(string filePath);
 }

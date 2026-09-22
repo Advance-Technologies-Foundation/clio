@@ -87,13 +87,6 @@ public class RegAppCommand : Command<RegAppOptions> {
 	public override int Execute(RegAppOptions options){
 		try {
 			OAuthFlow? requestedAuthFlow = ParseAuthFlow(options);
-			if (requestedAuthFlow == OAuthFlow.AuthorizationCode && string.IsNullOrWhiteSpace(options.ClientId)) {
-				throw new ValidationException("Authorization-code sign-in requires --clientId. clio ships no default client; ask whoever administers "
-					+ (options.Uri ?? "the environment") + " which OAuth client to use.");
-			}
-			if (requestedAuthFlow == OAuthFlow.AuthorizationCode && !string.IsNullOrWhiteSpace(options.ClientSecret)) {
-				throw new ValidationException("Authorization-code sign-in uses a public client and does not accept --clientSecret.");
-			}
 			if (options.RedirectPort is < 1 or > 65535) {
 				throw new ValidationException("--redirect-port must be between 1 and 65535.");
 			}
@@ -127,8 +120,25 @@ public class RegAppCommand : Command<RegAppOptions> {
 				}
 				throw new Exception($"Not found environment {options.ActiveEnvironment} in settings");
 			}
-			EnvironmentSettings? existingEnvironment = _settingsRepository.FindEnvironment(options.EnvironmentName);
+			// A blank name resolves to the ACTIVE environment, so a nameless registration must not inherit
+			// anything from an unrelated environment that happens to be active.
+			EnvironmentSettings? existingEnvironment = string.IsNullOrWhiteSpace(options.EnvironmentName)
+				? null
+				: _settingsRepository.FindEnvironment(options.EnvironmentName);
 			OAuthFlow authFlow = requestedAuthFlow ?? existingEnvironment?.AuthFlow ?? OAuthFlow.ClientCredentials;
+			// Re-registration keeps the settings that make the inherited flow usable; otherwise updating just
+			// the url would drop the client id and the redirect and break every later command.
+			string clientId = string.IsNullOrWhiteSpace(options.ClientId) ? existingEnvironment?.ClientId : options.ClientId;
+			int? redirectPort = options.RedirectPort ?? existingEnvironment?.RedirectPort;
+			string redirectUri = string.IsNullOrWhiteSpace(options.RedirectUri) ? existingEnvironment?.RedirectUri : options.RedirectUri;
+			// Validate the EFFECTIVE flow, not just the one passed on this invocation.
+			if (authFlow == OAuthFlow.AuthorizationCode && string.IsNullOrWhiteSpace(clientId)) {
+				throw new ValidationException("Authorization-code sign-in requires --clientId. clio ships no default client; ask whoever administers "
+					+ (options.Uri ?? "the environment") + " which OAuth client to use.");
+			}
+			if (authFlow == OAuthFlow.AuthorizationCode && !string.IsNullOrWhiteSpace(options.ClientSecret)) {
+				throw new ValidationException("Authorization-code sign-in uses a public client and does not accept --clientSecret.");
+			}
 			
 			// Resolve the runtime BEFORE anything is persisted. Detection is allowed to refuse, and a refusal
 			// that leaves a registered environment behind is worse than a plain failure: the stored IsNetCore
@@ -142,12 +152,12 @@ public class RegAppCommand : Command<RegAppOptions> {
 				Safe = options.SafeValue ?? false,
 				IsNetCore = resolvedIsNetCore,
 				DeveloperModeEnabled = options.DeveloperModeEnabled,
-				ClientId = options.ClientId,
+				ClientId = clientId,
 				ClientSecret = options.ClientSecret,
 				AuthAppUri = options.AuthAppUri,
 				AuthFlow = authFlow,
-				RedirectPort = options.RedirectPort,
-				RedirectUri = options.RedirectUri,
+				RedirectPort = redirectPort,
+				RedirectUri = redirectUri,
 				WorkspacePathes = options.WorkspacePathes,
 				EnvironmentPath = options.EnvironmentPath
 			};
