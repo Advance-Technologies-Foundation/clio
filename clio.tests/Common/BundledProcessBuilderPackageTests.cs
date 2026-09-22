@@ -745,7 +745,7 @@ public class BundledProcessBuilderPackageTests {
 		string archive = ReadBundledArchiveAsText();
 
 		// Act
-		int operations = CountOccurrences(archive, "[OperationContract]");
+		int operations = CountUncommentedOccurrences(archive, "[OperationContract]");
 
 		// Assert
 		operations.Should().Be(ExpectedOperationContractCount,

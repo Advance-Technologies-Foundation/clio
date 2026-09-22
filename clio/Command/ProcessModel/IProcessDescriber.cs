@@ -1188,7 +1188,11 @@ public sealed class DescribedMultiInstanceOptions {
 	/// "absent". Reported as the string rather than the stored number because the write side REFUSES a number, so
 	/// echoing one back would produce a block that does not re-apply.</para>
 	/// <para><c>Parallel</c> does not by itself mean concurrent threads: it changes the generated flow topology,
-	/// and genuine concurrency comes from the element's own background mode.</para>
+	/// and background mode does NOT buy concurrency either: it moves each iteration onto the background job
+	/// queue, whose continuations are consumed under a per-process distributed lock
+	/// (<c>ContinueProcessCommandConsumer.TryExecuteWithinLock</c>), so the iterations of one instance are
+	/// queued rather than simultaneous - and were measured substantially SLOWER on a stand (1282 ms against
+	/// 105 ms for three iterations).</para>
 	/// </summary>
 	[JsonPropertyName("executionMode")]
 	public string ExecutionMode { get; set; }

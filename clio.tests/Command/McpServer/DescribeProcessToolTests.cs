@@ -218,9 +218,11 @@ public sealed class DescribeProcessToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("The describe tool contract documents the multiInstanceOptions read block and routes the "
-		+ "caller to calleeInSync. inSync is FALSE BY CONSTRUCTION on a multi-instance element - it compares "
-		+ "the callee against the element's ROOT parameters, which there are the five service ones - so an "
-		+ "agent told only 'inSync is false' reports permanent drift on a healthy element. calleeInSync is "
+		+ "caller to calleeInSync. inSync compares the callee against the element's ROOT parameters, which on "
+		+ "a multi-instance element are the five service ones - so it is false whenever the callee declares "
+		+ "anything, and VACUOUSLY TRUE against a callee that declares nothing, because the test is an All "
+		+ "over an empty sequence. 'FALSE BY CONSTRUCTION' was the earlier wording and it was wrong in the "
+		+ "second case; the package's own shipped contract already recorded the vacuous one. calleeInSync is "
 		+ "the field that answers the question one level down, and it is a SEPARATE field precisely so that "
 		+ "no deserializer, schema check or version negotiation has to notice a redefinition.")]
 	public void DescribeProcess_ShouldDocumentMultiInstanceOptions_WhenToolContractIsRead() {
@@ -237,9 +239,13 @@ public sealed class DescribeProcessToolTests {
 		toolText.Should().Contain("calleeInSync",
 			because: "it is the only field that answers whether the callee's contract is still carried, and "
 				+ "inSync cannot answer it on a multi-instance element");
-		toolText.Should().Contain("FALSE BY CONSTRUCTION",
-			because: "an agent must be told WHY inSync is false there, or it reports a healthy element as "
-				+ "drifted");
+		toolText.Should().Contain("VACUOUSLY TRUE",
+			because: "an agent must be told WHY inSync cannot answer there - false whenever the callee "
+				+ "declares anything, true when it declares nothing - or it reads one of the two as evidence. "
+				+ "The earlier wording claimed the test can NEVER pass, which a parameterless callee refutes");
+		toolText.Should().NotContain("FALSE BY CONSTRUCTION",
+			because: "that phrasing asserts the vacuous case cannot happen, and it can - the package's own "
+				+ "DescribeContracts records a multi-instance element reporting true against such a callee");
 		foreach (string parameterName in new[] {
 				"inputCollection", "outputCollection", "completedIterationsCount",
 				"terminatedIterationsCount", "totalIterationsCount" }) {
