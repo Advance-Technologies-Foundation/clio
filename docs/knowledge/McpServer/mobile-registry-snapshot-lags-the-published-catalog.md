@@ -12,8 +12,9 @@ date: 2026-09-21
 with its own refresh cadence. On 2026-08-26 it carried **35** components while
 `https://academy.creatio.com/api/mcp/latest/MobileComponentRegistry.json` served **47**; among the twelve it
 lacked were `crt.SearchFilter`, `crt.QuickFilter` and `crt.QuickFilterGroup` — exactly the types the
-`excludedComponents` rules target. ENG-96589 refreshed it to the runtime-derived 66-component catalog, but
-the mechanism that let it drift is unchanged.
+`excludedComponents` rules target. ENG-96589 refreshed it to the runtime-derived catalog, but the mechanism
+that let it drift is unchanged — and a count written down here is one more thing to go stale, which is why
+the code comments that used to carry one now state the invariant instead.
 
 The live catalog is what runs in production: `MobilePageConversionGuideTool` builds its `mobileTypes` set from
 `_mobileCatalog.LoadAsync(...)` (cache → CDN → `latest`), never from this fixture. The fixture exists only for

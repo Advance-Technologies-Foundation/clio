@@ -1229,6 +1229,15 @@ public sealed class MobilePageConversionGuide {
 	/// <see cref="PropertyPruneApplied"/>; it is false exactly when the gate refused.
 	/// </para>
 	/// <para>
+	/// "Removed" is exact for an <c>insert</c> and loose for a <c>merge</c>. A merge payload is a DELTA over
+	/// an element the mobile template already owns, so an omitted key is simply not written and the
+	/// template's own value stands — the property is not gone from the page. That is why a pruned
+	/// <see cref="PrunedPropertyEntry.Bindings"/> entry on a merge files no <c>droppedRequests</c> record:
+	/// the template element may go on firing its own binding, and clio cannot claim otherwise without having
+	/// read it. Read an entry on a merge operation as "the page's value did not carry over", not as "the
+	/// property is absent from the mobile element".
+	/// </para>
+	/// <para>
 	/// One asymmetry when reconciling: a component the registry describes with NO properties of its own
 	/// yields no membership information, so the prune fails OPEN on it and every carried property survives —
 	/// while its contract row still lists the inherited surface. Undeclared keys surviving on such a type
