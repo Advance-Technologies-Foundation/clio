@@ -6,7 +6,7 @@
 **PRD**: [prd-eng-99856-multi-instance.md](../prd/prd-eng-99856-multi-instance.md) — *Delivery cost*
 **ADR**: [adr-eng-99856-multi-instance.md](../adr/adr-eng-99856-multi-instance.md) — *Sequencing*, *Dependencies*
 **Jira**: ENG-99856
-**Status**: ready-for-dev
+**Status**: review
 **Size**: M (half day — the script does most of it; the cost is the two counts it does **not** write, the
 version choice, and the floor raises)
 **Repo**: clio (+ a tag in crt-process-builder)

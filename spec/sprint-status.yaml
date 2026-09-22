@@ -4481,7 +4481,7 @@ stories:
     feature: "eng-99856-multi-instance"
     repo: "clio (+ a tag in crt-process-builder)"
     size: M
-    status: ready-for-dev
+    status: review
     jira: ENG-99856
     file: spec/stories/story-eng-99856-multi-instance-12.md
     prd: spec/prd/prd-eng-99856-multi-instance.md
