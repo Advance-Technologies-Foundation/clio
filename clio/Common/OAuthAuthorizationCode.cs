@@ -230,49 +230,60 @@ public sealed class OAuthAuthorizationCodeService : IOAuthAuthorizationCodeServi
         int callbackPort = environment.RedirectPort ?? (Uri.TryCreate(configuredRedirect, UriKind.Absolute, out Uri configuredUri) && configuredUri.Port > 0 ? configuredUri.Port : 0);
         using TcpListener listener = useLoopback ? new TcpListener(IPAddress.Loopback, callbackPort) : null;
         listener?.Start();
-        string redirect = configuredRedirect;
-        if (useLoopback)
-        {
-            int port = ((IPEndPoint)listener.LocalEndpoint).Port;
-            redirect = string.IsNullOrWhiteSpace(configuredRedirect)
-                ? $"http://127.0.0.1:{port}/callback"
-                : ReplacePort(configuredRedirect, port);
-        }
-        else if (string.IsNullOrWhiteSpace(redirect) && environment.RedirectPort is > 0)
-        {
-            // The documented registration is --redirect-port only, so derive the same loopback
-            // redirect here instead of hard-failing on the paste-back path.
-            redirect = $"http://127.0.0.1:{environment.RedirectPort.Value}/callback";
-        }
-        if (string.IsNullOrWhiteSpace(redirect)) throw new InvalidOperationException("OAuth authorization requires a registered --redirect-uri or --redirect-port.");
+        string redirect = ResolveRedirect(environment, listener, useLoopback, configuredRedirect);
         string auth = BuildAuthorizationUrl(discovery.authorization_endpoint, environment.ClientId, redirect, state, verifier);
         if (!noBrowser && TryOpenBrowser(auth)) _logger.WriteInfo("Complete sign-in in the browser; waiting for the callback..."); else _logger.WriteInfo($"Open this authorization URL: {auth}");
-        string callback;
-        try
-        {
-            if (useLoopback)
-            {
-                callback = await ReceiveCallbackAsync(listener, timeoutMs, cancellationToken);
-            }
-            else if (noBrowser)
-            {
-                callback = Console.ReadLine() ?? string.Empty;
-            }
-            else
-            {
-                throw new InvalidOperationException(
-                    $"Redirect '{redirect}' is not a loopback address, so clio cannot receive the callback. Retry with --no-browser and paste the full redirect URL.");
-            }
-        }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            throw new InvalidOperationException("OAuth callback timed out. Retry with --no-browser and paste the full redirect URL.");
-        }
+        string callback = await ReadCallbackAsync(listener, useLoopback, noBrowser, redirect, timeoutMs, cancellationToken);
         (string code, _) = OAuthAuthorizationCodeProtocol.ParseCallback(callback, state);
         OAuthTokenSet result = await ExchangeCodeAsync(discovery.token_endpoint, environment.ClientId, code, redirect, verifier, cancellationToken);
         _store.Write(environment, result);
         _tokens[_store.BuildKey(environment)] = result;
         return result;
+    }
+
+    private static string ResolveRedirect(EnvironmentSettings environment, TcpListener listener, bool useLoopback,
+        string configuredRedirect)
+    {
+        if (useLoopback)
+        {
+            int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+            return string.IsNullOrWhiteSpace(configuredRedirect)
+                ? $"http://127.0.0.1:{port}/callback"
+                : ReplacePort(configuredRedirect, port);
+        }
+        if (!string.IsNullOrWhiteSpace(configuredRedirect))
+        {
+            return configuredRedirect;
+        }
+        if (environment.RedirectPort is > 0)
+        {
+            // The documented registration is --redirect-port only, so derive the same loopback
+            // redirect here instead of hard-failing on the paste-back path.
+            return $"http://127.0.0.1:{environment.RedirectPort.Value}/callback";
+        }
+        throw new InvalidOperationException("OAuth authorization requires a registered --redirect-uri or --redirect-port.");
+    }
+
+    private async Task<string> ReadCallbackAsync(TcpListener listener, bool useLoopback, bool noBrowser, string redirect,
+        int timeoutMs, CancellationToken cancellationToken)
+    {
+        if (!useLoopback && !noBrowser)
+        {
+            throw new InvalidOperationException(
+                $"Redirect '{redirect}' is not a loopback address, so clio cannot receive the callback. Retry with --no-browser and paste the full redirect URL.");
+        }
+        if (!useLoopback)
+        {
+            return Console.ReadLine() ?? string.Empty;
+        }
+        try
+        {
+            return await ReceiveCallbackAsync(listener, timeoutMs, cancellationToken);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new InvalidOperationException("OAuth callback timed out. Retry with --no-browser and paste the full redirect URL.");
+        }
     }
 
     private static void EnsureAuthorizationCodeEnvironment(EnvironmentSettings environment)
