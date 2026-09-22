@@ -4453,7 +4453,7 @@ stories:
     feature: "eng-99856-multi-instance"
     repo: "stand + spec"
     size: M
-    status: ready-for-dev
+    status: review
     jira: ENG-99856
     file: spec/stories/story-eng-99856-multi-instance-11.md
     prd: spec/prd/prd-eng-99856-multi-instance.md
@@ -4475,6 +4475,26 @@ stories:
       STAND WRITES SEQUENTIAL — a parallel burst trips IIS rapid-fail and downs a .NET Framework app pool.
       The parent's stand residue is explicitly NOT cleaned up: doing so would make this baseline
       unreproducible.
+      RUN 2026-09-22 on stand Creatio at CrtProcessBuilder 1.6.6.0 — record
+      spec/eng-99856-multi-instance/eng-99856-multi-instance-stand-verification-2026-09-22.md.
+      A-02 confirmed (the designer panel renders in full and shows the dotted per-item source in its OWN
+      notation, no console exception). A-03 confirmed (3 element-log rows + 3 callee runs; counters
+      completed=3 total=3 terminated=0 read by BRANCHING, which is the only readable route because a
+      completed element's parameter values are purged and a parked process's blob carries structure only;
+      the output collection measured by feeding it into a SECOND iterator, and a probe callee confirmed
+      3/3 that the per-item value really arrived — the ContainerUId backfill validated at run time).
+      A-04 confirmed WITH A FINDING: parallel + background preserves order but does NOT overlap on this
+      stand — iterations are ~300 ms apart through the job queue and the element took 1282 ms against
+      105 ms sequential. A-05 NOT REACHED: both gates measured open, and the conversion has NO dedicated
+      control (it is a side effect of collectionMappingSet in ProcessFlowElementPropertiesPage.js), but
+      the gesture was not completed — the Select parameter dialog offered nothing for a Text target. That
+      does NOT block story 13: its fixture was always clio-built, and this run proves clio can build one
+      that runs and that the designer renders. What story 13 must carry is narrower — there is no
+      hand-built control group on this stand. TWO BY-PRODUCTS FOR THE OWNER: the designer sets
+      useBackgroundMode=true on EVERY conversion (and false on de-conversion) while clio's element carries
+      false — a divergence from the "как в дизайнере" ruling that is a decision, not a defect, since
+      matching it costs an order of magnitude in wall clock; and a multi-instance input collection binds
+      from a Read data element's ResultCompositeObjectList, NEVER ResultEntityCollection.
 
   - id: story-eng-99856-multi-instance-12
     title: "Ship the package — rebundle, four provenance pins, two hand-moved security counts, three floors"
