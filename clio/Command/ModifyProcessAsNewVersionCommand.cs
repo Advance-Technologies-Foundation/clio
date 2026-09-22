@@ -30,7 +30,7 @@ namespace Clio.Command;
 // operations arrays never carry) no longer buys anything: BundledPackageConvergence already refuses every
 // environment below the archive clio ships (1.6.2.1) on this same command, so the raise adds no refusal in
 // normal mode and is the one fail-closed refusal left in convergence's degraded warn-and-allow modes.
-// Raised to 1.6.6.0 by ENG-99856: `subProcess.multiInstanceOptions`, the dotted per-item path on
+// Raised to 1.6.6.4 by ENG-99856: `subProcess.multiInstanceOptions`, the dotted per-item path on
 // `elementParameter` / `sourceElementParameter`, and the refusals that go with them. The rule is the one
 // that produced the 1.6.2.1 raise - it moves when clio starts ADVERTISING behaviour the deployed server
 // may not have - and the failure mode here is the worse of the two shapes this contract knows: a new
@@ -39,8 +39,8 @@ namespace Clio.Command;
 // "success", and has an ordinary single-call element with nothing anywhere saying a block was dropped.
 // The dotted path fails differently and just as quietly: an older server resolves `elementParameter` flat
 // only, finds no parameter of that name and refuses - loudly, but naming a parameter rather than the
-// package. 1.6.6.0 is the archive cut from crt-process-builder 4af1fb6.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.0",
+// package. 1.6.6.4 is the archive cut from crt-process-builder bf9fb3c.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.4",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class ModifyProcessAsNewVersionOptions : EnvironmentOptions {
 	/// <summary>Process code (schema Name) of the SOURCE. Provide exactly one of <see cref="ProcessName"/> or <see cref="ProcessUid"/>.</summary>

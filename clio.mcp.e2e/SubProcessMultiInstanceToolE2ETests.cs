@@ -19,7 +19,7 @@ namespace Clio.Mcp.E2E;
 /// <summary>
 /// End-to-end coverage for the MULTI-INSTANCE Sub-process element (ENG-99856) over the real MCP path. NOT in
 /// CI - run manually, gated on the <c>process-designer</c> feature and a reachable environment carrying a
-/// CrtProcessBuilder of at least 1.6.6.0.
+/// CrtProcessBuilder of at least 1.6.6.4.
 /// <para>What only a live server can prove here is the PLATFORM's rebuild. Assigning <c>SchemaUId</c> on a
 /// converted element makes the platform clear the element's parameters and re-derive them, and every unit
 /// test drives that against a substituted schema manager. This is the only place the real
@@ -129,6 +129,11 @@ public sealed class SubProcessMultiInstanceToolE2ETests {
 		JsonSerializer.Serialize(callResult).Should().Contain("OutputRecordCollection",
 			because: "the refusal has to name the collection it is about, or the caller cannot tell it from any "
 				+ "other mapping failure");
+		JsonSerializer.Serialize(callResult).Should().Contain("is inside the output collection",
+			because: "the parameter NAME alone does not identify which refusal spoke - a direction guard, a "
+				+ "type mismatch or a 'no such parameter' would all quote it back - and this assertion is the "
+				+ "only thing standing between 'the right refusal reached the caller over the real MCP path' "
+				+ "and 'the build failed for some reason and the name happened to appear'");
 	}
 
 	#endregion
@@ -287,7 +292,7 @@ public sealed class SubProcessMultiInstanceToolE2ETests {
 		string? environmentName = settings.Sandbox.EnvironmentName;
 		if (string.IsNullOrWhiteSpace(environmentName)) {
 			Assert.Ignore(
-				"Configure McpE2E:Sandbox:EnvironmentName (with a CrtProcessBuilder of at least 1.6.6.0) to run "
+				"Configure McpE2E:Sandbox:EnvironmentName (with a CrtProcessBuilder of at least 1.6.6.4) to run "
 				+ "the multi-instance Sub-process MCP E2E tests.");
 		}
 
