@@ -19,7 +19,7 @@ namespace Clio.Mcp.E2E;
 /// <summary>
 /// End-to-end coverage for the MULTI-INSTANCE Sub-process element (ENG-99856) over the real MCP path. NOT in
 /// CI - run manually, gated on the <c>process-designer</c> feature and a reachable environment carrying a
-/// CrtProcessBuilder of at least 1.6.6.11.
+/// CrtProcessBuilder of at least 1.6.6.12.
 /// <para>What only a live server can prove here is the PLATFORM's rebuild. Assigning <c>SchemaUId</c> on a
 /// converted element makes the platform clear the element's parameters and re-derive them, and every unit
 /// test drives that against a substituted schema manager. This is the only place the real
@@ -152,6 +152,20 @@ public sealed class SubProcessMultiInstanceToolE2ETests {
 		await ArrangeProcessAsync(context, BuildCalleeDescriptor(calleeName), "called process");
 		await ArrangeProcessAsync(context, BuildMultiInstanceCallerDescriptor(callerName, calleeName),
 			"multi-instance caller");
+		// AND PROVE IT CONVERTED, because four of the five assertions below are satisfied by an element that
+		// never was multi-instance: multiInstance:false, a null options block, no InputRecordCollection at the
+		// root and ItemName present at it are ALL true of a plain sub-process element. The Act would pass too -
+		// `enabled: false` on a single-instance element is not refused, it answers AlreadyInRequestedState - so
+		// the whole case would go green having exercised no de-conversion at all. That is exactly the
+		// silently-discarded-block failure this fixture's own version gate exists for.
+		DescribedElement converted = (await DescribeAsync(context, callerName)).Elements
+			.Single(candidate => candidate.Name == "SubProcess1");
+		converted.SubProcess?.MultiInstance.Should().Be(true,
+			because: "the arrange is only meaningful while the element IS multi-instance - if the server "
+				+ "discarded the block and answered success, everything below is about a plain element");
+		converted.Parameters.Select(parameter => parameter.Name).Should().Contain("InputRecordCollection",
+			because: "the five service parameters are what the de-conversion below has to remove, so they have "
+				+ "to be there first");
 
 		// Act
 		CallToolResult callResult = await CallToolAsync(context, ModifyToolName, new Dictionary<string, object?> {
@@ -168,7 +182,12 @@ public sealed class SubProcessMultiInstanceToolE2ETests {
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
 			because: "a de-conversion is an ordinary edit and must not fail at the transport");
-		JsonSerializer.Serialize(callResult).Should().NotContain("\"success\":false",
+		// THE EXIT CODE, not a string. `"success":false` can never appear here: the command deserializes the
+		// server envelope and THROWS on failure, so the wire field is never re-serialized into the tool result,
+		// and the envelope the parser reads carries exit-code and execution-log-messages instead. A guard
+		// written against a string that cannot occur is a guard that cannot fail - and this file already says
+		// so one method down, where ArrangeProcessAsync explains why IsError is not enough either.
+		McpCommandExecutionParser.Extract(callResult).ExitCode.Should().Be(0,
 			because: "the edit has to LAND - a refused de-conversion would leave the element multi-instance and "
 				+ "every assertion below would then be about the arrange rather than about this operation");
 
@@ -357,7 +376,7 @@ public sealed class SubProcessMultiInstanceToolE2ETests {
 		string? environmentName = settings.Sandbox.EnvironmentName;
 		if (string.IsNullOrWhiteSpace(environmentName)) {
 			Assert.Ignore(
-				"Configure McpE2E:Sandbox:EnvironmentName (with a CrtProcessBuilder of at least 1.6.6.11) to run "
+				"Configure McpE2E:Sandbox:EnvironmentName (with a CrtProcessBuilder of at least 1.6.6.12) to run "
 				+ "the multi-instance Sub-process MCP E2E tests.");
 		}
 
