@@ -29,13 +29,18 @@ public sealed class KnowledgeGuidanceSourceTests {
 		KnowledgeGuidanceSource source = new(activator, refreshTrigger, runtime, features);
 
 		// Act - every member of the read surface.
-		source.FindByName("routing");
-		source.FindByUri("docs://knowledge/com.creatio.clio/routing");
-		source.GetNames();
-		source.GetCatalog();
-		source.GetDiscoveryCatalog();
+		KnowledgeArticleLookup byName = source.FindByName("routing");
+		KnowledgeArticleLookup byUri = source.FindByUri("docs://knowledge/com.creatio.clio/routing");
+		IReadOnlyList<string> names = source.GetNames();
+		IReadOnlyList<KnowledgeGuidanceDescriptor> catalog = source.GetCatalog();
+		IReadOnlyList<KnowledgeGuidanceDescriptor> discoveryCatalog = source.GetDiscoveryCatalog();
 
 		// Assert
+		byName.Status.Should().Be(KnowledgeArticleLookupStatus.NotFound);
+		byUri.Status.Should().Be(KnowledgeArticleLookupStatus.NotFound);
+		names.Should().BeEmpty();
+		catalog.Should().BeEmpty();
+		discoveryCatalog.Should().BeEmpty();
 		refreshTrigger.Received(5).TriggerIfDue();
 		activator.Received(5).EnsureActivated();
 	}

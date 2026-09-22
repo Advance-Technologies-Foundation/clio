@@ -143,7 +143,7 @@ internal sealed class KnowledgeRefreshTrigger : IKnowledgeRefreshTrigger {
 	}
 
 	/// <inheritdoc/>
-	public Task TriggerIfDue() {
+	public Task? TriggerIfDue() {
 		if (!IsEligibleProcess()) {
 			return null;
 		}
