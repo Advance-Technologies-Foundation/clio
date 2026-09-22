@@ -60,6 +60,7 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 			IReadOnlyList<string> objects =
 				_connectedObjects.Resolve(options.EntitySchemaName, options.IncludeConnected, "Checking");
 			List<string> granteeMissing = new();
+			int skipped = 0;
 
 			_logger.WriteInfo(
 				$"Object operation permissions for '{options.EntitySchemaName}'"
@@ -69,10 +70,12 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 			foreach (string schemaName in objects) {
 				ObjectRightsInfo info = _rightsReader.GetObjectRights(schemaName, requestOptions);
 				if (info.ReadError != null) {
+					skipped++;
 					_logger.WriteWarning($"  {schemaName}: could not read object rights ({info.ReadError}) — skipped.");
 					continue;
 				}
 				if (!info.Found) {
+					skipped++;
 					_logger.WriteWarning($"  {schemaName}: schema not found (skipped).");
 					continue;
 				}
@@ -85,11 +88,15 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 			}
 
 			if (granteeFilter is not null) {
+				string skippedNote = skipped > 0 ? $" ({skipped} object(s) could not be read)" : "";
 				if (granteeMissing.Count == 0) {
-					_logger.WriteInfo($"Grantee {granteeFilter} already has read/create/edit on every listed object.");
+					// Never report a clean all-clear when objects were skipped — an unread object is unknown, not verified.
+					_logger.WriteInfo(skipped == 0
+						? $"Grantee {granteeFilter} already has read/create/edit on every listed object."
+						: $"Grantee {granteeFilter} has read/create/edit on every object that could be read{skippedNote}.");
 				} else {
 					_logger.WriteWarning(
-						$"Objects where grantee {granteeFilter} lacks read/create/edit: {string.Join(", ", granteeMissing)}.");
+						$"Objects where grantee {granteeFilter} lacks read/create/edit: {string.Join(", ", granteeMissing)}{skippedNote}.");
 				}
 			}
 			return 0;

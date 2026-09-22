@@ -41,7 +41,7 @@ SysAdminUnit id (role or user) to grant/revoke. Names are not unique — pass th
 All external users = 720b771c-e7a7-4f31-9cfb-52cd21c3739f.
 
 --operations LIST
-Comma-separated: read,create,edit,delete. Default: all four.
+Comma-separated: read,create,edit,delete. Default: read,create,edit (delete not granted by default).
 
 --revoke
 Revoke instead of grant. A role left with no operations is removed.

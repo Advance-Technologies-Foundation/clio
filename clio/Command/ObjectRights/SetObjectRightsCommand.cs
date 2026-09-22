@@ -21,7 +21,7 @@ public class SetObjectRightsOptions : RemoteCommandOptions {
 	public string Grantee { get; set; }
 
 	[Option("operations", Required = false, HelpText =
-		"Comma-separated operations: read,create,edit,delete. Default: all four.")]
+		"Comma-separated operations: read,create,edit,delete. Default: read,create,edit (delete not granted by default).")]
 	public string Operations { get; set; }
 
 	[Option("revoke", Required = false, HelpText =
@@ -68,10 +68,16 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 			TimeOut = options.TimeOut, MaxAttempts = options.MaxAttempts, RetryDelay = options.RetryDelay
 		};
 
+		// Resolve the full target set BEFORE confirming, so the destructive prompt names every object that will
+		// be written (with --include-connected the fan-out can span several permission objects).
+		IReadOnlyList<string> objects =
+			_connectedObjects.Resolve(options.EntitySchemaName, options.IncludeConnected, "Changing");
 		string verb = options.Revoke ? "Revoke" : "Grant";
 		string opList = string.Join("/", operations.Select(op => op.ToString().ToLowerInvariant()));
-		string scope = options.IncludeConnected ? " and its connected objects" : "";
-		string change = $"{verb} object operations [{opList}] for grantee {grantee} on '{options.EntitySchemaName}'{scope}.";
+		string targets = objects.Count == 1
+			? $"'{objects[0]}'"
+			: $"{objects.Count} objects ({string.Join(", ", objects)})";
+		string change = $"{verb} object operations [{opList}] for grantee {grantee} on {targets}.";
 
 		ConfirmDecision decision = ConfirmApply(options, change);
 		if (decision == ConfirmDecision.Cancelled) {
@@ -82,8 +88,6 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 		}
 
 		try {
-			IReadOnlyList<string> objects =
-				_connectedObjects.Resolve(options.EntitySchemaName, options.IncludeConnected, "Changing");
 			bool anyFailure = false;
 			foreach (string schemaName in objects) {
 				ObjectRightsChange result = _rightsWriter.SetObjectRights(
@@ -111,7 +115,10 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 		out string error) {
 		error = null;
 		if (string.IsNullOrWhiteSpace(raw)) {
-			operations = new[] { ObjectOperation.Read, ObjectOperation.Create, ObjectOperation.Edit, ObjectOperation.Delete };
+			// Least-privilege default: read/create/edit (the access a role needs to work with an object, and
+			// what the portal "make available" flow grants). delete is NOT granted by default — pass it in
+			// --operations explicitly. This matches the read/create/edit "has access" check in get-object-rights.
+			operations = new[] { ObjectOperation.Read, ObjectOperation.Create, ObjectOperation.Edit };
 			return true;
 		}
 		List<ObjectOperation> parsed = new();

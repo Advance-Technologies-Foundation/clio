@@ -134,7 +134,8 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 	}
 
 	// Applies the grant/revoke to the object node's operation-rights rows in place; returns whether anything
-	// actually changed. All other fields of the node are left untouched so the save round-trips faithfully.
+	// ACTUALLY changed (so an unchanged re-run reports "no change" and skips the save). All other fields of the
+	// node are left untouched so the save round-trips faithfully.
 	private static bool MutateOperationRow(JsonObject node, Guid grantee,
 		IReadOnlyCollection<ObjectOperation> operations, bool revoke) {
 		JsonArray rows = node["entitySchemaOperationsRights"] as JsonArray;
@@ -149,6 +150,7 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 			if (existing is null) {
 				return false;
 			}
+			(bool, bool, bool, bool) before = Snapshot(existing);
 			foreach (ObjectOperation op in operations) {
 				existing[FieldOf(op)] = false;
 			}
@@ -156,10 +158,18 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 			if (!Flag(existing, "canRead") && !Flag(existing, "canAppend")
 				&& !Flag(existing, "canEdit") && !Flag(existing, "canDelete")) {
 				rows.Remove(existing);
+				// The last grant is gone — turn operation permissions back OFF so the object returns to
+				// "available to all" rather than being left administered with zero grants (readable by nobody).
+				if (rows.Count == 0 && Flag(node, "administratedByOperations")) {
+					node["administratedByOperations"] = false;
+				}
+				return true;
 			}
-			return true;
+			return before != Snapshot(existing);
 		}
 
+		// Enabling operation permissions is itself a change; track it so a re-grant that alters nothing is a no-op.
+		bool enabledNow = !Flag(node, "administratedByOperations");
 		node["administratedByOperations"] = true;
 		if (existing is null) {
 			JsonObject row = new() {
@@ -173,11 +183,16 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 			rows.Add(row);
 			return true;
 		}
+		(bool, bool, bool, bool) grantBefore = Snapshot(existing);
 		foreach (ObjectOperation op in operations) {
 			existing[FieldOf(op)] = true;
 		}
-		return true;
+		return enabledNow || grantBefore != Snapshot(existing);
 	}
+
+	// The four operation flags of a row, for change detection.
+	private static (bool read, bool append, bool edit, bool delete) Snapshot(JsonObject row) =>
+		(Flag(row, "canRead"), Flag(row, "canAppend"), Flag(row, "canEdit"), Flag(row, "canDelete"));
 
 	// One past the highest existing position, so a new row never collides with an existing one even when the
 	// existing positions are non-contiguous (a prior designer-side removal can leave gaps).

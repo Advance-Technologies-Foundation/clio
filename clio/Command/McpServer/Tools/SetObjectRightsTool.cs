@@ -28,7 +28,7 @@ public sealed class SetObjectRightsTool(
 	[Description("Grant or revoke OBJECT operation permissions (read/create/edit/delete) for one role on an object — the SysSchemaOperationRight / \"Object permissions\" layer (DESTRUCTIVE — changes access rights). " +
 		"Object-level analog of set-record-rights, and works for ANY role. Grants turn on the object's operation permissions when needed. " +
 		"grantee is a SysAdminUnit id (roles/users; names are not unique). Portal audience: All external users = 720b771c-e7a7-4f31-9cfb-52cd21c3739f. " +
-		"operations defaults to all four; revoke=true removes them (a role left with none is removed). " +
+		"operations defaults to read/create/edit (delete not granted by default); revoke=true removes them (a role left with none is removed). " +
 		"include-connected also applies to the root object's own lookup objects (the portal-section convenience). Does NOT change column permissions. Read it back with get-object-rights.")]
 	public ObjectRightsToolResponse SetObjectRights(
 		[Description("Parameters: environment-name, entity-schema-name, grantee (required); operations, revoke, include-connected (optional).")]
@@ -70,7 +70,7 @@ public sealed record SetObjectRightsArgs(
 	string Grantee,
 
 	[property: JsonPropertyName("operations")]
-	[property: Description("Comma-separated operations: read,create,edit,delete. Default: all four.")]
+	[property: Description("Comma-separated operations: read,create,edit,delete. Default: read,create,edit (delete not granted by default).")]
 	string Operations = null,
 
 	[property: JsonPropertyName("revoke")]
