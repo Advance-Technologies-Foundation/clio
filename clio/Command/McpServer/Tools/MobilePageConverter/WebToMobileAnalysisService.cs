@@ -278,9 +278,11 @@ public static partial class WebToMobileAnalysisService {
 		// update filters on anything else, which is why WebToMobilePageConversionRulesRegistryTests asserts
 		// that every property an override READS or WRITES is one the registry declares.
 		//
-		// A no-op unless the environment's version is
-		// positively known and above the floor AND the loaded payload carries the Flutter inherited surface,
-		// which is how the runtime-derived generation is recognised — see MobileRegistryGeneration.
+		// A no-op unless the loaded payload carries the Flutter
+		// inherited surface, which is how the runtime-derived generation is recognised — see
+		// MobileRegistryGeneration. Deliberately NOT gated on the stand's platform version: each version's
+		// registry describes the runtime that version runs, so an old stand served its own regenerated file
+		// is pruned correctly rather than merely spared.
 		DeclaredPropertyIndex declaredProps =
 			DeclaredPropertyIndex.Build(mobileByType, mobileRegistryGeneration);
 		PropertyPruneResult propertyPrune = PruneUndeclaredProperties(
@@ -355,16 +357,11 @@ public static partial class WebToMobileAnalysisService {
 		//    suggestions, so an early answer also sends a contract set that is wrong in BOTH directions.
 		List<ComponentSuggestion> suggestions = BuildComponentSuggestions(namesByType, rules, webTypes, elementMap);
 		// The contract's allowedProperties is the SAME union the prune enforces, so a caller can always see
-		// WHY a property was pruned. The inherited surface is folded in only when the loaded payload IS the
-		// runtime-derived generation: the web-derived one publishes Angular element attributes (classes, id,
-		// loading, shape, styles, tabIndex) under the same key, and folding those in would advertise `classes`
-		// and `tabIndex` as accepted MOBILE properties in the field the guidance tells the agent to build
-		// values from.
-		//
-		// The predicate is CatalogIsRuntimeDerived and deliberately NOT declaredProps.Enabled. The prune gate
-		// asks about the STAND; this asks about the payload, and they disagree on every stand whose versioned
-		// registry 404s (served `latest`), on a degraded probe, and on an explicit version=latest. Using the
-		// gate here would deny `visible` and `layoutConfig` on a response whose every insert carries them.
+		// WHY a property was pruned — and it is fed from the SAME predicate, so the two cannot drift. The
+		// inherited surface is folded in only when the loaded payload is the runtime-derived generation: the
+		// web-derived one publishes Angular element attributes (classes, id, loading, shape, styles,
+		// tabIndex) under the same key, and folding those in would advertise `classes` and `tabIndex` as
+		// accepted MOBILE properties in the field the guidance tells the agent to build values from.
 		List<MobileComponentContract> contracts = BuildMobileContracts(
 			suggestions, mobileByType,
 			mobileRegistryGeneration is { CatalogIsRuntimeDerived: true } ? mobileRegistryGeneration.BaseInputs : null);

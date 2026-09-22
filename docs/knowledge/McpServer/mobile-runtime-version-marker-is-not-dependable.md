@@ -27,7 +27,9 @@ snapshot carries no marker and the guard's marker branch is otherwise dead.
 **Why it is this way** — a provenance field that survives two hours is not a contract. A feature gated on
 it switches itself OFF with nothing failing: no exception, no warning, and a response that looks exactly
 like a page which happened to have nothing to prune. The generation is decided by the inherited
-`baseInputs` surface instead, and whether the prune ran is reported as `propertyPruneApplied`.
+`baseInputs` surface instead — which is now the ENTIRE prune gate, so this record's subject is the one
+input that was considered for that job and rejected. Whether the prune ran is reported as
+`propertyPruneApplied`.
 
 **What breaks if you ignore it** — two symmetric failures. Gate on the marker and the property prune stops
 running on the current published catalog, silently, so every undeclared web property ships to the device

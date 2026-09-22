@@ -28,20 +28,6 @@ namespace Clio.Tests.Command.McpServer.Tools.MobilePageConverter;
 [Property("Module", "McpServer")]
 public sealed class WebToMobilePropertyPruneTests {
 
-	private const string LatestVersion = "latest";
-
-	/// <summary>
-	/// A version above the floor, and the DEFAULT for every test that is not about the gate. Deliberately
-	/// not <c>latest</c>: that string is a catalog alias rather than a statement about the target, and it no
-	/// longer opens the gate — so a fixture that used it everywhere would silently stop pruning and assert
-	/// nothing. Nothing is published under this version; the client falls back to the latest catalog, which
-	/// is exactly the real case of a stand newer than the newest versioned registry.
-	/// </summary>
-	private const string AboveFloorVersion = "10.1.0";
-
-	/// <summary>A stand on the last version whose published mobile registry is the web-derived generation.</summary>
-	private const string FloorVersion = "10.0.0";
-
 	// ---------------------------------------------------------------- enablement gate
 
 	[Test]
@@ -74,7 +60,7 @@ public sealed class WebToMobilePropertyPruneTests {
 
 		// Act
 		MobilePageConversionGuide guide = Analyze(
-			bundle, generation: Generation(AboveFloorVersion, baseInputs: webBaseInputs));
+			bundle, generation: Generation(baseInputs: webBaseInputs));
 
 		// Assert
 		Values(guide, "HelpTab").Should().ContainKey("icon",
@@ -98,7 +84,7 @@ public sealed class WebToMobilePropertyPruneTests {
 		PageBundleInfo bundle = TabContainerCarryingIcons();
 
 		// Act
-		MobilePageConversionGuide guide = Analyze(bundle, generation: Generation(AboveFloorVersion));
+		MobilePageConversionGuide guide = Analyze(bundle, generation: Generation());
 
 		// Assert
 		guide.MobileContracts.Should().NotBeEmpty(because: "the page converts to known mobile types");
@@ -108,84 +94,22 @@ public sealed class WebToMobilePropertyPruneTests {
 				+ "gate is open — that fold is what makes allowedProperties the same set the prune enforces");
 	}
 
-	[TestCase("8.3.0")]
-	[TestCase("8.3.4")]
-	[TestCase("8.3.5")]
-	[TestCase(FloorVersion)]
-	[TestCase("10.0.0.934")]
-	[TestCase("10.0")]
-	[Description("A stand at or below the 10.0.0 floor never prunes, even when the loaded payload IS runtime-derived. 8.3.5 is the case that makes both halves of the gate necessary: it has no published versioned mobile registry, so the client falls back to `latest` and is served the runtime-derived catalog — but the stand's own runtime is older than the one that catalog describes. 10.0.0.934 is the shape a real Creatio core version takes: compared raw, System.Version reads its Revision as ABOVE the floor's implicit -1 and would prune the very generation the floor is named after.")]
-	public void Analyze_WhenEnvironmentIsAtOrBelowTheFloor_ShouldPruneNothing(string environmentVersion) {
+	[Test]
+	[Description("A runtime-derived payload prunes, and the guide reports that it did. There is no version dimension left to parameterise: the gate reads the CONTENT of the registry the chain served and nothing about the stand, so each platform version is covered by its own published file describing the runtime that version runs. The fixture also carries no mobileRuntimeVersion marker — exactly like the published catalog since 2026-09-17 — so this proves the prune never depended on that either.")]
+	public void Analyze_WhenTheCatalogIsRuntimeDerived_ShouldPrune() {
 		// Arrange
 		PageBundleInfo bundle = TabContainerCarryingIcons();
 
 		// Act
-		MobilePageConversionGuide guide = Analyze(bundle, generation: Generation(environmentVersion));
-
-		// Assert
-		Values(guide, "HelpTab").Should().ContainKey("icon",
-			because: $"a stand on {environmentVersion} runs a mobile runtime older than the one `latest` was generated from, so pruning against it could strip properties that stand supports");
-		guide.PrunedProperties.Should().BeNull(
-			because: "below the floor the PRUNE is a no-op — the rules-name corrections that shipped with it "
-				+ "are resolved independently of this gate and are not what this asserts");
-		guide.PropertyPruneApplied.Should().BeFalse(
-			because: "this is how a caller tells that the prune did not run on this stand");
-	}
-
-	[TestCase("10.0.1")]
-	[TestCase("10.1.0")]
-	[TestCase("11.0.0")]
-	[Description("Every version strictly above the 10.0.0 floor prunes, and the guide reports that it did. The fixture carries no mobileRuntimeVersion marker — exactly like the published catalog since 2026-09-17 — so these cases also prove the prune never depended on it.")]
-	public void Analyze_WhenEnvironmentIsAboveTheFloor_ShouldPrune(string environmentVersion) {
-		// Arrange
-		PageBundleInfo bundle = TabContainerCarryingIcons();
-
-		// Act
-		MobilePageConversionGuide guide = Analyze(bundle, generation: Generation(environmentVersion));
+		MobilePageConversionGuide guide = Analyze(bundle, generation: Generation());
 
 		// Assert
 		Values(guide, "HelpTab").Should().NotContainKey("icon",
-			because: $"{environmentVersion} is above the floor and the payload is runtime-derived, so membership is a valid test");
+			because: "the payload is runtime-derived, so membership in it is a valid statement of mobile support");
 		guide.PrunedProperties.Should().NotBeNull(
 			because: "an undeclared property was carried, so the removal must be reported rather than done silently");
 		guide.PropertyPruneApplied.Should().BeTrue(
 			because: "the gate opened, so the caller-facing flag must say so — it is the only prune signal the response carries");
-	}
-
-	[Test]
-	[Description("A version string of \"latest\" that came from a FAILED probe does not open the gate. PlatformVersionResolver returns that literal for every failure class (no environment, missing CoreVersion, probe error, unparseable version), so reading it as \"this stand is newer than the floor\" would prune exactly the stand the floor protects — an 8.3.5 box whose cliogate is too old to answer is served the `latest` catalog and would be measured against a runtime it does not run.")]
-	public void Analyze_WhenVersionIsNotPositivelyKnown_ShouldPruneNothing() {
-		// Arrange
-		PageBundleInfo bundle = TabContainerCarryingIcons();
-
-		// Act — exactly what a degraded probe produces: the string "latest", but no knowledge behind it.
-		MobilePageConversionGuide guide = Analyze(
-			bundle, generation: Generation(LatestVersion, versionKnown: false));
-
-		// Assert
-		Values(guide, "HelpTab").Should().ContainKey("icon",
-			because: "a failed version probe says nothing about how new the stand is, so it cannot authorise pruning");
-		guide.PrunedProperties.Should().BeNull(
-			because: "the gate refused, so there is nothing to report");
-		guide.PropertyPruneApplied.Should().BeFalse(
-			because: "a degraded probe must leave the caller-facing flag false — it is the only prune signal the response carries, so a caller reading it as true would treat a survivor as a defect");
-	}
-
-	[Test]
-	[Description("An explicit caller-supplied version=latest does NOT open the gate. `latest` is a catalog alias, not a statement about the target: an explicit version bypasses the probe, so `environment-name: <8.3.5 stand>` plus `version: latest` would otherwise prune that stand against a Flutter runtime it does not run — the exact input the floor exists to refuse, reaching the gate through the one string the floor cannot compare. The sibling tools close this by rejecting version + environment-name together; this tool cannot, because it needs the environment to read the source page.")]
-	public void Analyze_WhenCallerNamesLatestExplicitly_ShouldPruneNothing() {
-		// Arrange
-		PageBundleInfo bundle = TabContainerCarryingIcons();
-
-		// Act — VersionKnown is true here: this is a caller naming the alias, not a degraded probe.
-		MobilePageConversionGuide guide = Analyze(
-			bundle, generation: Generation(LatestVersion, versionKnown: true));
-
-		// Assert
-		Values(guide, "HelpTab").Should().ContainKey("icon",
-			because: "an alias names a CATALOG, so it cannot authorise measuring a stand whose own version was never read");
-		guide.PropertyPruneApplied.Should().BeFalse(
-			because: "the refusal must be visible — a caller who wants the prune names a version above the floor instead");
 	}
 
 	[Test]
@@ -196,7 +120,7 @@ public sealed class WebToMobilePropertyPruneTests {
 
 		// Act
 		MobilePageConversionGuide guide = Analyze(
-			bundle, generation: Generation(AboveFloorVersion, omitBaseInputs: true));
+			bundle, generation: Generation(omitBaseInputs: true));
 
 		// Assert
 		JsonObject values = Values(guide, "HelpTab");
@@ -237,7 +161,7 @@ public sealed class WebToMobilePropertyPruneTests {
 			""");
 
 		// Act
-		MobilePageConversionGuide guide = Analyze(bundle, generation: Generation(AboveFloorVersion));
+		MobilePageConversionGuide guide = Analyze(bundle, generation: Generation());
 
 		// Assert
 		Values(guide, "Records").Should().ContainKey("itemSelected",
@@ -256,7 +180,7 @@ public sealed class WebToMobilePropertyPruneTests {
 			""");
 
 		// Act
-		MobilePageConversionGuide guide = Analyze(bundle, generation: Generation(AboveFloorVersion));
+		MobilePageConversionGuide guide = Analyze(bundle, generation: Generation());
 
 		// Assert
 		Values(guide, "Widget").Should().ContainKey(binding,
@@ -278,7 +202,7 @@ public sealed class WebToMobilePropertyPruneTests {
 			""");
 
 		// Act
-		MobilePageConversionGuide guide = Analyze(bundle, generation: Generation(AboveFloorVersion));
+		MobilePageConversionGuide guide = Analyze(bundle, generation: Generation());
 
 		// Assert
 		Values(guide, "LeadName").Should().ContainKey(propertyName,
@@ -295,7 +219,7 @@ public sealed class WebToMobilePropertyPruneTests {
 			""");
 
 		// Act
-		MobilePageConversionGuide guide = Analyze(bundle, generation: Generation(AboveFloorVersion));
+		MobilePageConversionGuide guide = Analyze(bundle, generation: Generation());
 
 		// Assert
 		Values(guide, "Note").Should().ContainKey("Caption",
@@ -311,7 +235,7 @@ public sealed class WebToMobilePropertyPruneTests {
 		PageBundleInfo bundle = TabContainerCarryingIcons();
 
 		// Act
-		MobilePageConversionGuide guide = Analyze(bundle, generation: Generation(AboveFloorVersion));
+		MobilePageConversionGuide guide = Analyze(bundle, generation: Generation());
 
 		// Assert
 		JsonObject values = Values(guide, "HelpTab");
@@ -333,7 +257,7 @@ public sealed class WebToMobilePropertyPruneTests {
 			""");
 
 		// Act
-		MobilePageConversionGuide guide = Analyze(bundle, generation: Generation(AboveFloorVersion));
+		MobilePageConversionGuide guide = Analyze(bundle, generation: Generation());
 
 		// Assert
 		JsonObject values = Values(guide, "MarketingTabGridContainer");
@@ -353,7 +277,7 @@ public sealed class WebToMobilePropertyPruneTests {
 			""");
 
 		// Act
-		MobilePageConversionGuide guide = Analyze(bundle, generation: Generation(AboveFloorVersion));
+		MobilePageConversionGuide guide = Analyze(bundle, generation: Generation());
 
 		// Assert
 		JsonObject values = Values(guide, "Account");
@@ -379,7 +303,7 @@ public sealed class WebToMobilePropertyPruneTests {
 			""");
 
 		// Act
-		MobilePageConversionGuide guide = Analyze(bundle, generation: Generation(AboveFloorVersion));
+		MobilePageConversionGuide guide = Analyze(bundle, generation: Generation());
 
 		// Assert
 		JsonObject values = Values(guide, "Feed");
@@ -408,7 +332,7 @@ public sealed class WebToMobilePropertyPruneTests {
 			""");
 
 		// Act
-		MobilePageConversionGuide guide = Analyze(bundle, generation: Generation(AboveFloorVersion));
+		MobilePageConversionGuide guide = Analyze(bundle, generation: Generation());
 
 		// Assert
 		JsonObject values = Values(guide, "Where");
@@ -428,7 +352,7 @@ public sealed class WebToMobilePropertyPruneTests {
 			""");
 
 		// Act
-		MobilePageConversionGuide guide = Analyze(bundle, generation: Generation(AboveFloorVersion), extraMobileTypes: ["crt.Menu"]);
+		MobilePageConversionGuide guide = Analyze(bundle, generation: Generation(), extraMobileTypes: ["crt.Menu"]);
 
 		// Assert
 		Values(guide, "Actions").Should().ContainKey("usrAnything",
@@ -442,7 +366,7 @@ public sealed class WebToMobilePropertyPruneTests {
 		PageBundleInfo bundle = TabContainerCarryingIcons();
 
 		// Act
-		MobilePageConversionGuide guide = Analyze(bundle, generation: Generation(AboveFloorVersion));
+		MobilePageConversionGuide guide = Analyze(bundle, generation: Generation());
 
 		// Assert
 		ViewConfigDiffOperation operation = guide.ViewConfigDiff.Single(o => o.Name == "HelpTab");
@@ -468,7 +392,7 @@ public sealed class WebToMobilePropertyPruneTests {
 			""");
 
 		// Act
-		MobilePageConversionGuide guide = Analyze(bundle, generation: Generation(AboveFloorVersion));
+		MobilePageConversionGuide guide = Analyze(bundle, generation: Generation());
 
 		// Assert
 		JsonObject layout = Values(guide, "LeadName")["layoutConfig"]!.AsObject();
@@ -494,7 +418,7 @@ public sealed class WebToMobilePropertyPruneTests {
 
 		// Act
 		MobilePageConversionGuide guide = Analyze(
-			bundle, generation: Generation(AboveFloorVersion), rules: RulesWithSaveRequest());
+			bundle, generation: Generation(), rules: RulesWithSaveRequest());
 
 		// Assert
 		Values(guide, "SaveButton").Should().ContainKey("clicked",
@@ -518,7 +442,7 @@ public sealed class WebToMobilePropertyPruneTests {
 
 		// Act
 		MobilePageConversionGuide guide = Analyze(
-			bundle, generation: Generation(AboveFloorVersion), rules: RulesWithSaveRequest());
+			bundle, generation: Generation(), rules: RulesWithSaveRequest());
 
 		// Assert
 		Values(guide, "Note").Should().NotContainKey("clicked",
@@ -550,7 +474,7 @@ public sealed class WebToMobilePropertyPruneTests {
 			""");
 
 		// Act
-		MobilePageConversionGuide guide = Analyze(bundle, generation: Generation(AboveFloorVersion));
+		MobilePageConversionGuide guide = Analyze(bundle, generation: Generation());
 
 		// Assert
 		Dictionary<string, IReadOnlyList<string>> contracts = guide.MobileContracts
@@ -585,7 +509,7 @@ public sealed class WebToMobilePropertyPruneTests {
 
 		// Act
 		MobilePageConversionGuide guide = Analyze(
-			bundle, generation: Generation(AboveFloorVersion), rules: RulesWithSaveRequest(),
+			bundle, generation: Generation(), rules: RulesWithSaveRequest(),
 			autoTwinNames: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
 				["Note"] = "crt.Label",
 			});
@@ -619,7 +543,7 @@ public sealed class WebToMobilePropertyPruneTests {
 
 		// Act
 		MobilePageConversionGuide guide = Analyze(
-			bundle, generation: Generation(AboveFloorVersion, baseInputs: withoutIdentity));
+			bundle, generation: Generation(baseInputs: withoutIdentity));
 
 		// Assert
 		JsonObject values = Values(guide, "HelpTab");
@@ -628,45 +552,6 @@ public sealed class WebToMobilePropertyPruneTests {
 		values.Should().NotContainKey("icon",
 			because: "the prune must still be RUNNING here — otherwise the assertion above holds for the trivial "
 				+ "reason that nothing was removed");
-	}
-
-	[Test]
-	[Description("A degraded probe does not open the gate even when the version STRING it carries would pass on its own. This is the only arrangement that separates the two halves of `VersionKnown && VersionAllowsPrune`: every other refusal pairs a failed probe with the literal 'latest', which the version half already refuses, so deleting the VersionKnown conjunct outright would leave them all green. PlatformVersionResolver returns 'latest' for every failure class today, which is exactly why the gate must not DEPEND on that pairing holding.")]
-	public void Analyze_WhenProbeDegradedButTheVersionStringWouldPass_ShouldPruneNothing() {
-		// Arrange
-		PageBundleInfo bundle = TabContainerCarryingIcons();
-
-		// Act — a prunable semver with no knowledge behind it.
-		MobilePageConversionGuide guide = Analyze(
-			bundle, generation: Generation(AboveFloorVersion, versionKnown: false));
-
-		// Assert
-		Values(guide, "HelpTab").Should().ContainKey("icon",
-			because: "the version was never READ from the target, so the string alone cannot authorise measuring it");
-		guide.PropertyPruneApplied.Should().BeFalse(
-			because: "both halves of the gate are load-bearing, and this is the case that proves the source half is");
-	}
-
-	[TestCase("latest", false)]
-	[TestCase("LATEST", false)]
-	[TestCase("", false)]
-	[TestCase("   ", false)]
-	[TestCase("8.x", false)]
-	[TestCase("not-a-version", false)]
-	[TestCase(FloorVersion, false)]
-	[TestCase("10.0.0.934", false)]
-	[TestCase("10.0.1", true)]
-	[TestCase("11.0.0.17", true)]
-	[Description("The version half of the gate, pinned directly. The alias short-circuit is defence in depth — `latest` also fails to parse as a semver, so through Analyze it is indistinguishable from any other unparseable string. Asserting it here is what states the INTENT: `latest` is refused because it names a CATALOG rather than a stand, not because it happens not to parse, so a future TryNormaliseToThreePartSemver that learned to map it would not silently re-open the hole.")]
-	public void VersionAllowsPrune_ShouldAdmitOnlyASemverAboveTheFloor(string requestedVersion, bool expected) {
-		// Arrange, Act
-		bool allowed = WebToMobileAnalysisService.MobileRegistryGeneration.VersionAllowsPrune(requestedVersion);
-
-		// Assert
-		allowed.Should().Be(expected,
-			because: $"'{requestedVersion}' must {(expected ? "open" : "refuse")} the version half of the gate — the "
-				+ "floor is the backward-compatibility guarantee, and every string reaching it is either a positive "
-				+ "statement about the stand or must be treated as no statement at all");
 	}
 
 	[Test]
@@ -681,7 +566,7 @@ public sealed class WebToMobilePropertyPruneTests {
 
 		// Act
 		MobilePageConversionGuide guide = Analyze(
-			bundle, generation: Generation(AboveFloorVersion), rules: RulesWithSaveRequest(),
+			bundle, generation: Generation(), rules: RulesWithSaveRequest(),
 			autoTwinNames: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
 				["SaveButton"] = "crt.Button",
 			});
@@ -693,29 +578,6 @@ public sealed class WebToMobilePropertyPruneTests {
 			.Contain(r => r.ElementName == "SaveButton" && r.Binding == "clicked",
 				because: "the merge writer DOES classify bindings, which is what makes 'no dropped record' on a "
 					+ "pruned merge a statement about the prune rather than about a collector never reached");
-	}
-
-	[Test]
-	[Description("A stand below the floor that is SERVED the runtime-derived catalog still gets the inherited surface in allowedProperties. The prune gate asks about the STAND; the contract asks about the PAYLOAD, and they disagree on every stand whose versioned registry 404s (8.3.5, 9.0.0 — served `latest`), on a degraded probe, and on an explicit version=latest. Gating the contract on the prune would deny `visible` and `layoutConfig` on a response whose every insert carries them — a self-contradiction in the field the guidance tells the agent to build values from, on a conversion that is otherwise entirely correct.")]
-	public void Analyze_WhenGateRefusesButTheCatalogIsRuntimeDerived_ShouldStillPublishTheInheritedSurface() {
-		// Arrange — 8.3.5 has no published versioned registry, so the client serves it the `latest` catalog.
-		PageBundleInfo bundle = TabContainerCarryingIcons();
-
-		// Act
-		MobilePageConversionGuide guide = Analyze(bundle, generation: Generation("8.3.5"));
-
-		// Assert
-		guide.PropertyPruneApplied.Should().BeFalse(
-			because: "the stand is below the floor, so nothing may be pruned however new the served catalog is");
-		Values(guide, "HelpTab").Should().ContainKey("icon",
-			because: "the premise of this case is a refused prune — a pruned page here would assert something else");
-		guide.MobileContracts.Should().NotBeEmpty(
-			because: "an OnlyContain over an empty set proves nothing");
-		guide.MobileContracts.Should().OnlyContain(
-			contract => contract.AllowedProperties.Any(p => string.Equals(p, "visible", StringComparison.OrdinalIgnoreCase)),
-			because: "`visible` is declared ONLY in references.baseInputs, and the catalog that published it IS the "
-				+ "runtime-derived one — withholding it would make the contract deny a property the same response "
-				+ "emits on every element");
 	}
 
 	// ---------------------------------------------------------------- generation identification
@@ -731,7 +593,7 @@ public sealed class WebToMobilePropertyPruneTests {
 
 		// Act
 		MobilePageConversionGuide guide = Analyze(
-			bundle, generation: Generation(AboveFloorVersion, baseInputs: partial));
+			bundle, generation: Generation(baseInputs: partial));
 
 		// Assert
 		Values(guide, "HelpTab").Should().ContainKey("icon",
@@ -752,7 +614,7 @@ public sealed class WebToMobilePropertyPruneTests {
 
 		// Act
 		MobilePageConversionGuide guide = Analyze(
-			bundle, generation: Generation(AboveFloorVersion, baseInputs: oddCasing));
+			bundle, generation: Generation(baseInputs: oddCasing));
 
 		// Assert
 		guide.PropertyPruneApplied.Should().BeTrue(
@@ -795,15 +657,16 @@ public sealed class WebToMobilePropertyPruneTests {
 
 	/// <summary>
 	/// A generation record. Defaults to the runtime-derived case so a test names only what it varies; the
-	/// baseInputs always come from the live fixture, since that is the half the prune must not invent.
+	/// baseInputs come from the live fixture, since that is the half the prune must not invent.
 	/// </summary>
+	/// <remarks>
+	/// It takes no version, because the gate has none: the record carries the loaded payload's inherited
+	/// surface and nothing else. A test that wants the prune refused supplies a different SURFACE.
+	/// </remarks>
 	private static WebToMobileAnalysisService.MobileRegistryGeneration Generation(
-		string requestedVersion,
-		bool versionKnown = true,
 		IReadOnlyDictionary<string, JsonElement> baseInputs = null,
 		bool omitBaseInputs = false) =>
-		new(requestedVersion, versionKnown,
-			omitBaseInputs ? null : baseInputs ?? LiveMobileCatalog().GlobalReferences?.BaseInputs);
+		new(omitBaseInputs ? null : baseInputs ?? LiveMobileCatalog().GlobalReferences?.BaseInputs);
 
 	/// <summary>
 	/// A rules object carrying ONE direct request mapping, so a binding actually converts and lands in the

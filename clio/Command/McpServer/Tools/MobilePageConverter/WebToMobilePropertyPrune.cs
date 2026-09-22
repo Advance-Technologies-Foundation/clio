@@ -21,87 +21,62 @@ using JsonValue = System.Text.Json.Nodes.JsonValue;
 public static partial class WebToMobileAnalysisService {
 
 	/// <summary>
-	/// Which mobile-registry generation the conversion loaded, and the inherited input surface that came
-	/// with it. Decides whether the property prune runs at all.
+	/// Which mobile-registry generation the conversion loaded, judged by the inherited input surface that
+	/// came with it. It is the ONLY thing that decides whether the property prune runs.
 	/// </summary>
-	/// <param name="RequestedVersion">
-	/// The version resolved against the TARGET ENVIRONMENT (the stand's platform version, or the one the
-	/// caller named explicitly) — NOT the version the CDN chain actually served. The stand is what the
-	/// question is about: a stand whose versioned registry 404s falls back to <c>latest</c> and would
-	/// otherwise be pruned against a runtime NEWER than the one it runs.
-	/// </param>
-	/// <param name="VersionKnown">
-	/// True only when <paramref name="RequestedVersion"/> is a POSITIVE statement about the target — read
-	/// from the environment, or named outright by the caller. False when the version probe degraded.
+	/// <remarks>
 	/// <para>
-	/// This distinction is load-bearing and easy to lose: <c>PlatformVersionResolver</c> returns the literal
-	/// string <c>"latest"</c> for EVERY failure class (no active environment, missing CoreVersion, probe
-	/// error, unparseable version). Treating that string as "this stand is newer than the floor" would open
-	/// the gate on exactly the stand the floor protects — an 8.3.5 box whose cliogate is too old to answer
-	/// is served the <c>latest</c> catalog and would be pruned against a runtime it does not run.
+	/// The gate is a question about the PAYLOAD and deliberately not about the stand. An earlier design
+	/// also required the environment's platform version to be positively known and above a 10.0.0 floor,
+	/// because every versioned registry path served the WEB-derived catalog (10.0.0 listed 46 components
+	/// describing Angular inputs; 8.3.0 listed three) and pruning against one of those inverts into a
+	/// page-destroying pass. That floor was removed once the versioned registries were regenerated from the
+	/// mobile runtime: membership in ANY runtime-derived catalog is a valid support test, and each version's
+	/// own file describes the runtime that version actually runs — which is a better answer than a floor,
+	/// because it prunes correctly on an old stand instead of merely refusing to.
 	/// </para>
-	/// </param>
+	/// <para>
+	/// Reading the CONTENT rather than a version number is what makes that transition safe without a clio
+	/// release: a path still serving the old generation fails this check and the prune stays off, and it
+	/// switches itself on for that version the moment the regenerated file is published. The two
+	/// generations are disjoint apart from <c>name</c>/<c>type</c> — the web-derived one carries
+	/// <c>classes</c>, <c>id</c>, <c>loading</c>, <c>shape</c>, <c>styles</c>, <c>tabIndex</c>, and has never
+	/// carried <c>layoutConfig</c>, which is the Flutter layout model itself.
+	/// </para>
+	/// <para>
+	/// What this CANNOT detect is a regenerated versioned file that is a copy of <c>latest</c> rather than a
+	/// description of that version's own runtime: it passes every check clio can make and prunes an old
+	/// stand against a newer runtime. That correctness lives with the registry producer.
+	/// </para>
+	/// <para>
+	/// The <c>mobileRuntimeVersion</c> marker is NOT consulted, here or anywhere else in the converter. It
+	/// was the gate's second condition until the producer republished <c>latest</c> without it (2026-09-17
+	/// 14:15 GMT, ~2h after it was first observed) while the CONTENT stayed runtime-derived — same
+	/// <c>baseInputs</c>, same component contracts. A field that can vanish within hours of appearing is not
+	/// a contract to gate a feature on.
+	/// </para>
+	/// </remarks>
 	/// <param name="BaseInputs">
 	/// The registry's root <c>references.baseInputs</c> — the surface every component inherits. It is the
 	/// SOLE declaration site of <c>visible</c> and <c>layoutConfig</c>: NO component declares either in its
 	/// own <c>inputs</c>, so a membership test that ignored this would strip both from every element of
-	/// every converted page.
+	/// every converted page. It is also what identifies the generation, which is why one field carries both
+	/// jobs rather than the gate taking a second input it could disagree with.
 	/// </param>
-	public sealed record MobileRegistryGeneration(
-		string RequestedVersion,
-		bool VersionKnown,
-		IReadOnlyDictionary<string, JsonElement> BaseInputs) {
+	public sealed record MobileRegistryGeneration(IReadOnlyDictionary<string, JsonElement> BaseInputs) {
 
 		/// <summary>
-		/// The version floor the prune requires, exclusive. Every published path at or below it serves the
-		/// WEB-derived generation (10.0.0 lists 46 components describing web inputs; 8.3.0 lists three), so
-		/// on a stand at or below it THE PRUNE is a no-op.
-		/// <para>
-		/// "No-op" is scoped to the prune and no wider. ENG-96589 also corrected three property names the
-		/// bundled conversion RULES declared, and rules are resolved independently of this gate — the CDN
-		/// rules file is unpublished, so <c>WebToMobilePageConversionRulesCatalog</c> falls back to the
-		/// embedded copy, and rule-declared elements are exempt from the prune anyway. Those corrections
-		/// therefore reach every stand, including one below the floor.
-		/// </para>
-		/// </summary>
-		internal static readonly Version MinimumPrunableVersion = new(10, 0, 0);
-
-		/// <summary>
-		/// True when the target version is positively KNOWN and is a semver above the floor. Those two are
-		/// the gate; the payload's own shape is checked separately by
-		/// <see cref="DeclaredPropertyIndex.Build"/>.
-		/// <para>
-		/// Both halves are needed and neither implies the other. A stand on 8.3.5 has no published versioned
-		/// mobile registry, so the client falls back to the <c>latest</c> catalog — which describes a mobile
-		/// runtime NEWER than the one that stand runs, so the floor must block it. And a stand whose version
-		/// probe merely FAILED reports the literal string <c>"latest"</c> without being new at all, so the
-		/// floor cannot tell the two apart on its own and <see cref="VersionKnown"/> must.
-		/// </para>
-		/// <para>
-		/// The payload's <c>mobileRuntimeVersion</c> marker is deliberately NOT consulted — not here and
-		/// nowhere else in the converter, which is also why this record no longer carries it. It WAS the
-		/// gate's second condition until the producer republished <c>latest</c> without it (2026-09-17
-		/// 14:15 GMT, ~2h after it was first observed) while the CONTENT stayed runtime-derived — same
-		/// <c>baseInputs</c>, same component contracts. A field that can vanish within hours of appearing is
-		/// not a contract to gate a feature on. The case it used to cover, a version above the floor served
-		/// in the OLD web-derived generation, is covered by the inherited-surface check in
-		/// <see cref="DeclaredPropertyIndex.Build"/>: that generation's <c>baseInputs</c> carry the Angular
-		/// element attributes (<c>classes</c>, <c>shape</c>, <c>tabIndex</c>) and no <c>layoutConfig</c>.
-		/// </para>
-		/// </summary>
-		public bool PruneEnabled => VersionKnown && VersionAllowsPrune(RequestedVersion);
-
-		/// <summary>
-		/// True when the LOADED payload is the runtime-derived generation, judged by the inherited surface it
-		/// publishes. Deliberately independent of <see cref="PruneEnabled"/>: the gate is a question about the
-		/// STAND, this is a question about the CATALOG, and the two disagree on every stand whose versioned
-		/// registry 404s (8.3.5, 9.0.0 — served <c>latest</c>), on a degraded probe, and on an explicit
-		/// <c>version=latest</c>. Confusing them makes <c>mobileContracts[].allowedProperties</c> deny
-		/// <c>visible</c> and <c>layoutConfig</c> on a response whose every insert carries them.
+		/// True when the loaded payload is the runtime-derived generation — the whole gate.
 		/// <para>
 		/// Recognised case-INSENSITIVELY. The registry's dictionaries come from <c>System.Text.Json</c> with
 		/// the ORDINAL comparer, so an indexed lookup would make the whole feature hinge on the producer's
 		/// casing — the same single-string fragility that made the provenance marker unusable as a gate.
+		/// </para>
+		/// <para>
+		/// BOTH keys are required. A payload carrying only one is not a generation this converter has ever
+		/// seen, and pruning against half a surface would strip whatever the missing half declared — which
+		/// is exactly the shape a producer-side cleanup (moving <c>visible</c> into per-component inputs)
+		/// would produce.
 		/// </para>
 		/// </summary>
 		public bool CatalogIsRuntimeDerived =>
@@ -109,45 +84,6 @@ public static partial class WebToMobileAnalysisService {
 			&& new HashSet<string>(surface.Keys, StringComparer.OrdinalIgnoreCase) is { } keys
 			&& keys.Contains("layoutConfig")
 			&& keys.Contains("visible");
-
-		/// <summary>
-		/// True only for a version that normalises to a 3-part semver strictly above
-		/// <see cref="MinimumPrunableVersion"/>. Everything else — blank, unparseable, at/below the floor, or
-		/// the literal <c>latest</c> — is refused.
-		/// </summary>
-		/// <remarks>
-		/// <para>
-		/// <c>latest</c> is refused DELIBERATELY, and it is the one value that needs arguing. It is a CATALOG
-		/// ALIAS, not a statement about the target: a successful probe always returns a semver, so the string
-		/// reaches this method only from a caller who named it, or from a failed probe (which
-		/// <see cref="VersionKnown"/> already rejects). Accepting it meant <c>environment-name: &lt;8.3.5
-		/// stand&gt;</c> plus <c>version: "latest"</c> skipped the probe entirely and pruned against a Flutter
-		/// runtime that stand does not run — the exact input this feature's floor exists to refuse. The
-		/// sibling tools do not have this hole because they reject <c>version</c> and <c>environment-name</c>
-		/// together; this tool cannot, because it NEEDS the environment to read the source page.
-		/// </para>
-		/// <para>
-		/// The cost is that a caller who pins <c>latest</c> on a modern stand gets no prune. That is the
-		/// fail-open direction every other rule here takes, and it is visible rather than silent:
-		/// <c>propertyPruneApplied</c> reports false. To prune deliberately, name a version above the floor.
-		/// </para>
-		/// <para>
-		/// The version is NORMALISED before comparing, never handed to <c>System.Version</c> raw. A Creatio
-		/// core version is commonly 4-part (<c>10.0.0.934</c>), and <c>System.Version</c> compares its
-		/// Revision against the floor's implicit <c>-1</c> — so a raw comparison reads <c>10.0.0.934</c> as
-		/// ABOVE <c>10.0.0</c> and prunes the very generation the floor is named after. Normalising also
-		/// makes a 2-part <c>10.0</c> behave like <c>10.0.0</c> instead of sorting below it.
-		/// </para>
-		/// </remarks>
-		internal static bool VersionAllowsPrune(string requestedVersion) {
-			if (string.IsNullOrWhiteSpace(requestedVersion)
-				|| string.Equals(requestedVersion.Trim(), ComponentRegistryClient.LatestVersion, StringComparison.OrdinalIgnoreCase)) {
-				return false;
-			}
-			return PlatformVersionResolver.TryNormaliseToThreePartSemver(requestedVersion, out string threePart)
-				&& Version.TryParse(threePart, out Version parsed)
-				&& parsed > MinimumPrunableVersion;
-		}
 	}
 
 	/// <summary>
@@ -192,7 +128,7 @@ public static partial class WebToMobileAnalysisService {
 			//     flexConfig, bindTo, adaptive, visible). Requiring `layoutConfig` is therefore not a
 			//     heuristic over prose — it is the presence of the layout model the prune's whole
 			//     top-level-only design depends on, and no web-derived payload has ever carried it.
-			if (generation is not { PruneEnabled: true, CatalogIsRuntimeDerived: true }
+			if (generation is not { CatalogIsRuntimeDerived: true }
 				|| mobileByType is not { Count: > 0 }) {
 				return Disabled;
 			}

@@ -1240,12 +1240,10 @@ public sealed class MobilePageConversionGuide {
 	public IReadOnlyList<PrunedPropertyEntry> PrunedProperties { get; init; }
 
 	/// <summary>
-	/// Whether the property prune RAN for this conversion. False means the gate refused (the platform
-	/// version could not be positively determined, is at/below the prune floor, was pinned to the literal
-	/// <c>latest</c> — an alias that names a catalog rather than a stand — or the loaded catalog is not the
-	/// runtime-derived generation), so an undeclared property surviving is EXPECTED rather than a
-	/// defect. True with an absent <see cref="PrunedProperties"/> means the page simply carried nothing
-	/// undeclared.
+	/// Whether the property prune RAN for this conversion. False means the loaded component registry is not
+	/// the runtime-derived generation — the only reason it can refuse — so an undeclared property surviving
+	/// is EXPECTED rather than a defect. True with an absent <see cref="PrunedProperties"/> means the page
+	/// simply carried nothing undeclared.
 	/// <para>
 	/// This is the ONLY prune signal the response carries, and it is a plain bool so a caller can branch on
 	/// it in every response. The catalog's own <c>mobileRuntimeVersion</c> marker is deliberately not echoed

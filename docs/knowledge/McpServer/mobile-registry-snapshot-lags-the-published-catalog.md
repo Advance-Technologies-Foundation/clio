@@ -20,8 +20,8 @@ The live catalog is what runs in production: `MobilePageConversionGuideTool` bui
 `ComponentRegistrySnapshotTests`, whose guard checks for UNMAPPED FIELDS.
 
 Partial mitigation since ENG-96589: that guard now also asserts a COUNT FLOOR (`> 60`), so a wholesale
-regression to an older, smaller pin fails. A floor is not a freshness check — the producer adding one more
-component still trips nothing. The guard does NOT require the `mobileRuntimeVersion` marker: the producer
+regression to an older, smaller pin fails. A count floor is not a freshness check — the producer adding one
+more component still trips nothing. The guard does NOT require the `mobileRuntimeVersion` marker: the producer
 dropped it from `latest` on 2026-09-17, so requiring it would fail on the current file.
 
 **Why it is this way** — the snapshot is refreshed by hand (`curl … > <fixture>`) when someone notices a

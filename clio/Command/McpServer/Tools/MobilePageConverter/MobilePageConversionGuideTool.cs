@@ -155,17 +155,12 @@ public class MobilePageConversionGuideTool {
 		IReadOnlyDictionary<string, ComponentRegistryEntry> mobileByType = IndexByComponentType(mobileEntries);
 		IReadOnlyDictionary<string, ComponentRegistryEntry> webByType = IndexByComponentType(webEntries);
 		// ENG-96589 — what the converter may treat as an authoritative statement of what mobile supports.
-		// `version` is the TARGET ENVIRONMENT's resolved platform version (not what the CDN chain served):
-		// a stand whose versioned registry 404s falls back to `latest`, and pruning it against a runtime
-		// newer than its own would strip properties it actually supports, so the stand's version is the
-		// question. BaseInputs travels along because it is the sole declaration site of visible/layoutConfig.
-		var mobileRegistryGeneration = new WebToMobileAnalysisService.MobileRegistryGeneration(
-			RequestedVersion: version,
-			// `Environment` covers both "read from the stand" and "named outright by the caller" — the two
-			// cases where the version is a POSITIVE statement about the target. A LatestFallback reports the
-			// literal string "latest" because the probe FAILED, which says nothing about how new the stand is.
-			VersionKnown: versionResolution.Source == VersionResolutionSource.Environment,
-			BaseInputs: mobileState.GlobalReferences?.BaseInputs);
+		// The question is about the PAYLOAD that was actually loaded, not about the stand: each version's
+		// registry describes the mobile runtime that version runs, so membership in the file the chain
+		// served IS the support test. baseInputs carries both jobs — it is the sole declaration site of
+		// visible/layoutConfig, and its content identifies the generation.
+		var mobileRegistryGeneration =
+			new WebToMobileAnalysisService.MobileRegistryGeneration(mobileState.GlobalReferences?.BaseInputs);
 
 		WebToMobilePageConversionRules rules = await _rulesCatalog.GetRulesAsync(version, cancellationToken).ConfigureAwait(false);
 		// Resolve the effective web template, climbing past same-named replacing layers when the page is a
@@ -877,7 +872,7 @@ public sealed record MobilePageConversionGuideArgs(
 	string TargetSchemaName = null,
 
 	[property: JsonPropertyName("version")]
-	[property: Description("Optional Creatio/registry version used to resolve the mobile and web component registries. A 3-part semver, or 'latest'. Defaults to probing the target environment. NOTE: an explicit value OVERRIDES that probe, and the literal 'latest' names a catalog rather than a stand, so it switches the undeclared-property prune OFF (propertyPruneApplied reports false). Name a version above 10.0.0 to prune deliberately.")]
+	[property: Description("Optional Creatio/registry version used to resolve the mobile and web component registries. A 3-part semver, or 'latest'. Defaults to probing the target environment. An explicit value OVERRIDES that probe, so naming a version other than the target's own measures the conversion against a different mobile runtime.")]
 	string Version = null,
 
 	[property: JsonPropertyName("environment-name")]

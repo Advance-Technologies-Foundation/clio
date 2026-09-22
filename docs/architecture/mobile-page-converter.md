@@ -170,10 +170,12 @@ Four working operations; two reach the wire.
   only the delta over the template, no `type`. A TOP-LEVEL property the target mobile component does not declare is then
   removed by `PruneUndeclaredProperties` and reported in `prunedProperties` (ENG-96589). Membership is
   `inputs ∪ outputs ∪ references.baseInputs` — `outputs` because that is where the runtime-derived registry puts every
-  event binding, `baseInputs` because `visible` and `layoutConfig` are declared nowhere else. The prune runs only when the
-  environment's platform version is POSITIVELY KNOWN and is `latest` or above `10.0.0`, and the loaded catalog carries the
-  Flutter inherited surface (`layoutConfig` + `visible` in `references.baseInputs`, which the web-derived generation never
-  has). On any other stand THE PRUNE is a no-op — but note that is scoped to the prune: the three property
+  event binding, `baseInputs` because `visible` and `layoutConfig` are declared nowhere else. The prune runs when — and only
+  when — the loaded catalog carries the Flutter inherited surface (`layoutConfig` + `visible` in `references.baseInputs`,
+  which the web-derived generation never has). Nothing about the stand's platform VERSION is consulted: each version's
+  registry describes the runtime that version runs, so an old stand served its own regenerated file is pruned correctly
+  rather than merely spared, and a path still serving the old generation switches the prune off for itself. Against a
+  web-derived payload THE PRUNE is a no-op — but note that is scoped to the prune: the three property
   names ENG-96589 corrected in the bundled conversion RULES reach every stand, because rules resolve through
   their own catalog (the CDN rules file is unpublished, so the embedded copy is the source of truth) and
   rule-declared elements are exempt from the prune regardless of the gate. Whether the prune ran is reported
@@ -391,7 +393,8 @@ E2E: the `clio.mcp.e2e` converter fixtures against a seeded stand.
 | Gap | Status |
 |---|---|
 | A property nested inside an `object`-typed input (e.g. `crt.ChartWidget.config`) is never pruned | Deliberate: the prune is top-level only while such an input is opaque. Contextual validity and MISSING properties are a different class of defect |
-| A stand at or below `10.0.0` still carries undeclared properties | Deliberate: every versioned mobile registry path serves the web-derived catalog, so membership in it is not a valid test. Resolves itself as versioned runtime-derived files are published |
+| A stand whose registry path still serves the web-derived catalog carries undeclared properties | Deliberate: membership in that generation is not a valid mobile-support test. Resolves itself per version as the regenerated files are published — the gate reads the payload, so no clio release is involved |
+| A stand whose version has no published registry (`8.3.5`, `9.0.0`) is measured against `latest` | Accepted: the chain falls back, and the response reports `resolvedFrom: environment-superset` with a `versionWarning`. Not silent, not refused |
 | `crt.MenuItem` has no inline contract | Rules emit it; the mobile registry does not describe it |
 | `adaptiveLayout`, `tabAreaLayers`, `modelConfig`, `viewModelConfig` re-serialize data the operations / diffs carry | Provenance the caller reads, not applies; removal is a contract decision |
 | A type whose every instance vanishes is reported per type, not per element | `componentSuggestions` only |
