@@ -57,6 +57,28 @@ public sealed class ModifyBusinessProcessServiceTests {
 	}
 
 	[Test]
+	[Description("confirmLayoutChange is posted on EVERY edit, false included. The server reads an absent "
+		+ "member as a caller built before the layout gate existed - one that cannot answer a refusal - and "
+		+ "applies the edit rather than blocking it. Sending the member only when true would therefore put "
+		+ "this client in that class on exactly the requests where the user has NOT agreed, and the gate "
+		+ "would never fire for clio at all.")]
+	public void ModifyProcess_ShouldPostTheConfirmationMember_EvenWhenItIsFalse() {
+		// Arrange
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
+		client.ExecutePostRequest(ModifyUrl, Arg.Any<string>()).Returns(
+			"{\"ModifyProcessResult\":{\"success\":true,\"schemaName\":\"UsrProc\",\"appliedOperations\":1}}");
+		ModifyBusinessProcessService service = CreateService(client);
+
+		// Act
+		service.ModifyProcess(Env, new ModifyBusinessProcessRequest("UsrProc", null, Operations));
+
+		// Assert
+		client.Received(1).ExecutePostRequest(ModifyUrl, Arg.Is<string>(body =>
+			Wrapped(body)["confirmLayoutChange"] != null
+			&& Wrapped(body)["confirmLayoutChange"].GetValue<bool>() == false));
+	}
+
+	[Test]
 	[Description("Reads the server's warnings[] off a SUCCESSFUL edit — the channel that carries the two outcomes which apply but are not what a caller assumes, and which an undeclared member would drop in silence.")]
 	public void ModifyProcess_ShouldReadWarnings_WhenServerReportsThemOnASuccessfulEdit() {
 		// Arrange

@@ -1462,7 +1462,11 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 			response = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(callResult);
 			return true;
 		}
-		catch (InvalidOperationException) {
+		catch (InvalidOperationException exception) {
+			// The throw is used as a boolean here, so a caller that returns false is a PASSING test.
+			// Its dump would otherwise be left in the published TestResults artifact with its path
+			// discarded along with the exception, making the one dump from a real failure hard to find.
+			PayloadDumpReader.DeleteIfPresent(exception.Message);
 			response = null;
 			return false;
 		}

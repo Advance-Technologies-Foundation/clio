@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 using Clio.Common;
@@ -60,11 +60,15 @@ public class ModifyProcessAsNewVersionTool(
 		 + "package, always — there is no fallback to a design package, so if the source's package does not "
 		 + "accept edits the call is refused and you must name an editable one. A version does NOT inherit the "
 		 + "root's package, and cross-package version families are normal. "
+		 + "THIS IS THE ANSWER to modify-business-process refusing an edit that would re-draw someone's "
+		 + "diagram: send it the same operations here once the user has agreed, and their process keeps the "
+		 + "diagram it has while the edit lands somewhere they can look at. Unlike that tool, this one never "
+		 + "refuses over layout — it reports how the new version's diagram differs and creates it anyway. "
 		 + "The new version is created INACTIVE: creating it changes NOTHING about what the environment "
-		 + "executes, and the source keeps running until something activates the new one. Activating is a "
-		 + "SEPARATE, explicit step — call set-active-business-process-version, and only if the user asked for "
-		 + "it; the product itself asks before making a new version actual, so do not activate on your own "
-		 + "initiative. The response reports the created version's schema UId, the name the PLATFORM composed "
+		 + "executes, and the source keeps running until something activates the new one. Activating is the "
+		 + "SECOND question and a SEPARATE call: ASK the user to open this version, look at it, and say "
+		 + "whether to make it actual; only then call set-active-business-process-version. Never chain the "
+		 + "two — a version is created inactive precisely so they get to look first. The response reports the created version's schema UId, the name the PLATFORM composed "
 		 + "(root name + package + number — you cannot predict or choose it), the version NUMBER the platform "
 		 + "allocated, isActiveVersion (false), the family ROOT UId (the family is FLAT — a version of a version "
 		 + "still points at the root) and the applied-operation count. The number and the flag are reported only "
@@ -76,9 +80,11 @@ public class ModifyProcessAsNewVersionTool(
 		 + "half-created version to clean up. Note that a version can never be DELETED — the platform has no such "
 		 + "operation — so every version you create is permanent; take that into account before creating one "
 		 + "speculatively. Requires the ProcessDesignService (CrtProcessBuilder) package on the target "
-		 + "environment at CrtProcessBuilder 1.6.1.0 or newer, which is where this operation first exists — an "
-		 + "older package is refused up front, naming the version this operation needs; install or update it "
-		 + "with install-process-builder. After a successful save the version normally stays INTERPRETED and "
+		 + "environment at CrtProcessBuilder 1.6.2.1 or newer — an older package is refused up front, naming the "
+		 + "version this operation needs; install or update it with install-process-builder. (The operation itself "
+		 + "first exists in 1.6.1.0; the floor moved to 1.6.2.1 with the Send email template message mode, because "
+		 + "the operations vocabulary now carries email.messageSource/template/templateEntity, which an older server "
+		 + "silently discards, and this route runs NO read-back check that could tell you.) After a successful save the version normally stays INTERPRETED and "
 		 + "runs as-is once activated, so compile-creatio is not needed — UNLESS the response warns that the "
 		 + "version cannot execute until the configuration is compiled, which happens when the source process "
 		 + "was itself not interpretable. Heed the warning over this sentence: run compile-creatio in that case. "

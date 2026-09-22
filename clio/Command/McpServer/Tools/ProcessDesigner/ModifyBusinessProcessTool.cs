@@ -19,7 +19,13 @@ public class ModifyBusinessProcessTool(
 	internal const string ModifyBusinessProcessToolName = "modify-business-process";
 
 	/// <summary>The canonical field list echoed back when an unknown argument key is refused (ENG-98566).</summary>
-	internal const string ValidArgsHint = "Valid: environment-name, process-name, process-uid, operations.";
+	// Lists confirm-layout-change although it is optional, because this hint is what an agent reads to
+	// RECOVER from a rejected argument - and the one call that needs recovering is the re-send after a
+	// layout refusal the user has already agreed to. An agent that reaches for the server's own wire
+	// spelling (confirmLayoutChange) lands in ExtensionData, is told the argument is unknown, and reads
+	// here that the flag it needs does not exist - so the consent the user gave cannot be acted on.
+	internal const string ValidArgsHint =
+		"Valid: environment-name, process-name, process-uid, operations, confirm-layout-change.";
 
 	/// <summary>
 	/// Refusal for a call whose whole argument object is absent (ENG-98566, Sonar S2259).
@@ -36,6 +42,8 @@ public class ModifyBusinessProcessTool(
 	/// </summary>
 	/// <param name="args">The tool arguments; see <see cref="ModifyBusinessProcessArgs"/>.</param>
 	/// <param name="operations">Inline JSON operations array.</param>
+	/// <param name="confirmLayoutChange">Agreement to have THIS process re-drawn, sent only after the user has
+	/// turned down the new-version route.</param>
 	/// <returns>The command execution result with the edited schema identity in the log output.</returns>
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
@@ -53,7 +61,7 @@ public class ModifyBusinessProcessTool(
 	 // standing second — an agent reads the full contract before calling. See
 	 // docs/knowledge/McpServer/first-sentence-of-a-description-becomes-the-compact-index-purpose.md
 	 Description("Edit an EXISTING business process on a Creatio environment by applying an ordered JSON array of operations. "
-		 + "BEFORE CALLING with an accessRights block: that block changes who can read, edit or delete LIVE records. Show the user the target object, the element record filter that decides WHICH records are affected, and every grantee with its operations and level - calling out level:delegate as onward re-sharing, level:restrict as the platform Deny level, which is DESTRUCTIVE rather than inert: UseDenyRecordRights gates only record positioning, never whether a right row is written. Against a grantee who already holds Allow it DOWNGRADES that row to Deny, and a fresh insert writes one row per operation - the one you named at your level and the OTHER TWO at Deny - so operations:['read'] denies edit and delete as well, and a remove entry is the way to take access away. Call out a remove entry as a revoke, and a supplied add/remove as a REPLACEMENT that drops every entry it does not restate - and get an explicit yes. The element has no output parameters, so nothing at run time will report what it did. The SAME confirmation is required for a clearFilter targeting a Change access rights element even though it carries no accessRights block: clearing the record filter is the widest edit this surface offers - it moves the element from narrowing to applying the permission change to EVERY record of its object, with record permissions disabled. Show the user which element and which object, and get an explicit yes. "
+		 + "BEFORE CALLING with an accessRights block: that block changes who can read, edit or delete LIVE records. Show the user the target object, the record filter deciding WHICH records are affected, and every grantee with its operations and level - calling out level:delegate as onward re-sharing, level:restrict as the platform Deny level, which is DESTRUCTIVE rather than inert: it DOWNGRADES an existing Allow row to Deny, and a fresh insert denies the two operations you did not name. Call out a remove entry as a revoke, and a supplied add/remove as a REPLACEMENT dropping every entry it does not restate - and get an explicit yes; the element has no output parameters. The SAME confirmation is required for a clearFilter on a Change access rights element even with no accessRights block: it acts on EVERY record with record permissions disabled - name the element and object, and get an explicit yes. "
 		 + "Identify the process by name (schema code) or uid. Each operation is an object with an "
 		 + "'op': addElement (with an 'element' descriptor: name (the element handle/local code), type, caption, "
 		 + "userTaskName?, useBackgroundMode? (element-level, supported by every element kind), "
@@ -61,7 +69,7 @@ public class ModifyBusinessProcessTool(
 		 + "approval? (approval elements — same block as create-business-process), "
 		 + "performer? (performTask elements — same block as create-business-process: who performs the task), "
 		 + "signal? {entity, on:added|modified|deleted, changedColumns?:[<ColumnName>,...]}, "
-		 + "formula? (formulaTask - create block; full on addElement, PARTIAL on setElement)), "
+		 + "formula?), "
 		 + "removeElement (with 'elementName' = the element's local name or UId), addFlow "
 		 + "(with 'source' and 'target' element names, plus an optional 'kind' — sequence (default) | "
 		 + "conditional | default — for a conditional one its 'condition', and an optional 'label') / "
@@ -70,11 +78,10 @@ public class ModifyBusinessProcessTool(
 		 + "joined by two flows, ignoring a 'kind' would remove one you did not name. Strip those fields "
 		 + "before removing. The REFUSAL ships from CrtProcessBuilder 1.6.0.10; below it the extra fields "
 		 + "are accepted and silently dropped, so on an older environment stripping them is the whole "
-		 + "protection and there is no backstop to rely on), setFlow (with "
+		 + "protection), setFlow (with "
 		 + "'source', 'target' and 'kind', plus an optional 'label': changes an EXISTING flow's kind IN PLACE, "
-		 + "keeping its UId and its "
-		 + "position, which is what keeps branch precedence — a remove-and-add looks equivalent and silently "
-		 + "moves the branch to last), setFlowCondition (with 'source' and "
+		 + "keeping its UId and its position, which decides branch precedence"
+		 + "), setFlowCondition (with 'source' and "
 		 + "'target' naming an EXISTING flow, plus a non-empty 'condition' — and NOT a 'kind', which it does "
 		 + "not read and REFUSES from 1.6.0.11 (it resolves the flow by its endpoint pair, so an echoed kind "
 		 + "would be dropped while the edit landed on whichever flow that pair resolves to) — a boolean "
@@ -126,11 +133,15 @@ public class ModifyBusinessProcessTool(
 		 + "flow label - one PREDATING it discards the field silently, so clio reads the flows back "
 		 + "and warns when a label you sent is not what is drawn), "
 		 + "addParameter (with a 'parameter': name, type "
-		 + "one of Text/Long text/Integer/Float/Money/Boolean/Date/Date-time/Time/Guid - plus Lookup, which is "
+		 + "one of Text/Long text/Integer/Float/Money/Boolean/Date/Date-time/Time/Guid/Collection - plus Lookup, which is "
 		 + "requested through referenceSchema rather than through type; anything else is rejected), "
-		 + "direction?, caption?, description?, optional value (a literal constant, not a formula), or "
-		 + "referenceSchema for a Lookup to an object e.g. City, or typeFromElement + typeFromElementParameter to "
-		 + "copy an element parameter's exact type), addMapping (with a 'mapping' whose keys are FLAT, not "
+		 + "direction? (a Collection defaults to Out unless you set one), caption?, description?, optional value (a literal constant, not a formula; refused on a Collection), or "
+		 + "referenceSchema for a Lookup to an object e.g. City (refused on a DECLARED Collection, ignored on a mirror), or typeFromElement + typeFromElementParameter to "
+		 + "copy an element parameter's exact type — mirroring a COLLECTION output (e.g. a "
+		 + "readData element's ResultCompositeObjectList) also copies its per-column itemProperties, "
+		 + "stamps tag '<element>.<parameter>' and binds the parameter to that output in the same step, exactly as the "
+		 + "designer's 'create parameter from element' does; a collection output is REFUSED as a mirror source when it carries NO itemProperties, or when an item carries no column UId in its tag — the mirror would be a bound, tagged, unbindable empty shape — so mirror an output the platform shaped, or declare a bare Collection on purpose; a bare type Collection is an opaque list with no shape), "
+		 + "addMapping (with a 'mapping' whose keys are FLAT, not "
 		 + "nested under a 'target' object: a target of either 'targetProcessParameter' or 'elementName' + "
 		 + "'elementParameter', and one source of {sourceElement, sourceElementParameter} "
 		 + "| processParameter | value | expression; parameter-to-parameter mappings require compatible types; "
@@ -146,8 +157,9 @@ public class ModifyBusinessProcessTool(
 		 + "[#BooleanValue.True#]. An expression is VALIDATED, by the PLATFORM, at the pre-save gate — so a bad "
 		 + "one aborts the whole edit with 'Process validation failed' and nothing is saved, rather than being "
 		 + "attributed to the one operation that carried it, which is why such a refusal reports NO "
-		 + "failedOperationIndex while one caused by a single operation reports its zero-based index (on CrtProcessBuilder this clio requires 1.6.0.3, the first "
-		 + "archive whose page change reconciles a Pre-configured page element's data sources; the message contract "
+		 + "failedOperationIndex while one caused by a single operation reports its zero-based index (on CrtProcessBuilder this clio requires 1.6.2.1 — the archive "
+		 + "carrying the Send email template message mode (ENG-95986), which subsumes 1.6.0.1's page-change reconciliation of a "
+		 + "Pre-configured page element's data sources; the message contract "
 		 + "described here is NOT where that collapse happened: 1.4.0.41 is where the PACKAGE stopped validating formulas a second "
 		 + "time and the platform's gate became the only one, .42 corrected the message that replaced the package's "
 		 + "own reference pre-check, and .44 is the first archive carrying both AND the ENG-96325 lookup-constant "
@@ -168,21 +180,22 @@ public class ModifyBusinessProcessTool(
 		 + "invalid line break symbol' and quotes the expression as EMPTY; an unresolvable [#…#] parameter "
 		 + "reference is not in this family at all - it names the reference and the remedy instead. Must be "
 		 + "one line; "
-		 + "a Lookup target's 'value' takes a bare non-empty record Guid, stored as the ConstValue the runtime "
-		 + "actually reads - and, from 1.4.0.40, the referenced record's NAME is resolved into the parameter's display value, which is what the designer renders, so 'Task category' shows Call rather than a Guid and describe reports it as valueDisplay beside the unchanged bare-Guid value. An already-composed [#Lookup.{objectUId}.{recordId}#] is ALSO accepted on a Lookup target and decoded to that bare id, so a value echoed back from describe re-submits unchanged; the same name resolution applies to a Lookup process parameter's DEFAULT set through addParameter / setParameter 'value', but the macro DECODE does NOT - that is the mapping route only, so a [#Lookup...#] written into a parameter default is stored as text and never resolved. (the route ships from CrtProcessBuilder 1.3.1.1; THIS clio additionally refuses, up "
-		 + "front, any environment below the version it NEEDS — the [RequiresPackage] floor, whose message names "
-		 + "that one version — and, when that floor is below what clio bundles, the package-convergence check "
-		 + "refuses the gap instead, naming both. An older clio surfaces the old package's [#Lookup…#]-macro rejection; either "
-		 + "refusal means the ENVIRONMENT IS BEHIND, not that the parameter is unsettable: update the package); "
-		 + "a non-Guid lookup value is refused with a message that leads with the bare-Guid route (the "
-		 + "[#Lookup…#] expression form stays the named fallback), Guid.Empty is refused as "
-		 + "referencing no record, and a Guid that exists in NO record of the parameter's reference object is "
-		 + "refused naming that object — so an id of the WRONG entity, e.g. a role id on the Contact-typed "
-		 + "OwnerId, cannot be stored; to assign a TEAM use the element-level 'performer' block, not OwnerId; "
-		 + "re-mapping an already-bound target overwrites it in place — there is no removeMapping/clear op), "
+		 + "a Lookup target's 'value' takes a bare non-empty record Guid (ships from CrtProcessBuilder 1.3.1.1; an "
+		 + "older-than-required environment is refused naming the version) - describe reports its resolved NAME "
+		 + "as valueDisplay beside the unchanged Guid, and an already-composed [#Lookup…#] macro is also accepted "
+		 + "and decoded, so a described value re-submits unchanged; a non-Guid value, Guid.Empty, or a Guid of "
+		 + "the WRONG entity (e.g. a role id on the Contact-typed OwnerId - use the element-level 'performer' "
+		 + "block for a TEAM) is refused naming why. get-guidance name=process-parameters owns the full contract, "
+		 + "including the same rule for a Lookup parameter's DEFAULT. Re-mapping an already-bound target "
+		 + "overwrites it in place — there is no removeMapping/clear op), "
 		 + "setParameter (with 'parameterName' = the target parameter by name/UId and 'parameterUpdate' = any of "
-		 + "caption/description/code/direction/referenceSchema (re-targets an existing Lookup only)/value, updated "
-		 + "in place — a data-type change is rejected), removeParameter (with 'parameterName'; blocked when another "
+		 + "caption/description/code/direction/referenceSchema (re-targets an existing Lookup only)/value/typeFromElement "
+		 + "+ typeFromElementParameter (a Collection only), updated "
+		 + "in place — a data-type change is rejected; on a Collection parameter the mirror pair refreshes its itemProperties "
+		 + "from the output it was CREATED from — the designer's Regenerate: the pair must equal the parameter's own tag AND "
+		 + "the parameter must still be bound to that output, so a DIFFERENT source, a binding since moved elsewhere, or a "
+		 + "bare (untagged) Collection is refused and retargeting is removeParameter + addParameter; the tag and the "
+		 + "binding are left untouched, both sides must be collections, and a shapeless source is refused here too), removeParameter (with 'parameterName'; blocked when another "
 		 + "parameter, an element mapping, an execution-context parameter or a conditional-flow CONDITION still "
 		 + "references it — including from inside a sub-process; the refusal names each site), setFilter (elementName + a 'filter': {object, logicalOperation:and|or, "
 		 + "conditions:[{column (may be a lookup dot-path), comparison:equal|notEqual|greater|less|contains|isNull|..., "
@@ -194,17 +207,19 @@ public class ModifyBusinessProcessTool(
 		 + "element and its flows; partial update: omit on to keep the current change type, omit entity to keep the "
 		 + "current one (retargeting it clears any old-entity filter), omit changedColumns to clear column tracking; "
 		 + "changedColumns is valid only for on:modified), setElement (elementName + an 'elementUpdate':"
-		 + "{useBackgroundMode?, readData?, changeData?, accessRights?, email?, approval?, formula?, performer?, openEditPage?, preconfiguredPage?} — changes element-level fields IN PLACE, preserving the element and its "
+		 + "{useBackgroundMode?, readData?, changeData?, addData?, deleteData?, accessRights?, email?, approval?, formula?, performer?, openEditPage?, preconfiguredPage?, subProcess? (get-guidance name=process-element-catalog owns the formula block, name=process-sub-process owns the subProcess block)} — changes element-level fields IN PLACE, preserving the element and its "
 		 + "flows; only the fields you pass change. useBackgroundMode applies to ANY element kind. readData "
-		 + "{source?, mode?:first, columns?, sort?:{column, direction?:asc|desc}} reconfigures a readData element's "
-		 + "data configuration: omit source to keep the current source object, omit columns/sort to keep the current "
-		 + "selection/order, pass columns:[] to reset to ALL columns. TWO refusals guard it: an element a human "
-		 + "configured in collection/count/aggregation mode cannot be converted to first-record — an explicit "
-		 + "mode:'first' is refused too, because its collection item parameters would be left behind — remove the "
-		 + "element and add a new readData one instead; and retargeting source to a different object is refused while "
-		 + "ANY other parameter still maps from the element (the refusal names each dependent — re-map or remove them "
-		 + "first). A retarget that proceeds clears the columns, sort AND record filter bound to the old entity — "
-		 + "re-supply them (and setFilter) in the same batch), "
+		 + "{source?, mode?:first|collection|count|aggregation, columns?, numberOfRecords? (collection only), "
+		 + "sort?:{column, direction?:asc|desc}, "
+		 + "aggregation?:{function:sum|avg|min|max, column} (aggregation only, required there)} reconfigures a readData "
+		 + "element's data configuration: omitted fields keep their stored value, pass columns:[] to reset to ALL "
+		 + "columns (first only). Changing the mode is a real conversion, REFUSED while ANY other parameter still "
+		 + "maps from the element (each mode produces a different output parameter); a conversion that proceeds "
+		 + "clears the previous mode's parameters and moves the result flag to the new mode's output. Retargeting "
+		 + "source is refused the same way and, proceeding, clears columns/sort/filter bound to the old entity - "
+		 + "re-supply them (and setFilter) in the same batch. get-guidance name=process-read-data owns the full "
+		 + "per-mode transition table (collection's columns/numberOfRecords rules, the output-parameter mapping "
+		 + "per mode, and the ResultCompositeObjectList shaping rules), "
 		 + "preconfiguredPage {page?, buttons?, dataSources?, performer?, recommendation?} reconfigures a "
 		 + "Pre-configured page element: every field is optional here, and OMITTING buttons or dataSources "
 		 + "means LEAVE THEM ALONE, never the page has none — with TWO exceptions when page changes TO a Freedom "
@@ -221,7 +236,8 @@ public class ModifyBusinessProcessTool(
 		 + "a rename keeps its value, a data-type change drops the value and is reported in the warnings). "
 		 + "An element on a CLASSIC UI page keeps that page and is limited to the fields both page types "
 		 + "share — buttons are refused there. "
-		 + "changeData {source?, values?} reconfigures a changeData element: omit source to keep the current "
+		 + "addData {source?, mode?, selection?, values?} reconfigures an Add data element IN PLACE: omitted fields keep their stored value (a supplied values array REPLACES the whole set); a retarget is refused while another parameter still maps from the element or a stored selectionColumn would strand, and clears the stored filter unless it already targets the new object - re-issue setFilter in the same batch; get-guidance name=process-add-data owns the full transition table. "
+		+ "changeData {source?, values?} reconfigures a changeData element: omit source to keep the current "
 		 + "target object, a supplied values array REPLACES the whole assignment set. Retargeting source to a "
 		 + "different object REQUIRES values for the new entity in the same update — the server refuses a "
 		 + "values-less retarget, because the cleared element would be silently skipped by the runtime; the same "
@@ -229,16 +245,30 @@ public class ModifyBusinessProcessTool(
 		 + "refused while another parameter still maps from the element (the refusal names each dependent). On ANY "
 		 + "target change (first configuration included) the stored record filter clears unless it already "
 		 + "targets the incoming object — re-issue setFilter when it cleared), "
-		 + "accessRights {object?, considerTimeInFilter?, add?, remove?} reconfigures a Change access rights element in place (entry shape as in create-business-process: omitted fields keep their values; a supplied add/remove REPLACES that whole collection — its previous grantee parameters are removed, replace is the only way to remove an entry — and [] clears it — clearing ONE is safe only while the other still holds an entry, since an element with both empty runs and changes nothing while reporting success. Because a supplied collection replaces rather than appends, a collection you build from a read-back can only be as complete as that read-back was: describe reports a stored-but-undecodable collection as an EMPTY array, but its addUnreadable/removeUnreadable counts say how many entries it could NOT report (-1 when the collection itself did not decode) - so a non-zero count means the stored entries are UNKNOWN rather than absent, and an empty collection with a ZERO count is genuinely empty. Supplying a collection for an element whose count is non-zero DROPS whatever it did not restate, including a remove entry, which BROADENS access: omit the field to keep what is there, or confirm the stored entries in the process designer first. NOTE clio also reads the process back after an array whose ONLY operation is clearFilter, and warns on the resulting filter state of any Change access rights element among the cleared - clearing a record filter makes the element act on EVERY record of its object, so that batch is checked rather than silent. A setFilter is not re-read: it always carried an object and its conditions, so it can only leave the element narrowing. It cannot verify what it cannot read: if the read-back fails, or the environment's CrtProcessBuilder does not report the block, you are told that instead; omit object to keep the current target (required when none is stored yet, and a present-but-blank object is refused). On ANY object change (first configuration included) the stored record filter clears unless it already targets the incoming object — re-issue setFilter in the same batch), "
+		 + "deleteData {source?} reconfigures a deleteData element: omit source to keep the current target "
+		 + "object. Retargeting source is refused while another parameter still maps from the element, and on ANY "
+		 + "target change (first configuration included) the stored record filter clears unless it already targets "
+		 + "the incoming object — re-issue setFilter when it cleared, because a deleteData element with no filter "
+		 + "deletes nothing and fails at run time — the server WARNS in the response when a retarget cleared it, "
+		 + "so treat that warning as an unfinished edit. DESTRUCTIVE, and a retarget is the edit that most needs "
+		 + "the ceremony, not less of it: it changes WHICH OBJECT is deleted from AND drops the filter that "
+		 + "scoped the old one, so consent given for the previous set does NOT carry. Before retargeting, do "
+		 + "what create-business-process requires of a new deleteData element — COUNT what the new filter "
+		 + "will match or name why no count is possible, tell the user the OBJECT (as the designer names it, "
+		 + "unshortened), the NUMBER and the consequences, and get an explicit yes; get-guidance "
+		 + "name=process-delete-data carries the message template and the exchange rules), "
+		 + "accessRights {object?, considerTimeInFilter?, add?, remove?} reconfigures a Change access rights element in place - get-guidance name=process-access-rights owns that block in full, including what a supplied collection REPLACES and what a read-back cannot see), "
 		 + "email "
 		 + "(sendEmail elements only, same block as create-business-process) rewrites the fields you pass — mode, "
-		 + "sender, subject, body, importance, ignoreErrors, performer replace the current value IN PLACE, but "
-		 + "to/cc/bcc recipients MATCH-OR-APPEND: an entry the line already carries (same resolved source AND value) is "
-		 + "a no-op, so re-applying the same block does NOT double an address, while a genuinely new address is "
-		 + "appended (numbering continues; a wrong recipient cannot be replaced or removed through modify yet — tell "
-		 + "the user). Switching mode to auto stops describe reporting "
-		 + "a performer (a performer applies to the manual mode only), though the element keeps the assignment it "
-		 + "had; switch back to manual to see it again), "
+		 + "sender, subject, body, template, templateEntity, importance, ignoreErrors, performer replace the current value "
+		 + "IN PLACE. SWITCHING the message mode clears what the other mode owns, so describe stays re-appliable: a "
+		 + "template (or messageSource 'template') on a custom element clears Body and a constant Subject you do not "
+		 + "re-supply; a body (or messageSource 'custom') on a template element clears the template and its macro "
+		 + "source; get-guidance name=process-send-email-template owns switching in full. "
+		 + "to/cc/bcc recipients MATCH-OR-APPEND: an existing entry (same resolved source AND value) is a no-op, a "
+		 + "genuinely new address is appended (a wrong recipient cannot be replaced or removed through modify yet). "
+		 + "Switching mode to auto stops describe reporting a performer, though the element keeps the assignment; "
+		 + "switch back to manual to see it again), "
 		 + "approval reconfigures an Approval element IN PLACE, same block as create-business-process: omit 'object' "
 		 + "to keep the current approval object, omit 'recordId' to keep the current record, omit 'approver' to keep "
 		 + "the current approver, and each notification block applies only when present. Supplying 'approver' "
@@ -335,7 +365,7 @@ public class ModifyBusinessProcessTool(
 		 + "first. For a setFlowCondition operation or an 'expression' mapping source read get-guidance "
 			 + "name=process-formulas - it owns the accepted vocabulary, the reference syntax, what each "
 			 + "refusal names, and the length bound. "
-			 + "Requires the ProcessDesignService (CrtProcessBuilder) package on the target environment; install it with install-process-builder. After a successful edit the process stays INTERPRETED and runs as-is: do NOT run compile-creatio, and do NOT infer a compile from a raw process read (a `VwSysProcess` row's `NeedInstall`/`NeedUpdateSourceCode`/`NeedUpdateStructure` are dirty flags, not a compile trigger) — verify with describe-business-process. The response carries a compile-not-required note; a process needs a compile only if it has a Script Task (custom C#), which clio cannot author.")]
+			 + "Requires the ProcessDesignService (CrtProcessBuilder) package; install with install-process-builder. After a successful edit the process stays INTERPRETED and runs as-is: do NOT run compile-creatio, and do NOT infer a compile need from a raw `VwSysProcess` read (its dirty flags are not a compile trigger) — verify with describe-business-process, whose response carries a compile-not-required note; a compile is needed only for a Script Task (custom C#), which clio cannot author.")]
 	public CommandExecutionResult ModifyBusinessProcess(
 		[Description("modify-business-process parameters")] [Required] ModifyBusinessProcessArgs args
 	) {
@@ -357,7 +387,8 @@ public class ModifyBusinessProcessTool(
 			Environment = args.EnvironmentName,
 			ProcessName = args.ProcessName ?? string.Empty,
 			ProcessUid = args.ProcessUid ?? string.Empty,
-			OperationsJson = args.Operations
+			OperationsJson = args.Operations,
+			ConfirmLayoutChange = args.ConfirmLayoutChange ?? false
 		};
 		// A business process edited by clio stays interpreted and runs as-is — editing it never needs
 		// compilation (clio cannot author a Script Task or an after-activity-save script, the only in-process
@@ -388,7 +419,7 @@ public sealed record ModifyBusinessProcessArgs(
 	string EnvironmentName,
 
 	[property: JsonPropertyName("operations")]
-	[property: Description("The operations array SERIALIZED AS A JSON STRING - not a nested array. Passing a real array fails with \"Cannot get the value of a token type 'StartArray' as a string\". e.g. \"[{\\\"op\\\":\\\"removeElement\\\",\\\"elementName\\\":\\\"StartEvent1\\\"}]\".")]
+	[property: Description("The operations array SERIALIZED AS A JSON STRING - not a nested array. A real array fails with \"Cannot get the value of a token type 'StartArray' as a string\". e.g. \"[{\\\"op\\\":\\\"removeElement\\\",\\\"elementName\\\":\\\"StartEvent1\\\"}]\".")]
 	[property: Required]
 	string Operations,
 
@@ -398,7 +429,11 @@ public sealed record ModifyBusinessProcessArgs(
 
 	[property: JsonPropertyName("process-uid")]
 	[property: Description("Process schema UId to edit; provide exactly one of process-name or process-uid.")]
-	string? ProcessUid = null) {
+	string? ProcessUid = null,
+
+	[property: JsonPropertyName("confirm-layout-change")]
+	[property: Description("LEAVE IT OUT: an edit that would RE-DRAW the diagram is refused unapplied; offer modify-business-process-as-new-version first.")]
+	bool? ConfirmLayoutChange = null) {
 
 	/// <summary>
 	/// Overflow bag for top-level keys the SDK could not bind to a declared argument (ENG-98566).

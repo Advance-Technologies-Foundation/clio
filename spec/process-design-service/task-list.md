@@ -135,8 +135,8 @@ Sub-process is a call-activity (`callActivity` → `SubProcess`); it references 
 ### Task 20 — Element "Add data"
 
 **Goal:** Support the **Add data** element (`addDataUserTask`) — create one or more records of a target object with column values.
-**Status:** Not implemented. Can be added as a user task generically; its data configuration is not supported.
-**Scope:** target object; column values to set (constant / process parameter / formula / entity column); "add from selection" mode + its selection filters; single-record vs from-a-collection.
+**Status:** Implemented (ENG-92708) in BOTH modes — `Add one record` and `Add selection`. The `addData` block carries the target object, the adding mode, the selection object and the column values; the value machinery is Modify data's (`ChangeDataConfigBinder.ResolveAssignments`), keyed by an element-kind prefix, so there is one storage format and one set of value rules across Modify data, Open edit page and Add data. `Column from this selection` is the one value source unique to this element.
+**Scope:** target object; adding mode; selection object; column values to set (constant / process parameter / element output / formula / column from this selection); selection filters via the existing capability-based data-node filter target (no new filter code).
 **Technical:** capture serialization from a designer-built Add data; column values via Task 6; selection filters via Task 4.
 **Deliverable:** an `addData` config in build / modify; server-side serialization (verified vs capture); `describe-process` read-back; tests + docs + MCP surface.
 **Reference:** Task 4 (selection filters), Task 6 (column values), Task 13 (Modify data — sibling); state doc.

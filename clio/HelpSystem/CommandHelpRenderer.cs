@@ -708,7 +708,7 @@ internal sealed class CommandHelpRenderer {
 				string.IsNullOrWhiteSpace(item.Attribute.MetaName) ? item.Property.Name : item.Attribute.MetaName,
 				item.Attribute.Required,
 				item.Attribute.HelpText,
-				GetDefaultValue(item.Property)))
+				GetDefaultValue(optionsType, item.Property)))
 			.ToArray();
 
 	private static IReadOnlyList<string> BuildOptions(Type optionsType, bool environmentOptionsOnly) =>
@@ -720,7 +720,7 @@ internal sealed class CommandHelpRenderer {
 			.ThenBy(item => item.Property.MetadataToken)
 			.SelectMany(item => FormatParameter(
 				BuildOptionDisplay(item.Attribute, item.Property),
-				BuildParameterDescription(item.Attribute.Required, item.Attribute.HelpText, item.Attribute.Default ?? GetDefaultValue(item.Property))))
+				BuildParameterDescription(item.Attribute.Required, item.Attribute.HelpText, item.Attribute.Default ?? GetDefaultValue(optionsType, item.Property))))
 			.ToArray();
 
 	private static IEnumerable<PropertyInfo> GetProperties(Type optionsType) =>
@@ -734,8 +734,16 @@ internal sealed class CommandHelpRenderer {
 		return declaringType == typeof(EnvironmentOptions) || declaringType == typeof(EnvironmentNameOptions);
 	}
 
-	private static object GetDefaultValue(PropertyInfo property) =>
-		property.PropertyType.IsValueType ? Activator.CreateInstance(property.PropertyType) : null;
+	private static object GetDefaultValue(Type optionsType, PropertyInfo property) {
+		// Some options (e.g. RemoteCommandOptions.TimeOut) compute their real default lazily in the
+		// getter rather than via [Option(Default = ...)], so the CLR type default alone is wrong.
+		try {
+			object instance = Activator.CreateInstance(optionsType);
+			return property.GetValue(instance);
+		} catch {
+			return property.PropertyType.IsValueType ? Activator.CreateInstance(property.PropertyType) : null;
+		}
+	}
 
 	private static string BuildOptionDisplay(OptionAttribute option, PropertyInfo property) {
 		List<string> names = [];

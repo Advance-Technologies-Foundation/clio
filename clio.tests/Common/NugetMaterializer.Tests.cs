@@ -675,6 +675,77 @@ public class NugetMaterializerTests
 		// string is exactly what let a crafted Include become an option
 	}
 
+	[Test]
+	[Description("Restores the package references an earlier conversion commented out when the legacy "
+		+ "repair removes the props imports that replaced them (issue 1311)")]
+	public void Materializer_RestoresCommentedReferences_When_LegacyRepairRemovesEveryPropsImport(){
+		// Arrange
+		string savedCsproj = null;
+		_fileSystem.ReadAllText(CsprojFileName).Returns(MockCsProjWithoutNugetButWithImports());
+		//Neither props file survived, so both imports go and nothing references the dependency any more.
+		_fileSystem.ExistsFile(Arg.Any<string>()).Returns(false);
+		_fileSystem.When(fs => fs.WriteAllTextToFile(CsprojFileName, Arg.Any<string>()))
+			.Do(ci => savedCsproj = ci.ArgAt<string>(1));
+
+		//Act
+		int actual = _sut.Materialize(PackageName);
+
+		//Assert
+		actual.Should().Be(1, because: "there is nothing left to materialize");
+		savedCsproj.Should().NotBeNull(because: "the repaired csproj has to be written");
+		savedCsproj.Should().Contain("<PackageReference Include=\"Nuget1\" Version=\"1.1.1\" />",
+			because: "without it the project builds while silently losing the dependency and its build assets");
+		savedCsproj.Should().NotContain("<!--<PackageReference",
+			because: "the comment is what replaced the reference and it is no longer the current state");
+		_logger.Received(1).WriteInfo(Arg.Is<string>(m => m.StartsWith("Restored the Nuget1")));
+		// because: the restore has to be reported, and the exact wording is not what this test is about
+	}
+
+	[Test]
+	[Description("Leaves an already converted, healthy package untouched: every props import is usable, so "
+		+ "nothing is repaired and no commented reference is restored (issue 1311)")]
+	public void Materializer_RestoresNothing_When_EveryPropsFileIsStillUsable(){
+		// Arrange
+		_fileSystem.ReadAllText(CsprojFileName).Returns(MockCsProjWithoutNugetButWithImports());
+		foreach (string moniker in new[] {"net472", "netstandard"}) {
+			string propsPath = $"{PackageName}-{moniker}.nuget.props";
+			_fileSystem.ExistsFile(propsPath).Returns(true);
+			_fileSystem.ReadAllText(propsPath).Returns("<Project></Project>");
+		}
+
+		//Act
+		int actual = _sut.Materialize(PackageName);
+
+		//Assert
+		actual.Should().Be(1, because: "the package is already converted, so there is nothing to convert");
+		_fileSystem.DidNotReceive().WriteAllTextToFile(CsprojFileName, Arg.Any<string>());
+		_logger.DidNotReceive().WriteInfo(Arg.Is<string>(m => m.StartsWith("Restored the")));
+	}
+
+	[Test]
+	[Description("Keeps the references commented while one props import still stands, because a reference "
+		+ "and the dll that replaced it in the same project fail the build on a duplicate assembly (issue 1311)")]
+	public void Materializer_RestoresNothing_When_OnePropsImportSurvivesTheRepair(){
+		// Arrange
+		string savedCsproj = null;
+		string net472Props = $"{PackageName}-net472.nuget.props";
+		_fileSystem.ReadAllText(CsprojFileName).Returns(MockCsProjWithoutNugetButWithImports());
+		_fileSystem.ExistsFile(net472Props).Returns(true);
+		_fileSystem.ReadAllText(net472Props).Returns("<Project></Project>");
+		_fileSystem.ExistsFile($"{PackageName}-netstandard.nuget.props").Returns(false);
+		_fileSystem.When(fs => fs.WriteAllTextToFile(CsprojFileName, Arg.Any<string>()))
+			.Do(ci => savedCsproj = ci.ArgAt<string>(1));
+
+		//Act
+		_sut.Materialize(PackageName);
+
+		//Assert
+		savedCsproj.Should().NotBeNull(because: "the stale netstandard import had to be removed");
+		savedCsproj.Should().Contain("<!--<PackageReference",
+			because: "the net472 props file still materializes that dependency");
+		_logger.DidNotReceive().WriteInfo(Arg.Is<string>(m => m.StartsWith("Restored the")));
+	}
+
 	#region Methods: Private
 
 	// The command line is passed as tokens, not as one interpolated string, so the assertions describe the
