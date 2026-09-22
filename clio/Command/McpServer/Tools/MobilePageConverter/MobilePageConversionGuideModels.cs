@@ -1184,12 +1184,11 @@ public sealed class MobilePageConversionGuide {
 	/// verbatim and flagged for manual review (the component stays). <c>droppedRequests</c> reports a
 	/// BINDING: one lost while its element survived, and one lost on the paths that place or remove the
 	/// element itself (retarget onto a native, missing retarget target, non-converting scope, empty
-	/// container, exclusion). A missing action target (<see cref="UnresolvedTargetRequest"/>) is the one
-	/// exception to "every actionable body change is already in <see cref="ViewConfigDiff"/>": a definitional
-	/// absence (see <see cref="UnresolvedTargetRequest.BindingRemoved"/>) removes the binding from
-	/// <see cref="ViewConfigDiff"/> too, but the caller may still need to RE-ADD it later from
-	/// <see cref="UnresolvedTargetRequest.OriginalBinding"/> once the target resolves — this section is where
-	/// that snapshot lives. What is NOT applied is the TELLING: every
+	/// container, exclusion). A missing action target (<see cref="UnresolvedTargetRequest"/>) still leaves
+	/// the converted binding in <see cref="ViewConfigDiff"/>: a definitional absence blanks only the target
+	/// param (see <see cref="UnresolvedTargetRequest.BindingRemoved"/>) rather than removing the binding, so
+	/// the caller PATCHES that param in place once the target resolves rather than re-adding anything. What
+	/// is NOT applied is the TELLING: every
 	/// <see cref="RequestConversionInfo.UnresolvedTargetRequests"/> entry is a diagnosis the caller must
 	/// report itself.
 	/// Null when the source page references no requests AND no action target needed reporting.
@@ -1397,12 +1396,12 @@ public sealed class RequestConversionInfo {
 	/// Actions whose REQUEST converts but whose NAVIGATION TARGET could not be confirmed to exist on
 	/// mobile: a <c>crt.OpenPageRequest</c> naming a web page, or a create/update-record request naming an
 	/// object with no default mobile edit page. The CONTROL always survives — every entry here
-	/// names an element the converted page still carries. Whether its ACTION also survives depends on how
-	/// confidently the absence is judged (see <see cref="UnresolvedTargetRequest.BindingRemoved"/>) — a
-	/// removed binding is preserved verbatim on <see cref="UnresolvedTargetRequest.OriginalBinding"/> so it
-	/// can be re-added once a target that converts later in the same session (the missing-target-page queue,
-	/// <see cref="MissingTargetPages"/>) makes the action work again, instead of it silently vanishing for
-	/// good or shipping broken.
+	/// names an element the converted page still carries. Whether the target param is also blanked depends
+	/// on how confidently the absence is judged (see <see cref="UnresolvedTargetRequest.BindingRemoved"/>):
+	/// a definitional absence blanks the target param on the binding that is ALREADY sitting on the element,
+	/// so once a target that converts later in the same session (the missing-target-page queue,
+	/// <see cref="MissingTargetPages"/>) makes the action work again, the caller PATCHES that one param
+	/// in place instead of the action silently vanishing for good or shipping broken.
 	/// <para>
 	/// Branch on <see cref="UnresolvedTargetRequest.State"/> for HOW CONFIDENTLY the absence is reported, and
 	/// on <see cref="UnresolvedTargetRequest.BindingRemoved"/> for WHAT WAS ACTUALLY DONE about it — the two
@@ -1410,13 +1409,13 @@ public sealed class RequestConversionInfo {
 	/// </para>
 	/// <list type="bullet">
 	/// <item><c>state: missing</c>, <c>bindingRemoved: true</c> — a DEFINITIONAL absence (a web page cannot
-	/// open on mobile at all). The binding is already gone from <c>viewConfigDiff[].values</c> and also
-	/// appears in <see cref="DroppedRequests"/> under <see cref="ReasonCodes.DropRequestTargetMissing"/>. Do
-	/// NOT re-add it as-is — it would fail every time it is used; re-add it only once the target resolves,
-	/// using <see cref="UnresolvedTargetRequest.OriginalBinding"/> with the target param's value swapped for
-	/// the resolved mobile schema name.</item>
+	/// open on mobile at all). The binding stays in <c>viewConfigDiff[].values</c> with its target param
+	/// blanked to <c>""</c>, and also appears in <see cref="DroppedRequests"/> under
+	/// <see cref="ReasonCodes.DropRequestTargetMissing"/>. Do not treat it as usable as-is — it opens nothing
+	/// until the target resolves; at that point patch
+	/// <c>values[elementName][binding].params[targetParam]</c> to the resolved mobile schema name.</item>
 	/// <item><c>state: missing</c>, <c>bindingRemoved: false</c> — an environment READ reported the target
-	/// absent (an object with no default mobile page). A read cannot PROVE absence, so nothing was removed:
+	/// absent (an object with no default mobile page). A read cannot PROVE absence, so nothing was blanked:
 	/// build the element exactly as the element map says, and tell the user which action needs a working
 	/// target.</item>
 	/// <item><c>state: unknown</c> — the environment could not answer; the action still works if the target
@@ -1471,10 +1470,9 @@ public sealed class RequestConversionInfo {
 	/// an entity target's resolved candidate (a direct <c>crt.OpenPageRequest</c> on a page that also happens
 	/// to be some object's default mobile edit page), they collapse into ONE entry carrying every reference
 	/// from both sources — the caller no longer needs to cross-reference the two sources itself. One entry
-	/// per distinct key (case-insensitive), carrying every element/binding pair that references it, each
-	/// with its own <see cref="MissingTargetPageReference.OriginalBinding"/> (null for an entity-only
-	/// reference, since that kind never strips a binding) to restore once the target resolves. Empty when no
-	/// target was found missing.
+	/// per distinct key (case-insensitive), carrying every element/binding pair that references it. Locate
+	/// each one's already-converted binding on the element by <c>elementName</c>/<c>binding</c> and patch its
+	/// target param once the target resolves. Empty when no target was found missing.
 	/// </summary>
 	[JsonPropertyName("missingTargetPages")]
 	public IReadOnlyList<MissingTargetPage> MissingTargetPages { get; init; } = [];
@@ -1488,20 +1486,16 @@ public sealed class MissingTargetPageReference {
 	[JsonPropertyName("elementName")]
 	public string ElementName { get; init; }
 
+	/// <summary>
+	/// The event binding this reference names (e.g. <c>clicked</c>). The converted binding is never removed
+	/// anymore — the mobile-shaped config (correct request name, <c>paramMap</c> already applied, every other
+	/// param intact) is already sitting on the element, only its target param is blanked — so repointing once
+	/// the target resolves means locating the existing binding by <see cref="ElementName"/>/<see cref="Binding"/>
+	/// and patching just the target param (<c>values[elementName][binding].params[targetParam]</c>) to the
+	/// resolved mobile schema name; the param name comes from the conversion rule's <c>targetParam</c>.
+	/// </summary>
 	[JsonPropertyName("binding")]
 	public string Binding { get; init; }
-
-	/// <summary>
-	/// THIS reference's original <c>{ request, params }</c> binding, verbatim — the same value
-	/// <see cref="UnresolvedTargetRequest.OriginalBinding"/> carries for this exact element/binding pair,
-	/// repeated here so a caller repointing straight from <see cref="RequestConversionInfo.MissingTargetPages"/>
-	/// does not have to cross-reference <c>unresolvedTargetRequests</c> to find which button it belongs to.
-	/// Restore it by cloning this object and swapping only the target param's value (<c>schemaName</c> for a
-	/// <c>web-page</c> target) for the resolved mobile schema name — never construct a fresh binding, which
-	/// would silently drop any other param this one carried.
-	/// </summary>
-	[JsonPropertyName("originalBinding")]
-	public JsonNode OriginalBinding { get; init; }
 }
 
 /// <summary>
@@ -1597,12 +1591,12 @@ public sealed class FlaggedRequest {
 
 /// <summary>
 /// One action whose navigation target was not confirmed to exist on mobile. The control it names ALWAYS
-/// stays on the converted page. Its ACTION stays too, UNLESS the absence is definitional — see
-/// <see cref="BindingRemoved"/> — in which case the binding is stripped rather than shipped broken, and its
-/// pre-removal shape is kept on <see cref="OriginalBinding"/> so repointing it once its target converts
-/// later in the same session (<c>requestConversions.missingTargetPages</c>) does not mean reconstructing it
-/// from scratch. Fully typed: what to do about each outcome arrives as a guide <c>constraint</c> composed
-/// from these findings, not as prose carried on this record.
+/// stays on the converted page, and so does its converted binding — UNLESS the absence is definitional —
+/// see <see cref="BindingRemoved"/> — in which case only the target param is blanked to <c>""</c> rather
+/// than shipping a binding that fails every time it fires. Because the binding is never removed, repointing
+/// it once its target converts later in the same session (<c>requestConversions.missingTargetPages</c>) is
+/// a point patch of that one param, not a reconstruction. Fully typed: what to do about each outcome arrives
+/// as a guide <c>constraint</c> composed from these findings, not as prose carried on this record.
 /// </summary>
 public sealed class UnresolvedTargetRequest {
 	/// <summary>
@@ -1645,32 +1639,18 @@ public sealed class UnresolvedTargetRequest {
 	public string State { get; init; }
 
 	/// <summary>
-	/// Whether the converter REMOVED this action's binding from the element's <c>mobileValues</c> (the control
-	/// itself always stays). True only for a DEFINITIONAL absence — <see cref="TargetKind"/>
-	/// <c>web-page</c> with <see cref="State"/> <see cref="StateMissing"/>, whose verdict needs no environment
-	/// read and cannot be wrong for a reason outside this process. Always <see langword="false"/> for
+	/// Whether the converter BLANKED this action's target param on the element's <c>mobileValues</c> binding
+	/// (the control, and the binding itself, always stay — only the target param's value is cleared to
+	/// <c>""</c>). True only for a DEFINITIONAL absence — <see cref="TargetKind"/> <c>web-page</c> with
+	/// <see cref="State"/> <see cref="StateMissing"/>, whose verdict needs no environment read and cannot be
+	/// wrong for a reason outside this process. Always <see langword="false"/> for
 	/// <c>entity-default-mobile-page</c> (an add-on declaring no default page is a fact about the add-on, not
-	/// proof the action is dead) and for <see cref="StateUnknown"/> (nothing was established either way).
-	/// See <see cref="OriginalBinding"/> for what a caller needs to restore a removed binding once its target
-	/// resolves.
+	/// proof the action is dead) and for <see cref="StateUnknown"/> (nothing was established either way). When
+	/// <see langword="true"/>, repoint by patching <c>values[elementName][binding].params[targetParam]</c>
+	/// once the target resolves — the binding itself is never removed, so there is nothing to reconstruct.
 	/// </summary>
 	[JsonPropertyName("bindingRemoved")]
 	public bool BindingRemoved { get; init; }
-
-	/// <summary>
-	/// The removed binding's original <c>{ request, params }</c> object, VERBATIM — set only when
-	/// <see cref="BindingRemoved"/> is <see langword="true"/>. Carries every param the web binding had (for
-	/// <c>crt.OpenPageRequest</c>: not just <c>schemaName</c> but also <c>modelInitConfigs</c>,
-	/// <c>parameters</c>, <c>skipUnsavedData</c> when the source set them), so a caller repointing this action
-	/// once its target page converts — or resolves to an existing mobile equivalent under a different name —
-	/// restores it by cloning this object and swapping ONLY the target param's value for the resolved mobile
-	/// schema name, rather than reconstructing the binding from scratch and silently dropping whatever else it
-	/// carried. Null whenever <see cref="BindingRemoved"/> is <see langword="false"/> — there is nothing to
-	/// restore because nothing was removed.
-	/// </summary>
-	[JsonPropertyName("originalBinding")]
-	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public JsonNode OriginalBinding { get; init; }
 
 	/// <summary>
 	/// The object's default WEB edit page, when one was found — set only for a
@@ -1901,8 +1881,8 @@ public enum ActionTargetState {
 	Resolved,
 
 	/// <summary>
-	/// Established absent on mobile. Always reported; never removes the control. Whether it removes the
-	/// action's BINDING depends on the target kind — see
+	/// Established absent on mobile. Always reported; never removes the control or the binding. Whether it
+	/// blanks the action's TARGET PARAM depends on the target kind — see
 	/// <c>MobileActionTargetProbe.StripsBindingOnMissing</c>.
 	/// </summary>
 	Missing

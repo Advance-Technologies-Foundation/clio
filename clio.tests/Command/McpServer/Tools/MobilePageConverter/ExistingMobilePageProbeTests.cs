@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Text.Json.Nodes;
 using Clio.Command;
 using Clio.Command.AddonSchemaDesigner;
 using Clio.Command.McpServer.Tools;
@@ -10,13 +12,22 @@ using NUnit.Framework;
 
 namespace Clio.Tests.Command.McpServer.Tools.MobilePageConverter;
 
+/// <summary>
+/// Exercises <see cref="ExistingMobilePageProbe.Probe"/> — the public entry point
+/// <c>MobilePageConversionGuideTool</c> actually calls — rather than its internal
+/// <c>ProbeSectionMobilePage</c>/<c>ProbeSourceEntityDefaultMobilePage</c> helpers directly: the
+/// <c>MobileSectionRegistered</c>/<c>MobileSectionSchemaUId</c> guard, the <c>IsFormPage</c> guard, the
+/// self-match exclusion, and both matches surfacing together are all orchestration <see cref="Probe"/>
+/// alone owns and the two helpers cannot demonstrate on their own.
+/// </summary>
 [TestFixture]
 [Category("Unit")]
 [Property("Module", "McpServer")]
 public sealed class ExistingMobilePageProbeTests {
 
 	private const string PackageUId = "11111111-1111-1111-1111-111111111111";
-	private const string PageSchemaUId = "33333333-3333-3333-3333-333333333333";
+	private const string SectionSchemaUId = "22222222-2222-2222-2222-222222222222";
+	private const string EntityDefaultPageSchemaUId = "33333333-3333-3333-3333-333333333333";
 	private const string EntitySchemaUId = "44444444-4444-4444-4444-444444444444";
 	private const string MobileRoot = "BaseMobilePageTemplate";
 
@@ -57,142 +68,264 @@ public sealed class ExistingMobilePageProbeTests {
 	/// <summary>A successful SelectQuery envelope carrying <paramref name="rows"/> (raw JSON objects).</summary>
 	private static string Rows(params string[] rows) => $"{{\"success\":true,\"rows\":[{string.Join(",", rows)}]}}";
 
-	private static string PageRow(string name, string parentName, string uId = PageSchemaUId) =>
+	private static string PageRow(string name, string parentName, string uId) =>
 		$"{{\"Name\":\"{name}\",\"UId\":\"{uId}\",\"ParentName\":{(parentName is null ? "null" : $"\"{parentName}\"")}}}";
 
-	private static string EntityRow(string name, bool extendParent = false, string uId = EntitySchemaUId) =>
-		$"{{\"Name\":\"{name}\",\"UId\":\"{uId}\",\"ExtendParent\":{(extendParent ? "true" : "false")}}}";
+	private static string EntityRow(string name, string uId = EntitySchemaUId) =>
+		$"{{\"Name\":\"{name}\",\"UId\":\"{uId}\",\"ExtendParent\":false}}";
 
 	/// <summary>Routes a serialized SelectQuery to the page-schema or object-schema answer.</summary>
 	private static Func<string, string> Route(string pageRows, string entityRows) =>
 		query => query.Contains("EntitySchemaManager") ? entityRows : pageRows;
 
+	/// <summary>A modelConfig whose single (primary) data source binds the page to <paramref name="entityName"/>.</summary>
+	private static JsonObject SourcePageBoundTo(string entityName) =>
+		JsonNode.Parse($$"""
+		{
+		  "primaryDataSourceName": "PDS",
+		  "dataSources": { "PDS": { "type": "crt.EntityDataSource",
+		    "config": { "entitySchemaName": "{{entityName}}" } } }
+		}
+		""").AsObject();
+
+	private static SectionRegistrationInfo RegisteredSection(string mobileSectionSchemaUId) => new() {
+		MobileSectionRegistered = true, MobileSectionSchemaUId = mobileSectionSchemaUId, IsFormPage = false, ProbeOk = true
+	};
+
+	private static ExistingMobilePageProbeRequest Request(
+		SectionRegistrationInfo sectionRegistration = null, bool isFormPage = false,
+		JsonObject modelConfig = null, string pagePackageUId = PackageUId,
+		string targetName = "Unrelated_MobileFormPage") =>
+		new(sectionRegistration, isFormPage, modelConfig, pagePackageUId, targetName);
+
+	private static List<ExistingMobilePageInfo> Probe(EnvironmentStub environment, ExistingMobilePageProbeRequest request) =>
+		ExistingMobilePageProbe.Probe(environment.Resolver, "env", null, null, null, request);
+
+	// ── Entity-default check (IsFormPage) ───────────────────────────────────────────────────────
+
 	[Test]
-	[Description("The source page's own bound entity already has a default mobile edit page: ProbeSourceEntityDefaultMobilePage resolves its schema name for the reuse-vs-convert check.")]
-	public void ProbeSourceEntityDefaultMobilePage_EntityHasDefault_ResolvesItsSchemaName() {
+	[Description("A form page's bound entity already has a default mobile edit page: Probe reports it for the reuse-vs-convert check.")]
+	public void Probe_FormPageEntityHasDefault_ReportsExistingEntityPage() {
 		// Arrange — entity name -> UId (EntitySchemaManager branch), mobile add-on declares an untyped default,
 		// and the reverse UId -> name lookup (page branch) resolves that default page's name.
 		EnvironmentStub environment = Environment(
-			Route(Rows(PageRow("LeadProduct_MobileFormPage", MobileRoot, uId: PageSchemaUId)), Rows(EntityRow("LeadProduct"))),
-			addonMetaData: $"{{\"Pages\":[{{\"PageSchemaUId\":\"{PageSchemaUId}\",\"IsDefault\":true}}]}}");
+			Route(Rows(PageRow("LeadProduct_MobileFormPage", MobileRoot, EntityDefaultPageSchemaUId)), Rows(EntityRow("LeadProduct"))),
+			addonMetaData: $"{{\"Pages\":[{{\"PageSchemaUId\":\"{EntityDefaultPageSchemaUId}\",\"IsDefault\":true}}]}}");
 
 		// Act
-		ExistingMobilePageInfo result = ExistingMobilePageProbe.ProbeSourceEntityDefaultMobilePage(
-			environment.Resolver, "env", null, null, null, "LeadProduct", PackageUId);
+		List<ExistingMobilePageInfo> matches = Probe(environment, Request(isFormPage: true, modelConfig: SourcePageBoundTo("LeadProduct")));
 
 		// Assert
-		result.Should().NotBeNull(because: "the entity's MobileRelatedPage add-on declares an untyped default");
-		result.SchemaName.Should().Be("LeadProduct_MobileFormPage");
-		result.SchemaUId.Should().Be(PageSchemaUId);
-		result.Source.Should().Be(MobileActionTargetProbe.KindEntityDefaultMobilePage);
+		ExistingMobilePageInfo match = matches.Should()
+			.ContainSingle(because: "the bound entity's MobileRelatedPage add-on declares an untyped default").Subject;
+		match.SchemaName.Should().Be("LeadProduct_MobileFormPage");
+		match.SchemaUId.Should().Be(EntityDefaultPageSchemaUId);
+		match.Source.Should().Be(MobileActionTargetProbe.KindEntityDefaultMobilePage);
 	}
 
 	[Test]
-	[Description("The source page's own bound entity has no default mobile edit page: ProbeSourceEntityDefaultMobilePage returns null rather than guessing one.")]
-	public void ProbeSourceEntityDefaultMobilePage_EntityHasNoDefault_ReturnsNull() {
+	[Description("A form page's bound entity has no default mobile edit page: Probe reports nothing rather than guessing one.")]
+	public void Probe_FormPageEntityHasNoDefault_ReportsNothing() {
 		// Arrange
-		EnvironmentStub environment = Environment(
-			Route(Rows(), Rows(EntityRow("LeadProduct"))), addonMetaData: "{\"Pages\":[]}");
+		EnvironmentStub environment = Environment(Route(Rows(), Rows(EntityRow("LeadProduct"))), addonMetaData: "{\"Pages\":[]}");
 
 		// Act
-		ExistingMobilePageInfo result = ExistingMobilePageProbe.ProbeSourceEntityDefaultMobilePage(
-			environment.Resolver, "env", null, null, null, "LeadProduct", PackageUId);
+		List<ExistingMobilePageInfo> matches = Probe(environment, Request(isFormPage: true, modelConfig: SourcePageBoundTo("LeadProduct")));
 
 		// Assert
-		result.Should().BeNull(because: "the object has no default mobile page to reuse");
+		matches.Should().BeEmpty(because: "the object has no default mobile page to reuse");
 	}
 
 	[Test]
-	[Description("The entity name cannot be resolved to a schema UId at all: ProbeSourceEntityDefaultMobilePage returns null and never reads the add-on.")]
-	public void ProbeSourceEntityDefaultMobilePage_EntityUnresolvable_ReturnsNullWithoutReadingAddon() {
+	[Description("The bound entity's name cannot be resolved to a schema UId at all: Probe reports nothing and never reads the add-on.")]
+	public void Probe_FormPageEntityUnresolvable_ReportsNothingWithoutReadingAddon() {
 		// Arrange — no SysSchema row for the object at all.
 		EnvironmentStub environment = Environment(Route(Rows(), Rows()));
 
 		// Act
-		ExistingMobilePageInfo result = ExistingMobilePageProbe.ProbeSourceEntityDefaultMobilePage(
-			environment.Resolver, "env", null, null, null, "UnknownObject", PackageUId);
+		List<ExistingMobilePageInfo> matches = Probe(environment, Request(isFormPage: true, modelConfig: SourcePageBoundTo("UnknownObject")));
 
 		// Assert
-		result.Should().BeNull();
-		environment.AddonClient.ReceivedCalls().Should().BeEmpty(
-			because: "there is no entity UId to address the add-on read with");
+		matches.Should().BeEmpty();
+		environment.AddonClient.ReceivedCalls().Should().BeEmpty(because: "there is no entity UId to address the add-on read with");
 	}
 
 	[Test]
-	[Description("A missing/unparseable package UId means the add-on read can never be addressed: ProbeSourceEntityDefaultMobilePage returns null without touching the environment.")]
-	public void ProbeSourceEntityDefaultMobilePage_UnparseablePackageUId_ReturnsNullWithoutReadingAnything() {
+	[Description("A missing/unparseable page package UId means the add-on read can never be addressed: Probe reports nothing without touching the environment.")]
+	public void Probe_UnparseablePagePackageUId_ReportsNothingWithoutReadingAnything() {
 		// Arrange
 		EnvironmentStub environment = Environment(Route(Rows(), Rows(EntityRow("LeadProduct"))));
 
 		// Act
-		ExistingMobilePageInfo result = ExistingMobilePageProbe.ProbeSourceEntityDefaultMobilePage(
-			environment.Resolver, "env", null, null, null, "LeadProduct", "not-a-guid");
+		List<ExistingMobilePageInfo> matches = Probe(environment,
+			Request(isFormPage: true, modelConfig: SourcePageBoundTo("LeadProduct"), pagePackageUId: "not-a-guid"));
 
 		// Assert
-		result.Should().BeNull();
+		matches.Should().BeEmpty();
 		environment.Client.ReceivedCalls().Should().BeEmpty(because: "no read can be addressed without a package UId");
 	}
 
 	[Test]
-	[Description("A THROW anywhere in the resolve-entity/read-addon/resolve-name chain degrades to null rather than propagating — this probe never throws.")]
-	public void ProbeSourceEntityDefaultMobilePage_ThrowingRead_DegradesToNull() {
+	[Description("A THROW anywhere in the resolve-entity/read-addon/resolve-name chain degrades to no match rather than propagating — this probe never throws.")]
+	public void Probe_FormPageThrowingRead_DegradesToNoMatches() {
 		// Arrange
 		EnvironmentStub environment = Environment(Route(Rows(), Rows(EntityRow("LeadProduct"))));
 		environment.AddonClient.GetSchema(Arg.Any<AddonGetRequestDto>()).Returns(_ => throw new InvalidOperationException("boom"));
 
 		// Act
-		ExistingMobilePageInfo result = ExistingMobilePageProbe.ProbeSourceEntityDefaultMobilePage(
-			environment.Resolver, "env", null, null, null, "LeadProduct", PackageUId);
+		List<ExistingMobilePageInfo> matches = Probe(environment, Request(isFormPage: true, modelConfig: SourcePageBoundTo("LeadProduct")));
 
 		// Assert
-		result.Should().BeNull();
+		matches.Should().BeEmpty();
 	}
 
 	[Test]
-	[Description("An already-known section mobile page UId resolves to its schema name for the reuse-vs-convert check.")]
-	public void ProbeSectionMobilePage_ResolvesSchemaName() {
+	[Description("A list/section source page (IsFormPage=false) never probes its bound entity's default mobile page, even though the environment would answer.")]
+	public void Probe_NotFormPage_SkipsEntityCheckEntirely() {
+		// Arrange — the stub would answer with a real default page, but nothing should ask it.
+		EnvironmentStub environment = Environment(
+			Route(Rows(PageRow("LeadProduct_MobileFormPage", MobileRoot, EntityDefaultPageSchemaUId)), Rows(EntityRow("LeadProduct"))),
+			addonMetaData: $"{{\"Pages\":[{{\"PageSchemaUId\":\"{EntityDefaultPageSchemaUId}\",\"IsDefault\":true}}]}}");
+
+		// Act
+		List<ExistingMobilePageInfo> matches = Probe(environment, Request(isFormPage: false, modelConfig: SourcePageBoundTo("LeadProduct")));
+
+		// Assert
+		matches.Should().BeEmpty(because: "a list/section source page has no single bound entity edit page to check");
+		environment.AddonClient.ReceivedCalls().Should().BeEmpty(because: "IsFormPage=false must skip the entity check entirely");
+	}
+
+	[Test]
+	[Description("An entity's default mobile page that already carries the TARGET schema name is excluded: there is nothing to reuse-vs-convert for the page the conversion is itself producing.")]
+	public void Probe_EntityDefaultIsTheConversionTarget_ExcludesItAsSelfMatch() {
+		// Arrange
+		EnvironmentStub environment = Environment(
+			Route(Rows(PageRow("Lead_MobileFormPage", MobileRoot, EntityDefaultPageSchemaUId)), Rows(EntityRow("Lead"))),
+			addonMetaData: $"{{\"Pages\":[{{\"PageSchemaUId\":\"{EntityDefaultPageSchemaUId}\",\"IsDefault\":true}}]}}");
+
+		// Act
+		List<ExistingMobilePageInfo> matches = Probe(environment,
+			Request(isFormPage: true, modelConfig: SourcePageBoundTo("Lead"), targetName: "Lead_MobileFormPage"));
+
+		// Assert
+		matches.Should().BeEmpty(because: "the resolved default page IS the schema this run is about to create/update");
+	}
+
+	// ── Section check (SectionRegistration) ─────────────────────────────────────────────────────
+
+	[Test]
+	[Description("An already-registered section's mobile page UId resolves to its schema name for the reuse-vs-convert check.")]
+	public void Probe_RegisteredSection_ReportsExistingSectionPage() {
 		// Arrange — the reverse UId -> name lookup is the same non-EntitySchemaManager query family the
 		// candidate batch (SchemaNameResolver.ResolveNames) uses, so it is routed through the page-rows side of Route.
-		EnvironmentStub environment = Environment(
-			Route(Rows(PageRow("UsrApp_MobileListPage", MobileRoot, uId: PageSchemaUId)), Rows()));
+		EnvironmentStub environment = Environment(Route(Rows(PageRow("UsrApp_MobileListPage", MobileRoot, SectionSchemaUId)), Rows()));
 
 		// Act
-		ExistingMobilePageInfo result = ExistingMobilePageProbe.ProbeSectionMobilePage(
-			environment.Resolver, "env", null, null, null, PageSchemaUId);
+		List<ExistingMobilePageInfo> matches = Probe(environment, Request(sectionRegistration: RegisteredSection(SectionSchemaUId)));
 
 		// Assert
-		result.Should().NotBeNull();
-		result.SchemaName.Should().Be("UsrApp_MobileListPage");
-		result.SchemaUId.Should().Be(PageSchemaUId);
-		result.Source.Should().Be(ExistingMobilePageProbe.KindSection);
+		ExistingMobilePageInfo match = matches.Should().ContainSingle().Subject;
+		match.SchemaName.Should().Be("UsrApp_MobileListPage");
+		match.SchemaUId.Should().Be(SectionSchemaUId);
+		match.Source.Should().Be(ExistingMobilePageProbe.KindSection);
 	}
 
 	[Test]
-	[Description("No row resolves for the given UId: ProbeSectionMobilePage returns null rather than fabricating a name.")]
-	public void ProbeSectionMobilePage_UnresolvableUId_ReturnsNull() {
+	[Description("A registered section's mobile page UId does not resolve to any row: Probe reports nothing rather than fabricating a name.")]
+	public void Probe_RegisteredSectionUnresolvableUId_ReportsNothing() {
 		// Arrange
 		EnvironmentStub environment = Environment(Route(Rows(), Rows()));
 
 		// Act
-		ExistingMobilePageInfo result = ExistingMobilePageProbe.ProbeSectionMobilePage(
-			environment.Resolver, "env", null, null, null, PageSchemaUId);
+		List<ExistingMobilePageInfo> matches = Probe(environment, Request(sectionRegistration: RegisteredSection(SectionSchemaUId)));
 
 		// Assert
-		result.Should().BeNull();
+		matches.Should().BeEmpty();
 	}
 
 	[Test]
-	[Description("A blank UId is rejected before any read is attempted.")]
-	public void ProbeSectionMobilePage_BlankUId_ReturnsNullWithoutReading() {
+	[Description("A registered section whose mobile page UId is blank is rejected before any read is attempted.")]
+	public void Probe_RegisteredSectionBlankUId_ReportsNothingWithoutReading() {
 		// Arrange
 		EnvironmentStub environment = Environment(Route(Rows(), Rows()));
 
 		// Act
-		ExistingMobilePageInfo result = ExistingMobilePageProbe.ProbeSectionMobilePage(
-			environment.Resolver, "env", null, null, null, "  ");
+		List<ExistingMobilePageInfo> matches = Probe(environment, Request(sectionRegistration: RegisteredSection("  ")));
 
 		// Assert
-		result.Should().BeNull();
+		matches.Should().BeEmpty();
 		environment.Client.ReceivedCalls().Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("A source page that is NOT a registered mobile section is never probed for a section match, even though the environment would answer.")]
+	public void Probe_SectionNotRegistered_SkipsSectionCheckEntirely() {
+		// Arrange — the stub would answer with a real section page, but nothing should ask it.
+		EnvironmentStub environment = Environment(Route(Rows(PageRow("UsrApp_MobileListPage", MobileRoot, SectionSchemaUId)), Rows()));
+		ExistingMobilePageProbeRequest request = Request(sectionRegistration: new SectionRegistrationInfo {
+			MobileSectionRegistered = false, MobileSectionSchemaUId = SectionSchemaUId, IsFormPage = false, ProbeOk = true
+		});
+
+		// Act
+		List<ExistingMobilePageInfo> matches = Probe(environment, request);
+
+		// Assert
+		matches.Should().BeEmpty(because: "MobileSectionRegistered=false means there is no existing registration to reuse");
+		environment.Client.ReceivedCalls().Should().BeEmpty(because: "an unregistered section is never even asked about");
+	}
+
+	[Test]
+	[Description("A registered section whose mobile page already carries the TARGET schema name is excluded as a self-match.")]
+	public void Probe_SectionMatchIsTheConversionTarget_ExcludesItAsSelfMatch() {
+		// Arrange
+		EnvironmentStub environment = Environment(Route(Rows(PageRow("UsrApp_MobileListPage", MobileRoot, SectionSchemaUId)), Rows()));
+
+		// Act
+		List<ExistingMobilePageInfo> matches = Probe(environment,
+			Request(sectionRegistration: RegisteredSection(SectionSchemaUId), targetName: "UsrApp_MobileListPage"));
+
+		// Assert
+		matches.Should().BeEmpty(because: "the resolved section page IS the schema this run is about to create/update");
+	}
+
+	// ── Both checks together (registered-section form page) ────────────────────────────────────
+
+	[Test]
+	[Description("A registered-section FORM page reports BOTH an existing section match and an existing entity-default match together, each under its own source tag — AND the two checks share ONE resolved environment-client trio instead of each independently re-resolving it (the ProbeContext-reuse fix).")]
+	public void Probe_RegisteredSectionFormPage_ReportsBothMatchesAndResolvesEnvironmentClientsOnce() {
+		// Arrange — a section registration AND a form page bound to an object that ALSO has its own default
+		// mobile page, each resolving to a DIFFERENT page UId so the test can tell the two reads apart.
+		var byUIdQueries = new List<string>();
+		EnvironmentStub environment = Environment(query => {
+			if (query.Contains("EntitySchemaManager")) {
+				return Rows(EntityRow("LeadProduct"));
+			}
+			byUIdQueries.Add(query);
+			if (query.Contains(SectionSchemaUId)) {
+				return Rows(PageRow("UsrApp_MobileListPage", MobileRoot, SectionSchemaUId));
+			}
+			if (query.Contains(EntityDefaultPageSchemaUId)) {
+				return Rows(PageRow("LeadProduct_MobileFormPage", MobileRoot, EntityDefaultPageSchemaUId));
+			}
+			return Rows();
+		}, addonMetaData: $"{{\"Pages\":[{{\"PageSchemaUId\":\"{EntityDefaultPageSchemaUId}\",\"IsDefault\":true}}]}}");
+		ExistingMobilePageProbeRequest request = Request(
+			sectionRegistration: RegisteredSection(SectionSchemaUId), isFormPage: true,
+			modelConfig: SourcePageBoundTo("LeadProduct"));
+
+		// Act
+		List<ExistingMobilePageInfo> matches = Probe(environment, request);
+
+		// Assert
+		matches.Should().HaveCount(2,
+			because: "a page can be both a registered section AND a form bound to an object with its own default page");
+		matches.Should().Contain(m => m.Source == ExistingMobilePageProbe.KindSection && m.SchemaName == "UsrApp_MobileListPage");
+		matches.Should().Contain(m =>
+			m.Source == MobileActionTargetProbe.KindEntityDefaultMobilePage && m.SchemaName == "LeadProduct_MobileFormPage");
+		byUIdQueries.Should().HaveCount(2,
+			because: "the section and the entity default resolve two DIFFERENT page UIds, so each still issues its own read");
+		environment.Resolver.Received(1).Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>());
+		environment.Resolver.Received(1).Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>());
+		environment.Resolver.Received(1).Resolve<IAddonSchemaDesignerClient>(Arg.Any<EnvironmentOptions>());
 	}
 }

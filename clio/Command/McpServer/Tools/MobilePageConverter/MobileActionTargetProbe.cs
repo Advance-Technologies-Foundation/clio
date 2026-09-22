@@ -282,30 +282,31 @@ public static class MobileActionTargetProbe {
 		|| string.Equals(kind, KindEntityDefaultMobilePage, StringComparison.OrdinalIgnoreCase);
 
 	/// <summary>
-	/// Whether a <see cref="ActionTargetState.Missing"/> verdict on this kind is strong enough to REMOVE the
-	/// action's binding, as opposed to only reporting it. The single seam that decides it, so the rule lives
-	/// in one place instead of being re-derived at each consumer.
+	/// Whether a <see cref="ActionTargetState.Missing"/> verdict on this kind is strong enough to BLANK the
+	/// action's target param, as opposed to only reporting it. The single seam that decides it, so the rule
+	/// lives in one place instead of being re-derived at each consumer.
 	/// <para>
 	/// True only for <see cref="KindWebPage"/> — a DEFINITIONAL absence that needs no environment read and
 	/// cannot be wrong for a reason outside this process: a web page cannot open on the Creatio Mobile app,
-	/// full stop. Leaving the binding in place there does not merely fail silently — <c>schemaName</c> is
-	/// <c>required</c> on <c>crt.OpenPageRequest</c>, so the runtime shows the user a settings-error dialog on
-	/// every tap. Removing it instead leaves the control inert (no dialog, no error), matching what the
-	/// developer actually asked for. <see cref="UnresolvedTargetRequest.OriginalBinding"/> keeps the removed
-	/// binding verbatim precisely so this is reversible: once the missing target page converts (or an existing
-	/// mobile equivalent is found under a different name) later in the same session, the caller re-adds the
-	/// binding from that snapshot with only the target param's value swapped — nothing else about it invented.
+	/// full stop. The request still converts and the binding stays on the element (mobile request name,
+	/// <c>paramMap</c> applied, every other param intact) — only the target param (<c>schemaName</c> on
+	/// <c>crt.OpenPageRequest</c>) is blanked to <c>""</c>, because leaving it pointed at a non-existent page
+	/// shows the user a settings-error dialog on every tap. Blanking it instead leaves the control inert (no
+	/// dialog, no error) while keeping the action visible and reconfigurable in Mobile Designer, rather than
+	/// losing it silently. Because the binding is never removed, there is nothing to reconstruct later: once
+	/// the missing target page converts (or an existing mobile equivalent is found under a different name), a
+	/// caller patches the already-present <c>values[binding].params[targetParam]</c> in place.
 	/// </para>
 	/// <para>
 	/// <see cref="KindEntityDefaultMobilePage"/> stays exempt for a SEPARATE reason: the <c>MobileRelatedPage</c>
 	/// add-on declaring no default page is a fact about the add-on, not proof the action is dead — a legacy
 	/// default page can exist without ever being registered there (see
-	/// <see cref="DefaultPageAddonReader.ReadMobileState"/>). Stripping on that uncertain a signal risks removing a
+	/// <see cref="DefaultPageAddonReader.ReadMobileState"/>). Blanking on that uncertain a signal risks disabling a
 	/// working action, which is a trade this tool does not make.
 	/// </para>
 	/// </summary>
 	/// <param name="kind">A rules-declared <c>targetKind</c>.</param>
-	/// <returns>Whether a verified absence of this kind removes the binding.</returns>
+	/// <returns>Whether a verified absence of this kind blanks the target param.</returns>
 	internal static bool StripsBindingOnMissing(string kind) =>
 		// Trimmed to match TargetKey, which trims the kind when it builds the key a resolution is stored
 		// under: an untrimmed Kind would otherwise be FOUND by the lookup and then silently not stripped.

@@ -1141,27 +1141,36 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 					+ "already dropped would contradict its own element map");
 			// bindingRemoved is TRUE only for a definitional absence (web-page + missing) — never for an
 			// entity-default-mobile-page verdict (an add-on read cannot prove absence) and never for "unknown"
-			// (nothing was established). This is a one-way implication, not an equivalence: a web-page+missing
-			// finding on a MERGE-TWIN binding stays false too (the merge payload cannot remove anything), so the
-			// converse is checked separately below on the twin-free happy path only.
+			// (nothing was established). It no longer means the binding was removed from the element — it means
+			// the binding's target param was blanked while the binding itself stayed in place.
 			if (finding.BindingRemoved) {
 				finding.TargetKind.Should().Be(MobileActionTargetProbe.KindWebPage,
-					because: $"'{finding.ElementName}' on '{convertedSchemaName}' claims a removal, which only a "
-						+ "definitional web-page absence may do");
+					because: $"'{finding.ElementName}' on '{convertedSchemaName}' claims a definitional absence, "
+						+ "which only a web-page target may report");
 				finding.State.Should().Be("missing",
-					because: "a removal without a verified absence would strip a working action on a guess");
-				finding.OriginalBinding.Should().NotBeNull(
-					because: $"'{finding.ElementName}' on '{convertedSchemaName}' removed its binding, so the "
-						+ "pre-removal shape must survive for a later repoint");
-				JsonObject original = finding.OriginalBinding!.AsObject();
-				original["request"]!.GetValue<string>().Should().Be(finding.WebRequest,
-					because: "the preserved binding must be the ORIGINAL web request, not a mobile-remapped one");
-				(original["params"]?["schemaName"]?.GetValue<string>()).Should().Be(finding.Target,
-					because: "the preserved binding's target param must match the finding's own target — a mixed-up "
-						+ "pair here would repoint the wrong button once the target resolves");
+					because: "a definitional absence without a verified absence would blank a working action on a guess");
+				ViewConfigDiffOperation element = guide.ViewConfigDiff.Should().ContainSingle(
+						operation => operation.Name == finding.ElementName,
+						because: $"'{finding.ElementName}' on '{convertedSchemaName}' still converts, so its own "
+							+ "operation must be findable in the diff")
+					.Subject;
+				JsonObject values = element.Values as JsonObject;
+				values.Should().NotBeNull(
+					because: "the element carrying a blanked binding must still carry a values object");
+				JsonNode bindingNode = values![finding.Binding];
+				bindingNode.Should().NotBeNull(
+					because: $"'{finding.ElementName}' on '{convertedSchemaName}' keeps its binding — only "
+						+ "the target param is blanked, not the whole binding");
+				JsonObject clicked = bindingNode!.AsObject();
+				clicked["request"]!.GetValue<string>().Should().Be(finding.WebRequest,
+					because: "the request still converts even though its target is dead");
+				clicked["params"]!["schemaName"]!.GetValue<string>().Should().BeEmpty(
+					because: "the target param is blanked instead of left pointing at a page the mobile app "
+						+ "cannot open");
 				conversions.ConvertedRequests.Should().NotContain(
 					r => r.ElementName == finding.ElementName && r.Binding == finding.Binding,
-					because: "a removed binding was not converted");
+					because: "a blanked target is reported as dropped, not converted, even though the binding "
+						+ "physically stays");
 				DroppedRequest dropped = conversions.DroppedRequests.Should().ContainSingle(
 						r => r.ElementName == finding.ElementName && r.Binding == finding.Binding,
 						because: $"'{finding.ElementName}' on '{convertedSchemaName}' must be reported as dropped, "
@@ -1169,10 +1178,6 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 					.Subject;
 				dropped.Reason.Should().Contain(r => r.Code == ReasonCodes.DropRequestTargetMissing,
 					because: "the caller must be able to switch on the coded reason, not re-derive it");
-			} else {
-				finding.OriginalBinding.Should().BeNull(
-					because: $"'{finding.ElementName}' on '{convertedSchemaName}' kept its binding, so there is "
-						+ "nothing to restore later");
 			}
 			// A resolved candidate is fail-open (null is a legitimate "none found"), but WHEN one
 			// comes back over the real MCP transport it must be well-formed and scoped to exactly the kind/state
@@ -1227,21 +1232,10 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 					+ "reference to it is a definitional web-page absence, even when an "
 					+ "entity-default-mobile-page reference to the same schema also exists");
 			foreach (UnresolvedTargetRequest finding in group) {
-				MissingTargetPageReference reference = queued.References.Should().ContainSingle(
-						r => r.ElementName == finding.ElementName && r.Binding == finding.Binding,
-						because: $"'{finding.ElementName}' on '{convertedSchemaName}' references the missing page and "
-							+ "must be traceable from the queue entry")
-					.Subject;
-				// The reference's own snapshot must match ITS OWN finding, never a sibling's — this is the
-				// cross-contamination guard: two controls in the same group must not swap OriginalBinding.
-				(reference.OriginalBinding is null).Should().Be(finding.OriginalBinding is null,
-					because: $"'{finding.ElementName}' on '{convertedSchemaName}' must carry the SAME "
-						+ "removed-or-kept verdict on both the finding and the queue reference");
-				if (finding.OriginalBinding is not null) {
-					reference.OriginalBinding!.ToJsonString().Should().Be(finding.OriginalBinding.ToJsonString(),
-						because: $"'{finding.ElementName}' on '{convertedSchemaName}' must see the identical "
-							+ "preserved binding from both collections, not two independently-built copies");
-				}
+				queued.References.Should().ContainSingle(
+					r => r.ElementName == finding.ElementName && r.Binding == finding.Binding,
+					because: $"'{finding.ElementName}' on '{convertedSchemaName}' references the missing page and "
+						+ "must be traceable from the queue entry");
 			}
 		}
 	}

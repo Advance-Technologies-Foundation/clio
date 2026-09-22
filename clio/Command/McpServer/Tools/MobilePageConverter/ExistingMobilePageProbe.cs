@@ -39,10 +39,24 @@ public static class ExistingMobilePageProbe {
 		IToolCommandResolver commandResolver, string environment, string uri, string login, string password,
 		ExistingMobilePageProbeRequest request) {
 		var matches = new List<ExistingMobilePageInfo>();
+		// Resolved AT MOST ONCE per call and shared by both sub-probes below, rather than each one calling
+		// MobileActionTargetProbe.ProbeContext.Create independently — a registered-section form page (the
+		// common case: both checks run) used to pay the environment-client resolution cost twice for the
+		// SAME environment/uri/login/password. Lazy (not built up front) so a page that needs neither check
+		// (no registered section, not a form page) still resolves nothing.
+		MobileActionTargetProbe.ProbeContext sharedContext = null;
+		bool sharedContextAttempted = false;
+		MobileActionTargetProbe.ProbeContext ResolveContext() {
+			if (!sharedContextAttempted) {
+				sharedContextAttempted = true;
+				sharedContext = MobileActionTargetProbe.ProbeContext.Create(commandResolver, environment, uri, login, password);
+			}
+			return sharedContext;
+		}
+
 		if (request.SectionRegistration is
 			{ MobileSectionRegistered: true, MobileSectionSchemaUId: { Length: > 0 } sectionSchemaUId }) {
-			ExistingMobilePageInfo sectionMatch = ProbeSectionMobilePage(
-				commandResolver, environment, uri, login, password, sectionSchemaUId);
+			ExistingMobilePageInfo sectionMatch = ProbeSectionMobilePage(commandResolver, ResolveContext, sectionSchemaUId);
 			if (sectionMatch is not null
 				&& !string.Equals(sectionMatch.SchemaName, request.TargetName, StringComparison.OrdinalIgnoreCase)) {
 				matches.Add(sectionMatch);
@@ -51,7 +65,7 @@ public static class ExistingMobilePageProbe {
 		if (request.IsFormPage) {
 			foreach (string entityName in MobileActionTargetProbe.CollectSourceEntityNames(request.ModelConfig)) {
 				ExistingMobilePageInfo entityMatch = ProbeSourceEntityDefaultMobilePage(
-					commandResolver, environment, uri, login, password, entityName, request.PagePackageUId);
+					commandResolver, ResolveContext, entityName, request.PagePackageUId);
 				if (entityMatch is not null
 					&& !string.Equals(entityMatch.SchemaName, request.TargetName, StringComparison.OrdinalIgnoreCase)) {
 					matches.Add(entityMatch);
@@ -76,15 +90,14 @@ public static class ExistingMobilePageProbe {
 	/// name.
 	/// </summary>
 	internal static ExistingMobilePageInfo ProbeSourceEntityDefaultMobilePage(
-		IToolCommandResolver commandResolver, string environment, string uri, string login, string password,
+		IToolCommandResolver commandResolver, Func<MobileActionTargetProbe.ProbeContext> resolveContext,
 		string entitySchemaName, string pagePackageUId) {
 		if (commandResolver is null || string.IsNullOrWhiteSpace(entitySchemaName)
 			|| !Guid.TryParse(pagePackageUId, out Guid packageUId)) {
 			return null;
 		}
 		try {
-			MobileActionTargetProbe.ProbeContext context =
-				MobileActionTargetProbe.ProbeContext.Create(commandResolver, environment, uri, login, password);
+			MobileActionTargetProbe.ProbeContext context = resolveContext();
 
 			var uIdByName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 			var seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -128,14 +141,13 @@ public static class ExistingMobilePageProbe {
 	/// Fails open to <see langword="null"/>, never throws.
 	/// </summary>
 	internal static ExistingMobilePageInfo ProbeSectionMobilePage(
-		IToolCommandResolver commandResolver, string environment, string uri, string login, string password,
+		IToolCommandResolver commandResolver, Func<MobileActionTargetProbe.ProbeContext> resolveContext,
 		string sectionSchemaUId) {
 		if (commandResolver is null || !Guid.TryParse(sectionSchemaUId, out Guid sectionUId)) {
 			return null;
 		}
 		try {
-			MobileActionTargetProbe.ProbeContext context =
-				MobileActionTargetProbe.ProbeContext.Create(commandResolver, environment, uri, login, password);
+			MobileActionTargetProbe.ProbeContext context = resolveContext();
 			SchemaNameResolver.Result result = SchemaNameResolver.ResolveName(context, sectionUId);
 			return result.Status == SchemaNameResolver.Status.Resolved
 				? new ExistingMobilePageInfo { SchemaName = result.Name, SchemaUId = sectionSchemaUId, Source = KindSection }

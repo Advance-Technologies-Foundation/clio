@@ -45,7 +45,7 @@ internal static class MissingTargetPageQueueBuilder {
 					.GroupBy(r => (r.ElementName, r.Binding))
 					.Select(rg => rg.First())
 					.Select(r => new MissingTargetPageReference {
-						ElementName = r.ElementName, Binding = r.Binding, OriginalBinding = r.OriginalBinding
+						ElementName = r.ElementName, Binding = r.Binding
 					})]
 			})];
 	}

@@ -3443,9 +3443,10 @@ public static class WebToMobileAnalysisService {
 				if (!JToken.DeepEquals(baseline[prop.Name], prop.Value)) {
 					// canRemoveBinding: false — `values` here is a DELTA MERGE payload, not the element's whole
 					// mobileValues. Omitting a key from a merge means "keep the mobile template element's own
-					// value" (see MobileValues), so nothing would actually be removed and the mobile control
-					// may well keep firing the template's own request. Report the dead target; do not claim a
-					// removal that the merge cannot perform.
+					// value" (see MobileValues), so a removal is not something this writer can perform — report
+					// the dead target instead of claiming one. A definitionally-absent target (a web page) is
+					// still written into the merge with its target param blanked: the page's own binding wins
+					// over the template's, just with the broken part cleared.
 					ProcessOneEventBinding(ctx, mobileName, prop.Name, (JObject)prop.Value, values,
 						canRemoveBinding: false);
 				}
@@ -4521,8 +4522,11 @@ public static class WebToMobileAnalysisService {
 	/// <c>mobileValues</c>. FALSE for the twin delta, whose <paramref name="values"/> is a merge payload where
 	/// an omitted key means "keep the template element's own value" — so a removal is not something that
 	/// writer can perform, and reporting one would tell the caller the control "renders and does nothing" when
-	/// it may still fire the mobile template's own request. The removal decision belongs to the WRITER as much
-	/// as to the target kind, which is why it is a parameter rather than a property of the resolution.
+	/// it may still fire the mobile template's own request. Still governs the genuinely-unsupported branch
+	/// (<see cref="RequestMappingRule.Mobile"/> empty) below, which never writes into <paramref name="values"/>
+	/// either way. It does NOT govern a definitionally-absent target (a web page): that branch always writes a
+	/// blanked clone into <paramref name="values"/> regardless of this flag, which now only decides the
+	/// reported <c>BindingRemoved</c> value — see the flag's use at the definitionally-absent branch below.
 	/// </param>
 	private static void ProcessOneEventBinding(
 		ElementMapContext ctx, string elementName, string binding, JObject source, JObject values,
@@ -4539,36 +4543,37 @@ public static class WebToMobileAnalysisService {
 				if (target is { State: ActionTargetState.Missing or ActionTargetState.Unknown }) {
 					bool missing = target.State == ActionTargetState.Missing;
 					// A DEFINITIONAL absence means the target cannot open on mobile at all (a web page
-					// cannot open on mobile, and no environment read was involved) — writing a converted
-					// request that still points at it is broken regardless of which writer is calling.
+					// cannot open on mobile, and no environment read was involved) — the converted
+					// request stays on the element, but the target param it would point at is blanked,
+					// regardless of which writer is calling.
 					bool definitionallyAbsent = missing
 						&& MobileActionTargetProbe.StripsBindingOnMissing(target.Kind);
-					// Removed (in the BindingRemoved sense) only when this writer can also perform an
-					// actual removal. An object's add-on verdict is a report, never a removal: it cannot
-					// prove absence, and stripping on it would cost a working action. The pre-removal
-					// shape is captured on OriginalBinding so a later repoint restores it verbatim,
-					// param-for-param.
+					// BindingRemoved reports whether THIS writer could have performed an actual removal —
+					// still only the insert writer, never the twin-merge delta — even though neither
+					// writer removes the binding anymore. It stays a pure reporting flag.
 					bool removed = definitionallyAbsent && canRemoveBinding;
 					ctx.UnresolvedTargetRequests.Add(new UnresolvedTargetRequest {
 						ElementName = elementName, Binding = binding, WebRequest = webRequest,
 						TargetKind = target.Kind, Target = target.Target,
 						State = missing ? UnresolvedTargetRequest.StateMissing : UnresolvedTargetRequest.StateUnknown,
 						BindingRemoved = removed,
-						OriginalBinding = removed ? ToJsonNode(source) : null,
 						ResolvedCandidateSchemaName = target.ResolvedCandidateSchemaName
 					});
-					if (removed) {
-						ctx.DroppedRequests.Add(new DroppedRequest {
-							ElementName = elementName, Binding = binding, WebRequest = webRequest,
-							Reason = [Reason(ReasonCodes.DropRequestTargetMissing,
-								("targetKind", Nz(target.Kind)), ("target", Nz(target.Target)))]
-						});
-						return;
-					}
 					if (definitionallyAbsent) {
-						// canRemoveBinding is false here (the twin-merge writer): omitting the key from
-						// this DELTA MERGE payload keeps the template element's own value instead of
-						// overwriting it with a request that is guaranteed broken.
+						// The request still converts (mobile name + paramMap applied) — only the target
+						// param is blanked, so the control stays on the element and reconfigurable in
+						// Mobile Designer instead of losing its action silently. `params` is guaranteed a
+						// JObject here — ResolvedTargetOf only resolves a target when source["params"] is
+						// one and TargetParam is set on it, and ApplyParamMap never changes that shape.
+						var blankedClone = (JObject)source.DeepClone();
+						blankedClone["request"] = rule.Mobile;
+						ApplyParamMap(blankedClone, rule.ParamMap);
+						string effectiveTargetParam =
+							rule.ParamMap != null && rule.ParamMap.TryGetValue(rule.TargetParam, out string mappedParam)
+								? mappedParam
+								: rule.TargetParam;
+						((JObject)blankedClone["params"])[effectiveTargetParam] = "";
+						values[binding] = blankedClone;
 						ctx.DroppedRequests.Add(new DroppedRequest {
 							ElementName = elementName, Binding = binding, WebRequest = webRequest,
 							Reason = [Reason(ReasonCodes.DropRequestTargetMissing,
