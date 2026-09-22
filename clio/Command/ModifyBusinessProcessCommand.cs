@@ -242,12 +242,14 @@ public sealed class ModifyBusinessProcessService(
 			requestObject["uid"] = request.ProcessUid;
 		}
 		requestObject["operations"] = ParseOperations(request.OperationsJson);
-		if (request.ConfirmLayoutChange) {
-			// Sent only when asked for. An older CrtProcessBuilder has no such member and DROPS it silently,
-			// which is the harmless direction: that server never refuses on layout either, so the edit applies
-			// exactly as it would have.
-			requestObject["confirmLayoutChange"] = true;
-		}
+		// ALWAYS sent, true or false, because the server reads its ABSENCE as a third answer. A caller that
+		// omits the member is one built before the gate existed and unable to answer a refusal, so the server
+		// applies the edit rather than blocking a client that cannot respond; sending false is how this client
+		// says it can. Omitting it when the user has not confirmed would therefore switch the gate off for
+		// clio - the edit would be applied unasked, which is the one outcome the gate exists to prevent. An
+		// older CrtProcessBuilder has no such member and DROPS it silently, which stays harmless: that server
+		// never refuses on layout either.
+		requestObject["confirmLayoutChange"] = request.ConfirmLayoutChange;
 
 		// Same reason as the build path: an invented button or data-source name survives every server-side check
 		// and only shows itself at run time, as a step that never completes. The retarget path needs it most —
