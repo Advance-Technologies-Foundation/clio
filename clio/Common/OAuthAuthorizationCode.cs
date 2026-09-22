@@ -264,7 +264,7 @@ public sealed class OAuthAuthorizationCodeService : IOAuthAuthorizationCodeServi
         throw new InvalidOperationException("OAuth authorization requires a registered --redirect-uri or --redirect-port.");
     }
 
-    private async Task<string> ReadCallbackAsync(TcpListener listener, bool useLoopback, bool noBrowser, string redirect,
+    private static async Task<string> ReadCallbackAsync(TcpListener listener, bool useLoopback, bool noBrowser, string redirect,
         int timeoutMs, CancellationToken cancellationToken)
     {
         if (!useLoopback && !noBrowser)
