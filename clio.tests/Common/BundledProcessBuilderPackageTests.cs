@@ -73,13 +73,13 @@ public class BundledProcessBuilderPackageTests {
 	/// <summary>
 	/// SHA-256 of the committed archive. Produced by <c>rebundle-process-builder.ps1</c> at
 	/// <see cref="ExpectedArchiveVersion"/> from
-	/// the <c>ProcessBuilder</c> repository (<c>packages/CrtProcessBuilder</c>, branch
-	/// <c>feature/ENG-95890-ENG-98448-layout-and-connector-geometry</c>, which merged <c>main</c> after the
-	/// sprint-3 release — so it contains the commit the 1.6.3.31 cut was produced from
-	/// (<c>0b2c69adfb0a59c3ab4b37fb519a5d0df345dba7</c>, verified with <c>git merge-base --is-ancestor</c>) and
-	/// with it the ENG-96503 Read-data count work, the ENG-95986 Send-email template mode and everything
-	/// <c>nitro/sprint-3-release</c> had accumulated, including the earlier ENG-91853 flow-labels and
-	/// ENG-94374 process-versioning work), at the commit recorded mechanically in
+	/// the <c>ProcessBuilder</c> repository (<c>packages/CrtProcessBuilder</c> on <c>main</c>, at the
+	/// squash-merge of engineering/crt-process-builder#70). That branch had merged <c>main</c> after the
+	/// sprint-3 release, so the cut contains the commit the 1.6.3.31 archive was produced from
+	/// (<c>0b2c69adfb0a59c3ab4b37fb519a5d0df345dba7</c>, verified with <c>git merge-base --is-ancestor</c>)
+	/// and with it the ENG-96503 Read-data count work, the ENG-95986 Send-email template mode and
+	/// everything <c>nitro/sprint-3-release</c> had accumulated, including the earlier ENG-91853
+	/// flow-labels and ENG-94374 process-versioning work. Recorded mechanically in
 	/// <see cref="ExpectedProducingCommit"/> — the script captures <c>git rev-parse HEAD</c> and refuses to cut
 	/// from a tree with uncommitted changes, so this reference is no longer a sentence anyone has to keep true
 	/// by hand. Many numbers below the current one are burned rather than reused — some because two branches drew
@@ -325,7 +325,15 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "8c6cdeb84c7aa461b70a87fbc14226d428901a16";
+	// Re-pointed from the branch cut to the squash-merge WITHOUT repacking, which is the one case where
+	// moving this pin alone is honest rather than a shortcut. #70 was squashed, so the branch commit the
+	// script recorded is not reachable from main and the pin's whole purpose - "anyone with a checkout can
+	// verify the rest with one git checkout" - was dead. The bytes did not need to change: measured over the
+	// committed archive, 205 of its 206 entries are byte-identical to this commit's blobs and the 206th is
+	// descriptor.json, which differs only in LINE ENDINGS because the repository normalises to LF and the
+	// restamp writes CRLF. Its CONTENT matches exactly - version and stamp included - which is stronger than
+	// the invariant below requires, and is true only because the restamp landed in the squash.
+	private const string ExpectedProducingCommit = "f603ca6f56c6faa9a6b7ced8391531668fcfe024";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
