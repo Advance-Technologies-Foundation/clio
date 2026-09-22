@@ -2,6 +2,9 @@ using System.Collections.Generic;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
+using Clio.Mcp.E2E.Support.Results;
+using FluentAssertions;
+using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E;
 
@@ -23,4 +26,28 @@ public sealed class SetObjectRightsToolE2ETests : ObjectRightsToolE2ETestsBase {
 		["grantee"] = "720b771c-e7a7-4f31-9cfb-52cd21c3739f",
 		["operations"] = "read"
 	};
+
+	[Test]
+	[Description("Binds the disable-operation-permissions opt-in through the real MCP server, so an agent can request the last-row revoke that a revoke never performs implicitly.")]
+	public async Task Tool_Should_Bind_DisableOperationPermissions_OptIn() {
+		// Arrange
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+		string invalidEnvironmentName = $"missing-{ToolName}-optin-env-{Guid.NewGuid():N}";
+		Dictionary<string, object?> args = InvalidEnvironmentArgs(invalidEnvironmentName);
+		args["revoke"] = true;
+		args["disable-operation-permissions"] = true;
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> { ["args"] = args },
+			arrangeContext.CancellationTokenSource.Token);
+		ObjectRightsToolResponse response = EntitySchemaStructuredResultParser.Extract<ObjectRightsToolResponse>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "disable-operation-permissions is part of the tool contract and must bind like any other argument");
+		response.Error.Should().Contain(invalidEnvironmentName,
+			because: "the opt-in must still fail on the missing environment rather than being rejected as an unknown argument");
+	}
 }

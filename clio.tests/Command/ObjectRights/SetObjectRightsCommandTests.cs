@@ -40,7 +40,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		_connectedObjects = Substitute.For<IConnectedObjectsResolver>();
 		_logger = Substitute.For<ILogger>();
 		_rightsWriter.SetObjectRights(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<ObjectOperation>>(),
-			Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>()).Returns(new ObjectRightsChange(true, true));
+			Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>()).Returns(new ObjectRightsChange(true, true));
 		// Default: no fan-out — the resolver returns just the root object.
 		_connectedObjects.Resolve(Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<string>())
 			.Returns(callInfo => new[] { (string)callInfo[0] });
@@ -68,7 +68,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 			Arg.Is<IReadOnlyCollection<ObjectOperation>>(ops =>
 				ops.Count == 2 && ops.Contains(ObjectOperation.Read) && ops.Contains(ObjectOperation.Edit)),
 			false,
-			Arg.Any<CreatioRequestOptions>());
+			Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>());
 	}
 
 	[Test]
@@ -85,7 +85,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		// Assert
 		exitCode.Should().Be(0, because: "a successful revoke returns exit code 0");
 		_rightsWriter.Received(1).SetObjectRights("UsrPortalSpike", Arg.Any<Guid>(),
-			Arg.Any<IReadOnlyCollection<ObjectOperation>>(), true, Arg.Any<CreatioRequestOptions>());
+			Arg.Any<IReadOnlyCollection<ObjectOperation>>(), true, Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>());
 	}
 
 	[Test]
@@ -104,9 +104,9 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		// Assert
 		exitCode.Should().Be(0, because: "granting root and its connected objects succeeds");
 		_rightsWriter.Received(1).SetObjectRights("UsrPortalSpike", Arg.Any<Guid>(),
-			Arg.Any<IReadOnlyCollection<ObjectOperation>>(), false, Arg.Any<CreatioRequestOptions>());
+			Arg.Any<IReadOnlyCollection<ObjectOperation>>(), false, Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>());
 		_rightsWriter.Received(1).SetObjectRights("UsrPSCategory", Arg.Any<Guid>(),
-			Arg.Any<IReadOnlyCollection<ObjectOperation>>(), false, Arg.Any<CreatioRequestOptions>());
+			Arg.Any<IReadOnlyCollection<ObjectOperation>>(), false, Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>());
 	}
 
 	[Test]
@@ -122,7 +122,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		exitCode.Should().Be(1, because: "a missing entity schema name is an input error");
 		_logger.Received().WriteError(Arg.Is<string>(m => m.Contains("entity-schema-name")));
 		_rightsWriter.DidNotReceive().SetObjectRights(Arg.Any<string>(), Arg.Any<Guid>(),
-			Arg.Any<IReadOnlyCollection<ObjectOperation>>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>());
+			Arg.Any<IReadOnlyCollection<ObjectOperation>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>());
 	}
 
 	[Test]
@@ -167,7 +167,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		exitCode.Should().Be(1, because: "a destructive change without --confirm is refused in a non-interactive run");
 		_logger.Received().WriteError(Arg.Is<string>(m => m.Contains("--confirm")));
 		_rightsWriter.DidNotReceive().SetObjectRights(Arg.Any<string>(), Arg.Any<Guid>(),
-			Arg.Any<IReadOnlyCollection<ObjectOperation>>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>());
+			Arg.Any<IReadOnlyCollection<ObjectOperation>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>());
 	}
 
 	[Test]
@@ -175,7 +175,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 	public void Execute_ShouldReturnError_WhenWriterFails() {
 		// Arrange
 		_rightsWriter.SetObjectRights(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<ObjectOperation>>(),
-			Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>()).Returns(new ObjectRightsChange(true, false, "boom"));
+			Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>()).Returns(new ObjectRightsChange(true, false, "boom"));
 		SetObjectRightsOptions options = new() { EntitySchemaName = "UsrPortalSpike", Grantee = Grantee, Confirm = true };
 
 		// Act
@@ -184,5 +184,47 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		// Assert
 		exitCode.Should().Be(1, because: "a writer failure returns exit code 1");
 		_logger.Received().WriteError(Arg.Is<string>(m => m.Contains("boom")));
+	}
+
+	[Test]
+	[Description("Reports the refused last-row revoke as an error naming the access widening it avoided, and returns exit code 1 because nothing was applied.")]
+	public void Execute_ShouldReportWidening_WhenWriterRefusesLastRowRemoval() {
+		// Arrange
+		_rightsWriter.SetObjectRights(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<ObjectOperation>>(),
+				Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>())
+			.Returns(new ObjectRightsChange(true, false, RefusedLastRowRemoval: true));
+		SetObjectRightsOptions options = new() {
+			EntitySchemaName = "UsrPortalSpike", Grantee = Grantee, Revoke = true, Confirm = true
+		};
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "the revoke the operator asked for did not happen");
+		_logger.Received().WriteError(Arg.Is<string>(m =>
+			m.Contains("ALL internal users") && m.Contains("--disable-operation-permissions")));
+	}
+
+	[Test]
+	[Description("Passes the opt-in through to the writer and names the resulting access widening in the per-object result line.")]
+	public void Execute_ShouldReportDisabledPermissions_WhenOptInGiven() {
+		// Arrange
+		_rightsWriter.SetObjectRights(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<ObjectOperation>>(),
+				Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>())
+			.Returns(new ObjectRightsChange(true, true, OperationPermissionsDisabled: true));
+		SetObjectRightsOptions options = new() {
+			EntitySchemaName = "UsrPortalSpike", Grantee = Grantee, Revoke = true,
+			DisableOperationPermissions = true, Confirm = true
+		};
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "the caller asked for the widening, so applying it is a success");
+		_rightsWriter.Received(1).SetObjectRights("UsrPortalSpike", Arg.Any<Guid>(),
+			Arg.Any<IReadOnlyCollection<ObjectOperation>>(), true, true, Arg.Any<CreatioRequestOptions>());
+		_logger.Received().WriteInfo(Arg.Is<string>(m => m.Contains("available to ALL internal users")));
 	}
 }

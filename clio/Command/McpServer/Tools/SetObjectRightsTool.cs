@@ -29,9 +29,10 @@ public sealed class SetObjectRightsTool(
 		"Object-level analog of set-record-rights, and works for ANY role. Grants turn on the object's operation permissions when needed. " +
 		"grantee is a SysAdminUnit id (roles/users; names are not unique). Portal audience: All external users = 720b771c-e7a7-4f31-9cfb-52cd21c3739f. " +
 		"operations defaults to read/create/edit (delete not granted by default); revoke=true removes them (a role left with none is removed). " +
-		"include-connected also applies to the root object's own lookup objects (the portal-section convenience). Does NOT change column permissions. Read it back with get-object-rights.")]
+		"include-connected also applies to the root object's own lookup objects (the portal-section convenience). Does NOT change column permissions. Read it back with get-object-rights. " +
+		"A revoke that would remove an object's LAST rights row is REFUSED unless disable-operation-permissions is set, because turning operation permissions off makes the object available to ALL internal users.")]
 	public ObjectRightsToolResponse SetObjectRights(
-		[Description("Parameters: environment-name, entity-schema-name, grantee (required); operations, revoke, include-connected (optional).")]
+		[Description("Parameters: environment-name, entity-schema-name, grantee (required); operations, revoke, include-connected, disable-operation-permissions (optional).")]
 		[Required]
 		SetObjectRightsArgs args) {
 		try {
@@ -42,6 +43,7 @@ public sealed class SetObjectRightsTool(
 				Operations = args.Operations,
 				Revoke = args.Revoke ?? false,
 				IncludeConnected = args.IncludeConnected ?? false,
+				DisableOperationPermissions = args.DisableOperationPermissions ?? false,
 				// --confirm is a CLI-only interactive gate; on MCP the Destructive flag is the safety mechanism,
 				// so confirm the apply here (the command otherwise refuses in a non-interactive run).
 				Confirm = true
@@ -79,5 +81,9 @@ public sealed record SetObjectRightsArgs(
 
 	[property: JsonPropertyName("include-connected")]
 	[property: Description("Also apply to the root object's own lookup objects (portal-section convenience; default false).")]
-	bool? IncludeConnected = null
+	bool? IncludeConnected = null,
+
+	[property: JsonPropertyName("disable-operation-permissions")]
+	[property: Description("Allow a revoke to remove the object's LAST rights row, turning the object's operation permissions OFF and making it available to ALL internal users (default false, which refuses such a revoke). Only set this when widening access to every internal user is the intent.")]
+	bool? DisableOperationPermissions = null
 );

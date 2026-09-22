@@ -21,13 +21,17 @@ Granting to an object that does not yet use operation permissions **turns them o
 grants `All employees` by default so internal users keep access). It does **not** change column
 permissions.
 
+A revoke only ever narrows access. Removing an object's **last** rights row is the one case that would
+not: it turns operation permissions off, which makes the object available to **all internal users**. That
+is refused unless `--disable-operation-permissions` asks for it explicitly.
+
 **Destructive.** In a non-interactive run it refuses to apply unless `--confirm` is passed; in an
 interactive run it asks for a `y/n` confirmation.
 
 ## Synopsis
 
 ```bash
-clio set-object-rights --entity-schema-name <EntitySchemaName> --grantee <SysAdminUnitId> [--operations read,create,edit,delete] [--revoke] [--include-connected] --confirm -e <environment>
+clio set-object-rights --entity-schema-name <EntitySchemaName> --grantee <SysAdminUnitId> [--operations read,create,edit,delete] [--revoke] [--disable-operation-permissions] [--include-connected] --confirm -e <environment>
 ```
 
 ## Options
@@ -45,6 +49,10 @@ Comma-separated: read,create,edit,delete. Default: read,create,edit (delete not 
 
 --revoke
 Revoke instead of grant. A role left with no operations is removed.
+
+--disable-operation-permissions
+Allow a revoke to remove the object's LAST rights row, turning operation permissions OFF and making
+the object available to ALL internal users. Without it such a revoke changes nothing and exits 1.
 
 --include-connected
 Also apply to the root object's own lookup objects (portal-section convenience).
@@ -76,12 +84,22 @@ Revoke delete from a role:
 clio set-object-rights --entity-schema-name UsrOrder --grantee <role-id> --operations delete --revoke --confirm -e production
 ```
 
+Return an object to "available to all internal users" by removing its last role grant:
+
+```bash
+clio set-object-rights --entity-schema-name UsrOrder --grantee <role-id> --revoke --disable-operation-permissions --confirm -e production
+```
+
 ## Notes
 
 - Backed by `RightManagementService.svc/GetAdministratedObject` + `SaveAdministratedObject` (a
   read-modify-write). Read the result back with `get-object-rights`.
-- Scope: object operation permissions only. Column permissions are out of scope; the "Use operation
-  permissions" toggle is turned ON by a grant but is not turned OFF by a revoke (that is a manual step).
+- Scope: object operation permissions only. Column permissions are out of scope. The "Use operation
+  permissions" toggle is turned ON by a grant; a revoke never turns it OFF unless
+  `--disable-operation-permissions` is passed, because doing so widens access to every internal user.
+- A revoke of the object's last rights row without that flag writes nothing and exits 1, naming the
+  widening it avoided. Neither of the two possible end states — administered with zero grants (reachable
+  by nobody) or unadministered (reachable by everybody) — is a side effect a per-role revoke may cause.
 - The portal-section flow uses `--grantee <All external users> --include-connected`; this is one case of
   a general capability.
 ```

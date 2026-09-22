@@ -5,7 +5,7 @@ NAME
     set-object-rights - Grant or revoke object operation permissions (read/create/edit/delete) for a role on an object
 
 SYNOPSIS
-    set-object-rights --entity-schema-name <EntitySchemaName> --grantee <SysAdminUnitId> [--operations read,create,edit,delete] [--revoke] [--include-connected] [--confirm] [OPTIONS]
+    set-object-rights --entity-schema-name <EntitySchemaName> --grantee <SysAdminUnitId> [--operations read,create,edit,delete] [--revoke] [--disable-operation-permissions] [--include-connected] [--confirm] [OPTIONS]
 
 DESCRIPTION
     Grants (or, with --revoke, revokes) object operation permissions for one role on an object — the
@@ -17,6 +17,10 @@ DESCRIPTION
     read, the grantee's row is added/updated (or removed), and the object is saved. Granting to an
     object that does not yet use operation permissions turns them on (Creatio then also grants
     "All employees" by default so internal users keep access). It does NOT change column permissions.
+
+    A revoke only ever narrows access. Removing an object's LAST rights row is the one case that would
+    not: it turns operation permissions off, which makes the object available to ALL internal users. That
+    is refused unless --disable-operation-permissions asks for it explicitly.
 
     DESTRUCTIVE: this command changes access. In a non-interactive run it refuses to apply unless
     --confirm is passed; in an interactive run it asks for a y/n confirmation.
@@ -36,6 +40,11 @@ OPTIONS
     --revoke
         Revoke the operations instead of granting them. A role left with no operations is removed.
 
+    --disable-operation-permissions
+        Allow a revoke to remove the object's LAST rights row. Doing so turns the object's operation
+        permissions OFF, which makes it available to ALL internal users — an access widening, so it
+        never happens implicitly. Without this flag such a revoke changes nothing and exits 1.
+
     --include-connected
         Also apply to every object referenced by the root object's OWN lookup columns. This is the
         convenience for making a Freedom portal section's object AND its lookups available in one call.
@@ -49,7 +58,8 @@ OPTIONS
 EXIT CODES
     0   The change was applied (or was already in the requested state, or cancelled at the prompt).
     1   An input was invalid (missing entity-schema-name, grantee not a GUID, unknown operation),
-        confirmation was missing in a non-interactive run, or the write failed.
+        confirmation was missing in a non-interactive run, the write failed, or a revoke was refused
+        because it would have removed the object's last rights row.
 
 EXAMPLES
     Make an object and its lookups available to portal users (grant the external audience):
@@ -60,3 +70,6 @@ EXAMPLES
 
     Revoke delete from a role:
         clio set-object-rights --entity-schema-name UsrOrder --grantee <role-id> --operations delete --revoke --confirm -e production
+
+    Return an object to "available to all internal users" by removing its last role grant:
+        clio set-object-rights --entity-schema-name UsrOrder --grantee <role-id> --revoke --disable-operation-permissions --confirm -e production

@@ -62,7 +62,7 @@ public class RightManagementServiceClientTests {
 		// Act
 		ObjectRightsChange result = _client.SetObjectRights("UsrFoo", Grantee,
 			new[] { ObjectOperation.Read, ObjectOperation.Create, ObjectOperation.Edit }, revoke: false,
-			new CreatioRequestOptions());
+			disableOperationPermissions: false, new CreatioRequestOptions());
 
 		// Assert
 		result.Changed.Should().BeTrue(because: "granting a role that had no row is a change");
@@ -73,23 +73,66 @@ public class RightManagementServiceClientTests {
 		_savedPayload.Should().Contain("\"entitySchemaColumnsRights\":null", because: "unchanged collections are nulled");
 	}
 
-	[Test]
-	[Description("Revoking the last grant removes the row and turns operation permissions back off, so the object is not left administered with zero grants.")]
-	public void SetObjectRights_ShouldDisableOperationPermissions_WhenRevokingLastRow() {
-		// Arrange
+	private void GetReturnsSingleRowObject() =>
 		GetReturns($"{{\"success\":true,\"administratedObject\":{{\"name\":\"UsrFoo\",\"administratedByOperations\":true,"
 			+ $"\"entitySchemaOperationsRights\":[{{\"id\":\"x\",\"position\":0,\"canRead\":true,\"canAppend\":false,"
 			+ $"\"canEdit\":false,\"canDelete\":false,\"sysAdminUnit\":{{\"id\":\"{Grantee}\",\"name\":\"R\"}}}}]}}}}");
 
+	[Test]
+	[Description("Revoking the last grant with disableOperationPermissions removes the row and turns operation permissions off, reporting the resulting access widening.")]
+	public void SetObjectRights_ShouldDisableOperationPermissions_WhenRevokingLastRowAndAsked() {
+		// Arrange
+		GetReturnsSingleRowObject();
+
 		// Act
 		ObjectRightsChange result = _client.SetObjectRights("UsrFoo", Grantee,
 			new[] { ObjectOperation.Read, ObjectOperation.Create, ObjectOperation.Edit, ObjectOperation.Delete },
-			revoke: true, new CreatioRequestOptions());
+			revoke: true, disableOperationPermissions: true, new CreatioRequestOptions());
 
 		// Assert
 		result.Changed.Should().BeTrue(because: "the row was removed");
+		result.OperationPermissionsDisabled.Should().BeTrue(
+			because: "the caller must be told the object is now available to every internal user");
 		_savedPayload.Should().Contain("\"administratedByOperations\":false",
-			because: "removing the last grant returns the object to available-to-all rather than a lockout");
+			because: "the caller explicitly asked to return the object to available-to-all");
+	}
+
+	[Test]
+	[Description("A revoke that would remove the object's last rights row writes nothing without disableOperationPermissions, so a revoke never widens access as a side effect.")]
+	public void SetObjectRights_ShouldRefuseAndNotSave_WhenRevokingLastRowWithoutOptIn() {
+		// Arrange
+		GetReturnsSingleRowObject();
+
+		// Act
+		ObjectRightsChange result = _client.SetObjectRights("UsrFoo", Grantee,
+			new[] { ObjectOperation.Read, ObjectOperation.Create, ObjectOperation.Edit, ObjectOperation.Delete },
+			revoke: true, disableOperationPermissions: false, new CreatioRequestOptions());
+
+		// Assert
+		result.RefusedLastRowRemoval.Should().BeTrue(because: "the caller did not ask to turn operation permissions off");
+		result.Changed.Should().BeFalse(because: "nothing was written");
+		_applicationClient.DidNotReceive().ExecutePostRequest(SaveUrl, Arg.Any<string>(), Arg.Any<int>(),
+			Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("A partial revoke that leaves the role some rights is applied even on the object's only row, because no row is removed.")]
+	public void SetObjectRights_ShouldApplyPartialRevoke_WhenLastRowKeepsRights() {
+		// Arrange
+		GetReturns($"{{\"success\":true,\"administratedObject\":{{\"name\":\"UsrFoo\",\"administratedByOperations\":true,"
+			+ $"\"entitySchemaOperationsRights\":[{{\"id\":\"x\",\"position\":0,\"canRead\":true,\"canAppend\":true,"
+			+ $"\"canEdit\":false,\"canDelete\":false,\"sysAdminUnit\":{{\"id\":\"{Grantee}\",\"name\":\"R\"}}}}]}}}}");
+
+		// Act
+		ObjectRightsChange result = _client.SetObjectRights("UsrFoo", Grantee,
+			new[] { ObjectOperation.Create }, revoke: true, disableOperationPermissions: false,
+			new CreatioRequestOptions());
+
+		// Assert
+		result.RefusedLastRowRemoval.Should().BeFalse(because: "the row keeps canRead, so it is not removed");
+		result.Changed.Should().BeTrue(because: "canAppend was cleared");
+		_savedPayload.Should().Contain("\"administratedByOperations\":true",
+			because: "a narrowing revoke never touches the object's administration flag");
 	}
 
 	[Test]
@@ -103,7 +146,7 @@ public class RightManagementServiceClientTests {
 		// Act
 		ObjectRightsChange result = _client.SetObjectRights("UsrFoo", Grantee,
 			new[] { ObjectOperation.Read, ObjectOperation.Create, ObjectOperation.Edit }, revoke: false,
-			new CreatioRequestOptions());
+			disableOperationPermissions: false, new CreatioRequestOptions());
 
 		// Assert
 		result.Changed.Should().BeFalse(because: "the role already holds exactly these operations");

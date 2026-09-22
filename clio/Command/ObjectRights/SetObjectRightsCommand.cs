@@ -28,6 +28,11 @@ public class SetObjectRightsOptions : RemoteCommandOptions {
 		"Revoke the operations instead of granting. A role left with no operations is removed.")]
 	public bool Revoke { get; set; }
 
+	[Option("disable-operation-permissions", Required = false, HelpText =
+		"Allow a revoke to remove the object's LAST rights row, which turns the object's operation permissions "
+		+ "OFF and makes it available to ALL internal users. Without this such a revoke is refused.")]
+	public bool DisableOperationPermissions { get; set; }
+
 	[Option("include-connected", Required = false, HelpText =
 		"Also apply to every object referenced by the root object's own lookup columns (portal-section convenience)")]
 	public bool IncludeConnected { get; set; }
@@ -78,6 +83,11 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 			? $"'{objects[0]}'"
 			: $"{objects.Count} objects ({string.Join(", ", objects)})";
 		string change = $"{verb} object operations [{opList}] for grantee {grantee} on {targets}.";
+		if (options.Revoke && options.DisableOperationPermissions) {
+			// The operator approves the access WIDENING here, not just the revoke — so the prompt has to say it.
+			change += " Any object left with no rights rows has its operation permissions turned OFF"
+				+ " and becomes available to ALL internal users.";
+		}
 
 		ConfirmDecision decision = ConfirmApply(options, change);
 		if (decision == ConfirmDecision.Cancelled) {
@@ -91,14 +101,25 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 			bool anyFailure = false;
 			foreach (string schemaName in objects) {
 				ObjectRightsChange result = _rightsWriter.SetObjectRights(
-					schemaName, grantee, operations, options.Revoke, requestOptions);
+					schemaName, grantee, operations, options.Revoke, options.DisableOperationPermissions, requestOptions);
 				if (result.Error != null) {
 					anyFailure = true;
 					_logger.WriteError($"  {schemaName}: {result.Error}");
 				} else if (!result.Found) {
 					_logger.WriteWarning($"  {schemaName}: schema not found (skipped).");
+				} else if (result.RefusedLastRowRemoval) {
+					// Nothing was written, so this is not a success: the revoke the operator asked for did not happen.
+					anyFailure = true;
+					_logger.WriteError(
+						$"  {schemaName}: grantee {grantee} holds the object's LAST rights row. Removing it would turn "
+						+ $"operation permissions OFF and make '{schemaName}' available to ALL internal users. "
+						+ "Nothing was changed — re-run with --disable-operation-permissions if that is what you want.");
 				} else if (result.Changed) {
-					_logger.WriteInfo($"  {schemaName}: {(options.Revoke ? "revoked" : "granted")} [{opList}] for grantee {grantee}.");
+					string widened = result.OperationPermissionsDisabled
+						? " Operation permissions are now OFF on this object — it is available to ALL internal users."
+						: "";
+					_logger.WriteInfo(
+						$"  {schemaName}: {(options.Revoke ? "revoked" : "granted")} [{opList}] for grantee {grantee}.{widened}");
 				} else {
 					_logger.WriteInfo($"  {schemaName}: already in the requested state (no change).");
 				}
