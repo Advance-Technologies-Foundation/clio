@@ -261,6 +261,9 @@ public sealed class DescribeProcessToolTests {
 		// Arrange
 		string toolText = ReadDescribeToolDescription();
 		string validatePrompt = ValidateProcessGraphPrompt.ProcessDesignGuidance();
+		string validateTool = ((System.ComponentModel.DescriptionAttribute)typeof(ValidateProcessGraphTool)
+			.GetMethod(nameof(ValidateProcessGraphTool.Validate))!
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false).Single()).Description;
 
 		// Act
 		// (the surfaces are the subject; nothing is invoked)
@@ -276,6 +279,15 @@ public sealed class DescribeProcessToolTests {
 		validatePrompt.Should().Contain("multiInstanceOptions",
 			because: "removing the refusal is only half the correction - the prompt has to name the member "
 				+ "that replaced it, or an agent learns only that its previous knowledge was wrong");
+		validateTool.Should().NotContain("once per item of a collection.",
+			because: "THIS description is the CANONICAL buildable-slice list - the prompt defers to it BY NAME "
+				+ "and deliberately does not restate it - so a retraction applied to the prompt alone leaves "
+				+ "the authoritative copy still claiming the element cannot be built. That is precisely what "
+				+ "happened: the first version of this sweep named three surfaces, read two, and the one it "
+				+ "skipped was this one");
+		validateTool.Should().Contain("multiInstanceOptions",
+			because: "the canonical list has to name the member that replaced the refusal, for the same reason "
+				+ "the prompt does");
 	}
 
 	/// <summary>Reads the describe tool's own [Description] - the agent-facing contract under test.</summary>
