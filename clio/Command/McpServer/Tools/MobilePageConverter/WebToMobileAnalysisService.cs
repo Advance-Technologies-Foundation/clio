@@ -4606,7 +4606,6 @@ public static class WebToMobileAnalysisService {
 		}
 	}
 
-	/// <summary>Builds the web-request → mapping-rule lookup (case-insensitive) from the resolved rules.</summary>
 	/// <summary>
 	/// The versioned rules file's <c>requests</c> entries whose mobile target the mobile request registry does
 	/// not list, as <c>web -&gt; mobile</c> pairs. Support is derived from the registry, so an entry naming a
@@ -4629,6 +4628,7 @@ public static class WebToMobileAnalysisService {
 		return unknown;
 	}
 
+	/// <summary>Builds the web-request → mapping-rule lookup (case-insensitive) from the resolved rules.</summary>
 	private static IReadOnlyDictionary<string, RequestMappingRule> BuildRequestMap(WebToMobilePageConversionRules rules) {
 		var map = new Dictionary<string, RequestMappingRule>(StringComparer.OrdinalIgnoreCase);
 		foreach (RequestMappingRule rule in rules?.Requests ?? []) {
