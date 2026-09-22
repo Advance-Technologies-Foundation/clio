@@ -1,6 +1,7 @@
 using Clio.Command;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
+using CommandLine;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
@@ -15,6 +16,22 @@ internal class SetEntitySchemaPropertiesCommandTests : BaseCommandTests<SetEntit
 	private SetEntitySchemaPropertiesCommand _command;
 	private IRemoteEntitySchemaColumnManager _columnManager;
 	private ILogger _logger;
+
+	[TestCase(true)]
+	[TestCase(false)]
+	[Description("Parses explicit true and false for the schema-property CLI option.")]
+	public void Parse_ShouldPreserveDbView_WhenExplicitlySupplied(bool expected) {
+		// Arrange
+		string[] arguments = ["--package", "UsrPkg", "--schema-name", "UsrView",
+			"--is-db-view", expected ? "true" : "false"];
+		SetEntitySchemaPropertiesOptions parsed = null;
+		// Act
+		ParserResult<SetEntitySchemaPropertiesOptions> result = Parser.Default
+			.ParseArguments<SetEntitySchemaPropertiesOptions>(arguments).WithParsed(options => parsed = options);
+		// Assert
+		result.Tag.Should().Be(ParserResultType.Parsed, because: "documented boolean syntax must parse");
+		parsed.IsDBView.Should().Be(expected, because: "clearing the flag must not become an omitted property");
+	}
 
 	public override void Setup() {
 		base.Setup();
@@ -33,6 +50,22 @@ internal class SetEntitySchemaPropertiesCommandTests : BaseCommandTests<SetEntit
 	public void ClearReceived() {
 		_columnManager.ClearReceivedCalls();
 		_logger.ClearReceivedCalls();
+	}
+
+	[TestCase(true)]
+	[TestCase(false)]
+	[Description("Accepts either explicit DB-view value as the sole schema property.")]
+	public void Execute_ShouldAcceptDbViewOnly_WhenExplicitlySupplied(bool value) {
+		// Arrange
+		SetEntitySchemaPropertiesOptions options = new() {
+			Package = "UsrPkg", SchemaName = "UsrVehicle", IsDBView = value
+		};
+		// Act
+		int result = _command.Execute(options);
+		// Assert
+		result.Should().Be(0, because: "false clears the flag and must not be mistaken for omission");
+		_columnManager.ReceivedCalls().Should().ContainSingle(
+			because: "the valid DB-view-only request must reach the manager once");
 	}
 
 	[Test]

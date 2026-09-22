@@ -383,11 +383,19 @@
 			// learn what the merge did.
 			response.AppendProjection = prepared.Projection;
 			response.Warnings = CombineWarnings(
-				BuildProjectedLossWarnings(prepared.Projection), prepared.DowngradeWarnings, prepared.InertWarnings);
+				BuildProjectedLossWarnings(prepared.Projection), prepared.DowngradeWarnings, prepared.InertWarnings,
+				explicitResources?.Count > 0 || prepared.RegisteredKeys?.Count > 0
+					? new List<string> { ResourceWorkspaceCaptureWarning } : null);
 			PopulatePostSaveChecksum(options, context, response);
 			AppendDesignerPresenceWarning(options, response);
 			return true;
 		}
+
+		internal const string ResourceWorkspaceCaptureWarning =
+			"Page resources were saved on the server; update-page does not capture your workspace source. " +
+			"A push-workspace from stale metadata/resource XML can revert these changes. Preserve local edits, " +
+			"capture the affected package with restore-workspace (pull-workspace), and review its schema metadata " +
+			"and culture resource XML before pushing. For linked FSM workspaces, follow the workspace's capture instructions.";
 
 		/// <summary>
 		/// Reads the resource keys already persisted on the target schema, resolving the schema hierarchy

@@ -859,6 +859,95 @@ public sealed class SensitiveErrorTextRedactorTests {
 			because: "no cut is needed, so no ellipsis may appear");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("RedactCredentials keeps a URI without userinfo byte-identical, host, port, path and query included (#1505).")]
+	[TestCase("Cannot connect to http://ts1-core-dev04:88/sae_m_seeenu_16009960_0914/0/DataService")]
+	[TestCase("Probe https://ts1-core-dev04:88?u=john@acme.com answered 404")]
+	[TestCase("Endpoint https://host.example.com has no path")]
+	public void RedactCredentials_ShouldLeaveAUriWithoutUserInfo_Untouched(string text) {
+		// Act
+		string result = SensitiveErrorTextRedactor.RedactCredentials(text);
+
+		// Assert
+		result.Should().Be(text,
+			because: "the console variant redacts credentials only; the operator's own endpoint is the diagnosis, not a leak - and an '@' inside the query must not be mistaken for userinfo");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("RedactCredentials removes only the userinfo of a URI and keeps the host - including a password that contains '@' (#1505).")]
+	[TestCase("Request to https://user:pw@host.example.com/x failed", "Request to https://[redacted]@host.example.com/x failed")]
+	[TestCase("Request to https://user:p@ss@host.example.com/x failed", "Request to https://[redacted]@host.example.com/x failed")]
+	[TestCase("Request to https://user@host.example.com/x failed", "Request to https://[redacted]@host.example.com/x failed")]
+	public void RedactCredentials_ShouldStripUriUserInfo_AndKeepTheHost(string text, string expected) {
+		// Act
+		string result = SensitiveErrorTextRedactor.RedactCredentials(text);
+
+		// Assert
+		result.Should().Be(expected,
+			because: "the authority ends at the first '/', '?' or '#', and the last '@' inside the authority is the userinfo delimiter, so a password containing '@' is still removed whole");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("RedactCredentials leaves local paths, host:port pairs and e-mail addresses alone - only the console's own reader sees them (#1505).")]
+	public void RedactCredentials_ShouldLeaveLocalPathsHostPortsAndEmails_Untouched() {
+		// Arrange
+		const string text = "Could not find a part of the path '/Users/x/y.json'. Connection refused (localhost:1616). Contact john.doe@acme.com.";
+
+		// Act
+		string result = SensitiveErrorTextRedactor.RedactCredentials(text);
+
+		// Assert
+		result.Should().Be(text,
+			because: "the path, host:port and e-mail rules are deliberately not part of the console variant");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("RedactCredentials is idempotent: the AggregateException arm of the CLI renderer scrubs twice (#1505).")]
+	public void RedactCredentials_ShouldBeIdempotent() {
+		// Arrange
+		const string text = "SelectQuery failed: password=s3cr3t token Bearer eyJabc.def.ghi at https://user:pw@host/x";
+
+		// Act
+		string once = SensitiveErrorTextRedactor.RedactCredentials(text);
+		string twice = SensitiveErrorTextRedactor.RedactCredentials(once);
+
+		// Assert
+		once.Should().NotContain("s3cr3t").And.NotContain("eyJabc").And.NotContain("user:pw",
+			because: "the credential pair, the bearer token and the URI userinfo are the console variant's whole job");
+		twice.Should().Be(once,
+			because: "a second pass must find nothing new to replace");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description(
+		"Issue #1505: a SERIALIZED JSON body puts the key's closing quote between the key and the colon "
+		+ "({\"password\":\"s3cr3t\"}), which the credential pair pattern used to miss. Both the MCP Redact "
+		+ "path and the console RedactCredentials path share that pattern, so both are pinned here.")]
+	public void RedactAndRedactCredentials_ShouldRedactJsonQuotedCredentialKey() {
+		// Arrange
+		const string text = "backend echoed {\"password\":\"s3cr3t\",\"server\":\"db.internal\"}";
+
+		// Act
+		string mcp = SensitiveErrorTextRedactor.Redact(text);
+		string console = SensitiveErrorTextRedactor.RedactCredentials(text);
+
+		// Assert
+		mcp.Should().NotContain("s3cr3t",
+			because: "the JSON-quoted shape is the one issue #1505 measured on the MCP path too");
+		console.Should().NotContain("s3cr3t",
+			because: "the console variant reuses the same pair pattern and must fail closed on the same shape");
+		console.Should().Contain("\"password\":\"[redacted]\"",
+			because: "the key is kept so the line still reads sensibly while the value is replaced - and the "
+				+ "JSON property rule keeps it in the spelling it was written in, so the echoed body still parses");
+		console.Should().Contain("\"server\":\"[redacted]\"",
+			because: "a connection-string host echoed by the server is redacted alongside the password");
+	}
+
 	private static int CountOccurrences(string text, string token) {
 		int count = 0;
 		int index = text.IndexOf(token, StringComparison.OrdinalIgnoreCase);
@@ -1341,5 +1430,55 @@ public sealed class SensitiveErrorTextRedactorTests {
 		// Assert
 		redacted.Should().Contain(pair,
 			because: "over-redacting an identifier every Creatio payload carries would cost more diagnostic signal than the camelCase widening buys");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("RedactJsonCredentialProperties replaces a credential-keyed JSON property, which is the whole reason a caller reaches for it instead of Redact.")]
+	public void RedactJsonCredentialProperties_ShouldReplaceTheValue_WhenTheKeyIsACredential() {
+		// Arrange: the show-webApp-list envelope shape the MCP e2e dump can carry (PR #1539).
+		const string text =
+			"""{"Name":"dev","Login":"Supervisor","Password":"hunter2","ClientSecret":"d3adb33f"}""";
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.RedactJsonCredentialProperties(text);
+
+		// Assert
+		redacted.Should().NotContain("hunter2",
+			because: "a registered environment's password is what this pass exists to keep out of a published build artifact");
+		redacted.Should().NotContain("d3adb33f",
+			because: "the client secret sits under the same rule's key set");
+		redacted.Should().Contain("Supervisor",
+			because: "the login is not in the credential key set, so the envelope keeps the part that makes the dump a diagnostic");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("RedactJsonCredentialProperties runs ONLY that rule: the paths, URIs and key=value pairs the full chain would scrub are exactly what the payload dump needs to keep.")]
+	public void RedactJsonCredentialProperties_ShouldLeaveEveryOtherRuleOff_WhenTheTextCarriesThem() {
+		// Arrange
+		const string text =
+			"Failed reading /Users/alex/secrets/credentials.json from https://stand.local:443 with password=hunter2";
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.RedactJsonCredentialProperties(text);
+
+		// Assert
+		redacted.Should().Be(text,
+			because: "none of this is a JSON credential property, and running the other nine-odd passes over a multi-megabyte payload is the cost issue #1537 removed");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("RedactJsonCredentialProperties treats null and empty the way every other entry point does, so a caller needs no null guard of its own.")]
+	[TestCase(null, TestName = "Null")]
+	[TestCase("", TestName = "Empty")]
+	public void RedactJsonCredentialProperties_ShouldReturnEmpty_WhenTextIsNullOrEmpty(string? text) {
+		// Act
+		string redacted = SensitiveErrorTextRedactor.RedactJsonCredentialProperties(text);
+
+		// Assert
+		redacted.Should().BeEmpty(
+			because: "Redact answers empty for both, and a second entry point that answered null instead would be a trap");
 	}
 }

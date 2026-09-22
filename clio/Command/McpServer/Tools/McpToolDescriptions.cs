@@ -63,6 +63,9 @@ internal static class McpToolDescriptions {
 	/// <c>McpFeatureToggleFilterTests.RegisterEnabledPrimitives_ShouldKeepToolsSerializedSizeWithinBudget_WhenCalled</c>.
 	/// </summary>
 	internal const string PageResourcesAdditive =
-		" Additions only: a key already stored on the schema stays registered and is NOT updated by " +
-		"re-sending it on a later save.";
+		" Adds missing keys and updates supplied en-US values; preserves resource identity, other cultures, " +
+		"and omitted keys. A key already stored on the schema stays registered without being re-sent. " +
+		"Server save only: preserve local edits, capture the affected workspace package with restore-workspace " +
+		"and review metadata/resource XML before push-workspace, which can revert uncaptured changes. " +
+		"Follow workspace instructions for linked FSM packages.";
 }

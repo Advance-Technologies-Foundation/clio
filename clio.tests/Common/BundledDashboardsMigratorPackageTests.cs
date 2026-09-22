@@ -55,7 +55,7 @@ public class BundledDashboardsMigratorPackageTests {
 	/// produced out of the SDLC build zip pinned in <see cref="ExpectedSourceBuildSha256"/>.
 	/// </summary>
 	private const string ExpectedArchiveSha256 =
-		"5946FB92AE02E8CA438CE6D2F2F1388D4B86A3B17127197A1E3364353C2EECD5";
+		"1AC177E5FBC1F9D10329E76D5EF908A1C3223ADD59416098FC7DD3510A666003";
 
 	/// <summary>
 	/// The app version the archive declares in <c>Files/app-descriptor.json</c> — the number Marketplace and
@@ -68,7 +68,7 @@ public class BundledDashboardsMigratorPackageTests {
 	/// <see cref="ExpectedArchiveVersion"/> with a build number; the commit is on the build's page in the SDLC app.
 	/// </summary>
 	private const string ExpectedSourceBuildSha256 =
-		"4527CCC0237A955BF338467AED1B803D8562A86509B279BCA8B5EB59A68C2C35";
+		"721D347EDB28E5F0E388C6E6D023D48E9D0583EDF43793279B40919D3D3396A4";
 
 	/// <summary>The descriptor stamp that makes the version bump take effect on the target (fact 2).</summary>
 	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1766076346000)/";

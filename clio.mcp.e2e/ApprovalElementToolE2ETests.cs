@@ -37,17 +37,28 @@ public sealed class ApprovalElementToolE2ETests {
 	// is never executed here, so whether Contact has approvals configured does not affect what this asserts.
 	private const string ApprovalObjectName = "Contact";
 
+	/// <summary>The cut that carries the approval block; gates this fixture and names itself in the skip.</summary>
+	private const string MinimumPackageVersion = "1.6.0.3";
+
+	/// <summary>Deserialises the graph, which this fixture asserts over as typed properties.</summary>
+	private static DescribeProcessResult ParseDescribedProcess(CallToolResult describeResult) =>
+		JsonSerializer.Deserialize<DescribeProcessResult>(
+			DescribedProcessGraph.Read(describeResult).ToJsonString(),
+			new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+
 	[Test]
 	[Description("Over the real MCP path, create-business-process builds an approval element and describe-business-process reads it back: the element resolves to the dedicated approval build type, its approval block carries the resolved object NAME, the purpose default and the delegation flag, and the visa schema derived server-side.")]
 	[AllureTag(ToolName)]
 	[AllureName("create-business-process builds an approval element and describe reads the block back")]
 	public async Task CreateBusinessProcess_Should_BuildApprovalElement_AndReadItBack() {
 		// Arrange
-		await using ArrangeContext context = await ArrangeAsync();
+		await using ProcessDesignerArrangeContext context =
+			await ProcessDesignerE2EArrange.StartAsync("Approval", MinimumPackageVersion);
 		string processName = $"UsrClioBpApprovalE2e{Guid.NewGuid():N}";
 
 		// Act
-		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+		CallToolResult callResult = await ProcessDesignerE2EArrange.CallToolAsync(context, ToolName,
+			new Dictionary<string, object?> {
 			["environment-name"] = context.EnvironmentName,
 			["descriptor"] = BuildApprovalDescriptor(processName)
 		});
@@ -62,7 +73,7 @@ public sealed class ApprovalElementToolE2ETests {
 			because: "only a genuinely successful build logs the created-schema line (run against an environment "
 				+ "whose CrtProcessBuilder supports the approval element)");
 
-		DescribeProcessResult graph = ParseDescribeGraph(await DescribeAsync(context, processName));
+		DescribeProcessResult graph = ParseDescribedProcess(await ProcessDesignerE2EArrange.DescribeAsync(context, processName));
 		DescribedElement approval = graph.Elements.Single(element => element.Name == "Approval1");
 		approval.BuildType.Should().Be("approval",
 			because: "an Approval element round-trips to its dedicated build token, not the generic userTask — "
@@ -91,11 +102,13 @@ public sealed class ApprovalElementToolE2ETests {
 	[AllureName("create-business-process accepts an approval block on the generic userTask route")]
 	public async Task CreateBusinessProcess_Should_AcceptApprovalBlock_OnGenericUserTaskRoute() {
 		// Arrange
-		await using ArrangeContext context = await ArrangeAsync();
+		await using ProcessDesignerArrangeContext context =
+			await ProcessDesignerE2EArrange.StartAsync("Approval", MinimumPackageVersion);
 		string processName = $"UsrClioBpApprovalGenericE2e{Guid.NewGuid():N}";
 
 		// Act
-		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+		CallToolResult callResult = await ProcessDesignerE2EArrange.CallToolAsync(context, ToolName,
+			new Dictionary<string, object?> {
 			["environment-name"] = context.EnvironmentName,
 			["descriptor"] = BuildGenericUserTaskApprovalDescriptor(processName)
 		});
@@ -105,7 +118,7 @@ public sealed class ApprovalElementToolE2ETests {
 			because: "the userTask + ApprovalUserTask route is the one that already worked before the dedicated "
 				+ "token existed, and it must keep working for a caller on an older habit");
 
-		DescribeProcessResult graph = ParseDescribeGraph(await DescribeAsync(context, processName));
+		DescribeProcessResult graph = ParseDescribedProcess(await ProcessDesignerE2EArrange.DescribeAsync(context, processName));
 		DescribedElement approval = graph.Elements.Single(element => element.Name == "Approval1");
 		approval.Approval.Should().NotBeNull(
 			because: "identity keys on the referenced task schema, so the block configures the element either way");
@@ -119,11 +132,13 @@ public sealed class ApprovalElementToolE2ETests {
 	[AllureName("create-business-process refuses a misplaced approval block")]
 	public async Task CreateBusinessProcess_Should_RefuseApprovalBlock_OnAnotherElementKind() {
 		// Arrange
-		await using ArrangeContext context = await ArrangeAsync();
+		await using ProcessDesignerArrangeContext context =
+			await ProcessDesignerE2EArrange.StartAsync("Approval", MinimumPackageVersion);
 		string processName = $"UsrClioBpApprovalMisplacedE2e{Guid.NewGuid():N}";
 
 		// Act
-		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+		CallToolResult callResult = await ProcessDesignerE2EArrange.CallToolAsync(context, ToolName,
+			new Dictionary<string, object?> {
 			["environment-name"] = context.EnvironmentName,
 			["descriptor"] = BuildMisplacedApprovalDescriptor(processName)
 		});
@@ -142,15 +157,17 @@ public sealed class ApprovalElementToolE2ETests {
 	[AllureName("create-business-process writes an approver and describe reads it back")]
 	public async Task CreateBusinessProcess_Should_WriteApprover_AndReadItBack() {
 		// Arrange
-		await using ArrangeContext context = await ArrangeAsync();
+		await using ProcessDesignerArrangeContext context =
+			await ProcessDesignerE2EArrange.StartAsync("Approval", MinimumPackageVersion);
 		string processName = $"UsrClioBpApproverE2e{Guid.NewGuid():N}";
 
 		// Act
-		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+		CallToolResult callResult = await ProcessDesignerE2EArrange.CallToolAsync(context, ToolName,
+			new Dictionary<string, object?> {
 			["environment-name"] = context.EnvironmentName,
 			["descriptor"] = BuildApproverDescriptor(processName)
 		});
-		DescribeProcessResult graph = ParseDescribeGraph(await DescribeAsync(context, processName));
+		DescribeProcessResult graph = ParseDescribedProcess(await ProcessDesignerE2EArrange.DescribeAsync(context, processName));
 
 		// Assert
 		JsonSerializer.Serialize(callResult).Should().Contain("created (UId:",
@@ -262,70 +279,6 @@ public sealed class ApprovalElementToolE2ETests {
 
 	// Deserializes the described graph (the Info log-message value inside the clio command envelope) into the
 	// typed model, the same way the create-business-process fixture does.
-	private static DescribeProcessResult ParseDescribeGraph(CallToolResult describeResult) {
-		CommandExecutionEnvelope envelope = McpCommandExecutionParser.Extract(describeResult);
-		string graphJson = envelope.Output!
-			.Select(message => message.Value)
-			.First(value => !string.IsNullOrWhiteSpace(value)
-				&& value!.TrimStart().StartsWith("{", StringComparison.Ordinal))!;
-		return JsonSerializer.Deserialize<DescribeProcessResult>(graphJson,
-			new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
-	}
-
-	private static async Task<CallToolResult> DescribeAsync(ArrangeContext context, string processCode) =>
-		await context.Session.CallToolAsync(
-			DescribeProcessTool.ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["environment-name"] = context.EnvironmentName,
-					["process-name"] = processCode
-				}
-			},
-			context.CancellationTokenSource.Token);
-
-	private static async Task<CallToolResult> CallToolAsync(ArrangeContext context,
-			Dictionary<string, object?> args) {
-		IReadOnlyCollection<string> toolNames =
-			await context.Session.ListReachableToolNamesAsync(context.CancellationTokenSource.Token);
-		toolNames.Should().Contain(ToolName,
-			because: "the create-business-process tool must be discoverable before the end-to-end call");
-		return await context.Session.CallToolAsync(
-			ToolName, new Dictionary<string, object?> { ["args"] = args }, context.CancellationTokenSource.Token);
-	}
-
-	// No 'requireReachableEnvironment' switch: every fixture here calls the server, so the parameter was passed
-	// true at all four call sites and the false branch could never run. A dead branch in an arrange helper reads
-	// as coverage that exists; reinstate it only alongside a fixture that actually needs it.
-	private static async Task<ArrangeContext> ArrangeAsync() {
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		string? environmentName = settings.Sandbox.EnvironmentName;
-		if (string.IsNullOrWhiteSpace(environmentName)) {
-			Assert.Ignore(
-				"Configure McpE2E:Sandbox:EnvironmentName (with a CrtProcessBuilder that supports the approval "
-				+ "element) to run the Approval MCP E2E tests.");
-		}
-
-		if (!await ClioCliCommandRunner.IsEnvironmentReachableAsync(settings, environmentName!)) {
-			Assert.Ignore(
-				$"Approval MCP E2E requires a reachable configured sandbox environment. '{environmentName}' was not reachable.");
-		}
-
-		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		return new ArrangeContext(session, cancellationTokenSource, environmentName);
-	}
-
-	private sealed record ArrangeContext(
-		McpServerSession Session,
-		CancellationTokenSource CancellationTokenSource,
-		string? EnvironmentName) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
-			CancellationTokenSource.Dispose();
-		}
-	}
-
 	#endregion
 
 }

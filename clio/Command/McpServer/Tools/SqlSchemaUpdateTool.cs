@@ -25,7 +25,7 @@ public sealed class SqlSchemaUpdateTool(
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description(
-		"Update the body of a SQL script schema on a remote Creatio environment via ScriptSchemaDesignerService. " +
+		"Update the body of a SQL script schema on a remote Creatio environment via SqlScriptSchemaDesignerService. " +
 		"Provide the body inline via `body` or, for large bodies, as an absolute file path via `body-file`. " +
 		"Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
 	public SqlSchemaUpdateResponse UpdateSchema(
