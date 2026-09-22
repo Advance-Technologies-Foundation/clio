@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading;
@@ -18,7 +19,7 @@ namespace Clio.Mcp.E2E;
 /// <summary>
 /// End-to-end coverage for <c>modify-business-process-as-new-version</c>. NOT in CI — run manually. The
 /// advertised-tool test is hermetic; the functional tests build a uniquely named process and then save
-/// versions of it, gated on a reachable environment carrying CrtProcessBuilder 1.6.1.0 or newer and a
+/// versions of it, gated on a reachable environment carrying CrtProcessBuilder 1.6.2.1 or newer and a
 /// writable <c>Custom</c> package.
 /// </summary>
 /// <remarks>
@@ -163,6 +164,76 @@ public sealed class ModifyProcessAsNewVersionToolE2ETests {
 
 	#region Methods: Private
 
+	[Test]
+	[Description("Over the real MCP path, a setElement carrying email.template in the operations array lands on the NEW VERSION (ENG-95986): the version's sendEmail element describes as messageSource 'template' with the template id and display name and no body. This route runs no read-back guard, so this describe is the only evidence clio can produce that the template member is not silently discarded on the way to a version. Depends on the stock template 'Case closure notification'.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process-as-new-version carries a template-mode sendEmail into the new version")]
+	public async Task ModifyProcessAsNewVersion_Should_CarryATemplateModeEmailIntoTheNewVersion() {
+		// Arrange - a custom-message sendEmail element on the source process
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpVersionEmailTplE2e{Guid.NewGuid():N}";
+		await CallToolExpectingSuccessAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildSendEmailDescriptor(processName)
+		});
+
+		// Act - switch the element to a template ON THE VERSION (one without a macro-source object, so no templateEntity)
+		CallToolResult callResult = await CallToolExpectingSuccessAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["package-name"] = "Custom",
+			["operations"] = """
+				[ { "op": "setElement", "elementName": "SendEmail1",
+				    "elementUpdate": { "email": { "template": "Case closure notification" } } } ]
+				"""
+		});
+
+		// Assert
+		JsonSerializer.Serialize(callResult).Should().Contain($"{processName}Custom1",
+			because: "the version must have been saved under the platform-composed name before its content can be checked");
+		CallToolResult describeResult = await CallToolAsync(context, DescribeToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = $"{processName}Custom1"
+			});
+		JsonObject describedVersion = DescribedProcessGraph.Read(describeResult);
+		JsonObject sendEmail = describedVersion["elements"]!.AsArray()
+			.Select(element => element!.AsObject())
+			.Single(element => element["name"]!.GetValue<string>() == "SendEmail1");
+		JsonObject email = sendEmail["email"]!.AsObject();
+		email["messageSource"]!.GetValue<string>().Should().Be("template",
+			because: "the template member must reach the version's element - this route has no read-back warning to catch a drop");
+		email["template"]!.GetValue<string>().Should().NotBeNullOrWhiteSpace(
+			because: "the resolved template id is stored on the version's EmailTemplateId");
+		email["templateDisplay"]!.GetValue<string>().Should().Be("Case closure notification",
+			because: "the template NAME is stored as the lookup's display value");
+		(email["hasBody"]?.GetValue<bool>() ?? false).Should().BeFalse(
+			because: "the custom body is cleared on the switch and a template element reports no body");
+		describedVersion["isActiveVersion"]!.GetValue<bool>().Should().BeFalse(
+			because: "creating a version must never change what the environment executes");
+	}
+
+	// A source process with a custom-message sendEmail element, so the version edit has a mode to switch FROM.
+	private static string BuildSendEmailDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Version Email Template E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "SendEmail1", "type": "sendEmail",
+		      "email": { "mode": "manual", "subject": "Version template probe", "body": "<p>ClioVersionTemplateProbe</p>",
+		        "to": [ { "value": "probe@example.com" } ] } },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "SendEmail1" },
+		    { "source": "SendEmail1", "target": "EndEvent1" }
+		  ]
+		}
+		""";
+
 	private static string BuildDescriptor(string processName) =>
 		$$"""
 		{
@@ -218,7 +289,7 @@ public sealed class ModifyProcessAsNewVersionToolE2ETests {
 		string? environmentName = settings.Sandbox.EnvironmentName;
 		if (requireReachableEnvironment) {
 			if (string.IsNullOrWhiteSpace(environmentName)) {
-				Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName (carrying CrtProcessBuilder 1.6.1.0 or "
+				Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName (carrying CrtProcessBuilder 1.6.2.1 or "
 					+ "newer) to run modify-business-process-as-new-version MCP E2E.");
 			}
 			if (!await ClioCliCommandRunner.IsEnvironmentReachableAsync(settings, environmentName!)) {

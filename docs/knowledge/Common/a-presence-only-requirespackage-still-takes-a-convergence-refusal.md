@@ -27,11 +27,16 @@ the two carrying a literal:
 
 | site | floor | refuses a behind environment |
 |---|---|---|
-| `CreateBusinessProcessCommand.cs:192` | `1.6.0.3` | yes |
-| `ModifyBusinessProcessCommand.cs:161` | `1.6.0.3` | yes |
-| `DescribeProcessCommand.cs:17` | none — `Hint` only | **yes** |
-| `ListUserTasksCommand.cs:15` | none — `Hint` only | **yes** |
-| `ValidateProcessGraphTool.cs:131` | none — `Hint` only | **yes** |
+| `CreateBusinessProcessOptions` (CreateBusinessProcessCommand.cs) | `1.6.2.1` | yes |
+| `ModifyBusinessProcessOptions` (ModifyBusinessProcessCommand.cs) | `1.6.2.1` | yes |
+| `DescribeProcessOptions` (DescribeProcessCommand.cs) | none — `Hint` only | **yes** |
+| `ListUserTasksOptions` (ListUserTasksCommand.cs) | none — `Hint` only | **yes** |
+| `ValidateProcessGraphArgs` (ValidateProcessGraphTool.cs) | none — `Hint` only | **yes** |
+
+The sites are named by the DECLARING TYPE, not by file and line. Line numbers in this table went stale
+twice — the last time when a rationale comment grew above an attribute and moved it nine lines — and a
+stale pointer is worse than none here, because the instruction beside it is to read each attribute in
+full. A type name survives every edit that does not rename it, and finds the attribute in one grep.
 | `GetProcessSignatureCommand.cs:17` | deliberately not gated | no |
 
 **Why it is this way** — by design, and the design is argued in

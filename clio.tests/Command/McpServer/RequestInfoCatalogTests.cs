@@ -254,4 +254,95 @@ public sealed class RequestInfoCatalogTests {
 		state.Lookup["crt.ClosePageRequest"].Parameters.Should().BeEmpty(
 			because: "an explicitly empty map means the request accepts no parameters");
 	}
+
+	[Test]
+	[Description("A producer-side entry-level 'deprecated' + 'deprecationReason' pair round-trips onto strongly-typed POCO fields (never onto UnmappedExtensions), so an agent can filter deprecated requests at browse time and read the replacement reason without parsing the description.")]
+	public void LoadFromStream_ShouldMapEntryLevelDeprecatedFields_WhenPresent() {
+		// Arrange
+		const string envelopeWithDeprecatedEntry = """
+		{
+		  "requests": [
+		    {
+		      "requestType": "crt.OpenLookupPageRequest",
+		      "parameters": {},
+		      "description": "Legacy record-selection window.",
+		      "deprecated": true,
+		      "deprecationReason": "Use crt.OpenSelectionWindowRequest instead."
+		    },
+		    {
+		      "requestType": "crt.OpenSelectionWindowRequest",
+		      "parameters": {},
+		      "description": "Opens a record-selection window."
+		    }
+		  ]
+		}
+		""";
+		using MemoryStream stream = new(Encoding.UTF8.GetBytes(envelopeWithDeprecatedEntry));
+
+		// Act
+		RequestCatalogState state = RequestInfoCatalog.LoadFromStream(stream);
+
+		// Assert — the deprecated entry surfaces both fields on the POCO.
+		RequestRegistryEntry deprecated = state.Lookup["crt.OpenLookupPageRequest"];
+		deprecated.Deprecated.Should().BeTrue(
+			because: "the producer flagged this entry as deprecated and the mapping must reach the POCO");
+		deprecated.DeprecationReason.Should().Be("Use crt.OpenSelectionWindowRequest instead.",
+			because: "the deprecation reason is what steers the agent to the replacement request");
+		deprecated.UnmappedExtensions.Should().BeNullOrEmpty(
+			because: "the deprecated/deprecationReason keys must not land on the silent-data-loss bucket");
+
+		// Assert — a non-deprecated entry leaves both fields null so the JSON stays absent.
+		RequestRegistryEntry active = state.Lookup["crt.OpenSelectionWindowRequest"];
+		active.Deprecated.Should().BeNull(
+			because: "a non-deprecated request must leave the field null so it is omitted from the wire");
+		active.DeprecationReason.Should().BeNull(
+			because: "deprecationReason is only meaningful when Deprecated is true");
+	}
+
+	[Test]
+	[Description("A deprecated entry surfaces its deprecation on BOTH the list item and the detail response so an agent that browses the catalog sees the flag without having to open the detail first.")]
+	public void CreateResponses_ShouldSurfaceDeprecationOnListAndDetail_WhenEntryIsDeprecated() {
+		// Arrange
+		const string envelopeWithDeprecatedEntry = """
+		{
+		  "requests": [
+		    {
+		      "requestType": "crt.OpenLookupPageRequest",
+		      "parameters": {},
+		      "description": "Legacy record-selection window.",
+		      "deprecated": true,
+		      "deprecationReason": "Use crt.OpenSelectionWindowRequest instead."
+		    }
+		  ]
+		}
+		""";
+		using MemoryStream stream = new(Encoding.UTF8.GetBytes(envelopeWithDeprecatedEntry));
+		RequestCatalogState state = RequestInfoCatalog.LoadFromStream(stream);
+		RequestRegistryEntry entry = state.Lookup["crt.OpenLookupPageRequest"];
+
+		// Act — list mode.
+		System.Collections.Generic.IReadOnlyList<RequestInfoListItem> items = RequestInfoTool.CreateItems(state.Entries);
+
+		// Assert — the list item echoes the flag + reason so browse-time filtering works.
+		items.Should().ContainSingle(
+			because: "the fixture publishes exactly one entry");
+		items[0].Deprecated.Should().BeTrue(
+			because: "list mode is where an agent picks a request; the deprecated flag belongs there too");
+		items[0].DeprecationReason.Should().Be("Use crt.OpenSelectionWindowRequest instead.",
+			because: "the replacement suggestion must reach the agent without a second call");
+
+		// Act — detail mode.
+		RequestInfoResponse detail = RequestInfoTool.CreateDetailResponse(
+			entry,
+			resolvedTargetVersion: state.ResolvedVersion,
+			resolvedFrom: "latest-fallback",
+			documentation: null,
+			globalReferences: state.GlobalReferences);
+
+		// Assert — the detail response mirrors the list item.
+		detail.Deprecated.Should().BeTrue(
+			because: "the detail response must expose the deprecation to consumers that skip the list");
+		detail.DeprecationReason.Should().Be("Use crt.OpenSelectionWindowRequest instead.",
+			because: "the detail response must expose the replacement suggestion verbatim");
+	}
 }
