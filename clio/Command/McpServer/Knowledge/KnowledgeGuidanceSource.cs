@@ -27,6 +27,7 @@ internal interface IKnowledgeGuidanceSource {
 
 internal sealed class KnowledgeGuidanceSource : IKnowledgeGuidanceSource {
 	private readonly IKnowledgeBundleActivator _activator;
+	private readonly IKnowledgeRefreshTrigger _refreshTrigger;
 	private readonly IKnowledgeBundleRuntime _runtime;
 	private readonly IFeatureToggleService _featureToggleService;
 	private readonly object _catalogLock = new();
@@ -35,11 +36,36 @@ internal sealed class KnowledgeGuidanceSource : IKnowledgeGuidanceSource {
 
 	public KnowledgeGuidanceSource(
 		IKnowledgeBundleActivator activator,
+		IKnowledgeRefreshTrigger refreshTrigger,
 		IKnowledgeBundleRuntime runtime,
 		IFeatureToggleService featureToggleService) {
 		_activator = activator ?? throw new ArgumentNullException(nameof(activator));
+		_refreshTrigger = refreshTrigger ?? throw new ArgumentNullException(nameof(refreshTrigger));
 		_runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
 		_featureToggleService = featureToggleService ?? throw new ArgumentNullException(nameof(featureToggleService));
+	}
+
+	/// <summary>
+	/// Brings the served snapshot up to date before answering, and asks for a publisher refresh when the
+	/// cached generation is due for one.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// Activation first, deliberately: it is local and synchronous, so a generation another clio process
+	/// already installed is picked up by THIS answer. The refresh that follows never blocks it — it is a
+	/// stale-while-revalidate for the next reader, in the same shape the component registry behind
+	/// <c>get-component-info</c> uses.
+	/// </para>
+	/// <para>
+	/// The trigger is asked unconditionally; WHETHER it does anything is its own decision. This source
+	/// serves the whole process — an ordinary CLI verb reaches it too (<c>clio config</c> reads the
+	/// <c>knowledge-feedback</c> article) — and <see cref="IKnowledgeRefreshTrigger"/> is where that
+	/// eligibility is decided and tested, so no run-mode policy leaks onto the read path.
+	/// </para>
+	/// </remarks>
+	private void EnsureCurrent() {
+		_activator.EnsureActivated();
+		_refreshTrigger.TriggerIfDue();
 	}
 
 	// Eligibility goes into the resolver rather than around it: filtering afterwards would let a
@@ -47,28 +73,28 @@ internal sealed class KnowledgeGuidanceSource : IKnowledgeGuidanceSource {
 	// eligible lower-priority article, and would let a gated candidate create a false tie.
 	public KnowledgeArticleLookup FindByName(string name) {
 		ArgumentException.ThrowIfNullOrWhiteSpace(name);
-		_activator.EnsureActivated();
+		EnsureCurrent();
 		return _runtime.Find(name, HasEnabledFeatures);
 	}
 
 	public KnowledgeArticleLookup FindByUri(string uri) {
 		ArgumentException.ThrowIfNullOrWhiteSpace(uri);
-		_activator.EnsureActivated();
+		EnsureCurrent();
 		return _runtime.Find(uri, HasEnabledFeatures);
 	}
 
 	public IReadOnlyList<string> GetNames() {
-		_activator.EnsureActivated();
+		EnsureCurrent();
 		return ResolveCatalog().GuidanceNames;
 	}
 
 	public IReadOnlyList<KnowledgeGuidanceDescriptor> GetCatalog() {
-		_activator.EnsureActivated();
+		EnsureCurrent();
 		return ResolveCatalog().ByName;
 	}
 
 	public IReadOnlyList<KnowledgeGuidanceDescriptor> GetDiscoveryCatalog() {
-		_activator.EnsureActivated();
+		EnsureCurrent();
 		return ResolveCatalog().ByUri;
 	}
 

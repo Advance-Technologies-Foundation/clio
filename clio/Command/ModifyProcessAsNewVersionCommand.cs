@@ -178,7 +178,8 @@ public sealed class ModifyProcessAsNewVersionService(
 		}
 
 		return new ModifyProcessAsNewVersionResult(result.VersionName, result.VersionSchemaUId, result.Version,
-			result.IsActiveVersion, result.VersionRootSchemaUId, result.AppliedOperations, result.Warnings);
+			result.IsActiveVersion, result.VersionRootSchemaUId, result.AppliedOperations, result.Warnings,
+			result.LayoutChange?.ElementsClause());
 	}
 
 	// A failure that still names a version is NOT a failed create: the version exists and the platform offers no
@@ -204,6 +205,14 @@ public sealed class ModifyProcessAsNewVersionService(
 		// old to send it, so it is reported whenever the server sent operations at all.
 		if (result.AppliedOperations > 0) {
 			message += $" {result.AppliedOperations} operation(s) had been applied to the version draft.";
+		}
+
+		// No layout question is ever asked on this path, so nothing here offers a way to re-send. What the
+		// server sends is a DESCRIPTION of the version's diagram, and on a failure that description belongs to
+		// a version that may or may not exist - so only the element names travel, beside the sentence the
+		// server's own warnings already carry.
+		if (result.LayoutChange != null) {
+			message += result.LayoutChange.ElementsClause();
 		}
 
 		if (!string.IsNullOrWhiteSpace(result.VersionName) || !string.IsNullOrWhiteSpace(result.VersionSchemaUId)) {
@@ -284,6 +293,11 @@ public sealed class ModifyProcessAsNewVersionService(
 
 		[JsonPropertyName("warnings")]
 		public List<string>? Warnings { get; set; }
+
+		// Declared for the reason the two above are: an undeclared member is discarded silently, and this one
+		// carries the only actionable part of a layout refusal - which elements to show the user.
+		[JsonPropertyName("layoutChange")]
+		public LayoutChangeRelay? LayoutChange { get; set; }
 	}
 
 	#endregion
@@ -331,11 +345,19 @@ public class ModifyProcessAsNewVersionCommand(
 			logger.WriteInfo(result.IsActiveVersion switch {
 				true => "This version is reported ACTIVE — unexpected for a create; verify with "
 					+ "describe-business-process.",
-				false => "The source version is still the actual one and keeps running. Use "
-					+ "set-active-business-process-version to switch, if that is what the user asked for.",
+				false => "The source version is still the actual one and keeps running. ASK THE USER to open "
+					+ "this version and say whether to make it actual; call "
+					+ "set-active-business-process-version only once they have. Do not chain the two - a "
+					+ "version is created inactive precisely so they get to look first.",
 				null => "The environment did not report which version is actual — verify with "
 					+ "describe-business-process before reporting what runs."
 			});
+			// Named on the SUCCESS path, where the server has no refusal message to carry them: the warning it
+			// sends says the diagram is laid out afresh, and without these the user cannot be told which parts
+			// of their picture that is about.
+			if (!string.IsNullOrWhiteSpace(result.RedrawnElements)) {
+				logger.WriteWarning($"The diagram of this version is laid out afresh.{result.RedrawnElements}");
+			}
 			foreach (string warning in result.Warnings ?? []) {
 				logger.WriteWarning(warning);
 			}
@@ -373,7 +395,14 @@ public sealed record ModifyProcessAsNewVersionRequest(string ProcessName, string
 /// </param>
 /// <param name="VersionRootSchemaUId">UId of the family ROOT. The family is FLAT — a version of a version still points at the root.</param>
 /// <param name="AppliedOperations">Number of operations applied to the clone.</param>
-/// <param name="Warnings">Outcomes that applied but are not what the caller would assume; <c>null</c> when there are none.</param>
+/// <param name="Warnings">
+/// Outcomes that applied but are not what the caller would assume. Never empty from a server that reports the
+/// version is not the actual one, which is a caveat every create carries.
+/// </param>
+/// <param name="RedrawnElements">
+/// The elements whose placement in this version is not the source's, as a ready sentence, or <c>null</c> when
+/// the diagram came through recognisable. Never a question: this path creates the version either way.
+/// </param>
 public sealed record ModifyProcessAsNewVersionResult(string? VersionName, string? VersionSchemaUId, int? Version,
 	bool? IsActiveVersion, string? VersionRootSchemaUId, int AppliedOperations,
-	IReadOnlyList<string>? Warnings = null);
+	IReadOnlyList<string>? Warnings = null, string? RedrawnElements = null);

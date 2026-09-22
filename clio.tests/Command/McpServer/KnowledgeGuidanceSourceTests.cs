@@ -14,6 +14,38 @@ namespace Clio.Tests.Command.McpServer;
 [Property("Module", "McpServer")]
 public sealed class KnowledgeGuidanceSourceTests {
 	[Test]
+	[Description("Every guidance read asks for a publisher refresh, which is what keeps an MCP-only installation current.")]
+	public void EveryRead_ShouldAskForARefresh_AfterActivating() {
+		// Arrange
+		IKnowledgeBundleActivator activator = Substitute.For<IKnowledgeBundleActivator>();
+		IKnowledgeRefreshTrigger refreshTrigger = Substitute.For<IKnowledgeRefreshTrigger>();
+		IKnowledgeBundleRuntime runtime = Substitute.For<IKnowledgeBundleRuntime>();
+		IFeatureToggleService features = Substitute.For<IFeatureToggleService>();
+		runtime.Find(Arg.Any<string>(), Arg.Any<Func<KnowledgeArticle, bool>?>())
+			.Returns(new KnowledgeArticleLookup(KnowledgeArticleLookupStatus.NotFound, null, 0));
+		runtime.GetNames(Arg.Any<Func<KnowledgeArticle, bool>?>()).Returns([]);
+		runtime.GetArticlesByRole(Arg.Any<string>()).Returns([]);
+		runtime.SnapshotToken.Returns(new object());
+		KnowledgeGuidanceSource source = new(activator, refreshTrigger, runtime, features);
+
+		// Act - every member of the read surface.
+		KnowledgeArticleLookup byName = source.FindByName("routing");
+		KnowledgeArticleLookup byUri = source.FindByUri("docs://knowledge/com.creatio.clio/routing");
+		IReadOnlyList<string> names = source.GetNames();
+		IReadOnlyList<KnowledgeGuidanceDescriptor> catalog = source.GetCatalog();
+		IReadOnlyList<KnowledgeGuidanceDescriptor> discoveryCatalog = source.GetDiscoveryCatalog();
+
+		// Assert
+		byName.Status.Should().Be(KnowledgeArticleLookupStatus.NotFound);
+		byUri.Status.Should().Be(KnowledgeArticleLookupStatus.NotFound);
+		names.Should().BeEmpty();
+		catalog.Should().BeEmpty();
+		discoveryCatalog.Should().BeEmpty();
+		refreshTrigger.Received(5).TriggerIfDue();
+		activator.Received(5).EnsureActivated();
+	}
+
+	[Test]
 	[Description("Guidance that requires a disabled experimental feature is absent from lookup and discovery.")]
 	public void FindAndCatalog_ShouldExcludeArticle_WhenRequiredFeatureIsDisabled() {
 		// Arrange
@@ -46,7 +78,7 @@ public sealed class KnowledgeGuidanceSourceTests {
 		runtime.GetArticlesByRole(Arg.Any<string>()).Returns([]);
 		runtime.SnapshotToken.Returns(new object());
 		features.IsFeatureEnabled("process-designer").Returns(false);
-		KnowledgeGuidanceSource source = new(activator, runtime, features);
+		KnowledgeGuidanceSource source = new(activator, Substitute.For<IKnowledgeRefreshTrigger>(), runtime, features);
 
 		// Act
 		KnowledgeArticleLookup lookup = source.FindByName(article.ItemId);
@@ -83,7 +115,7 @@ public sealed class KnowledgeGuidanceSourceTests {
 			article,
 			4));
 		features.IsFeatureEnabled("process-designer").Returns(true);
-		KnowledgeGuidanceSource source = new(activator, runtime, features);
+		KnowledgeGuidanceSource source = new(activator, Substitute.For<IKnowledgeRefreshTrigger>(), runtime, features);
 
 		// Act
 		KnowledgeArticleLookup lookup = source.FindByName(article.ItemId);
@@ -122,7 +154,7 @@ public sealed class KnowledgeGuidanceSourceTests {
 		runtime.GetArticlesByRole("reference").Returns([
 			new KnowledgeRoleArticle(article, provenance, 100, KnowledgeSourceParticipation.Authoritative)
 		]);
-		KnowledgeGuidanceSource source = new(activator, runtime, features);
+		KnowledgeGuidanceSource source = new(activator, Substitute.For<IKnowledgeRefreshTrigger>(), runtime, features);
 
 		// Act
 		IReadOnlyList<string> guidanceNames = source.GetNames();
@@ -166,7 +198,7 @@ public sealed class KnowledgeGuidanceSourceTests {
 				7);
 		});
 		runtime.GetArticlesByRole(Arg.Any<string>()).Returns([]);
-		KnowledgeGuidanceSource source = new(activator, runtime, features);
+		KnowledgeGuidanceSource source = new(activator, Substitute.For<IKnowledgeRefreshTrigger>(), runtime, features);
 
 		// Act
 		IReadOnlyList<KnowledgeGuidanceDescriptor> firstPageView = source.GetDiscoveryCatalog();

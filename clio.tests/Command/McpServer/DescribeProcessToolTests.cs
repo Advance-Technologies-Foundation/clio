@@ -110,7 +110,7 @@ public sealed class DescribeProcessToolTests {
 		// enumeration - the exact regression this test is named for - left it green. Same for "kind" and
 		// "condition", which appear throughout the surrounding prose. Only branchesOnActivityResult was
 		// really pinned. The fragment below is the enumeration itself, so a field removed from it fails here.
-		prompt.Should().Contain("`flows` (name, source, target, kind, `label`, and on a branch its `condition`",
+		prompt.Should().Contain("`flows` (name, source, target, kind, `label`, `geometry`, and on a branch its `condition`",
 			because: "the per-flow field list is what an agent reads to learn a flow's shape, and this prompt "
 				+ "does NOT defer that list to guidance - so a field missing from THIS enumeration is a field "
 				+ "no agent looks for, whatever else the prose mentions");
@@ -118,6 +118,13 @@ public sealed class DescribeProcessToolTests {
 			because: "the enumeration continues on the next line and would otherwise fall outside the "
 				+ "fragment above - and `results` is the field that says WHICH results decide the branch, so "
 				+ "a reader who learns only the boolean can see THAT a selection exists and never read it");
+		prompt.Should().Contain("`start`, `points[]`, `end`, `exitSide`, `entrySide`",
+			because: "the members of a flow's geometry are the vocabulary an agent answers a question about "
+				+ "the PICTURE in - which arrow leaves where, which one crosses what - and naming the field "
+				+ "without naming its parts leaves that unanswerable");
+		prompt.Should().Contain("READ-ONLY",
+			because: "position, size and geometry are re-derived on every save and no write argument carries "
+				+ "them, and a field an agent can see is a field it will otherwise try to set");
 
 		// The TOOL description carries the same disambiguation, and an agent may read either one. Asserted
 		// on both because the inverse pin in BundledProcessBuilderPackageTests only forbids a VERSION -

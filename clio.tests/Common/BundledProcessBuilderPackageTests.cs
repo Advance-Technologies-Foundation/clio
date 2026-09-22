@@ -122,6 +122,17 @@ public class BundledProcessBuilderPackageTests {
 	/// guards with the union of a frozen pre-batch capture and a fresh live re-scan, so neither a dependent cleared
 	/// nor one added mid-batch escapes detection. Every PATCH digit over 1.6.2.5 fixes something a review or a
 	/// live-test run found, and each is raised so a stand still carrying an earlier one is DETECTABLY behind.</para>
+	/// <para>1.6.5.14 (THIS cut, from <c>feature/ENG-95890-ENG-98448-layout-and-connector-geometry</c>): the
+	/// band layout and connector geometry (ENG-95890, ENG-98448), and on top of them the second review round's
+	/// four fixes. The one that decides whether this archive may ship at all is
+	/// <c>ModifyProcessRequest.ConfirmLayoutChange</c> becoming NULLABLE. This version changed which arm of a
+	/// split keeps the trunk and made end-event pinning conditional, so a diagram an earlier package drew now
+	/// lands in cells this engine would not choose - measured at 21 of 33 graphs by running 1.6.5.4's own
+	/// placement algorithm beside the current one. While the member was a <c>bool</c>, absence read as
+	/// "not confirmed" and every one of those edits was REFUSED; the member is new in this very clio PR, so no
+	/// released clio and no direct web-service consumer could send it. Absence now means a caller that predates
+	/// the gate and the edit applies, which is why the clio side must send the member on EVERY request rather
+	/// than only when true - see <c>ModifyBusinessProcessServiceTests</c>, which pins that.</para>
 	/// <para>1.6.2.8 (this cut): two more post-merge review findings on the same feature branch, both confirmed
 	/// against current code before fixing. <c>ProcessElementDependencyScanner.CaptureSnapshot</c> now also walks
 	/// <c>schema.ExecutionContexts</c> — a second schema-level parameter collection, distinct from
@@ -551,7 +562,13 @@ public class BundledProcessBuilderPackageTests {
 	// the rest of the archive as the window would let a member on any later type satisfy the probe,
 	// which is exactly the vacuity this helper exists to remove. `DescribeProcessFlow` is the last
 	// region in its file, so that is not a hypothetical shape.
-	private static bool DeclaresLabelOn(string archive, string typeName) {
+	private static bool DeclaresLabelOn(string archive, string typeName) =>
+		DeclaresMemberOn(archive, typeName, "label");
+
+	// Generalised from the label probe: the same window, asked about any wire name. The diagram members
+	// arrived needing that question about three more types, and a second copy of the region arithmetic is a
+	// second place for the unterminated-region hole to be reintroduced.
+	private static bool DeclaresMemberOn(string archive, string typeName, string dataMemberName) {
 		int start = archive.IndexOf($"#region Class: {typeName}\r", StringComparison.Ordinal);
 		if (start < 0) {
 			start = archive.IndexOf($"#region Class: {typeName}\n", StringComparison.Ordinal);
@@ -563,7 +580,7 @@ public class BundledProcessBuilderPackageTests {
 
 		int end = archive.IndexOf("#endregion", start, StringComparison.Ordinal);
 		return end >= 0
-			&& archive[start..end].Contains("[DataMember(Name = \"label\")]", StringComparison.Ordinal);
+			&& archive[start..end].Contains($"[DataMember(Name = \"{dataMemberName}\")]", StringComparison.Ordinal);
 	}
 
 	/// <summary>
@@ -1123,6 +1140,28 @@ public class BundledProcessBuilderPackageTests {
 		archive.Should().Contain("BodyStyle = WebMessageBodyStyle.Wrapped",
 			because: "the wrapper name clio looks for (PingResult) is a FUNCTION of this setting; flipping it to "
 				+ "Bare removes the envelope and the verdict inverts silently");
+
+		// The diagram read-back, asked the same way and for the same reason: clio TYPES these members, so
+		// an archive without them answers every describe with a null size and a null geometry while clio's
+		// own DTO says the fields exist - and a caller then reads "this package reports no geometry" off a
+		// package that simply was not rebundled.
+		DeclaresMemberOn(archive, "DescribeProcessElement", "size").Should().BeTrue(
+			because: "without the size a described position cannot be inverted into a diagram row at all");
+		DeclaresMemberOn(archive, "DescribeProcessFlow", "geometry").Should().BeTrue(
+			because: "every criterion about a connector is a statement about this chain, so without it the "
+				+ "layout can only be checked by a person opening the designer");
+		DeclaresMemberOn(archive, "DescribeFlowGeometry", "start").Should().BeTrue(
+			because: "the chain's own members have to be on the shipped type, not only on its container");
+		// Through the ENTRY NAMES, not the text: the container stores paths UTF-16LE, so a Contain over the
+		// decompressed blob answers false for a file that IS shipped. The names come back with forward
+		// slashes whatever the container stored.
+		IReadOnlyList<string> entries = ReadBundledArchiveEntryNames();
+		entries.Should().Contain(name => name.EndsWith("Layout/ConnectorRouter.cs", StringComparison.Ordinal),
+			because: "the package ships as SOURCE and compiles on the target, so a routing file missing from "
+				+ "the archive is a package that installs, pings green and writes no connector geometry");
+		entries.Should().Contain(name => name.EndsWith("Layout/FlowGeometryWriter.cs", StringComparison.Ordinal),
+			because: "same for the writer - the one file that turns a routed chain into stored CI7/CI8/CI10/"
+				+ "CI11/CI12");
 	}
 
 	[Test]
