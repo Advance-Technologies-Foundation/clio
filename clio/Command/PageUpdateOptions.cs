@@ -337,7 +337,7 @@
 			response = null;
 			if (context.SchemaType == PageSchemaType.Mobile) return true;
 			JArray candidate = PageParentNameValidation.ReadDiff(body);
-			if (!candidate.OfType<JObject>().Any(x => (x.Value<string>("operation") is "insert" or "move")
+			if (!candidate.OfType<JObject>().Any(x => (x.Value<string>("operation") is "insert" or "move" or "set")
 				&& (!string.IsNullOrEmpty(x.Value<string>("parentName")) || !string.IsNullOrEmpty(x.Value<string>("nameTo"))))) return true;
 			if (_hierarchyClient is null || _viewConfigApplierFactory is null)
 				throw new InvalidOperationException("Page parent validation requires the designer hierarchy and diff applier.");

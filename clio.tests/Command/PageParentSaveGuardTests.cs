@@ -107,4 +107,28 @@ public class PageParentSaveGuardTests {
         result.Should().Be(expectedSuccess, because: "only effective operations can create orphans: " + response.Error);
     }
 
+    [TestCase("parentName", "MainContainer", true)]
+    [TestCase("parentName", "Missing", false)]
+    [TestCase("nameTo", "MainContainer", true)]
+    [TestCase("nameTo", "Missing", false)]
+    [TestCase("nameTo", "Child", false)]
+    [Description("Set relocations must resolve their destination before a page can be saved.")]
+    public void TryUpdatePage_ShouldValidateSetDestination(string property, string destination, bool expected) {
+        // Arrange
+        _hierarchy.GetParentSchemas(Uid, "pkg").Returns([
+            new PageDesignerHierarchySchema { UId = Uid, Name = "UsrProof", PackageUId = "pkg", SchemaType = 9 },
+            new PageDesignerHierarchySchema { UId = "base", Name = "Base", Body = Body(
+                "[{operation:'insert',name:'MainContainer',values:{items:[]}},{operation:'insert',name:'Child',parentName:'MainContainer',propertyName:'items',values:{}}]") }
+        ]);
+        var options = new PageUpdateOptions { SchemaName = "UsrProof", Validate = false,
+            Body = Body("[{operation:'set',name:'Child'," + property + ":'" + destination + "',values:{}}]") };
+        // Act
+        bool result = _command.TryUpdatePage(options, out var response);
+        // Assert
+        result.Should().Be(expected, because: "set uses the same destination guard as insert and move: " + response.Error);
+        if (!expected) {
+            response.Error.Should().Contain(destination, because: "the diagnostic must identify the unresolved destination");
+            _client.DidNotReceive().ExecutePostRequest(Arg.Is<string>(x => x.EndsWith("SaveSchema")), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+        }
+    }
 }

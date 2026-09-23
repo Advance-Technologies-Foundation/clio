@@ -667,6 +667,11 @@ public class JsonDiffApplier : IJsonDiffApplier {
 			config["parentName"] = parentName;
 			config["propertyName"] = itemInfo["propertyName"]?.DeepClone();
 		}
+		if (_operationsOptions?.RejectUnresolvedParents == true &&
+			!string.IsNullOrEmpty(parentName) && FindItemInfoInSourceObject(parentName) is null) {
+			throw new JsonDiffApplierException(PageParentNameValidation.Diagnostic(
+				config.Value<string>("name"), parentName, PageParentNameValidation.Names(_sourceObject)));
+		}
 		Insert(config);
 		return parentExists;
 	}
