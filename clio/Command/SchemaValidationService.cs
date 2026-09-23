@@ -963,25 +963,10 @@ public static class SchemaValidationService
 	private static void ReportIndicatorProvidingGaps(
 		JsonElement widget, string entryLabel, SchemaValidationResult result) {
 		bool hasConfig = TryGetObjectProperty(widget, "config", out JsonElement config);
-		var designerGaps = new List<string>();
-		if (!hasConfig || !TryGetObjectProperty(config, "layout", out _)) {
-			designerGaps.Add("config.layout");
-		}
-		if (!hasConfig || !TryGetObjectProperty(config, "text", out _)) {
-			designerGaps.Add("config.text");
-		}
-		var providingGaps = new List<string>();
+		List<string> designerGaps = CollectDesignerGaps(hasConfig, config);
 		bool boundToData = widget.TryGetProperty("data", out JsonElement boundData)
 			&& boundData.ValueKind != JsonValueKind.Null;
-		if (!boundToData) {
-			if (!hasConfig || !TryGetObjectProperty(config, "data", out JsonElement data)) {
-				providingGaps.Add("config.data");
-			} else if (!TryGetObjectProperty(data, "providing", out JsonElement providing)) {
-				providingGaps.Add("config.data.providing");
-			} else if (!TryGetObjectProperty(providing, "expressionSchema", out _)) {
-				CollectAggregationProvidingGaps(providing, providingGaps);
-			}
-		}
+		List<string> providingGaps = boundToData ? [] : CollectProvidingGaps(hasConfig, config);
 		if (designerGaps.Count == 0 && providingGaps.Count == 0) {
 			return;
 		}
@@ -1006,6 +991,29 @@ public static class SchemaValidationService
 		message.Append(" The save succeeds either way, so nothing downstream reports this.");
 		result.IsValid = false;
 		result.Errors.Add(message.ToString());
+	}
+
+	private static List<string> CollectDesignerGaps(bool hasConfig, JsonElement config) {
+		var gaps = new List<string>();
+		if (!hasConfig || !TryGetObjectProperty(config, "layout", out _)) {
+			gaps.Add("config.layout");
+		}
+		if (!hasConfig || !TryGetObjectProperty(config, "text", out _)) {
+			gaps.Add("config.text");
+		}
+		return gaps;
+	}
+
+	private static List<string> CollectProvidingGaps(bool hasConfig, JsonElement config) {
+		var gaps = new List<string>();
+		if (!hasConfig || !TryGetObjectProperty(config, "data", out JsonElement data)) {
+			gaps.Add("config.data");
+		} else if (!TryGetObjectProperty(data, "providing", out JsonElement providing)) {
+			gaps.Add("config.data.providing");
+		} else if (!TryGetObjectProperty(providing, "expressionSchema", out _)) {
+			CollectAggregationProvidingGaps(providing, gaps);
+		}
+		return gaps;
 	}
 
 	/// <summary>
