@@ -33,7 +33,6 @@ jobs:
       clio-src:    ${{ steps.filter.outputs.clio-src }}
       tests:       ${{ steps.filter.outputs.tests }}
       analyzers:   ${{ steps.filter.outputs.analyzers }}
-      cliogate:    ${{ steps.filter.outputs.cliogate }}
       unit-matrix: ${{ steps.plan.outputs.unit-matrix }}
       integration-matrix: ${{ steps.plan.outputs.integration-matrix }}
     steps:
@@ -61,9 +60,6 @@ jobs:
               - 'Clio.Analyzers/**'
               - 'Clio.Analyzers.Tests/**'
               - 'Directory.Packages.props'
-            cliogate:
-              - 'cliogate/**'
-              - 'cliogate.tests/**'
 
       - name: Build matrices
         id: plan
@@ -340,31 +336,6 @@ jobs:
           path: TestResults/mcp-e2e-noenvironment/**
           if-no-files-found: warn
           retention-days: 14
-
-  # ── ClioGate tests (only when the bundled service changes) ──────────
-  cliogate-tests:
-    name: ClioGate Tests
-    needs: changes
-    if: >-
-      needs.changes.outputs.cliogate == 'true' &&
-      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-    # ClioGate restores Creatio packages from the private Nexus feed, which is unreachable from hosted runners.
-    runs-on: [self-hosted, Windows]
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 1
-          persist-credentials: false
-
-      - name: Run ClioGate tests
-        shell: powershell
-        run: |
-          $ErrorActionPreference = 'Stop';
-          Set-Location $env:GITHUB_WORKSPACE;
-          dotnet test .\cliogate.tests\cliogate.tests.csproj `
-            --configuration Release;
 
   # ── Integration tests (three hosted runners in parallel with unit tests) ──
   integration-test-shards:

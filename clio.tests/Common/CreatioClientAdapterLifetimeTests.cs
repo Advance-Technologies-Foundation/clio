@@ -38,7 +38,8 @@ internal sealed class CreatioClientAdapterLifetimeTests {
 	[Description("Disposing a factory-created adapter disposes its short-lived owned CreatioClient")]
 	public void Dispose_ShouldDisposeClient_WhenClientIsFactoryOwned() {
 		// Arrange
-		ApplicationClientFactory factory = new(Substitute.For<IReauthExecutor>());
+		ApplicationClientFactory factory = new(Substitute.For<IReauthExecutor>(),
+			Substitute.For<Clio.Common.ExternalAccess.IExternalAccessSessionProvider>());
 		IOwnedApplicationClient sut = factory.CreateFormsEnvironmentClient(new EnvironmentSettings {
 			Uri = "https://localhost",
 			Login = "Supervisor",
