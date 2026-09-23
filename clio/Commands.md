@@ -752,6 +752,13 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="sso-register-provider"></a>
 - [`register-sso-provider`](docs/commands/register-sso-provider.md) - Register a new OIDC SSO provider in Creatio, `sso-register-provider`
 
+### Connecting through a support access grant
+
+`--external-access-token <token>` is available on every command that takes an environment. It
+exchanges a token minted for a support access grant for a Creatio session, so clio can reach a site
+for which no login and password exist. The token is never stored and the session cannot be renewed.
+See [external access login](docs/external-access-login.md).
+
 ## General
 
 <a id="assert"></a>

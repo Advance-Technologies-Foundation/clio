@@ -68,7 +68,7 @@ public sealed class SysImageUploader : ISysImageUploader {
 		Justification = "The compatibility constructor must retain its historical public signature.")]
 	public SysImageUploader(EnvironmentSettings environmentSettings, ICreatioAuthClient authClient,
 		IHttpClientFactory httpClientFactory, Clio.Common.IFileSystem fileSystem)
-		: this(environmentSettings, new ApplicationClientFactory(new NoReauthExecutor()),
+		: this(environmentSettings, new ApplicationClientFactory(new NoReauthExecutor(), Clio.Common.ExternalAccess.ExternalAccessSessionProvider.CreateDefault()),
 			new ServiceUrlBuilder(environmentSettings), fileSystem) {
 		ArgumentNullException.ThrowIfNull(authClient);
 		ArgumentNullException.ThrowIfNull(httpClientFactory);
