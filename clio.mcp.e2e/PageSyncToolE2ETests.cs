@@ -978,7 +978,7 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 			// Act 2: out-of-band modification via update-page anchored elsewhere (no baseline there).
 			string outOfBandBody = originalBody.Replace(
 				"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/",
-				"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrE2ESyncOobContainer\",\"values\":{\"type\":\"crt.FlexContainer\",\"direction\":\"row\",\"items\":[]},\"parentName\":\"Main\",\"propertyName\":\"items\",\"index\":0}]/**SCHEMA_VIEW_CONFIG_DIFF*/");
+				"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrE2ESyncOobContainer\",\"values\":{\"type\":\"crt.FlexContainer\",\"direction\":\"row\",\"items\":[]},\"parentName\":\"MainContainer\",\"propertyName\":\"items\",\"index\":0}]/**SCHEMA_VIEW_CONFIG_DIFF*/");
 			CallToolResult outOfBandResult = await context.Session.CallToolAsync(
 				PageUpdateTool.ToolName,
 				new Dictionary<string, object?> {
@@ -1863,7 +1863,7 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 		body.Replace(
 			"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/",
 			"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"" + containerName +
-			"\",\"values\":{\"type\":\"crt.FlexContainer\",\"direction\":\"row\",\"items\":[]},\"parentName\":\"Main\",\"propertyName\":\"items\",\"index\":0}]/**SCHEMA_VIEW_CONFIG_DIFF*/");
+			"\",\"values\":{\"type\":\"crt.FlexContainer\",\"direction\":\"row\",\"items\":[]},\"parentName\":\"MainContainer\",\"propertyName\":\"items\",\"index\":0}]/**SCHEMA_VIEW_CONFIG_DIFF*/");
 
 	/// <summary>
 	/// Returns <paramref name="body"/> with an INSERTED FIELD whose label points at
@@ -1884,7 +1884,7 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 			"[{\"operation\":\"insert\",\"name\":\"UsrE2ESyncPersistedField\"," +
 			"\"values\":{\"type\":\"crt.Input\",\"label\":\"$Resources.Strings." + resourceKey +
 			"\",\"control\":\"$UsrE2ESyncPersistedAttribute\"}," +
-			"\"parentName\":\"Main\",\"propertyName\":\"items\",\"index\":0}]");
+			"\"parentName\":\"MainContainer\",\"propertyName\":\"items\",\"index\":0}]");
 		return ReplaceEmptyMarker(
 			withField, "SCHEMA_VIEW_MODEL_CONFIG_DIFF",
 			"[{\"operation\":\"merge\",\"path\":[\"attributes\"]," +

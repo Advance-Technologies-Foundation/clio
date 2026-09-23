@@ -31,6 +31,8 @@ public sealed class PageParentValidationE2ETests : McpContractFixtureBase {
     [TestCase(true, true)]
     [Description("Real MCP reports missing template context, rejects typos with known containers, and accepts real parents.")]
     [AllureTag(PageValidateTool.ToolName)]
+    [AllureName("validate-page resolves parent references")]
+    [AllureDescription("Verifies missing template context warnings, rejected unknown parents, and acceptance of known parent containers through the real MCP server.")]
     public async Task ValidatePage_ShouldReportParentResolution(bool supplyContainers, bool correctParent) {
         // Arrange
         await using var context = Arrange(TimeSpan.FromMinutes(3));
@@ -50,6 +52,9 @@ public sealed class PageParentValidationE2ETests : McpContractFixtureBase {
     }
     [Test]
     [Description("Unsupported dynamic diff expressions return structured invalid results rather than MCP failures.")]
+    [AllureTag(PageValidateTool.ToolName)]
+    [AllureName("validate-page rejects dynamic diff expressions")]
+    [AllureDescription("Verifies that a dynamic diff expression produces a structured invalid result through the real MCP server.")]
     public async Task ValidatePage_ShouldReturnStructuredFailure_WhenDiffIsNotJson() {
         // Arrange
         await using var context = Arrange(TimeSpan.FromMinutes(3));
