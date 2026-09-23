@@ -158,6 +158,11 @@ TEMPLATES
         - clio does not auto-build the base image when you build `dev` or `prod`
         - successful bundled `base` builds are also cached as local image archives under the clio settings folder
         - bundled `dev` and `prod` can restore that cached archive automatically when the local base image is missing
+        - bundled `prod` can be layered over an already-hardened image, such as the
+          Creatio .NET 10 product image or an image a previous `prod` build produced:
+          existing `/conf -> /app/conf` and `/Terrasoft.Configuration ->
+          /app/Terrasoft.Configuration` symlinks are kept, while any other existing
+          `/conf` or `/Terrasoft.Configuration` fails the build
 
     Bundled templates are copied to the clio settings folder:
         Windows:        %LOCALAPPDATA%\creatio\clio\docker-templates
@@ -330,6 +335,12 @@ TROUBLESHOOTING
     "looks like a .NET Framework Creatio distribution"
         Use a Creatio .NET 8+ distribution. .NET Framework builds are not supported
         for Docker image creation.
+
+    "ERROR: /conf already exists and is not a symlink to /app/conf"
+        The `prod` base image already has `/conf` (or `/Terrasoft.Configuration`)
+        as a real file or directory, or as a symlink to another target. The `prod`
+        template never replaces it. Use a base image where that path is absent or
+        already links to `/app/conf` (`/app/Terrasoft.Configuration`).
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio

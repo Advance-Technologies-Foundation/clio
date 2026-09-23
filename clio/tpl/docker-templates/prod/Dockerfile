@@ -30,17 +30,38 @@ RUN sed -i 's|<add key="CookiesSameSiteMode" value="[^"]*" */>|<add key="Cookies
 #     prevents IN-PLACE modification, not replacement. That is inherent to the
 #     chart's write requirement, not an oversight — do not read it as immutability.
 #
-# `ln -sT` deliberately omits -f: if a link path already exists as a real file or
-# directory the build fails loudly rather than silently replacing it. The layer is
-# therefore not idempotent over an already-hardened base, which is intended.
+# The /conf -> /app/conf and /Terrasoft.Configuration -> /app/Terrasoft.Configuration
+# compatibility links are created through `ensure_link <target> <link>`, which is
+# idempotent for exactly one pre-existing state and strict for every other one:
+#   * link path absent -> created with `ln -sT`.
+#   * link path is a symlink whose `readlink` is exactly <target> -> kept as is. This
+#     is the expected state when BASE_IMAGE is already hardened: the Creatio .NET 10
+#     product image (core Terrasoft.WebHost/Dockerfile, ENG-95158) and every image a
+#     previous `--template prod` build produced carry both links, and platform-update
+#     builds layer onto them through `--base-image` (ENG-94408).
+#   * anything else (a real file or directory, or a symlink to any other target,
+#     dangling or not) -> the build fails with the offending `ls -ld` line.
+# `ln` never gets -f, so an unexpected layout is never silently replaced and /conf can
+# never end up pointing anywhere but the group-writable /app/conf the chart writes.
+# RUN uses the default /bin/sh (no SHELL directive), so the guard is POSIX sh only.
 RUN mkdir -p /app/conf /app/Terrasoft.Configuration && \
     chmod -R g=rX /app && \
     chmod g=u /app && \
     chmod -R g=u /app/conf /app/Terrasoft.Configuration && \
     find /app -maxdepth 1 \( -name ConnectionStrings.config -o -name Terrasoft.WebHost.dll.config \) -exec chmod g=u {} + && \
     find /app -type f -name '*.pfx' -exec chmod 0640 {} + && \
-    ln -sT /app/conf /conf && \
-    ln -sT /app/Terrasoft.Configuration /Terrasoft.Configuration && \
+    ensure_link() { \
+        if [ -L "$2" ] && [ "$(readlink "$2")" = "$1" ]; then \
+            echo "$2 already links to $1 in the base image; keeping it"; \
+        elif [ -e "$2" ] || [ -L "$2" ]; then \
+            echo "ERROR: $2 already exists and is not a symlink to $1: $(ls -ld "$2"). Refusing to replace it; use a base image where $2 is absent or already links to $1." >&2; \
+            return 1; \
+        else \
+            ln -sT "$1" "$2"; \
+        fi; \
+    } && \
+    ensure_link /app/conf /conf && \
+    ensure_link /app/Terrasoft.Configuration /Terrasoft.Configuration && \
     test -e /conf && test -e /Terrasoft.Configuration
 
 EXPOSE 5000 5002
