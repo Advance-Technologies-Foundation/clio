@@ -887,7 +887,7 @@ public static class SchemaValidationService
 	/// A widget that carries its own non-null <c>data</c> is exempt from the PROVIDING checks only: the runtime
 	/// returns before it reads <c>providing</c> at all, so such a metric renders from its binding. It still needs
 	/// <c>config.layout</c> and <c>config.text</c>, which the designer dereferences on every path — see
-	/// <see cref="ReportIndicatorProvidingGaps"/>.
+	/// <see cref="ReportIndicatorWidgetGaps"/>.
 	/// One conditional the rule does NOT mirror: the runtime accepts a null <c>columnPath</c> while the
 	/// <c>EnableFormulaAggregationInDesigner</c> feature is on. It defaults off, so requiring the path
 	/// unconditionally is correct today — re-check this if that default flips.
@@ -935,7 +935,7 @@ public static class SchemaValidationService
 			case JsonValueKind.Object:
 				if (TryGetStringProperty(element, TypePropertyName, out string componentType)
 					&& string.Equals(componentType, IndicatorWidgetComponentType, StringComparison.Ordinal)) {
-					ReportIndicatorProvidingGaps(element, entryLabel, result);
+					ReportIndicatorWidgetGaps(element, entryLabel, result);
 				}
 				foreach (JsonProperty property in element.EnumerateObject()) {
 					ScanAuthoredIndicatorWidgets(property.Value, entryLabel, depth + 1, result);
@@ -960,7 +960,7 @@ public static class SchemaValidationService
 	/// widget with its own <c>data</c> binding and a calculated metric; without them the canvas never builds.
 	/// The DEVICE reads <c>providing</c>, and only when no <c>data</c> binding short-circuits it.
 	/// </remarks>
-	private static void ReportIndicatorProvidingGaps(
+	private static void ReportIndicatorWidgetGaps(
 		JsonElement widget, string entryLabel, SchemaValidationResult result) {
 		bool hasConfig = TryGetObjectProperty(widget, "config", out JsonElement config);
 		List<string> designerGaps = CollectDesignerGaps(hasConfig, config);
@@ -975,7 +975,7 @@ public static class SchemaValidationService
 			: entryLabel;
 		var message = new StringBuilder(
 			$"{IndicatorWidgetComponentType} {widgetLabel} is incomplete: "
-			+ $"{string.Join(", ", designerGaps.Concat(providingGaps))} missing.");
+			+ $"{string.Join(", ", designerGaps.Concat(providingGaps))} missing or malformed.");
 		if (designerGaps.Count > 0) {
 			message.Append(" The Mobile Interface Designer dereferences config.layout.color and "
 				+ "config.text.template unconditionally, so without both objects its canvas never builds; "
@@ -986,7 +986,8 @@ public static class SchemaValidationService
 			message.Append(" The mobile runtime abandons the data request when an aggregation metric lacks "
 				+ "'schemaName' or 'aggregation.column.expression', and treats a missing 'aggregationType' as no "
 				+ "aggregate (1 Count, 2 Sum, 3 Avg, 4 Min, 5 Max); a calculated metric carries "
-				+ "'expressionSchema' instead of all of them.");
+				+ "'expressionSchema' instead of all of them, and it must be an object - the runtime casts it "
+				+ "to a map and throws on anything else.");
 		}
 		message.Append(" The save succeeds either way, so nothing downstream reports this.");
 		result.IsValid = false;
@@ -1010,7 +1011,13 @@ public static class SchemaValidationService
 			gaps.Add("config.data");
 		} else if (!TryGetObjectProperty(data, "providing", out JsonElement providing)) {
 			gaps.Add("config.data.providing");
-		} else if (!TryGetObjectProperty(providing, "expressionSchema", out _)) {
+		} else if (providing.TryGetProperty("expressionSchema", out JsonElement expressionSchema)
+			&& expressionSchema.ValueKind != JsonValueKind.Null) {
+			// Present but not an object: the runtime branches on "non-null", then casts to a map and throws.
+			if (expressionSchema.ValueKind != JsonValueKind.Object) {
+				gaps.Add("config.data.providing.expressionSchema");
+			}
+		} else {
 			CollectAggregationProvidingGaps(providing, gaps);
 		}
 		return gaps;

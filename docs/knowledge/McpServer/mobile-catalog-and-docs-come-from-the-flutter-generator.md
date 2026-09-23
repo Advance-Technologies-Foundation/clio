@@ -3,7 +3,6 @@ description: MobileComponentRegistry.json and mobile-docs/ are produced from the
 applies-to:
   - clio/Command/McpServer/Tools/ComponentRegistryClient.cs
   - clio/Command/McpServer/Tools/ComponentInfoCatalog.cs
-  - clio/Command/McpServer/Data/MobileComponentRegistry.json
   - clio.tests/Command/McpServer/Fixtures/MobileComponentRegistry.live-snapshot.json
 ticket: ENG-98482
 date: 2026-09-22

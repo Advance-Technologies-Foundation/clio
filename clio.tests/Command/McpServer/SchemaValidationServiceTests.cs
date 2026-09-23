@@ -8915,7 +8915,7 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
-	[Description("A non-object expressionSchema does not buy the formula exemption. The runtime casts it to a map, so a string or a number throws rather than degrading, and accepting it here would wave through a harder failure than the one this rule exists to catch.")]
+	[Description("A non-object expressionSchema is blocked and named as the cause. The runtime takes the formula branch for any non-null value and then casts it to a map, so a string or a number throws rather than degrading.")]
 	public void ValidateMobileIndicatorWidgetProviding_WhenExpressionSchemaIsNotAnObject_AddsBlockingError() {
 		// Arrange
 		string body = MobileIndicatorBody("""
@@ -8927,7 +8927,11 @@ public sealed class SchemaValidationServiceTests
 
 		// Assert
 		result.IsValid.Should().BeFalse(
-			because: "only an expressionSchema object identifies a calculated metric; anything else falls back to the aggregation contract it does not satisfy");
+			because: "the runtime takes the formula branch for any non-null expressionSchema and then throws casting it to a map");
+		result.Errors.Should().ContainSingle(e =>
+				e.Contains("config.data.providing.expressionSchema")
+				&& !e.Contains("config.data.providing.aggregation.column.expression"),
+			because: "the diagnostic has to name the real cause; sending the author to the aggregation contract would fix the wrong thing");
 	}
 
 	#endregion

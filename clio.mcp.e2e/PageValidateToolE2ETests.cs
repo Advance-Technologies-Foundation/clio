@@ -1017,6 +1017,8 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 			    { "operation": "insert", "name": "TotalIndicator", "parentName": "MainContainer", "propertyName": "items",
 			      "values": { "type": "crt.IndicatorWidget",
 			                  "config": { "title": "Total",
+			                              "layout": { "color": "green" },
+			                              "text": { "template": "{0}", "metricMacros": "{0}" },
 			                              "data": { "providing": { "schemaName": "Contact",
 			                                                       "aggregation": { "column": { "columnPath": "Id" } } } } } } }
 			  ],
@@ -1035,7 +1037,7 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 		response.Validation.Should().NotBeNull(
 			because: "validation details are always included in the response");
 		response.Validation!.Errors.Should().Contain(
-			e => e.Contains("config.data.providing.aggregation.column.expression"),
+			e => e.Contains("config.data.providing.aggregation.column.expression") && !e.Contains("config.layout"),
 			because: "the caller must be given the exact missing path, since the document it authored from is the source of the defect");
 	}
 
