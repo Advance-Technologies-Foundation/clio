@@ -29,6 +29,60 @@ public sealed class ValidatePageToolTests {
 		"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
 		"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
 
+	[TestCase("// explanation\n")]
+	[TestCase("/* explanation */")]
+	[Description("JSON section comments do not prevent full page validation.")]
+	public async System.Threading.Tasks.Task ValidatePage_ShouldAcceptComments_InJsonSections(string comment) {
+		// Arrange
+		string body = ValidWebBody.Replace("[]/**SCHEMA_VIEW_CONFIG_DIFF*/", "[" + comment + "]/**SCHEMA_VIEW_CONFIG_DIFF*/");
+		PageValidateTool tool = CreateTool();
+		// Act
+		PageValidateResponse response = await tool.ValidatePage(new PageValidateArgs(Body: body));
+		// Assert
+		response.Valid.Should().BeTrue(because: "JavaScript comments are valid documentation inside page JSON sections");
+	}
+	[TestCase("SCHEMA_DEPS")]
+	[TestCase("SCHEMA_ARGS")]
+	[TestCase("SCHEMA_VIEW_CONFIG_DIFF")]
+	[TestCase("SCHEMA_VIEW_MODEL_CONFIG_DIFF")]
+	[TestCase("SCHEMA_MODEL_CONFIG_DIFF")]
+	[TestCase("SCHEMA_HANDLERS")]
+	[TestCase("SCHEMA_CONVERTERS")]
+	[TestCase("SCHEMA_VALIDATORS")]
+	[Description("Both marker boundaries remain mandatory even when ordinary comments are allowed.")]
+	public async System.Threading.Tasks.Task ValidatePage_ShouldRejectMissingMarkerBoundary(string marker) {
+		// Arrange
+		string token = "/**" + marker + "*/";
+		string body = ValidWebBody.Remove(ValidWebBody.IndexOf(token, StringComparison.Ordinal), token.Length);
+		// Act
+		PageValidateResponse response = await CreateTool().ValidatePage(new PageValidateArgs(Body: body));
+		// Assert
+		response.Valid.Should().BeFalse(because: "Creatio needs both markers to read and replace section contents");
+	}
+
+	[TestCase("[/* explanation */ {\"operation\": }]")]
+	[TestCase("[/* explanation */ {\"operation\":\"insert\",\"name\":\"Button\",\"values\":{\"type\":\"crt.Button\",\"caption\":\"Not localized\"}}]")]
+	[Description("Comment support does not bypass malformed JSON or diff semantic validation.")]
+	public async System.Threading.Tasks.Task ValidatePage_ShouldRejectInvalidCommentedContent(string content) {
+		// Arrange
+		string body = ValidWebBody.Replace("[]/**SCHEMA_VIEW_CONFIG_DIFF*/", content + "/**SCHEMA_VIEW_CONFIG_DIFF*/");
+		// Act
+		PageValidateResponse response = await CreateTool().ValidatePage(new PageValidateArgs(Body: body));
+		// Assert
+		response.Valid.Should().BeFalse(because: "comments must not suppress syntax or semantic failures");
+	}
+
+	[Test]
+	[Description("Resources preserve comment-like strings and accept comments after trailing commas.")]
+	public async System.Threading.Tasks.Task ValidatePage_ShouldAcceptCommentedResourcesAndTrailingComma() {
+		// Arrange
+		const string resources = "{\"Caption\":\"https://example.test/*text*/,]\", /* explanation */}";
+		// Act
+		PageValidateResponse response = await CreateTool().ValidatePage(new PageValidateArgs(Body: ValidWebBody, Resources: resources));
+		// Assert
+		response.Valid.Should().BeTrue(because: "native parsing handles comments and trailing commas without rewriting strings");
+	}
+
 	private static PageValidateTool CreateTool(IFileSystem? fileSystem = null) => new(
 		Substitute.For<IMobileComponentInfoCatalog>(),
 		Substitute.For<IComponentInfoCatalog>(),

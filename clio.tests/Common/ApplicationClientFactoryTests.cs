@@ -14,11 +14,18 @@ internal sealed class ApplicationClientFactoryTests {
 
 	#region Methods: Private
 
+	private static ApplicationClientFactory CreateFactory(
+		Clio.Common.ExternalAccess.IExternalAccessSessionProvider externalAccessSessionProvider) {
+		IReauthExecutor noReauthExecutor = Substitute.For<IReauthExecutor>();
+		return new ApplicationClientFactory(noReauthExecutor, externalAccessSessionProvider);
+	}
+
 	private static ApplicationClientFactory CreateFactory(IOAuthAuthorizationCodeService oauthService = null) {
 		// The passthrough executor is substituted; the factory only forwards it into the adapter's
 		// bearer branch and never invokes it during construction (the CreatioClient is lazy).
 		IReauthExecutor noReauthExecutor = Substitute.For<IReauthExecutor>();
-		return new ApplicationClientFactory(noReauthExecutor, oauthService);
+		return new ApplicationClientFactory(noReauthExecutor,
+			Substitute.For<Clio.Common.ExternalAccess.IExternalAccessSessionProvider>(), oauthService);
 	}
 
 	private static EnvironmentSettings AuthorizationCodeEnvironment() => new() {
@@ -312,5 +319,54 @@ internal sealed class ApplicationClientFactoryTests {
 		act.Should().Throw<ArgumentException>()
 			.Which.Message.Should().Contain("access token",
 				because: "a missing bearer token must not fall through to implicit forms authentication");
+	}
+
+	[Test]
+	[Description("CreateEnvironmentClient resolves an external-access session before returning a client")]
+	public void CreateEnvironmentClient_ShouldResolveSession_WhenExternalAccessTokenIsSet() {
+		// Arrange
+		Clio.Common.ExternalAccess.IExternalAccessSessionProvider provider =
+			Substitute.For<Clio.Common.ExternalAccess.IExternalAccessSessionProvider>();
+		provider.GetSession(Arg.Any<EnvironmentSettings>(), Arg.Any<string>())
+			.Returns(new[] {
+				new Creatio.Client.CreatioSessionCookie(".ASPXAUTH", "v", "external.creatio.com", "/",
+					true, true, null, DateTime.MinValue)
+			});
+		ApplicationClientFactory sut = CreateFactory(provider);
+		EnvironmentSettings settings = new() {
+			Uri = "https://external.creatio.com",
+			ExternalAccessToken = "jwt-value"
+		};
+
+		// Act
+		IApplicationClient result = sut.CreateEnvironmentClient(settings);
+
+		// Assert
+		provider.Received(1).GetSession(settings, "jwt-value");
+		result.Should().BeOfType<CreatioClientAdapter>(
+			because: "an external-access session is served through the same adapter as every other client");
+	}
+
+	[Test]
+	[Description("CreateEnvironmentClient refuses an external-access token combined with an access token")]
+	public void CreateEnvironmentClient_ShouldThrow_WhenBothTokenKindsAreSet() {
+		// Arrange
+		Clio.Common.ExternalAccess.IExternalAccessSessionProvider provider =
+			Substitute.For<Clio.Common.ExternalAccess.IExternalAccessSessionProvider>();
+		ApplicationClientFactory sut = CreateFactory(provider);
+		EnvironmentSettings settings = new() {
+			Uri = "https://external.creatio.com",
+			ExternalAccessToken = "jwt-value",
+			AccessToken = "api-token"
+		};
+
+		// Act
+		Action act = () => sut.CreateEnvironmentClient(settings);
+
+		// Assert
+		act.Should().Throw<NotSupportedException>(
+			because: "the two tokens are different authentication models against different endpoints, and "
+				+ "silently picking one would connect as an identity the caller did not ask for");
+		provider.DidNotReceive().GetSession(Arg.Any<EnvironmentSettings>(), Arg.Any<string>());
 	}
 }

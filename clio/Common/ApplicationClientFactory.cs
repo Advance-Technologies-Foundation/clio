@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using Clio.Common.ExternalAccess;
 using Creatio.Client;
 
 namespace Clio.Common;
@@ -12,14 +14,18 @@ internal class ApplicationClientFactory : IApplicationClientFactory{
 
 	private readonly IReauthExecutor _noReauthExecutor;
 	private readonly IOAuthAuthorizationCodeService _oauthService;
+	private readonly IExternalAccessSessionProvider _externalAccessSessionProvider;
 
 	#endregion
 
 	#region Constructors: Public
 
-	public ApplicationClientFactory(IReauthExecutor noReauthExecutor, IOAuthAuthorizationCodeService oauthService = null) {
+	public ApplicationClientFactory(IReauthExecutor noReauthExecutor,
+		IExternalAccessSessionProvider externalAccessSessionProvider, IOAuthAuthorizationCodeService oauthService = null) {
 		_noReauthExecutor = noReauthExecutor ?? throw new ArgumentNullException(nameof(noReauthExecutor));
 		_oauthService = oauthService;
+		_externalAccessSessionProvider = externalAccessSessionProvider
+			?? throw new ArgumentNullException(nameof(externalAccessSessionProvider));
 	}
 
 	#endregion
@@ -27,6 +33,10 @@ internal class ApplicationClientFactory : IApplicationClientFactory{
 	#region Methods: Public
 
 	public IApplicationClient CreateClient(EnvironmentSettings settings) {
+		if (!string.IsNullOrEmpty(settings.ExternalAccessToken)) {
+			return CreateExternalAccessClient(settings, serviceUrlBuilder: null);
+		}
+
 		if (settings.AuthFlow == OAuthFlow.AuthorizationCode) {
 			return CreateAuthorizationCodeClient(settings);
 		}
@@ -56,6 +66,10 @@ internal class ApplicationClientFactory : IApplicationClientFactory{
 	}
 
 	public IApplicationClient CreateEnvironmentClient(EnvironmentSettings settings) {
+		if (!string.IsNullOrEmpty(settings.ExternalAccessToken)) {
+			return CreateExternalAccessClient(settings, new ServiceUrlBuilder(settings));
+		}
+
 		if (settings.AuthFlow == OAuthFlow.AuthorizationCode) {
 			return CreateAuthorizationCodeClient(settings);
 		}
@@ -166,6 +180,42 @@ internal class ApplicationClientFactory : IApplicationClientFactory{
 		}
 		return _oauthService.RefreshAsync(settings, rejectedAccessToken).GetAwaiter().GetResult();
 	}
+
+	/// <summary>
+	/// Exchanges the environment's external-access token for a Creatio session and returns a client
+	/// that runs on it.
+	/// </summary>
+	/// <remarks>
+	/// The exchange happens eagerly rather than inside a <see cref="Lazy{T}" />: it is the whole point
+	/// of this branch, and a token that the site refuses has to surface as an authentication error at
+	/// the call that asked for a client, not as an unrelated failure on some later request.
+	/// The client is built with NO credentials, so creatio.client's authentication handler sees the
+	/// imported session cookie, treats the client as already authenticated, and never attempts a login;
+	/// <see cref="NoReauthExecutor" /> keeps it that way when the session eventually ends, because
+	/// nothing in clio can mint a replacement token.
+	/// </remarks>
+	/// <param name="settings">Environment carrying the external-access token.</param>
+	/// <param name="serviceUrlBuilder">Environment-relative url builder, or <c>null</c>.</param>
+	/// <returns>A pre-authenticated client that never re-logs-in.</returns>
+	private IApplicationClient CreateExternalAccessClient(EnvironmentSettings settings,
+		IServiceUrlBuilder serviceUrlBuilder) {
+		GuardExternalAccessSettings(settings);
+		IReadOnlyList<CreatioSessionCookie> session =
+			_externalAccessSessionProvider.GetSession(settings, settings.ExternalAccessToken);
+		Lazy<CreatioClient> client = new(() => {
+			CreatioClient created = new(settings.Uri, userName: null, userPassword: null,
+				useUntrustedSsl: false, settings.IsNetCore);
+			created.ImportSessionCookies(session);
+			return created;
+		});
+		return new CreatioClientAdapter(client, serviceUrlBuilder, _noReauthExecutor, ownsClient: true);
+	}
+
+
+	// The rule itself lives in ExternalAccessSettingsGuard so that BindingsModule and Program ask the
+	// same question; this call stays as a cheap defence-in-depth assert on the programmatic path.
+	private static void GuardExternalAccessSettings(EnvironmentSettings settings) =>
+		Clio.Common.ExternalAccess.ExternalAccessSettingsGuard.Validate(settings);
 
 	// Validates the bearer-passthrough settings. Errors are caller-actionable and NEVER echo the
 	// secret token value (FR-12): a blank url is named explicitly, and an unsupported token type
