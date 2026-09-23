@@ -1033,7 +1033,7 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 
 		// Assert
 		response.Valid.Should().BeFalse(
-			because: "the runtime issues no data request for this shape");
+			because: "this shape cannot render a value");
 		response.Validation.Should().NotBeNull(
 			because: "validation details are always included in the response");
 		response.Validation!.Errors.Should().Contain(

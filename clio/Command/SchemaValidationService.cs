@@ -918,19 +918,14 @@ public static class SchemaValidationService
 			$"{IndicatorWidgetComponentType} {widgetLabel} is incomplete: "
 			+ $"{string.Join(", ", designerGaps.Concat(providingGaps))} missing or malformed.");
 		if (designerGaps.Count > 0) {
-			message.Append(" The Mobile Interface Designer dereferences config.layout.color and "
-				+ "config.text.template unconditionally, so without both objects its canvas never builds; "
-				+ "author them as the designer does: \"layout\": {\"color\": \"green\"}, \"text\": "
-				+ "{\"template\": \"{0}\", \"metricMacros\": \"{0}\"}.");
+			message.Append(" The Mobile Interface Designer requires both: \"layout\": {\"color\": \"green\"}, "
+				+ "\"text\": {\"template\": \"{0}\", \"metricMacros\": \"{0}\"}.");
 		}
 		if (providingGaps.Count > 0) {
-			message.Append(" The mobile runtime abandons the data request when an aggregation metric lacks "
-				+ "'schemaName' or 'aggregation.column.expression', and treats a missing 'aggregationType' as no "
-				+ "aggregate (1 Count, 2 Sum, 3 Avg, 4 Min, 5 Max); a calculated metric carries "
-				+ "'expressionSchema' instead of all of them, and it must be an object - the runtime casts it "
-				+ "to a map and throws on anything else.");
+			message.Append(" An aggregation metric needs schemaName and aggregation.column.expression with "
+				+ "functionArgument.columnPath and aggregationType 1-5; a calculated metric uses an expressionSchema "
+				+ "object instead.");
 		}
-		message.Append(" The save succeeds either way, so nothing downstream reports this.");
 		result.IsValid = false;
 		result.Errors.Add(message.ToString());
 	}

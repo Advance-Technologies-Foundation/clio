@@ -8759,23 +8759,22 @@ public sealed class SchemaValidationServiceTests
 			because: "both gaps arrive in one diagnostic");
 	}
 
-	[Test]
-	[Description("aggregationType 6 is blocked: QueryAggregationType stops at 5.")]
-	public void ValidateMobileIndicatorWidgetProviding_WhenAggregationTypeIsAboveTheTypedEnum_AddsBlockingError() {
+	[TestCase(0)]
+	[TestCase(6)]
+	[Description("aggregationType outside 1-5 is blocked: 0 aggregates nothing, 6 throws in QueryAggregationType.")]
+	public void ValidateMobileIndicatorWidgetProviding_WhenAggregationTypeIsOutOfRange_AddsBlockingError(int aggregationType) {
 		// Arrange
 		string body = MobileIndicatorBody(
-			"""
-			"providing":{"schemaName":"Contact","aggregation":{"column":{"expression":{
-			  "expressionType":1,"functionType":2,"aggregationType":6,
-			  "functionArgument":{"expressionType":0,"columnPath":"Id"}}}}}
-			""");
+			"\"providing\":{\"schemaName\":\"Contact\",\"aggregation\":{\"column\":{\"expression\":{"
+			+ $"\"expressionType\":1,\"functionType\":2,\"aggregationType\":{aggregationType},"
+			+ "\"functionArgument\":{\"expressionType\":0,\"columnPath\":\"Id\"}}}}}");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateMobileIndicatorWidgetProviding(body);
 
 		// Assert
 		result.IsValid.Should().BeFalse(
-			because: "6 throws when the column is deserialised");
+			because: "only 1-5 produce an aggregate the runtime can read");
 		result.Errors.Should().ContainSingle(e => e.Contains("aggregationType"),
 			because: "the out-of-range field is named");
 	}

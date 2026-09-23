@@ -121,8 +121,8 @@ DESCRIPTION
       lacks schemaName, aggregation.column.expression with
       functionArgument.columnPath, or an aggregationType of 1-5 (a
       calculated metric carries expressionSchema instead). Such a page
-      saves, but the tile renders empty or the designer canvas does not
-      build. A widget with its own "data" binding is exempt from the
+      saves, but the metric shows no value or an error placeholder, or
+      the designer canvas does not build. A widget with its own "data" binding is exempt from the
       providing checks.
     - Warned: a component type in NEITHER the mobile nor the web
       registry. It may be a custom mobile component registered in your
