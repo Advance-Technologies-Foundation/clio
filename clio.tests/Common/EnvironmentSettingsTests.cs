@@ -24,6 +24,7 @@ public sealed class EnvironmentSettingsTests {
 		Login = "Supervisor",
 		AccessToken = "super-secret-token-value",
 		AccessTokenType = "Bearer",
+		ExternalAccessToken = "super-secret-external-access-token",
 		Cookie = "BPMLOADER=secret-cookie; .ASPXAUTH=secret-auth"
 	};
 
@@ -58,6 +59,10 @@ public sealed class EnvironmentSettingsTests {
 			because: "the secret token value must never be persisted");
 		json.Should().NotContain("secret-cookie",
 			because: "the secret cookie value must never be persisted");
+		json.Should().NotContain("ExternalAccessToken",
+			because: "AC-2 — the support-grant token must never reach appsettings.json");
+		json.Should().NotContain("super-secret-external-access-token",
+			because: "AC-2 — the external-access token value must never be persisted");
 	}
 
 	[Test]
@@ -79,6 +84,10 @@ public sealed class EnvironmentSettingsTests {
 			because: "the secret token value must never be serialized to YAML");
 		yaml.Should().NotContain("secret-cookie",
 			because: "the secret cookie value must never be serialized to YAML");
+		yaml.Should().NotContain("ExternalAccessToken",
+			because: "AC-2 — [YamlIgnore] must keep the support-grant token out of any YAML export");
+		yaml.Should().NotContain("super-secret-external-access-token",
+			because: "AC-2 — the external-access token value must never be serialized to YAML");
 	}
 
 	[Test]
@@ -105,6 +114,12 @@ public sealed class EnvironmentSettingsTests {
 			because: "the secret token value must never be printed by ShowSettingsTo");
 		output.Should().NotContain("secret-cookie",
 			because: "the secret cookie value must never be printed by ShowSettingsTo");
+		output.Should().NotContain("ExternalAccessToken",
+			because: "AC-2 — ShowSettingsTo must not print the support-grant token field");
+		output.Should().NotContain("super-secret-external-access-token",
+			because: "AC-2 — the external-access token value must never be printed by ShowSettingsTo");
+		persisted.Should().NotContain("super-secret-external-access-token",
+			because: "AC-2 — the real SaveSettings/appsettings.json write path must never persist the external-access token");
 		persisted.Should().NotContain("super-secret-token-value",
 			because: "the real SaveSettings/appsettings.json write path must never persist the token value");
 		persisted.Should().NotContain("secret-cookie",
