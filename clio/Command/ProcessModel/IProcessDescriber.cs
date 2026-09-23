@@ -1128,7 +1128,6 @@ public sealed class DescribedSubProcess {
 	/// <summary>
 	/// Whether the element still carries every parameter the called process declares. <c>null</c> means that
 	/// process could not be read, which is UNKNOWN and never "out of sync".
-
 	/// <para>THE RECIPE, which is what to do rather than why it works: save the caller, <b>describe it once</b>,
 	/// change the callee, then describe again and read this flag. The middle read is what makes the last one
 	/// meaningful, and between the callee change and the final read do not run, re-read or compile the caller.
@@ -1147,12 +1146,15 @@ public sealed class DescribedSubProcess {
 	/// right half to be sensitive to, because the runtime binds by CODE and a caption has no effect on delivery;
 	/// but <c>true</c> means "the element carries every parameter the callee declares", NOT "the element matches
 	/// the callee".</para>
-	/// <para>On a MULTI-INSTANCE element <c>false</c> is PERMANENT and is not drift. Such an element carries an
-	/// input collection, an output collection and three iteration counters INSTEAD of the callee's parameters, so
-	/// this test can never be satisfied there. It is no longer the end of the story, though: read
+	/// <para>On a MULTI-INSTANCE element this flag carries NO information in either direction, and neither value
+	/// is drift. Such an element carries an input collection, an output collection and three iteration counters
+	/// INSTEAD of the callee's parameters, so the test reads <c>false</c> whenever the callee declares anything
+	/// and VACUOUSLY <c>true</c> against a callee that declares nothing - it asks whether every callee parameter
+	/// is present, and that holds over an empty set. Read
 	/// <see cref="DescribedMultiInstanceOptions.CalleeInSync"/> instead, which asks the same question one level
-	/// down, and a re-synchronization IS available on such an element (<c>subProcess.resync: true</c>). Read this
-	/// flag together with <see cref="DescribedSubProcess.MultiInstance"/>, never alone.</para>
+	/// down where the contract actually lives, and a re-synchronization IS available on such an element
+	/// (<c>subProcess.resync: true</c>). Read this flag together with
+	/// <see cref="DescribedSubProcess.MultiInstance"/>, never alone.</para>
 	/// </summary>
 	[JsonPropertyName("inSync")]
 	public bool? InSync { get; set; }
@@ -1254,8 +1256,9 @@ public sealed class DescribedMultiInstanceOptions {
 	/// <see cref="DescribedSubProcess.InSync"/> asks for a single-instance element, asked one level down where a
 	/// multi-instance element's contract actually lives.
 	/// <para>Read THIS one on a multi-instance element, not <c>inSync</c>. <c>inSync</c> compares the callee
-	/// against the element's ROOT parameters, which here are the five service ones, so it is <c>false</c> by
-	/// construction and says nothing. The two are separate fields on purpose: redefining <c>inSync</c> would have
+	/// against the element's ROOT parameters, which here are the five service ones, so it says nothing:
+	/// <c>false</c> whenever the callee declares anything, and vacuously <c>true</c> against a callee that
+	/// declares nothing. The two are separate fields on purpose: redefining <c>inSync</c> would have
 	/// changed what a shipped field means with no wire change at all — same name, same type, same JSON — and no
 	/// deserializer, schema check or version negotiation could have seen it.</para>
 	/// <para><c>false</c> means a re-synchronization is owed, and there is one to ask for: send

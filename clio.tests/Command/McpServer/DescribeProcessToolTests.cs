@@ -1,5 +1,8 @@
-﻿using System.Linq;
+﻿using System;
+using System.IO;
+using System.Linq;
 using System.Reflection;
+using System.Text.RegularExpressions;
 using Clio.Command;
 using Clio.Command.McpServer.Prompts;
 using Clio.Command.McpServer.Prompts.ProcessDesigner;
@@ -301,6 +304,80 @@ public sealed class DescribeProcessToolTests {
 		validateTool.Should().Contain("multiInstanceOptions",
 			because: "the canonical list has to name the member that replaced the refusal, for the same reason "
 				+ "the prompt does");
+	}
+
+	/// <summary>
+	/// The retracted multi-instance claims, as NORMALIZED prose (see <see cref="NormalizeProse"/>), each with
+	/// the fact that retracted it. Two claims, several spellings: the sweep has to catch the paraphrase as well
+	/// as the phrase, because a correction applied to one wording is exactly how the second one survived.
+	/// </summary>
+	private static readonly (string Phrase, string Truth)[] RetractedMultiInstanceClaims = [
+		("false by construction", "on a multi-instance element inSync carries no information in EITHER direction: "
+			+ "it is false whenever the callee declares anything and VACUOUSLY TRUE against a callee that declares "
+			+ "nothing, because an all-present test holds over an empty set"),
+		("can never be satisfied", "the same test IS satisfied, vacuously, against a parameterless callee"),
+		("false is permanent", "false is not permanent there - a parameterless callee reads true"),
+		("permanent and meaningless", "the guidance's paraphrase of the same retracted claim"),
+		("refused on it", "a re-synchronization IS available on a multi-instance element - subProcess.resync:true "
+			+ "de-converts, re-synchronizes and re-converts it"),
+		("configures such an element refuses it", "such an element is configurable through "
+			+ "subProcess.multiInstanceOptions"),
+		("and any element that runs the called process once per item of a collection", "the element is no longer "
+			+ "one of the sub-process refusals - it is buildable through subProcess.multiInstanceOptions")
+	];
+
+	[TestCase("docs/McpCapabilityMap.md")]
+	[TestCase("clio/Command/ProcessModel/IProcessDescriber.cs")]
+	[Category("Unit")]
+	[Description("THE RETRACTION SWEEP, over the two repository surfaces the tool-contract sweep above cannot reach: the capability map, and the XML docs on the describe DTO - the typed member's doc is the agent-facing contract for that field. Both retracted multi-instance claims are swept (the element cannot be configured or re-synchronized; inSync is false by construction there), in every spelling that shipped, against prose NORMALIZED for XML tags, comment markers and line breaks - because the stale 'false by construction' in IProcessDescriber.cs was split across two lines by '<c>false</c> by' / 'construction', so a plain substring search over the raw file walks straight past it.")]
+	public void RepositorySurfaces_ShouldNotCarryARetractedMultiInstanceClaim_WhenSwept(string relativePath) {
+		// Arrange
+		string prose = NormalizeProse(ReadRepositoryText(relativePath));
+
+		// Act
+		// (the surface is the subject; nothing is invoked)
+
+		// Assert
+		foreach ((string phrase, string truth) in RetractedMultiInstanceClaims) {
+			prose.Should().NotContain(phrase,
+				because: $"'{phrase}' is a retracted multi-instance claim and {relativePath} is agent-facing: {truth}");
+		}
+		prose.Should().Contain("vacuously",
+			because: "removing the claim is half the correction - the surface has to say what IS true about inSync "
+				+ "on a multi-instance element, or a reader who meets a true there has no rule to apply to it");
+		prose.Should().Contain("calleeinsync",
+			because: "the surface has to name the field that DOES answer the question on a multi-instance element");
+	}
+
+	/// <summary>
+	/// Flattens agent-facing prose so a phrase is found however the file happens to wrap or mark it up: XML doc
+	/// comment markers and tags, markdown code spans and emphasis are dropped, every whitespace run - line
+	/// breaks included - becomes one space, and the text is lower-cased.
+	/// </summary>
+	private static string NormalizeProse(string text) {
+		TimeSpan timeout = TimeSpan.FromSeconds(2);
+		string withoutMarkers = text.Replace("///", " ", StringComparison.Ordinal);
+		string withoutTags = Regex.Replace(withoutMarkers, "<[^>]+>", " ", RegexOptions.None, timeout);
+		string withoutMarkdown = Regex.Replace(withoutTags, "[`*]", string.Empty, RegexOptions.None, timeout);
+		return Regex.Replace(withoutMarkdown, @"\s+", " ", RegexOptions.None, timeout).ToLowerInvariant();
+	}
+
+	/// <summary>
+	/// Reads a repository file by walking up from the test assembly to the checkout that holds it - the same
+	/// helper <c>BundledProcessBuilderPackageTests</c> uses, for the same reason: a repository doc is not copied
+	/// to the build output. Fails loudly rather than skipping, because a sweep that silently stops reading a
+	/// surface is how this one came to cover less than its description claimed.
+	/// </summary>
+	private static string ReadRepositoryText(string relativePath) {
+		string platformPath = relativePath.Replace('/', Path.DirectorySeparatorChar);
+		var directory = new DirectoryInfo(TestContext.CurrentContext.TestDirectory);
+		while (directory != null && !File.Exists(Path.Combine(directory.FullName, platformPath))) {
+			directory = directory.Parent;
+		}
+		directory.Should().NotBeNull(
+			because: $"'{relativePath}' must be reachable from the test directory - without it this sweep would "
+				+ "silently stop covering that surface");
+		return File.ReadAllText(Path.Combine(directory!.FullName, platformPath));
 	}
 
 	/// <summary>Reads the describe tool's own [Description] - the agent-facing contract under test.</summary>
