@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Text.Json;
@@ -44,7 +44,12 @@ public sealed class ComponentRegistrySnapshotTests {
 		using FileStream stream = File.OpenRead(snapshotPath);
 		ComponentCatalogState state = ComponentInfoCatalog.LoadFromStream(stream);
 
-		// Assert — root-level envelope.
+		// Assert — root-level envelope. Until ENG-96589 nothing read the ENVELOPE's own bucket
+		// (ComponentCatalogState did not carry it), so a new TOP-LEVEL producer field was swallowed
+		// without failing anything — which is exactly how `mobileRuntimeVersion` went unnoticed.
+		UnmappedKeys(state.EnvelopeExtensions).Should().BeEmpty(
+			because: "any new TOP-LEVEL producer field must be mapped or explicitly allowlisted, not silently dropped");
+
 		state.GlobalReferences.Should().NotBeNull(
 			because: "the live payload now ships a top-level 'references' block (baseInputs + global typeDefinitions)");
 		UnmappedKeys(state.GlobalReferences!.UnmappedExtensions).Should().BeEmpty(
@@ -185,8 +190,42 @@ public sealed class ComponentRegistrySnapshotTests {
 					because: $"any new key under mobile '{entry.ComponentType}'.references.* must be mapped");
 			}
 		}
-		state.Entries.Should().NotBeEmpty(
-			because: "the live mobile catalog must list at least one component");
+		UnmappedKeys(state.EnvelopeExtensions).Should().BeEmpty(
+			because: "any new TOP-LEVEL producer field on the mobile payload must be mapped, not silently dropped");
+
+		// Assert — the runtime-derived generation marker, WHEN the producer publishes it. It is provenance
+		// only: it was briefly published and then dropped again on 2026-09-17 while the catalog content was
+		// unchanged, so the converter's prune does not gate on it and neither does this guard. What IS
+		// asserted is that whenever it appears it round-trips completely — a half-mapped marker would be a
+		// silent data loss of exactly the kind this fixture exists to catch.
+		if (state.MobileRuntimeVersion is not null) {
+			state.MobileRuntimeVersion.Commit.Should().NotBeNullOrWhiteSpace(
+				because: "a published marker must name the runtime commit the catalog was introspected from");
+			state.MobileRuntimeVersion.Release.Should().NotBeNullOrWhiteSpace(
+				because: "a published marker must name the release branch the runtime was built from");
+			UnmappedKeys(state.MobileRuntimeVersion.UnmappedExtensions).Should().BeEmpty(
+				because: "any new key under mobileRuntimeVersion.* must be mapped");
+		}
+
+		// Assert — the inherited input surface. `visible` and `layoutConfig` are declared by ZERO of
+		// any component in its own `inputs`; they exist ONLY here. A membership test that
+		// forgot baseInputs would therefore strip them from every element of every converted page.
+		state.GlobalReferences.Should().NotBeNull(
+			because: "the mobile payload parses through the same wrapped envelope as the web one and ships references.baseInputs");
+		state.GlobalReferences!.BaseInputs.Should().NotBeNull(
+			because: "the inherited input surface is the sole declaration site of visible/layoutConfig");
+		state.GlobalReferences.BaseInputs!.Keys.Should().Contain("visible",
+			because: "no mobile component declares 'visible' in its own inputs — pruning without baseInputs would strip it everywhere");
+		state.GlobalReferences.BaseInputs.Keys.Should().Contain("layoutConfig",
+			because: "no mobile component declares 'layoutConfig' in its own inputs — it is placement carried on every element");
+		UnmappedKeys(state.GlobalReferences.UnmappedExtensions).Should().BeEmpty(
+			because: "any new key under the mobile root.references.* must be mapped");
+
+		// Assert — count floor, mirroring the web arm. The previous fixture was a 35-entry curated
+		// snapshot; a regression back to it would make every prune assertion in
+		// WebToMobilePropertyPruneTests vacuous while staying green here.
+		state.Entries.Count.Should().BeGreaterThan(60,
+			because: "the runtime-derived mobile catalog ships ~65 components — a regression to the old 35-entry curated snapshot must fail this guard");
 	}
 
 	[Test]
@@ -218,6 +257,36 @@ public sealed class ComponentRegistrySnapshotTests {
 			UnmappedKeys(composite.UnmappedExtensions).Should().BeEmpty(
 				because: $"every key on composite '{composite.Caption}' must be mapped, not dropped to an UnmappedExtensions bucket");
 		}
+	}
+
+	[Test]
+	[Description("A payload carrying the top-level mobileRuntimeVersion marker maps release and commit to the right fields and leaves no unmapped key. The live fixture has carried no marker since the producer dropped it on 2026-09-17, so the snapshot guard's marker branch never executes and swapping the two properties would pass every other test — while the mapping itself is kept precisely so a re-published marker cannot fall into the extension bucket unnoticed, which is how it was missed the first time.")]
+	public void Synthetic_MobileRuntimeVersion_Payload_Should_Map_Every_Field() {
+		// Arrange — the marker exactly as the producer published it on 2026-09-17, values made distinguishable
+		// so a release/commit swap cannot pass.
+		const string payload = """
+		{
+		  "mobileRuntimeVersion": { "release": "main", "commit": "d7a0c3bb6796a1cde204ab8762b04d8940e38726" },
+		  "components": [
+		    { "componentType": "crt.Input", "category": "inputs", "description": "Text input.", "properties": {} }
+		  ]
+		}
+		""";
+		using MemoryStream stream = new(Encoding.UTF8.GetBytes(payload));
+
+		// Act
+		ComponentCatalogState state = ComponentInfoCatalog.LoadFromStream(stream);
+
+		// Assert
+		state.MobileRuntimeVersion.Should().NotBeNull(
+			because: "the envelope declares the marker, so the catalog state must carry it rather than drop it");
+		state.MobileRuntimeVersion!.Release.Should().Be("main",
+			because: "release is the branch the runtime was built from, and the two string fields are trivially swappable");
+		state.MobileRuntimeVersion.Commit.Should().Be("d7a0c3bb6796a1cde204ab8762b04d8940e38726",
+			because: "commit identifies the exact runtime build, which is the whole value of the marker");
+		UnmappedKeys(state.EnvelopeExtensions).Should().BeEmpty(
+			because: "this is the point of keeping the mapping at all — without it the marker lands in the envelope's "
+				+ "extension bucket and a producer change goes unnoticed, exactly as it did before ENG-96589");
 	}
 
 	private static IEnumerable<string> UnmappedKeys(IDictionary<string, JsonElement>? bucket) =>
