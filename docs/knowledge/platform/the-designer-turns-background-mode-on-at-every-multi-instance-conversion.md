@@ -24,6 +24,14 @@ this.set("useBackgroundMode", true);
 while `_convertElementToSingleInstanceMode` sets it back to `false` and resets `backgroundModePriority`
 to `Inherited`. Neither is asked for and neither is announced.
 
+**It is the PAGE, not the schema method** — and that is the trap. `ProcessActivitySchema.convertToMultiInstance`
+creates the five parameters and the options object and touches nothing else; the properties page sets the
+flag right after calling it, and writes it onto the element when it saves (CrtProcessDesigner 7.8.0
+`ProcessFlowElementPropertiesPage.js:875-889` and `:984`). Re-verified 2026-09-23 in that source, in the same
+client schema on the `d_krestov_n:40001` stand, and in the built page of the Creatio2 checkout (`:879-892`).
+A same-day retraction read only the method, concluded the designer leaves the flag alone, and reached the
+shipped guidance before a review of clio-knowledge#223 caught it.
+
 Two consequences, both measured on a stand (2026-09-22, `CrtProcessBuilder 1.6.6.0`):
 
 1. **A clio-built multi-instance element is not identical to a designer-built one.** clio's conversion
