@@ -185,6 +185,6 @@ public sealed class PageWriteCaptionResourceGateTests {
 		]);
 		return new PageUpdateCommand(
 			applicationClient, serviceUrlBuilder, Substitute.For<ILogger>(),
-			Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), hierarchyClient);
+			Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), hierarchyClient, viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 	}
 }

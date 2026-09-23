@@ -40,7 +40,7 @@ public sealed class PageValidateTool(
 		BudgetPolicy = McpToolBudgetPolicy.None,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Validates a Freedom UI page body without saving. Checks web markers, JS syntax, field/column bindings, handlers, converters, and validators; mobile disallowed constructs, diff application, `type` placement, Scaffold slot merges, action-button placement, and metric-widget data providing plus the layout/text objects the designer requires. Accepts inline body or local-stdio get-page files.bodyFile via body-file; inline wins. Run before update-page. See get-guidance page-schema-converters, page-schema-handlers, page-schema-validators, or mobile-page-modification.")]
+	[Description("Validates a Freedom UI page body without saving. Checks web parent references (known-containers), markers, JS syntax, field/column bindings, handlers, converters, and validators; mobile disallowed constructs, diff application, `type` placement, Scaffold slot merges, action-button placement, and metric-widget data providing plus the layout/text objects the designer requires. Accepts inline body or local-stdio get-page files.bodyFile via body-file; inline wins. Run before update-page. See get-guidance page-schema-converters, page-schema-handlers, page-schema-validators, or mobile-page-modification.")]
 	public async Task<PageValidateResponse> ValidatePage(
 		[Description("Parameters: body or body-file; optional resources and version")]
 		[Required] PageValidateArgs args,
@@ -88,6 +88,14 @@ public sealed class PageValidateTool(
 			SchemaValidationService.ValidateRunProcessButtonStructure(body);
 		if (!runProcessResult.IsValid) {
 			result = FoldInContentErrors(result, runProcessResult);
+		}
+		if (result.JsSyntaxOk && result.MarkersOk && result.ContentOk) {
+			SchemaValidationResult parents = PageParentNameValidation.Validate(body, args.KnownContainers);
+			if (!parents.IsValid) result = FoldInContentErrors(result, parents);
+			if (parents.Warnings.Count > 0) result = new PageSyncValidationResult {
+				MarkersOk = result.MarkersOk, JsSyntaxOk = result.JsSyntaxOk, ContentOk = result.ContentOk,
+				Errors = result.Errors, Warnings = (result.Warnings ?? []).Concat(parents.Warnings).ToList()
+			};
 		}
 		return new PageValidateResponse {
 			Valid = result.MarkersOk && result.JsSyntaxOk && result.ContentOk,
@@ -383,12 +391,15 @@ public sealed record PageValidateArgs(
 	string? Resources = null,
 
 	[property: JsonPropertyName("version")]
-	[property: Description("Optional explicit platform version (3-part semver, e.g. '8.3.3') that scopes the registry-driven chart-widget (crt.ChartWidget) validation to the target environment's component set. PREFER passing the resolvedTargetVersion you already got from get-component-info for the same environment, so this pre-flight check matches what update-page / sync-pages will enforce on save. When omitted, validation uses the 'latest' catalog (a superset of all GA versions). If no registry is published for the given version, the catalog automatically falls back to 'latest'.")]
+	[property: Description("Target platform version for chart validation; prefer resolvedTargetVersion from get-component-info. Omitted or unavailable versions use the latest catalog.")]
 	string? Version = null,
 
 	[property: JsonPropertyName("body-file")]
 	[property: Description("Absolute local stdio path, normally get-page files.bodyFile.")]
-	string? BodyFile = null
+	string? BodyFile = null,
+	[property: JsonPropertyName("known-containers")]
+	[property: Description("Inherited element names from the page bundle. Omitted: unresolved parents warn because template context is unknown. Supplied (including []): unresolved parents fail.")]
+	IReadOnlyList<string>? KnownContainers = null
 );
 
 public sealed class PageValidateResponse {

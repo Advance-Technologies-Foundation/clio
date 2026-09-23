@@ -1,4 +1,4 @@
-﻿COMMAND TYPE
+COMMAND TYPE
     Development commands
 
 NAME
@@ -354,3 +354,10 @@ EXAMPLE
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio
+
+Parent references:
+    Web parentName references must resolve in the inherited page hierarchy or
+    submitted diff. Invalid parents fail before saving, even with validation
+    disabled, and during dry runs. Root inserts remain valid.
+    The view-config diff must be statically parseable; dynamic expressions are
+    rejected even with validation disabled.
