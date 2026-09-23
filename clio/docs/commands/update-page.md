@@ -12,6 +12,17 @@ update-page - Update the raw schema body of a Freedom UI page
 
 ## Description
 
+Web page saves resolve explicit `parentName` references against the inherited page
+hierarchy and the submitted diff. An unresolved parent fails before saving, including
+with `validate: false` and during dry runs. The error names the child and parent and
+suggests the closest known element. Root inserts without a parent remain valid.
+
+The MCP `validate-page` tool can receive `known-containers`, an array of inherited
+element names obtained from the page bundle. With that context, missing parents
+fail validation; without it, unresolved references produce warnings because a
+parent may be supplied by the template. This offline hint does not bypass the
+authoritative save check.
+
 `--resources` adds missing keys and updates the `en-US` value of existing keys.
 Resource identities, other cultures, and omitted keys are preserved. The
 `resourcesRegistered` count includes only newly declared keys, not value updates.

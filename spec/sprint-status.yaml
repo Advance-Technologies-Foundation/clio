@@ -21,6 +21,11 @@
 # 2026-07-06) is a separate Jira ticket stacked on the same branch; tracked as its own row.
 
 stories:
+  - id: story-page-parent-validation-1640
+    title: Reject unresolved Freedom UI parent references
+    status: review
+    issue: 1640
+    file: spec/issue-1640/issue-1640-spec.md
   - id: story-create-user-task-page-1
     title: Native Classic parameter-page scaffolding
     status: in-progress
