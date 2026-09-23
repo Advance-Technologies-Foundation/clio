@@ -4619,3 +4619,9 @@ stories:
       (`creatio.external-organizations`, `creatio.portal-service-routing` and their bare aliases) while
       bundle-source.json still carries both articles - a re-pin artifact, not an article removal. Restored,
       so "availableNames UNCHANGED" is true again against master.
+
+  - id: story-1641-page-json-comments-1
+    status: review
+    description: Accept explanatory comments while preserving required schema markers for issue 1641
+    depends_on: []
+    blocks: []
