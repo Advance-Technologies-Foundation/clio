@@ -35,8 +35,8 @@ below are the stand's UTC.
 * **Every prediction was written into the log before the step ran.** 18 of 20 predictions held. The two misses are
   recorded as misses: pair 3 was refuted, and Q5c is not explained by the final model (§6).
 * Mechanism claims come from platform source `C:\Projects\Creatio2\TSBpm\Src\Lib`. **V** marks a line I read myself.
-  **A** marks a claim reported by an independent source-reading agent: it is consistent with every measurement, but
-  I did not read the line.
+  **A** marks a claim reported by a second, independent reading of the source: it is consistent with every
+  measurement, but I did not read the line myself.
 
 ## 3. Mechanism
 
@@ -97,7 +97,7 @@ below are the stand's UTC.
    * Its caller save writes the client-sent captions as-is, with no server-side re-sync (**A**, consistent with
      pair 1 and Q5d).
 
-### 3.2 Hypotheses from the handoff
+### 3.2 Hypotheses considered
 
 | Hypothesis | Verdict | Evidence |
 |---|---|---|
@@ -105,7 +105,7 @@ below are the stand's UTC.
 | **H2**: a freshly built caption resolves to null and `SetCultureValue(null)` is ignored | **Refuted for finding A, partly right for B.** | The stale values are real strings. In finding A the second run moved the caller to save #1's value, which H2 cannot produce. For finding B a null in build #1 does produce the blank. |
 | **H3**: different cache tiers disagree | **Confirmed, in this specific form.** | `MetaItems` (build #1, stale), the runtime instance (build #1 or #2, depending on the reader order) and the design item (`TryDesignItem`, always fresh) disagree by construction. |
 
-The handoff's two unexplained observations are now explained:
+The ticket's two unexplained observations are now explained:
 
 * **The fourth run "without lag"** was an ADD-only save. Existing captions equalled the previous state, and the new
   one resolved fresh on the modify path. The lag was there but invisible. D4 reproduced it: in one save a changed
@@ -141,7 +141,7 @@ Pairs are `UsrCap<tag>Callee` / `UsrCap<tag>Caller`. "pkg" means a clio `modify-
 The full log, with timestamps and every prediction as written before its step, is
 `eng-100077-subprocess-caption-sync-measurement-log.md`. The rows above were copied from it.
 
-## 5. Handoff questions
+## 5. The questions this research had to answer
 
 1. **Mechanism:** §3. It is established from source, and every non-trivial model prediction on the stand held
    (D2–D5, T1, T2, R1).
@@ -185,6 +185,23 @@ The full log, with timestamps and every prediction as written before its step, i
 * Feature `KeepProcessSchemaInstanceInProcessSchemaSubProcess` is not registered on the stand, so the default
   applies (it caches the callee on the element, `ProcessSchemaSubProcess.cs:100-103`). Its effect with the feature
   on was not measured.
+* **Known limitation of the caption report, not fixed (peer review of the delivered PRs, finding 6).** The stored
+  side is read by the caller's `SysSchema.Id` alone, with no `SysPackageId` filter, unlike the platform's own
+  `HierarchySchemaResourceReader` (`:210-238`). A schema saved with `ExtendParent` keeps its resources under the
+  PARENT's `SysSchemaId` (`SchemaManager.cs:2680-2684`), so for such a caller the element reads as never stored and
+  its captions are reported as unknown: no replaced and no filled-in notice, while the synchronization still writes
+  the callee's captions. Rare for processes, and the reviewer's own confidence was low; the fix itself (R) does not
+  depend on it. Revisit if a caller that replaces a schema from another package shows a silent resync.
+* **Known limitation, not fixed (second review round, Low).** Whether an element is stored is decided by NAME,
+  because the resource keys are: any row under `BaseElements.<element>.`, in any culture. A batch that removes an
+  element and adds another under the SAME name, then re-synchronizes it, therefore compares the new element with
+  the removed one's stored captions and can announce them as replaced. Telling the two apart needs the element
+  UIds the request started with, which the reader does not have; the case needs three operations in one batch
+  and changes nothing that is saved.
+* **A second toolset save of a callee that is already stale** was measured only in the ticket's shape, a save that
+  changed the captions AGAIN: it left the callers one save behind again. Whether a save that changes no caption
+  catches them up was not measured. By the model it would (the new design session's snapshot is taken after the
+  previous save), but the guidance names only the measured cure, a designer save of the callee.
 
 ## 7. Side observations (out of scope, recorded so they are not rediscovered)
 
@@ -193,9 +210,9 @@ The full log, with timestamps and every prediction as written before its step, i
   captions.
 * The designer writes a mapped parameter's `DisplayValue` row as `[#Delivery date#]`. The package writes
   `Delivery date`.
-* The platform's sync copies the **current culture** only. Server-written captions exist in `en-US` only
-  (see memory `creatio-schema-caption-resource`). Other cultures keep whatever they had, and no fix proposed here
-  changes that.
+* The platform's sync copies the **current culture** only (`ProcessSchemaActivity.cs:173-177`), so a caption
+  written server-side exists in the writer's culture only - `en-US` on this stand. Other cultures keep whatever
+  they had, and no fix proposed here changes that.
 
 ## 7a. Shipped corpus
 
@@ -219,4 +236,4 @@ Their state after the runs:
 * `UsrCapD2Callee` was cured by T1.
 * `UsrCapD4CallerB` has no `Flag5` caption row (Q5d).
 
-The older `UsrCapM*` fixtures from the handoff were not touched.
+The older `UsrCapM*` fixtures from the ticket's reproduction were not touched.

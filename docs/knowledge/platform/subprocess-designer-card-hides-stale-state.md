@@ -49,7 +49,9 @@ actually looks at.
   runtime binds by code; but do not read `inSync: true` as "the element matches the callee".
 * the MODIFY path always takes the design instance (`ProcessModifyHandler` then `GetDesignInstance`),
   which converges before the package sees the schema — which is why the re-synchronization's own drift
-  report is empty.
+  report is empty. **Captions are the exception from CrtProcessBuilder 1.6.6.17:** they are compared with the
+  caller's STORED `SysLocalizableValue` rows rather than with the converged element, so a resync does name
+  a caption the callee changed (ENG-100077, `a-process-resource-cache-survives-its-own-save.md`).
 * `describe-business-process` can report the stale name and `inSync: false`, but only for some processes
   and only at some times. WHEN is platform behaviour and is NOT restated here: see
   `subprocess-insync-depends-on-the-schema-instance.md`. **Never compile to expose drift**: on this stand
@@ -98,7 +100,8 @@ migration step. It was never meant to be an inspection surface, and it is not on
 evidence. `describe-business-process` reads whatever instance the schema manager already HOLDS
 (`ProcessSchemaRepository.LoadForDescribe`) and does not re-converge it, so while that instance predates
 the callee's change it reports the STALE name and `inSync: false` — both real evidence. The MODIFY path
-takes the design instance, which is why its drift report sees nothing. From CrtProcessBuilder 1.6.3.7 a
+takes the design instance, which is why its drift report sees nothing of a rename or a drop (it does see a
+caption change from 1.6.6.17, measured against the stored rows). From CrtProcessBuilder 1.6.3.7 a
 re-synchronization does report the CONSEQUENCE of a DROPPED parameter — references left bound to a UId the
 element no longer carries — the half a caller can act on. A CODE rename produces no consequence to find:
 the mapping row keeps the UId, so every reference stays resolvable and only the saved NAME is stale. Two

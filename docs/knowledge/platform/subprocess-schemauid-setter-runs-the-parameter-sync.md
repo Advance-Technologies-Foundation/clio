@@ -53,8 +53,10 @@ divergent diff over the same data, and the platform's runs afterwards anyway on 
 `SchemaUId` inside `Create()` — the shape every existing user-task handler uses — throws an NRE the
 moment the callee declares a parameter, which is every real callee. Writing the element for a process
 that calls itself produces an element with zero parameters and no complaint. And a re-sync implemented
-as "load, compare" reports nothing every time, because the load already converged it: the only window
-is a snapshot taken before the write.
+as "load, compare" reports nothing every time, because the load already converged it: the in-memory
+window is a snapshot taken before the write. The other window is the database - what the caller had STORED -
+which is how the caption report finds a caption the callee changed between two requests (ENG-100077,
+CrtProcessBuilder 1.6.6.17).
 
 Source: `Terrasoft.Core/Process/ProcessSchemaSubProcess.cs`, `ProcessSchemaActivity.cs`. Full
 write-up with line numbers: `spec/eng-92707-sub-process-element/`.

@@ -117,7 +117,7 @@ if __name__ == "__main__":
         for el in graph["elements"]:
             if el.get("name") == sys.argv[4]:
                 sub = el.get("subProcess") or {}
-                print("inSync:", sub.get("inSync"), "| callee:", sub.get("processName"))
+                print("inSync:", sub.get("inSync"), "| callee:", sub.get("process"))
                 for p in el.get("parameters", []):
                     print(json.dumps({k: p.get(k) for k in ("name", "caption", "uid", "direction", "source", "value")},
                                      ensure_ascii=False))

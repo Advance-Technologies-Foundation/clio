@@ -5,6 +5,14 @@ shows a blank caption on the first caller read" (Sub-task of **ENG-92707** "Sub-
 parameter sync"). Mechanism and evidence are in `eng-100077-subprocess-caption-sync-research.md`; section numbers
 below (§) refer to it.
 
+> **As implemented.** This plan was written before the code, and the delivery departs from it where review or
+> measurement showed a better shape. Each departure is marked **As implemented** where it occurs. In short: the
+> release runs in a `finally` (§3.1); the saved instance's `ResourceManager` is NOT re-pointed (§3.1); the
+> knowledge record is `docs/knowledge/platform/a-process-resource-cache-survives-its-own-save.md` (§3.1); a
+> parameter the sync ADDS is reported only as Added, never also as a caption filled in (§3.2); the report carries
+> a caption-read failure, and a version edit reads its source version's rows (§3.2); and the package version is
+> 1.6.6.17 (§3.4).
+
 ## 1. Recommendation
 
 Fix the cause where it is created, in **CrtProcessBuilder's save path**, and add the missing report entry:
@@ -19,8 +27,8 @@ Fix the cause where it is created, in **CrtProcessBuilder's save path**, and add
 2. **B — report caption changes in the resync report**, measured against the caller's STORED caption. This is
    criterion 4.
    * Without R, the caption the load produced is already the stale one. With R, it is already the fresh one.
-   * Either way, "before" read from the in-memory element is useless (research §6 trap, agent B §4). It has to come
-     from the database.
+   * Either way, "before" read from the in-memory element is useless: the design-time load has already
+     re-synchronized it (`SubProcessSyncReport`'s own remarks). It has to come from the database.
 
 Do **not** make "overwrite captions from a fresh read" (option a) or "reset the callee's cache before each sync"
 (option c) the fix. Both are compared in §2.
@@ -33,7 +41,7 @@ Do **not** make "overwrite captions from a fresh read" (option a) or "reset the 
 | **B** | New `CaptionsChanged {parameter, from, to}` in `SubProcessSyncReport`, where `from` is the caller's stored `SysLocalizableValue` row for the current culture and `to` is the caption about to be saved | **Do it** (scope: explicit `resync` and selection only; see §7 decision 2) | Criterion 3. It must be measured against stored rows, which is a small slice of ENG-99737 "Sub-process resync: report what the called process changed, by diffing the STORED metadata". It is built so ENG-99737 can generalize it. |
 | a | After the platform sync, overwrite the element's captions from a fresh read of the callee | Reject as the fix | The only read proven fresh is `TryDesignItem`, the designer card's path. The package reader's `GetInstanceByUId` can be the stale build (pair 2, D3). It covers the explicit resync only, not the incidental save that reverts a correct row (R1), not `describe`, and not the designer. It treats the symptom on every resync while the cause keeps producing it. |
 | c | Before syncing, release the callee's cache and evict its `MetaItems` entry | Reject | It needs an eviction the package can only get through `ISchemaManagerItem.Invalidate()`, which also broadcasts a change notification (**A**). It runs on every read path we control and on none we don't (describe, designer). R removes the cause at the writer instead. |
-| d | Document only; workaround "save the callee again, then resync" | Reject | The workaround as filed is wrong for clio: a second clio save moves the lag by one (finding A). Only a DESIGNER save of the callee cures it (T1). Silent reverts (R1) cannot be documented away. |
+| d | Document only; workaround "save the callee again, then resync" | Reject | The workaround as filed is not reliable for clio: in the ticket's runs a second clio save that changed the captions again left the callers one save behind again (finding A); a second save with no change was not measured (research §6). The measured cure is a DESIGNER save of the callee (T1). Silent reverts (R1) cannot be documented away. |
 
 **Pre-existing stale entries** (a callee saved by an older package build): R does not cure an entry that already
 exists; the next save of that callee does. Installing the fixed package recompiles and restarts the app pool,
@@ -52,9 +60,12 @@ The release notes should still name the manual cure: open and save the callee in
   2. Point the saved design instance's `ResourceManager` at it, when the instance is at hand.
   3. `manager.ReleaseAllResources()`.
 
+  **As implemented:** steps 1 and 3 only, on the request connection's workspace. Step 2 is skipped because
+  nothing reads the saved instance again - the platform's save drops the schema's cached instances, and the next
+  build binds the schema's own manager (`ProcessSchemaRepository.ReleaseResourceCache` remarks).
+
   Guard against a null `ResourceStorage` the way `SchemaManager.cs:1047-1050` does. Do not use
-  `IResourceStorage.Invalidate`: an instance still holding the old manager would keep reading its stale sets
-  (unit-test agent, Q4).
+  `IResourceStorage.Invalidate`: an instance still holding the old manager would keep reading its stale sets.
 * **Seam.** Follow the package's own precedent: a `protected virtual` seam on `ProcessSchemaRepository` around the
   manager save, like the existing `RemoveItem` seam (`ProcessSchemaRepositoryTests.cs:59-73`). `SchemaManager.SaveSchema`
   is not virtual (`SchemaManager.cs:4256, 4276`), so the tests cannot run the real save.
@@ -64,13 +75,17 @@ The release notes should still name the manual cure: open and save the callee in
   the returned bool. That matches the designer, which releases unconditionally after `SaveSchema` returns.
   * Do not release in `finally` on an exception path. If the save rolled back, the snapshot in the cache equals
     the committed rows, and releasing is harmless but pointless. Keep the code simple.
+  * **As implemented:** the release IS in a `finally`. Pre-PR review showed a save that throws AFTER its commit
+    (the platform fires its change events and evicts caches once the transaction is done), which would otherwise
+    leave exactly the stale state this release clears. A release failure is logged, never thrown, so it cannot
+    replace the save's own answer or exception.
 * **Not** before `SaveSchema`: the pipeline's own `InitializeLocalizableValues` would refill the cache from the
   still-uncommitted state.
 * **XML doc** on the release method states why the release is needed, and names `ReleaseResourcesManagers`
   releasing by `SysSchema.Name` as the platform gap.
-* **Knowledge record** (clio, `docs/knowledge/platform/process-resource-cache-not-released-by-save.md`,
-  `applies-to: clio/CrtProcessBuilder/CrtProcessBuilder.gz`): the UId-keyed cache, the by-name release and the
-  designer's compensation. This is exactly the kind of fact whose failure is silent.
+* **Knowledge record** (clio, `applies-to: clio/CrtProcessBuilder/CrtProcessBuilder.gz`): the UId-keyed cache,
+  the by-name release and the designer's compensation. This is exactly the kind of fact whose failure is silent.
+  **As implemented:** `docs/knowledge/platform/a-process-resource-cache-survives-its-own-save.md`.
 
 ### 3.2 B — caption changes in the resync report (package)
 
@@ -82,6 +97,21 @@ The release notes should still name the manual cure: open and save the callee in
   caption (current culture) with the stored row. A missing row counts as "no caption". Emit
   `CaptionsChanged{Name, From, To}` for every difference, including a parameter added by this sync that now has a
   caption.
+  * **As implemented:** a parameter the sync ADDS is skipped - it is already reported as Added, and listing it
+    again as filled in would name one event twice. A parameter the sync RENAMES is compared under its old name.
+    The comparison reads the current culture without fallback, and runs only on an explicit resync or when the
+    process already called is named again (§7 decision 2).
+  * **As implemented, after peer review:** a failed read of the stored rows is reported as its own notice
+    (`CaptionReadFailure`), not only logged; an element with no stored row at all reads as unknown rather than as
+    "stored without captions"; the Input collection wins over the Output one whatever order the rows come in; the
+    rows are read once per schema per request; captions in the notices are JSON-style quoted; and a
+    `modify-as-new-version` edit reads its SOURCE version's rows, because the clone has none until it is saved.
+  * **As implemented, after the second review round:** "is the element stored" is asked across EVERY culture
+    and the captions of the current one only, so a caller written in one language and re-synchronized in another
+    still reports what it fills in; a failed read is kept for the rest of the request instead of being retried
+    per element; after a retarget that also asks for `enabled:false`, the de-conversion's caption half is
+    withdrawn, because its stored rows belong to the previous callee; the version handler's call is
+    `IStoredCaptionReader.AliasUnsavedCopy`.
   * **Separate "filled in" from "changed"** (`From` null or empty vs non-empty) in the notice. In the shipped
     corpus 303 of the 311 caller-vs-callee caption differences are an EMPTY caller caption (§10); without the split
     the report would mostly announce old blanks being filled.
@@ -94,7 +124,8 @@ The release notes should still name the manual cure: open and save the callee in
   * `MultiInstanceApplier.DriftOf` copies it (`:768-774`), or multi-instance de-conversion drops it.
   * `SubProcessSyncNotices.Describe` gets one sentence per element, for example "3 parameter captions refreshed from
     the called process: DeliveryDateParameter 'Requested delivery date' → 'Delivery date and time', …". It stays a
-    `Warnings` string, so clio forwards it with no clio code change (agent B §2).
+    `Warnings` string, so clio forwards it with no clio code change (clio's response DTO passes `Warnings`
+    through verbatim).
 * **Leave the structured-field question to ENG-99737.** That ticket owns "structured drift fields"
   (`SubProcessSyncNotices.cs:164-169`).
 
@@ -111,7 +142,8 @@ The release notes should still name the manual cure: open and save the callee in
   required".
 * **MCP:** `ModifyBusinessProcessTool` description says caveats arrive as `Warning` entries (`:359-361`), which is
   still true. "MCP reviewed, no update required" for the tool itself, plus the E2E below.
-* **ClioRing:** it does not consume `modify-business-process` / `describe-business-process` (agent B §2). Record
+* **ClioRing:** it does not consume `modify-business-process` / `describe-business-process` (none of
+  `clio-ring/ClioRing.Ipc`, `clio-ring/ClioRing` or `clio-ring/ClioRing.Desktop/actions.json` calls them). Record
   "ClioRing compatibility reviewed, no Ring-consumed contract changed" with the inspected paths.
 
 ### 3.4 Guidance (clio-knowledge)
@@ -128,6 +160,10 @@ The release notes should still name the manual cure: open and save the callee in
   budget. From 1.6.6.16 its sentence is true again as written.
 * Bumped `libraryVersion` 1.15.71 → 1.15.72; `dotnet test automation/Clio.Knowledge.Bundle.Tests -c Release`
   202/202.
+* **As implemented, after peer review:** the floor is 1.6.6.17 and `libraryVersion` 1.15.73. The bullet says the
+  notices name at most ten captions, that an incidental save writes the current captions without a notice, and
+  that a designer save of the callee is a step for the user, not the agent; the unmeasured "a second toolset save
+  only moves the lag" claim is gone (research §6).
 
 ## 4. Acceptance criteria → evidence
 
@@ -242,7 +278,7 @@ fresh. D3's "describe fresh / resync stale" split must disappear.
 
 ## 9. Branches, PRs, merge order
 
-* **Precondition:** engineering/crt-process-builder#75, Advance-Technologies-Foundation/clio#1659 and
+* **Precondition:** [crt-process-builder PR 75](https://creatio.ghe.com/engineering/crt-process-builder/pull/75), Advance-Technologies-Foundation/clio#1659 and
   Advance-Technologies-Foundation/clio-knowledge#223 (the three PRs of ENG-99856 "Sub-process element: support
   MULTI-INSTANCE (running the callee once per item of a collection)") are MERGED. Check before branching. If they
   are not merged, ask whether to wait or to base on the ENG-99856 branches temporarily and rebase.

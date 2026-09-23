@@ -50,8 +50,8 @@ T2 prediction (65%): designer change D3 callee caption -> "D3 date A3" + save; t
 - Not time-based (still stale after 11 min, pair 2) and not cured by saves of other schemas or by a designer read of the callee.
 - Designer card: always fresh (re-derives from ProcessSchemaRequest callee). Designer caller save WITH card opened persists fresh; WITHOUT opening the card persists what the server load carried (blank persisted in Q5d).
 - clio incidental save (design load path) persisted fresh captions for a new parameter in 2/2 runs (Q5b, Q5c) -- but the same design-load sync gave a stale caption for a caption-only change (pairs 1/2), so "fresh" there is not guaranteed.
-## Source model (platform agent): package OpenDesignSession/GetDesignInstance -> UpdateResourceManager reloads the callee's SHARED SchemaResourceManager (keyed by UId "N") from the PRE-EDIT SessionData snapshot; SaveSchema's ReleaseResourcesManagers releases by SysSchema.Name -> never the process cache; first metadata build after save (build #1) reads the stale cache into MetaItems; resync reads MetaItems via GetInstanceFromMetaData. Designer save releases the callee cache after commit (ProcessSchemaDesignerUtilities.ReleaseLocalizableValues).
-Model checks already consistent: pair 3 (=agent D1), T1, pair 2 order (resync -> PSR callee -> resync stale), pair 1, Q5d, pair 4. NOT obviously predicted: Q5c (incidental modify as first reader after ADD gave the fresh caption).
+## Source model (from platform source): package OpenDesignSession/GetDesignInstance -> UpdateResourceManager reloads the callee's SHARED SchemaResourceManager (keyed by UId "N") from the PRE-EDIT SessionData snapshot; SaveSchema's ReleaseResourcesManagers releases by SysSchema.Name -> never the process cache; first metadata build after save (build #1) reads the stale cache into MetaItems; resync reads MetaItems via GetInstanceFromMetaData. Designer save releases the callee cache after commit (ProcessSchemaDesignerUtilities.ReleaseLocalizableValues).
+Model checks already consistent: pair 3 (= source-model prediction D1), T1, pair 2 order (resync -> PSR callee -> resync stale), pair 1, Q5d, pair 4. NOT obviously predicted: Q5c (incidental modify as first reader after ADD gave the fresh caption).
 ## Falsification runs on fresh fixtures (UsrCapE*)
 E-fixtures created 11:5x: E1 (8ca09fba callee / 8786ce89 caller), E2 (c668b34c / f825398f), E4 (6497d51e / e3f50a40), E3 (1f3debb3 callee / 930a7a45 A / bfb9f78f B).
 D2 prediction (model): package setParameter E1 callee -> "E1 date A2"; then ProcessSchemaRequest(E1 callee) (= what the card does; TryDesignItem puts a FRESH build in MetaItems since none exists); then package resync E1 caller -> FRESH "E1 date A2".
@@ -61,7 +61,7 @@ D3 prediction (model): package set E2 callee A2 -> describe(E2 callee) FIRST -> 
 D5 prediction (model): package addParameter E3 callee Urgent "E3 urgent" -> describe(E3 callee) FIRST (fresh, shows "E3 urgent") -> describe CallerB -> "" -> describe CallerA -> "" (build #1 never filled because the runtime instance is build #2).
 - D5 RESULT: 11:51:56 add; 11:52:02 describe(E3 callee) FRESH incl. "E3 urgent"; 11:52:08 CallerB Urgent ""; 11:52:14 CallerA Urgent "". CONFIRMED (both blank when the callee is described first).
 D4 prediction (model + Q5c): ONE package modify of E4 callee = setParameter DeliveryDate "E4 date A2" + addParameter Urgent "E4 urgent"; then package resync E4 caller -> DeliveryDate row "E4 date A1" (STALE), Urgent row "E4 urgent" (FRESH).
-- D4 RESULT: 11:52:36 one modify (set DeliveryDate A2 + add Urgent); 11:52:50 resync -> DeliveryDate "E4 date A1" STALE, Urgent "E4 urgent" FRESH. CONFIRMED. Explains the handoff's run 4: an ADD-only save leaves existing captions equal to the previous state, so the one-save lag is present but invisible.
+- D4 RESULT: 11:52:36 one modify (set DeliveryDate A2 + add Urgent); 11:52:50 resync -> DeliveryDate "E4 date A1" STALE, Urgent "E4 urgent" FRESH. CONFIRMED. Explains the ticket's fourth run: an ADD-only save leaves existing captions equal to the previous state, so the one-save lag is present but invisible.
 - Source verified by me: SessionData nameKey = GetResourceManagerName() (UId "N") -> UpdateResourceManager reloads that cache from the pre-edit snapshot (SchemaManager.cs:4630-4635, 4803-4806, 2712-2720); ReleaseResourcesManagers releases GetManager(SysSchema.Name) (2622-2636, 1121-1128); Schema.GetResourceManagerName = UId "N" (Schema.cs:586-592; only EntitySchema overrides); designer save calls ProcessSchemaDesignerUtilities.ReleaseLocalizableValues by UId after SaveSchema (BaseProcessSchemaDesigner.cs:181-186, ProcessSchemaDesignerUtilities.cs:68-75; "TODO Cache management will be added in #CRM-28975").
 - Stand facts (D7): MSSQL 2022; 4 active cultures; Feature KeepProcessSchemaInstanceInProcessSchemaSubProcess NOT registered; UseProcessDiagramComponent enabled. IIS worker count not checked (no server access).
 R1 prediction (model): D1 callee's MetaItems still holds the stale build #1 (A1, built by the designer's caller load at ~11:24; the card's TryDesignItem does not replace it; D1 callee not saved since). An INCIDENTAL package save of D1 caller (setParameter on its own param) REVERTS the caller's correct row "D1 date A2" -> "D1 date A1".
@@ -71,3 +71,55 @@ R1 prediction (model): D1 callee's MetaItems still holds the stale build #1 (A1,
 ## E2E (clio.mcp.e2e, clio master 727f8c9a3 + this change, stand .NET Framework / MSSQL)
 - RED on CrtProcessBuilder 1.6.6.14 (main, fix absent): the 5 new caption cases in SubProcessElementToolE2ETests all FAILED for the predicted reasons (stored row "Order id v1" after one resync and after an incidental caller save; new parameter caption "" in both read orders; no caption notice in the resync answer).
 - GREEN on 1.6.6.16 (this fix): all 5 PASSED; SubProcessMultiInstanceToolE2ETests 8/8 PASSED. One pre-existing failure, unrelated to this change: CreateBusinessProcess_Should_RefuseASelfReferencingSubProcess answers "was not found" because on CREATE the self-named callee is not registered yet (ResolveByName throws before EnsureCallable's self-reference check; no code touched here runs on that path). Split into its own task.
+
+- GREEN on 1.6.6.17 (peer-review round, clio.mcp.e2e from this branch): the 5 caption cases PASSED, now with every
+  arrange checking the callee's OWN stored row (`Parameters.OrderId.Caption`) first; SubProcessMultiInstanceToolE2ETests
+  8/8 PASSED. CreateBusinessProcess_Should_RefuseASelfReferencingSubProcess still fails with the same "was not found"
+  answer - pre-existing and unrelated, tracked as ENG-100192.
+
+## Unit mutation run (peer-review round, package candidate 1.6.6.17)
+Each row reverts or breaks ONE line of the fix in the package source, runs the caption fixtures
+(`SubProcessCaptionChangeTests`, `StoredCaptionReaderTests`, `ProcessSchemaRepositoryTests`,
+`ProcessVersionSaveHandlerTests`, `SubProcessContractTests`, `CrtProcessBuilderAppTests`, 142 tests) and
+restores the file. 36 of 36 turn at least one test red. Two survived a first run and are recorded rather than
+hidden: B3 (see its row) and E1/E2, whose first test asserted "announced once" - which the notice collector
+already guarantees by dropping exact duplicates, so it could not see the withdrawal. It now asserts the case
+the withdrawal exists for, a retarget.
+
+| # | Mutation | Red tests |
+|---|---|---|
+| R1 | `Save` does not release the cache | TC-R02, TC-R03..R06 (Save) |
+| R2 | `SaveEdited` does not release the cache | TC-R01, TC-R03..R06 (SaveEdited) |
+| R3 | `Save` releases BEFORE the save | TC-R02 |
+| R4 | a release failure propagates | TC-R04, TC-R06 (both sites) |
+| R5 | the cache is released by name, not by UId | TC-R01..R06 |
+| B1 | no caption report on an explicit resync | TC-C01, C03, C11, C12, C21, C32 |
+| B2 | no caption report when the process already called is named again | TC-C08 |
+| B3 | a caption report on a retarget too | TC-C09 (after it gained a caller-created parameter: the first run SURVIVED, because on a retarget every callee parameter is Added and skipped) |
+| B4 | a renamed parameter looked up under its new name | TC-C10 |
+| B5 | a parameter the sync ADDED is not skipped | TC-C05 |
+| B6 | the caption read WITH culture fallback | TC-C20 |
+| B7 | the incidental path reports captions | TC-C19 |
+| B8 | a read failure is not flagged | TC-C11, C32 |
+| B9 | the reader asked under the wrong element name | TC-C01, C02, C05, C08, C10, C12, C20, C21 (the fake answers "stored without captions" for any other element) |
+| B10 | `IsUnchanged` ignores a read failure | TC-C11 |
+| B11 | `DriftOf` drops the caption list | TC-C12 |
+| B12 | `DriftOf` drops the read failure | TC-C32 |
+| N1 | no first-selection gate on the caption notices | TC-C15 |
+| N2 | a filled-in caption announced as replaced | TC-C14 |
+| N3 | captions not escaped | TC-C13, C14, C21, C22 |
+| N4 | no read-failure notice | TC-C11, C23, C32 |
+| N5 | the caption list unbounded | TC-C17 |
+| S1 | the Output collection wins | TC-C18, C24 |
+| S2 | an element with no row reads as stored without captions | TC-C37 (TC-C25 pins the key rule itself) |
+| S3 | no SysSchema-row check | TC-C28, C30 |
+| S4 | no empty-Id guard | TC-C27 |
+| S5 | no per-request cache | TC-C30 |
+| S6 | a fixed culture (`en-US`) | TC-C29, C30, C31, C34 |
+| S7 | the copy-to-original mapping ignored | TC-C31 |
+| S8 | "is the element stored" asked in the current culture only | TC-C34 |
+| S9 | a failed read not kept for the next element | TC-C35 |
+| E1 | a de-conversion after a retarget keeps its caption list | TC-C33 (change) |
+| E2 | a de-conversion after a retarget keeps its read failure | TC-C33 (read failure) |
+| V1 | the version handler never maps the clone | TC-C26 |
+| V2 | the version handler maps the clone AFTER the edit | TC-C26 |
