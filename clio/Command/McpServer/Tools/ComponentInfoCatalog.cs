@@ -100,10 +100,9 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 		}
 
 		(ComponentRegistryEntry[] rawEntries, RegistryGlobalReferences? globalReferences, CompositeDefinition[] composites,
-			MobileRuntimeVersion? mobileRuntimeVersion, IDictionary<string, JsonElement>? envelopeExtensions) =
-			DeserializeEnvelope(stream, "Component registry stream");
+			ComponentRegistryEnvelopeExtras extras) = DeserializeEnvelope(stream, "Component registry stream");
 		return BuildState(rawEntries, globalReferences, composites, "Component registry stream", resolvedVersion, source,
-			mobileRuntimeVersion, envelopeExtensions);
+			extras);
 	}
 
 	/// <summary>
@@ -120,8 +119,8 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 	/// so a new TOP-LEVEL producer field was swallowed silently.
 	/// </para>
 	/// </summary>
-	internal static (ComponentRegistryEntry[] Entries, RegistryGlobalReferences? GlobalReferences, CompositeDefinition[] Composites,
-		MobileRuntimeVersion? MobileRuntimeVersion, IDictionary<string, JsonElement>? EnvelopeExtensions) DeserializeEnvelope(
+	internal static (ComponentRegistryEntry[] Entries, RegistryGlobalReferences? GlobalReferences,
+		CompositeDefinition[] Composites, ComponentRegistryEnvelopeExtras Extras) DeserializeEnvelope(
 		Stream stream, string sourceDescription) {
 		using JsonDocument document = JsonDocument.Parse(stream);
 		ComponentRegistryEntry[] entries;
@@ -157,7 +156,8 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 		if (entries is null || entries.Length == 0) {
 			throw new InvalidOperationException($"{sourceDescription} is empty or invalid.");
 		}
-		return (entries, globalReferences, composites, mobileRuntimeVersion, envelopeExtensions);
+		return (entries, globalReferences, composites,
+			new ComponentRegistryEnvelopeExtras(mobileRuntimeVersion, envelopeExtensions));
 	}
 
 	private async Task<ComponentCatalogState> LoadCatalogStateAsync(string requestedVersion, CancellationToken cancellationToken) {
@@ -180,8 +180,7 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 		string sourceDescription,
 		string resolvedVersion,
 		ComponentRegistrySource source,
-		MobileRuntimeVersion? mobileRuntimeVersion = null,
-		IDictionary<string, JsonElement>? envelopeExtensions = null) {
+		ComponentRegistryEnvelopeExtras? extras = null) {
 		string[] duplicateTypes = rawEntries
 			.Where(entry => !string.IsNullOrWhiteSpace(entry.ComponentType))
 			.GroupBy(entry => entry.ComponentType, StringComparer.OrdinalIgnoreCase)
@@ -234,8 +233,8 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 		return new ComponentCatalogState(
 			orderedEntries, lookup, resolvedVersion, source, globalReferences) {
 			Composites = orderedComposites,
-			MobileRuntimeVersion = mobileRuntimeVersion,
-			EnvelopeExtensions = envelopeExtensions,
+			MobileRuntimeVersion = extras?.MobileRuntimeVersion,
+			EnvelopeExtensions = extras?.UnmappedExtensions,
 		};
 	}
 
@@ -334,6 +333,28 @@ public sealed class MobileComponentInfoCatalog : IMobileComponentInfoCatalog {
 /// <param name="Entries">Ordered list of catalog entries.</param>
 /// <param name="Lookup">Case-insensitive map of componentType → entry.</param>
 /// <param name="ResolvedVersion">The version actually loaded; may differ from the requested version on fallback.</param>
+/// <summary>
+/// What a wrapped component-registry envelope carried BESIDES its three structural blocks (entries,
+/// references, composites). Both members are null for the legacy top-level-array shape.
+/// </summary>
+/// <remarks>
+/// They travel as one value rather than as two more parameters on <c>BuildState</c> because they answer one
+/// question — "what else was at the top level of this payload" — and because keeping them separate pushed
+/// that method past the parameter limit. A data-only carrier, so a record and <c>new</c> are allowed.
+/// </remarks>
+/// <param name="MobileRuntimeVersion">
+/// The envelope-level <c>mobileRuntimeVersion</c> marker when the producer published one. Nothing reads it:
+/// it is mapped so it cannot fall into <paramref name="UnmappedExtensions"/> unnoticed, and so the snapshot
+/// guard can assert its shape. See <c>docs/knowledge/McpServer/mobile-runtime-version-marker-is-not-dependable.md</c>.
+/// </param>
+/// <param name="UnmappedExtensions">
+/// The envelope's own unmapped top-level producer fields, surfaced purely so the snapshot guard can assert
+/// it is empty. Before this existed a new top-level field was swallowed without failing a test.
+/// </param>
+internal sealed record ComponentRegistryEnvelopeExtras(
+	MobileRuntimeVersion? MobileRuntimeVersion,
+	IDictionary<string, JsonElement>? UnmappedExtensions);
+
 /// <param name="Source">Which tier of the fallback chain produced the bytes.</param>
 /// <param name="GlobalReferences">
 /// Optional global <c>references</c> block from the wrapped envelope shape; carries

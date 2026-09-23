@@ -80,10 +80,19 @@ public static partial class WebToMobileAnalysisService {
 		/// </para>
 		/// </summary>
 		public bool CatalogIsRuntimeDerived =>
-			BaseInputs is { Count: > 0 } surface
-			&& new HashSet<string>(surface.Keys, StringComparer.OrdinalIgnoreCase) is { } keys
-			&& keys.Contains("layoutConfig")
-			&& keys.Contains("visible");
+			BaseInputs is { Count: > 0 }
+			&& DeclaresInherited("layoutConfig")
+			&& DeclaresInherited("visible");
+
+		/// <summary>
+		/// Whether the inherited surface carries <paramref name="key"/>, compared case-insensitively.
+		/// Scans rather than indexing: the registry's dictionaries come from <c>System.Text.Json</c> with the
+		/// ORDINAL comparer, so <c>BaseInputs.ContainsKey</c> would make the gate hinge on the producer's
+		/// casing. Building a case-insensitive set instead would allocate one on every read of a PROPERTY,
+		/// and the property form is required — the call sites match on it with a property pattern.
+		/// </summary>
+		private bool DeclaresInherited(string key) =>
+			BaseInputs.Keys.Any(declared => string.Equals(declared, key, StringComparison.OrdinalIgnoreCase));
 	}
 
 	/// <summary>
@@ -157,7 +166,7 @@ public static partial class WebToMobileAnalysisService {
 		/// Fails OPEN — returns true — when the index is disabled, the type carries no name, or the registry
 		/// has no membership data for it. "Not described" is never treated as "not supported".
 		/// </summary>
-		internal bool Declares(string mobileType, string propName) {
+		internal bool DeclaresProperty(string mobileType, string propName) {
 			if (!Enabled || string.IsNullOrWhiteSpace(mobileType) || string.IsNullOrWhiteSpace(propName)) {
 				return true;
 			}
@@ -241,7 +250,7 @@ public static partial class WebToMobileAnalysisService {
 				// operation's own identity) and its remarks forbid a competing mechanism. Both happen to be
 				// declared in baseInputs too, so this is belt-and-braces — but it must not DEPEND on producer
 				// data staying that way, because removing either makes the element unaddressable.
-				if (ExcludedSourceProps.Contains(propName) || declaredProps.Declares(entry.MobileType, propName)) {
+				if (ExcludedSourceProps.Contains(propName) || declaredProps.DeclaresProperty(entry.MobileType, propName)) {
 					continue;
 				}
 				bool wasBinding = IsEventBindingNode(values[propName]);
