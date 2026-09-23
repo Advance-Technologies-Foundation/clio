@@ -1,7 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.IO.Abstractions.TestingHelpers;
+using System.Text;
 using System.Text.Json;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
@@ -176,7 +179,7 @@ public sealed class ODataReadToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Advertises a stable read-only MCP tool name for odata-read.")]
+	[Description("Advertises a stable MCP tool name for odata-read, and the read-only annotations an ordinary query must keep.")]
 	public void Read_Should_Advertise_Stable_Tool_Name() {
 		// Arrange
 
@@ -190,9 +193,116 @@ public sealed class ODataReadToolTests {
 		attribute.Name.Should().Be(ODataReadTool.ToolName,
 			because: "the MCP tool name must stay stable for callers and tests");
 		attribute.ReadOnly.Should().BeTrue(
-			because: "odata-read only queries Creatio records");
+			because: "odata-read writes nothing, and only a ReadOnly tool keeps the bounded retry-safe read "
+				+ "semantics of the MCP read-deadline pipeline - the file destination lives in odata-read-to-file "
+				+ "precisely so this contract survives");
+		attribute.Idempotent.Should().BeTrue(
+			because: "repeating an odata-read call has no side effect to repeat");
 		attribute.Destructive.Should().BeFalse(
 			because: "odata-read must not mutate remote Creatio state");
+	}
+
+	// Issue #1221: the target validation moved into a shared ODataReadTool.ValidateTarget so
+	// odata-read-to-file refuses the same targets with the same wording. The `entity` member is the part
+	// that is easy to lose in that move - the contract on it says an argument-level rejection of a bad or
+	// missing entity carries NO entity, and nothing asserted it, so a first attempt echoed the rejected
+	// name back and every test still passed.
+	[TestCase("", TestName = "Read_Should_Not_Name_An_Entity_When_It_Is_Missing")]
+	[TestCase("   ", TestName = "Read_Should_Not_Name_An_Entity_When_It_Is_Blank")]
+	[TestCase("Con tact", TestName = "Read_Should_Not_Name_An_Entity_When_The_Name_Is_Malformed")]
+	[TestCase("Contact;drop", TestName = "Read_Should_Not_Name_An_Entity_When_The_Name_Carries_Punctuation")]
+	[Category("Unit")]
+	[Description("A rejected or missing entity name is not echoed back in the response's entity member, because the failure is refused before the requested entity is known.")]
+	public void Read_Should_Not_Name_An_Unaccepted_Entity(string entity) {
+		// Arrange
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		ODataReadTool tool = new(resolver, new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
+
+		// Act
+		ODataReadResponse response = tool.Read(new ODataReadArgs { EnvironmentName = "dev", Entity = entity });
+
+		// Assert
+		response.Success.Should().BeFalse(because: "a missing or malformed entity name cannot be queried");
+		response.ErrorCode.Should().Be(ODataReadErrorCodes.Argument,
+			because: "this is refused locally on the arguments, not by Creatio");
+		response.Entity.Should().BeNull(
+			because: "entity names the set the failure refers to; echoing a name that was just rejected as invalid tells a caller correlating several reads that such a set was addressed, when none was");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An out-of-range top DOES name the entity, because the entity name was accepted and the failure refers to a real requested set.")]
+	public void Read_Should_Name_The_Entity_When_Only_Top_Is_Out_Of_Range() {
+		// Arrange
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		ODataReadTool tool = new(resolver, new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
+
+		// Act
+		ODataReadResponse response = tool.Read(new ODataReadArgs {
+			EnvironmentName = "dev", Entity = " Contact ", Top = ODataReadTool.MaxTop + 1
+		});
+
+		// Assert
+		response.Success.Should().BeFalse(because: "an out-of-range top is refused, never silently widened");
+		response.Entity.Should().Be("Contact",
+			because: "the name was accepted, so the failure refers to a known set - and trimmed, like every other path reports it");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects output-file on odata-read so the file destination cannot re-enter the read-only tool through the unbound-argument bag.")]
+	public void Read_Should_Reject_Output_File_Argument() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		commandResolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(applicationClient);
+		ODataReadTool tool = new(commandResolver, new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
+		ODataReadArgs args = JsonSerializer.Deserialize<ODataReadArgs>(
+			"""{"environment-name":"dev","entity":"Contact","output-file":"out.json"}""")!;
+
+		// Act
+		ODataReadResponse response = tool.Read(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "output-file is not an argument of the read-only tool");
+		response.Error.Should().Contain("odata-read-to-file",
+			because: "the caller must be pointed at the tool that does take a file destination");
+		applicationClient.ReceivedCalls().Should().BeEmpty(
+			because: "an unbound argument is rejected before any Creatio request");
+	}
+
+	[TestCase("null")]
+	[TestCase("true")]
+	[TestCase("false")]
+	[TestCase("42")]
+	[TestCase("\"Unauthorized\"")]
+	[Category("Unit")]
+	[Description("Rejects a scalar JSON body instead of reporting it as one successful entity, which is what a proxy, an auth redirect or a misrouted request returns.")]
+	public void Read_Should_Reject_Scalar_Response_Body(string scalarBody) {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact?$top=25");
+		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(scalarBody);
+		ODataReadTool tool = new(resolver, new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
+
+		// Act
+		ODataReadResponse response = tool.Read(new ODataReadArgs { EnvironmentName = "dev", Entity = "Contact" });
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a scalar body is not OData content and must never be reported as one record");
+		response.Count.Should().NotBe(1,
+			because: "reporting count=1 for a scalar body told the caller a record was returned when none was");
+		response.Error.Should().Be(CreatioResponseError.DescribeNonJsonReadResponse(),
+			because: "every non-OData body now gets the same fixed diagnostic - naming the JSON kind was safe, "
+				+ "but master narrowed this path to one message so no fragment of a server- or proxy-controlled "
+				+ "body can reach the MCP transcript through the wording");
 	}
 
 	[Test]
