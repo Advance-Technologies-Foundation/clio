@@ -55,8 +55,10 @@ public static class ValidateProcessGraphPrompt {
 		edge's `results`, exactly as step 3 above says, and a formula on such a connector is refused by
 		the build. The Sub-process element
 		(`callActivity` here, `subProcess` in a descriptor) IS buildable; the EVENT and EXPANDED
-		sub-processes are not, and neither is one that runs the called process once per item of a
-		collection. R16 - the called process must begin with a Simple start event - cannot be checked
+		sub-processes are not. One that runs the called process ONCE PER ITEM of a collection IS
+		buildable (`subProcess.multiInstanceOptions`), and this validator neither checks nor needs
+		it: the mode is element configuration, not graph shape, so it changes no node type and no
+		edge. R16 - the called process must begin with a Simple start event - cannot be checked
 		here either, because a planned graph carries no reference to that process; the build path
 		refuses it, and `execute-esq` over `VwProcessLib` answers it in advance through
 		`HasStartEvent`. Check the buildable slice in
