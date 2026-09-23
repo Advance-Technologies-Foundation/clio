@@ -8670,7 +8670,7 @@ public sealed class SchemaValidationServiceTests
 		"\"layout\":{\"color\":\"green\"},\"text\":{\"template\":\"{0}\",\"metricMacros\":\"{0}\"}";
 
 	[Test]
-	[Description("An aggregation metric without providing.schemaName blocks: the mobile runtime abandons the data request, so the tile renders with no value and nothing downstream reports it.")]
+	[Description("Aggregation providing without schemaName is blocked.")]
 	public void ValidateMobileIndicatorWidgetProviding_WhenAggregationHasNoSchemaName_AddsBlockingError() {
 		// Arrange
 		string body = MobileIndicatorBody(
@@ -8684,13 +8684,13 @@ public sealed class SchemaValidationServiceTests
 
 		// Assert
 		result.IsValid.Should().BeFalse(
-			because: "the runtime skips the data request when schemaName is absent, and the only symptom is a widget with no number");
+			because: "the runtime skips the data request without schemaName");
 		result.Errors.Should().ContainSingle(e => e.Contains("config.data.providing.schemaName"),
-			because: "the diagnostic must name the exact JSON path so the body can be fixed without re-reading the document that caused the defect");
+			because: "the diagnostic names the missing path");
 	}
 
 	[Test]
-	[Description("An aggregation column carrying a bare columnPath instead of an expression blocks. This is the shape the published mobile component document prescribes today, and it is the case a shallower rule (schemaName plus any aggregation object) would pass.")]
+	[Description("A bare columnPath on aggregation.column, the old document's shape, is blocked, also when nested in a container.")]
 	public void ValidateMobileIndicatorWidgetProviding_WhenAggregationColumnHasNoExpression_AddsBlockingError() {
 		// Arrange — the widget is nested inside a container's items, the way a real insert authors it.
 		string body = """
@@ -8711,15 +8711,15 @@ public sealed class SchemaValidationServiceTests
 
 		// Assert
 		result.IsValid.Should().BeFalse(
-			because: "aggregation.column without an expression yields no aggregate attribute, so the runtime builds no data source at all");
+			because: "a column without an expression is not an aggregate");
 		result.Errors.Should().ContainSingle(e =>
 				e.Contains("config.data.providing.aggregation.column.expression") && e.Contains("TotalIndicator")
 				&& !e.Contains("config.layout"),
-			because: "the rule must reach widgets nested inside an authored container and name the offending element, and only the gap this body actually has");
+			because: "the nested widget is found and only its real gap is named");
 	}
 
 	[Test]
-	[Description("An aggregation expression without aggregationType blocks: the runtime degrades it to 'no aggregate' rather than failing, which is the silent zero the defect reports.")]
+	[Description("A missing aggregationType is blocked.")]
 	public void ValidateMobileIndicatorWidgetProviding_WhenAggregationTypeIsMissing_AddsBlockingError() {
 		// Arrange
 		string body = MobileIndicatorBody(
@@ -8733,13 +8733,13 @@ public sealed class SchemaValidationServiceTests
 
 		// Assert
 		result.IsValid.Should().BeFalse(
-			because: "a missing aggregationType is not rejected by the runtime — it aggregates nothing and the tile shows a default value");
+			because: "a missing aggregationType aggregates nothing");
 		result.Errors.Should().ContainSingle(e => e.Contains("aggregationType"),
-			because: "the diagnostic must name the field and its accepted values, since neither the registry nor the document marks it required");
+			because: "the diagnostic names the field");
 	}
 
 	[Test]
-	[Description("An aggregation column holding a plain COLUMN expression (expressionType 0) rather than a function expression blocks on both counts at once. Serialising a QueryColumn always emits an expression object, so this — not a bare columnPath — is the shape a page persisted by older tooling carries when its column was never an aggregate.")]
+	[Description("A column expression instead of a function expression names both missing paths.")]
 	public void ValidateMobileIndicatorWidgetProviding_WhenColumnCarriesAPlainColumnExpression_NamesBothMissingPaths() {
 		// Arrange
 		string body = MobileIndicatorBody(
@@ -8753,14 +8753,14 @@ public sealed class SchemaValidationServiceTests
 
 		// Assert
 		result.IsValid.Should().BeFalse(
-			because: "a column expression carries neither the aggregate function nor its argument, so the runtime produces no aggregate attribute and abandons the request");
+			because: "a column expression is not an aggregate");
 		result.Errors.Should().ContainSingle(e =>
 				e.Contains("functionArgument.columnPath") && e.Contains("aggregationType"),
-			because: "both gaps have to arrive in the one diagnostic, or fixing the first only reveals the second on the next round-trip");
+			because: "both gaps arrive in one diagnostic");
 	}
 
 	[Test]
-	[Description("aggregationType 6 blocks even though the raw-map AggregationType the metadata generator reads defines TopOne at 6. The same column is also deserialised through QueryAggregationType, which stops at 5 and has no unknown-value fallback, so a 6 throws and the platform swaps the whole widget for an error placeholder.")]
+	[Description("aggregationType 6 is blocked: QueryAggregationType stops at 5.")]
 	public void ValidateMobileIndicatorWidgetProviding_WhenAggregationTypeIsAboveTheTypedEnum_AddsBlockingError() {
 		// Arrange
 		string body = MobileIndicatorBody(
@@ -8775,13 +8775,13 @@ public sealed class SchemaValidationServiceTests
 
 		// Assert
 		result.IsValid.Should().BeFalse(
-			because: "the two aggregation enums the runtime uses disagree above 5, and a body has to satisfy the narrower one");
+			because: "6 throws when the column is deserialised");
 		result.Errors.Should().ContainSingle(e => e.Contains("aggregationType"),
-			because: "an out-of-range value must be named as precisely as an absent one");
+			because: "the out-of-range field is named");
 	}
 
 	[Test]
-	[Description("A set operation is checked like an insert. The differ implements set as Remove followed by Insert on the same config, so it authors the whole element and additionally destroys whatever did work before.")]
+	[Description("A set authoring an incomplete widget is blocked.")]
 	public void ValidateMobileIndicatorWidgetProviding_WhenSetAuthorsTheWidget_AddsBlockingError() {
 		// Arrange
 		string body = MobileIndicatorBody("""
@@ -8793,11 +8793,11 @@ public sealed class SchemaValidationServiceTests
 
 		// Assert
 		result.IsValid.Should().BeFalse(
-			because: "set replaces the element outright, so an incomplete providing block reaches the runtime exactly as an inserted one would");
+			because: "set replaces the element wholesale");
 	}
 
 	[Test]
-	[Description("A metric without config.layout and config.text blocks even when its providing is complete. The Mobile Interface Designer renders the page with the Angular design-time component, which reads config.layout.color and config.text.template without a guard, so the canvas never builds; verified on a 10.2.260 stand, where the same body with both objects rendered the aggregate.")]
+	[Description("Missing config.layout and config.text are both named.")]
 	public void ValidateMobileIndicatorWidgetProviding_WhenDesignerObjectsAreMissing_NamesBoth() {
 		// Arrange
 		string body =
@@ -8813,13 +8813,13 @@ public sealed class SchemaValidationServiceTests
 
 		// Assert
 		result.IsValid.Should().BeFalse(
-			because: "a providing block the device can execute does not save the page from a designer that cannot open it");
+			because: "the designer cannot render the widget without them");
 		result.Errors.Should().ContainSingle(e => e.Contains("config.layout") && e.Contains("config.text"),
-			because: "each object is dereferenced separately, so each has to be named, and both in the one diagnostic");
+			because: "both objects are named in one diagnostic");
 	}
 
 	[Test]
-	[Description("A widget with its own data binding still needs config.layout. The binding exempts it from the providing checks only, because the device returns before reading providing; the designer dereferences layout on every path, binding or not.")]
+	[Description("A widget with a data binding still needs config.layout.")]
 	public void ValidateMobileIndicatorWidgetProviding_WhenBoundDataWidgetLacksLayout_AddsBlockingError() {
 		// Arrange
 		string body =
@@ -8833,13 +8833,13 @@ public sealed class SchemaValidationServiceTests
 
 		// Assert
 		result.IsValid.Should().BeFalse(
-			because: "the data-binding exemption covers what the device skips, not what the designer dereferences");
+			because: "the binding exempts the providing checks only");
 		result.Errors.Should().ContainSingle(e => e.Contains("config.layout") && !e.Contains("config.data"),
-			because: "only the designer gap applies; demanding a providing block from a bound widget would be the false positive the exemption exists to prevent");
+			because: "only the designer gap is reported");
 	}
 
 	[Test]
-	[Description("A calculated (formula) metric passes on expressionSchema alone: it reads neither schemaName nor aggregation, so requiring them would reject every valid formula widget.")]
+	[Description("A calculated metric passes on expressionSchema.")]
 	public void ValidateMobileIndicatorWidgetProviding_WhenProvidingIsExpressionSchema_Passes() {
 		// Arrange
 		string body = MobileIndicatorBody(
@@ -8853,13 +8853,13 @@ public sealed class SchemaValidationServiceTests
 
 		// Assert
 		result.IsValid.Should().BeTrue(
-			because: "expressionSchema is the second legal providing shape and the runtime branches to it before reading any aggregation field");
+			because: "expressionSchema is a legal providing shape");
 		result.Errors.Should().BeEmpty(
-			because: "a valid formula metric must not be blocked by a rule written for the aggregation variant");
+			because: "a valid calculated metric raises no error");
 	}
 
 	[Test]
-	[Description("A complete aggregation metric passes, so the rule cannot be satisfied only by removing the widget.")]
+	[Description("A complete aggregation metric passes.")]
 	public void ValidateMobileIndicatorWidgetProviding_WhenProvidingIsComplete_Passes() {
 		// Arrange
 		string body = MobileIndicatorBody(
@@ -8875,13 +8875,13 @@ public sealed class SchemaValidationServiceTests
 
 		// Assert
 		result.IsValid.Should().BeTrue(
-			because: "schemaName plus aggregation.column.expression with an aggregationType and a columnPath is exactly what the runtime reads");
+			because: "this is the shape the runtime executes");
 		result.Errors.Should().BeEmpty(
-			because: "the reference body that renders the correct aggregate must stay authorable");
+			because: "the reference body raises no error");
 	}
 
 	[Test]
-	[Description("A merge carrying a whole widget is checked like an insert. JsonDiffApplier.Merge replaces a top-level property rather than merging into it, and against an absent slot a merge is often the only single-operation route to a new element — so a merge authors just as completely and cannot be exempt.")]
+	[Description("A merge authoring an incomplete widget is blocked.")]
 	public void ValidateMobileIndicatorWidgetProviding_WhenMergeAuthorsTheWidget_AddsBlockingError() {
 		// Arrange
 		string body = MobileIndicatorBody("""
@@ -8893,11 +8893,11 @@ public sealed class SchemaValidationServiceTests
 
 		// Assert
 		result.IsValid.Should().BeFalse(
-			because: "the merged config replaces the target's wholesale, so an incomplete providing block reaches the runtime exactly as an inserted one would");
+			because: "merge replaces config wholesale");
 	}
 
 	[Test]
-	[Description("A widget carrying its own data binding is left alone. The runtime returns before it reads providing at all, so such a metric renders from the binding and a providing rule has no jurisdiction over it.")]
+	[Description("A widget with a data binding skips the providing checks.")]
 	public void ValidateMobileIndicatorWidgetProviding_WhenWidgetCarriesABoundDataAttribute_Passes() {
 		// Arrange
 		string body =
@@ -8911,11 +8911,11 @@ public sealed class SchemaValidationServiceTests
 
 		// Assert
 		result.IsValid.Should().BeTrue(
-			because: "a pre-bound data attribute short-circuits providing generation, so demanding a providing block would refuse a metric that renders correctly");
+			because: "a data binding bypasses providing generation");
 	}
 
 	[Test]
-	[Description("A non-object expressionSchema is blocked and named as the cause. The runtime takes the formula branch for any non-null value and then casts it to a map, so a string or a number throws rather than degrading.")]
+	[Description("A non-object expressionSchema is blocked and named as the cause.")]
 	public void ValidateMobileIndicatorWidgetProviding_WhenExpressionSchemaIsNotAnObject_AddsBlockingError() {
 		// Arrange
 		string body = MobileIndicatorBody("""
@@ -8927,11 +8927,11 @@ public sealed class SchemaValidationServiceTests
 
 		// Assert
 		result.IsValid.Should().BeFalse(
-			because: "the runtime takes the formula branch for any non-null expressionSchema and then throws casting it to a map");
+			because: "the runtime throws casting a non-object expressionSchema");
 		result.Errors.Should().ContainSingle(e =>
 				e.Contains("config.data.providing.expressionSchema")
 				&& !e.Contains("config.data.providing.aggregation.column.expression"),
-			because: "the diagnostic has to name the real cause; sending the author to the aggregation contract would fix the wrong thing");
+			because: "the real cause is named, not the aggregation path");
 	}
 
 	#endregion

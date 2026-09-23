@@ -1,4 +1,4 @@
-# update-page
+﻿# update-page
 
 ## Command Type
 
@@ -142,21 +142,12 @@ name instead of trying to edit a non-existent local `insert`.
     shadows the native element, so the top navigation bar and the page body silently come from the wrong
     element. A `merge` onto `Scaffold` is the SUPPORTED way to patch the template's own root and is left
     alone here — the merge-slot rules above own what may go inside it.
-  - **Rejected — a `crt.IndicatorWidget` whose data providing cannot produce a value.** An `insert`, `set`
-    or `merge` authoring a metric must give `config.data.providing` one of its two legal shapes: an AGGREGATION metric
-    needs `schemaName` plus `aggregation.column.expression` carrying a numeric `aggregationType`
-    (1 Count, 2 Sum, 3 Avg, 4 Min, 5 Max) and a `functionArgument.columnPath`; a CALCULATED
-    (formula) metric carries `expressionSchema` instead and reads none of them. The mobile runtime abandons
-    the data request when any of the three is absent, and degrades a missing `aggregationType` to no
-    aggregate — while the tile and its title still render, so the write succeeds, the read-back is intact,
-    and the only signal is a missing or zero number. `attribute` is NOT required: the runtime derives
-    `<elementName>_Data`. A `merge` is NOT exempt: the differ replaces a top-level property wholesale, so a
-    merge carrying `config` authors that whole config.
-    The widget also needs `config.layout` and `config.text` objects. The Mobile Interface Designer renders the
-    page with the Angular design-time component, which reads `layout.color` and `text.template` without a
-    guard, so without them the canvas never builds — a spinner and a console `TypeError`. These two apply
-    even to a widget with its own `data` binding, which is exempt from the providing checks because the
-    device returns before reading `providing`.
+  - **Rejected — a `crt.IndicatorWidget` that would show no value.** An `insert`, `set` or `merge` authoring a
+    metric must carry `config.layout` and `config.text`, and a `config.data.providing` the mobile runtime can
+    execute: `schemaName` plus `aggregation.column.expression` with a `functionArgument.columnPath` and an
+    `aggregationType` of 1–5, or `expressionSchema` for a calculated metric. Otherwise the page saves and the
+    tile renders empty, or the designer canvas does not build. A widget with its own `data` binding is exempt
+    from the providing checks.
   - **Warned — a `merge` that authors child elements in any other slot.** Same mechanism, different odds: a
     slot the target does not carry (`menuItems` on a `crt.Button` or `crt.FloatingActionButton`, `items` on
     `crt.QuickFilterGroup`, `crt.Sort`, `crt.Timeline`) is *created* by the merge and the authoring works.

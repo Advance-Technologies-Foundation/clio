@@ -1004,10 +1004,10 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
-	[Description("A mobile crt.IndicatorWidget whose aggregation column carries a bare columnPath instead of an expression is refused. That is the shape the published mobile component document prescribes, and it used to pass every check: the widget and its title render, the save succeeds, the read-back is intact, and the only signal is a metric with no value.")]
+	[Description("validate-page blocks a mobile metric whose aggregation column has no expression.")]
 	[AllureTag(ToolName)]
 	[AllureName("validate-page rejects a mobile metric whose providing cannot produce a value")]
-	[AllureDescription("Sends a mobile body inserting a crt.IndicatorWidget whose config.data.providing.aggregation.column has no expression, and verifies validate-page blocks it end-to-end and names the missing JSON path.")]
+	[AllureDescription("Sends a mobile body with the old document's metric shape and verifies validate-page blocks it and names the missing path.")]
 	public async Task PageValidateTool_Should_Reject_Mobile_Indicator_Widget_Without_Executable_Providing() {
 		// Arrange
 		await using var context = Arrange(TimeSpan.FromMinutes(3));
@@ -1033,12 +1033,12 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 
 		// Assert
 		response.Valid.Should().BeFalse(
-			because: "the runtime abandons the data request for this shape, so a silently wrong analytic must be refused before it reaches a stand rather than discovered by reading the number");
+			because: "the runtime issues no data request for this shape");
 		response.Validation.Should().NotBeNull(
 			because: "validation details are always included in the response");
 		response.Validation!.Errors.Should().Contain(
 			e => e.Contains("config.data.providing.aggregation.column.expression") && !e.Contains("config.layout"),
-			because: "the caller must be given the exact missing path, since the document it authored from is the source of the defect");
+			because: "the missing path is named");
 	}
 
 	[Test]
