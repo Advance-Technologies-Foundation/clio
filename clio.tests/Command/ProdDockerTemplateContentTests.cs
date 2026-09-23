@@ -96,14 +96,77 @@ public sealed class ProdDockerTemplateContentTests {
 			"because the step must still prove both links resolve after it ran");
 	}
 
-	private static string ReadHardeningRunInstruction() {
+	[Test]
+	[Description("The prod Dockerfile should empty /app before copying the source, so a populated base image's stale assemblies, packages, and db backup never survive into the new image.")]
+	public void ProdDockerfile_ShouldReplaceAppWholesaleBeforeCopyingSource() {
+		// Arrange
+		string[] instructions = ReadInstructions();
+
+		// Act
+		int resetIndex = Array.FindIndex(instructions, instruction =>
+			instruction.StartsWith("RUN ", StringComparison.Ordinal)
+			&& Regex.IsMatch(instruction, @"\brm\s+-rf\s+/app(?=\s|;|$)", RegexOptions.None, RegexTimeout)
+			&& Regex.IsMatch(instruction, @"\bmkdir\s+(?:-p\s+)?/app(?=\s|;|$)", RegexOptions.None, RegexTimeout));
+		int firstAppReference = Array.FindIndex(instructions, instruction =>
+			instruction.Contains("/app", StringComparison.Ordinal));
+		int copySourceIndex = Array.FindIndex(instructions, instruction =>
+			Regex.IsMatch(instruction, @"^COPY\s+source/\s+\./?$", RegexOptions.None, RegexTimeout));
+		int workdirIndex = Array.IndexOf(instructions, "WORKDIR /app");
+
+		// Assert
+		resetIndex.Should().BeGreaterThanOrEqualTo(0,
+			"because /app must be removed and recreated so the image holds exactly the source payload, not a merge with the parent image's /app");
+		firstAppReference.Should().Be(resetIndex,
+			"because nothing may touch /app before it is reset, or a parent image's content (or an /app symlink) would be used first");
+		workdirIndex.Should().BeGreaterThan(resetIndex,
+			"because WORKDIR must point at the freshly created /app, not at a directory that is deleted afterwards");
+		copySourceIndex.Should().BeGreaterThan(workdirIndex,
+			"because the source must be copied into the reset /app");
+	}
+
+	[Test]
+	[Description("The prod Dockerfile should verify that /app/conf and /app/Terrasoft.Configuration are real directories before any recursive chmod, so the group-write grant can never follow a symlink out of /app.")]
+	public void ProdDockerfile_ShouldVerifyWritableDirectoriesAreRealBeforeGrantingGroupWrite() {
+		// Arrange
+		string hardeningInstruction = ReadHardeningRunInstruction();
+
+		// Act
+		Match guard = Regex.Match(hardeningInstruction,
+			@"\bensure_real_dir\s*\(\s*\)\s*\{(?<body>.*?)\}\s*&&", RegexOptions.Singleline, RegexTimeout);
+		int firstRecursiveChmod = hardeningInstruction.IndexOf("chmod -R", StringComparison.Ordinal);
+
+		// Assert
+		guard.Success.Should().BeTrue(
+			"because the hardening step must define an 'ensure_real_dir <path>' guard for the group-writable directories");
+		guard.Groups["body"].Value.Should().MatchRegex(
+			@"\bif\s+\[\s*-L\s+""\$1""\s*\]\s*\|\|\s*\[\s*!\s+-d\s+""\$1""\s*\]\s*;\s*then\b.*>&2.*\breturn\s+1\b",
+			"because a symlink or a non-directory must fail the build with a message instead of being chmod-ed through");
+		firstRecursiveChmod.Should().BeGreaterThan(0, "because the step still grants group access recursively");
+		foreach (string directory in new[] { "/app/conf", "/app/Terrasoft.Configuration" }) {
+			int guardCall = Regex.Match(hardeningInstruction,
+				$@"\bensure_real_dir\s+{Regex.Escape(directory)}\s*&&", RegexOptions.None, RegexTimeout).Index;
+			guardCall.Should().BeInRange(1, firstRecursiveChmod - 1,
+				$"because '{directory}' must be proven a real directory before 'chmod -R' dereferences it as an operand");
+		}
+
+		hardeningInstruction.Should().MatchRegex(@"find\s+/app\s+-maxdepth\s+1\s+-type\s+f\s",
+			"because the config-file chmod must not follow a symlinked ConnectionStrings.config or Terrasoft.WebHost.dll.config out of /app");
+	}
+
+	private static string[] ReadInstructions() {
 		File.Exists(ProdDockerfilePath).Should().BeTrue(
 			$"because the bundled prod Dockerfile must be copied to the test output at '{ProdDockerfilePath}' (clio.csproj copies tpl/**)");
 		string dockerfile = File.ReadAllText(ProdDockerfilePath);
 		string joined = Regex.Replace(dockerfile, @"\\\r?\n", " ", RegexOptions.None, RegexTimeout);
-		string[] matchingInstructions = joined
+		return joined
 			.Split('\n')
 			.Select(line => line.Trim())
+			.Where(line => line.Length > 0 && !line.StartsWith('#'))
+			.ToArray();
+	}
+
+	private static string ReadHardeningRunInstruction() {
+		string[] matchingInstructions = ReadInstructions()
 			.Where(line => line.StartsWith("RUN ", StringComparison.Ordinal)
 				&& line.Contains("/Terrasoft.Configuration", StringComparison.Ordinal))
 			.ToArray();
