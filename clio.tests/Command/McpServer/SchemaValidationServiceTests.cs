@@ -8699,6 +8699,7 @@ public sealed class SchemaValidationServiceTests
 		                  {"operation":"insert","name":"Wrap","parentName":"Scaffold","propertyName":"items",
 		                   "values":{"type":"crt.GridContainer","items":[
 		                     {"name":"TotalIndicator","type":"crt.IndicatorWidget","config":{"title":"Total",
+		                      "layout":{"color":"green"},"text":{"template":"{0}","metricMacros":"{0}"},
 		                      "data":{"providing":{"schemaName":"Contact",
 		                        "aggregation":{"column":{"columnPath":"Id"}}}}}}]}}
 		                ]
@@ -8712,8 +8713,9 @@ public sealed class SchemaValidationServiceTests
 		result.IsValid.Should().BeFalse(
 			because: "aggregation.column without an expression yields no aggregate attribute, so the runtime builds no data source at all");
 		result.Errors.Should().ContainSingle(e =>
-				e.Contains("config.data.providing.aggregation.column.expression") && e.Contains("TotalIndicator"),
-			because: "the rule must reach widgets nested inside an authored container and name the offending element");
+				e.Contains("config.data.providing.aggregation.column.expression") && e.Contains("TotalIndicator")
+				&& !e.Contains("config.layout"),
+			because: "the rule must reach widgets nested inside an authored container and name the offending element, and only the gap this body actually has");
 	}
 
 	[Test]
