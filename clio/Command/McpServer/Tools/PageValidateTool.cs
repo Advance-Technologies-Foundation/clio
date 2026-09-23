@@ -40,7 +40,7 @@ public sealed class PageValidateTool(
 		BudgetPolicy = McpToolBudgetPolicy.None,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Validates a Freedom UI page body without saving. Checks web markers, JS syntax, field/column bindings, handlers, converters, and validators; mobile disallowed constructs, diff application, `type` placement, Scaffold slot merges, action-button placement, and metric-widget data providing. Accepts inline body or local-stdio get-page files.bodyFile via body-file; inline wins. Run before update-page. See get-guidance page-schema-converters, page-schema-handlers, page-schema-validators, or mobile-page-modification.")]
+	[Description("Validates a Freedom UI page body without saving. Checks web markers, JS syntax, field/column bindings, handlers, converters, and validators; mobile disallowed constructs, diff application, `type` placement, Scaffold slot merges, action-button placement, and metric-widget data providing plus the layout/text objects the designer requires. Accepts inline body or local-stdio get-page files.bodyFile via body-file; inline wins. Run before update-page. See get-guidance page-schema-converters, page-schema-handlers, page-schema-validators, or mobile-page-modification.")]
 	public async Task<PageValidateResponse> ValidatePage(
 		[Description("Parameters: body or body-file; optional resources and version")]
 		[Required] PageValidateArgs args,

@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Clio.Common;
@@ -850,9 +851,11 @@ public static class SchemaValidationService
 
 	/// <summary>
 	/// Validates that every <c>crt.IndicatorWidget</c> a mobile page AUTHORS carries a data-providing block the
-	/// mobile runtime can actually execute. A metric whose <c>config.data.providing</c> is incomplete renders its
-	/// tile and its title and then shows no value, or a default <c>0</c> — nothing errors at any stage, so the
-	/// first observable signal is a wrong number on a page that is already saved.
+	/// mobile runtime can actually execute, plus the <c>config.layout</c> and <c>config.text</c> objects the Mobile
+	/// Interface Designer cannot render without. A metric whose <c>config.data.providing</c> is incomplete renders
+	/// its tile and its title and then shows no value, or a default <c>0</c>; one without <c>layout</c> or
+	/// <c>text</c> leaves the designer canvas unbuilt. Nothing errors at any stage in either case, so the first
+	/// observable signal arrives on a page that is already saved.
 	/// </summary>
 	/// <remarks>
 	/// <para>
@@ -881,8 +884,10 @@ public static class SchemaValidationService
 	/// base, so the target's component type is unknowable and that shape passes unchecked.
 	/// </para>
 	/// <para>
-	/// A widget that carries its own non-null <c>data</c> is skipped entirely: the runtime returns before it reads
-	/// <c>providing</c> at all, so such a metric renders from its binding and this rule has no jurisdiction.
+	/// A widget that carries its own non-null <c>data</c> is exempt from the PROVIDING checks only: the runtime
+	/// returns before it reads <c>providing</c> at all, so such a metric renders from its binding. It still needs
+	/// <c>config.layout</c> and <c>config.text</c>, which the designer dereferences on every path — see
+	/// <see cref="ReportIndicatorProvidingGaps"/>.
 	/// One conditional the rule does NOT mirror: the runtime accepts a null <c>columnPath</c> while the
 	/// <c>EnableFormulaAggregationInDesigner</c> feature is on. It defaults off, so requiring the path
 	/// unconditionally is correct today — re-check this if that default flips.
@@ -945,37 +950,62 @@ public static class SchemaValidationService
 	}
 
 	/// <summary>
-	/// Collects every missing providing path on one authored widget and reports them as a SINGLE error, so an
-	/// agent fixing the body sees the whole contract at once instead of one field per round-trip.
+	/// Collects every gap on one authored widget and reports them as a SINGLE error, so an agent fixing the body
+	/// sees the whole contract at once instead of one field per round-trip.
 	/// </summary>
+	/// <remarks>
+	/// Two consumers, two sets of gaps. The DESIGNER renders the page with the Angular mobile design-time
+	/// component, whose header reads <c>config.layout.color</c> and whose text builder reads
+	/// <c>config.text.template</c> without a guard — so both objects are required on every path, including a
+	/// widget with its own <c>data</c> binding and a calculated metric; without them the canvas never builds.
+	/// The DEVICE reads <c>providing</c>, and only when no <c>data</c> binding short-circuits it.
+	/// </remarks>
 	private static void ReportIndicatorProvidingGaps(
 		JsonElement widget, string entryLabel, SchemaValidationResult result) {
-		if (widget.TryGetProperty("data", out JsonElement boundData) && boundData.ValueKind != JsonValueKind.Null) {
-			return;
+		bool hasConfig = TryGetObjectProperty(widget, "config", out JsonElement config);
+		var designerGaps = new List<string>();
+		if (!hasConfig || !TryGetObjectProperty(config, "layout", out _)) {
+			designerGaps.Add("config.layout");
 		}
-		var missing = new List<string>();
-		if (!TryGetObjectProperty(widget, "config", out JsonElement config)
-			|| !TryGetObjectProperty(config, "data", out JsonElement data)) {
-			missing.Add("config.data");
-		} else if (!TryGetObjectProperty(data, "providing", out JsonElement providing)) {
-			missing.Add("config.data.providing");
-		} else if (!TryGetObjectProperty(providing, "expressionSchema", out _)) {
-			CollectAggregationProvidingGaps(providing, missing);
+		if (!hasConfig || !TryGetObjectProperty(config, "text", out _)) {
+			designerGaps.Add("config.text");
 		}
-		if (missing.Count == 0) {
+		var providingGaps = new List<string>();
+		bool boundToData = widget.TryGetProperty("data", out JsonElement boundData)
+			&& boundData.ValueKind != JsonValueKind.Null;
+		if (!boundToData) {
+			if (!hasConfig || !TryGetObjectProperty(config, "data", out JsonElement data)) {
+				providingGaps.Add("config.data");
+			} else if (!TryGetObjectProperty(data, "providing", out JsonElement providing)) {
+				providingGaps.Add("config.data.providing");
+			} else if (!TryGetObjectProperty(providing, "expressionSchema", out _)) {
+				CollectAggregationProvidingGaps(providing, providingGaps);
+			}
+		}
+		if (designerGaps.Count == 0 && providingGaps.Count == 0) {
 			return;
 		}
 		string widgetLabel = TryGetStringProperty(widget, NamePropertyName, out string widgetName)
 			? $"'{Sanitize(widgetName)}'"
 			: entryLabel;
+		var message = new StringBuilder(
+			$"{IndicatorWidgetComponentType} {widgetLabel} is incomplete: "
+			+ $"{string.Join(", ", designerGaps.Concat(providingGaps))} missing.");
+		if (designerGaps.Count > 0) {
+			message.Append(" The Mobile Interface Designer dereferences config.layout.color and "
+				+ "config.text.template unconditionally, so without both objects its canvas never builds; "
+				+ "author them as the designer does: \"layout\": {\"color\": \"green\"}, \"text\": "
+				+ "{\"template\": \"{0}\", \"metricMacros\": \"{0}\"}.");
+		}
+		if (providingGaps.Count > 0) {
+			message.Append(" The mobile runtime abandons the data request when an aggregation metric lacks "
+				+ "'schemaName' or 'aggregation.column.expression', and treats a missing 'aggregationType' as no "
+				+ "aggregate (1 Count, 2 Sum, 3 Avg, 4 Min, 5 Max); a calculated metric carries "
+				+ "'expressionSchema' instead of all of them.");
+		}
+		message.Append(" The save succeeds either way, so nothing downstream reports this.");
 		result.IsValid = false;
-		result.Errors.Add(
-			$"{IndicatorWidgetComponentType} {widgetLabel} will render no value: {string.Join(", ", missing)} "
-			+ "missing. The mobile runtime abandons the data request when an aggregation metric lacks "
-			+ "'schemaName' or 'aggregation.column.expression', and treats a missing 'aggregationType' as no "
-			+ "aggregate (1 Count, 2 Sum, 3 Avg, 4 Min, 5 Max); a calculated metric carries "
-			+ "'expressionSchema' instead of all of them. The widget and its title still render, so nothing "
-			+ "downstream reports this.");
+		result.Errors.Add(message.ToString());
 	}
 
 	/// <summary>

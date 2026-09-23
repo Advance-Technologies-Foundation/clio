@@ -8662,8 +8662,12 @@ public sealed class SchemaValidationServiceTests
 	private static string MobileIndicatorBody(string providing, string operation = "insert") =>
 		"{\"viewConfigDiff\":[{\"operation\":\"" + operation + "\",\"name\":\"TotalIndicator\","
 		+ "\"parentName\":\"MainContainer\",\"propertyName\":\"items\","
-		+ "\"values\":{\"type\":\"crt.IndicatorWidget\",\"config\":{\"title\":\"Total\",\"data\":{"
+		+ "\"values\":{\"type\":\"crt.IndicatorWidget\",\"config\":{\"title\":\"Total\","
+		+ DesignerRequiredIndicatorConfig + ",\"data\":{"
 		+ providing + "}}}}]}";
+
+	private const string DesignerRequiredIndicatorConfig =
+		"\"layout\":{\"color\":\"green\"},\"text\":{\"template\":\"{0}\",\"metricMacros\":\"{0}\"}";
 
 	[Test]
 	[Description("An aggregation metric without providing.schemaName blocks: the mobile runtime abandons the data request, so the tile renders with no value and nothing downstream reports it.")]
@@ -8791,6 +8795,48 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
+	[Description("A metric without config.layout and config.text blocks even when its providing is complete. The Mobile Interface Designer renders the page with the Angular design-time component, which reads config.layout.color and config.text.template without a guard, so the canvas never builds; verified on a 10.2.260 stand, where the same body with both objects rendered the aggregate.")]
+	public void ValidateMobileIndicatorWidgetProviding_WhenDesignerObjectsAreMissing_NamesBoth() {
+		// Arrange
+		string body =
+			"{\"viewConfigDiff\":[{\"operation\":\"insert\",\"name\":\"TotalIndicator\","
+			+ "\"parentName\":\"Scaffold\",\"propertyName\":\"items\","
+			+ "\"values\":{\"type\":\"crt.IndicatorWidget\",\"config\":{\"title\":\"Total\",\"data\":{"
+			+ "\"providing\":{\"schemaName\":\"Contact\",\"aggregation\":{\"column\":{\"expression\":{"
+			+ "\"expressionType\":1,\"functionType\":2,\"aggregationType\":1,"
+			+ "\"functionArgument\":{\"expressionType\":0,\"columnPath\":\"Id\"}}}}}}}}}]}";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileIndicatorWidgetProviding(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "a providing block the device can execute does not save the page from a designer that cannot open it");
+		result.Errors.Should().ContainSingle(e => e.Contains("config.layout") && e.Contains("config.text"),
+			because: "each object is dereferenced separately, so each has to be named, and both in the one diagnostic");
+	}
+
+	[Test]
+	[Description("A widget with its own data binding still needs config.layout. The binding exempts it from the providing checks only, because the device returns before reading providing; the designer dereferences layout on every path, binding or not.")]
+	public void ValidateMobileIndicatorWidgetProviding_WhenBoundDataWidgetLacksLayout_AddsBlockingError() {
+		// Arrange
+		string body =
+			"{\"viewConfigDiff\":[{\"operation\":\"insert\",\"name\":\"TotalIndicator\","
+			+ "\"parentName\":\"MainContainer\",\"propertyName\":\"items\","
+			+ "\"values\":{\"type\":\"crt.IndicatorWidget\",\"data\":\"$PreloadedTotal\","
+			+ "\"config\":{\"title\":\"Total\",\"text\":{\"template\":\"{0}\"}}}}]}";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileIndicatorWidgetProviding(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "the data-binding exemption covers what the device skips, not what the designer dereferences");
+		result.Errors.Should().ContainSingle(e => e.Contains("config.layout") && !e.Contains("config.data"),
+			because: "only the designer gap applies; demanding a providing block from a bound widget would be the false positive the exemption exists to prevent");
+	}
+
+	[Test]
 	[Description("A calculated (formula) metric passes on expressionSchema alone: it reads neither schemaName nor aggregation, so requiring them would reject every valid formula widget.")]
 	public void ValidateMobileIndicatorWidgetProviding_WhenProvidingIsExpressionSchema_Passes() {
 		// Arrange
@@ -8856,7 +8902,7 @@ public sealed class SchemaValidationServiceTests
 			"{\"viewConfigDiff\":[{\"operation\":\"insert\",\"name\":\"TotalIndicator\","
 			+ "\"parentName\":\"MainContainer\",\"propertyName\":\"items\","
 			+ "\"values\":{\"type\":\"crt.IndicatorWidget\",\"data\":\"$PreloadedTotal\","
-			+ "\"config\":{\"title\":\"Total\"}}}]}";
+			+ "\"config\":{\"title\":\"Total\"," + DesignerRequiredIndicatorConfig + "}}}]}";
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateMobileIndicatorWidgetProviding(body);
