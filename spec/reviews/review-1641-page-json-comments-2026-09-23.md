@@ -1,0 +1,9 @@
+# Review: issue 1641 (2026-09-23)
+
+Intent: allow ordinary comments while preserving required Creatio marker pairs and source text.
+
+Parallel agentic review covered quality, security, performance, tests, edge cases, intent, and KISS. Pre-PR and final full-diff passes found no actionable code defects. KISS reported a stale SPEC live-save phrase; a fresh read confirmed the current SPEC already describes Windows MCP plus mocked save-payload validation, with no live save claim.
+
+The production change uses existing JsonDocumentOptions; no custom parser, new dependency, or lifecycle machinery. Preserve the runtime/validation distinction: Mutagen proves file delivery, Windows stdio MCP proves validation behavior, and unit tests prove the SaveSchema payload. No registered-page rendering or live SaveSchema result was exercised.
+
+Validation: dotnet test clio.tests/clio.tests.csproj --filter "Category=Unit&(Module=Command|Module=McpServer)" --verbosity minimal --logger "trx;LogFileName=issue-1641.trx" passed: 10,473 passed, 15 skipped, 0 failed. Real patched Windows stdio MCP passed all three valid fixtures and rejected the missing-marker fixture. Claude review rev_13567fa1a9b4499b is pending.

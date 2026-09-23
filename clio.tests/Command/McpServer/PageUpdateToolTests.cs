@@ -49,10 +49,12 @@ public sealed class PageUpdateToolTests {
 	private IToolCommandResolver _commandResolver;
 	private IPlatformVersionResolverFactory _resolverFactory;
 	private PageUpdateTool _tool;
+	private IApplicationClient _applicationClient;
 
 	[SetUp]
 	public void SetUp() {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		_applicationClient = applicationClient;
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns(SelectQueryUrl);
@@ -88,6 +90,24 @@ public sealed class PageUpdateToolTests {
 			_webComponentCatalog,
 			Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(),
 			_resolverFactory, settingsRepository);
+	}
+
+	[TestCase("// explanation\n")]
+	[TestCase("/* explanation */")]
+	[Description("Validated page updates preserve ordinary comments and every marker in the saved body.")]
+	public async Task UpdatePage_ShouldPreserveCommentedBody(string comment) {
+		// Arrange
+		string body = ValidBody.Replace("[]/**SCHEMA_VIEW_CONFIG_DIFF*/", "[" + comment + "]/**SCHEMA_VIEW_CONFIG_DIFF*/");
+		PageUpdateArgs args = new(SchemaName, body, Validate: true);
+		// Act
+		PageUpdateResponse response = await _tool.UpdatePage(args);
+		// Assert
+		response.Success.Should().BeTrue(because: "ordinary comments must pass validated updates");
+		string payload = (string)_applicationClient.ReceivedCalls()
+			.Single(call => call.GetMethodInfo().Name == nameof(IApplicationClient.ExecutePostRequest)
+				&& Equals(call.GetArguments()[0], SaveSchemaUrl)).GetArguments()[1];
+		Newtonsoft.Json.Linq.JObject.Parse(payload)["body"].ToString().Should().Be(body,
+			because: "saving must preserve comments and both boundaries of every marker");
 	}
 
 	private static PageUpdateArgs CreateArgs(string environmentName) =>
