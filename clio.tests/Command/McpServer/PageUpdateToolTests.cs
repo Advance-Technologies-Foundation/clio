@@ -110,6 +110,24 @@ public sealed class PageUpdateToolTests {
 			because: "saving must preserve comments and both boundaries of every marker");
 	}
 
+	[TestCase(false)]
+	[TestCase(true)]
+	[Description("Update-page refuses missing marker boundaries and never reaches SaveSchema.")]
+	public async Task UpdatePage_ShouldRejectMissingBoundaryBeforeSaving(bool removeClosing) {
+		// Arrange
+		const string marker = "/**SCHEMA_VIEW_CONFIG_DIFF*/";
+		int index = removeClosing ? ValidBody.LastIndexOf(marker, System.StringComparison.Ordinal)
+			: ValidBody.IndexOf(marker, System.StringComparison.Ordinal);
+		PageUpdateArgs args = new(SchemaName, ValidBody.Remove(index, marker.Length), Validate: true);
+		// Act
+		PageUpdateResponse response = await _tool.UpdatePage(args);
+		// Assert
+		response.Success.Should().BeFalse(because: "both marker boundaries are mandatory even with comment support");
+		response.Error.Should().Contain("SCHEMA_VIEW_CONFIG_DIFF", because: "the missing marker must be actionable");
+		_applicationClient.DidNotReceive().ExecutePostRequest(SaveSchemaUrl, Arg.Any<string>(),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
 	private static PageUpdateArgs CreateArgs(string environmentName) =>
 		new(SchemaName, ValidBody) { EnvironmentName = environmentName };
 

@@ -10,3 +10,4 @@
 - Cleanup: verify disposable CR, runtime resources, PVC/PV and database absent, Redis slot empty, local registration and sync session removed.
 
 Limits: no registered Creatio page rendering or live SaveSchema validation; no debugger work in this issue.
+- Durable MCP E2E: PageCommentValidationE2ETests runs real stdio on .NET 8 and .NET 10. It covers comment acceptance in validate/update/sync, plus opening/closing marker rejection in validate/sync; update marker rejection is unit-tested after command resolution. Unique missing environments ensure no write can occur.
