@@ -153,12 +153,21 @@ cannot tell you which branch or how many iterations ran, and a root row with no 
     [ENG-99967](https://creatio.atlassian.net/browse/ENG-99967), which also carries the second defect the
     fix exposes (`describe` reports a Read data element's collections only when they are flagged, so it
     has never reported them for a designer-built element).
-  - **Two by-products.** (1) The designer sets `useBackgroundMode = true` on EVERY conversion and back to
-    false on de-conversion; clio's converted element carries `false`. MEASURED, not merely read from
-    source: the element converted by hand describes back with `useBackgroundMode: True`, and is otherwise
-    IDENTICAL to a clio-built one — same five parameters, same item properties, same
-    `multiInstanceOptions`, `calleeInSync: true`. Given the owner's "как в дизайнере" ruling this is a
-    decision to take, not a defect — matching the designer costs an order of magnitude in wall clock. (2) A multi-instance input collection binds from a Read data element's
+  - **Two by-products.** (1) ~~The designer sets `useBackgroundMode = true` on EVERY conversion~~ —
+    **RETRACTED 2026-09-23, and the inference was confounded.** What was measured is that a
+    hand-converted element describes back with `useBackgroundMode: True` while a clio-built one carries
+    `false` — two DIFFERENT elements, which cannot tell "the conversion set it" from "the element already
+    had it". The source says the conversion did not: `ProcessActivitySchema.convertToMultiInstance`
+    creates the five parameters and the options object and touches nothing else, the current
+    process-designer component bundle contains zero occurrences of `useBackgroundMode` against 25 of
+    `multiInstance`, no non-test designer file mentions both, and `BaseProcessSchemaElement` defaults the
+    flag to `false` with no override for a Sub-process element. So there is no decision to take and no
+    parity gap: clio leaving the flag alone is what the designer does too. What remains unexplained is why
+    THAT element carried `true` — a before/after on ONE element would settle it, and nothing depends on
+    the answer. Worth knowing instead: the platform excludes a multi-instance sub-process from the element
+    background token by name (`ShouldUseElementBackgroundToken`), and `FlowSchemaGenerator` reads the flag
+    to pick a different ITERATION flow — which is what the 1282 ms against 105 ms measured.
+    (2) A multi-instance input collection binds from a Read data element's
     `ResultCompositeObjectList`, never `ResultEntityCollection`; only the former shares the
     `651ec16f-...` type.
   - **Why the counters are read by branching.** A completed element's `SysProcessElementData` row is
