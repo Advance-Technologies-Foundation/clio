@@ -112,6 +112,9 @@ The release notes should still name the manual cure: open and save the callee in
     per element; after a retarget that also asks for `enabled:false`, the de-conversion's caption half is
     withdrawn, because its stored rows belong to the previous callee; the version handler's call is
     `IStoredCaptionReader.AliasUnsavedCopy`.
+  * **As implemented, after the Copilot re-review:** a parameter created in the CALLER is not compared - the
+    platform's `UpdateParameters` never writes a dynamic parameter's caption, so its caption is never the called
+    process's. The package is restamped 1.6.6.18.
   * **Separate "filled in" from "changed"** (`From` null or empty vs non-empty) in the notice. In the shipped
     corpus 303 of the 311 caller-vs-callee caption differences are an EMPTY caller caption (§10); without the split
     the report would mostly announce old blanks being filled.

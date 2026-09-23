@@ -76,15 +76,18 @@ R1 prediction (model): D1 callee's MetaItems still holds the stale build #1 (A1,
   arrange checking the callee's OWN stored row (`Parameters.OrderId.Caption`) first; SubProcessMultiInstanceToolE2ETests
   8/8 PASSED. CreateBusinessProcess_Should_RefuseASelfReferencingSubProcess still fails with the same "was not found"
   answer - pre-existing and unrelated, tracked as ENG-100192.
+- GREEN on 1.6.6.18 (after the Copilot re-review: caller-created parameters are no longer compared): the same 18 of 19,
+  the same pre-existing ENG-100192 failure.
 
 ## Unit mutation run (peer-review round, package candidate 1.6.6.17)
 Each row reverts or breaks ONE line of the fix in the package source, runs the caption fixtures
 (`SubProcessCaptionChangeTests`, `StoredCaptionReaderTests`, `ProcessSchemaRepositoryTests`,
 `ProcessVersionSaveHandlerTests`, `SubProcessContractTests`, `CrtProcessBuilderAppTests`, 142 tests) and
-restores the file. 36 of 36 turn at least one test red. Two survived a first run and are recorded rather than
-hidden: B3 (see its row) and E1/E2, whose first test asserted "announced once" - which the notice collector
-already guarantees by dropping exact duplicates, so it could not see the withdrawal. It now asserts the case
-the withdrawal exists for, a retarget.
+restores the file. 35 of 37 turn at least one test red; the other two (B3, B6) are EQUIVALENT once caller-created
+parameters are skipped (D1), and their rows say why. Recorded rather than hidden: B3 also survived a first run,
+and E1/E2 survived one whose test asserted "announced once" - which the notice collector already guarantees by
+dropping exact duplicates, so it could not see the withdrawal. It now asserts the case the withdrawal exists
+for, a retarget.
 
 | # | Mutation | Red tests |
 |---|---|---|
@@ -95,11 +98,12 @@ the withdrawal exists for, a retarget.
 | R5 | the cache is released by name, not by UId | TC-R01..R06 |
 | B1 | no caption report on an explicit resync | TC-C01, C03, C11, C12, C21, C32 |
 | B2 | no caption report when the process already called is named again | TC-C08 |
-| B3 | a caption report on a retarget too | TC-C09 (after it gained a caller-created parameter: the first run SURVIVED, because on a retarget every callee parameter is Added and skipped) |
+| B3 | a caption report on a retarget too | EQUIVALENT: on a retarget every callee parameter is Added and skipped, and every caller-created one is skipped by D1 (TC-C09 killed it until D1 existed) |
 | B4 | a renamed parameter looked up under its new name | TC-C10 |
 | B5 | a parameter the sync ADDED is not skipped | TC-C05 |
-| B6 | the caption read WITH culture fallback | TC-C20 |
+| B6 | the caption read WITH culture fallback | EQUIVALENT: every parameter still compared was synchronized, and the platform writes its caption into the current culture, so both readings agree (TC-C20 killed it until D1 existed) |
 | B7 | the incidental path reports captions | TC-C19 |
+| D1 | caller-created (dynamic) parameters compared too | TC-C20 |
 | B8 | a read failure is not flagged | TC-C11, C32 |
 | B9 | the reader asked under the wrong element name | TC-C01, C02, C05, C08, C10, C12, C20, C21 (the fake answers "stored without captions" for any other element) |
 | B10 | `IsUnchanged` ignores a read failure | TC-C11 |
