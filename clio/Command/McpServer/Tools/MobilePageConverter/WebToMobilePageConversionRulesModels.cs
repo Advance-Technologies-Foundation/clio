@@ -877,7 +877,10 @@ public sealed class ViewConfigTemplateRule {
 	/// its resolved <c>type</c> aside) and the template's <see cref="Value"/> is laid OVER them — so the mobile
 	/// element keeps all its source properties except the ones the template explicitly names, without enumerating
 	/// them (e.g. crt.Checkbox → crt.Toggle keeps <c>control</c>/<c>value</c>/<c>label</c>/… and just retypes;
-	/// a grid → list keeps its <c>dataSourceName</c>/columns). Default (false) is AUTHORITATIVE: the values are
+	/// a grid → list keeps its columns). What is carried here is still subject to the registry-driven prune:
+	/// a copied property the target mobile component does not declare is removed afterwards — e.g.
+	/// <c>dataSourceName</c>, which no component in the runtime-derived catalog declares.
+	/// Default (false) is AUTHORITATIVE: the values are
 	/// formed EXCLUSIVELY from what the template declares (over the element's type). Either way
 	/// <c>layoutConfig</c> is always copied — it is layout placement, not a component property.
 	/// </summary>

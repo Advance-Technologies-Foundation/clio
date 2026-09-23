@@ -1015,14 +1015,34 @@ internal class Program {
 		Func<TCommand, TOptions, int> execute, params object[] additionalConstructorArgs)
 		where TOptions : EnvironmentOptions {
 		EnvironmentSettings settings = GetEnvironmentSettings(options);
-		using CreatioClientAdapter clientAdapter = string.IsNullOrEmpty(settings.ClientId)
+		using IOwnedApplicationClient clientAdapter = CreateRemoteCommandClient(settings);
+		object[] constructorArgs = new object[] {clientAdapter, settings}.Concat(additionalConstructorArgs).ToArray();
+		TCommand command = (TCommand)Activator.CreateInstance(typeof(TCommand), constructorArgs);
+		return execute(command, options);
+	}
+
+	/// <summary>
+	/// Builds the client a remote command runs on.
+	/// </summary>
+	/// <remarks>
+	/// An external-access session cannot be produced by a constructor - the token has to be exchanged
+	/// for a session first - so that shape is delegated to the application-client factory, which owns
+	/// the exchange. The login/password and OAuth shapes keep being built here exactly as before: they
+	/// are constructed WITHOUT a service-url builder, and routing them through the factory would wire
+	/// one and change how every existing remote command resolves its routes.
+	/// </remarks>
+	/// <param name="settings">The resolved environment.</param>
+	/// <returns>A client the caller owns and must dispose.</returns>
+	private static IOwnedApplicationClient CreateRemoteCommandClient(EnvironmentSettings settings){
+		Clio.Common.ExternalAccess.ExternalAccessSettingsGuard.Validate(settings);
+		if (!string.IsNullOrEmpty(settings.ExternalAccessToken)) {
+			return Resolve<IApplicationClientFactory>().CreateOwnedEnvironmentClient(settings);
+		}
+		return string.IsNullOrEmpty(settings.ClientId)
 			? new CreatioClientAdapter(settings.Uri, settings.Login, settings.Password,
 				useUntrustedSsl: true, settings.IsNetCore)
 			: new CreatioClientAdapter(settings.Uri, settings.ClientId, settings.ClientSecret,
 				settings.AuthAppUri, settings.IsNetCore);
-		object[] constructorArgs = new object[] {clientAdapter, settings}.Concat(additionalConstructorArgs).ToArray();
-		TCommand command = (TCommand)Activator.CreateInstance(typeof(TCommand), constructorArgs);
-		return execute(command, options);
 	}
 
 	private static CreatioClient CreateCreatioClient(){
@@ -1652,11 +1672,10 @@ internal class Program {
 		if (IsMcpServerMode) return true;
 		// Honor an opt-out env var so harnesses (e.g. the MCP e2e suite) can suppress the
 		// background self-update for every spawned clio process from a single seam, instead of
-		// relying on per-process appsettings.json edits. Any non-empty, non-"false" value enables.
-		string? noUpdate = Environment.GetEnvironmentVariable("CLIO_NO_UPDATE_CHECK");
-		if (!string.IsNullOrWhiteSpace(noUpdate)
-			&& !string.Equals(noUpdate, "false", StringComparison.OrdinalIgnoreCase)
-			&& !string.Equals(noUpdate, "0", StringComparison.Ordinal)) {
+		// relying on per-process appsettings.json edits. The predicate lives in UpdateCheckOptOut
+		// because the read-triggered knowledge refresh honors the same variable, and two copies of
+		// the acceptance rule would diverge silently in exactly the run it was set for.
+		if (Common.UpdateCheckOptOut.IsSuppressed()) {
 			return true;
 		}
 		if (args == null || args.Length == 0) return true;

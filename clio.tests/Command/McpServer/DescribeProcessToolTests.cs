@@ -1,5 +1,8 @@
-﻿using System.Linq;
+﻿using System;
+using System.IO;
+using System.Linq;
 using System.Reflection;
+using System.Text.RegularExpressions;
 using Clio.Command;
 using Clio.Command.McpServer.Prompts;
 using Clio.Command.McpServer.Prompts.ProcessDesigner;
@@ -221,6 +224,167 @@ public sealed class DescribeProcessToolTests {
 		prompt.Should().Contain("nothing to redirect to",
 			because: "the branch with no activeVersionSchemaUId is reachable, and without it the prompt tells the agent to redirect by a field that is not there");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The describe tool contract documents the multiInstanceOptions read block and routes the "
+		+ "caller to calleeInSync. inSync compares the callee against the element's ROOT parameters, which on "
+		+ "a multi-instance element are the five service ones - so it is false whenever the callee declares "
+		+ "anything, and VACUOUSLY TRUE against a callee that declares nothing, because the test is an All "
+		+ "over an empty sequence. 'FALSE BY CONSTRUCTION' was the earlier wording and it was wrong in the "
+		+ "second case; the package's own shipped contract already recorded the vacuous one. calleeInSync is "
+		+ "the field that answers the question one level down, and it is a SEPARATE field precisely so that "
+		+ "no deserializer, schema check or version negotiation has to notice a redefinition.")]
+	public void DescribeProcess_ShouldDocumentMultiInstanceOptions_WhenToolContractIsRead() {
+		// Arrange
+		string toolText = ReadDescribeToolDescription();
+
+		// Act
+		// (nothing to act on - the contract is the attribute itself)
+
+		// Assert
+		toolText.Should().Contain("multiInstanceOptions",
+			because: "the block is reported on every multi-instance element and an agent that cannot find "
+				+ "its name here cannot ask for it");
+		toolText.Should().Contain("calleeInSync",
+			because: "it is the only field that answers whether the callee's contract is still carried, and "
+				+ "inSync cannot answer it on a multi-instance element");
+		toolText.Should().Contain("VACUOUSLY TRUE",
+			because: "an agent must be told WHY inSync cannot answer there - false whenever the callee "
+				+ "declares anything, true when it declares nothing - or it reads one of the two as evidence. "
+				+ "The earlier wording claimed the test can NEVER pass, which a parameterless callee refutes");
+		toolText.Should().NotContain("FALSE BY CONSTRUCTION",
+			because: "that phrasing asserts the vacuous case cannot happen, and it can - the package's own "
+				+ "DescribeContracts records a multi-instance element reporting true against such a callee");
+		foreach (string parameterName in new[] {
+				"inputCollection", "outputCollection", "completedIterationsCount",
+				"terminatedIterationsCount", "totalIterationsCount" }) {
+			toolText.Should().Contain(parameterName,
+				because: $"'{parameterName}' is one of the five names a converted element carries instead of "
+					+ "the callee's parameters, and a mapping is written in terms of it");
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("THE RETRACTION SWEEP. Three clio-owned agent-facing surfaces used to state that a "
+		+ "multi-instance element cannot be built or re-synchronized. Both claims are now false - the "
+		+ "element is buildable through subProcess.multiInstanceOptions and a re-synchronization is "
+		+ "subProcess.resync:true - and a false sentence left beside a true one is worse than silence, "
+		+ "because an agent that reads the stale half stops looking. This sweeps all three in one test so "
+		+ "the correction cannot be applied to one surface and forgotten on the others.")]
+	public void AgentFacingSurfaces_ShouldNotClaimMultiInstanceIsUnsupported_WhenSwept() {
+		// Arrange
+		string toolText = ReadDescribeToolDescription();
+		string validatePrompt = ValidateProcessGraphPrompt.ProcessDesignGuidance();
+		string validateTool = ((System.ComponentModel.DescriptionAttribute)typeof(ValidateProcessGraphTool)
+			.GetMethod(nameof(ValidateProcessGraphTool.Validate))!
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false).Single()).Description;
+
+		// Act
+		// (the surfaces are the subject; nothing is invoked)
+
+		// Assert
+		toolText.Should().NotContain("re-sync is REFUSED",
+			because: "a re-synchronization IS available on a multi-instance element - subProcess.resync:true "
+				+ "de-converts, re-synchronizes and re-converts it, which is what the process designer does "
+				+ "for the same edit");
+		validatePrompt.Should().NotContain("neither is one that runs the called process once per item",
+			because: "such an element is buildable now, and this prompt is what tells an agent which slice "
+				+ "of the palette it may plan with");
+		validatePrompt.Should().Contain("multiInstanceOptions",
+			because: "removing the refusal is only half the correction - the prompt has to name the member "
+				+ "that replaced it, or an agent learns only that its previous knowledge was wrong");
+		validateTool.Should().NotContain("once per item of a collection.",
+			because: "THIS description is the CANONICAL buildable-slice list - the prompt defers to it BY NAME "
+				+ "and deliberately does not restate it - so a retraction applied to the prompt alone leaves "
+				+ "the authoritative copy still claiming the element cannot be built. That is precisely what "
+				+ "happened: the first version of this sweep named three surfaces, read two, and the one it "
+				+ "skipped was this one");
+		validateTool.Should().Contain("multiInstanceOptions",
+			because: "the canonical list has to name the member that replaced the refusal, for the same reason "
+				+ "the prompt does");
+	}
+
+	/// <summary>
+	/// The retracted multi-instance claims, as NORMALIZED prose (see <see cref="NormalizeProse"/>), each with
+	/// the fact that retracted it. Two claims, several spellings: the sweep has to catch the paraphrase as well
+	/// as the phrase, because a correction applied to one wording is exactly how the second one survived.
+	/// </summary>
+	private static readonly (string Phrase, string Truth)[] RetractedMultiInstanceClaims = [
+		("false by construction", "on a multi-instance element inSync carries no information in EITHER direction: "
+			+ "it is false whenever the callee declares anything and VACUOUSLY TRUE against a callee that declares "
+			+ "nothing, because an all-present test holds over an empty set"),
+		("can never be satisfied", "the same test IS satisfied, vacuously, against a parameterless callee"),
+		("false is permanent", "false is not permanent there - a parameterless callee reads true"),
+		("permanent and meaningless", "the guidance's paraphrase of the same retracted claim"),
+		("refused on it", "a re-synchronization IS available on a multi-instance element - subProcess.resync:true "
+			+ "de-converts, re-synchronizes and re-converts it"),
+		("configures such an element refuses it", "such an element is configurable through "
+			+ "subProcess.multiInstanceOptions"),
+		("and any element that runs the called process once per item of a collection", "the element is no longer "
+			+ "one of the sub-process refusals - it is buildable through subProcess.multiInstanceOptions")
+	];
+
+	[TestCase("docs/McpCapabilityMap.md")]
+	[TestCase("clio/Command/ProcessModel/IProcessDescriber.cs")]
+	[Category("Unit")]
+	[Description("THE RETRACTION SWEEP, over the two repository surfaces the tool-contract sweep above cannot reach: the capability map, and the XML docs on the describe DTO - the typed member's doc is the agent-facing contract for that field. Both retracted multi-instance claims are swept (the element cannot be configured or re-synchronized; inSync is false by construction there), in every spelling that shipped, against prose NORMALIZED for XML tags, comment markers and line breaks - because the stale 'false by construction' in IProcessDescriber.cs was split across two lines by '<c>false</c> by' / 'construction', so a plain substring search over the raw file walks straight past it.")]
+	public void RepositorySurfaces_ShouldNotCarryARetractedMultiInstanceClaim_WhenSwept(string relativePath) {
+		// Arrange
+		string prose = NormalizeProse(ReadRepositoryText(relativePath));
+
+		// Act
+		// (the surface is the subject; nothing is invoked)
+
+		// Assert
+		foreach ((string phrase, string truth) in RetractedMultiInstanceClaims) {
+			prose.Should().NotContain(phrase,
+				because: $"'{phrase}' is a retracted multi-instance claim and {relativePath} is agent-facing: {truth}");
+		}
+		prose.Should().Contain("vacuously",
+			because: "removing the claim is half the correction - the surface has to say what IS true about inSync "
+				+ "on a multi-instance element, or a reader who meets a true there has no rule to apply to it");
+		prose.Should().Contain("calleeinsync",
+			because: "the surface has to name the field that DOES answer the question on a multi-instance element");
+	}
+
+	/// <summary>
+	/// Flattens agent-facing prose so a phrase is found however the file happens to wrap or mark it up: XML doc
+	/// comment markers and tags, markdown code spans and emphasis are dropped, every whitespace run - line
+	/// breaks included - becomes one space, and the text is lower-cased.
+	/// </summary>
+	private static string NormalizeProse(string text) {
+		TimeSpan timeout = TimeSpan.FromSeconds(2);
+		string withoutMarkers = text.Replace("///", " ", StringComparison.Ordinal);
+		string withoutTags = Regex.Replace(withoutMarkers, "<[^>]+>", " ", RegexOptions.None, timeout);
+		string withoutMarkdown = Regex.Replace(withoutTags, "[`*]", string.Empty, RegexOptions.None, timeout);
+		return Regex.Replace(withoutMarkdown, @"\s+", " ", RegexOptions.None, timeout).ToLowerInvariant();
+	}
+
+	/// <summary>
+	/// Reads a repository file by walking up from the test assembly to the checkout that holds it - the same
+	/// helper <c>BundledProcessBuilderPackageTests</c> uses, for the same reason: a repository doc is not copied
+	/// to the build output. Fails loudly rather than skipping, because a sweep that silently stops reading a
+	/// surface is how this one came to cover less than its description claimed.
+	/// </summary>
+	private static string ReadRepositoryText(string relativePath) {
+		string platformPath = relativePath.Replace('/', Path.DirectorySeparatorChar);
+		var directory = new DirectoryInfo(TestContext.CurrentContext.TestDirectory);
+		while (directory != null && !File.Exists(Path.Combine(directory.FullName, platformPath))) {
+			directory = directory.Parent;
+		}
+		directory.Should().NotBeNull(
+			because: $"'{relativePath}' must be reachable from the test directory - without it this sweep would "
+				+ "silently stop covering that surface");
+		return File.ReadAllText(Path.Combine(directory!.FullName, platformPath));
+	}
+
+	/// <summary>Reads the describe tool's own [Description] - the agent-facing contract under test.</summary>
+	private static string ReadDescribeToolDescription() =>
+		((System.ComponentModel.DescriptionAttribute)typeof(DescribeProcessTool)
+			.GetMethod(nameof(DescribeProcessTool.DescribeProcess))!
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false).Single()).Description;
 
 	private sealed class FakeDescribeProcessCommand : DescribeProcessCommand {
 		public DescribeProcessOptions CapturedOptions { get; private set; }
