@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text.Json.Nodes;
+using System.Threading;
 using Clio.Command.AddonSchemaDesigner;
 using Clio.Common;
 using static Clio.Command.BusinessRules.BusinessRuleConstants;
@@ -33,12 +34,22 @@ public static class ExistingMobilePageProbe {
 	/// page's bound entities' own default mobile edit page. Either match is excluded when it names
 	/// <see cref="ExistingMobilePageProbeRequest.TargetName"/> (the schema this run is about to create/update):
 	/// there is nothing to "reuse vs convert again" for the page the conversion is itself producing.
-	/// Best-effort; never throws.
+	/// Best-effort; never throws — a cancelled <paramref name="cancellationToken"/> degrades the same way
+	/// every other failure here does: the affected match is simply skipped, never an exception.
 	/// </summary>
+	/// <param name="request">
+	/// Guarded as a whole, not member-by-member — mirrors <see cref="MobileActionTargetProbe.Probe"/>: a
+	/// null-conditional on the first access and a plain dereference on the next reads as safe and is not, and
+	/// this method's own contract is that it never throws. A <see langword="null"/> request yields no matches,
+	/// exactly like every other degradation this probe already fails open to.
+	/// </param>
 	public static List<ExistingMobilePageInfo> Probe(
 		IToolCommandResolver commandResolver, string environment, string uri, string login, string password,
-		ExistingMobilePageProbeRequest request) {
+		ExistingMobilePageProbeRequest request, CancellationToken cancellationToken = default) {
 		var matches = new List<ExistingMobilePageInfo>();
+		if (request is null) {
+			return matches;
+		}
 		// Resolved AT MOST ONCE per call and shared by both sub-probes below, rather than each one calling
 		// MobileActionTargetProbe.ProbeContext.Create independently — a registered-section form page (the
 		// common case: both checks run) used to pay the environment-client resolution cost twice for the
@@ -56,7 +67,8 @@ public static class ExistingMobilePageProbe {
 
 		if (request.SectionRegistration is
 			{ MobileSectionRegistered: true, MobileSectionSchemaUId: { Length: > 0 } sectionSchemaUId }) {
-			ExistingMobilePageInfo sectionMatch = ProbeSectionMobilePage(commandResolver, ResolveContext, sectionSchemaUId);
+			ExistingMobilePageInfo sectionMatch =
+				ProbeSectionMobilePage(commandResolver, ResolveContext, sectionSchemaUId, cancellationToken);
 			if (sectionMatch is not null
 				&& !string.Equals(sectionMatch.SchemaName, request.TargetName, StringComparison.OrdinalIgnoreCase)) {
 				matches.Add(sectionMatch);
@@ -65,7 +77,7 @@ public static class ExistingMobilePageProbe {
 		if (request.IsFormPage) {
 			foreach (string entityName in MobileActionTargetProbe.CollectSourceEntityNames(request.ModelConfig)) {
 				ExistingMobilePageInfo entityMatch = ProbeSourceEntityDefaultMobilePage(
-					commandResolver, ResolveContext, entityName, request.PagePackageUId);
+					commandResolver, ResolveContext, entityName, request.PagePackageUId, cancellationToken);
 				if (entityMatch is not null
 					&& !string.Equals(entityMatch.SchemaName, request.TargetName, StringComparison.OrdinalIgnoreCase)) {
 					matches.Add(entityMatch);
@@ -91,21 +103,33 @@ public static class ExistingMobilePageProbe {
 	/// </summary>
 	internal static ExistingMobilePageInfo ProbeSourceEntityDefaultMobilePage(
 		IToolCommandResolver commandResolver, Func<MobileActionTargetProbe.ProbeContext> resolveContext,
-		string entitySchemaName, string pagePackageUId) {
+		string entitySchemaName, string pagePackageUId, CancellationToken cancellationToken = default) {
 		if (commandResolver is null || string.IsNullOrWhiteSpace(entitySchemaName)
-			|| !Guid.TryParse(pagePackageUId, out Guid packageUId)) {
+			|| !Guid.TryParse(pagePackageUId, out Guid fallbackPackageUId)) {
 			return null;
 		}
 		try {
+			// Checked inside the try, not before it: a cancellation here must fail open to null exactly like
+			// every other degradation this method already swallows, never escape as an exception.
+			cancellationToken.ThrowIfCancellationRequested();
 			MobileActionTargetProbe.ProbeContext context = resolveContext();
 
 			var uIdByName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+			var packageUIdByName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 			var seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-			MobileActionTargetProbe.ReadEntitySchemaRows(context, [entitySchemaName], uIdByName, seenNames);
+			MobileActionTargetProbe.ReadEntitySchemaRows(
+				context, [entitySchemaName], uIdByName, packageUIdByName, seenNames);
 			if (!uIdByName.TryGetValue(entitySchemaName, out string entitySchemaUId)
 				|| !Guid.TryParse(entitySchemaUId, out Guid entityUId)) {
 				return null;
 			}
+			// The entity's OWN package — never the source page's — so an auto-provisioned add-on descriptor
+			// lands where the entity itself lives (see DefaultPageAddonReader). Falls back only when the
+			// row's package could not be resolved.
+			Guid packageUId = packageUIdByName.TryGetValue(entitySchemaName, out string rawPackageUId)
+				&& Guid.TryParse(rawPackageUId, out Guid parsedPackageUId)
+					? parsedPackageUId
+					: fallbackPackageUId;
 
 			AddonSchemaDto schema = context.AddonClient.GetSchema(new AddonGetRequestDto {
 				AddonName = DefaultPageAddonReader.MobileRelatedPageAddonName,
@@ -142,11 +166,12 @@ public static class ExistingMobilePageProbe {
 	/// </summary>
 	internal static ExistingMobilePageInfo ProbeSectionMobilePage(
 		IToolCommandResolver commandResolver, Func<MobileActionTargetProbe.ProbeContext> resolveContext,
-		string sectionSchemaUId) {
+		string sectionSchemaUId, CancellationToken cancellationToken = default) {
 		if (commandResolver is null || !Guid.TryParse(sectionSchemaUId, out Guid sectionUId)) {
 			return null;
 		}
 		try {
+			cancellationToken.ThrowIfCancellationRequested();
 			MobileActionTargetProbe.ProbeContext context = resolveContext();
 			SchemaNameResolver.Result result = SchemaNameResolver.ResolveName(context, sectionUId);
 			return result.Status == SchemaNameResolver.Status.Resolved

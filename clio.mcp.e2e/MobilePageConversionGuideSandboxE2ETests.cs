@@ -1063,7 +1063,7 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	}
 
 	[Test]
-	[Description("End to end: a converted page whose actions navigate somewhere must report, against the LIVE environment, whether each target exists on mobile. Asserts the probe actually ran (targetsProbed), that every finding uses the declared vocabulary, that it names a control the element map really carries, and — the warn-only contract — that a verified-missing target never removes that control. A conversion failure always fails the test; only a seed with no navigating action degrades to Ignore.")]
+	[Description("End to end: a converted page whose actions navigate somewhere must report, against the LIVE environment, whether each target exists on mobile. Asserts the probe actually ran (targetsProbed), that every finding uses the declared vocabulary, that it names a control the element map really carries, and — the keep-and-blank contract — that a definitionally-missing web-page target never removes the control, only blanks its target param, and that BindingRemoved reports exactly that fact regardless of which writer (insert or twin-merge delta) produced it. A conversion failure always fails the test; a seed with no navigating action, or none whose target is a verified-missing web page, degrades to Ignore.")]
 	[AllureTag(ToolName)]
 	[AllureName("get-mobile-page-conversion-guide verifies each action's navigation target against the environment")]
 	[AllureDescription("Converts the seeded application's pages through the real clio MCP server until one carries an action whose request declares a navigation target, then asserts the guide reports the target verification as typed data and leaves the control in place.")]
@@ -1085,10 +1085,15 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			because: "the shipped rules must declare at least one navigation target, or this surface is dead data");
 		IReadOnlySet<string> navigatingRequests = ResolveBundledNavigatingRequests();
 
-		// Act — convert candidates until one carries an action that actually NAVIGATES. Selecting on
-		// TargetsProbed alone would be vacuous: the probe reports ProbeOk for a page with no navigating action
-		// at all, so the first page with any request binding would satisfy it and every assertion below would
-		// iterate an empty list. A conversion FAILURE is a regression, not a seed gap, so it fails the test.
+		// Act — convert candidates until one carries an action that actually NAVIGATES to a target verified
+		// missing as a WEB PAGE. Selecting on TargetsProbed alone would be vacuous: the probe reports ProbeOk
+		// for a page with no navigating action at all, so the first page with any request binding would
+		// satisfy it and every assertion below would iterate an empty list. Requiring a web-page/missing
+		// finding specifically (not just any navigating action) is what makes the blanking assertions below
+		// non-vacuous too: a page whose only navigating actions are crt.CreateRecordRequest against objects
+		// that DO have a mobile default, or one that targets only its own primary entity, would otherwise pass
+		// selection and iterate zero findings — proving nothing about the keep-and-blank contract. A conversion
+		// FAILURE is a regression, not a seed gap, so it fails the test.
 		MobilePageConversionGuide? guide = null;
 		string convertedSchemaName = string.Empty;
 		List<string> failedCandidates = [];
@@ -1096,7 +1101,8 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			MobilePageConversionGuide? candidate = await ConvertOrCollectFailureAsync(
 				context.Session, context.CancellationTokenSource.Token, environmentName, schemaName, failedCandidates);
 			if (candidate?.RequestConversions is { TargetsProbed: true } candidateConversions
-				&& CarriesNavigatingAction(candidateConversions, navigatingRequests)) {
+				&& CarriesNavigatingAction(candidateConversions, navigatingRequests)
+				&& CarriesVerifiedMissingWebPageTarget(candidateConversions)) {
 				guide = candidate;
 				convertedSchemaName = schemaName;
 				break;
@@ -1106,9 +1112,10 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		if (guide is null) {
 			Assert.Ignore(
 				$"All {candidates.Count} seeded page(s) of '{ApplicationCode}' on environment '{environmentName}' "
-				+ "converted successfully, but none carried an action whose request declares a navigation target. Add a "
-				+ "page with a button firing crt.OpenPageRequest or crt.CreateRecordRequest to the seed application to "
-				+ "exercise this surface.");
+				+ "converted successfully, but none carried a crt.OpenPageRequest (or similarly mapped request) "
+				+ "verified missing on mobile (targetKind: web-page, state: missing) — the one finding shape the "
+				+ "keep-and-blank assertions below require to run at all. Add a page with a button firing "
+				+ "crt.OpenPageRequest at a web-only page to the seed application to exercise this surface.");
 		}
 
 		// Assert — the findings are usable typed data, consistent with the element map, and non-destructive.
@@ -1139,16 +1146,19 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 				because: $"'{finding.ElementName}' on '{convertedSchemaName}' is reported as carrying an unreachable "
 					+ "target, so the CONTROL must still be on the converted page: naming a control the guide "
 					+ "already dropped would contradict its own element map");
-			// bindingRemoved is TRUE only for a definitional absence (web-page + missing) — never for an
-			// entity-default-mobile-page verdict (an add-on read cannot prove absence) and never for "unknown"
-			// (nothing was established). It no longer means the binding was removed from the element — it means
-			// the binding's target param was blanked while the binding itself stayed in place.
-			if (finding.BindingRemoved) {
-				finding.TargetKind.Should().Be(MobileActionTargetProbe.KindWebPage,
-					because: $"'{finding.ElementName}' on '{convertedSchemaName}' claims a definitional absence, "
-						+ "which only a web-page target may report");
-				finding.State.Should().Be("missing",
-					because: "a definitional absence without a verified absence would blank a working action on a guess");
+			// Select on the PHYSICAL FACT (a definitional absence: web-page + missing), never on BindingRemoved
+			// itself — that flag is under test here. Gating selection on it would make a regression that
+			// miscomputes it invisible: this is exactly how the twin-merge writer's blanking went unverified
+			// before ENG-94839's B1 fix, where BindingRemoved read false on that path even though the target
+			// param WAS blanked.
+			bool isDefinitionalAbsence =
+				string.Equals(finding.TargetKind, MobileActionTargetProbe.KindWebPage, StringComparison.OrdinalIgnoreCase)
+				&& string.Equals(finding.State, UnresolvedTargetRequest.StateMissing, StringComparison.OrdinalIgnoreCase);
+			finding.BindingRemoved.Should().Be(isDefinitionalAbsence,
+				because: $"'{finding.ElementName}' on '{convertedSchemaName}' must report BindingRemoved exactly "
+					+ "when the target param was blanked — true only for a definitional absence (web-page + "
+					+ "missing), independent of which writer (insert or twin-merge delta) produced it");
+			if (isDefinitionalAbsence) {
 				ViewConfigDiffOperation element = guide.ViewConfigDiff.Should().ContainSingle(
 						operation => operation.Name == finding.ElementName,
 						because: $"'{finding.ElementName}' on '{convertedSchemaName}' still converts, so its own "
@@ -1193,10 +1203,10 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			}
 		}
 
-		// missingTargetPages queue: BuildMissingTargetPages aggregates BOTH kinds now — a web-page finding is
-		// always queued (settled offline, every state is missing), and a verified-missing
+		// missingTargetPages queue: MissingTargetPageQueueBuilder.Build aggregates BOTH kinds now — a web-page
+		// finding is always queued (settled offline, every state is missing), and a verified-missing
 		// entity-default-mobile-page finding is queued too, keyed by its resolved candidate name when the
-		// environment found one, else by the raw object name (WebToMobileAnalysisService.BuildMissingTargetPages).
+		// environment found one, else by the raw object name.
 		// When both kinds resolve to the SAME schema name they collapse into ONE row and web-page always wins
 		// the reported kind. Asserted against real transport data rather than only the hand-built unit fixtures.
 		// OnlyContain (not NotContain) is safe here because it only pins the KIND vocabulary, never emptiness —
@@ -1231,6 +1241,23 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 				because: $"'{group.Key}' on '{convertedSchemaName}' must report the web-page kind whenever ANY "
 					+ "reference to it is a definitional web-page absence, even when an "
 					+ "entity-default-mobile-page reference to the same schema also exists");
+			// resolvedCandidateSchemaName disambiguates the two shapes an entity-default-mobile-page row's
+			// Target can take (already a resolved page name vs. just the raw object name) — asserted against
+			// real transport data, not only the hand-built unit fixtures.
+			bool anyResolvedEntityCandidate = group.Any(f =>
+				string.Equals(f.TargetKind, MobileActionTargetProbe.KindEntityDefaultMobilePage, StringComparison.OrdinalIgnoreCase)
+				&& string.Equals(f.ResolvedCandidateSchemaName, group.Key, StringComparison.OrdinalIgnoreCase));
+			if (!anyWebPage && anyResolvedEntityCandidate) {
+				queued.ResolvedCandidateSchemaName.Should().Be(group.Key,
+					because: $"'{group.Key}' on '{convertedSchemaName}' is queued because a candidate WAS "
+						+ "resolved for it, so the discriminator must confirm Target is already a real page "
+						+ "name, not just the object name");
+			} else {
+				queued.ResolvedCandidateSchemaName.Should().BeNull(
+					because: $"'{group.Key}' on '{convertedSchemaName}' is either a web-page row (Target is "
+						+ "already a page name by construction) or an entity row with no resolved candidate "
+						+ "(Target is just the object name) — neither shape needs the discriminator populated");
+			}
 			foreach (UnresolvedTargetRequest finding in group) {
 				queued.References.Should().ContainSingle(
 					r => r.ElementName == finding.ElementName && r.Binding == finding.Binding,
@@ -1238,6 +1265,105 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 						+ "must be traceable from the queue entry");
 			}
 		}
+	}
+
+	[Test]
+	[Description("existingMobilePages (ENG-94839 M7, playbook step 2a reuse-vs-convert): converts seeded pages until one reports at least one existing mobile page for its section/bound entity, then asserts the entry is well-formed (non-blank schemaName/schemaUId, source from the closed set) and correctly SELF-EXCLUDES — it never names the schema this very run would create/update. A conversion failure always fails the test; no seeded page reporting a match degrades to Ignore.")]
+	[AllureTag(ToolName)]
+	[AllureName("get-mobile-page-conversion-guide reports a well-formed, self-excluded existingMobilePages match")]
+	[AllureDescription("Converts the seeded application's pages through the real clio MCP server until one reports a non-empty existingMobilePages, then asserts every entry's schemaName/schemaUId/source and that none names the page's own target schema.")]
+	public async Task MobilePageConversionGuideTool_Should_Report_ExistingMobilePages_When_A_Default_Is_Registered() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
+		await RequireConverterToolAsync(context);
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		IReadOnlyList<string> candidates = await ResolveConvertibleSeededPageCandidatesAsync(
+			context.Session, context.CancellationTokenSource.Token, environmentName);
+
+		// Act — convert candidates until one carries at least one existing-mobile-page match.
+		MobilePageConversionGuide? guide = null;
+		string convertedSchemaName = string.Empty;
+		List<string> failedCandidates = [];
+		foreach (string schemaName in candidates) {
+			MobilePageConversionGuide? candidate = await ConvertOrCollectFailureAsync(
+				context.Session, context.CancellationTokenSource.Token, environmentName, schemaName, failedCandidates);
+			if (candidate is { ExistingMobilePages.Count: > 0 }) {
+				guide = candidate;
+				convertedSchemaName = schemaName;
+				break;
+			}
+		}
+		FailOnConversionFailures(failedCandidates, candidates.Count, environmentName);
+		if (guide is null) {
+			Assert.Ignore(
+				$"None of the {candidates.Count} convertible seeded page(s) of '{ApplicationCode}' on environment "
+				+ $"'{environmentName}' reported an existing mobile page for their section or bound entity — add an "
+				+ "object (or a registered section) that already has a default mobile page to the seed application "
+				+ "to exercise this shape.");
+		}
+
+		// Assert
+		string ownTargetName = MobilePageConversionGuideTool.DeriveMobileSchemaName(convertedSchemaName);
+		foreach (ExistingMobilePageInfo match in guide!.ExistingMobilePages) {
+			match.SchemaName.Should().NotBeNullOrWhiteSpace(
+				because: $"an existing-page match on '{convertedSchemaName}' the caller cannot look up by name is "
+					+ "not actionable");
+			match.SchemaUId.Should().NotBeNullOrWhiteSpace(
+				because: $"an existing-page match on '{convertedSchemaName}' must carry the schema identity, not "
+					+ "just its name");
+			match.Source.Should().BeOneOf([ExistingMobilePageProbe.KindSection, MobileActionTargetProbe.KindEntityDefaultMobilePage],
+				because: $"'{convertedSchemaName}' must report where the match came from using the closed source "
+					+ "vocabulary, never a literal the probe invented");
+			match.SchemaName.Should().NotBe(ownTargetName,
+				because: $"'{convertedSchemaName}' is about to create/update '{ownTargetName}' itself, so a match "
+					+ "naming that same schema must have been excluded as a self-match rather than offered for "
+					+ "reuse — otherwise the guide tells the caller to \"reuse\" the page it is currently building");
+		}
+	}
+
+	[Test]
+	[Description("existingMobilePages (ENG-94839 M7, playbook step 2a reuse-vs-convert): a converted page whose section/bound entity carries NO existing default mobile page must still succeed, reporting an empty (never null) existingMobilePages — an empty list is a legitimate 'nothing to reuse' answer, not an error. A conversion failure always fails the test; every seeded page already carrying a match degrades to Ignore.")]
+	[AllureTag(ToolName)]
+	[AllureName("get-mobile-page-conversion-guide reports an empty existingMobilePages without error when nothing exists to reuse")]
+	[AllureDescription("Converts the seeded application's pages through the real clio MCP server until one reports an empty existingMobilePages, and asserts the conversion still succeeded — proving the empty shape is a normal, non-error outcome.")]
+	public async Task MobilePageConversionGuideTool_Should_Report_EmptyExistingMobilePages_WithoutError_WhenNoDefaultExists() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
+		await RequireConverterToolAsync(context);
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		IReadOnlyList<string> candidates = await ResolveConvertibleSeededPageCandidatesAsync(
+			context.Session, context.CancellationTokenSource.Token, environmentName);
+
+		// Act — convert candidates until one carries NO existing-mobile-page match.
+		MobilePageConversionGuide? guide = null;
+		string convertedSchemaName = string.Empty;
+		List<string> failedCandidates = [];
+		foreach (string schemaName in candidates) {
+			MobilePageConversionGuide? candidate = await ConvertOrCollectFailureAsync(
+				context.Session, context.CancellationTokenSource.Token, environmentName, schemaName, failedCandidates);
+			if (candidate is { ExistingMobilePages.Count: 0 }) {
+				guide = candidate;
+				convertedSchemaName = schemaName;
+				break;
+			}
+		}
+		FailOnConversionFailures(failedCandidates, candidates.Count, environmentName);
+		if (guide is null) {
+			Assert.Ignore(
+				$"All {candidates.Count} convertible seeded page(s) of '{ApplicationCode}' on environment "
+				+ $"'{environmentName}' reported an existing mobile page match, so none is available to exercise "
+				+ "the no-default shape.");
+		}
+
+		// Assert — reaching here at all already proves the conversion succeeded (ConvertOrCollectFailureAsync
+		// only returns a non-null guide for a successful response), so the empty list is confirmed non-error.
+		guide!.ExistingMobilePages.Should().BeEmpty(
+			because: $"'{convertedSchemaName}' was selected precisely because it carried no existing-mobile-page "
+				+ "match, and the conversion still succeeded — an empty list must never be reported as a failure");
 	}
 
 	/// <summary>
@@ -1270,6 +1396,19 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		conversions.ConvertedRequests.Any(r => navigatingRequests.Contains(r.WebRequest ?? string.Empty))
 		|| conversions.FlaggedRequests.Any(r => navigatingRequests.Contains(r.Request ?? string.Empty))
 		|| conversions.DroppedRequests.Any(r => navigatingRequests.Contains(r.WebRequest ?? string.Empty));
+
+	/// <summary>
+	/// Whether the conversion reports at least one finding verified DEFINITIONALLY missing (targetKind
+	/// web-page, state missing) — the one finding shape whose blanking (keep-and-blank, never remove) is
+	/// worth asserting. Selecting a candidate on <see cref="CarriesNavigatingAction"/> alone can satisfy a page
+	/// whose only navigating actions are crt.CreateRecordRequest against objects that DO have a mobile
+	/// default, or one that targets only its own primary entity — both real seed shapes that would iterate
+	/// zero findings and leave the keep-and-blank assertions unexercised.
+	/// </summary>
+	private static bool CarriesVerifiedMissingWebPageTarget(RequestConversionInfo conversions) =>
+		conversions.UnresolvedTargetRequests.Any(f =>
+			string.Equals(f.TargetKind, MobileActionTargetProbe.KindWebPage, StringComparison.OrdinalIgnoreCase)
+			&& string.Equals(f.State, UnresolvedTargetRequest.StateMissing, StringComparison.OrdinalIgnoreCase));
 
 	/// <summary>
 	/// Fails the test when any seeded page failed to convert, whether or not the search that collected the

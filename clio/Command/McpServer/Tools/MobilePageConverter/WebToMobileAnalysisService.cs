@@ -3441,14 +3441,13 @@ public static class WebToMobileAnalysisService {
 			// interaction enters a twin merge). An unchanged binding is inherited and left to the template element.
 			if (IsEventBinding(prop.Value)) {
 				if (!JToken.DeepEquals(baseline[prop.Name], prop.Value)) {
-					// canRemoveBinding: false — `values` here is a DELTA MERGE payload, not the element's whole
-					// mobileValues. Omitting a key from a merge means "keep the mobile template element's own
-					// value" (see MobileValues), so a removal is not something this writer can perform — report
-					// the dead target instead of claiming one. A definitionally-absent target (a web page) is
-					// still written into the merge with its target param blanked: the page's own binding wins
-					// over the template's, just with the broken part cleared.
-					ProcessOneEventBinding(ctx, mobileName, prop.Name, (JObject)prop.Value, values,
-						canRemoveBinding: false);
+					// `values` here is a DELTA MERGE payload, not the element's whole mobileValues. Omitting a
+					// key from a merge means "keep the mobile template element's own value" (see MobileValues),
+					// so an unsupported request is dropped by omission rather than an explicit removal. A
+					// definitionally-absent target (a web page) is still written into the merge with its target
+					// param blanked: the page's own binding wins over the template's, just with the broken part
+					// cleared — and BindingRemoved reports that blanking regardless of which writer performed it.
+					ProcessOneEventBinding(ctx, mobileName, prop.Name, (JObject)prop.Value, values);
 				}
 				continue;
 			}
@@ -4500,8 +4499,7 @@ public static class WebToMobileAnalysisService {
 	private static void ProcessEventBindings(ElementMapContext ctx, JObject node, JObject values, string elementName) {
 		foreach (JProperty prop in node.Properties()) {
 			if (IsEventBinding(prop.Value)) {
-				ProcessOneEventBinding(ctx, elementName, prop.Name, (JObject)prop.Value, values,
-					canRemoveBinding: true);
+				ProcessOneEventBinding(ctx, elementName, prop.Name, (JObject)prop.Value, values);
 			}
 		}
 	}
@@ -4516,21 +4514,8 @@ public static class WebToMobileAnalysisService {
 	/// <param name="binding">The event property, e.g. <c>clicked</c>.</param>
 	/// <param name="source">The source binding's <c>{ request, params }</c> object.</param>
 	/// <param name="values">The values object being built.</param>
-	/// <param name="canRemoveBinding">
-	/// Whether omitting <paramref name="binding"/> from <paramref name="values"/> actually REMOVES the action.
-	/// True for the insert builder, whose <paramref name="values"/> becomes the element's entire
-	/// <c>mobileValues</c>. FALSE for the twin delta, whose <paramref name="values"/> is a merge payload where
-	/// an omitted key means "keep the template element's own value" — so a removal is not something that
-	/// writer can perform, and reporting one would tell the caller the control "renders and does nothing" when
-	/// it may still fire the mobile template's own request. Still governs the genuinely-unsupported branch
-	/// (<see cref="RequestMappingRule.Mobile"/> empty) below, which never writes into <paramref name="values"/>
-	/// either way. It does NOT govern a definitionally-absent target (a web page): that branch always writes a
-	/// blanked clone into <paramref name="values"/> regardless of this flag, which now only decides the
-	/// reported <c>BindingRemoved</c> value — see the flag's use at the definitionally-absent branch below.
-	/// </param>
 	private static void ProcessOneEventBinding(
-		ElementMapContext ctx, string elementName, string binding, JObject source, JObject values,
-		bool canRemoveBinding) {
+		ElementMapContext ctx, string elementName, string binding, JObject source, JObject values) {
 		string webRequest = source["request"].ToString();
 		values.Remove(binding); // own this property regardless of the prune loop
 
@@ -4538,7 +4523,7 @@ public static class WebToMobileAnalysisService {
 			if (!string.IsNullOrWhiteSpace(rule.Mobile)) {
 				// The request type converts. Its DESTINATION is the second question, and it is reported
 				// separately: whether the action is also REMOVED depends on how strong the absence verdict is,
-				// which MobileActionTargetProbe.StripsBindingOnMissing owns. The COMPONENT always stays.
+				// which MobileActionTargetProbe.BlanksTargetOnMissing owns. The COMPONENT always stays.
 				ActionTargetResolution target = ResolvedTargetOf(ctx, rule, source);
 				if (target is { State: ActionTargetState.Missing or ActionTargetState.Unknown }) {
 					bool missing = target.State == ActionTargetState.Missing;
@@ -4547,16 +4532,16 @@ public static class WebToMobileAnalysisService {
 					// request stays on the element, but the target param it would point at is blanked,
 					// regardless of which writer is calling.
 					bool definitionallyAbsent = missing
-						&& MobileActionTargetProbe.StripsBindingOnMissing(target.Kind);
-					// BindingRemoved reports whether THIS writer could have performed an actual removal —
-					// still only the insert writer, never the twin-merge delta — even though neither
-					// writer removes the binding anymore. It stays a pure reporting flag.
-					bool removed = definitionallyAbsent && canRemoveBinding;
+						&& MobileActionTargetProbe.BlanksTargetOnMissing(target.Kind);
+					// BindingRemoved reports whether the target param was blanked — true exactly when the
+					// absence is definitional, independent of which writer (insert or twin-merge delta) is
+					// calling: both writers blank the same way, so the flag is a fact about the target, not
+					// about writer capability.
 					ctx.UnresolvedTargetRequests.Add(new UnresolvedTargetRequest {
 						ElementName = elementName, Binding = binding, WebRequest = webRequest,
 						TargetKind = target.Kind, Target = target.Target,
 						State = missing ? UnresolvedTargetRequest.StateMissing : UnresolvedTargetRequest.StateUnknown,
-						BindingRemoved = removed,
+						BindingRemoved = definitionallyAbsent,
 						ResolvedCandidateSchemaName = target.ResolvedCandidateSchemaName
 					});
 					if (definitionallyAbsent) {
@@ -4568,8 +4553,15 @@ public static class WebToMobileAnalysisService {
 						var blankedClone = (JObject)source.DeepClone();
 						blankedClone["request"] = rule.Mobile;
 						ApplyParamMap(blankedClone, rule.ParamMap);
+						// Mirrors ApplyParamMap's own guard exactly: a null/whitespace mapped value is a rename
+						// ApplyParamMap itself skips (the rules file is external, versioned data this build has
+						// never seen), so the two must agree on what "effective" means here — otherwise this
+						// blanks a param ApplyParamMap never renamed to, and either throws on a null key or
+						// leaves the real (dead) rule.TargetParam value untouched.
 						string effectiveTargetParam =
-							rule.ParamMap != null && rule.ParamMap.TryGetValue(rule.TargetParam, out string mappedParam)
+							rule.ParamMap != null
+							&& rule.ParamMap.TryGetValue(rule.TargetParam, out string mappedParam)
+							&& !string.IsNullOrWhiteSpace(mappedParam)
 								? mappedParam
 								: rule.TargetParam;
 						((JObject)blankedClone["params"])[effectiveTargetParam] = "";
@@ -4690,8 +4682,11 @@ public static class WebToMobileAnalysisService {
 			FlaggedRequests = flagged,
 			UnresolvedTargetRequests = unresolvedTargets,
 			TargetsProbed = targetsProbed,
-			// Carried whenever the probe set one — today only when the source page's package could not be
-			// resolved, so no object-target read could run at all. Redacted at the point it is built.
+			// Carried whenever the probe set one — not only when the source page's package could not be
+			// resolved: it also fires when the per-call probe ceiling clips the object-target list, and when a
+			// candidate-web-page lookup fails for a verified-missing object (the two compose into one note
+			// rather than either silently replacing the other — see
+			// MobileActionTargetProbe.CandidateFailureAccumulator.ComposeNote). Redacted at the point it is built.
 			TargetsNote = actionTargetsProbe?.Note,
 			MissingTargetPages = MissingTargetPageQueueBuilder.Build(unresolvedTargets)
 		};

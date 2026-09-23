@@ -1449,10 +1449,13 @@ public sealed class RequestConversionInfo {
 	public bool TargetsProbed { get; init; }
 
 	/// <summary>
-	/// What limited the check, when anything did: no environment, an unreadable response, or rules that
-	/// declare no navigation targets. Null when the check ran in full — so it can be present even with
-	/// <see cref="TargetsProbed"/> true, and reporting it is what lets the user tell "not asked" from "asked,
-	/// and the answer was no".
+	/// What limited the check, when anything did: no environment, an unreadable response, rules that declare
+	/// no navigation targets, the per-call probe ceiling (<c>MobileActionTargetProbe.MaxEntityAddonProbes</c>)
+	/// being exceeded, or a candidate-web-page lookup failing for one or more verified-missing objects — the
+	/// last two can fire TOGETHER and are composed into one note rather than one silently replacing the other
+	/// (see <c>MobileActionTargetProbe.CandidateFailureAccumulator.ComposeNote</c>). Null when the check ran in
+	/// full — so it can be present even with <see cref="TargetsProbed"/> true, and reporting it is what lets
+	/// the user tell "not asked" from "asked, and the answer was no".
 	/// </summary>
 	[JsonPropertyName("targetsNote")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -1506,7 +1509,9 @@ public sealed class MissingTargetPage {
 	/// <summary>
 	/// The target value: a page schema name for a <c>web-page</c> row, or for an entity row
 	/// <see cref="UnresolvedTargetRequest.ResolvedCandidateSchemaName"/> when resolved, else the raw object
-	/// name.
+	/// name. These last two are NOT distinguishable from this field alone — see
+	/// <see cref="ResolvedCandidateSchemaName"/>, which exists precisely because a resolved page name and a
+	/// raw object name are otherwise emitted identically.
 	/// </summary>
 	[JsonPropertyName("target")]
 	public string Target { get; init; }
@@ -1518,6 +1523,20 @@ public sealed class MissingTargetPage {
 	/// </summary>
 	[JsonPropertyName("targetKind")]
 	public string TargetKind { get; init; }
+
+	/// <summary>
+	/// Set ONLY when <see cref="TargetKind"/> is <c>entity-default-mobile-page</c> AND the environment
+	/// resolved a candidate web page for it — in which case it equals <see cref="Target"/>, confirming
+	/// <see cref="Target"/> is already a real, call-ready page schema name rather than the raw object name.
+	/// Null for a <c>web-page</c> row (its <see cref="Target"/> is a page name by construction — no
+	/// disambiguation needed) and for an <c>entity-default-mobile-page</c> row where no candidate could be
+	/// resolved (<see cref="Target"/> is then just the object/entity name, not a page — do not pass it to
+	/// <c>get-page</c> expecting a page; a name that happens to collide with an unrelated existing page would
+	/// resolve to the WRONG schema).
+	/// </summary>
+	[JsonPropertyName("resolvedCandidateSchemaName")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string ResolvedCandidateSchemaName { get; init; }
 
 	/// <summary>Every element/binding pair on the source page that references <see cref="Target"/>.</summary>
 	[JsonPropertyName("references")]
@@ -1883,7 +1902,7 @@ public enum ActionTargetState {
 	/// <summary>
 	/// Established absent on mobile. Always reported; never removes the control or the binding. Whether it
 	/// blanks the action's TARGET PARAM depends on the target kind — see
-	/// <c>MobileActionTargetProbe.StripsBindingOnMissing</c>.
+	/// <c>MobileActionTargetProbe.BlanksTargetOnMissing</c>.
 	/// </summary>
 	Missing
 }

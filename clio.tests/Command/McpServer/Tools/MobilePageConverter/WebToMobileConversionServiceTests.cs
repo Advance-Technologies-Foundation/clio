@@ -6679,14 +6679,16 @@ public sealed class WebToMobileConversionServiceTests {
 		MobileActionTargetProbeResult probe = ProbeResult(
 			"OpenButton", "crt.OpenPageRequest", MobileActionTargetProbe.KindWebPage, "LegacyPage",
 			ActionTargetState.Missing,
-			note: "Only the first 32 object targets were checked; the rest are reported as unverified.");
+			note: $"Only the first {MobileActionTargetProbe.MaxEntityAddonProbes} object targets were checked; "
+				+ "the rest are reported as unverified.");
 
 		// Act
 		MobilePageConversionGuide guide = AnalyzeTargets(bundle, probe);
 
 		// Assert
 		guide.RequestConversions!.TargetsProbed.Should().BeTrue(because: "the reads themselves succeeded");
-		guide.RequestConversions.TargetsNote.Should().StartWith("Only the first 32",
+		guide.RequestConversions.TargetsNote.Should().StartWith(
+			$"Only the first {MobileActionTargetProbe.MaxEntityAddonProbes}",
 			because: "the caller cannot otherwise tell 'not asked' from 'asked, and the answer was no'");
 	}
 
@@ -6741,8 +6743,8 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("A same-component TWIN's dead action is reported but never marked removed, AND the request IS written into the merge payload with its target param blanked: the twin's mobileValues is a delta MERGE payload, so writing the blanked clone overrides the template element's own value with the page's own (now-inert) action, rather than shipping one guaranteed to fail.")]
-	public void Analyze_TwinMergeTargetMissing_ReportsWithoutClaimingARemovalAndWritesTheBlankedBinding() {
+	[Description("A same-component TWIN's dead action is reported AND marked BindingRemoved (the target param was blanked), AND the request IS written into the merge payload with its target param blanked: the twin's mobileValues is a delta MERGE payload, so writing the blanked clone overrides the template element's own value with the page's own (now-inert) action, rather than shipping one guaranteed to fail. BindingRemoved reports the blanking itself, not which writer performed it — a merge payload cannot remove a KEY, but it can and does blank the VALUE, and the flag must say so.")]
+	public void Analyze_TwinMergeTargetMissing_ReportsBindingRemovedAndWritesTheBlankedBinding() {
 		// Arrange — a same-component twin (crt.Feed -> crt.Feed) whose clicked binding the page CHANGED from
 		// the web-template baseline, pointing at a page that cannot exist on mobile.
 		PageBundleInfo bundle = Bundle("""
@@ -6785,9 +6787,10 @@ public sealed class WebToMobileConversionServiceTests {
 		guide.RequestConversions.DroppedRequests.Should().Contain(r => r.ElementName == "Feed" && r.Binding == "clicked",
 			because: "the target is verified missing, so the action is still reported as a dropped request even "
 				+ "though the binding itself stays in the merge payload with its target param blanked");
-		finding.BindingRemoved.Should().BeFalse(
-			because: "a merge payload cannot REMOVE anything — this writer can only write or omit a key — so "
-				+ "'ALREADY REMOVED' would be a claim about a write that never happened");
+		finding.BindingRemoved.Should().BeTrue(
+			because: "BindingRemoved reports whether the target param was blanked, independent of which writer "
+				+ "performed it — the twin-merge writer cannot remove the KEY, but it did blank the VALUE, so the "
+				+ "flag must say so or the caller (which gates the repoint on this flag) never fixes it later");
 		twin.Values.Should().NotBeNull(because: "the page also changed dataSourceName, so the merge still carries a payload");
 		JsonObject clicked = twin.Values!.AsObject()["clicked"]!.AsObject();
 		clicked["request"]!.GetValue<string>().Should().Be("crt.OpenPageRequest",
@@ -6795,6 +6798,92 @@ public sealed class WebToMobileConversionServiceTests {
 		clicked["params"]!["schemaName"]!.GetValue<string>().Should().BeEmpty(
 			because: "the merge overrides the template element's own value with the page's action, but with the "
 				+ "dead target param blanked so it never fails at runtime");
+	}
+
+	[Test]
+	[Description("A definitionally-absent web-page target whose rule's paramMap maps TargetParam to a null value does not throw and blanks the ORIGINAL (unmapped) param: ApplyParamMap itself skips a rename with no usable value, so effectiveTargetParam must agree with it instead of computing a null key from the raw TryGetValue result.")]
+	public void Analyze_TargetMissing_ParamMapMapsTargetParamToNull_BlanksTheOriginalParam() {
+		// Arrange — paramMap declares a rename for schemaName (the TargetParam) to a null value, which
+		// ApplyParamMap's own guard skips as unusable.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "OpenBtn", "type": "crt.Button",
+				  "clicked": { "request": "crt.OpenPageRequest",
+				               "params": { "schemaName": "LegacyPage" } } } ] } ]
+			""");
+		WebToMobilePageConversionRules rules = new() {
+			Requests = [
+				new RequestMappingRule {
+					Web = "crt.OpenPageRequest", Mobile = "crt.OpenPageRequest", Category = "DirectMapping",
+					TargetParam = "schemaName", TargetKind = MobileActionTargetProbe.KindWebPage,
+					ParamMap = new Dictionary<string, string> { ["schemaName"] = null }
+				}
+			]
+		};
+		MobileActionTargetProbeResult probe = ProbeResult(
+			"OpenBtn", "crt.OpenPageRequest", MobileActionTargetProbe.KindWebPage, "LegacyPage",
+			ActionTargetState.Missing);
+
+		// Act
+		MobilePageConversionGuide guide = WebToMobileAnalysisService.Analyze(
+			bundle, TargetMobileTypes, WebTypes,
+			webByType: Reg(("crt.FlexContainer", true)),
+			mobileByType: null,
+			rules, templateRule: null,
+			sourcePage: "UsrApp_FormPage", sourceTemplate: null,
+			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: null,
+			actionTargetsProbe: probe);
+
+		// Assert
+		JsonObject clicked = Element(guide, "OpenBtn").Values!.AsObject()["clicked"]!.AsObject();
+		clicked["params"]!.AsObject().ContainsKey("schemaName").Should().BeTrue(
+			because: "ApplyParamMap skipped the null-valued rename, so the original key is still the one carrying "
+				+ "the dead target, and that is the key the blank must land on");
+		clicked["params"]!["schemaName"]!.GetValue<string>().Should().BeEmpty(
+			because: "a null-valued paramMap entry for TargetParam must not throw or blank a null key — it must "
+				+ "fall back to blanking rule.TargetParam itself");
+	}
+
+	[Test]
+	[Description("A definitionally-absent web-page target whose rule's paramMap maps TargetParam to a whitespace-only value does not create a bogus whitespace key: ApplyParamMap skips the rename (its own guard), so effectiveTargetParam must fall back to the ORIGINAL TargetParam, leaving the real (dead) value blanked rather than untouched under the original key while a decoy blank key appears beside it.")]
+	public void Analyze_TargetMissing_ParamMapMapsTargetParamToWhitespace_BlanksTheOriginalParam() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "OpenBtn", "type": "crt.Button",
+				  "clicked": { "request": "crt.OpenPageRequest",
+				               "params": { "schemaName": "LegacyPage" } } } ] } ]
+			""");
+		WebToMobilePageConversionRules rules = new() {
+			Requests = [
+				new RequestMappingRule {
+					Web = "crt.OpenPageRequest", Mobile = "crt.OpenPageRequest", Category = "DirectMapping",
+					TargetParam = "schemaName", TargetKind = MobileActionTargetProbe.KindWebPage,
+					ParamMap = new Dictionary<string, string> { ["schemaName"] = "   " }
+				}
+			]
+		};
+		MobileActionTargetProbeResult probe = ProbeResult(
+			"OpenBtn", "crt.OpenPageRequest", MobileActionTargetProbe.KindWebPage, "LegacyPage",
+			ActionTargetState.Missing);
+
+		// Act
+		MobilePageConversionGuide guide = WebToMobileAnalysisService.Analyze(
+			bundle, TargetMobileTypes, WebTypes,
+			webByType: Reg(("crt.FlexContainer", true)),
+			mobileByType: null,
+			rules, templateRule: null,
+			sourcePage: "UsrApp_FormPage", sourceTemplate: null,
+			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: null,
+			actionTargetsProbe: probe);
+
+		// Assert
+		JsonObject clicked = Element(guide, "OpenBtn").Values!.AsObject()["clicked"]!.AsObject();
+		clicked["params"]!.AsObject().ContainsKey("   ").Should().BeFalse(
+			because: "the whitespace-only mapped value must never be written as a literal key on the params object");
+		clicked["params"]!["schemaName"]!.GetValue<string>().Should().BeEmpty(
+			because: "the whitespace-only rename is unusable, so the blank must land on the original TargetParam "
+				+ "instead of leaving the dead value untouched under it");
 	}
 
 	[Test]
@@ -6941,9 +7030,36 @@ public sealed class WebToMobileConversionServiceTests {
 		candidate.Target.Should().Be("LegacyPage", because: "the queue entry names the page to convert next");
 		candidate.TargetKind.Should().Be(MobileActionTargetProbe.KindWebPage,
 			because: "only web-page targets are aggregated by this pass");
+		candidate.ResolvedCandidateSchemaName.Should().BeNull(
+			because: "a web-page row's Target is already a page name by construction — the discriminator is only "
+				+ "meaningful for entity-default-mobile-page rows, where the same Target shape is ambiguous");
 		candidate.References.Should().ContainSingle(
 			r => r.ElementName == "PostponeButton" && r.Binding == "clicked",
 			because: "the queue entry must name every control that references the missing page");
+	}
+
+	[Test]
+	[Description("A web-page target whose value is not a syntactically valid schema name (page-authored data, never read against the environment) is still reported in unresolvedTargetRequests but excluded from missingTargetPages — the queue a consuming agent executes automatically must never receive an unvalidated value (M6).")]
+	public void Analyze_WebPageTargetSyntacticallyInvalid_IsReportedButNotQueued() {
+		// Arrange — a schemaName value that cannot possibly be a real schema (starts with a digit, contains
+		// spaces) stands in for an untrusted / hostile page-authored value that reaches this far unchecked.
+		const string hostileTarget = "1 DROP TABLE SysSchema";
+		PageBundleInfo bundle = OpenPageButtonBundle("PostponeButton", hostileTarget);
+		MobileActionTargetProbeResult probe = ProbeResult(
+			"PostponeButton", "crt.OpenPageRequest", MobileActionTargetProbe.KindWebPage, hostileTarget,
+			ActionTargetState.Missing);
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeTargets(bundle, probe);
+
+		// Assert
+		guide.RequestConversions!.UnresolvedTargetRequests.Should().ContainSingle(
+			r => r.Target == hostileTarget,
+			because: "the dead action must still be reported so the caller can see it, even though the value "
+				+ "cannot be queued");
+		guide.RequestConversions.MissingTargetPages.Should().BeEmpty(
+			because: "a syntactically invalid target must never be promoted into missingTargetPages — that queue "
+				+ "is executed automatically by a consuming agent, unlike the report-only unresolvedTargetRequests");
 	}
 
 	[Test]
@@ -7066,6 +7182,9 @@ public sealed class WebToMobileConversionServiceTests {
 		candidate.Target.Should().Be("LeadProduct_FormPage",
 			because: "the resolved candidate schema name is the page to actually convert, not the object name");
 		candidate.TargetKind.Should().Be(MobileActionTargetProbe.KindEntityDefaultMobilePage);
+		candidate.ResolvedCandidateSchemaName.Should().Be("LeadProduct_FormPage",
+			because: "a caller must be able to tell THIS shape (Target already IS a resolved page name) apart "
+				+ "from the no-candidate shape without re-deriving it, since both report the same TargetKind");
 		candidate.References.Should().ContainSingle(r => r.ElementName == "ProductsAddButton");
 	}
 
@@ -7087,6 +7206,10 @@ public sealed class WebToMobileConversionServiceTests {
 		candidate.Target.Should().Be("LeadProduct",
 			because: "with no candidate resolved, the raw object name is the only key available");
 		candidate.TargetKind.Should().Be(MobileActionTargetProbe.KindEntityDefaultMobilePage);
+		candidate.ResolvedCandidateSchemaName.Should().BeNull(
+			because: "Target here is just the raw object name, not a page — a caller must be able to tell this "
+				+ "apart from the resolved-candidate shape instead of risking get-page on an object name that "
+				+ "happens to collide with an unrelated page");
 	}
 
 	[Test]
@@ -7185,6 +7308,10 @@ public sealed class WebToMobileConversionServiceTests {
 		candidate.Target.Should().Be("LeadProduct_FormPage");
 		candidate.TargetKind.Should().Be(MobileActionTargetProbe.KindWebPage,
 			because: "a merged row reports as web-page — that is the kind the step-8a repoint sub-step keys on");
+		candidate.ResolvedCandidateSchemaName.Should().BeNull(
+			because: "the discriminator is scoped to rows still reported as entity-default-mobile-page; a merged "
+				+ "row reports web-page, whose Target is already a page name by construction — no disambiguation "
+				+ "needed here even though an entity finding also contributed to this row");
 		candidate.References.Should().HaveCount(2,
 			because: "the merged row must carry the reference from BOTH sources, not just the web-page one");
 		candidate.References.Should().Contain(r => r.ElementName == "OpenButton");

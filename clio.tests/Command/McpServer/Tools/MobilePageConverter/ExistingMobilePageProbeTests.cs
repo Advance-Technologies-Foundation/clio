@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text.Json.Nodes;
+using System.Threading;
 using Clio.Command;
 using Clio.Command.AddonSchemaDesigner;
 using Clio.Command.McpServer.Tools;
@@ -71,8 +72,10 @@ public sealed class ExistingMobilePageProbeTests {
 	private static string PageRow(string name, string parentName, string uId) =>
 		$"{{\"Name\":\"{name}\",\"UId\":\"{uId}\",\"ParentName\":{(parentName is null ? "null" : $"\"{parentName}\"")}}}";
 
-	private static string EntityRow(string name, string uId = EntitySchemaUId) =>
-		$"{{\"Name\":\"{name}\",\"UId\":\"{uId}\",\"ExtendParent\":false}}";
+	private static string EntityRow(string name, string uId = EntitySchemaUId, string packageUId = null) =>
+		$"{{\"Name\":\"{name}\",\"UId\":\"{uId}\","
+		+ (packageUId is null ? "" : $"\"PackageUId\":\"{packageUId}\",")
+		+ "\"ExtendParent\":false}";
 
 	/// <summary>Routes a serialized SelectQuery to the page-schema or object-schema answer.</summary>
 	private static Func<string, string> Route(string pageRows, string entityRows) =>
@@ -98,8 +101,10 @@ public sealed class ExistingMobilePageProbeTests {
 		string targetName = "Unrelated_MobileFormPage") =>
 		new(sectionRegistration, isFormPage, modelConfig, pagePackageUId, targetName);
 
-	private static List<ExistingMobilePageInfo> Probe(EnvironmentStub environment, ExistingMobilePageProbeRequest request) =>
-		ExistingMobilePageProbe.Probe(environment.Resolver, "env", null, null, null, request);
+	private static List<ExistingMobilePageInfo> Probe(
+		EnvironmentStub environment, ExistingMobilePageProbeRequest request,
+		CancellationToken cancellationToken = default) =>
+		ExistingMobilePageProbe.Probe(environment.Resolver, "env", null, null, null, request, cancellationToken);
 
 	// ── Entity-default check (IsFormPage) ───────────────────────────────────────────────────────
 
@@ -124,6 +129,43 @@ public sealed class ExistingMobilePageProbeTests {
 	}
 
 	[Test]
+	[Description("The MobileRelatedPage add-on read (which the platform answers by auto-provisioning an empty descriptor when none exists) is addressed with the ENTITY's own package, resolved from the same batched SysSchema row — never the source page's package, which would auto-provision a descriptor inside the wrong package.")]
+	public void Probe_EntityRowDeclaresOwnPackage_AddonReadUsesTheEntitysPackageNotThePagesPackage() {
+		// Arrange — the bound entity's own SysSchema row carries a package UId distinct from the source page's.
+		const string EntityPackageUId = "77777777-7777-7777-7777-777777777777";
+		EnvironmentStub environment = Environment(
+			Route(Rows(PageRow("LeadProduct_MobileFormPage", MobileRoot, EntityDefaultPageSchemaUId)),
+				Rows(EntityRow("LeadProduct", packageUId: EntityPackageUId))),
+			addonMetaData: $"{{\"Pages\":[{{\"PageSchemaUId\":\"{EntityDefaultPageSchemaUId}\",\"IsDefault\":true}}]}}");
+
+		// Act
+		Probe(environment, Request(isFormPage: true, modelConfig: SourcePageBoundTo("LeadProduct")));
+
+		// An auto-provisioned descriptor must land in the ENTITY's own package, never the source page's, or it
+		// would travel with the wrong package on push-pkg.
+		environment.AddonClient.Received(1).GetSchema(
+			Arg.Is<AddonGetRequestDto>(request => request.TargetPackageUId == Guid.Parse(EntityPackageUId)));
+	}
+
+	[Test]
+	[Description("An entity's SysSchema row with no resolvable package (a null/malformed SysPackage.UId) falls back to the source page's package rather than failing the probe outright.")]
+	public void Probe_EntityRowWithoutOwnPackage_FallsBackToThePagesPackage() {
+		// Arrange — no PackageUId on the entity's own row (the untouched default EntityRow shape).
+		EnvironmentStub environment = Environment(
+			Route(Rows(PageRow("LeadProduct_MobileFormPage", MobileRoot, EntityDefaultPageSchemaUId)),
+				Rows(EntityRow("LeadProduct"))),
+			addonMetaData: $"{{\"Pages\":[{{\"PageSchemaUId\":\"{EntityDefaultPageSchemaUId}\",\"IsDefault\":true}}]}}");
+
+		// Act
+		Probe(environment, Request(isFormPage: true, modelConfig: SourcePageBoundTo("LeadProduct")));
+
+		// With no package on the entity's own row, the read must still go through, addressed by the source
+		// page's package as the documented fallback.
+		environment.AddonClient.Received(1).GetSchema(
+			Arg.Is<AddonGetRequestDto>(request => request.TargetPackageUId == Guid.Parse(PackageUId)));
+	}
+
+	[Test]
 	[Description("A form page's bound entity has no default mobile edit page: Probe reports nothing rather than guessing one.")]
 	public void Probe_FormPageEntityHasNoDefault_ReportsNothing() {
 		// Arrange
@@ -134,6 +176,44 @@ public sealed class ExistingMobilePageProbeTests {
 
 		// Assert
 		matches.Should().BeEmpty(because: "the object has no default mobile page to reuse");
+	}
+
+	[Test]
+	[Description("A token already cancelled before the entity-default check runs degrades to an empty match list instead of throwing OperationCanceledException — the never-throws contract holds for cancellation too, not just for environment failures.")]
+	public void Probe_CancelledBeforeEntityCheckRuns_DegradesWithoutThrowing() {
+		// Arrange
+		EnvironmentStub environment = Environment(
+			Route(Rows(PageRow("LeadProduct_MobileFormPage", MobileRoot, EntityDefaultPageSchemaUId)), Rows(EntityRow("LeadProduct"))),
+			addonMetaData: $"{{\"Pages\":[{{\"PageSchemaUId\":\"{EntityDefaultPageSchemaUId}\",\"IsDefault\":true}}]}}");
+		using var cts = new CancellationTokenSource();
+		cts.Cancel();
+
+		// Act
+		List<ExistingMobilePageInfo> matches = null;
+		Action act = () => matches = Probe(
+			environment, Request(isFormPage: true, modelConfig: SourcePageBoundTo("LeadProduct")), cts.Token);
+		act.Should().NotThrow(because: "a cancellation must degrade like every other failure this probe already swallows");
+
+		// Assert
+		matches.Should().BeEmpty(because: "the check never actually ran, so it must not report a match it never found");
+		environment.AddonClient.DidNotReceive().GetSchema(Arg.Any<AddonGetRequestDto>());
+	}
+
+	[Test]
+	[Description("A null request degrades to an empty match list instead of throwing NullReferenceException — the never-throws contract holds structurally at the entry point, not just for a cancellation or an environment failure.")]
+	public void Probe_NullRequest_DegradesWithoutThrowing() {
+		// Arrange
+		EnvironmentStub environment = Environment(Route(Rows(), Rows()));
+
+		// Act
+		List<ExistingMobilePageInfo> matches = null;
+		Action act = () => matches = ExistingMobilePageProbe.Probe(
+			environment.Resolver, "env", null, null, null, request: null);
+		act.Should().NotThrow(because: "a null request must degrade like every other failure this probe already swallows");
+
+		// Assert
+		matches.Should().BeEmpty(because: "there is nothing to check without a request, so no match can be reported");
+		environment.AddonClient.ReceivedCalls().Should().BeEmpty(because: "a null request must never reach the environment");
 	}
 
 	[Test]

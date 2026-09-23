@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command.AddonSchemaDesigner;
 using Clio.Common;
@@ -84,9 +85,11 @@ public static class MobileActionTargetProbe {
 	/// there is no bound on how many layers an object carries. The read ORDERS base rows first
 	/// (<see cref="ClassicEntitySchemaQuery.ColumnOrderedAsc"/>), so this cap can no longer cost the base row
 	/// — it only decides how many extra layers are seen, which is what separates "this object has no rows at
-	/// all" (absent) from "rows but no base row" (unknown).
+	/// all" (absent) from "rows but no base row" (unknown). Shared (not private) because
+	/// <see cref="SchemaNameResolver.ResolveNames"/> applies the same headroom to its by-UId row cap for the
+	/// identical reason — a UId can carry more than one row across package layers, just like a Name can.
 	/// </summary>
-	private const int RowsPerNameHeadroom = 4;
+	internal const int RowsPerNameHeadroom = 4;
 
 	/// <summary>
 	/// Per-call ceiling on <see cref="DefaultPageAddonReader.ReadMobileState"/> probes: each one is a sequential
@@ -95,8 +98,10 @@ public static class MobileActionTargetProbe {
 	/// and a retry after a timeout repeats the identical unbounded work rather than resuming it. Capping
 	/// keeps one guide call's cost predictable regardless of how many targets a page names, at the cost of
 	/// reporting the excess as <see cref="ActionTargetState.Unknown"/> (fail open) rather than verifying them.
+	/// Internal (not private) so test fixtures assert against this single value instead of restating it as a
+	/// literal — a literal already drifted from it once (commit 9c051d94d).
 	/// </summary>
-	private const int MaxEntityAddonProbes = 32;
+	internal const int MaxEntityAddonProbes = 32;
 
 	/// <summary>
 	/// Upper bound on how many of the per-object reads inside the <see cref="MaxEntityAddonProbes"/> budget
@@ -108,8 +113,16 @@ public static class MobileActionTargetProbe {
 	/// <c>RequestsInFlight</c> with <c>Interlocked</c>) — proven at concurrency 2, not yet proven at the width
 	/// this constant introduces. Kept well under <see cref="MaxEntityAddonProbes"/> as a deliberate caution
 	/// pending a live-stand measurement, rather than running the whole budget wide open.
+	/// <para>
+	/// The stand-side BURST width is still unmeasured at this constant's value — that question is separate
+	/// from, and not settled by, <see cref="ProbeBudgeted"/>'s cancellation wiring: cancellation stops the
+	/// fan-out from SCHEDULING more of the budget once the caller stops waiting, but each already in-flight
+	/// call still blocks its thread until the add-on read itself returns or fails (<c>GetSchema</c> carries
+	/// no request timeout today — see <c>AddonSchemaDesignerClient.GetSchema</c>), and cancellation changes
+	/// neither that nor how many requests a single call sends to the stand when nothing is cancelled.
+	/// </para>
 	/// </summary>
-	private const int MaxEntityProbeParallelism = 8;
+	internal const int MaxEntityProbeParallelism = 8;
 
 	/// <summary>
 	/// The key one distinct action target is resolved under. Single-sourced so the probe that WRITES a
@@ -128,11 +141,18 @@ public static class MobileActionTargetProbe {
 	/// <param name="login">Explicit login.</param>
 	/// <param name="password">Explicit password.</param>
 	/// <param name="request">The page-side inputs: body, resolved rules and the package identity to read with.</param>
+	/// <param name="cancellationToken">
+	/// Propagated into the entity tier's <c>Parallel.For</c> (see <see cref="ProbeBudgeted"/>) so an MCP
+	/// read-response deadline stops the fan-out from SCHEDULING further per-object reads once it fires,
+	/// instead of the whole budget always running to completion. A cancellation is caught at this method's
+	/// own boundary and degrades to a normal <see cref="NotProbed"/> result — the never-throws contract
+	/// holds for this reason too, not just for an environment failure.
+	/// </param>
 	/// <returns>The occurrences found on the page and, when the reads succeeded, one resolution per distinct target.</returns>
 	public static MobileActionTargetProbeResult Probe(
 		IToolCommandResolver commandResolver,
 		string environment, string uri, string login, string password,
-		MobileActionTargetProbeRequest request) {
+		MobileActionTargetProbeRequest request, CancellationToken cancellationToken = default) {
 		// Guard the REQUEST, not each member: a null-conditional on the first access and a plain dereference on
 		// the next reads as safe and is not, and this method's contract is that it never throws.
 		if (request is null) {
@@ -184,17 +204,28 @@ public static class MobileActionTargetProbe {
 		}
 
 		try {
+			// Checked before any environment work starts: a caller that hands in an already-cancelled token
+			// (e.g. the read deadline fired between this call being scheduled and actually running) should
+			// never pay for even the context resolution.
+			cancellationToken.ThrowIfCancellationRequested();
 			// Resolved ONCE rather than per object: the add-on read runs once per distinct object, and
 			// re-resolving inside that loop buys nothing but container work.
 			ProbeContext context = ProbeContext.Create(commandResolver, environment, uri, login, password);
 
 			EntityTierOutcome outcome =
-				ResolveEntityTargets(context, entityTargets, request.PagePackageUId, resolutions);
+				ResolveEntityTargets(context, entityTargets, request.PagePackageUId, resolutions, cancellationToken);
 
 			return new MobileActionTargetProbeResult {
 				ProbeOk = outcome.Answered, Occurrences = occurrences, TargetsByKey = resolutions,
 				Note = outcome.Note
 			};
+		} catch (OperationCanceledException) {
+			// A cancelled fan-out is not an environment failure: nothing here says the target is actually
+			// missing, only that the caller stopped waiting (e.g. the read-response deadline fired). Same
+			// degrade shape as every other "did not answer" branch — fail open to Unknown, never throw.
+			return NotProbed(occurrences,
+				"Object action targets were not verified (the check was cancelled before it completed).",
+				resolutions);
 		} catch (Exception ex) {
 			// Covers the DataService failure envelope and a non-JSON body alike: IApplicationClient returns a
 			// proxy/auth error PAGE as an ordinary string rather than throwing, so it is the SelectQuery helper
@@ -307,7 +338,7 @@ public static class MobileActionTargetProbe {
 	/// </summary>
 	/// <param name="kind">A rules-declared <c>targetKind</c>.</param>
 	/// <returns>Whether a verified absence of this kind blanks the target param.</returns>
-	internal static bool StripsBindingOnMissing(string kind) =>
+	internal static bool BlanksTargetOnMissing(string kind) =>
 		// Trimmed to match TargetKey, which trims the kind when it builds the key a resolution is stored
 		// under: an untrimmed Kind would otherwise be FOUND by the lookup and then silently not stripped.
 		string.Equals(kind?.Trim(), KindWebPage, StringComparison.OrdinalIgnoreCase);
@@ -467,15 +498,15 @@ public static class MobileActionTargetProbe {
 	/// <returns>Whether the tier answered, and what limited it — see <see cref="EntityTierOutcome"/>.</returns>
 	private static EntityTierOutcome ResolveEntityTargets(
 		ProbeContext context, IReadOnlyList<string> names, string pagePackageUId,
-		IDictionary<string, ActionTargetResolution> into) {
+		IDictionary<string, ActionTargetResolution> into, CancellationToken cancellationToken) {
 		if (names.Count == 0) {
 			return new EntityTierOutcome(true, null);
 		}
-		if (!Guid.TryParse(pagePackageUId, out Guid packageUId)) {
-			// The add-on read is addressed by package; without one nothing can be verified. Unknown, not
-			// Missing — the absence is in clio's inputs, not in the environment. And NOT "answered": no read
-			// happened, so reporting targetsProbed:true here would claim a verification that never ran, the
-			// same degradation PageBusinessRuleProbe reports for the identical input.
+		if (!Guid.TryParse(pagePackageUId, out Guid fallbackPackageUId)) {
+			// The add-on read is addressed by package; without at least a FALLBACK nothing can be verified.
+			// Unknown, not Missing — the absence is in clio's inputs, not in the environment. And NOT
+			// "answered": no read happened, so reporting targetsProbed:true here would claim a verification
+			// that never ran, the same degradation PageBusinessRuleProbe reports for the identical input.
 			foreach (string name in names) {
 				Record(into, KindEntityDefaultMobilePage, name, ActionTargetState.Unknown);
 			}
@@ -483,29 +514,37 @@ public static class MobileActionTargetProbe {
 				"Object action targets were not verified (the source page package could not be resolved).");
 		}
 
-		(List<(string Name, string EntityUId)> budgeted, bool budgetExhausted) =
-			PartitionByEntityRow(context, names, into);
-		EntityProbeOutcome[] outcomes = ProbeBudgeted(context, budgeted, packageUId);
+		(List<(string Name, string EntityUId, Guid PackageUId)> budgeted, bool budgetExhausted) =
+			PartitionByEntityRow(context, names, fallbackPackageUId, into);
+		EntityProbeOutcome[] outcomes = ProbeBudgeted(context, budgeted, cancellationToken);
 		return CollectOutcomes(context, outcomes, budgetExhausted, into);
 	}
 
 	/// <summary>
-	/// Phase 1 of <see cref="ResolveEntityTargets"/> — the only phase that reads anything: one batched
-	/// <c>SysSchema</c> read for <paramref name="names"/>' base-row UIds, then a purely sequential split by
-	/// whether the object even HAS a row to probe. A name with no row is recorded directly (see the inline
-	/// reasoning below) and never competes for the budget; what remains is clipped to
+	/// Phase 1 of <see cref="ResolveEntityTargets"/> — not the only phase that reads: it runs one batched
+	/// <c>SysSchema</c> read for <paramref name="names"/>' base-row UIds AND their own package UIds, then a
+	/// purely sequential split by whether the object even HAS a row to probe; <see cref="ProbeBudgeted"/> (phase 2)
+	/// and <see cref="CollectOutcomes"/> (phase 3, the batched candidate-name lookup) read too. A name with no row is recorded
+	/// directly (see the inline reasoning below) and never competes for the budget; what remains is clipped to
 	/// <see cref="MaxEntityAddonProbes"/>, in the same first-seen order <paramref name="names"/> walks in, so
 	/// the budget consumes candidates in a deterministic, input-order sequence before any concurrency enters
 	/// the picture in <see cref="ProbeBudgeted"/>.
 	/// </summary>
-	/// <returns>The budgeted (name, entityUId) pairs to probe, and whether the budget clipped anything.</returns>
-	private static (List<(string Name, string EntityUId)> Budgeted, bool BudgetExhausted) PartitionByEntityRow(
-		ProbeContext context, IReadOnlyList<string> names, IDictionary<string, ActionTargetResolution> into) {
+	/// <param name="fallbackPackageUId">
+	/// Used only when an object's own row carries no resolvable package (a null/malformed
+	/// <c>SysPackage.UId</c>) — the source page's package, so the add-on read still has SOME package to
+	/// address rather than failing the object outright.
+	/// </param>
+	/// <returns>The budgeted (name, entityUId, packageUId) triples to probe, and whether the budget clipped anything.</returns>
+	private static (List<(string Name, string EntityUId, Guid PackageUId)> Budgeted, bool BudgetExhausted) PartitionByEntityRow(
+		ProbeContext context, IReadOnlyList<string> names, Guid fallbackPackageUId,
+		IDictionary<string, ActionTargetResolution> into) {
 		var uIdByName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+		var packageUIdByName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 		var seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-		bool truncated = ReadEntitySchemaRows(context, names, uIdByName, seenNames);
+		bool truncated = ReadEntitySchemaRows(context, names, uIdByName, packageUIdByName, seenNames);
 
-		var toProbe = new List<(string Name, string EntityUId)>();
+		var toProbe = new List<(string Name, string EntityUId, Guid PackageUId)>();
 		foreach (string name in names) {
 			if (!uIdByName.TryGetValue(name, out string entityUId)) {
 				// No rows at all: the object does not exist, so the action is dead — unless the read may have
@@ -516,17 +555,24 @@ public static class MobileActionTargetProbe {
 					seenNames.Contains(name) || truncated ? ActionTargetState.Unknown : ActionTargetState.Missing);
 				continue;
 			}
-			toProbe.Add((name, entityUId));
+			// The object's OWN package — never the source page's — so an auto-provisioned add-on descriptor
+			// (see DefaultPageAddonReader) lands where the object itself lives, not inside whatever package
+			// happens to be converting it. Falls back only when the row's package could not be resolved.
+			Guid packageUId = packageUIdByName.TryGetValue(name, out string rawPackageUId)
+				&& Guid.TryParse(rawPackageUId, out Guid parsedPackageUId)
+					? parsedPackageUId
+					: fallbackPackageUId;
+			toProbe.Add((name, entityUId, packageUId));
 		}
 
 		bool budgetExhausted = toProbe.Count > MaxEntityAddonProbes;
-		List<(string Name, string EntityUId)> budgeted =
+		List<(string Name, string EntityUId, Guid PackageUId)> budgeted =
 			budgetExhausted ? toProbe.Take(MaxEntityAddonProbes).ToList() : toProbe;
 		if (budgetExhausted) {
 			// Fail open AND say so: an unasked target must not look like one the environment answered "no" to.
 			// Never entering the probe phase for these also skips their candidate read — a target never probed
 			// is never Missing, so it never enters candidate resolution.
-			foreach ((string name, _) in toProbe.Skip(MaxEntityAddonProbes)) {
+			foreach ((string name, _, _) in toProbe.Skip(MaxEntityAddonProbes)) {
 				Record(into, KindEntityDefaultMobilePage, name, ActionTargetState.Unknown);
 			}
 		}
@@ -542,14 +588,26 @@ public static class MobileActionTargetProbe {
 	/// can escape the parallel body and take any other object's result down with it. Writing into a
 	/// PRE-SIZED, per-index array — never a shared mutable collection — keeps the result order deterministic
 	/// (byte-for-byte identical to a sequential version) no matter which read finishes first or slowest.
+	/// Each entry carries its OWN package (see <see cref="PartitionByEntityRow"/>), never a package shared
+	/// across every object in the tier.
+	/// <para>
+	/// <paramref name="cancellationToken"/> is wired into <see cref="ParallelOptions.CancellationToken"/>,
+	/// not just carried for show: once cancelled, <c>Parallel.For</c> stops SCHEDULING any budgeted entry
+	/// that has not started yet and throws rather than running the whole budget to completion. It cannot
+	/// preempt an entry already blocked inside a synchronous add-on read — <c>GetSchema</c> carries no
+	/// request timeout of its own today, so that thread only unblocks once the underlying HTTP call itself
+	/// returns or fails — but cancellation does stop the fan-out from starting MORE such calls after the
+	/// caller (an MCP read-response deadline) has stopped waiting.
+	/// </para>
 	/// </summary>
 	private static EntityProbeOutcome[] ProbeBudgeted(
-		ProbeContext context, IReadOnlyList<(string Name, string EntityUId)> budgeted, Guid packageUId) {
+		ProbeContext context, IReadOnlyList<(string Name, string EntityUId, Guid PackageUId)> budgeted,
+		CancellationToken cancellationToken) {
 		var outcomes = new EntityProbeOutcome[budgeted.Count];
 		Parallel.For(0, budgeted.Count,
-			new ParallelOptions { MaxDegreeOfParallelism = MaxEntityProbeParallelism },
+			new ParallelOptions { MaxDegreeOfParallelism = MaxEntityProbeParallelism, CancellationToken = cancellationToken },
 			i => {
-				(string name, string entityUId) = budgeted[i];
+				(string name, string entityUId, Guid packageUId) = budgeted[i];
 				try {
 					ActionTargetState state = DefaultPageAddonReader.ReadMobileState(context, entityUId, packageUId);
 					Guid? candidatePageUId = null;
@@ -647,11 +705,15 @@ public static class MobileActionTargetProbe {
 	}
 
 	/// <summary>
-	/// Reads the objects' <c>SysSchema</c> rows and keeps the BASE row UId per name — the stable unit, exactly
-	/// as <c>ClassicEntitySchemaQuery.ResolveEntityUId</c> picks it; a replacing layer is not a
-	/// different object and must not be addressed instead. <paramref name="seenNames"/> separates "no rows at
-	/// all" from "rows but no base row", which resolve differently. Internal, not private:
-	/// <see cref="ExistingMobilePageProbe"/> resolves an entity NAME to a UId the same way.
+	/// Reads the objects' <c>SysSchema</c> rows and keeps the BASE row UId (and its own package UId, via the
+	/// <c>SysPackage.UId</c> lookup path) per name — the stable unit, exactly as
+	/// <c>ClassicEntitySchemaQuery.ResolveEntityUId</c> picks it; a replacing layer is not a different object
+	/// and must not be addressed instead. The package column rides the SAME batched read that already resolves
+	/// the UId, so every caller gets the object's OWN package at no extra round trip instead of having to fall
+	/// back to whatever package happens to be converting it (see <see cref="DefaultPageAddonReader"/>).
+	/// <paramref name="seenNames"/> separates "no rows at all" from "rows but no base row", which resolve
+	/// differently. Internal, not private: <see cref="ExistingMobilePageProbe"/> resolves an entity NAME to a
+	/// UId the same way.
 	/// </summary>
 	/// <returns>
 	/// Whether a chunk came back EXACTLY full, i.e. rows may have been left behind. A <c>SelectQuery</c> is
@@ -661,7 +723,7 @@ public static class MobileActionTargetProbe {
 	/// </returns>
 	internal static bool ReadEntitySchemaRows(
 		ProbeContext context, IReadOnlyList<string> names,
-		IDictionary<string, string> uIdByName, ISet<string> seenNames) {
+		IDictionary<string, string> uIdByName, IDictionary<string, string> packageUIdByName, ISet<string> seenNames) {
 		bool truncated = false;
 		foreach (IReadOnlyList<string> chunk in Chunk(names)) {
 			int requestedRows = chunk.Count * RowsPerNameHeadroom;
@@ -670,6 +732,7 @@ public static class MobileActionTargetProbe {
 				new JObject {
 					["Name"] = ClassicEntitySchemaQuery.Column("Name"),
 					["UId"] = ClassicEntitySchemaQuery.Column("UId"),
+					["PackageUId"] = ClassicEntitySchemaQuery.Column("SysPackage.UId"),
 					// ORDERED ascending, so the base row (ExtendParent = false) is always inside the row window.
 					// A SelectQuery caps an UNORDERED result, and an OOTB object routinely carries more schema
 					// layers than the per-name headroom: on a real stand Account, Lead, Activity and Case all
@@ -691,6 +754,10 @@ public static class MobileActionTargetProbe {
 				string uId = row["UId"]?.ToString();
 				if (row["ExtendParent"]?.Value<bool?>() == false && !string.IsNullOrWhiteSpace(uId)) {
 					uIdByName[name] = uId;
+					string packageUId = row["PackageUId"]?.ToString();
+					if (!string.IsNullOrWhiteSpace(packageUId)) {
+						packageUIdByName[name] = packageUId;
+					}
 				}
 			}
 		}

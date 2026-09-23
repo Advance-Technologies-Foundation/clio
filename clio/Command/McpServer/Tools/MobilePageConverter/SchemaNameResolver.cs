@@ -30,12 +30,21 @@ internal static class SchemaNameResolver {
 
 	/// <summary>
 	/// Resolves every UId in <paramref name="uIds"/> to its <c>SysSchema</c> name in one chunked select.
-	/// Truncation cannot cut this read the way it can cut a by-Name read: the UIds are DISTINCT, a
-	/// <c>SysSchema</c> UId matches at most one row, and the row cap is the distinct count — so a full result
-	/// is the all-resolved case, and <see cref="Status.RowMissing"/> always means "no such row", never "cut
-	/// off". Propagates a transport/query failure to the caller rather than swallowing it: a caller batching
-	/// many UIds in one call needs the actual exception to compose its own degradation note, which this
-	/// resolver has no way to phrase on its callers' behalf.
+	/// The row cap requests <see cref="MobileActionTargetProbe.RowsPerNameHeadroom"/> rows per distinct UId,
+	/// not a bare 1:1 count: a <c>SysSchema</c> UId is not guaranteed row-unique the way a fresh single-row
+	/// lookup would be — like a Name, a UId can carry a base row plus a replacing layer per package — and an
+	/// unordered result caps arbitrarily, so a chunk with even one duplicated UId could otherwise push a
+	/// sibling UId's row out of the window and misreport it as <see cref="Status.RowMissing"/>. This mirrors
+	/// the identical fix already applied to the by-Name read in
+	/// <see cref="MobileActionTargetProbe.ReadEntitySchemaRows"/>. Unlike that read, no explicit ordering is
+	/// needed here: every row sharing a UId names the same schema, so whichever row survives the cap carries
+	/// the same <c>Name</c>. The query is built locally (<see cref="BuildSelectNamesByUIdWithHeadroom"/>)
+	/// rather than through <see cref="ClassicEntitySchemaQuery.BuildSelectSchemaNamesByUId"/> so this probe's
+	/// headroom decision cannot change that shared helper's row cap for its other two callers (a section
+	/// module, a detail's edit card), which still assume one row per distinct UId. Propagates a
+	/// transport/query failure to the caller rather than swallowing it: a caller batching many UIds in one
+	/// call needs the actual exception to compose its own degradation note, which this resolver has no way
+	/// to phrase on its callers' behalf.
 	/// </summary>
 	internal static IReadOnlyDictionary<Guid, Result> ResolveNames(
 		MobileActionTargetProbe.ProbeContext context, IReadOnlyList<Guid> uIds) {
@@ -46,8 +55,9 @@ internal static class SchemaNameResolver {
 		string[] distinct = [.. uIds.Select(u => u.ToString()).Distinct(StringComparer.OrdinalIgnoreCase)];
 		var nameByUId = new Dictionary<Guid, string>();
 		foreach (IReadOnlyList<string> chunk in Chunk(distinct)) {
+			int requestedRows = chunk.Count * MobileActionTargetProbe.RowsPerNameHeadroom;
 			JArray rows = ClassicEntitySchemaQuery.Select(
-				context.Client, context.UrlBuilder, ClassicEntitySchemaQuery.BuildSelectSchemaNamesByUId(chunk));
+				context.Client, context.UrlBuilder, BuildSelectNamesByUIdWithHeadroom(chunk, requestedRows));
 			foreach (JToken row in rows) {
 				if (Guid.TryParse(row["UId"]?.ToString(), out Guid rowUId)) {
 					nameByUId[rowUId] = row["Name"]?.ToString();
@@ -59,6 +69,22 @@ internal static class SchemaNameResolver {
 		}
 		return results;
 	}
+
+	/// <summary>
+	/// Byte-identical column set and <c>In</c>-filter shape to
+	/// <see cref="ClassicEntitySchemaQuery.BuildSelectSchemaNamesByUId"/>, with an explicit <paramref
+	/// name="rowCount"/> instead of that helper's implicit "one row per distinct UId" assumption. Kept as a
+	/// local copy — scoped to this mobile-converter probe only — rather than widening the shared helper's
+	/// signature, so this row-cap decision can never affect its other two, unrelated callers.
+	/// </summary>
+	private static JObject BuildSelectNamesByUIdWithHeadroom(IReadOnlyCollection<string> uIds, int rowCount) =>
+		ClassicEntitySchemaQuery.Query(
+			"SysSchema",
+			new JObject {
+				["UId"] = ClassicEntitySchemaQuery.Column("UId"), ["Name"] = ClassicEntitySchemaQuery.Column("Name")
+			},
+			ClassicEntitySchemaQuery.Group(("byUId", ClassicEntitySchemaQuery.InFilter("UId", uIds, 0))),
+			rowCount);
 
 	/// <summary>Settles one UId's <see cref="Result"/> from the batched <c>SysSchema</c> read.</summary>
 	private static Result ResolveFromRow(IReadOnlyDictionary<Guid, string> nameByUId, Guid uId) {

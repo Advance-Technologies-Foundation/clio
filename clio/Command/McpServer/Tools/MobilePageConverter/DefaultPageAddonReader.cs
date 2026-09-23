@@ -39,9 +39,15 @@ internal static class DefaultPageAddonReader {
 	/// deliberately, not as a shortcut. That method resolves the object's own package and parent schema
 	/// because it backs a read-modify-WRITE against one package; this read only asks, and
 	/// <c>UseFullHierarchy</c> makes the server walk the hierarchy itself. Verified against a stand: the same
-	/// object read through four different packages returns an identical page set, so
-	/// <c>TargetPackageUId</c> does not select the answer — which is why the SOURCE page's package (the one
-	/// clio already has, with no extra round trip) is a legitimate value here.
+	/// object read through four different packages returns an identical page set, so <c>TargetPackageUId</c>
+	/// does not select the ANSWER. It still matters for a DIFFERENT reason: <c>GetSchema</c> auto-provisions
+	/// an empty descriptor when none exists (see <see cref="MobileActionTargetProbe"/>'s class doc), and that
+	/// write lands in whichever package <c>TargetPackageUId</c> names. <paramref name="packageUId"/> is
+	/// therefore the OBJECT's own package — resolved by <see cref="MobileActionTargetProbe.ReadEntitySchemaRows"/>
+	/// in the same batched <c>SysSchema</c> read that already resolves <paramref name="entitySchemaUId"/>, so at
+	/// no extra round trip — falling back to the source page's package only when the object's own could not be
+	/// resolved. Never the source page's package outright: that would auto-provision a descriptor for someone
+	/// else's object inside the page's own package, to travel with it on the next <c>push-pkg</c>.
 	/// </remarks>
 	internal static ActionTargetState ReadMobileState(
 		MobileActionTargetProbe.ProbeContext context, string entitySchemaUId, Guid packageUId) {

@@ -82,10 +82,14 @@ public class MobilePageConversionGuideTool {
 		+ "article. It FAILS rather than degrading when the mobile template cannot be read, because without it "
 		+ "the guide would insert duplicates of elements that template already provides. "
 		+ "requestConversions.missingTargetPages / unresolvedTargetRequests report candidate names ONLY — "
-		+ "they carry no classification. YOU must classify each distinct candidate "
+		+ "they carry no classification of existence/schema-type. YOU must classify each distinct candidate "
 		+ "yourself (get-page for existence/schema-type; list-pages / find-entity-schema to check for an "
 		+ "existing mobile equivalent) before presenting a plan; a candidate matched under a mobile-styled "
 		+ "name that turns out to be Classic UI counts as NO existing mobile equivalent. "
+		+ "A missingTargetPages row's targetKind entity-default-mobile-page covers TWO shapes of its target "
+		+ "value: a real resolved page schema name, or (when no candidate was found) the raw object/entity "
+		+ "name — never call get-page on the latter expecting a page. resolvedCandidateSchemaName (present "
+		+ "only on that shape when a candidate WAS resolved) tells them apart. "
 		+ "MANDATORY before acting on the guide: get-guidance name `freedom-page-web-to-mobile-conversion`.")]
 	public async Task<MobilePageConversionGuideResponse> GetMobilePageConversionGuide(
 		[Description("Parameters: schema-name (required, the source page); target-schema-name (optional suggested mobile page name); version (optional registry/Creatio version); environment-name preferred; uri/login/password emergency fallback only.")]
@@ -231,7 +235,8 @@ public class MobilePageConversionGuideTool {
 			_commandResolver, args.EnvironmentName, args.Uri, args.Login, args.Password,
 			new MobileActionTargetProbeRequest(
 				pageResponse.Bundle?.ViewConfig, rules, pageResponse.Bundle?.ModelConfig,
-				pageResponse.Page?.PackageUId));
+				pageResponse.Page?.PackageUId),
+			cancellationToken);
 
 		// Read-only probe: does the entity/page being converted already have an EXISTING mobile page — the
 		// reuse-vs-convert fact (playbook step 2a)? Best-effort; never blocks the guide.
@@ -239,7 +244,8 @@ public class MobilePageConversionGuideTool {
 			_commandResolver, args.EnvironmentName, args.Uri, args.Login, args.Password,
 			new ExistingMobilePageProbeRequest(
 				sectionRegistration, isFormPage, pageResponse.Bundle?.ModelConfig, pageResponse.Page?.PackageUId,
-				targetName));
+				targetName),
+			cancellationToken);
 
 		MobilePageConversionGuide guide;
 		try {
