@@ -15,6 +15,11 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 
 ## Application Management
 
+<a id="attach"></a>
+- [`attach`](docs/commands/attach.md) - Attach a local workspace to an existing Kubernetes runtime
+<a id="detach"></a>
+- [`detach`](docs/commands/detach.md) - Detach a workspace without destroying its runtime or files
+
 <a id="clear-local-env"></a>
 <a id="clear-env"></a>
 - [`clear-local-env`](docs/commands/clear-local-env.md) - Clear deleted local environments, `clear-env`

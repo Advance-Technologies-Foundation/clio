@@ -909,6 +909,8 @@ public class BindingsModule {
 		services.AddTransient<ExperimentalCommand>();
 		services.AddTransient<ConfigCommand>();
 		services.AddTransient<RegisterCommand>();
+		services.AddTransient<AttachCommand>();
+		services.AddTransient<DetachCommand>();
 		services.AddTransient<UnregisterCommand>();
 		
 		services.AddTransient<IUserPromptService, UserPromptService>();

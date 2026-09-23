@@ -1,0 +1,7 @@
+Stop attachment without deleting the runtime, database or workspace files.
+
+Usage: clio detach --workspace <path>
+
+Requires the original host's Mutagen session and Kubernetes access. Stops synchronization,
+preserves pending changes in each copy, and cleans only the owned attachment. Failed cleanup can be retried.
+No ClioGate requirement.

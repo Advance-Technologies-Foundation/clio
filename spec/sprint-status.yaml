@@ -21,6 +21,10 @@
 # 2026-07-06) is a separate Jira ticket stacked on the same branch; tracked as its own row.
 
 stories:
+  - id: story-runtime-attachment-1
+    title: Attach local workspaces to existing Kubernetes runtimes
+    status: in-progress
+    file: spec/stories/story-runtime-attachment-1.md
   - id: story-create-user-task-page-1
     title: Native Classic parameter-page scaffolding
     status: in-progress

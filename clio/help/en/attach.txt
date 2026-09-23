@@ -1,0 +1,9 @@
+Attach an existing local Clio workspace to an operator-managed Kubernetes runtime.
+
+Usage: clio attach <environment> --workspace <path> --ssh-alias <alias>
+Options: --provider operator-kubernetes, --context <context>, --namespace <namespace>, --mode develop
+
+Requires local Mutagen, OpenSSH and kubectl on PATH, an existing trusted SSH alias,
+and an attachable operator Dev image. Environment is the CreatioInstance name.
+Synchronizes packages both ways; conflicts are preserved. Build on the runtime.
+Does not deploy Creatio, configure agent MCP servers or activate packages. No ClioGate requirement.

@@ -184,3 +184,8 @@ clio/Utilities/WebBrowser.cs
 clio/WikiHelpViewer.cs
 clio/Workspace/WorkspaceEnvironment.cs
 clio/Workspace/WorkspaceMerger.cs
+clio/Command/RuntimeAttachmentCommand.cs
+clio/Common/RuntimeAttachment/AttachmentProcess.cs
+clio/Common/RuntimeAttachment/KubernetesAttachmentProvider.cs
+clio/Common/RuntimeAttachment/RuntimeAttachmentModels.cs
+clio/Common/RuntimeAttachment/RuntimeAttachmentService.cs
