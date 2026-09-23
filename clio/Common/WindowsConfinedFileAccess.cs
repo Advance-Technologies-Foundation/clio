@@ -234,7 +234,10 @@ internal sealed class WindowsConfinedFileAccess : IConfinedFileAccess {
 			pinned.Reverify();
 			File.Move(temporaryPath, canonicalPath, overwrite: false);
 		}
-		catch (IOException) when (File.Exists(canonicalPath) && !File.Exists(temporaryPath)) {
+		catch (IOException) when (File.Exists(canonicalPath)) {
+			// File.Move with overwrite:false fails on a taken name WITHOUT moving anything, so the temporary
+			// file is still there at this point and has to be removed here.
+			DeleteQuietly(temporaryPath);
 			throw new OutputFileAlreadyExistsException(canonicalPath);
 		}
 		catch {

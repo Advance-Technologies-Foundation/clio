@@ -144,9 +144,11 @@ public sealed class ConfinedFileAccessTests {
 		// Assert
 		File.ReadAllText(path).Should().Be("{\"written\":true}",
 			because: "the write must publish exactly the bytes it was given, creating the parent directory");
-		second.Should().Throw<IOException>(
-			because: "an explicit output-file is additive and must never overwrite an existing file")
-			.WithMessage("*already exists*");
+		second.Should().Throw<OutputFileAlreadyExistsException>(
+			because: "an explicit output-file is additive and must never overwrite an existing file, and the "
+				+ "collision has to surface as the typed exception the error-code classification matches on");
+		Directory.GetFiles(Path.Combine(_sandbox, "nested"), "*.tmp").Should().BeEmpty(
+			because: "a refused publish must not leave its temporary file behind");
 	}
 
 	[Test]
