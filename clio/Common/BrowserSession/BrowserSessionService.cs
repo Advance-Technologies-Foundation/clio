@@ -36,7 +36,7 @@ public sealed class BrowserSessionService : IBrowserSessionService {
 		Justification = "The compatibility constructor must retain its historical public signature.")]
 	public BrowserSessionService(ICreatioAuthClient authClient, IBrowserSessionCache cache,
 		IFileSystem fileSystem, IHttpClientFactory httpClientFactory)
-		: this(new ApplicationClientFactory(new NoReauthExecutor()), cache, fileSystem) {
+		: this(new ApplicationClientFactory(new NoReauthExecutor(), Clio.Common.ExternalAccess.ExternalAccessSessionProvider.CreateDefault()), cache, fileSystem) {
 		ArgumentNullException.ThrowIfNull(authClient);
 		ArgumentNullException.ThrowIfNull(httpClientFactory);
 		_legacyAuthClient = authClient;

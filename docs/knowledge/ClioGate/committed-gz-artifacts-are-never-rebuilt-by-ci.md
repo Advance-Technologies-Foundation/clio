@@ -5,6 +5,7 @@ applies-to:
   - clio/cliogate/cliogate.gz
   - clio/cliogate/cliogate_netcore.gz
   - build.ps1
+  - .github/workflows/build.yml
 date: 2026-09-11
 ---
 
@@ -12,8 +13,11 @@ date: 2026-09-11
 actually installs: `InstallGateCommand.GetPackagePath()` reads
 `<ExecutingDirectory>/cliogate/<name>.gz`, and `clio.csproj` copies `cliogate\**` to output. They are
 committed binaries produced by `build.ps1` (or the manual macOS steps in AGENTS.md). No workflow
-rebuilds them: `.github/workflows/build.yml` compiles and tests `cliogate/**` but never runs the
-`compress` step, and the nuget release workflow does not either.
+rebuilds them: `cliogate/**` is compiled and tested only by the TeamCity build
+`Team_Atf_ClioUnitTests` (step `ClioGate tests (net472)`, see
+[clio-unit-tests-teamcity-config-is-hand-maintained](../infra/clio-unit-tests-teamcity-config-is-hand-maintained.md)),
+`.github/workflows/build.yml` no longer watches those paths at all, and neither that build nor the
+nuget release workflow ever runs the `compress` step.
 
 **Why it is this way** — the gate targets `net472` against a specific CreatioSDK, so the archive is
 produced once on a developer machine rather than per CI run.
