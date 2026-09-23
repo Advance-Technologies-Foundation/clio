@@ -2073,7 +2073,7 @@ public sealed class ServerProcessDescriberTests {
 			+ "\"subProcess\":{\"process\":\"UsrOrderApproval\",\"multiInstance\":true,"
 			+ "\"multiInstanceOptions\":{\"enabled\":true,\"executionMode\":\"Sequential\","
 			+ "\"ignoreErrors\":false,\"inputCollection\":\"InputRecordCollection\","
-			+ "\"futureMultiInstanceFact\":\"kept\"}},"
+			+ "\"calleeInSync\":false,\"futureMultiInstanceFact\":\"kept\"}},"
 			+ "\"parameters\":[]}],\"flows\":[],\"parameters\":[]}}");
 		ServerProcessDescriber describer = CreateDescriber(client);
 
@@ -2094,6 +2094,14 @@ public sealed class ServerProcessDescriberTests {
 			because: "the same holds for the other suppressed default");
 		block["inputCollection"]!.GetValue<string>().Should().Be("InputRecordCollection",
 			because: "the role a caller maps into has to reach them");
+		block.AsObject().ContainsKey("calleeInSync").Should().BeTrue(
+			because: "calleeInSync is the one field that says a multi-instance element owes a re-synchronization, "
+				+ "and only the OUTBOUND side can see its wire name drift: the inbound read binds "
+				+ "case-insensitively, so with the JsonPropertyName deleted it still deserializes - and then "
+				+ "re-serializes as 'CalleeInSync', which no caller looks for");
+		block["calleeInSync"]!.GetValue<bool>().Should().BeFalse(
+			because: "false is the actionable value - a re-synchronization is owed - and it must reach the caller "
+				+ "as false, not be dropped as a default");
 		block["futureMultiInstanceFact"]!.GetValue<string>().Should().Be("kept",
 			because: "this block carries the overflow bag every server-built block here carries, and capturing an "
 				+ "undeclared field is only half of it - it has to come back out");
@@ -2155,5 +2163,91 @@ public sealed class ServerProcessDescriberTests {
 		JsonNode.Parse(reserialized)["elements"]![0]!["subProcess"]!.AsObject()
 			.ContainsKey("multiInstanceOptions").Should().BeFalse(
 				because: "and it has to be absent on the wire too, not merely null in the model");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A multi-instance element's ELEMENT-LEVEL parameters carry the callee's contract as itemProperties with NO provenance tag - unlike a Read data collection, whose items are stamped with column UIds - and one of them carries a per-item mapping value. Both have to survive deserialization AND the re-serialize the caller reads: the item value is the only place a caller can see what each iteration receives, and a tag-less item must omit the field rather than surface it as null. The existing itemProperties fixture reads a PROCESS-level, tagged collection only, so the element path and the tag-less shape were unpinned.")]
+	public void Describe_ShouldReadTagLessItemPropertiesWithAPerItemValue_WhenAMultiInstanceElementReportsThem() {
+		// Arrange - the shape CrtProcessBuilder reports for a converted element: the per-item value is a flat
+		// [Element].[Parameter] metapath pointing at the Read data element's collection item
+		const string perItemValue = "[#[Element:{0a1b2c3d-0000-0000-0000-00000000000a}]."
+			+ "[Parameter:{0a1b2c3d-0000-0000-0000-0000000000b1}]#]";
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"SubProcess1\","
+			+ "\"type\":\"ProcessSchemaSubProcess\",\"buildType\":\"subprocess\","
+			+ "\"subProcess\":{\"process\":\"UsrOrderApproval\",\"multiInstance\":true,"
+			+ "\"multiInstanceOptions\":{\"enabled\":true,\"inputCollection\":\"InputRecordCollection\"}},"
+			+ "\"parameters\":[{\"name\":\"InputRecordCollection\",\"uid\":\"p1\","
+			+ "\"type\":\"CompositeObjectList\",\"direction\":\"In\","
+			+ "\"itemProperties\":[{\"name\":\"ItemName\",\"uid\":\"i1\",\"type\":\"ShortText\","
+			+ "\"direction\":\"In\",\"source\":\"Mapping\",\"value\":\"" + perItemValue + "\"},"
+			+ "{\"name\":\"Comment\",\"uid\":\"i2\",\"type\":\"ShortText\",\"direction\":\"In\"}]}]}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+		string reserialized = JsonSerializer.Serialize(result.Value, DescribeProcessCommand.OutputOptions);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedParameter input = result.Value.Elements[0].Parameters[0];
+		input.ItemProperties.Should().HaveCount(2,
+			because: "the callee's contract lives one level down on a multi-instance element, item by item");
+		input.ItemProperties[0].Value.Should().Be(perItemValue,
+			because: "the per-item mapping is the only place a caller can see what each iteration receives");
+		input.ItemProperties[0].Source.Should().Be("Mapping",
+			because: "the source kind says the value is a binding rather than a constant");
+		input.ItemProperties[0].Tag.Should().BeNull(
+			because: "a callee parameter carries no provenance stamp, and absence must read as absence");
+		input.ItemProperties[1].Value.Should().BeNull(
+			because: "an item nothing was mapped onto carries no value, and it must not borrow one");
+		JsonObject reserializedInput = JsonNode.Parse(reserialized)["elements"]![0]!["parameters"]![0]!.AsObject();
+		reserializedInput.ContainsKey("itemProperties").Should().BeTrue(
+			because: "the item shape has to reach the caller under its WIRE name - the inbound read binds "
+				+ "case-insensitively, so a dropped JsonPropertyName still deserializes and then re-serializes as "
+				+ "'ItemProperties', which no caller looks for");
+		JsonNode item = reserializedInput["itemProperties"]![0]!;
+		item["value"]!.GetValue<string>().Should().Be(perItemValue,
+			because: "the value has to survive the re-serialize the caller actually reads, under its wire name");
+		item.AsObject().ContainsKey("tag").Should().BeFalse(
+			because: "a tag-less item must OMIT the field rather than emit null, the same rule as a tag-less "
+				+ "process parameter");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A CrtProcessBuilder that predates the options block reports multiInstance:true with NO multiInstanceOptions at all. The describer has to TOLERATE that - read the element, keep multiInstance true and leave the block null - rather than refuse the read or synthesize an empty block: an empty object would read as 'it iterates, with nothing configured', and a refused read would take the whole graph with it over one element.")]
+	public void Describe_ShouldTolerateAMultiInstanceElementWithoutAnOptionsBlock_WhenAnOlderServerOmitsIt() {
+		// Arrange
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"SubProcess1\","
+			+ "\"type\":\"ProcessSchemaSubProcess\",\"buildType\":\"subprocess\","
+			+ "\"subProcess\":{\"process\":\"UsrOrderApproval\",\"multiInstance\":true,\"inSync\":false},"
+			+ "\"parameters\":[]}],\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(
+			because: "an older server's element is still a readable element - one missing block must not fail "
+				+ "the whole graph");
+		DescribedSubProcess block = result.Value.Elements[0].SubProcess;
+		block.MultiInstance.Should().Be(true,
+			because: "the flag the older server DID report has to come through as reported");
+		block.MultiInstanceOptions.Should().BeNull(
+			because: "the block was not reported, so the model must not invent one - an empty object would claim "
+				+ "the element iterates with nothing configured");
+		JsonNode subProcess = JsonNode.Parse(JsonSerializer.Serialize(result.Value,
+			DescribeProcessCommand.OutputOptions))["elements"]![0]!["subProcess"]!;
+		subProcess["multiInstance"]!.GetValue<bool>().Should().BeTrue(
+			because: "the caller still has to learn the element iterates");
+		subProcess.AsObject().ContainsKey("multiInstanceOptions").Should().BeFalse(
+			because: "and the absent block stays absent on the wire, not an empty object");
 	}
 }

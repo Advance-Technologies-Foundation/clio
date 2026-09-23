@@ -636,7 +636,7 @@ public class BundledProcessBuilderPackageTests {
 
 	/// <summary>
 	/// Counts occurrences of <paramref name="value"/> that are actually CODE — i.e. not preceded on their own
-	/// line by a <c>//</c> comment marker.
+	/// line by a <c>//</c> comment marker that sits outside a double-quoted string literal.
 	/// </summary>
 	/// <remarks>
 	/// A plain substring count over archive text cannot tell a live call from a commented-out one, and for the
@@ -645,7 +645,12 @@ public class BundledProcessBuilderPackageTests {
 	/// unchanged, and both gate literals still match — because the guard CLASS is untouched — so an archive
 	/// with zero live gates passes every pin in this fixture. Line-level rather than token-level on purpose:
 	/// this is a text scan over sources it cannot parse, so it recognises the one form that actually occurs
-	/// (<c>// _guard.…</c>) and does not pretend to understand block comments or strings.
+	/// (<c>// _guard.…</c>) and does not pretend to understand block comments, verbatim or raw strings, or
+	/// character literals.
+	/// <para>The ONE piece of string awareness it has is the one whose absence fails in the unsafe direction:
+	/// a <c>//</c> inside an ordinary string earlier on the line - a URL is the obvious one - used to mark the
+	/// rest of the line as a comment, so a live <c>[OperationContract]</c> after it went UNCOUNTED, and an
+	/// undercount is exactly what lets an extra endpoint past the operation-count guard.</para>
 	/// </remarks>
 	private static int CountUncommentedOccurrences(string text, string value) {
 		int count = 0;
@@ -654,11 +659,37 @@ public class BundledProcessBuilderPackageTests {
 			index = text.IndexOf(value, index + value.Length, StringComparison.Ordinal)) {
 			int lineStart = text.LastIndexOfAny(['\n', '\r'], index) + 1;
 			string beforeOnLine = text.Substring(lineStart, index - lineStart);
-			if (!beforeOnLine.Contains("//", StringComparison.Ordinal)) {
+			if (!ContainsLineCommentMarker(beforeOnLine)) {
 				count++;
 			}
 		}
 		return count;
+	}
+
+	/// <summary>
+	/// Whether <paramref name="line"/> carries a <c>//</c> that starts a comment - one OUTSIDE a double-quoted
+	/// string literal. A backslash inside a string escapes the next character, so <c>"a \"//\" b"</c> is one
+	/// string and carries no comment.
+	/// </summary>
+	private static bool ContainsLineCommentMarker(string line) {
+		bool insideString = false;
+		for (int position = 0; position < line.Length; position++) {
+			char current = line[position];
+			if (insideString) {
+				if (current == '\\') {
+					position++;
+				} else if (current == '"') {
+					insideString = false;
+				}
+				continue;
+			}
+			if (current == '"') {
+				insideString = true;
+			} else if (current == '/' && position + 1 < line.Length && line[position + 1] == '/') {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	#endregion
@@ -778,6 +809,32 @@ public class BundledProcessBuilderPackageTests {
 					+ "an allowlist naming an operation that no longer exists silently widens what the count "
 					+ "above tolerates");
 		}
+	}
+
+	[TestCase("\t\t[OperationContract]\n", 1, TestName = "{m}(live line)")]
+	[TestCase("\t\t// [OperationContract]\n", 0, TestName = "{m}(commented line)")]
+	[TestCase("\t\tDoWork(); // [OperationContract]\n", 0, TestName = "{m}(trailing comment)")]
+	[TestCase("\t\t// a note\n\t\t[OperationContract]\n", 1,
+		TestName = "{m}(comment on the previous line)")]
+	[TestCase("\t\tconst string Url = \"http://host/x\"; [OperationContract]\n", 1,
+		TestName = "{m}(double slash inside a string)")]
+	[TestCase("\t\tconst string Text = \"a \\\"//\\\" b\"; [OperationContract]\n", 1,
+		TestName = "{m}(double slash inside a string with escaped quotes)")]
+	[TestCase("\t\tconst string Url = \"http://host/x\"; // [OperationContract]\n", 0,
+		TestName = "{m}(comment after a closed string)")]
+	[Description("The helper both security-count guards stand on counts only occurrences that are CODE. Its failure modes are asymmetric, and both are pinned: counting a COMMENTED occurrence lets a commented-out gate call stand in for a live one, and NOT counting a live one - which the line scan did whenever a '//' sat inside a string earlier on the line, a URL being the obvious case - lets an extra [OperationContract] past the operation-count guard, the unsafe direction for a count that exists to catch an endpoint arriving.")]
+	public void CountUncommentedOccurrences_ShouldCountOnlyCode_WhenScanningALine(string text, int expected) {
+		// Arrange
+		const string value = "[OperationContract]";
+
+		// Act
+		int count = CountUncommentedOccurrences(text, value);
+
+		// Assert
+		count.Should().Be(expected,
+			because: "an occurrence counts exactly when no '//' OUTSIDE a double-quoted string precedes it on its "
+				+ "own line - a '//' inside a string is not a comment, and a comment on another line does not "
+				+ "reach this one");
 	}
 
 	[Test]
