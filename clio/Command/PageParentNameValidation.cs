@@ -36,15 +36,7 @@ internal static class PageParentNameValidation {
 		var result = new SchemaValidationResult { IsValid = true };
 		if (PageSchemaTypeExtensions.FromBody(body) == PageSchemaType.Mobile) return result;
 		JArray diff = ReadDiff(body);
-		var known = new HashSet<string>(inheritedNames ?? [], StringComparer.Ordinal);
-		foreach (JObject op in diff.OfType<JObject>().Where(x => x.Value<string>(OperationKey) == "remove" && x["properties"] is not JArray))
-			known.Remove(op.Value<string>("name") ?? "");
-		foreach (JObject op in diff.OfType<JObject>().Where(x => x.Value<string>(OperationKey) == "insert")) {
-			if (op.Value<string>("name") is string name) known.Add(name);
-			if (op["values"] is JObject values) {
-                foreach (JProperty property in values.Properties().Where(x => x.Name != "name")) known.UnionWith(Names(property.Value));
-            }
-		}
+		HashSet<string> known = CollectKnownNames(diff, inheritedNames);
 		foreach (JObject op in ParentOperations(diff)) {
             if (inheritedNames is not null && op.Value<string>(OperationKey) == "move" &&
                 !known.Contains(op.Value<string>("name") ?? "")) continue;
@@ -55,6 +47,19 @@ internal static class PageParentNameValidation {
 			else { result.IsValid = false; result.Errors.Add(message); }
 		}
 		return result;
+	}
+
+	private static HashSet<string> CollectKnownNames(JArray diff, IReadOnlyList<string> inheritedNames) {
+		var known = new HashSet<string>(inheritedNames ?? [], StringComparer.Ordinal);
+		foreach (JObject op in diff.OfType<JObject>().Where(x => x.Value<string>(OperationKey) == "remove" && x["properties"] is not JArray))
+			known.Remove(op.Value<string>("name") ?? "");
+		foreach (JObject op in diff.OfType<JObject>().Where(x => x.Value<string>(OperationKey) == "insert")) {
+			if (op.Value<string>("name") is string name) known.Add(name);
+			if (op["values"] is JObject values) {
+                foreach (JProperty property in values.Properties().Where(x => x.Name != "name")) known.UnionWith(Names(property.Value));
+            }
+		}
+		return known;
 	}
 
 	internal static string Diagnostic(string child, string parent, IEnumerable<string> known) {
