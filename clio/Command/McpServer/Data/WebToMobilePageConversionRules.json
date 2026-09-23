@@ -46,15 +46,25 @@
       "web": "PageWithTabsFreedomTemplate",
       "mobile": "MobilePageWithTabsFreedomTemplate",
       "note": "Tabbed record page (Tabs + Feed + Attachments). Preferred target for web tabbed record pages.",
+      "declaredElements": [
+        {
+          "name": "GeneralInformationTab",
+          "type": "crt.TabContainer",
+          "parentName": "Tabs",
+          "propertyName": "items",
+          "index": 1,
+          "captionResource": { "key": "GeneralInformationTab_caption", "value": "General information" }
+        }
+      ],
       "containers": [
         { "web": "Tabs", "mobile": "Tabs" },
         { "web": "GeneralInfoTab", "mobile": "GeneralInfoTab" },
-        { "web": "GeneralInfoTabContainer", "mobile": "GeneralTabContainer" },
+        { "web": "GeneralInfoTabContainer", "mobile": "AreaProfileContainer" },
         { "web": "FeedTabContainer", "mobile": "FeedContainer" },
         { "web": "AttachmentsTabContainer", "mobile": "AttachmentsContainer" },
         { "web": "CardToggleTabPanel", "mobile": "Tabs" },
         { "web": "CardContentWrapper", "mobile": "GeneralTabContainer" },
-        { "web": "SideAreaProfileContainer", "mobile": "AreaProfileContainer" },
+        { "web": "SideAreaProfileContainer", "mobile": "GeneralInformationTab" },
         { "web": "CardContentWrapper:top", "mobile": "Tabs:top" },
         { "web": "CardContentWrapper:bottom", "mobile": "Tabs:bottom" }
       ],

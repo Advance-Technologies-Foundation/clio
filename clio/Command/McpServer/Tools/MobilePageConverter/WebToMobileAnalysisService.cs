@@ -2723,7 +2723,7 @@ public static partial class WebToMobileAnalysisService {
 				// Children go into the twin ITSELF, and a containers entry deliberately says nothing more than
 				// that. A web element the page did not remove is walked into its own entry, so a page that KEPT
 				// the template's content grid resolves its children through that grid's own pair
-				// (GeneralInfoTabContainer -> GeneralTabContainer); a page that REMOVED it has no such node, that
+				// (GeneralInfoTabContainer -> AreaProfileContainer); a page that REMOVED it has no such node, that
 				// pair never matches, and the children belong where the page put them — in the tab itself, which
 				// is a crt.TabContainer and hosts items. The two shapes DIFFER on web (the removed grid was a
 				// two-column layout with its own gap), so carrying the difference is the faithful conversion;
@@ -4840,7 +4840,7 @@ public static partial class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, string> mobileContainerParents = null) {
 		// Grid-container column counts are captured under the WEB container name, but children carry the MOBILE
 		// parent name in their element-map entries — a merge twin or relocated wrapper renames the container
-		// (e.g. CardContentWrapper -> GeneralTabContainer, SideAreaProfileContainer -> AreaProfileContainer).
+		// (e.g. CardContentWrapper -> GeneralTabContainer, GeneralInfoTabContainer -> AreaProfileContainer).
 		// Translate each count to the container's mobile name via its element-map entry so the lookup below
 		// matches renamed pairs; keep the web name as a fallback for containers that are not renamed.
 		// LAST WINS on a duplicate mobile name, which `containers` allows by design. Harmless as shipped: only
@@ -6129,8 +6129,8 @@ public static partial class WebToMobileAnalysisService {
 	private static void InitializeContainerChildSlots(List<ElementMapEntry> elementMap,
 		IReadOnlyDictionary<string, ComponentRegistryEntry> mobileByType) {
 		// occupiedSlots keys purely on Name, not on entry identity. Name is NOT unique across the
-		// element map: `containers` is a MANY-TO-ONE map by design (CardContentWrapper and GeneralInfoTab both
-		// merge onto GeneralTabContainer), so two entries can share one mobile name. This stays safe because the
+		// element map: `containers` is a MANY-TO-ONE map by design (Tabs and CardToggleTabPanel both
+		// merge onto Tabs), so two entries can share one mobile name. This stays safe because the
 		// loop below is gated on Operation == "insert" and every duplicate produced by that map is a MERGE — the
 		// insert side keeps its own uniqueness: Freedom UI requires unique component names on a page (the web
 		// source this walk consumes), and the only NAME-GENERATING path, StableSuffix in BuildTabAreaLayers,

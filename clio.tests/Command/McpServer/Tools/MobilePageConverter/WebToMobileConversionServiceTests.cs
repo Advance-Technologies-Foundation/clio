@@ -1045,7 +1045,7 @@ public sealed class WebToMobileConversionServiceTests {
 			["Tabs"] = "Tabs",
 			["FeedTabContainer"] = "FeedContainer",
 			["AttachmentsTabContainer"] = "AttachmentsContainer",
-			["SideAreaProfileContainer"] = "AreaProfileContainer"
+			["SideAreaProfileContainer"] = "GeneralInformationTab"
 		};
 
 	[Test]
