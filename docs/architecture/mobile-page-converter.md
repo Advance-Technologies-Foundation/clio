@@ -110,7 +110,7 @@ Thirty fields, three caller actions. A "report" field is never planned from; a "
  3. BuildElementMap                → working map (merge / insert / drop / relocate-children)
                                      request bindings remapped / stripped / flagged in place
     ├ RemoveExcludedComponents     rules-driven positional bans
-    ├ RemoveDeadActions            unsupported menu items (entry-graph + verbatim carry); buttons left holding none
+    ├ ApplyComponentRemovals       unsupported actions (entry-graph + verbatim carry); then componentRemovals rules
     ├ RemoveEmptyContainers        bottom-up, cascades
     ├ CompactPositionalIndexes
     ├ AssignConvertedTabIndexes
@@ -137,7 +137,8 @@ Each one fails silently when broken.
 |---|---|
 | Step 4 after every map-mutating pass | Per-type answer says "what will happen to this type" while the caller reads "what happened to these elements"; `mobileContracts` follows the suggestions, so the contract set is wrong in both directions |
 | `RemoveExcludedComponents` before `RemoveEmptyContainers` | A branch the exclusion empties does not cascade away |
-| `RemoveDeadActions` after `RemoveExcludedComponents`, before `RemoveEmptyContainers` | An exclusion can take the last menu item off a button, so running earlier keeps a button the page no longer needs; running later leaves the container it emptied shipping as a shell |
+| `ApplyComponentRemovals` after `RemoveExcludedComponents`, before `RemoveEmptyContainers` | An exclusion can take the last menu item off a button, so running earlier keeps a button the page no longer needs; running later leaves the container it emptied shipping as a shell |
+| `ApplyComponentRemovals` before `InitializeContainerChildSlots` | That pass seeds `[]` into every slot whose children SURVIVED, so after it a healthy menu button and a dead one look identical to an `IsEmpty` test — and the inversion is total, not partial: on the wire `menuItems: []` means HEALTHY and an absent key means dead |
 | `RemoveEmptyContainers` before `InitializeContainerChildSlots` | Emptiness is read as slot *absence*; a seeded slot makes every container look occupied and disables the pass |
 | `CompactPositionalIndexes` before `AssignConvertedTabIndexes` | Compaction rebases each parent's indexed group to 0; over tab indexes it moves the first web tab before the template's general tab |
 | `BuildRequestConversionInfo` after both removal passes | A binding on a removed element is reported as converted for an element the map says not to create |
@@ -201,14 +202,37 @@ Conflict kinds (closed): `changed-named-element` · `changed-scalar` · `nameles
 map is applied while each insert's values are built. Not in the map → `flag-request-unmapped`; unsupported → dropped;
 element removed by a later pass → reported as discarded. Summary: `requestConversions`.
 
-Whether a dead request removes the whole ELEMENT is decided by type, and the set is closed at two: `crt.Button` and
-`crt.MenuItem` (`IsActionOnlyType`). Both exist only to fire an action; anything else keeps its binding and is flagged,
-because dropping it would lose valid UI. `RemoveDeadActions` then covers the two things the walk cannot see — a menu item
-carried VERBATIM inside its button's `values` (the normal shape, since the registry does not declare `crt.MenuItem`, so it
-never reaches `ProcessEventBindings` at all), and a button left with no surviving menu item and no click request of its
-own. Both carry `drop-unsupported-request` — the owner's removal chains back to the very requests its menu items were
-dropped for, so it is one cause, not two. "No click request" is read off the SOURCE node, never off the converted values: a button
-whose `clicked` was stripped for a missing target also has none left, and ENG-94839 decided that button stays.
+Whether a dead request removes the whole ELEMENT is decided by type, and the types are DECLARED: `rules.actionComponents`
+names `crt.Button` and `crt.MenuItem`, plus the properties that carry their action. Both exist only to fire one; anything
+else keeps its binding and is flagged, because dropping it would lose valid UI. An absent or empty section falls back to
+the bundled list rather than matching nothing — the opposite polarity to every other rules section, because switching this
+one off would make unsupported actions SHIP rather than visibly disabling a cleanup.
+
+`ApplyComponentRemovals` then runs TWO rules that are different in kind. The first — "the request does not convert" — is
+code, and covers the shape the walk cannot see: a menu item carried VERBATIM inside its button's `values` (the normal
+shape, since the registry does not declare `crt.MenuItem`, so it never reaches `ProcessEventBindings` at all). It cannot
+be data, because the dead binding is PRESENT on the node and no emptiness test can tell a live request from a dead one.
+
+The second — "this control has nothing left to do" — IS data: `rules.componentRemovals`, a type plus a filter tree of
+`IsEmpty` tests combined by `Group` (`and` / `or`; anything unrecognised reads as `and`, the narrower). It is expressible
+as data precisely because it asks about ABSENCE. An expression resolves against the MERGED state of the property, in
+three tiers — child operations addressing this component by `parentName` + `propertyName`, then the operations named for
+it folded in order, then its own value — and that is what lets ONE filter cover both traversal shapes: a carried node is
+addressed by no operation, so it falls to the third tier. The shipped rules remove a `crt.Button` with neither `clicked`
+nor `menuItems` and a `crt.MenuItem` with no `clicked`, both under `drop-unsupported-request`. Reusing that code is a
+recorded cost, not an oversight: a button that never had a request is reported under a code naming one.
+
+Three guards hold whatever a rule says — a component is never removed while it still owns a live event binding, still
+carries a nested component anywhere in its values (as an array member OR as a single-object slot), or is still named as
+the `parentName` of a surviving operation. They are not narrowings of a rule but the three ways this pass could do damage
+that NOTHING reports: an orphaned `requestConversions` record describing an element the map does not create; a live
+control leaving the page inside its owner with no `drop` entry of its own; and an orphaned child insert, which makes the
+platform differ reject the WHOLE pasted diff with “is not a container for other items”.
+
+A control whose `clicked` was STRIPPED because its navigation target cannot exist on mobile is removed by the same rule
+once that leaves it with nothing to do. ENG-94839 forbade the PROBE from removing such a control and assigned the removal
+here. Its `unresolvedTargetRequests` finding is deliberately NOT purged, unlike the empty-container and exclusion passes'
+— for them the finding is unrelated to the removal, here it is the only field that explains it.
 
 The two traversal shapes must report IDENTICALLY. Which one runs depends on whether the published registry declares
 `crt.MenuItem` — invisible on the caller's page, so it must not reach the caller's report. That is why the pass mints no
@@ -390,7 +414,7 @@ E2E: the `clio.mcp.e2e` converter fixtures against a seeded stand.
 | Gap | Status |
 |---|---|
 | Properties a mobile component cannot accept are copied verbatim | Blocked on `MobileComponentRegistry.json` publishing real per-component property lists |
-| `crt.MenuItem` has no inline contract | Rules emit it; the mobile registry does not describe it. That absence also decides which traversal a button's menu takes — `RemoveDeadActions` covers both shapes and the regression suite pins that they report identically |
+| `crt.MenuItem` has no inline contract | Rules emit it; the mobile registry does not describe it. That absence also decides which traversal a button's menu takes — `ApplyComponentRemovals` covers both shapes and the regression suite pins that they report identically |
 | `adaptiveLayout`, `tabAreaLayers`, `modelConfig`, `viewModelConfig` re-serialize data the operations / diffs carry | Provenance the caller reads, not applies; removal is a contract decision |
 | A type whose every instance vanishes is reported per type, not per element | `componentSuggestions` only |
 | `BuildRootMergeDiff` fallback is indistinguishable by field | A root merge and a targeted diff share the `*Diff` field |
@@ -405,7 +429,8 @@ E2E: the `clio.mcp.e2e` converter fixtures against a seeded stand.
 | `MobilePageConversionGuideModels.cs` | Wire contract, `ReasonCodes`, `DataSectionConflict` |
 | `MobilePageConversionGuideTool.cs` | MCP tool: I/O, template resolution, refusals, `[Description]` trigger |
 | `ExcludedComponentsPass.cs` | Positional exclusion |
-| `WebToMobileAnalysisService.DeadActions.cs` | Dead actions: unsupported menu items in both traversal shapes, and the controls left holding none |
+| `WebToMobileAnalysisService.ComponentRemovals.cs` | Unsupported actions in both traversal shapes, and the `componentRemovals` filter evaluator |
+| `WebToMobileComponentRemovalRules.cs` | The `componentRemovals` filter grammar and its order-independent converter |
 | `PageBusinessRuleProbe.cs` · `MobileSectionRegistrationProbe.cs` | Best-effort environment probes |
 | `WebToMobilePageConversionRulesCatalog.cs` · `WebToMobilePageConversionRulesModels.cs` | Rules loading and model |
 | `clio/Command/McpServer/Data/WebToMobilePageConversionRules.json` | Bundled rules |

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using Newtonsoft.Json.Linq;
@@ -684,6 +684,151 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 
 		rules.Version.Should().Be("9.9.9",
 			because: "when the client serves rules, the catalog must use them rather than the bundled fallback");
+	}
+
+	[Test]
+	[Description("The bundled componentRemovals section declares the two action rules ENG-96178 ships, each naming a PUBLISHED reason code. Pinned because this section is the only place the removal behaviour is stated now: a rules push that changed a type or a filter here would change what the converter removes with no code review at all.")]
+	public void LoadBundled_ComponentRemovals_CarryTheTwoShippedActionRules() {
+		// Arrange / Act
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+
+		// Assert
+		rules.ComponentRemovals.Select(rule => rule.Type).Should()
+			.BeEquivalentTo(["crt.Button", "crt.MenuItem"],
+				because: "these are the two types ENG-96178 removes, and the list is the whole contract");
+		rules.ComponentRemovals.Should().OnlyContain(
+			rule => rule.Reason == ReasonCodes.DropUnsupportedRequest,
+			because: "the ticket reuses one published code rather than minting a second, so a caller reads one "
+				+ "cause instead of rejoining two");
+		ComponentRemovalRule button = rules.ComponentRemovals.Single(rule => rule.Type == "crt.Button");
+		LeftExpressions(button.Filters).Should().BeEquivalentTo(["clicked", "menuItems"],
+			because: "a button goes only when it fires nothing AND holds nothing — either alone would take "
+				+ "a working control");
+		ComponentRemovalRule menuItem = rules.ComponentRemovals.Single(rule => rule.Type == "crt.MenuItem");
+		LeftExpressions(menuItem.Filters).Should().BeEquivalentTo(["clicked"],
+			because: "a menu item has nothing but its action, so that one expression is the whole test");
+	}
+
+	/// <summary>Every <c>leftExpression</c> reachable in a filter tree, in no particular order.</summary>
+	private static IEnumerable<string> LeftExpressions(ComponentPropertyFilter filter) =>
+		filter switch {
+			ComponentPropertyIsEmptyFilter isEmpty => [isEmpty.LeftExpression],
+			ComponentPropertyGroupFilter group => (group.Items ?? []).SelectMany(LeftExpressions),
+			_ => []
+		};
+
+	[Test]
+	[Description("The bundled actionComponents section declares the two types whose unsupported request removes the whole component, each naming clicked as its action. This list is what separates a control that exists only to act from one that may legitimately carry a system or custom request and must merely be flagged.")]
+	public void LoadBundled_ActionComponents_DeclareTheTwoActionOnlyTypes() {
+		// Arrange / Act
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+
+		// Assert
+		rules.ActionComponents.Select(rule => rule.Type).Should()
+			.BeEquivalentTo(["crt.Button", "crt.MenuItem"],
+				because: "dropping any other component over an unsupported request would lose valid UI");
+		rules.ActionComponents.Should().OnlyContain(
+			rule => rule.ActionPropertyNames.Count == 1 && rule.ActionPropertyNames[0] == "clicked",
+			because: "clicked is the binding both types act through, and naming it in data is what stops a "
+				+ "second spelling of it appearing in code");
+	}
+
+	[Test]
+	[Description("filterType is found wherever it sits in the object. System.Text.Json's own polymorphic support requires the discriminator FIRST, and this file is hand-authored in another repository - an author who writes leftExpression first would otherwise get a failure whose cause is invisible in the data. Pinned because the custom converter is the only thing standing between that and a rules file that silently will not load.")]
+	public void ParseStream_FindsTheDiscriminator_WhereverItSitsInTheObject() {
+		// Arrange - filterType LAST in both the group and its item.
+		const string json = """
+			{ "componentRemovals": [ { "type": "crt.Button", "reason": "drop-unsupported-request",
+			    "filters": { "items": [ { "leftExpression": "clicked", "filterType": "IsEmpty" } ],
+			                 "logicalOperation": "and", "filterType": "Group" } } ] }
+			""";
+
+		// Act
+		WebToMobilePageConversionRules rules =
+			WebToMobilePageConversionRulesCatalog.ParseStream(JsonStream(json));
+
+		// Assert
+		ComponentPropertyGroupFilter group = rules.ComponentRemovals.Single().Filters
+			.Should().BeOfType<ComponentPropertyGroupFilter>(
+				because: "the group is recognised by its filterType, not by its position").Subject;
+		group.Items.Single().Should().BeOfType<ComponentPropertyIsEmptyFilter>(
+			because: "and so is every nested item, through the same converter");
+	}
+
+	[Test]
+	[Description("An unknown filterType THROWS rather than deserialising to null. A null filter is not a harmless unknown: MatchingRemovalReason would read the rule as declaring no condition, and the safest reading of that is ambiguous enough that the parse must refuse instead of choosing. Failing here also routes a bad CDN document to the bundled fallback, which is the behaviour a caller should get.")]
+	public void ParseStream_UnknownFilterType_Throws() {
+		// Arrange
+		const string json = """
+			{ "componentRemovals": [ { "type": "crt.Button",
+			    "filters": { "filterType": "Contains", "leftExpression": "clicked" } } ] }
+			""";
+
+		// Act
+		Action parse = () => WebToMobilePageConversionRulesCatalog.ParseStream(JsonStream(json));
+
+		// Assert
+		parse.Should().Throw<JsonException>(
+			because: "an unsupported filter kind must stop the document rather than quietly become no filter")
+			.WithMessage("*Contains*",
+				because: "the message names what was not understood, so a rules author can see it without "
+					+ "reading clio's source");
+	}
+
+	[Test]
+	[Description("A componentRemovals rule naming a reason code clio does not publish THROWS on load. The reason vocabulary is a two-repository contract - clio pins ReasonCodes, the published guidance article documents each one - so a code no article explains would tell the caller an element was dropped and hand them a token nothing defines (invariant 9.2). Validating on LOAD is what keeps that impossible rather than merely unlikely.")]
+	public void ParseStream_UnknownReasonCode_Throws() {
+		// Arrange
+		const string json = """
+			{ "componentRemovals": [ { "type": "crt.Button", "reason": "drop-because-i-said-so",
+			    "filters": { "filterType": "IsEmpty", "leftExpression": "clicked" } } ] }
+			""";
+
+		// Act
+		Action parse = () => WebToMobilePageConversionRulesCatalog.ParseStream(JsonStream(json));
+
+		// Assert
+		parse.Should().Throw<JsonException>(
+			because: "a rules push must not be able to mint a reason code no published article explains")
+			.WithMessage("*drop-because-i-said-so*",
+				because: "naming the offending code is what makes the refusal actionable");
+	}
+
+	[Test]
+	[Description("A CDN document that fails validation degrades to the BUNDLED rules rather than reaching a caller. This is why the validation throws a JsonException specifically: GetRulesAsync already treats that as 'this document is unusable', so an invented reason code behaves exactly like an unparseable file.")]
+	public async Task GetRulesAsync_WhenClientServesAnInvalidReasonCode_FallsBackToBundled() {
+		// Arrange
+		const string json = """
+			{ "version": "9.9.9", "componentRemovals": [ { "type": "crt.Button", "reason": "drop-invented",
+			    "filters": { "filterType": "IsEmpty", "leftExpression": "clicked" } } ] }
+			""";
+		var client = Substitute.For<IWebToMobilePageConversionRulesRegistryClient>();
+		client.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+			.Returns(Task.FromResult(new ComponentRegistryFetchResult(
+				JsonStream(json), "9.9.9", ComponentRegistrySource.Cdn)));
+		var catalog = new WebToMobilePageConversionRulesCatalog(client);
+
+		// Act
+		WebToMobilePageConversionRules rules = await catalog.GetRulesAsync("9.9.9");
+
+		// Assert
+		rules.Version.Should().NotBe("9.9.9",
+			because: "the served document was refused, so the bundled rules answered instead");
+		rules.ComponentRemovals.Should().OnlyContain(
+			rule => rule.Reason == ReasonCodes.DropUnsupportedRequest,
+			because: "and the caller therefore only ever sees codes clio publishes");
+	}
+
+	[Test]
+	[Description("The bundled rules document leaves NOTHING on the forward-compat extension bag. That bag is the canary for a section the producer added and clio never implemented: without this guard such a section parses green, does nothing, and is undetectable - which is exactly how componentRemovals and actionComponents sat inert in this file before ENG-96178 wired them. The component and request registries have carried this guard for their own buckets since ENG-91571; the rules document had none.")]
+	public void LoadBundled_LeavesNothingOnTheExtensionBag() {
+		// Arrange / Act
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+
+		// Assert
+		(rules.Extensions?.Keys ?? []).Should().BeEmpty(
+			because: "every section the shipped document declares must be mapped to a typed property and read "
+				+ "by the converter - an unmapped one is data nobody consumes, and nothing else reports it");
 	}
 
 	[Test]

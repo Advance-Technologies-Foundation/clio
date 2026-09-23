@@ -165,6 +165,39 @@ public sealed class WebToMobilePageConversionRules {
 	[JsonPropertyName("nonConvertingScopeContainers")]
 	public IReadOnlyList<string> NonConvertingScopeContainers { get; init; } = [];
 
+	/// <summary>
+	/// Group: components that must be REMOVED when their filter tree matches the MERGED state of the
+	/// properties it names — a control left with nothing to do. Distinct from
+	/// <see cref="ExcludedComponents"/>, which bans a type by POSITION regardless of what it holds, and from
+	/// <see cref="EmptyContainerRemoval"/>, which owns one hardcoded predicate over a type allowlist: this one
+	/// carries its condition in data. Absent or empty falls back to the BUNDLED section rather than switching
+	/// the pass off — see <c>WebToMobileAnalysisService.ComponentRemovalsOf</c> for why this one section has
+	/// the opposite polarity to its siblings.
+	/// </summary>
+	/// <remarks>
+	/// "Merged state" is what makes the section expressible at all: a button's <c>menuItems</c> live in
+	/// SEPARATE operations addressing it by <c>parentName</c>, never inside its own values, so a filter reading
+	/// the raw value alone would call every healthy menu button empty. See
+	/// <c>WebToMobileAnalysisService.IsEmptyExpression</c>.
+	/// </remarks>
+	[JsonPropertyName("componentRemovals")]
+	public IReadOnlyList<ComponentRemovalRule> ComponentRemovals { get; init; } = [];
+
+	/// <summary>
+	/// Group: the component types that exist ONLY to fire an action (<c>crt.Button</c>, <c>crt.MenuItem</c>),
+	/// and the properties that carry it. Such a type is DROPPED when its request cannot convert; every other
+	/// type keeps its binding and is flagged instead, because another component may legitimately use a system
+	/// or custom request and losing the whole component over it would lose valid UI.
+	/// </summary>
+	/// <remarks>
+	/// Absent or empty falls back to the bundled list rather than matching nothing — the opposite polarity to
+	/// this file's other sections, deliberately. The others switch a feature OFF when absent, which is safe;
+	/// switching this one off would make every unsupported action SHIP instead, turning a rules file that
+	/// failed to load into a silent behaviour change on the page.
+	/// </remarks>
+	[JsonPropertyName("actionComponents")]
+	public IReadOnlyList<ActionComponentRule> ActionComponents { get; init; } = [];
+
 	/// <summary>Any future producer field not yet mapped to a typed group.</summary>
 	[JsonExtensionData]
 	public IDictionary<string, JsonElement> Extensions { get; init; }

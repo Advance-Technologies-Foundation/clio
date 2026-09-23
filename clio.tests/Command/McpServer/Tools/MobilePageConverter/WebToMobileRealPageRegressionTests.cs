@@ -394,7 +394,7 @@ public sealed class WebToMobileRealPageRegressionTests {
 
 	[Test]
 	[Description("With the real page's targets absent on mobile, every action is reported and NO element is removed.")]
-	public void Convert_WithMissingTargets_ReportsThemWithoutChangingTheElementMap() {
+	public void Convert_WithMissingTargets_ReportsThem_AndRemovesWhatTheyEmptied() {
 		// Arrange
 		JsonObject fixture = LoadFixture();
 		IReadOnlySet<string> mobileTypes = MobileTypesResolvingSearchFilter(fixture["viewConfig"]!);
@@ -413,8 +413,18 @@ public sealed class WebToMobileRealPageRegressionTests {
 			because: "the button opening a non-converted page is exactly what the user must be warned about");
 		guide.RequestConversions.UnresolvedTargetRequests.Should().OnlyContain(r => r.State == "missing",
 			because: "every target was resolved as absent in this run");
-		OperationDifferences(baseline, guide).Should().BeEmpty(
-			because: "the report is a warning: no control is removed on target grounds");
+		IReadOnlyList<string> changed = OperationDifferences(baseline, guide);
+		changed.Should().BeEquivalentTo(["PostponeQueueItemButton"],
+			because: "EQUALITY, not containment: on the whole OOTB page exactly ONE control is left with nothing "
+				+ "to do when every navigation target is reported missing, and a second name here is the pass "
+				+ "reaching a control the ticket never looked at — which is the failure mode the widened rule "
+				+ "makes possible and nothing else would catch");
+		guide.DroppedElements.Should().Contain(e => e.WebName == "PostponeQueueItemButton",
+			because: "the control that left the canvas is accounted for in the other list");
+		(guide.ViewConfigDiff.Count + (guide.DroppedElements?.Count ?? 0)).Should()
+			.Be(baseline.ViewConfigDiff.Count + (baseline.DroppedElements?.Count ?? 0),
+				because: "every source element is still in one list or the other — the TOTAL moving would mean the "
+					+ "removal cascaded into a container or orphaned a subtree, neither of which this run may do");
 	}
 
 	[Test]

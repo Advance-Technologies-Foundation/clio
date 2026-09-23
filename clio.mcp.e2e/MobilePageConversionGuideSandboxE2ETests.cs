@@ -1190,10 +1190,10 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	}
 
 	[Test]
-	[Description("ENG-94839 end to end: a converted page whose actions navigate somewhere must report, against the LIVE environment, whether each target exists on mobile. Asserts the probe actually ran (targetsProbed), that every finding uses the declared vocabulary, that it names a control the element map really carries, and — the warn-only contract — that a verified-missing target never removes that control. A conversion failure always fails the test; only a seed with no navigating action degrades to Ignore.")]
+	[Description("ENG-94839 end to end: a converted page whose actions navigate somewhere must report, against the LIVE environment, whether each target exists on mobile. Asserts the probe actually ran (targetsProbed), that every finding uses the declared vocabulary, that a warn-only finding names a control the element map really carries, and — since ENG-96178 took the removal ENG-94839 forbade the probe from making — that a control the stripped binding left with nothing to do is accounted for in droppedElements rather than simply absent. The finding outlives the control either way, because it is the only field that explains the removal. A conversion failure always fails the test; only a seed with no navigating action degrades to Ignore.")]
 	[AllureTag(ToolName)]
 	[AllureName("get-mobile-page-conversion-guide verifies each action's navigation target against the environment")]
-	[AllureDescription("Converts the seeded application's pages through the real clio MCP server until one carries an action whose request declares a navigation target, then asserts the guide reports the target verification as typed data and leaves the control in place.")]
+	[AllureDescription("Converts the seeded application's pages through the real clio MCP server until one carries an action whose request declares a navigation target, then asserts the guide reports the target verification as typed data, and that every control the verification cost is accounted for in droppedElements.")]
 	public async Task MobilePageConversionGuideTool_Should_Verify_Action_Targets_Against_The_Environment() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -1262,14 +1262,25 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 					+ "the analysis service invented");
 			finding.Target.Should().NotBeNullOrWhiteSpace(
 				because: "a finding the user cannot trace back to a page or object name is not actionable");
-			survivingMobileNames.Should().Contain(finding.ElementName!,
-				because: $"'{finding.ElementName}' on '{convertedSchemaName}' is reported as carrying an unreachable "
-					+ "target, so the CONTROL must still be on the converted page: naming a control the guide "
-					+ "already dropped would contradict its own element map");
+			if (!finding.BindingRemoved) {
+				survivingMobileNames.Should().Contain(finding.ElementName!,
+					because: $"'{finding.ElementName}' on '{convertedSchemaName}' is a WARN-ONLY finding — the binding "
+						+ "was kept, so the control must still be on the converted page");
+			}
 			if (finding.BindingRemoved) {
 				finding.State.Should().Be("missing",
 					because: "an action is only ever removed for an absence that was established, never for one "
 						+ "the environment could not answer for");
+				// ENG-96178: the stripped binding may leave the control with nothing to do, and then the control
+				// goes too. Either outcome is correct; what must hold on BOTH is that the finding OUTLIVES it,
+				// because it is the only field that explains a removal whose droppedElements entry carries a bare
+				// reason code and no request to name.
+				if (!survivingMobileNames.Contains(finding.ElementName!)) {
+					(guide.DroppedElements ?? []).Should().Contain(
+						d => string.Equals(d.WebName, finding.ElementName, StringComparison.OrdinalIgnoreCase),
+						because: $"'{finding.ElementName}' left the canvas over the real transport, so it must be "
+							+ "accounted for in droppedElements rather than simply absent");
+				}
 				conversions.DroppedRequests.Should().Contain(
 					r => r.ElementName == finding.ElementName && r.Binding == finding.Binding,
 					because: "a removed binding is a dropped request, so the two collections must agree over the "

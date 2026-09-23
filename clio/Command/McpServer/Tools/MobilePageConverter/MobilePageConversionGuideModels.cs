@@ -323,9 +323,12 @@ public static class ReasonCodes {
 	/// A component whose request the Mobile app does not support — a <c>crt.Button</c> or a
 	/// <c>crt.MenuItem</c> on the element path, or any action inside a non-converting scope container.
 	/// Params: <c>request</c>, <c>scope</c> — <c>scope</c> is absent on the element path, and BOTH are
-	/// absent in one case: a button or menu item removed for having no surviving menu item and no click
-	/// request of ITS own has no request to name, so the entry arrives as the bare code and what was lost
-	/// is the menu items reported beside it. Not to be confused with
+	/// absent in one case: a control removed for having NOTHING LEFT TO DO — no action of its own and no
+	/// menu item under it — has no request to name, so the entry arrives as the bare code, and what was
+	/// lost (when anything was) is the menu items reported beside it. That case also covers a control that
+	/// never carried a request at all, which this code then names as a cause it did not have: reusing one
+	/// code rather than minting a second is a deliberate trade, so a caller reads one cause instead of
+	/// rejoining two (ENG-96178). Not to be confused with
 	/// <see cref="DropRequestUnsupported"/>: there the element SURVIVES and only its binding is removed.
 	/// </summary>
 	public const string DropUnsupportedRequest = "drop-unsupported-request";
@@ -396,7 +399,11 @@ public static class ReasonCodes {
 
 	/// <summary>
 	/// The request TYPE converts, but its navigation TARGET cannot exist on mobile, so the binding was
-	/// removed while the component itself still renders. Emitted only for a DEFINITIONAL absence — a
+	/// removed. Whether the COMPONENT survives is a SEPARATE question this code does not answer: one whose
+	/// only action this was is then removed for having nothing left to do, under
+	/// <see cref="DropUnsupportedRequest"/>, and the matching
+	/// <c>requestConversions.unresolvedTargetRequests</c> finding is deliberately kept as the only field
+	/// that explains that removal. Emitted only for a DEFINITIONAL absence — a
 	/// verdict that needed no environment read — never for one a probe merely failed to confirm; the
 	/// softer verdicts are reported in <c>requestConversions.unresolvedTargetRequests</c> and remove
 	/// nothing. Params: <c>targetKind</c> and <c>target</c>, which is the pair that says what to fix.
@@ -1134,8 +1141,9 @@ public sealed class MobilePageConversionGuide {
 	/// action — the whole element is DROPPED, read in <see cref="DroppedElement"/> under
 	/// <see cref="ReasonCodes.DropUnsupportedRequest"/>, which is the only place such a leaf's loss is
 	/// reported; on any other component type the binding is kept verbatim and flagged for manual review
-	/// (the component stays), because it has a purpose beyond the action. A button left with no surviving
-	/// menu item and no click request of its own follows its menu out under the same code.
+	/// (the component stays), because it has a purpose beyond the action. A control left with NOTHING TO DO
+	/// — no action of its own and no menu item under it — follows under the same code, whether or not it
+	/// ever had either; which controls that covers is declared by the rules' <c>componentRemovals</c>.
 	/// <c>droppedRequests</c> reports a
 	/// BINDING: one lost while its element survived, and one lost on the paths that place or remove the
 	/// element itself (retarget onto a native, missing retarget target, non-converting scope, empty
