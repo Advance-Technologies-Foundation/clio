@@ -141,10 +141,12 @@ public sealed class ExistingMobilePageProbeTests {
 		// Act
 		Probe(environment, Request(isFormPage: true, modelConfig: SourcePageBoundTo("LeadProduct")));
 
-		// An auto-provisioned descriptor must land in the ENTITY's own package, never the source page's, or it
-		// would travel with the wrong package on push-pkg.
-		environment.AddonClient.Received(1).GetSchema(
+		// Assert
+		Action addonReadCheck = () => environment.AddonClient.Received(1).GetSchema(
 			Arg.Is<AddonGetRequestDto>(request => request.TargetPackageUId == Guid.Parse(EntityPackageUId)));
+		addonReadCheck.Should().NotThrow(because:
+			"an auto-provisioned descriptor must land in the ENTITY's own package, never the source page's, " +
+			"or it would travel with the wrong package on push-pkg");
 	}
 
 	[Test]
@@ -159,10 +161,12 @@ public sealed class ExistingMobilePageProbeTests {
 		// Act
 		Probe(environment, Request(isFormPage: true, modelConfig: SourcePageBoundTo("LeadProduct")));
 
-		// With no package on the entity's own row, the read must still go through, addressed by the source
-		// page's package as the documented fallback.
-		environment.AddonClient.Received(1).GetSchema(
+		// Assert
+		Action addonReadCheck = () => environment.AddonClient.Received(1).GetSchema(
 			Arg.Is<AddonGetRequestDto>(request => request.TargetPackageUId == Guid.Parse(PackageUId)));
+		addonReadCheck.Should().NotThrow(because:
+			"with no package on the entity's own row, the read must still go through, addressed by the " +
+			"source page's package as the documented fallback");
 	}
 
 	[Test]
