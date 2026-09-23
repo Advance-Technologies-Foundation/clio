@@ -34,6 +34,8 @@ JSON-backed page sections accept ordinary `//` and `/* ... */` comments and
 trailing commas during validation. Required paired `/**SCHEMA_...*/` markers
 must still surround their sections; they are structural delimiters, not optional
 documentation. Validation does not strip comments or rewrite the supplied body.
+Replace mode preserves the supplied comments; append mode re-serializes merged
+diff sections and can discard comments inside those sections.
 
 > **CLI vs MCP.** The CLI `get-page` verb returns `raw.body` inline, so a CLI caller copies
 > that value. The MCP `get-page` tool returns no `raw` property — it writes the body to disk

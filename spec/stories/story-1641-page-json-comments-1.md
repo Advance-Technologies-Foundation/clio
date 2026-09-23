@@ -7,6 +7,7 @@ status: review
 - [x] Use native reader options without rewriting source.
 - [x] Reproduce and verify through Windows MCP using local files synchronized over SSH/Mutagen to the FSM-linked package.
 - [x] Destroy disposable instance and verify database, Redis, storage and registration cleanup.
-- [ ] Finish save-payload regression tests, reviews and delivery.
+- [x] Save-payload regression tests and final reviews complete; delivery tracked in PR #1661.
 
 The page fixtures were not registered/rendered in Creatio. Update-page preservation is checked at the mocked save boundary; no live save or debugger evidence is claimed for this issue.
+
