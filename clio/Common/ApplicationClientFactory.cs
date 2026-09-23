@@ -28,7 +28,7 @@ internal class ApplicationClientFactory : IApplicationClientFactory{
 
 	public IApplicationClient CreateClient(EnvironmentSettings settings) {
 		if (settings.AuthFlow == OAuthFlow.AuthorizationCode) {
-			return CreateBearerEnvironmentClient(settings, () => ResolveOAuthToken(settings).AccessToken);
+			return CreateAuthorizationCodeClient(settings);
 		}
 		// Credential-passthrough bearer branch (FR-01/FR-18): an ephemeral EnvironmentSettings
 		// carrying an opaque access token resolves to a pre-authenticated client that NEVER
@@ -57,7 +57,7 @@ internal class ApplicationClientFactory : IApplicationClientFactory{
 
 	public IApplicationClient CreateEnvironmentClient(EnvironmentSettings settings) {
 		if (settings.AuthFlow == OAuthFlow.AuthorizationCode) {
-			return CreateBearerEnvironmentClient(settings, () => ResolveOAuthToken(settings).AccessToken);
+			return CreateAuthorizationCodeClient(settings);
 		}
 		// Credential-passthrough bearer branch (FR-01/FR-18): see CreateClient. The service-url
 		// builder is still wired so environment-relative routes resolve; only the reauth path
@@ -106,25 +106,7 @@ internal class ApplicationClientFactory : IApplicationClientFactory{
 			AccessToken = accessToken,
 			AccessTokenType = AuthenticationScheme.Bearer
 		});
-		return CreateBearerEnvironmentClient(environment, () => accessToken);
-	}
-
-	// Token-accessor overload: the value is read inside the Lazy closure, so constructing the client
-	// costs nothing. Resolving eagerly used to run a token-store read and, inside the pre-expiry
-	// window, a blocking refresh POST plus a file rewrite at construction time - even when the
-	// client was never used.
-	private IOwnedApplicationClient CreateBearerEnvironmentClient(EnvironmentSettings environment,
-		Func<string> accessTokenAccessor) {
-		Lazy<CreatioClient> client = new(() => {
-			string accessToken = accessTokenAccessor();
-			GuardBearerSettings(new EnvironmentSettings {
-				Uri = environment.Uri,
-				IsNetCore = environment.IsNetCore,
-				AccessToken = accessToken,
-				AccessTokenType = AuthenticationScheme.Bearer
-			});
-			return new CreatioClient(environment.Uri, accessToken, useUntrustedSsl: false, environment.IsNetCore);
-		});
+		Lazy<CreatioClient> client = new(() => CreateBearerClient(environment, accessToken));
 		return new CreatioClientAdapter(client, new ServiceUrlBuilder(environment), _noReauthExecutor,
 			ownsClient: true);
 	}
@@ -132,6 +114,31 @@ internal class ApplicationClientFactory : IApplicationClientFactory{
 	#endregion
 
 	#region Methods: Private
+
+	// An authorization-code client outlives its access token whenever the container that holds it does
+	// (the mcp-server per-session container stays alive for hours), so it cannot be wired to the
+	// NoReauthExecutor: its executor renews the client with a current token before a call and after an
+	// expired-session response. The token is still read only when the client is first built, so
+	// constructing a client that is never used costs no token-store read and no refresh round-trip.
+	private IOwnedApplicationClient CreateAuthorizationCodeClient(EnvironmentSettings environment) {
+		CreatioClientTransport transport = null;
+		OAuthAuthorizationCodeReauthExecutor executor = new(
+			() => ResolveOAuthToken(environment).AccessToken,
+			rejectedAccessToken => RefreshOAuthToken(environment, rejectedAccessToken).AccessToken,
+			() => transport.Renew());
+		transport = new CreatioClientTransport(() => CreateBearerClient(environment, executor.AcquireClientToken()));
+		return new CreatioClientAdapter(transport, new ServiceUrlBuilder(environment), executor, ownsClient: true);
+	}
+
+	private static CreatioClient CreateBearerClient(EnvironmentSettings environment, string accessToken) {
+		GuardBearerSettings(new EnvironmentSettings {
+			Uri = environment.Uri,
+			IsNetCore = environment.IsNetCore,
+			AccessToken = accessToken,
+			AccessTokenType = AuthenticationScheme.Bearer
+		});
+		return new CreatioClient(environment.Uri, accessToken, useUntrustedSsl: false, environment.IsNetCore);
+	}
 
 	// An OAuth client-credentials profile (ClientId/ClientSecret) is a token shape: it carries no
 	// username/password, so a login-page response must never send it down CreatioClient.Login().
@@ -151,6 +158,13 @@ internal class ApplicationClientFactory : IApplicationClientFactory{
 			throw new InvalidOperationException("OAuth authorization-code service is not registered.");
 		}
 		return _oauthService.ResolveAsync(settings).GetAwaiter().GetResult();
+	}
+
+	private OAuthTokenSet RefreshOAuthToken(EnvironmentSettings settings, string rejectedAccessToken) {
+		if (_oauthService is null) {
+			throw new InvalidOperationException("OAuth authorization-code service is not registered.");
+		}
+		return _oauthService.RefreshAsync(settings, rejectedAccessToken).GetAwaiter().GetResult();
 	}
 
 	// Validates the bearer-passthrough settings. Errors are caller-actionable and NEVER echo the

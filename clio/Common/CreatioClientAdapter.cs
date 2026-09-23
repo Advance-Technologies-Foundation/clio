@@ -156,6 +156,14 @@ public class CreatioClientAdapter : IOwnedApplicationClient {
 		: this(lazyClient, serviceUrlBuilder, null,
 			reauthExecutor ?? throw new ArgumentNullException(nameof(reauthExecutor)), ownsClient: true) { }
 
+	// Renewable-transport constructor: the OAuth authorization-code branch of ApplicationClientFactory
+	// builds the transport itself, because its executor has to be able to replace the client the
+	// transport holds once the access token that client carries is replaced.
+	internal CreatioClientAdapter(ICreatioClientTransport transport, IServiceUrlBuilder serviceUrlBuilder,
+		IReauthExecutor reauthExecutor, bool ownsClient)
+		: this(transport ?? throw new ArgumentNullException(nameof(transport)), serviceUrlBuilder, null,
+			reauthExecutor ?? throw new ArgumentNullException(nameof(reauthExecutor)), null, ownsClient) { }
+
 	// Factory-created bearer clients are short-lived and owned by the returned adapter. The DI path
 	// intentionally uses the three-argument overload above because its client can back a SignalR
 	// listener whose cancellation completes asynchronously after the service provider is disposed.

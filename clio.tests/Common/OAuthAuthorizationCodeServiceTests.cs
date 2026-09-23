@@ -141,6 +141,53 @@ public sealed class OAuthAuthorizationCodeServiceTests {
 		handler.RequestCount.Should().Be(0, because: "a valid cached token must not cost a token-endpoint round-trip");
 	}
 
+	[Test]
+	[Description("RefreshAsync refreshes a token the server rejected even though its expiry has not been reached, because ResolveAsync would keep returning it.")]
+	public async Task RefreshAsync_ShouldRefresh_WhenTheRejectedTokenIsStillInsideItsLifetime() {
+		// Arrange
+		IOAuthTokenStore store = CreateStoreWithToken(DateTimeOffset.UtcNow.AddHours(1));
+		StubHttpMessageHandler handler = StubHttpMessageHandler.Returning(
+			HttpStatusCode.OK, "{\"access_token\":\"fresh-access\",\"expires_in\":3600}");
+		OAuthAuthorizationCodeService service = CreateService(store, handler);
+
+		// Act
+		OAuthTokenSet refreshed = await service.RefreshAsync(CreateEnvironment(), "old-access");
+		OAuthTokenSet resolved = await service.ResolveAsync(CreateEnvironment());
+
+		// Assert
+		refreshed.AccessToken.Should().Be("fresh-access");
+		resolved.AccessToken.Should().Be("fresh-access", because: "the refreshed token replaces the cached one");
+		handler.RequestCount.Should().Be(1);
+		store.Received(1).Write(Arg.Any<EnvironmentSettings>(), Arg.Any<OAuthTokenSet>());
+	}
+
+	[Test]
+	[Description("When a token other than the rejected one is already available (another caller refreshed first), RefreshAsync returns it without rotating the refresh token again.")]
+	public async Task RefreshAsync_ShouldReuseANewerToken_WhenTheRejectedOneWasAlreadyReplaced() {
+		// Arrange
+		IOAuthTokenStore store = CreateStoreWithToken(DateTimeOffset.UtcNow.AddHours(1));
+		StubHttpMessageHandler handler = StubHttpMessageHandler.Returning(HttpStatusCode.OK, "{}");
+		OAuthAuthorizationCodeService service = CreateService(store, handler);
+
+		// Act
+		OAuthTokenSet resolved = await service.RefreshAsync(CreateEnvironment(), "an-older-access-token");
+
+		// Assert
+		resolved.AccessToken.Should().Be("old-access");
+		handler.RequestCount.Should().Be(0, because: "the stored token is not the one the server rejected");
+	}
+
+	private static IOAuthTokenStore CreateStoreWithToken(DateTimeOffset expiresAt) {
+		IOAuthTokenStore store = Substitute.For<IOAuthTokenStore>();
+		store.BuildKey(Arg.Any<EnvironmentSettings>()).Returns("key");
+		store.TryRead(Arg.Any<EnvironmentSettings>(), out Arg.Any<OAuthTokenSet>())
+			.Returns(call => {
+				call[1] = BuildToken(expiresAt);
+				return true;
+			});
+		return store;
+	}
+
 	private static EnvironmentSettings CreateEnvironment() => new() {
 		Uri = "https://work.creatio.com",
 		EnvironmentName = "work",

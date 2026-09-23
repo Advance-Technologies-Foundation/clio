@@ -41,6 +41,13 @@ internal sealed class ApplicationClientFactoryTests {
 		}
 	}
 
+	private static object ReadReauthExecutor(IApplicationClient client) {
+		System.Reflection.FieldInfo executorField = client.GetType().GetField("_reauthExecutor",
+			System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+		executorField.Should().NotBeNull(because: "CreatioClientAdapter._reauthExecutor decides how an expired token is handled");
+		return executorField!.GetValue(client);
+	}
+
 	private static IOAuthAuthorizationCodeService SubstituteOAuthService() {
 		IOAuthAuthorizationCodeService service = Substitute.For<IOAuthAuthorizationCodeService>();
 		service.ResolveAsync(Arg.Any<EnvironmentSettings>(), Arg.Any<System.Threading.CancellationToken>())
@@ -238,6 +245,37 @@ internal sealed class ApplicationClientFactoryTests {
 		client.Should().BeOfType<CreatioClientAdapter>();
 		environmentClient.Should().BeOfType<CreatioClientAdapter>();
 		oauthService.DidNotReceive().ResolveAsync(Arg.Any<EnvironmentSettings>(),
+			Arg.Any<System.Threading.CancellationToken>());
+	}
+
+	[Test]
+	[Description("An authorization-code client must not be wired to the NoReauthExecutor: it outlives its access token in the mcp-server per-session container, so it needs the executor that renews the client with a current token.")]
+	public void AuthorizationCodeEnvironment_ShouldUseTheRenewingExecutor_OnBothEntryPoints() {
+		// Arrange
+		ApplicationClientFactory sut = CreateFactory(SubstituteOAuthService());
+
+		// Act
+		IApplicationClient client = sut.CreateClient(AuthorizationCodeEnvironment());
+		IApplicationClient environmentClient = sut.CreateEnvironmentClient(AuthorizationCodeEnvironment());
+
+		// Assert
+		ReadReauthExecutor(client).Should().BeOfType<OAuthAuthorizationCodeReauthExecutor>();
+		ReadReauthExecutor(environmentClient).Should().BeOfType<OAuthAuthorizationCodeReauthExecutor>();
+	}
+
+	[Test]
+	[Description("Building the client records the token it carries, so a token the OAuth service later replaces is detected on the next call.")]
+	public void AuthorizationCodeEnvironment_ShouldBuildTheClientWithTheResolvedToken() {
+		// Arrange
+		IOAuthAuthorizationCodeService oauthService = SubstituteOAuthService();
+		ApplicationClientFactory sut = CreateFactory(oauthService);
+		IApplicationClient client = sut.CreateEnvironmentClient(AuthorizationCodeEnvironment());
+
+		// Act
+		ForceClientCreation(client);
+
+		// Assert
+		oauthService.Received(1).ResolveAsync(Arg.Any<EnvironmentSettings>(),
 			Arg.Any<System.Threading.CancellationToken>());
 	}
 

@@ -25,7 +25,10 @@ internal sealed class CreatioClientTransport : ICreatioClientTransport {
 
 	#region Fields: Private
 
-	private readonly Lazy<CreatioClient> _lazyClient;
+	private readonly Func<CreatioClient> _clientFactory;
+	private readonly List<CreatioClient> _retiredClients = [];
+	private readonly object _renewSync = new();
+	private Lazy<CreatioClient> _lazyClient;
 
 	#endregion
 
@@ -37,18 +40,31 @@ internal sealed class CreatioClientTransport : ICreatioClientTransport {
 		_lazyClient = lazyClient ?? throw new ArgumentNullException(nameof(lazyClient));
 	}
 
+	/// <summary>Creates a renewable transport whose client is built by <paramref name="clientFactory"/>.</summary>
+	/// <param name="clientFactory">Builds the client on first use and again after every <see cref="Renew"/>. Required.</param>
+	public CreatioClientTransport(Func<CreatioClient> clientFactory) {
+		_clientFactory = clientFactory ?? throw new ArgumentNullException(nameof(clientFactory));
+		_lazyClient = new Lazy<CreatioClient>(clientFactory);
+	}
+
 	#endregion
 
 	#region Properties: Private
 
-	private CreatioClient Client => _lazyClient.Value;
+	private CreatioClient Client => Volatile.Read(ref _lazyClient).Value;
 
 	#endregion
 
 	#region Properties: Public
 
 	/// <inheritdoc />
-	public bool IsCreated => _lazyClient.IsValueCreated;
+	public bool IsCreated {
+		get {
+			lock (_renewSync) {
+				return _lazyClient.IsValueCreated || _retiredClients.Count > 0;
+			}
+		}
+	}
 
 	#endregion
 
@@ -77,16 +93,46 @@ internal sealed class CreatioClientTransport : ICreatioClientTransport {
 
 	/// <inheritdoc />
 	public void Dispose() {
-		// Only a created client owns unmanaged transport state; resolving the Lazy here just to
-		// dispose it would open the very connection the caller decided never to use.
-		if (_lazyClient.IsValueCreated) {
-			_lazyClient.Value?.Dispose();
+		lock (_renewSync) {
+			// Only a created client owns unmanaged transport state; resolving the Lazy here just to
+			// dispose it would open the very connection the caller decided never to use.
+			if (_lazyClient.IsValueCreated) {
+				_lazyClient.Value?.Dispose();
+			}
+			foreach (CreatioClient retired in _retiredClients) {
+				retired?.Dispose();
+			}
+			_retiredClients.Clear();
+		}
+	}
+
+	/// <summary>
+	/// Makes the next call build a new client through the factory this transport was created with. Used
+	/// when the credential the current client carries (an OAuth access token) has been replaced.
+	/// </summary>
+	/// <remarks>
+	/// The replaced client is kept, not disposed, until the transport itself is disposed: a request that
+	/// started on it may still be running on another thread, and disposing its HTTP transport would fail
+	/// that request. A SignalR listener started on it keeps running on it for the same reason.
+	/// </remarks>
+	/// <exception cref="InvalidOperationException">The transport was created over a fixed lazy client.</exception>
+	public void Renew() {
+		if (_clientFactory is null) {
+			throw new InvalidOperationException("This transport was created over a fixed client and cannot be renewed.");
+		}
+		lock (_renewSync) {
+			Lazy<CreatioClient> replaced = _lazyClient;
+			if (!replaced.IsValueCreated) {
+				return;
+			}
+			_retiredClients.Add(replaced.Value);
+			Volatile.Write(ref _lazyClient, new Lazy<CreatioClient>(_clientFactory));
 		}
 	}
 
 	/// <inheritdoc />
 	public void EnsureCreated() {
-		_ = _lazyClient.Value;
+		_ = Client;
 	}
 
 	/// <inheritdoc />

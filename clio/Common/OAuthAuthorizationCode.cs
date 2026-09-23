@@ -158,6 +158,13 @@ public interface IOAuthAuthorizationCodeService
 {
     Task<OAuthTokenSet> LoginAsync(EnvironmentSettings environment, bool noBrowser, int timeoutMs, CancellationToken cancellationToken = default);
     Task<OAuthTokenSet> ResolveAsync(EnvironmentSettings environment, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Refreshes the access token even when it has not reached its expiry window yet, because the
+    /// server has just rejected <paramref name="rejectedAccessToken"/>. A token other than the rejected
+    /// one that is already cached or stored (another caller or process refreshed first) is returned as is.
+    /// </summary>
+    Task<OAuthTokenSet> RefreshAsync(EnvironmentSettings environment, string rejectedAccessToken,
+        CancellationToken cancellationToken = default);
     Task LogoutAsync(EnvironmentSettings environment, CancellationToken cancellationToken = default);
 }
 
@@ -196,12 +203,42 @@ public sealed class OAuthAuthorizationCodeService : IOAuthAuthorizationCodeServi
         finally { _refreshGate.Release(); }
     }
 
+    /// <inheritdoc />
+    public async Task<OAuthTokenSet> RefreshAsync(EnvironmentSettings environment, string rejectedAccessToken,
+        CancellationToken cancellationToken = default)
+    {
+        string cacheKey = _store.BuildKey(environment);
+        // Same gate as ResolveAsync: a burst of rejected requests must share one refresh, and the ones
+        // that arrive after it find the new token below instead of rotating the refresh token again.
+        await _refreshGate.WaitAsync(cancellationToken);
+        try
+        {
+            if (_tokens.TryGetValue(cacheKey, out OAuthTokenSet cached) && IsUsable(cached, rejectedAccessToken)) return cached;
+            if (!_store.TryRead(environment, out OAuthTokenSet token)) throw MissingToken(environment);
+            OAuthTokenSet resolved = IsUsable(token, rejectedAccessToken)
+                ? token
+                : await RefreshTokenAsync(environment, token, cancellationToken);
+            _tokens[cacheKey] = resolved;
+            return resolved;
+        }
+        finally { _refreshGate.Release(); }
+    }
+
     private static bool IsFresh(OAuthTokenSet token) => token.ExpiresAt - DateTimeOffset.UtcNow >= TimeSpan.FromSeconds(60);
+
+    private static bool IsUsable(OAuthTokenSet token, string rejectedAccessToken) =>
+        IsFresh(token) && !string.Equals(token.AccessToken, rejectedAccessToken, StringComparison.Ordinal);
 
     private async Task<OAuthTokenSet> ResolveCoreAsync(EnvironmentSettings environment, CancellationToken cancellationToken)
     {
         if (!_store.TryRead(environment, out OAuthTokenSet token)) throw MissingToken(environment);
         if (IsFresh(token)) return token;
+        return await RefreshTokenAsync(environment, token, cancellationToken);
+    }
+
+    private async Task<OAuthTokenSet> RefreshTokenAsync(EnvironmentSettings environment, OAuthTokenSet token,
+        CancellationToken cancellationToken)
+    {
         using HttpClient client = _httpClientFactory.CreateClient();
         using HttpRequestMessage request = new(HttpMethod.Post, token.TokenEndpoint)
         {
