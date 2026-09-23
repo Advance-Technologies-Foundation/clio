@@ -212,6 +212,20 @@ namespace Clio.Command
 
 		private void ReportBaseProbeFailure(BaseProbeFailure failure, Uri targetUri, Exception exception = null,
 			int? responseLength = null) {
+			// An external-access exchange failure already states which grant condition was refused and what
+			// to do about it. The generic texts below would replace that with "verify the credentials",
+			// which is advice nobody can act on: an external-access session has no credentials to verify.
+			// The chain walker dereferences what it is given, and this method is also called with no
+			// exception at all (a response-shape failure), so the null check has to come first.
+			Exception externalAccessFailure = exception is null
+				? null
+				: EnumerateExceptionChain(exception)
+					.FirstOrDefault(item => item is Clio.Common.ExternalAccess.ExternalAccessLoginException);
+			if (externalAccessFailure is not null) {
+				Logger.WriteError(externalAccessFailure.Message);
+				WriteSafeDebug("base-probe", failure, exception, responseLength);
+				return;
+			}
 			string displayUri = GetDisplayUri(targetUri);
 			string message = failure switch {
 				BaseProbeFailure.Authentication =>
