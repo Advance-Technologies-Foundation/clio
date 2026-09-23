@@ -163,6 +163,13 @@ public class MobilePageConversionGuideTool {
 		HashSet<string> webTypes = new(webEntries.Select(e => e.ComponentType), StringComparer.OrdinalIgnoreCase);
 		IReadOnlyDictionary<string, ComponentRegistryEntry> mobileByType = IndexByComponentType(mobileEntries);
 		IReadOnlyDictionary<string, ComponentRegistryEntry> webByType = IndexByComponentType(webEntries);
+		// ENG-96589 — what the converter may treat as an authoritative statement of what mobile supports.
+		// The question is about the PAYLOAD that was actually loaded, not about the stand: each version's
+		// registry describes the mobile runtime that version runs, so membership in the file the chain
+		// served IS the support test. baseInputs carries both jobs — it is the sole declaration site of
+		// visible/layoutConfig, and its content identifies the generation.
+		var mobileRegistryGeneration =
+			new WebToMobileAnalysisService.MobileRegistryGeneration(mobileState.GlobalReferences?.BaseInputs);
 
 		WebToMobilePageConversionRules rules = await _rulesCatalog.GetRulesAsync(version, cancellationToken).ConfigureAwait(false);
 		// Resolve the effective web template, climbing past same-named replacing layers when the page is a
@@ -270,7 +277,8 @@ public class MobilePageConversionGuideTool {
 				webTemplateBaselineNodes: webTemplateBaseline.Nodes,
 				webTemplateResources: webTemplateBaseline.Resources,
 				actionTargetsProbe: actionTargets,
-				existingMobilePages: existingMobilePages);
+				existingMobilePages: existingMobilePages,
+				mobileRegistryGeneration: mobileRegistryGeneration);
 		} catch (Exception ex) {
 			return Fail(args, sourceType, $"Failed to analyze source page '{args.SchemaName}': {ex.Message}");
 		}
@@ -884,7 +892,7 @@ public sealed record MobilePageConversionGuideArgs(
 	string TargetSchemaName = null,
 
 	[property: JsonPropertyName("version")]
-	[property: Description("Optional Creatio/registry version used to resolve the mobile and web component registries. Defaults to the latest published registry.")]
+	[property: Description("Optional Creatio/registry version used to resolve the mobile and web component registries. A 3-part semver, or 'latest'. Defaults to probing the target environment. An explicit value OVERRIDES that probe, so naming a version other than the target's own measures the conversion against a different mobile runtime.")]
 	string Version = null,
 
 	[property: JsonPropertyName("environment-name")]

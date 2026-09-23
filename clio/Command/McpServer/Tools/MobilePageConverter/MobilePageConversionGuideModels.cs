@@ -392,6 +392,16 @@ public static class ReasonCodes {
 	public const string DropRequestUnsupported = "drop-request-unsupported";
 
 	/// <summary>
+	/// The binding's PROPERTY is not declared by the target mobile component — absent from that component's
+	/// <c>inputs</c>, its <c>outputs</c> and the registry's <c>baseInputs</c> — so the whole binding went
+	/// with the property when undeclared properties were pruned (ENG-96589). The component itself still
+	/// renders. Distinct from <see cref="DropRequestUnsupported"/>, where the property is fine and the
+	/// REQUEST has no mobile equivalent. Params: <c>mobileType</c> — the type whose declaration was
+	/// consulted; the element and the request are already the record's own fields.
+	/// </summary>
+	public const string DropRequestPropertyNotDeclared = "drop-request-property-not-declared";
+
+	/// <summary>
 	/// The request TYPE converts, but its navigation TARGET cannot exist on mobile, so the binding was
 	/// removed while the component itself still renders. Emitted only for a DEFINITIONAL absence — a
 	/// verdict that needed no environment read — never for one a probe merely failed to confirm; the
@@ -777,7 +787,19 @@ public sealed class MobileComponentContract {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string Description { get; init; }
 
-	/// <summary>Property/input names this mobile component accepts (Properties ∪ Inputs).</summary>
+	/// <summary>
+	/// Property/input names this mobile component accepts: its legacy <c>properties</c>, its <c>inputs</c>
+	/// and its <c>outputs</c> (where the runtime-derived registry puts event bindings). The registry's root
+	/// <c>references.baseInputs</c> is folded in as well whenever the LOADED catalog is the runtime-derived
+	/// generation — and only then, because the web-derived one publishes Angular element attributes
+	/// (<c>classes</c>, <c>shape</c>, <c>tabIndex</c>) under that same key and they are not mobile properties.
+	/// <para>
+	/// Built by <c>WebToMobileAnalysisService.BuildAllowedPropertyNames</c>, which is also what the property
+	/// prune enforces — so wherever <see cref="MobilePageConversionGuide.PrunedProperties"/> is non-null this
+	/// is exactly the set it can be reconciled against. (The prune is gated on the STAND as well, so the
+	/// reverse does not hold: this set can carry the inherited surface on a conversion that pruned nothing.)
+	/// </para>
+	/// </summary>
 	[JsonPropertyName("allowedProperties")]
 	public IReadOnlyList<string> AllowedProperties { get; init; } = [];
 
@@ -1249,6 +1271,53 @@ public sealed class MobilePageConversionGuide {
 	public IReadOnlyDictionary<string, NormalizationInfo> Normalizations { get; init; }
 
 	/// <summary>
+	/// Properties the conversion REMOVED because the target mobile component does not declare them
+	/// (ENG-96589). Already applied in <see cref="ViewConfigDiff"/> — nothing here is separate to apply.
+	/// It exists so a caller can see what the web page carried that mobile does not implement, and
+	/// cross-check it against <c>mobileContracts[].allowedProperties</c>: for every type that section
+	/// lists, it is the SAME set, computed by the same function. A pruned element whose type reached no
+	/// component suggestion has no contract row to check against.
+	/// <para>
+	/// Null when nothing was pruned — including every case where pruning is OFF. To tell those apart read
+	/// <see cref="PropertyPruneApplied"/>; it is false exactly when the gate refused.
+	/// </para>
+	/// <para>
+	/// "Removed" is exact for an <c>insert</c> and loose for a <c>merge</c>. A merge payload is a DELTA over
+	/// an element the mobile template already owns, so an omitted key is simply not written and the
+	/// template's own value stands — the property is not gone from the page. That is why a pruned
+	/// <see cref="PrunedPropertyEntry.Bindings"/> entry on a merge files no <c>droppedRequests</c> record:
+	/// the template element may go on firing its own binding, and clio cannot claim otherwise without having
+	/// read it. Read an entry on a merge operation as "the page's value did not carry over", not as "the
+	/// property is absent from the mobile element".
+	/// </para>
+	/// <para>
+	/// One asymmetry when reconciling: a component the registry describes with NO properties of its own
+	/// yields no membership information, so the prune fails OPEN on it and every carried property survives —
+	/// while its contract row still lists the inherited surface. Undeclared keys surviving on such a type
+	/// are correct, not a prune failure.
+	/// </para>
+	/// </summary>
+	[JsonPropertyName("prunedProperties")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<PrunedPropertyEntry> PrunedProperties { get; init; }
+
+	/// <summary>
+	/// Whether the property prune RAN for this conversion. False means the loaded component registry is not
+	/// the runtime-derived generation — the only reason it can refuse — so an undeclared property surviving
+	/// is EXPECTED rather than a defect. True with an absent <see cref="PrunedProperties"/> means the page
+	/// simply carried nothing undeclared.
+	/// <para>
+	/// This is the ONLY prune signal the response carries, and it is a plain bool so a caller can branch on
+	/// it in every response. The catalog's own <c>mobileRuntimeVersion</c> marker is deliberately not echoed
+	/// here: the producer publishes it irregularly (absent from <c>latest</c> since 2026-09-17), so a field
+	/// derived from it would be missing on every conversion against today's catalog and a caller would read
+	/// the gap as "the prune did not run". Which catalog was served is reported by <c>resolvedFrom</c>.
+	/// </para>
+	/// </summary>
+	[JsonPropertyName("propertyPruneApplied")]
+	public bool PropertyPruneApplied { get; init; }
+
+	/// <summary>
 	/// Every localized string the converted body references, keyed by resource name and resolved to its
 	/// en-US text (e.g. <c>{ "EmailsSentNewMetric_title": "Emails sent" }</c>). The converted <c>values</c>
 	/// carry the <c>#ResourceString(key)#</c> tokens verbatim (top-level captions AND nested ones like
@@ -1541,6 +1610,48 @@ public sealed class MissingTargetPage {
 	/// <summary>Every element/binding pair on the source page that references <see cref="Target"/>.</summary>
 	[JsonPropertyName("references")]
 	public IReadOnlyList<MissingTargetPageReference> References { get; init; } = [];
+}
+
+/// <summary>
+/// One element and the undeclared top-level properties removed from its mobile values (ENG-96589).
+/// </summary>
+public sealed class PrunedPropertyEntry {
+	/// <summary>The element's mobile name — the same key the element map and the request collections use.</summary>
+	[JsonPropertyName("name")]
+	public string Name { get; init; }
+
+	/// <summary>The mobile component type whose declaration was consulted.</summary>
+	[JsonPropertyName("type")]
+	public string Type { get; init; }
+
+	/// <summary>The element's WEB name, when it converted from one.</summary>
+	[JsonPropertyName("webName")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string WebName { get; init; }
+
+	/// <summary>
+	/// The top-level property keys removed, in source order. TOP-LEVEL only, so this never names a dotted
+	/// path — a nested key such as <c>layoutConfig.colSpan</c> or anything inside a chart's <c>config</c> is
+	/// out of the prune's reach by design.
+	/// </summary>
+	[JsonPropertyName("properties")]
+	public IReadOnlyList<string> Properties { get; init; } = [];
+
+	/// <summary>
+	/// The subset of <see cref="Properties"/> that carried an EVENT BINDING rather than an inert value.
+	/// Absent when none did.
+	/// <para>
+	/// A binding pruned from an INSERT that a request record claimed is ALSO reported in
+	/// <c>requestConversions.droppedRequests</c> with
+	/// <see cref="ReasonCodes.DropRequestPropertyNotDeclared"/> — there an ACTION was lost. It is NOT
+	/// reported there on a MERGE (omitting a key from a merge cannot claim the template element's own
+	/// binding is gone), nor when no record claimed it (an inert leftover). So read this list as "the
+	/// property carried a binding", and join to <c>droppedRequests</c> for what became of the action.
+	/// </para>
+	/// </summary>
+	[JsonPropertyName("bindings")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<string> Bindings { get; init; }
 }
 
 /// <summary>A request carried to mobile from a component's event binding.</summary>

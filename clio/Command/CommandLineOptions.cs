@@ -122,6 +122,12 @@ namespace Clio
 			}
 
 
+			[Option("external-access-token", Required = false,
+				HelpText = "Support external-access token minted for one access-list grant; exchanged for a "
+					+ "Creatio session instead of a login and password")]
+			public string ExternalAccessToken { get; set; }
+
+
 			[Option("silent", Required = false, HelpText = "Use default behavior without user interaction")]
 			public bool IsSilent { get; set; }
 
@@ -158,6 +164,7 @@ namespace Clio
 						string.IsNullOrEmpty(options.ClientId) &&
 						string.IsNullOrEmpty(options.ClientSecret) &&
 						string.IsNullOrEmpty(options.AuthAppUri) &&
+						string.IsNullOrEmpty(options.ExternalAccessToken) &&
 						string.IsNullOrEmpty(options.Maintainer)) {
 					return true;
 				}
