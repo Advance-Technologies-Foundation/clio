@@ -1881,7 +1881,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("insert values carry the type, the field label, and EVERY source property verbatim — including one the mobile registry does not declare (registry is incomplete, ENG-91859) and the value binding itself, under both source spellings (control and value). Nothing is left for the caller to attach.")]
+	[Description("insert values carry the type, the field label, and EVERY source property verbatim — including one the mobile registry does not declare — plus the value binding itself, under both source spellings (control and value). Nothing is left for the caller to attach. This caller supplies no mobile registry GENERATION, so the ENG-96589 prune is off and the pre-prune copy rule is what is pinned here.")]
 	public void Analyze_FieldInsert_MobileValues_CarriesSupportedPropsAndLabel() {
 		PageBundleInfo bundle = Bundle(
 			viewConfigJson: """
@@ -1927,8 +1927,8 @@ public sealed class WebToMobileConversionServiceTests {
 		// Every source property is carried verbatim …
 		leadVals.ContainsKey("readonly").Should().BeTrue(because: "readonly is carried");
 		leadVals.ContainsKey("placeholder").Should().BeTrue(because: "placeholder is carried");
-		// … including one the mobile registry does not declare (no registry-membership pruning while the
-		// registry is incomplete — ENG-91859); only the value binding is left out.
+		// … including one the mobile registry does not declare: this Analyze supplies no registry generation,
+		// so the ENG-96589 prune never runs and the raw copy rule is visible on its own.
 		leadVals.ContainsKey("usrWebOnly").Should().BeTrue(because: "registry-absent props are no longer dropped");
 		// The value binding is carried like any other property. It used to be held back, on the premise that
 		// the mobile binding property is a TYPE-SPECIFIC RENAME of the web one — which was backwards: the
@@ -1951,7 +1951,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("When the mobile registry declares NO inputs for the type (empty/untrustworthy contract — ENG-91859), pruning is skipped: every source property (e.g. entityName) is carried verbatim even when the web registry declares it.")]
+	[Description("When the mobile registry declares NO inputs for the type, there is no membership information at all, so every source property (e.g. entityName) is carried verbatim even when the web registry declares it. The fail-open rule outlives the prune: ENG-96589 keeps it as an explicit guard.")]
 	public void Analyze_Insert_EmptyMobileContract_CarriesAllSourceProps() {
 		PageBundleInfo bundle = Bundle(
 			viewConfigJson: """
@@ -1975,7 +1975,7 @@ public sealed class WebToMobileConversionServiceTests {
 			}
 		};
 		// crt.EntityStageProgressBar is supported on mobile (so the leaf inserts) but its registry entry
-		// carries no inputs — the exact ENG-91859 shape.
+		// carries no inputs — the empty-contract shape the prune must fail open on.
 		var mobileTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "crt.EntityStageProgressBar" };
 
 		MobilePageConversionGuide guide = WebToMobileAnalysisService.Analyze(
@@ -3672,10 +3672,11 @@ public sealed class WebToMobileConversionServiceTests {
 		ViewConfigDiffOperation tabs = Declared(guide, "Tabs");
 		tabs.Operation.Should().Be("insert", because: "the mobile template has no Tabs, so the rule declares one and it is created");
 		tabs.ParentName.Should().Be("MainContainer", because: "the declaration puts the strip in the template's main container");
-		tabs.Values!["scrollable"]!.GetValue<bool>().Should().BeTrue(
-			because: "the declared values carry the mobile standard for a converted strip: it must scroll");
-		tabs.Values!["bodyBackgroundColor"]!.GetValue<string>().Should().Be("transparent",
-			because: "the declared values carry the mobile standard for a converted strip: no opaque backdrop over the Area cards");
+		tabs.Values!["isScrollable"]!.GetValue<bool>().Should().BeTrue(
+			because: "the declared values carry the mobile standard for a converted strip: it must scroll — under the "
+				+ "runtime-derived registry the declared slot is 'isScrollable' (ENG-96589)");
+		tabs.Values!["bodyBackgroundColor"].Should().BeNull(
+			because: "mobile crt.TabPanel declares no background slot, so the rules no longer ship one (ENG-96589)");
 		tabs.Values!["items"].Should().BeOfType<JsonArray>(
 			because: "the declared strip receives tab inserts, so its items slot is declared like any inserted container's");
 		tabs.Values!["layoutConfig"].Should().NotBeNull(
@@ -3739,8 +3740,9 @@ public sealed class WebToMobileConversionServiceTests {
 			.Single(t => t.Web == DeclaredElementsWebTemplate).DeclaredElements.Single(d => d.Name == DeclaredElementsExtraTab).CaptionResource.Value;
 		extra.Values!["caption"]!.GetValue<string>().Should().Be($"#ResourceString({DeclaredElementsExtraTabCaptionKey})#",
 			because: "the element references its caption through the resource token, like every converted caption");
-		extra.Values!["iconPosition"]!.GetValue<string>().Should().Be("only-text",
-			because: "the declared values are carried verbatim");
+		extra.Values!["iconPosition"].Should().BeNull(
+			because: "mobile crt.TabContainer declares only caption + items, so the rules no longer declare an icon "
+				+ "position the runtime ignores (ENG-96589)");
 
 		int tabsAt = IndexOfName(guide, "Tabs");
 		int extraAt = IndexOfName(guide, DeclaredElementsExtraTab);
@@ -4874,7 +4876,9 @@ public sealed class WebToMobileConversionServiceTests {
 		ViewConfigDiffOperation tabs = Declared(guide, "Tabs");
 		tabs.Operation.Should().Be("insert", because: "the mobile template has no Tabs, so the rule declares one and it is created");
 		tabs.ParentName.Should().Be("MainContainer", because: "the declaration puts the strip in the template's main container");
-		tabs.Values!["scrollable"]!.GetValue<bool>().Should().BeTrue(because: "the declared values carry the mobile standard for a converted strip");
+		tabs.Values!["isScrollable"]!.GetValue<bool>().Should().BeTrue(
+			because: "the declared values carry the mobile standard for a converted strip, under the slot name the "
+				+ "runtime-derived registry declares (ENG-96589)");
 		OperationNames(guide).Count(name => name == "Tabs").Should().Be(1,
 			because: "the web strip merges onto the declared one and adds nothing, so the payload-free twin is dropped");
 
@@ -7040,7 +7044,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("Every property is carried verbatim: a system/framework prop (layoutConfig), a mobile-supported prop (readonly), AND a prop the web registry declares but the mobile registry lacks — the last is no longer dropped (no registry-membership pruning while the mobile registry is incomplete, ENG-91859).")]
+	[Description("Every property is carried verbatim: a system/framework prop (layoutConfig), a mobile-supported prop (readonly), AND a prop the web registry declares but the mobile registry lacks. No registry generation is supplied here, so the ENG-96589 prune is off and this pins the copy step in isolation from it.")]
 	public void Analyze_AllProps_CarriedIncludingWebSpecific() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
@@ -9000,7 +9004,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("Building the row READS the grid's columns and leaves them in place: the synthesized itemLayout coexists with the grid-only properties, because pruning what mobile crt.List does not declare belongs to the registry (ENG-91859), not to this mapping.")]
+	[Description("Building the row READS the grid's columns and leaves them in place: the synthesized itemLayout coexists with the grid-only properties, because pruning what mobile crt.List does not declare belongs to the registry-driven pass (ENG-96589), not to this mapping.")]
 	public void Analyze_MobileValues_GridConvertedToList_SynthesizesRowWithoutRemovingItsSource() {
 		// Arrange
 		var web = Reg(("crt.FlexContainer", true), ("crt.DataGrid", false));
@@ -9401,7 +9405,7 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "the template does not name layoutConfig, so it survives — this is what keeps the element placed");
 		values["features"]?["rows"]?["selection"]?["enable"]?.GetValue<bool>().Should().BeTrue(
 			because: "a carried property the template does not name is untouched; pruning what mobile crt.List does "
-				+ "not declare belongs to the registry (ENG-91859), not to this mapping");
+				+ "not declare belongs to the registry-driven prune (ENG-96589), not to this mapping");
 		values["primaryColumnName"]?.GetValue<string>().Should().Be("DataGrid_rcdtw3fDS_Id");
 		values["columns"].Should().NotBeNull(because: "feeding the row must not consume its source");
 		values.ToJsonString().Should().NotContain("{{").And.NotContain("$each",
@@ -9690,7 +9694,7 @@ public sealed class WebToMobileConversionServiceTests {
 		JsonNode row = Element(guide, "ProductsList").Values["itemLayout"];
 		row["title"]?.GetValue<string>().Should().Be("$ProductsListDS_Product",
 			because: "the converter must not withhold a row just because the registry cannot confirm its shape — "
-				+ "the mobile registry is still incomplete (ENG-91859)");
+				+ "this caller supplies no registry generation, so the ENG-96589 prune does not run");
 		row["body"]?.AsArray().Should().HaveCount(2,
 			because: "the body is shipped for the same reason");
 	}
