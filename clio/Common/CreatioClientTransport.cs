@@ -51,7 +51,35 @@ internal sealed class CreatioClientTransport : ICreatioClientTransport {
 
 	#region Properties: Private
 
-	private CreatioClient Client => Volatile.Read(ref _lazyClient).Value;
+	private CreatioClient Client {
+		get {
+			Lazy<CreatioClient> current = Volatile.Read(ref _lazyClient);
+			if (_clientFactory is null) {
+				return current.Value;
+			}
+			try {
+				return current.Value;
+			} catch (Exception) {
+				// Lazy<T> caches a factory exception, and a faulted instance reports IsValueCreated == false,
+				// so Renew() would never replace it. Swap in a fresh Lazy so the next call builds the client
+				// again (for example after `clio login` stored a new token).
+				DiscardFaulted(current);
+				throw;
+			}
+		}
+	}
+
+	#endregion
+
+	#region Methods: Private
+
+	private void DiscardFaulted(Lazy<CreatioClient> faulted) {
+		lock (_renewSync) {
+			if (ReferenceEquals(_lazyClient, faulted)) {
+				Volatile.Write(ref _lazyClient, new Lazy<CreatioClient>(_clientFactory));
+			}
+		}
+	}
 
 	#endregion
 

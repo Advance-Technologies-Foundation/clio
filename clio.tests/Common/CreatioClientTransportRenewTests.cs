@@ -81,6 +81,30 @@ internal sealed class CreatioClientTransportRenewTests {
 	}
 
 	[Test]
+	[Description("A failed first build is not cached: once a token is available (for example after clio login), the next use builds the client.")]
+	public void Client_ShouldRebuild_WhenTheFirstBuildThrew() {
+		// Arrange
+		int attempts = 0;
+		using CreatioClientTransport sut = new(() => {
+			attempts++;
+			if (attempts == 1) {
+				throw new InvalidOperationException("no valid session");
+			}
+			return new CreatioClient("https://creatio.test", "token", true);
+		});
+		Action firstUse = sut.EnsureCreated;
+		firstUse.Should().Throw<InvalidOperationException>();
+
+		// Act
+		Action secondUse = sut.EnsureCreated;
+
+		// Assert
+		secondUse.Should().NotThrow(because: "a faulted build must not stick in the renewable transport");
+		attempts.Should().Be(2);
+		sut.IsCreated.Should().BeTrue();
+	}
+
+	[Test]
 	[Description("A transport over a fixed lazy client has no factory to build a replacement with, so Renew fails loudly.")]
 	public void Renew_ShouldThrow_WhenTheTransportWrapsAFixedClient() {
 		// Arrange
