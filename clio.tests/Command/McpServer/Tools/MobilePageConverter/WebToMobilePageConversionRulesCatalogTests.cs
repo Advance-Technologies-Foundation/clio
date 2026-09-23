@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using Newtonsoft.Json.Linq;
@@ -374,11 +374,16 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 		tabs.ParentName.Should().Be("MainContainer", because: "the strip sits in the template's main container, like the tabbed mobile template's own Tabs");
 		tabs.PropertyName.Should().Be("items", because: "a container holds its children in items");
 		tabs.Index.Should().BeNull(because: "the strip is appended to MainContainer; a grid parent positions by layoutConfig, not by index");
-		tabs.Values["scrollable"].GetBoolean().Should().BeTrue(
+		tabs.Values["isScrollable"].GetBoolean().Should().BeTrue(
 			because: "a converted tab strip must scroll on mobile; with creation explicit in the declaration, the strip's mobile "
 				+ "standard is declared here rather than stamped by a viewConfigTemplate matching the strip by name");
-		tabs.Values["bodyBackgroundColor"].GetString().Should().Be("transparent",
-			because: "the strip must not paint an opaque background over the Area cards its tabs wrap");
+		tabs.Values.Should().NotContainKey("scrollable",
+			because: "the runtime-derived registry declares the slot as 'isScrollable'. The web spelling had to be "
+				+ "corrected BY HAND rather than left to the prune: a rule-declared value is prune-EXEMPT, so the "
+				+ "converter would have written 'scrollable' into every converted tab strip and reported nothing "
+				+ "(ENG-96589). WebToMobilePageConversionRulesRegistryTests is what now catches the next one");
+		tabs.Values.Should().NotContainKey("bodyBackgroundColor",
+			because: "mobile crt.TabPanel declares no background slot, so declaring one shipped a property the runtime ignores (ENG-96589)");
 		rightArea.Containers.Should().Contain(c => c.Web == "Tabs" && c.Mobile == "Tabs",
 			because: "the web strip merges onto the DECLARED strip by name — the pair merges, the declaration creates");
 
@@ -428,9 +433,9 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 		DeclaredElementRule rightAreaTabs = rightArea.DeclaredElements.Single(d => d.Name == "Tabs");
 		tabs.Type.Should().Be(rightAreaTabs.Type, because: "both templates declare the same mobile tab panel component");
 		tabs.ParentName.Should().Be("MainContainer", because: "the strip sits in the template's main container");
-		tabs.Values["scrollable"].GetBoolean().Should().BeTrue(because: "a converted tab strip must scroll on mobile");
-		tabs.Values["bodyBackgroundColor"].GetString().Should().Be("transparent",
-			because: "the strip must not paint an opaque background over the Area cards its tabs wrap");
+		tabs.Values["isScrollable"].GetBoolean().Should().BeTrue(because: "a converted tab strip must scroll on mobile");
+		tabs.Values.Should().NotContainKey("bodyBackgroundColor",
+			because: "mobile crt.TabPanel declares no background slot (ENG-96589)");
 
 		DeclaredElementRule generalTab = topArea.DeclaredElements.Single(d => d.Name == "GeneralInfoTab");
 		generalTab.Type.Should().Be("crt.TabContainer", because: "a tab is a crt.TabContainer");
