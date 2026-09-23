@@ -298,20 +298,12 @@
           { "filterType": "IsEmpty", "leftExpression": "clicked" },
           { "filterType": "IsEmpty", "leftExpression": "menuItems" }
         ]
-      },
-      "note": "ENG-96178: a button with no action of its own and nothing left in its menu is chrome the user can press to no effect. Both expressions resolve against the MERGED state of the property - for menuItems that is the child insert operations addressing this button, which is why a healthy menu button is never matched even though its own values never carry the slot."
+      }
     },
     {
       "type": "crt.MenuItem",
       "reason": "drop-unsupported-request",
-      "filters": {
-        "filterType": "Group",
-        "logicalOperation": "and",
-        "items": [
-          { "filterType": "IsEmpty", "leftExpression": "clicked" }
-        ]
-      },
-      "note": "ENG-96178: a menu item exists only to fire its action. One whose request does not CONVERT is removed earlier - by the walk's leaf drop in the entry-graph shape, or by its twin in the carried shape - because a dead binding is present rather than absent and no emptiness test can see it. This rule covers the menu item left holding nothing at all."
+      "filters": { "filterType": "IsEmpty", "leftExpression": "clicked" }
     }
   ],
   "actionComponents": [

@@ -1,4 +1,4 @@
-namespace Clio.Command.McpServer.Tools.MobilePageConverter;
+﻿namespace Clio.Command.McpServer.Tools.MobilePageConverter;
 
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
@@ -46,15 +46,6 @@ public sealed class ComponentRemovalRule {
 	/// </summary>
 	[JsonPropertyName("reason")]
 	public string Reason { get; init; }
-
-	/// <summary>
-	/// Free-text note for whoever maintains the rules file — never read by the converter and never reported.
-	/// Mapped rather than left unmapped because an unmapped member of a NESTED object is simply discarded:
-	/// the <c>[JsonExtensionData]</c> bag the catalog tests guard is on the ROOT document only, so nothing
-	/// would report a note that quietly stopped round-tripping.
-	/// </summary>
-	[JsonPropertyName("note")]
-	public string Note { get; init; }
 }
 
 /// <summary>
