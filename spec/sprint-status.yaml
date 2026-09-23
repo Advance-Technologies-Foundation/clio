@@ -4155,3 +4155,15 @@ stories:
     description: Native entity DB-view flag support for clio issue 1618
     depends_on: []
     blocks: []
+
+  - id: story-section-delete-safety-1
+    status: review
+    description: Preserve unrelated schemas during section deletion for clio issue 1634
+    depends_on: []
+    blocks: []
+
+  - id: story-1641-page-json-comments-1
+    status: review
+    description: Accept explanatory comments while preserving required schema markers for issue 1641
+    depends_on: []
+    blocks: []

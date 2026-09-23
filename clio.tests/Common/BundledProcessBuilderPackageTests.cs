@@ -73,9 +73,13 @@ public class BundledProcessBuilderPackageTests {
 	/// <summary>
 	/// SHA-256 of the committed archive. Produced by <c>rebundle-process-builder.ps1</c> at
 	/// <see cref="ExpectedArchiveVersion"/> from
-	/// the <c>ProcessBuilder</c> repository (<c>packages/CrtProcessBuilder</c>, branch
-	/// <c>feature/ENG-92707-sub-process-element</c>), at the commit
-	/// recorded mechanically in
+	/// the <c>ProcessBuilder</c> repository (<c>packages/CrtProcessBuilder</c> on <c>main</c>, at the
+	/// squash-merge of engineering/crt-process-builder#70). That branch had merged <c>main</c> after the
+	/// sprint-3 release, so the cut contains the commit the 1.6.3.31 archive was produced from
+	/// (<c>0b2c69adfb0a59c3ab4b37fb519a5d0df345dba7</c>, verified with <c>git merge-base --is-ancestor</c>)
+	/// and with it the ENG-96503 Read-data count work, the ENG-95986 Send-email template mode and
+	/// everything <c>nitro/sprint-3-release</c> had accumulated, including the earlier ENG-91853
+	/// flow-labels and ENG-94374 process-versioning work. Recorded mechanically in
 	/// <see cref="ExpectedProducingCommit"/> — the script captures <c>git rev-parse HEAD</c> and refuses to cut
 	/// from a tree with uncommitted changes, so this reference is no longer a sentence anyone has to keep true
 	/// by hand. Many numbers below the current one are burned rather than reused — some because two branches drew
@@ -90,6 +94,83 @@ public class BundledProcessBuilderPackageTests {
 	/// reaching a clio commit. Do not take one above the global maximum across all branches: another branch sitting
 	/// higher does not make its number yours to continue, and adopting it produces a version that looks newer than
 	/// work it does not contain. See docs/agent-instructions/bundled-packages.md for the commands.</para>
+	/// <para>What this cut carries, over the 1.6.1.9 flow-label delivery (ENG-91853) on <c>nitro/sprint-3-release</c>
+	/// it was cut above: the Send email TEMPLATE message mode (ENG-95986) — <c>email.messageSource</c>,
+	/// <c>email.template</c> and <c>email.templateEntity</c>, written as the three-parameter template mode with the
+	/// shared <c>EmailTemplateResolver</c>; the subject-only regression fixed (a subject no longer flips a template
+	/// element to a custom message); an <c>IsDBNull</c> guard on the template reads; and the review fixes (describe
+	/// hides a stale template in custom mode, the <c>templateEntity</c> texts name a record ID rather than a Read data
+	/// element's whole-record <c>ResultEntity</c>, which the server refuses; then the second review round: a stored
+	/// subject kept on a non-switching update, the mode inferred from a stored template on a mode-less element,
+	/// the custom-alone refusal, and the shared entity/parameter seams). The version is 1.6.2.3 — 1.6.2.1 and
+	/// 1.6.2.2 were the earlier review rounds' cuts, each superseded on the same branch before it shipped; the
+	/// create/modify FLOOR stays at 1.6.2.1, the first archive carrying the mode, which this one satisfies. 1.6.2.0 is
+	/// BURNED — it was cut from a commit below ENG-91853, so an archive numbered above 1.6.1.9 would have lacked the
+	/// flow labels 1.6.1.4-1.6.1.9 ship (the "newer stops meaning contains" trap of bundled-packages.md), and its tag
+	/// still names that commit; the .2 minor step over 1.6.1.x records that a new element behaviour the clio
+	/// descriptions advertise is a capability. Each raise is what makes a stand still carrying an earlier archive
+	/// DETECTABLY behind — same-version re-cuts make equal version numbers mean nothing, which the convergence
+	/// check cannot see through.</para>
+	/// <para>On TOP of that (this cut, merged from <c>feature/ENG-96503-read-data-count-aggregation</c>): the Read
+	/// data element's <c>count</c> and <c>aggregation</c> modes — <c>readData.mode</c> takes <c>first</c> |
+	/// <c>count</c> | <c>aggregation</c>, the aggregation pair validated against the source object's column types,
+	/// the result flag moved to the output the runtime actually writes — AND a same-batch dependency-guard bypass
+	/// closed (AC 9a): the retarget/mode-change guards on Read data, Modify data, Add data and Pre-configured page
+	/// used to scan the schema LIVE at the moment each guard ran, so an earlier operation in the SAME
+	/// <c>modify-business-process</c> call could repoint or clear a dependent mapping and let a later operation in
+	/// that call dodge the guard — confirmed via a live CAADT/Playwright run that completed a "forbidden" mode
+	/// switch end to end. <c>IProcessDependencySnapshot</c> (request-scoped) now answers every one of those four
+	/// guards with the union of a frozen pre-batch capture and a fresh live re-scan, so neither a dependent cleared
+	/// nor one added mid-batch escapes detection. Every PATCH digit over 1.6.2.5 fixes something a review or a
+	/// live-test run found, and each is raised so a stand still carrying an earlier one is DETECTABLY behind.</para>
+	/// <para>1.6.5.14 (THIS cut, from <c>feature/ENG-95890-ENG-98448-layout-and-connector-geometry</c>): the
+	/// band layout and connector geometry (ENG-95890, ENG-98448), and on top of them the second review round's
+	/// four fixes. The one that decides whether this archive may ship at all is
+	/// <c>ModifyProcessRequest.ConfirmLayoutChange</c> becoming NULLABLE. This version changed which arm of a
+	/// split keeps the trunk and made end-event pinning conditional, so a diagram an earlier package drew now
+	/// lands in cells this engine would not choose - measured at 21 of 33 graphs by running 1.6.5.4's own
+	/// placement algorithm beside the current one. While the member was a <c>bool</c>, absence read as
+	/// "not confirmed" and every one of those edits was REFUSED; the member is new in this very clio PR, so no
+	/// released clio and no direct web-service consumer could send it. Absence now means a caller that predates
+	/// the gate and the edit applies, which is why the clio side must send the member on EVERY request rather
+	/// than only when true - see <c>ModifyBusinessProcessServiceTests</c>, which pins that.</para>
+	/// <para>1.6.2.8 (this cut): two more post-merge review findings on the same feature branch, both confirmed
+	/// against current code before fixing. <c>ProcessElementDependencyScanner.CaptureSnapshot</c> now also walks
+	/// <c>schema.ExecutionContexts</c> — a second schema-level parameter collection, distinct from
+	/// <c>schema.Parameters</c>, that <c>ProcessParameterService</c>'s parameter-delete guard already scanned; a
+	/// reference living only there was invisible to every retarget/mode-change guard above. And
+	/// <c>ReadDataConfigBinder.Describe</c> now omits <c>columns</c>/<c>sort</c> for <c>count</c>/<c>aggregation</c>
+	/// — a shipped Function-mode element can carry stale stored values from a designer-side mode switch (the
+	/// designer does not clear them the way this package's own <c>Apply</c> does), and reporting them produced a
+	/// block <c>build</c>/<c>modify</c> immediately refuses, breaking the round-trip.</para>
+	/// <para>1.6.2.9 (this cut): a High-severity post-merge finding on <c>PreconfiguredPageApplier.Apply</c> — it
+	/// mutated the page (and, further down, buttons/performer/data sources) BEFORE its stale-data-source
+	/// dependency guard ran, so a refusal from that guard left the page already switched to the retarget's
+	/// destination while the stale, now-orphaned parameter it named stayed in place. <c>ApplyPage</c> and
+	/// <c>ApplyDataSources</c> are now split into a read-only resolve phase and a mutation-only write phase; every
+	/// guard — the newly-hoisted "no buttons on a new Freedom element" check included — now runs before any write,
+	/// in the method's original relative write order, so a refusal leaves the element exactly as it was.</para>
+	/// <para>1.6.2.10 (this cut): the same atomicity fix, closed the rest of the way. <c>ApplyPerformer</c> called
+	/// the shared <c>IUserTaskPerformerApplier.ApplyToUserTask</c> — which writes the owner/role assignment —
+	/// BEFORE its own "showPage applies to a user performer only" gate, so a role/manager performer with an
+	/// explicit <c>showPage</c> wrote the assignment and only then refused; it now uses the shared mechanism's own
+	/// <c>ResolveForUserTask</c>/<c>ApplyResolvedToUserTask</c> split (the same one <c>OpenEditPageConfigBinder</c>
+	/// already uses), with the gate checked against the resolved-but-unwritten performer. <c>ApplyButtons</c> and
+	/// <c>ApplyRecommendation</c> were each already validate-before-write internally, but ran in the write phase
+	/// AFTER the page had already been written; both are now split into a resolve half (validation, no schema
+	/// mutation) and a write half, so every guard in the method runs before any of it commits.</para>
+	/// <para>1.6.2.11 (this cut): a self-regression the atomicity split introduced, found by the same review pass.
+	/// The original <c>ApplyDataSources</c> caught two data sources sharing a name in one request because each
+	/// iteration added its parameter to <c>element.Parameters</c> immediately, so a later duplicate hit the
+	/// existing name-conflict check; splitting resolution from writing removed that side effect, so
+	/// <c>ResolveDataSources</c> now runs its own intra-request duplicate check, mirroring the one
+	/// <c>ResolveButtons</c> already runs for completing buttons.</para>
+	/// <para>1.6.2.12 (this cut): the previous cut's new check used <c>StringComparer.Ordinal</c>, but the
+	/// runtime's parameter dictionary is case-insensitive while the generated parameter name is only
+	/// case-sensitive as TEXT, so <c>PDS</c> and <c>pds</c> in one request both passed the check and then
+	/// collided at write time the same way an exact duplicate does. Switched to <c>OrdinalIgnoreCase</c>,
+	/// matching the sibling existing-parameter conflict check right below it and <c>ResolveButtons</c>' own
+	/// duplicate check.</para>
 	/// <para>What THIS cut carries, over the 1.6.3.16 this file previously pinned: the Sub-process element
 	/// (ENG-92707) - the BPMN call activity,
 	/// selecting the called process and letting the platform copy that process's parameters onto the element,
@@ -113,8 +194,13 @@ public class BundledProcessBuilderPackageTests {
 	/// each is raised so a stand still carrying an earlier one is DETECTABLY behind — same-version re-cuts make
 	/// equal version numbers mean nothing, which the convergence check cannot see through.</para>
 	/// <para>
-	/// The cut ran with the package's own gate tests passing rather than under <c>-SkipTests</c>, and the
-	/// script verified the archive inventory it produced. The byte-for-byte comparison of every archive entry
+	/// This cut DID run under <c>-SkipTests</c>. The package's suite is green on the producing commit
+	/// (1871 of 1872 with the CI filter) except for
+	/// <c>CiContractGuardTests.FeatureToggling_LoadedIdentityMatchesThePlatformDemandAndTheTestKit</c>, which
+	/// fails on this machine because the local <c>.application/net-framework/core-bin</c> binds an older
+	/// <c>Creatio.FeatureToggling</c> than the test project references — a stale local dependency set, not a
+	/// defect in the cut. The script verified the archive inventory it produced. The byte-for-byte comparison of
+	/// every archive entry
 	/// against the commit's CHECKOUT rendering was NOT re-run here, and the clean-tree refusal does NOT cover
 	/// it: a clean TREE and a clean CHECKOUT are different states. `git add` normalises to LF in the INDEX while
 	/// the working tree keeps what was written, so LF files can be committed, leave the tree clean, pass the
@@ -181,6 +267,11 @@ public class BundledProcessBuilderPackageTests {
 	/// and this removes the operator's editor and git configuration from the hash instead of gating on them.
 	/// </para>
 	/// <para>
+	/// The entry-by-entry byte audit (every archive entry compared against
+	/// <c>git show &lt;ExpectedProducingCommit&gt;:&lt;path&gt;</c>; last measured on the 1.6.1.2 cut as 157 entries,
+	/// 156 byte-identical, the 157th being the restamped <c>descriptor.json</c>) was NOT re-run for the 1.6.2.3 cut.
+	/// Its reproducibility rests on the export flags above, which are what made the earlier audit come out clean;
+	/// a reviewer can repeat the audit from the producing commit alone.
 	/// The INVARIANT, which is what this paragraph is for and the only part that cannot go stale: every entry in
 	/// the archive is byte-IDENTICAL to the producing commit's blob EXCEPT <c>descriptor.json</c>, which by
 	/// contract cannot match a pre-restamp commit and is pinned separately by
@@ -194,7 +285,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"E928108CD27B31A4C3C1F35E3E205ECB86DD17D196E035E94886969CE4965A43";
+		"DC38CCC2D2079235AA88C42818483929FF8EBE950F9F2C5C0A945177E70B6FE1";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -222,7 +313,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.3.29";
+	private const string ExpectedArchiveVersion = "1.6.5.14";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, written by
@@ -234,7 +325,15 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "7ff720f6b0ef807d5e5777ef9e8148b8c1c72801";
+	// Re-pointed from the branch cut to the squash-merge WITHOUT repacking, which is the one case where
+	// moving this pin alone is honest rather than a shortcut. #70 was squashed, so the branch commit the
+	// script recorded is not reachable from main and the pin's whole purpose - "anyone with a checkout can
+	// verify the rest with one git checkout" - was dead. The bytes did not need to change: measured over the
+	// committed archive, 205 of its 206 entries are byte-identical to this commit's blobs and the 206th is
+	// descriptor.json, which differs only in LINE ENDINGS because the repository normalises to LF and the
+	// restamp writes CRLF. Its CONTENT matches exactly - version and stamp included - which is stronger than
+	// the invariant below requires, and is true only because the restamp landed in the squash.
+	private const string ExpectedProducingCommit = "f603ca6f56c6faa9a6b7ced8391531668fcfe024";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -260,7 +359,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1789742821000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1790064360000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
@@ -469,7 +568,13 @@ public class BundledProcessBuilderPackageTests {
 	// the rest of the archive as the window would let a member on any later type satisfy the probe,
 	// which is exactly the vacuity this helper exists to remove. `DescribeProcessFlow` is the last
 	// region in its file, so that is not a hypothetical shape.
-	private static bool DeclaresLabelOn(string archive, string typeName) {
+	private static bool DeclaresLabelOn(string archive, string typeName) =>
+		DeclaresMemberOn(archive, typeName, "label");
+
+	// Generalised from the label probe: the same window, asked about any wire name. The diagram members
+	// arrived needing that question about three more types, and a second copy of the region arithmetic is a
+	// second place for the unterminated-region hole to be reintroduced.
+	private static bool DeclaresMemberOn(string archive, string typeName, string dataMemberName) {
 		int start = archive.IndexOf($"#region Class: {typeName}\r", StringComparison.Ordinal);
 		if (start < 0) {
 			start = archive.IndexOf($"#region Class: {typeName}\n", StringComparison.Ordinal);
@@ -481,7 +586,7 @@ public class BundledProcessBuilderPackageTests {
 
 		int end = archive.IndexOf("#endregion", start, StringComparison.Ordinal);
 		return end >= 0
-			&& archive[start..end].Contains("[DataMember(Name = \"label\")]", StringComparison.Ordinal);
+			&& archive[start..end].Contains($"[DataMember(Name = \"{dataMemberName}\")]", StringComparison.Ordinal);
 	}
 
 	/// <summary>
@@ -811,10 +916,11 @@ public class BundledProcessBuilderPackageTests {
 			because: $"every gate must be visible to this scan and no other type may carry one. Add or remove "
 				+ $"a gate and {nameof(ProcessBuilderGatedTypes)} moves in the same commit, so a lost "
 				+ "declaration cannot pass as slack and a new one cannot arrive unreviewed");
-		// The loop EXECUTES today: four of the seven carry a version literal, and they do NOT agree with each
-		// other — create at 1.4.0.44, modify at 1.6.0.1 (they diverged when modify's page-change
-		// reconciliation promise needed a newer archive than create's), and both versioning options at the
-		// version their own operations first ship in. That spread is the reason the assertion counts literals
+		// The loop EXECUTES today: four of the seven carry a version literal, and they do NOT all agree with
+		// each other — create, modify and modify-as-new-version at 1.6.2.1 since ENG-95986 (create and modify had
+		// diverged before, when modify's page-change reconciliation promise needed a newer archive than create's;
+		// the new-version route followed because it shares the operations vocabulary and runs no read-back), and
+		// set-active-version at the 1.6.1.0 its operation first ships in. That spread is the reason the assertion counts literals
 		// rather than pinning a value: no single number describes the set. It was vacuous when written,
 		// deliberately — the invariant had to be in place before the first literal appeared, because the
 		// commit that adds one is exactly when it must already work. It replaces the old pin (descriptor
@@ -1040,6 +1146,28 @@ public class BundledProcessBuilderPackageTests {
 		archive.Should().Contain("BodyStyle = WebMessageBodyStyle.Wrapped",
 			because: "the wrapper name clio looks for (PingResult) is a FUNCTION of this setting; flipping it to "
 				+ "Bare removes the envelope and the verdict inverts silently");
+
+		// The diagram read-back, asked the same way and for the same reason: clio TYPES these members, so
+		// an archive without them answers every describe with a null size and a null geometry while clio's
+		// own DTO says the fields exist - and a caller then reads "this package reports no geometry" off a
+		// package that simply was not rebundled.
+		DeclaresMemberOn(archive, "DescribeProcessElement", "size").Should().BeTrue(
+			because: "without the size a described position cannot be inverted into a diagram row at all");
+		DeclaresMemberOn(archive, "DescribeProcessFlow", "geometry").Should().BeTrue(
+			because: "every criterion about a connector is a statement about this chain, so without it the "
+				+ "layout can only be checked by a person opening the designer");
+		DeclaresMemberOn(archive, "DescribeFlowGeometry", "start").Should().BeTrue(
+			because: "the chain's own members have to be on the shipped type, not only on its container");
+		// Through the ENTRY NAMES, not the text: the container stores paths UTF-16LE, so a Contain over the
+		// decompressed blob answers false for a file that IS shipped. The names come back with forward
+		// slashes whatever the container stored.
+		IReadOnlyList<string> entries = ReadBundledArchiveEntryNames();
+		entries.Should().Contain(name => name.EndsWith("Layout/ConnectorRouter.cs", StringComparison.Ordinal),
+			because: "the package ships as SOURCE and compiles on the target, so a routing file missing from "
+				+ "the archive is a package that installs, pings green and writes no connector geometry");
+		entries.Should().Contain(name => name.EndsWith("Layout/FlowGeometryWriter.cs", StringComparison.Ordinal),
+			because: "same for the writer - the one file that turns a routed chain into stored CI7/CI8/CI10/"
+				+ "CI11/CI12");
 	}
 
 	[Test]
