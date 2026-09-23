@@ -101,7 +101,7 @@ public sealed class PageUpdateCommandPersistedResourcesTests {
 			new PageDesignerHierarchySchema { UId = SchemaUId, Name = SchemaName, PackageUId = "test-pkg-uid" }
 		]);
 		_command = new PageUpdateCommand(
-			_applicationClient, serviceUrlBuilder, _logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), hierarchyClient);
+			_applicationClient, serviceUrlBuilder, _logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), hierarchyClient, viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 	}
 
 	/// <summary>Stubs the GetSchema round-trip with the given persisted localizable-string keys.</summary>
