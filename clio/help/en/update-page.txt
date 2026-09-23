@@ -116,6 +116,16 @@ DESCRIPTION
       shadows the native element, so the top navigation bar and the page
       body silently come from the wrong one. A "merge" onto Scaffold is
       the SUPPORTED way to patch the template's own root and is allowed.
+    - Rejected: an "insert"/"set" authoring a crt.IndicatorWidget whose
+      config.data.providing cannot produce a value. An aggregation metric
+      needs "schemaName" plus aggregation.column.expression carrying a
+      numeric "aggregationType" (1 Count, 2 Sum, 3 Avg, 4 Min, 5 Max)
+      and functionArgument.columnPath; a calculated metric
+      carries "expressionSchema" instead of all of them. The mobile
+      runtime abandons the data request when one is absent, and the tile
+      and title still render - so the save succeeds and the only signal
+      is a missing or zero number. A "merge" is exempt: it patches an
+      element whose providing is already complete.
     - Warned: a component type in NEITHER the mobile nor the web
       registry. It may be a custom mobile component registered in your
       own package, in which case ignore it; it is equally what a typo

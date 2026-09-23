@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Reflection;
@@ -5400,7 +5400,7 @@ internal static class ToolContractCatalog {
 			"Client-side Freedom UI page body validation without saving to Creatio. Pass body inline, or on local stdio pass body-file using files.bodyFile returned by get-page. " +
 			"For web pages (body starts with `define(`): checks marker integrity, JS syntax, JSON content, field bindings, column bindings, " +
 			"handler structure, and VendorPrefix.Name format for converters, validators, and handler request values. " +
-			"For mobile pages (plain JSON body starting with `{`): validates that disallowed constructs (validators, handlers, custom converters sections) are absent.",
+			"For mobile pages (plain JSON body starting with `{`): validates that disallowed constructs (validators, handlers, custom converters sections) are absent, and that an authored crt.IndicatorWidget carries a data-providing block the mobile runtime can execute (schemaName + aggregation.column.expression, or expressionSchema for a calculated metric).",
 			new ToolInputSchemaContract(
 				[],
 				[

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -1001,6 +1001,42 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 			because: "validation details are always included in the response");
 		response.Validation!.Warnings.Should().Contain(w => w.Contains("usr.NotARealComponentType"),
 			because: "the previously silent case has to name the type so a typo is distinguishable from a deliberate custom component");
+	}
+
+	[Test]
+	[Description("A mobile crt.IndicatorWidget whose aggregation column carries a bare columnPath instead of an expression is refused. That is the shape the published mobile component document prescribes, and it used to pass every check: the widget and its title render, the save succeeds, the read-back is intact, and the only signal is a metric with no value.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page rejects a mobile metric whose providing cannot produce a value")]
+	[AllureDescription("Sends a mobile body inserting a crt.IndicatorWidget whose config.data.providing.aggregation.column has no expression, and verifies validate-page blocks it end-to-end and names the missing JSON path.")]
+	public async Task PageValidateTool_Should_Reject_Mobile_Indicator_Widget_Without_Executable_Providing() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string mobileBodyWithDeadMetric = """
+			{
+			  "viewConfigDiff": [
+			    { "operation": "insert", "name": "TotalIndicator", "parentName": "MainContainer", "propertyName": "items",
+			      "values": { "type": "crt.IndicatorWidget",
+			                  "config": { "title": "Total",
+			                              "data": { "providing": { "schemaName": "Contact",
+			                                                       "aggregation": { "column": { "columnPath": "Id" } } } } } } }
+			  ],
+			  "viewModelConfigDiff": [],
+			  "modelConfigDiff": []
+			}
+			""";
+
+		// Act
+		PageValidateResponse response = await CallAsync(
+			context.Session, context.CancellationTokenSource.Token, mobileBodyWithDeadMetric);
+
+		// Assert
+		response.Valid.Should().BeFalse(
+			because: "the runtime abandons the data request for this shape, so a silently wrong analytic must be refused before it reaches a stand rather than discovered by reading the number");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.Errors.Should().Contain(
+			e => e.Contains("config.data.providing.aggregation.column.expression"),
+			because: "the caller must be given the exact missing path, since the document it authored from is the source of the defect");
 	}
 
 	[Test]

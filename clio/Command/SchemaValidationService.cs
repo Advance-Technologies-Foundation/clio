@@ -53,6 +53,7 @@ public static class SchemaValidationService
 	private const string ScaffoldItemsSlot = "items";
 	private const int MaxMergeSlotDiagnosticsPerEntry = 10;
 	private const string ButtonComponentType = "crt.Button";
+	private const string IndicatorWidgetComponentType = "crt.IndicatorWidget";
 
 	/// <summary>
 	/// The Scaffold slots a shipped template already populates, which is what makes a merge authoring into them the
@@ -409,6 +410,9 @@ public static class SchemaValidationService
 
 		SchemaValidationResult componentResult = ValidateMobileComponentTypes(body, allowedMobileTypes, webOnlyTypes);
 		warnings.AddRange(componentResult.Warnings);
+
+		SchemaValidationResult indicatorProvidingResult = ValidateMobileIndicatorWidgetProviding(body);
+		if (!indicatorProvidingResult.IsValid) errors.AddRange(indicatorProvidingResult.Errors);
 
 		SchemaValidationResult bindingResult = ValidateMobileFieldBindings(body);
 		if (!bindingResult.IsValid) errors.AddRange(bindingResult.Errors);
@@ -842,6 +846,166 @@ public static class SchemaValidationService
 			$"viewConfigDiff[{index}] authors a second '{ScaffoldComponentType}'. The mobile template already "
 			+ "provides the Scaffold root and a page may not add another — it would shadow the native element. "
 			+ $"Use operation 'merge' on '{ScaffoldElementName}' to patch the template's own root instead.");
+	}
+
+	/// <summary>
+	/// Validates that every <c>crt.IndicatorWidget</c> a mobile page AUTHORS carries a data-providing block the
+	/// mobile runtime can actually execute. A metric whose <c>config.data.providing</c> is incomplete renders its
+	/// tile and its title and then shows no value, or a default <c>0</c> — nothing errors at any stage, so the
+	/// first observable signal is a wrong number on a page that is already saved.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// The rule mirrors the runtime's OWN skip conditions rather than the registry's type schema, and that is
+	/// deliberate: the mobile catalog publishes no <c>required</c> markers outside <c>RequestBindingConfig</c>, so
+	/// the registry-driven machinery used for <c>crt.ChartWidget</c> (<see cref="ValidateChartWidgetConfig"/>)
+	/// would be a silent no-op here. Do not fold this onto that path without first checking that the mobile
+	/// registry marks these fields required.
+	/// </para>
+	/// <para>
+	/// Two providing shapes are legal and the check branches on them. An AGGREGATION metric needs
+	/// <c>schemaName</c> plus <c>aggregation.column.expression</c> carrying a numeric <c>aggregationType</c> and a
+	/// <c>functionArgument.columnPath</c> — the runtime abandons the data request when any of the three is absent,
+	/// and degrades a missing <c>aggregationType</c> to "no aggregate" rather than failing. A CALCULATED (formula)
+	/// metric carries <c>expressionSchema</c> instead and reads none of them, so demanding <c>schemaName</c>
+	/// unconditionally would reject every valid formula widget. <c>attribute</c> is NOT required: the runtime
+	/// derives <c>&lt;elementName&gt;_Data</c> when it is absent.
+	/// </para>
+	/// <para>
+	/// Scope: the <c>values</c> subtree of an <c>insert</c>, <c>set</c> or <c>merge</c>. <c>merge</c> belongs here
+	/// even though it patches rather than creates, because <see cref="JsonDiffApplier.Merge"/> REPLACES a top-level
+	/// property wholesale rather than merging into it — a merge carrying a <c>config</c> therefore authors that whole
+	/// config, and against an absent or empty slot it is often the only single-operation route to a new element at
+	/// all (see <see cref="ValidateMobileMergeSlotAuthoring"/>). What the rule cannot see is a merge that replaces an
+	/// existing metric's <c>config</c> without repeating its <c>type</c>: clio applies the diff against an empty
+	/// base, so the target's component type is unknowable and that shape passes unchecked.
+	/// </para>
+	/// <para>
+	/// A widget that carries its own non-null <c>data</c> is skipped entirely: the runtime returns before it reads
+	/// <c>providing</c> at all, so such a metric renders from its binding and this rule has no jurisdiction.
+	/// One conditional the rule does NOT mirror: the runtime accepts a null <c>columnPath</c> while the
+	/// <c>EnableFormulaAggregationInDesigner</c> feature is on. It defaults off, so requiring the path
+	/// unconditionally is correct today — re-check this if that default flips.
+	/// </para>
+	/// </remarks>
+	/// <param name="body">Plain-JSON mobile page body.</param>
+	/// <returns>
+	/// A <see cref="SchemaValidationResult"/> carrying one error per authored widget whose providing block cannot
+	/// produce a value, naming every missing path at once.
+	/// </returns>
+	public static SchemaValidationResult ValidateMobileIndicatorWidgetProviding(string body) =>
+		ScanMobileViewConfigDiffEntries(body, ValidateMobileIndicatorWidgetProvidingEntry);
+
+	/// <summary>
+	/// Applies the indicator-providing rule to one <c>viewConfigDiff</c> entry. See
+	/// <see cref="ValidateMobileIndicatorWidgetProviding"/> for the operation scope and the two legal shapes.
+	/// </summary>
+	private static void ValidateMobileIndicatorWidgetProvidingEntry(
+		JsonElement entry, int index, SchemaValidationResult result) {
+		if (entry.ValueKind != JsonValueKind.Object
+			|| !TryGetStringProperty(entry, OperationPropertyName, out string operation)
+			|| (!string.Equals(operation, InsertOperationName, StringComparison.Ordinal)
+				&& !string.Equals(operation, SetOperationName, StringComparison.Ordinal)
+				&& !string.Equals(operation, MergeOperationName, StringComparison.Ordinal))
+			|| !entry.TryGetProperty(ValuesPropertyName, out JsonElement values)) {
+			return;
+		}
+		ScanAuthoredIndicatorWidgets(values, DescribeViewConfigDiffEntry(entry, index), depth: 0, result);
+	}
+
+	/// <summary>
+	/// Walks an authored <c>values</c> subtree and checks every <c>crt.IndicatorWidget</c> it declares — a metric
+	/// nested in a container's <c>items</c> is authored just as completely as one at the root of <c>values</c>.
+	/// </summary>
+	/// <remarks>
+	/// Bounded by <see cref="JsonReaderLimits.MaxParseDepth"/>, which the parse this element came out of already
+	/// enforced; the budget is here to state the bound, as in <see cref="DeclaresScaffold(JsonElement, int)"/>.
+	/// </remarks>
+	private static void ScanAuthoredIndicatorWidgets(
+		JsonElement element, string entryLabel, int depth, SchemaValidationResult result) {
+		if (depth > JsonReaderLimits.MaxParseDepth) {
+			return;
+		}
+		switch (element.ValueKind) {
+			case JsonValueKind.Object:
+				if (TryGetStringProperty(element, TypePropertyName, out string componentType)
+					&& string.Equals(componentType, IndicatorWidgetComponentType, StringComparison.Ordinal)) {
+					ReportIndicatorProvidingGaps(element, entryLabel, result);
+				}
+				foreach (JsonProperty property in element.EnumerateObject()) {
+					ScanAuthoredIndicatorWidgets(property.Value, entryLabel, depth + 1, result);
+				}
+				break;
+			case JsonValueKind.Array:
+				foreach (JsonElement item in element.EnumerateArray()) {
+					ScanAuthoredIndicatorWidgets(item, entryLabel, depth + 1, result);
+				}
+				break;
+		}
+	}
+
+	/// <summary>
+	/// Collects every missing providing path on one authored widget and reports them as a SINGLE error, so an
+	/// agent fixing the body sees the whole contract at once instead of one field per round-trip.
+	/// </summary>
+	private static void ReportIndicatorProvidingGaps(
+		JsonElement widget, string entryLabel, SchemaValidationResult result) {
+		if (widget.TryGetProperty("data", out JsonElement boundData) && boundData.ValueKind != JsonValueKind.Null) {
+			return;
+		}
+		var missing = new List<string>();
+		if (!TryGetObjectProperty(widget, "config", out JsonElement config)
+			|| !TryGetObjectProperty(config, "data", out JsonElement data)) {
+			missing.Add("config.data");
+		} else if (!TryGetObjectProperty(data, "providing", out JsonElement providing)) {
+			missing.Add("config.data.providing");
+		} else if (!TryGetObjectProperty(providing, "expressionSchema", out _)) {
+			CollectAggregationProvidingGaps(providing, missing);
+		}
+		if (missing.Count == 0) {
+			return;
+		}
+		string widgetLabel = TryGetStringProperty(widget, NamePropertyName, out string widgetName)
+			? $"'{Sanitize(widgetName)}'"
+			: entryLabel;
+		result.IsValid = false;
+		result.Errors.Add(
+			$"{IndicatorWidgetComponentType} {widgetLabel} will render no value: {string.Join(", ", missing)} "
+			+ "missing. The mobile runtime abandons the data request when an aggregation metric lacks "
+			+ "'schemaName' or 'aggregation.column.expression', and treats a missing 'aggregationType' as no "
+			+ "aggregate (1 Count, 2 Sum, 3 Avg, 4 Min, 5 Max); a calculated metric carries "
+			+ "'expressionSchema' instead of all of them. The widget and its title still render, so nothing "
+			+ "downstream reports this.");
+	}
+
+	/// <summary>
+	/// Adds the paths an AGGREGATION providing block is missing. The three checked here are exactly the ones the
+	/// mobile runtime reads before deciding whether to issue the data request at all.
+	/// </summary>
+	private static void CollectAggregationProvidingGaps(JsonElement providing, List<string> missing) {
+		if (!TryGetStringProperty(providing, "schemaName", out _)) {
+			missing.Add("config.data.providing.schemaName");
+		}
+		if (!TryGetObjectProperty(providing, "aggregation", out JsonElement aggregation)
+			|| !TryGetObjectProperty(aggregation, "column", out JsonElement column)
+			|| !TryGetObjectProperty(column, "expression", out JsonElement expression)) {
+			missing.Add("config.data.providing.aggregation.column.expression");
+			return;
+		}
+		if (!TryGetObjectProperty(expression, "functionArgument", out JsonElement functionArgument)
+			|| !TryGetStringProperty(functionArgument, "columnPath", out _)) {
+			missing.Add("config.data.providing.aggregation.column.expression.functionArgument.columnPath");
+		}
+		// 1-5, not the 0-6 of the raw-map AggregationType the metadata generator consults: the column is ALSO
+		// deserialised through the typed QueryAggregationType, which stops at max(5) and has no unknown-value
+		// fallback, so a 6 throws and the platform swaps the whole widget for an error placeholder. The narrower
+		// of the two enums is the one an authored body has to satisfy.
+		if (!expression.TryGetProperty("aggregationType", out JsonElement aggregationType)
+			|| aggregationType.ValueKind != JsonValueKind.Number
+			|| !aggregationType.TryGetInt32(out int aggregationTypeValue)
+			|| aggregationTypeValue is < 1 or > 5) {
+			missing.Add("config.data.providing.aggregation.column.expression.aggregationType");
+		}
 	}
 
 	/// <summary>
@@ -3685,6 +3849,22 @@ public static class SchemaValidationService
 	private static bool TryGetCaptionExpression(JsonElement componentValues, out string captionExpression) {
 		return TryGetStringProperty(componentValues, LabelPropertyName, out captionExpression)
 			|| TryGetStringProperty(componentValues, "caption", out captionExpression);
+	}
+
+	/// <summary>
+	/// Object twin of <see cref="TryGetStringProperty"/>: reads <paramref name="propertyName"/> as a JSON object,
+	/// guarding the non-object owner that would make <see cref="JsonElement.TryGetProperty(string, out JsonElement)"/>
+	/// throw. Lets a nested path be walked one guarded step at a time.
+	/// </summary>
+	private static bool TryGetObjectProperty(JsonElement owner, string propertyName, out JsonElement value) {
+		value = default;
+		if (owner.ValueKind != JsonValueKind.Object
+			|| !owner.TryGetProperty(propertyName, out JsonElement candidate)
+			|| candidate.ValueKind != JsonValueKind.Object) {
+			return false;
+		}
+		value = candidate;
+		return true;
 	}
 
 	private static bool TryGetStringProperty(JsonElement element, string propertyName, out string value) {
