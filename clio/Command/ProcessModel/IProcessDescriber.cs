@@ -1206,8 +1206,8 @@ public sealed class DescribedMultiInstanceOptions {
 	/// and background mode does NOT buy concurrency either: it moves each iteration onto the background job
 	/// queue, whose continuations are consumed under a per-process distributed lock
 	/// (<c>ContinueProcessCommandConsumer.TryExecuteWithinLock</c>), so the iterations of one instance are
-	/// queued rather than simultaneous - and were measured substantially SLOWER on a stand (1282 ms against
-	/// 105 ms for three iterations).</para>
+	/// queued rather than simultaneous: on a stand, three <c>Parallel</c> iterations with background mode did
+	/// not overlap.</para>
 	/// </summary>
 	[JsonPropertyName("executionMode")]
 	public string ExecutionMode { get; set; }
