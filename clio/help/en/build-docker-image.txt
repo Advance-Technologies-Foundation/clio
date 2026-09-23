@@ -73,7 +73,12 @@ OPTIONS
         Optional. For template `base`, this is the base image reference to build.
         For bundled `dev` and `prod`, this is the local base image reference that
         clio uses as the parent image.
-        Default: `creatio-base:8.0-v1`.
+        For a custom template directory, clio passes IMAGE as the `BASE_IMAGE`
+        build argument and checks that it is available locally, but only when the
+        template's Dockerfile declares `ARG BASE_IMAGE`. If it does not, the command
+        fails before building instead of silently ignoring the option. Without
+        `--base-image`, a custom template keeps its own `ARG BASE_IMAGE` default.
+        Default: `creatio-base:8.0-v1` (bundled `dev` and `prod` only).
 
     --registry PREFIX
         Optional. Registry or repository prefix used for image push.
@@ -192,9 +197,15 @@ TEMPLATES
     Custom templates:
         Pass an absolute or relative directory path to --template.
         The directory must contain a Dockerfile.
+        To let `--base-image` choose the parent image, declare it before the first
+        FROM, for example:
+            ARG BASE_IMAGE=creatio-base:8.0-v1
+            FROM ${BASE_IMAGE}
 
 BEHAVIOR
     1. Resolve and validate the ordered template list
+       - when `--base-image` is set, every custom template must declare
+         `ARG BASE_IMAGE`; otherwise the command stops before any build
     2. For batches that include any template other than `base`, resolve and validate source path once
     3. Extract ZIP input at most once and reuse the prepared payload across the batch
     4. Resolve the effective container image CLI from CLI flags or runtime probing once per invocation
@@ -209,7 +220,8 @@ BEHAVIOR
        - Normalize staged `*.sh` files to Unix LF line endings for Linux container compatibility
        - for bundled `dev`, ensure the requested code-server archive is cached locally
          and copy it into the Docker build context as `code-server.tar.gz`
-    7. For bundled `dev` and `prod`, verify that the selected base image is available locally
+    7. For bundled `dev` and `prod`, and for custom templates built with `--base-image`,
+       verify that the selected base image is available locally
        - if it is missing and a cached base image archive exists, restore it first
        - when `nerdctl` is used, clio accepts the image from namespace `k8s.io`
          or `buildkit`
@@ -303,6 +315,12 @@ EXAMPLES
           --from "/opt/builds/creatio-net8" \
           --template "/workspace/docker-templates/custom-prod"
 
+    Build a custom template over a specific parent image (its Dockerfile declares `ARG BASE_IMAGE`):
+        clio build-docker-image \
+          --from "/opt/builds/creatio-net10" \
+          --template "/workspace/docker-templates/custom-prod" \
+          --base-image "registry.example/creatio/product:8.3.4"
+
 OUTPUT
     On success, the command logs:
     - Resolved source path
@@ -327,6 +345,11 @@ TROUBLESHOOTING
 
     "Docker template directory 'X' must contain a Dockerfile"
         Add a Dockerfile to the custom template directory.
+
+    "Custom template 'X' does not declare 'ARG BASE_IMAGE'"
+        `--base-image` was set for a custom template whose Dockerfile cannot use it.
+        Add `ARG BASE_IMAGE` before the first FROM and use it there
+        (`FROM ${BASE_IMAGE}`), or omit `--base-image`.
 
     "does not contain a 'db' directory required by the bundled 'db' template"
         Use a source ZIP or directory that contains a `db` folder, or pass the
