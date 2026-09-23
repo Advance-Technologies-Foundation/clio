@@ -1764,7 +1764,7 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 		try {
 			PageGetResponse firstGet = await ReadSeededPageAsync(context, environmentName, sessionDir);
 			originalBody = await File.ReadAllTextAsync(firstGet.Files.BodyFile);
-			const string resourceKey = "UsrE2ESyncPersistedField_label";
+			string resourceKey = "UsrE2ESyncPersistedField_" + Guid.NewGuid().ToString("N");
 			string labelledBody = BodyWithLabelledField(originalBody, resourceKey);
 
 			// Act 0: the same body with the key registered NOWHERE. Non-vacuity for the whole test - if the

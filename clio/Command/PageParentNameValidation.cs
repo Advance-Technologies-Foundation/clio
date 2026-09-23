@@ -8,6 +8,7 @@ using Newtonsoft.Json.Linq;
 
 /// <summary>Checks explicit web diff parents against local elements and a supplied inherited element set.</summary>
 internal static class PageParentNameValidation {
+    private const string OperationKey = "operation";
 	internal static JArray ReadDiff(string body) {
 		if (!PageSchemaSectionReader.TryRead(body, out string text, "SCHEMA_VIEW_CONFIG_DIFF", "SCHEMA_DIFF")) return [];
 		return JArray.Parse(JsonhReader.ParseElement(text).Value.GetRawText());
@@ -25,10 +26,10 @@ internal static class PageParentNameValidation {
 	}
 
 	internal static IEnumerable<JObject> ParentOperations(JArray diff) {
-		var removed = diff.OfType<JObject>().Where(x => x.Value<string>("operation") == "remove" && x["properties"] is not JArray)
+		var removed = diff.OfType<JObject>().Where(x => x.Value<string>(OperationKey) == "remove" && x["properties"] is not JArray)
 			.Select(x => x.Value<string>("name")).ToHashSet(StringComparer.Ordinal);
-		return diff.OfType<JObject>().Where(x => x.Value<string>("operation") == "insert"
-			|| (x.Value<string>("operation") == "move" && !removed.Contains(x.Value<string>("name"))));
+		return diff.OfType<JObject>().Where(x => x.Value<string>(OperationKey) == "insert"
+			|| (x.Value<string>(OperationKey) == "move" && !removed.Contains(x.Value<string>("name"))));
 	}
 
 	internal static SchemaValidationResult Validate(string body, IReadOnlyList<string> inheritedNames = null) {
@@ -36,13 +37,17 @@ internal static class PageParentNameValidation {
 		if (PageSchemaTypeExtensions.FromBody(body) == PageSchemaType.Mobile) return result;
 		JArray diff = ReadDiff(body);
 		var known = new HashSet<string>(inheritedNames ?? [], StringComparer.Ordinal);
-		foreach (JObject op in diff.OfType<JObject>().Where(x => x.Value<string>("operation") == "remove" && x["properties"] is not JArray))
+		foreach (JObject op in diff.OfType<JObject>().Where(x => x.Value<string>(OperationKey) == "remove" && x["properties"] is not JArray))
 			known.Remove(op.Value<string>("name") ?? "");
-		foreach (JObject op in diff.OfType<JObject>().Where(x => x.Value<string>("operation") == "insert")) {
+		foreach (JObject op in diff.OfType<JObject>().Where(x => x.Value<string>(OperationKey) == "insert")) {
 			if (op.Value<string>("name") is string name) known.Add(name);
-			if (op["values"] is JToken values) known.UnionWith(Names(values));
+			if (op["values"] is JObject values) {
+                foreach (JProperty property in values.Properties().Where(x => x.Name != "name")) known.UnionWith(Names(property.Value));
+            }
 		}
 		foreach (JObject op in ParentOperations(diff)) {
+            if (inheritedNames is not null && op.Value<string>(OperationKey) == "move" &&
+                !known.Contains(op.Value<string>("name") ?? "")) continue;
 			string parent = op.Value<string>("parentName");
 			if (string.IsNullOrEmpty(parent) || known.Contains(parent)) continue;
 			string message = Diagnostic(op.Value<string>("name"), parent, known);

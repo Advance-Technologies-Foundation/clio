@@ -1,6 +1,7 @@
 ﻿namespace Clio.Command {
 	using System;
 	using System.Collections.Generic;
+	using System.Diagnostics.CodeAnalysis;
 	using System.IO;
 	using System.Linq;
 	using Clio.Command.McpServer;
@@ -202,6 +203,8 @@
 		/// <param name="viewConfigApplierFactory">Creates the platform diff interpreter for mandatory parent validation.</param>
 		/// <param name="pageDesignerPresenceNotifier">Best-effort notifier used by the update-page
 		/// entry points to publish Designer Presence save events.</param>
+		[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+			Justification = "DI constructor: each collaborator owns a separate write concern. The factory creates a fresh stateful diff interpreter per hierarchy; bundling unrelated services would hide dependencies.")]
 		public PageUpdateCommand(
 			IApplicationClient applicationClient,
 			IServiceUrlBuilder serviceUrlBuilder,
@@ -341,9 +344,21 @@
 				&& (!string.IsNullOrEmpty(x.Value<string>("parentName")) || !string.IsNullOrEmpty(x.Value<string>("nameTo"))))) return true;
 			if (_hierarchyClient is null || _viewConfigApplierFactory is null)
 				throw new InvalidOperationException("Page parent validation requires the designer hierarchy and diff applier.");
+			IEnumerable<PageDesignerHierarchySchema> inherited = GetInheritedHierarchy(context);
+			IJsonDiffApplier applier = _viewConfigApplierFactory();
+			JToken view = new JArray();
+			foreach (PageDesignerHierarchySchema part in inherited.Reverse().Where(part => !string.IsNullOrWhiteSpace(part.Body))) {
+				view = applier.Apply(view, PageParentNameValidation.ReadDiff(part.Body),
+					new JsonApplierOperationsOptions { ApplyMoveIfIndirectParentMoved = part.SchemaVersion >= 1 });
+			}
+			applier.Apply(view, candidate, new JsonApplierOperationsOptions { RejectUnresolvedParents = true });
+			return true;
+		}
+
+		private IEnumerable<PageDesignerHierarchySchema> GetInheritedHierarchy(EditableSchemaContext context) {
 			string uid = context.IsCreateReplacing ? context.TemplateSchemaUId : context.EditableSchemaUId;
 			string package = context.DesignPackageUId ?? _hierarchyClient.GetDesignPackageUId(uid);
-			IReadOnlyList<PageDesignerHierarchySchema> hierarchy = _hierarchyClient.GetParentSchemas(uid, package);
+			IReadOnlyList<PageDesignerHierarchySchema> hierarchy = context.ResolvedHierarchy ?? _hierarchyClient.GetParentSchemas(uid, package);
 			if (hierarchy is null || hierarchy.Count == 0)
 				throw new InvalidOperationException("Cannot validate parentName: page hierarchy is unavailable.");
 			IEnumerable<PageDesignerHierarchySchema> inherited = hierarchy;
@@ -352,14 +367,7 @@
 				if (own < 0) throw new InvalidOperationException("Cannot validate parentName: target schema is missing from the hierarchy.");
 				inherited = hierarchy.Skip(own + 1);
 			}
-			IJsonDiffApplier applier = _viewConfigApplierFactory();
-			JToken view = new JArray();
-			foreach (PageDesignerHierarchySchema part in inherited.Reverse()) {
-				if (!string.IsNullOrWhiteSpace(part.Body)) view = applier.Apply(view, PageParentNameValidation.ReadDiff(part.Body),
-					new JsonApplierOperationsOptions { ApplyMoveIfIndirectParentMoved = part.SchemaVersion >= 1 });
-			}
-			applier.Apply(view, candidate, new JsonApplierOperationsOptions { RejectUnresolvedParents = true });
-			return true;
+			return inherited;
 		}
 
 		private bool TryCompleteDryRun(
@@ -790,7 +798,7 @@
 				EditableSchemaUId = options.TargetSchemaUId,
 				TemplateSchemaUId = options.TargetSchemaUId,
 				IsCreateReplacing = false,
-				SchemaType = pageSchemaType
+				SchemaType = pageSchemaType,
 			};
 			response = null;
 			return true;
@@ -976,7 +984,8 @@
 				ParentSchemaUId = isCreateReplacing ? root.UId : null,
 				ParentSchemaName = root.Name,
 				TemplateSchemaUId = isCreateReplacing ? root.UId : editableUId,
-				SchemaType = pageSchemaType
+				SchemaType = pageSchemaType,
+                ResolvedHierarchy = isCreateReplacing ? null : hierarchy
 			};
 			response = null;
 			return true;
@@ -1023,6 +1032,7 @@
 		}
 
 		internal sealed class EditableSchemaContext {
+            public IReadOnlyList<PageDesignerHierarchySchema> ResolvedHierarchy { get; set; }
 			public string SchemaName { get; set; }
 			public string EditableSchemaUId { get; set; }
 			public string DesignPackageUId { get; set; }

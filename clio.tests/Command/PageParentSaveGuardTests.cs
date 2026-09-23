@@ -61,6 +61,7 @@ public class PageParentSaveGuardTests {
         bool result=_command.TryUpdatePage(options,out var response);
         // Assert
         result.Should().BeTrue(because:"the parent is supplied by the actual inherited hierarchy: "+response.Error);
+        _hierarchy.Received(1).GetParentSchemas(Arg.Any<string>(), "pkg");
         _client.Received().ExecutePostRequest(Arg.Is<string>(x=>x.EndsWith("SaveSchema")),Arg.Any<string>(),Arg.Any<int>(),Arg.Any<int>(),Arg.Any<int>());
     }
     [TestCase("[{operation:'remove',name:'MainContainer'},{operation:'move',name:'MainContainer',parentName:'Missing',propertyName:'items'}]")]

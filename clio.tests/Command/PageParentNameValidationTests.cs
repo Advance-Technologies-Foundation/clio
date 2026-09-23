@@ -49,4 +49,17 @@ public class PageParentNameValidationTests {
         // Assert
         result.IsValid.Should().BeFalse(because:"the removal happens before insertion");
     }
+    [TestCase("[{operation:'move',name:'Absent',parentName:'Missing'}]", true)]
+    [TestCase("[{operation:'move',name:'Parent',parentName:'Missing'}]", false)]
+    [TestCase("[{operation:'insert',name:'Actual',values:{name:'Phantom'}},{operation:'insert',name:'Child',parentName:'Phantom',values:{}}]", false)]
+    [TestCase("[{operation:'insert',name:'Actual',values:{name:'Phantom',items:[{name:'Nested'}]}},{operation:'insert',name:'Child',parentName:'Nested',values:{}}]", true)]
+    [Description("Static validation ignores absent moves and uses effective insert names while retaining nested names.")]
+    public void Validate_ShouldUseEffectiveElementNames(string diff, bool expected) {
+        // Arrange
+        string body = Body(diff);
+        // Act
+        var result = PageParentNameValidation.Validate(body, ["Parent"]);
+        // Assert
+        result.IsValid.Should().Be(expected, because: "only names used by the interpreter can establish source and destination elements");
+    }
 }
