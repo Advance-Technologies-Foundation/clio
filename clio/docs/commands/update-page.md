@@ -1,4 +1,4 @@
-﻿# update-page
+# update-page
 
 ## Command Type
 
@@ -15,7 +15,9 @@ update-page - Update the raw schema body of a Freedom UI page
 Web page saves resolve explicit `parentName` references against the inherited page
 hierarchy and the submitted diff. An unresolved parent fails before saving, including
 with `validate: false` and during dry runs. The error names the child and parent and
-suggests the closest known element. Root inserts without a parent remain valid.
+suggests the closest known element. Root inserts without a parent remain valid. The guard requires a statically
+parseable view-config diff; dynamic JavaScript expressions in that section cannot
+be verified and are rejected even with `validate: false`.
 
 The MCP `validate-page` tool can receive `known-containers`, an array of inherited
 element names obtained from the page bundle. With that context, missing parents

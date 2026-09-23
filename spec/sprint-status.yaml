@@ -23,7 +23,7 @@
 stories:
   - id: story-page-parent-validation-1640
     title: Reject unresolved Freedom UI parent references
-    status: review
+    status: done
     issue: 1640
     file: spec/issue-1640/issue-1640-spec.md
   - id: story-create-user-task-page-1
