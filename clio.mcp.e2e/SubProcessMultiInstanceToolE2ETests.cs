@@ -470,6 +470,45 @@ public sealed class SubProcessMultiInstanceToolE2ETests {
 			because: "the process parameter's binding onto TotalIterationsCount has to come through untouched");
 	}
 
+	[Test]
+	[Description("Over the real MCP path, DE-CONVERTING an element whose service parameters are still read is REFUSED, and nothing is saved. The collections and counters exist only while the element iterates, so a reader of one would point at nothing - and the platform's pre-save process validation will not save a process carrying such a reader: it refuses the whole edit and names the reader. Measured on a stand while writing this: the package's own 'a parameter the de-conversion removed' notice cannot reach a caller for these two reader kinds, because the edit never lands, although the shipped guidance promised that notice. This pins what really happens, so the contract text cannot drift from it again.")]
+	[AllureTag(ModifyToolName)]
+	[AllureName("modify-business-process refuses a de-conversion while the service parameters are still read")]
+	public async Task ModifyBusinessProcess_Should_RefuseADeconversion_WhileTheServiceParametersAreStillRead() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync();
+		string calleeName = $"UsrClioBpMiStrandCallee{Guid.NewGuid():N}";
+		string callerName = $"UsrClioBpMiStrandCaller{Guid.NewGuid():N}";
+		await ArrangeProcessAsync(context, BuildCalleeDescriptor(calleeName), "called process");
+		await ArrangeProcessAsync(context, BuildReadersCallerDescriptor(callerName, calleeName),
+			"multi-instance caller with readers");
+		ReaderSites before = await DescribeReaderSitesAsync(context, callerName);
+
+		// Act
+		CallToolResult callResult = await ModifyAsync(context, callerName, """
+			[ { "op": "setElement", "elementName": "SubProcess1",
+			    "elementUpdate": { "subProcess": { "multiInstanceOptions": { "enabled": false } } } } ]
+			""");
+
+		// Assert
+		McpCommandExecutionParser.Extract(callResult).ExitCode.Should().NotBe(0,
+			because: "a de-conversion that would leave a reader pointing at a parameter the element no longer has "
+				+ "is refused by the platform's validation - a success here would mean a process was saved that "
+				+ "delivers nothing to that reader at run time");
+		string log = LogText(callResult);
+		log.Should().Contain("Process validation failed",
+			because: "the refusal is the platform's pre-save validation, not a guard of this contract - which is "
+				+ "why no de-conversion notice can name these readers");
+		log.Should().Contain("SubProcess2",
+			because: "the refusal names the reader, and that name is what the caller needs: re-point or remove it, "
+				+ "then de-convert");
+		await DescribeMultiInstanceElementAsync(context, callerName, "SubProcess1");
+		ReaderSites after = await DescribeReaderSitesAsync(context, callerName);
+		after.ServiceParameterUIds.Should().Equal(before.ServiceParameterUIds,
+			because: "nothing was saved, so the element is still multi-instance around the SAME five parameters "
+				+ "and both readers are still bound to them");
+	}
+
 	#endregion
 
 	#region Methods: Descriptors

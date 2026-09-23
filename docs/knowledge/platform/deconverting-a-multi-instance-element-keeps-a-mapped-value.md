@@ -21,7 +21,11 @@ step is `GetRemovedSchemaParameters`, and it decides per parameter:
   `FillNewSchemaParameters` then re-creates it from the callee under a FRESH UId and no value.
 
 So a value a caller MAPPED survives; a value stored directly on a parameter with no mapping row does
-not. Every route this contract offers (`addMapping`, `mappings[]`) writes a row, so in practice the
+not. **The exception is a callee that dropped the parameter since the conversion:** the row's source no
+longer resolves, so `GetRemovedSchemaParameters` removes the parameter AND its row, value included. The
+de-conversion used to carry only the two callee-failure flags out of that synchronization report, so this
+loss was silent beside a notice saying the values came back; since crt-process-builder#75 (`e3fe770`,
+`81f941e`) the removal is named and that sentence is qualified. Every route this contract offers (`addMapping`, `mappings[]`) writes a row, so in practice the
 mapped value comes back. What genuinely does not come back is the OUTPUT collection's non-`Out` items:
 `FillCollectionParameters` mints them as XOR-derived twins of `Variable` parameters with the value
 already cleared, and `RestoredCalleeParameters` drops them because the original returns from the input
