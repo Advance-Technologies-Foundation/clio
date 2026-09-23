@@ -391,7 +391,7 @@ a merge. Everything load-bearing therefore has a unit-level mirror — AC-17 say
   silent-no-op class this project has already paid for twice; and two live defects (the `Text`-typed
   multi-instance harness, the guard typed one level too low) are fixed in passing.
 - **Trade-offs**: the delivery is far larger than the contract — a package rebundle with a mandatory version
-  bump, two hand-moved security counts, three `[RequiresPackage]` floors, a five-file guidance PR in another
+  bump, two hand-moved security counts, three `[RequiresPackage]` floors, a seven-file guidance PR in another
   repository with a `libraryVersion` bump and a fixture re-pin, and 19 shipped statements to retract, two of
   them user-visible run-time messages. The output-collection refusal is deliberately stricter than the
   platform, so a caller who could previously write there (to no effect) is now refused.
@@ -505,7 +505,7 @@ against two collections and three counters.
       only
 - [ ] MCP surface reviewed: tool `[Description]`, prompts, resources, `clio.tests`, **and** `clio.mcp.e2e`
 - [ ] `docs/McpCapabilityMap.md` updated; `docs/knowledge/` records touched by the diff updated or deleted
-- [ ] clio-knowledge PR linked: five files, ten statements, `libraryVersion` bumped, `sequence` not
+- [ ] clio-knowledge PR linked: seven files, eleven statements, `libraryVersion` bumped, `sequence` not
       hand-authored; `curated-knowledge-names.json` re-pinned; `WorkspaceTemplateGuidanceDriftTests` green
 - [ ] All 19 retraction targets grepped to zero across clio, CrtProcessBuilder and clio-knowledge, including
       the two user-visible run-time messages

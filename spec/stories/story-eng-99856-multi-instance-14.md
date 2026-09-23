@@ -8,7 +8,7 @@
 **Contract**: [eng-99856-multi-instance-contract-answers.md](../eng-99856-multi-instance/eng-99856-multi-instance-contract-answers.md) — *Corrections this pass made*
 **Jira**: ENG-99856
 **Status**: review
-**Size**: L (full day — three repositories, 19 statements, a five-file guidance PR with a
+**Size**: L (full day — three repositories, 19 statements, a seven-file guidance PR with a
 `libraryVersion` bump, and a fixture re-pin whose drift test must stay green)
 **Repo**: clio + crt-process-builder + **clio-knowledge** (a pull request in another repository)
 **Depends on**: story 13 (the tool texts must be final — the guidance quotes them) and, through it, every
@@ -95,7 +95,7 @@ implementation time, they move):
   process-designer tool texts and `docs/`.
 - CrtProcessBuilder: `EnsureNotMultiInstance`'s neighbourhood, the `SubProcessApplier` class summary
   (story 7), the describe handler, and the **two user-visible run-time messages**.
-- clio-knowledge: the ten statements across the five files.
+- clio-knowledge: the eleven statements across the seven files (see the correction below).
 
 Two corrections that ride along because the same sentences carry them (FR-20, also touched by story 7):
 the stale T-27 clause, and the false `itemProperties` "tag (the column UId)" claim — **0 of the 407**
@@ -132,7 +132,7 @@ Test naming: `CuratedKnowledgeNames_ShouldMatchPublishedGeneration_WhenLibraryVe
 
 - [ ] The before/after inventory of all 19 statements is in the PR description with `file:line`
 - [ ] The two user-visible run-time messages are replaced, not merely documented around
-- [ ] clio-knowledge PR: five files, ten statements, `libraryVersion` bumped, `sequence` not hand-authored
+- [ ] clio-knowledge PR: seven files, eleven statements, `libraryVersion` bumped, `sequence` not hand-authored
 - [ ] `curated-knowledge-names.json` re-pinned; `WorkspaceTemplateGuidanceDriftTests` green
 - [ ] `docs/knowledge/` records whose `applies-to` changed are updated or deleted in the same PR; new
       records only for facts the code does not say
@@ -196,7 +196,14 @@ the platform, not a refusal claim.
 
 ### The clio-knowledge pull request (AC-03, AC-04, AC-07)
 
-Five files, ten statements: `sub-process.md` (the section, replacing NOT SUPPORTED), `parameters.md`
+**Corrected 2026-09-23 (review of clio-knowledge#223):** the tally below was short. The PR touches **seven**
+files — six guidance articles plus `bundle-source.json` — and retracts **eleven** statements. The missing one
+is `read-data.md`'s "Nothing CONSUMES a collection yet", the same claim `parameters.md` carried, now
+replaced by the `ResultCompositeObjectList` -> `InputRecordCollection` mapping. The seventh file,
+`routing.md`, carries a new routing entry to `process-sub-process`, not a retraction. The 19 above is
+the clio + CrtProcessBuilder count (8 + 11) and does not move.
+
+As first recorded — five files, ten statements: `sub-process.md` (the section, replacing NOT SUPPORTED), `parameters.md`
 (two — "Nothing CONSUMES a collection yet", and `inSync` ending at "permanent and meaningless"),
 `element-catalog.md`, `process-modeling.md`, and `bundle-source.json`'s two descriptions (one of which
 said "no iterator consumes a read collection").

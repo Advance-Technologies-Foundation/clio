@@ -339,9 +339,10 @@ and say why, so the question is not reopened.
   correct claim is **nothing is persisted**: the single save point is after the batch
   (`ProcessModifyHandler.cs:91`) and the catch at `:113` skips it. A schema-deleting rollback exists only on
   the create path.
-- **The guidance deliverable is five files, not one** — `sub-process.md`, `parameters.md`,
-  `element-catalog.md`, `process-modeling.md` and the `bundle-source.json:1658` description; ten statements
-  in all. `parameters.md:37-38` ("Nothing CONSUMES a collection yet") is the closing claim of the
+- **The guidance deliverable is seven files, not one** — `sub-process.md`, `parameters.md`,
+  `element-catalog.md`, `process-modeling.md`, `read-data.md`, the `bundle-source.json:1658` description and
+  a new `routing.md` entry; eleven statements in all (first recorded as five files and ten, before
+  `read-data.md` was found to carry the same "Nothing CONSUMES a collection yet" claim). `parameters.md:37-38` ("Nothing CONSUMES a collection yet") is the closing claim of the
   *collection-parameter* contract, not a sub-process aside. Retraction inventory: **eight** statements in
   clio, **eleven** in CrtProcessBuilder, two of them user-visible run-time messages.
 - **`sequence` is not authored.** `BundleBuilder.DeriveSequence`
