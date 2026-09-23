@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Clio.Command.ProcessModel;
 using FluentAssertions;
@@ -11,10 +12,89 @@ namespace Clio.Tests.Command.ProcessModel;
 /// the pure halves (what the payload asked for, what the description is missing, what the caller is told).
 /// </summary>
 [TestFixture]
+[Property("Module", "ProcessModel")]
 [Category("Unit")]
 public class EmailBlockExpectationTests {
 
 	#region Methods: FromDescriptor
+
+	[Test]
+	[Description("A build descriptor with a DUPLICATE property name - accepted by JsonNode.Parse, thrown as ArgumentException only when the JsonObject materialises - must not escape the detectors: the parse helper materialises the tree under its own catch, so every detector returns empty instead of taking the whole read-back verification down. Pinned at both nesting levels, because the throw happens on whichever object carries the duplicate.")]
+	public void Detectors_ShouldReturnEmptyWithoutThrowing_WhenTheDescriptorCarriesADuplicateKey() {
+		// Arrange - a duplicate at the top level and one nested inside an elements[] entry
+		const string duplicateTopLevel = """
+			{"name":"UsrProc","name":"UsrProc2","elements":[
+				{"name":"SendMail1","type":"sendEmail","email":{"template":"Case closure notification"}}]}
+			""";
+		const string duplicateNested = """
+			{"name":"UsrProc","elements":[
+				{"name":"SendMail1","type":"sendEmail","email":{"template":"T","template":"T2"}}]}
+			""";
+
+		// Act
+		Func<IReadOnlyList<string>> topLevelEmail = () => EmailBlockExpectation.FromDescriptor(duplicateTopLevel);
+		Func<IReadOnlyList<string>> topLevelTemplate = () => EmailBlockExpectation.TemplateElements(duplicateTopLevel);
+		Func<IReadOnlyList<string>> nestedEmail = () => EmailBlockExpectation.FromDescriptor(duplicateNested);
+		Func<IReadOnlyList<string>> nestedTemplate = () => EmailBlockExpectation.TemplateElements(duplicateNested);
+
+		// Assert
+		topLevelEmail.Should().NotThrow(because: "a duplicate key is the caller's payload problem, reported by the command's own error path, not by the read-back guard")
+			.Which.Should().BeEmpty(because: "an unparseable payload skips the verification rather than accusing the server");
+		topLevelTemplate.Should().NotThrow().Which.Should().BeEmpty();
+		nestedEmail.Should().NotThrow(because: "the duplicate sits on a nested object, which is where a materialisation that stopped at the root would still throw in the caller")
+			.Which.Should().BeEmpty();
+		nestedTemplate.Should().NotThrow().Which.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("A later operation whose email block carries an EMPTY body, or only a bodyFormat, does NOT count as switching the element back to a custom message: the server refuses both payloads (a non-empty body is required, and a bodyFormat alone configures nothing), so neither can leave a custom element behind - and dropping the element from the template check would stop verifying a template on exactly the batch that failed.")]
+	public void TemplateElementsFromOperations_ShouldKeepAnElement_WhenALaterOperationCarriesAnEmptyBodyOrOnlyABodyFormat() {
+		// Arrange
+		const string emptyBody = """
+			[{"op":"setElement","elementName":"Tpl1","elementUpdate":{"email":{"template":"Welcome"}}},
+			 {"op":"setElement","elementName":"Tpl1","elementUpdate":{"email":{"body":"   "}}}]
+			""";
+		const string formatOnly = """
+			[{"op":"setElement","elementName":"Tpl1","elementUpdate":{"email":{"template":"Welcome"}}},
+			 {"op":"setElement","elementName":"Tpl1","elementUpdate":{"email":{"bodyFormat":"html"}}}]
+			""";
+
+		// Act
+		IReadOnlyList<string> afterEmptyBody = EmailBlockExpectation.TemplateElementsFromOperations(emptyBody);
+		IReadOnlyList<string> afterFormatOnly = EmailBlockExpectation.TemplateElementsFromOperations(formatOnly);
+
+		// Assert
+		afterEmptyBody.Should().BeEquivalentTo(["Tpl1"],
+			because: "an explicitly empty body is refused at build, so it never produces the custom-message element that would legitimately have no template");
+		afterFormatOnly.Should().BeEquivalentTo(["Tpl1"],
+			because: "a bodyFormat with no body is refused as configuring nothing, so it cannot clear the template either");
+	}
+
+	[Test]
+	[Description("The same duplicate-key payload on the modify path: the operations detectors return empty without throwing, for a duplicate on the operation object and for one nested in elementUpdate.email.")]
+	public void OperationsDetectors_ShouldReturnEmptyWithoutThrowing_WhenAnOperationCarriesADuplicateKey() {
+		// Arrange
+		const string duplicateOnOperation = """
+			[{"op":"setElement","op":"setElement","elementName":"SendMail1",
+			  "elementUpdate":{"email":{"template":"Case closure notification"}}}]
+			""";
+		const string duplicateInEmail = """
+			[{"op":"setElement","elementName":"SendMail1",
+			  "elementUpdate":{"email":{"template":"T","template":"T2"}}}]
+			""";
+
+		// Act
+		Func<IReadOnlyList<string>> onOperationEmail = () => EmailBlockExpectation.FromOperations(duplicateOnOperation);
+		Func<IReadOnlyList<string>> onOperationTemplate = () => EmailBlockExpectation.TemplateElementsFromOperations(duplicateOnOperation);
+		Func<IReadOnlyList<string>> inEmailEmail = () => EmailBlockExpectation.FromOperations(duplicateInEmail);
+		Func<IReadOnlyList<string>> inEmailTemplate = () => EmailBlockExpectation.TemplateElementsFromOperations(duplicateInEmail);
+
+		// Assert
+		onOperationEmail.Should().NotThrow().Which.Should().BeEmpty(because: "the verification is skipped, not the command");
+		onOperationTemplate.Should().NotThrow().Which.Should().BeEmpty();
+		inEmailEmail.Should().NotThrow(because: "the duplicate is three objects deep; the walk must reach it").Which.Should().BeEmpty();
+		inEmailTemplate.Should().NotThrow().Which.Should().BeEmpty();
+	}
 
 	[Test]
 	[Description("A build descriptor's elements carrying an email block are the ones whose configuration must be verified; elements without one are irrelevant to the check.")]
@@ -51,8 +131,10 @@ public class EmailBlockExpectationTests {
 	[Description("An unparseable or empty descriptor yields no expectation: the command reports the real JSON error through its normal path, and this check must not add a second, misleading message.")]
 	public void FromDescriptor_ShouldReturnEmpty_WhenPayloadIsNotUsableJson() {
 		// Arrange, Act, Assert
-		EmailBlockExpectation.FromDescriptor("not json at all").Should().BeEmpty();
-		EmailBlockExpectation.FromDescriptor("").Should().BeEmpty();
+		EmailBlockExpectation.FromDescriptor("not json at all").Should().BeEmpty(
+			because: "unparseable text is the command's JSON error to report, not a second message from this check");
+		EmailBlockExpectation.FromDescriptor("").Should().BeEmpty(
+			because: "an empty payload carries no element that could have asked for an email block");
 		EmailBlockExpectation.FromDescriptor("[1,2,3]").Should().BeEmpty(
 			because: "a JSON array is not a descriptor object, so there is nothing to read elements from");
 	}
@@ -85,8 +167,10 @@ public class EmailBlockExpectationTests {
 	[Description("A non-array operations payload yields no expectation rather than throwing, because the command already rejects that shape with a precise error.")]
 	public void FromOperations_ShouldReturnEmpty_WhenPayloadIsNotAnArray() {
 		// Arrange, Act, Assert
-		EmailBlockExpectation.FromOperations("""{"op":"setElement"}""").Should().BeEmpty();
-		EmailBlockExpectation.FromOperations("broken").Should().BeEmpty();
+		EmailBlockExpectation.FromOperations("""{"op":"setElement"}""").Should().BeEmpty(
+			because: "an operations payload is an ARRAY; an object is not one and must not be walked as if it were");
+		EmailBlockExpectation.FromOperations("broken").Should().BeEmpty(
+			because: "unparseable text is the command's JSON error to report, not a second message from this check");
 	}
 
 	#endregion
@@ -167,7 +251,7 @@ public class EmailBlockExpectationTests {
 		string? warning = EmailBlockExpectation.BuildWarning(["SendMail1"]);
 
 		// Assert
-		warning.Should().NotBeNull();
+		warning.Should().NotBeNull(because: "a dropped block must produce a warning; silence would read as success");
 		warning.Should().Contain("SendMail1", because: "the caller has to know WHICH element is unconfigured");
 		warning.Should().Contain("UNCONFIGURED",
 			because: "the consequence is the point: the process has an email step that will not send");
@@ -184,7 +268,8 @@ public class EmailBlockExpectationTests {
 	[Description("No dropped elements produces no warning, so a healthy environment stays silent instead of emitting a reassuring non-message on every build.")]
 	public void BuildWarning_ShouldReturnNull_WhenNothingWasDropped() {
 		// Arrange, Act, Assert
-		EmailBlockExpectation.BuildWarning([]).Should().BeNull();
+		EmailBlockExpectation.BuildWarning([]).Should().BeNull(
+			because: "nothing dropped means nothing to say; a non-null result would emit an empty warning");
 	}
 
 	#endregion
@@ -252,7 +337,7 @@ public class EmailBlockExpectationTests {
 		string? warning = EmailBlockExpectation.BuildMacroWarning(["ParamMail"]);
 
 		// Assert
-		warning.Should().NotBeNull();
+		warning.Should().NotBeNull(because: "an unresolved body must produce a warning; silence would read as success");
 		warning.Should().Contain("ParamMail", because: "the caller has to know which element's body did not resolve");
 		warning.Should().Contain("did NOT resolve",
 			because: "the observation is the point: the placeholders were stored, not resolved");
@@ -260,6 +345,111 @@ public class EmailBlockExpectationTests {
 			because: "a warning without the remedy leaves the caller stuck");
 		EmailBlockExpectation.BuildMacroWarning([]).Should().BeNull(
 			because: "a healthy build must stay silent rather than emit a reassuring non-message");
+	}
+
+	#endregion
+
+
+	#region Methods: Templates (ENG-95986)
+
+	[Test]
+	[Description("A build descriptor's elements naming an email template are the ones whose template must be verified after the build; an email block without a template, or with a blank one, is not a template expectation.")]
+	public void TemplateElements_ShouldReturnOnlyElementsNamingATemplate() {
+		// Arrange
+		const string descriptor = """
+			{"name":"UsrProc","elements":[
+				{"name":"Custom1","type":"sendEmail","email":{"body":"<p>x</p>"}},
+				{"name":"Tpl1","type":"sendEmail","email":{"template":"Case closure notification"}},
+				{"name":"Blank1","type":"sendEmail","email":{"template":"  "}},
+				{"name":"Tpl2","type":"sendEmail","email":{"messageSource":"template","template":"80cdb129-de99-433f-8783-9d71c205607b"}}]}
+			""";
+
+		// Act
+		IReadOnlyList<string> expected = EmailBlockExpectation.TemplateElements(descriptor);
+
+		// Assert
+		expected.Should().BeEquivalentTo(["Tpl1", "Tpl2"],
+			because: "only an element that sent a template can have its template discarded by an older server");
+	}
+
+	[Test]
+	[Description("Both modify routes that can carry a template are detected: addElement under 'element.email' and setElement under 'elementUpdate.email' with the name on the operation.")]
+	public void TemplateElementsFromOperations_ShouldDetectBothRoutes() {
+		// Arrange
+		const string operations = """
+			[{"op":"addElement","element":{"name":"Added1","type":"sendEmail","email":{"template":"Welcome"}}},
+			 {"op":"setElement","elementName":"Existing1","elementUpdate":{"email":{"template":"Welcome","subject":"Hi"}}},
+			 {"op":"setElement","elementName":"Existing2","elementUpdate":{"email":{"subject":"only a subject"}}}]
+			""";
+
+		// Act
+		IReadOnlyList<string> expected = EmailBlockExpectation.TemplateElementsFromOperations(operations);
+
+		// Assert
+		expected.Should().BeEquivalentTo(["Added1", "Existing1"],
+			because: "a subject-only update names no template and must not be accused of losing one");
+	}
+
+	[Test]
+	[Description("A sent template that the read-back does not show is reported; an element whose read-back carries the template is not, and one absent from the read-back or without an email block is left to the block-landed check.")]
+	public void UnlandedTemplates_ShouldReportOnlyElementsWhoseReadBackLacksTheTemplate() {
+		// Arrange
+		DescribeProcessResult described = new() {
+			Elements = [
+				new DescribedElement { Name = "Landed", Email = new DescribedEmail { MessageSource = "template", Template = "80cdb129-de99-433f-8783-9d71c205607b" } },
+				new DescribedElement { Name = "Dropped", Email = new DescribedEmail { Subject = "Hi" } },
+				new DescribedElement { Name = "NoBlock", Email = null }
+			]
+		};
+
+		// Act
+		IReadOnlyList<string> unlanded = EmailBlockExpectation.UnlandedTemplates(described,
+			["Landed", "Dropped", "NoBlock", "Unknown"]);
+
+		// Assert
+		unlanded.Should().BeEquivalentTo(["Dropped"],
+			because: "only an element that reports an email block WITHOUT the template it was sent proves the member was discarded; a missing block is the other check's finding and an unknown element is no evidence");
+	}
+
+	[Test]
+	[Description("The template warning names the elements, the wrong-mode consequence and the one action that fixes it, and is null when every template landed.")]
+	public void BuildTemplateWarning_ShouldNameElementsAndRemedy_OrBeNullWhenNothingUnlanded() {
+		// Arrange, Act
+		string? warning = EmailBlockExpectation.BuildTemplateWarning(["Tpl1"]);
+		string? none = EmailBlockExpectation.BuildTemplateWarning([]);
+
+		// Assert
+		warning.Should().Contain("'Tpl1'", because: "the caller must know which element lost its template");
+		warning.Should().Contain("Localizable template not found",
+			because: "the run-time failure of an element left without a mode is the reason the warning exists");
+		warning.Should().Contain("install-process-builder", because: "the remedy is a package that supports template mode");
+		warning.Should().Contain(EmailBlockExpectation.TemplateWarningMarker,
+			because: "the e2e negative assertion references this marker; the warning must carry it verbatim");
+		none.Should().BeNull(because: "no warning is emitted when every sent template reads back");
+	}
+
+	[Test]
+	[Description("A batch that sets a template and then, for the SAME element, sends a body or messageSource 'custom' is not a template expectation: the server clears the template on that switch by contract, so 'no template' in the read-back is the requested state, not a discarded member.")]
+	public void TemplateElementsFromOperations_ShouldDropAnElementSwitchedBackToCustomLaterInTheBatch() {
+		// Arrange
+		const string operations = """
+			[{"op":"setElement","elementName":"A","elementUpdate":{"email":{"template":"Welcome"}}},
+			 {"op":"setElement","elementName":"A","elementUpdate":{"email":{"body":"<p>custom</p>"}}},
+			 {"op":"setElement","elementName":"B","elementUpdate":{"email":{"template":"Welcome"}}},
+			 {"op":"setElement","elementName":"B","elementUpdate":{"email":{"messageSource":"custom"}}},
+			 {"op":"setElement","elementName":"C","elementUpdate":{"email":{"body":"<p>x</p>"}}},
+			 {"op":"setElement","elementName":"C","elementUpdate":{"email":{"template":"Welcome"}}},
+			 {"op":"setElement","elementName":"C","elementUpdate":{"email":{"template":"Welcome","subject":"again"}}}]
+			""";
+
+		// Act
+		IReadOnlyList<string> expected = EmailBlockExpectation.TemplateElementsFromOperations(operations);
+
+		// Assert
+		expected.Should().BeEquivalentTo(["C"],
+			because: "A and B end the batch as custom-message elements (a body, then an explicit custom mode), so a "
+				+ "missing template is what was asked for; C ends as a template element and is listed ONCE even though "
+				+ "two operations named its template");
 	}
 
 	#endregion

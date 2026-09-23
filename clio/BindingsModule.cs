@@ -557,6 +557,8 @@ public class BindingsModule {
 		services.AddTransient<GetClassicListColumnsCommand>();
 		services.AddTransient<ListEntityClientSchemasCommand>();
 		services.AddTransient<SqlSchemaCreateCommand>();
+		services.AddTransient<RegisterProcessElementCommand>();
+		services.AddTransient<IProcessElementRegistration, ProcessElementRegistration>();
 		services.AddTransient<SqlSchemaGetCommand>();
 		services.AddTransient<SqlSchemaUpdateCommand>();
 		services.AddTransient<SqlSchemaInstallCommand>();
@@ -706,6 +708,7 @@ public class BindingsModule {
 		services.AddTransient<GetClassicPageSourcesTool>();
 		services.AddTransient<ListEntityClientSchemasTool>();
 		services.AddTransient<SqlSchemaCreateTool>();
+		services.AddTransient<RegisterProcessElementTool>();
 		services.AddTransient<SqlSchemaGetTool>();
 		services.AddTransient<SqlSchemaUpdateTool>();
 		services.AddTransient<SqlSchemaInstallTool>();
@@ -764,6 +767,7 @@ public class BindingsModule {
 		services.AddSingleton<IKnowledgeReferenceExampleParser, KnowledgeReferenceExampleParser>();
 		services.AddSingleton<IKnowledgeReferenceExampleService, KnowledgeReferenceExampleService>();
 		services.AddSingleton<IKnowledgeBundleActivator, KnowledgeMultiSourceActivator>();
+		services.AddSingleton<IKnowledgeRefreshTrigger, KnowledgeRefreshTrigger>();
 		services.AddSingleton<IKnowledgeGuidanceSource, KnowledgeGuidanceSource>();
 		services.AddSingleton<IKnowledgeGuidanceResourceAdapter, KnowledgeGuidanceResourceAdapter>();
 		services.AddTransient<InstallKnowledgeCommand>();
@@ -1129,6 +1133,9 @@ public class BindingsModule {
 		services.AddTransient<FindEntitySchemaCommand>();
 		services.AddTransient<FindAppCommand>();
 		services.AddTransient<CreateUserTaskCommand>();
+		services.AddTransient<CreateUserTaskPageCommand>();
+		services.AddTransient<CreateUserTaskPageTool>();
+		services.AddTransient<IUserTaskPageScaffolder, UserTaskPageScaffolder>();
 		services.AddTransient<ModifyUserTaskParametersCommand>();
 		services.AddTransient<DeleteSchemaCommand>();
 		services.AddTransient<ExportSchemaCommand>();

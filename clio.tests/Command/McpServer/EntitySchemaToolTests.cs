@@ -22,6 +22,22 @@ namespace Clio.Tests.Command.McpServer;
 [NonParallelizable]
 public sealed class EntitySchemaToolTests {
 
+	[TestCase(null)]
+	[TestCase(true)]
+	[TestCase(false)]
+	[Category("Unit")]
+	[Description("Preserves omitted, true, and false DB-view values when mapping create arguments.")]
+	public void CreateOptions_ShouldPreserveDbView_WhenMapped(bool? requested) {
+		// Arrange
+		CreateEntitySchemaArgs args = new("UsrPkg", "UsrView",
+			new Dictionary<string, string> { ["en-US"] = "View" }, "dev") { IsDBView = requested };
+		// Act
+		CreateEntitySchemaOptions options = CreateEntitySchemaTool.CreateOptions(args, null, false,
+			isDBView: args.IsDBView);
+		// Assert
+		options.IsDBView.Should().Be(requested, because: "omission must remain distinguishable from explicit false");
+	}
+
 	[Test]
 	[Category("Unit")]
 	[Description("Advertises stable MCP tool names for the entity schema tool family so tests and callers share the same identifiers.")]
@@ -145,7 +161,7 @@ public sealed class EntitySchemaToolTests {
 			"UsrPkg",
 			"UsrVehicle",
 			PrimaryDisplayColumn: "UsrName",
-			TitleLocalizations: new Dictionary<string, string> { ["en-US"] = "Vehicle" }));
+			TitleLocalizations: new Dictionary<string, string> { ["en-US"] = "Vehicle" }, IsDBView: false));
 
 		// Assert
 		result.ExitCode.Should().Be(0,
@@ -162,6 +178,8 @@ public sealed class EntitySchemaToolTests {
 			because: "the schema name must be forwarded to the command");
 		resolvedCommand.CapturedOptions.PrimaryDisplayColumn.Should().Be("UsrName",
 			because: "the primary-display column argument must be forwarded to the command");
+		resolvedCommand.CapturedOptions.IsDBView.Should().BeFalse(
+			because: "an explicit false must survive MCP argument mapping");
 		// This assertion is the entire test for the AC-3 hop from the MCP title-localizations argument to
 		// SetEntitySchemaPropertiesOptions.ParsedTitleLocalizations. Deleting the mapping expression in
 		// EntitySchemaTool.SetEntitySchemaProperties must make this test red.

@@ -26,6 +26,15 @@ Clio also has independent knowledge and toolkit policies. On an eligible
 command startup, each due enabled policy advances its `next-run` timestamp and
 calls the existing updater on a best-effort basis.
 
+The MCP verbs (`mcp-server`, `mcp-http`) are excluded from that startup check, so the `knowledge`
+policy is additionally evaluated **when guidance is read**: a `get-guidance` lookup answers from the
+active generation and, when the cache is due for verification, starts the refresh beside the answer
+(ENG-99899). Without it, an installation used only through MCP would never refresh its guidance — a
+warm start activates the cached generation without contacting the publisher. It is the same policy, so
+`"knowledge": { "enabled": false }` stops the read-triggered refresh as well, `frequency-minutes` sets
+its cadence, and the persisted `next-run` keeps a CLI command and a resident MCP host from each
+running their own update.
+
 ```json
 "autoupdate": {
   "clio":      { "enabled": false, "frequency-minutes": 480, "next-run": "2026-09-04T08:00:00Z" },
@@ -64,6 +73,8 @@ autoupdate --enable
 - --enable and --disable control only `autoupdate.clio.enabled`
 - Default frequencies are 480 minutes for clio and 60 minutes for knowledge and toolkit
 - Due policies reuse the existing clio, knowledge, and toolkit update services
+- The `knowledge` policy is evaluated both at CLI startup and on a guidance read inside a running
+  `mcp-server` / `mcp-http` host; disabling it stops both
 - Manual update commands remain available and bypass the schedule
 - `next-run` is optional: a policy that has never run carries no `next-run`, which means it is due
 - The clio self-update is deferred while an MCP host (`mcp-server` or `mcp-http`) is resident for this

@@ -13,8 +13,8 @@ get-sql-schema - Read body and metadata of a SQL script schema on a remote Creat
 ## Description
 
 The get-sql-schema command reads the body and metadata of an existing SQL script schema on a
-remote Creatio environment via ScriptSchemaDesignerService. The schema is resolved by name and
-the full schema descriptor (UId, name, caption, package, body, etc.) is returned. No local
+remote Creatio environment via SqlScriptSchemaDesignerService. The schema is resolved by name and
+the script UId, name, package and body are returned. The legacy caption field is null. No local
 workspace files are created or modified.
 
 When `--output-file` is set, the schema body is written to the specified file and the body
@@ -69,3 +69,7 @@ clio sql-schema-get --schema-name UsrCleanupStaleRows -e dev
     https://github.com/Advance-Technologies-Foundation/clio
 
 - [Clio Command Reference](../../Commands.md#get-sql-schema)
+
+## Native package SQL
+
+Resolves package SQL scripts through VwSysSqlScriptInPackage and reads them through SqlScriptSchemaDesignerService/GetSchema. Ambiguous names are rejected. Updates preserve the existing engine, installation phase and dependencies.

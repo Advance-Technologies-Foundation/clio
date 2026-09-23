@@ -162,6 +162,7 @@ internal class Program {
 		typeof(GetClassicListColumnsOptions),
 		typeof(ListEntityClientSchemasOptions),
 		typeof(SqlSchemaCreateOptions),
+		typeof(RegisterProcessElementOptions),
 		typeof(SqlSchemaGetOptions),
 		typeof(SqlSchemaUpdateOptions),
 		typeof(SqlSchemaInstallOptions),
@@ -235,6 +236,7 @@ internal class Program {
 		typeof(FindEntitySchemaOptions),
 		typeof(FindAppOptions),
 		typeof(CreateUserTaskOptions),
+		typeof(CreateUserTaskPageOptions),
 		typeof(ModifyUserTaskParametersOptions),
 		typeof(DeleteSchemaOptions),
 		typeof(ExportSchemaOptions),
@@ -714,6 +716,7 @@ internal class Program {
 			FindEntitySchemaOptions opts => Resolve<FindEntitySchemaCommand>(opts).Execute(opts),
 			FindAppOptions opts => Resolve<FindAppCommand>(opts).Execute(opts),
 			CreateUserTaskOptions opts => Resolve<CreateUserTaskCommand>(opts).Execute(opts),
+			CreateUserTaskPageOptions opts => Resolve<CreateUserTaskPageCommand>(opts).Execute(opts),
 			ModifyUserTaskParametersOptions opts => Resolve<ModifyUserTaskParametersCommand>(opts).Execute(opts),
 			DeleteSchemaOptions opts => Resolve<DeleteSchemaCommand>(opts).Execute(opts),
 			ExportSchemaOptions opts => Resolve<ExportSchemaCommand>(opts).Execute(opts),
@@ -748,6 +751,7 @@ internal class Program {
 			GetClassicListColumnsOptions opts => Resolve<GetClassicListColumnsCommand>(opts).Execute(opts),
 			ListEntityClientSchemasOptions opts => Resolve<ListEntityClientSchemasCommand>(opts).Execute(opts),
 			SqlSchemaCreateOptions opts => Resolve<SqlSchemaCreateCommand>(opts).Execute(opts),
+			RegisterProcessElementOptions opts => Resolve<RegisterProcessElementCommand>(opts).Execute(opts),
 			SqlSchemaGetOptions opts => Resolve<SqlSchemaGetCommand>(opts).Execute(opts),
 			SqlSchemaUpdateOptions opts => Resolve<SqlSchemaUpdateCommand>(opts).Execute(opts),
 			SqlSchemaInstallOptions opts => Resolve<SqlSchemaInstallCommand>(opts).Execute(opts),
@@ -1668,11 +1672,10 @@ internal class Program {
 		if (IsMcpServerMode) return true;
 		// Honor an opt-out env var so harnesses (e.g. the MCP e2e suite) can suppress the
 		// background self-update for every spawned clio process from a single seam, instead of
-		// relying on per-process appsettings.json edits. Any non-empty, non-"false" value enables.
-		string? noUpdate = Environment.GetEnvironmentVariable("CLIO_NO_UPDATE_CHECK");
-		if (!string.IsNullOrWhiteSpace(noUpdate)
-			&& !string.Equals(noUpdate, "false", StringComparison.OrdinalIgnoreCase)
-			&& !string.Equals(noUpdate, "0", StringComparison.Ordinal)) {
+		// relying on per-process appsettings.json edits. The predicate lives in UpdateCheckOptOut
+		// because the read-triggered knowledge refresh honors the same variable, and two copies of
+		// the acceptance rule would diverge silently in exactly the run it was set for.
+		if (Common.UpdateCheckOptOut.IsSuppressed()) {
 			return true;
 		}
 		if (args == null || args.Length == 0) return true;

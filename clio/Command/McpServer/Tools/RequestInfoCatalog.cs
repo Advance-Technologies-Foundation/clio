@@ -261,6 +261,28 @@ public sealed class RequestRegistryEntry {
 	public RequestReferences? References { get; init; }
 
 	/// <summary>
+	/// When <c>true</c>, marks the whole request type as deprecated so AI consumers know
+	/// not to author new schemas against it. A schema that already references the request
+	/// keeps working — the field steers new authorship, it does not remove the request from
+	/// the catalog. Absent (null) on non-deprecated requests. Producer surface: sourced
+	/// from a class-level <c>@deprecated</c> JSDoc tag on the <c>@CrtRequest</c> class.
+	/// </summary>
+	[JsonPropertyName("deprecated")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public bool? Deprecated { get; init; }
+
+	/// <summary>
+	/// Human-readable reason the request is deprecated and, when applicable, the name of
+	/// the replacement request the AI should reach for instead (e.g.
+	/// <c>"Use crt.OpenSelectionWindowRequest instead."</c>). Populated from the trailing
+	/// text of the class-level <c>@deprecated</c> JSDoc tag. Only meaningful when
+	/// <see cref="Deprecated"/> is <c>true</c>.
+	/// </summary>
+	[JsonPropertyName("deprecationReason")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? DeprecationReason { get; init; }
+
+	/// <summary>
 	/// Captures any per-request producer field clio has not mapped yet. The
 	/// request-registry snapshot guard test fails when this is non-empty.
 	/// </summary>

@@ -119,6 +119,13 @@ public class ModifyUserTaskParametersCommand : RemoteCommand<ModifyUserTaskParam
 		HashSet<string> workspacePackages = GetWorkspacePackages();
 		WorkspaceExplorerItemDto schemaItem = FindWorkspaceUserTaskItem(userTaskName, workspacePackages);
 		ProcessUserTaskDesignSchemaDto schema = LoadSchema(schemaItem);
+		// The native parameter DTO omits Direction; preserve the workspace values before SaveSchema exports over them.
+		IReadOnlyDictionary<string, int> existingDirections = _userTaskMetadataDirectionApplier
+			.ReadDirections(schemaItem.PackageName, schema.Name);
+		Dictionary<string, int> preservedDirections = (existingDirections ?? new Dictionary<string, int>())
+			.Where(pair => !parameterNamesToRemove.Contains(pair.Key, StringComparer.OrdinalIgnoreCase)
+				&& (schema.Parameters?.Any(parameter => string.Equals(parameter.Name, pair.Key, StringComparison.OrdinalIgnoreCase)) ?? false))
+			.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
 		List<UserTaskParameterDto> parametersToAdd = UserTaskSchemaSupport.BuildParameters(
 			options.Culture,
 			options.AddParameters,
@@ -141,7 +148,8 @@ public class ModifyUserTaskParametersCommand : RemoteCommand<ModifyUserTaskParam
 		Logger.WriteInfo($"Updated user task schema '{schema.Name}' ({saveResponse.SchemaUId}).");
 		BuildPackage(schemaItem.PackageName);
 		ApplyParameterDirectionMetadataIfNeeded(schemaItem.PackageName, schema.Name,
-			MergeDirectionUpdates(explicitAddedParameterDirections, parameterDirectionsToUpdate));
+			MergeDirectionUpdates(preservedDirections,
+				MergeDirectionUpdates(explicitAddedParameterDirections, parameterDirectionsToUpdate)));
 	}
 
 	private void ConfigureWorkspace(ModifyUserTaskParametersOptions options) {
