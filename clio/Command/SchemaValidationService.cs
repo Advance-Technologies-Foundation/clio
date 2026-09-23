@@ -5406,7 +5406,10 @@ public static class SchemaValidationService
 
 	private static bool TryParseJsonDocument(string content, out JsonDocument document, out string errorMessage) {
 		try {
-			document = JsonDocument.Parse(NormalizeJson(content));
+			document = JsonDocument.Parse(content, new JsonDocumentOptions {
+				CommentHandling = JsonCommentHandling.Skip,
+				AllowTrailingCommas = true
+			});
 			errorMessage = string.Empty;
 			return true;
 		} catch (Exception ex) {
@@ -5414,10 +5417,6 @@ public static class SchemaValidationService
 			errorMessage = ex.Message;
 			return false;
 		}
-	}
-
-	internal static string NormalizeJson(string content) {
-		return Regex.Replace(content, @",(\s*[\]\}])", "$1", RegexOptions.None, RegexTimeout);
 	}
 
 	private static void CollectPathsFromElement(JsonElement element, HashSet<string> paths) {
