@@ -4167,6 +4167,464 @@ stories:
     depends_on: []
     blocks: []
 
+  - id: story-eng-99856-multi-instance-1
+    title: "Diagnose why describe reports no item properties — and write the gate answer down"
+    feature: "eng-99856-multi-instance"
+    repo: "crt-process-builder + stand + spec"
+    size: M
+    status: review
+    jira: ENG-99856
+    file: spec/stories/story-eng-99856-multi-instance-1.md
+    prd: spec/prd/prd-eng-99856-multi-instance.md
+    adr: spec/adr/adr-eng-99856-multi-instance.md
+    depends_on: []
+    blocks:
+      - story-eng-99856-multi-instance-9
+      - story-eng-99856-multi-instance-10
+      - story-eng-99856-multi-instance-12
+    note: >-
+      NOT A FEATURE. ADR Decision 0 refuted A-01 in source: both LoadForDescribe branches funnel into one
+      factory and the content fork sits BELOW them, in CreateSchemaInstance on UseInstanceFromMetaData; no
+      package-reachable lever forces a metadata instance (the members are internal to Terrasoft.Core).
+      Three of four candidate causes are eliminated, leaving an ENVIRONMENTAL one with two shapes — a stale
+      cached instance, or a stored blob that differs from the file the 4/6 counts came from. Two
+      instruments: a package unit test (no stand) that separates a code defect from an environment state,
+      and one sequential stand read against a COLD app pool plus a direct read of the stored MetaData.
+      Deliverable is a written gate in spec/eng-99856-multi-instance/…-describe-gate-outcome.md naming
+      Outcome 1 or Outcome 2. AC-15 IS OUTCOME-DEPENDENT and is deliberately not asserted: under Outcome 2
+      it cannot be met as written and is renegotiated with the owner.
+
+  - id: story-eng-99856-multi-instance-2
+    title: "Fix the multi-instance test harness before any new test is offered as evidence"
+    feature: "eng-99856-multi-instance"
+    repo: "crt-process-builder"
+    size: M
+    status: review
+    jira: ENG-99856
+    file: spec/stories/story-eng-99856-multi-instance-2.md
+    prd: spec/prd/prd-eng-99856-multi-instance.md
+    adr: spec/adr/adr-eng-99856-multi-instance.md
+    depends_on: []
+    blocks:
+      - story-eng-99856-multi-instance-3
+      - story-eng-99856-multi-instance-4
+      - story-eng-99856-multi-instance-5
+      - story-eng-99856-multi-instance-6
+      - story-eng-99856-multi-instance-7
+      - story-eng-99856-multi-instance-8
+      - story-eng-99856-multi-instance-9
+    note: >-
+      FR-19, a PRECONDITION. SubProcessTestSupport.AParameterOn hardcodes DataValueType = "Text" (:265) and
+      MakeMultiInstance (:211-233) builds both collections AND all three counters through it, so every
+      existing multi-instance test runs over an element whose collections are not collections. The type is
+      exactly what the feature validates on and what four run-time paths degrade SILENTLY on, so a suite
+      built on Text cannot fail the way production fails. Sized M rather than S because the helper is
+      shared with the single-instance fixtures: every test whose result changes has to be triaged as
+      "wrong before" or "wrong now", not silenced.
+
+  - id: story-eng-99856-multi-instance-3
+    title: "Convert a Sub-process element to multi-instance — the member, the guard conjunct, the applier"
+    feature: "eng-99856-multi-instance"
+    repo: "crt-process-builder"
+    size: L
+    status: review
+    jira: ENG-99856
+    file: spec/stories/story-eng-99856-multi-instance-3.md
+    prd: spec/prd/prd-eng-99856-multi-instance.md
+    adr: spec/adr/adr-eng-99856-multi-instance.md
+    depends_on:
+      - story-eng-99856-multi-instance-2
+    blocks:
+      - story-eng-99856-multi-instance-4
+      - story-eng-99856-multi-instance-6
+      - story-eng-99856-multi-instance-7
+      - story-eng-99856-multi-instance-8
+      - story-eng-99856-multi-instance-9
+      - story-eng-99856-multi-instance-12
+    note: >-
+      FR-01, FR-03, FR-06..FR-09 / AC-01..AC-04, AC-19. The core. ONE member on the shared
+      SubProcessDescriptor reaches create, addElement and setElement at once. CARRIES THE MANDATORY
+      one-conjunct edit to AsksForNothing (SubProcessApplier.cs:345-347) because it is the first story to
+      introduce multiInstanceOptions: without it a block carrying only that member matches the guard,
+      returns MultiInstanceSkipped at :78-81 and reports success having done nothing. The construction
+      order is forced by the platform (SchemaUId's SETTER re-enters the rebuild, which resolves both
+      collections with the THROWING GetByUId): five parameters → Parameters → five UIds into the options →
+      assign MultiInstanceOptions → only then SchemaUId. WRITE In/Out and all five; VALIDATE only that both
+      collection UIds resolve and that both are CompositeObjectList — direction is read by no
+      multi-instance mechanism and must never be a refusal on an existing element.
+
+  - id: story-eng-99856-multi-instance-4
+    title: "executionMode and ignoreErrors — string-only, default-suppressed, updated in place"
+    feature: "eng-99856-multi-instance"
+    repo: "crt-process-builder"
+    size: M
+    status: review
+    jira: ENG-99856
+    file: spec/stories/story-eng-99856-multi-instance-4.md
+    prd: spec/prd/prd-eng-99856-multi-instance.md
+    adr: spec/adr/adr-eng-99856-multi-instance.md
+    depends_on:
+      - story-eng-99856-multi-instance-2
+      - story-eng-99856-multi-instance-3
+    blocks:
+      - story-eng-99856-multi-instance-12
+      - story-eng-99856-multi-instance-13
+    note: >-
+      FR-04, FR-05 / AC-05, AC-06. OQ-06 DECIDED by the owner 2026-09-21: in-place update IS supported;
+      omitted on update means "left as is, never reset", omitted on create means Sequential/false. A
+      different collection source in the same call is still refused as a retarget. The earlier claim of a
+      hard dependency on OQ-01 was wrong - in-place needs no de-conversion. The
+      mode-without-enabled refusal is load-bearing: accepting it mints an empty
+      ProcessSchemaMultiInstanceOptions, which turns the mode ON with five empty UIds
+      (IsMultiInstanceModeEnabled is a bare null check) and puts the element permanently on the throwing
+      GetByUId path at design AND run time. No shipped element is in that state — only a tool could create
+      it.
+
+  - id: story-eng-99856-multi-instance-5
+    title: "Map the collection and each item — the dotted name path, and the caller stamp"
+    feature: "eng-99856-multi-instance"
+    repo: "crt-process-builder"
+    size: M
+    status: review
+    jira: ENG-99856
+    file: spec/stories/story-eng-99856-multi-instance-5.md
+    prd: spec/prd/prd-eng-99856-multi-instance.md
+    adr: spec/adr/adr-eng-99856-multi-instance.md
+    depends_on:
+      - story-eng-99856-multi-instance-2
+    blocks:
+      - story-eng-99856-multi-instance-6
+      - story-eng-99856-multi-instance-12
+      - story-eng-99856-multi-instance-13
+    note: >-
+      FR-10..FR-12 / AC-07, AC-08, AC-09 and AC-17's unit mirror. Binding the collection to iterate needs
+      ZERO code change — that AC is a confirmation test. A per-item target is one resolver change and zero
+      new wire members: flat first (unchanged), then split on '.' and descend ItemProperties
+      OrdinalIgnoreCase. One method serves BOTH the mapping target (:124-125) and the source (:289-290),
+      which is what settled it against a collection discriminator. THE CALLER STAMP IS A RUNTIME
+      REQUIREMENT, not bookkeeping: UseOnlyModifiedParameters defaults true and the reader filters item
+      properties by SourceValue.ModifiedInSchemaUId == ParentMetaSchema.UId; no match means the sub-process
+      receives NO VALUES AT ALL while the element saves, describes and renders perfectly. Reuse
+      BuildSourceValue; the stamp gets its own named test. OQ-07 ASSUMED out of v1 (no collection SHAPE
+      check) — if reversed, the story grows a shape comparison and the unmeasured failure mode has to be
+      measured on a stand first.
+
+  - id: story-eng-99856-multi-instance-6
+    title: "The refusals that stop a write from reporting success and vanishing"
+    feature: "eng-99856-multi-instance"
+    repo: "crt-process-builder"
+    size: M
+    status: review
+    jira: ENG-99856
+    file: spec/stories/story-eng-99856-multi-instance-6.md
+    prd: spec/prd/prd-eng-99856-multi-instance.md
+    adr: spec/adr/adr-eng-99856-multi-instance.md
+    depends_on:
+      - story-eng-99856-multi-instance-2
+      - story-eng-99856-multi-instance-5
+    blocks:
+      - story-eng-99856-multi-instance-12
+      - story-eng-99856-multi-instance-13
+      - story-eng-99856-multi-instance-14
+    note: >-
+      FR-13..FR-15 / AC-10..AC-12. OQ-04 ASSUMED: an output-collection target is REFUSED at any depth and
+      any direction — if the owner chooses accept-and-warn, it becomes a warning path and the E2E fixture
+      changes from refused to warned. The existing direction guard cannot be reused: an absent L12 means
+      Variable, and 133 shipped Variable entries sit in the OUTPUT collection, precisely the XOR twins the
+      platform wipes in place and never reads back, so the guard as-is ACCEPTS a write the platform erases.
+      The input-collection refusal reuses the existing message VERBATIM (asserted against the constant).
+      The Internal-callee case is a deliberate ANTI-REFUSAL: refusing would make 12 of 327 shipped elements
+      permanently unconvertible, so it converts with a notice — and the notice must not repeat A-08's
+      BulkDeleteOldFiles inference as fact. OQ-05 ASSUMED: validate-process-graph grows no rule in v1.
+
+  - id: story-eng-99856-multi-instance-7
+    title: "The latent guard, the retarget refusal, and two comments that are now false"
+    feature: "eng-99856-multi-instance"
+    repo: "crt-process-builder + clio"
+    size: S
+    status: review
+    jira: ENG-99856
+    file: spec/stories/story-eng-99856-multi-instance-7.md
+    prd: spec/prd/prd-eng-99856-multi-instance.md
+    adr: spec/adr/adr-eng-99856-multi-instance.md
+    depends_on:
+      - story-eng-99856-multi-instance-3
+    blocks:
+      - story-eng-99856-multi-instance-12
+      - story-eng-99856-multi-instance-14
+    note: >-
+      FR-16, FR-20 / AC-16. OQ-02 ASSUMED: a callee retarget on a multi-instance element is REFUSED, naming
+      both routes — if the owner chooses to reproduce the designer, the retarget succeeds and de-converts
+      unconditionally, which becomes a documented destructive write depending on OQ-01.
+      MultiInstanceOptions is declared on the ABSTRACT ProcessSchemaActivity while EnsureNotMultiInstance
+      takes a ProcessSchemaSubProcess, so a multi-instance user task reaches the other appliers unguarded
+      and has its flat parameters discarded; latent, not live (0 of 61 shipped), and a one-line re-typing.
+      Two false comments corrected in the same change: the stale T-27 "this contract produces no dynamic
+      ones" clause (CreateIntegerParameter stamps the CALLER's schema, so all three counters are dynamic by
+      construction — this feature is what makes the clause false) and the "tag (the column UId)"
+      itemProperties claim, false in both repositories (0 of 407).
+
+  - id: story-eng-99856-multi-instance-8
+    title: "De-conversion — enabled:false turns a multi-instance element back into a single one"
+    feature: "eng-99856-multi-instance"
+    repo: "crt-process-builder"
+    size: M
+    status: review
+    jira: ENG-99856
+    file: spec/stories/story-eng-99856-multi-instance-8.md
+    prd: spec/prd/prd-eng-99856-multi-instance.md
+    adr: spec/adr/adr-eng-99856-multi-instance.md
+    depends_on:
+      - story-eng-99856-multi-instance-3
+    blocks:
+      - story-eng-99856-multi-instance-12
+      - story-eng-99856-multi-instance-14
+    note: >-
+      FR-25, now Must rather than Could. OQ-01 DECIDED by the owner 2026-09-21: de-conversion SHIPS,
+      classified destructive. Carried by two reasons: the alternative route back, removeElement +
+      addElement, changes the element UId and drops its flows and mappings, so it is strictly more
+      destructive; and the lossiness objection is weak, because the XOR'd Variable twin that is discarded
+      is DERIVED and FillCollectionParameters re-mints it on the next conversion. Story 7's retarget
+      message loses its "de-convert first" branch. The platform has the operation —
+      convertToSingleInstance, client-side, pinned by the platform's own Jasmine spec — and it is lossy in
+      one defined way: the XOR'd Variable twin is discarded and the original returns from the input side.
+
+  - id: story-eng-99856-multi-instance-9
+    title: "describe-business-process reports the multi-instance options — and the clio DTO mirrors them"
+    feature: "eng-99856-multi-instance"
+    repo: "crt-process-builder + clio"
+    size: M
+    status: review
+    jira: ENG-99856
+    file: spec/stories/story-eng-99856-multi-instance-9.md
+    prd: spec/prd/prd-eng-99856-multi-instance.md
+    adr: spec/adr/adr-eng-99856-multi-instance.md
+    depends_on:
+      - story-eng-99856-multi-instance-1
+      - story-eng-99856-multi-instance-3
+    blocks:
+      - story-eng-99856-multi-instance-10
+      - story-eng-99856-multi-instance-12
+      - story-eng-99856-multi-instance-13
+    note: >-
+      FR-17, FR-02 / AC-13, AC-14. Two PRs, PACKAGE FIRST. The read block takes the SAME NAME as the write
+      one (every configuration block in DescribeContracts.cs does; multiInstanceDetails would be invented
+      vocabulary). Every role resolves through the TOLERANT FindByUId and reports null on a miss — an
+      unresolvable role is exactly the state the rebuild throws on, and describe must report a malformed
+      element rather than die on it. multiInstance stays a JSON bool; widening it breaks clio's
+      deserializer. The clio DTO is mirrored TYPED even though DescribedSubProcess carries
+      [JsonExtensionData], because the XML doc on a typed member is the agent-facing contract surface and
+      clio's tests can only assert against typed members. OQ-03 ASSUMED: inSync is FROZEN — if the owner
+      redefines it, FR-24 activates and DescribeProcessCommand needs a [RequiresPackage] floor it does not
+      have today.
+
+  - id: story-eng-99856-multi-instance-10
+    title: "Report the callee's contract — the shape selected by story 1's gate"
+    feature: "eng-99856-multi-instance"
+    repo: "crt-process-builder (+ clio under Outcome 2)"
+    size: S
+    status: review
+    jira: ENG-99856
+    file: spec/stories/story-eng-99856-multi-instance-10.md
+    prd: spec/prd/prd-eng-99856-multi-instance.md
+    adr: spec/adr/adr-eng-99856-multi-instance.md
+    depends_on:
+      - story-eng-99856-multi-instance-1
+      - story-eng-99856-multi-instance-9
+    blocks:
+      - story-eng-99856-multi-instance-12
+    note: >-
+      FR-18's second half. UNBLOCKED 2026-09-21: story 1's gate answered OUTCOME 1
+      (spec/eng-99856-multi-instance/eng-99856-multi-instance-describe-gate-outcome.md), so this is the S
+      shape and the calleeContract view is DROPPED — it existed only as the Outcome-2 fallback. AC-15 is
+      met as written (4 and 6); nothing here needs an owner sign-off and nothing here blocks story 12's
+      rebundle. What remains: a regression test pinning nested itemProperties through the real describe
+      path, plus the documented statement that a described itemProperties reflects the INSTANCE the server
+      holds at that moment — measured stable across repeated reads within one worker process, and observed
+      to differ BETWEEN worker processes, so an environment that has just had a package pushed is not a
+      sound place to measure one. The Outcome-2 branch below is kept for the record only. Outcome 1: a regression test
+      pinning nested itemProperties through the real describe path, plus a documented statement that a
+      described itemProperties reflects the instance the server holds, which an earlier write in the same
+      process lifetime can have flattened — AC-15 met as written (4 and 6). Outcome 2: a contingent
+      calleeContract view under multiInstanceOptions, derived from the callee and LABELLED as derived,
+      never accepted as a write — AC-15 cannot be met as written and is renegotiated with the owner, who
+      also signs off on the added wire member. Under Outcome 2 this must land BEFORE story 12's rebundle or
+      force a second version bump. Four designs are already rejected in ADR D1 (force the design instance,
+      force a metadata instance, invalidate the cache from a read path, synthesise item properties) — do
+      not re-propose them.
+
+  - id: story-eng-99856-multi-instance-11
+    title: "Stand verification — does the designer open it, does it iterate, can a fixture exist at all"
+    feature: "eng-99856-multi-instance"
+    repo: "stand + spec"
+    size: M
+    status: review
+    jira: ENG-99856
+    file: spec/stories/story-eng-99856-multi-instance-11.md
+    prd: spec/prd/prd-eng-99856-multi-instance.md
+    adr: spec/adr/adr-eng-99856-multi-instance.md
+    depends_on:
+      - story-eng-99856-multi-instance-3
+      - story-eng-99856-multi-instance-4
+      - story-eng-99856-multi-instance-6
+    blocks:
+      - story-eng-99856-multi-instance-13
+    note: >-
+      Discharges A-02..A-05, the four things no unit test can reach. A-02 matters because the designer's
+      client resolves all five parameters with a THROWING accessor while loading localizable values, so a
+      construction defect surfaces as a designer exception rather than a validation message — found late
+      and with a poor error. A-04 is the MAJORITY shape (39 of 61 shipped elements are parallel +
+      background), and parallel alone does not mean concurrent threads. A-05 decides whether story 13 can
+      have an E2E happy path at all: the feature ships enabled but PER ROLE, and an embedded process schema
+      hard-codes useForceCompile:true, so a sub-process element inside one can never be multi-instance. ALL
+      STAND WRITES SEQUENTIAL — a parallel burst trips IIS rapid-fail and downs a .NET Framework app pool.
+      The parent's stand residue is explicitly NOT cleaned up: doing so would make this baseline
+      unreproducible.
+      RUN 2026-09-22 on stand Creatio at CrtProcessBuilder 1.6.6.0 — record
+      spec/eng-99856-multi-instance/eng-99856-multi-instance-stand-verification-2026-09-22.md.
+      A-02 confirmed (the designer panel renders in full and shows the dotted per-item source in its OWN
+      notation, no console exception). A-03 confirmed (3 element-log rows + 3 callee runs; counters
+      completed=3 total=3 terminated=0 read by BRANCHING, which is the only readable route because a
+      completed element's parameter values are purged and a parked process's blob carries structure only;
+      the output collection measured by feeding it into a SECOND iterator, and a probe callee confirmed
+      3/3 that the per-item value really arrived — the ContainerUId backfill validated at run time).
+      A-04 confirmed WITH A FINDING: parallel + background preserves order but does NOT overlap on this
+      stand — iterations are ~300 ms apart through the job queue and the element took 1282 ms against
+      105 ms sequential. A-05 CONFIRMED, after a correction: both gates measured open, and the conversion
+      has NO dedicated control (it is a side effect of collectionMappingSet in
+      ProcessFlowElementPropertiesPage.js). The first attempt failed and the failure WAS the finding - it
+      was a READ DATA defect, not a multi-instance one. clio sets IsResult=true on BOTH of a Read data
+      element's collection outputs where the platform sets it on neither, and the designer client throws
+      on more than one, so the collection is hidden from every mapping picker. A package cut with those
+      two lines removed and NOTHING else made both pickers list "Collection of records -> Full name", and
+      selecting it converted the element to multi-instance on the spot. Tracked as ENG-99967, which also
+      carries the second defect the fix exposes: describe reports a Read data element's collections only
+      when they are flagged, so it has never reported them for a designer-built element. TWO BY-PRODUCTS FOR THE OWNER: the designer sets
+      useBackgroundMode=true on EVERY conversion (and false on de-conversion) while clio's element carries
+      false — a divergence from the "как в дизайнере" ruling that is a decision, not a defect, since
+      matching it costs an order of magnitude in wall clock; and a multi-instance input collection binds
+      from a Read data element's ResultCompositeObjectList, NEVER ResultEntityCollection.
+
+  - id: story-eng-99856-multi-instance-12
+    title: "Ship the package — rebundle, four provenance pins, two hand-moved security counts, three floors"
+    feature: "eng-99856-multi-instance"
+    repo: "clio (+ a tag in crt-process-builder)"
+    size: M
+    status: review
+    jira: ENG-99856
+    file: spec/stories/story-eng-99856-multi-instance-12.md
+    prd: spec/prd/prd-eng-99856-multi-instance.md
+    adr: spec/adr/adr-eng-99856-multi-instance.md
+    depends_on:
+      - story-eng-99856-multi-instance-3
+      - story-eng-99856-multi-instance-4
+      - story-eng-99856-multi-instance-5
+      - story-eng-99856-multi-instance-6
+      - story-eng-99856-multi-instance-7
+      - story-eng-99856-multi-instance-8
+      - story-eng-99856-multi-instance-9
+      - story-eng-99856-multi-instance-10
+    blocks:
+      - story-eng-99856-multi-instance-13
+    note: >-
+      FR-23 / AC-21's package half. DELIVERY TAX, COSTED AS WORK. Every item here has a SILENT failure
+      mode: an unchanged version reaches new installs only, so nobody who already has the package is ever
+      asked to update; a stale provenance pin points a reviewer at bytes that are not shipped; a security
+      count left at the old number passes a test meant to notice a widened service surface. The script
+      writes four pins; it does NOT write ExpectedOperationContractCount or
+      ExpectedAuthorizationGateCallSites — those move by hand in the same commit, or the PR states
+      explicitly that neither moved. Both PackageVersion and ModifiedOnUtc must move (the STAMP, not the
+      version, decides whether the recorded version is rewritten) and the package UId must not. Three
+      [RequiresPackage] floors go up from a verified 1.6.2.1; the describe floor is NOT added under the
+      OQ-03 working assumption. Touching clio/Common/ triggers the FULL unit suite, not a module filter.
+
+  - id: story-eng-99856-multi-instance-13
+    title: "The MCP surface — tool contracts, capability map, E2E coverage, and the ClioRing verdict"
+    feature: "eng-99856-multi-instance"
+    repo: "clio"
+    size: L
+    status: review
+    jira: ENG-99856
+    file: spec/stories/story-eng-99856-multi-instance-13.md
+    prd: spec/prd/prd-eng-99856-multi-instance.md
+    adr: spec/adr/adr-eng-99856-multi-instance.md
+    depends_on:
+      - story-eng-99856-multi-instance-9
+      - story-eng-99856-multi-instance-11
+      - story-eng-99856-multi-instance-12
+    blocks:
+      - story-eng-99856-multi-instance-14
+    note: >-
+      FR-22 / AC-17's E2E half, AC-21's MCP half. The write descriptor crosses clio as OPAQUE JSON, so the
+      tool [Description] is the only clio-side contract surface for the new member — load-bearing, not
+      decorative: an agent that cannot read it there cannot discover it at all. The first sentence of each
+      description is what the get-tool-contract compact index shows, and that is the only discovery surface
+      a non-resident tool has. clio.mcp.e2e coverage is MANDATORY even though the process-designer fixtures
+      do not run in CI (CrtProcessBuilder is not installed on that stand) and the E2E check is advisory and
+      cannot fail a merge — hence every load-bearing assertion has a named unit mirror. ClioRing gate is
+      near zero (Ring consumes three tool names and six nested clio-run commands, none process-designer)
+      but the statement "ClioRing compatibility reviewed, no Ring-consumed contract changed" with the
+      inspected paths is mandatory. validate-process-graph is deliberately unchanged (OQ-05).
+      DONE 2026-09-22 with THREE acceptance criteria REROUTED. The describe contract, the capability map
+      and ValidateProcessGraphPrompt all carried the retired claim that a multi-instance element cannot be
+      built or re-synchronized; all three are corrected and pinned by a retraction SWEEP test. E2E added
+      and RUN against the live stand (2 passed). ClioRing compatibility reviewed, no Ring-consumed contract
+      changed - Ring names exactly one tool literally (get-tool-contract), binds only Name/Purpose/
+      ContractAvailable from the catalog and treats a full contract as opaque text; tests 157/157 and the
+      Windows x64 NativeAOT publish both green. AC-01 and the write-tool halves of AC-04/AC-05 could NOT
+      land: ToolContractPayloadBudgetTests caps a get-tool-contract payload at 34816 bytes and
+      create-business-process sits at that ceiling with ZERO headroom, while nothing false about
+      multi-instance lives in either write description to delete in exchange. Owner decision: the write
+      contract goes to the process-sub-process guidance article. Story 14 inherits it, plus a pointer
+      reconciliation - create says process-element-catalog owns the subProcess block, modify says
+      process-sub-process; both articles exist and the second is the specific one.
+
+  - id: story-eng-99856-multi-instance-14
+    title: "Retract the 19 statements that promise multi-instance is refused, and publish the guidance"
+    feature: "eng-99856-multi-instance"
+    repo: "clio + crt-process-builder + clio-knowledge"
+    size: L
+    status: review
+    jira: ENG-99856
+    file: spec/stories/story-eng-99856-multi-instance-14.md
+    prd: spec/prd/prd-eng-99856-multi-instance.md
+    adr: spec/adr/adr-eng-99856-multi-instance.md
+    depends_on:
+      - story-eng-99856-multi-instance-13
+    blocks: []
+    note: >-
+      FR-21 / AC-20. Nineteen shipped statements promise multi-instance is refused — 8 in clio, 11 in
+      CrtProcessBuilder, TWO OF THEM USER-VISIBLE RUN-TIME MESSAGES, which are not documentation and must
+      not be triaged as such. The guidance deliverable is a pull request in ANOTHER REPOSITORY spanning
+      FIVE files (sub-process.md, parameters.md, element-catalog.md, process-modeling.md, the
+      bundle-source.json description) and TEN statements, with a libraryVersion bump; `sequence` is derived
+      at build time and is never hand-authored. clio re-pins curated-knowledge-names.json and
+      WorkspaceTemplateGuidanceDriftTests must stay green. The guidance lands BEFORE OR WITH the clio
+      release: a stale knowledge cache fails SILENTLY, keeping the old article in service. The text is a
+      direct function of OQ-01, OQ-02, OQ-03 and OQ-04, so if any of the four is decided against the
+      working assumption this story is rewritten, not patched. docs/knowledge/ is internal repository
+      knowledge and is a SEPARATE sweep from the shipped guidance library — the two are not the same thing.
+      DONE 2026-09-22. clio-knowledge PR branch feature/ENG-99856-multi-instance @ 25c013f:
+      five files, ten statements, libraryVersion 1.15.51 -> 1.15.52, sequence DERIVED (1015052000), bundle
+      tests 202/202. THE COUNT MOVED and the reason is recorded: CrtProcessBuilder's predicted eleven were
+      already retracted by the behaviour stories as the code was rewritten (verified by reading each, incl.
+      both user-visible run-time messages), and two clio statements turned out to be still TRUE and were
+      removed from the inventory rather than edited. Three retracted in clio: IProcessDescriber's
+      "what stays refused is a RETARGET ... and a re-synchronization" (the file contradicted itself twenty
+      lines later), the unscoped "tag = the column UId" claim about itemProperties (0 of 407 multi-instance
+      item properties carry one), and the knowledge record that said the element is refused. AC-09 wrote NO
+      new record on purpose - both facts were already recorded. curated-knowledge-names re-pinned to
+      1.15.52 with availableNames UNCHANGED (no article added or renamed); WorkspaceTemplateGuidanceDrift
+      green. The two PRs are COUPLED: the guidance must land before or with the clio release, and a failed
+      update-knowledge keeps serving the old article with no error.
+      SUPERSEDED BY REVIEW ROUND 5 (2026-09-22): the library is at 1.15.62, not 1.15.52 - the note above
+      records the generation this story published and the number moved four more times since (a floor
+      re-pin, two rebundles and the round-5 corrections). Round 5 also found that four names had gone
+      MISSING from curated-knowledge-names.json between the 1.15.48 master pin and 1.15.61
+      (`creatio.external-organizations`, `creatio.portal-service-routing` and their bare aliases) while
+      bundle-source.json still carries both articles - a re-pin artifact, not an article removal. Restored,
+      so "availableNames UNCHANGED" is true again against master.
+
   - id: story-1641-page-json-comments-1
     status: review
     description: Accept explanatory comments while preserving required schema markers for issue 1641
