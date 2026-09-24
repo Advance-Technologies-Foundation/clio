@@ -13,8 +13,9 @@ session opened, i.e. before the edit (`SchemaManager.cs:4627-4635, 2712-2720, 47
 `ReleaseResourcesManagers` releases `GetManager(SysSchema.Name)` only (`SchemaManager.cs:2610-2636, 1121-1128`),
 so the UId-keyed cache survives the save. The next metadata build reads it and is kept in `MetaItems`, and every
 caller that resolves the callee through `GetInstanceFromMetaData` copies those captions until the callee is
-saved again. CrtProcessBuilder releases it in `ProcessSchemaRepository.Save` / `SaveEdited` from 1.6.6.17, as
-the classic designer does after its own save (`ProcessSchemaDesignerUtilities.ReleaseLocalizableValues`,
+saved again. CrtProcessBuilder releases it in `ProcessSchemaRepository.Save` / `SaveEdited` from 1.6.6.20, the
+first version clio bundles with the fix, as the classic designer does after its own save
+(`ProcessSchemaDesignerUtilities.ReleaseLocalizableValues`,
 `Terrasoft.Nui.ServiceModel/WebService/BaseProcessSchemaDesigner.cs:181-186`).
 
 **Why it is this way** — the release goes by `SysSchema.Name`, and a manager is named after the schema only for

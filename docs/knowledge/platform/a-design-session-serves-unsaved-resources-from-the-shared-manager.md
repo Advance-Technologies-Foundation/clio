@@ -21,8 +21,9 @@ design session overwrite it with the session's view; nothing distinguishes saved
 
 **What breaks if you ignore it** — a server-side "compare with what was stored" that reads the shared manager
 compares the new value with itself and reports nothing, or works only while some unrelated call happens to load
-the runtime instance first. CrtProcessBuilder 1.6.6.19 shipped such a caption report: it answered correctly only
-because the self-reference check loaded the caller's instance, and a later change to that check silenced it. The
-report was removed (captions are display text; binding goes by name and UId). If one is ever needed again, read
-the stored side from the database - a `Select` on `SysLocalizableValue` with no-lock hints, as CrtCampaignUtils'
-`CampaignEventHandler.SerializeLocalizableValues` does - never through the shared manager.
+the runtime instance first. An unreleased CrtProcessBuilder 1.6.6.19 build carried such a caption report: it
+answered correctly only because the self-reference check loaded the caller's instance, and a later change to that
+check silenced it. The report was removed (captions are display text; binding goes by name and UId). If one is
+ever needed again, read the stored side from the database - a `Select` on `SysLocalizableValue` with no-lock
+hints, as CrtCampaignUtils' `CampaignEventHandler.SerializeLocalizableValues` does - never through the shared
+manager.
