@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Net;
 using System.Net.Http;
 using System.Net.WebSockets;
 using System.Threading;
@@ -259,6 +261,116 @@ public class CreatioClientAdapter : IOwnedApplicationClient {
 		int maxAttempts = 1, int delaySec = 1, CancellationToken cancellationToken = default) =>
 		_loginDiagnostics.TrackRequestAsync(() =>
 			Client.ExecuteGetRequestAsync(url, requestTimeout, maxAttempts, delaySec, cancellationToken));
+
+	/// <inheritdoc />
+	public async Task<byte[]> ExecuteGetRequestBoundedAsync(string url, long maxBytes,
+		int requestTimeout = 100_000, CancellationToken cancellationToken = default) {
+		// The transfer runs through the ONE configured, authenticated client. DownloadFileByGetBoundedAsync
+		// issues its request with HttpCompletionOption.ResponseHeadersRead and copies the body incrementally
+		// to disk, so it streams exactly like a hand-built transport would - while keeping everything a
+		// parallel stack loses: the OAuth/bearer token, the configured certificate-validation policy
+		// (useUntrustedSsl is held by the client, never by this adapter) and the session-recovery retry.
+		// The ceiling is enforced INSIDE that copy loop, before each write. The previous version could only
+		// watch the growing scratch file from another task, which is a TIME bound rather than a byte bound:
+		// the producer is not scheduled in step with the observer, so an arbitrary amount got through between
+		// two observations - measured at over 134 MB against a 64 MiB limit. Nothing outside the client could
+		// fix that, because 2.0.2 exposed no per-chunk hook, no Stream-returning download and no
+		// HttpMessageHandler seam to wrap.
+		// The raw OData response is staged on disk before it is handed back, and the download opens that path
+		// with an ordinary FileMode.Create - which under the usual umask 022 leaves an ambient 0644 file that
+		// any other local account can read while the transfer runs. The staging file therefore lives inside a
+		// directory created owner-only IN THE SAME CALL that creates it, so there is no window in which the
+		// business data underneath is reachable by anyone else, whatever mode the file itself ends up with.
+		string scratchDirectory = CreateOwnerOnlyScratchDirectory();
+		string scratch = Path.Combine(scratchDirectory, "response.tmp");
+		// One deadline across send, stream acquisition and EVERY body read. With ResponseHeadersRead a server
+		// can answer the headers in milliseconds and then withhold the body forever: the reads would then be
+		// governed by the caller token alone, and MCP host cancellation is not guaranteed to arrive, so the
+		// invocation would hang with no bound at all.
+		using CancellationTokenSource deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+		if (requestTimeout > 0) {
+			deadline.CancelAfter(requestTimeout);
+		}
+		try {
+			// EVERY status streams to the scratch file through that one counted loop, so a non-2xx body is
+			// bounded as well and is readable here. 2.0.2 answered a final non-2xx by draining the whole body
+			// into memory and writing no file, so this read failed with FileNotFoundException and the real
+			// server error was lost - the status was all that survived.
+			using HttpResponseMessage response = await Client
+				.DownloadFileByGetBoundedAsync(url, scratch, maxBytes, requestTimeout, deadline.Token)
+				.ConfigureAwait(false);
+			return await File.ReadAllBytesAsync(scratch, cancellationToken).ConfigureAwait(false);
+		}
+		// Translated at the boundary: callers of IApplicationClient must not have to reference the transport
+		// package to catch its exception type, and ResponseTooLargeException is what the OData tools already
+		// report to the agent.
+		catch (CreatioResponseTooLargeException exception) {
+			throw new ResponseTooLargeException(exception.ObservedBytes, exception.MaxBytes);
+		}
+		// Deadline expiry and caller cancellation arrive as the SAME exception type from the linked source, and
+		// they mean different things to the caller: one is the server failing to deliver in time (retryable,
+		// and the message has to say so), the other is the caller withdrawing the request (nothing to report).
+		// Distinguishing them is only possible here, where both tokens are still in scope.
+		catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested
+			&& deadline.IsCancellationRequested) {
+			throw new TimeoutException(
+				$"the request to '{url}' did not complete within {requestTimeout} ms. The response headers may "
+				+ "have arrived while the body stalled; narrow the query with 'select' or 'top', or raise the "
+				+ "request timeout.");
+		}
+		finally {
+			DeleteScratchQuietly(scratch);
+			DeleteScratchDirectoryQuietly(scratchDirectory);
+		}
+	}
+
+	// Owner-only AT CREATION rather than tightened afterwards: File/Directory.SetUnixFileMode runs after the
+	// directory already exists, and everything staged during that gap is world-readable. The mode argument is
+	// applied by the mkdir syscall itself, so the directory is never briefly open.
+	private static string CreateOwnerOnlyScratchDirectory() {
+		string path = Path.Combine(Path.GetTempPath(), $"clio-bounded-{Guid.NewGuid():N}");
+		if (OperatingSystem.IsWindows()) {
+			// %TEMP% on Windows is per-user (under the profile) and inherits its owner-only ACL, so the
+			// directory is not shared the way the Unix temp root is. Explicit DACL tightening is the same
+			// tracked follow-up FileSecurityHardening records rather than shipping unverified ACL code.
+			Directory.CreateDirectory(path);
+			return path;
+		}
+		Directory.CreateDirectory(path, OwnerOnlyDirectory);
+		return path;
+	}
+
+	private const UnixFileMode OwnerOnlyDirectory =
+		UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
+
+	private static void DeleteScratchDirectoryQuietly(string path) {
+		try {
+			if (Directory.Exists(path)) {
+				Directory.Delete(path, true);
+			}
+		}
+		catch (IOException) {
+			// A leftover staging directory is not worth replacing the real failure with a second exception.
+		}
+		catch (UnauthorizedAccessException) {
+			// Same reasoning as above.
+		}
+	}
+
+	private static void DeleteScratchQuietly(string path) {
+		try {
+			if (File.Exists(path)) {
+				File.Delete(path);
+			}
+		}
+		catch (IOException) {
+			// A leftover scratch file is not worth replacing the real failure with a second exception.
+		}
+		catch (UnauthorizedAccessException) {
+			// Same reasoning as above.
+		}
+	}
+
 
 	public string ExecutePostRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
 		int maxAttempts = 1, int delaySec = 1) {

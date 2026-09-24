@@ -880,7 +880,10 @@ public class BindingsModule {
 		services.AddTransient<IODataBuildGate, ODataBuildGate>();
 		services.AddTransient<IEntitySchemaPublisher, EntitySchemaPublisher>();
 		services.AddTransient<IDataForgeContextService, DataForgeContextService>();
+		services.AddTransient<IConfinedFileAccess, ConfinedFileAccess>();
+		services.AddTransient<IODataFileContract, ODataFileContract>();
 		services.AddTransient<ODataReadTool>();
+		services.AddTransient<ODataReadToFileTool>();
 		services.AddTransient<ODataCreateTool>();
 		services.AddTransient<ODataUpdateTool>();
 		services.AddTransient<ODataDeleteTool>();
