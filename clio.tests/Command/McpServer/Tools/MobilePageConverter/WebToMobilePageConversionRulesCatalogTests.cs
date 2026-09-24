@@ -330,7 +330,7 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 	}
 
 	[Test]
-	[Description("Bundled tabbed template carries container-name correspondence: the type-aligned general-tab pair GeneralInfoTab->GeneralInfoTab (ENG-94951), CardContentWrapper->GeneralTabContainer for general non-tab content, GeneralInfoTabContainer->AreaProfileContainer for a page that KEEPS the template's content grid (the grid's own profile card is now the merge target, not the general tab's whole content grid), SideAreaProfileContainer->GeneralInformationTab for the profile island (its own dedicated tab, declared separately — see LoadBundled_TabbedTemplateDeclaresGeneralInformationTab), and positional CardContentWrapper:top/:bottom -> Tabs:top/:bottom entries.")]
+	[Description("Bundled tabbed template carries container-name correspondence: the type-aligned general-tab pair GeneralInfoTab->GeneralInfoTab (ENG-94951), CardContentWrapper->GeneralInformationTab for general non-tab content (the wrapper's side-column content, e.g. TermsContainer, shares the declared tab with the profile island), GeneralInfoTabContainer->AreaProfileContainer for a page that KEEPS the template's content grid (the grid's own profile card is now the merge target, not the general tab's whole content grid), SideAreaProfileContainer->GeneralInformationTab for the profile island (its own dedicated tab, declared separately — see LoadBundled_TabbedTemplateDeclaresGeneralInformationTab), and positional CardContentWrapper:top/:bottom -> Tabs:top/:bottom entries.")]
 	public void LoadBundled_TemplatesCarryContainerCorrespondence() {
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
 
@@ -338,8 +338,11 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 			t.Web == "PageWithTabsFreedomTemplate" && t.Mobile == "MobilePageWithTabsFreedomTemplate");
 		tabbed.Containers.Should().Contain(c => c.Web == "Tabs" && c.Mobile == "Tabs");
 		tabbed.Containers.Should().Contain(c => c.Web == "FeedTabContainer" && c.Mobile == "FeedContainer");
-		tabbed.Containers.Should().Contain(c => c.Web == "CardContentWrapper" && c.Mobile == "GeneralTabContainer",
-			because: "the wrapper's general non-tab content fills the mobile general tab's grid");
+		tabbed.Containers.Should().Contain(c => c.Web == "CardContentWrapper" && c.Mobile == "GeneralInformationTab",
+			because: "the wrapper's general non-tab content (the side column beside the profile island) now fills the "
+				+ "declared General information tab, together with the profile island, instead of the general tab's grid");
+		tabbed.Containers.Should().NotContain(c => c.Web == "CardContentWrapper" && c.Mobile == "GeneralTabContainer",
+			because: "a second CardContentWrapper pair would make the wrapper's mobile side depend on list order");
 		tabbed.Containers.Should().Contain(c => c.Web == "SideAreaProfileContainer" && c.Mobile == "GeneralInformationTab",
 			because: "the web profile island now becomes its own dedicated mobile tab instead of a card "
 				+ "squeezed into the general tab's grid — the declared tab is where its children land");
@@ -355,7 +358,7 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 	}
 
 	[Test]
-	[Description("The tabbed template DECLARES a dedicated 'General information' tab (GeneralInformationTab, a crt.TabContainer, at index 1 right after the template's own general tab) so the web profile island (SideAreaProfileContainer) gets its own mobile tab instead of being squeezed into the general tab's grid. Creation is explicit in declaredElements — the containers pair (asserted in LoadBundled_TemplatesCarryContainerCorrespondence) only merges the web content onto it by name.")]
+	[Description("The tabbed template DECLARES a dedicated 'General information' tab (GeneralInformationTab, a crt.TabContainer, at index 0 so it is the first tab and the one selected when the page opens) so the web profile island (SideAreaProfileContainer) gets its own mobile tab instead of being squeezed into the general tab's grid. Creation is explicit in declaredElements — the containers pair (asserted in LoadBundled_TemplatesCarryContainerCorrespondence) only merges the web content onto it by name.")]
 	public void LoadBundled_TabbedTemplateDeclaresGeneralInformationTab() {
 		// Arrange
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
@@ -372,8 +375,9 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 		generalInformationTab.Type.Should().Be("crt.TabContainer", because: "a tab is a crt.TabContainer");
 		generalInformationTab.ParentName.Should().Be("Tabs", because: "the declared tab lives in the mobile tab strip");
 		generalInformationTab.PropertyName.Should().Be("items", because: "a tab strip holds its tabs in items");
-		generalInformationTab.Index.Should().Be(1,
-			because: "it follows the template's own general tab (index 0) and precedes page-authored tabs");
+		generalInformationTab.Index.Should().Be(0,
+			because: "the first tab is the one selected on open, which keeps the profile island in view; the "
+				+ "template's own general tab shifts to index 1 and page-authored tabs follow it");
 		generalInformationTab.CaptionResource.Should().NotBeNull(because: "a tab needs a caption");
 		generalInformationTab.CaptionResource.Key.Should().Be("GeneralInformationTab_caption",
 			because: "the caption is a page resource keyed by the tab name");

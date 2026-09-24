@@ -6869,6 +6869,63 @@ public sealed class WebToMobileConversionServiceTests {
 		co["medium"]!["row"]!.GetValue<int>().Should().Be(1);
 	}
 
+	/// <summary>
+	/// A two-column web grid <c>CardContentWrapper</c> paired onto <paramref name="mobileName"/>, whose type the
+	/// probed mobile template reports as <paramref name="mobileType"/> — the only input that differs between the
+	/// guarded and the admitted case of the adaptive pass.
+	/// </summary>
+	private static MobilePageConversionGuide AnalyzeGridRenamedOnto(string mobileName, string mobileType) {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "CardContentWrapper", "type": "crt.GridContainer",
+			    "columns": [ "minmax(32px, 1fr)", "minmax(32px, 1fr)" ], "items": [
+				{ "name": "Name", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 1, "colSpan": 1, "rowSpan": 1 } },
+				{ "name": "CreatedOn", "type": "crt.Input", "layoutConfig": { "column": 2, "row": 1, "colSpan": 1, "rowSpan": 1 } } ] } ]
+			""");
+		var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+			["CardContentWrapper"] = mobileName
+		};
+		var mobileTemplateTypes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+			[mobileName] = mobileType
+		};
+		return Analyze(bundle,
+			webByType: Reg(("crt.GridContainer", true), ("crt.Input", false)),
+			containerNameMap: map,
+			mobileTemplateTypesByName: mobileTemplateTypes);
+	}
+
+	[Test]
+	[Description("A multi-column web grid renamed by a containers pair onto a mobile element that is NOT a crt.GridContainer (e.g. CardContentWrapper -> the declared GeneralInformationTab, a crt.TabContainer) does not carry its column count there: adaptive per-breakpoint columns is a property of the mobile grid type only, so no adaptive group is built and the children are not placed as if they sat in a multi-column grid.")]
+	public void Analyze_MultiColumnGrid_RenamedOntoNonGrid_GetsNoAdaptive() {
+		// Arrange & Act
+		MobilePageConversionGuide guide = AnalyzeGridRenamedOnto("GeneralInformationTab", "crt.TabContainer");
+
+		// Assert
+		Element(guide, "CardContentWrapper").Name.Should().Be("GeneralInformationTab",
+			because: "the pair must actually rename the grid onto the tab, or the guard is not exercised");
+		(guide.AdaptiveLayout ?? []).Should().NotContain(g => g.ContainerName == "GeneralInformationTab",
+			because: "a crt.TabContainer has no columns input, so the web grid's columns must not be attached to it");
+		foreach (string field in new[] { "Name", "CreatedOn" }) {
+			JsonNode layoutConfig = Element(guide, field).Values?["layoutConfig"];
+			(layoutConfig?["adaptive"]).Should().BeNull(
+				because: $"'{field}' does not sit in a multi-column mobile grid, so it must not get an adaptive "
+					+ "placement — an adaptive layoutConfig is never overwritten by a later placement pass");
+		}
+	}
+
+	[Test]
+	[Description("Control for the non-grid guard: the same web grid renamed onto a mobile element the template reports as crt.GridContainer still gets the adaptive group — the guard reads the MOBILE type, it does not reject renamed pairs.")]
+	public void Analyze_MultiColumnGrid_RenamedOntoMobileGrid_KeepsAdaptive() {
+		// Arrange & Act
+		MobilePageConversionGuide guide = AnalyzeGridRenamedOnto("GeneralTabContainer", "crt.GridContainer");
+
+		// Assert
+		guide.AdaptiveLayout.Should().ContainSingle(g => g.ContainerName == "GeneralTabContainer",
+			because: "a grid-to-grid pair keeps the web column count under the mobile name");
+		JsonObject co = AdaptiveOf(guide, "CreatedOn");
+		co["small"]!["column"]!.GetValue<int>().Should().Be(1, because: "the phone breakpoint stacks into one column");
+		co["medium"]!["column"]!.GetValue<int>().Should().Be(2, because: "tablet keeps the web two-column cell");
+	}
+
 	[Test]
 	[Description("A single-column crt.GridContainer gets NO adaptive (the mobile client renders the plain config); its children keep the carried base layoutConfig, not an adaptive one.")]
 	public void Analyze_SingleColumnGrid_NoAdaptive() {

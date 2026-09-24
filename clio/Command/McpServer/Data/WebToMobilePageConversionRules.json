@@ -52,7 +52,7 @@
           "type": "crt.TabContainer",
           "parentName": "Tabs",
           "propertyName": "items",
-          "index": 1,
+          "index": 0,
           "captionResource": { "key": "GeneralInformationTab_caption", "value": "General information" }
         }
       ],
@@ -63,7 +63,7 @@
         { "web": "FeedTabContainer", "mobile": "FeedContainer" },
         { "web": "AttachmentsTabContainer", "mobile": "AttachmentsContainer" },
         { "web": "CardToggleTabPanel", "mobile": "Tabs" },
-        { "web": "CardContentWrapper", "mobile": "GeneralTabContainer" },
+        { "web": "CardContentWrapper", "mobile": "GeneralInformationTab" },
         { "web": "SideAreaProfileContainer", "mobile": "GeneralInformationTab" },
         { "web": "CardContentWrapper:top", "mobile": "Tabs:top" },
         { "web": "CardContentWrapper:bottom", "mobile": "Tabs:bottom" }
