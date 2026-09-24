@@ -63,7 +63,7 @@ public sealed class PageSyncToolPersistedResourcesTests {
 		]);
 		_updateCommand = new PageUpdateCommand(
 			_applicationClient, serviceUrlBuilder, Substitute.For<ILogger>(),
-			Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), _hierarchyClient);
+			Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), _hierarchyClient, viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 	}
 
 	[TearDown]

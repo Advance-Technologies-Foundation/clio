@@ -55,7 +55,7 @@ public sealed class PageUpdateCommandConflictTests
 		StubNameMetadata();
 		StubDesignerEndpoints();
 		_command = new PageUpdateCommand(
-			_applicationClient, _serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), CreateHierarchyClient());
+			_applicationClient, _serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), CreateHierarchyClient(), viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 	}
 
 	private void StubNameMetadata() {

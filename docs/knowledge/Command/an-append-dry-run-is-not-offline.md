@@ -80,7 +80,7 @@ handler — which the DTO documents rather than reporting zeros for.
 **`mode: replace` is narrower than "offline", and saying otherwise misleads.** `TryResolveContext`
 runs before either mode is chosen and already reaches the server, so a replace dry run is not an
 offline operation. What it skips is `TryCompleteDryRun`'s designer `GetSchema` of the current body —
-precisely what `TryUpdatePage_WhenDryRun_SkipsDesignerServiceCalls` asserts, and no more. Do not
+precisely what `TryUpdatePage_WhenDryRun_SkipsDesignerServiceCalls` asserts for its body without parent references, and no more. Explicit web parent references additionally require the inherited designer hierarchy, including on replace dry runs (GH-1640). Do not
 widen that test's name into a claim that the path runs without a server; a caller who plans an
 offline workflow on it will find one that cannot run. The cost of that guarantee is the one
 divergence left: a replace dry run's caption check resolves only against the explicitly passed

@@ -60,7 +60,7 @@ public sealed class PageUpdateCommandDesignerPresenceTests {
 			logger,
 			Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(),
 			hierarchyClient,
-			_notifier);
+			_notifier, viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 	}
 
 	private static PageUpdateOptions CreateOptions() =>

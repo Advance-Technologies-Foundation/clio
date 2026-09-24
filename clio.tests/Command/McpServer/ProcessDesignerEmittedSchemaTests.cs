@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Clio;
 using Clio.Command;
 using Clio.Command.McpServer;
@@ -234,5 +235,31 @@ public sealed class ProcessDesignerEmittedSchemaTests {
 					"process, a process with no outputs, an unbounded request, and the direct-connection " +
 					"fallback are each a complete payload without it");
 		}
+	}
+
+	[TestCase(CreateBusinessProcessTool.CreateBusinessProcessToolName)]
+	[TestCase(ModifyBusinessProcessTool.ModifyBusinessProcessToolName)]
+	[TestCase(ModifyProcessAsNewVersionTool.ModifyProcessAsNewVersionToolName)]
+	[Category("Unit")]
+	[Description("Every process WRITE tool's emitted description names the multi-instance member by its exact path, subProcess.multiInstanceOptions, and never by the one-word-short subProcess.multiInstance. A live agent reached for subProcess.multiInstance on a stand because the contract named no member, and an older server silently DISCARDS an unknown member while answering success - so the wrong name builds a plain sub-process and nothing says so. The payload budget in ToolContractPayloadBudgetTests pushes the next author toward deleting exactly this text, which is why it is pinned rather than trusted.")]
+	public void ProcessWriteTools_Should_NameTheMultiInstanceOptionsMember_InEmittedDescription(string toolName) {
+		// Arrange
+		McpToolInvokerRegistry registry = BuildProductionRegistry();
+		registry.TryGetTool(toolName, out McpServerTool tool).Should().BeTrue(
+			because: $"'{toolName}' must be a registered tool for its emitted description to be assertable");
+
+		// Act
+		string description = tool.ProtocolTool.Description ?? string.Empty;
+
+		// Assert
+		description.Should().Contain("subProcess.multiInstanceOptions",
+			because: "the member has to be named by its exact path in the contract the agent actually receives - "
+				+ "the guidance that also names it ships on a separate release train");
+		Regex.IsMatch(description, @"subProcess\.multiInstance(?!Options)", RegexOptions.None,
+				TimeSpan.FromSeconds(1))
+			.Should().BeFalse(
+				because: "subProcess.multiInstance is the READ-side flag describe reports, not a write member - "
+					+ "naming it on a write tool is the exact mistake a live agent made, and an older server "
+					+ "discards an unknown member silently");
 	}
 }

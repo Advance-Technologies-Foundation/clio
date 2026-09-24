@@ -71,7 +71,7 @@
           "type": "crt.TabPanel",
           "parentName": "MainContainer",
           "propertyName": "items",
-          "values": { "scrollable": true, "bodyBackgroundColor": "transparent" }
+          "values": { "isScrollable": true }
         },
         {
           "name": "GeneralInfoTab",
@@ -79,7 +79,6 @@
           "parentName": "Tabs",
           "propertyName": "items",
           "index": 0,
-          "values": { "iconPosition": "only-text" },
           "captionResource": { "key": "GeneralInfoTab_caption", "value": "General information" }
         },
         {
@@ -88,7 +87,6 @@
           "parentName": "Tabs",
           "propertyName": "items",
           "index": 1,
-          "values": { "iconPosition": "only-text" },
           "captionResource": { "key": "RightPanelTab_caption", "value": "Details" }
         }
       ],
@@ -109,7 +107,7 @@
           "type": "crt.TabPanel",
           "parentName": "MainContainer",
           "propertyName": "items",
-          "values": { "scrollable": true, "bodyBackgroundColor": "transparent" }
+          "values": { "isScrollable": true }
         },
         {
           "name": "GeneralInfoTab",
@@ -117,7 +115,6 @@
           "parentName": "Tabs",
           "propertyName": "items",
           "index": 0,
-          "values": { "iconPosition": "only-text" },
           "captionResource": { "key": "GeneralInfoTab_caption", "value": "General information" }
         }
       ],

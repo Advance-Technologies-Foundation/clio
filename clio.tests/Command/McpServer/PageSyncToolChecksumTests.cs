@@ -71,7 +71,7 @@ public sealed class PageSyncToolChecksumTests {
 		]);
 		return new PageUpdateCommand(
 			_applicationClient, serviceUrlBuilder, Substitute.For<ILogger>(),
-			Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), hierarchyClient);
+			Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), hierarchyClient, viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 	}
 
 	// The REAL PageBaselineGuard over an empty file system: no .clio-pages baseline exists, so the pin

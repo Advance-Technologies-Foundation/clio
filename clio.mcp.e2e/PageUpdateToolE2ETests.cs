@@ -1475,7 +1475,7 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 			// (no baseline there → no conflict check, and the session baseline stays untouched).
 			string outOfBandBody = originalBody.Replace(
 				"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/",
-				"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrE2EOobContainer\",\"values\":{\"type\":\"crt.FlexContainer\",\"direction\":\"row\",\"items\":[]},\"parentName\":\"Main\",\"propertyName\":\"items\",\"index\":0}]/**SCHEMA_VIEW_CONFIG_DIFF*/");
+				"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrE2EOobContainer\",\"values\":{\"type\":\"crt.FlexContainer\",\"direction\":\"row\",\"items\":[]},\"parentName\":\"MainContainer\",\"propertyName\":\"items\",\"index\":0}]/**SCHEMA_VIEW_CONFIG_DIFF*/");
 			PageUpdateResponse outOfBandResponse = await UpdatePageAsync(
 				arrangeContext, savePage, outOfBandBody, environmentName, outOfBandDir);
 			outOfBandResponse.Success.Should().BeTrue(
@@ -1724,7 +1724,7 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		"SCHEMA_VIEW_CONFIG_DIFF",
 		"[{\"operation\":\"insert\",\"name\":\"" + containerName +
 		"\",\"values\":{\"type\":\"crt.FlexContainer\",\"direction\":\"row\",\"items\":[]}," +
-		"\"parentName\":\"Main\",\"propertyName\":\"items\",\"index\":0}]");
+		"\"parentName\":\"MainContainer\",\"propertyName\":\"items\",\"index\":0}]");
 
 	/// <summary>
 	/// Returns <paramref name="originalBody"/> with an inserted field whose label points at
@@ -1739,7 +1739,7 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 			"[{\"operation\":\"insert\",\"name\":\"UsrE2EResourceField\"," +
 			"\"values\":{\"type\":\"crt.Input\",\"label\":\"$Resources.Strings." + resourceKey +
 			"\",\"control\":\"$UsrE2EResourceAttribute\"}," +
-			"\"parentName\":\"Main\",\"propertyName\":\"items\",\"index\":0}]");
+			"\"parentName\":\"MainContainer\",\"propertyName\":\"items\",\"index\":0}]");
 		return ReplaceEmptyMarker(
 			withField,
 			"SCHEMA_VIEW_MODEL_CONFIG_DIFF",
@@ -1838,7 +1838,7 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 			string originalBody = await File.ReadAllTextAsync(getResponse.Files.BodyFile);
 			string outOfBandBody = originalBody.Replace(
 				"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/",
-				"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrE2EForceContainer\",\"values\":{\"type\":\"crt.FlexContainer\",\"direction\":\"row\",\"items\":[]},\"parentName\":\"Main\",\"propertyName\":\"items\",\"index\":0}]/**SCHEMA_VIEW_CONFIG_DIFF*/");
+				"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrE2EForceContainer\",\"values\":{\"type\":\"crt.FlexContainer\",\"direction\":\"row\",\"items\":[]},\"parentName\":\"MainContainer\",\"propertyName\":\"items\",\"index\":0}]/**SCHEMA_VIEW_CONFIG_DIFF*/");
 			PageUpdateResponse outOfBandResponse = await UpdatePageAsync(
 				arrangeContext, savePage, outOfBandBody, environmentName, outOfBandDir);
 			outOfBandResponse.Success.Should().BeTrue(
@@ -1902,8 +1902,8 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		original.Success.Should().BeTrue(because: "the new page must be readable before editing");
 		string originalBody = await File.ReadAllTextAsync(original.Files.BodyFile);
 		const string mappingDiff = """
-			[{"operation":"insert","name":"GalleryProbe","parentName":"Main","propertyName":"items","values":{"type":"crt.Gallery","itemConfig":{"templateValuesMapping":{"caption":"GalleryDS_Name","description":"GalleryDS_Description","image":"GalleryDS_Image","id":"GalleryDS_Id"}}}},
-			{"operation":"insert","name":"PlaybookProbe","parentName":"Main","propertyName":"items","values":{"type":"crt.Playbook","_designOptions":{"templateValuesMapping":{"caption":"PlaybookDS_Name"}}}}]
+			[{"operation":"insert","name":"GalleryProbe","parentName":"MainContainer","propertyName":"items","values":{"type":"crt.Gallery","itemConfig":{"templateValuesMapping":{"caption":"GalleryDS_Name","description":"GalleryDS_Description","image":"GalleryDS_Image","id":"GalleryDS_Id"}}}},
+			{"operation":"insert","name":"PlaybookProbe","parentName":"MainContainer","propertyName":"items","values":{"type":"crt.Playbook","_designOptions":{"templateValuesMapping":{"caption":"PlaybookDS_Name"}}}}]
 			""";
 		string body = Regex.Replace(originalBody,
 			@"/\*\*SCHEMA_VIEW_CONFIG_DIFF\*/[\s\S]*?/\*\*SCHEMA_VIEW_CONFIG_DIFF\*/",

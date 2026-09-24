@@ -97,6 +97,7 @@ public class JsonDiffApplier : IJsonDiffApplier {
 		try {
 			var innerOperations = (JArray)(operations?.DeepClone() ?? new JArray());
 			ApplyOperations(innerOperations);
+
 			result = _sourceObject;
 		} finally {
 			_sourceObject = null;
@@ -378,6 +379,11 @@ public class JsonDiffApplier : IJsonDiffApplier {
 		for (int index = 0; index < unsuccessful.Count; index++) {
 			unsuccessful[index]["operation"] = "move";
 			if (FindItemInfoInSourceObject(unsuccessful[index].Value<string>("parentName")) is null) {
+				if (_operationsOptions?.RejectUnresolvedParents == true) {
+					throw new JsonDiffApplierException(PageParentNameValidation.Diagnostic(
+						unsuccessful[index].Value<string>("name"), unsuccessful[index].Value<string>("parentName"),
+						PageParentNameValidation.Names(_sourceObject)));
+				}
 				unsuccessful.RemoveAt(index);
 			}
 		}
@@ -661,6 +667,11 @@ public class JsonDiffApplier : IJsonDiffApplier {
 			config["parentName"] = parentName;
 			config["propertyName"] = itemInfo["propertyName"]?.DeepClone();
 		}
+		if (_operationsOptions?.RejectUnresolvedParents == true &&
+			!string.IsNullOrEmpty(parentName) && FindItemInfoInSourceObject(parentName) is null) {
+			throw new JsonDiffApplierException(PageParentNameValidation.Diagnostic(
+				config.Value<string>("name"), parentName, PageParentNameValidation.Names(_sourceObject)));
+		}
 		Insert(config);
 		return parentExists;
 	}
@@ -813,6 +824,10 @@ public class JsonDiffApplier : IJsonDiffApplier {
 
 /// <summary>Options for <see cref="JsonDiffApplier"/> (mirrors the client <c>JsonApplierOperationsOptions</c>).</summary>
 public sealed class JsonApplierOperationsOptions {
+	/// <summary>Clio save guard: reject orphan insert/move parents after applying a candidate diff.
+	/// Defaults to false to preserve the platform interpreter's permissive behavior.</summary>
+	public bool RejectUnresolvedParents { get; set; }
+
 	public bool ApplyMoveIfIndirectParentMoved { get; init; }
 }
 

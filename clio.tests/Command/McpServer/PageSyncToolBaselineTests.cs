@@ -77,7 +77,7 @@ public sealed class PageSyncToolBaselineTests
 				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("""{"success": true}""");
 		return new PageUpdateCommand(
-			applicationClient, serviceUrlBuilder, Substitute.For<ILogger>(), Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), CreateHierarchyClient());
+			applicationClient, serviceUrlBuilder, Substitute.For<ILogger>(), Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), CreateHierarchyClient(), viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 	}
 
 	private static string ChecksumRow(string checksum) =>

@@ -47,6 +47,14 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	private const string ApplicationCode = "AutoTestClioMcp";
 
 	/// <summary>
+	/// An OLD published registry version. It is pinned deliberately: the prune reads the CONTENT of whatever
+	/// registry the chain serves and nothing about the stand, so the invariant below has to hold on a
+	/// versioned path as well as on <c>latest</c> — before the versioned files are regenerated from the
+	/// mobile runtime and after.
+	/// </summary>
+	private const string OldRegistryVersion = "10.0.0";
+
+	/// <summary>
 	/// Budget for the one-off candidate probe, which converts every seeded page. It is deliberately
 	/// independent of the calling test's token: the probe is fixture-scoped work, and charging it to the
 	/// first test's (smallest) budget would cancel that test for a cost none of its own assertions caused.
@@ -1161,6 +1169,156 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			.Where(kind => !string.IsNullOrWhiteSpace(kind))
 			.ToHashSet(StringComparer.OrdinalIgnoreCase)!;
 
+	[Test]
+	[Description("Against the runtime-derived mobile registry, everything the page carried beyond the target component's published contract is reported in prunedProperties rather than pasted into the page (ENG-96589).")]
+	[AllureTag(ToolName)]
+	[AllureName("get-mobile-page-conversion-guide prunes undeclared properties against the runtime-derived registry")]
+	[AllureDescription("Starts the real clio MCP server and converts a seeded page pinned to version=latest, so the runtime-derived MobileComponentRegistry is served deterministically regardless of the stand's platform version. Asserts the response is self-consistent: propertyPruneApplied is true, at least one property was actually pruned, and every property reported as pruned is genuinely absent from that type's published allowedProperties.")]
+	public async Task MobilePageConversionGuideTool_Should_Prune_Undeclared_Properties_Against_RuntimeDerived_Registry() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
+		await RequireConverterToolAsync(context);
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		IReadOnlyList<string> candidates = await ResolveConvertibleSeededPageCandidatesAsync(
+			context.Session, context.CancellationTokenSource.Token, environmentName);
+
+		// Act — the version is PINNED rather than resolved from the stand: until every versioned registry is
+		// regenerated from the mobile runtime, only /latest/ is guaranteed to serve the runtime-derived
+		// catalog, so a stand on an un-regenerated version would disable the very behaviour under test and
+		// every assertion below would pass vacuously.
+		List<string> failedCandidates = [];
+		MobilePageConversionGuide? guide = null;
+		string convertedSchemaName = string.Empty;
+		foreach (string schemaName in candidates) {
+			MobilePageConversionGuide? candidate = await ConvertAtVersionOrCollectFailureAsync(
+				context.Session, context.CancellationTokenSource.Token, environmentName, schemaName,
+				ComponentRegistryClient.LatestVersion, failedCandidates);
+			if (candidate is not null) {
+				guide = candidate;
+				convertedSchemaName = schemaName;
+				break;
+			}
+		}
+
+		// Assert
+		FailOnConversionFailures(failedCandidates, candidates.Count, environmentName);
+		if (guide is null) {
+			Assert.Ignore($"No seeded page of '{ApplicationCode}' converted on environment '{environmentName}'.");
+			return;
+		}
+		guide.PropertyPruneApplied.Should().BeTrue(
+			because: $"'{convertedSchemaName}' was converted against the latest catalog, which is runtime-derived, so "
+				+ "the gate must have opened. This flag is the response's only prune signal — the catalog's "
+				+ "mobileRuntimeVersion marker is published irregularly and is not echoed, precisely so nobody reads "
+				+ "its absence as 'the prune did not run'");
+		guide.MobileContracts.Should().NotBeEmpty(
+			because: "the pruned keys below are cross-checked against these contracts");
+
+		// Only the REVERSE direction is sound over the wire. The forward one ("every emitted key is
+		// declared") does not hold for a component the registry describes with NO properties of its own:
+		// the prune fails open on it by design, while its contract row still lists the inherited surface.
+		// The forward invariant is asserted in the unit fixture, which can consult the registry entry.
+		Dictionary<string, IReadOnlyList<string>> contracts = guide.MobileContracts
+			.ToDictionary(c => c.ComponentType, c => c.AllowedProperties, StringComparer.OrdinalIgnoreCase);
+		int checkedKeys = 0;
+		foreach (PrunedPropertyEntry pruned in guide.PrunedProperties ?? []) {
+			if (!contracts.TryGetValue(pruned.Type, out IReadOnlyList<string>? allowed)) {
+				continue;
+			}
+			foreach (string key in pruned.Properties) {
+				checkedKeys++;
+				allowed.Should().NotContain(declared => string.Equals(declared, key, StringComparison.OrdinalIgnoreCase),
+					because: $"'{key}' was reported as pruned from {pruned.Name} ({pruned.Type}) of "
+						+ $"'{convertedSchemaName}', so it must NOT appear in that type's allowedProperties — a "
+						+ "DECLARED property being pruned is the failure mode that silently strips working pages");
+			}
+		}
+		TestContext.Out.WriteLine(
+			$"prune cross-check: {checkedKeys} pruned key(s) verified against the published contracts on "
+			+ $"'{convertedSchemaName}'.");
+		checkedKeys.Should().BeGreaterThan(0,
+			because: $"the loop above is the whole assertion, and on a page that lost nothing it iterates zero times "
+				+ $"and proves nothing. A seeded page of '{ApplicationCode}' converted against the runtime-derived "
+				+ "catalog always carries at least one undeclared web property (layout `rows`, `icon`, `tooltip`), so "
+				+ "zero here means the prune silently stopped running rather than that the page was clean");
+	}
+
+	[Test]
+	[Description("On a VERSIONED registry path the prune is reported consistently with the catalog that was actually served: propertyPruneApplied is true exactly when the contracts carry the inherited surface, and pruned keys are never declared. Deliberately not asserted as a fixed direction — 10.0.0 still served the web-derived catalog when this was written, and the same assertion must keep holding after that file is regenerated from the mobile runtime, which flips the behaviour with no clio release. A fixed expectation would have to be edited on the day of the regeneration, which is precisely the day nobody is watching this test.")]
+	[AllureTag(ToolName)]
+	[AllureName("get-mobile-page-conversion-guide reports the prune consistently with the served registry")]
+	[AllureDescription("Converts a seeded page pinned to version=10.0.0 through the real clio MCP server and asserts the response is internally consistent whichever generation that path serves — proving the gate reads the payload over the real PlatformVersionResolver, MobileComponentRegistryClient and versioned CDN chain, rather than the stand's version number.")]
+	public async Task MobilePageConversionGuideTool_Should_Report_The_Prune_Consistently_With_The_Served_Registry() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
+		await RequireConverterToolAsync(context);
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		IReadOnlyList<string> candidates = await ResolveConvertibleSeededPageCandidatesAsync(
+			context.Session, context.CancellationTokenSource.Token, environmentName);
+
+		// Act
+		List<string> failedCandidates = [];
+		MobilePageConversionGuide? guide = null;
+		string convertedSchemaName = string.Empty;
+		foreach (string schemaName in candidates) {
+			MobilePageConversionGuide? candidate = await ConvertAtVersionOrCollectFailureAsync(
+				context.Session, context.CancellationTokenSource.Token, environmentName, schemaName,
+				OldRegistryVersion, failedCandidates);
+			if (candidate is not null) {
+				guide = candidate;
+				convertedSchemaName = schemaName;
+				break;
+			}
+		}
+
+		// Assert
+		FailOnConversionFailures(failedCandidates, candidates.Count, environmentName);
+		if (guide is null) {
+			Assert.Ignore($"No seeded page of '{ApplicationCode}' converted on environment '{environmentName}'.");
+			return;
+		}
+		guide.MobileContracts.Should().NotBeEmpty(
+			because: "the contracts are how this test observes which generation was served, so an empty set would "
+				+ "make every assertion below vacuous");
+		// `visible` is declared ONLY in references.baseInputs, and that surface is folded into the contracts
+		// exactly when the served payload is runtime-derived — which is exactly when the prune runs. So the
+		// contracts report the generation without this test having to know what the CDN publishes today.
+		bool servedRuntimeDerived = guide.MobileContracts.All(
+			contract => contract.AllowedProperties.Any(p => string.Equals(p, "visible", StringComparison.OrdinalIgnoreCase)));
+		guide.PropertyPruneApplied.Should().Be(servedRuntimeDerived,
+			because: $"'{convertedSchemaName}' was converted at {OldRegistryVersion}, and the prune must follow the "
+				+ "catalog that path SERVED: while it still carries the web-derived generation nothing may be pruned "
+				+ "(its inputs describe Angular components — crt.Feed declares only primaryColumnValue there), and "
+				+ "once it is regenerated from the mobile runtime the prune must start working on that version with "
+				+ "no clio release");
+		if (!servedRuntimeDerived) {
+			guide.PrunedProperties.Should().BeNull(
+				because: "a refused gate must remove nothing at all, not merely report less");
+			TestContext.Out.WriteLine(
+				$"version {OldRegistryVersion} still serves the WEB-derived catalog; prune correctly withheld.");
+			return;
+		}
+		Dictionary<string, IReadOnlyList<string>> contracts = guide.MobileContracts
+			.ToDictionary(c => c.ComponentType, c => c.AllowedProperties, StringComparer.OrdinalIgnoreCase);
+		foreach (PrunedPropertyEntry pruned in guide.PrunedProperties ?? []) {
+			if (!contracts.TryGetValue(pruned.Type, out IReadOnlyList<string>? allowed)) {
+				continue;
+			}
+			foreach (string key in pruned.Properties) {
+				allowed.Should().NotContain(declared => string.Equals(declared, key, StringComparison.OrdinalIgnoreCase),
+					because: $"'{key}' was reported as pruned from {pruned.Name} ({pruned.Type}), so this version's "
+						+ "own registry must not declare it — a DECLARED property being pruned is the failure mode "
+						+ "that silently strips working pages, and a freshly regenerated file is where it would appear");
+			}
+		}
+		TestContext.Out.WriteLine(
+			$"version {OldRegistryVersion} now serves the RUNTIME-DERIVED catalog; prune ran and was cross-checked.");
+	}
+
 	/// <summary>
 	/// The web requests the SHIPPED rules say carry a navigation target — the ones whose presence on a page
 	/// means the probe had real work to do. Read from the rules for the same reason as the kinds.
@@ -1209,6 +1367,41 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	/// response is collected into <paramref name="failedCandidates"/> (the caller fails the test on any —
 	/// a seeded page that stops converting is a runtime regression, never a seed gap) and yields null.
 	/// </summary>
+	/// <summary>
+	/// Converts one seeded page at an EXPLICIT registry version, so a test can drive the mobile registry
+	/// GENERATION instead of inheriting whatever the stand's platform version happens to resolve to.
+	/// Failures are collected exactly as <see cref="ConvertOrCollectFailureAsync"/> does.
+	/// </summary>
+	private static async Task<MobilePageConversionGuide?> ConvertAtVersionOrCollectFailureAsync(
+		McpServerSession session, CancellationToken cancellationToken, string environmentName,
+		string schemaName, string version, List<string> failedCandidates) {
+		CallToolResult callResult = await session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = schemaName,
+					["environment-name"] = environmentName,
+					["version"] = version
+				}
+			},
+			cancellationToken);
+		if (callResult.IsError == true) {
+			failedCandidates.Add($"'{schemaName}' at {version}: transport-level error");
+			return null;
+		}
+		MobilePageConversionGuideResponse response =
+			EntitySchemaStructuredResultParser.Extract<MobilePageConversionGuideResponse>(callResult);
+		if (!response.Success) {
+			failedCandidates.Add($"'{schemaName}' at {version}: {response.Error}");
+			return null;
+		}
+		if (response.Guide is null) {
+			failedCandidates.Add($"'{schemaName}' at {version}: successful response carried no guide");
+			return null;
+		}
+		return response.Guide;
+	}
+
 	private static async Task<MobilePageConversionGuide?> ConvertOrCollectFailureAsync(
 		McpServerSession session, CancellationToken cancellationToken, string environmentName,
 		string schemaName, List<string> failedCandidates) {
