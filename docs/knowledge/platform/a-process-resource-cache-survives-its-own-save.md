@@ -23,7 +23,7 @@ other schema, a process included, is keyed by UId. The designer compensates by r
 itself (its block carries `TODO Cache management will be added in #CRM-28975`), so any other server-side writer
 has to as well.
 
-**What breaks if you ignore it** — measured on a .NET Framework stand (`spec/eng-100077-subprocess-caption-sync/`):
+**What breaks if you ignore it** — measured on a .NET Framework stand (ENG-100077, https://creatio.atlassian.net/browse/ENG-100077):
 a caption changed on a callee reaches its callers one save late, on an explicit resync and on any unrelated save
 of a caller (one such save reverted a correct caller row); a parameter added in that save shows an EMPTY caption
 on callers; and `describe` of the callee can read fresh while the resync right after it is stale, because the two
