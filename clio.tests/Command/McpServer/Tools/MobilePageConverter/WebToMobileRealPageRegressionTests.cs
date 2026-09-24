@@ -34,6 +34,12 @@ using NUnit.Framework;
 [Property("Module", "McpServer")]
 public sealed class WebToMobileRealPageRegressionTests {
 
+	/// <summary>No mobile request registry: support comes from the versioned rules alone, which is
+	/// what these component-level fixtures are about. Passed explicitly because the parameter is
+	/// required — an omitted registry must be a visible decision, not a silent empty default.</summary>
+	private static readonly IReadOnlySet<string> NoRequestRegistry =
+		new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
 	private const string FixtureName = "LeadsFormPage.live-snapshot.json";
 
 	/// <summary>
@@ -582,7 +588,8 @@ public sealed class WebToMobileRealPageRegressionTests {
 			mobileTemplateTypesByName: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
 				["Tabs"] = "crt.Tabs",
 				["GeneralTabContainer"] = "crt.GridContainer"
-			});
+			},
+			mobileRequestTypes: NoRequestRegistry);
 
 	[Test]
 	[Description("The central promise — \"paste viewConfigDiff verbatim\" — put through the Creatio differ clones on the real page, hermetically. The only other oracle that applies converter output lives in the sandbox E2E fixture, which Assert.Ignores without a stand, so the promise had no gate that runs on every build: a regression making the emitted diff unappliable would reach a user before anything went red.")]
@@ -668,7 +675,8 @@ public sealed class WebToMobileRealPageRegressionTests {
 			sourcePage: "Leads_FormPage", sourceTemplate: "PageWithTabsFreedomTemplate",
 			suggestedTarget: "UsrLeads_MobileFormPage",
 			containerNameMap: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
-			actionTargetsProbe: actionTargets);
+			actionTargetsProbe: actionTargets,
+			mobileRequestTypes: NoRequestRegistry);
 	}
 
 	/// <summary>
