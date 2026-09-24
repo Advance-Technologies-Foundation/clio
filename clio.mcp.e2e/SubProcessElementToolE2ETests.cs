@@ -42,6 +42,7 @@ public sealed class SubProcessElementToolE2ETests {
 
 	private const string ToolName = CreateBusinessProcessTool.CreateBusinessProcessToolName;
 	private const string ModifyToolName = ModifyBusinessProcessTool.ModifyBusinessProcessToolName;
+	private const string AsNewVersionToolName = ModifyProcessAsNewVersionTool.ModifyProcessAsNewVersionToolName;
 	private const string DescribeToolName = DescribeProcessTool.ToolName;
 
 	// The caller's resource key for the element parameter's caption: captions are not metadata, they live in
@@ -316,8 +317,47 @@ public sealed class SubProcessElementToolE2ETests {
 		JsonSerializer.Serialize(callResult).Should().NotContain("created (UId:",
 			because: "the build has to be refused rather than saved - a self-referencing element is the platform's "
 				+ "one silent no-op, and the process would look healthy afterwards");
+		// The MESSAGE is the assertion that discriminates, not the absence of the success line. The process being
+		// created is a draft the schema manager cannot see, so a server that looks the name up and nothing else
+		// refuses this too - with "was not found on this environment", which sends the caller off to create the
+		// process first. That is what every CrtProcessBuilder before the host-draft check answered here.
 		JsonSerializer.Serialize(callResult).Should().Contain("cannot call itself",
 			because: "the refusal has to name what is wrong, or the caller cannot tell it from any other failure");
+	}
+
+	[Test]
+	[Description("Over the real MCP path, a NEW VERSION cannot call its own process either. modify-business-process-as-new-version edits a clone that is registered nowhere until it is saved, and the self-reference guard used to look the host's version family up through the schema manager - which missed and answered the clone's own UId, so selecting the root passed and a version was saved that calls itself the moment it is activated.")]
+	[AllureTag(AsNewVersionToolName)]
+	[AllureName("modify-business-process-as-new-version refuses a sub-process element that calls its own process")]
+	public async Task ModifyProcessAsNewVersion_Should_RefuseASubProcessCallingItsOwnProcess() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync();
+		string processName = $"UsrClioBpSubSelfVersion{Guid.NewGuid():N}";
+		await ArrangeProcessAsync(context, BuildCalleeDescriptor(processName), "source process");
+
+		// Act - rewired so the element is on the path, which leaves the self-reference as the only thing wrong
+		CallToolResult callResult = await CallToolAsync(context, AsNewVersionToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["package-name"] = "Custom",
+			["operations"] = $$"""
+				[ { "op": "removeFlow", "source": "StartEvent1", "target": "EndEvent1" },
+				  { "op": "addElement", "element": { "name": "SubProcess1", "type": "subProcess",
+				      "caption": "Call this process", "subProcess": { "processName": "{{processName}}" } } },
+				  { "op": "addFlow", "source": "StartEvent1", "target": "SubProcess1" },
+				  { "op": "addFlow", "source": "SubProcess1", "target": "EndEvent1" } ]
+				"""
+		});
+
+		// Assert
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		callResultJson.Should().NotContain("\\u0022exit-code\\u0022:0",
+			because: "the version must not be saved: the runtime resolves a called process through its family's "
+				+ "ACTIVE version, so once this version is activated the element calls itself without end - and the "
+				+ "platform's own guard compares exact schema UIds, so it lets a family member through and "
+				+ "synchronizes it as if it were any other process");
+		callResultJson.Should().Contain("cannot call itself",
+			because: "the refusal names the self-reference; a version saved successfully here is the defect");
 	}
 
 	[Test]
