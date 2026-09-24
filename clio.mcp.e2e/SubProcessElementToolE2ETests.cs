@@ -326,14 +326,15 @@ public sealed class SubProcessElementToolE2ETests {
 	}
 
 	[Test]
-	[Description("Over the real MCP path, a NEW VERSION cannot call its own process either. modify-business-process-as-new-version edits a clone that is registered nowhere until it is saved, and the self-reference guard used to look the host's version family up through the schema manager - which missed and answered the clone's own UId, so selecting the root passed and a version was saved that calls itself the moment it is activated.")]
+	[Description("Over the real MCP path, a NEW VERSION cannot call its own family either. modify-business-process-as-new-version edits a clone that is registered nowhere until it is saved, and the self-reference guard used to look the host's version family up through the schema manager - which missed and answered the clone's own UId, so selecting the root passed and a version was saved that calls itself the moment it is activated. The root is selected by its processUId: the clone still carries the source's NAME until it is renamed after the edit, so naming the source would be refused by the host-name check alone and never reach the family comparison.")]
 	[AllureTag(AsNewVersionToolName)]
 	[AllureName("modify-business-process-as-new-version refuses a sub-process element that calls its own process")]
 	public async Task ModifyProcessAsNewVersion_Should_RefuseASubProcessCallingItsOwnProcess() {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync();
 		string processName = $"UsrClioBpSubSelfVersion{Guid.NewGuid():N}";
-		await ArrangeProcessAsync(context, BuildCalleeDescriptor(processName), "source process");
+		CallToolResult created = await ArrangeProcessAsync(context, BuildCalleeDescriptor(processName), "source process");
+		string rootUId = CreatedUIdOf(created);
 
 		// Act - rewired so the element is on the path, which leaves the self-reference as the only thing wrong
 		CallToolResult callResult = await CallToolAsync(context, AsNewVersionToolName, new Dictionary<string, object?> {
@@ -343,21 +344,24 @@ public sealed class SubProcessElementToolE2ETests {
 			["operations"] = $$"""
 				[ { "op": "removeFlow", "source": "StartEvent1", "target": "EndEvent1" },
 				  { "op": "addElement", "element": { "name": "SubProcess1", "type": "subProcess",
-				      "caption": "Call this process", "subProcess": { "processName": "{{processName}}" } } },
+				      "caption": "Call this process", "subProcess": { "processUId": "{{rootUId}}" } } },
 				  { "op": "addFlow", "source": "StartEvent1", "target": "SubProcess1" },
 				  { "op": "addFlow", "source": "SubProcess1", "target": "EndEvent1" } ]
 				"""
 		});
 
 		// Assert
-		string callResultJson = JsonSerializer.Serialize(callResult);
-		callResultJson.Should().NotContain("\\u0022exit-code\\u0022:0",
+		McpCommandExecutionParser.Extract(callResult).ExitCode.Should().NotBe(0,
 			because: "the version must not be saved: the runtime resolves a called process through its family's "
 				+ "ACTIVE version, so once this version is activated the element calls itself without end - and the "
 				+ "platform's own guard compares exact schema UIds, so it lets a family member through and "
 				+ "synchronizes it as if it were any other process");
+		string callResultJson = JsonSerializer.Serialize(callResult);
 		callResultJson.Should().Contain("cannot call itself",
 			because: "the refusal names the self-reference; a version saved successfully here is the defect");
+		callResultJson.Should().Contain("another version through",
+			because: "only the family comparison can refuse a selection by the root's UId, and its refusal names "
+				+ "the family's consequence rather than the exact self-reference's silent no-op");
 	}
 
 	[Test]
@@ -510,6 +514,13 @@ public sealed class SubProcessElementToolE2ETests {
 	/// described result instead. An arrange guard that checked only the flag would have passed the exact failure
 	/// it exists to catch.</para>
 	/// </summary>
+	/// <summary>The UId a successful create-business-process answer reports ("created (UId: ...").</summary>
+	private static string CreatedUIdOf(CallToolResult result) {
+		Match match = Regex.Match(JsonSerializer.Serialize(result), @"created \(UId: ([0-9a-fA-F-]{36})");
+		match.Success.Should().BeTrue(because: "the arrange step's create answer names the new process's UId");
+		return match.Groups[1].Value;
+	}
+
 	private static async Task<CallToolResult> ArrangeProcessAsync(ArrangeContext context, string descriptor,
 			string what) {
 		CallToolResult result = await CreateAsync(context, descriptor);
