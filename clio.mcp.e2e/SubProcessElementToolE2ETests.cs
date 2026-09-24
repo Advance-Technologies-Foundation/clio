@@ -301,36 +301,6 @@ public sealed class SubProcessElementToolE2ETests {
 	}
 
 	[Test]
-	[Description("ENG-100077: a resync that changes a caption SAYS so, naming the parameter and both captions; a second resync with nothing left to change says nothing about captions. The report is measured against the caller's STORED caption, because the load has already converged the in-memory element.")]
-	[AllureTag(ModifyToolName)]
-	[AllureName("modify-business-process resync reports a caption change")]
-	public async Task ModifyBusinessProcess_Should_ReportACaptionChange_InTheResyncAnswer() {
-		// Arrange
-		await using ArrangeContext context = await ArrangeAsync(needsSql: true);
-		string calleeName = $"UsrClioBpCapReportCallee{Guid.NewGuid():N}";
-		string callerName = $"UsrClioBpCapReportCaller{Guid.NewGuid():N}";
-		await ArrangeProcessAsync(context, BuildCaptionedCalleeDescriptor(calleeName), "called process");
-		await ArrangeProcessAsync(context, BuildCallerDescriptor(callerName, calleeName), "calling process");
-		await ArrangeModifyAsync(context, calleeName, SetOrderIdCaption("Order id v2"), "caption-only callee change");
-		await ArrangeCalleeStoresAsync(context, calleeName, "Order id v2");
-
-		// Act
-		CallToolResult first = await ModifyAsync(context, callerName, Resync);
-		CallToolResult second = await ModifyAsync(context, callerName, Resync);
-
-		// Assert
-		McpCommandExecutionParser.Extract(first).ExitCode.Should().Be(0,
-			because: "a missing notice must not be the disguise of a failed resync");
-		McpCommandExecutionParser.Extract(second).ExitCode.Should().Be(0,
-			because: "running the resync again must succeed too");
-		WarningsOf(first).Should().Contain(warning => warning.Contains("'OrderId' from \"Order id v1\" to \"Order id v2\""),
-			because: "the resync replaced a stored caption, and the caller has to be told which one and to what");
-		WarningsOf(second).Should().NotContain(warning => warning.Contains("replaced with the called process's")
-				|| warning.Contains("had no caption stored under"),
-			because: "the first resync stored the current caption, so the second has no caption to report at all");
-	}
-
-	[Test]
 	[Description("Over the real MCP path, a process cannot call ITSELF: the platform accepts that write and then synchronizes nothing, so without the refusal the process saves green with an element that carries no parameters and no complaint.")]
 	[AllureTag(ToolName)]
 	[AllureName("create-business-process refuses a sub-process element that calls its own process")]
@@ -546,12 +516,6 @@ public sealed class SubProcessElementToolE2ETests {
 			because: "the parameter the callee gained reaches every caller's element");
 		return element.Parameters.Single(parameter => parameter.Name == "Urgent").Caption;
 	}
-
-	private static IReadOnlyList<string> WarningsOf(CallToolResult result) =>
-		(McpCommandExecutionParser.Extract(result).Output ?? [])
-			.Where(message => message.MessageType == LogDecoratorType.Warning && message.Value != null)
-			.Select(message => message.Value!)
-			.ToList();
 
 	/// <summary>
 	/// The caller's STORED rows for one resource key, every culture, read through <c>execute-sql-script</c>.

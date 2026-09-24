@@ -5,6 +5,12 @@ shows a blank caption on the first caller read" (Sub-task of **ENG-92707** "Sub-
 parameter sync"). Mechanism and evidence are in `eng-100077-subprocess-caption-sync-research.md`; section numbers
 below (§) refer to it.
 
+> **2026-09-24, owner's decision: Fix B is REMOVED; only R ships (CrtProcessBuilder 1.6.6.20).** A parameter
+> caption is display text only - binding, mapping and execution go by name and UId, and the classic designer
+> overwrites it on every synchronization without a word - so a report of caption changes is not worth a
+> stored-side reader. Criterion 4 and every B item below (§1 point 2, §3.2, U3-U5, E2E-4) are withdrawn; they stay
+> in this document as the record of what was built and why it was taken out (measurement log, M3).
+
 > **As implemented.** This plan was written before the code, and the delivery departs from it where review or
 > measurement showed a better shape. Each departure is marked **As implemented** where it occurs. In short: the
 > release runs in a `finally` (§3.1); the saved instance's `ResourceManager` is NOT re-pointed (§3.1); the
@@ -87,13 +93,14 @@ The release notes should still name the manual cure: open and save the callee in
   the by-name release and the designer's compensation. This is exactly the kind of fact whose failure is silent.
   **As implemented:** `docs/knowledge/platform/a-process-resource-cache-survives-its-own-save.md`.
 
-### 3.2 B — caption changes in the resync report (package)
+### 3.2 B — caption changes in the resync report (package) — REMOVED 2026-09-24
 
 * **Stored captions.** Add `IStoredCaptionReader`. It returns, for the caller schema's `SysSchema.Id` and the
   current culture, every `BaseElements.<element>.Parameters.<param>.Caption` row.
   * One `Select` through the request `UserConnection`, not the NOLOCK resource reader.
   * Read it before `SaveSchema`, inside `SubProcessApplier.SynchronizeAgainstCurrentCallee` next to `Snapshot`.
-  * **Superseded in 1.6.6.19** by a read through the resource manager - see the last "As implemented" entry.
+  * **Superseded in 1.6.6.19** by a read through the resource manager - see the last "As implemented" entry,
+    itself retracted: Fix B was removed (header).
 * **Diff.** After the platform sync, and before `EnsureSynchronizationLanded`, compare each element parameter's
   caption (current culture) with the stored row. A missing row counts as "no caption". Emit
   `CaptionsChanged{Name, From, To}` for every difference, including a parameter added by this sync that now has a
@@ -126,6 +133,9 @@ The release notes should still name the manual cure: open and save the callee in
     whose caption is not bound under `BaseElements.<element>.` - created in this request, or a plain value - reads
     as unknown. Captions in the notices are rendered with the platform's `Json.Serialize`. The package is
     restamped 1.6.6.19.
+  * **Retracted the same day.** M1 and M2 ran on a path where the self-reference check had just loaded the caller's
+    runtime instance, which reloads the shared manager from the database; without that call the same manager
+    answers the unsaved, already-synchronized caption (measurement log, M3). Fix B was then removed (header).
   * **Separate "filled in" from "changed"** (`From` null or empty vs non-empty) in the notice. In the shipped
     corpus 303 of the 311 caller-vs-callee caption differences are an EMPTY caller caption (§10); without the split
     the report would mostly announce old blanks being filled.
@@ -186,7 +196,7 @@ The release notes should still name the manual cure: open and save the callee in
 | After a callee caption-only change, one `resync` leaves the caller's `SysLocalizableValue` row equal to the callee's caption | E2E-1 (DB row via SQL), plus the stand replay of pair 2 / E2 |
 | A new callee parameter shows the callee's caption on every caller, regardless of read order | E2E-3 (D5 order: add → describe callee → describe callers A and B), E2E-3b (pair-4 order: caller B first), plus the stand replay of D5 / Q5d |
 | A package save of a caller that is not a resync does not persist a stale caption (Finding C, added 2026-09-23) | E2E-2 (the R1 shape), plus the stand replay of R1 |
-| A resync that changes a caption says so in its report | E2E-4 (warnings contain the caption sentence; none when nothing changed), plus unit U3–U5 |
+| A resync that changes a caption says so in its report | **Withdrawn 2026-09-24** - Fix B removed (header). Was: E2E-4 plus unit U3–U5 |
 | Regression tests for both, each verified to fail with its fix reverted | §5: every E2E is run against today's package (must fail) and the new one (must pass); every unit test is shown red with its production line reverted |
 
 ## 5. Tests

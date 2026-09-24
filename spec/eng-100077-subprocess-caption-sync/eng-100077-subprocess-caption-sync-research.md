@@ -185,33 +185,11 @@ The full log, with timestamps and every prediction as written before its step, i
 * Feature `KeepProcessSchemaInstanceInProcessSchemaSubProcess` is not registered on the stand, so the default
   applies (it caches the callee on the element, `ProcessSchemaSubProcess.cs:100-103`). Its effect with the feature
   on was not measured.
-* **No longer applies (peer review of the delivered PRs, finding 6).** The finding was that the stored side, read
-  by the caller's `SysSchema.Id` alone, would miss the resources of a schema saved with `ExtendParent`. From
-  1.6.6.19 the stored side is read through the resource manager the element's caption is bound to (the owner's
-  decision, measurement log M1/M2), which resolves resources through the platform's own hierarchy reader - so the
-  package-hierarchy question is the platform's. Processes are versioned, not replaced, in any case: the stand
-  holds no `ExtendParent` process and no process UId in two packages.
-* **Known limitation, not fixed (second review round, Low).** Whether an element is stored is decided by NAME,
-  because the resource keys are: any resource under `BaseElements.<element>.`, in any culture. A batch that
-  removes an element and adds another under the SAME name, then re-synchronizes it, therefore compares the new
-  element with the removed one's stored captions and can announce them as replaced. Telling the two apart needs
-  the element UIds the request started with, which the reader does not have; the case needs three operations in
-  one batch and changes nothing that is saved.
-* **Known limitation, not fixed (manager-switch review, Medium).** The manager is shared by the whole app pool,
-  and ANY design session reloads it from that session's snapshot (`SchemaManager.FindDesignItem` →
-  `UpdateResourceManager`, `SchemaManager.cs:4627-4635, 2712-2720`). A snapshot another session took earlier -
-  another user with the caller open in the designer, say - can therefore be what the reader answers as "stored",
-  and a notice's "from" text is that session's rather than the saved one. Nothing saved is affected: the "to"
-  side and the synchronization itself come from the callee. The platform's own runtime and designer read the same
-  manager, so they show the same text in that window; reading the database instead was the rejected alternative.
-* **Known limitation, not fixed (manager-switch review, Low).** A version's manager resolves resources through
-  its family (`SysSchema.ParentId`, `SchemaHierarchyReader.cs:122-151`). Processes save full resources, so the
-  root's resources show through only for a key the version lacks: a parameter whose caption is EMPTY in the version
-  (an empty caption deletes its resource) can read as the root's older caption, and a "filled in" notice as
-  "replaced". An element renamed by case only keeps the root's key casing and reads as unknown.
-* **Accepted (manager-switch review, Low).** The reader enumerates a resource set outside the manager's lock, so a
-  concurrent `ReleaseAllResources` can close it mid-read. That surfaces as `ObjectDisposedException`, which the
-  applier reports as a caption read failure notice, never as a refused edit.
+* **The caption report (Fix B) was removed on 2026-09-24** (plan header, measurement log M3), and with it every
+  limit the reviews recorded for it: the stored read's package hierarchy (finding 6), the name-based "is the element
+  stored", the shared manager's other-session snapshots, the version family root showing through, and the
+  enumeration outside the manager's lock. What remains true of the platform is in
+  `docs/knowledge/platform/a-design-session-serves-unsaved-resources-from-the-shared-manager.md`.
 * **A second toolset save of a callee that is already stale** was measured only in the ticket's shape, a save that
   changed the captions AGAIN: it left the callers one save behind again. Whether a save that changes no caption
   catches them up was not measured. By the model it would (the new design session's snapshot is taken after the

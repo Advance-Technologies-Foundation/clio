@@ -79,7 +79,8 @@ R1 prediction (model): D1 callee's MetaItems still holds the stale build #1 (A1,
 - GREEN on 1.6.6.18 (after the Copilot re-review: caller-created parameters are no longer compared): the same 18 of 19,
   the same pre-existing ENG-100192 failure.
 - GREEN on 1.6.6.19 (stored side read through the resource manager, below): the same 18 of 19 - the 5 caption cases
-  and multi-instance 8/8 pass - and the same pre-existing ENG-100192 failure ("was not found").
+  and multi-instance 8/8 pass - and the same pre-existing ENG-100192 failure ("was not found"). The caption-report
+  case passed only because of an unrelated reload of the manager (M3).
 
 ## Unit mutation run (peer-review round, package candidate 1.6.6.17)
 Each row reverts or breaks ONE line of the fix in the package source, runs the caption fixtures
@@ -130,7 +131,7 @@ for, a retarget.
 | V1 | the version handler never maps the clone | TC-C26 |
 | V2 | the version handler maps the clone AFTER the edit | TC-C26 |
 
-## Where the stored side is read: resource manager, not `SysLocalizableValue` (2026-09-24)
+## Where the stored side is read: resource manager, not `SysLocalizableValue` (2026-09-24) - RETRACTED, see M3
 1.6.6.16-1.6.6.18 read the caller's stored captions with a `Select` on `SysLocalizableValue`. The argument for it
 was a source trace: the design-load re-synchronization writes the callee's captions into the element's in-memory
 values, the design session's resource snapshot is serialized from those values, and the shared manager is refilled
@@ -157,7 +158,7 @@ the experiment instead of the argument.
   keeps the default `ProcessSchemaSubProcess.Caption` binding (`ProcessSchemaSubProcess.cs:40`), which the reader
   answers as unknown (TC-C40).
 
-## Unit mutation run (manager-based reader, package candidate 1.6.6.19)
+## Unit mutation run (manager-based reader, package candidate 1.6.6.19) - OBSOLETE, the reader was removed
 Same method as the run above, over `SubProcessCaptionChangeTests`, `StoredCaptionReaderTests`,
 `ProcessSchemaRepositoryTests`, `ProcessVersionSaveHandlerTests`, `SubProcessContractTests`,
 `CrtProcessBuilderAppTests`, `ProcessEditPipelineTests` and `ProcessVersionCloneFactoryTests` (166 tests).
@@ -178,3 +179,30 @@ per-request cache, the copy-to-original mapping, the kept failure, the version h
 | M4 | only the current culture is asked | TC-C34, C39 |
 | M5 | read through the manager named after the schema instead of the element's binding | TC-C29, C31, C34, C39 |
 | P1 | the pipeline rebinds the captions BEFORE the operations | TC-C38 |
+
+## M3: the manager answered the stored caption only after an unrelated reload (2026-09-24)
+The ENG-100192 build (self-reference check reads the HOST's family off the schema instead of
+`FindItemByUId(host).Instance`) silenced the caption report: `..._ReportACaptionChange_InTheResyncAnswer` red 3 of 3,
+and a manual E1 resync reported nothing. 1.6.6.19 on the same stand reported "E1 date A6" -> "E1 date A7"; the
+ENG-100192 build with ONLY that call restored reported "E1 date A7" -> "E1 date A8".
+
+Diagnostic build (never committed), one resync request on UsrCapE1Caller, callee set to "E1 date A9", caller stored
+"E1 date A8":
+
+| Moment in the request | Manager object | `GetString(<parameter key>)` | Reader |
+|---|---|---|---|
+| before `FindItemByUId(caller).Instance` | `8786ce89...#63407150` | "E1 date A9" (unsaved, synchronized) | A9 - nothing to report |
+| after it | the same `#63407150` | "E1 date A8" (`SysLocalizableValue`) | A8 - report "A8 -> A9" |
+
+The caption stayed bound to `8786ce89...|BaseElements.ScheduleDelivery.Caption` throughout. An independent
+source trace, made before this run and forbidden to read this spec, predicted all three columns: the session
+snapshot is serialized from the in-memory values after the design-load sync (`ResourcePackage`), `FindDesignItem` ->
+`UpdateResourceManager` loads it into the shared manager, and building the runtime instance ends in
+`InitializeSchemaResourceManager` -> `ReleaseAllResources()` (`SchemaManager.cs:1057`), so the next read reloads
+from the database. M1 and M2 measured that reload, not the manager. Recorded in
+`docs/knowledge/platform/a-design-session-serves-unsaved-resources-from-the-shared-manager.md`.
+
+Owner's decision the same day: remove the caption report (Fix B); only R ships, as 1.6.6.20. Mutations R1-R5
+re-run on the R-only candidate: all 5 killed by `ProcessSchemaRepositoryTests`.
+- GREEN on 1.6.6.20 (R only, crt-process-builder 101adce + restamp 0db6975): the 4 caption cases and
+  multi-instance 8/8 pass; the only failure is the pre-existing ENG-100192 case ("was not found").
