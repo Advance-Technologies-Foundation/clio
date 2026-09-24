@@ -3,7 +3,7 @@ description: A value on a sub-process element parameter survives the next sync o
 applies-to:
   - clio/CrtProcessBuilder/CrtProcessBuilder.gz
   - spec/eng-92707-sub-process-element/
-ticket: ENG-92707
+ticket: ENG-92707, ENG-99856
 date: 2026-09-16
 ---
 
@@ -35,6 +35,18 @@ healthy element — and because the platform re-syncs on every design-time read,
 synchronization" is the next time anything opens the schema. The same applies to writing a value onto
 an `Out` or `Internal` parameter: the call succeeds and the value is gone by the next read, which is
 why a mapping onto a non-assignable direction must be refused at write time.
+
+**ENG-99856 made this rule load-bearing for writes, not only for reads.** A multi-instance conversion
+moves the element's existing parameters into the input collection before handing the element to the
+platform, and a de-conversion moves them back; a retarget and a re-synchronization do both around the
+caller's work. Every one of those hops must carry each parameter's `CreatedInSchemaUId` and its
+`SourceValue.ModifiedInSchemaUId` ACROSS UNCHANGED. Re-stamping either one - which is the natural thing
+to do when you are building a parameter rather than moving one - makes the provenance test false and the
+next synchronization erases the value, silently, exactly as this record describes. That is why the
+applier re-converts around the SAME five parameter objects instead of minting new ones: their UIds and
+their stamps both survive the round trip. The corpus figure above already anticipated this shape - the
+293 differing parameters sit on multi-instance elements whose collections and counters are legitimately
+caller-created.
 
 Source: `Terrasoft.Core/Process/ProcessSchemaSubProcess.cs`,
 `Terrasoft.Core/Process/ProcessSchemaParameterDirectionUtils.cs`,

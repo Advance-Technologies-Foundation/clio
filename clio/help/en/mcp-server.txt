@@ -62,7 +62,19 @@ DESCRIPTION
     more than 3 days old logs a warning naming that marker's library version and the update
     call that checks for a newer release, so a stale bundle stops being silent; startup
     still proceeds. A clean successful check renews freshness even when the published
-    generation has not changed; a rejected candidate does not. get-guidance
+    generation has not changed; a rejected candidate does not.
+
+    Startup stays offline, but the cache does not stay frozen: a GUIDANCE READ refreshes
+    it. When the cached generation is due for verification, a get-guidance lookup answers
+    from the active generation and starts the publisher check beside the answer, so no
+    request ever waits on the network - the same stale-while-revalidate shape
+    get-component-info uses for the component registry. Whether a refresh may run is the
+    operator's autoupdate.knowledge policy (enabled by default, every 60 minutes):
+    enabled=false stops it, frequency-minutes sets the cadence, and next-run is shared
+    with the CLI path. In the ordinary case it costs one conditional metadata request -
+    the release transport compares the published tag against the active revision and
+    stops, with no download - and a newer generation activates on the next lookup without
+    a restart. get-guidance
     also reports the served libraryVersion on every article, so an agent session can
     read it without calling info-knowledge. An entry left by an earlier version under a different alias or
     the former Git transport is migrated in place, preserving an operator's

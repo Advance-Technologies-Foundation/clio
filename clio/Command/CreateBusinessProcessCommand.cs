@@ -202,7 +202,27 @@ namespace Clio.Command;
 // anything below the archive clio ships, so a raised floor would add no refusal that is not already
 // there. The conclusion survives its own argument: the floor is for what clio DEPENDS on, a warning is
 // for what it merely offers.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.0.3",
+// From ENG-95986, 1.6.2.1: the Send email TEMPLATE message mode - `email.messageSource`, `email.template`
+// and `email.templateEntity`. The descriptions above now advertise it, and an older server has no such
+// members: its serializer DISCARDS them and answers success, leaving an element in the WRONG mode - no
+// mode at all (which the platform runs as template mode with no template and fails with "Localizable
+// template not found"), or a custom message with no body when a subject travelled with the template.
+// EmailBlockExpectation's template-landed read-back still warns behind this floor, but a floor is the gate
+// and the read-back is the evidence; the rule stays "moves when clio starts ADVERTISING behaviour the
+// deployed server may not have", which is exactly this raise. 1.6.2.1 is the archive cut from the
+// producing commit that carries the mode (crt-process-builder fe18ff3); every in-flight branch numbered
+// below it at the time of the cut.
+// Raised to 1.6.6.14 by ENG-99856: `subProcess.multiInstanceOptions`, the dotted per-item path on
+// `elementParameter` / `sourceElementParameter`, and the refusals that go with them. The rule is the one
+// that produced the 1.6.2.1 raise - it moves when clio starts ADVERTISING behaviour the deployed server
+// may not have - and the failure mode here is the worse of the two shapes this contract knows: a new
+// BLOCK riding on a KNOWN type is not refused by an older server, it is DISCARDED by its serializer while
+// the call answers success. So a caller on an older package asks for a multi-instance element, is told
+// "success", and has an ordinary single-call element with nothing anywhere saying a block was dropped.
+// The dotted path fails differently and just as quietly: an older server resolves `elementParameter` flat
+// only, finds no parameter of that name and refuses - loudly, but naming a parameter rather than the
+// package. 1.6.6.14 is the archive cut from crt-process-builder 13bd2a2.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.14",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class CreateBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Inline JSON process descriptor (name, caption, packageName, elements[], flows[], parameters[], mappings[]).</summary>

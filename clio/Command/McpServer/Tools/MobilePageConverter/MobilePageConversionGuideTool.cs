@@ -81,6 +81,15 @@ public class MobilePageConversionGuideTool {
 		+ "validate-page / update-page, and the ordered flow plus every standing rule live in the guidance "
 		+ "article. It FAILS rather than degrading when the mobile template cannot be read, because without it "
 		+ "the guide would insert duplicates of elements that template already provides. "
+		+ "requestConversions.missingTargetPages / unresolvedTargetRequests report candidate names ONLY — "
+		+ "they carry no classification of existence/schema-type. YOU must classify each distinct candidate "
+		+ "yourself (get-page for existence/schema-type; list-pages / find-entity-schema to check for an "
+		+ "existing mobile equivalent) before presenting a plan; a candidate matched under a mobile-styled "
+		+ "name that turns out to be Classic UI counts as NO existing mobile equivalent. "
+		+ "A missingTargetPages row's targetKind entity-default-mobile-page covers TWO shapes of its target "
+		+ "value: a real resolved page schema name, or (when no candidate was found) the raw object/entity "
+		+ "name — never call get-page on the latter expecting a page. resolvedCandidateSchemaName (present "
+		+ "only on that shape when a candidate WAS resolved) tells them apart. "
 		+ "MANDATORY before acting on the guide: get-guidance name `freedom-page-web-to-mobile-conversion`.")]
 	public async Task<MobilePageConversionGuideResponse> GetMobilePageConversionGuide(
 		[Description("Parameters: schema-name (required, the source page); target-schema-name (optional suggested mobile page name); version (optional registry/Creatio version); environment-name preferred; uri/login/password emergency fallback only.")]
@@ -154,6 +163,13 @@ public class MobilePageConversionGuideTool {
 		HashSet<string> webTypes = new(webEntries.Select(e => e.ComponentType), StringComparer.OrdinalIgnoreCase);
 		IReadOnlyDictionary<string, ComponentRegistryEntry> mobileByType = IndexByComponentType(mobileEntries);
 		IReadOnlyDictionary<string, ComponentRegistryEntry> webByType = IndexByComponentType(webEntries);
+		// ENG-96589 — what the converter may treat as an authoritative statement of what mobile supports.
+		// The question is about the PAYLOAD that was actually loaded, not about the stand: each version's
+		// registry describes the mobile runtime that version runs, so membership in the file the chain
+		// served IS the support test. baseInputs carries both jobs — it is the sole declaration site of
+		// visible/layoutConfig, and its content identifies the generation.
+		var mobileRegistryGeneration =
+			new WebToMobileAnalysisService.MobileRegistryGeneration(mobileState.GlobalReferences?.BaseInputs);
 
 		WebToMobilePageConversionRules rules = await _rulesCatalog.GetRulesAsync(version, cancellationToken).ConfigureAwait(false);
 		// Resolve the effective web template, climbing past same-named replacing layers when the page is a
@@ -220,13 +236,23 @@ public class MobilePageConversionGuideTool {
 		// Read-only probe: do the page's action bindings point at targets that EXIST on mobile — a page the
 		// converter has a mobile twin for, an object with a default mobile edit page? Best-effort and
 		// per-tier: an unreachable environment leaves every OBJECT target unknown, which reports nothing and
-		// changes no conversion decision. A web-page target needs no read at all, so it is still reported and
-		// still costs its binding (never its control) even offline (ENG-94839).
+		// changes no conversion decision. A web-page target needs no read at all, so it is still reported even
+		// offline (its binding kept, same as every other finding — the control was never at risk either way).
 		MobileActionTargetProbeResult actionTargets = MobileActionTargetProbe.Probe(
 			_commandResolver, args.EnvironmentName, args.Uri, args.Login, args.Password,
 			new MobileActionTargetProbeRequest(
 				pageResponse.Bundle?.ViewConfig, rules, pageResponse.Bundle?.ModelConfig,
-				pageResponse.Page?.PackageUId));
+				pageResponse.Page?.PackageUId),
+			cancellationToken);
+
+		// Read-only probe: does the entity/page being converted already have an EXISTING mobile page — the
+		// reuse-vs-convert fact (playbook step 2a)? Best-effort; never blocks the guide.
+		List<ExistingMobilePageInfo> existingMobilePages = ExistingMobilePageProbe.Probe(
+			_commandResolver, args.EnvironmentName, args.Uri, args.Login, args.Password,
+			new ExistingMobilePageProbeRequest(
+				sectionRegistration, isFormPage, pageResponse.Bundle?.ModelConfig, pageResponse.Page?.PackageUId,
+				targetName),
+			cancellationToken);
 
 		MobilePageConversionGuide guide;
 		try {
@@ -250,7 +276,9 @@ public class MobilePageConversionGuideTool {
 				mobileTemplateNodesByName: mobileTemplateProbe.NodesByName,
 				webTemplateBaselineNodes: webTemplateBaseline.Nodes,
 				webTemplateResources: webTemplateBaseline.Resources,
-				actionTargetsProbe: actionTargets);
+				actionTargetsProbe: actionTargets,
+				existingMobilePages: existingMobilePages,
+				mobileRegistryGeneration: mobileRegistryGeneration);
 		} catch (Exception ex) {
 			return Fail(args, sourceType, $"Failed to analyze source page '{args.SchemaName}': {ex.Message}");
 		}
@@ -864,7 +892,7 @@ public sealed record MobilePageConversionGuideArgs(
 	string TargetSchemaName = null,
 
 	[property: JsonPropertyName("version")]
-	[property: Description("Optional Creatio/registry version used to resolve the mobile and web component registries. Defaults to the latest published registry.")]
+	[property: Description("Optional Creatio/registry version used to resolve the mobile and web component registries. A 3-part semver, or 'latest'. Defaults to probing the target environment. An explicit value OVERRIDES that probe, so naming a version other than the target's own measures the conversion against a different mobile runtime.")]
 	string Version = null,
 
 	[property: JsonPropertyName("environment-name")]

@@ -379,6 +379,66 @@ public sealed class ToolContractGetToolTests {
 			because: "the removed raw filter must be explicitly rejected in the discoverable contract");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Keeps the curated odata-read-to-file input contract aligned with every bound ODataReadToFileArgs JSON member, including the inherited query arguments.")]
+	public void ToolContractGet_Should_Keep_ODataReadToFile_Input_Contract_In_Sync_With_Args() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+		string[] boundArgumentNames = typeof(ODataReadToFileArgs)
+			.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+			.Where(property => property.GetCustomAttribute<JsonExtensionDataAttribute>() is null)
+			.Select(property => property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? property.Name)
+			.ToArray();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([ODataReadToFileTool.ToolName]));
+		ToolContractDefinition contract = result.Tools!.Single();
+
+		// Assert
+		contract.InputSchema.Properties.Select(property => property.Name).Should().BeEquivalentTo(boundArgumentNames,
+			because: "the curated contract must advertise every argument the real stdio binder accepts and no stale arguments");
+		contract.InputSchema.Required.Should().Contain("output-file",
+			because: "the file destination is what separates this tool from odata-read");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Keeps output-file off the odata-read contract, so the read-only tool is never advertised as taking a file destination it rejects.")]
+	public void ToolContractGet_Should_Not_Advertise_Output_File_On_ODataRead() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([ODataReadTool.ToolName]));
+		ToolContractDefinition contract = result.Tools!.Single();
+
+		// Assert
+		contract.InputSchema.Properties.Should().NotContain(property => property.Name == "output-file",
+			because: "odata-read rejects output-file; advertising it would send callers into a guaranteed failure");
+		contract.Description.Should().Contain(ODataReadToFileTool.ToolName,
+			because: "a caller with a large response must be pointed at the tool that does take a file destination");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Publishes the enforced odata-create row ceiling in the curated contract, so a caller can batch before an all-or-nothing rejection.")]
+	public void ToolContractGet_Should_Publish_The_ODataCreate_Row_Ceiling() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([ODataCreateTool.ToolName]));
+		ToolContractDefinition contract = result.Tools!.Single();
+
+		// Assert
+		contract.Preconditions.Should().Contain(ODataCreateTool.RowCountLimitDescription,
+			because: "the contract and the runtime limit must be built from the same wording, not restated");
+		contract.InputSchema.Properties.Single(property => property.Name == "rows").Description.Should()
+			.Contain(ODataCreateTool.MaxRowCountText,
+				because: "the argument a caller fills in has to state the count limit it is checked against");
+	}
+
 	// PR #1356 review (d-krestov, Gate 3) - update-page has a CURATED contract, so
 	// TryResolveFullContract serves the hand-written ToolContractCatalog literal and never looks at
 	// PageUpdateArgs. A spot check for `checksum` therefore passes verbatim with PageUpdateArgs.Checksum
@@ -3294,6 +3354,23 @@ public sealed class ToolContractGetToolTests {
 			because: "producer-owned BaseRequest fields are not part of the authorable request surface");
 		baseParameters.Description.Should().NotContainAny(["$context", "scopes", "$initialEvent"],
 			because: "the contract prose must not restore a fixed list of known producer fields");
+		// Kamil review (PR #1626): entry-level deprecated/deprecationReason were added to both
+		// RequestInfoResponse and RequestInfoListItem without being declared here, so the curated
+		// envelope was incomplete on the detail side and factually wrong about list items — an agent
+		// filtering the catalog listing had no declared field to filter on. Pinned so the two wire
+		// fields cannot drift back out of the declaration.
+		ToolContractField items = contract.OutputContract.Fields.Single(field => field.Name == "items");
+		items.Description.Should().Contain("deprecated/deprecationReason",
+			because: "list items carry entry-level deprecation metadata, and browse-time filtering is the reason it is emitted in list mode at all");
+		contract.OutputContract.Fields.Select(field => field.Name).Should().Contain(
+			["deprecated", "deprecationReason"],
+			because: "detail mode emits entry-level deprecation on the wire, so the curated envelope must declare both fields rather than leaving an agent to discover them");
+		ToolContractField deprecated = contract.OutputContract.Fields.Single(field => field.Name == "deprecated");
+		deprecated.Description.Should().Contain("honor that guidance",
+			because: "declaring the deprecation flag is insufficient unless the contract tells agents to act on it, matching the baseParameters precedent");
+		contract.OutputContract.Fields.Single(field => field.Name == "deprecationReason")
+			.Description.Should().Contain("honor that guidance",
+				because: "the reason names the replacement request, which is the actionable half of the deprecation signal");
 		contract.AntiPatterns.Should().NotBeNullOrEmpty(
 			because: "the contract must carry anti-patterns steering agents away from inventing request names and values");
 		contract.AntiPatterns!.Should().Contain(pattern =>

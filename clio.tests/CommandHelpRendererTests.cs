@@ -1,5 +1,6 @@
 using System;
 using System.IO.Abstractions.TestingHelpers;
+using System.Linq;
 using Clio.Help;
 using Clio.Tests.Command;
 using Clio.Tests.Infrastructure;
@@ -279,6 +280,23 @@ EXAMPLE
 			because: "manual markdown generation should not synthesize positional argument sections");
 		output.Should().NotContain("## Options",
 			because: "manual markdown generation should not synthesize option sections");
+	}
+
+	[Test]
+	[Description("Renders the effective runtime default for options whose default is computed in the getter rather than declared via [Option(Default = ...)].")]
+	public void RenderMarkdownDoc_WhenOptionDefaultIsComputedAtRuntime_UsesEffectiveDefaultInsteadOfClrTypeDefault() {
+		CommandHelpCatalog catalog = new();
+		catalog.TryGetCommand("idp-upsert", out HelpCommandMetadata command).Should().BeTrue(
+			because: "the idp-upsert command should exist in the canonical help catalog");
+
+		string output = _exportRenderer.RenderMarkdownDoc(command);
+		string[] lines = output.Split('\n');
+		int timeoutIndex = Array.FindIndex(lines, line => line.Contains("--timeout"));
+
+		timeoutIndex.Should().BeGreaterThanOrEqualTo(0, because: "idp-upsert inherits --timeout from RemoteCommandOptions");
+		string timeoutBlock = string.Join(" ", lines.Skip(timeoutIndex).Take(3));
+		timeoutBlock.Should().Contain("Default: 100000.",
+			because: "RemoteCommandOptions.TimeOut computes its real default (100_000ms) lazily in the getter, so the renderer must read it from a constructed options instance instead of the CLR default (0) for int");
 	}
 
 	private CommandHelpRenderer CreateRenderer(Func<bool> supportsAnsi) =>

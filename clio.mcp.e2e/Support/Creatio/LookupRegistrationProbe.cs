@@ -10,7 +10,7 @@ internal static class LookupRegistrationProbe {
 	internal static LookupRegistrationSnapshot Read(string environmentName, string packageName, string lookupSchemaName) {
 		EnvironmentSettings environmentSettings = RegisteredClioEnvironmentSettingsResolver.Resolve(environmentName);
 		using IOwnedApplicationClient applicationClient =
-			new ApplicationClientFactory(new NoReauthExecutor()).CreateOwnedEnvironmentClient(environmentSettings);
+			new ApplicationClientFactory(new NoReauthExecutor(), Clio.Common.ExternalAccess.ExternalAccessSessionProvider.CreateDefault()).CreateOwnedEnvironmentClient(environmentSettings);
 		ServiceUrlBuilder serviceUrlBuilder = new(environmentSettings);
 		string? entitySchemaUId = ResolveEntitySchemaUId(applicationClient, serviceUrlBuilder, lookupSchemaName);
 		LookupRegistrationSelectResponse lookupRows =

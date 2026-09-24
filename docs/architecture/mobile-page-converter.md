@@ -57,7 +57,7 @@ data and is unit-tested without an environment. Every environment-dependent inpu
 
 ## 3. Contract
 
-Thirty fields, three caller actions. A "report" field is never planned from; a "paste" field is never rebuilt.
+Thirty-two fields, three caller actions. A "report" field is never planned from; a "paste" field is never rebuilt.
 
 ### 3.1 Paste / pass
 
@@ -86,6 +86,8 @@ Thirty fields, three caller actions. A "report" field is never planned from; a "
 | `templateMatch` | `"matched"` (rule has a `web` template) or `"generic-fallback"` (default rule); null without a rule |
 | `adaptiveLayout` / `tabAreaLayers` | Readable indexes of layout the operations already carry |
 | `webOnlySections` | Handlers / validators / converters the source declares and mobile has no place for |
+| `prunedProperties` | Per element, the top-level properties removed because the target mobile type does not declare them (ENG-96589). Already applied in `viewConfigDiff` — never re-add one |
+| `propertyPruneApplied` | Whether that prune RAN at all. The field a caller branches on: false means the gate refused, so an undeclared property surviving is expected rather than a defect |
 
 ### 3.3 Read only to understand
 
@@ -142,6 +144,10 @@ Each one fails silently when broken.
 | `BuildAdaptiveLayout` before `PlacePositionalGroups` and `BuildTabAreaLayers` | Adaptive would overwrite positional grid placement; synthesized layers would shift a child's stacking index |
 | `InitializeContainerChildSlots` after `BuildTabAreaLayers` | Synthesized layers are insert parents; earlier seeding leaves them without a slot → differ: `Item X is not a container for other items` |
 | `ApplyComponentPropertyOverrides` before `NormalizePlacements` | A rule that declares a `layoutConfig` would write a partial one after normalization |
+| `PruneUndeclaredProperties` after `ProcessEventBindings` | That pass removes a binding key and re-adds it, so an earlier prune is silently undone |
+| `PruneUndeclaredProperties` before `BuildRequestConversionInfo` | A pruned binding stays in `convertedRequests`, naming an action the shipped `viewConfigDiff` does not contain |
+| `PruneUndeclaredProperties` before every converter-authored write (adaptive, positional, child slots, property overrides, placements) | The converter prunes its own output — e.g. a synthesized layer's slot is removed as "undeclared" |
+| `PruneUndeclaredProperties` before `ApplyComponentPropertyOverrides` — and note the coupling | Overrides SELECT rules by reading these values (an absent property never matches), so a pruned key can silently disable an override with no `normalizations` entry. Latent while every bundled override filters on `type`; `WebToMobilePageConversionRulesRegistryTests` is what keeps a rules update from making it live |
 | `StampParentSource` last | Parent provenance is complete only after the tab layers re-point a tab's children |
 
 ---
@@ -161,8 +167,21 @@ Four working operations; two reach the wire.
 - Wire projection is an **allow-list** (`IsInsert || IsMerge`), never a deny-list: a new working operation must fail to reach
   the applier rather than land in it.
 - `values` on `insert`: `type` + every source property except `name`, the value binding (`control`) included. On `merge`:
-  only the delta over the template, no `type`. Nothing is pruned against the mobile registry until it publishes real
-  per-component property lists.
+  only the delta over the template, no `type`. A TOP-LEVEL property the target mobile component does not declare is then
+  removed by `PruneUndeclaredProperties` and reported in `prunedProperties` (ENG-96589). Membership is
+  `inputs ∪ outputs ∪ references.baseInputs` — `outputs` because that is where the runtime-derived registry puts every
+  event binding, `baseInputs` because `visible` and `layoutConfig` are declared nowhere else. The prune runs when — and only
+  when — the loaded catalog carries the Flutter inherited surface (`layoutConfig` + `visible` in `references.baseInputs`,
+  which the web-derived generation never has). Nothing about the stand's platform VERSION is consulted: each version's
+  registry describes the runtime that version runs, so an old stand served its own regenerated file is pruned correctly
+  rather than merely spared, and a path still serving the old generation switches the prune off for itself. Against a
+  web-derived payload THE PRUNE is a no-op — but note that is scoped to the prune: the three property
+  names ENG-96589 corrected in the bundled conversion RULES reach every stand, because rules resolve through
+  their own catalog (the CDN rules file is unpublished, so the embedded copy is the source of truth) and
+  rule-declared elements are exempt from the prune regardless of the gate. Whether the prune ran is reported
+  as `propertyPruneApplied`, a plain bool; the catalog's `mobileRuntimeVersion` marker is neither part of the
+  gate nor echoed in the response — it is absent from every published catalog, so a field carrying it would
+  read as "the prune was off" on every conversion. See the knowledge record on the registry generations.
 - A merge with nothing to apply carries `{}` — never `null`, never absent. `JsonDiffApplier` requires `values` on `merge`
   and validates every operation before applying any.
 - `name` is not unique: two operations may target one element (`Tabs → Tabs` and `CardToggleTabPanel → Tabs`). Apply in
@@ -373,7 +392,9 @@ E2E: the `clio.mcp.e2e` converter fixtures against a seeded stand.
 
 | Gap | Status |
 |---|---|
-| Properties a mobile component cannot accept are copied verbatim | Blocked on `MobileComponentRegistry.json` publishing real per-component property lists |
+| A property nested inside an `object`-typed input (e.g. `crt.ChartWidget.config`) is never pruned | Deliberate: the prune is top-level only while such an input is opaque. Contextual validity and MISSING properties are a different class of defect |
+| A stand whose registry path still serves the web-derived catalog carries undeclared properties | Deliberate: membership in that generation is not a valid mobile-support test. Resolves itself per version as the regenerated files are published — the gate reads the payload, so no clio release is involved |
+| A stand whose version has no published registry (`8.3.5`, `9.0.0`) is measured against `latest` | Accepted: the chain falls back, and the response reports `resolvedFrom: environment-superset` with a `versionWarning`. Not silent, not refused |
 | `crt.MenuItem` has no inline contract | Rules emit it; the mobile registry does not describe it |
 | `adaptiveLayout`, `tabAreaLayers`, `modelConfig`, `viewModelConfig` re-serialize data the operations / diffs carry | Provenance the caller reads, not applies; removal is a contract decision |
 | A type whose every instance vanishes is reported per type, not per element | `componentSuggestions` only |

@@ -28,12 +28,19 @@ namespace Clio.Command.ProcessModel;
 /// Elements whose record FILTER this payload changed in a way that can widen them (today: <c>clearFilter</c>).
 /// These sent no block, so no block-shaped check may accuse them.
 /// </param>
+/// <param name="TemplatedEmail">
+/// Elements whose email block named a <c>template</c> (ENG-95986). A subset of <see cref="ConfiguredEmail"/> with
+/// its own check: a server that predates template mode keeps the block but DISCARDS the template member, so the
+/// block lands and the element is still in the wrong mode — the block-landed check alone cannot see it.
+/// </param>
 internal sealed record BlockExpectationIntent(
 	IReadOnlyList<string> ConfiguredRights,
 	IReadOnlyList<string> ConfiguredEmail,
-	IReadOnlyList<string> FilterTouched) {
+	IReadOnlyList<string> FilterTouched,
+	IReadOnlyList<string> TemplatedEmail) {
 
 	/// <summary>Nothing to verify, so the caller can skip the read-back entirely.</summary>
+	// TemplatedEmail is a subset of ConfiguredEmail (a template lives inside an email block), so it adds no term here.
 	internal bool IsEmpty =>
 		ConfiguredRights.Count == 0 && ConfiguredEmail.Count == 0 && FilterTouched.Count == 0;
 
@@ -60,11 +67,13 @@ internal sealed record BlockExpectationIntent(
 	internal static BlockExpectationIntent FromDescriptor(string descriptorJson) =>
 		new(AccessRightsBlockExpectation.FromDescriptor(descriptorJson),
 			EmailBlockExpectation.FromDescriptor(descriptorJson),
-			[]);
+			[],
+			EmailBlockExpectation.TemplateElements(descriptorJson));
 
 	/// <summary>The modify path can do both, and can do the second WITHOUT the first.</summary>
 	internal static BlockExpectationIntent FromOperations(string operationsJson) =>
 		new(AccessRightsBlockExpectation.FromOperations(operationsJson),
 			EmailBlockExpectation.FromOperations(operationsJson),
-			AccessRightsBlockExpectation.FilterTouched(operationsJson));
+			AccessRightsBlockExpectation.FilterTouched(operationsJson),
+			EmailBlockExpectation.TemplateElementsFromOperations(operationsJson));
 }

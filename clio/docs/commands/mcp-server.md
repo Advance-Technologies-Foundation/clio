@@ -85,6 +85,23 @@ successful publisher check older than **3 days** logs a warning naming that mark
 and the `update-knowledge --source creatio-curated` call that checks for a newer release. Startup still
 proceeds, so an operator with no network keeps working. A clean successful check renews freshness even
 when the published generation has not changed; a rejected publisher candidate does not.
+
+Startup stays offline, but the cache does not stay frozen: a **guidance read** is what refreshes it.
+When the cached generation is due for verification, a `get-guidance` lookup answers immediately from
+the active generation and starts the publisher check beside the answer — the same
+stale-while-revalidate shape the component registry behind `get-component-info` uses, so no request
+ever waits on the network and a host nobody asks for guidance contacts nobody. Whether a refresh may
+run at all is the operator's `autoupdate.knowledge` policy (enabled by default, every 60 minutes):
+`"knowledge": { "enabled": false }` stops it, `frequency-minutes` sets the cadence, and the persisted
+`next-run` is shared with the CLI path so concurrent clio processes cost one update between them. This
+closes the gap the MCP verbs had — they are excluded from the CLI startup update check, so an
+installation used only through MCP never refreshed at all (ENG-99899).
+
+The refresh is cheap in the ordinary case: the release transport compares the published tag against
+the active revision and stops there — one conditional metadata request, no download, no signature
+check, no generation switch. The bundle is fetched only when the publisher really moved, and the new
+generation activates on the next guidance lookup without a restart.
+
 Every `get-guidance` article additionally carries the served `libraryVersion`, so an agent session can
 record or compare the active generation without shelling out to `info-knowledge --json`. An entry left by an
 earlier Clio under a different alias, or under the former Git transport, is migrated in place and
@@ -202,7 +219,7 @@ get-guidance again with the selected name.
 - If you use an external MCP client wrapper, follow that wrapper's own parsing and transport guarantees
 - Boolean parameters must be JSON booleans (true/false), not strings
 - Entity tools work DB-first: schemas are created directly in PostgreSQL
-- Guidance lookups use the persistent disk cache and hot reload only when its activation marker changes; network update checks happen through install-knowledge/update-knowledge, not every MCP session
+- Guidance lookups use the persistent disk cache and hot reload only when its activation marker changes; the publisher is contacted by install-knowledge/update-knowledge and by a read-triggered refresh bounded by the autoupdate.knowledge schedule (hourly by default), never per MCP session or per lookup
 - Some tool calls run in a short-lived child worker process the server supervises and can kill. How many such workers may run at once is capped, and `CLIO_MCP_WORKER_CONCURRENCY` raises or lowers that cap. The default is derived from the host's processor count, so on a single-vCPU host it is low: a long operation (`compile-creatio`, `restart-*`) can be refused with `error-class=clio-worker-saturated` until the variable is raised. Nothing is spawned and no request reaches Creatio on that refusal, so it is safe to retry.
 
 ## Return Values

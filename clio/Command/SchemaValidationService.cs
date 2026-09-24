@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Clio.Common;
@@ -53,6 +54,7 @@ public static class SchemaValidationService
 	private const string ScaffoldItemsSlot = "items";
 	private const int MaxMergeSlotDiagnosticsPerEntry = 10;
 	private const string ButtonComponentType = "crt.Button";
+	private const string IndicatorWidgetComponentType = "crt.IndicatorWidget";
 
 	/// <summary>
 	/// The Scaffold slots a shipped template already populates, which is what makes a merge authoring into them the
@@ -409,6 +411,9 @@ public static class SchemaValidationService
 
 		SchemaValidationResult componentResult = ValidateMobileComponentTypes(body, allowedMobileTypes, webOnlyTypes);
 		warnings.AddRange(componentResult.Warnings);
+
+		SchemaValidationResult indicatorProvidingResult = ValidateMobileIndicatorWidgetProviding(body);
+		if (!indicatorProvidingResult.IsValid) errors.AddRange(indicatorProvidingResult.Errors);
 
 		SchemaValidationResult bindingResult = ValidateMobileFieldBindings(body);
 		if (!bindingResult.IsValid) errors.AddRange(bindingResult.Errors);
@@ -842,6 +847,139 @@ public static class SchemaValidationService
 			$"viewConfigDiff[{index}] authors a second '{ScaffoldComponentType}'. The mobile template already "
 			+ "provides the Scaffold root and a page may not add another — it would shadow the native element. "
 			+ $"Use operation 'merge' on '{ScaffoldElementName}' to patch the template's own root instead.");
+	}
+
+	/// <summary>
+	/// Blocks an authored <c>crt.IndicatorWidget</c> that saves cleanly but shows no value: a data-providing block
+	/// the mobile runtime cannot execute, or no <c>config.layout</c> / <c>config.text</c>, which the Mobile
+	/// Interface Designer reads unguarded.
+	/// </summary>
+	/// <remarks>
+	/// Hardcoded rather than registry-driven like <see cref="ValidateChartWidgetConfig"/>: the mobile catalog marks
+	/// none of these fields required. <c>merge</c> is checked because <see cref="JsonDiffApplier.Merge"/> replaces
+	/// <c>config</c> wholesale.
+	/// </remarks>
+	/// <param name="body">Plain-JSON mobile page body.</param>
+	/// <returns>One error per incomplete widget.</returns>
+	public static SchemaValidationResult ValidateMobileIndicatorWidgetProviding(string body) =>
+		ScanMobileViewConfigDiffEntries(body, ValidateMobileIndicatorWidgetProvidingEntry);
+
+	private static void ValidateMobileIndicatorWidgetProvidingEntry(
+		JsonElement entry, int index, SchemaValidationResult result) {
+		if (entry.ValueKind != JsonValueKind.Object
+			|| !TryGetStringProperty(entry, OperationPropertyName, out string operation)
+			|| (!string.Equals(operation, InsertOperationName, StringComparison.Ordinal)
+				&& !string.Equals(operation, SetOperationName, StringComparison.Ordinal)
+				&& !string.Equals(operation, MergeOperationName, StringComparison.Ordinal))
+			|| !entry.TryGetProperty(ValuesPropertyName, out JsonElement values)) {
+			return;
+		}
+		ScanAuthoredIndicatorWidgets(values, DescribeViewConfigDiffEntry(entry, index), depth: 0, result);
+	}
+
+	private static void ScanAuthoredIndicatorWidgets(
+		JsonElement element, string entryLabel, int depth, SchemaValidationResult result) {
+		if (depth > JsonReaderLimits.MaxParseDepth) {
+			return;
+		}
+		switch (element.ValueKind) {
+			case JsonValueKind.Object:
+				if (TryGetStringProperty(element, TypePropertyName, out string componentType)
+					&& string.Equals(componentType, IndicatorWidgetComponentType, StringComparison.Ordinal)) {
+					ReportIndicatorWidgetGaps(element, entryLabel, result);
+				}
+				foreach (JsonProperty property in element.EnumerateObject()) {
+					ScanAuthoredIndicatorWidgets(property.Value, entryLabel, depth + 1, result);
+				}
+				break;
+			case JsonValueKind.Array:
+				foreach (JsonElement item in element.EnumerateArray()) {
+					ScanAuthoredIndicatorWidgets(item, entryLabel, depth + 1, result);
+				}
+				break;
+		}
+	}
+
+	// A data binding exempts a widget from the providing checks only: the designer still reads layout and text.
+	private static void ReportIndicatorWidgetGaps(
+		JsonElement widget, string entryLabel, SchemaValidationResult result) {
+		bool hasConfig = TryGetObjectProperty(widget, "config", out JsonElement config);
+		List<string> designerGaps = CollectDesignerGaps(hasConfig, config);
+		bool boundToData = widget.TryGetProperty("data", out JsonElement boundData)
+			&& boundData.ValueKind != JsonValueKind.Null;
+		List<string> providingGaps = boundToData ? [] : CollectProvidingGaps(hasConfig, config);
+		if (designerGaps.Count == 0 && providingGaps.Count == 0) {
+			return;
+		}
+		string widgetLabel = TryGetStringProperty(widget, NamePropertyName, out string widgetName)
+			? $"'{Sanitize(widgetName)}'"
+			: entryLabel;
+		var message = new StringBuilder(
+			$"{IndicatorWidgetComponentType} {widgetLabel} is incomplete: "
+			+ $"{string.Join(", ", designerGaps.Concat(providingGaps))} missing or malformed.");
+		if (designerGaps.Count > 0) {
+			message.Append(" The Mobile Interface Designer requires both: \"layout\": {\"color\": \"green\"}, "
+				+ "\"text\": {\"template\": \"{0}\", \"metricMacros\": \"{0}\"}.");
+		}
+		if (providingGaps.Count > 0) {
+			message.Append(" An aggregation metric needs schemaName and aggregation.column.expression with "
+				+ "functionArgument.columnPath and aggregationType 1-5; a calculated metric uses an expressionSchema "
+				+ "object instead.");
+		}
+		result.IsValid = false;
+		result.Errors.Add(message.ToString());
+	}
+
+	private static List<string> CollectDesignerGaps(bool hasConfig, JsonElement config) {
+		var gaps = new List<string>();
+		if (!hasConfig || !TryGetObjectProperty(config, "layout", out _)) {
+			gaps.Add("config.layout");
+		}
+		if (!hasConfig || !TryGetObjectProperty(config, "text", out _)) {
+			gaps.Add("config.text");
+		}
+		return gaps;
+	}
+
+	private static List<string> CollectProvidingGaps(bool hasConfig, JsonElement config) {
+		var gaps = new List<string>();
+		if (!hasConfig || !TryGetObjectProperty(config, "data", out JsonElement data)) {
+			gaps.Add("config.data");
+		} else if (!TryGetObjectProperty(data, "providing", out JsonElement providing)) {
+			gaps.Add("config.data.providing");
+		} else if (providing.TryGetProperty("expressionSchema", out JsonElement expressionSchema)
+			&& expressionSchema.ValueKind != JsonValueKind.Null) {
+			// Present but not an object: the runtime branches on "non-null", then casts to a map and throws.
+			if (expressionSchema.ValueKind != JsonValueKind.Object) {
+				gaps.Add("config.data.providing.expressionSchema");
+			}
+		} else {
+			CollectAggregationProvidingGaps(providing, gaps);
+		}
+		return gaps;
+	}
+
+	private static void CollectAggregationProvidingGaps(JsonElement providing, List<string> missing) {
+		if (!TryGetStringProperty(providing, "schemaName", out _)) {
+			missing.Add("config.data.providing.schemaName");
+		}
+		if (!TryGetObjectProperty(providing, "aggregation", out JsonElement aggregation)
+			|| !TryGetObjectProperty(aggregation, "column", out JsonElement column)
+			|| !TryGetObjectProperty(column, "expression", out JsonElement expression)) {
+			missing.Add("config.data.providing.aggregation.column.expression");
+			return;
+		}
+		if (!TryGetObjectProperty(expression, "functionArgument", out JsonElement functionArgument)
+			|| !TryGetStringProperty(functionArgument, "columnPath", out _)) {
+			missing.Add("config.data.providing.aggregation.column.expression.functionArgument.columnPath");
+		}
+		// Not 6 (TopOne): the column is also deserialised as QueryAggregationType, which stops at 5 and throws.
+		if (!expression.TryGetProperty("aggregationType", out JsonElement aggregationType)
+			|| aggregationType.ValueKind != JsonValueKind.Number
+			|| !aggregationType.TryGetInt32(out int aggregationTypeValue)
+			|| aggregationTypeValue is < 1 or > 5) {
+			missing.Add("config.data.providing.aggregation.column.expression.aggregationType");
+		}
 	}
 
 	/// <summary>
@@ -3687,6 +3825,17 @@ public static class SchemaValidationService
 			|| TryGetStringProperty(componentValues, "caption", out captionExpression);
 	}
 
+	private static bool TryGetObjectProperty(JsonElement owner, string propertyName, out JsonElement value) {
+		value = default;
+		if (owner.ValueKind != JsonValueKind.Object
+			|| !owner.TryGetProperty(propertyName, out JsonElement candidate)
+			|| candidate.ValueKind != JsonValueKind.Object) {
+			return false;
+		}
+		value = candidate;
+		return true;
+	}
+
 	private static bool TryGetStringProperty(JsonElement element, string propertyName, out string value) {
 		value = string.Empty;
 		if (!element.TryGetProperty(propertyName, out JsonElement propertyValue) ||
@@ -5181,7 +5330,10 @@ public static class SchemaValidationService
 
 	private static bool TryParseJsonDocument(string content, out JsonDocument document, out string errorMessage) {
 		try {
-			document = JsonDocument.Parse(NormalizeJson(content));
+			document = JsonDocument.Parse(content, new JsonDocumentOptions {
+				CommentHandling = JsonCommentHandling.Skip,
+				AllowTrailingCommas = true
+			});
 			errorMessage = string.Empty;
 			return true;
 		} catch (Exception ex) {
@@ -5189,10 +5341,6 @@ public static class SchemaValidationService
 			errorMessage = ex.Message;
 			return false;
 		}
-	}
-
-	internal static string NormalizeJson(string content) {
-		return Regex.Replace(content, @",(\s*[\]\}])", "$1", RegexOptions.None, RegexTimeout);
 	}
 
 	private static void CollectPathsFromElement(JsonElement element, HashSet<string> paths) {

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Management.Automation;
@@ -7,6 +8,7 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 using Clio.Mcp.E2E;
 using FluentAssertions;
 using NUnit.Framework;
@@ -28,6 +30,11 @@ namespace Clio.Tests;
 /// </remarks>
 [TestFixture]
 [Category("Unit")]
+// Without a Module trait the repository's own smart-regression filter (Category=Unit&Module=X)
+// never runs this fixture, so an author who adds an unreachable product file sees their targeted
+// tests pass and learns about the pin only from full CI - at which point the path of least
+// resistance is to regenerate the list rather than to review it.
+[Property("Module", "Core")]
 internal sealed class McpE2eSelectionCoverageTests {
 
 	private static readonly string RepositoryRoot =
@@ -46,6 +53,9 @@ internal sealed class McpE2eSelectionCoverageTests {
 		Path.Combine(RepositoryRoot, ".github", "workflows", "build.yml");
 
 	private static readonly string SupportDirectory = Path.Combine(RepositoryRoot, "clio.mcp.e2e", "Support");
+
+	private static readonly string UnreachablePinPath =
+		Path.Combine(RepositoryRoot, "clio.mcp.e2e", "TestSelection", "unreachable-product-files.txt");
 
 	/// <summary>The script's inventory of the live tree, computed once per run.</summary>
 	private static readonly Lazy<JsonElement> Inventory = new(() => RunScript(ps => ps.AddParameter("Inventory")));
@@ -177,19 +187,25 @@ internal sealed class McpE2eSelectionCoverageTests {
 	}
 
 	[Test]
-	[Description("Every path the TeamCity trigger workflow listens to is a relevant path in the manifest, so a change that queues the build is also classified rather than ignored.")]
-	public void WorkflowTriggerPaths_ShouldAllBeRelevantPathsInTheManifest() {
+	[Description("Every path the TeamCity trigger workflow listens to is classified by the manifest: a path that starts a run is a relevant path, and a path the trigger excludes is one the manifest ignores, so the two filters cannot drift apart.")]
+	public void WorkflowTriggerPaths_ShouldAllBeClassifiedByTheManifest() {
 		// Arrange
-		HashSet<string> relevant = ReadManifest().GetProperty("relevantPaths").EnumerateArray().Select(p => p.GetString()!).ToHashSet(StringComparer.Ordinal);
+		JsonElement manifest = ReadManifest();
+		HashSet<string> relevant = manifest.GetProperty("relevantPaths").EnumerateArray().Select(p => p.GetString()!).ToHashSet(StringComparer.Ordinal);
+		HashSet<string> ignored = manifest.GetProperty("ignoredPaths").EnumerateArray().Select(p => p.GetString()!).ToHashSet(StringComparer.Ordinal);
 		string[] triggerPaths = ReadTriggerPaths();
 
 		// Act
-		string[] unclassified = triggerPaths.Where(path => !relevant.Contains(path)).ToArray();
+		string[] unclassified = triggerPaths
+			.Where(path => path.StartsWith('!')
+				? !ignored.Contains(path[1..])
+				: !relevant.Contains(path) && !ignored.Contains("!" + path))
+			.ToArray();
 
 		// Assert
 		triggerPaths.Should().NotBeEmpty(because: "the workflow must declare the paths that queue the TeamCity build");
 		unclassified.Should().BeEmpty(
-			because: "a path that triggers the workflow but is not in relevantPaths is ignored by the selection, and a run with only such files falls back to the full suite instead of the intended subset");
+			because: "a path that triggers the workflow but is not in relevantPaths is never classified, and a path the trigger excludes but the manifest does not ignore would be classified on a run started by some other file; both readings of the same filter have to agree");
 	}
 
 	[Test]
@@ -219,14 +235,14 @@ internal sealed class McpE2eSelectionCoverageTests {
 	[Description("Changing shared infrastructure forces a full run even when a tool file changed alongside it.")]
 	public void Script_ShouldSelectFullRun_WhenSharedInfrastructureChanged() {
 		// Arrange
-		string[] changed = ["clio/Common/SomeService.cs", "clio/Command/McpServer/Tools/PageSyncTool.cs"];
+		string[] changed = ["clio/BindingsModule.cs", "clio/Command/McpServer/Tools/PageSyncTool.cs"];
 
 		// Act
 		JsonElement selection = RunSelection(changed, includeNoEnvironment: false);
 
 		// Assert
 		selection.GetProperty("mode").GetString().Should().Be("full",
-			because: "clio/Common is used by every tool, so no subset is safe");
+			because: "with no BaseRef there is no diff available to narrow a registration file by, so the composition root is read whole and no subset is safe; the narrowing rule itself is covered by the Registration_* cases, which do supply a diff");
 		selection.GetProperty("filter").GetString().Should().Be(
 			"TestCategory!=McpE2E.NoEnvironment&TestCategory!=McpE2E.ProcessDesigner&TestCategory!=McpE2E.Manual",
 			because: "a full pull-request run still hands the NoEnvironment tier to GitHub");
@@ -249,48 +265,153 @@ internal sealed class McpE2eSelectionCoverageTests {
 	}
 
 	[Test]
-	[Description("A diff without any relevant file falls back to the full run rather than to an empty selection.")]
-	public void Script_ShouldSelectFullRun_WhenNoRelevantFileChanged() {
+	[Description("A diff of nothing but documentation and generated help runs no e2e build at all, because none of it is compiled into clio or read by the harness.")]
+	public void Script_ShouldRunNothing_WhenOnlyDocumentationChanged() {
 		// Arrange
-		string[] changed = ["README.md", "clio/docs/commands/ping.md", "clio.mcp.e2e/AGENTS.md"];
+		string[] changed = ["README.md", "clio/docs/commands/ping.md", "clio/Commands.md", "clio/help/en/ping.txt", "clio/Wiki/WikiAnchors.txt", "clio.mcp.e2e/AGENTS.md"];
 
 		// Act
 		JsonElement selection = RunSelection(changed, includeNoEnvironment: false);
 
 		// Assert
-		selection.GetProperty("mode").GetString().Should().Be("full",
-			because: "an unclassifiable diff must never shrink the run; the safe default is everything");
-		selection.GetProperty("decisions").EnumerateArray().Select(d => d.GetString()).Should().Contain(d => d!.Contains("no relevant file changed"),
-			because: "documentation under clio.mcp.e2e is excluded from relevantPaths and must be ignored, not classified");
+		selection.GetProperty("mode").GetString().Should().Be("none",
+			because: "no fixture can observe a change to text that is never compiled or loaded, so deploying a Creatio for it is pure waste");
+		selection.GetProperty("filter").GetString().Should().BeEmpty(
+			because: "mode none must not hand TeamCity any filter");
+		selection.GetProperty("decisions").EnumerateArray().Select(d => d.GetString()).Should().Contain(d => d!.Contains("ignored (documentation"),
+			because: "the decision log must name the rule that discarded each file");
 	}
 
 	[Test]
-	[Description("In a synthetic repository, a product file whose only consumers are tool files selects the fixtures of those tools; a product file also consumed outside the tools, or consumed by nothing, forces a full run.")]
-	public void Script_ShouldApplyClosedConsumerRule_ForProductFilesOutsideTools() {
+	[Description("A changed product file that no MCP tool, MCP resource/prompt or covered CLI verb consumes runs nothing, because no fixture in this suite executes that code.")]
+	public void Script_ShouldRunNothing_WhenTheChangedCodeIsUnreachableFromTheMcpSurface() {
 		// Arrange
 		using SyntheticRepository repo = SyntheticRepository.Create();
 
 		// Act
-		JsonElement onlyToolConsumer = RunSelection(["clio/Command/AlphaService.cs"], includeNoEnvironment: false, repo.Root);
-		JsonElement outsideConsumer = RunSelection(["clio/Command/SharedHelper.cs"], includeNoEnvironment: false, repo.Root);
-		JsonElement noConsumer = RunSelection(["clio/Command/OrphanService.cs"], includeNoEnvironment: false, repo.Root);
+		JsonElement selection = RunSelection(["clio/Command/OrphanService.cs"], includeNoEnvironment: false, repo.Root);
+
+		// Assert
+		selection.GetProperty("mode").GetString().Should().Be("none",
+			because: "OrphanService is named by no tool, reaches no verb a fixture spells out, and is registered nowhere, so no e2e test can show a regression in it");
+		selection.GetProperty("decisions").EnumerateArray().Select(d => d.GetString()).Should().Contain(d => d!.Contains("no MCP tool, MCP resource/prompt or covered CLI verb"),
+			because: "skipping the build is only defensible when the log says which reachability check came back empty");
+	}
+
+	[Test]
+	[Description("In a synthetic repository, a product file is selected through the transitive consumer graph: a direct tool consumer, a consumer one hop away, a DI-registered implementation reached only through its interface, a CLI verb a fixture spells out, and an asset a tool loads by file name.")]
+	public void Script_ShouldFollowTheReferenceGraph_ForProductFilesOutsideTools() {
+		// Arrange
+		using SyntheticRepository repo = SyntheticRepository.Create();
+		string[] alphaFixtures = ["AlphaToolE2ETests", "AlphaLiteralE2ETests", "AlphaContractE2ETests", "AlphaLegacyE2ETests"];
+
+		// Act
+		JsonElement directToolConsumer = RunSelection(["clio/Command/AlphaService.cs"], includeNoEnvironment: false, repo.Root);
+		JsonElement indirectConsumer = RunSelection(["clio/Command/SharedHelper.cs"], includeNoEnvironment: false, repo.Root);
+		JsonElement registeredImplementation = RunSelection(["clio/Common/BetaService.cs"], includeNoEnvironment: false, repo.Root);
+		JsonElement factoryImplementation = RunSelection(["clio/Common/DeltaBackend.cs"], includeNoEnvironment: false, repo.Root);
+		JsonElement cliVerb = RunSelection(["clio/Command/GammaCommand.cs"], includeNoEnvironment: false, repo.Root);
+		JsonElement asset = RunSelection(["clio/Command/McpServer/Data/BetaRules.json"], includeNoEnvironment: false, repo.Root);
 		JsonElement toolFile = RunSelection(["clio/Command/McpServer/Tools/AlphaTool.cs"], includeNoEnvironment: false, repo.Root);
 
 		// Assert
-		onlyToolConsumer.GetProperty("mode").GetString().Should().Be("subset",
-			because: "AlphaService is named only by AlphaTool.cs, so its blast radius is AlphaTool's fixtures");
-		onlyToolConsumer.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(
-			["AlphaToolE2ETests", "AlphaLiteralE2ETests", "AlphaContractE2ETests", "AlphaLegacyE2ETests"],
+		directToolConsumer.GetProperty("mode").GetString().Should().Be("subset",
+			because: "AlphaService is named by AlphaTool.cs, so its blast radius is AlphaTool's fixtures");
+		directToolConsumer.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(alphaFixtures,
 			because: "AlphaTool is selected by the fixture named after it, by the ones that use its tool-name literal and by the NoEnvironment contract fixture that names its class");
-		outsideConsumer.GetProperty("mode").GetString().Should().Be("full",
-			because: "SharedHelper is also named by clio/Command/OtherCommand.cs, so consumers outside the tools exist and the closure is unknown");
-		noConsumer.GetProperty("mode").GetString().Should().Be("full",
-			because: "a type nobody names under clio/ is reached through DI or reflection, which the textual rule cannot follow");
+		indirectConsumer.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(alphaFixtures,
+			because: "SharedHelper is named by OtherCommand.cs as well, but following that consumer further reaches no other tool, so the old rule's full run was pure over-approximation");
+		registeredImplementation.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["BetaToolE2ETests"],
+			because: "BetaTool names only IBetaService, so the AddSingleton<IBetaService, BetaService> pair is the only edge that links the implementation to its coverage");
+		factoryImplementation.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["DeltaToolE2ETests"],
+			because: "DeltaBackend declares no interface, so the factory line in the composition root is the only thing that ties it to DeltaTool; without reading that line a change to it looks unreachable and skips the build entirely");
+		cliVerb.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["GammaCliE2ETests"],
+			because: "a command is reached by its verb string, so the fixture that spells the verb out is its only textual coverage link");
+		asset.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["BetaToolE2ETests"],
+			because: "an asset loaded by file name belongs to the fixtures of the tools that load it");
 		toolFile.GetProperty("mode").GetString().Should().Be("subset",
 			because: "a tool file resolves directly to the fixtures that reference it");
-		toolFile.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(
-			["AlphaToolE2ETests", "AlphaLiteralE2ETests", "AlphaContractE2ETests", "AlphaLegacyE2ETests"],
+		toolFile.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(alphaFixtures,
 			because: "the class identifier, the tool-name literal and the naming convention all point at the same fixtures");
+	}
+
+	[Test]
+	[Description("The graph follows the references a plain identifier scan cannot see: a fully qualified type name, an extension method reached only through the type it extends, and a declaration that only looks like one because it sits inside a raw string.")]
+	public void Script_ShouldFollowReferencesThatAPlainIdentifierScanMisses() {
+		// Arrange
+		using SyntheticRepository repo = SyntheticRepository.Create();
+
+		// Act
+		JsonElement qualified = RunSelection(["clio/Common/EpsilonService.cs"], includeNoEnvironment: false, repo.Root);
+		JsonElement extensionMethod = RunSelection(["clio/Common/ZetaExtensions.cs"], includeNoEnvironment: false, repo.Root);
+		JsonElement pastARawString = RunSelection(["clio/Common/ThetaDependency.cs"], includeNoEnvironment: false, repo.Root);
+
+		// Assert
+		qualified.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["EpsilonToolE2ETests"],
+			because: "EpsilonTool writes Clio.Common.EpsilonService, and a dot in front of the type name must not hide the reference or the change looks unobservable");
+		extensionMethod.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["ZetaToolE2ETests"],
+			because: "the call site writes value.Normalize() and never names ZetaExtensions, so the extended type is the only route from the tool to the extension");
+		pastARawString.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["ThetaToolE2ETests"],
+			because: "the declaration inside ThetaService's raw string must not end ThetaService's body early, or the dependency it uses after the literal loses its consumer");
+	}
+
+	[Test]
+	[Description("A registration spread over several lines still links the implementation, a namespace alias still resolves the type behind it, and an extension on a type the repository does not declare runs the whole suite because its callers cannot be enumerated.")]
+	public void Script_ShouldHandleMultilineRegistrations_AliasedNamespaces_AndUnboundedExtensions() {
+		// Arrange
+		using SyntheticRepository repo = SyntheticRepository.Create();
+
+		// Act
+		JsonElement multilineFactory = RunSelection(["clio/Common/IotaBackend.cs"], includeNoEnvironment: false, repo.Root);
+		JsonElement aliasedNamespace = RunSelection(["clio/Common/KappaService.cs"], includeNoEnvironment: false, repo.Root);
+		JsonElement unboundedExtension = RunSelection(["clio/Common/LambdaExtensions.cs"], includeNoEnvironment: false, repo.Root);
+
+		// Assert
+		multilineFactory.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["IotaToolE2ETests"],
+			because: "the implementation sits on a continuation line, and a rule that reads only the line with the generic argument would call the change unobservable");
+		aliasedNamespace.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["KappaToolE2ETests"],
+			because: "Contracts.KappaService is a reference to Clio.Common.KappaService, and an alias must resolve to the namespace behind it");
+		unboundedExtension.GetProperty("mode").GetString().Should().Be("full",
+			because: "an extension on string is called as value.Shorten() from anywhere, including code outside this repository, so no consumer set bounds it and skipping the build would be a guess");
+	}
+
+	[Test]
+	[Description("The parser survives the C# shapes that break a line-oriented reading: a base list on the line after the declaration, a raw string delimited by four quotes whose content contains three, and a factory registration whose lambda holds a semicolon and a closing parenthesis in a literal and in a comment, and a class written inside a block comment.")]
+	public void Script_ShouldParseBaseListsRawStringsAndLiteralsThatSpanOrContainDelimiters() {
+		// Arrange
+		using SyntheticRepository repo = SyntheticRepository.Create();
+
+		// Act
+		JsonElement baseListOnNextLine = RunSelection(["clio/Common/MuService.cs"], includeNoEnvironment: false, repo.Root);
+		JsonElement longRawStringDelimiter = RunSelection(["clio/Common/NuDependency.cs"], includeNoEnvironment: false, repo.Root);
+		JsonElement semicolonInLiteral = RunSelection(["clio/Common/XiBackend.cs"], includeNoEnvironment: false, repo.Root);
+		JsonElement declarationInBlockComment = RunSelection(["clio/Common/OmicronDependency.cs"], includeNoEnvironment: false, repo.Root);
+
+		// Assert
+		baseListOnNextLine.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["MuToolE2ETests"],
+			because: "clio/Common/System.cs declares its interface on the following line, so a base list read only to the end of the declaration line loses a real implementation edge");
+		longRawStringDelimiter.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["NuToolE2ETests"],
+			because: "a four-quote raw string ends at four quotes, and stopping at the three inside it would leave a fake declaration visible and cut NuService's body short");
+		semicolonInLiteral.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["XiToolE2ETests"],
+			because: "neither the semicolon nor the closing parenthesis inside the lambda's string or its comment may end the registration statement before the implementation is named");
+		declarationInBlockComment.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["OmicronToolE2ETests"],
+			because: "a class written inside a block comment is not a declaration, and reading it as one would end OmicronService's body before the dependency it uses");
+	}
+
+	[Test]
+	[Description("A data asset runs the whole suite when any file naming it has an unknown blast radius, even when another file naming it resolved to fixtures first.")]
+	public void Script_ShouldSelectFullRun_WhenOneHolderOfADataAssetIsUnclassifiable() {
+		// Arrange
+		using SyntheticRepository repo = SyntheticRepository.Create();
+
+		// Act
+		JsonElement selection = RunSelection(["clio/Command/McpServer/Data/AlphaRules.json"], includeNoEnvironment: false, repo.Root);
+
+		// Assert
+		selection.GetProperty("mode").GetString().Should().Be("full",
+			because: "EtaLoader also reads the asset and is resolved dynamically, so its blast radius is unknown; AlphaTool resolving first must not hide that");
+		selection.GetProperty("decisions").EnumerateArray().Select(d => d.GetString()).Should().Contain(d => d!.Contains("asset holder"),
+			because: "the decision log must name the holder that forced the full run");
 	}
 
 	[Test]
@@ -312,8 +433,8 @@ internal sealed class McpE2eSelectionCoverageTests {
 			because: "a tool without fixtures must not shrink the run to nothing");
 		unreferencedTool.GetProperty("decisions").EnumerateArray().Select(d => d.GetString()).Should().Contain(d => d!.Contains("selects no fixture"),
 			because: "the decision log must say why the run became full");
-		registeredOnly.GetProperty("mode").GetString().Should().Be("full",
-			because: "BindingsModule.cs is a registration file and is excluded from the consumer set, leaving no consumer");
+		registeredOnly.GetProperty("mode").GetString().Should().Be("none",
+			because: "a type only the composition root mentions, with no interface registration pointing at it, is consumed by nothing this suite executes");
 		fixtureFile.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["AlphaToolE2ETests"],
 			because: "the abstract AlphaFixtureBase declared in the same file is not a runnable fixture and must not enter the filter");
 		noEnvironmentOnly.GetProperty("mode").GetString().Should().Be("none",
@@ -325,6 +446,177 @@ internal sealed class McpE2eSelectionCoverageTests {
 		untieredOnly.GetProperty("mode").GetString().Should().Be("subset",
 			because: "a fixture with no McpE2E.* tier runs on TeamCity under the base filter and nowhere on GitHub, so the absence of a Sandbox marker must never be read as NoEnvironment coverage (review finding on PR #1571)");
 	}
+
+	[Test]
+	[Description("After the script blanks comments and literals, no quote or comment marker is left anywhere under clio/, so a literal form the lexer does not know cannot silently corrupt the structural parse.")]
+	public void Lexer_ShouldLeaveNoLiteralOrCommentResidue() {
+		// Arrange
+		string[] residue = Inventory.Value.GetProperty("lexerResidue").EnumerateArray().Select(f => f.GetString()!).ToArray();
+
+		// Act
+		string[] offenders = residue.OrderBy(f => f, StringComparer.Ordinal).Take(10).ToArray();
+
+		// Assert
+		offenders.Should().BeEmpty(
+			because: "structure - declarations, base lists, the parentheses of a registration call - is parsed on the blanked text, so a string or comment form the lexer misses leaves a bracket or a quote behind and can end a type body or a registration statement early; that narrows the selection, which is the direction that loses a test. Interpolated raw strings ($\"\"\") and interpolated verbatim strings with a quote inside a hole are the forms that already did it");
+	}
+
+	[Test]
+	[Description("The set of product files no fixture can observe matches the list pinned in the repository, so a file drifting into or out of that set is a reviewable diff rather than a silent change to what runs.")]
+	public void UnreachableProductFiles_ShouldMatchThePinnedList() {
+		// Arrange
+		string[] pinned = File.ReadAllLines(UnreachablePinPath)
+			.Where(line => !line.StartsWith('#') && !string.IsNullOrWhiteSpace(line))
+			.ToArray();
+		string[] computed = Inventory.Value.GetProperty("unreachableProductFiles").EnumerateArray().Select(p => p.GetString()!).ToArray();
+
+		// Act
+		string[] newlyUnreachable = computed.Except(pinned, StringComparer.Ordinal).OrderBy(p => p, StringComparer.Ordinal).ToArray();
+		string[] noLongerUnreachable = pinned.Except(computed, StringComparer.Ordinal).OrderBy(p => p, StringComparer.Ordinal).ToArray();
+
+		// Assert
+		pinned.Should().NotBeEmpty(because: "the pinned list is the record of what the detector is allowed to skip a build for");
+		newlyUnreachable.Should().BeEmpty(
+			because: "a pull request touching only these files queues no e2e build, so adding a file here is a claim that no fixture covers it and has to be reviewed, not discovered later; refresh the list with Select-McpE2eTestFilter.ps1 -Inventory once you agree");
+		noLongerUnreachable.Should().BeEmpty(
+			because: "a file that became reachable must leave the list, or the pin keeps asserting something that stopped being true");
+	}
+
+	[Test]
+	[Description("Every MCP tool that declares a tool name has at least one fixture, or is listed as a known gap, so the detector never selects an empty subset for a tool and no tool quietly ships without e2e coverage.")]
+	public void ToolsWithoutFixtures_ShouldMatchTheDeclaredGaps() {
+		// Arrange
+		HashSet<string> declaredGaps = ReadManifest().GetProperty("toolsWithoutFixtures").EnumerateArray()
+			.Select(t => t.GetString()!).ToHashSet(StringComparer.Ordinal);
+		string[] uncovered = Inventory.Value.GetProperty("uncoveredTools").EnumerateArray().Select(t => t.GetString()!).ToArray();
+
+		// Act
+		string[] undeclared = uncovered.Except(declaredGaps, StringComparer.Ordinal).OrderBy(t => t, StringComparer.Ordinal).ToArray();
+		string[] stale = declaredGaps.Except(uncovered, StringComparer.Ordinal).OrderBy(t => t, StringComparer.Ordinal).ToArray();
+
+		// Assert
+		undeclared.Should().BeEmpty(
+			because: "a tool no fixture references forces the whole suite to run for every change to it; add the fixture, or record the gap in toolsWithoutFixtures so it is visible");
+		stale.Should().BeEmpty(
+			because: "a declared gap that has fixtures now is dead configuration and hides the next real gap");
+	}
+
+	[Test]
+	[Description("Every MCP resource and prompt file either selects a fixture or is listed as a known gap, so the full run each uncovered one forces is a recorded coverage gap rather than an unexplained cost.")]
+	public void EntryPointsWithoutFixtures_ShouldMatchTheDeclaredGaps() {
+		// Arrange
+		HashSet<string> declaredGaps = ReadManifest().GetProperty("entryPointsWithoutFixtures").EnumerateArray()
+			.Select(t => t.GetString()!).ToHashSet(StringComparer.Ordinal);
+		string[] uncovered = Inventory.Value.GetProperty("uncoveredEntryPoints").EnumerateArray().Select(t => t.GetString()!).ToArray();
+
+		// Act
+		string[] undeclared = uncovered.Except(declaredGaps, StringComparer.Ordinal).OrderBy(t => t, StringComparer.Ordinal).ToArray();
+		string[] stale = declaredGaps.Except(uncovered, StringComparer.Ordinal).OrderBy(t => t, StringComparer.Ordinal).ToArray();
+
+		// Assert
+		undeclared.Should().BeEmpty(
+			because: "an MCP resource or prompt no fixture names forces the whole suite to run for every change to it, exactly as an uncovered tool does; add the fixture, or record the gap in entryPointsWithoutFixtures so it is as visible as a tool gap");
+		stale.Should().BeEmpty(
+			because: "a declared gap that has fixtures now is dead configuration and hides the next real gap");
+	}
+
+	[Test]
+	[Description("A service reached only THROUGH an MCP resource selects that resource's fixtures instead of resolving to none: the resource is an entry point wherever it appears in the closure, not only when it is the changed file.")]
+	public void Script_ShouldSelectResourceFixtures_WhenAServiceIsReachedOnlyThroughAnMcpResource() {
+		// Arrange
+		using SyntheticRepository repo = SyntheticRepository.Create();
+
+		// Act
+		JsonElement selection = RunSelection(["clio/Command/SigmaService.cs"], includeNoEnvironment: false, repo.Root);
+
+		// Assert
+		selection.GetProperty("mode").GetString().Should().Be("subset",
+			because: "SigmaService has a fixture that observes it through SigmaResource, so the change is not unobservable; reading the closure as 'no tool consumes it' would skip the build for a covered file");
+		selection.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().Contain("SigmaResourceE2ETests",
+			because: "the fixture spells the resource's URI template, which is how a fixture names a resource the way it names a tool");
+	}
+
+	[Test]
+	[Description("A composition-root diff made only of registration statements narrows to the fixtures of the registered types.")]
+	public void Registration_ShouldSelectSubset_WhenTheDiffIsOnlyRegistrationStatements() {
+		// Arrange
+		using SyntheticRepository repo = SyntheticRepository.Create();
+		string baseRef = repo.InitializeGit();
+		string module = repo.ReadFile("clio/BindingsModule.cs")
+			.Replace("\t_ = typeof(RegisteredOnlyService);", "\t_ = typeof(RegisteredOnlyService);\n\tservices.AddSingleton<AlphaService>();");
+
+		// Act
+		repo.CommitChange("clio/BindingsModule.cs", module, "register AlphaService");
+		JsonElement selection = RunSelectionWithDiff(["clio/BindingsModule.cs"], baseRef, repo.Root);
+
+		// Assert
+		selection.GetProperty("mode").GetString().Should().Be("subset",
+			because: "a diff of nothing but registration statements changes what the registered type's consumers resolve and nothing else, which is the entire premise of narrowing a composition root");
+		selection.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().Contain("AlphaToolE2ETests",
+			because: "AlphaService is consumed by AlphaTool, so the fixtures of that tool are exactly the blast radius of registering it");
+	}
+
+	[Test]
+	[Description("One non-registration line anywhere in the composition-root diff forces the whole suite.")]
+	public void Registration_ShouldSelectFullRun_WhenOneChangedLineIsNotARegistration() {
+		// Arrange
+		using SyntheticRepository repo = SyntheticRepository.Create();
+		string baseRef = repo.InitializeGit();
+		string module = repo.ReadFile("clio/BindingsModule.cs")
+			.Replace("\t_ = typeof(RegisteredOnlyService);",
+				"\t_ = typeof(RegisteredOnlyService);\n\tservices.AddSingleton<AlphaService>();\n\tConfigureEverything();");
+
+		// Act
+		repo.CommitChange("clio/BindingsModule.cs", module, "register AlphaService and reconfigure");
+		JsonElement selection = RunSelectionWithDiff(["clio/BindingsModule.cs"], baseRef, repo.Root);
+
+		// Assert
+		selection.GetProperty("mode").GetString().Should().Be("full",
+			because: "any line that is not a registration statement can change resolution globally, and the rule has no way to bound it - a subset here would be a guess");
+	}
+
+	[Test]
+	[Description("A composition-root diff that names no type the graph knows forces the whole suite rather than selecting nothing.")]
+	public void Registration_ShouldSelectFullRun_WhenNoKnownTypeIsOnTheChangedLines() {
+		// Arrange
+		using SyntheticRepository repo = SyntheticRepository.Create();
+		string baseRef = repo.InitializeGit();
+		string module = repo.ReadFile("clio/BindingsModule.cs")
+			.Replace("\t_ = typeof(RegisteredOnlyService);", "\t_ = typeof(RegisteredOnlyService);\n\t// re-ordered\n\t{\n\t}");
+
+		// Act
+		repo.CommitChange("clio/BindingsModule.cs", module, "braces and a comment only");
+		JsonElement selection = RunSelectionWithDiff(["clio/BindingsModule.cs"], baseRef, repo.Root);
+
+		// Assert
+		selection.GetProperty("mode").GetString().Should().Be("full",
+			because: "punctuation and comments pass the registration-statement test but name nothing, so the rule has no registered type to bound the change by and must not read that as an empty blast radius");
+	}
+
+	[Test]
+	[Description("Registering a type whose own classification is a full run escalates the registration file to a full run too.")]
+	public void Registration_ShouldSelectFullRun_WhenTheRegisteredTypeItselfForcesOne() {
+		// Arrange
+		using SyntheticRepository repo = SyntheticRepository.Create();
+		string baseRef = repo.InitializeGit();
+		string module = repo.ReadFile("clio/BindingsModule.cs")
+			.Replace("\t_ = typeof(RegisteredOnlyService);", "\t_ = typeof(RegisteredOnlyService);\n\tservices.AddSingleton<LonelyTool>();");
+
+		// Act
+		repo.CommitChange("clio/BindingsModule.cs", module, "register LonelyTool");
+		JsonElement selection = RunSelectionWithDiff(["clio/BindingsModule.cs"], baseRef, repo.Root);
+
+		// Assert
+		selection.GetProperty("mode").GetString().Should().Be("full",
+			because: "LonelyTool is a tool no fixture names, so changing what it resolves cannot be covered by any subset; the escalation has to travel from the registered type back to the registration file");
+	}
+
+	private static JsonElement RunSelectionWithDiff(string[] changedFiles, string baseRef, string repositoryRoot) =>
+		RunScript(powerShell => {
+			powerShell.AddParameter("ChangedFiles", changedFiles);
+			powerShell.AddParameter("BaseRef", baseRef);
+			powerShell.AddParameter("HeadRef", "HEAD");
+		}, repositoryRoot);
 
 	private static JsonElement RunSelection(string[] changedFiles, bool includeNoEnvironment, string? repositoryRoot = null) =>
 		RunScript(powerShell => {
@@ -429,6 +721,96 @@ internal sealed class McpE2eSelectionCoverageTests {
 
 		private SyntheticRepository(string root) => Root = root;
 
+		/// <summary>
+		/// Turns the layout into a one-commit git repository and returns that commit's sha, so a test
+		/// can hand the selection script a REAL <c>BaseRef</c>. Everything the registration rule does
+		/// beyond the degenerate "no diff available" branch runs `git diff` against it, so without a
+		/// repository here those branches cannot be exercised at all.
+		/// </summary>
+		public string InitializeGit() {
+			Git("init", "--quiet", "--initial-branch=main");
+			Git("config", "user.email", "selection-guard@example.invalid");
+			Git("config", "user.name", "Selection Guard");
+			Git("config", "commit.gpgsign", "false");
+			// Git for Windows installs core.autocrlf=true in its SYSTEM config, so without this
+			// every one of these LF-written files makes `git add -A` print a "LF will be replaced
+			// by CRLF" warning. That is thousands of bytes of stderr for a repository this size,
+			// which is what used to fill the pipe. The environment is neutralised in Git() as
+			// well; this line keeps the repository itself correct for anyone reading it.
+			Git("config", "core.autocrlf", "false");
+			return CommitAll("base");
+		}
+
+		/// <summary>Replaces one file and commits, returning the new commit's sha.</summary>
+		public string CommitChange(string relative, string content, string message) {
+			string path = Path.Combine(Root, relative.Replace('/', Path.DirectorySeparatorChar));
+			Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+			File.WriteAllText(path, content);
+			return CommitAll(message);
+		}
+
+		public string ReadFile(string relative) =>
+			File.ReadAllText(Path.Combine(Root, relative.Replace('/', Path.DirectorySeparatorChar)));
+
+		private string CommitAll(string message) {
+			Git("add", "-A");
+			Git("commit", "--quiet", "--no-verify", "-m", message);
+			return Git("rev-parse", "HEAD").Trim();
+		}
+
+		/// <summary>
+		/// Resolved from PATH rather than left as the bare name "git": the test project's own output
+		/// directory contains a git.dll (clio.process.fixture builds one), and the process launcher
+		/// picks that up first and fails with "The application to execute does not exist".
+		/// </summary>
+		private static readonly string GitExecutable = FindGit();
+
+		private static string FindGit() {
+			string fileName = OperatingSystem.IsWindows() ? "git.exe" : "git";
+			foreach (string directory in (Environment.GetEnvironmentVariable("PATH") ?? string.Empty)
+				.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)) {
+				string candidate = Path.Combine(directory, fileName);
+				if (File.Exists(candidate)) {
+					return candidate;
+				}
+			}
+			throw new InvalidOperationException("git was not found on PATH; the registration-diff cases need it.");
+		}
+
+		private string Git(params string[] arguments) {
+			ProcessStartInfo startInfo = new(GitExecutable) {
+				WorkingDirectory = Root,
+				RedirectStandardOutput = true,
+				RedirectStandardError = true,
+				UseShellExecute = false
+			};
+			// The system and global git configuration belong to whoever runs the suite, and this
+			// repository must behave identically everywhere. core.autocrlf is the setting that
+			// broke it on Windows; core.hooksPath, init.defaultBranch and commit.gpgsign are the
+			// same class of hazard. GIT_CONFIG_GLOBAL points at a path that is never created.
+			startInfo.Environment["GIT_CONFIG_NOSYSTEM"] = "1";
+			startInfo.Environment["GIT_CONFIG_GLOBAL"] = Path.Combine(Root, ".gitconfig-absent");
+			foreach (string argument in arguments) {
+				startInfo.ArgumentList.Add(argument);
+			}
+			using Process process = Process.Start(startInfo)!;
+			// Both pipes are drained concurrently. Reading them one after the other deadlocks: git
+			// blocks writing once the pipe it is NOT being read from fills (~4 KB) while the parent
+			// sits in ReadToEnd on the other one, so neither side moves and WaitForExit is never
+			// reached. `git add -A` reaches that volume on Windows unaided - Git for Windows ships
+			// core.autocrlf=true in its system config and this tree is written with LF, so every
+			// file adds a "LF will be replaced by CRLF" line to stderr.
+			Task<string> standardErrorTask = process.StandardError.ReadToEndAsync();
+			string standardOutput = process.StandardOutput.ReadToEnd();
+			string standardError = standardErrorTask.GetAwaiter().GetResult();
+			process.WaitForExit();
+			if (process.ExitCode != 0) {
+				throw new InvalidOperationException(
+					$"git {string.Join(' ', arguments)} failed ({process.ExitCode}): {standardError}{standardOutput}");
+			}
+			return standardOutput;
+		}
+
 		public static SyntheticRepository Create() {
 			string root = Path.Combine(Path.GetTempPath(), "clio-selection-" + Guid.NewGuid().ToString("N"));
 			void Write(string relative, string content) {
@@ -440,7 +822,7 @@ internal sealed class McpE2eSelectionCoverageTests {
 			Write("clio/Command/McpServer/Tools/BaseTool.cs", "public abstract class BaseTool { }");
 			Write("clio/Command/McpServer/Tools/AlphaTool.cs",
 				"public sealed class AlphaTool : BaseTool {\n\tinternal const string ToolName = \"alpha-run\";\n" +
-				"\t[McpServerTool(Name = ToolName)]\n\tpublic void Run(AlphaService service, SharedHelper helper) { }\n}");
+				"\t[McpServerTool(Name = ToolName)]\n\tpublic void Run(AlphaService service, SharedHelper helper) { Load(\"AlphaRules.json\"); }\n}");
 			Write("clio/Command/McpServer/Tools/LonelyTool.cs",
 				"public sealed class LonelyTool : BaseTool {\n\t[McpServerTool(Name = \"lonely-run\")]\n\tpublic void Run() { }\n}");
 			Write("clio/Command/AlphaService.cs", "public sealed class AlphaService { }");
@@ -448,27 +830,171 @@ internal sealed class McpE2eSelectionCoverageTests {
 			Write("clio/Command/OtherCommand.cs", "public sealed class OtherCommand { private readonly SharedHelper _helper; }");
 			Write("clio/Command/OrphanService.cs", "public sealed class OrphanService { }");
 			Write("clio/Command/RegisteredOnlyService.cs", "public sealed class RegisteredOnlyService { }");
-			Write("clio/BindingsModule.cs", "public static class BindingsModule { static void Register() { _ = typeof(RegisteredOnlyService); } }");
+			// BetaTool depends on the interface and never spells the implementation out; only the
+			// registration pair links them, which is the edge plain name matching cannot see.
+			Write("clio/Command/McpServer/Tools/BetaTool.cs",
+				"public sealed class BetaTool : BaseTool {\n\tinternal const string ToolName = \"beta-run\";\n" +
+				"\t[McpServerTool(Name = ToolName)]\n\tpublic void Run(IBetaService service) { Load(\"BetaRules.json\"); }\n}");
+			Write("clio/Common/IBetaService.cs", "public interface IBetaService { }");
+			Write("clio/Common/BetaService.cs", "public sealed class BetaService : IBetaService { }");
+			// Registered through a factory. DeltaBackend declares no base list, so the
+			// implementation-to-interface edge cannot reach it and the factory line is the only
+			// thing tying it to the tool - the form 31 registrations in the real BindingsModule use.
+			Write("clio/Command/McpServer/Tools/DeltaTool.cs",
+				"public sealed class DeltaTool : BaseTool {\n\tinternal const string ToolName = \"delta-run\";\n" +
+				"\t[McpServerTool(Name = ToolName)]\n\tpublic void Run(IDeltaService service) { }\n}");
+			Write("clio/Common/IDeltaService.cs", "public interface IDeltaService { }");
+			Write("clio/Common/DeltaAdapter.cs", "public sealed class DeltaAdapter : IDeltaService { }");
+			Write("clio/Common/DeltaBackend.cs", "public sealed class DeltaBackend { }");
+			// A CLI command reached by its verb string, the way the harness runs the executable.
+			Write("clio/Command/GammaCommand.cs",
+				"[Verb(\"gamma-run\")]\npublic sealed class GammaOptions { }\npublic sealed class GammaCommand { }");
+			// An asset the tool loads by file name rather than by type reference.
+			Write("clio/Command/McpServer/Data/AlphaRules.json", "{ }");
+			Write("clio/Command/McpServer/Data/BetaRules.json", "{ }");
+			// EpsilonTool names its dependency fully qualified, so the dot in front of the type hides
+			// it from the plain identifier scan; 1247 references in the real tree are written this way.
+			Write("clio/Command/McpServer/Tools/EpsilonTool.cs",
+				"namespace Clio.Command.McpServer.Tools;\npublic sealed class EpsilonTool : BaseTool {\n" +
+				"\tinternal const string ToolName = \"epsilon-run\";\n\t[McpServerTool(Name = ToolName)]\n" +
+				"\tpublic void Run() { var x = new Clio.Common.EpsilonService(); }\n}");
+			Write("clio/Common/EpsilonService.cs", "namespace Clio.Common;\npublic sealed class EpsilonService { }");
+			// ZetaExtensions is named by nobody: the call site writes value.Normalize() and reaches it
+			// only through the type it extends.
+			Write("clio/Command/McpServer/Tools/ZetaTool.cs",
+				"public sealed class ZetaTool : BaseTool {\n\tinternal const string ToolName = \"zeta-run\";\n" +
+				"\t[McpServerTool(Name = ToolName)]\n\tpublic void Run(ZetaValue value) { value.Normalize(); }\n}");
+			Write("clio/Common/ZetaValue.cs", "public sealed class ZetaValue { }");
+			Write("clio/Common/ZetaExtensions.cs",
+				"public static class ZetaExtensions {\n\tpublic static int Normalize(this ZetaValue value) => 1;\n}");
+			// A second holder of AlphaRules.json whose own blast radius is unknown.
+			Write("clio/Command/McpServer/Tools/EtaLoader.cs",
+				"[ResolvedDynamically]\npublic sealed class EtaLoader {\n\tpublic void Load() { Read(\"AlphaRules.json\"); }\n}");
+			// A raw string whose contents look like a top-level declaration.
+			Write("clio/Common/ThetaService.cs",
+				"public sealed class ThetaService {\n\tconst string Sample = \"\"\"\npublic class FakeDeclaration { }\n\"\"\";\n" +
+				"\tpublic void Use(ThetaDependency dependency) { }\n}");
+			Write("clio/Command/McpServer/Tools/ThetaTool.cs",
+				"public sealed class ThetaTool : BaseTool {\n\tinternal const string ToolName = \"theta-run\";\n" +
+				"\t[McpServerTool(Name = ToolName)]\n\tpublic void Run(ThetaService service) { }\n}");
+			Write("clio/Common/ThetaDependency.cs", "public sealed class ThetaDependency { }");
+			// The implementation sits on a continuation line of the registration statement.
+			Write("clio/Command/McpServer/Tools/IotaTool.cs",
+				"public sealed class IotaTool : BaseTool {\n\tinternal const string ToolName = \"iota-run\";\n" +
+				"\t[McpServerTool(Name = ToolName)]\n\tpublic void Run(IIotaService service) { }\n}");
+			Write("clio/Common/IIotaService.cs", "public interface IIotaService { }");
+			Write("clio/Common/IotaBackend.cs", "public sealed class IotaBackend { }");
+			// Reached only through a namespace alias.
+			Write("clio/Command/McpServer/Tools/KappaTool.cs",
+				"namespace Clio.Command.McpServer.Tools;\nusing Contracts = Clio.Common;\n" +
+				"public sealed class KappaTool : BaseTool {\n\tinternal const string ToolName = \"kappa-run\";\n" +
+				"\t[McpServerTool(Name = ToolName)]\n\tpublic void Run() { var x = new Contracts.KappaService(); }\n}");
+			Write("clio/Common/KappaService.cs", "namespace Clio.Common;\npublic sealed class KappaService { }");
+			// An extension on a type this repository does not declare: its callers cannot be listed.
+			Write("clio/Common/LambdaExtensions.cs",
+				"public static class LambdaExtensions {\n\tpublic static int Shorten(this string value) => 1;\n}");
+			// The base list starts on the line after the declaration, as clio/Common/System.cs does.
+			Write("clio/Command/McpServer/Tools/MuTool.cs",
+				"public sealed class MuTool : BaseTool {\n\tinternal const string ToolName = \"mu-run\";\n" +
+				"\t[McpServerTool(Name = ToolName)]\n\tpublic void Run(IMuService service) { }\n}");
+			Write("clio/Common/IMuService.cs", "public interface IMuService { }");
+			Write("clio/Common/MuService.cs", "public sealed class MuService\n\t: IMuService\n{\n}");
+			// A raw string with four quotes wrapping content that itself contains three.
+			Write("clio/Common/NuService.cs",
+				"public sealed class NuService {\n\tconst string Sample = \"\"\"\"\ncontains \"\"\" inside\n" +
+				"public class NuFakeDeclaration { }\n\"\"\"\";\n\tpublic void Use(NuDependency dependency) { }\n}");
+			Write("clio/Common/NuDependency.cs", "public sealed class NuDependency { }");
+			Write("clio/Common/OmicronService.cs",
+				"public sealed class OmicronService {\n\t/*\npublic class OmicronFakeDeclaration { }\n\t*/\n" +
+				"\tpublic void Use(OmicronDependency dependency) { }\n}");
+			Write("clio/Common/OmicronDependency.cs", "public sealed class OmicronDependency { }");
+			Write("clio/Command/McpServer/Tools/OmicronTool.cs",
+				"public sealed class OmicronTool : BaseTool {\n\tinternal const string ToolName = \"omicron-run\";\n" +
+				"\t[McpServerTool(Name = ToolName)]\n\tpublic void Run(OmicronService service) { }\n}");
+			Write("clio/Command/McpServer/Tools/NuTool.cs",
+				"public sealed class NuTool : BaseTool {\n\tinternal const string ToolName = \"nu-run\";\n" +
+				"\t[McpServerTool(Name = ToolName)]\n\tpublic void Run(NuService service) { }\n}");
+			// A factory whose lambda body contains a string literal with a semicolon in it.
+			Write("clio/Command/McpServer/Tools/XiTool.cs",
+				"public sealed class XiTool : BaseTool {\n\tinternal const string ToolName = \"xi-run\";\n" +
+				"\t[McpServerTool(Name = ToolName)]\n\tpublic void Run(IXiService service) { }\n}");
+			Write("clio/Common/IXiService.cs", "public interface IXiService { }");
+			Write("clio/Common/XiBackend.cs", "public sealed class XiBackend { }");
+			Write("clio/BindingsModule.cs",
+				"public static class BindingsModule { static void Register() {\n" +
+				"\t_ = typeof(RegisteredOnlyService);\n\tservices.AddSingleton<IBetaService, BetaService>();\n" +
+				"\tservices.AddSingleton<IDeltaService>(sp => new DeltaAdapter(new DeltaBackend()));\n" +
+				"\tservices.AddSingleton<IIotaService>(\n\t\tsp => new IotaAdapter(new IotaBackend()));\n" +
+				"\tservices.AddSingleton<IXiService>(sp => {\n\t\tvar marker = \"a;b)\";\n\t\t// this comment contains )\n\t\treturn new XiBackend();\n\t});\n} }");
 			Write("clio.mcp.e2e/AlphaToolE2ETests.cs",
 				"public abstract class AlphaFixtureBase { }\n[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class AlphaToolE2ETests : AlphaFixtureBase {\n\t[Test] public void Works() => Call(AlphaTool.ToolName);\n}");
 			Write("clio.mcp.e2e/AlphaLiteralE2ETests.cs",
 				"[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class AlphaLiteralE2ETests {\n\t[Test] public void Works() => Call(\"alpha-run\");\n}");
 			Write("clio.mcp.e2e/AlphaContractE2ETests.cs",
 				"[TestFixture]\n[Category(\"McpE2E.NoEnvironment\")]\npublic sealed class AlphaContractE2ETests {\n\t[Test] public void Advertises() => Call(AlphaTool.ToolName);\n}");
+			// An MCP resource is an entry point just as a tool is, and SigmaService is reachable only
+			// THROUGH it - the shape KnowledgeGuidanceResourceAdapter has in the live tree.
+			Write("clio/Command/McpServer/Resources/SigmaResource.cs",
+				"[McpServerResourceType]\npublic sealed class SigmaResource {\n" +
+				"\t[McpServerResource(UriTemplate = \"sigma://guide/{name}\")]\n\tpublic string Read(SigmaService service) => null;\n}");
+			Write("clio/Command/SigmaService.cs", "public sealed class SigmaService { }");
+			Write("clio.mcp.e2e/SigmaResourceE2ETests.cs",
+				"[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class SigmaResourceE2ETests {\n\t[Test] public void Works() => Read(\"sigma://guide/alpha\");\n}");
 			Write("clio.mcp.e2e/UnrelatedE2ETests.cs",
 				"[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class UnrelatedE2ETests {\n\t[Test] public void Works() { }\n}");
+			Write("clio.mcp.e2e/BetaToolE2ETests.cs",
+				"[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class BetaToolE2ETests {\n\t[Test] public void Works() => Call(BetaTool.ToolName);\n}");
+			Write("clio.mcp.e2e/OmicronToolE2ETests.cs",
+				"[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class OmicronToolE2ETests {\n\t[Test] public void Works() => Call(OmicronTool.ToolName);\n}");
+			Write("clio.mcp.e2e/MuToolE2ETests.cs",
+				"[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class MuToolE2ETests {\n\t[Test] public void Works() => Call(MuTool.ToolName);\n}");
+			Write("clio.mcp.e2e/NuToolE2ETests.cs",
+				"[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class NuToolE2ETests {\n\t[Test] public void Works() => Call(NuTool.ToolName);\n}");
+			Write("clio.mcp.e2e/XiToolE2ETests.cs",
+				"[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class XiToolE2ETests {\n\t[Test] public void Works() => Call(XiTool.ToolName);\n}");
+			Write("clio.mcp.e2e/IotaToolE2ETests.cs",
+				"[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class IotaToolE2ETests {\n\t[Test] public void Works() => Call(IotaTool.ToolName);\n}");
+			Write("clio.mcp.e2e/KappaToolE2ETests.cs",
+				"[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class KappaToolE2ETests {\n\t[Test] public void Works() => Call(KappaTool.ToolName);\n}");
+			Write("clio.mcp.e2e/EpsilonToolE2ETests.cs",
+				"[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class EpsilonToolE2ETests {\n\t[Test] public void Works() => Call(EpsilonTool.ToolName);\n}");
+			Write("clio.mcp.e2e/ZetaToolE2ETests.cs",
+				"[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class ZetaToolE2ETests {\n\t[Test] public void Works() => Call(ZetaTool.ToolName);\n}");
+			Write("clio.mcp.e2e/ThetaToolE2ETests.cs",
+				"[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class ThetaToolE2ETests {\n\t[Test] public void Works() => Call(ThetaTool.ToolName);\n}");
+			Write("clio.mcp.e2e/DeltaToolE2ETests.cs",
+				"[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class DeltaToolE2ETests {\n\t[Test] public void Works() => Call(DeltaTool.ToolName);\n}");
+			Write("clio.mcp.e2e/GammaCliE2ETests.cs",
+				"[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class GammaCliE2ETests {\n\t[Test] public void Works() => RunCli(\"gamma-run\");\n}");
 			// Carries no McpE2E.* tier at all, like DownloadSysSettingFileE2ETests in the live tree.
 			Write("clio.mcp.e2e/AlphaLegacyE2ETests.cs",
 				"[TestFixture]\n[Category(\"E2E\")]\npublic sealed class AlphaLegacyE2ETests {\n\t[Test] public void Works() => Call(\"alpha-run\");\n}");
 			return new SyntheticRepository(root);
 		}
 
+		/// <summary>
+		/// Deleting the tree needs the read-only bit cleared first: git writes its loose objects and
+		/// pack files read-only, and on Windows <c>Directory.Delete</c> then throws
+		/// <see cref="UnauthorizedAccessException"/>, which is not an <see cref="IOException"/>. Left
+		/// narrower, that exception escapes from inside a <c>using</c> and REPLACES whatever the test
+		/// itself threw, so the real failure never reaches the report.
+		/// </summary>
 		public void Dispose() {
 			try {
+				if (Directory.Exists(Root)) {
+					foreach (string file in Directory.EnumerateFiles(Root, "*", SearchOption.AllDirectories)) {
+						FileInfo info = new(file);
+						if ((info.Attributes & FileAttributes.ReadOnly) != 0) {
+							info.Attributes &= ~FileAttributes.ReadOnly;
+						}
+					}
+				}
 				Directory.Delete(Root, recursive: true);
 			}
-			catch (IOException) {
-				// A leftover temp directory is not worth failing the test run for.
+			catch (Exception exception) {
+				// A leftover temp directory is not worth failing the test run for, and it must never
+				// mask the exception the test was already reporting - so it is reported, not thrown.
+				TestContext.Out.WriteLine($"Leftover synthetic repository {Root} was not removed: {exception.Message}");
 			}
 		}
 

@@ -1,0 +1,186 @@
+# Product files no clio.mcp.e2e fixture can observe, as computed by
+
+# .github/scripts/Select-McpE2eTestFilter.ps1 -Inventory over the reference graph.
+
+#
+
+# A pull request that touches ONLY files listed here queues no TeamCity e2e build at all. That is
+
+# safe exactly while this list is true, so it is pinned here and compared by
+
+# clio.tests/McpE2eSelectionCoverageTests.cs: a file appearing in this list for the first time is a
+
+# reviewable claim that no e2e test covers it, not a silent loss of coverage.
+
+#
+
+# Before you regenerate: read the diff, do not just paste the new output. For every file that
+
+# APPEARS here, answer two questions and say so in the pull request.
+
+#   1. Is there really no fixture that exercises it, directly or through a tool it is reached
+
+#      from? A missing fixture is the answer 'none'; a fixture the graph cannot see is a defect.
+
+#   2. Would a fixture that did cover it run before merge at all? A McpE2E.NoEnvironment fixture
+
+#      runs on GitHub for any clio/** change, a Sandbox one runs only in the TeamCity build this
+
+#      list can skip - so the tiers are not interchangeable and membership alone does not say
+
+#      which one a file would have had.
+
+# A file LEAVING the list needs no defence: it became reachable, which is the safe direction.
+
+#
+
+# Refresh with:
+
+#   pwsh ./.github/scripts/Select-McpE2eTestFilter.ps1 -Inventory |
+
+#     ConvertFrom-Json | ForEach-Object { $_.unreachableProductFiles }
+clio/AppUpdater.cs
+clio/Command/AddSchema.cs
+clio/Command/Administration/AdministrationClient.cs
+clio/Command/ALMCommand/DeployCommand.cs
+clio/Command/ApplicationCommand/SetApplicationIconCommand.cs
+clio/Command/ApplicationCommand/SetApplicationVersionCommand.cs
+clio/Command/AssemblyCommand.cs
+clio/Command/AssertCommand.cs
+clio/Command/BuildDockerImageCommand.cs
+clio/Command/BuildDockerImageService.cs
+clio/Command/BuildInfoCommand.cs
+clio/Command/CheckNugetUpdateCommand.cs
+clio/Command/CheckWebFarmNodeConfigurationsCommand.cs
+clio/Command/CheckWindowsFeatureCommand.cs
+clio/Command/ClearLocalEnvironmentCommand.cs
+clio/Command/CloneEnvironmentCommand.cs
+clio/Command/ComponentRegistryRefreshCommand.cs
+clio/Command/CompressAppCommand.cs
+clio/Command/CompressPackageCommand.cs
+clio/Command/ConfigureWorkspaceCommand.cs
+clio/Command/CreateInfrastructure.cs
+clio/Command/CustomizeDataProtection.cs
+clio/Command/DeleteInfrastructureCommand.cs
+clio/Command/DeletePackageCommand.cs
+clio/Command/DeletePkgOptions.cs
+clio/Command/DeployAppCommand.cs
+clio/Command/DistributeLicenseCommand.cs
+clio/Command/DistributeLicenseOptions.cs
+clio/Command/DownloadAppCommand.cs
+clio/Command/EnvManageUiCommand.cs
+clio/Command/FeatureToggleFilter.cs
+clio/Command/GetAppHash.cs
+clio/Command/GitSync.cs
+clio/Command/IdentityProviderManagementCommand.cs
+clio/Command/InstallDbHubCommand.cs
+clio/Command/InstallNugetPackageCommand.cs
+clio/Command/Link2RepoCommand.cs
+clio/Command/LinkCoreSrcCommand.cs
+clio/Command/LinkPackageStoreCommand.cs
+clio/Command/ListenCommand.cs
+clio/Command/LockPackageCommand.cs
+clio/Command/McpServer/Knowledge/KnowledgeResourceDiscoveryFilter.cs
+clio/Command/MergeWorkspacesCommand.cs
+clio/Command/MockDataCommand.cs
+clio/Command/NewPkgCommand.cs
+clio/Command/OpenAppCommand.cs
+clio/Command/OpenCfgCommand.cs
+clio/Command/OpenInfrastructureCommand.cs
+clio/Command/PackageCommand/ActivatePackageCommand.cs
+clio/Command/PackageCommand/DeactivatePackageCommand.cs
+clio/Command/PackageCommand/DownloadPackageCommand.cs
+clio/Command/PackageCommand/ExtractPackageCommand.cs
+clio/Command/PackageCommand/GetPackageVersionCommand.cs
+clio/Command/PackageCommand/LicenseInstallationException.cs
+clio/Command/PackageCommand/LicensePackageLookup.cs
+clio/Command/PackageCommand/LicenseResponseParser.cs
+clio/Command/PackageCommand/LicenseServiceJsonHelper.cs
+clio/Command/PackageCommand/LicenseUserLookup.cs
+clio/Command/PackageCommand/SetPackageVersionCommand.cs
+clio/Command/PackageCommand/ValidationPackageCommand.cs
+clio/Command/PackNuGetPackageCommand.cs
+clio/Command/PinCertificateCommand.cs
+clio/Command/PingCommand.cs
+clio/Command/PublishWorkspaceCommand.cs
+clio/Command/PushNuGetPackagesCommand.cs
+clio/Command/Quiz/PeopleGameSession.cs
+clio/Command/Quiz/PeopleModels.cs
+clio/Command/Quiz/PeopleRenderer.cs
+clio/Command/Quiz/QuestionRepository.cs
+clio/Command/Quiz/QuizGame.cs
+clio/Command/QuizCommand.cs
+clio/Command/ReferenceCommand.cs
+clio/Command/RegisterSsoProviderCommand.cs
+clio/Command/RestoreFromPackageBackupCommand.cs
+clio/Command/RestoreNugetPackageCommand.cs
+clio/Command/RingCommand.cs
+clio/Command/SaveSettingsToManifestCommand.cs
+clio/Command/SetFileContentStorageConnectionStringCommand.cs
+clio/Command/ShowDiffEnvironmentsCommand.cs
+clio/Command/ShowLocalEnvironmentsCommand.cs
+clio/Command/SwitchNugetToDllCommand.cs
+clio/Command/SyncDbHubCommand.cs
+clio/Command/TurnFarmModeCommand.cs
+clio/Command/UnregisterCommand.cs
+clio/Command/Update/SetAutoupdateCommand.cs
+clio/Command/Update/UpdateCliCommand.cs
+clio/Command/Update/UserPromptService.cs
+clio/Command/UploadLicenseCommand.cs
+clio/Command/UploadLicensesCommand.cs
+clio/Command/UploadLicensesOptions.cs
+clio/Common/CliogateHttpReadinessProbe.cs
+clio/Common/CodeServerArchiveCache.cs
+clio/Common/ContainerRegistryCredentialProvider.cs
+clio/Common/ContainerRegistryPreflightService.cs
+clio/Common/DbHub/DbHubInstallerService.cs
+clio/Common/DockerTemplatePathProvider.cs
+clio/Common/EnvManageUiService.cs
+clio/Common/IConsole.cs
+clio/Common/InfrastructurePathProvider.cs
+clio/Common/NugetMaterializer.cs
+clio/Common/PropsBuilder.cs
+clio/Common/ResolvedDynamicallyAttribute.cs
+clio/Common/ScenarioHandlers/UpdateIISSitePhysicalPath.cs
+clio/Common/SkillRepositoryResolver.cs
+clio/Common/Skills/AgentCliRunner.cs
+clio/Common/Skills/Agents/ClaudeAgent.cs
+clio/Common/Skills/Agents/CodexAgent.cs
+clio/Common/Skills/Agents/CodingAgentBase.cs
+clio/Common/Skills/Agents/CopilotAgent.cs
+clio/Common/Skills/Agents/CursorAgent.cs
+clio/Common/Skills/Agents/MarketplaceAgentBase.cs
+clio/Common/Skills/CodexTomlConfigEditor.cs
+clio/Common/Skills/CursorPluginRuntimeInstaller.cs
+clio/Common/Skills/CursorRuleWriter.cs
+clio/Common/Skills/IAgentCliRunner.cs
+clio/Common/Skills/ICodexTomlConfigEditor.cs
+clio/Common/Skills/ICursorPluginRuntimeInstaller.cs
+clio/Common/Skills/ICursorRuleWriter.cs
+clio/Common/Skills/IJsonConfigEditor.cs
+clio/Common/Skills/InstalledToolkitVersions.cs
+clio/Common/Skills/JsonConfigEditor.cs
+clio/Common/Skills/ManagedSkillsManifestStore.cs
+clio/Common/StringParser.cs
+clio/Common/UpdateCheckCache.cs
+clio/CreatioModel/SysWorkspace.cs
+clio/CreatioModel/VwWebServiceV2.cs
+clio/K8CommandsTests.cs
+clio/ManageWindowsFeaturesCommand.cs
+clio/Package/IPackageActivator.cs
+clio/Package/IPackageDeactivator.cs
+clio/Package/PackageActivator.cs
+clio/Package/PackageConverter.cs
+clio/Package/PackageDeactivator.cs
+clio/Package/Responses/PackageActivationResponse.cs
+clio/Package/Responses/PackageActivationResultDto.cs
+clio/Project/CreatioPkgProject.cs
+clio/Project/CreatioPkgProjectCreator.cs
+clio/Project/ICreatioPkgProject.cs
+clio/Project/ICreatioPkgProjectCreator.cs
+clio/Requests/Validators/ExternalLinkValidator.cs
+clio/Requests/Validators/ISSScannerValidator.cs
+clio/Utilities/WebBrowser.cs
+clio/WikiHelpViewer.cs
+clio/Workspace/WorkspaceEnvironment.cs
+clio/Workspace/WorkspaceMerger.cs

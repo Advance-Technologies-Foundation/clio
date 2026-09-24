@@ -188,6 +188,26 @@ namespace Clio
 			get; set;
 		}
 
+		/// <summary>
+		/// A support external-access token minted by the grantor site (work.creatio.com) for one
+		/// <c>ExternalAccess</c> grant, exchanged once for a Creatio session at
+		/// <c>ServiceModel/AuthService.svc/OAuthTokenLogin</c>.
+		/// </summary>
+		/// <remarks>
+		/// This is NOT an API bearer token and must never be sent as one: the customer site's
+		/// <c>OAuthAuthorizationHelper</c> requires an <c>OAuthClientApp</c> row for the token's
+		/// client id, which an external-access token does not have, so every API call would fail.
+		/// Carries the same secret discipline as <see cref="AccessToken"/> — it is never written to
+		/// appsettings.json and never appears in settings output.
+		/// See spec/external-access-login/external-access-login-spec.md.
+		/// </remarks>
+		[YamlIgnore]
+		[Newtonsoft.Json.JsonIgnore]
+		[System.Text.Json.Serialization.JsonIgnore]
+		public string ExternalAccessToken {
+			get; set;
+		}
+
 		internal void Merge(EnvironmentSettings environment) {
 			if (!environment.IdentityService.IsEmpty) {
 				IdentityService = environment.IdentityService;
@@ -268,6 +288,9 @@ namespace Clio
 			result.AuthAppUri = string.IsNullOrEmpty(options.AuthAppUri) ? this.AuthAppUri : options.AuthAppUri;
 			result.Maintainer =
 				string.IsNullOrEmpty(options.Maintainer) ? this.Maintainer : options.Maintainer;
+			// Never inherited from the stored environment: an external-access token is per-invocation
+			// and is never persisted, so it can only come from the command line.
+			result.ExternalAccessToken = options.ExternalAccessToken;
 			if (this.Safe.HasValue && this.Safe.Value
 				&& !interactiveConsole.Prompt($"You try to apply the action on the production site {this.Uri}")) {
 				// Non-interactive hosts (MCP stdio / CI) fail closed here instead of blocking on

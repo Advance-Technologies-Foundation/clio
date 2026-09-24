@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json.Nodes;
+using System.Threading;
+using System.Threading.Tasks;
 using Clio.Command;
 using Clio.Command.AddonSchemaDesigner;
 using Clio.Command.McpServer.Tools;
@@ -41,7 +43,10 @@ public sealed class MobileActionTargetProbeTests {
 
 	private static EnvironmentStub Environment(
 		Func<string, string> select,
-		string addonMetaData = null) {
+		string addonMetaData = null,
+		string webRelatedPageAddonMetaData = null,
+		Exception webRelatedPageAddonException = null,
+		Guid? webRelatedPageAddonExceptionForEntityUId = null) {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
 			.Returns(callInfo => select(callInfo.ArgAt<string>(1)));
@@ -50,9 +55,27 @@ public sealed class MobileActionTargetProbeTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns(callInfo => callInfo.Arg<string>());
 		urlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>()).Returns("/DataService/json/SyncReply/SelectQuery");
 
+		// Routed by AddonName: the MobileRelatedPage classification read (addonMetaData) and the WEB RelatedPage
+		// candidate read (webRelatedPageAddonMetaData) are two DIFFERENT add-ons on the same
+		// object, so a test exercising both must be able to answer them differently.
+		// webRelatedPageAddonException additionally lets a test make the CANDIDATE read fail without touching
+		// the classification read, optionally scoped to one entity's TargetSchemaUId so a sibling object's own
+		// candidate lookup stays provably unaffected.
 		IAddonSchemaDesignerClient addonClient = Substitute.For<IAddonSchemaDesignerClient>();
 		addonClient.GetSchema(Arg.Any<AddonGetRequestDto>())
-			.Returns(new AddonSchemaDto { MetaData = addonMetaData ?? string.Empty });
+			.Returns(callInfo => {
+				AddonGetRequestDto request = callInfo.Arg<AddonGetRequestDto>();
+				bool isRelatedPage = string.Equals(request.AddonName, "RelatedPage", StringComparison.Ordinal);
+				if (isRelatedPage && webRelatedPageAddonException is not null
+					&& (webRelatedPageAddonExceptionForEntityUId is null
+						|| webRelatedPageAddonExceptionForEntityUId == request.TargetSchemaUId)) {
+					throw webRelatedPageAddonException;
+				}
+				string metaData = isRelatedPage
+					? webRelatedPageAddonMetaData ?? string.Empty
+					: addonMetaData ?? string.Empty;
+				return new AddonSchemaDto { MetaData = metaData };
+			});
 
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
@@ -68,8 +91,11 @@ public sealed class MobileActionTargetProbeTests {
 	private static string PageRow(string name, string parentName, string uId = PageSchemaUId) =>
 		$"{{\"Name\":\"{name}\",\"UId\":\"{uId}\",\"ParentName\":{(parentName is null ? "null" : $"\"{parentName}\"")}}}";
 
-	private static string EntityRow(string name, bool extendParent = false, string uId = EntitySchemaUId) =>
-		$"{{\"Name\":\"{name}\",\"UId\":\"{uId}\",\"ExtendParent\":{(extendParent ? "true" : "false")}}}";
+	private static string EntityRow(
+		string name, bool extendParent = false, string uId = EntitySchemaUId, string packageUId = null) =>
+		$"{{\"Name\":\"{name}\",\"UId\":\"{uId}\","
+		+ (packageUId is null ? "" : $"\"PackageUId\":\"{packageUId}\",")
+		+ $"\"ExtendParent\":{(extendParent ? "true" : "false")}}}";
 
 	/// <summary>Routes a serialized SelectQuery to the page-schema or object-schema answer.</summary>
 	private static Func<string, string> Route(string pageRows, string entityRows) =>
@@ -117,13 +143,19 @@ public sealed class MobileActionTargetProbeTests {
 			? resolution.State
 			: ActionTargetState.Unknown;
 
+	private static string CandidateOf(MobileActionTargetProbeResult result, string kind, string target) =>
+		result.TargetsByKey.TryGetValue(MobileActionTargetProbe.TargetKey(kind, target), out ActionTargetResolution resolution)
+			? resolution.ResolvedCandidateSchemaName
+			: null;
+
 	private static MobileActionTargetProbeResult Probe(
 		EnvironmentStub environment, JsonArray viewConfig, WebToMobilePageConversionRules rules = null,
-		JsonObject modelConfig = null) =>
+		JsonObject modelConfig = null, CancellationToken cancellationToken = default) =>
 		MobileActionTargetProbe.Probe(
 			environment.Resolver, "env", null, null, null,
 			new MobileActionTargetProbeRequest(
-				viewConfig, rules ?? RulesWithTargets(), modelConfig, PackageUId));
+				viewConfig, rules ?? RulesWithTargets(), modelConfig, PackageUId),
+			cancellationToken);
 
 	/// <summary>A modelConfig whose single data source binds the page to <paramref name="entityName"/>.</summary>
 	private static JsonObject SourcePageBoundTo(string entityName) =>
@@ -376,6 +408,52 @@ public sealed class MobileActionTargetProbeTests {
 	}
 
 	[Test]
+	[Description("The add-on read is addressed with the OBJECT's own package, resolved from the same batched SysSchema row — never the source page's package.")]
+	public void Probe_EntityRowDeclaresOwnPackage_AddonReadUsesTheObjectsPackageNotThePagesPackage() {
+		// Arrange — the object's own SysSchema row carries a package UId distinct from the source page's.
+		const string ObjectPackageUId = "77777777-7777-7777-7777-777777777777";
+		EnvironmentStub environment = Environment(
+			Route(Rows(), Rows(EntityRow("Opportunity", packageUId: ObjectPackageUId))),
+			addonMetaData: "{\"Pages\":[]}");
+
+		// Act
+		MobileActionTargetProbeResult result = Probe(
+			environment, ViewConfig("crt.CreateRecordRequest", "entityName", "Opportunity"));
+
+		// Assert
+		StateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, "Opportunity")
+			.Should().Be(ActionTargetState.Missing, because: "the add-on declares an empty page set");
+		// The add-on read must be addressed with the OBJECT's own package, never the source page's.
+		environment.AddonClient.Received(1).GetSchema(
+			Arg.Is<AddonGetRequestDto>(request =>
+				request.TargetSchemaUId == Guid.Parse(EntitySchemaUId)
+				&& request.AddonName == "MobileRelatedPage"
+				&& request.TargetPackageUId == Guid.Parse(ObjectPackageUId)));
+	}
+
+	[Test]
+	[Description("An object's SysSchema row with no resolvable package (a null/malformed SysPackage.UId) falls back to the source page's package rather than failing the object's probe outright.")]
+	public void Probe_EntityRowWithoutOwnPackage_FallsBackToThePagesPackage() {
+		// Arrange — no PackageUId on the object's own row (the untouched default EntityRow shape).
+		EnvironmentStub environment = Environment(
+			Route(Rows(), Rows(EntityRow("Opportunity"))),
+			addonMetaData: "{\"Pages\":[]}");
+
+		// Act
+		MobileActionTargetProbeResult result = Probe(
+			environment, ViewConfig("crt.CreateRecordRequest", "entityName", "Opportunity"));
+
+		// Assert
+		StateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, "Opportunity")
+			.Should().Be(ActionTargetState.Missing, because: "the add-on declares an empty page set");
+		// With no package on the object's own row, the read must still go through, addressed by the source
+		// page's package as the documented fallback.
+		environment.AddonClient.Received(1).GetSchema(
+			Arg.Is<AddonGetRequestDto>(request =>
+				request.AddonName == "MobileRelatedPage" && request.TargetPackageUId == Guid.Parse(PackageUId)));
+	}
+
+	[Test]
 	[Description("An object with rows but no base row stays unknown: it cannot be addressed reliably, so absence is not concluded.")]
 	public void Probe_EntityWithoutBaseRow_ReportsUnknown() {
 		// Arrange
@@ -423,6 +501,365 @@ public sealed class MobileActionTargetProbeTests {
 		state.Should().Be(expected,
 			because: "an empty page SET is a real absence, but a blank or unreadable body proves nothing — it is "
 				+ "equally the shape a request the server did not understand returns");
+	}
+
+	// ── Candidate web page resolution ───────────────────────────────────────────────────────────
+
+	[TestCase("", null, TestName = "ExtractDefaultPageSchemaUId_Blank_IsNull")]
+	[TestCase("{}", null, TestName = "ExtractDefaultPageSchemaUId_NoPagesKey_IsNull")]
+	[TestCase("not json", null, TestName = "ExtractDefaultPageSchemaUId_Unparseable_IsNull")]
+	[TestCase("{\"Pages\":[{\"PageSchemaUId\":\"" + PageSchemaUId + "\",\"IsDefault\":true,\"TypeColumnValue\":\"abc\"}]}",
+		null, TestName = "ExtractDefaultPageSchemaUId_OnlyTypedDefault_IsNull")]
+	[TestCase("{\"Pages\":[{\"PageSchemaUId\":\"" + PageSchemaUId + "\",\"IsDefault\":true}]}", PageSchemaUId,
+		TestName = "ExtractDefaultPageSchemaUId_UntypedDefault_ReturnsItsUId")]
+	[Description("The default page's PageSchemaUId is extracted under the same 'untyped default' rule ClassifyRelatedPageMetadata uses to decide presence, mirrored to return the UId to resolve instead of a state.")]
+	public void ExtractDefaultPageSchemaUId_ExtractsTheUntypedDefault(string metaData, string expected) {
+		// Arrange & Act
+		string pageSchemaUId = MobileActionTargetProbe.ExtractDefaultPageSchemaUId(metaData);
+
+		// Assert
+		pageSchemaUId.Should().Be(expected,
+			because: "only a real untyped default carries a UId worth resolving to a page name");
+	}
+
+	[Test]
+	[Description("An object verified missing its mobile default, whose WEB RelatedPage add-on declares an untyped default page, gets that page's NAME resolved as the candidate to convert next.")]
+	public void Probe_EntityMissingWithWebDefaultPage_ResolvesCandidateSchemaName() {
+		// Arrange — mobile add-on: no default (Missing). Web add-on: an untyped default page.
+		EnvironmentStub environment = Environment(
+			Route(Rows(PageRow("LeadProduct_FormPage", WebRoot, uId: PageSchemaUId)), Rows(EntityRow("LeadProduct"))),
+			addonMetaData: "{\"Pages\":[]}",
+			webRelatedPageAddonMetaData: $"{{\"Pages\":[{{\"PageSchemaUId\":\"{PageSchemaUId}\",\"IsDefault\":true}}]}}");
+
+		// Act
+		MobileActionTargetProbeResult result = Probe(
+			environment, ViewConfig("crt.CreateRecordRequest", "entityName", "LeadProduct"));
+
+		// Assert
+		StateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, "LeadProduct")
+			.Should().Be(ActionTargetState.Missing, because: "the mobile add-on still declares no default");
+		CandidateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, "LeadProduct")
+			.Should().Be("LeadProduct_FormPage",
+				because: "the web RelatedPage add-on's default page is the candidate to convert next");
+		// NSubstitute's Received() carries no because overload: the candidate read must address the WEB
+		// add-on of the SAME object the mobile read classified.
+		environment.AddonClient.Received(1).GetSchema(
+			Arg.Is<AddonGetRequestDto>(request =>
+				request.AddonName == "RelatedPage" && request.TargetSchemaUId == Guid.Parse(EntitySchemaUId)));
+	}
+
+	[Test]
+	[Description("An object verified missing its mobile default, whose WEB RelatedPage add-on ALSO declares no default, resolves no candidate — never a guessed page name.")]
+	public void Probe_EntityMissingWithoutWebDefaultPage_ResolvedCandidateIsNull() {
+		// Arrange
+		EnvironmentStub environment = Environment(
+			Route(Rows(), Rows(EntityRow("LeadProduct"))),
+			addonMetaData: "{\"Pages\":[]}",
+			webRelatedPageAddonMetaData: "{\"Pages\":[]}");
+
+		// Act
+		MobileActionTargetProbeResult result = Probe(
+			environment, ViewConfig("crt.CreateRecordRequest", "entityName", "LeadProduct"));
+
+		// Assert
+		CandidateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, "LeadProduct")
+			.Should().BeNull(
+				because: "the object has no web edit page registered either, so there is nothing to offer");
+	}
+
+	[Test]
+	[Description("A THROW from the web RelatedPage candidate read is isolated to the candidate lookup: the object's own Missing verdict — already settled by the mobile add-on read — stands, no candidate is guessed, ProbeOk stays true, and the failure is surfaced on the probe's Note instead of propagating to wipe the whole entity tier.")]
+	public void Probe_WebRelatedPageAddonThrows_KeepsTheVerdictAndSurfacesTheFailure() {
+		// Arrange — mobile add-on: no default (Missing). Web add-on read: throws.
+		EnvironmentStub environment = Environment(
+			Route(Rows(), Rows(EntityRow("LeadProduct"))),
+			addonMetaData: "{\"Pages\":[]}",
+			webRelatedPageAddonException: new InvalidOperationException("boom"));
+
+		// Act
+		MobileActionTargetProbeResult result = Probe(
+			environment, ViewConfig("crt.CreateRecordRequest", "entityName", "LeadProduct"));
+
+		// Assert
+		StateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, "LeadProduct")
+			.Should().Be(ActionTargetState.Missing,
+				because: "the mobile add-on's own answer already settled this — a SECOND read failing must not undo it");
+		CandidateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, "LeadProduct")
+			.Should().BeNull(because: "a failed read is fail-open, never a guessed page name");
+		result.ProbeOk.Should().BeTrue(
+			because: "the entity tier itself answered — only a bonus candidate lookup failed, not the classification");
+		result.Note.Should().Contain("Could not resolve a candidate web page for 1 object(s)",
+				because: "the caller must be able to tell 'the read failed' apart from 'the object genuinely has no "
+					+ "default web page' instead of both reaching the wire as the same null")
+			.And.Contain("boom", because: "the note must carry the underlying read failure's own reason");
+	}
+
+	[Test]
+	[Description("A PageSchemaUId the web RelatedPage add-on still names, but that no longer exists in SysSchema (zero rows on the by-UId lookup), resolves no candidate and is surfaced as a failure — a dangling reference is a different fact from 'no default configured', which is what a bare null would otherwise claim.")]
+	public void Probe_CandidatePageSchemaUIdIsDangling_ResolvesNoCandidateAndSurfacesTheFailure() {
+		// Arrange — the web add-on declares a default page, but the by-UId select for its name finds nothing.
+		EnvironmentStub environment = Environment(
+			Route(Rows(), Rows(EntityRow("LeadProduct"))),
+			addonMetaData: "{\"Pages\":[]}",
+			webRelatedPageAddonMetaData: $"{{\"Pages\":[{{\"PageSchemaUId\":\"{PageSchemaUId}\",\"IsDefault\":true}}]}}");
+
+		// Act
+		MobileActionTargetProbeResult result = Probe(
+			environment, ViewConfig("crt.CreateRecordRequest", "entityName", "LeadProduct"));
+
+		// Assert
+		CandidateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, "LeadProduct")
+			.Should().BeNull(because: "a dangling reference is not a page name to offer");
+		result.Note.Should().Contain("Could not resolve a candidate web page for 1 object(s)",
+				because: "a stale add-on reference must read differently from a clean 'no default configured' absence")
+			.And.Contain("could not be resolved to a name",
+				because: "the note must name WHY the lookup failed, not just that it did");
+	}
+
+	[Test]
+	[Description("A rejected (success:false) envelope from the by-UId select resolves no candidate and is surfaced as a failure, the same as a dangling reference — a rejected query answers nothing about whether the page exists, so it must not be read as 'confirmed absent'.")]
+	public void Probe_CandidateByUIdSelectRejected_ResolvesNoCandidateAndSurfacesTheFailure() {
+		// Arrange
+		EnvironmentStub environment = Environment(
+			Route("{\"success\":false,\"errorInfo\":{\"message\":\"denied\"}}", Rows(EntityRow("LeadProduct"))),
+			addonMetaData: "{\"Pages\":[]}",
+			webRelatedPageAddonMetaData: $"{{\"Pages\":[{{\"PageSchemaUId\":\"{PageSchemaUId}\",\"IsDefault\":true}}]}}");
+
+		// Act
+		MobileActionTargetProbeResult result = Probe(
+			environment, ViewConfig("crt.CreateRecordRequest", "entityName", "LeadProduct"));
+
+		// Assert
+		CandidateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, "LeadProduct")
+			.Should().BeNull(because: "a rejected query answers nothing about the page's existence");
+		result.Note.Should().Contain("Could not resolve a candidate web page for 1 object(s)",
+				because: "a rejected query must not be silently read as 'confirmed absent'")
+			.And.Contain("denied", because: "the note must carry the server's own rejection reason, not a generic one");
+	}
+
+	[Test]
+	[Description("Several verified-missing objects where ONE candidate read fails: the failing object's candidate is null and counted on the Note, while the OTHER object's candidate resolves normally and completely unaffected — a local failure must never leak sideways onto a sibling's result.")]
+	public void Probe_OneOfSeveralCandidateReadsFails_SiblingCandidateStaysIntact() {
+		// Arrange — "LeadProduct"'s web RelatedPage read throws (scoped to its own TargetSchemaUId); "Contact"'s
+		// declares a real default that resolves cleanly through the by-UId select.
+		EnvironmentStub environment = Environment(
+			Route(
+				Rows(PageRow("Contact_FormPage", WebRoot, uId: PageSchemaUId)),
+				Rows(EntityRow("LeadProduct", uId: EntitySchemaUId), EntityRow("Contact", uId: SecondEntitySchemaUId))),
+			addonMetaData: "{\"Pages\":[]}",
+			webRelatedPageAddonMetaData: $"{{\"Pages\":[{{\"PageSchemaUId\":\"{PageSchemaUId}\",\"IsDefault\":true}}]}}",
+			webRelatedPageAddonException: new InvalidOperationException("boom"),
+			webRelatedPageAddonExceptionForEntityUId: Guid.Parse(EntitySchemaUId));
+
+		// Act
+		MobileActionTargetProbeResult result = Probe(
+			environment, CreateRecordViewConfig("LeadProduct", "Contact"));
+
+		// Assert
+		StateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, "LeadProduct")
+			.Should().Be(ActionTargetState.Missing, because: "the classification read for THIS object never failed");
+		StateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, "Contact")
+			.Should().Be(ActionTargetState.Missing, because: "the classification read for THIS object never failed");
+		CandidateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, "LeadProduct")
+			.Should().BeNull(because: "its own candidate read failed");
+		CandidateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, "Contact")
+			.Should().Be("Contact_FormPage",
+				because: "a sibling object's failed candidate read must never cost this object its own, unrelated, "
+					+ "successfully-resolved candidate");
+		result.ProbeOk.Should().BeTrue(because: "both entity verdicts were answered — only one candidate lookup failed");
+		result.Note.Should().Contain("Could not resolve a candidate web page for 1 object(s)",
+				because: "one object's failed candidate lookup must still be surfaced, even though its sibling "
+					+ "succeeded, and the count must say ONE, not both")
+			.And.Contain("boom", because: "the note must carry the underlying read failure's own reason");
+	}
+
+	[Test]
+	[Description("Several verified-missing objects resolve their candidate page NAMES through ONE batched by-UId select after the loop — never one reverse-lookup round trip per object.")]
+	public void Probe_SeveralMissingObjects_ResolveCandidateNamesInOneBatchedSelect() {
+		// Arrange — two objects, each web add-on declaring a DIFFERENT default page, so the one batch query
+		// must carry both UIds and each object must get its own name back.
+		var byUIdQueries = new List<string>();
+		EnvironmentStub environment = Environment(query => {
+			if (query.Contains("EntitySchemaManager")) {
+				return Rows(
+					EntityRow("LeadProduct", uId: EntitySchemaUId), EntityRow("Contact", uId: SecondEntitySchemaUId));
+			}
+			byUIdQueries.Add(query);
+			return Rows(
+				PageRow("LeadProduct_FormPage", WebRoot, uId: PageSchemaUId),
+				PageRow("Contact_FormPage", WebRoot, uId: DefaultMobilePageUId));
+		});
+		environment.AddonClient.GetSchema(Arg.Any<AddonGetRequestDto>()).Returns(callInfo => {
+			AddonGetRequestDto request = callInfo.Arg<AddonGetRequestDto>();
+			if (!string.Equals(request.AddonName, "RelatedPage", StringComparison.Ordinal)) {
+				return new AddonSchemaDto { MetaData = "{\"Pages\":[]}" };
+			}
+			string pageUId = request.TargetSchemaUId == Guid.Parse(EntitySchemaUId)
+				? PageSchemaUId
+				: DefaultMobilePageUId;
+			return new AddonSchemaDto {
+				MetaData = $"{{\"Pages\":[{{\"PageSchemaUId\":\"{pageUId}\",\"IsDefault\":true}}]}}"
+			};
+		});
+
+		// Act
+		MobileActionTargetProbeResult result = Probe(environment, CreateRecordViewConfig("LeadProduct", "Contact"));
+
+		// Assert
+		byUIdQueries.Should().HaveCount(1,
+			because: "the UId->name lookups must be batched into one select after the loop, not issued per object");
+		byUIdQueries[0].Should().Contain("byUId",
+			because: "the batch must go through the shared BuildSelectSchemaNamesByUId query, not a private twin");
+		byUIdQueries[0].Should().Contain(PageSchemaUId, because: "one query must carry every pending page UId")
+			.And.Contain(DefaultMobilePageUId, because: "one query must carry every pending page UId");
+		CandidateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, "LeadProduct")
+			.Should().Be("LeadProduct_FormPage", because: "each object must get ITS page back out of the shared batch");
+		CandidateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, "Contact")
+			.Should().Be("Contact_FormPage", because: "each object must get ITS page back out of the shared batch");
+		result.Note.Should().BeNullOrWhiteSpace(because: "every lookup succeeded, so there is nothing to caveat");
+	}
+
+	[Test]
+	[Description("The batched by-UId select requests row headroom per distinct UId, not a bare 1:1 count — a SysSchema UId can carry a base row plus a replacing layer per package, just like a Name, and an unordered result caps arbitrarily.")]
+	public void Probe_SeveralMissingObjects_CandidateBatchRequestsRowHeadroomPerUId() {
+		// Arrange — two objects, each web add-on declaring a DIFFERENT default page, so the byUId select must
+		// carry two distinct UIds and its rowCount cap must scale with that count.
+		var byUIdQueries = new List<string>();
+		EnvironmentStub environment = Environment(query => {
+			if (query.Contains("EntitySchemaManager")) {
+				return Rows(
+					EntityRow("LeadProduct", uId: EntitySchemaUId), EntityRow("Contact", uId: SecondEntitySchemaUId));
+			}
+			byUIdQueries.Add(query);
+			return Rows(
+				PageRow("LeadProduct_FormPage", WebRoot, uId: PageSchemaUId),
+				PageRow("Contact_FormPage", WebRoot, uId: DefaultMobilePageUId));
+		});
+		environment.AddonClient.GetSchema(Arg.Any<AddonGetRequestDto>()).Returns(callInfo => {
+			AddonGetRequestDto request = callInfo.Arg<AddonGetRequestDto>();
+			if (!string.Equals(request.AddonName, "RelatedPage", StringComparison.Ordinal)) {
+				return new AddonSchemaDto { MetaData = "{\"Pages\":[]}" };
+			}
+			string pageUId = request.TargetSchemaUId == Guid.Parse(EntitySchemaUId)
+				? PageSchemaUId
+				: DefaultMobilePageUId;
+			return new AddonSchemaDto {
+				MetaData = $"{{\"Pages\":[{{\"PageSchemaUId\":\"{pageUId}\",\"IsDefault\":true}}]}}"
+			};
+		});
+
+		// Act
+		_ = Probe(environment, CreateRecordViewConfig("LeadProduct", "Contact"));
+
+		// Assert
+		byUIdQueries.Should().HaveCount(1, because: "both candidate UIds must still batch into one select");
+		byUIdQueries[0].Should().Contain(
+			$"\"rowCount\":{2 * MobileActionTargetProbe.RowsPerNameHeadroom}",
+			because: "requesting a bare 1-row-per-UId cap risks an unordered result pushing a sibling UId's row "
+				+ "out of the window and misreporting it as RowMissing, exactly like the by-Name read this "
+				+ "mirrors (M4)");
+	}
+
+	[TestCase("", TestName = "Probe_CandidateRowNameEmpty_ResolvesNoCandidateWithoutFailure")]
+	[TestCase("123 not a schema name", TestName = "Probe_CandidateRowNameInvalid_ResolvesNoCandidateWithoutFailure")]
+	[Description("A row the by-UId batch DID return, but whose Name is empty or invalid, resolves no candidate SILENTLY — the row exists, so this is 'nothing offerable', not the dangling-reference failure, and the two must not collapse into the same outcome.")]
+	public void Probe_CandidateRowNameUnusable_ResolvesNoCandidateWithoutFailure(string pageName) {
+		// Arrange — the batch returns the page row, but its Name is unusable.
+		EnvironmentStub environment = Environment(
+			Route(Rows(PageRow(pageName, WebRoot, uId: PageSchemaUId)), Rows(EntityRow("LeadProduct"))),
+			addonMetaData: "{\"Pages\":[]}",
+			webRelatedPageAddonMetaData: $"{{\"Pages\":[{{\"PageSchemaUId\":\"{PageSchemaUId}\",\"IsDefault\":true}}]}}");
+
+		// Act
+		MobileActionTargetProbeResult result = Probe(
+			environment, ViewConfig("crt.CreateRecordRequest", "entityName", "LeadProduct"));
+
+		// Assert
+		CandidateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, "LeadProduct")
+			.Should().BeNull(because: "an unusable name must never be offered as the page to convert next");
+		result.Note.Should().BeNullOrWhiteSpace(
+			because: "the row came back, so 'present but unusable' is a clean absence — reporting it as a failure "
+				+ "would erase the distinction from a dangling reference, whose row did NOT come back");
+	}
+
+	[Test]
+	[Description("The batched by-UId select being rejected fails EVERY pending candidate at once: both verdicts stand, both candidates are null, and the Note counts them — a name-lookup failure must never demote a settled Missing verdict.")]
+	public void Probe_CandidateBatchSelectRejected_AllVerdictsStandAndCandidatesFail() {
+		// Arrange — both objects Missing with declared web defaults; the one batch select is rejected.
+		EnvironmentStub environment = Environment(
+			Route(
+				"{\"success\":false,\"errorInfo\":{\"message\":\"denied\"}}",
+				Rows(EntityRow("LeadProduct", uId: EntitySchemaUId), EntityRow("Contact", uId: SecondEntitySchemaUId))),
+			addonMetaData: "{\"Pages\":[]}",
+			webRelatedPageAddonMetaData: $"{{\"Pages\":[{{\"PageSchemaUId\":\"{PageSchemaUId}\",\"IsDefault\":true}}]}}");
+
+		// Act
+		MobileActionTargetProbeResult result = Probe(environment, CreateRecordViewConfig("LeadProduct", "Contact"));
+
+		// Assert
+		StateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, "LeadProduct")
+			.Should().Be(ActionTargetState.Missing, because: "the verdict was settled before the batch ran");
+		StateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, "Contact")
+			.Should().Be(ActionTargetState.Missing, because: "the verdict was settled before the batch ran");
+		CandidateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, "LeadProduct")
+			.Should().BeNull(because: "a failed lookup is fail-open, never a guessed page name");
+		CandidateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, "Contact")
+			.Should().BeNull(because: "a failed lookup is fail-open, never a guessed page name");
+		result.ProbeOk.Should().BeTrue(because: "the entity tier answered — only the bonus candidate lookup failed");
+		result.Note.Should().Contain("Could not resolve a candidate web page for 2 object(s)",
+			because: "one failed batch loses every candidate pending in it, and the count must say so");
+	}
+
+	[Test]
+	[Description("A RESOLVED object (mobile add-on already has a default) never triggers the candidate read — it is not missing anything to resolve a candidate for.")]
+	public void Probe_EntityResolved_DoesNotReadTheWebRelatedPageAddon() {
+		// Arrange
+		EnvironmentStub environment = Environment(
+			Route(Rows(), Rows(EntityRow("Opportunity"))),
+			addonMetaData: $"{{\"Pages\":[{{\"PageSchemaUId\":\"{DefaultMobilePageUId}\",\"IsDefault\":true}}]}}");
+
+		// Act
+		MobileActionTargetProbeResult result = Probe(
+			environment, ViewConfig("crt.CreateRecordRequest", "entityName", "Opportunity"));
+
+		// Assert
+		StateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, "Opportunity")
+			.Should().Be(ActionTargetState.Resolved);
+		environment.AddonClient.DidNotReceive().GetSchema(
+			Arg.Is<AddonGetRequestDto>(request => request.AddonName == "RelatedPage"));
+	}
+
+	[Test]
+	[Description("An UNKNOWN object (no base row to address reliably) never triggers the candidate read — the classification itself never ran to reach a Missing verdict.")]
+	public void Probe_EntityUnknown_DoesNotReadTheWebRelatedPageAddon() {
+		// Arrange
+		EnvironmentStub environment = Environment(
+			Route(Rows(), Rows(EntityRow("Opportunity", extendParent: true))));
+
+		// Act
+		MobileActionTargetProbeResult result = Probe(
+			environment, ViewConfig("crt.CreateRecordRequest", "entityName", "Opportunity"));
+
+		// Assert
+		StateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, "Opportunity")
+			.Should().Be(ActionTargetState.Unknown);
+		environment.AddonClient.DidNotReceive().GetSchema(
+			Arg.Is<AddonGetRequestDto>(request => request.AddonName == "RelatedPage"));
+	}
+
+	[Test]
+	[Description("A WEB-PAGE target never gets a candidate: candidate resolution only applies to entity-default-mobile-page findings.")]
+	public void Probe_WebPageTarget_NeverCarriesACandidate() {
+		// Arrange
+		EnvironmentStub environment = Environment(Route(Rows(), Rows()));
+
+		// Act
+		MobileActionTargetProbeResult result = Probe(
+			environment, ViewConfig("crt.OpenPageRequest", "schemaName", "LegacyPage"));
+
+		// Assert
+		CandidateOf(result, MobileActionTargetProbe.KindWebPage, "LegacyPage").Should().BeNull(
+			because: "a web-page verdict is definitional and needs no candidate resolution at all");
 	}
 
 	[Test]
@@ -621,7 +1058,7 @@ public sealed class MobileActionTargetProbeTests {
 			$$"""[ { "type": "crt.FlexContainer", "name": "MainContainer", "items": [ {{items}} ] } ]""").AsArray();
 	}
 
-	// ── Per-tier degradation (ENG-94839) ───────────────────────────────────────────────────────
+	// ── Per-tier degradation ───────────────────────────────────────────────────────────────────
 
 	[Test]
 	[Description("An unreachable environment does not discard the web-page verdict the probe had already settled offline, even though the object tier on the SAME page could not answer.")]
@@ -660,9 +1097,9 @@ public sealed class MobileActionTargetProbeTests {
 	}
 
 	[Test]
-	[Description("Past the per-object read ceiling the remaining targets are unknown AND a note says they were never asked, so the caller can tell 'not asked' from 'asked, and the answer was no'.")]
-	public void Probe_MoreObjectTargetsThanTheCeiling_ReportsThemUnaskedInTheNote() {
-		// Arrange — nine objects, all present as base rows, against a ceiling of eight.
+	[Description("Comfortably under the per-call probe ceiling, every distinct object target on the page is checked.")]
+	public void Probe_ManyObjectTargets_UnderCeiling_ChecksEveryOne() {
+		// Arrange — nine objects, all present as base rows.
 		string[] names = [.. Enumerable.Range(0, 9).Select(i => $"Object{i}")];
 		EnvironmentStub environment = Environment(
 			Route(Rows(), Rows([.. names.Select(n => EntityRow(n))])),
@@ -673,11 +1110,86 @@ public sealed class MobileActionTargetProbeTests {
 
 		// Assert
 		result.ProbeOk.Should().BeTrue(because: "the reads that ran did succeed");
-		StateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, names[^1])
+		foreach (string name in names) {
+			StateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, name)
+				.Should().Be(ActionTargetState.Resolved,
+					because: $"'{name}' has a default mobile page and nine targets is well under the probe ceiling");
+		}
+		result.Note.Should().BeNullOrWhiteSpace(because: "every target was actually asked, so there is nothing to caveat");
+	}
+
+	[Test]
+	[Description("Exactly at the per-call probe ceiling, every target is still checked and no budget note is raised — the ceiling only bites past it.")]
+	public void Probe_ObjectTargets_AtCeiling_ChecksEveryOneWithoutNote() {
+		// Arrange — exactly MaxEntityAddonProbes objects, all present as base rows and all resolved.
+		string[] names = [.. Enumerable.Range(0, MobileActionTargetProbe.MaxEntityAddonProbes).Select(i => $"Object{i}")];
+		EnvironmentStub environment = Environment(
+			Route(Rows(), Rows([.. names.Select(n => EntityRow(n))])),
+			addonMetaData: """{"Pages":[{"IsDefault":true}]}""");
+
+		// Act
+		MobileActionTargetProbeResult result = Probe(environment, CreateRecordViewConfig(names));
+
+		// Assert
+		foreach (string name in names) {
+			StateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, name)
+				.Should().Be(ActionTargetState.Resolved,
+					because: $"'{name}' sits within the ceiling, so it must still be probed");
+		}
+		result.Note.Should().BeNullOrWhiteSpace(
+			because: "the ceiling was reached but never exceeded, so there is nothing unverified to caveat");
+	}
+
+	[Test]
+	[Description("Past the per-call probe ceiling, the objects beyond it are reported Unknown (never guessed Missing) and the note names the ceiling, so an unasked target cannot look like one the environment answered 'no' to.")]
+	public void Probe_ObjectTargets_BeyondCeiling_TailIsUnknownWithBudgetNote() {
+		// Arrange — one more object than MaxEntityAddonProbes, all present and all resolved if probed.
+		const int ceiling = MobileActionTargetProbe.MaxEntityAddonProbes;
+		string[] names = [.. Enumerable.Range(0, ceiling + 1).Select(i => $"Object{i}")];
+		EnvironmentStub environment = Environment(
+			Route(Rows(), Rows([.. names.Select(n => EntityRow(n))])),
+			addonMetaData: """{"Pages":[{"IsDefault":true}]}""");
+
+		// Act
+		MobileActionTargetProbeResult result = Probe(environment, CreateRecordViewConfig(names));
+
+		// Assert
+		result.ProbeOk.Should().BeTrue(because: "the reads that DID run still succeeded — only some were never asked");
+		foreach (string name in names.Take(ceiling)) {
+			StateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, name)
+				.Should().Be(ActionTargetState.Resolved, because: $"'{name}' is within the first {ceiling} and was probed");
+		}
+		StateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, names[ceiling])
 			.Should().Be(ActionTargetState.Unknown,
-				because: "an unasked target must fail open, never present as a verified absence");
-		result.Note.Should().Contain("were checked",
-			because: "silence would leave the last target indistinguishable from one the environment answered for");
+				because: "the (ceiling+1)th target exhausted the budget and was never asked — Unknown, not a guessed Missing");
+		result.Note.Should().Contain($"Only the first {ceiling} object targets were checked",
+			because: "the caller must be told some targets were never verified, and how many were");
+	}
+
+	[Test]
+	[Description("When the budget is exhausted AND a probed object's candidate lookup also fails, the note reports BOTH — neither degradation may silently swallow the other.")]
+	public void Probe_ObjectTargets_BudgetExhaustedAndCandidateFailure_NoteReportsBoth() {
+		// Arrange — one more object than MaxEntityAddonProbes, all Missing on the mobile add-on, and the web
+		// candidate read always throws.
+		const int ceiling = MobileActionTargetProbe.MaxEntityAddonProbes;
+		string[] names = [.. Enumerable.Range(0, ceiling + 1).Select(i => $"Object{i}")];
+		EnvironmentStub environment = Environment(
+			Route(Rows(), Rows([.. names.Select(n => EntityRow(n))])),
+			addonMetaData: "{\"Pages\":[]}",
+			webRelatedPageAddonException: new InvalidOperationException("boom"));
+
+		// Act
+		MobileActionTargetProbeResult result = Probe(environment, CreateRecordViewConfig(names));
+
+		// Assert
+		StateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, names[ceiling])
+			.Should().Be(ActionTargetState.Unknown, because: "the (ceiling+1)th target still exhausts the budget");
+		StateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, names[0])
+			.Should().Be(ActionTargetState.Missing, because: "a probed object's own verdict stands despite the candidate read failing");
+		result.Note.Should().Contain($"Only the first {ceiling} object targets were checked",
+			because: "the budget degradation must not be dropped just because a second one also fired");
+		result.Note.Should().Contain($"Could not resolve a candidate web page for {ceiling} object(s)",
+			because: $"every one of the {ceiling} probed objects resolved Missing and every candidate read threw");
 	}
 
 	[Test]
@@ -692,9 +1204,162 @@ public sealed class MobileActionTargetProbeTests {
 		Probe(environment, CreateRecordViewConfig("First", "Second"));
 
 		// Assert — NSubstitute's Received() carries no because overload, so the reason is stated here:
-		// the add-on read runs once per object up to the ceiling, and re-resolving the client inside that
-		// loop would turn a read budget into a container-resolution budget as well.
+		// the add-on read runs once per object, and re-resolving the client inside that loop would cost
+		// container work for nothing.
 		environment.Resolver.Received(1).Resolve<IAddonSchemaDesignerClient>(Arg.Any<EnvironmentOptions>());
+	}
+
+	// ── Concurrency (bounded per-object reads run at the same time) ────────────────────────────
+
+	[Test]
+	[CancelAfter(30_000)]
+	[Description("Six objects probed at once complete their per-object reads OUT OF ORDER (deliberately reversed via gated release, never a wall-clock delay), yet every object's own verdict and candidate land under ITS OWN key — concurrent completion order must never scramble which result belongs to which object. Bounded by [CancelAfter] so a regression that deadlocks the gates fails the test instead of hanging CI.")]
+	public void Probe_ManyObjectTargets_CompleteOutOfOrder_EachResultLandsUnderItsOwnKey() {
+		// Arrange — six objects: even-indexed ones resolve cleanly, odd-indexed ones are Missing with their
+		// own distinct candidate page. Every classify read blocks on its OWN gate until every one of the six
+		// has reached it (readyGate), then the test releases the gates in REVERSE probe order — a
+		// deterministic reordering with no reliance on wall-clock timing (Sonar S2925) — so if a result ever
+		// landed under the wrong slot, this reversal is what would surface it.
+		const int count = 6;
+		string[] names = [.. Enumerable.Range(0, count).Select(i => $"Object{i}")];
+		Guid[] entityUIds = [.. names.Select(_ => Guid.NewGuid())];
+		Guid[] candidatePageUIds = [.. names.Select(_ => Guid.NewGuid())];
+
+		using var readyGate = new CountdownEvent(count);
+		ManualResetEventSlim[] releaseGates =
+			[.. Enumerable.Range(0, count).Select(_ => new ManualResetEventSlim(false))];
+		// Proves the concurrency bound itself, which the gated design alone never asserts: every classify read
+		// increments this while blocked on its own release gate, so the peak observed across all six reads is
+		// how many were GENUINELY in flight at once, not just "eventually all ran".
+		object concurrencyLock = new();
+		int currentConcurrency = 0;
+		int peakConcurrency = 0;
+
+		EnvironmentStub environment = Environment(
+			Route(
+				Rows([.. Enumerable.Range(0, count).Where(i => i % 2 == 1)
+					.Select(i => PageRow($"{names[i]}_FormPage", WebRoot, uId: candidatePageUIds[i].ToString()))]),
+				Rows([.. Enumerable.Range(0, count).Select(i => EntityRow(names[i], uId: entityUIds[i].ToString()))])));
+		environment.AddonClient.GetSchema(Arg.Any<AddonGetRequestDto>()).Returns(callInfo => {
+			AddonGetRequestDto request = callInfo.Arg<AddonGetRequestDto>();
+			int index = Array.IndexOf(entityUIds, request.TargetSchemaUId);
+			bool isMissing = index % 2 == 1;
+			if (string.Equals(request.AddonName, "RelatedPage", StringComparison.Ordinal)) {
+				return new AddonSchemaDto {
+					MetaData = isMissing
+						? $"{{\"Pages\":[{{\"PageSchemaUId\":\"{candidatePageUIds[index]}\",\"IsDefault\":true}}]}}"
+						: "{\"Pages\":[]}"
+				};
+			}
+			lock (concurrencyLock) {
+				currentConcurrency++;
+				peakConcurrency = Math.Max(peakConcurrency, currentConcurrency);
+			}
+			readyGate.Signal();
+			releaseGates[index].Wait();
+			lock (concurrencyLock) {
+				currentConcurrency--;
+			}
+			return new AddonSchemaDto {
+				MetaData = isMissing ? "{\"Pages\":[]}" : "{\"Pages\":[{\"IsDefault\":true}]}"
+			};
+		});
+
+		// Act — run the probe on its own thread so this thread can wait for every object to reach its gate,
+		// then release the gates in reverse index order before observing the result.
+		Task<MobileActionTargetProbeResult> probing = Task.Run(
+			() => Probe(environment, CreateRecordViewConfig(names)));
+		// Bounded wait: a regression that deadlocks the fan-out (fewer than `count` reads ever reaching their
+		// gate) must fail this assertion with a clear reason instead of hanging the test indefinitely — the
+		// [CancelAfter] above is the last-resort backstop, not the primary signal.
+		readyGate.Wait(TimeSpan.FromSeconds(20)).Should().BeTrue(
+			because: "all six classify reads must reach their own gate well within this budget, or a regression "
+				+ "stalled the fan-out itself rather than merely completing out of order");
+		for (int i = count - 1; i >= 0; i--) {
+			releaseGates[i].Set();
+		}
+		MobileActionTargetProbeResult result;
+		try {
+			result = probing.GetAwaiter().GetResult();
+		} finally {
+			// A `finally` so an exception from the probe itself (which the parallel body degrades away today,
+			// but a regression could reintroduce) never leaks these gates.
+			foreach (ManualResetEventSlim gate in releaseGates) {
+				gate.Dispose();
+			}
+		}
+
+		// Assert
+		for (int i = 0; i < count; i++) {
+			bool isMissing = i % 2 == 1;
+			StateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, names[i])
+				.Should().Be(isMissing ? ActionTargetState.Missing : ActionTargetState.Resolved,
+					because: $"'{names[i]}'s own verdict must land under its own key regardless of completion order");
+			CandidateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, names[i])
+				.Should().Be(isMissing ? $"{names[i]}_FormPage" : null,
+					because: $"'{names[i]}'s own candidate must never be swapped with a sibling's");
+		}
+		result.Note.Should().BeNullOrWhiteSpace(because: "every read succeeded, so there is nothing to caveat");
+		peakConcurrency.Should().BeGreaterThan(1,
+			because: "the test's own premise is that these reads genuinely overlap — a peak of 1 would mean "
+				+ "the gated design silently degraded to sequential execution without failing any assertion above");
+		peakConcurrency.Should().BeLessThanOrEqualTo(MobileActionTargetProbe.MaxEntityProbeParallelism,
+			because: "the fan-out must never exceed its own configured concurrency cap");
+	}
+
+	[Test]
+	[Description("One object's mobile-classification read throwing does not affect any other object's result — running the reads concurrently must not let one object's exception escape the parallel body and abort its siblings.")]
+	public void Probe_OneOfSeveralClassifyReadsThrows_SiblingResultsStayIntact() {
+		// Arrange — "Faulty"'s MobileRelatedPage read throws; "Healthy"'s resolves cleanly.
+		Guid faultyUId = Guid.NewGuid();
+		Guid healthyUId = Guid.NewGuid();
+		EnvironmentStub environment = Environment(
+			Route(Rows(), Rows(
+				EntityRow("Faulty", uId: faultyUId.ToString()), EntityRow("Healthy", uId: healthyUId.ToString()))));
+		environment.AddonClient.GetSchema(Arg.Any<AddonGetRequestDto>()).Returns(callInfo => {
+			AddonGetRequestDto request = callInfo.Arg<AddonGetRequestDto>();
+			if (!string.Equals(request.AddonName, "MobileRelatedPage", StringComparison.Ordinal)) {
+				return new AddonSchemaDto { MetaData = "{\"Pages\":[]}" };
+			}
+			if (request.TargetSchemaUId == faultyUId) {
+				throw new InvalidOperationException("boom");
+			}
+			return new AddonSchemaDto { MetaData = "{\"Pages\":[{\"IsDefault\":true}]}" };
+		});
+
+		// Act
+		MobileActionTargetProbeResult result = Probe(environment, CreateRecordViewConfig("Faulty", "Healthy"));
+
+		// Assert
+		StateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, "Faulty")
+			.Should().Be(ActionTargetState.Unknown,
+				because: "a throwing classify read fails open, never a guessed Missing or Resolved");
+		StateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, "Healthy")
+			.Should().Be(ActionTargetState.Resolved,
+				because: "a sibling's throwing read must never affect this object's own successful classification");
+		result.ProbeOk.Should().BeTrue(
+			because: "the entity tier still answered — one object's classification degraded, not the whole tier");
+	}
+
+	[Test]
+	[Description("A token already cancelled before the entity tier starts degrades to a normal NotProbed result instead of throwing OperationCanceledException — the fan-out's never-throws contract holds for cancellation too, not just for environment failures.")]
+	public void Probe_CancelledBeforeEntityTierRuns_DegradesWithoutThrowing() {
+		// Arrange
+		EnvironmentStub environment = Environment(Route(Rows(), Rows(EntityRow("SomeObject"))));
+		using var cts = new CancellationTokenSource();
+		cts.Cancel();
+
+		// Act
+		MobileActionTargetProbeResult result = null;
+		Action act = () => result = Probe(
+			environment, CreateRecordViewConfig("SomeObject"), cancellationToken: cts.Token);
+		act.Should().NotThrow(because: "a cancellation must degrade like every other tier failure, never escape as an exception");
+
+		// Assert
+		result!.ProbeOk.Should().BeFalse(because: "the entity tier never actually answered, so it must not claim it did");
+		result.Note.Should().Contain("cancelled",
+			because: "the caller needs to tell a cancellation apart from a genuine environment failure");
+		environment.Resolver.DidNotReceive().Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>());
 	}
 
 	[Test]
@@ -746,18 +1411,18 @@ public sealed class MobileActionTargetProbeTests {
 	}
 
 	[TestCase(MobileActionTargetProbe.KindWebPage, true,
-		TestName = "StripsBindingOnMissing_WebPage_Strips")]
+		TestName = "BlanksTargetOnMissing_WebPage_Blanks")]
 	[TestCase(MobileActionTargetProbe.KindEntityDefaultMobilePage, false,
-		TestName = "StripsBindingOnMissing_EntityDefaultMobilePage_ReportsOnly")]
-	[TestCase("some-future-kind", false, TestName = "StripsBindingOnMissing_UnknownKind_ReportsOnly")]
-	[TestCase(null, false, TestName = "StripsBindingOnMissing_NullKind_ReportsOnly")]
-	[Description("Only a DEFINITIONAL absence removes an action: a web page cannot open on mobile whatever the environment holds, while every kind whose verdict comes from a read is reported and left alone.")]
-	public void StripsBindingOnMissing_OnlyDefinitionalAbsenceStrips(string kind, bool expected) {
+		TestName = "BlanksTargetOnMissing_EntityDefaultMobilePage_ReportsOnly")]
+	[TestCase("some-future-kind", false, TestName = "BlanksTargetOnMissing_UnknownKind_ReportsOnly")]
+	[TestCase(null, false, TestName = "BlanksTargetOnMissing_NullKind_ReportsOnly")]
+	[Description("Only a DEFINITIONAL absence blanks an action's target param: a web page cannot open on mobile whatever the environment holds, while every kind whose verdict comes from a read is reported and left alone.")]
+	public void BlanksTargetOnMissing_OnlyDefinitionalAbsenceBlanks(string kind, bool expected) {
 		// Arrange & Act
-		bool strips = MobileActionTargetProbe.StripsBindingOnMissing(kind);
+		bool blanks = MobileActionTargetProbe.BlanksTargetOnMissing(kind);
 
 		// Assert
-		strips.Should().Be(expected,
+		blanks.Should().Be(expected,
 			because: "the object verdict comes from an add-on read whose body carrying no page set is equally "
 				+ "the shape a mis-addressed read returns, so removing a working action on it is not a trade "
 				+ "this tool makes");

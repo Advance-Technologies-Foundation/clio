@@ -36,8 +36,11 @@ public static class CreateBusinessProcessPrompt {
 		 trigger), not a page save handler; add `changedColumns` to fire an `on:modified` trigger only when specific
 		 columns change, and/or a `filter` to fire only for matching records. To send an email, add a `sendEmail`
 		 element with an `email` block — `mode` (auto/manual), `sender`, `to`/`cc`/`bcc` recipients, `subject`, the
-		 HTML custom-message `body` (`bodyFormat` `html` only), `importance`, `ignoreErrors`, and a manual-mode
-		 `performer`; email TEMPLATES are not supported (custom message only). To route a record for sign-off, add an
+		 message as EITHER an HTML custom-message `body` (`bodyFormat` `html` only) OR an existing email `template`
+		 (by name or id; plus `templateEntity`, the record its macros resolve against, when the template is authored
+		 against an object — never both a template and a body), `importance`, `ignoreErrors`, and a manual-mode
+		 `performer`; when several templates could fit or none is named, ASK the user which template to use or offer
+		 a custom message rather than guessing. To route a record for sign-off, add an
 		 `approval` element with an `approval` block — the `object` and the `recordId` under approval, the `approver`
 		 (a nested object taking `type` user|manager|role plus that type's `employee` or `role`), `allowDelegation`,
 		 and the two notifications (`notifyApprover` / `notifyAuthor`, each a nested object taking `emailTemplate`,

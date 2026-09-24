@@ -44,7 +44,12 @@ using JsonValue = System.Text.Json.Nodes.JsonValue;
 [SuppressMessage("Info Code Smell", "S1135:Track uses of TODO tags", Justification = "The TODO tracks ENG-93027 (dynamic mobile-request set) and is intentionally retained as a pointer.")]
 [SuppressMessage("Major Code Smell", "S3358:Ternary operators should not be nested", Justification = "The nested ternaries express a compact fallback chain that reads clearly in context.")]
 [SuppressMessage("Major Code Smell", "S2589:Boolean expressions should not be gratuitous", Justification = "The flagged null checks guard values the analyzer cannot prove non-null across the Newtonsoft/STJ boundary; removing them would risk an NRE on malformed bundles.")]
-public static class WebToMobileAnalysisService {
+// Split across two files: the conversion walk here, and the ENG-96589 property prune in
+// WebToMobilePropertyPrune.cs, which needs this file's private registry and reason helpers. Attributes sit
+// on the TYPE, so the [SuppressMessage] block above governs that file's MEMBERS as well — but not anything
+// outside the type declaration there, such as its file-header comment. Keep that comment free of
+// code-shaped text rather than adding a second suppression block.
+public static partial class WebToMobileAnalysisService {
 
 	private const string GuidanceArticleName = "freedom-page-web-to-mobile-conversion";
 
@@ -84,9 +89,12 @@ public static class WebToMobileAnalysisService {
 	/// as <paramref name="mobileTemplateViewModelConfig"/> to diff the page's modelConfig. Null when no
 	/// template rule matched or the template bundle could not be read.</param>
 	/// <param name="actionTargetsProbe">Read-only probe of whether each action's NAVIGATION TARGET exists on
-	/// mobile (ENG-94839), surfaced as <c>requestConversions.unresolvedTargetRequests</c>. Null - or a probe
+	/// mobile, surfaced as <c>requestConversions.unresolvedTargetRequests</c>. Null - or a probe
 	/// that could not reach the environment - leaves every target unknown and changes no conversion decision:
 	/// the report is a warning, nothing is dropped on target grounds.</param>
+	/// <param name="existingMobilePages">Mobile page(s) already found for the entity/page being converted
+	/// (the reuse-vs-convert fact, playbook step 2a). Carried onto the guide unchanged; null becomes an
+	/// empty list.</param>
 		public static MobilePageConversionGuide Analyze(
 		PageBundleInfo bundle,
 		IReadOnlySet<string> mobileTypes,
@@ -112,7 +120,9 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, JObject> mobileTemplateNodesByName = null,
 		IReadOnlyDictionary<string, JObject> webTemplateBaselineNodes = null,
 		JObject webTemplateResources = null,
-		MobileActionTargetProbeResult actionTargetsProbe = null) {
+		MobileActionTargetProbeResult actionTargetsProbe = null,
+		IReadOnlyList<ExistingMobilePageInfo> existingMobilePages = null,
+		MobileRegistryGeneration mobileRegistryGeneration = null) {
 		ArgumentNullException.ThrowIfNull(bundle);
 		ArgumentNullException.ThrowIfNull(mobileTypes);
 		ArgumentNullException.ThrowIfNull(webTypes);
@@ -206,7 +216,7 @@ public static class WebToMobileAnalysisService {
 		// from the map, and an absent key reads as Unknown. Gating on the flag instead threw away the verdicts
 		// the probe had ALREADY settled without the environment (a web-page target is dead by construction),
 		// so a page carrying one web-page target plus one object target silently lost the web-page warning
-		// that the same page without the object target reports fine (ENG-94839).
+		// that the same page without the object target reports fine.
 		IReadOnlyDictionary<string, ActionTargetResolution> actionTargets =
 			actionTargetsProbe?.TargetsByKey
 			?? new Dictionary<string, ActionTargetResolution>(StringComparer.OrdinalIgnoreCase);
@@ -257,6 +267,30 @@ public static class WebToMobileAnalysisService {
 		// each parent's indexed group to 0; run over tab indexes it would rebase the first-tab offset away and
 		// put the first web tab BEFORE the general tab).
 		AssignConvertedTabIndexes(elementMap);
+		// ENG-96589 — drop the source properties the target mobile component does not DECLARE. Every writer
+		// of mobile `values` and every REMOVAL pass has run, so this sees the final carried surface and never
+		// reports a prune on an element the page will not have. It runs BEFORE BuildRequestConversionInfo so
+		// a pruned event binding can still be reclassified in the collectors below, and before every
+		// converter-authored write further down (adaptive, positional, child slots, property overrides,
+		// placements) so the converter never prunes its own output.
+		//
+		// One consequence of running FIRST is worth stating, because it is not a write-ordering question:
+		// ApplyComponentPropertyOverrides SELECTS its rules by reading these values (MatchesValueConstraints,
+		// where an ABSENT property never matches), so a pruned key can silently disable an override — no
+		// normalizations entry, no skip record. It is latent today, because all three bundled overrides
+		// filter on `type`, which ExcludedSourceProps never removes. It stops being latent the moment a rules
+		// update filters on anything else, which is why WebToMobilePageConversionRulesRegistryTests asserts
+		// that every property an override READS or WRITES is one the registry declares.
+		//
+		// A no-op unless the loaded payload carries the Flutter
+		// inherited surface, which is how the runtime-derived generation is recognised — see
+		// MobileRegistryGeneration. Deliberately NOT gated on the stand's platform version: each version's
+		// registry describes the runtime that version runs, so an old stand served its own regenerated file
+		// is pruned correctly rather than merely spared.
+		DeclaredPropertyIndex declaredProps =
+			DeclaredPropertyIndex.Build(mobileByType, mobileRegistryGeneration);
+		PropertyPruneResult propertyPrune = PruneUndeclaredProperties(
+			elementMap, declaredProps, convertedRequests, flaggedRequests, droppedRequests, unresolvedTargets);
 		RequestConversionInfo requestConversions = BuildRequestConversionInfo(
 			convertedRequests, droppedRequests, flaggedRequests, emptyRemovedMobileNames,
 			excludedRemovedMobileNames, actionTargetsProbe, unresolvedTargets);
@@ -326,7 +360,15 @@ public static class WebToMobileAnalysisService {
 		//    exclusion rule drops every crt.SearchFilter here — and BuildMobileContracts follows the
 		//    suggestions, so an early answer also sends a contract set that is wrong in BOTH directions.
 		List<ComponentSuggestion> suggestions = BuildComponentSuggestions(namesByType, rules, webTypes, elementMap);
-		List<MobileComponentContract> contracts = BuildMobileContracts(suggestions, mobileByType);
+		// The contract's allowedProperties is the SAME union the prune enforces, so a caller can always see
+		// WHY a property was pruned — and it is fed from the SAME predicate, so the two cannot drift. The
+		// inherited surface is folded in only when the loaded payload is the runtime-derived generation: the
+		// web-derived one publishes Angular element attributes (classes, id, loading, shape, styles,
+		// tabIndex) under the same key, and folding those in would advertise `classes` and `tabIndex` as
+		// accepted MOBILE properties in the field the guidance tells the agent to build values from.
+		List<MobileComponentContract> contracts = BuildMobileContracts(
+			suggestions, mobileByType,
+			mobileRegistryGeneration is { CatalogIsRuntimeDerived: true } ? mobileRegistryGeneration.BaseInputs : null);
 
 		// 5. Data sections applied to the mobile body verbatim/filtered (identical structural support on
 		//    mobile): modelConfig is carried over as-is (preserving attribute types like ForwardReference);
@@ -389,11 +431,19 @@ public static class WebToMobileAnalysisService {
 			DroppedElements = ProjectDroppedElements(elementMap),
 			MobileContracts = contracts,
 			SectionRegistration = sectionRegistration,
+			ExistingMobilePages = existingMobilePages ?? [],
 			PageBusinessRules = pageBusinessRules,
 			RequestConversions = requestConversions,
 			AdaptiveLayout = adaptiveLayout.Count > 0 ? adaptiveLayout : null,
 			TabAreaLayers = tabAreaLayers.Count > 0 ? tabAreaLayers : null,
 			Normalizations = BuildNormalizations(componentPropertyOverrides),
+			PrunedProperties = propertyPrune.IsEmpty ? null : propertyPrune.Entries,
+			// Whether the prune RAN — the response's only prune signal, and deliberately not derived from the
+			// catalog's mobileRuntimeVersion marker: the producer publishes that irregularly (absent from
+			// `latest` since 2026-09-17), so a field carrying it would be missing on every conversion against
+			// today's catalog and a caller would read the gap as "the prune was off". Which catalog was
+			// served is already reported by `resolvedFrom`.
+			PropertyPruneApplied = declaredProps.Enabled,
 			ResourceStrings = resourceStrings.Count > 0 ? resourceStrings : null,
 
 			GuidanceArticle = GuidanceArticleName,
@@ -1339,7 +1389,8 @@ public static class WebToMobileAnalysisService {
 	/// </summary>
 	private static List<MobileComponentContract> BuildMobileContracts(
 		IReadOnlyList<ComponentSuggestion> suggestions,
-		IReadOnlyDictionary<string, ComponentRegistryEntry> mobileByType) {
+		IReadOnlyDictionary<string, ComponentRegistryEntry> mobileByType,
+		IReadOnlyDictionary<string, JsonElement> baseInputs = null) {
 		var contracts = new List<MobileComponentContract>();
 		if (mobileByType is null) {
 			return contracts;
@@ -1357,7 +1408,7 @@ public static class WebToMobileAnalysisService {
 					ComponentType = mobileType,
 					Container = entry.Container,
 					Description = entry.Description,
-					AllowedProperties = BuildAllowedPropertyNames(entry),
+					AllowedProperties = BuildAllowedPropertyNames(entry, baseInputs).ToList(),
 					Example = entry.Example,
 					DesignerDefaults = entry.DesignerDefaults
 				});
@@ -1366,10 +1417,36 @@ public static class WebToMobileAnalysisService {
 		return contracts;
 	}
 
-	private static IReadOnlyList<string> BuildAllowedPropertyNames(ComponentRegistryEntry entry) {
+	/// <summary>
+	/// Every property name a mobile component DECLARES — the single membership authority (ENG-96589). The
+	/// union has four sources and dropping any one of them silently breaks converted pages:
+	/// <list type="bullet">
+	/// <item><description><c>inputs</c> — the component's own authorable surface.</description></item>
+	/// <item><description><c>outputs</c> — where the runtime-derived registry puts event/request bindings.
+	/// EVERY one of the 24 output keys in the live payload is ABSENT from the same component's
+	/// <c>inputs</c> (<c>crt.List.itemSelected</c>, <c>crt.Toggle.valueChange</c>,
+	/// <c>crt.ComboBox.valuePicked</c>, …), so an inputs-only union strips every binding.</description></item>
+	/// <item><description><c>properties</c> — the legacy schema generation.</description></item>
+	/// <item><description>the registry's root <c>references.baseInputs</c> — the inherited surface.
+	/// NO component declares <c>visible</c> in its own <c>inputs</c>, and none declares
+	/// <c>layoutConfig</c>; they exist ONLY here.</description></item>
+	/// </list>
+	/// The caller-facing <c>mobileContracts[].allowedProperties</c> and the set the prune enforces are this
+	/// one function, so a caller can always see WHY a property was pruned.
+	/// </summary>
+	/// <remarks>
+	/// Materialised as a case-insensitive set rather than probed per call: the registry's own dictionaries
+	/// are ORDINAL (<c>System.Text.Json</c> builds them with the default comparer;
+	/// <c>PropertyNameCaseInsensitive</c> binds POCO properties, not dictionary keys), which is why
+	/// <see cref="ResolveExpectedShape"/> and <see cref="DeclaresScalarString"/> iterate and compare instead
+	/// of indexing. This keeps that contract while paying the iteration once per TYPE.
+	/// </remarks>
+	private static SortedSet<string> BuildAllowedPropertyNames(
+		ComponentRegistryEntry entry,
+		IReadOnlyDictionary<string, JsonElement> baseInputs = null) {
 		var allowed = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
 		if (entry is null) {
-			return [];
+			return allowed;
 		}
 		if (entry.Properties is not null) {
 			foreach (string key in entry.Properties.Keys) {
@@ -1381,7 +1458,17 @@ public static class WebToMobileAnalysisService {
 				allowed.Add(key);
 			}
 		}
-		return allowed.ToList();
+		if (entry.Outputs is not null) {
+			foreach (string key in entry.Outputs.Keys) {
+				allowed.Add(key);
+			}
+		}
+		if (baseInputs is not null) {
+			foreach (string key in baseInputs.Keys) {
+				allowed.Add(key);
+			}
+		}
+		return allowed;
 	}
 
 	/// <summary>
@@ -1985,9 +2072,6 @@ public static class WebToMobileAnalysisService {
 		}
 		return referenced;
 	}
-
-
-
 
 	private static bool HasContent(string section, string empty) =>
 		!string.IsNullOrWhiteSpace(section) &&
@@ -3439,13 +3523,13 @@ public static class WebToMobileAnalysisService {
 			// interaction enters a twin merge). An unchanged binding is inherited and left to the template element.
 			if (IsEventBinding(prop.Value)) {
 				if (!JToken.DeepEquals(baseline[prop.Name], prop.Value)) {
-					// canRemoveBinding: false — `values` here is a DELTA MERGE payload, not the element's whole
-					// mobileValues. Omitting a key from a merge means "keep the mobile template element's own
-					// value" (see MobileValues), so nothing would actually be removed and the mobile control
-					// may well keep firing the template's own request. Report the dead target; do not claim a
-					// removal that the merge cannot perform.
-					ProcessOneEventBinding(ctx, mobileName, prop.Name, (JObject)prop.Value, values,
-						canRemoveBinding: false);
+					// `values` here is a DELTA MERGE payload, not the element's whole mobileValues. Omitting a
+					// key from a merge means "keep the mobile template element's own value" (see MobileValues),
+					// so an unsupported request is dropped by omission rather than an explicit removal. A
+					// definitionally-absent target (a web page) is still written into the merge with its target
+					// param blanked: the page's own binding wins over the template's, just with the broken part
+					// cleared — and BindingRemoved reports that blanking regardless of which writer performed it.
+					ProcessOneEventBinding(ctx, mobileName, prop.Name, (JObject)prop.Value, values);
 				}
 				continue;
 			}
@@ -3711,10 +3795,14 @@ public static class WebToMobileAnalysisService {
 
 	/// <summary>
 	/// Source-node properties never copied into the prebuilt mobile <c>values</c>: the element
-	/// identity/type (<c>name</c>/<c>type</c>), and nothing else. <c>dataSourceName</c> is NOT excluded:
+	/// identity/type (<c>name</c>/<c>type</c>), and nothing else. <c>dataSourceName</c> is NOT excluded HERE:
 	/// a surviving element only ever references the primary data source (foreign-DS elements are dropped
-	/// wholesale), so its <c>dataSourceName</c> is the valid primary DS and some components require it (e.g.
-	/// <c>crt.Feed</c> needs <c>dataSourceName</c> + <c>entitySchemaName</c>). NOTE: <c>items</c> is NOT here
+	/// wholesale), so the value that gets copied is the valid primary DS. Whether it SURVIVES is a separate
+	/// question, answered by the registry: no component in the runtime-derived catalog declares
+	/// <c>dataSourceName</c> and it is not inherited, so <see cref="PruneUndeclaredProperties"/> removes it
+	/// wherever the prune is enabled (ENG-96589 took the runtime's word over the converter's older
+	/// assumption that <c>crt.Feed</c> needs it; <c>entitySchemaName</c> IS declared and survives). The
+	/// decision is pinned by <c>WebToMobilePropertyPruneTests</c>. NOTE: <c>items</c> is NOT here
 	/// — it is excluded only when it is an ARRAY of child view elements (structural, handled by the tree
 	/// walk); as a STRING it is a real collection binding (e.g. <c>crt.CommunicationOptions</c>/<c>crt.List</c>
 	/// <c>items: "$Attr"</c>) and is carried like any other property. Everything else is carried verbatim.
@@ -3735,10 +3823,11 @@ public static class WebToMobileAnalysisService {
 	/// get-page round trip.
 	/// </remarks>
 	/// <remarks>
-	/// Nothing is pruned against the mobile registry here, including the binding: while
-	/// <c>MobileComponentRegistry.json</c> does not publish real per-component property lists, EVERY property
-	/// is copied from the web component verbatim. Removing the ones a mobile component does not accept is
-	/// ENG-96589's job, and it is blocked on that registry — do not anticipate it by adding names to this set.
+	/// This set is about element IDENTITY, not support: it names the two keys the operation itself carries,
+	/// so they must never be duplicated into <c>values</c>. Properties the mobile component does not SUPPORT
+	/// are removed separately and centrally by <see cref="PruneUndeclaredProperties"/> against the
+	/// runtime-derived registry (ENG-96589) — do not grow this set with component-specific names, or the
+	/// prune and this deny-list become two competing mechanisms for one question.
 	/// </remarks>
 	private static readonly HashSet<string> ExcludedSourceProps = new(StringComparer.OrdinalIgnoreCase) {
 		"name", "type"
@@ -3746,15 +3835,16 @@ public static class WebToMobileAnalysisService {
 
 	/// <summary>
 	/// Builds the prebuilt, ready-to-paste mobile <c>values</c> for an inserted component. Copy rule: carry
-	/// EVERY source property verbatim, dropping only the element identity/type and the value binding (see
-	/// <see cref="ExcludedSourceProps"/>) and event bindings (converted separately). A property is NOT dropped
-	/// because the mobile registry fails to declare it: the generated mobile registry is currently incomplete
-	/// (missing <c>inputs</c> for several components, e.g. <c>crt.Feed</c>, <c>crt.EntityStageProgressBar</c> —
-	/// ENG-91859), so pruning against it would discard required, genuinely-supported properties (e.g. Feed's
-	/// <c>dataSourceName</c>/<c>entitySchemaName</c>). The registry is still consulted for SHAPE, not
-	/// membership: <see cref="CoerceToDeclaredShape"/> reshapes a property the registry does describe
-	/// (e.g. crt.List <c>itemLayout</c> array→object). <c>type</c> is set and, for field components,
-	/// <c>label</c> is synthesized. Returns null for an unknown mobile type.
+	/// EVERY source property verbatim, dropping only the element identity/type (see
+	/// <see cref="ExcludedSourceProps"/>) and event bindings (converted separately). <c>type</c> is set and,
+	/// for field components, <c>label</c> is synthesized. Returns null for an unknown mobile type.
+	/// <para>
+	/// Membership is NOT decided here. This method reshapes what the registry describes
+	/// (<see cref="CoerceToDeclaredShape"/>, e.g. crt.List <c>itemLayout</c> array→object); removing what it
+	/// does NOT describe is <see cref="PruneUndeclaredProperties"/>'s job, as ONE post-pass over the finished
+	/// element map. Keeping the two apart is deliberate: there are six writers of mobile <c>values</c>, so a
+	/// per-writer prune would have to be repeated six times and could double-apply.
+	/// </para>
 	/// </summary>
 	private static JsonNode BuildMobileValues(ElementMapContext ctx, JObject node, string mobileName,
 		string mobileType, CaptionResource caption, string parentName, string propertyName,
@@ -3811,9 +3901,9 @@ public static class WebToMobileAnalysisService {
 				if (IsEventBinding(prop.Value)) {
 					continue;
 				}
-				// Carry the property verbatim. Do NOT prune against the mobile registry — while it is incomplete
-				// (ENG-91859) a registry-absent property is treated as supported, not web-only. CoerceToDeclaredShape
-				// only reshapes (object vs array) a property the registry DOES describe; otherwise it is a no-op.
+				// Carry the property verbatim, reshaping only what the registry DOES describe (object vs array);
+				// otherwise CoerceToDeclaredShape is a no-op. Whether mobile accepts the property at all is decided
+				// later and centrally by PruneUndeclaredProperties.
 				values[prop.Name] = CoerceToDeclaredShape(ctx, mobileType, prop.Name, prop.Value.DeepClone());
 			}
 		}
@@ -3840,9 +3930,8 @@ public static class WebToMobileAnalysisService {
 		foreach (ViewConfigTemplateRule template in templates) {
 			RenderOne(ctx, template, values, roots);
 		}
-		// A converted element still CARRIES its source properties, including ones the mobile type does not
-		// declare. Removing them per-rule would be a second pruning mechanism beside the registry one, and the
-		// registry is the right owner once ENG-91859 makes it complete.
+		// A converted element still carries its source properties at this point, undeclared ones included.
+		// They are removed by the registry-driven post-pass, never per rule: one owner for the question.
 		ProcessEventBindings(ctx, node, values, mobileName);
 		// Synthesize a field label ONLY as a fallback — when the source did not carry one. Most fields carry
 		// their own web `label` verbatim above (e.g. "$Resources.Strings.<attribute>", which auto-resolves to
@@ -4497,8 +4586,7 @@ public static class WebToMobileAnalysisService {
 	private static void ProcessEventBindings(ElementMapContext ctx, JObject node, JObject values, string elementName) {
 		foreach (JProperty prop in node.Properties()) {
 			if (IsEventBinding(prop.Value)) {
-				ProcessOneEventBinding(ctx, elementName, prop.Name, (JObject)prop.Value, values,
-					canRemoveBinding: true);
+				ProcessOneEventBinding(ctx, elementName, prop.Name, (JObject)prop.Value, values);
 			}
 		}
 	}
@@ -4513,18 +4601,8 @@ public static class WebToMobileAnalysisService {
 	/// <param name="binding">The event property, e.g. <c>clicked</c>.</param>
 	/// <param name="source">The source binding's <c>{ request, params }</c> object.</param>
 	/// <param name="values">The values object being built.</param>
-	/// <param name="canRemoveBinding">
-	/// Whether omitting <paramref name="binding"/> from <paramref name="values"/> actually REMOVES the action.
-	/// True for the insert builder, whose <paramref name="values"/> becomes the element's entire
-	/// <c>mobileValues</c>. FALSE for the twin delta, whose <paramref name="values"/> is a merge payload where
-	/// an omitted key means "keep the template element's own value" — so a removal is not something that
-	/// writer can perform, and reporting one would tell the caller the control "renders and does nothing" when
-	/// it may still fire the mobile template's own request. The removal decision belongs to the WRITER as much
-	/// as to the target kind, which is why it is a parameter rather than a property of the resolution.
-	/// </param>
 	private static void ProcessOneEventBinding(
-		ElementMapContext ctx, string elementName, string binding, JObject source, JObject values,
-		bool canRemoveBinding) {
+		ElementMapContext ctx, string elementName, string binding, JObject source, JObject values) {
 		string webRequest = source["request"].ToString();
 		values.Remove(binding); // own this property regardless of the prune loop
 
@@ -4532,23 +4610,49 @@ public static class WebToMobileAnalysisService {
 			if (!string.IsNullOrWhiteSpace(rule.Mobile)) {
 				// The request type converts. Its DESTINATION is the second question, and it is reported
 				// separately: whether the action is also REMOVED depends on how strong the absence verdict is,
-				// which MobileActionTargetProbe.StripsBindingOnMissing owns. The COMPONENT always stays.
+				// which MobileActionTargetProbe.BlanksTargetOnMissing owns. The COMPONENT always stays.
 				ActionTargetResolution target = ResolvedTargetOf(ctx, rule, source);
 				if (target is { State: ActionTargetState.Missing or ActionTargetState.Unknown }) {
 					bool missing = target.State == ActionTargetState.Missing;
-					// Removed only for a DEFINITIONAL absence (a web page cannot open on mobile, and no
-					// environment read was involved). An object's add-on verdict is a report, never a removal:
-					// it cannot prove absence, and stripping on it would cost a working action.
-					bool removed = missing
-						&& canRemoveBinding
-						&& MobileActionTargetProbe.StripsBindingOnMissing(target.Kind);
+					// A DEFINITIONAL absence means the target cannot open on mobile at all (a web page
+					// cannot open on mobile, and no environment read was involved) — the converted
+					// request stays on the element, but the target param it would point at is blanked,
+					// regardless of which writer is calling.
+					bool definitionallyAbsent = missing
+						&& MobileActionTargetProbe.BlanksTargetOnMissing(target.Kind);
+					// BindingRemoved reports whether the target param was blanked — true exactly when the
+					// absence is definitional, independent of which writer (insert or twin-merge delta) is
+					// calling: both writers blank the same way, so the flag is a fact about the target, not
+					// about writer capability.
 					ctx.UnresolvedTargetRequests.Add(new UnresolvedTargetRequest {
 						ElementName = elementName, Binding = binding, WebRequest = webRequest,
 						TargetKind = target.Kind, Target = target.Target,
 						State = missing ? UnresolvedTargetRequest.StateMissing : UnresolvedTargetRequest.StateUnknown,
-						BindingRemoved = removed
+						BindingRemoved = definitionallyAbsent,
+						ResolvedCandidateSchemaName = target.ResolvedCandidateSchemaName
 					});
-					if (removed) {
+					if (definitionallyAbsent) {
+						// The request still converts (mobile name + paramMap applied) — only the target
+						// param is blanked, so the control stays on the element and reconfigurable in
+						// Mobile Designer instead of losing its action silently. `params` is guaranteed a
+						// JObject here — ResolvedTargetOf only resolves a target when source["params"] is
+						// one and TargetParam is set on it, and ApplyParamMap never changes that shape.
+						var blankedClone = (JObject)source.DeepClone();
+						blankedClone["request"] = rule.Mobile;
+						ApplyParamMap(blankedClone, rule.ParamMap);
+						// Mirrors ApplyParamMap's own guard exactly: a null/whitespace mapped value is a rename
+						// ApplyParamMap itself skips (the rules file is external, versioned data this build has
+						// never seen), so the two must agree on what "effective" means here — otherwise this
+						// blanks a param ApplyParamMap never renamed to, and either throws on a null key or
+						// leaves the real (dead) rule.TargetParam value untouched.
+						string effectiveTargetParam =
+							rule.ParamMap != null
+							&& rule.ParamMap.TryGetValue(rule.TargetParam, out string mappedParam)
+							&& !string.IsNullOrWhiteSpace(mappedParam)
+								? mappedParam
+								: rule.TargetParam;
+						((JObject)blankedClone["params"])[effectiveTargetParam] = "";
+						values[binding] = blankedClone;
 						ctx.DroppedRequests.Add(new DroppedRequest {
 							ElementName = elementName, Binding = binding, WebRequest = webRequest,
 							Reason = [Reason(ReasonCodes.DropRequestTargetMissing,
@@ -4665,10 +4769,13 @@ public static class WebToMobileAnalysisService {
 			FlaggedRequests = flagged,
 			UnresolvedTargetRequests = unresolvedTargets,
 			TargetsProbed = targetsProbed,
-			// Carried whenever the probe set one, not only on total failure: a check that ran but hit its
-			// per-object ceiling is incomplete in a way TargetsProbed alone cannot express. Redacted at the
-			// point it is built.
-			TargetsNote = actionTargetsProbe?.Note
+			// Carried whenever the probe set one — not only when the source page's package could not be
+			// resolved: it also fires when the per-call probe ceiling clips the object-target list, and when a
+			// candidate-web-page lookup fails for a verified-missing object (the two compose into one note
+			// rather than either silently replacing the other — see
+			// MobileActionTargetProbe.CandidateFailureAccumulator.ComposeNote). Redacted at the point it is built.
+			TargetsNote = actionTargetsProbe?.Note,
+			MissingTargetPages = MissingTargetPageQueueBuilder.Build(unresolvedTargets)
 		};
 	}
 

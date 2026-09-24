@@ -12,6 +12,19 @@ update-page - Update the raw schema body of a Freedom UI page
 
 ## Description
 
+Web page saves resolve explicit `parentName` references against the inherited page
+hierarchy and the submitted diff. An unresolved parent fails before saving, including
+with `validate: false` and during dry runs. The error names the child and parent and
+suggests the closest known element. Root inserts without a parent remain valid. The guard requires a statically
+parseable view-config diff; dynamic JavaScript expressions in that section cannot
+be verified and are rejected even with `validate: false`.
+
+The MCP `validate-page` tool can receive `known-containers`, an array of inherited
+element names obtained from the page bundle. With that context, missing parents
+fail validation; without it, unresolved references produce warnings because a
+parent may be supplied by the template. This offline hint does not bypass the
+authoritative save check.
+
 `--resources` adds missing keys and updates the `en-US` value of existing keys.
 Resource identities, other cultures, and omitted keys are preserved. The
 `resourcesRegistered` count includes only newly declared keys, not value updates.
@@ -29,6 +42,13 @@ than assuming either server success or a JavaScript body file is a complete capt
 The update-page command validates and saves the raw JavaScript body of a
 Freedom UI page schema. Pass the full body string directly, typically
 after reading raw.body from get-page.
+
+JSON-backed page sections accept ordinary `//` and `/* ... */` comments and
+trailing commas during validation. Required paired `/**SCHEMA_...*/` markers
+must still surround their sections; they are structural delimiters, not optional
+documentation. Validation does not strip comments or rewrite the supplied body.
+Replace mode preserves the supplied comments; append mode re-serializes merged
+diff sections and can discard comments inside those sections.
 
 > **CLI vs MCP.** The CLI `get-page` verb returns `raw.body` inline, so a CLI caller copies
 > that value. The MCP `get-page` tool returns no `raw` property — it writes the body to disk
@@ -122,6 +142,12 @@ name instead of trying to edit a non-existent local `insert`.
     shadows the native element, so the top navigation bar and the page body silently come from the wrong
     element. A `merge` onto `Scaffold` is the SUPPORTED way to patch the template's own root and is left
     alone here — the merge-slot rules above own what may go inside it.
+  - **Rejected — a `crt.IndicatorWidget` that would show no value.** An `insert`, `set` or `merge` authoring a
+    metric must carry `config.layout` and `config.text`, and a `config.data.providing` the mobile runtime can
+    execute: `schemaName` plus `aggregation.column.expression` with a `functionArgument.columnPath` and an
+    `aggregationType` of 1–5, or `expressionSchema` for a calculated metric. Otherwise the page saves, but the
+    metric shows no value or an error placeholder, or the designer canvas does not build. A widget with its own `data` binding is exempt
+    from the providing checks.
   - **Warned — a `merge` that authors child elements in any other slot.** Same mechanism, different odds: a
     slot the target does not carry (`menuItems` on a `crt.Button` or `crt.FloatingActionButton`, `items` on
     `crt.QuickFilterGroup`, `crt.Sort`, `crt.Timeline`) is *created* by the merge and the authoring works.

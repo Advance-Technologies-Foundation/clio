@@ -78,7 +78,7 @@ public sealed class IdentityServerProbe : IIdentityServerProbe
 	[System.Diagnostics.CodeAnalysis.SuppressMessage("Architecture", "CLIO001:Resolve behavior through DI",
 		Justification = "The compatibility constructor must retain its historical public signature.")]
 	public IdentityServerProbe(IHttpClientFactory httpClientFactory)
-		: this(httpClientFactory, new ApplicationClientFactory(new NoReauthExecutor())) { }
+		: this(httpClientFactory, new ApplicationClientFactory(new NoReauthExecutor(), Clio.Common.ExternalAccess.ExternalAccessSessionProvider.CreateDefault())) { }
 
 	/// <inheritdoc />
 	public bool IsDiscoveryReachable(string identityServerBaseUrl) {

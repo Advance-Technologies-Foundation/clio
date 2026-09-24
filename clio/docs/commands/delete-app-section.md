@@ -10,15 +10,15 @@ delete-app-section - Delete a section from an existing installed application
 
 ## Description
 
-The delete-app-section command removes a section and all its associated
+The delete-app-section command removes a section and its explicitly referenced
 metadata artifacts from a Creatio application. The following artifacts
 are deleted in order:
 
 - SysModuleInWorkplace records (workplace visibility entries)
 - SysModuleLcz records (section localizations, if any)
-- Freedom UI page schemas and addon schemas (via WorkspaceExplorer)
-- SysModuleEntity record (section-to-entity binding)
+- Declared list and form page schemas (by UId, via WorkspaceExplorer)
 - SysModule record (the section itself)
+- Unshared SysModuleEntity record (section-to-entity binding)
 
 By default, the underlying entity schema is preserved so that data in the
 underlying database table is not lost. Pass `--delete-entity-schema` to also
@@ -69,9 +69,11 @@ clio delete-app-section --application-code UsrOrdersApp --section-code UsrOrders
 ## Notes
 
 - The entity schema is preserved by default so data in the underlying table is not lost.
+- The form page is retained with its entity. Pages registered as edit, mini or search-row pages and pages or entity bindings shared by another section are retained. Entity deletion is refused if another section uses it.
+- Schema identities are logged before deletion and each successful schema deletion is logged afterwards. A failed schema delete stops the command; deletion is not transactional and may be partial.
 - The command is destructive and cannot be undone.
-- cliogate must be installed on the target environment.
-- Page schemas (Freedom UI pages, addon related-page schemas) are deleted through WorkspaceExplorer and require developer mode to be active on the target environment.
+- No name-prefix matching is used. Auxiliary schemas (details, mobile pages, addons, listeners) without an explicit section reference are retained.
+- Declared list and form page schemas are deleted through WorkspaceExplorer and require developer mode to be active on the target environment.
 
 ## Reporting Bugs
 

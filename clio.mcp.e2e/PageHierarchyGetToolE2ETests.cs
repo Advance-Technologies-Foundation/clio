@@ -174,7 +174,10 @@ public sealed class PageHierarchyGetToolE2ETests : McpContractFixtureBase {
 	private static GetPageHierarchyResponse ExtractHierarchy(CallToolResult callResult) {
 		try {
 			return EntitySchemaStructuredResultParser.Extract<GetPageHierarchyResponse>(callResult);
-		} catch (InvalidOperationException) {
+		} catch (InvalidOperationException exception) {
+			// The parse failure is the lenient normal path here, not an error, so its payload dump is
+			// evidence of nothing and would otherwise accumulate in the published TestResults artifact.
+			PayloadDumpReader.DeleteIfPresent(exception.Message);
 			string json = JsonSerializer.Serialize(callResult.StructuredContent);
 			return JsonSerializer.Deserialize<GetPageHierarchyResponse>(json)
 				?? new GetPageHierarchyResponse { Success = false, Error = "could not parse get-page-hierarchy response" };

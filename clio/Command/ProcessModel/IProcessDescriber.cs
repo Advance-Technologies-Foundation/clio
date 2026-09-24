@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -494,9 +494,22 @@ public sealed class DescribedElement {
 	[JsonPropertyName("managerItemUId")]
 	public string ManagerItemUId { get; set; }
 
-	/// <summary>Diagram position "X;Y".</summary>
+	/// <summary>Diagram position "X;Y" — the shape's TOP-LEFT corner, not its centre.</summary>
 	[JsonPropertyName("position")]
 	public string Position { get; set; }
+
+	/// <summary>
+	/// The shape's size, <c>"W;H"</c>; absent on a <c>CrtProcessBuilder</c> that predates the member.
+	/// </summary>
+	/// <remarks>
+	/// Typed beside <see cref="Position"/> because the position alone cannot be turned back into a diagram row:
+	/// elements of different heights share a row by sharing its CENTRE line, so the row is
+	/// <c>(Y + ceil(H / 2) - CenterY) / BranchStep</c> and the height is half of that arithmetic. Read-only — no
+	/// create or modify argument carries it, and the server recomputes the whole layout on every save.
+	/// </remarks>
+	[JsonPropertyName("size")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string Size { get; set; }
 
 	/// <summary>
 	/// Whether the element runs in background mode — a platform property of EVERY process element, so it is reported
@@ -981,6 +994,37 @@ public sealed class DescribedEmail {
 	public string Subject { get; set; }
 
 	/// <summary>
+	/// Which message the element sends: <c>custom</c> (<c>BodyTemplateType = "1"</c>) or <c>template</c>
+	/// (<c>"0"</c>); null when the element carries no stored mode — which the platform RUNS as template mode, so null
+	/// beside a null <see cref="Template"/> is the pre-run signal of the <c>Localizable template not found</c> trap.
+	/// Null also from a server that predates template mode (ENG-95986), which reports no such member.
+	/// </summary>
+	[JsonPropertyName("messageSource")]
+	public string MessageSource { get; set; }
+
+	/// <summary>TEMPLATE mode: the stored <c>EmailTemplate</c> record id; null when none is set. Re-appliable through <c>email.template</c>.</summary>
+	[JsonPropertyName("template")]
+	public string Template { get; set; }
+
+	/// <summary>The template's name as the designer shows it; null when the schema stores no display value.</summary>
+	[JsonPropertyName("templateDisplay")]
+	public string TemplateDisplay { get; set; }
+
+	/// <summary>
+	/// The entity the template's macros resolve against — the macro-source parameter's reference object by name;
+	/// null when the element carries none (a template without an object cannot be personalized).
+	/// </summary>
+	[JsonPropertyName("templateObject")]
+	public string TemplateObject { get; set; }
+
+	/// <summary>
+	/// TEMPLATE mode: the macro-source record binding (<c>EmailTemplateEntityId</c>) with its source and value,
+	/// projected like a recipient; null when unbound. Re-appliable through <c>email.templateEntity</c>.
+	/// </summary>
+	[JsonPropertyName("templateEntity")]
+	public DescribedParameter TemplateEntity { get; set; }
+
+	/// <summary>
 	/// True when the element carries a custom-message body. A lightweight presence flag beside <see cref="Body"/>,
 	/// for callers that only need to know a body exists without pulling the (possibly large) decoded HTML.
 	/// <para>Nullable defensively, NOT because a known server omits it: the flag is a non-nullable <c>bool</c>
@@ -1034,8 +1078,8 @@ public sealed class DescribedEmail {
 
 	/// <summary>
 	/// Captures every other field the server reports inside the email block so the description round-trips
-	/// losslessly: a newer <c>CrtProcessBuilder</c> reporting something this build does not declare — a template
-	/// selection, a body format, an attachment list — reaches the command output verbatim instead of being
+	/// losslessly: a newer <c>CrtProcessBuilder</c> reporting something this build does not declare — a body format, an
+	/// attachment list — reaches the command output verbatim instead of being
 	/// discarded without a trace. This block is where the next email feature lands, so it needs the bag most.
 	/// </summary>
 	[JsonExtensionData]
@@ -1067,12 +1111,16 @@ public sealed class DescribedSubProcess {
 	/// True when the element runs the called process once per item of a collection: it carries two collections and
 	/// three iteration counters instead of the called process's parameters, so the names a mapping would use
 	/// address nothing on it.
-	/// <para>Every write path that CONFIGURES such an element refuses it, which is what this flag lets a caller
-	/// see coming. An unrelated <c>setElement</c> is NOT refused - it is applied, the element's re-synchronization
-	/// is skipped, and a warning says so.</para>
+	/// <para>Such an element IS configurable: see <see cref="MultiInstanceOptions"/>, which carries how it
+	/// iterates and round-trips into the write side's <c>multiInstanceOptions</c> block. A RETARGET and a
+	/// re-synchronization are both available on it, through the same <c>subProcess</c> block: the element is
+	/// de-converted, the ordinary applier does the work against a single-instance element with every guard it
+	/// carries, and it is re-converted around the SAME five parameter objects, so their UIds survive the round
+	/// trip. That is what the process designer does for the same edit. An unrelated <c>setElement</c> is not
+	/// refused either: it is applied, the element's re-synchronization is skipped, and a warning says so.</para>
 	/// <para>Nullable defensively, like <see cref="DescribedEmail.HasBody"/> and for the same reason: no shipped
-	/// server omits it, but a flag whose absence deserializes to <c>false</c> would read as "plain call activity,
-	/// safe to write" - the wrong side to fail toward on the one field that signals a refusal.</para>
+	/// server omits it, but a flag whose absence deserializes to <c>false</c> would read as "plain call activity"
+	/// - the wrong side to fail toward on the field that says the element's parameters are not where they look.</para>
 	/// </summary>
 	[JsonPropertyName("multiInstance")]
 	public bool? MultiInstance { get; set; }
@@ -1080,7 +1128,6 @@ public sealed class DescribedSubProcess {
 	/// <summary>
 	/// Whether the element still carries every parameter the called process declares. <c>null</c> means that
 	/// process could not be read, which is UNKNOWN and never "out of sync".
-
 	/// <para>THE RECIPE, which is what to do rather than why it works: save the caller, <b>describe it once</b>,
 	/// change the callee, then describe again and read this flag. The middle read is what makes the last one
 	/// meaningful, and between the callee change and the final read do not run, re-read or compile the caller.
@@ -1099,19 +1146,139 @@ public sealed class DescribedSubProcess {
 	/// right half to be sensitive to, because the runtime binds by CODE and a caption has no effect on delivery;
 	/// but <c>true</c> means "the element carries every parameter the callee declares", NOT "the element matches
 	/// the callee".</para>
-	/// <para>On a MULTI-INSTANCE element <c>false</c> is PERMANENT and is not drift. Such an element carries an
-	/// input collection, an output collection and three iteration counters INSTEAD of the callee's parameters, so
-	/// the test can never be satisfied - and the re-synchronization <c>false</c> would otherwise call for is
-	/// REFUSED on it. Read this flag together with <see cref="DescribedSubProcess.MultiInstance"/>, never alone.</para>
+	/// <para>On a MULTI-INSTANCE element this flag carries NO information in either direction, and neither value
+	/// is drift. Such an element carries an input collection, an output collection and three iteration counters
+	/// INSTEAD of the callee's parameters, so the test reads <c>false</c> whenever the callee declares anything
+	/// and VACUOUSLY <c>true</c> against a callee that declares nothing - it asks whether every callee parameter
+	/// is present, and that holds over an empty set. Read
+	/// <see cref="DescribedMultiInstanceOptions.CalleeInSync"/> instead, which asks the same question one level
+	/// down where the contract actually lives, and a re-synchronization IS available on such an element
+	/// (<c>subProcess.resync: true</c>). Read this flag together with
+	/// <see cref="DescribedSubProcess.MultiInstance"/>, never alone.</para>
 	/// </summary>
 	[JsonPropertyName("inSync")]
 	public bool? InSync { get; set; }
+
+	/// <summary>
+	/// How the element iterates, when it does. Absent - and <c>null</c> - on an element that calls the process
+	/// once, so the block's PRESENCE is itself the answer.
+	/// <para>Mirrored as a TYPED member even though <see cref="AdditionalData"/> would carry it as raw extension
+	/// data: the XML doc on a typed member is the agent-facing contract surface, extension data carries none, and
+	/// clio's own tests can only assert against typed members.</para>
+	/// </summary>
+	[JsonPropertyName("multiInstanceOptions")]
+	public DescribedMultiInstanceOptions MultiInstanceOptions { get; set; }
 
 	/// <summary>
 	/// Anything the server reports inside this block that this model does not declare. Every server-built
 	/// configuration block here carries one, and the reason is the failure this whole block exists to close one
 	/// level up: the describe output is re-serialized from this model, so a field a later CrtProcessBuilder adds
 	/// is dropped on the way to the caller with nothing logged and a read-back that looks complete.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
+}
+
+/// <summary>
+/// A multi-instance element's iteration configuration. Mirrors the server's
+/// <c>DescribeMultiInstanceOptions</c> field for field, and round-trips into the write side's
+/// <c>multiInstanceOptions</c> block without translation.
+/// <para>The five parameter roles are reported as NAMES, which is what a caller can act on: mappings and
+/// describe output work in names, and the UIds are an implementation detail the server mints. A role is
+/// <c>null</c> when its stored UId resolves to no parameter on the element - a MALFORMED element, and the only
+/// warning a caller gets, because the platform's own load path throws on exactly that state rather than
+/// reporting it.</para>
+/// </summary>
+public sealed class DescribedMultiInstanceOptions {
+	/// <summary>
+	/// Always <c>true</c> on a block that is present at all - the block is absent on an element that calls the
+	/// process once. Present so the read feeds straight back into the write side's <c>enabled</c>.
+	/// </summary>
+	[JsonPropertyName("enabled")]
+	public bool? Enabled { get; set; }
+
+	/// <summary>
+	/// <c>Sequential</c> or <c>Parallel</c>, spelled as the write side accepts them.
+	/// <para>The EFFECTIVE value, including the default the stored metadata suppresses - a caller cannot act on
+	/// "absent". Reported as the string rather than the stored number because the write side REFUSES a number, so
+	/// echoing one back would produce a block that does not re-apply.</para>
+	/// <para><c>Parallel</c> does not by itself mean concurrent threads: it changes the generated flow topology,
+	/// and background mode does NOT buy concurrency either: it moves each iteration onto the background job
+	/// queue, whose continuations are consumed under a per-process distributed lock
+	/// (<c>ContinueProcessCommandConsumer.TryExecuteWithinLock</c>), so the iterations of one instance are
+	/// queued rather than simultaneous: on a stand, three <c>Parallel</c> iterations with background mode did
+	/// not overlap.</para>
+	/// </summary>
+	[JsonPropertyName("executionMode")]
+	public string ExecutionMode { get; set; }
+
+	/// <summary>
+	/// Whether a failed iteration lets the process continue instead of failing. The EFFECTIVE value, including
+	/// the suppressed default of <c>false</c>. It changes only what happens AFTER a failure - the
+	/// failed-iteration counter is incremented either way.
+	/// </summary>
+	[JsonPropertyName("ignoreErrors")]
+	public bool? IgnoreErrors { get; set; }
+
+	/// <summary>
+	/// The name of the collection parameter the element iterates. Its <c>itemProperties</c> are the called
+	/// process's contract, and they are where a per-item value is mapped - the run time binds them BY NAME, and
+	/// answers an unmatched name with silence rather than an error.
+	/// </summary>
+	[JsonPropertyName("inputCollection")]
+	public string InputCollection { get; set; }
+
+	/// <summary>
+	/// The name of the collection parameter that receives one item per completed iteration. Do NOT write values
+	/// into its item properties: the platform derives them and clears them on every synchronization.
+	/// </summary>
+	[JsonPropertyName("outputCollection")]
+	public string OutputCollection { get; set; }
+
+	/// <summary>
+	/// The name of the counter the run time writes the completed-iteration count into.
+	/// <para>Its mid-run value is not what it looks like: the parallel barrier uses it as an arrival counter and
+	/// the End token overwrites it with total minus failed before persisting.</para>
+	/// </summary>
+	[JsonPropertyName("completedIterationsCount")]
+	public string CompletedIterationsCount { get; set; }
+
+	/// <summary>The name of the counter the run time writes the terminated-iteration count into.</summary>
+	[JsonPropertyName("terminatedIterationsCount")]
+	public string TerminatedIterationsCount { get; set; }
+
+	/// <summary>The name of the counter the run time writes the total-iteration count into.</summary>
+	[JsonPropertyName("totalIterationsCount")]
+	public string TotalIterationsCount { get; set; }
+
+	/// <summary>
+	/// Whether the two collections still carry every parameter the called process declares — the question
+	/// <see cref="DescribedSubProcess.InSync"/> asks for a single-instance element, asked one level down where a
+	/// multi-instance element's contract actually lives.
+	/// <para>Read THIS one on a multi-instance element, not <c>inSync</c>. <c>inSync</c> compares the callee
+	/// against the element's ROOT parameters, which here are the five service ones, so it says nothing:
+	/// <c>false</c> whenever the callee declares anything, and vacuously <c>true</c> against a callee that
+	/// declares nothing. The two are separate fields on purpose: redefining <c>inSync</c> would have
+	/// changed what a shipped field means with no wire change at all — same name, same type, same JSON — and no
+	/// deserializer, schema check or version negotiation could have seen it.</para>
+	/// <para><c>false</c> means a re-synchronization is owed, and there is one to ask for: send
+	/// <c>subProcess.resync: true</c>. The element is de-converted, re-synchronized and re-converted around the
+	/// same five parameters, which is what the process designer does for the same edit; the five keep their UIds
+	/// and the collection-level mapping survives. What does not survive is a per-item mapping onto a parameter
+	/// the callee no longer declares — the item goes with the parameter.</para>
+	/// <para>ONE-DIRECTIONAL, like <c>inSync</c>: it asks whether everything the callee declares is present, so a
+	/// callee that ADDS a parameter flips it to <c>false</c> while one that REMOVES a parameter leaves it
+	/// <c>true</c>. <c>null</c> means the called process could not be read — UNKNOWN, never "out of sync".</para>
+	/// <para>Absent on a CrtProcessBuilder that predates the field, which deserializes to <c>null</c> and is
+	/// therefore indistinguishable from "could not read the callee". Both mean: do not act on it.</para>
+	/// </summary>
+	[JsonPropertyName("calleeInSync")]
+	public bool? CalleeInSync { get; set; }
+
+	/// <summary>
+	/// Anything the server reports inside this block that this model does not declare - the same reason every
+	/// other server-built block here carries one: the describe output is re-serialized from this model, so a
+	/// field a later CrtProcessBuilder adds would otherwise be dropped silently.
 	/// </summary>
 	[JsonExtensionData]
 	public Dictionary<string, JsonElement> AdditionalData { get; set; }
@@ -1618,12 +1785,58 @@ public sealed class DescribedFlow {
 	public string Label { get; set; }
 
 	/// <summary>
+	/// Where the connector runs: the point it leaves the source by, the corners between, the point it arrives at
+	/// the target by, and the edge of each shape it attaches to. <c>null</c> on a flow the server stored no
+	/// geometry for, and on a <c>CrtProcessBuilder</c> that predates the member.
+	/// </summary>
+	/// <remarks>
+	/// Typed rather than left to the overflow bag because it is what an assertion about a diagram is written in
+	/// terms of: every criterion about connectors - orthogonal, anchored on a border, distinct exits per branch,
+	/// no segment through an unrelated shape - is a statement about this chain, and without it they can only be
+	/// checked by a person opening the designer. Read-only, for the same reason as
+	/// <see cref="DescribedElement.Size"/>.
+	/// </remarks>
+	[JsonPropertyName("geometry")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public DescribedFlowGeometry Geometry { get; set; }
+
+	/// <summary>
 	/// Every other field the server returns on a flow, so a description round-trips losslessly - the same bag
 	/// the graph root, nodes and parameters already carry. Added with the nullability fix above: without it a
 	/// newer <c>CrtProcessBuilder</c> reporting a new flow field needs a matching clio property AND a clio
 	/// release before the caller can see it, and until then it is dropped with no trace. <c>condition</c> and
 	/// <c>branchesOnActivityResult</c> keep their typed properties because guards and callers read them by name.
 	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
+}
+
+/// <summary>Where one connector runs on the diagram, as the designer draws it.</summary>
+public sealed class DescribedFlowGeometry {
+	/// <summary>Where the connector leaves the source shape, as <c>"X;Y"</c> on that shape's border.</summary>
+	[JsonPropertyName("start")]
+	public string Start { get; set; }
+
+	/// <summary>
+	/// The corners between the two ends, each <c>"X;Y"</c>. Empty for a straight connector and for one the server
+	/// could not route, where the designer's own router decides the path.
+	/// </summary>
+	[JsonPropertyName("points")]
+	public string[] Points { get; set; }
+
+	/// <summary>Where the connector arrives at the target shape, as <c>"X;Y"</c> on that shape's border.</summary>
+	[JsonPropertyName("end")]
+	public string End { get; set; }
+
+	/// <summary>Which edge of the source it leaves by: <c>right</c>, <c>left</c>, <c>top</c> or <c>bottom</c>.</summary>
+	[JsonPropertyName("exitSide")]
+	public string ExitSide { get; set; }
+
+	/// <summary>Which edge of the target it arrives at.</summary>
+	[JsonPropertyName("entrySide")]
+	public string EntrySide { get; set; }
+
+	/// <summary>Anything else the server reports about a connector's geometry, so a newer one is not dropped.</summary>
 	[JsonExtensionData]
 	public Dictionary<string, JsonElement> AdditionalData { get; set; }
 }
@@ -1698,6 +1911,35 @@ public sealed class DescribedParameter {
 	/// </summary>
 	[JsonPropertyName("valueDisplay")]
 	public string ValueDisplay { get; set; }
+
+	/// <summary>
+	/// Provenance stamp, when the parameter carries one: a collection parameter mirrored from an element output is
+	/// tagged <c>&lt;elementName&gt;.&lt;parameterName&gt;</c> — the designer's own "create parameter from element"
+	/// stamp — so a caller can re-issue the mirror later (<c>setParameter</c> with the same pair, the designer's
+	/// <i>Regenerate</i>). Null when untagged; omitted when the server (an older <c>CrtProcessBuilder</c>)
+	/// does not report it.
+	/// </summary>
+	[JsonPropertyName("tag")]
+	public string Tag { get; set; }
+
+	/// <summary>
+	/// The per-item shape of a collection parameter (<c>CompositeObjectList</c>): one entry per member the
+	/// collection carries, each a parameter in its own right. This is the DESIGN-TIME contract a consumer binds
+	/// against — a collection without it is an opaque list. Null for a scalar and for a bare, shapeless
+	/// collection; omitted when the server does not report it.
+	/// <para>A <c>tag</c> is NOT part of the shape, and this doc comment used to say it was. It is carried only
+	/// where the items are COLUMNS mirrored from an entity — a collection this API built through
+	/// <c>addParameter</c>'s <c>typeFromElement</c>, or a Read data element's <c>ResultCompositeObjectList</c>,
+	/// where the tag is the column UId the platform keys its own re-synchronization on. Where the items are
+	/// PARAMETERS of another process — the two collections of a MULTI-INSTANCE Sub-process element — there is no
+	/// column to name and no tag at all: measured, 0 of the 407 item properties in the shipped corpus carry one.
+	/// Reading a tag as a required field is how a consumer written against the first case silently rejects every
+	/// instance of the second.</para>
+	/// <para>Feed a described collection back through <c>addParameter</c>'s <c>typeFromElement</c> naming its
+	/// source, never by re-typing the shape.</para>
+	/// </summary>
+	[JsonPropertyName("itemProperties")]
+	public List<DescribedParameter> ItemProperties { get; set; }
 }
 
 #endregion

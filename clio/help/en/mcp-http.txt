@@ -28,6 +28,15 @@ DESCRIPTION
     naming that marker's library version and the update call that checks for a newer
     release; startup still proceeds. A clean successful check renews this freshness
     timestamp even when the published generation has not changed; a rejected candidate does not.
+
+    The cache is refreshed by a GUIDANCE READ, not by startup and not by a timer: when the
+    cached generation is due for verification, a get-guidance lookup answers from the
+    active generation and starts the publisher check beside the answer. The operator's
+    autoupdate.knowledge policy decides whether it may run - enabled=false stops it,
+    frequency-minutes (60 by default) sets the cadence, next-run is shared with the CLI
+    path. In the ordinary case it costs one conditional metadata request with no download.
+    This host commonly runs for weeks as a service task, which is the case the
+    read-triggered refresh exists for.
     The source
     cannot be removed; use disable-knowledge-source --alias creatio-curated.
     A failed or timed-out initial retrieval is logged as a warning and does not block HTTP startup.
