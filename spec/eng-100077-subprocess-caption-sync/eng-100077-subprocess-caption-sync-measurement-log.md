@@ -78,6 +78,8 @@ R1 prediction (model): D1 callee's MetaItems still holds the stale build #1 (A1,
   answer - pre-existing and unrelated, tracked as ENG-100192.
 - GREEN on 1.6.6.18 (after the Copilot re-review: caller-created parameters are no longer compared): the same 18 of 19,
   the same pre-existing ENG-100192 failure.
+- GREEN on 1.6.6.19 (stored side read through the resource manager, below): the same 18 of 19 - the 5 caption cases
+  and multi-instance 8/8 pass - and the same pre-existing ENG-100192 failure ("was not found").
 
 ## Unit mutation run (peer-review round, package candidate 1.6.6.17)
 Each row reverts or breaks ONE line of the fix in the package source, runs the caption fixtures
@@ -127,3 +129,52 @@ for, a retarget.
 | E2 | a de-conversion after a retarget keeps its read failure | TC-C33 (read failure) |
 | V1 | the version handler never maps the clone | TC-C26 |
 | V2 | the version handler maps the clone AFTER the edit | TC-C26 |
+
+## Where the stored side is read: resource manager, not `SysLocalizableValue` (2026-09-24)
+1.6.6.16-1.6.6.18 read the caller's stored captions with a `Select` on `SysLocalizableValue`. The argument for it
+was a source trace: the design-load re-synchronization writes the callee's captions into the element's in-memory
+values, the design session's resource snapshot is serialized from those values, and the shared manager is refilled
+from that snapshot - so the manager would answer the callee's captions, never the stored ones. The owner asked for
+the experiment instead of the argument.
+- M1 (marker build, never committed; `StoredCaptionReader` replaced by a read through
+  `Workspace.ResourceStorage.GetManager(schema.GetResourceManagerName())`, the caller's own manager, with "[mgr]"
+  appended to every answer): callee E1 set to "E1 date A3" (caller stored "E1 date A2"); resync E1 caller ->
+  notice from "E1 date A2[mgr]" to "E1 date A3". The manager answered the STORED caption while the synchronization
+  had already written the callee's. The trace was wrong. E2E-4 (`..._ReportACaptionChange_InTheResyncAnswer`)
+  PASSED on the same build.
+- Owner decision: read through the resource manager - the platform's standard mechanism, no extra database read,
+  and node synchronization in a farm is the manager's own concern.
+- M2 (control for a review hypothesis: M1 could have been confounded by a STALE callee metadata instance, so that
+  the design-load sync wrote the old caption and the manager merely looked "stored"): working-tree build with the
+  manager-based reader installed; callee E1 set to "E1 date A5" (caller stored "E1 date A4"); `restart-web-app`, so
+  no in-process cache survives; resync E1 caller -> notice from "E1 date A4" to "E1 date A5". Same answer on cold
+  caches: the hypothesis is refuted, and the reader does not depend on a cache being stale.
+- Source facts the review verified and the reader relies on: a design instance's element captions are bound to
+  the workspace resource storage under the schema's UId name (`BaseProcessSchema.cs:788-798`, `Schema.cs:231,
+  586-591`); a `modify-as-new-version` clone is bound to its SOURCE's manager by `ReadSchemaMetaData`
+  (`ProcessSchemaRepository.cs:161-162`) and rebound to its own only in the edit pipeline's tail
+  (`ProcessEditPipeline.cs`, `InitializeLocalizableValues`, pinned by TC-C38); an element created in the request
+  keeps the default `ProcessSchemaSubProcess.Caption` binding (`ProcessSchemaSubProcess.cs:40`), which the reader
+  answers as unknown (TC-C40).
+
+## Unit mutation run (manager-based reader, package candidate 1.6.6.19)
+Same method as the run above, over `SubProcessCaptionChangeTests`, `StoredCaptionReaderTests`,
+`ProcessSchemaRepositoryTests`, `ProcessVersionSaveHandlerTests`, `SubProcessContractTests`,
+`CrtProcessBuilderAppTests`, `ProcessEditPipelineTests` and `ProcessVersionCloneFactoryTests` (166 tests).
+33 of 35 turn at least one test red; B3 and B6 stay EQUIVALENT for the reasons given in the table above.
+Rows R1-R5, B1-B12, D1, N1-N5, E1 and E2 are unchanged from that table and were killed by the same tests. S3, S4,
+S5, S7, S9, V1 and V2 mutated code the manager made unnecessary (the `SysSchema` check, the empty-Id guard, the
+per-request cache, the copy-to-original mapping, the kept failure, the version handler's alias) and are gone.
+
+| # | Mutation | Red tests |
+|---|---|---|
+| S1 | the Output collection wins | TC-C18, C24 |
+| S2 | an element with no resource in any culture reads as stored without captions | TC-C37 |
+| S6 | a fixed culture (`en-US`) | TC-C29, C31, C34 |
+| S8 | "is the element stored" asked in the current culture only | TC-C34 |
+| M1 | no check that the caption is bound under `BaseElements.<element>.` | TC-C27, C40 |
+| M2 | a culture the manager has not loaded is taken as empty (`createIfNotExist: false`) | TC-C39 |
+| M3 | parent-culture fallback (`tryParents: true`) | TC-C39 |
+| M4 | only the current culture is asked | TC-C34, C39 |
+| M5 | read through the manager named after the schema instead of the element's binding | TC-C29, C31, C34, C39 |
+| P1 | the pipeline rebinds the captions BEFORE the operations | TC-C38 |

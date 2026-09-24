@@ -93,6 +93,7 @@ The release notes should still name the manual cure: open and save the callee in
   current culture, every `BaseElements.<element>.Parameters.<param>.Caption` row.
   * One `Select` through the request `UserConnection`, not the NOLOCK resource reader.
   * Read it before `SaveSchema`, inside `SubProcessApplier.SynchronizeAgainstCurrentCallee` next to `Snapshot`.
+  * **Superseded in 1.6.6.19** by a read through the resource manager - see the last "As implemented" entry.
 * **Diff.** After the platform sync, and before `EnsureSynchronizationLanded`, compare each element parameter's
   caption (current culture) with the stored row. A missing row counts as "no caption". Emit
   `CaptionsChanged{Name, From, To}` for every difference, including a parameter added by this sync that now has a
@@ -115,6 +116,16 @@ The release notes should still name the manual cure: open and save the callee in
   * **As implemented, after the Copilot re-review:** a parameter created in the CALLER is not compared - the
     platform's `UpdateParameters` never writes a dynamic parameter's caption, so its caption is never the called
     process's. The package is restamped 1.6.6.18.
+  * **As implemented, after the owner's decision (2026-09-24):** the stored side is read through the resource
+    manager the element's caption is BOUND to, not by a `Select` on `SysLocalizableValue` - the platform's standard
+    mechanism, no extra database read, and node synchronization is the manager's concern. Measured before it was
+    adopted (measurement log M1, and M2 on cold caches after an app restart): during a resync that manager answers
+    the stored caption while the synchronization has already written the callee's. A `modify-as-new-version`
+    clone needs nothing extra: `ReadSchemaMetaData` binds its captions to the SOURCE's manager until the edit
+    pipeline's tail rebinds them (TC-C38), so `AliasUnsavedCopy` and the per-request row cache are gone. An element
+    whose caption is not bound under `BaseElements.<element>.` - created in this request, or a plain value - reads
+    as unknown. Captions in the notices are rendered with the platform's `Json.Serialize`. The package is
+    restamped 1.6.6.19.
   * **Separate "filled in" from "changed"** (`From` null or empty vs non-empty) in the notice. In the shipped
     corpus 303 of the 311 caller-vs-callee caption differences are an EMPTY caller caption (§10); without the split
     the report would mostly announce old blanks being filled.
