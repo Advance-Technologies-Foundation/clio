@@ -73,13 +73,12 @@ public class BundledProcessBuilderPackageTests {
 	/// <summary>
 	/// SHA-256 of the committed archive. Produced by <c>rebundle-process-builder.ps1</c> at
 	/// <see cref="ExpectedArchiveVersion"/> from
-	/// the <c>ProcessBuilder</c> repository (<c>packages/CrtProcessBuilder</c> on <c>main</c>, at the
-	/// squash-merge of engineering/crt-process-builder#70). That branch had merged <c>main</c> after the
-	/// sprint-3 release, so the cut contains the commit the 1.6.3.31 archive was produced from
-	/// (<c>0b2c69adfb0a59c3ab4b37fb519a5d0df345dba7</c>, verified with <c>git merge-base --is-ancestor</c>)
-	/// and with it the ENG-96503 Read-data count work, the ENG-95986 Send-email template mode and
-	/// everything <c>nitro/sprint-3-release</c> had accumulated, including the earlier ENG-91853
-	/// flow-labels and ENG-94374 process-versioning work. Recorded mechanically in
+	/// the <c>ProcessBuilder</c> repository (<c>packages/CrtProcessBuilder</c>, branch
+	/// <c>feature/ENG-99856-multi-instance</c>, merged from <c>main</c> — so the cut also carries everything
+	/// <c>main</c> had accumulated by then, including the ENG-95890/ENG-98448 branch-band layout and connector
+	/// geometry that landed there while this branch was open, and, transitively, the ENG-95986 Send-email
+	/// template-mode work and the earlier ENG-91853 flow-labels and ENG-94374 process-versioning work), at the
+	/// commit recorded mechanically in
 	/// <see cref="ExpectedProducingCommit"/> — the script captures <c>git rev-parse HEAD</c> and refuses to cut
 	/// from a tree with uncommitted changes, so this reference is no longer a sentence anyone has to keep true
 	/// by hand. Many numbers below the current one are burned rather than reused — some because two branches drew
@@ -171,12 +170,15 @@ public class BundledProcessBuilderPackageTests {
 	/// collided at write time the same way an exact duplicate does. Switched to <c>OrdinalIgnoreCase</c>,
 	/// matching the sibling existing-parameter conflict check right below it and <c>ResolveButtons</c>' own
 	/// duplicate check.</para>
-	/// <para>What THIS cut carries, over the 1.6.3.16 this file previously pinned: the Sub-process element
-	/// (ENG-92707) - the BPMN call activity,
-	/// selecting the called process and letting the platform copy that process's parameters onto the element,
-	/// with the guards the platform does not have (self-reference, a retarget with live dependents, a callee with
-	/// no Simple start event, an ambiguous caption, and any multi-instance element) and a drift report around the
-	/// synchronization.</para>
+	/// <para>What THIS cut carries, over the 1.6.5.14 this file previously pinned: MULTI-INSTANCE on the
+	/// Sub-process element (ENG-99856) - running the called process once per item of a collection, through
+	/// <c>subProcess.multiInstanceOptions</c>. It REMOVES a refusal rather than adding one: the Sub-process
+	/// element shipped in ENG-92707 refused any multi-instance element outright, and the paragraph that said so
+	/// is gone with it. A converted element stops carrying the callee's parameters and carries two collections
+	/// and three iteration counters instead, with the callee's contract one level down in the input collection's
+	/// item properties - which is why a per-item value is addressed by a DOTTED name and a write into the output
+	/// collection is refused at any depth. Also in the cut, from the <c>main</c> merge: the ENG-95890/ENG-98448
+	/// branch-band layout and connector geometry.</para>
 	/// <para>The FOURTH digit moves here: the third already stood at 1.6.3 when this branch started, so this cut
 	/// continues that line rather than opening one. The paragraph below records why the third digit was moved by
 	/// the cut that opened it, which is the case that was the OPPOSITE of the rule stated above, and the reason is
@@ -194,12 +196,12 @@ public class BundledProcessBuilderPackageTests {
 	/// each is raised so a stand still carrying an earlier one is DETECTABLY behind — same-version re-cuts make
 	/// equal version numbers mean nothing, which the convergence check cannot see through.</para>
 	/// <para>
-	/// This cut DID run under <c>-SkipTests</c>. The package's suite is green on the producing commit
-	/// (1871 of 1872 with the CI filter) except for
-	/// <c>CiContractGuardTests.FeatureToggling_LoadedIdentityMatchesThePlatformDemandAndTheTestKit</c>, which
-	/// fails on this machine because the local <c>.application/net-framework/core-bin</c> binds an older
-	/// <c>Creatio.FeatureToggling</c> than the test project references — a stale local dependency set, not a
-	/// defect in the cut. The script verified the archive inventory it produced. The byte-for-byte comparison of
+	/// This cut did NOT run under <c>-SkipTests</c>: the script built the package sources and ran their suite
+	/// on the producing commit before packing anything — 2512 passed, 0 failed, 0 skipped, measured on this cut
+	/// and not carried over from a previous one. That matters beyond hygiene, because <c>-SkipTests</c> is the
+	/// ONE path that can reach the coarse failure the two security counts below exist to catch. The script also
+	/// verified the archive inventory it produced (209 entries, 2 DLLs, both under <c>Files/Libs</c>, compile
+	/// marker present, no own assembly, nothing that executes on install). The byte-for-byte comparison of
 	/// every archive entry
 	/// against the commit's CHECKOUT rendering was NOT re-run here, and the clean-tree refusal does NOT cover
 	/// it: a clean TREE and a clean CHECKOUT are different states. `git add` normalises to LF in the INDEX while
@@ -269,7 +271,7 @@ public class BundledProcessBuilderPackageTests {
 	/// <para>
 	/// The entry-by-entry byte audit (every archive entry compared against
 	/// <c>git show &lt;ExpectedProducingCommit&gt;:&lt;path&gt;</c>; last measured on the 1.6.1.2 cut as 157 entries,
-	/// 156 byte-identical, the 157th being the restamped <c>descriptor.json</c>) was NOT re-run for the 1.6.2.3 cut.
+	/// 156 byte-identical, the 157th being the restamped <c>descriptor.json</c>) was re-run on the 1.6.6.14 cut and came out clean: every entry identical except <c>descriptor.json</c>.
 	/// Its reproducibility rests on the export flags above, which are what made the earlier audit come out clean;
 	/// a reviewer can repeat the audit from the producing commit alone.
 	/// The INVARIANT, which is what this paragraph is for and the only part that cannot go stale: every entry in
@@ -285,7 +287,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"DC38CCC2D2079235AA88C42818483929FF8EBE950F9F2C5C0A945177E70B6FE1";
+		"E04D5A92ECB14078870979B3BE371B8E3A908DF54F1F295642E032247D1CA038";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -313,7 +315,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.5.14";
+	private const string ExpectedArchiveVersion = "1.6.6.14";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, written by
@@ -325,15 +327,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	// Re-pointed from the branch cut to the squash-merge WITHOUT repacking, which is the one case where
-	// moving this pin alone is honest rather than a shortcut. #70 was squashed, so the branch commit the
-	// script recorded is not reachable from main and the pin's whole purpose - "anyone with a checkout can
-	// verify the rest with one git checkout" - was dead. The bytes did not need to change: measured over the
-	// committed archive, 205 of its 206 entries are byte-identical to this commit's blobs and the 206th is
-	// descriptor.json, which differs only in LINE ENDINGS because the repository normalises to LF and the
-	// restamp writes CRLF. Its CONTENT matches exactly - version and stamp included - which is stronger than
-	// the invariant below requires, and is true only because the restamp landed in the squash.
-	private const string ExpectedProducingCommit = "f603ca6f56c6faa9a6b7ced8391531668fcfe024";
+	private const string ExpectedProducingCommit = "13bd2a2cf8436785dacc275f9f5ab33433160b87";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -359,7 +353,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1790064360000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1790164926000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
@@ -642,7 +636,7 @@ public class BundledProcessBuilderPackageTests {
 
 	/// <summary>
 	/// Counts occurrences of <paramref name="value"/> that are actually CODE — i.e. not preceded on their own
-	/// line by a <c>//</c> comment marker.
+	/// line by a <c>//</c> comment marker that sits outside a double-quoted string literal.
 	/// </summary>
 	/// <remarks>
 	/// A plain substring count over archive text cannot tell a live call from a commented-out one, and for the
@@ -651,7 +645,12 @@ public class BundledProcessBuilderPackageTests {
 	/// unchanged, and both gate literals still match — because the guard CLASS is untouched — so an archive
 	/// with zero live gates passes every pin in this fixture. Line-level rather than token-level on purpose:
 	/// this is a text scan over sources it cannot parse, so it recognises the one form that actually occurs
-	/// (<c>// _guard.…</c>) and does not pretend to understand block comments or strings.
+	/// (<c>// _guard.…</c>) and does not pretend to understand block comments, verbatim or raw strings, or
+	/// character literals.
+	/// <para>The ONE piece of string awareness it has is the one whose absence fails in the unsafe direction:
+	/// a <c>//</c> inside an ordinary string earlier on the line - a URL is the obvious one - used to mark the
+	/// rest of the line as a comment, so a live <c>[OperationContract]</c> after it went UNCOUNTED, and an
+	/// undercount is exactly what lets an extra endpoint past the operation-count guard.</para>
 	/// </remarks>
 	private static int CountUncommentedOccurrences(string text, string value) {
 		int count = 0;
@@ -660,11 +659,37 @@ public class BundledProcessBuilderPackageTests {
 			index = text.IndexOf(value, index + value.Length, StringComparison.Ordinal)) {
 			int lineStart = text.LastIndexOfAny(['\n', '\r'], index) + 1;
 			string beforeOnLine = text.Substring(lineStart, index - lineStart);
-			if (!beforeOnLine.Contains("//", StringComparison.Ordinal)) {
+			if (!ContainsLineCommentMarker(beforeOnLine)) {
 				count++;
 			}
 		}
 		return count;
+	}
+
+	/// <summary>
+	/// Whether <paramref name="line"/> carries a <c>//</c> that starts a comment - one OUTSIDE a double-quoted
+	/// string literal. A backslash inside a string escapes the next character, so <c>"a \"//\" b"</c> is one
+	/// string and carries no comment.
+	/// </summary>
+	private static bool ContainsLineCommentMarker(string line) {
+		bool insideString = false;
+		for (int position = 0; position < line.Length; position++) {
+			char current = line[position];
+			if (insideString) {
+				if (current == '\\') {
+					position++;
+				} else if (current == '"') {
+					insideString = false;
+				}
+				continue;
+			}
+			if (current == '"') {
+				insideString = true;
+			} else if (current == '/' && position + 1 < line.Length && line[position + 1] == '/') {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	#endregion
@@ -768,7 +793,7 @@ public class BundledProcessBuilderPackageTests {
 		string archive = ReadBundledArchiveAsText();
 
 		// Act
-		int operations = CountOccurrences(archive, "[OperationContract]");
+		int operations = CountUncommentedOccurrences(archive, "[OperationContract]");
 
 		// Assert
 		operations.Should().Be(ExpectedOperationContractCount,
@@ -784,6 +809,32 @@ public class BundledProcessBuilderPackageTests {
 					+ "an allowlist naming an operation that no longer exists silently widens what the count "
 					+ "above tolerates");
 		}
+	}
+
+	[TestCase("\t\t[OperationContract]\n", 1, TestName = "{m}(live line)")]
+	[TestCase("\t\t// [OperationContract]\n", 0, TestName = "{m}(commented line)")]
+	[TestCase("\t\tDoWork(); // [OperationContract]\n", 0, TestName = "{m}(trailing comment)")]
+	[TestCase("\t\t// a note\n\t\t[OperationContract]\n", 1,
+		TestName = "{m}(comment on the previous line)")]
+	[TestCase("\t\tconst string Url = \"http://host/x\"; [OperationContract]\n", 1,
+		TestName = "{m}(double slash inside a string)")]
+	[TestCase("\t\tconst string Text = \"a \\\"//\\\" b\"; [OperationContract]\n", 1,
+		TestName = "{m}(double slash inside a string with escaped quotes)")]
+	[TestCase("\t\tconst string Url = \"http://host/x\"; // [OperationContract]\n", 0,
+		TestName = "{m}(comment after a closed string)")]
+	[Description("The helper both security-count guards stand on counts only occurrences that are CODE. Its failure modes are asymmetric, and both are pinned: counting a COMMENTED occurrence lets a commented-out gate call stand in for a live one, and NOT counting a live one - which the line scan did whenever a '//' sat inside a string earlier on the line, a URL being the obvious case - lets an extra [OperationContract] past the operation-count guard, the unsafe direction for a count that exists to catch an endpoint arriving.")]
+	public void CountUncommentedOccurrences_ShouldCountOnlyCode_WhenScanningALine(string text, int expected) {
+		// Arrange
+		const string value = "[OperationContract]";
+
+		// Act
+		int count = CountUncommentedOccurrences(text, value);
+
+		// Assert
+		count.Should().Be(expected,
+			because: "an occurrence counts exactly when no '//' OUTSIDE a double-quoted string precedes it on its "
+				+ "own line - a '//' inside a string is not a comment, and a comment on another line does not "
+				+ "reach this one");
 	}
 
 	[Test]
@@ -917,7 +968,7 @@ public class BundledProcessBuilderPackageTests {
 				+ $"a gate and {nameof(ProcessBuilderGatedTypes)} moves in the same commit, so a lost "
 				+ "declaration cannot pass as slack and a new one cannot arrive unreviewed");
 		// The loop EXECUTES today: four of the seven carry a version literal, and they do NOT all agree with
-		// each other — create, modify and modify-as-new-version at 1.6.2.1 since ENG-95986 (create and modify had
+		// each other — create, modify and modify-as-new-version at 1.6.6.14 since ENG-99856 (create and modify had
 		// diverged before, when modify's page-change reconciliation promise needed a newer archive than create's;
 		// the new-version route followed because it shares the operations vocabulary and runs no read-back), and
 		// set-active-version at the 1.6.1.0 its operation first ships in. That spread is the reason the assertion counts literals

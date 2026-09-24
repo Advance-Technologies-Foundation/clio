@@ -77,6 +77,22 @@ public class PageOutputDirectoryResolverTests {
 	}
 
 	[Test]
+	[Description("A null fallback collapses the cwd-is-home case to NO anchor, which is how a caller-supplied path is confined temp-only instead of inheriting clio's own configuration directory as its boundary.")]
+	public void ResolveAnchor_WhenCwdIsHomeAndFallbackIsNull_ReturnsNull() {
+		// Arrange
+		MockFileSystem fs = new();
+		string baseDir = fs.Directory.GetCurrentDirectory();
+		string home = fs.Path.Combine(baseDir, "home");
+
+		// Act
+		string anchor = Resolve(fs, cwd: home, home: home, fallback: null, explicitDir: null);
+
+		// Assert
+		anchor.Should().BeNull(
+			because: "with no fallback the bare home directory must yield no anchor at all, never $HOME itself");
+	}
+
+	[Test]
 	[Description("An orphaned .clio directory without workspaceSettings.json (e.g. a pre-consolidation ~/.clio cache) above a project dir is NOT treated as a workspace root.")]
 	public void ResolveAnchor_WhenOrphanedClioDirAboveProjectDir_DoesNotTreatAsWorkspace() {
 		MockFileSystem fs = new();

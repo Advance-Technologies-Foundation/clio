@@ -1,6 +1,7 @@
 ﻿namespace Clio.Command {
 	using System;
 	using System.Collections.Generic;
+	using System.Diagnostics.CodeAnalysis;
 	using System.IO;
 	using System.Linq;
 	using Clio.Command.McpServer;
@@ -175,6 +176,7 @@
 		private readonly IServiceUrlBuilder _serviceUrlBuilder;
 		private readonly ILogger _logger;
 		private readonly IPageDesignerHierarchyClient _hierarchyClient;
+		private readonly Func<IJsonDiffApplier> _viewConfigApplierFactory;
 		private readonly IPageDesignerPresenceNotifier? _pageDesignerPresenceNotifier;
 		private readonly IPageBaselineGuard _pageBaselineGuard;
 		private readonly IPersistedResourceKeyReader _persistedResourceKeyReader;
@@ -198,8 +200,11 @@
 		/// invisible to every existing test construction, and silently reverting to an uncached read would
 		/// restore the duplicate round trips this collaborator exists to remove.</param>
 		/// <param name="hierarchyClient">Designer hierarchy client used to resolve replacing schemas.</param>
+		/// <param name="viewConfigApplierFactory">Creates the platform diff interpreter for mandatory parent validation.</param>
 		/// <param name="pageDesignerPresenceNotifier">Best-effort notifier used by the update-page
 		/// entry points to publish Designer Presence save events.</param>
+		[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+			Justification = "DI constructor: each collaborator owns a separate write concern. The factory creates a fresh stateful diff interpreter per hierarchy; bundling unrelated services would hide dependencies.")]
 		public PageUpdateCommand(
 			IApplicationClient applicationClient,
 			IServiceUrlBuilder serviceUrlBuilder,
@@ -207,11 +212,13 @@
 			IPageBaselineGuard pageBaselineGuard,
 			IPersistedResourceKeyReader persistedResourceKeyReader,
 			IPageDesignerHierarchyClient hierarchyClient = null,
-			IPageDesignerPresenceNotifier? pageDesignerPresenceNotifier = null) {
+			IPageDesignerPresenceNotifier? pageDesignerPresenceNotifier = null,
+			Func<IJsonDiffApplier> viewConfigApplierFactory = null) {
 			_applicationClient = applicationClient;
 			_serviceUrlBuilder = serviceUrlBuilder;
 			_logger = logger;
 			_hierarchyClient = hierarchyClient;
+			_viewConfigApplierFactory = viewConfigApplierFactory;
 			_pageDesignerPresenceNotifier = pageDesignerPresenceNotifier;
 			_pageBaselineGuard = pageBaselineGuard;
 			_persistedResourceKeyReader = persistedResourceKeyReader;
@@ -315,6 +322,7 @@
 			if (!TryLoadSchemaForSave(options.SchemaName, context, out JObject schemaToSave, out response)) return false;
 			if (!TryResolveBodyToWrite(schemaToSave, options, out string bodyToWrite,
 				out PageAppendProjection projection, out response)) return false;
+			if (!TryValidateParents(bodyToWrite, context, out response)) return false;
 			// Captured BEFORE UpdateSchemaBody overwrites `body` with the resolved one.
 			IReadOnlyList<string> downgradeWarnings =
 				PageInsertDowngradeDetector.Detect(schemaToSave["body"]?.ToString(), bodyToWrite);
@@ -328,6 +336,40 @@
 			return true;
 		}
 
+		private bool TryValidateParents(string body, EditableSchemaContext context, out PageUpdateResponse response) {
+			response = null;
+			if (context.SchemaType == PageSchemaType.Mobile) return true;
+			JArray candidate = PageParentNameValidation.ReadDiff(body);
+			if (!candidate.OfType<JObject>().Any(x => (x.Value<string>("operation") is "insert" or "move" or "set")
+				&& (!string.IsNullOrEmpty(x.Value<string>("parentName")) || !string.IsNullOrEmpty(x.Value<string>("nameTo"))))) return true;
+			if (_hierarchyClient is null || _viewConfigApplierFactory is null)
+				throw new InvalidOperationException("Page parent validation requires the designer hierarchy and diff applier.");
+			IEnumerable<PageDesignerHierarchySchema> inherited = GetInheritedHierarchy(context);
+			IJsonDiffApplier applier = _viewConfigApplierFactory();
+			JToken view = new JArray();
+			foreach (PageDesignerHierarchySchema part in inherited.Reverse().Where(part => !string.IsNullOrWhiteSpace(part.Body))) {
+				view = applier.Apply(view, PageParentNameValidation.ReadDiff(part.Body),
+					new JsonApplierOperationsOptions { ApplyMoveIfIndirectParentMoved = part.SchemaVersion >= 1 });
+			}
+			applier.Apply(view, candidate, new JsonApplierOperationsOptions { RejectUnresolvedParents = true });
+			return true;
+		}
+
+		private IEnumerable<PageDesignerHierarchySchema> GetInheritedHierarchy(EditableSchemaContext context) {
+			string uid = context.IsCreateReplacing ? context.TemplateSchemaUId : context.EditableSchemaUId;
+			string package = context.DesignPackageUId ?? _hierarchyClient.GetDesignPackageUId(uid);
+			IReadOnlyList<PageDesignerHierarchySchema> hierarchy = context.ResolvedHierarchy ?? _hierarchyClient.GetParentSchemas(uid, package);
+			if (hierarchy is null || hierarchy.Count == 0)
+				throw new InvalidOperationException("Cannot validate parentName: page hierarchy is unavailable.");
+			IEnumerable<PageDesignerHierarchySchema> inherited = hierarchy;
+			if (!context.IsCreateReplacing) {
+				int own = hierarchy.ToList().FindIndex(x => SchemaUIdsMatch(x.UId, uid));
+				if (own < 0) throw new InvalidOperationException("Cannot validate parentName: target schema is missing from the hierarchy.");
+				inherited = hierarchy.Skip(own + 1);
+			}
+			return inherited;
+		}
+
 		private bool TryCompleteDryRun(
 			PageUpdateOptions options,
 			EditableSchemaContext context,
@@ -335,12 +377,9 @@
 			JArray parsedOptionalProperties,
 			out PageUpdateResponse response) {
 			if (!IsAppendMode(options)) {
-				// A replace dry run stays OFFLINE. That is a deliberate pre-existing guarantee, asserted by
-				// TryUpdatePage_WhenDryRun_SkipsDesignerServiceCalls: replace writes the body verbatim, so
-				// there is nothing to merge and no reason to reach the server. It keeps the advisory
-				// fragment-scoped caption check, which is all that is available without the server's
-				// localizableStrings - a known, narrower divergence from the save's authoritative gate, and
-				// one that cannot be closed without making this path networked too.
+				if (!TryValidateParents(options.Body, context, out response)) return false;
+				// Parent references require the target hierarchy even during a dry run. No schema is saved.
+				// Caption checks remain fragment-scoped because replace does not fetch localizableStrings.
 				response = CreateSuccessResponse(options, dryRun: true, registeredKeys: null);
 				response.Warnings = CombineWarnings(
 					BuildDryRunWidgetCaptionWarnings(options.Body, context.SchemaType, explicitResources),
@@ -759,7 +798,7 @@
 				EditableSchemaUId = options.TargetSchemaUId,
 				TemplateSchemaUId = options.TargetSchemaUId,
 				IsCreateReplacing = false,
-				SchemaType = pageSchemaType
+				SchemaType = pageSchemaType,
 			};
 			response = null;
 			return true;
@@ -945,7 +984,8 @@
 				ParentSchemaUId = isCreateReplacing ? root.UId : null,
 				ParentSchemaName = root.Name,
 				TemplateSchemaUId = isCreateReplacing ? root.UId : editableUId,
-				SchemaType = pageSchemaType
+				SchemaType = pageSchemaType,
+                ResolvedHierarchy = isCreateReplacing ? null : hierarchy
 			};
 			response = null;
 			return true;
@@ -992,6 +1032,7 @@
 		}
 
 		internal sealed class EditableSchemaContext {
+            public IReadOnlyList<PageDesignerHierarchySchema> ResolvedHierarchy { get; set; }
 			public string SchemaName { get; set; }
 			public string EditableSchemaUId { get; set; }
 			public string DesignPackageUId { get; set; }

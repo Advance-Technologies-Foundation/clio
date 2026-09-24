@@ -88,9 +88,12 @@ public static partial class WebToMobileAnalysisService {
 	/// as <paramref name="mobileTemplateViewModelConfig"/> to diff the page's modelConfig. Null when no
 	/// template rule matched or the template bundle could not be read.</param>
 	/// <param name="actionTargetsProbe">Read-only probe of whether each action's NAVIGATION TARGET exists on
-	/// mobile (ENG-94839), surfaced as <c>requestConversions.unresolvedTargetRequests</c>. Null - or a probe
+	/// mobile, surfaced as <c>requestConversions.unresolvedTargetRequests</c>. Null - or a probe
 	/// that could not reach the environment - leaves every target unknown and changes no conversion decision:
 	/// the report is a warning, nothing is dropped on target grounds.</param>
+	/// <param name="existingMobilePages">Mobile page(s) already found for the entity/page being converted
+	/// (the reuse-vs-convert fact, playbook step 2a). Carried onto the guide unchanged; null becomes an
+	/// empty list.</param>
 		public static MobilePageConversionGuide Analyze(
 		PageBundleInfo bundle,
 		IReadOnlySet<string> mobileTypes,
@@ -99,6 +102,7 @@ public static partial class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, ComponentRegistryEntry> mobileByType,
 		WebToMobilePageConversionRules rules,
 		TemplateMappingRule templateRule,
+		IReadOnlySet<string> mobileRequestTypes,
 		string sourcePage,
 		string sourceTemplate,
 		string suggestedTarget,
@@ -117,7 +121,7 @@ public static partial class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, JObject> webTemplateBaselineNodes = null,
 		JObject webTemplateResources = null,
 		MobileActionTargetProbeResult actionTargetsProbe = null,
-		IReadOnlySet<string> mobileRequestTypes = null,
+		IReadOnlyList<ExistingMobilePageInfo> existingMobilePages = null,
 		MobileRegistryGeneration mobileRegistryGeneration = null) {
 		ArgumentNullException.ThrowIfNull(bundle);
 		ArgumentNullException.ThrowIfNull(mobileTypes);
@@ -127,8 +131,7 @@ public static partial class WebToMobileAnalysisService {
 		// A request is supported when the mobile request registry lists it. A caller that supplies no
 		// catalog leaves the versioned rules file as the only source of support, which is what the
 		// hermetic element-mapping tests rely on.
-		IReadOnlySet<string> mobileRequestSet =
-			mobileRequestTypes ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		ArgumentNullException.ThrowIfNull(mobileRequestTypes);
 		IReadOnlyDictionary<string, string> map =
 			containerNameMap ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 		IReadOnlyDictionary<string, ComponentMappingRule> componentMap =
@@ -217,7 +220,7 @@ public static partial class WebToMobileAnalysisService {
 		// from the map, and an absent key reads as Unknown. Gating on the flag instead threw away the verdicts
 		// the probe had ALREADY settled without the environment (a web-page target is dead by construction),
 		// so a page carrying one web-page target plus one object target silently lost the web-page warning
-		// that the same page without the object target reports fine (ENG-94839).
+		// that the same page without the object target reports fine.
 		IReadOnlyDictionary<string, ActionTargetResolution> actionTargets =
 			actionTargetsProbe?.TargetsByKey
 			?? new Dictionary<string, ActionTargetResolution>(StringComparer.OrdinalIgnoreCase);
@@ -228,7 +231,7 @@ public static partial class WebToMobileAnalysisService {
 			positionalParentByAnchor, positionalAnchorByWebAnchor,
 			mobileTypesByName, mobileTemplateNodesByName, webBaselineNodes, webTemplateResources,
 			declaredElements,
-			actionTargets, unresolvedTargets, mobileRequestSet);
+			actionTargets, unresolvedTargets, mobileRequestTypes);
 
 		// Removes components an excludedComponents rule bans from a host (type-agnostic — which
 		// type/host/property is banned comes entirely from the rules), in the two shapes a banned component
@@ -432,6 +435,7 @@ public static partial class WebToMobileAnalysisService {
 			DroppedElements = ProjectDroppedElements(elementMap),
 			MobileContracts = contracts,
 			SectionRegistration = sectionRegistration,
+			ExistingMobilePages = existingMobilePages ?? [],
 			PageBusinessRules = pageBusinessRules,
 			RequestConversions = requestConversions,
 			AdaptiveLayout = adaptiveLayout.Count > 0 ? adaptiveLayout : null,
@@ -2073,9 +2077,6 @@ public static partial class WebToMobileAnalysisService {
 		return referenced;
 	}
 
-
-
-
 	private static bool HasContent(string section, string empty) =>
 		!string.IsNullOrWhiteSpace(section) &&
 		!string.Equals(section.Trim(), empty, StringComparison.Ordinal);
@@ -3529,13 +3530,13 @@ public static partial class WebToMobileAnalysisService {
 			// interaction enters a twin merge). An unchanged binding is inherited and left to the template element.
 			if (IsEventBinding(prop.Value)) {
 				if (!JToken.DeepEquals(baseline[prop.Name], prop.Value)) {
-					// canRemoveBinding: false — `values` here is a DELTA MERGE payload, not the element's whole
-					// mobileValues. Omitting a key from a merge means "keep the mobile template element's own
-					// value" (see MobileValues), so nothing would actually be removed and the mobile control
-					// may well keep firing the template's own request. Report the dead target; do not claim a
-					// removal that the merge cannot perform.
-					ProcessOneEventBinding(ctx, mobileName, prop.Name, (JObject)prop.Value, values,
-						canRemoveBinding: false);
+					// `values` here is a DELTA MERGE payload, not the element's whole mobileValues. Omitting a
+					// key from a merge means "keep the mobile template element's own value" (see MobileValues),
+					// so an unsupported request is dropped by omission rather than an explicit removal. A
+					// definitionally-absent target (a web page) is still written into the merge with its target
+					// param blanked: the page's own binding wins over the template's, just with the broken part
+					// cleared — and BindingRemoved reports that blanking regardless of which writer performed it.
+					ProcessOneEventBinding(ctx, mobileName, prop.Name, (JObject)prop.Value, values);
 				}
 				continue;
 			}
@@ -4579,8 +4580,7 @@ public static partial class WebToMobileAnalysisService {
 	private static void ProcessEventBindings(ElementMapContext ctx, JObject node, JObject values, string elementName) {
 		foreach (JProperty prop in node.Properties()) {
 			if (IsEventBinding(prop.Value)) {
-				ProcessOneEventBinding(ctx, elementName, prop.Name, (JObject)prop.Value, values,
-					canRemoveBinding: true);
+				ProcessOneEventBinding(ctx, elementName, prop.Name, (JObject)prop.Value, values);
 			}
 		}
 	}
@@ -4595,18 +4595,8 @@ public static partial class WebToMobileAnalysisService {
 	/// <param name="binding">The event property, e.g. <c>clicked</c>.</param>
 	/// <param name="source">The source binding's <c>{ request, params }</c> object.</param>
 	/// <param name="values">The values object being built.</param>
-	/// <param name="canRemoveBinding">
-	/// Whether omitting <paramref name="binding"/> from <paramref name="values"/> actually REMOVES the action.
-	/// True for the insert builder, whose <paramref name="values"/> becomes the element's entire
-	/// <c>mobileValues</c>. FALSE for the twin delta, whose <paramref name="values"/> is a merge payload where
-	/// an omitted key means "keep the template element's own value" — so a removal is not something that
-	/// writer can perform, and reporting one would tell the caller the control "renders and does nothing" when
-	/// it may still fire the mobile template's own request. The removal decision belongs to the WRITER as much
-	/// as to the target kind, which is why it is a parameter rather than a property of the resolution.
-	/// </param>
 	private static void ProcessOneEventBinding(
-		ElementMapContext ctx, string elementName, string binding, JObject source, JObject values,
-		bool canRemoveBinding) {
+		ElementMapContext ctx, string elementName, string binding, JObject source, JObject values) {
 		string webRequest = source["request"].ToString();
 		values.Remove(binding); // own this property regardless of the prune loop
 
@@ -4614,23 +4604,49 @@ public static partial class WebToMobileAnalysisService {
 			if (!string.IsNullOrWhiteSpace(rule.Mobile)) {
 				// The request type converts. Its DESTINATION is the second question, and it is reported
 				// separately: whether the action is also REMOVED depends on how strong the absence verdict is,
-				// which MobileActionTargetProbe.StripsBindingOnMissing owns. The COMPONENT always stays.
+				// which MobileActionTargetProbe.BlanksTargetOnMissing owns. The COMPONENT always stays.
 				ActionTargetResolution target = ResolvedTargetOf(ctx, rule, source);
 				if (target is { State: ActionTargetState.Missing or ActionTargetState.Unknown }) {
 					bool missing = target.State == ActionTargetState.Missing;
-					// Removed only for a DEFINITIONAL absence (a web page cannot open on mobile, and no
-					// environment read was involved). An object's add-on verdict is a report, never a removal:
-					// it cannot prove absence, and stripping on it would cost a working action.
-					bool removed = missing
-						&& canRemoveBinding
-						&& MobileActionTargetProbe.StripsBindingOnMissing(target.Kind);
+					// A DEFINITIONAL absence means the target cannot open on mobile at all (a web page
+					// cannot open on mobile, and no environment read was involved) — the converted
+					// request stays on the element, but the target param it would point at is blanked,
+					// regardless of which writer is calling.
+					bool definitionallyAbsent = missing
+						&& MobileActionTargetProbe.BlanksTargetOnMissing(target.Kind);
+					// BindingRemoved reports whether the target param was blanked — true exactly when the
+					// absence is definitional, independent of which writer (insert or twin-merge delta) is
+					// calling: both writers blank the same way, so the flag is a fact about the target, not
+					// about writer capability.
 					ctx.UnresolvedTargetRequests.Add(new UnresolvedTargetRequest {
 						ElementName = elementName, Binding = binding, WebRequest = webRequest,
 						TargetKind = target.Kind, Target = target.Target,
 						State = missing ? UnresolvedTargetRequest.StateMissing : UnresolvedTargetRequest.StateUnknown,
-						BindingRemoved = removed
+						BindingRemoved = definitionallyAbsent,
+						ResolvedCandidateSchemaName = target.ResolvedCandidateSchemaName
 					});
-					if (removed) {
+					if (definitionallyAbsent) {
+						// The request still converts (mobile name + paramMap applied) — only the target
+						// param is blanked, so the control stays on the element and reconfigurable in
+						// Mobile Designer instead of losing its action silently. `params` is guaranteed a
+						// JObject here — ResolvedTargetOf only resolves a target when source["params"] is
+						// one and TargetParam is set on it, and ApplyParamMap never changes that shape.
+						var blankedClone = (JObject)source.DeepClone();
+						blankedClone["request"] = rule.Mobile;
+						ApplyParamMap(blankedClone, rule.ParamMap);
+						// Mirrors ApplyParamMap's own guard exactly: a null/whitespace mapped value is a rename
+						// ApplyParamMap itself skips (the rules file is external, versioned data this build has
+						// never seen), so the two must agree on what "effective" means here — otherwise this
+						// blanks a param ApplyParamMap never renamed to, and either throws on a null key or
+						// leaves the real (dead) rule.TargetParam value untouched.
+						string effectiveTargetParam =
+							rule.ParamMap != null
+							&& rule.ParamMap.TryGetValue(rule.TargetParam, out string mappedParam)
+							&& !string.IsNullOrWhiteSpace(mappedParam)
+								? mappedParam
+								: rule.TargetParam;
+						((JObject)blankedClone["params"])[effectiveTargetParam] = "";
+						values[binding] = blankedClone;
 						ctx.DroppedRequests.Add(new DroppedRequest {
 							ElementName = elementName, Binding = binding, WebRequest = webRequest,
 							Reason = [Reason(ReasonCodes.DropRequestTargetMissing,
@@ -4713,6 +4729,55 @@ public static partial class WebToMobileAnalysisService {
 	/// rules-file edit from reintroducing one. An empty registry yields no findings, so a caller with no catalog
 	/// loaded reports nothing rather than flagging all of them.
 	/// </summary>
+	/// <summary>
+	/// Request types that open a page chosen by one of their own parameters, and whose target the converter
+	/// therefore cannot verify without a rules entry. Each is published by the mobile request registry and
+	/// mapped by no rules entry today, so registry membership alone would make it supported: the binding
+	/// would convert by identity, with no <c>paramMap</c> and no <c>targetParam</c>/<c>targetKind</c> pair
+	/// for the unresolved-target probe to use, and could look valid while opening nothing on the device.
+	/// <para>
+	/// Named, not derived. Deriving the set from the parameter NAMES the rules use as targets
+	/// (<c>entityName</c>, <c>schemaName</c>) was tried and rejected: the same names mean a FILE schema on
+	/// <c>crt.OpenFileRequest</c> and <c>crt.OpenSignatureServiceRequest</c>, which that rule withheld too.
+	/// Each entry below was read in the mobile runtime and opens a page. The list is a stopgap that shrinks
+	/// on its own: a type leaves it by gaining a rules entry, which is what the lookup below checks.
+	/// </para>
+	/// </summary>
+	private static readonly IReadOnlySet<string> TargetCarryingRequestsPendingRules =
+		new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"crt.CreateCalendarRecordRequest",
+			"crt.CreateRecordFromLookupRequest",
+			"crt.CopyCalendarRecordRequest",
+			"crt.CreateRecordWithGeodataRequest",
+			"crt.SelectSurveyRequest"
+		};
+
+	/// <summary>
+	/// The subset of <see cref="TargetCarryingRequestsPendingRules"/> the registry publishes and the rules
+	/// do not map — the types to withhold from registry-derived support on this run.
+	/// </summary>
+	public static IReadOnlySet<string> TargetCarryingRegistryOnlyRequests(
+		WebToMobilePageConversionRules rules, IEnumerable<RequestRegistryEntry> registryEntries) {
+		var withheld = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		if (registryEntries is null) {
+			return withheld;
+		}
+		var mapped = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		foreach (RequestMappingRule rule in rules?.Requests ?? []) {
+			if (!string.IsNullOrWhiteSpace(rule?.Web)) {
+				mapped.Add(rule.Web);
+			}
+		}
+		foreach (RequestRegistryEntry entry in registryEntries) {
+			if (!string.IsNullOrWhiteSpace(entry?.RequestType)
+				&& TargetCarryingRequestsPendingRules.Contains(entry.RequestType)
+				&& !mapped.Contains(entry.RequestType)) {
+				withheld.Add(entry.RequestType);
+			}
+		}
+		return withheld;
+	}
+
 	public static IReadOnlyList<string> UnknownMobileRequestTargets(
 		WebToMobilePageConversionRules rules, IReadOnlySet<string> mobileRequestTypes) {
 		if (mobileRequestTypes is null || mobileRequestTypes.Count == 0) {
@@ -4769,10 +4834,13 @@ public static partial class WebToMobileAnalysisService {
 			FlaggedRequests = flagged,
 			UnresolvedTargetRequests = unresolvedTargets,
 			TargetsProbed = targetsProbed,
-			// Carried whenever the probe set one, not only on total failure: a check that ran but hit its
-			// per-object ceiling is incomplete in a way TargetsProbed alone cannot express. Redacted at the
-			// point it is built.
-			TargetsNote = actionTargetsProbe?.Note
+			// Carried whenever the probe set one — not only when the source page's package could not be
+			// resolved: it also fires when the per-call probe ceiling clips the object-target list, and when a
+			// candidate-web-page lookup fails for a verified-missing object (the two compose into one note
+			// rather than either silently replacing the other — see
+			// MobileActionTargetProbe.CandidateFailureAccumulator.ComposeNote). Redacted at the point it is built.
+			TargetsNote = actionTargetsProbe?.Note,
+			MissingTargetPages = MissingTargetPageQueueBuilder.Build(unresolvedTargets)
 		};
 	}
 
