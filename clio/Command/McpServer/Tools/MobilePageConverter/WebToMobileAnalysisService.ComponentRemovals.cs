@@ -38,9 +38,8 @@ using JsonObject = System.Text.Json.Nodes.JsonObject;
 //
 // PLACEMENT is load-bearing (architecture doc section 4.1): AFTER RemoveExcludedComponents, because an
 // exclusion can remove the last menu item; BEFORE RemoveEmptyContainers, so a container this pass empties
-// cascades away there; and BEFORE InitializeContainerChildSlots, which seeds an empty array into every slot
-// that still has a surviving child — running after it would make a healthy menu button indistinguishable from
-// a dead one, in the inverted direction.
+// cascades away there. Both are about what the MAP holds when the rules are evaluated, and neither is
+// visible at this call site.
 public static partial class WebToMobileAnalysisService {
 
 	/// <summary>
@@ -550,10 +549,16 @@ public static partial class WebToMobileAnalysisService {
 	/// </description></item>
 	/// </list>
 	/// <para>
-	/// Reading tier 3 alone is the trap this ordering exists to avoid, and it fails in BOTH directions: a
-	/// healthy menu button would read as empty (its items are elsewhere), and — if this pass ran after
-	/// <c>InitializeContainerChildSlots</c> — a dead one would read as non-empty, because that pass seeds
-	/// <c>[]</c> into exactly the slots whose children SURVIVED.
+	/// Reading tier 3 alone is the trap the first tier exists to avoid: a healthy menu button carries no
+	/// <c>menuItems</c> in its own values at all — <c>BuildMobileValues</c> skips a slot the walk descended —
+	/// so every working menu button on the page would read as empty and be removed.
+	/// </para>
+	/// <para>
+	/// Worth knowing when reading the OUTPUT rather than writing this pass: on the emitted diff
+	/// <c>menuItems: []</c> means the button is HEALTHY and an ABSENT key means it is dead, because
+	/// <see cref="InitializeContainerChildSlots"/> seeds a slot only when a child survived to occupy it. That
+	/// is a fact about the wire, not a constraint on this pass — tier 1 answers from the element map, so the
+	/// seeding cannot change this predicate's verdict whichever side of it the pass runs on.
 	/// </para>
 	/// </remarks>
 	private static bool IsEmptyExpression(

@@ -140,7 +140,6 @@ Each one fails silently when broken.
 | Step 4 after every map-mutating pass | Per-type answer says "what will happen to this type" while the caller reads "what happened to these elements"; `mobileContracts` follows the suggestions, so the contract set is wrong in both directions |
 | `RemoveExcludedComponents` before `RemoveEmptyContainers` | A branch the exclusion empties does not cascade away |
 | `ApplyComponentRemovals` after `RemoveExcludedComponents`, before `RemoveEmptyContainers` | An exclusion can take the last menu item off a button, so running earlier keeps a button the page no longer needs; running later leaves the container it emptied shipping as a shell |
-| `ApplyComponentRemovals` before `InitializeContainerChildSlots` | That pass seeds `[]` into every slot whose children SURVIVED, so after it a healthy menu button and a dead one look identical to an `IsEmpty` test — and the inversion is total, not partial: on the wire `menuItems: []` means HEALTHY and an absent key means dead |
 | `RemoveEmptyContainers` before `InitializeContainerChildSlots` | Emptiness is read as slot *absence*; a seeded slot makes every container look occupied and disables the pass |
 | `CompactPositionalIndexes` before `AssignConvertedTabIndexes` | Compaction rebases each parent's indexed group to 0; over tab indexes it moves the first web tab before the template's general tab |
 | `BuildRequestConversionInfo` after both removal passes | A binding on a removed element is reported as converted for an element the map says not to create |
