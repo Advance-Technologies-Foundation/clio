@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -15,6 +14,7 @@ using Clio.Common;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
+using Clio.Package;
 using FluentAssertions;
 using ModelContextProtocol.Protocol;
 
@@ -52,10 +52,6 @@ public sealed class SubProcessElementToolE2ETests {
 	// The called process's OWN row for its parameter: a process parameter's caption is stored under
 	// Parameters.<name>.Caption (read off a stand, 2026-09-23).
 	private const string OrderIdCalleeCaptionKey = "Parameters.OrderId.Caption";
-
-	// Every value spliced into the caption SQL must match this: letters, digits, '_' and '.' - which is all a
-	// generated process name and a resource key contain.
-	private static readonly Regex SqlSafeIdentifier = new("^[A-Za-z0-9_.]+$", RegexOptions.CultureInvariant);
 
 	private const string Resync = """
 		[ { "op": "setElement", "elementName": "SubProcess1",
@@ -216,7 +212,7 @@ public sealed class SubProcessElementToolE2ETests {
 	[AllureName("modify-business-process resync stores the called process's current caption")]
 	public async Task ModifyBusinessProcess_Should_StoreTheCalleesCurrentCaption_OnOneResync() {
 		// Arrange
-		await using ArrangeContext context = await ArrangeAsync(needsSql: true);
+		await using ArrangeContext context = await ArrangeAsync();
 		string calleeName = $"UsrClioBpCapResyncCallee{Guid.NewGuid():N}";
 		string callerName = $"UsrClioBpCapResyncCaller{Guid.NewGuid():N}";
 		await ArrangeProcessAsync(context, BuildCaptionedCalleeDescriptor(calleeName), "called process");
@@ -243,7 +239,7 @@ public sealed class SubProcessElementToolE2ETests {
 	[AllureName("an incidental caller save stores the called process's current caption")]
 	public async Task ModifyBusinessProcess_Should_StoreTheCalleesCurrentCaption_OnAnIncidentalCallerSave() {
 		// Arrange
-		await using ArrangeContext context = await ArrangeAsync(needsSql: true);
+		await using ArrangeContext context = await ArrangeAsync();
 		string calleeName = $"UsrClioBpCapIncCallee{Guid.NewGuid():N}";
 		string callerName = $"UsrClioBpCapIncCaller{Guid.NewGuid():N}";
 		await ArrangeProcessAsync(context, BuildCaptionedCalleeDescriptor(calleeName), "called process");
@@ -571,48 +567,44 @@ public sealed class SubProcessElementToolE2ETests {
 	}
 
 	/// <summary>
-	/// The caller's STORED rows for one resource key, every culture, read through <c>execute-sql-script</c>.
+	/// A process's STORED rows for one resource key, every culture, read from <c>SysLocalizableValue</c> through
+	/// <c>execute-esq</c>.
 	/// <para>The database and not <c>describe</c>, on purpose: the platform re-synchronizes on every read, so a
-	/// describe shows the called process's caption whether or not it was ever saved. Identifiers are
-	/// double-quoted, which PostgreSQL requires and MSSQL accepts; the statement has been RUN on MSSQL only.</para>
+	/// describe shows the called process's caption whether or not it was ever saved.</para>
+	/// <para>DataService and not <c>execute-sql-script</c>: a SQL read needs cliogate and is refused on a stand
+	/// with <c>DenyCustomQueryApiUsage</c>, while here both values travel as typed filter parameters and are never
+	/// spliced into a statement. The filter follows the <c>SysSchema</c> lookup (<c>SysSchema.Id</c>, the row id,
+	/// not the UId) to the schema's name. Run against an MSSQL .NET Framework stand on 2026-09-24, where it
+	/// returned exactly the row a SQL join on <c>SysSchemaId</c> returned; DataService builds the SQL itself, so
+	/// the read does not depend on the database engine.</para>
+	/// <para>Every culture is read and the callers expect ONE row: a server-side write stores the current culture
+	/// only, and these processes are created and edited through clio alone, so a second row would itself be a
+	/// finding.</para>
 	/// </summary>
 	private static async Task<IReadOnlyList<string?>> ReadStoredCaptionsAsync(ArrangeContext context,
 			string schemaName, string key) {
-		string directory = Path.Combine(Path.GetTempPath(), "clio-e2e-captions", Guid.NewGuid().ToString("N"));
-		Directory.CreateDirectory(directory);
-		try {
-			return await ReadStoredCaptionsIntoAsync(context, schemaName, key, Path.Combine(directory, "captions.json"));
-		} finally {
-			Directory.Delete(directory, recursive: true);
-		}
-	}
-
-	// Every culture is read and the callers expect ONE row: a server-side write stores the current culture only,
-	// and these processes are created and edited through clio alone, so a second row would itself be a finding.
-	private static async Task<IReadOnlyList<string?>> ReadStoredCaptionsIntoAsync(ArrangeContext context,
-			string schemaName, string key, string destination) {
-		// The two values are spliced into SQL, so they are held to a shape that cannot close the literal. Both are
-		// generated by this fixture today; the guard keeps it that way.
-		schemaName.Should().MatchRegex(SqlSafeIdentifier.ToString(),
-			because: "a schema name spliced into SQL must not be able to close the string literal");
-		key.Should().MatchRegex(SqlSafeIdentifier.ToString(),
-			because: "a resource key spliced into SQL must not be able to close the string literal");
-		string sql = "SELECT v.\"Value\" AS value FROM \"SysLocalizableValue\" v "
-			+ "INNER JOIN \"SysSchema\" s ON s.\"Id\" = v.\"SysSchemaId\" "
-			+ $"WHERE s.\"Name\" = '{schemaName}' AND v.\"Key\" = '{key}'";
-		CallToolResult result = await CallToolAsync(context, ExecuteSqlScriptTool.ToolName,
+		object query = SelectQueryHelper.BuildSelectQuery("SysLocalizableValue",
+			[new SelectQueryHelper.SelectQueryColumnDefinition("Value", "Value")],
+			[
+				new SelectQueryHelper.SelectQueryFilterDefinition("SysSchema.Name", schemaName,
+					SelectQueryHelper.TextDataValueType),
+				new SelectQueryHelper.SelectQueryFilterDefinition("Key", key, SelectQueryHelper.TextDataValueType)
+			]);
+		CallToolResult result = await CallToolAsync(context, ExecuteEsqTool.ToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
-				["script"] = sql,
-				["view"] = "json",
-				["destination-path"] = destination,
-				["silent"] = true
+				["query"] = JsonSerializer.SerializeToElement(query)
 			});
-		McpCommandExecutionParser.Extract(result).ExitCode.Should().Be(0,
-			because: "the caption rows have to be readable for this case to measure anything");
-		using JsonDocument document = JsonDocument.Parse(await File.ReadAllTextAsync(destination));
-		return document.RootElement.EnumerateArray()
-			.Select(row => row.GetProperty("value").GetString())
+		ExecuteEsqResponse response = EntitySchemaStructuredResultParser.Extract<ExecuteEsqResponse>(result);
+		response.Success.Should().BeTrue(
+			because: "the caption rows have to be readable for this case to measure anything, and the read failed "
+				+ "with: {0}",
+			response.Error);
+		JsonElement rows = response.Rows.GetValueOrDefault();
+		rows.ValueKind.Should().Be(JsonValueKind.Array,
+			because: "a SelectQuery answers with a rows array; anything else is a response shape this read cannot count");
+		return rows.EnumerateArray()
+			.Select(row => row.GetProperty("Value").GetString())
 			.ToList();
 	}
 
@@ -650,7 +642,7 @@ public sealed class SubProcessElementToolE2ETests {
 			toolName, new Dictionary<string, object?> { ["args"] = args }, context.CancellationTokenSource.Token);
 	}
 
-	private static async Task<ArrangeContext> ArrangeAsync(bool needsSql = false) {
+	private static async Task<ArrangeContext> ArrangeAsync() {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string? environmentName = settings.Sandbox.EnvironmentName;
@@ -665,12 +657,6 @@ public sealed class SubProcessElementToolE2ETests {
 				$"Sub-process MCP E2E requires a reachable configured sandbox environment. '{environmentName}' was not reachable.");
 		}
 
-		if (needsSql) {
-			// execute-sql-script runs through cliogate. The install gets its OWN budget: one that has to push the
-			// package can take minutes, and they must not come out of the case's five.
-			using CancellationTokenSource installTimeout = new(TimeSpan.FromMinutes(10));
-			await ClioCliCommandRunner.EnsureCliogateInstalledAsync(settings, environmentName!, installTimeout.Token);
-		}
 		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(5));
 		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
 		return new ArrangeContext(session, cancellationTokenSource, environmentName);

@@ -1,0 +1,199 @@
+{
+	"requests": [
+		{
+			"requestType": "crt.AddCommunicationOptionsRequest"
+		},
+		{
+			"requestType": "crt.AppSyncRequest"
+		},
+		{
+			"requestType": "crt.CallerIdFilterRequest"
+		},
+		{
+			"requestType": "crt.CancelRecordChangesRequest"
+		},
+		{
+			"requestType": "crt.ClearImageRequest"
+		},
+		{
+			"requestType": "crt.ClosePageRequest"
+		},
+		{
+			"requestType": "crt.ComboboxLoadDataRequest"
+		},
+		{
+			"requestType": "crt.ComboboxPickValueRequest"
+		},
+		{
+			"requestType": "crt.CopyCalendarRecordRequest"
+		},
+		{
+			"requestType": "crt.CopyRecordRequest"
+		},
+		{
+			"requestType": "crt.CreateActivityParticipantDetailRequest"
+		},
+		{
+			"requestType": "crt.CreateCalendarRecordRequest"
+		},
+		{
+			"requestType": "crt.CreateCommunicationOptionRequest"
+		},
+		{
+			"requestType": "crt.CreateListItemRequest"
+		},
+		{
+			"requestType": "crt.CreateRecordFromLookupRequest"
+		},
+		{
+			"requestType": "crt.CreateRecordRequest"
+		},
+		{
+			"requestType": "crt.CreateRecordWithGeodataRequest"
+		},
+		{
+			"requestType": "crt.DeleteFileRequest"
+		},
+		{
+			"requestType": "crt.DeleteListItemRequest"
+		},
+		{
+			"requestType": "crt.DeleteRecordRequest"
+		},
+		{
+			"requestType": "crt.EntityStageProgressBarLoadDataRequest"
+		},
+		{
+			"requestType": "crt.EntityStageProgressBarStageChangedRequest"
+		},
+		{
+			"requestType": "crt.ExecuteExpressionRequest"
+		},
+		{
+			"requestType": "crt.HandleViewModelAttributeChangeRequest"
+		},
+		{
+			"requestType": "crt.HandleViewModelInitRequest"
+		},
+		{
+			"requestType": "crt.LoadDataRequest"
+		},
+		{
+			"requestType": "crt.OpenAddressOnMapRequest"
+		},
+		{
+			"requestType": "crt.OpenConversationRequest"
+		},
+		{
+			"requestType": "crt.OpenConversationsRequest"
+		},
+		{
+			"requestType": "crt.OpenCustomWebViewPageRequest"
+		},
+		{
+			"requestType": "crt.OpenFileRequest"
+		},
+		{
+			"requestType": "crt.OpenLookupPageRequest"
+		},
+		{
+			"requestType": "crt.OpenModalFolderTreeRequest"
+		},
+		{
+			"requestType": "crt.OpenPageRequest"
+		},
+		{
+			"requestType": "crt.OpenSearchListRequest"
+		},
+		{
+			"requestType": "crt.OpenSignatureServiceRequest"
+		},
+		{
+			"requestType": "crt.PhoneCallRequest"
+		},
+		{
+			"requestType": "crt.PhoneLinkClickRequest"
+		},
+		{
+			"requestType": "crt.PickFilesRequest"
+		},
+		{
+			"requestType": "crt.QuickFilterGroupItemRequest"
+		},
+		{
+			"requestType": "crt.QuickFilterGroupRequest"
+		},
+		{
+			"requestType": "crt.QuickFilterRequest"
+		},
+		{
+			"requestType": "crt.RemoveCommunicationOptionRequest"
+		},
+		{
+			"requestType": "crt.RenameFileListItemRequest"
+		},
+		{
+			"requestType": "crt.RunBusinessProcessRequest"
+		},
+		{
+			"requestType": "crt.SaveAttributeToProfileRequest"
+		},
+		{
+			"requestType": "crt.SaveRecordRequest"
+		},
+		{
+			"requestType": "crt.SchemaViewMaskRequest"
+		},
+		{
+			"requestType": "crt.SearchFilterRequest"
+		},
+		{
+			"requestType": "crt.SelectFileRequest"
+		},
+		{
+			"requestType": "crt.SelectGalleryRequest"
+		},
+		{
+			"requestType": "crt.SelectSurveyRequest"
+		},
+		{
+			"requestType": "crt.SetAttributeFromBarcodeComponentRequest"
+		},
+		{
+			"requestType": "crt.SetAttributeFromBarcodeRequest"
+		},
+		{
+			"requestType": "crt.SetAttributeFromNfcRequest"
+		},
+		{
+			"requestType": "crt.SetViewModelAttributeRequest"
+		},
+		{
+			"requestType": "crt.ShowDialogRequest"
+		},
+		{
+			"requestType": "crt.SortChangeRequest"
+		},
+		{
+			"requestType": "crt.TakePhotoRequest"
+		},
+		{
+			"requestType": "crt.UpdateListItemRequest"
+		},
+		{
+			"requestType": "crt.UpdateQuickFilterGroupRequest"
+		},
+		{
+			"requestType": "crt.UpdateRecordRequest"
+		},
+		{
+			"requestType": "crt.UploadFileRequest"
+		},
+		{
+			"requestType": "crt.UploadImageRequest"
+		},
+		{
+			"requestType": "crt.WidgetDrilldownRequest"
+		}
+	]
+}
