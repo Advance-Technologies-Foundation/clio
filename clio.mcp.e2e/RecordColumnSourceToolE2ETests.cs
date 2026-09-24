@@ -17,7 +17,7 @@ namespace Clio.Mcp.E2E;
 /// <summary>
 /// End-to-end coverage for ONE column of a record another element returned as a value source (ENG-91844) over
 /// the real MCP path. NOT in CI — run manually, gated on the <c>process-designer</c> feature and a reachable
-/// environment carrying CrtProcessBuilder 1.6.6.24 or later.
+/// environment carrying CrtProcessBuilder 1.6.6.25 or later.
 /// <para>The motivating session: an agent could not assign a Perform task to a read contact's <c>Owner</c>, nor
 /// branch on the contact's <c>DoNotUseCall</c>, and built two filtered signal starts instead of one gateway. These
 /// tests build exactly that shape by NAME - <c>sourceColumn</c> on the mapping, <c>[#Read.ResultEntity.Column#]</c>
@@ -36,7 +36,7 @@ public sealed class RecordColumnSourceToolE2ETests {
 	private const string ModifyToolName = ModifyBusinessProcessTool.ModifyBusinessProcessToolName;
 
 	/// <summary>The cut that resolves <c>sourceColumn</c>; named in the skip message so a developer knows what to install.</summary>
-	private const string MinimumPackageVersion = "1.6.6.24";
+	private const string MinimumPackageVersion = "1.6.6.25";
 
 	#region Methods: Tests
 
@@ -72,6 +72,16 @@ public sealed class RecordColumnSourceToolE2ETests {
 			because: "the stored value is the platform's three-segment meta path");
 		graph.ToJsonString().Should().NotContain("ReadContact.ResultEntity.DoNotUseCall",
 			because: "the condition name is expanded at build; an unexpanded one fails the platform's gate");
+		JsonObject mayCall = graph["flows"]!.AsArray().Select(flow => flow!.AsObject())
+			.Single(flow => flow["target"]?.GetValue<string>() == "Call");
+		mayCall["condition"]!.GetValue<string>().Should().Contain("[EntityColumn:",
+			because: "the condition must carry the column segment, not merely have lost the name");
+		JsonObject stamp = ElementNamed(graph, "Stamp");
+		string stampJson = stamp.ToJsonString();
+		stampJson.Should().Contain("\"sourceColumn\":\"Owner\"",
+			because: "a Modify data value's sourceColumn crosses the wire and describes back by name");
+		stampJson.Should().Contain("[EntityColumn:",
+			because: "the filter's elementParameter.column is stored as the three-segment reference");
 	}
 
 	[Test]
@@ -154,6 +164,13 @@ public sealed class RecordColumnSourceToolE2ETests {
 		      "readData": { "source": "Contact", "mode": "first" } },
 		    { "name": "Decide", "type": "exclusiveGateway", "caption": "Can we call?" },
 		    { "name": "Call", "type": "performTask", "caption": "Call the contact" },
+		    { "name": "Stamp", "type": "changeData", "caption": "Stamp the contact",
+		      "changeData": { "source": "Contact", "values": [
+		        { "column": "Owner", "sourceElement": "ReadContact", "sourceElementParameter": "ResultEntity",
+		          "sourceColumn": "Owner" } ] },
+		      "filter": { "object": "Contact", "logicalOperation": "and", "conditions": [
+		        { "column": "Id", "comparison": "equal",
+		          "elementParameter": { "elementName": "ReadContact", "parameter": "ResultEntity", "column": "Id" } } ] } },
 		    { "name": "EndCall", "type": "endEvent" },
 		    { "name": "EndSkip", "type": "endEvent" }
 		  ],
@@ -162,7 +179,8 @@ public sealed class RecordColumnSourceToolE2ETests {
 		    { "source": "ReadContact", "target": "Decide" },
 		    { "source": "Decide", "target": "Call", "kind": "conditional",
 		      "condition": "[#ReadContact.ResultEntity.DoNotUseCall#] == false", "label": "May call" },
-		    { "source": "Decide", "target": "EndSkip", "kind": "default", "label": "Do not call" },
+		    { "source": "Decide", "target": "Stamp", "kind": "default", "label": "Do not call" },
+		    { "source": "Stamp", "target": "EndSkip" },
 		    { "source": "Call", "target": "EndCall" }
 		  ],
 		  "mappings": [

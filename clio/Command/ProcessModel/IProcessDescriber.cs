@@ -1917,20 +1917,17 @@ public sealed class DescribedParameter {
 	/// <c>[Element].[Parameter].[EntityColumn]</c> meta path): the element's name. Reported with
 	/// <see cref="SourceElementParameter"/> and <see cref="SourceColumn"/> only when the server can name all three
 	/// AND those names re-apply to the identical stored value, so the trio feeds straight back into
-	/// <c>addMapping</c>. Null for every other value, and omitted by a <c>CrtProcessBuilder</c> older than 1.6.6.24.
+	/// <c>addMapping</c>. Null for every other value, and omitted by a <c>CrtProcessBuilder</c> older than 1.6.6.25.
 	/// </summary>
 	[JsonPropertyName("sourceElement")]
-	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string SourceElement { get; set; }
 
 	/// <summary>The record parameter on <see cref="SourceElement"/>, for example <c>ResultEntity</c>.</summary>
 	[JsonPropertyName("sourceElementParameter")]
-	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string SourceElementParameter { get; set; }
 
 	/// <summary>The column of that record, by its code, for example <c>Owner</c>.</summary>
 	[JsonPropertyName("sourceColumn")]
-	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string SourceColumn { get; set; }
 
 	/// <summary>

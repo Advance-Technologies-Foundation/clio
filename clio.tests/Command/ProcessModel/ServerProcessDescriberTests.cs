@@ -378,6 +378,29 @@ public sealed class ServerProcessDescriberTests {
 	}
 
 	[Test]
+	[Description("Deserializes the decoded source of a value that reads ONE column of another element's record - sourceElement / sourceElementParameter / sourceColumn - into the DescribedParameter DTO. The DTO carries no overflow bag, so a field it does not declare is dropped on the way in with nothing said (ENG-91844).")]
+	public void Describe_ShouldReadTheRecordColumnSource_WhenServerReportsIt() {
+		// Arrange
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"Call\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"usertask\","
+			+ "\"parameters\":[{\"name\":\"OwnerId\",\"uid\":\"p1\",\"type\":\"Lookup\",\"source\":\"Script\",\"value\":\"[#...#]\","
+			+ "\"sourceElement\":\"ReadContact\",\"sourceElementParameter\":\"ResultEntity\",\"sourceColumn\":\"Owner\"}]}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedParameter parameter = result.Value.Elements[0].Parameters[0];
+		parameter.SourceElement.Should().Be("ReadContact", because: "the source element's name must be read");
+		parameter.SourceElementParameter.Should().Be("ResultEntity", because: "the record parameter must be read");
+		parameter.SourceColumn.Should().Be("Owner", because: "the column must be read, or the trio cannot feed addMapping");
+	}
+
+	[Test]
 	[Description("Deserializes an element parameter's direction and isResult from the server response into the DescribedParameter DTO (so callers can tell an element's outputs, mappable as a source, from its inputs).")]
 	public void Describe_ShouldReadParameterDirectionAndIsResult_WhenServerReportsThem() {
 		// Arrange — a user task whose parameter is an output (isResult true) while its direction is Variable

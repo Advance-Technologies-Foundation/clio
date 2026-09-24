@@ -20,7 +20,9 @@ the query, not as a hint. The mapped-columns fallback exists only for the no-sel
 **What breaks if you ignore it** — `OwnerId <- ReadContact.ResultEntity.Owner` with `readData.columns:
 ["DoNotUseCall"]` builds green and runs with a null OwnerId - not the owner anybody chose; what the task
 then falls back to was not measured - and a branch on an unlisted column reads null every time.
-CrtProcessBuilder refuses such a `sourceColumn`, filter `column` or `[#Read.ResultEntity.Column#]` at the
-write that names it (`RecordColumnReference.ResolveColumn`, 1.6.6.24+). It does NOT re-check when a later
-`setElement readData.columns` narrows the list under an existing reference — that direction is still silent.
-Traced in source, not measured on a stand.
+CrtProcessBuilder (1.6.6.25+) refuses it where it can see a NAME: a `sourceColumn`, a filter `column`, a
+`[#Read.ResultEntity.Column#]` condition or Formula name (`RecordColumnReference.ResolveColumn`), and a later
+`setElement readData.columns` that drops a column something still reads (`ReadDataConfigApplier`). The UId
+form bypasses the write-side check — a hand-written `expression` or a modify-path `setFlowCondition` carrying
+`[EntityColumn:{uid}]` is stored as given, so the column has to be listed (or the list omitted) by the author.
+The primary column is always selected, so `Id` never needs listing. Traced in source, not measured on a stand.

@@ -19,15 +19,22 @@
 | TC-U-13 | A filter's `elementParameter.column` stores the unmasked path | `Filter_ElementParameterColumn_*` |
 | TC-U-14 | `[#Read.ResultEntity.Column#]` expands; `[#Lookup.X.Y#]` passes through | `ConditionNames_ThreeSegments_ShouldExpand*` |
 | TC-U-15 | A path, an unknown column, a collection, a lookup and an unknown parameter in a three-segment name are refused | `ConditionNames_ThreeSegments_ShouldRefuseWhatCannotResolve` |
-| TC-U-16 | The connection reader sees the third segment and does not name the whole record | `ConnectionReader_ShouldNotDecodeAColumnReferenceAsTheWholeRecord` |
 | TC-U-17 | Open edit page `recordId.sourceColumn` stores the token; a text column and a lookup to another object are refused | `OpenEditPageConfigBinderTests.Apply_RecordIdSourceColumn_*` |
 | TC-U-18 | The describer decodes every element and process parameter with the loaded schema | `ProcessDescriberTests.Describe_ShouldDecodeRecordColumnSources_*` |
+| TC-U-19 | A count / aggregation read is refused as a column source, and describe names none | `RecordColumnSourceTests.SourceColumn_ShouldBeRefused_WhenTheReadRunsInFunctionMode` |
+| TC-U-20 | The primary column is accepted outside a column selection | `SourceColumn_ShouldAcceptThePrimaryColumn_OutsideTheSelection` |
+| TC-U-21 | `setElement readData.columns` that drops a read column is refused; keeping it or `[]` passes | `ReadDataConfigApplierTests.Apply_ShouldRefuseAColumnSelectionThatDropsAReadColumn` |
+| TC-U-22 | A pathological stored value neither fails nor stalls describe | `DecodeRecordColumnSource_ShouldNotFailDescribe_OnAPathologicalValue` |
+| TC-U-23 | On a modify without a page, `recordId.sourceColumn` is checked against the stored object | `OpenEditPageConfigBinderTests.Apply_RecordIdSourceColumn_ChecksTheStoredObject_WhenNoPageIsSent` |
+| TC-U-24 | The connection reader returns the raw expression for a column-drilled connection | `EntityConnectionReaderTests.Read_ShouldNotDecodeAColumnReference_AsTheWholeRecord` |
 
 Command: `dotnet test tests/UnitTests/CrtProcessBuilder.Tests/CrtProcessBuilder.Tests.csproj -c dev-nf`.
 
 ## Unit (clio)
 
 - `ProcessDesignerRequiresPackageAttributeTests` pins the raised floors.
+- `ServerProcessDescriberTests.Describe_ShouldReadTheRecordColumnSource_WhenServerReportsIt` and
+  `DescribeProcessCommandTests.Execute_ShouldWriteTheRecordColumnSource_OnlyWhenPresent` pin the DTO both ways.
 - `BundledProcessBuilderPackageTests` pins the archive and checks every floor sentence against the literal.
 - `ToolContractPayloadBudgetTests` keeps the create / modify contracts inside the payload budget.
 
@@ -37,7 +44,7 @@ Command: `dotnet test clio.tests/clio.tests.csproj --filter "Category=Unit&(Modu
 
 | ID | Case | Where |
 |---|---|---|
-| TC-I-01 | create builds Read contact → gateway on `[#ReadContact.ResultEntity.DoNotUseCall#]` → Perform task with `OwnerId <- sourceColumn Owner`; describe reports the trio | `RecordColumnSourceToolE2ETests.CreateBusinessProcess_Should_MapAndBranchOnReadRecordColumns` |
+| TC-I-01 | create builds Read contact → gateway on `[#ReadContact.ResultEntity.DoNotUseCall#]` → Perform task with `OwnerId <- sourceColumn Owner`, plus a Modify data value with `sourceColumn` and a filter with `elementParameter.column`; describe reports the trio and the expanded condition | `RecordColumnSourceToolE2ETests.CreateBusinessProcess_Should_MapAndBranchOnReadRecordColumns` |
 | TC-I-02 | modify `addMapping` with `sourceColumn` applies; `Account` is refused naming the column | `ModifyBusinessProcess_Should_AddAColumnMapping_AndRefuseAnIncompatibleOne` |
 | TC-I-03 | A `sourceColumn` path is refused at build | `CreateBusinessProcess_Should_RefuseASourceColumnPath` |
 
