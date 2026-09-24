@@ -1,0 +1,1211 @@
+{
+  "apiVersion": "v1",
+  "kind": "List",
+  "items": [
+    {
+      "apiVersion": "apiextensions.k8s.io/v1",
+      "kind": "CustomResourceDefinition",
+      "metadata": {
+        "name": "creatioinstances.apps.creatio.io",
+        "annotations": {
+          "clio.creatio.com/install-profile": "rancher-desktop-v1"
+        }
+      },
+      "spec": {
+        "group": "apps.creatio.io",
+        "scope": "Namespaced",
+        "names": {
+          "plural": "creatioinstances",
+          "singular": "creatioinstance",
+          "kind": "CreatioInstance",
+          "shortNames": [
+            "ci"
+          ]
+        },
+        "versions": [
+          {
+            "name": "v1alpha1",
+            "served": true,
+            "storage": true,
+            "subresources": {
+              "status": {}
+            },
+            "additionalPrinterColumns": [
+              {
+                "name": "Image",
+                "type": "string",
+                "jsonPath": ".spec.image.repository"
+              },
+              {
+                "name": "Tag",
+                "type": "string",
+                "jsonPath": ".spec.image.tag"
+              },
+              {
+                "name": "RedisDB",
+                "type": "integer",
+                "jsonPath": ".status.redisDb"
+              },
+              {
+                "name": "Ready",
+                "type": "string",
+                "jsonPath": ".status.conditions[0].status"
+              },
+              {
+                "name": "Age",
+                "type": "date",
+                "jsonPath": ".metadata.creationTimestamp"
+              }
+            ],
+            "schema": {
+              "openAPIV3Schema": {
+                "type": "object",
+                "required": [
+                  "spec"
+                ],
+                "properties": {
+                  "spec": {
+                    "type": "object",
+                    "required": [
+                      "image"
+                    ],
+                    "properties": {
+                      "image": {
+                        "type": "object",
+                        "required": [
+                          "repository",
+                          "tag"
+                        ],
+                        "properties": {
+                          "repository": {
+                            "type": "string"
+                          },
+                          "tag": {
+                            "type": "string"
+                          },
+                          "databaseSourceMode": {
+                            "type": "string",
+                            "enum": [
+                              "template",
+                              "existing"
+                            ]
+                          },
+                          "databaseSourceName": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "overrides": {
+                        "type": "object",
+                        "properties": {
+                          "basePort": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 65535
+                          },
+                          "databaseName": {
+                            "type": "string"
+                          },
+                          "infrastructureNamespace": {
+                            "type": "string"
+                          },
+                          "dbEngine": {
+                            "type": "string",
+                            "enum": [
+                              "postgres",
+                              "mssql"
+                            ]
+                          },
+                          "serviceType": {
+                            "type": "string",
+                            "enum": [
+                              "ClusterIP",
+                              "NodePort",
+                              "LoadBalancer"
+                            ]
+                          },
+                          "exposureStrategy": {
+                            "type": "string",
+                            "enum": [
+                              "LoadBalancer",
+                              "NodePort",
+                              "Traefik"
+                            ]
+                          },
+                          "redisDb": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 99
+                          },
+                          "enableHttps": {
+                            "type": "boolean"
+                          },
+                          "enableCodeServer": {
+                            "type": "boolean"
+                          },
+                          "enableSsh": {
+                            "type": "boolean"
+                          },
+                          "imagePullPolicy": {
+                            "type": "string",
+                            "enum": [
+                              "Always",
+                              "IfNotPresent",
+                              "Never"
+                            ]
+                          },
+                          "suspended": {
+                            "type": "boolean"
+                          },
+                          "resources": {
+                            "type": "object",
+                            "properties": {
+                              "cpuRequest": {
+                                "type": "string"
+                              },
+                              "cpuLimit": {
+                                "type": "string"
+                              },
+                              "memoryRequest": {
+                                "type": "string"
+                              },
+                              "memoryLimit": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "storage": {
+                            "type": "object",
+                            "properties": {
+                              "size": {
+                                "type": "string"
+                              },
+                              "storageClassName": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "ingress": {
+                            "type": "object",
+                            "properties": {
+                              "publicDnsTarget": {
+                                "type": "string"
+                              },
+                              "annotations": {
+                                "type": "object",
+                                "additionalProperties": {
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "status": {
+                    "type": "object",
+                    "properties": {
+                      "observedGeneration": {
+                        "type": "integer"
+                      },
+                      "phase": {
+                        "type": "string"
+                      },
+                      "deploymentName": {
+                        "type": "string"
+                      },
+                      "pvcName": {
+                        "type": "string"
+                      },
+                      "databaseName": {
+                        "type": "string"
+                      },
+                      "basePort": {
+                        "type": "integer"
+                      },
+                      "redisDb": {
+                        "type": "integer"
+                      },
+                      "serviceUrl": {
+                        "type": "string"
+                      },
+                      "accessHost": {
+                        "type": "string"
+                      },
+                      "codeServerUrl": {
+                        "type": "string"
+                      },
+                      "dbHubUrl": {
+                        "type": "string"
+                      },
+                      "twinCodeUrl": {
+                        "type": "string"
+                      },
+                      "sshPort": {
+                        "type": "integer"
+                      },
+                      "exposureStrategy": {
+                        "type": "string"
+                      },
+                      "readyReplicas": {
+                        "type": "integer"
+                      },
+                      "suspended": {
+                        "type": "boolean"
+                      },
+                      "cpuRequest": {
+                        "type": "string"
+                      },
+                      "cpuLimit": {
+                        "type": "string"
+                      },
+                      "memoryRequest": {
+                        "type": "string"
+                      },
+                      "memoryLimit": {
+                        "type": "string"
+                      },
+                      "enableCodeServer": {
+                        "type": "boolean"
+                      },
+                      "enableDbHub": {
+                        "type": "boolean"
+                      },
+                      "enableTwinCode": {
+                        "type": "boolean"
+                      },
+                      "enableSsh": {
+                        "type": "boolean"
+                      },
+                      "conditions": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string"
+                            },
+                            "status": {
+                              "type": "string"
+                            },
+                            "reason": {
+                              "type": "string"
+                            },
+                            "message": {
+                              "type": "string"
+                            },
+                            "lastTransitionTime": {
+                              "type": "string",
+                              "format": "date-time"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "apiextensions.k8s.io/v1",
+      "kind": "CustomResourceDefinition",
+      "metadata": {
+        "name": "creatiodatabasetemplates.apps.creatio.io",
+        "annotations": {
+          "clio.creatio.com/install-profile": "rancher-desktop-v1"
+        }
+      },
+      "spec": {
+        "group": "apps.creatio.io",
+        "scope": "Namespaced",
+        "names": {
+          "plural": "creatiodatabasetemplates",
+          "singular": "creatiodatabasetemplate",
+          "kind": "CreatioDatabaseTemplate",
+          "shortNames": [
+            "cdt"
+          ]
+        },
+        "versions": [
+          {
+            "name": "v1alpha1",
+            "served": true,
+            "storage": true,
+            "subresources": {
+              "status": {}
+            },
+            "additionalPrinterColumns": [
+              {
+                "name": "Image",
+                "type": "string",
+                "jsonPath": ".spec.image.repository"
+              },
+              {
+                "name": "Tag",
+                "type": "string",
+                "jsonPath": ".spec.image.tag"
+              },
+              {
+                "name": "Source",
+                "type": "string",
+                "jsonPath": ".status.databaseSource"
+              },
+              {
+                "name": "Phase",
+                "type": "string",
+                "jsonPath": ".status.phase"
+              },
+              {
+                "name": "Age",
+                "type": "date",
+                "jsonPath": ".metadata.creationTimestamp"
+              }
+            ],
+            "schema": {
+              "openAPIV3Schema": {
+                "type": "object",
+                "required": [
+                  "spec"
+                ],
+                "properties": {
+                  "spec": {
+                    "type": "object",
+                    "required": [
+                      "image",
+                      "dbEngine"
+                    ],
+                    "properties": {
+                      "dbEngine": {
+                        "type": "string",
+                        "enum": [
+                          "postgres"
+                        ]
+                      },
+                      "image": {
+                        "type": "object",
+                        "required": [
+                          "repository",
+                          "tag"
+                        ],
+                        "properties": {
+                          "repository": {
+                            "type": "string"
+                          },
+                          "tag": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "status": {
+                    "type": "object",
+                    "properties": {
+                      "observedGeneration": {
+                        "type": "integer"
+                      },
+                      "phase": {
+                        "type": "string"
+                      },
+                      "databaseSource": {
+                        "type": "string"
+                      },
+                      "templateDatabaseName": {
+                        "type": "string"
+                      },
+                      "restoreJobName": {
+                        "type": "string"
+                      },
+                      "message": {
+                        "type": "string"
+                      },
+                      "conditions": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string"
+                            },
+                            "status": {
+                              "type": "string"
+                            },
+                            "reason": {
+                              "type": "string"
+                            },
+                            "message": {
+                              "type": "string"
+                            },
+                            "lastTransitionTime": {
+                              "type": "string",
+                              "format": "date-time"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "apiextensions.k8s.io/v1",
+      "kind": "CustomResourceDefinition",
+      "metadata": {
+        "name": "creatiosharedinfrastructures.apps.creatio.io",
+        "annotations": {
+          "clio.creatio.com/install-profile": "rancher-desktop-v1"
+        }
+      },
+      "spec": {
+        "group": "apps.creatio.io",
+        "scope": "Namespaced",
+        "names": {
+          "plural": "creatiosharedinfrastructures",
+          "singular": "creatiosharedinfrastructure",
+          "kind": "CreatioSharedInfrastructure",
+          "shortNames": [
+            "csi"
+          ]
+        },
+        "versions": [
+          {
+            "name": "v1alpha1",
+            "served": true,
+            "storage": true,
+            "subresources": {
+              "status": {}
+            },
+            "additionalPrinterColumns": [
+              {
+                "name": "Phase",
+                "type": "string",
+                "jsonPath": ".status.phase"
+              },
+              {
+                "name": "PG",
+                "type": "string",
+                "jsonPath": ".status.postgres.ownership"
+              },
+              {
+                "name": "Redis",
+                "type": "string",
+                "jsonPath": ".status.redis.ownership"
+              },
+              {
+                "name": "MSSQL",
+                "type": "string",
+                "jsonPath": ".status.mssql.ownership"
+              },
+              {
+                "name": "Age",
+                "type": "date",
+                "jsonPath": ".metadata.creationTimestamp"
+              }
+            ],
+            "schema": {
+              "openAPIV3Schema": {
+                "type": "object",
+                "required": [
+                  "spec"
+                ],
+                "properties": {
+                  "spec": {
+                    "type": "object",
+                    "properties": {
+                      "postgres": {
+                        "type": "object",
+                        "properties": {
+                          "mode": {
+                            "type": "string",
+                            "enum": [
+                              "Managed",
+                              "External"
+                            ]
+                          },
+                          "image": {
+                            "type": "object",
+                            "properties": {
+                              "repository": {
+                                "type": "string"
+                              },
+                              "tag": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "resources": {
+                            "type": "object",
+                            "properties": {
+                              "cpuRequest": {
+                                "type": "string"
+                              },
+                              "cpuLimit": {
+                                "type": "string"
+                              },
+                              "memoryRequest": {
+                                "type": "string"
+                              },
+                              "memoryLimit": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "storage": {
+                            "type": "object",
+                            "properties": {
+                              "data": {
+                                "type": "object",
+                                "properties": {
+                                  "size": {
+                                    "type": "string"
+                                  },
+                                  "storageClassName": {
+                                    "type": "string"
+                                  }
+                                }
+                              },
+                              "backupImages": {
+                                "type": "object",
+                                "properties": {
+                                  "size": {
+                                    "type": "string"
+                                  },
+                                  "storageClassName": {
+                                    "type": "string"
+                                  }
+                                }
+                              }
+                            }
+                          },
+                          "exposure": {
+                            "type": "object",
+                            "properties": {
+                              "mode": {
+                                "type": "string",
+                                "enum": [
+                                  "Disabled",
+                                  "LoadBalancer",
+                                  "NodePort"
+                                ]
+                              }
+                            }
+                          },
+                          "suspended": {
+                            "type": "boolean"
+                          }
+                        }
+                      },
+                      "redis": {
+                        "type": "object",
+                        "properties": {
+                          "mode": {
+                            "type": "string",
+                            "enum": [
+                              "Managed",
+                              "External"
+                            ]
+                          },
+                          "image": {
+                            "type": "object",
+                            "properties": {
+                              "repository": {
+                                "type": "string"
+                              },
+                              "tag": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "resources": {
+                            "type": "object",
+                            "properties": {
+                              "cpuRequest": {
+                                "type": "string"
+                              },
+                              "cpuLimit": {
+                                "type": "string"
+                              },
+                              "memoryRequest": {
+                                "type": "string"
+                              },
+                              "memoryLimit": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "databaseCount": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "exposure": {
+                            "type": "object",
+                            "properties": {
+                              "mode": {
+                                "type": "string",
+                                "enum": [
+                                  "Disabled",
+                                  "LoadBalancer",
+                                  "NodePort"
+                                ]
+                              }
+                            }
+                          },
+                          "suspended": {
+                            "type": "boolean"
+                          }
+                        }
+                      },
+                      "mssql": {
+                        "type": "object",
+                        "properties": {
+                          "mode": {
+                            "type": "string",
+                            "enum": [
+                              "Managed",
+                              "External"
+                            ]
+                          },
+                          "image": {
+                            "type": "object",
+                            "properties": {
+                              "repository": {
+                                "type": "string"
+                              },
+                              "tag": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "resources": {
+                            "type": "object",
+                            "properties": {
+                              "cpuRequest": {
+                                "type": "string"
+                              },
+                              "cpuLimit": {
+                                "type": "string"
+                              },
+                              "memoryRequest": {
+                                "type": "string"
+                              },
+                              "memoryLimit": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "storage": {
+                            "type": "object",
+                            "properties": {
+                              "size": {
+                                "type": "string"
+                              },
+                              "storageClassName": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "exposure": {
+                            "type": "object",
+                            "properties": {
+                              "mode": {
+                                "type": "string",
+                                "enum": [
+                                  "Disabled",
+                                  "LoadBalancer",
+                                  "NodePort"
+                                ]
+                              }
+                            }
+                          },
+                          "suspended": {
+                            "type": "boolean"
+                          }
+                        }
+                      },
+                      "nexus": {
+                        "type": "object",
+                        "properties": {
+                          "mode": {
+                            "type": "string",
+                            "enum": [
+                              "Managed",
+                              "External"
+                            ]
+                          },
+                          "image": {
+                            "type": "object",
+                            "properties": {
+                              "repository": {
+                                "type": "string"
+                              },
+                              "tag": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "resources": {
+                            "type": "object",
+                            "properties": {
+                              "cpuRequest": {
+                                "type": "string"
+                              },
+                              "cpuLimit": {
+                                "type": "string"
+                              },
+                              "memoryRequest": {
+                                "type": "string"
+                              },
+                              "memoryLimit": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "storage": {
+                            "type": "object",
+                            "properties": {
+                              "size": {
+                                "type": "string"
+                              },
+                              "storageClassName": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "exposure": {
+                            "type": "object",
+                            "properties": {
+                              "mode": {
+                                "type": "string",
+                                "enum": [
+                                  "Disabled",
+                                  "LoadBalancer",
+                                  "NodePort"
+                                ]
+                              }
+                            }
+                          },
+                          "publicHost": {
+                            "type": "string"
+                          },
+                          "uiHost": {
+                            "type": "string"
+                          },
+                          "suspended": {
+                            "type": "boolean"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "status": {
+                    "type": "object",
+                    "properties": {
+                      "observedGeneration": {
+                        "type": "integer"
+                      },
+                      "phase": {
+                        "type": "string",
+                        "enum": [
+                          "NeedsConfiguration",
+                          "Progressing",
+                          "Ready",
+                          "Conflict",
+                          "Error",
+                          "Suspended"
+                        ]
+                      },
+                      "postgres": {
+                        "type": "object",
+                        "properties": {
+                          "ownership": {
+                            "type": "string",
+                            "enum": [
+                              "Managed",
+                              "External",
+                              "Missing",
+                              "Conflict"
+                            ]
+                          },
+                          "ready": {
+                            "type": "boolean"
+                          },
+                          "message": {
+                            "type": "string"
+                          },
+                          "internalServiceName": {
+                            "type": "string"
+                          },
+                          "externalServiceName": {
+                            "type": "string"
+                          },
+                          "secretName": {
+                            "type": "string"
+                          },
+                          "dataPvcName": {
+                            "type": "string"
+                          },
+                          "backupImagesPvcName": {
+                            "type": "string"
+                          },
+                          "probeSummary": {
+                            "type": "string"
+                          },
+                          "suspended": {
+                            "type": "boolean"
+                          }
+                        }
+                      },
+                      "redis": {
+                        "type": "object",
+                        "properties": {
+                          "ownership": {
+                            "type": "string",
+                            "enum": [
+                              "Managed",
+                              "External",
+                              "Missing",
+                              "Conflict"
+                            ]
+                          },
+                          "ready": {
+                            "type": "boolean"
+                          },
+                          "message": {
+                            "type": "string"
+                          },
+                          "internalServiceName": {
+                            "type": "string"
+                          },
+                          "externalServiceName": {
+                            "type": "string"
+                          },
+                          "databaseCount": {
+                            "type": "integer"
+                          },
+                          "probeSummary": {
+                            "type": "string"
+                          },
+                          "suspended": {
+                            "type": "boolean"
+                          }
+                        }
+                      },
+                      "mssql": {
+                        "type": "object",
+                        "properties": {
+                          "ownership": {
+                            "type": "string",
+                            "enum": [
+                              "Managed",
+                              "External",
+                              "Missing",
+                              "Conflict"
+                            ]
+                          },
+                          "ready": {
+                            "type": "boolean"
+                          },
+                          "message": {
+                            "type": "string"
+                          },
+                          "internalServiceName": {
+                            "type": "string"
+                          },
+                          "externalServiceName": {
+                            "type": "string"
+                          },
+                          "secretName": {
+                            "type": "string"
+                          },
+                          "dataPvcName": {
+                            "type": "string"
+                          },
+                          "probeSummary": {
+                            "type": "string"
+                          },
+                          "suspended": {
+                            "type": "boolean"
+                          }
+                        }
+                      },
+                      "nexus": {
+                        "type": "object",
+                        "properties": {
+                          "ownership": {
+                            "type": "string",
+                            "enum": [
+                              "Managed",
+                              "External",
+                              "Missing",
+                              "Conflict"
+                            ]
+                          },
+                          "ready": {
+                            "type": "boolean"
+                          },
+                          "provisioned": {
+                            "type": "boolean"
+                          },
+                          "message": {
+                            "type": "string"
+                          },
+                          "internalRegistryEndpoint": {
+                            "type": "string"
+                          },
+                          "publicHost": {
+                            "type": "string"
+                          },
+                          "uiHost": {
+                            "type": "string"
+                          },
+                          "secretName": {
+                            "type": "string"
+                          },
+                          "dataPvcName": {
+                            "type": "string"
+                          },
+                          "version": {
+                            "type": "string"
+                          },
+                          "probeSummary": {
+                            "type": "string"
+                          },
+                          "suspended": {
+                            "type": "boolean"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "apiextensions.k8s.io/v1",
+      "kind": "CustomResourceDefinition",
+      "metadata": {
+        "name": "creatioactiondefinitions.apps.creatio.io",
+        "annotations": {
+          "clio.creatio.com/install-profile": "rancher-desktop-v1"
+        }
+      },
+      "spec": {
+        "group": "apps.creatio.io",
+        "scope": "Namespaced",
+        "names": {
+          "plural": "creatioactiondefinitions",
+          "singular": "creatioactiondefinition",
+          "kind": "CreatioActionDefinition",
+          "shortNames": [
+            "cad"
+          ]
+        },
+        "versions": [
+          {
+            "name": "v1alpha1",
+            "served": true,
+            "storage": true,
+            "schema": {
+              "openAPIV3Schema": {
+                "type": "object",
+                "properties": {
+                  "apiVersion": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "type": "string"
+                  },
+                  "metadata": {
+                    "type": "object"
+                  },
+                  "spec": {
+                    "type": "object",
+                    "required": [
+                      "executorImage"
+                    ],
+                    "properties": {
+                      "executorImage": {
+                        "type": "string"
+                      },
+                      "contractVersion": {
+                        "type": "string"
+                      },
+                      "triggerMode": {
+                        "type": "string"
+                      },
+                      "timeoutSeconds": {
+                        "type": "integer"
+                      },
+                      "backoffLimit": {
+                        "type": "integer"
+                      },
+                      "executionTarget": {
+                        "type": "object",
+                        "properties": {
+                          "runtime": {
+                            "type": "string"
+                          },
+                          "namespaceMode": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "requiredBindings": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "type": "string"
+                            },
+                            "type": {
+                              "type": "string"
+                            },
+                            "secretName": {
+                              "type": "string"
+                            },
+                            "secretKey": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "status": {
+                    "type": "object",
+                    "properties": {
+                      "phase": {
+                        "type": "string"
+                      },
+                      "message": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "apiextensions.k8s.io/v1",
+      "kind": "CustomResourceDefinition",
+      "metadata": {
+        "name": "creatioactionruns.apps.creatio.io",
+        "annotations": {
+          "clio.creatio.com/install-profile": "rancher-desktop-v1"
+        }
+      },
+      "spec": {
+        "group": "apps.creatio.io",
+        "scope": "Namespaced",
+        "names": {
+          "plural": "creatioactionruns",
+          "singular": "creatioactionrun",
+          "kind": "CreatioActionRun",
+          "shortNames": [
+            "car"
+          ]
+        },
+        "versions": [
+          {
+            "name": "v1alpha1",
+            "served": true,
+            "storage": true,
+            "subresources": {
+              "status": {}
+            },
+            "schema": {
+              "openAPIV3Schema": {
+                "type": "object",
+                "properties": {
+                  "apiVersion": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "type": "string"
+                  },
+                  "metadata": {
+                    "type": "object"
+                  },
+                  "spec": {
+                    "type": "object",
+                    "required": [
+                      "instance",
+                      "definitionName"
+                    ],
+                    "properties": {
+                      "instance": {
+                        "type": "object",
+                        "required": [
+                          "name"
+                        ],
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "namespace": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "definitionName": {
+                        "type": "string"
+                      },
+                      "definitionNamespace": {
+                        "type": "string"
+                      },
+                      "parameters": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "status": {
+                    "type": "object",
+                    "properties": {
+                      "observedGeneration": {
+                        "type": "integer"
+                      },
+                      "phase": {
+                        "type": "string"
+                      },
+                      "jobName": {
+                        "type": "string"
+                      },
+                      "contextSecretName": {
+                        "type": "string"
+                      },
+                      "message": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

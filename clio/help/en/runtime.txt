@@ -1,0 +1,13 @@
+Build images or create, list or inspect an operator-managed Creatio runtime.
+
+clio runtime build --context rancher-desktop --from <Creatio.zip>
+clio runtime create <name> --context <context> [--namespace creatio-runtimes] --image <repository>:<tag>
+clio runtime status <name> --context <context> [--namespace creatio-runtimes]
+clio runtime list --context <context> [--namespace creatio-runtimes]
+
+Requires kubectl and the Creatio operator. No ClioGate required.
+Build currently requires Windows Rancher Desktop with Moby and rdctl. It builds base/db/dev images locally without pushing to a registry.
+Context is mandatory and never changes current-context. Names are scoped by context and namespace.
+Create submits asynchronous provisioning; use status until Ready, then attach the workspace.
+Existing runtimes are never overwritten. SSH key setup is a separate operation.
+Clio appsettings credentials are not automatically registered by this prototype.

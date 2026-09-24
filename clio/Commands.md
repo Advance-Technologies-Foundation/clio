@@ -814,3 +814,11 @@ Enroll explicit contacts through Creatio's native sequence service. See [enroll-
 <a id="execute-dataservice-batch"></a>
 
 Write explicit records in a native DataService batch. See [execute-dataservice-batch](docs/commands/execute-dataservice-batch.md).
+
+<a id="install-operator"></a>
+
+- [install-operator](docs/commands/install-operator.md) - Install the Creatio operator into Rancher Desktop without a local registry.
+
+<a id="runtime"></a>
+
+- [runtime](docs/commands/runtime.md) - Create and inspect operator runtimes in an explicit Kubernetes context.

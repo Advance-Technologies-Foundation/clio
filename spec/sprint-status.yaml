@@ -21,6 +21,10 @@
 # 2026-07-06) is a separate Jira ticket stacked on the same branch; tracked as its own row.
 
 stories:
+  - id: story-operator-bootstrap-1
+    title: Registry-free Rancher operator bootstrap and context-scoped runtime commands
+    status: in-progress
+    file: spec/stories/story-operator-bootstrap-1.md
   - id: story-runtime-attachment-1
     title: Attach local workspaces to existing Kubernetes runtimes
     status: in-progress

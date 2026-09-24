@@ -189,3 +189,9 @@ clio/Common/RuntimeAttachment/AttachmentProcess.cs
 clio/Common/RuntimeAttachment/KubernetesAttachmentProvider.cs
 clio/Common/RuntimeAttachment/RuntimeAttachmentModels.cs
 clio/Common/RuntimeAttachment/RuntimeAttachmentService.cs
+clio/Command/InstallOperatorCommand.cs
+clio/Command/RuntimeCommand.cs
+clio/Common/OperatorBootstrap/LocalRuntimeImageBuilder.cs
+clio/Common/OperatorBootstrap/OperatorInstaller.cs
+clio/Common/OperatorBootstrap/OperatorRuntimeService.cs
+clio/Common/OperatorBootstrap/RancherDesktopTarget.cs

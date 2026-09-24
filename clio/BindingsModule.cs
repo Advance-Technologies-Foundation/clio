@@ -910,6 +910,8 @@ public class BindingsModule {
 		services.AddTransient<ConfigCommand>();
 		services.AddTransient<RegisterCommand>();
 		services.AddTransient<AttachCommand>();
+		services.AddTransient<InstallOperatorCommand>();
+		services.AddTransient<RuntimeCommand>();
 		services.AddTransient<DetachCommand>();
 		services.AddTransient<UnregisterCommand>();
 		

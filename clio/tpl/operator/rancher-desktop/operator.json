@@ -1,0 +1,566 @@
+{
+  "apiVersion": "v1",
+  "kind": "List",
+  "items": [
+    {
+      "apiVersion": "v1",
+      "kind": "Namespace",
+      "metadata": {
+        "name": "creatio-system",
+        "annotations": {
+          "clio.creatio.com/install-profile": "rancher-desktop-v1"
+        }
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "ServiceAccount",
+      "metadata": {
+        "name": "creatio-operator",
+        "namespace": "creatio-system",
+        "annotations": {
+          "clio.creatio.com/install-profile": "rancher-desktop-v1"
+        }
+      }
+    },
+    {
+      "apiVersion": "rbac.authorization.k8s.io/v1",
+      "kind": "ClusterRole",
+      "metadata": {
+        "name": "creatio-operator",
+        "annotations": {
+          "clio.creatio.com/install-profile": "rancher-desktop-v1"
+        }
+      },
+      "rules": [
+        {
+          "apiGroups": [
+            "apps.creatio.io"
+          ],
+          "resources": [
+            "creatioinstances"
+          ],
+          "verbs": [
+            "get",
+            "list",
+            "watch",
+            "create",
+            "patch",
+            "update",
+            "delete"
+          ]
+        },
+        {
+          "apiGroups": [
+            "apps.creatio.io"
+          ],
+          "resources": [
+            "creatioinstances/status"
+          ],
+          "verbs": [
+            "get",
+            "patch",
+            "update"
+          ]
+        },
+        {
+          "apiGroups": [
+            "apps.creatio.io"
+          ],
+          "resources": [
+            "creatiodatabasetemplates"
+          ],
+          "verbs": [
+            "get",
+            "list",
+            "watch",
+            "create",
+            "patch",
+            "update",
+            "delete"
+          ]
+        },
+        {
+          "apiGroups": [
+            "apps.creatio.io"
+          ],
+          "resources": [
+            "creatiodatabasetemplates/status"
+          ],
+          "verbs": [
+            "get",
+            "patch",
+            "update"
+          ]
+        },
+        {
+          "apiGroups": [
+            "apps.creatio.io"
+          ],
+          "resources": [
+            "creatiosharedinfrastructures"
+          ],
+          "verbs": [
+            "get",
+            "list",
+            "watch",
+            "create",
+            "patch",
+            "update",
+            "delete"
+          ]
+        },
+        {
+          "apiGroups": [
+            "apps.creatio.io"
+          ],
+          "resources": [
+            "creatiosharedinfrastructures/status"
+          ],
+          "verbs": [
+            "get",
+            "patch",
+            "update"
+          ]
+        },
+        {
+          "apiGroups": [
+            "apps.creatio.io"
+          ],
+          "resources": [
+            "creatioactiondefinitions"
+          ],
+          "verbs": [
+            "get",
+            "list",
+            "watch",
+            "create",
+            "patch",
+            "update",
+            "delete"
+          ]
+        },
+        {
+          "apiGroups": [
+            "apps.creatio.io"
+          ],
+          "resources": [
+            "creatioactiondefinitions/status"
+          ],
+          "verbs": [
+            "get",
+            "patch",
+            "update"
+          ]
+        },
+        {
+          "apiGroups": [
+            "apps.creatio.io"
+          ],
+          "resources": [
+            "creatioactionruns"
+          ],
+          "verbs": [
+            "get",
+            "list",
+            "watch",
+            "create",
+            "patch",
+            "update",
+            "delete"
+          ]
+        },
+        {
+          "apiGroups": [
+            "apps.creatio.io"
+          ],
+          "resources": [
+            "creatioactionruns/status"
+          ],
+          "verbs": [
+            "get",
+            "patch",
+            "update"
+          ]
+        },
+        {
+          "apiGroups": [
+            ""
+          ],
+          "resources": [
+            "pods",
+            "secrets",
+            "services",
+            "persistentvolumeclaims",
+            "configmaps",
+            "namespaces",
+            "events"
+          ],
+          "verbs": [
+            "get",
+            "list",
+            "watch",
+            "create",
+            "update",
+            "patch",
+            "delete"
+          ]
+        },
+        {
+          "apiGroups": [
+            ""
+          ],
+          "resources": [
+            "pods/exec",
+            "pods/log"
+          ],
+          "verbs": [
+            "get",
+            "create"
+          ]
+        },
+        {
+          "apiGroups": [
+            ""
+          ],
+          "resources": [
+            "nodes"
+          ],
+          "verbs": [
+            "get",
+            "list",
+            "watch"
+          ]
+        },
+        {
+          "apiGroups": [
+            "metrics.k8s.io"
+          ],
+          "resources": [
+            "pods",
+            "nodes"
+          ],
+          "verbs": [
+            "get",
+            "list"
+          ]
+        },
+        {
+          "apiGroups": [
+            "apps"
+          ],
+          "resources": [
+            "deployments",
+            "daemonsets",
+            "statefulsets"
+          ],
+          "verbs": [
+            "get",
+            "list",
+            "watch",
+            "create",
+            "update",
+            "patch",
+            "delete"
+          ]
+        },
+        {
+          "apiGroups": [
+            "networking.k8s.io"
+          ],
+          "resources": [
+            "ingresses"
+          ],
+          "verbs": [
+            "get",
+            "list",
+            "watch",
+            "create",
+            "update",
+            "patch",
+            "delete"
+          ]
+        },
+        {
+          "apiGroups": [
+            "batch"
+          ],
+          "resources": [
+            "jobs"
+          ],
+          "verbs": [
+            "get",
+            "list",
+            "watch",
+            "create",
+            "update",
+            "patch",
+            "delete"
+          ]
+        }
+      ]
+    },
+    {
+      "apiVersion": "rbac.authorization.k8s.io/v1",
+      "kind": "ClusterRoleBinding",
+      "metadata": {
+        "name": "creatio-operator",
+        "annotations": {
+          "clio.creatio.com/install-profile": "rancher-desktop-v1"
+        }
+      },
+      "roleRef": {
+        "apiGroup": "rbac.authorization.k8s.io",
+        "kind": "ClusterRole",
+        "name": "creatio-operator"
+      },
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "creatio-operator",
+          "namespace": "creatio-system"
+        }
+      ]
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Service",
+      "metadata": {
+        "name": "creatio-operator",
+        "namespace": "creatio-system",
+        "annotations": {
+          "clio.creatio.com/install-profile": "rancher-desktop-v1"
+        }
+      },
+      "spec": {
+        "selector": {
+          "app.kubernetes.io/name": "creatio-operator"
+        },
+        "ports": [
+          {
+            "name": "http",
+            "port": 8080,
+            "targetPort": 8080
+          }
+        ],
+        "type": "ClusterIP"
+      }
+    },
+    {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment",
+      "metadata": {
+        "name": "creatio-operator",
+        "namespace": "creatio-system",
+        "annotations": {
+          "clio.creatio.com/install-profile": "rancher-desktop-v1"
+        }
+      },
+      "spec": {
+        "replicas": 1,
+        "selector": {
+          "matchLabels": {
+            "app.kubernetes.io/name": "creatio-operator"
+          }
+        },
+        "template": {
+          "metadata": {
+            "labels": {
+              "app.kubernetes.io/name": "creatio-operator"
+            }
+          },
+          "spec": {
+            "serviceAccountName": "creatio-operator",
+            "volumes": [
+              {
+                "name": "docker-socket",
+                "hostPath": {
+                  "path": "/var/run/docker.sock",
+                  "type": "Socket"
+                }
+              }
+            ],
+            "containers": [
+              {
+                "name": "manager",
+                "image": "__OPERATOR_IMAGE__",
+                "imagePullPolicy": "IfNotPresent",
+                "command": [
+                  "dotnet",
+                  "Creatio.Operator.dll"
+                ],
+                "volumeMounts": [
+                  {
+                    "name": "docker-socket",
+                    "mountPath": "/var/run/docker.sock",
+                    "readOnly": true
+                  }
+                ],
+                "ports": [
+                  {
+                    "containerPort": 8080,
+                    "name": "http"
+                  }
+                ],
+                "env": [
+                  {
+                    "name": "Operator__JanitorIntervalSeconds",
+                    "value": "300"
+                  },
+                  {
+                    "name": "Operator__DashboardAuth__Enabled",
+                    "value": "true"
+                  },
+                  {
+                    "name": "Operator__DashboardAuth__AdminUsername",
+                    "valueFrom": {
+                      "secretKeyRef": {
+                        "name": "creatio-operator-dashboard-admin",
+                        "key": "username"
+                      }
+                    }
+                  },
+                  {
+                    "name": "Operator__DashboardAuth__AdminPassword",
+                    "valueFrom": {
+                      "secretKeyRef": {
+                        "name": "creatio-operator-dashboard-admin",
+                        "key": "password"
+                      }
+                    }
+                  },
+                  {
+                    "name": "POD_NAME",
+                    "valueFrom": {
+                      "fieldRef": {
+                        "fieldPath": "metadata.name"
+                      }
+                    }
+                  },
+                  {
+                    "name": "POD_NAMESPACE",
+                    "valueFrom": {
+                      "fieldRef": {
+                        "fieldPath": "metadata.namespace"
+                      }
+                    }
+                  },
+                  {
+                    "name": "Operator__DefaultExposureStrategy",
+                    "value": "LoadBalancer"
+                  },
+                  {
+                    "name": "Operator__WebExposureMode",
+                    "value": "LoadBalancer"
+                  },
+                  {
+                    "name": "Operator__PublicAccessHost",
+                    "value": "localhost"
+                  },
+                  {
+                    "name": "Operator__PublicBaseDomain",
+                    "value": "localhost"
+                  },
+                  {
+                    "name": "Operator__IngressTlsSecretName",
+                    "value": ""
+                  },
+                  {
+                    "name": "Operator__IngressClassName",
+                    "value": "traefik"
+                  },
+                  {
+                    "name": "Operator__ImageMetadataDockerSocketPath",
+                    "value": "/var/run/docker.sock"
+                  },
+                  {
+                    "name": "ASPNETCORE_HTTP_PORTS",
+                    "value": ""
+                  },
+                  {
+                    "name": "HTTP_PORTS",
+                    "value": "8080"
+                  },
+                  {
+                    "name": "Operator__NexusRegistryEnabled",
+                    "value": "false"
+                  },
+                  {
+                    "name": "Operator__NexusNodeHostPort",
+                    "value": "0"
+                  },
+                  {
+                    "name": "Operator__ImageBuildEnabled",
+                    "value": "false"
+                  },
+                  {
+                    "name": "Operator__ClusterName",
+                    "value": "rancher-desktop"
+                  },
+                  {
+                    "name": "Operator__DefaultMemoryRequest",
+                    "value": "5Gi"
+                  },
+                  {
+                    "name": "Operator__DefaultMemoryLimit",
+                    "value": "6Gi"
+                  },
+                  {
+                    "name": "Operator__AllowResourceOverprovisioning",
+                    "value": "true"
+                  },
+                  {
+                    "name": "Operator__RestorePostgresClientImage",
+                    "value": "postgres:18.6"
+                  }
+                ],
+                "readinessProbe": {
+                  "tcpSocket": {
+                    "port": "http"
+                  },
+                  "initialDelaySeconds": 3,
+                  "periodSeconds": 5
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "networking.k8s.io/v1",
+      "kind": "Ingress",
+      "metadata": {
+        "name": "creatio-operator-dashboard",
+        "namespace": "creatio-system",
+        "annotations": {
+          "clio.creatio.com/install-profile": "rancher-desktop-v1"
+        }
+      },
+      "spec": {
+        "ingressClassName": "traefik",
+        "rules": [
+          {
+            "host": "creatio-operator.localhost",
+            "http": {
+              "paths": [
+                {
+                  "path": "/",
+                  "pathType": "Prefix",
+                  "backend": {
+                    "service": {
+                      "name": "creatio-operator",
+                      "port": {
+                        "number": 8080
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

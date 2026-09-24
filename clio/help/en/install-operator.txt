@@ -1,0 +1,11 @@
+Install the Creatio operator into Rancher Desktop without a local registry.
+
+clio install-operator --target rancher-desktop [--context rancher-desktop] [--image <reference>]
+
+Requires kubectl, rdctl, Rancher Moby/dockerd, Traefik and cluster-admin permissions.
+The context defaults to rancher-desktop, not current-context. Other cluster profiles are not supported yet.
+Installs CRDs, RBAC, dashboard and ingress. Initializes PG/Redis policy; Nexus is not installed.
+Existing credentials and infrastructure are preserved. No reset, wipe or implicit takeover.
+Dashboard: http://creatio-operator.localhost
+Credentials: Secret creatio-system/creatio-operator-dashboard-admin, keys username/password.
+No Creatio environment or ClioGate is required. Local ZIP builds and runtime attachment are separate operations.

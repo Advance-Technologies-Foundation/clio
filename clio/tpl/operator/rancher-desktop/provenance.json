@@ -1,0 +1,6 @@
+{
+  "source": "creatio-operator/bootstrap.yaml",
+  "sourceSha256": "28ac3ce49eb55754947da6f915f40305bc994440f11a0431421170b8588a6d2a",
+  "profile": "rancher-desktop-v1",
+  "image": "registry.krylov.cloud/creatio-operator@sha256:6c54b36dbe63509b7944ddb92c9c5262661958420a0194963b9a8d912e71f2f2"
+}
