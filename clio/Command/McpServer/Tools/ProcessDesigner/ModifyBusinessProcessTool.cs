@@ -61,6 +61,8 @@ public class ModifyBusinessProcessTool(
 	 // standing second — an agent reads the full contract before calling. See
 	 // docs/knowledge/McpServer/first-sentence-of-a-description-becomes-the-compact-index-purpose.md
 	 Description("Edit an EXISTING business process on a Creatio environment by applying an ordered JSON array of operations. "
+		 + "On the ACTIVE version (isActiveVersion) the overwrite is irreversible: get an explicit yes first - the "
+		 + "edit request is not one. "
 		 + "BEFORE CALLING with an accessRights block: that block changes who can read, edit or delete LIVE records. Show the user the target object, the record filter deciding WHICH records are affected, and every grantee with its operations and level - calling out level:delegate as onward re-sharing, level:restrict as the platform Deny level, which is DESTRUCTIVE rather than inert: it DOWNGRADES an existing Allow row to Deny, and a fresh insert denies the two operations you did not name. Call out a remove entry as a revoke, and a supplied add/remove as a REPLACEMENT dropping every entry it does not restate - and get an explicit yes; the element has no output parameters. The SAME confirmation is required for a clearFilter on a Change access rights element even with no accessRights block: it acts on EVERY record with record permissions disabled - name the element and object, and get an explicit yes. "
 		 + "Identify the process by name (schema code) or uid. Each operation is an object with an "
 		 + "'op': addElement (with an 'element' descriptor: name (the element handle/local code), type, caption, "
