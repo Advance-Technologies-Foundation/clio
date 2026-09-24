@@ -66,6 +66,25 @@ public sealed class OAuthTokenStoreTests {
 	}
 
 	[Test]
+	[Description("Editing a stored login or password must not orphan a live SSO session, and the credentials must not reach the file name.")]
+	public void BuildKey_ShouldNotDependOnStoredCredentials() {
+		// Arrange
+		EnvironmentSettings first = Env();
+		first.Login = "Supervisor";
+		first.Password = "old-password";
+		EnvironmentSettings second = Env();
+		second.Login = "Other";
+		second.Password = "new-password";
+
+		// Act
+		string firstKey = _sut.BuildKey(first);
+		string secondKey = _sut.BuildKey(second);
+
+		// Assert
+		firstKey.Should().Be(secondKey, because: "the session belongs to the url, the OAuth client and the runtime, not to stored credentials");
+	}
+
+	[Test]
 	[Description("A round-trip returns what was written, so the write format and the read parser stay in step.")]
 	public void TryRead_ShouldReturnTheWrittenToken_WhenTheFileIsIntact() {
 		// Arrange

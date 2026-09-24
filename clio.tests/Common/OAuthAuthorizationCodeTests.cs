@@ -1,4 +1,9 @@
 using System;
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 using Clio.Common;
 using FluentAssertions;
 using NUnit.Framework;
@@ -60,5 +65,46 @@ public sealed class OAuthAuthorizationCodeTests {
 		// Assert
 		code.Should().Be("opaque-code", because: "the authorization code is percent-decoded exactly once");
 		state.Should().Be("expected", because: "the validated state is returned for the completed exchange");
+	}
+
+	[Test]
+	[Description("The server matches the redirect exactly, so replacing the port keeps a trailing slash only when the configured redirect had one.")]
+	[TestCase("http://127.0.0.1:37319/", 5000, "http://127.0.0.1:5000/")]
+	[TestCase("http://127.0.0.1:37319", 5000, "http://127.0.0.1:5000")]
+	[TestCase("http://127.0.0.1:37319/callback", 5000, "http://127.0.0.1:5000/callback")]
+	public void ReplacePort_ShouldKeepTheTrailingSlashAsConfigured(string redirect, int port, string expected) {
+		// Act
+		string result = OAuthAuthorizationCodeService.ReplacePort(redirect, port);
+
+		// Assert
+		result.Should().Be(expected);
+	}
+
+	[Test]
+	[Description("A browser preconnect socket that never sends a request must not hold up the real redirect waiting behind it.")]
+	public async Task ReceiveCallbackAsync_ShouldReturnTheRedirect_WhenAnIdleConnectionArrivesFirst() {
+		// Arrange
+		TcpListener listener = new(IPAddress.Loopback, 0);
+		listener.Start();
+		try {
+			int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+			using TcpClient idle = new();
+			await idle.ConnectAsync(IPAddress.Loopback, port);
+			Task<string> receive = OAuthAuthorizationCodeService.ReceiveCallbackAsync(listener, 10000,
+				CancellationToken.None, connectionTimeout: 300);
+			using TcpClient real = new();
+			await real.ConnectAsync(IPAddress.Loopback, port);
+			byte[] request = Encoding.ASCII.GetBytes("GET /?code=abc&state=xyz HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n");
+			await real.GetStream().WriteAsync(request);
+
+			// Act
+			string redirect = await receive;
+
+			// Assert
+			redirect.Should().Be("http://127.0.0.1/?code=abc&state=xyz");
+		}
+		finally {
+			listener.Stop();
+		}
 	}
 }

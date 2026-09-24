@@ -46,8 +46,9 @@ public sealed class OAuthTokenStore : IOAuthTokenStore
     {
         ArgumentNullException.ThrowIfNull(environment);
         string stem = Sanitize(StripScheme(environment.Uri ?? throw new ArgumentException("Environment url is required.", nameof(environment))));
-        string discriminator = string.Concat(environment.Login ?? string.Empty, "|", environment.Password ?? string.Empty,
-            "|", environment.ClientId ?? string.Empty, "|", environment.IsNetCore);
+        // Credentials stay out of the key: editing a stored login or password must not orphan a live
+        // session, and a filename must not carry a hash a weak password could be recovered from.
+        string discriminator = string.Concat(environment.ClientId ?? string.Empty, "|", environment.IsNetCore);
         string hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(discriminator)))[..16].ToLowerInvariant();
         return $"{stem}_{hash}";
     }
@@ -248,7 +249,17 @@ public sealed class OAuthAuthorizationCodeService : IOAuthAuthorizationCodeServi
         string body = await response.Content.ReadAsStringAsync(cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
-            if (IsTerminalRefreshFailure(response.StatusCode, body)) DeleteToken(environment);
+            if (IsTerminalRefreshFailure(response.StatusCode, body))
+            {
+                // The gate above is per process. Another clio process may have refreshed with the same
+                // one-time refresh token first; its rotated session is in the store and must survive.
+                if (_store.TryRead(environment, out OAuthTokenSet current)
+                    && !string.Equals(current.RefreshToken, token.RefreshToken, StringComparison.Ordinal))
+                {
+                    return current;
+                }
+                DeleteToken(environment);
+            }
             throw new InvalidOperationException(DescribeOAuthFailure("OAuth token refresh failed", body));
         }
         OAuthResponse refreshed = JsonSerializer.Deserialize<OAuthResponse>(body) ?? throw MissingToken(environment);
@@ -354,7 +365,18 @@ public sealed class OAuthAuthorizationCodeService : IOAuthAuthorizationCodeServi
 
     public async Task LogoutAsync(EnvironmentSettings environment, CancellationToken cancellationToken = default)
     {
-        if (!_store.TryRead(environment, out OAuthTokenSet token)) return;
+        OAuthTokenSet token;
+        try
+        {
+            if (!_store.TryRead(environment, out token)) return;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // A token file readable by others is not trusted enough to send to the server, but it is
+            // still a local session the user asked to remove.
+            DeleteToken(environment);
+            throw new InvalidOperationException("The OAuth token file had permissions wider than owner-only access, so it was deleted without revoking the session on the server.");
+        }
         try
         {
             DiscoveryDocument discovery = await DiscoverAsync(environment, cancellationToken);
@@ -420,30 +442,58 @@ public sealed class OAuthAuthorizationCodeService : IOAuthAuthorizationCodeServi
 	private static string BuildAuthorizationUrl(string endpoint, string clientId, string redirect, string state, string verifier) => endpoint + "?" + string.Join("&", new Dictionary<string, string> { { "response_type", "code" }, { ClientIdParameter, clientId }, { "redirect_uri", redirect }, { "state", state }, { "code_challenge", OAuthAuthorizationCodeProtocol.CreateCodeChallenge(verifier) }, { "code_challenge_method", "S256" }, { "scope", "offline_access" } }.Select(p => $"{Uri.EscapeDataString(p.Key)}={Uri.EscapeDataString(p.Value)}"));
     private static bool IsLoopbackRedirect(string redirect) => Uri.TryCreate(redirect, UriKind.Absolute, out Uri uri)
         && uri.Scheme == Uri.UriSchemeHttp && uri.IsLoopback;
-    private static string ReplacePort(string redirect, int port) { UriBuilder builder = new(redirect); builder.Port = port; return builder.Uri.ToString().TrimEnd('/'); }
+    // The redirect is matched exactly by the server, so the result keeps a trailing slash only when the
+    // configured redirect had one.
+    internal static string ReplacePort(string redirect, int port)
+    {
+        UriBuilder builder = new(redirect) { Port = port };
+        string result = builder.Uri.ToString();
+        return redirect.EndsWith('/') ? result : result.TrimEnd('/');
+    }
 	// The url reaches the platform handler as one opaque operand: routing it through cmd.exe /c start
 	// would let an unquoted '&' in a discovery-supplied authorization endpoint start a second command.
 	private bool TryOpenBrowser(string url) => _processExecutor.OpenWithDefaultHandler(url);
-    private static async Task<string> ReceiveCallbackAsync(TcpListener listener, int timeout, CancellationToken ct)
+    internal static async Task<string> ReceiveCallbackAsync(TcpListener listener, int timeout, CancellationToken ct,
+        int connectionTimeout = CallbackConnectionTimeoutMs)
     {
         using CancellationTokenSource timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeoutSource.CancelAfter(timeout <= 0 ? 120000 : timeout);
         while (true)
         {
             using TcpClient client = await listener.AcceptTcpClientAsync(timeoutSource.Token);
-            using NetworkStream stream = client.GetStream();
-            using StreamReader reader = new(stream, Encoding.UTF8, leaveOpen: true);
-            string request = await reader.ReadLineAsync(timeoutSource.Token) ?? string.Empty;
-            string target = request.StartsWith("GET ", StringComparison.Ordinal) ? request[4..].Split(' ')[0] : string.Empty;
-            string body = "<html><body>You can close this tab.</body></html>";
-            byte[] bodyBytes = Encoding.UTF8.GetBytes(body);
-            byte[] bytes = Encoding.UTF8.GetBytes($"HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {bodyBytes.Length}\r\nConnection: close\r\n\r\n{body}");
-            await stream.WriteAsync(bytes, timeoutSource.Token);
-            if (target.Contains("code=", StringComparison.OrdinalIgnoreCase) || target.Contains("error=", StringComparison.OrdinalIgnoreCase))
+            string target = await TryReadCallbackTargetAsync(client, connectionTimeout, timeoutSource.Token);
+            if (target is not null && (target.Contains("code=", StringComparison.OrdinalIgnoreCase)
+                || target.Contains("error=", StringComparison.OrdinalIgnoreCase)))
             {
                 return "http://127.0.0.1/" + target.TrimStart('/');
             }
         }
+    }
+
+    private const int CallbackConnectionTimeoutMs = 5000;
+
+    // A browser opens speculative connections that may never send a request, and a socket can be reset
+    // mid-read. Each connection gets its own short deadline and its failures are dropped, so one idle or
+    // broken socket cannot hold up the real redirect waiting in the backlog.
+    private static async Task<string> TryReadCallbackTargetAsync(TcpClient client, int connectionTimeout,
+        CancellationToken overall)
+    {
+        using CancellationTokenSource connectionSource = CancellationTokenSource.CreateLinkedTokenSource(overall);
+        connectionSource.CancelAfter(connectionTimeout);
+        try
+        {
+            using NetworkStream stream = client.GetStream();
+            using StreamReader reader = new(stream, Encoding.UTF8, leaveOpen: true);
+            string request = await reader.ReadLineAsync(connectionSource.Token) ?? string.Empty;
+            string target = request.StartsWith("GET ", StringComparison.Ordinal) ? request[4..].Split(' ')[0] : string.Empty;
+            string body = "<html><body>You can close this tab.</body></html>";
+            byte[] bodyBytes = Encoding.UTF8.GetBytes(body);
+            byte[] bytes = Encoding.UTF8.GetBytes($"HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {bodyBytes.Length}\r\nConnection: close\r\n\r\n{body}");
+            await stream.WriteAsync(bytes, connectionSource.Token);
+            return target;
+        }
+        catch (OperationCanceledException) when (!overall.IsCancellationRequested) { return null; }
+        catch (IOException) { return null; }
     }
     private static InvalidOperationException MissingToken(EnvironmentSettings e) { string name = string.IsNullOrWhiteSpace(e.EnvironmentName) ? e.Uri : e.EnvironmentName; return new($"Environment '{name}' uses SSO sign-in and has no valid session. Run: clio login -e {name}"); }
     private sealed record DiscoveryDocument(string authorization_endpoint, string token_endpoint, string revocation_endpoint);

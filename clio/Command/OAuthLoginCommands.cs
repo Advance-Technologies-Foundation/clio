@@ -97,12 +97,14 @@ public sealed class AuthStatusCommand : Command<AuthStatusOptions>
             }
             if (!_store.TryRead(environment, out OAuthTokenSet token))
             {
-                _logger.WriteError("No cached OAuth session. Run: clio login -e " + options.Environment);
+                string name = string.IsNullOrWhiteSpace(environment.EnvironmentName) ? options.Environment : environment.EnvironmentName;
+                _logger.WriteError("No cached OAuth session. Run: clio login -e " + name);
                 return 1;
             }
-            bool usable = token.ExpiresAt > DateTimeOffset.UtcNow || !string.IsNullOrWhiteSpace(token.RefreshToken);
-            _logger.WriteInfo($"Authentication flow: authorization-code; cached token: {(usable ? "yes" : "expired")}; access-token expiry: {token.ExpiresAt:O}");
-            return usable ? 0 : 1;
+            // The store only returns a session that carries a refresh token, so an expired access token
+            // is renewed by the next command without a browser.
+            _logger.WriteInfo($"Authentication flow: authorization-code; cached token: yes; access-token expiry: {token.ExpiresAt:O}");
+            return 0;
         }
         catch (Exception exception)
         {

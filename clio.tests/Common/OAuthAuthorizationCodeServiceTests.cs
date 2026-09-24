@@ -177,6 +177,51 @@ public sealed class OAuthAuthorizationCodeServiceTests {
 		handler.RequestCount.Should().Be(0, because: "the stored token is not the one the server rejected");
 	}
 
+	[Test]
+	[Description("Another clio process may refresh first with the same one-time refresh token; the invalid_grant this process then gets must not delete the rotated session that process wrote.")]
+	public async Task ResolveAsync_ShouldReturnTheRotatedSession_WhenAnotherProcessRefreshedFirst() {
+		// Arrange
+		IOAuthTokenStore store = Substitute.For<IOAuthTokenStore>();
+		store.BuildKey(Arg.Any<EnvironmentSettings>()).Returns("key");
+		int reads = 0;
+		OAuthTokenSet rotated = new("new-access", "new-refresh", DateTimeOffset.UtcNow.AddHours(1), TokenEndpoint,
+			"clio-client", DateTimeOffset.UtcNow);
+		store.TryRead(Arg.Any<EnvironmentSettings>(), out Arg.Any<OAuthTokenSet>())
+			.Returns(call => {
+				call[1] = reads++ == 0 ? BuildToken(DateTimeOffset.UtcNow.AddSeconds(-10)) : rotated;
+				return true;
+			});
+		OAuthAuthorizationCodeService service = CreateService(store,
+			StubHttpMessageHandler.Returning(HttpStatusCode.BadRequest, "{\"error\":\"invalid_grant\"}"));
+
+		// Act
+		OAuthTokenSet resolved = await service.ResolveAsync(CreateEnvironment());
+
+		// Assert
+		resolved.AccessToken.Should().Be("new-access");
+		store.DidNotReceive().Delete(Arg.Any<EnvironmentSettings>());
+	}
+
+	[Test]
+	[Description("A token file readable by others is not sent for revocation, but logout still removes it and says revocation did not happen.")]
+	public async Task LogoutAsync_ShouldDeleteTheFileAndReport_WhenItsPermissionsAreTooWide() {
+		// Arrange
+		IOAuthTokenStore store = Substitute.For<IOAuthTokenStore>();
+		store.BuildKey(Arg.Any<EnvironmentSettings>()).Returns("key");
+		store.TryRead(Arg.Any<EnvironmentSettings>(), out Arg.Any<OAuthTokenSet>())
+			.Returns(_ => throw new UnauthorizedAccessException("wide"));
+		StubHttpMessageHandler handler = StubHttpMessageHandler.Returning(HttpStatusCode.OK, "{}");
+		OAuthAuthorizationCodeService service = CreateService(store, handler);
+
+		// Act
+		Func<Task> act = () => service.LogoutAsync(CreateEnvironment());
+
+		// Assert
+		await act.Should().ThrowAsync<InvalidOperationException>();
+		store.Received(1).Delete(Arg.Any<EnvironmentSettings>());
+		handler.RequestCount.Should().Be(0, because: "an untrusted token file must not be sent to the server");
+	}
+
 	private static IOAuthTokenStore CreateStoreWithToken(DateTimeOffset expiresAt) {
 		IOAuthTokenStore store = Substitute.For<IOAuthTokenStore>();
 		store.BuildKey(Arg.Any<EnvironmentSettings>()).Returns("key");

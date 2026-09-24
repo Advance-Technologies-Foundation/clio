@@ -1041,7 +1041,7 @@ internal class Program {
 	/// <returns>A client the caller owns and must dispose.</returns>
 	private static IOwnedApplicationClient CreateRemoteCommandClient(EnvironmentSettings settings){
 		Clio.Common.ExternalAccess.ExternalAccessSettingsGuard.Validate(settings);
-		if (!string.IsNullOrEmpty(settings.ExternalAccessToken)) {
+		if (!string.IsNullOrEmpty(settings.ExternalAccessToken) || settings.AuthFlow == OAuthFlow.AuthorizationCode) {
 			return Resolve<IApplicationClientFactory>().CreateOwnedEnvironmentClient(settings);
 		}
 		return string.IsNullOrEmpty(settings.ClientId)
@@ -1052,6 +1052,11 @@ internal class Program {
 	}
 
 	private static CreatioClient CreateCreatioClient(){
+		if (CreatioEnvironment.Settings.AuthFlow == OAuthFlow.AuthorizationCode) {
+			throw new InvalidOperationException(
+				"This command does not support environments that sign in with the OAuth authorization-code flow (clio login). "
+				+ "Register the environment with login/password or client credentials to use it.");
+		}
 		if (string.IsNullOrEmpty(ClientId)) {
 			return new CreatioClient(Url, UserName, UserPassword, true, CreatioEnvironment.IsNetCore);
 		}
