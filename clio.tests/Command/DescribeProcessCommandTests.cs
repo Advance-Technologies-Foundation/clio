@@ -272,8 +272,10 @@ public sealed class DescribeProcessCommandTests {
 			because: "the column must survive the clio DTO re-serialization");
 		written.Should().Contain("\"sourceElementParameter\": \"ResultEntity\"",
 			because: "so must the record parameter");
-		System.Text.RegularExpressions.Regex.Matches(written, "\"sourceColumn\"").Count.Should().Be(1,
-			because: "a value with no record-column source carries none of the three fields, not a null");
+		foreach (string field in new[] { "sourceElement", "sourceElementParameter", "sourceColumn" }) {
+			System.Text.RegularExpressions.Regex.Matches(written, $"\"{field}\"").Count.Should().Be(1,
+				because: $"a value with no record-column source carries no '{field}', not a null");
+		}
 	}
 
 	[Test]

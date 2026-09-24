@@ -80,8 +80,11 @@ public sealed class RecordColumnSourceToolE2ETests {
 		string stampJson = stamp.ToJsonString();
 		stampJson.Should().Contain("\"sourceColumn\":\"Owner\"",
 			because: "a Modify data value's sourceColumn crosses the wire and describes back by name");
-		stampJson.Should().Contain("[EntityColumn:",
-			because: "the filter's elementParameter.column is stored as the three-segment reference");
+		string filterReference = stamp["filter"]!["conditions"]!.AsArray().Single()!["expression"]!
+			.GetValue<string>();
+		filterReference.Should().Contain("[EntityColumn:",
+			because: "the filter's elementParameter.column is stored as the three-segment reference - read off "
+				+ "the described FILTER, since the value parameter above carries the same segment");
 	}
 
 	[Test]
