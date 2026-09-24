@@ -18,6 +18,9 @@ first version clio bundles with the fix, as the classic designer does after its 
 (`ProcessSchemaDesignerUtilities.ReleaseLocalizableValues`,
 `Terrasoft.Nui.ServiceModel/WebService/BaseProcessSchemaDesigner.cs:181-186`).
 
+Line numbers are from a TSBpm core checkout at `8f6745caa` (2025-07-21); other core versions shift them, the
+method names do not.
+
 **Why it is this way** — the release goes by `SysSchema.Name`, and a manager is named after the schema only for
 a RUNTIME entity schema (`EntitySchema.GetResourceManagerName`, `Entities/EntitySchema.cs:2621-2623`); every
 other schema, a process included, is keyed by UId. The designer compensates by releasing the UId-keyed manager

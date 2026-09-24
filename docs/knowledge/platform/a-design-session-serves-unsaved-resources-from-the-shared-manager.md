@@ -16,6 +16,9 @@ it into the shared manager (`SchemaManager.cs:4621-4661, 2712-2720`), and buildi
 `InitializeSchemaResourceManager` → `ReleaseAllResources()` (`SchemaManager.cs:1057`), after which the next read
 reloads from the database.
 
+Line numbers are from a TSBpm core checkout at `8f6745caa` (2025-07-21); other core versions shift them, the
+method names do not.
+
 **Why it is this way** — the platform keeps one resource manager per schema for the whole app pool and lets a
 design session overwrite it with the session's view; nothing distinguishes saved from unsaved values in it.
 
