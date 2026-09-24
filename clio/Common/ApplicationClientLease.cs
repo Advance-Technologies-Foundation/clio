@@ -46,6 +46,11 @@ internal sealed class ApplicationClientLease(IApplicationClient client) : IOwned
 		int maxAttempts = 1, int delaySec = 1, CancellationToken cancellationToken = default) =>
 		Extended.ExecuteGetRequestAsync(url, requestTimeout, maxAttempts, delaySec, cancellationToken);
 
+	/// <inheritdoc />
+	public Task<byte[]> ExecuteGetRequestBoundedAsync(string url, long maxBytes, int requestTimeout = 100_000,
+		CancellationToken cancellationToken = default) =>
+		Extended.ExecuteGetRequestBoundedAsync(url, maxBytes, requestTimeout, cancellationToken);
+
 	public string ExecutePostRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
 		int maxAttempts = 1, int delaySec = 1) =>
 		_client.ExecutePostRequest(url, requestData, requestTimeout, maxAttempts, delaySec);

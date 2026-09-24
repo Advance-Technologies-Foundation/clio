@@ -3,6 +3,10 @@ description: convergence never reads the [RequiresPackage] version, so a presenc
 applies-to:
   - clio/Common/BundledPackageConvergence.cs
   - clio/Common/RequiredPackageChecker.cs
+  - clio/Command/CreateBusinessProcessCommand.cs
+  - clio/Command/ModifyBusinessProcessCommand.cs
+  - clio/Command/ModifyProcessAsNewVersionCommand.cs
+  - clio/Command/SetActiveProcessVersionCommand.cs
   - clio/Command/DescribeProcessCommand.cs
   - clio/Command/ListUserTasksCommand.cs
   - clio/Command/McpServer/Tools/ProcessDesigner/ValidateProcessGraphTool.cs
@@ -22,16 +26,22 @@ version — there is no parameter for the requirement's floor — and returns `f
 is absent, is not bundled, has an unreadable or suffixed bundled version, or `installedVersion >=
 bundledVersion`.
 
-So for the ProcessBuilder package, **all five** gated surfaces refuse a behind environment, not just
-the two carrying a literal:
+So for the ProcessBuilder package, **every** gated surface refuses a behind environment, not just the
+ones carrying a literal:
 
 | site | floor | refuses a behind environment |
 |---|---|---|
-| `CreateBusinessProcessOptions` (CreateBusinessProcessCommand.cs) | `1.6.2.1` | yes |
-| `ModifyBusinessProcessOptions` (ModifyBusinessProcessCommand.cs) | `1.6.2.1` | yes |
+| `CreateBusinessProcessOptions` (CreateBusinessProcessCommand.cs) | `1.6.6.14` | yes |
+| `ModifyBusinessProcessOptions` (ModifyBusinessProcessCommand.cs) | `1.6.6.14` | yes |
+| `ModifyProcessAsNewVersionOptions` (ModifyProcessAsNewVersionCommand.cs) | `1.6.6.14` | yes |
+| `SetActiveProcessVersionOptions` (SetActiveProcessVersionCommand.cs) | `1.6.1.0` | yes |
 | `DescribeProcessOptions` (DescribeProcessCommand.cs) | none — `Hint` only | **yes** |
 | `ListUserTasksOptions` (ListUserTasksCommand.cs) | none — `Hint` only | **yes** |
 | `ValidateProcessGraphArgs` (ValidateProcessGraphTool.cs) | none — `Hint` only | **yes** |
+
+The literals move with every rebundle that changes what a command ADVERTISES, so read them from the
+attributes rather than from this table; what the table is for is the right-hand column, which does not
+move.
 
 The sites are named by the DECLARING TYPE, not by file and line. Line numbers in this table went stale
 twice — the last time when a rationale comment grew above an attribute and moved it nine lines — and a

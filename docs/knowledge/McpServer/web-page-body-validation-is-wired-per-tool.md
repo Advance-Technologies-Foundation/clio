@@ -41,3 +41,8 @@ the exact body the check exists to reject, and because these checks are mostly w
 omission produces no error anywhere - the page is simply saved unvalidated. Every past validator
 addition needed all three edits; grep the three tool files for a sibling validator name to see the
 shape before adding one.
+
+The GH-1640 parent guard is authoritative in `PageUpdateCommand`, shared by update-page
+and sync-pages. The standalone validate-page check instead accepts inherited names
+or warns when that context is absent; it must not pretend to resolve a server
+hierarchy from a body alone.

@@ -48,6 +48,12 @@ namespace Clio.Tests.Command.McpServer.Tools.MobilePageConverter;
 [Property("Module", "McpServer")]
 public sealed class WebToMobileGeneralInfoTabRegressionTests {
 
+	/// <summary>No mobile request registry: support comes from the versioned rules alone, which is
+	/// what these component-level fixtures are about. Passed explicitly because the parameter is
+	/// required — an omitted registry must be a visible decision, not a silent empty default.</summary>
+	private static readonly IReadOnlySet<string> NoRequestRegistry =
+		new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
 	private const string FixtureName = "ServicesFormPageTabbed.live-snapshot.json";
 
 	/// <summary>The mobile general tab's content grid — the "Details tab content container" of the ticket.</summary>
@@ -685,7 +691,8 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 					fixture["mobileTemplate"]!["viewConfig"]!.DeepClone().AsArray())
 				: null,
 			mobileTemplateTypesByName: mobileTemplateAvailable ? MobileTemplateTypes(fixture) : null,
-			webTemplateBaselineNodes: webBaselineNodes);
+			webTemplateBaselineNodes: webBaselineNodes,
+			mobileRequestTypes: NoRequestRegistry);
 		RequireFixtureIsUsable(fixture, guide);
 		return guide;
 	}

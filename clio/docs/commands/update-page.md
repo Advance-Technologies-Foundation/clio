@@ -12,6 +12,19 @@ update-page - Update the raw schema body of a Freedom UI page
 
 ## Description
 
+Web page saves resolve explicit `parentName` references against the inherited page
+hierarchy and the submitted diff. An unresolved parent fails before saving, including
+with `validate: false` and during dry runs. The error names the child and parent and
+suggests the closest known element. Root inserts without a parent remain valid. The guard requires a statically
+parseable view-config diff; dynamic JavaScript expressions in that section cannot
+be verified and are rejected even with `validate: false`.
+
+The MCP `validate-page` tool can receive `known-containers`, an array of inherited
+element names obtained from the page bundle. With that context, missing parents
+fail validation; without it, unresolved references produce warnings because a
+parent may be supplied by the template. This offline hint does not bypass the
+authoritative save check.
+
 `--resources` adds missing keys and updates the `en-US` value of existing keys.
 Resource identities, other cultures, and omitted keys are preserved. The
 `resourcesRegistered` count includes only newly declared keys, not value updates.
@@ -129,6 +142,12 @@ name instead of trying to edit a non-existent local `insert`.
     shadows the native element, so the top navigation bar and the page body silently come from the wrong
     element. A `merge` onto `Scaffold` is the SUPPORTED way to patch the template's own root and is left
     alone here — the merge-slot rules above own what may go inside it.
+  - **Rejected — a `crt.IndicatorWidget` that would show no value.** An `insert`, `set` or `merge` authoring a
+    metric must carry `config.layout` and `config.text`, and a `config.data.providing` the mobile runtime can
+    execute: `schemaName` plus `aggregation.column.expression` with a `functionArgument.columnPath` and an
+    `aggregationType` of 1–5, or `expressionSchema` for a calculated metric. Otherwise the page saves, but the
+    metric shows no value or an error placeholder, or the designer canvas does not build. A widget with its own `data` binding is exempt
+    from the providing checks.
   - **Warned — a `merge` that authors child elements in any other slot.** Same mechanism, different odds: a
     slot the target does not carry (`menuItems` on a `crt.Button` or `crt.FloatingActionButton`, `items` on
     `crt.QuickFilterGroup`, `crt.Sort`, `crt.Timeline`) is *created* by the merge and the authoring works.

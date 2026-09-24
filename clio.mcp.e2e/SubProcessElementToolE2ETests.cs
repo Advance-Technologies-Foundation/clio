@@ -6,11 +6,14 @@ using System.Threading;
 using System.Threading.Tasks;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
+using Clio.Command.McpServer.Tools;
 using Clio.Command.McpServer.Tools.ProcessDesigner;
 using Clio.Command.ProcessModel;
+using Clio.Common;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
+using Clio.Package;
 using FluentAssertions;
 using ModelContextProtocol.Protocol;
 
@@ -39,6 +42,19 @@ public sealed class SubProcessElementToolE2ETests {
 	private const string ToolName = CreateBusinessProcessTool.CreateBusinessProcessToolName;
 	private const string ModifyToolName = ModifyBusinessProcessTool.ModifyBusinessProcessToolName;
 	private const string DescribeToolName = DescribeProcessTool.ToolName;
+
+	// The caller's resource key for the element parameter's caption: captions are not metadata, they live in
+	// SysLocalizableValue under name-derived keys.
+	private const string OrderIdElementCaptionKey = "BaseElements.SubProcess1.Parameters.OrderId.Caption";
+
+	// The called process's OWN row for its parameter: a process parameter's caption is stored under
+	// Parameters.<name>.Caption (read off a stand, 2026-09-23).
+	private const string OrderIdCalleeCaptionKey = "Parameters.OrderId.Caption";
+
+	private const string Resync = """
+		[ { "op": "setElement", "elementName": "SubProcess1",
+		    "elementUpdate": { "subProcess": { "resync": true } } } ]
+		""";
 
 	#region Methods: Tests
 
@@ -189,6 +205,97 @@ public sealed class SubProcessElementToolE2ETests {
 	}
 
 	[Test]
+	[Description("ENG-100077: after a caption-only change on the called process, ONE resync of the caller stores the called process's CURRENT caption. Read from SysLocalizableValue, not from describe: every read re-synchronizes, so describe can show a caption the database does not hold. Before the fix the package's save left the callee's resource cache holding the pre-edit captions and this row stayed one save behind.")]
+	[AllureTag(ModifyToolName)]
+	[AllureName("modify-business-process resync stores the called process's current caption")]
+	public async Task ModifyBusinessProcess_Should_StoreTheCalleesCurrentCaption_OnOneResync() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync();
+		string calleeName = $"UsrClioBpCapResyncCallee{Guid.NewGuid():N}";
+		string callerName = $"UsrClioBpCapResyncCaller{Guid.NewGuid():N}";
+		await ArrangeProcessAsync(context, BuildCaptionedCalleeDescriptor(calleeName), "called process");
+		await ArrangeProcessAsync(context, BuildCallerDescriptor(callerName, calleeName), "calling process");
+		await ArrangeModifyAsync(context, calleeName, SetOrderIdCaption("Order id v2"), "caption-only callee change");
+		await ArrangeCalleeStoresAsync(context, calleeName, "Order id v2");
+
+		// Act
+		CallToolResult result = await ModifyAsync(context, callerName, Resync);
+
+		// Assert
+		McpCommandExecutionParser.Extract(result).ExitCode.Should().Be(0,
+			because: "a resync against a readable callee must succeed");
+		(await ReadStoredCaptionsAsync(context, callerName, OrderIdElementCaptionKey)).Should()
+			.ContainSingle(because: "the caller stores one caption row for the element parameter")
+			.Which.Should().Be("Order id v2",
+				because: "one resync must store the callee's CURRENT caption - the stale 'Order id v1' was "
+					+ "written back here while the callee's resource cache still held its pre-edit captions");
+	}
+
+	[Test]
+	[Description("ENG-100077: an INCIDENTAL save of the caller - an edit that never mentions the sub-process element - also stores the called process's current caption. Every design-time load re-synchronizes the element and the save persists it, so before the fix such an edit silently wrote the callee's STALE caption, and could revert a correct row.")]
+	[AllureTag(ModifyToolName)]
+	[AllureName("an incidental caller save stores the called process's current caption")]
+	public async Task ModifyBusinessProcess_Should_StoreTheCalleesCurrentCaption_OnAnIncidentalCallerSave() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync();
+		string calleeName = $"UsrClioBpCapIncCallee{Guid.NewGuid():N}";
+		string callerName = $"UsrClioBpCapIncCaller{Guid.NewGuid():N}";
+		await ArrangeProcessAsync(context, BuildCaptionedCalleeDescriptor(calleeName), "called process");
+		await ArrangeProcessAsync(context, BuildCallerDescriptor(callerName, calleeName), "calling process");
+		await ArrangeModifyAsync(context, calleeName, SetOrderIdCaption("Order id v2"), "caption-only callee change");
+		await ArrangeCalleeStoresAsync(context, calleeName, "Order id v2");
+
+		// Act - an edit about something else entirely
+		CallToolResult result = await ModifyAsync(context, callerName, """
+			[ { "op": "addParameter",
+			    "parameter": { "name": "Note", "type": "Text", "direction": "In", "caption": "Note" } } ]
+			""");
+
+		// Assert
+		McpCommandExecutionParser.Extract(result).ExitCode.Should().Be(0,
+			because: "an unrelated edit of the caller must succeed");
+		(await ReadStoredCaptionsAsync(context, callerName, OrderIdElementCaptionKey)).Should()
+			.ContainSingle(because: "the caller stores one caption row for the element parameter")
+			.Which.Should().Be("Order id v2",
+				because: "the save persists what the load's re-synchronization copied, so it must be the callee's "
+					+ "current caption and never the one from before the callee's last edit");
+	}
+
+	[TestCase(true, TestName = "DescribeBusinessProcess_Should_ShowANewCalleeParametersCaption_WhenTheCalleeIsReadFirst")]
+	[TestCase(false, TestName = "DescribeBusinessProcess_Should_ShowANewCalleeParametersCaption_WhenACallerIsReadFirst")]
+	[Description("ENG-100077: a parameter the called process GAINS carries its caption on every caller, whatever is read first. Before the fix the callee's cached build had no caption for the new key, so a caller built from it showed an empty caption - measured on both read orders.")]
+	[AllureTag(DescribeToolName)]
+	[AllureName("a new callee parameter shows its caption on every caller")]
+	public async Task DescribeBusinessProcess_Should_ShowANewCalleeParametersCaption(bool calleeFirst) {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync();
+		string calleeName = $"UsrClioBpCapNewCallee{Guid.NewGuid():N}";
+		string firstCallerName = $"UsrClioBpCapNewCallerA{Guid.NewGuid():N}";
+		string secondCallerName = $"UsrClioBpCapNewCallerB{Guid.NewGuid():N}";
+		await ArrangeProcessAsync(context, BuildCaptionedCalleeDescriptor(calleeName), "called process");
+		await ArrangeProcessAsync(context, BuildCallerDescriptor(firstCallerName, calleeName), "first calling process");
+		await ArrangeProcessAsync(context, BuildCallerDescriptor(secondCallerName, calleeName), "second calling process");
+		await ArrangeModifyAsync(context, calleeName, """
+			[ { "op": "addParameter",
+			    "parameter": { "name": "Urgent", "type": "Boolean", "direction": "In", "caption": "Urgent flag" } } ]
+			""", "new callee parameter");
+
+		// Act
+		if (calleeFirst) {
+			await DescribeAsync(context, calleeName);
+		}
+		DescribeProcessResult first = await DescribeAsync(context, firstCallerName);
+		DescribeProcessResult second = await DescribeAsync(context, secondCallerName);
+
+		// Assert
+		UrgentCaptionOf(first).Should().Be("Urgent flag",
+			because: "the caller read first after the callee gained the parameter must carry its caption - it was "
+				+ "the one left empty before the fix");
+		UrgentCaptionOf(second).Should().Be("Urgent flag",
+			because: "every caller carries the new parameter's caption regardless of read order");
+	}
+
+	[Test]
 	[Description("Over the real MCP path, a process cannot call ITSELF: the platform accepts that write and then synchronizes nothing, so without the refusal the process saves green with an element that carries no parameters and no complaint.")]
 	[AllureTag(ToolName)]
 	[AllureName("create-business-process refuses a sub-process element that calls its own process")]
@@ -254,6 +361,31 @@ public sealed class SubProcessElementToolE2ETests {
 		  ],
 		  "flows": [ { "source": "StartEvent1", "target": "EndEvent1" } ]
 		}
+		""";
+
+	// The ordinary callee with CAPTIONS, which the ENG-100077 cases change and then read back from the caller.
+	private static string BuildCaptionedCalleeDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP SubProcess caption callee E2E",
+		  "packageName": "Custom",
+		  "parameters": [
+		    { "name": "OrderId", "type": "Guid", "direction": "In", "caption": "Order id v1" },
+		    { "name": "Approved", "type": "Boolean", "direction": "Out", "caption": "Approved" }
+		  ],
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [ { "source": "StartEvent1", "target": "EndEvent1" } ]
+		}
+		""";
+
+	private static string SetOrderIdCaption(string caption) =>
+		$$"""
+		[ { "op": "setParameter", "parameterName": "OrderId",
+		    "parameterUpdate": { "caption": "{{caption}}" } } ]
 		""";
 
 	private static string BuildCallerDescriptor(string processName, string calleeName) =>
@@ -343,6 +475,83 @@ public sealed class SubProcessElementToolE2ETests {
 			because: $"only a genuinely successful build logs the created-schema line, and the {what} has to "
 				+ "exist before the case below means anything");
 		return result;
+	}
+
+	private static async Task<CallToolResult> ModifyAsync(ArrangeContext context, string processName,
+			string operations) =>
+		await CallToolAsync(context, ModifyToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = operations
+		});
+
+	/// <summary>A modify used as an ARRANGE step, failed on the spot when it did not succeed.</summary>
+	private static async Task ArrangeModifyAsync(ArrangeContext context, string processName, string operations,
+			string what) {
+		CallToolResult result = await ModifyAsync(context, processName, operations);
+		McpCommandExecutionParser.Extract(result).ExitCode.Should().Be(0,
+			because: $"the {what} is an arrange step - if it failed, every assertion below is about the wrong failure");
+	}
+
+	/// <summary>
+	/// Fails the ARRANGE on the spot unless the called process itself stored <paramref name="caption"/>. Without it a
+	/// callee edit that did not land reads, three steps later, as a caller that stored the wrong caption.
+	/// </summary>
+	private static async Task ArrangeCalleeStoresAsync(ArrangeContext context, string calleeName, string caption) =>
+		(await ReadStoredCaptionsAsync(context, calleeName, OrderIdCalleeCaptionKey)).Should()
+			.ContainSingle(because: "the called process stores one caption row for its own parameter")
+			.Which.Should().Be(caption,
+				because: "the callee edit is an arrange step - if the callee did not store it, the caller cannot");
+
+	private static string? UrgentCaptionOf(DescribeProcessResult described) {
+		described.Elements.Should().ContainSingle(candidate => candidate.Name == "SubProcess1",
+			because: "each caller carries exactly one sub-process element");
+		DescribedElement element = described.Elements.Single(candidate => candidate.Name == "SubProcess1");
+		element.Parameters.Should().ContainSingle(parameter => parameter.Name == "Urgent",
+			because: "the parameter the callee gained reaches every caller's element");
+		return element.Parameters.Single(parameter => parameter.Name == "Urgent").Caption;
+	}
+
+	/// <summary>
+	/// A process's STORED rows for one resource key, every culture, read from <c>SysLocalizableValue</c> through
+	/// <c>execute-esq</c>.
+	/// <para>The database and not <c>describe</c>, on purpose: the platform re-synchronizes on every read, so a
+	/// describe shows the called process's caption whether or not it was ever saved.</para>
+	/// <para>DataService and not <c>execute-sql-script</c>: a SQL read needs cliogate and is refused on a stand
+	/// with <c>DenyCustomQueryApiUsage</c>, while here both values travel as typed filter parameters and are never
+	/// spliced into a statement. The filter follows the <c>SysSchema</c> lookup (<c>SysSchema.Id</c>, the row id,
+	/// not the UId) to the schema's name. Run against an MSSQL .NET Framework stand on 2026-09-24, where it
+	/// returned exactly the row a SQL join on <c>SysSchemaId</c> returned; DataService builds the SQL itself, so
+	/// the read does not depend on the database engine.</para>
+	/// <para>Every culture is read and the callers expect ONE row: a server-side write stores the current culture
+	/// only, and these processes are created and edited through clio alone, so a second row would itself be a
+	/// finding.</para>
+	/// </summary>
+	private static async Task<IReadOnlyList<string?>> ReadStoredCaptionsAsync(ArrangeContext context,
+			string schemaName, string key) {
+		object query = SelectQueryHelper.BuildSelectQuery("SysLocalizableValue",
+			[new SelectQueryHelper.SelectQueryColumnDefinition("Value", "Value")],
+			[
+				new SelectQueryHelper.SelectQueryFilterDefinition("SysSchema.Name", schemaName,
+					SelectQueryHelper.TextDataValueType),
+				new SelectQueryHelper.SelectQueryFilterDefinition("Key", key, SelectQueryHelper.TextDataValueType)
+			]);
+		CallToolResult result = await CallToolAsync(context, ExecuteEsqTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["query"] = JsonSerializer.SerializeToElement(query)
+			});
+		ExecuteEsqResponse response = EntitySchemaStructuredResultParser.Extract<ExecuteEsqResponse>(result);
+		response.Success.Should().BeTrue(
+			because: "the caption rows have to be readable for this case to measure anything, and the read failed "
+				+ "with: {0}",
+			response.Error);
+		JsonElement rows = response.Rows.GetValueOrDefault();
+		rows.ValueKind.Should().Be(JsonValueKind.Array,
+			because: "a SelectQuery answers with a rows array; anything else is a response shape this read cannot count");
+		return rows.EnumerateArray()
+			.Select(row => row.GetProperty("Value").GetString())
+			.ToList();
 	}
 
 	private static async Task<CallToolResult> CreateAsync(ArrangeContext context, string descriptor) =>

@@ -523,8 +523,8 @@ public sealed class ServerProcessDescriberTests {
 		block.ProcessCaption.Should().Be("Order approval",
 			because: "the caption is what a human recognises, and it comes from the server rather than being derived");
 		block.MultiInstance.Should().BeFalse(
-			because: "the flag that tells a caller the element is refused by every configuring write path has to "
-				+ "survive the round trip");
+			because: "the flag that tells a caller the element's parameters are not where they look - two "
+				+ "collections and three counters instead of the callee's - has to survive the round trip");
 		block.InSync.Should().BeTrue(
 			because: "inSync is the one field that says whether a re-synchronization is owed");
 		result.Value.Elements[0].Parameters[0].IsRequired.Should().BeTrue(
@@ -566,7 +566,8 @@ public sealed class ServerProcessDescriberTests {
 		block["processCaption"]!.GetValue<string>().Should().Be("Order approval",
 			because: "the caption is what a human recognises in the output");
 		block["multiInstance"]!.GetValue<bool>().Should().BeFalse(
-			because: "the flag that says every configuring write path refuses this element has to reach the reader");
+			because: "the flag that says this element carries collections and counters rather than the callee's "
+				+ "parameters has to reach the reader");
 		block["inSync"]!.GetValue<bool>().Should().BeTrue(
 			because: "inSync is the field a caller decides a re-synchronization on");
 		block["futureSubProcessFact"]!.GetValue<string>().Should().Be("kept",
@@ -1961,4 +1962,292 @@ public sealed class ServerProcessDescriberTests {
 		client.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default, default, default, default);
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Story 9 AC-05: the multiInstanceOptions block deserializes into a TYPED member, every field by name. A member the DTO does not declare, or a JsonPropertyName that drifted from the server's DataMember, is dropped silently on re-serialize - so each name is asserted individually.")]
+	public void Describe_ShouldReadTheMultiInstanceOptionsBlock_WhenServerReportsIt() {
+		// Arrange - a multi-instance element the way CrtProcessBuilder writes it
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"SubProcess1\","
+			+ "\"type\":\"ProcessSchemaSubProcess\",\"buildType\":\"subprocess\","
+			+ "\"subProcess\":{\"process\":\"UsrOrderApproval\",\"multiInstance\":true,\"inSync\":false,"
+			+ "\"multiInstanceOptions\":{\"enabled\":true,\"executionMode\":\"Parallel\","
+			+ "\"ignoreErrors\":true,\"inputCollection\":\"InputRecordCollection\","
+			+ "\"outputCollection\":\"OutputRecordCollection\","
+			+ "\"completedIterationsCount\":\"CompletedIterationsCount\","
+			+ "\"terminatedIterationsCount\":\"TerminatedIterationsCount\","
+			+ "\"totalIterationsCount\":\"TotalIterationsCount\"}},"
+			+ "\"parameters\":[]}],\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedMultiInstanceOptions options = result.Value.Elements[0].SubProcess.MultiInstanceOptions;
+		options.Should().NotBeNull(
+			because: "a null here is the silent-drop signature - the describe output is re-serialized from this "
+				+ "model, so a block the model does not declare reaches nobody");
+		options.Enabled.Should().BeTrue(because: "the read has to feed straight back into the write side's enabled");
+		options.ExecutionMode.Should().Be("Parallel",
+			because: "the mode is carried as the STRING the write side accepts, so a described block re-applies "
+				+ "without translation - the write side refuses the stored number");
+		options.IgnoreErrors.Should().BeTrue(because: "the other mode field round-trips too");
+		options.InputCollection.Should().Be("InputRecordCollection",
+			because: "the input collection is the one a caller maps into, so its name is the load-bearing role");
+		options.OutputCollection.Should().Be("OutputRecordCollection",
+			because: "the output collection is where one item per completed iteration is written back");
+		options.CompletedIterationsCount.Should().Be("CompletedIterationsCount",
+			because: "each counter is a parameter a caller can read a value out of after a run");
+		options.TerminatedIterationsCount.Should().Be("TerminatedIterationsCount",
+			because: "all three counters are reported, not just the first");
+		options.TotalIterationsCount.Should().Be("TotalIterationsCount",
+			because: "all three counters are reported, not just the first");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("calleeInSync deserializes as a typed nullable bool, and it is the field to read on a multi-instance element - inSync there carries no information in either direction and answers nothing.")]
+	public void Describe_ShouldReadCalleeInSync_WhenServerReportsIt() {
+		// Arrange - a multi-instance element whose callee has drifted
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"SubProcess1\","
+			+ "\"type\":\"ProcessSchemaSubProcess\",\"buildType\":\"subprocess\","
+			+ "\"subProcess\":{\"process\":\"UsrOrderApproval\",\"multiInstance\":true,\"inSync\":false,"
+			+ "\"multiInstanceOptions\":{\"enabled\":true,\"calleeInSync\":false}},"
+			+ "\"parameters\":[]}],\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		DescribedSubProcess block = result.Value.Elements[0].SubProcess;
+		block.MultiInstanceOptions.CalleeInSync.Should().BeFalse(
+			because: "a re-synchronization is owed, and on a multi-instance element this is the only field that "
+				+ "can say so - the run time binds per-item values BY NAME and delivers nothing for a name the "
+				+ "element does not carry, with no exception and no log line");
+		block.InSync.Should().BeFalse(
+			because: "inSync keeps its old meaning - it compares against the element ROOT parameters, which here "
+				+ "are the five service ones, so it carries no information: false whenever the callee declares "
+				+ "anything, and vacuously TRUE when it declares nothing, since the test is an All over the "
+				+ "callee's parameters. Redefining it would have changed a shipped field silently; the two "
+				+ "coexist instead");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("calleeInSync stays null when an older CrtProcessBuilder omits it, which is indistinguishable from a callee that could not be read - and both mean do not act on it.")]
+	public void Describe_ShouldLeaveCalleeInSyncNull_WhenServerOmitsIt() {
+		// Arrange
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"SubProcess1\","
+			+ "\"type\":\"ProcessSchemaSubProcess\",\"buildType\":\"subprocess\","
+			+ "\"subProcess\":{\"process\":\"UsrOrderApproval\",\"multiInstance\":true,"
+			+ "\"multiInstanceOptions\":{\"enabled\":true}},"
+			+ "\"parameters\":[]}],\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.Value.Elements[0].SubProcess.MultiInstanceOptions.CalleeInSync.Should().BeNull(
+			because: "a nullable bool is what lets absence stay absent - a non-nullable one would deserialize to "
+				+ "false and tell every caller on an older package that a re-synchronization is owed");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Story 9 AC-05: the block survives RE-SERIALIZATION under the describe command's own options, which is what the caller actually receives. An inbound-only assertion cannot see a JsonPropertyName that drifted from the server's DataMember, because the same wrong name reads and writes consistently.")]
+	public void Describe_ShouldReserializeTheMultiInstanceOptionsBlock_UnderTheCommandsOwnOptions() {
+		// Arrange - the same payload plus an undeclared field, so the overflow bag is exercised too
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"SubProcess1\","
+			+ "\"type\":\"ProcessSchemaSubProcess\",\"buildType\":\"subprocess\","
+			+ "\"subProcess\":{\"process\":\"UsrOrderApproval\",\"multiInstance\":true,"
+			+ "\"multiInstanceOptions\":{\"enabled\":true,\"executionMode\":\"Sequential\","
+			+ "\"ignoreErrors\":false,\"inputCollection\":\"InputRecordCollection\","
+			+ "\"calleeInSync\":false,\"futureMultiInstanceFact\":\"kept\"}},"
+			+ "\"parameters\":[]}],\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act - the command's OWN options object, not a copy
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+		string reserialized = JsonSerializer.Serialize(result.Value, DescribeProcessCommand.OutputOptions);
+
+		// Assert
+		JsonNode output = JsonNode.Parse(reserialized);
+		JsonNode block = output["elements"]![0]!["subProcess"]!["multiInstanceOptions"]!;
+		block["enabled"]!.GetValue<bool>().Should().BeTrue(
+			because: "the wire name is what the caller reads and what they pass back; a JsonPropertyName that "
+				+ "drifted reads and writes consistently, so only the outbound side can catch it");
+		block["executionMode"]!.GetValue<string>().Should().Be("Sequential",
+			because: "the EFFECTIVE mode reaches the caller even at its default - the server reports it because "
+				+ "the stored metadata suppresses it, and a caller cannot act on absent");
+		block["ignoreErrors"]!.GetValue<bool>().Should().BeFalse(
+			because: "the same holds for the other suppressed default");
+		block["inputCollection"]!.GetValue<string>().Should().Be("InputRecordCollection",
+			because: "the role a caller maps into has to reach them");
+		block.AsObject().ContainsKey("calleeInSync").Should().BeTrue(
+			because: "calleeInSync is the one field that says a multi-instance element owes a re-synchronization, "
+				+ "and only the OUTBOUND side can see its wire name drift: the inbound read binds "
+				+ "case-insensitively, so with the JsonPropertyName deleted it still deserializes - and then "
+				+ "re-serializes as 'CalleeInSync', which no caller looks for");
+		block["calleeInSync"]!.GetValue<bool>().Should().BeFalse(
+			because: "false is the actionable value - a re-synchronization is owed - and it must reach the caller "
+				+ "as false, not be dropped as a default");
+		block["futureMultiInstanceFact"]!.GetValue<string>().Should().Be("kept",
+			because: "this block carries the overflow bag every server-built block here carries, and capturing an "
+				+ "undeclared field is only half of it - it has to come back out");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Story 9 AC-06: a role the server omits serializes AWAY rather than reaching the caller as an explicit null - a test pins which of the two an agent sees, because the two read very differently.")]
+	public void Describe_ShouldOmitAnAbsentRole_RatherThanEmitNull() {
+		// Arrange - a malformed element: the server resolved no name for two of the roles
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"SubProcess1\","
+			+ "\"type\":\"ProcessSchemaSubProcess\",\"buildType\":\"subprocess\","
+			+ "\"subProcess\":{\"process\":\"UsrOrderApproval\",\"multiInstance\":true,"
+			+ "\"multiInstanceOptions\":{\"enabled\":true,\"executionMode\":\"Sequential\","
+			+ "\"ignoreErrors\":false,\"inputCollection\":\"InputRecordCollection\"}},"
+			+ "\"parameters\":[]}],\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+		string reserialized = JsonSerializer.Serialize(result.Value, DescribeProcessCommand.OutputOptions);
+
+		// Assert
+		JsonNode block = JsonNode.Parse(reserialized)["elements"]![0]!["subProcess"]!["multiInstanceOptions"]!;
+		block.AsObject().ContainsKey("outputCollection").Should().BeFalse(
+			because: "the command's serializer suppresses nulls, so an unresolved role is ABSENT rather than "
+				+ "explicitly null - an agent reading the output sees no key at all, and that is what this pins");
+		block.AsObject().ContainsKey("totalIterationsCount").Should().BeFalse(
+			because: "the same holds for every role, not only the first one that happened to be missing");
+		block["inputCollection"]!.GetValue<string>().Should().Be("InputRecordCollection",
+			because: "the roles that DID resolve still reach the caller - one missing role must not take the "
+				+ "block with it, which is the whole reason describe reports a malformed element rather than "
+				+ "refusing it");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An older CrtProcessBuilder that reports no multiInstanceOptions block leaves the member null, so it serializes away cleanly rather than surfacing an empty object that would read as 'it iterates, with nothing configured'.")]
+	public void Describe_ShouldLeaveTheMultiInstanceOptionsNull_WhenServerOmitsIt() {
+		// Arrange - a single-instance element, which is also what an older package reports for every element
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"SubProcess1\","
+			+ "\"type\":\"ProcessSchemaSubProcess\",\"buildType\":\"subprocess\","
+			+ "\"subProcess\":{\"process\":\"UsrOrderApproval\",\"multiInstance\":false},"
+			+ "\"parameters\":[]}],\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+		string reserialized = JsonSerializer.Serialize(result.Value, DescribeProcessCommand.OutputOptions);
+
+		// Assert
+		result.Value.Elements[0].SubProcess.MultiInstanceOptions.Should().BeNull(
+			because: "the block's PRESENCE is what tells a caller the element iterates, so an empty object would "
+				+ "make a single-instance element read as a misconfigured multi-instance one");
+		JsonNode.Parse(reserialized)["elements"]![0]!["subProcess"]!.AsObject()
+			.ContainsKey("multiInstanceOptions").Should().BeFalse(
+				because: "and it has to be absent on the wire too, not merely null in the model");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A multi-instance element's ELEMENT-LEVEL parameters carry the callee's contract as itemProperties with NO provenance tag - unlike a Read data collection, whose items are stamped with column UIds - and one of them carries a per-item mapping value. Both have to survive deserialization AND the re-serialize the caller reads: the item value is the only place a caller can see what each iteration receives, and a tag-less item must omit the field rather than surface it as null. The existing itemProperties fixture reads a PROCESS-level, tagged collection only, so the element path and the tag-less shape were unpinned.")]
+	public void Describe_ShouldReadTagLessItemPropertiesWithAPerItemValue_WhenAMultiInstanceElementReportsThem() {
+		// Arrange - the shape CrtProcessBuilder reports for a converted element: the per-item value is a flat
+		// [Element].[Parameter] metapath pointing at the Read data element's collection item
+		const string perItemValue = "[#[Element:{0a1b2c3d-0000-0000-0000-00000000000a}]."
+			+ "[Parameter:{0a1b2c3d-0000-0000-0000-0000000000b1}]#]";
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"SubProcess1\","
+			+ "\"type\":\"ProcessSchemaSubProcess\",\"buildType\":\"subprocess\","
+			+ "\"subProcess\":{\"process\":\"UsrOrderApproval\",\"multiInstance\":true,"
+			+ "\"multiInstanceOptions\":{\"enabled\":true,\"inputCollection\":\"InputRecordCollection\"}},"
+			+ "\"parameters\":[{\"name\":\"InputRecordCollection\",\"uid\":\"p1\","
+			+ "\"type\":\"CompositeObjectList\",\"direction\":\"In\","
+			+ "\"itemProperties\":[{\"name\":\"ItemName\",\"uid\":\"i1\",\"type\":\"ShortText\","
+			+ "\"direction\":\"In\",\"source\":\"Mapping\",\"value\":\"" + perItemValue + "\"},"
+			+ "{\"name\":\"Comment\",\"uid\":\"i2\",\"type\":\"ShortText\",\"direction\":\"In\"}]}]}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+		string reserialized = JsonSerializer.Serialize(result.Value, DescribeProcessCommand.OutputOptions);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedParameter input = result.Value.Elements[0].Parameters[0];
+		input.ItemProperties.Should().HaveCount(2,
+			because: "the callee's contract lives one level down on a multi-instance element, item by item");
+		input.ItemProperties[0].Value.Should().Be(perItemValue,
+			because: "the per-item mapping is the only place a caller can see what each iteration receives");
+		input.ItemProperties[0].Source.Should().Be("Mapping",
+			because: "the source kind says the value is a binding rather than a constant");
+		input.ItemProperties[0].Tag.Should().BeNull(
+			because: "a callee parameter carries no provenance stamp, and absence must read as absence");
+		input.ItemProperties[1].Value.Should().BeNull(
+			because: "an item nothing was mapped onto carries no value, and it must not borrow one");
+		JsonObject reserializedInput = JsonNode.Parse(reserialized)["elements"]![0]!["parameters"]![0]!.AsObject();
+		reserializedInput.ContainsKey("itemProperties").Should().BeTrue(
+			because: "the item shape has to reach the caller under its WIRE name - the inbound read binds "
+				+ "case-insensitively, so a dropped JsonPropertyName still deserializes and then re-serializes as "
+				+ "'ItemProperties', which no caller looks for");
+		JsonNode item = reserializedInput["itemProperties"]![0]!;
+		item["value"]!.GetValue<string>().Should().Be(perItemValue,
+			because: "the value has to survive the re-serialize the caller actually reads, under its wire name");
+		item.AsObject().ContainsKey("tag").Should().BeFalse(
+			because: "a tag-less item must OMIT the field rather than emit null, the same rule as a tag-less "
+				+ "process parameter");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A CrtProcessBuilder that predates the options block reports multiInstance:true with NO multiInstanceOptions at all. The describer has to TOLERATE that - read the element, keep multiInstance true and leave the block null - rather than refuse the read or synthesize an empty block: an empty object would read as 'it iterates, with nothing configured', and a refused read would take the whole graph with it over one element.")]
+	public void Describe_ShouldTolerateAMultiInstanceElementWithoutAnOptionsBlock_WhenAnOlderServerOmitsIt() {
+		// Arrange
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"SubProcess1\","
+			+ "\"type\":\"ProcessSchemaSubProcess\",\"buildType\":\"subprocess\","
+			+ "\"subProcess\":{\"process\":\"UsrOrderApproval\",\"multiInstance\":true,\"inSync\":false},"
+			+ "\"parameters\":[]}],\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(
+			because: "an older server's element is still a readable element - one missing block must not fail "
+				+ "the whole graph");
+		DescribedSubProcess block = result.Value.Elements[0].SubProcess;
+		block.MultiInstance.Should().Be(true,
+			because: "the flag the older server DID report has to come through as reported");
+		block.MultiInstanceOptions.Should().BeNull(
+			because: "the block was not reported, so the model must not invent one - an empty object would claim "
+				+ "the element iterates with nothing configured");
+		JsonNode subProcess = JsonNode.Parse(JsonSerializer.Serialize(result.Value,
+			DescribeProcessCommand.OutputOptions))["elements"]![0]!["subProcess"]!;
+		subProcess["multiInstance"]!.GetValue<bool>().Should().BeTrue(
+			because: "the caller still has to learn the element iterates");
+		subProcess.AsObject().ContainsKey("multiInstanceOptions").Should().BeFalse(
+			because: "and the absent block stays absent on the wire, not an empty object");
+	}
 }

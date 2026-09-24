@@ -110,12 +110,17 @@ internal sealed class TestShardingWorkflowTests {
 		aggregateCondition.Should().Be("always()",
 			because: "the aggregate must still run and report failure when one of its dependencies fails or is skipped");
 		dependencies.Select(value => value.ToString()).Should().BeEquivalentTo(
-			new[] { "changes", "unit-test-shards", "net8-compatibility", "conflict-resolver-tests" },
-			because: "the aggregate must wait for planning, every shard, and both compatibility jobs");
+			new[] {
+				"changes", "unit-test-shards", "unix-file-mode-tests", "net8-compatibility",
+				"conflict-resolver-tests"
+			},
+			because: "the aggregate must wait for planning, every shard, the Unix file-mode leg, and both " +
+			"compatibility jobs");
 		normalizedFailureCondition.Should().Be(
 			"needs.changes.result!='success'||((needs.changes.outputs.clio-src=='true'||" +
 			"needs.changes.outputs.tests=='true'||github.ref=='refs/heads/master')&&" +
-			"(needs.unit-test-shards.result!='success'||needs.net8-compatibility.result!='success'||" +
+			"(needs.unit-test-shards.result!='success'||needs.unix-file-mode-tests.result!='success'||" +
+			"needs.net8-compatibility.result!='success'||" +
 			"needs.conflict-resolver-tests.result!='success'))",
 			because: "the stable gate must fail for change detection or any relevant prerequisite without failing irrelevant changes");
 	}

@@ -1,9 +1,9 @@
 ---
-description: Synchronizing a multi-instance sub-process element rebuilds it as two collections plus three counters, with the callee's parameters as the collections' item properties - it is the platform's own idempotent refresh, not data loss, but the element still carries none of the names a contract would map onto
+description: Synchronizing a multi-instance sub-process element rebuilds it as two collections plus three counters, with the callee's parameters as the collections' item properties - it is the platform's own idempotent refresh, not data loss, and since ENG-99856 clio DRIVES that rebuild instead of refusing the element; the callee's names live one level down, addressed by a dotted path
 applies-to:
   - clio/CrtProcessBuilder/CrtProcessBuilder.gz
   - spec/eng-92707-sub-process-element/
-ticket: ENG-92707
+ticket: ENG-92707, ENG-99856
 date: 2026-09-16
 ---
 
@@ -33,14 +33,25 @@ data collection converts the element, and its parameter set then stops mirroring
 rebuild is how the platform re-derives the collection wrapper on every read.
 
 **What breaks if you ignore it** — not the schema, but every contract that addresses parameters **by
-name**. A multi-instance element carries none of the callee's parameter names, so a mapping, a
-`typeFromElement` parameter or a drift report written in those terms addresses nothing on it, and
-`describe` reports a structurally valid element whose parameter list has no relation to the called
-process. CrtProcessBuilder therefore refuses such an element as a **pre-condition on
-`MultiInstanceOptions != null`**, before any path that can reach the setter, and reports it as
-`subProcess.multiInstance` in describe so a caller sees the refusal coming. The incidental path - a
-`setElement` that touched the element for some other reason - skips it with a notice instead of
-refusing the whole edit.
+name**. A multi-instance element carries none of the callee's parameter names at its ROOT, so a mapping,
+a `typeFromElement` parameter or a drift report written in those terms addresses nothing on it: the
+callee's contract is one level down, in the collections' `ItemProperties`, and a per-item value is
+addressed by a DOTTED path (`InputRecordCollection.<Param>`).
+
+**This paragraph replaced a refusal, and the difference matters.** Until ENG-99856 CrtProcessBuilder
+refused such an element outright, as a pre-condition on `MultiInstanceOptions != null` before any path
+that could reach the setter. It no longer does. The rebuild described above is now DRIVEN rather than
+avoided: a conversion, a de-conversion, a retarget and a re-synchronization all de-convert the element,
+let the ordinary applier work against a single-instance one with every guard it carries, and re-convert
+it around the SAME five parameter objects so their UIds survive. `EnsureNotMultiInstance` still exists
+and still refuses — but only on the LEGACY path, and its message says so, naming the `subProcess` block
+on `setElement` as the route that works. Do not read that refusal as the product's answer.
+
+One consequence of the rebuild is load-bearing for anyone driving it: because `Parameters.Clear()` runs
+unconditionally, a FIRST conversion must move the element's existing parameters into the input
+collection BEFORE handing the element to the platform, or their mapped values are gone with no error
+anywhere. That is a separate record —
+`platform/multi-instance-conversion-must-move-parameters-before-the-rebuild.md`.
 
 Source: `Terrasoft.Core/Process/ProcessSchemaActivity.cs`; measured by
 `CrtProcessBuilder.Tests/SubProcessPlatformProbeTests`. Full write-up:
