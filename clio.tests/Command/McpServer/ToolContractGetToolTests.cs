@@ -379,6 +379,66 @@ public sealed class ToolContractGetToolTests {
 			because: "the removed raw filter must be explicitly rejected in the discoverable contract");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Keeps the curated odata-read-to-file input contract aligned with every bound ODataReadToFileArgs JSON member, including the inherited query arguments.")]
+	public void ToolContractGet_Should_Keep_ODataReadToFile_Input_Contract_In_Sync_With_Args() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+		string[] boundArgumentNames = typeof(ODataReadToFileArgs)
+			.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+			.Where(property => property.GetCustomAttribute<JsonExtensionDataAttribute>() is null)
+			.Select(property => property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? property.Name)
+			.ToArray();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([ODataReadToFileTool.ToolName]));
+		ToolContractDefinition contract = result.Tools!.Single();
+
+		// Assert
+		contract.InputSchema.Properties.Select(property => property.Name).Should().BeEquivalentTo(boundArgumentNames,
+			because: "the curated contract must advertise every argument the real stdio binder accepts and no stale arguments");
+		contract.InputSchema.Required.Should().Contain("output-file",
+			because: "the file destination is what separates this tool from odata-read");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Keeps output-file off the odata-read contract, so the read-only tool is never advertised as taking a file destination it rejects.")]
+	public void ToolContractGet_Should_Not_Advertise_Output_File_On_ODataRead() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([ODataReadTool.ToolName]));
+		ToolContractDefinition contract = result.Tools!.Single();
+
+		// Assert
+		contract.InputSchema.Properties.Should().NotContain(property => property.Name == "output-file",
+			because: "odata-read rejects output-file; advertising it would send callers into a guaranteed failure");
+		contract.Description.Should().Contain(ODataReadToFileTool.ToolName,
+			because: "a caller with a large response must be pointed at the tool that does take a file destination");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Publishes the enforced odata-create row ceiling in the curated contract, so a caller can batch before an all-or-nothing rejection.")]
+	public void ToolContractGet_Should_Publish_The_ODataCreate_Row_Ceiling() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([ODataCreateTool.ToolName]));
+		ToolContractDefinition contract = result.Tools!.Single();
+
+		// Assert
+		contract.Preconditions.Should().Contain(ODataCreateTool.RowCountLimitDescription,
+			because: "the contract and the runtime limit must be built from the same wording, not restated");
+		contract.InputSchema.Properties.Single(property => property.Name == "rows").Description.Should()
+			.Contain(ODataCreateTool.MaxRowCountText,
+				because: "the argument a caller fills in has to state the count limit it is checked against");
+	}
+
 	// PR #1356 review (d-krestov, Gate 3) - update-page has a CURATED contract, so
 	// TryResolveFullContract serves the hand-written ToolContractCatalog literal and never looks at
 	// PageUpdateArgs. A spot check for `checksum` therefore passes verbatim with PageUpdateArgs.Checksum

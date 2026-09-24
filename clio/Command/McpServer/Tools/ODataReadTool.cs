@@ -36,9 +36,11 @@ public sealed class ODataReadTool(
 
 	private const string ValidArgumentsHint =
 		"Valid: entity, environment-name, filters, select, expand, order-by, top, skip, count. " +
-		"Raw filter strings are not supported; use the structured filters object.";
+		"Raw filter strings are not supported; use the structured filters object. " +
+		"To keep a large response on disk, call odata-read-to-file instead.";
 
-	private static readonly IReadOnlyDictionary<string, string> ArgumentAliases =
+	/// <summary>Alias map shared with <see cref="ODataReadToFileTool"/>, which extends it with its own keys.</summary>
+	internal static readonly IReadOnlyDictionary<string, string> ArgumentAliases =
 		new Dictionary<string, string>(StringComparer.Ordinal) {
 			["environmentName"] = "environment-name",
 			["environment_name"] = "environment-name",
@@ -76,6 +78,8 @@ public sealed class ODataReadTool(
 	[Description(
 		"Query Creatio records via OData v4. " +
 		"Supports structured filters, select, expand, order by, top, skip, and total-count requests. " +
+		"Read-only and retry-safe: it never writes, locally or remotely. " +
+		"For a response too large to return inline, call odata-read-to-file, which takes the same arguments plus output-file. " +
 		"top must be between 1 and 100 (default 25); an out-of-range top (including 0 or negative) is rejected, never silently widened. " +
 		"skip must be zero or greater; use order-by with skip for stable paging. " +
 		"Unknown arguments and malformed filter conditions fail before any Creatio request; raw filter strings are not supported. " +
@@ -97,34 +101,26 @@ public sealed class ODataReadTool(
 
 	private ODataReadResponse ReadCore(ODataReadArgs args, string correlationId) {
 		try {
-			string? argumentError = ValidateAndNormalizeArguments(args, out string[]? selectColumns,
-				out string[]? expandColumns);
+			string? argumentError = ValidateAndNormalizeArguments(args, ArgumentAliases, ValidArgumentsHint,
+				out string[]? selectColumns, out string[]? expandColumns);
 			if (argumentError is not null) {
 				return ODataReadResponse.Failure(argumentError, ODataReadErrorCodes.Argument);
 			}
-			if (string.IsNullOrWhiteSpace(args.Entity)) {
-				return ODataReadResponse.Failure("entity is required.", ODataReadErrorCodes.Argument);
-			}
-			if (!ODataKeyFormatter.IsValidEntityName(args.Entity)) {
-				return ODataReadResponse.Failure(
-					"entity must be a valid OData entity set name (letters, digits, underscore).",
-					ODataReadErrorCodes.Argument);
-			}
-			if (args.Top is { } requestedTop && (requestedTop < MinTop || requestedTop > MaxTop)) {
-				// An out-of-range top must NOT silently fall through to the default (which would
-				// return a page when the caller asked for 0, or be misread as "all" on negatives).
-				return ODataReadResponse.Failure(
-					$"top must be between {MinTop} and {MaxTop} (got {requestedTop}). Omit top to use the default of {DefaultTop}.",
-					ODataReadErrorCodes.Argument, entity: args.Entity.Trim());
+			string? targetError = ValidateTarget(args);
+			if (targetError is not null) {
+				//entity travels only once the NAME ITSELF has been accepted. The contract on the member
+				//says so - "an argument-level rejection (a bad or missing entity ...) is refused before
+				//that point and carries no entity" - so a rejected name must not be echoed back as the
+				//entity this failure is about. Only the top-range refusal reaches here with a usable one.
+				return ODataReadResponse.Failure(targetError, ODataReadErrorCodes.Argument,
+					entity: IsEntityNameAccepted(args) ? args.Entity.Trim() : null);
 			}
 
 			EnvironmentOptions options = new() { Environment = args.EnvironmentName };
 			IApplicationClient client = commandResolver.Resolve<IApplicationClient>(options);
 			IServiceUrlBuilder urlBuilder = commandResolver.Resolve<IServiceUrlBuilder>(options);
 
-			string queryString = BuildQueryString(args, selectColumns, expandColumns);
-			string path = $"odata/{args.Entity.Trim()}{queryString}";
-			string url = urlBuilder.Build(path);
+			string url = urlBuilder.Build(BuildRequestPath(args, selectColumns, expandColumns));
 
 			string responseJson = client.ExecuteGetRequest(url, 30_000);
 			return ParseODataResponse(responseJson, args, correlationId);
@@ -153,6 +149,38 @@ public sealed class ODataReadTool(
 	}
 
 	/// <summary>
+	/// Validates the READ TARGET - the entity set name and the page size - for either read path.
+	/// </summary>
+	/// <remarks>
+	/// Shared with <see cref="ODataReadToFileTool"/> so the two read paths refuse the same targets with
+	/// the same wording; a second copy drifted the moment one of them was edited.
+	/// </remarks>
+	/// <param name="args">The bound tool arguments.</param>
+	/// <returns>The contract message when the target is not accepted; otherwise null.</returns>
+	internal static string? ValidateTarget(ODataReadArgs args) {
+		if (!IsEntityNameAccepted(args)) {
+			return string.IsNullOrWhiteSpace(args.Entity)
+				? "entity is required."
+				: "entity must be a valid OData entity set name (letters, digits, underscore).";
+		}
+		if (args.Top is { } requestedTop && (requestedTop < MinTop || requestedTop > MaxTop)) {
+			// An out-of-range top must NOT silently fall through to the default (which would
+			// return a page when the caller asked for 0, or be misread as "all" on negatives).
+			return $"top must be between {MinTop} and {MaxTop} (got {requestedTop}). "
+				+ $"Omit top to use the default of {DefaultTop}.";
+		}
+		return null;
+	}
+
+	/// <summary>
+	/// Whether the requested entity set NAME was supplied and is well formed - which is what decides
+	/// whether a failure may name an entity at all.
+	/// </summary>
+	/// <param name="args">The bound tool arguments.</param>
+	internal static bool IsEntityNameAccepted(ODataReadArgs args) =>
+		!string.IsNullOrWhiteSpace(args.Entity) && ODataKeyFormatter.IsValidEntityName(args.Entity);
+
+	/// <summary>
 	/// Validates the supplied arguments and hands back the normalized column lists.
 	/// </summary>
 	/// <remarks>
@@ -162,11 +190,14 @@ public sealed class ODataReadTool(
 	/// with no way for a test, a log or a second validation pass to tell which one it is looking at.
 	/// </remarks>
 	/// <param name="args">The bound tool arguments.</param>
+	/// <param name="argumentAliases">Alias map for the CALLING tool, whose accepted argument set may be wider.</param>
+	/// <param name="validArgumentsHint">The calling tool's list of accepted arguments, quoted in the rejection.</param>
 	/// <param name="selectColumns">The normalized $select list, or null when select was omitted.</param>
 	/// <param name="expandColumns">The normalized $expand list, or null when expand was omitted.</param>
 	/// <returns>The contract message when an argument is not accepted; otherwise null.</returns>
-	private static string? ValidateAndNormalizeArguments(ODataReadArgs args, out string[]? selectColumns,
-			out string[]? expandColumns) {
+	internal static string? ValidateAndNormalizeArguments(ODataReadArgs args,
+			IReadOnlyDictionary<string, string> argumentAliases, string validArgumentsHint,
+			out string[]? selectColumns, out string[]? expandColumns) {
 		selectColumns = null;
 		expandColumns = null;
 		if (args.ExtensionData?.ContainsKey("filter") == true) {
@@ -176,9 +207,9 @@ public sealed class ODataReadTool(
 		}
 		string? argumentError = McpToolArgumentSupport.BuildLegacyAliasError(
 			args.ExtensionData,
-			ArgumentAliases,
+			argumentAliases,
 			".",
-			ValidArgumentsHint);
+			validArgumentsHint);
 		if (argumentError is not null) {
 			return argumentError;
 		}
@@ -458,6 +489,13 @@ public sealed class ODataReadTool(
 		return parts.Count > 0 ? string.Join(" and ", parts) : null;
 	}
 
+	/// <summary>Builds the OData request path both read paths issue, including the query string.</summary>
+	/// <param name="args">The bound tool arguments.</param>
+	/// <param name="selectColumns">Normalized $select list, or null.</param>
+	/// <param name="expandColumns">Normalized $expand list, or null.</param>
+	internal static string BuildRequestPath(ODataReadArgs args, string[]? selectColumns, string[]? expandColumns) =>
+		$"odata/{args.Entity.Trim()}{BuildQueryString(args, selectColumns, expandColumns)}";
+
 	private static string BuildQueryString(ODataReadArgs args, string[]? selectColumns,
 			string[]? expandColumns) {
 		var parts = new List<string>();
@@ -619,7 +657,7 @@ public sealed class ODataReadTool(
 	/// default-metadata responses always carry the context, which is what the single-entity path
 	/// already requires.
 	/// </remarks>
-	private static bool IsCollectionResponse(JsonElement root, string entityName) =>
+	internal static bool IsCollectionResponse(JsonElement root, string entityName) =>
 		MatchesTopLevelContext(root, entityName, singleEntity: false);
 
 	/// <summary>
@@ -692,7 +730,7 @@ public sealed class ODataReadTool(
 	private const string SingleEntitySuffix = "/$entity";
 
 	/// <summary>True when the body is a top-level read of the requested set, in either shape.</summary>
-	private static bool HasMatchingODataIdentity(JsonElement root, string entityName) =>
+	internal static bool HasMatchingODataIdentity(JsonElement root, string entityName) =>
 		root.ValueKind == JsonValueKind.Object
 		&& (MatchesTopLevelContext(root, entityName, singleEntity: true)
 			|| MatchesTopLevelContext(root, entityName, singleEntity: false));
@@ -726,12 +764,17 @@ public sealed class ODataReadTool(
 	/// MCP transcript as the requested data. The collection branch already checks the entity set; so
 	/// does this one now.
 	/// </summary>
-	private static bool IsSingleEntityResponse(JsonElement root, string entityName) =>
+	internal static bool IsSingleEntityResponse(JsonElement root, string entityName) =>
 		root.ValueKind == JsonValueKind.Object
 		&& MatchesTopLevelContext(root, entityName, singleEntity: true);
 
-	/// <summary>Maps a classified server error onto this tool's machine-readable error-code.</summary>
-	private static string ErrorCodeFor(ODataErrorKind kind) => kind switch {
+	/// <summary>Maps a classified server error onto the shared machine-readable error-code.</summary>
+	/// <remarks>
+	/// <c>internal</c> so odata-read-to-file maps the same kind to the same code. A second copy of this
+	/// switch drifted immediately: the file path shipped without the InvalidQuery arm, so one body came
+	/// back <c>server-reported-error</c> from one read path and <c>invalid-query</c> from the other.
+	/// </remarks>
+	internal static string ErrorCodeFor(ODataErrorKind kind) => kind switch {
 		//A routing miss IS a missing entity set - the same condition the IIS 404 page reports - so the
 		//two paths must not hand the caller two different codes for one cause.
 		ODataErrorKind.UnregisteredEntity => ODataReadErrorCodes.EntityNotFound,
@@ -857,7 +900,9 @@ public sealed class ODataReadTool(
 /// <summary>
 /// Arguments for <see cref="ODataReadTool"/>.
 /// </summary>
-public sealed record ODataReadArgs {
+//NOT sealed: ODataReadToFileArgs inherits it, so the two read paths bind the SAME query members and
+//one validator covers both. A second declaration of the query surface would drift on the first edit.
+public record ODataReadArgs {
 	private ODataFilters? _filters;
 
 	/// <summary>Creatio OData entity set name (e.g., Contact, Account, Activity).</summary>
@@ -987,7 +1032,22 @@ public sealed record ODataReadResponse(
 	[property: JsonPropertyName("correlation-id")]
 	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	[property: Description("Identifier for this read, present on success and on failure. The same id tags the debug line carrying the server's own error text.")]
-	string? CorrelationId = null) {
+	string? CorrelationId = null,
+
+	[property: JsonPropertyName("output-file")]
+	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[property: Description("Absolute path to the raw OData response written to disk.")]
+	string? OutputFile = null,
+
+	[property: JsonPropertyName("row-count")]
+	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[property: Description("Number of object rows written to output-file.")]
+	int? RowCount = null,
+
+	[property: JsonPropertyName("column-sizes")]
+	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[property: Description("UTF-8 byte totals by column for rows written to output-file.")]
+	IReadOnlyDictionary<string, long>? ColumnSizes = null) {
 
 	/// <summary>Creates a failure response carrying its machine-readable classification.</summary>
 	/// <param name="message">The locally authored failure text; never server prose.</param>

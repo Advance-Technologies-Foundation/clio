@@ -2025,7 +2025,7 @@ public class PageToolsTests
 					}
 				}
 			}.ToString());
-		PageUpdateCommand updateCommand = new(updateApplicationClient, updateServiceUrlBuilder, updateLogger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), CreateHierarchyClientFor("roundtrip-page-uid", "roundtrip-pkg-uid"));
+		PageUpdateCommand updateCommand = new(updateApplicationClient, updateServiceUrlBuilder, updateLogger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), CreateHierarchyClientFor("roundtrip-page-uid", "roundtrip-pkg-uid"), viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 
 		// Act
 		bool getResult = getCommand.TryGetPage(getOptions, out PageGetResponse getResponse);
@@ -2086,7 +2086,7 @@ public class PageToolsTests
 				if (callIndex == 2) return getSchemaResponse.ToString();
 				return saveResponse.ToString();
 			});
-		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), CreateHierarchyClientFor("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"));
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), CreateHierarchyClientFor("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"), viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 		var options = new PageUpdateOptions {
 			SchemaName = "Test_FormPage",
 			Body = validBody,
@@ -2118,7 +2118,7 @@ public class PageToolsTests
 			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(metadataResponse.ToString());
 		string validBody = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
-		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), CreateHierarchyClientFor("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"));
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), CreateHierarchyClientFor("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"), viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 		var options = new PageUpdateOptions {
 			SchemaName = "Test_FormPage",
 			Body = validBody,
@@ -2162,7 +2162,7 @@ public class PageToolsTests
 				SchemaType = 9
 			}
 		]);
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), hierarchyClient);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), hierarchyClient, viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 		PageUpdateOptions options = new() {
 			SchemaName = "UsrWeb_FormPage",
 			Body = """
@@ -2223,7 +2223,7 @@ public class PageToolsTests
 				Arg.Is<string>(url => url.Contains("ResetScriptCache")),
 				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(string.Empty);
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader());
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 		string mobileBody = """
 			{
 			  "viewConfigDiff": [
@@ -2302,7 +2302,7 @@ public class PageToolsTests
 				Arg.Is<string>(url => url.Contains("ResetScriptCache")),
 				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(string.Empty);
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader());
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 		// The incoming replace body changes that same UsrName from insert to merge.
 		PageUpdateOptions options = new() {
 			SchemaName = "UsrDowngrade_FormPage",
@@ -2363,7 +2363,7 @@ public class PageToolsTests
 				Arg.Is<string>(url => url.Contains("ResetScriptCache")),
 				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(string.Empty);
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader());
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 		PageUpdateOptions options = new() {
 			SchemaName = "UsrBothWarnings_FormPage",
 			Body = CreatePageBody("""
@@ -2406,7 +2406,7 @@ public class PageToolsTests
 				"dry-inert-package-uid",
 				"UsrDryInertPackage",
 				"BasePage").ToString());
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader());
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), CreateHierarchyClientFor("dry-inert-schema-uid", "dry-inert-package-uid"), viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 		PageUpdateOptions options = new() {
 			SchemaName = "UsrDryInert_FormPage",
 			Body = CreatePageBody("""
@@ -2464,7 +2464,7 @@ public class PageToolsTests
 				Arg.Is<string>(url => url.Contains("ResetScriptCache")),
 				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(string.Empty);
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader());
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
@@ -2546,7 +2546,7 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		SetupSchemaMetadata(applicationClient, serviceUrlBuilder, "UsrMobile_FormPage");
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader());
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 		PageUpdateOptions options = new() {
 			SchemaName = "UsrMobile_FormPage",
 			// Unterminated array - valid enough to be recognised as a mobile body, not valid JSON.
@@ -2575,7 +2575,7 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		SetupSchemaMetadata(applicationClient, serviceUrlBuilder, "UsrMobile_FormPage");
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader());
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 		PageUpdateOptions options = new() {
 			SchemaName = "UsrMobile_FormPage",
 			Body = """
@@ -2616,7 +2616,7 @@ public class PageToolsTests
 				["rows"] = new JArray { new JObject { ["UId"] = "web-schema-uid", ["SchemaType"] = 9 } }
 			}.ToString());
 		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger,
-			Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), CreateHierarchyClientFor("web-schema-uid"));
+			Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), CreateHierarchyClientFor("web-schema-uid"), viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 		PageUpdateOptions options = new() {
 			SchemaName = "UsrWeb_FormPage",
 			// Parses as JavaScript, so the syntax gate alone would let it through.
@@ -2645,7 +2645,7 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		SetupSchemaMetadata(applicationClient, serviceUrlBuilder, "UsrMobile_FormPage");
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader());
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 		PageUpdateOptions options = new() {
 			SchemaName = "UsrMobile_FormPage",
 			Body = """
@@ -2678,7 +2678,7 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		SetupSchemaMetadata(applicationClient, serviceUrlBuilder, "UsrMobile_FormPage");
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader());
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 		PageUpdateOptions options = new() {
 			SchemaName = "UsrMobile_FormPage",
 			Body = "{ this is not valid json",
@@ -2704,7 +2704,7 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		SetupSchemaMetadata(applicationClient, serviceUrlBuilder, "UsrMobile_FormPage");
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader());
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 		PageUpdateOptions options = new() {
 			SchemaName = "UsrMobile_FormPage",
 			Body = """
@@ -2735,7 +2735,7 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		SetupSchemaMetadata(applicationClient, serviceUrlBuilder, "UsrMobile_FormPage");
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader());
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 		PageUpdateOptions options = new() {
 			SchemaName = "UsrMobile_FormPage",
 			Body = """
@@ -2772,7 +2772,7 @@ public class PageToolsTests
 			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(metadataResponse.ToString());
 		string validBody = "define(\"X\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
-		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), Substitute.For<IPageDesignerHierarchyClient>());
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), Substitute.For<IPageDesignerHierarchyClient>(), viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 		var options = new PageUpdateOptions {
 			SchemaName = "MissingPage",
 			Body = validBody,
@@ -2791,7 +2791,7 @@ public class PageToolsTests
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), Substitute.For<IPageDesignerHierarchyClient>());
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), Substitute.For<IPageDesignerHierarchyClient>(), viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 		PageUpdateOptions options = new() {
 			SchemaName = "UsrEmptyBody_FormPage",
 			Body = string.Empty,
@@ -2818,7 +2818,7 @@ public class PageToolsTests
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), Substitute.For<IPageDesignerHierarchyClient>());
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), Substitute.For<IPageDesignerHierarchyClient>(), viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 		PageUpdateOptions options = new() {
 			SchemaName = "UsrInvalidResources_FormPage",
 			Body = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });",
@@ -2845,7 +2845,7 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		SetupSchemaMetadata(applicationClient, serviceUrlBuilder, "UsrProxyBinding_FormPage");
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader());
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 		PageUpdateOptions options = new() {
 			SchemaName = "UsrProxyBinding_FormPage",
 			Body = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"$Resources.Strings.PDS_UsrStatus\",\"control\":\"$UsrStatusField\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[{\"operation\":\"merge\",\"values\":{\"UsrStatus\":{\"modelConfig\":{\"path\":\"PDS.UsrStatus\"}}}}]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });",
@@ -2871,7 +2871,7 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		SetupSchemaMetadata(applicationClient, serviceUrlBuilder, "UsrMergeBinding_FormPage");
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader());
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 		PageUpdateOptions options = new() {
 			SchemaName = "UsrMergeBinding_FormPage",
 			Body = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"merge\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"$Resources.Strings.PDS_UsrStatus\",\"control\":\"$UsrStatusField\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });",
@@ -2893,7 +2893,7 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		SetupSchemaMetadata(applicationClient, serviceUrlBuilder, "UsrHandlerDrivenBinding_FormPage");
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader());
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 		PageUpdateOptions options = new() {
 			SchemaName = "UsrHandlerDrivenBinding_FormPage",
 			Body = CreatePageBody(
@@ -2928,7 +2928,7 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		SetupSchemaMetadata(applicationClient, serviceUrlBuilder, "UsrValidatorPlacement_FormPage");
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader());
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 		PageUpdateOptions options = new() {
 			SchemaName = "UsrValidatorPlacement_FormPage",
 			Body = CreatePageBody(
@@ -2961,7 +2961,7 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader());
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
@@ -2990,7 +2990,7 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader());
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
@@ -3044,7 +3044,7 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader());
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		return new PageUpdateTool(
 			command, logger, commandResolver,
@@ -3169,7 +3169,7 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader());
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
@@ -3201,7 +3201,7 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader());
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		applicationClient
 			.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
@@ -3230,7 +3230,7 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader());
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
@@ -3261,7 +3261,7 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader());
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
@@ -3291,7 +3291,7 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader());
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
@@ -3323,7 +3323,7 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader());
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
@@ -3391,7 +3391,7 @@ public class PageToolsTests
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
-		PageUpdateCommand updateCommand = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader());
+		PageUpdateCommand updateCommand = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
 		MockFileSystem fileSystem = new();
@@ -3437,7 +3437,7 @@ public class PageToolsTests
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
-		PageUpdateCommand updateCommand = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader());
+		PageUpdateCommand updateCommand = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
 		MockFileSystem fileSystem = new();
@@ -3482,7 +3482,7 @@ public class PageToolsTests
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
-		PageUpdateCommand updateCommand = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader());
+		PageUpdateCommand updateCommand = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
 		MockFileSystem fileSystem = new();
@@ -3531,7 +3531,7 @@ public class PageToolsTests
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
-		PageUpdateCommand updateCommand = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader());
+		PageUpdateCommand updateCommand = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
 		MockFileSystem fileSystem = new();
@@ -4180,7 +4180,7 @@ public class PageToolsTests
 				return new JObject { ["success"] = true }.ToString();
 			});
 
-		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), hierarchyClient);
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), hierarchyClient, viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 		bool ok = command.TryUpdatePage(new PageUpdateOptions { SchemaName = "Accounts_ListPage", Body = validBody, DryRun = false }, out PageUpdateResponse response);
 
 		ok.Should().BeTrue(because: "expected success; error: " + response.Error);
@@ -4251,7 +4251,7 @@ public class PageToolsTests
 				return new JObject { ["success"] = true }.ToString();
 			});
 
-		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), hierarchyClient);
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), hierarchyClient, viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 		bool ok = command.TryUpdatePage(new PageUpdateOptions { SchemaName = "Accounts_ListPage", Body = validBody, DryRun = false }, out PageUpdateResponse response);
 
 		ok.Should().BeTrue();
@@ -4335,7 +4335,7 @@ public class PageToolsTests
 			});
 
 		// Act
-		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), hierarchyClient);
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), hierarchyClient, viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 		bool ok = command.TryUpdatePage(new PageUpdateOptions { SchemaName = "Accounts_ListPage", Body = validBody, DryRun = false }, out PageUpdateResponse response);
 
 		// Assert
@@ -4376,7 +4376,7 @@ public class PageToolsTests
 				};
 			});
 
-		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader());
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 		bool ok = command.TryUpdatePage(new PageUpdateOptions { SchemaName = "Test_FormPage", Body = validBody, DryRun = false }, out PageUpdateResponse response);
 
 		ok.Should().BeTrue();
@@ -4473,7 +4473,7 @@ public class PageToolsTests
 				};
 			});
 		string validBody = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
-		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), hierarchyClient);
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), hierarchyClient, viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 
 		bool ok = command.TryUpdatePage(new PageUpdateOptions { SchemaName = "Test_FormPage", Body = validBody, DryRun = false }, out PageUpdateResponse response);
 
@@ -4598,7 +4598,7 @@ public class PageToolsTests
 				Arg.Is<string>(url => url.Contains("ResetScriptCache")),
 				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(string.Empty);
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader());
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 		PageUpdateOptions options = new() {
 			SchemaName = "UsrCleanSave_FormPage",
 			Body = CreatePageBody("""[{ "operation": "insert", "name": "UsrSolo", "values": { "type": "crt.Input" } }]"""),
@@ -4671,7 +4671,7 @@ public class PageToolsTests
 					_ => saveResponse.ToString()
 				};
 			});
-		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), hierarchyClient);
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), hierarchyClient, viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 
 		// Act
 		bool ok = command.TryUpdatePage(new PageUpdateOptions {
@@ -4728,7 +4728,7 @@ public class PageToolsTests
 				};
 			});
 		string incomingFragment = "/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"TestButton\",\"values\":{\"type\":\"crt.Button\",\"caption\":\"Test\"},\"parentName\":\"ActionButtonsContainer\"}]/**SCHEMA_VIEW_CONFIG_DIFF*/ /**SCHEMA_HANDLERS*/[{request:\"usr.TestRequest\",handler:()=>alert(\"Test\")}]/**SCHEMA_HANDLERS*/";
-		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), hierarchyClient);
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), hierarchyClient, viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 
 		bool ok = command.TryUpdatePage(new PageUpdateOptions {
 			SchemaName = "Opportunities_ListPage",
@@ -4783,7 +4783,7 @@ public class PageToolsTests
 				return new JObject { ["success"] = true }.ToString();
 			});
 		string incomingBody = "/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[{\"operation\":\"merge\",\"path\":[\"attributes\"],\"values\":{\"UsrName\":{\"validators\":{\"Probe\":{\"type\":\"usr.Missing\"}}}}}]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/";
-		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), hierarchyClient);
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), hierarchyClient, viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 
 		// Act
 		bool ok = command.TryUpdatePage(new PageUpdateOptions {
@@ -4842,7 +4842,7 @@ public class PageToolsTests
 			});
 		// Incoming fragment is valid diff form — the caller did nothing wrong; the blocker is the server body.
 		string incomingFragment = "/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"TestButton\",\"values\":{\"type\":\"crt.Button\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/";
-		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), hierarchyClient);
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), hierarchyClient, viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 
 		// Act
 		bool ok = command.TryUpdatePage(new PageUpdateOptions {
@@ -4904,7 +4904,7 @@ public class PageToolsTests
 			});
 		// Incoming fragment is valid diff form — the caller did nothing wrong; the merge fails on the current body's shape.
 		string incomingFragment = "/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"TestButton\",\"values\":{\"type\":\"crt.Button\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/";
-		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), hierarchyClient);
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), hierarchyClient, viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 
 		// Act
 		bool ok = command.TryUpdatePage(new PageUpdateOptions {
@@ -5867,7 +5867,7 @@ public class PageToolsTests
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader());
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
@@ -5912,7 +5912,7 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader());
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		applicationClient
 			.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
@@ -5962,7 +5962,7 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader());
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
@@ -5989,7 +5989,7 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader());
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
@@ -6027,7 +6027,7 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader());
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
@@ -6221,7 +6221,7 @@ public class PageToolsTests
 		serviceUrlBuilder.Build(Arg.Any<string>())
 			.Returns(callInfo => "http://test" + callInfo.Arg<string>());
 		ILogger logger = Substitute.For<ILogger>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader());
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		return new PageUpdateTool(command, logger, commandResolver,

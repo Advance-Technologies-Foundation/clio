@@ -60,10 +60,15 @@ public sealed class ToolContractPayloadBudgetTests {
 	// pinned where it stands.
 	// Registration and Classic parameter-page discovery add two independent long-tail tools.
 	// The combined default index measures 44986 bytes; round to the next 256-byte step (45056).
+	// Re-pinned deliberately for issue #1221: odata-read-to-file is one more long-tail tool, and one more
+	// tool is exactly what this ceiling is defined to grow by. Measured 45223 bytes on the default surface
+	// with it registered - 237 bytes for its index entry, which is one entry's worth and nothing else: the
+	// index carries only the FIRST SENTENCE of a description (BuildPurpose), so the sentences this branch
+	// adds to odata-read's own [Description] cost the index nothing. Next 256-byte step is 45312 (177).
 	// Serialization uses the default JSON encoder,
 	// which escapes non-ASCII (a purpose ellipsis is written as a 6-byte escape), so it over-counts the real
 	// UTF-8 wire size — conservative, which is the safe direction for a ceiling.
-	private const int MaxCompactIndexSerializedBytes = 176 * 256;
+	private const int MaxCompactIndexSerializedBytes = 177 * 256;
 
 	// Worst-case ceiling for ONE named full contract, measured as the SERIALIZED contract in UTF-8 bytes
 	// — the same quantity the index ratchet above measures, and what the agent actually receives.
@@ -76,8 +81,8 @@ public sealed class ToolContractPayloadBudgetTests {
 	// This is the number ENG-96389 watched double: create-business-process answers a single
 	// get-tool-contract call with more than the ENTIRE tools/list budget, for one tool. Pinning the
 	// MAXIMUM rather than the sum keeps the guard on what ONE fetch costs, which is what an agent pays.
-	// Measured 34794 bytes (create-business-process) at the ENG-92707 round-3 cut, with
-	// modify-business-process 10 bytes behind it at 34784 and create-entity-business-rules third at 32010;
+	// Measured 34748 bytes (create-business-process) after ENG-99856 named subProcess.multiInstanceOptions
+	// inline, with modify-business-process at 34712 and create-entity-business-rules third at 32010;
 	// 136 * 256 = 34816 per the next-256 convention, re-pinned from 134 when CrtProcessBuilder 1.6.2.18
 	// added the activity-result selection: modify-business-process gained the setFlowResults operation and
 	// create-business-process the flows[].results field, and the Approval paragraph in the latter had to be
@@ -92,7 +97,15 @@ public sealed class ToolContractPayloadBudgetTests {
 	// mutually exclusive, and what each refusal is. That is the split ENG-96389 section 5 identified as the
 	// one that pays - cutting depth WITHIN a block, not relocating the block.
 	//
-	// Be honest about what 22 bytes of headroom means rather than claiming a wording fix passes: the
+	// ENG-99856 spent its 68 bytes on a SWAP rather than an addition, which is the shape that fits here: the
+	// version appositive said which archive the floor names - pure provenance, nothing a caller decides at
+	// call time - and it was replaced by the member they must actually write,
+	// subProcess.multiInstanceOptions {enabled, executionMode, ignoreErrors}. A manual run on a live stand
+	// is why: an agent reached for `subProcess.multiInstance`, one word off, because this contract named no
+	// member and the guidance that does is published on a separate train. Net +3 bytes on create, -2 on
+	// modify.
+	//
+	// Be honest about what 68 bytes of headroom means rather than claiming a wording fix passes: the
 	// default JSON encoder escapes every non-ASCII character and apostrophe as a six-byte unicode
 	// escape, and these descriptions are dense with both, so the room is roughly THREE escaped
 	// characters — not a clause, not a word. Adding anything at all to create-business-process trips
