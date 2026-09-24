@@ -102,6 +102,9 @@ public class OperatorInstallerTests {
 		// Assert
 		var writes = _calls.Where(c => c.Input != null).ToList();
 		writes.Should().OnlyContain(c => c.Args[0] == "--context" && c.Args[1] == "local-alias", "writes must never follow ambient current-context");
+		JObject credentials = JObject.Parse(writes.Single(c => JObject.Parse(c.Input).Value<string>("kind") == "Secret").Input);
+		credentials["stringData"].Value<string>("username").Should().Be("Supervisor", "local Rancher uses the requested default account");
+		credentials["stringData"].Value<string>("password").Should().Be("Supervisor", "local Rancher uses the requested default password");
 		int policy = writes.FindIndex(c => c.Input.Contains("CreatioSharedInfrastructure"));
 		policy.Should().BeGreaterThanOrEqualTo(0, "the default policy must be created explicitly");
 		JObject.Parse(writes[policy].Input)["spec"]["nexus"].Value<string>("mode").Should().Be("External", "no Nexus may be provisioned");

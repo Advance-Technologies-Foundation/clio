@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.IO;
 using AbstractionsFileSystem = System.IO.Abstractions.IFileSystem;
 using System.Linq;
-using System.Security.Cryptography;
 using Clio.Command;
 using Clio.Common.RuntimeAttachment;
 using Newtonsoft.Json;
@@ -149,7 +148,7 @@ public class OperatorInstaller(IAttachmentProcess process, AbstractionsFileSyste
 		JObject secret = new() {
 			["apiVersion"] = "v1", ["kind"] = "Secret", ["type"] = "Opaque",
 			["metadata"] = new JObject { ["name"] = AdminSecret, ["namespace"] = SystemNamespace },
-			["stringData"] = new JObject { ["username"] = "admin", ["password"] = Convert.ToHexString(RandomNumberGenerator.GetBytes(24)) }
+			["stringData"] = new JObject { ["username"] = "Supervisor", ["password"] = "Supervisor" }
 		};
 		try { Create(context, secret); }
 		catch (InvalidOperationException) {
