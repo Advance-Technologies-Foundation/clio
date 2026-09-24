@@ -30,9 +30,8 @@ namespace Clio.Command.McpServer.Tools.MobilePageConverter;
 /// <para>
 /// It performs DataService <c>SelectQuery</c> reads plus up to two designer reads per object — the mobile
 /// classification, and for a verified-missing object the web candidate — capped per call by
-/// <see cref="MaxEntityAddonProbes"/>, and issues no write
-/// call. (The add-on <c>GetSchema</c> is a read that the SERVER answers by auto-provisioning an empty
-/// descriptor when none exists; that side effect is the platform's, and it is idempotent.) It NEVER throws: any failure degrades to <see cref="MobileActionTargetProbeResult.ProbeOk"/> = false and
+/// <see cref="MaxEntityAddonProbes"/>, and issues no write call. It NEVER throws: any failure degrades to
+/// <see cref="MobileActionTargetProbeResult.ProbeOk"/> = false and
 /// leaves the affected targets ABSENT from the resolution map, which every consumer reads as
 /// <see cref="ActionTargetState.Unknown"/> — the fail-open value. Nothing on the page is ever reported
 /// broken on missing information.
@@ -555,9 +554,9 @@ public static class MobileActionTargetProbe {
 					seenNames.Contains(name) || truncated ? ActionTargetState.Unknown : ActionTargetState.Missing);
 				continue;
 			}
-			// The object's OWN package — never the source page's — so an auto-provisioned add-on descriptor
-			// (see DefaultPageAddonReader) lands where the object itself lives, not inside whatever package
-			// happens to be converting it. Falls back only when the row's package could not be resolved.
+			// The object's OWN package (see DefaultPageAddonReader), never the source page's — falls back
+			// only when the row's package could not be resolved. Free by-product of the row already read
+			// for entityUId, not a fix for a confirmed effect.
 			Guid packageUId = packageUIdByName.TryGetValue(name, out string rawPackageUId)
 				&& Guid.TryParse(rawPackageUId, out Guid parsedPackageUId)
 					? parsedPackageUId

@@ -40,14 +40,12 @@ internal static class DefaultPageAddonReader {
 	/// because it backs a read-modify-WRITE against one package; this read only asks, and
 	/// <c>UseFullHierarchy</c> makes the server walk the hierarchy itself. Verified against a stand: the same
 	/// object read through four different packages returns an identical page set, so <c>TargetPackageUId</c>
-	/// does not select the ANSWER. It still matters for a DIFFERENT reason: <c>GetSchema</c> auto-provisions
-	/// an empty descriptor when none exists (see <see cref="MobileActionTargetProbe"/>'s class doc), and that
-	/// write lands in whichever package <c>TargetPackageUId</c> names. <paramref name="packageUId"/> is
-	/// therefore the OBJECT's own package — resolved by <see cref="MobileActionTargetProbe.ReadEntitySchemaRows"/>
-	/// in the same batched <c>SysSchema</c> read that already resolves <paramref name="entitySchemaUId"/>, so at
-	/// no extra round trip — falling back to the source page's package only when the object's own could not be
-	/// resolved. Never the source page's package outright: that would auto-provision a descriptor for someone
-	/// else's object inside the page's own package, to travel with it on the next <c>push-pkg</c>.
+	/// does not select the ANSWER. <paramref name="packageUId"/> is nonetheless resolved to the OBJECT's own
+	/// package — by <see cref="MobileActionTargetProbe.ReadEntitySchemaRows"/> in the same batched
+	/// <c>SysSchema</c> read that already resolves <paramref name="entitySchemaUId"/>, so at no extra round
+	/// trip — falling back to the source page's package only when the object's own could not be resolved. A
+	/// free-by-construction default that matches the write path's own resolution above, not a fix for a
+	/// confirmed effect of this read.
 	/// </remarks>
 	internal static ActionTargetState ReadMobileState(
 		MobileActionTargetProbe.ProbeContext context, string entitySchemaUId, Guid packageUId) {

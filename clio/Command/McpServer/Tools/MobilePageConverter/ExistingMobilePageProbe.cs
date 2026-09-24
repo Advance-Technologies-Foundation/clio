@@ -123,9 +123,9 @@ public static class ExistingMobilePageProbe {
 				|| !Guid.TryParse(entitySchemaUId, out Guid entityUId)) {
 				return null;
 			}
-			// The entity's OWN package — never the source page's — so an auto-provisioned add-on descriptor
-			// lands where the entity itself lives (see DefaultPageAddonReader). Falls back only when the
-			// row's package could not be resolved.
+			// The entity's OWN package (see DefaultPageAddonReader), never the source page's — falls back
+			// only when the row's package could not be resolved. Free by-product of the row already read
+			// for entityUId, not a fix for a confirmed effect.
 			Guid packageUId = packageUIdByName.TryGetValue(entitySchemaName, out string rawPackageUId)
 				&& Guid.TryParse(rawPackageUId, out Guid parsedPackageUId)
 					? parsedPackageUId

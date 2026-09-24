@@ -129,7 +129,7 @@ public sealed class ExistingMobilePageProbeTests {
 	}
 
 	[Test]
-	[Description("The MobileRelatedPage add-on read (which the platform answers by auto-provisioning an empty descriptor when none exists) is addressed with the ENTITY's own package, resolved from the same batched SysSchema row — never the source page's package, which would auto-provision a descriptor inside the wrong package.")]
+	[Description("The MobileRelatedPage add-on read is addressed with the ENTITY's own package, resolved from the same batched SysSchema row — never the source page's package.")]
 	public void Probe_EntityRowDeclaresOwnPackage_AddonReadUsesTheEntitysPackageNotThePagesPackage() {
 		// Arrange — the bound entity's own SysSchema row carries a package UId distinct from the source page's.
 		const string EntityPackageUId = "77777777-7777-7777-7777-777777777777";
@@ -145,8 +145,7 @@ public sealed class ExistingMobilePageProbeTests {
 		Action addonReadCheck = () => environment.AddonClient.Received(1).GetSchema(
 			Arg.Is<AddonGetRequestDto>(request => request.TargetPackageUId == Guid.Parse(EntityPackageUId)));
 		addonReadCheck.Should().NotThrow(because:
-			"an auto-provisioned descriptor must land in the ENTITY's own package, never the source page's, " +
-			"or it would travel with the wrong package on push-pkg");
+			"the add-on read must be addressed with the ENTITY's own package, never the source page's");
 	}
 
 	[Test]

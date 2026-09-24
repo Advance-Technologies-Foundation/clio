@@ -408,7 +408,7 @@ public sealed class MobileActionTargetProbeTests {
 	}
 
 	[Test]
-	[Description("The add-on read (which the platform answers by auto-provisioning an empty descriptor when none exists) is addressed with the OBJECT's own package, resolved from the same batched SysSchema row — never the source page's package, which would auto-provision a descriptor inside the wrong package.")]
+	[Description("The add-on read is addressed with the OBJECT's own package, resolved from the same batched SysSchema row — never the source page's package.")]
 	public void Probe_EntityRowDeclaresOwnPackage_AddonReadUsesTheObjectsPackageNotThePagesPackage() {
 		// Arrange — the object's own SysSchema row carries a package UId distinct from the source page's.
 		const string ObjectPackageUId = "77777777-7777-7777-7777-777777777777";
@@ -423,8 +423,7 @@ public sealed class MobileActionTargetProbeTests {
 		// Assert
 		StateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, "Opportunity")
 			.Should().Be(ActionTargetState.Missing, because: "the add-on declares an empty page set");
-		// An auto-provisioned descriptor must land in the OBJECT's own package, never the source page's, or it
-		// would travel with the wrong package on push-pkg.
+		// The add-on read must be addressed with the OBJECT's own package, never the source page's.
 		environment.AddonClient.Received(1).GetSchema(
 			Arg.Is<AddonGetRequestDto>(request =>
 				request.TargetSchemaUId == Guid.Parse(EntitySchemaUId)
