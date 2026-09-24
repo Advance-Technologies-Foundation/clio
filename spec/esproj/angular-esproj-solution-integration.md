@@ -5,6 +5,11 @@
 >
 > Everything here was validated end‑to‑end on a Creatio **File System Mode (FSM)** workspace with
 > the Angular client output landing inside a Creatio package.
+>
+> **Since ENG-100106** the `ui-project` templates build with Rspack: `npm run build` runs `rspack build`,
+> and the bundle folder is `OUTPUT_PATH` in `rspack.config.js` (the same `<%distPath%>` token). Where this
+> document says `ng build` or `angular.json` `outputPath`, it describes the pre-Rspack template; the
+> esproj integration itself is unchanged.
 
 ---
 

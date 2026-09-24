@@ -1,4 +1,4 @@
-import { Injector, NgModuleRef, Type, createNgModule } from '@angular/core';
+import { Injector, NgModuleRef, Type, createNgModule, provideZoneChangeDetection } from '@angular/core';
 import { platformBrowser } from '@angular/platform-browser';
 
 import { RemoteAppModule } from './remote-app.module';
@@ -17,7 +17,9 @@ const featureModuleRefs = new Map<Type<unknown>, NgModuleRef<unknown>>();
  * @returns A remote application context that contains the root injector and module reference.
  */
 async function bootstrapRemoteApp(): Promise<RemoteAppContext> {
-  const moduleRef = await platformBrowser().bootstrapModule(RemoteAppModule);
+  const moduleRef = await platformBrowser().bootstrapModule(RemoteAppModule, {
+    applicationProviders: [provideZoneChangeDetection()],
+  });
   const injector = moduleRef.injector;
 
   return {
