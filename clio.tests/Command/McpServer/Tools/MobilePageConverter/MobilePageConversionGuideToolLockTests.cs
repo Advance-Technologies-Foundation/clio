@@ -55,6 +55,7 @@ public sealed class MobilePageConversionGuideToolLockTests {
 			_logger,
 			Substitute.For<IMobileComponentInfoCatalog>(),
 			Substitute.For<IComponentInfoCatalog>(),
+			Substitute.For<IMobileRequestInfoCatalog>(),
 			Substitute.For<IWebToMobilePageConversionRulesCatalog>(),
 			Substitute.For<IPlatformVersionResolverFactory>(),
 			Substitute.For<ISettingsRepository>());

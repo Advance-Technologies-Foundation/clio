@@ -426,7 +426,8 @@ public static class ReasonCodes {
 
 	// ── Why a request was KEPT but needs review ──────
 	/// <summary>
-	/// The request is in neither the conversion map nor the bundled set, so the binding was kept VERBATIM
+	/// The request is in neither the conversion map nor the mobile request registry, so the binding was kept
+	/// VERBATIM
 	/// for manual verification — the component works, the action may or may not. Params: NONE — the record's
 	/// own <c>request</c> field names it.
 	/// </summary>
@@ -1385,6 +1386,22 @@ public sealed class MobilePageConversionGuideResponse {
 	[JsonPropertyName("resolvedFromReason")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string ResolvedFromReason { get; init; }
+
+	/// <summary>
+	/// Caveat when the mobile REQUEST registry was served from a different version than the one resolved
+	/// for the component catalogs; null when it matched. Reported on its own channel rather than folded
+	/// into <c>resolvedFrom</c>: the request registry has no versioned CDN copy yet, so it is always
+	/// served as "latest", and folding it would downgrade every exact-version conversion to
+	/// environment-superset and attach a remedy ("pass an explicit version") that cannot clear it.
+	/// </summary>
+	[JsonPropertyName("requestRegistryWarning")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string RequestRegistryWarning { get; init; }
+
+	/// <summary>Caveat when a conversion-rules entry names a mobile request type the mobile request registry does not publish; null when every entry resolves.</summary>
+	[JsonPropertyName("rulesWarning")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string RulesWarning { get; init; }
 
 	[JsonPropertyName("error")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

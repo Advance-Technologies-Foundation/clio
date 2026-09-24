@@ -41,7 +41,6 @@ using JsonValue = System.Text.Json.Nodes.JsonValue;
 [SuppressMessage("Minor Code Smell", "S1192:String literals should not be duplicated", Justification = "Freedom UI JSON keys (items/merge/insert/request/…) read more clearly inline than behind constants in this converter.")]
 [SuppressMessage("Minor Code Smell", "S3267:Loops should be simplified with LINQ", Justification = "Explicit loops with side effects (element-map emission, ref accumulation) are clearer than a LINQ rewrite here.")]
 [SuppressMessage("Major Code Smell", "S125:Sections of code should not be commented out", Justification = "The flagged lines are explanatory design notes, not commented-out code.")]
-[SuppressMessage("Info Code Smell", "S1135:Track uses of TODO tags", Justification = "The TODO tracks ENG-93027 (dynamic mobile-request set) and is intentionally retained as a pointer.")]
 [SuppressMessage("Major Code Smell", "S3358:Ternary operators should not be nested", Justification = "The nested ternaries express a compact fallback chain that reads clearly in context.")]
 [SuppressMessage("Major Code Smell", "S2589:Boolean expressions should not be gratuitous", Justification = "The flagged null checks guard values the analyzer cannot prove non-null across the Newtonsoft/STJ boundary; removing them would risk an NRE on malformed bundles.")]
 // Split across two files: the conversion walk here, and the ENG-96589 property prune in
@@ -103,6 +102,7 @@ public static partial class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, ComponentRegistryEntry> mobileByType,
 		WebToMobilePageConversionRules rules,
 		TemplateMappingRule templateRule,
+		IReadOnlySet<string> mobileRequestTypes,
 		string sourcePage,
 		string sourceTemplate,
 		string suggestedTarget,
@@ -128,6 +128,10 @@ public static partial class WebToMobileAnalysisService {
 		ArgumentNullException.ThrowIfNull(webTypes);
 		ArgumentNullException.ThrowIfNull(rules);
 
+		// A request is supported when the mobile request registry lists it. A caller that supplies no
+		// catalog leaves the versioned rules file as the only source of support, which is what the
+		// hermetic element-mapping tests rely on.
+		ArgumentNullException.ThrowIfNull(mobileRequestTypes);
 		IReadOnlyDictionary<string, string> map =
 			containerNameMap ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 		IReadOnlyDictionary<string, ComponentMappingRule> componentMap =
@@ -227,7 +231,7 @@ public static partial class WebToMobileAnalysisService {
 			positionalParentByAnchor, positionalAnchorByWebAnchor,
 			mobileTypesByName, mobileTemplateNodesByName, webBaselineNodes, webTemplateResources,
 			declaredElements,
-			actionTargets, unresolvedTargets);
+			actionTargets, unresolvedTargets, mobileRequestTypes);
 
 		// Removes components an excludedComponents rule bans from a host (type-agnostic — which
 		// type/host/property is banned comes entirely from the rules), in the two shapes a banned component
@@ -2117,7 +2121,8 @@ public static partial class WebToMobileAnalysisService {
 		IReadOnlySet<string> ContentContainerTypes,
 		IReadOnlyDictionary<string, ActionTargetResolution> ActionTargets,
 		List<UnresolvedTargetRequest> UnresolvedTargetRequests,
-		IReadOnlyDictionary<string, string> DeclaredTypesByName);
+		IReadOnlyDictionary<string, string> DeclaredTypesByName,
+		IReadOnlySet<string> MobileRequestTypes);
 
 	/// <summary>
 	/// The set of NON-CONVERTING scope container names — declared EXPLICITLY by the rules'
@@ -2162,7 +2167,8 @@ public static partial class WebToMobileAnalysisService {
 		JObject webBaselineResources,
 		IReadOnlyList<DeclaredElementRule> declaredElements,
 		IReadOnlyDictionary<string, ActionTargetResolution> actionTargets,
-		List<UnresolvedTargetRequest> unresolvedTargetRequests) {
+		List<UnresolvedTargetRequest> unresolvedTargetRequests,
+		IReadOnlySet<string> mobileRequestTypes) {
 		var declaredTypesByName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 		foreach (DeclaredElementRule declared in declaredElements ?? []) {
 			declaredTypesByName.TryAdd(declared.Name, declared.Type);
@@ -2182,7 +2188,8 @@ public static partial class WebToMobileAnalysisService {
 			CollectScopeContainerNames(rules),
 			ContentContainerTypesOf(rules),
 			actionTargets, unresolvedTargetRequests,
-			declaredTypesByName);
+			declaredTypesByName,
+			mobileRequestTypes);
 		EmitDeclaredElements(ctx, declaredElements);
 		WalkElements(ctx, tree, mobileParentName: null);
 		return ctx.Out;
@@ -3086,15 +3093,15 @@ public static partial class WebToMobileAnalysisService {
 		/// <summary>No <c>clicked</c> event binding — a container-only node (e.g. a dropdown), not itself an action.</summary>
 		None,
 		/// <summary>A <c>crt.Button</c> whose clicked request is NOT supported on mobile — the versioned map clears its
-		/// target, OR it is covered by neither the versioned map nor the bundled supported set (an unknown
+		/// target, OR it is covered by neither the versioned map nor the mobile request registry (an unknown
 		/// <c>crt.*</c> or a custom <c>usr.*</c> request). A dead button, so it is NOT retargeted into the FAB. Only a
 		/// <c>crt.Button</c> classifies here: another component type (e.g. a <c>crt.MenuItem</c>) with an unsupported
 		/// clicked is <see cref="Convertible"/> — kept and flagged by <see cref="ProcessEventBindings"/>, not dropped,
 		/// matching the leaf policy (<see cref="UnsupportedRequestOf"/> gates on <c>crt.Button</c>) and the tool
 		/// contract.</summary>
 		Unsupported,
-		/// <summary>The clicked request is supported on mobile (mapped to a mobile target, or present in the bundled
-		/// supported set), OR the node is not a <c>crt.Button</c> (an unsupported clicked on another component type is
+		/// <summary>The clicked request is supported on mobile (mapped to a mobile target, or published by the mobile
+		/// request registry), OR the node is not a <c>crt.Button</c> (an unsupported clicked on another component type is
 		/// kept and flagged, not dropped) — the action converts.</summary>
 		Convertible
 	}
@@ -3235,7 +3242,7 @@ public static partial class WebToMobileAnalysisService {
 		}
 		if (clicked == ClickedConvertibility.Unsupported) {
 			// Distinguish a KNOWN-unsupported request (the versioned map clears its mobile target) from an
-			// UNKNOWN/custom one (absent from both the versioned map and the bundled fallback set). clio can assert
+			// UNKNOWN/custom one (absent from both the versioned map and the mobile request registry). clio can assert
 			// "not supported" only for the former; for the latter it can merely say it does not know it, so the
 			// developer can re-add the action manually if that custom request IS implemented on mobile.
 			bool knownUnsupported = ctx.RequestMap.TryGetValue(request, out RequestMappingRule rule)
@@ -4510,35 +4517,9 @@ public static partial class WebToMobileAnalysisService {
 	}
 
 	/// <summary>
-	/// OFFLINE-FALLBACK set of requests the Creatio Mobile app supports (from the monorepo
-	/// <c>@CrtInterfaceDesignerMobileRequest</c> decorators). The AUTHORITATIVE source is the versioned rules
-	/// file's <c>requests</c> section (<see cref="ElementMapContext.RequestMap"/>): an entry with a mobile
-	/// target is supported, an entry that clears the target is unsupported. This constant is consulted only for
-	/// a request the versioned file does not cover, so a CDN rules update can enable/disable a request without a
-	/// clio release. TODO(ENG-93027): fold this constant into the versioned file —
-	/// https://creatio.atlassian.net/browse/ENG-93027.
-	/// </summary>
-	private static readonly HashSet<string> MobileSupportedRequests = new(StringComparer.OrdinalIgnoreCase) {
-		"crt.AddCommunicationOptionsRequest",
-		"crt.CancelRecordChangesRequest",
-		"crt.ClosePageRequest",
-		"crt.CreateRecordRequest",
-		"crt.DeleteRecordRequest",
-		"crt.LoadDataRequest",
-		"crt.OpenPageRequest",
-		"crt.RunBusinessProcessRequest",
-		"crt.SaveRecordRequest",
-		"crt.SetAttributeFromBarcodeRequest",
-		"crt.SetAttributeFromNfcRequest",
-		"crt.UpdateQuickFilterGroupRequest",
-		"crt.UpdateRecordRequest",
-		"crt.UploadFileRequest"
-	};
-
-	/// <summary>
 	/// The first event-binding request on the node the Creatio Mobile app does not support (or null when every
 	/// binding is supported), per the shared <see cref="IsRequestSupported"/> criterion — the versioned rules file
-	/// first, then the bundled <see cref="MobileSupportedRequests"/> fallback.
+	/// first, then the mobile request registry.
 	/// </summary>
 	private static string UnsupportedRequestOf(ElementMapContext ctx, JObject node) {
 		foreach (JProperty prop in node.Properties()) {
@@ -4559,13 +4540,26 @@ public static partial class WebToMobileAnalysisService {
 	/// non-converting-scope / FAB gate) so the two never diverge — the bug where a header button with an unsupported
 	/// request was dropped on the leaf path but moved into the FAB on the scope path. The versioned rules file wins
 	/// (an entry with a mobile target is supported, an entry that clears the target is unsupported); a request the
-	/// file does not cover falls back to the bundled <see cref="MobileSupportedRequests"/> set, so anything absent —
-	/// an unknown <c>crt.*</c> or a custom <c>usr.*</c> request — is unsupported.
+	/// file does not cover falls back to the mobile request registry — the set the mobile runtime itself
+	/// publishes — so anything absent from both, an unknown <c>crt.*</c> or a custom <c>usr.*</c> request, is
+	/// unsupported.
+	/// <para>
+	/// Widening the fallback from the deleted 14-entry constant to the registry was measured, not incidental:
+	/// 38 types gain support (the registry-plus-rules union minus the constant-plus-rules union, against a
+	/// 65-entry registry) and none is lost. Of those 38, 12 are ALSO declared as web request types in
+	/// creatio-ui — ComboboxLoadData, CreateCalendarRecord, CreateRecordFromLookup,
+	/// HandleViewModelAttributeChange, HandleViewModelInit, PhoneLinkClick, SaveAttributeToProfile,
+	/// SearchFilter, SelectFile, SetViewModelAttribute, UploadImage, WidgetDrilldown — measured over the 427
+	/// types declared there via <c>@CrtRequest</c>; the other 26 are mobile-runtime-internal and cannot appear
+	/// in a web page schema being converted, so they are inert in practice. Residual risk, accepted: because the
+	/// fallback is now a 65-entry set rather than a 14-entry one, a future web request whose name coincides with
+	/// a mobile-internal one would be treated as supported — the short constant blocked that by being short.
+	/// </para>
 	/// </summary>
 	private static bool IsRequestSupported(ElementMapContext ctx, string webRequest) =>
 		ctx.RequestMap.TryGetValue(webRequest, out RequestMappingRule rule)
 			? !string.IsNullOrWhiteSpace(rule.Mobile)
-			: MobileSupportedRequests.Contains(webRequest);
+			: ctx.MobileRequestTypes.Contains(webRequest);
 
 	/// <summary>
 	/// A component event binding is a property whose value is an object carrying a string <c>request</c>
@@ -4725,6 +4719,77 @@ public static partial class WebToMobileAnalysisService {
 				prms[pair.Value] = moved;
 			}
 		}
+	}
+
+	/// <summary>
+	/// The versioned rules file's <c>requests</c> entries whose mobile target the mobile request registry does
+	/// not list, as <c>web -&gt; mobile</c> pairs. Support is derived from the registry, so an entry naming a
+	/// mobile request the runtime never publishes converts a binding into a type the app cannot dispatch — the
+	/// failure is silent on the page. Every entry passes today; this is the regression guard that keeps a later
+	/// rules-file edit from reintroducing one. An empty registry yields no findings, so a caller with no catalog
+	/// loaded reports nothing rather than flagging all of them.
+	/// </summary>
+	/// <summary>
+	/// Request types that open a page chosen by one of their own parameters, and whose target the converter
+	/// therefore cannot verify without a rules entry. Each is published by the mobile request registry and
+	/// mapped by no rules entry today, so registry membership alone would make it supported: the binding
+	/// would convert by identity, with no <c>paramMap</c> and no <c>targetParam</c>/<c>targetKind</c> pair
+	/// for the unresolved-target probe to use, and could look valid while opening nothing on the device.
+	/// <para>
+	/// Named, not derived. Deriving the set from the parameter NAMES the rules use as targets
+	/// (<c>entityName</c>, <c>schemaName</c>) was tried and rejected: the same names mean a FILE schema on
+	/// <c>crt.OpenFileRequest</c> and <c>crt.OpenSignatureServiceRequest</c>, which that rule withheld too.
+	/// Each entry below was read in the mobile runtime and opens a page. The list is a stopgap that shrinks
+	/// on its own: a type leaves it by gaining a rules entry, which is what the lookup below checks.
+	/// </para>
+	/// </summary>
+	private static readonly IReadOnlySet<string> TargetCarryingRequestsPendingRules =
+		new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"crt.CreateCalendarRecordRequest",
+			"crt.CreateRecordFromLookupRequest",
+			"crt.CopyCalendarRecordRequest",
+			"crt.CreateRecordWithGeodataRequest",
+			"crt.SelectSurveyRequest"
+		};
+
+	/// <summary>
+	/// The subset of <see cref="TargetCarryingRequestsPendingRules"/> the registry publishes and the rules
+	/// do not map — the types to withhold from registry-derived support on this run.
+	/// </summary>
+	public static IReadOnlySet<string> TargetCarryingRegistryOnlyRequests(
+		WebToMobilePageConversionRules rules, IEnumerable<RequestRegistryEntry> registryEntries) {
+		var withheld = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		if (registryEntries is null) {
+			return withheld;
+		}
+		var mapped = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		foreach (RequestMappingRule rule in rules?.Requests ?? []) {
+			if (!string.IsNullOrWhiteSpace(rule?.Web)) {
+				mapped.Add(rule.Web);
+			}
+		}
+		foreach (RequestRegistryEntry entry in registryEntries) {
+			if (!string.IsNullOrWhiteSpace(entry?.RequestType)
+				&& TargetCarryingRequestsPendingRules.Contains(entry.RequestType)
+				&& !mapped.Contains(entry.RequestType)) {
+				withheld.Add(entry.RequestType);
+			}
+		}
+		return withheld;
+	}
+
+	public static IReadOnlyList<string> UnknownMobileRequestTargets(
+		WebToMobilePageConversionRules rules, IReadOnlySet<string> mobileRequestTypes) {
+		if (mobileRequestTypes is null || mobileRequestTypes.Count == 0) {
+			return [];
+		}
+		var unknown = new List<string>();
+		foreach (RequestMappingRule rule in rules?.Requests ?? []) {
+			if (!string.IsNullOrWhiteSpace(rule?.Mobile) && !mobileRequestTypes.Contains(rule.Mobile)) {
+				unknown.Add($"{rule.Web} -> {rule.Mobile}");
+			}
+		}
+		return unknown;
 	}
 
 	/// <summary>Builds the web-request → mapping-rule lookup (case-insensitive) from the resolved rules.</summary>
