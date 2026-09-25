@@ -34,6 +34,23 @@ public sealed class CompileStatusToolTests {
 	}
 
 	[Test]
+	[Description("A process-name compile is reported with its process-name, so a null package-name does not read as a full compilation.")]
+	public void GetStatus_Should_ReportTheProcessName_ForAProcessCompile() {
+		// Arrange
+		CompileOperationRegistry registry = new();
+		registry.Begin("tenant-a", "sandbox", packageName: null, processName: "UsrProc");
+		CompileStatusTool tool = new(registry, CreateResolver("tenant-a"));
+
+		// Act
+		CompileStatusResponse response = tool.GetStatus(new CompileStatusArgs("sandbox", null));
+
+		// Assert
+		response.Status.Should().Be("running", because: "the operation has not finished");
+		response.ProcessName.Should().Be("UsrProc", because: "the process the compile is for is surfaced");
+		response.PackageName.Should().BeNull(because: "the package is only known once the server answers");
+	}
+
+	[Test]
 	[Description("Reports not-found (not an error) when no compile-creatio operation has ever run for the environment.")]
 	public void GetStatus_Should_ReturnNotFound_WhenNoOperationTrackedForEnvironment() {
 		// Arrange

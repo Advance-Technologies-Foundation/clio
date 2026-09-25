@@ -287,7 +287,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"B6E7320F0DF8A37A1EC177D73F9FFC0AE44456F7857836ABA1586579688A60C1";
+		"071D812F99C52AD779EA29437B47EC4CD45C69321147B4BDEED27D22469CEEB6";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -315,7 +315,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.6.32";
+	private const string ExpectedArchiveVersion = "1.6.6.33";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, written by
@@ -327,7 +327,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "69af6d9c009f8ef45e979c816d43525cf7d082c6";
+	private const string ExpectedProducingCommit = "7326c262506687b1ed3a9c37e481c06d756b8e1a";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -353,7 +353,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1790364675000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1790368061000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
@@ -782,6 +782,9 @@ public class BundledProcessBuilderPackageTests {
 				+ "required too, and that half is exactly what makes this gate stricter than CanManageSolution. "
 				+ "A rebundle that lost the connection-type check would install, pass every other pin here, and "
 				+ "let a portal user holding CanManageProcessDesign write a process carrying a script task");
+		CountUncommentedOccurrences(archive, "_guard.EnsureCanCompileConfiguration()").Should().Be(1,
+			because: "CompileProcess reloads the runtime for every user, so its compile gate - a second gate the "
+				+ "count below does not scan - must be on the one handler that compiles");
 		callSites.Should().Be(ExpectedAuthorizationGateCallSites,
 			because: "the gate sits BELOW the service boundary, in the domain handlers, so it is these call "
 				+ "sites and not a per-[WebInvoke] attribute that authorize a request. Five handlers plus "
@@ -977,7 +980,7 @@ public class BundledProcessBuilderPackageTests {
 		// diverged before, when modify's page-change reconciliation promise needed a newer archive than create's;
 		// the new-version route followed because it shares the operations vocabulary and runs no read-back),
 		// set-active-version at the 1.6.1.0 its operation first ships in, and the process compile at the
-		// 1.6.6.32 its CompileProcess operation first ships in. That spread is the reason the assertion counts literals
+		// 1.6.6.33 its CompileProcess operation first ships working in. That spread is the reason the assertion counts literals
 		// rather than pinning a value: no single number describes the set. It was vacuous when written,
 		// deliberately — the invariant had to be in place before the first literal appeared, because the
 		// commit that adds one is exactly when it must already work. It replaces the old pin (descriptor

@@ -14,9 +14,10 @@ namespace Clio.Command;
 /// Consumed by the MCP <c>compile-creatio</c> tool's <c>process-name</c> mode, which sets these properties
 /// directly.
 /// </summary>
-// CompileProcess first exists in the 1.6.6.32 archive, so an older package answers the route with a 404 rather
-// than a contract error; the literal turns that into "your package is behind".
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.32",
+// CompileProcess first ships working in the 1.6.6.33 archive (1.6.6.32 was a local cut that answered "nothing to
+// compile" for a process the runtime does not interpret); an older package answers the route with a 404 rather
+// than a contract error, and the literal turns that into "your package is behind".
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.33",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class CompileBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Schema name (code) of the process. Provide exactly one of <see cref="ProcessName"/> or <see cref="ProcessUid"/>.</summary>
@@ -50,7 +51,7 @@ public sealed class CompileBusinessProcessService(
 	: ICompileBusinessProcessService {
 	/// <summary>
 	/// The same bound compile-configuration declares. A compile of a general package rebuilds the shared
-	/// configuration assembly, which took 3.5 minutes on a local stand; one attempt, never retried, because a
+	/// configuration assembly, which took 3 min 21 s on a local stand; one attempt, never retried, because a
 	/// retry of a compile that is still running is refused by the platform rather than queued.
 	/// </summary>
 	internal static readonly int CompileTimeoutMs = (int)TimeSpan.FromMinutes(60).TotalMilliseconds;
@@ -92,7 +93,18 @@ public sealed class CompileBusinessProcessService(
 			$"Compiling the package of process '{identity}' on '{environmentName}'. A compile reloads the runtime "
 			+ "for every user of the environment and usually takes a few minutes...");
 
-		string responseBody = client.ExecutePostRequest(url, requestBody, CompileTimeoutMs);
+		string responseBody;
+		try {
+			responseBody = client.ExecutePostRequest(url, requestBody, CompileTimeoutMs);
+		} catch (Exception exception) when (exception is not ArgumentException) {
+			// A timeout or a dropped connection mid-compile says nothing about the compile itself, and a retry
+			// while it still runs is refused by the platform rather than queued - so the caller is told so.
+			throw new InvalidOperationException(
+				"CompileProcess did not answer, so whether the package was compiled is UNKNOWN - the compile may "
+				+ "still be running on the server. Wait, then read last-compilation-log for this environment before "
+				+ $"compiling again. Transport detail: {exception.Message}",
+				exception);
+		}
 		ResponseEnvelope? envelope;
 		try {
 			envelope = JsonSerializer.Deserialize<ResponseEnvelope>(responseBody, JsonOptions);
@@ -239,13 +251,16 @@ public class CompileBusinessProcessCommand(
 			: "the shared configuration assembly";
 
 	// One line per error, the process's own first (the server orders them), so the caller reads what it has to
-	// fix before what another schema of the package broke.
+	// fix before what another schema of the package broke. Sanitized on this side too: the compile covers the
+	// whole package, so a message can be another author's #error text, and it reaches an agent as tool output.
 	private void ReportFailure(CompileBusinessProcessResult result) {
-		logger.WriteError(result.ErrorMessage ?? "CompileProcess failed.");
+		logger.WriteError(TextUtilities.SanitizeForDisplay(result.ErrorMessage ?? "CompileProcess failed.", 1000));
 		foreach (CompileBusinessProcessError error in result.Errors) {
 			string where = error.InThisProcess ? string.Empty : " [another schema of the package]";
 			logger.WriteError(
-				$"{error.FileName}({error.Line},{error.Column}): {error.Code} {error.Message}{where}");
+				$"{TextUtilities.SanitizeForDisplay(error.FileName, 260)}({error.Line},{error.Column}): "
+				+ $"{TextUtilities.SanitizeForDisplay(error.Code, 32)} "
+				+ $"{TextUtilities.SanitizeForDisplay(error.Message)}{where}");
 		}
 		int omitted = result.ErrorCount - result.Errors.Count;
 		if (omitted > 0) {

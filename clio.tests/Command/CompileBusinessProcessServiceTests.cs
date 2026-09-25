@@ -91,6 +91,44 @@ public sealed class CompileBusinessProcessServiceTests {
 	}
 
 	[Test]
+	[Description("A process identified by uid is sent as 'uid' alone; the two identities are alternatives.")]
+	public void Compile_ShouldSendTheUidAlone_WhenIdentifiedByUid() {
+		// Arrange
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
+		client.ExecutePostRequest(CompileUrl, Arg.Any<string>(), Arg.Any<int>()).Returns(
+			"{\"CompileProcessResult\":{\"success\":true,\"compileRequired\":false}}");
+		CompileBusinessProcessService service = CreateService(client);
+
+		// Act
+		CompileBusinessProcessResult result = service.Compile(Env,
+			new CompileBusinessProcessRequest(null, "5c58c4c4-134b-4744-9c67-96d9c69c9d55"));
+
+		// Assert
+		result.Success.Should().BeTrue(because: "the server answered success");
+		client.Received(1).ExecutePostRequest(CompileUrl,
+			Arg.Is<string>(body => Wrapped(body)["uid"].GetValue<string>() == "5c58c4c4-134b-4744-9c67-96d9c69c9d55"
+				&& Wrapped(body)["name"] == null),
+			CompileBusinessProcessService.CompileTimeoutMs);
+	}
+
+	[Test]
+	[Description("A transport failure mid-compile says the outcome is unknown and not to compile again blindly: the compile may still be running, and the platform refuses a second one.")]
+	public void Compile_ShouldSayTheOutcomeIsUnknown_WhenTheCallFails() {
+		// Arrange
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
+		client.ExecutePostRequest(CompileUrl, Arg.Any<string>(), Arg.Any<int>())
+			.Returns(_ => throw new TimeoutException("The operation has timed out."));
+		CompileBusinessProcessService service = CreateService(client);
+
+		// Act
+		Action act = () => service.Compile(Env, new CompileBusinessProcessRequest("UsrProc", null));
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(because: "the call did not answer")
+			.WithMessage("*UNKNOWN*still be running*", because: "a retry would be refused while the compile runs");
+	}
+
+	[Test]
 	[Description("A body that is not the envelope - an HTML error page from a wrong route - says the compile outcome is unknown and where to read it, instead of a parser message.")]
 	public void Compile_ShouldSayTheOutcomeIsUnknown_WhenTheBodyIsNotTheEnvelope() {
 		// Arrange
@@ -143,8 +181,11 @@ public sealed class CompileBusinessProcessCommandTests {
 	[Test]
 	[Description("A clean compile exits 0 and says which package was compiled, how long it took, and that the process now runs its saved code.")]
 	public void Execute_ShouldReportTheCompiledPackage_OnSuccess() {
+		// Arrange
+		CompileBusinessProcessResult result = Result(success: true);
+
 		// Act
-		int exitCode = Execute(Result(success: true));
+		int exitCode = Execute(result);
 
 		// Assert
 		exitCode.Should().Be(0, because: "the compile succeeded");
@@ -155,8 +196,11 @@ public sealed class CompileBusinessProcessCommandTests {
 	[Test]
 	[Description("A process without C# exits 0 and says nothing was compiled, rather than claiming a compile that did not happen.")]
 	public void Execute_ShouldSayNothingWasCompiled_ForAProcessWithoutCSharp() {
+		// Arrange
+		CompileBusinessProcessResult result = Result(success: true, compileRequired: false);
+
 		// Act
-		int exitCode = Execute(Result(success: true, compileRequired: false));
+		int exitCode = Execute(result);
 
 		// Assert
 		exitCode.Should().Be(0, because: "there was nothing to compile");
@@ -190,8 +234,11 @@ public sealed class CompileBusinessProcessCommandTests {
 	[TestCase("UsrProc", "5c58c4c4-134b-4744-9c67-96d9c69c9d55")]
 	[TestCase("", "")]
 	public void Execute_ShouldRequireExactlyOneIdentity(string processName, string processUid) {
+		// Arrange
+		CompileBusinessProcessResult result = Result(success: true);
+
 		// Act
-		int exitCode = Execute(Result(success: true), processName, processUid);
+		int exitCode = Execute(result, processName, processUid);
 
 		// Assert
 		exitCode.Should().Be(1, because: "the identity is ambiguous or missing");

@@ -47,7 +47,7 @@ public sealed class ScriptTaskElementToolE2ETests {
 	private const string MinimumPackageVersion = "1.6.6.30";
 
 	/// <summary>The cut that ships the CompileProcess operation compile-creatio's process-name mode calls.</summary>
-	private const string MinimumCompilePackageVersion = "1.6.6.32";
+	private const string MinimumCompilePackageVersion = "1.6.6.33";
 
 	private const string CompileToolName = CompileCreatioTool.CompileCreatioToolName;
 
@@ -278,10 +278,19 @@ public sealed class ScriptTaskElementToolE2ETests {
 				["process-name"] = processName
 			}));
 
+		string status = JsonSerializer.Serialize(await context.Session.CallToolAsync(
+			CompileStatusTool.CompileStatusToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> { ["environment-name"] = context.EnvironmentName }
+			},
+			context.CancellationTokenSource.Token));
+
 		// Assert
 		compiled.Should().Contain(ExitCodeZero, because: "a process without C# needs no compile, which is a success");
 		compiled.Should().Contain("nothing was compiled",
 			because: "the server's own predicate owes no compile, so none ran and the runtime was not reloaded");
+		status.Should().Contain(processName,
+			because: "compile-status names the process of a process-name compile rather than reporting a full one");
 	}
 
 	[Test]
@@ -290,8 +299,9 @@ public sealed class ScriptTaskElementToolE2ETests {
 	[AllureName("compile-creatio refuses process-name with package-name")]
 	public async Task CompileCreatio_WithProcessAndPackageName_Should_Refuse() {
 		// Arrange
+		// The element cut, not the compile one: the refusal happens before anything reaches the environment.
 		await using ProcessDesignerArrangeContext context =
-			await ProcessDesignerE2EArrange.StartAsync("ScriptTask", MinimumCompilePackageVersion);
+			await ProcessDesignerE2EArrange.StartAsync("ScriptTask", MinimumPackageVersion);
 
 		// Act
 		string refused = JsonSerializer.Serialize(await ProcessDesignerE2EArrange.CallToolAsync(context,

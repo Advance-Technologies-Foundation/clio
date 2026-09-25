@@ -194,7 +194,7 @@ public sealed class CompileCreatioToolTests
 		commandResolver.GetTargetKey(Arg.Any<EnvironmentOptions>()).Returns("sandbox-target");
 		IRequiredPackageChecker checker = Substitute.For<IRequiredPackageChecker>();
 		checker.When(c => c.EnsureRequirements(Arg.Any<object>()))
-			.Do(_ => throw new InvalidOperationException("CrtProcessBuilder 1.6.6.32 or newer is required."));
+			.Do(_ => throw new InvalidOperationException("CrtProcessBuilder 1.6.6.33 or newer is required."));
 		commandResolver.Resolve<IRequiredPackageChecker>(Arg.Any<CompileBusinessProcessOptions>()).Returns(checker);
 		FakeCompileBusinessProcessCommand resolvedCommand = new();
 		commandResolver.Resolve<CompileBusinessProcessCommand>(Arg.Any<CompileBusinessProcessOptions>())
@@ -210,7 +210,7 @@ public sealed class CompileCreatioToolTests
 
 			// Assert
 			result.ExitCode.Should().NotBe(0, because: "the package cannot serve the operation");
-			result.Output.Should().Contain(message => message.Value.ToString()!.Contains("1.6.6.32"),
+			result.Output.Should().Contain(message => message.Value.ToString()!.Contains("1.6.6.33"),
 				because: "the refusal names the version the operation needs");
 			resolvedCommand.CapturedOptions.Should().BeNull(because: "nothing is sent to a package that is behind");
 			registry.GetLatest("sandbox-tenant")!.Status.Should().Be(CompileOperationStatus.Failed,
@@ -220,6 +220,56 @@ public sealed class CompileCreatioToolTests
 		{
 			ConsoleLogger.Instance.ClearMessages();
 		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A package that is behind surfaces as exit 1 - the recoverable code BaseTool gives the same refusal - not -1, which tells an agent not to retry and breaks the install-then-retry path.")]
+	public async Task CompileCreatio_Should_Return_ExitOne_When_ThePackageRequirementFails()
+	{
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.GetTenantKey(Arg.Any<EnvironmentOptions>()).Returns("sandbox-tenant");
+		commandResolver.GetTargetKey(Arg.Any<EnvironmentOptions>()).Returns("sandbox-target");
+		IRequiredPackageChecker checker = Substitute.For<IRequiredPackageChecker>();
+		checker.When(c => c.EnsureRequirements(Arg.Any<object>()))
+			.Do(_ => throw new PackageRequirementException("CrtProcessBuilder 1.6.6.33 or newer is required."));
+		commandResolver.Resolve<IRequiredPackageChecker>(Arg.Any<CompileBusinessProcessOptions>()).Returns(checker);
+		commandResolver.Resolve<CompileBusinessProcessCommand>(Arg.Any<CompileBusinessProcessOptions>())
+			.Returns(new FakeCompileBusinessProcessCommand());
+		CompileCreatioTool tool = new(ConsoleLogger.Instance, commandResolver, new CompileOperationRegistry());
+
+		try
+		{
+			// Act
+			CommandExecutionResult result = await tool.CompileCreatio(
+				new CompileCreatioArgs("sandbox", ProcessName: "UsrProc"));
+
+			// Assert
+			result.ExitCode.Should().Be(1, because: "a package that is behind is fixed by installing it and retrying");
+		}
+		finally
+		{
+			ConsoleLogger.Instance.ClearMessages();
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A blank process-name is refused rather than read as 'no process-name', which would run a FULL compile the user never agreed to.")]
+	public async Task CompileCreatio_Should_Reject_A_Blank_Process_Name()
+	{
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		CompileCreatioTool tool = new(ConsoleLogger.Instance, commandResolver, new CompileOperationRegistry());
+
+		// Act
+		CommandExecutionResult result = await tool.CompileCreatio(new CompileCreatioArgs("sandbox", ProcessName: "  "));
+
+		// Assert
+		result.ExitCode.Should().Be(1, because: "an empty scoped request is not a request for a full compile");
+		commandResolver.DidNotReceive().Resolve<CompileConfigurationCommand>(Arg.Any<CompileConfigurationOptions>());
 	}
 
 	[Test]
@@ -691,6 +741,27 @@ public sealed class CompileCreatioToolTests
 			ExecuteGate?.Wait();
 			return ExitCodeToReturn;
 		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The three process save tools route a compile-required warning to compile-creatio process-name, asked for first: on Creatio 10.x a package-name compile misses a server-side save, and a description that sent agents there would reproduce the stale-body trap.")]
+	[TestCase(typeof(Clio.Command.McpServer.Tools.ProcessDesigner.CreateBusinessProcessTool), "CreateBusinessProcess")]
+	[TestCase(typeof(Clio.Command.McpServer.Tools.ProcessDesigner.ModifyBusinessProcessTool), "ModifyBusinessProcess")]
+	[TestCase(typeof(Clio.Command.McpServer.Tools.ProcessDesigner.ModifyProcessAsNewVersionTool), "ModifyProcessAsNewVersion")]
+	public void ProcessSaveTools_Should_RouteTheCompileToProcessName(Type toolType, string methodName)
+	{
+		// Arrange
+		System.Reflection.MethodInfo method = toolType.GetMethod(methodName)!;
+
+		// Act
+		string description = ((System.ComponentModel.DescriptionAttribute)method
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false).Single()).Description;
+
+		// Assert
+		description.Should().Contain("compile-creatio with process-name",
+			because: "the save's compile demand is answered by the process-name mode");
+		description.Should().Contain("ask", because: "a compile reloads the runtime for every user, so it is asked for");
 	}
 
 	private sealed class FakeCompileBusinessProcessCommand : CompileBusinessProcessCommand

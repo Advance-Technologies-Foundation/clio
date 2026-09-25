@@ -10,7 +10,9 @@ date: 2026-08-19
 **What is true** — no fixture in `clio.mcp.e2e` performs a real install that restarts the platform or
 makes the target rebuild its configuration. `install-gate` has no fixture at all - it appears only as
 probe-first arrange (`ClioCliCommandRunner.EnsureCliogateInstalledAsync`) for roughly thirty
-fixtures; `compile-creatio` and `restart-web-app` cover only their negative paths;
+fixtures; `restart-web-app` covers only its negative paths, and `compile-creatio` its negative paths
+plus one `process-name` success that compiles NOTHING (a process without C#, answered by the server without a
+build - `ScriptTaskElementToolE2ETests`); a process-name compile that builds stays a stand leg;
 `deploy-creatio` deliberately feeds a corrupt archive so nothing is created. `clio.mcp.e2e/AGENTS.md`
 documents the destructive sub-tier for uninstall/deploy fixtures, but a mere **restart** is the case
 it does not name.

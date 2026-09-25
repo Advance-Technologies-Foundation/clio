@@ -47,10 +47,12 @@ assembly; the runtime binds a script task to a method of the compiled `<Process>
 the only check (`ProcessSchema.CheckCompiledMethodsInAssembly`) is whether that TYPE exists. The optimized
 compile is 10.x's answer to 20-minute full builds, and its bookkeeping is fed by the designers.
 
-**What breaks if you ignore it** — an agent that edits a script body and runs `compile-creatio` with or
-without `package-name` sees the OLD behaviour and "fixes" code that was never the code running; the
-package-scoped one also spends 17 minutes on static content first. The route that works everywhere is
-`compile-creatio process-name=<process>` (CrtProcessBuilder 1.6.6.32+), which calls the package's
+**What breaks if you ignore it** — an agent that edits a script body and runs `compile-creatio` with
+`package-name` (or the CLI `compile-configuration` without `--all`) sees the OLD behaviour and "fixes" code
+that was never the code running; the package-scoped one also spends 17 minutes on static content first. A
+full `compile-creatio` does pick it up, in about 20 minutes. The fast route, measured on 10.1 and read from
+source on 8.3, is
+`compile-creatio process-name=<process>` (CrtProcessBuilder 1.6.6.33+), which calls the package's
 `CompileProcess`. Do not "optimize" that endpoint back onto WorkspaceExplorerService: it would inherit the
 plan and compile nothing. A never-compiled process refuses to start (`Publish the "<name>" process before
 starting it`) rather than running stale code.

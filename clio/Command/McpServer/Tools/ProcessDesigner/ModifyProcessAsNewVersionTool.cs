@@ -90,7 +90,7 @@ public class ModifyProcessAsNewVersionTool(
 		 + "version cannot execute until the configuration is compiled, which happens when the source process "
 		 + "was itself not interpretable, or when the process carries a script task or process methods (a version "
 		 + "is a new process name, whose generated code does not exist until compiled). Heed the warning over this "
-		 + "sentence: when it names a script task or process methods, ask the user and run compile-creatio with process-name set to the NEW version; otherwise a full compile-creatio. "
+		 + "sentence: when it names a script task or process methods, ask the user and run compile-creatio with process-name set to the NEW version; otherwise, after asking, a full compile-creatio. "
 		 + "Use describe-business-process to inspect the family.")]
 	public CommandExecutionResult ModifyProcessAsNewVersion(
 		[Description("modify-business-process-as-new-version parameters")] [Required]

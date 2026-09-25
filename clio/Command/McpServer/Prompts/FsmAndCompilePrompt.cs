@@ -66,9 +66,10 @@ public static class FsmAndCompilePrompt
 			  can be run later.
 			  Once confirmed, use clio mcp server `{Tools.CompileCreatioTool.CompileCreatioToolName}` with `process-name`
 			  `{processName}` for registered Creatio environment `{environmentName}`: it compiles the package that process is in
-			  through CrtProcessBuilder (1.6.6.32 or newer) and reports the compiler errors, the process's own first. It is the
-			  compile a script task or process methods saved by create/modify-business-process need; on Creatio 10.x a plain or
-			  `package-name` compile does not pick such a save up. Do not pass `package-name` with it.
+			  through CrtProcessBuilder (1.6.6.33 or newer) and reports the compiler errors, the process's own first. It is the
+			  compile a script task or process methods saved by create/modify-business-process need; on Creatio 10.x a
+			  `package-name` compile does not pick such a save up and a full one takes about 20 minutes. Do not pass
+			  `package-name` with it.
 			  If the tool returns exit-code 0 with an in-progress note, it is still running server-side —
 			  poll `{Tools.CompileStatusTool.CompileStatusToolName}` instead of retrying.
 			  """

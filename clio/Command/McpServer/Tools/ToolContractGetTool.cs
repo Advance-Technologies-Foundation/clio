@@ -633,6 +633,7 @@ internal static class ToolContractCatalog {
 	private const string OperationsFieldName = "operations";
 	private const string OffsetFieldName = "offset";
 	private const string PackageNameFieldName = "package-name";
+	private const string CompileProcessNameFieldName = "process-name";
 	private const string PackagesFieldName = "packages";
 	private const string PasswordFieldName = "password";
 	private const string PagesFieldName = "pages";
@@ -5916,7 +5917,8 @@ internal static class ToolContractCatalog {
 				[EnvironmentNameFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
-					Field(PackageNameFieldName, StringType, "Optional package name. When omitted, runs a full compilation (`clio cc -e ENV_NAME --all`). When provided, recompiles only that single package. Comma-separated lists are not supported.")
+					Field(PackageNameFieldName, StringType, "Optional package name. When omitted (and process-name is omitted too), runs a full compilation (`clio cc -e ENV_NAME --all`). When provided, recompiles only that single package. Comma-separated lists are not supported."),
+					Field(CompileProcessNameFieldName, StringType, "Optional business process code. Compiles the package that process is in through CrtProcessBuilder 1.6.6.33+ and answers with the compiler errors, the process's own first - the compile a Script Task or process methods saved by create/modify-business-process need: on Creatio 10.x a package-name compile does not pick such a save up, and a full one takes about 20 minutes. A process without C# is answered without a compile. Exclusive with package-name.")
 				]),
 			CommandExecutionOutput(),
 			CommonErrorContract,
@@ -5929,6 +5931,10 @@ internal static class ToolContractCatalog {
 				Example("Recompile a single package after a C# schema change", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
 					[PackageNameFieldName] = ExamplePackageName
+				}),
+				Example("Compile a business process's package after its save warned it cannot run until compiled", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[CompileProcessNameFieldName] = "UsrCalculateDiscount"
 				})
 			],
 			Flow(
@@ -5965,7 +5971,7 @@ internal static class ToolContractCatalog {
 				"C# schemas were added or modified in the targeted package.",
 				"The runtime reported a missing-in-runtime or schema-not-found error that maps to a compilation gap.",
 				"Caller must NOT call this tool after `create-app`, `update-page`, `sync-pages`, `update-entity-schema`, `create-page`, `create-entity-business-rules`, or `create-page-business-rules`.",
-				"After `create-business-process`/`modify-business-process`, compile ONLY when the process carries C# you authored — a Script Task, or a user task with an after-activity-save script (the `C# schemas were added or modified` case above). Otherwise the process runs with no compile. A raw process read (e.g. `VwSysProcess`) shows `NeedInstall`, `NeedUpdateSourceCode` and `NeedUpdateStructure` all true on a fresh process; none is a compile trigger — read status with `describe-business-process`, not a raw process read. (A CUSTOM user-task SCHEMA is separate: creating/changing one needs a compile.)"
+				"After `create-business-process`/`modify-business-process`, compile ONLY when the process carries C# you authored — a Script Task, or a user task with an after-activity-save script (the `C# schemas were added or modified` case above) — and then pass `process-name` rather than `package-name`. Otherwise the process runs with no compile. A raw process read (e.g. `VwSysProcess`) shows `NeedInstall`, `NeedUpdateSourceCode` and `NeedUpdateStructure` all true on a fresh process; none is a compile trigger — read status with `describe-business-process`, not a raw process read. (A CUSTOM user-task SCHEMA is separate: creating/changing one needs a compile.)"
 			]);
 	}
 
