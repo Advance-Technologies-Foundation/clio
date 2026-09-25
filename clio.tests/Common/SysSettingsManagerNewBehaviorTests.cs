@@ -1686,49 +1686,87 @@ public class SysSettingsManagerNewBehaviorTests {
 			because: "the non-bearer path must keep recovering from server-side session expiry");
 	}
 
-	[Test]
-	[TestCase("token", null, true, TestName = "AccessTokenProfile")]
-	[TestCase(null, "clio-client", true, TestName = "OAuthClientProfile")]
-	[TestCase(null, null, false, TestName = "LoginPasswordProfile")]
-	[Description("An OAuth client-credentials profile counts as token authentication alongside an access token, because neither carries a username or password for the forms-login reauthentication path.")]
-	public void UsesTokenAuthentication_ShouldTreatAnOAuthClientAsAToken(
-		string accessToken, string clientId, bool expected) {
-		// Arrange
-		EnvironmentSettings settings = new() {
+	// The three profile shapes the token rule distinguishes: an access token and an OAuth client are
+	// both token shapes (no username/password, so no forms-login fallback), a login/password profile
+	// keeps the login-capable executor.
+	private static EnvironmentSettings BuildProfileSettings(string profile) => profile switch {
+		"AccessToken" => new EnvironmentSettings {
 			Uri = "https://localhost",
-			AccessToken = accessToken,
-			ClientId = clientId,
-			Login = clientId is null && accessToken is null ? "Supervisor" : null,
-			Password = clientId is null && accessToken is null ? "Supervisor" : null
-		};
-		System.Reflection.MethodInfo predicate = typeof(BindingsModule).GetMethod(
-			"UsesTokenAuthentication",
-			System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
-		predicate.Should().NotBeNull(
-			because: "BindingsModule.UsesTokenAuthentication is the single rule both adapter wirings ask");
+			AccessToken = "token",
+			AccessTokenType = AuthenticationScheme.Bearer,
+			IsNetCore = true
+		},
+		"OAuthClient" => new EnvironmentSettings {
+			Uri = "https://localhost",
+			ClientId = "clio-client",
+			ClientSecret = "clio-secret",
+			AuthAppUri = "https://localhost/auth",
+			IsNetCore = true
+		},
+		"LoginPassword" => new EnvironmentSettings {
+			Uri = "https://localhost",
+			Login = "Supervisor",
+			Password = "Supervisor",
+			IsNetCore = true
+		},
+		_ => throw new ArgumentOutOfRangeException(nameof(profile), profile, "Unknown profile shape.")
+	};
+
+	[Test]
+	[TestCase("AccessToken", true, TestName = "AccessTokenProfile")]
+	[TestCase("OAuthClient", true, TestName = "OAuthClientProfile")]
+	[TestCase("LoginPassword", false, TestName = "LoginPasswordProfile")]
+	[Description("Both places that chose the Creatio client adapter inline now resolve through the single IApplicationClientFactory, so the token rule lives there. An access token and an OAuth client-credentials profile carry no username/password and must get the no-login executor; a login/password profile must keep the login-capable one. The adapter stays lazy, so reading the wiring costs no HTTP call.")]
+	public void ApplicationClientFactory_ShouldSelectTheExecutor_ByTokenShape(string profile, bool expectNoReauth) {
+		// Arrange
+		EnvironmentSettings profileSettings = BuildProfileSettings(profile);
+		BindingsModule bm = new(FileSystem);
+		IServiceProvider container = bm.Register(EnvironmentSettings);
+		IApplicationClientFactory factory = container.GetRequiredService<IApplicationClientFactory>();
 
 		// Act
-		bool usesToken = (bool)predicate!.Invoke(null, [settings]);
+		//The client stays lazy, so reading the wiring costs no HTTP call.
+		IApplicationClient applicationClient = factory.CreateEnvironmentClient(profileSettings);
 
 		// Assert
-		usesToken.Should().Be(expected,
-			because: "an OAuth client has no username/password, so a login-page response must not send it down CreatioClient.Login()");
+		applicationClient.Should().BeOfType<CreatioClientAdapter>(
+			because: "the factory wires every environment shape onto the Creatio client adapter");
+		object executor = ReadPrivateField(applicationClient, "_reauthExecutor");
+		if (expectNoReauth) {
+			executor.Should().BeOfType<NoReauthExecutor>(
+				because: "a token shape has no username/password, so a login-page response must not send it down CreatioClient.Login()");
+		} else {
+			executor.Should().NotBeOfType<NoReauthExecutor>(
+				because: "a login/password profile must keep recovering from server-side session expiry");
+		}
 	}
 
 	[Test]
-	[Description("Both places that choose the Creatio client adapter ask UsesTokenAuthentication, so an OAuth profile cannot regain the login-capable executor at one of them. The factory path itself cannot be exercised here: building an OAuth RemoteDataProvider fetches a token over the network.")]
-	public void AdapterWiring_ShouldSelectTheExecutor_ThroughTheSharedTokenRule() {
+	[TestCase("AccessToken", true, TestName = "ActiveEnvironmentAccessTokenProfile")]
+	[TestCase("OAuthClient", true, TestName = "ActiveEnvironmentOAuthClientProfile")]
+	[TestCase("LoginPassword", false, TestName = "ActiveEnvironmentLoginPasswordProfile")]
+	[Description("The active-environment IApplicationClient registration must pick the executor by the same rule as the per-environment factory, or a token profile regains the login-capable path at one of the two sites.")]
+	public void ActiveEnvironmentRegistration_ShouldSelectTheExecutor_ByTokenShape(string profile, bool expectNoReauth) {
 		// Arrange
-		string bindingsSourcePath = Path.Combine(RepositoryRoot, "clio", "BindingsModule.cs");
-		File.Exists(bindingsSourcePath).Should().BeTrue(
-			because: $"this guard reads the adapter wiring from {bindingsSourcePath}");
-		string source = File.ReadAllText(bindingsSourcePath);
+		EnvironmentSettings profileSettings = BuildProfileSettings(profile);
+		BindingsModule bm = new(FileSystem);
+		IServiceProvider container = bm.Register(profileSettings);
+
+		// Act
+		//The client stays lazy, so reading the wiring costs no HTTP call.
+		IApplicationClient applicationClient = container.GetRequiredService<IApplicationClient>();
 
 		// Assert
-		source.Should().Contain("IApplicationClient applicationClient = UsesTokenAuthentication(envSettings)",
-			because: "the per-environment sys-settings factory must pick the no-login executor for every token shape");
-		source.Should().Contain("return UsesTokenAuthentication(activeSettings)",
-			because: "the active-environment registration must pick it by the same rule");
+		applicationClient.Should().BeOfType<CreatioClientAdapter>(
+			because: "the active-environment registration wires the Creatio client adapter");
+		object executor = ReadPrivateField(applicationClient, "_reauthExecutor");
+		if (expectNoReauth) {
+			executor.Should().BeOfType<NoReauthExecutor>(
+				because: "a token shape must never fall back to a login/password re-authentication");
+		} else {
+			executor.Should().NotBeOfType<NoReauthExecutor>(
+				because: "a login/password profile must keep recovering from server-side session expiry");
+		}
 	}
 
 	private static IReauthExecutor ResolveFactoryReauthExecutor(EnvironmentSettings envSettings) {
