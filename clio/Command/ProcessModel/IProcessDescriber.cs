@@ -383,10 +383,25 @@ public class DescribeProcessResult {
 	/// <summary>
 	/// The process's own using directives (Process properties -> Methods -> Usings), in the shape a build's
 	/// <c>usings[]</c> takes. The namespaces the platform's code generator always imports are not listed.
-	/// <c>null</c> on a server that predates CrtProcessBuilder 1.6.6.29.
+	/// <c>null</c> on a server that predates CrtProcessBuilder 1.6.6.30.
 	/// </summary>
 	[JsonPropertyName("usings")]
 	public List<DescribedUsing> Usings { get; set; }
+
+	/// <summary>
+	/// The process's own C# methods (Process properties -> Methods), verbatim: class members compiled into the
+	/// same class as its interpreted script tasks, which call them. <c>null</c> when there are none, and on a
+	/// server that predates CrtProcessBuilder 1.6.6.30.
+	/// </summary>
+	[JsonPropertyName("methods")]
+	public string Methods { get; set; }
+
+	/// <summary>
+	/// The older compiled variant's methods, reported read-only: they live in the compiled process class and
+	/// only compiled-variant script tasks can call them. <c>null</c> when there are none.
+	/// </summary>
+	[JsonPropertyName("compiledMethods")]
+	public string CompiledMethods { get; set; }
 
 	/// <summary>
 	/// Captures every other field the server returns at the graph root so the description round-trips
@@ -685,7 +700,7 @@ public sealed class DescribedElement {
 	public DescribedFormula Formula { get; set; }
 
 	/// <summary>
-	/// For a Script task (CrtProcessBuilder 1.6.6.29 and later): its C# body and which of the platform's two
+	/// For a Script task (CrtProcessBuilder 1.6.6.30 and later): its C# body and which of the platform's two
 	/// script variants it is. <c>null</c> for other element kinds - a Formula task included, although its class
 	/// derives from the script task's - and on a server that predates the element.
 	/// </summary>

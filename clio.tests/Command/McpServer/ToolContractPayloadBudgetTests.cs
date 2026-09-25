@@ -123,9 +123,10 @@ public sealed class ToolContractPayloadBudgetTests {
 	// dropped the floor-history paragraph about 1.4.0.58/.60 and the 88%/65% condition statistics - provenance,
 	// nothing decided at call time - and spent the room on the scriptTask block, usings[], and the compile
 	// signal becoming conditional; modify-business-process shortened the same history and lost a
-	// parenthetical. Re-measured by lowering the ceiling: modify-business-process 34785, create-business-process
-	// 34603, describe-business-process 32786 (which gained the scriptTask block and usings[]). Modify is 31
-	// bytes under the ceiling now, so the warning above still holds for it.
+	// parenthetical. The process methods (`methods`, `setMethods`) followed the same way. Re-measured by
+	// lowering the ceiling: modify-business-process 34765, create-business-process 34731,
+	// describe-business-process 32900 (which gained the scriptTask block, usings[] and methods). Both write
+	// tools are within 90 bytes of the ceiling, so the warning above holds for both.
 	private const int MaxToolContractSerializedBytes = 136 * 256;
 
 	[Test]

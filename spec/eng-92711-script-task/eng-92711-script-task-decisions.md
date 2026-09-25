@@ -9,20 +9,20 @@ This file records only what the implementation decided and what the stand measur
 
 | Repository | What |
 |---|---|
-| crt-process-builder | `scriptTask` element (create, addElement, setElement, describe); process-level `usings[]`, `addUsing` / `removeUsing`, describe `usings[]`; the save-time script notices; CrtProcessBuilder 1.6.6.29 |
-| clio | describe DTOs (`DescribedScriptTask`, `DescribedUsing`); create/modify compile note GATED on the server's compile-required warning instead of appended unconditionally; tool descriptions; `[RequiresPackage]` 1.6.6.29; bundled archive 1.6.6.29; unit + E2E coverage |
+| crt-process-builder | `scriptTask` element (create, addElement, setElement, describe); process-level `usings[]`, `addUsing` / `removeUsing`, describe `usings[]`; process methods `methods`, `setMethods`, describe `methods` / `compiledMethods`; the save-time script notices; CrtProcessBuilder 1.6.6.30 |
+| clio | describe DTOs (`DescribedScriptTask`, `DescribedUsing`); create/modify compile note GATED on the server's compile-required warning instead of appended unconditionally; tool descriptions; `[RequiresPackage]` 1.6.6.30; bundled archive 1.6.6.30; unit + E2E coverage |
 | clio-knowledge | `process-script-task` rewritten around WHEN to use a script task, how clio builds one, default namespaces, usings and aliases; catalog / modeling / routing no longer call it unbuildable; libraryVersion 1.15.80 |
 
 ## Decisions (the review's open questions, answered)
 
 | # | Question | Decision | Why |
 |---|---|---|---|
-| Q1 | Is "required Methods/Usings are declared" satisfied by an empty set? | Usings ARE delivered; process Methods are NOT (they stay with ENG-91852). | The corpus shows usings exist *because of* script tasks (62% of script-task schemas vs 1.4% of others), and `Terrasoft.Configuration` - where every configuration class lives - is not a default import. Methods are declared by 92 of 348 script-task processes and are a separate code surface. |
+| Q1 | Is "required Methods/Usings are declared" satisfied by an empty set? | Both ARE delivered here, on the owner's request (2026-09-25): usings (`usings[]`, `addUsing` / `removeUsing`) and the process methods (`methods`, `setMethods`, describe `methods` / `compiledMethods`). ENG-91852 keeps the other process properties. | Usings are what script tasks need (62% of script-task schemas declare one, 1.4% of the rest), and `Terrasoft.Configuration` is not a default import. Methods are the helpers several scripts of ONE process share; they compile into the same class and reach parameters the same way. |
 | Q2 | A `requiresCompilation` response field? | Not added. The compile demand travels as a warning carrying the phrase clio already gates on. | It reuses the existing, tested gate (`WithCompileNotRequiredNote`) and needs no new wire contract. |
 | Q3 | Validator rule R17 for a script-task target | Unchanged (advisory). | Out of the element's write path. |
 | Q4 | Set `UseSystemSecurityContext` like the designer? | Not set - and the designer does NOT set it either. | `base-process-schema.js` defaults it to `false`; nothing sets it on a new process. The shipped `FindContactForTA` has `IJ10 = true` by its author's choice. Script tasks of a clio-built process run with the caller's rights, same as a designer-built one. |
 | Q5 | Does `process-script-task` join the process guide set? | No banner change. | Kept ungated and routed, as `ProcessScriptTaskGuidanceTests` requires. |
-| Q6 | Hold or raise the `[RequiresPackage]` floor? | Raised to 1.6.6.29. | Silent-discard shape: an older server drops a build's top-level `usings[]` (and a `scriptTask` block riding a setElement beside another field) while answering success. The type token and the two operations would be refused loudly, the usings would not. |
+| Q6 | Hold or raise the `[RequiresPackage]` floor? | Raised to 1.6.6.30. | Silent-discard shape: an older server drops a build's top-level `usings[]` (and a `scriptTask` block riding a setElement beside another field) while answering success. The type token and the two operations would be refused loudly, the usings would not. |
 | Q7 | The userTask after-activity-save script | Out of scope. | Sibling compile trigger; the gate added here is keyed on the server's warning, so a later ticket only has to emit the same phrase. |
 
 Also decided without asking:

@@ -80,9 +80,9 @@ public class ModifyProcessAsNewVersionTool(
 		 + "half-created version to clean up. Note that a version can never be DELETED — the platform has no such "
 		 + "operation — so every version you create is permanent; take that into account before creating one "
 		 + "speculatively. Requires the ProcessDesignService (CrtProcessBuilder) package on the target "
-		 + "environment at CrtProcessBuilder 1.6.6.29 or newer — an older package is refused up front, naming the "
+		 + "environment at CrtProcessBuilder 1.6.6.30 or newer — an older package is refused up front, naming the "
 		 + "version this operation needs; install or update it with install-process-builder. (The operation itself "
-		 + "first exists in 1.6.1.0; the floor moved to 1.6.2.1, 1.6.6.14 and 1.6.6.29 for the same reason each time - the "
+		 + "first exists in 1.6.1.0; the floor moved to 1.6.2.1, 1.6.6.14 and 1.6.6.30 for the same reason each time - the "
 		 + "operations vocabulary grew email.messageSource/template/templateEntity, then "
 		 + "subProcess.multiInstanceOptions, then a scriptTask block on setElement, each of which an older server silently discards while "
 		 + "answering success, and this route runs NO read-back check that could tell you.) After a successful save the version normally stays INTERPRETED and "
@@ -123,7 +123,7 @@ public class ModifyProcessAsNewVersionTool(
 		// warning and its exact opposite in one response - and an agent that believed the note would activate
 		// a version that throws NotImplementedException out of CreateProcess on first run. A version of a process
 		// with a script task is the second case: interpretable, yet its MethodsWrapper does not exist until a
-		// compile, and the package (from 1.6.6.29) warns in the same phrase.
+		// compile, and the package (from 1.6.6.30) warns in the same phrase.
 		CommandExecutionResult result = InternalExecute<ModifyProcessAsNewVersionCommand>(options);
 		if (result.ExitCode != 0) {
 			return result;

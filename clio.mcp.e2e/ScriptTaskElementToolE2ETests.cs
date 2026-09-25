@@ -18,7 +18,7 @@ namespace Clio.Mcp.E2E;
 /// <summary>
 /// End-to-end coverage for the Script task element and the process-level usings (ENG-92711) over the real MCP
 /// path. NOT in CI - run manually, gated on the <c>process-designer</c> feature and a reachable environment
-/// carrying CrtProcessBuilder 1.6.6.29 or later.
+/// carrying CrtProcessBuilder 1.6.6.30 or later.
 /// <para>What these tests pin is what a caller can SEE: the element's build token and body, the usings as
 /// describe reports them, and - the part the element changes for every caller - the compile signal. A process
 /// with a script task needs a compile, so its result must carry the server's compile-required warning and
@@ -42,7 +42,7 @@ public sealed class ScriptTaskElementToolE2ETests {
 	private const string ExitCodeZero = "\\u0022exit-code\\u0022:0";
 
 	/// <summary>The cut that builds the element; named in the skip message so a developer knows what to install.</summary>
-	private const string MinimumPackageVersion = "1.6.6.29";
+	private const string MinimumPackageVersion = "1.6.6.30";
 
 	#region Methods: Tests
 
@@ -211,16 +211,50 @@ public sealed class ScriptTaskElementToolE2ETests {
 			because: "activating such a version without a compile refuses to start it");
 	}
 
+	[Test]
+	[Description("Process methods travel with the build beside an interpreted script task and read back verbatim, and a setMethods edit carries the compile-required warning - the methods are new C# for the same generated class.")]
+	[AllureTag(CreateToolName)]
+	[AllureName("create-business-process builds process methods and setMethods demands a compile")]
+	public async Task CreateAndModify_Should_CarryProcessMethods_AndDemandACompileForSetMethods() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context =
+			await ProcessDesignerE2EArrange.StartAsync("ScriptTask", MinimumPackageVersion);
+		string processName = $"UsrClioBpScriptTaskMethodsE2e{Guid.NewGuid():N}";
+		string created = JsonSerializer.Serialize(await ProcessDesignerE2EArrange.CallToolAsync(context,
+			CreateToolName, new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["descriptor"] = BuildDescriptor(processName, withMethods: true)
+			}));
+		created.Should().Contain("created (UId:", because: "the arrange step must have built the process");
+
+		// Act
+		JsonObject graph = DescribedProcessGraph.Read(await ProcessDesignerE2EArrange.DescribeAsync(context, processName));
+		string edited = JsonSerializer.Serialize(await ProcessDesignerE2EArrange.CallToolAsync(context,
+			ModifyToolName, new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName,
+				["operations"] = """[{"op":"setMethods","methods":"private int Doubled(int value) => value * 3;"}]"""
+			}));
+
+		// Assert
+		graph["methods"]!.GetValue<string>().Should().Contain("Doubled",
+			because: "the methods are stored and read back verbatim");
+		edited.Should().Contain(ExitCodeZero, because: "replacing the methods is a valid edit");
+		edited.Should().Contain(CommandExecutionResult.CompileRequiredWarningMarker,
+			because: "new methods are new C# for the class the script tasks compile into");
+	}
+
 	#endregion
 
 	#region Methods: Private
 
-	private static string BuildDescriptor(string processName) =>
+	private static string BuildDescriptor(string processName, bool withMethods = false) =>
 		$$"""
 		{
 		  "name": "{{processName}}",
 		  "caption": "Clio BP Script Task E2E",
 		  "packageName": "Custom",
+		  {{(withMethods ? "\"methods\": \"private int Doubled(int value) => value * 2;\"," : string.Empty)}}
 		  "usings": [
 		    { "namespace": "System.Linq" },
 		    { "namespace": "Terrasoft.Configuration" },

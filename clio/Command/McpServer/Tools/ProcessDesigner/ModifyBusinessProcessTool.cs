@@ -161,10 +161,9 @@ public class ModifyBusinessProcessTool(
 		 + "[#BooleanValue.True#]. An expression is VALIDATED, by the PLATFORM, at the pre-save gate — so a bad "
 		 + "one aborts the whole edit with 'Process validation failed' and nothing is saved, rather than being "
 		 + "attributed to the one operation that carried it, which is why such a refusal reports NO "
-		 + "failedOperationIndex while one caused by a single operation reports its zero-based index (on CrtProcessBuilder this clio requires 1.6.6.29, for "
-		 + "scriptTask, addUsing/removeUsing and subProcess.multiInstanceOptions {enabled, executionMode, ignoreErrors}; the message contract "
-		 + "described here is NOT where that collapse happened: 1.4.0.41 is where the PACKAGE stopped validating formulas a second "
-		 + "time and the platform's gate became the only one). It must parse, every parameter "
+		 + "failedOperationIndex while one caused by a single operation reports its zero-based index (on CrtProcessBuilder this clio requires 1.6.6.30, for "
+		 + "scriptTask, addUsing/removeUsing/setMethods and subProcess.multiInstanceOptions {enabled, executionMode, ignoreErrors}; "
+		 + "1.4.0.41 is where the PACKAGE stopped validating formulas itself). It must parse, every parameter "
 		 + "reference must resolve in THIS process, its result must fit the target parameter's DECLARED type (so a "
 		 + "fractional formula into an Integer parameter is refused), and every [#…#] macro family must be one a "
 		 + "converter resolves where you used it — an invented family and the real [#ColumnValue…#] and "
@@ -355,7 +354,8 @@ public class ModifyBusinessProcessTool(
 		 + "element parameters in place; only 'column' is read and a source is rejected. Idempotent, and it reports "
 		 + "which bindings it actually cleared, because a cleared connection vanishes from describe-business-process "
 		 + "and is then indistinguishable from one that was never bound). "
-		 + "addUsing / removeUsing (using:{namespace, alias?}: the process-level usings of its scriptTask C#). "
+		 + "addUsing / removeUsing (using:{namespace, alias?}) and setMethods (methods: C# class members as one "
+		 + "string, empty clears): the process-level usings and methods of its scriptTask C#. "
 		 + "Operations apply in order; any failure aborts the edit (nothing is saved). A SUCCESSFUL edit may still "
 		 + "report caveats: they arrive as entries with message-type \"Warning\" in execution-log-messages (there is "
 		 + "no separate 'warnings' field on the response) — outcomes that APPLIED but are not what you would assume. "
@@ -366,7 +366,7 @@ public class ModifyBusinessProcessTool(
 		 + "first. For a setFlowCondition operation or an 'expression' mapping source read get-guidance "
 			 + "name=process-formulas - it owns the accepted vocabulary, the reference syntax, what each "
 			 + "refusal names, and the length bound. "
-			 + "Requires the ProcessDesignService (CrtProcessBuilder) package; install with install-process-builder. Unless the edit adds a scriptTask, replaces its body or changes a using, the process stays INTERPRETED and the result carries the compile-not-required note: do NOT run compile-creatio, and do NOT infer a compile need from a raw `VwSysProcess` read. Such an edit warns compile-REQUIRED instead: then run a FULL compile-creatio, no package-name (name=process-script-task).")]
+			 + "Requires the ProcessDesignService (CrtProcessBuilder) package; install with install-process-builder. Unless the edit adds a scriptTask, replaces its body or changes a using or the methods, the process stays INTERPRETED and the result carries the compile-not-required note: do NOT run compile-creatio, and do NOT infer a compile need from a raw `VwSysProcess` read. Such an edit warns compile-REQUIRED instead: then run a FULL compile-creatio, no package-name (name=process-script-task).")]
 	public CommandExecutionResult ModifyBusinessProcess(
 		[Description("modify-business-process parameters")] [Required] ModifyBusinessProcessArgs args
 	) {

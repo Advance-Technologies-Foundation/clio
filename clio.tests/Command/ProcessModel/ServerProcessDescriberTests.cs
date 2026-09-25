@@ -514,9 +514,9 @@ public sealed class ServerProcessDescriberTests {
 	}
 
 	[Test]
-	[Description("Deserializes the scriptTask block and the process-level usings by name (ENG-92711). The describe output is re-serialized from this model, so a member it does not declare reaches nobody; the body is what a caller edits and the variant flag decides which parameter-access style compiles, so both are asserted individually, as are the namespace and the alias of each using.")]
+	[Description("Deserializes the scriptTask block, the process-level usings and the process methods by name (ENG-92711). The describe output is re-serialized from this model, so a member it does not declare reaches nobody; the body is what a caller edits and the variant flag decides which parameter-access style compiles, so both are asserted individually, as are the namespace and the alias of each using.")]
 	public void Describe_ShouldReadTheScriptTaskBlockAndTheUsings_WhenServerReportsThem() {
-		// Arrange - a script task and two usings reported the way CrtProcessBuilder 1.6.6.29 writes them
+		// Arrange - a script task and two usings reported the way CrtProcessBuilder 1.6.6.30 writes them
 		IApplicationClient client = ClientReturning(
 			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
 			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000002\",\"name\":\"CalcTotal\","
@@ -525,7 +525,8 @@ public sealed class ServerProcessDescriberTests {
 			+ "\"parameters\":[]}],"
 			+ "\"flows\":[],\"parameters\":[],"
 			+ "\"usings\":[{\"namespace\":\"System.Linq\",\"alias\":null},"
-			+ "{\"namespace\":\"Terrasoft.Core.Configuration.SysSettings\",\"alias\":\"SysSettings\"}]}}");
+			+ "{\"namespace\":\"Terrasoft.Core.Configuration.SysSettings\",\"alias\":\"SysSettings\"}],"
+			+ "\"methods\":\"private int Doubled(int v) => v * 2;\"}}");
 		ServerProcessDescriber describer = CreateDescriber(client);
 
 		// Act
@@ -544,6 +545,9 @@ public sealed class ServerProcessDescriberTests {
 		result.Value.Usings[0].Alias.Should().BeNull(because: "a plain using carries no alias");
 		result.Value.Usings[1].Alias.Should().Be("SysSettings",
 			because: "the alias is what makes an aliased type name compile, so losing it breaks the round trip");
+		result.Value.Methods.Should().Be("private int Doubled(int v) => v * 2;",
+			because: "the process methods are read back verbatim so a caller can edit and resend them");
+		result.Value.CompiledMethods.Should().BeNull(because: "a field the server did not send stays null");
 	}
 
 	[Test]

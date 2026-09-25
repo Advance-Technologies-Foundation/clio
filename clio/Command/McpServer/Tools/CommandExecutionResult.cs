@@ -41,7 +41,7 @@ public record CommandExecutionResult(
 	/// <remarks>
 	/// A wire-text match, which is worth being explicit about: it mirrors
 	/// <c>ProcessVersionSaveHandler.NotInterpretableWarning</c> and <c>ScriptTaskNotices.CompileRequiredMarker</c>
-	/// (the Script task's compile demand on create and modify, from CrtProcessBuilder 1.6.6.29) and can only be
+	/// (the Script task's compile demand on create and modify, from CrtProcessBuilder 1.6.6.30) and can only be
 	/// kept in step by hand. It is a substring rather than the whole sentence so a reworded warning that keeps the
 	/// clause still suppresses the note, because the failure that matters is asserting the OPPOSITE of what the
 	/// server said. The cleaner shape is for the server to report <c>isInterpretable</c> as a field and for

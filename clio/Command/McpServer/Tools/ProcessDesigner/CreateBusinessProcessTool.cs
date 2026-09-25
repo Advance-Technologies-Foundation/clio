@@ -295,7 +295,7 @@ public class CreateBusinessProcessTool(
 		 + "element output as a process output); source is exactly one of {sourceElement, sourceElementParameter} "
 		 + "(another element's output), processParameter, value, or expression. An 'expression' is a FORMULA, "
 		 + "validated by the PLATFORM at the pre-save gate — so a bad one aborts the whole build with 'Process "
-		 + "validation failed' and nothing is created. On CrtProcessBuilder this clio requires 1.6.6.29 (for "
+		 + "validation failed' and nothing is created. On CrtProcessBuilder this clio requires 1.6.6.30 (for "
 		 + "scriptTask, usings[] and subProcess.multiInstanceOptions {enabled, executionMode, ignoreErrors}), which is "
 		 + "NOT where that collapse happened: 1.4.0.41 is where the PACKAGE stopped validating formulas a second "
 		 + "time and the platform's gate became the only one, and .44 is simply the first archive carrying that "
@@ -343,7 +343,8 @@ public class CreateBusinessProcessTool(
 		 + "and do NOT infer a compile need from a raw `VwSysProcess` read. A scriptTask is C# the platform compiles - "
 		 + "scriptTask:{body} holds method STATEMENTS ending in return true; reading and writing parameters ONLY "
 		 + "through Get/Set by case-sensitive name, and namespaces beyond the defaults go in top-level "
-		 + "usings[]:[{namespace, alias?}]. It is the last resort after no-code elements, formulas and a compiled "
+		 + "usings[]:[{namespace, alias?}]; helpers several of its scripts share go in top-level methods: C# CLASS "
+		 + "members as one string (Get/Set work there too). It is the last resort after no-code elements, formulas and a compiled "
 		 + "user task (read get-guidance name=process-script-task first); its result carries a compile-REQUIRED "
 		 + "warning instead of the note, and then a FULL compile-creatio (no package-name) is owed. Either signal "
 		 + "speaks for THIS call only: a compile an earlier save made owed is still owed. A SUCCESSFUL build can still report caveats as message-type \"Warning\" entries in "
@@ -403,7 +404,7 @@ public sealed record CreateBusinessProcessArgs(
 
 	[property: JsonPropertyName("descriptor")]
 	[property: Description("The process descriptor (name, caption, packageName, elements[], flows[], "
-		+ "parameters[], mappings[], usings[]) SERIALIZED AS A JSON STRING - not a nested object. Passing a real object "
+		+ "parameters[], mappings[], usings[], methods) SERIALIZED AS A JSON STRING - not a nested object. Passing a real object "
 		+ "fails with \"Cannot get the value of a token type 'StartObject' as a string\".")]
 	[property: Required]
 	string Descriptor,
