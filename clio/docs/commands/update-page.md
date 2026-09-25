@@ -1,4 +1,4 @@
-# update-page
+﻿# update-page
 
 ## Command Type
 
@@ -142,6 +142,12 @@ name instead of trying to edit a non-existent local `insert`.
     shadows the native element, so the top navigation bar and the page body silently come from the wrong
     element. A `merge` onto `Scaffold` is the SUPPORTED way to patch the template's own root and is left
     alone here — the merge-slot rules above own what may go inside it.
+  - **Rejected — a `crt.IndicatorWidget` that would show no value.** An `insert`, `set` or `merge` authoring a
+    metric must carry `config.layout` and `config.text`, and a `config.data.providing` the mobile runtime can
+    execute: `schemaName` plus `aggregation.column.expression` with a `functionArgument.columnPath` and an
+    `aggregationType` of 1–5, or `expressionSchema` for a calculated metric. Otherwise the page saves, but the
+    metric shows no value or an error placeholder, or the designer canvas does not build. A widget with its own `data` binding is exempt
+    from the providing checks.
   - **Warned — a `merge` that authors child elements in any other slot.** Same mechanism, different odds: a
     slot the target does not carry (`menuItems` on a `crt.Button` or `crt.FloatingActionButton`, `items` on
     `crt.QuickFilterGroup`, `crt.Sort`, `crt.Timeline`) is *created* by the merge and the authoring works.

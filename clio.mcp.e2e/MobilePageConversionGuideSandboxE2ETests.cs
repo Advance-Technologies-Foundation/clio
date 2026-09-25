@@ -1071,7 +1071,7 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	}
 
 	[Test]
-	[Description("ENG-94839 end to end: a converted page whose actions navigate somewhere must report, against the LIVE environment, whether each target exists on mobile. Asserts the probe actually ran (targetsProbed), that every finding uses the declared vocabulary, that it names a control the element map really carries, and — the warn-only contract — that a verified-missing target never removes that control. A conversion failure always fails the test; only a seed with no navigating action degrades to Ignore.")]
+	[Description("End to end: a converted page whose actions navigate somewhere must report, against the LIVE environment, whether each target exists on mobile. Asserts the probe actually ran (targetsProbed), that every finding uses the declared vocabulary, that it names a control the element map really carries, and — the keep-and-blank contract — that a definitionally-missing web-page target never removes the control, only blanks its target param, and that BindingRemoved reports exactly that fact regardless of which writer (insert or twin-merge delta) produced it. A conversion failure always fails the test; a seed with no navigating action, or none whose target is a verified-missing web page, degrades to Ignore.")]
 	[AllureTag(ToolName)]
 	[AllureName("get-mobile-page-conversion-guide verifies each action's navigation target against the environment")]
 	[AllureDescription("Converts the seeded application's pages through the real clio MCP server until one carries an action whose request declares a navigation target, then asserts the guide reports the target verification as typed data and leaves the control in place.")]
@@ -1093,10 +1093,15 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			because: "the shipped rules must declare at least one navigation target, or this surface is dead data");
 		IReadOnlySet<string> navigatingRequests = ResolveBundledNavigatingRequests();
 
-		// Act — convert candidates until one carries an action that actually NAVIGATES. Selecting on
-		// TargetsProbed alone would be vacuous: the probe reports ProbeOk for a page with no navigating action
-		// at all, so the first page with any request binding would satisfy it and every assertion below would
-		// iterate an empty list. A conversion FAILURE is a regression, not a seed gap, so it fails the test.
+		// Act — convert candidates until one carries an action that actually NAVIGATES to a target verified
+		// missing as a WEB PAGE. Selecting on TargetsProbed alone would be vacuous: the probe reports ProbeOk
+		// for a page with no navigating action at all, so the first page with any request binding would
+		// satisfy it and every assertion below would iterate an empty list. Requiring a web-page/missing
+		// finding specifically (not just any navigating action) is what makes the blanking assertions below
+		// non-vacuous too: a page whose only navigating actions are crt.CreateRecordRequest against objects
+		// that DO have a mobile default, or one that targets only its own primary entity, would otherwise pass
+		// selection and iterate zero findings — proving nothing about the keep-and-blank contract. A conversion
+		// FAILURE is a regression, not a seed gap, so it fails the test.
 		MobilePageConversionGuide? guide = null;
 		string convertedSchemaName = string.Empty;
 		List<string> failedCandidates = [];
@@ -1104,7 +1109,8 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			MobilePageConversionGuide? candidate = await ConvertOrCollectFailureAsync(
 				context.Session, context.CancellationTokenSource.Token, environmentName, schemaName, failedCandidates);
 			if (candidate?.RequestConversions is { TargetsProbed: true } candidateConversions
-				&& CarriesNavigatingAction(candidateConversions, navigatingRequests)) {
+				&& CarriesNavigatingAction(candidateConversions, navigatingRequests)
+				&& CarriesVerifiedMissingWebPageTarget(candidateConversions)) {
 				guide = candidate;
 				convertedSchemaName = schemaName;
 				break;
@@ -1114,9 +1120,10 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		if (guide is null) {
 			Assert.Ignore(
 				$"All {candidates.Count} seeded page(s) of '{ApplicationCode}' on environment '{environmentName}' "
-				+ "converted successfully, but none carried an action whose request declares a navigation target. Add a "
-				+ "page with a button firing crt.OpenPageRequest or crt.CreateRecordRequest to the seed application to "
-				+ "exercise this surface.");
+				+ "converted successfully, but none carried a crt.OpenPageRequest (or similarly mapped request) "
+				+ "verified missing on mobile (targetKind: web-page, state: missing) — the one finding shape the "
+				+ "keep-and-blank assertions below require to run at all. Add a page with a button firing "
+				+ "crt.OpenPageRequest at a web-only page to the seed application to exercise this surface.");
 		}
 
 		// Assert — the findings are usable typed data, consistent with the element map, and non-destructive.
@@ -1147,21 +1154,236 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 				because: $"'{finding.ElementName}' on '{convertedSchemaName}' is reported as carrying an unreachable "
 					+ "target, so the CONTROL must still be on the converted page: naming a control the guide "
 					+ "already dropped would contradict its own element map");
-			if (finding.BindingRemoved) {
-				finding.State.Should().Be("missing",
-					because: "an action is only ever removed for an absence that was established, never for one "
-						+ "the environment could not answer for");
-				conversions.DroppedRequests.Should().Contain(
+			// Select on the PHYSICAL FACT (a definitional absence: web-page + missing), never on BindingRemoved
+			// itself — that flag is under test here. Gating selection on it would make a regression that
+			// miscomputes it invisible: this is exactly how the twin-merge writer's blanking went unverified
+			// before ENG-94839's B1 fix, where BindingRemoved read false on that path even though the target
+			// param WAS blanked.
+			bool isDefinitionalAbsence =
+				string.Equals(finding.TargetKind, MobileActionTargetProbe.KindWebPage, StringComparison.OrdinalIgnoreCase)
+				&& string.Equals(finding.State, UnresolvedTargetRequest.StateMissing, StringComparison.OrdinalIgnoreCase);
+			finding.BindingRemoved.Should().Be(isDefinitionalAbsence,
+				because: $"'{finding.ElementName}' on '{convertedSchemaName}' must report BindingRemoved exactly "
+					+ "when the target param was blanked — true only for a definitional absence (web-page + "
+					+ "missing), independent of which writer (insert or twin-merge delta) produced it");
+			if (isDefinitionalAbsence) {
+				ViewConfigDiffOperation element = guide.ViewConfigDiff.Should().ContainSingle(
+						operation => operation.Name == finding.ElementName,
+						because: $"'{finding.ElementName}' on '{convertedSchemaName}' still converts, so its own "
+							+ "operation must be findable in the diff")
+					.Subject;
+				JsonObject values = element.Values as JsonObject;
+				values.Should().NotBeNull(
+					because: "the element carrying a blanked binding must still carry a values object");
+				JsonNode bindingNode = values![finding.Binding];
+				bindingNode.Should().NotBeNull(
+					because: $"'{finding.ElementName}' on '{convertedSchemaName}' keeps its binding — only "
+						+ "the target param is blanked, not the whole binding");
+				JsonObject clicked = bindingNode!.AsObject();
+				clicked["request"]!.GetValue<string>().Should().Be(finding.WebRequest,
+					because: "the request still converts even though its target is dead");
+				clicked["params"]!["schemaName"]!.GetValue<string>().Should().BeEmpty(
+					because: "the target param is blanked instead of left pointing at a page the mobile app "
+						+ "cannot open");
+				conversions.ConvertedRequests.Should().NotContain(
 					r => r.ElementName == finding.ElementName && r.Binding == finding.Binding,
-					because: "a removed binding is a dropped request, so the two collections must agree over the "
-						+ "real MCP transport and not only in unit tests");
+					because: "a blanked target is reported as dropped, not converted, even though the binding "
+						+ "physically stays");
+				DroppedRequest dropped = conversions.DroppedRequests.Should().ContainSingle(
+						r => r.ElementName == finding.ElementName && r.Binding == finding.Binding,
+						because: $"'{finding.ElementName}' on '{convertedSchemaName}' must be reported as dropped, "
+							+ "exactly as an unsupported request type is")
+					.Subject;
+				dropped.Reason.Should().Contain(r => r.Code == ReasonCodes.DropRequestTargetMissing,
+					because: "the caller must be able to switch on the coded reason, not re-derive it");
+			}
+			// A resolved candidate is fail-open (null is a legitimate "none found"), but WHEN one
+			// comes back over the real MCP transport it must be well-formed and scoped to exactly the kind/state
+			// the feature targets — a null-vs-empty-string slip or a leak onto web-page/unknown findings would
+			// not show up in the hand-built unit fixtures.
+			if (!string.IsNullOrEmpty(finding.ResolvedCandidateSchemaName)) {
+				finding.TargetKind.Should().Be(MobileActionTargetProbe.KindEntityDefaultMobilePage,
+					because: $"'{finding.ElementName}' on '{convertedSchemaName}' carries a resolved candidate, "
+						+ "which only ever applies to an entity-default-mobile-page target");
+				finding.State.Should().Be("missing",
+					because: "a candidate is resolved only for a target verified missing, never for one the "
+						+ "environment could not answer for");
 			}
 		}
+
+		// missingTargetPages queue: MissingTargetPageQueueBuilder.Build aggregates BOTH kinds now — a web-page
+		// finding is always queued (settled offline, every state is missing), and a verified-missing
+		// entity-default-mobile-page finding is queued too, keyed by its resolved candidate name when the
+		// environment found one, else by the raw object name.
+		// When both kinds resolve to the SAME schema name they collapse into ONE row and web-page always wins
+		// the reported kind. Asserted against real transport data rather than only the hand-built unit fixtures.
+		// OnlyContain (not NotContain) is safe here because it only pins the KIND vocabulary, never emptiness —
+		// an empty queue trivially satisfies "every entry has a declared kind".
+		IReadOnlyList<UnresolvedTargetRequest> webPageFindings = [.. conversions.UnresolvedTargetRequests
+			.Where(f => string.Equals(f.TargetKind, MobileActionTargetProbe.KindWebPage, StringComparison.OrdinalIgnoreCase))];
+		IReadOnlyList<UnresolvedTargetRequest> missingEntityFindings = [.. conversions.UnresolvedTargetRequests
+			.Where(f => string.Equals(
+					f.TargetKind, MobileActionTargetProbe.KindEntityDefaultMobilePage, StringComparison.OrdinalIgnoreCase)
+				&& string.Equals(f.State, UnresolvedTargetRequest.StateMissing, StringComparison.OrdinalIgnoreCase))];
+		conversions.MissingTargetPages.Should().OnlyContain(
+			p => declaredKinds.Contains(p.TargetKind),
+			because: $"on '{convertedSchemaName}' every queued target's kind must come from the shipped rules' "
+				+ "vocabulary, never a literal the aggregation invented");
+
+		string QueueKeyOf(UnresolvedTargetRequest finding) =>
+			string.Equals(finding.TargetKind, MobileActionTargetProbe.KindWebPage, StringComparison.OrdinalIgnoreCase)
+				? finding.Target!
+				: (!string.IsNullOrWhiteSpace(finding.ResolvedCandidateSchemaName)
+					? finding.ResolvedCandidateSchemaName!
+					: finding.Target!);
+		foreach (IGrouping<string, UnresolvedTargetRequest> group in
+			webPageFindings.Concat(missingEntityFindings).GroupBy(QueueKeyOf, StringComparer.OrdinalIgnoreCase)) {
+			MissingTargetPage queued = conversions.MissingTargetPages.Should().ContainSingle(
+				p => string.Equals(p.Target, group.Key, StringComparison.OrdinalIgnoreCase),
+				because: $"'{group.Key}' was reported missing on '{convertedSchemaName}', so it must be queued "
+					+ "exactly once regardless of how many controls or kinds reference it").Subject;
+			bool anyWebPage = group.Any(
+				f => string.Equals(f.TargetKind, MobileActionTargetProbe.KindWebPage, StringComparison.OrdinalIgnoreCase));
+			queued.TargetKind.Should().Be(
+				anyWebPage ? MobileActionTargetProbe.KindWebPage : MobileActionTargetProbe.KindEntityDefaultMobilePage,
+				because: $"'{group.Key}' on '{convertedSchemaName}' must report the web-page kind whenever ANY "
+					+ "reference to it is a definitional web-page absence, even when an "
+					+ "entity-default-mobile-page reference to the same schema also exists");
+			// resolvedCandidateSchemaName disambiguates the two shapes an entity-default-mobile-page row's
+			// Target can take (already a resolved page name vs. just the raw object name) — asserted against
+			// real transport data, not only the hand-built unit fixtures.
+			bool anyResolvedEntityCandidate = group.Any(f =>
+				string.Equals(f.TargetKind, MobileActionTargetProbe.KindEntityDefaultMobilePage, StringComparison.OrdinalIgnoreCase)
+				&& string.Equals(f.ResolvedCandidateSchemaName, group.Key, StringComparison.OrdinalIgnoreCase));
+			if (!anyWebPage && anyResolvedEntityCandidate) {
+				queued.ResolvedCandidateSchemaName.Should().Be(group.Key,
+					because: $"'{group.Key}' on '{convertedSchemaName}' is queued because a candidate WAS "
+						+ "resolved for it, so the discriminator must confirm Target is already a real page "
+						+ "name, not just the object name");
+			} else {
+				queued.ResolvedCandidateSchemaName.Should().BeNull(
+					because: $"'{group.Key}' on '{convertedSchemaName}' is either a web-page row (Target is "
+						+ "already a page name by construction) or an entity row with no resolved candidate "
+						+ "(Target is just the object name) — neither shape needs the discriminator populated");
+			}
+			foreach (UnresolvedTargetRequest finding in group) {
+				queued.References.Should().ContainSingle(
+					r => r.ElementName == finding.ElementName && r.Binding == finding.Binding,
+					because: $"'{finding.ElementName}' on '{convertedSchemaName}' references the missing page and "
+						+ "must be traceable from the queue entry");
+			}
+		}
+	}
+
+	[Test]
+	[Description("existingMobilePages (ENG-94839 M7, playbook step 2a reuse-vs-convert): converts seeded pages until one reports at least one existing mobile page for its section/bound entity, then asserts the entry is well-formed (non-blank schemaName/schemaUId, source from the closed set) and correctly SELF-EXCLUDES — it never names the schema this very run would create/update. A conversion failure always fails the test; no seeded page reporting a match degrades to Ignore.")]
+	[AllureTag(ToolName)]
+	[AllureName("get-mobile-page-conversion-guide reports a well-formed, self-excluded existingMobilePages match")]
+	[AllureDescription("Converts the seeded application's pages through the real clio MCP server until one reports a non-empty existingMobilePages, then asserts every entry's schemaName/schemaUId/source and that none names the page's own target schema.")]
+	public async Task MobilePageConversionGuideTool_Should_Report_ExistingMobilePages_When_A_Default_Is_Registered() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
+		await RequireConverterToolAsync(context);
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		IReadOnlyList<string> candidates = await ResolveConvertibleSeededPageCandidatesAsync(
+			context.Session, context.CancellationTokenSource.Token, environmentName);
+
+		// Act — convert candidates until one carries at least one existing-mobile-page match.
+		MobilePageConversionGuide? guide = null;
+		string convertedSchemaName = string.Empty;
+		List<string> failedCandidates = [];
+		foreach (string schemaName in candidates) {
+			MobilePageConversionGuide? candidate = await ConvertOrCollectFailureAsync(
+				context.Session, context.CancellationTokenSource.Token, environmentName, schemaName, failedCandidates);
+			if (candidate is { ExistingMobilePages.Count: > 0 }) {
+				guide = candidate;
+				convertedSchemaName = schemaName;
+				break;
+			}
+		}
+		FailOnConversionFailures(failedCandidates, candidates.Count, environmentName);
+		if (guide is null) {
+			Assert.Ignore(
+				$"None of the {candidates.Count} convertible seeded page(s) of '{ApplicationCode}' on environment "
+				+ $"'{environmentName}' reported an existing mobile page for their section or bound entity — add an "
+				+ "object (or a registered section) that already has a default mobile page to the seed application "
+				+ "to exercise this shape.");
+		}
+
+		// Assert
+		string ownTargetName = MobilePageConversionGuideTool.DeriveMobileSchemaName(convertedSchemaName);
+		foreach (ExistingMobilePageInfo match in guide!.ExistingMobilePages) {
+			match.SchemaName.Should().NotBeNullOrWhiteSpace(
+				because: $"an existing-page match on '{convertedSchemaName}' the caller cannot look up by name is "
+					+ "not actionable");
+			match.SchemaUId.Should().NotBeNullOrWhiteSpace(
+				because: $"an existing-page match on '{convertedSchemaName}' must carry the schema identity, not "
+					+ "just its name");
+			match.Source.Should().BeOneOf([ExistingMobilePageProbe.KindSection, MobileActionTargetProbe.KindEntityDefaultMobilePage],
+				because: $"'{convertedSchemaName}' must report where the match came from using the closed source "
+					+ "vocabulary, never a literal the probe invented");
+			match.SchemaName.Should().NotBe(ownTargetName,
+				because: $"'{convertedSchemaName}' is about to create/update '{ownTargetName}' itself, so a match "
+					+ "naming that same schema must have been excluded as a self-match rather than offered for "
+					+ "reuse — otherwise the guide tells the caller to \"reuse\" the page it is currently building");
+		}
+	}
+
+	[Test]
+	[Description("existingMobilePages (ENG-94839 M7, playbook step 2a reuse-vs-convert): a converted page whose section/bound entity carries NO existing default mobile page must still succeed, reporting an empty (never null) existingMobilePages — an empty list is a legitimate 'nothing to reuse' answer, not an error. A conversion failure always fails the test; every seeded page already carrying a match degrades to Ignore.")]
+	[AllureTag(ToolName)]
+	[AllureName("get-mobile-page-conversion-guide reports an empty existingMobilePages without error when nothing exists to reuse")]
+	[AllureDescription("Converts the seeded application's pages through the real clio MCP server until one reports an empty existingMobilePages, and asserts the conversion still succeeded — proving the empty shape is a normal, non-error outcome.")]
+	public async Task MobilePageConversionGuideTool_Should_Report_EmptyExistingMobilePages_WithoutError_WhenNoDefaultExists() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
+		await RequireConverterToolAsync(context);
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		IReadOnlyList<string> candidates = await ResolveConvertibleSeededPageCandidatesAsync(
+			context.Session, context.CancellationTokenSource.Token, environmentName);
+
+		// Act — convert candidates until one carries NO existing-mobile-page match.
+		MobilePageConversionGuide? guide = null;
+		string convertedSchemaName = string.Empty;
+		List<string> failedCandidates = [];
+		foreach (string schemaName in candidates) {
+			MobilePageConversionGuide? candidate = await ConvertOrCollectFailureAsync(
+				context.Session, context.CancellationTokenSource.Token, environmentName, schemaName, failedCandidates);
+			if (candidate is { ExistingMobilePages.Count: 0 }) {
+				guide = candidate;
+				convertedSchemaName = schemaName;
+				break;
+			}
+		}
+		FailOnConversionFailures(failedCandidates, candidates.Count, environmentName);
+		if (guide is null) {
+			Assert.Ignore(
+				$"All {candidates.Count} convertible seeded page(s) of '{ApplicationCode}' on environment "
+				+ $"'{environmentName}' reported an existing mobile page match, so none is available to exercise "
+				+ "the no-default shape.");
+		}
+
+		// Assert — reaching here at all already proves the conversion succeeded (ConvertOrCollectFailureAsync
+		// only returns a non-null guide for a successful response), so the empty list is confirmed non-error.
+		guide!.ExistingMobilePages.Should().BeEmpty(
+			because: $"'{convertedSchemaName}' was selected precisely because it carried no existing-mobile-page "
+				+ "match, and the conversion still succeeded — an empty list must never be reported as a failure");
 	}
 
 	/// <summary>
 	/// The <c>targetKind</c> values the SHIPPED rules declare, read from the rules file rather than restated
 	/// here: the vocabulary is data, and a rules update that adds a kind must not fail this test.
+	/// <para>
+	/// KNOWN LIMIT: this reads the BUNDLED rules, while the tool serves the versioned rules for the
+	/// environment. The two agree today, and a lane that wants the comparison to be sound by construction
+	/// should pin both sides by setting <c>CLIO_WEB_TO_MOBILE_PAGE_CONVERSION_RULES_LOCAL_FILE</c> to the
+	/// bundled file before the run. Left unpinned here because these tests have never executed against a
+	/// stand, and a process-wide environment variable set from a test would reach every other one.
+	/// </para>
 	/// </summary>
 	private static IReadOnlySet<string> ResolveBundledTargetKinds() =>
 		WebToMobilePageConversionRulesCatalog.LoadBundled().Requests
@@ -1339,6 +1561,395 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		conversions.ConvertedRequests.Any(r => navigatingRequests.Contains(r.WebRequest ?? string.Empty))
 		|| conversions.FlaggedRequests.Any(r => navigatingRequests.Contains(r.Request ?? string.Empty))
 		|| conversions.DroppedRequests.Any(r => navigatingRequests.Contains(r.WebRequest ?? string.Empty));
+
+	[Test]
+	[Description("ENG-96584 end to end: request support is no longer a hardcoded constant. A header action whose request the bundled WebToMobilePageConversionRules.json does NOT cover but the LIVE mobile request registry DOES list must survive into the FloatingActionButton — the deleted MobileSupportedRequests constant is what used to carry crt.SetAttributeFromNfcRequest / crt.UpdateQuickFilterGroupRequest, and a registry the converter fails to consult turns exactly those actions back into dropped dead buttons. The registry-declared set is READ from the live catalog through get-request-info rather than restated here, and every converted page is additionally checked for the two drop shapes the regression produces, so it fails on whichever seeded page carries the evidence. A seed that references no such request at all degrades to Ignore, never a vacuous pass; a conversion failure always fails the test.")]
+	[AllureTag(ToolName)]
+	[AllureName("get-mobile-page-conversion-guide keeps a header action only the mobile request registry declares")]
+	[AllureDescription("Reads the live mobile request registry through get-request-info (schema-type=mobile against the same environment, so the same version resolution the converter applies), subtracts the bundled rules file's own requests entries, converts the seeded application's pages through the real clio MCP server, asserts that no registry-declared request is dropped as unsupported on any of them, and asserts that a header action firing one reaches FloatingActionButton.menuItems with its binding intact.")]
+	public async Task MobilePageConversionGuideTool_Should_Keep_A_Header_Action_Only_The_Registry_Declares() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
+		await RequireConverterToolAsync(context);
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		IReadOnlyList<string> candidates = await ResolveConvertibleSeededPageCandidatesAsync(
+			context.Session, context.CancellationTokenSource.Token, environmentName);
+		IReadOnlySet<string> registryOnlyRequests = await ResolveRegistryOnlyRequestTypesAsync(
+			context.Session, context.CancellationTokenSource.Token, environmentName);
+		registryOnlyRequests.Should().NotBeEmpty(
+			because: "the live mobile request registry must list request types the bundled rules file does not "
+				+ "cover — with none, the registry fallback decides nothing and this guard tests nothing");
+
+		// Act — convert EVERY candidate. The drop shapes the regression produces are asserted on each page that
+		// references a registry-declared request, so a converter that stopped consulting the registry fails on
+		// whichever seeded page carries the evidence; the loop itself hunts for the header-action instance and
+		// stops there. A conversion failure is a runtime regression, never a seed gap.
+		MobilePageConversionGuide? fabGuide = null;
+		RequestMention fabMention = default;
+		string convertedSchemaName = string.Empty;
+		int referencingPages = 0;
+		List<string> failedCandidates = [];
+		foreach (string schemaName in candidates) {
+			MobilePageConversionGuide? candidate = await ConvertOrCollectFailureAsync(
+				context.Session, context.CancellationTokenSource.Token, environmentName, schemaName, failedCandidates);
+			if (candidate is null) {
+				continue;
+			}
+			List<RequestMention> references = [.. MentionedRequests(candidate)
+				.Where(mention => registryOnlyRequests.Contains(mention.Request))];
+			if (references.Count == 0) {
+				continue;
+			}
+			referencingPages++;
+			AssertRegistryDeclaredRequestsAreSupported(candidate, registryOnlyRequests, schemaName);
+			IReadOnlySet<string> fabNames = FabMenuItemNames(candidate);
+			RequestMention headerAction = references.FirstOrDefault(
+				mention => fabNames.Contains(mention.ElementName ?? string.Empty));
+			if (headerAction.Request is not null) {
+				fabGuide = candidate;
+				fabMention = headerAction;
+				convertedSchemaName = schemaName;
+				break;
+			}
+		}
+
+		// Assert
+		FailOnConversionFailures(failedCandidates, candidates.Count, environmentName);
+		if (referencingPages == 0) {
+			Assert.Ignore(
+				$"None of the {candidates.Count} seeded page(s) of '{ApplicationCode}' on environment '{environmentName}' "
+				+ "references ANY of the request types the live mobile request registry declares and the bundled rules "
+				+ "file does not cover, so the registry fallback could not be exercised end to end. The seed application "
+				+ "is provisioned OUTSIDE this repository, so this gap is closed by seeding, not by a code change: add a "
+				+ "page with a crt.Button in the MainHeader whose clicked fires crt.SetAttributeFromNfcRequest or "
+				+ "crt.UpdateQuickFilterGroupRequest — the two entries of the deleted MobileSupportedRequests constant "
+				+ "the shipped rules file leaves uncovered. Until then the rules-then-registry criterion stays pinned "
+				+ "off-stand by WebToMobileConversionServiceTests.");
+		}
+		if (fabGuide is null) {
+			// Reported, NOT ignored — the same rule this fixture applies to the tab-strip observation in
+			// MobilePageConversionGuideTool_Should_Return_ViewConfigDiff_The_Differ_Applies_Cleanly. By this line
+			// the registry verdict HAS been verified on every referencing page: a registry-declared request was
+			// carried rather than dropped as unsupported, which is the whole of what the deleted constant used to
+			// decide. Marking the run skipped would deny work that actually happened. What is NOT covered while
+			// this line prints is only the header-action PLACEMENT of such a request.
+			// Inconclusive, not a pass: the registry verdict above really was verified on every referencing
+			// page, but the header-to-FAB half named in this test never ran. A green tick would report
+			// coverage this run does not have, which is the one reading that must not be possible.
+			Assert.Inconclusive(
+				$"[seed gap] {referencingPages} of {candidates.Count} seeded page(s) of '{ApplicationCode}' on "
+				+ $"environment '{environmentName}' reference a registry-declared request and none was dropped as "
+				+ "unsupported, but none of them carries it on a MainHeader action, so the FAB placement half was not "
+				+ "exercised on this run. To close it, move one of those buttons into the page's MainHeader.");
+			return;
+		}
+		AssertHeaderActionsConvertToFab(fabGuide);
+		ViewConfigDiffOperation fabEntry = fabGuide.ViewConfigDiff.Single(entry =>
+			entry.Operation == "insert" && entry.Name == fabMention.ElementName
+			&& entry.ParentName == "FloatingActionButton" && entry.PropertyName == "menuItems");
+		fabMention.Collection.Should().Be("flaggedRequests",
+			because: $"'{fabMention.Request}' is absent from the bundled rules map, so the converter keeps the binding "
+				+ $"VERBATIM on '{fabMention.ElementName}' and flags it for review — reporting it anywhere else would "
+				+ "mean the rules map, not the registry, settled its fate");
+		(fabEntry.Values as JsonObject).Should().NotBeNull(
+			because: $"a converted FAB menu item ('{fabEntry.Name}' on '{convertedSchemaName}') always carries the "
+				+ "mobileValues object the converter built");
+		((JsonObject)fabEntry.Values!).ContainsKey(fabMention.Binding!).Should().BeTrue(
+			because: $"the registry is what makes '{fabMention.Request}' survivable, so the menu item must still "
+				+ $"carry its '{fabMention.Binding}' binding — reaching the FAB with the action stripped is the same "
+				+ "loss in a different shape");
+		fabEntry.Values![fabMention.Binding!]?["request"]?.GetValue<string>().Should().Be(fabMention.Request,
+			because: "the rules map declares no mobile counterpart to remap this request to, so it is carried "
+				+ "verbatim; a rewritten request would name a mapping the rules file does not publish");
+		TestContext.Out.WriteLine(
+			$"registry-declared request '{fabMention.Request}' converted into FloatingActionButton.menuItems as "
+			+ $"'{fabEntry.Name}' on seeded page '{convertedSchemaName}'.");
+	}
+
+	[Test]
+	[Description("ENG-96584 end to end, the other half: a request the bundled rules map does NOT cover and the live mobile request registry does NOT list is unsupported, so the crt.Button firing it is dropped and the loss is RECORDED — in droppedElements under drop-unsupported-request / drop-unknown-request naming the request, and additionally in requestConversions.droppedRequests whenever the button sat in a non-converting scope (the header), which is the collection a caller reads to learn what the converted page no longer does. Every converted seeded page is checked for the classification contract — a converted request is always one the rules map targets, and every request-caused drop names a request the two-source criterion finds in NEITHER catalog — so a drop decided by anything other than rules-then-registry fails here. The drop OCCURRENCE needs a seeded page firing an unknown crt.* or a custom usr.* request and degrades to Ignore when the seed carries none; a conversion failure always fails the test.")]
+	[AllureTag(ToolName)]
+	[AllureName("get-mobile-page-conversion-guide drops a request neither the rules nor the registry declare")]
+	[AllureDescription("Reads the live mobile request registry through get-request-info and the bundled rules file's own requests entries, converts every seeded page of AutoTestClioMcp through the real clio MCP server, and asserts per page that every converted request is one the rules map targets and that every element dropped for the request it fires names a request absent from BOTH catalogs, is gone from the element map, and — when the drop happened inside a non-converting scope — has its binding recorded in requestConversions.droppedRequests.")]
+	public async Task MobilePageConversionGuideTool_Should_Drop_A_Request_Neither_Source_Declares() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
+		await RequireConverterToolAsync(context);
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		IReadOnlyList<string> candidates = await ResolveConvertibleSeededPageCandidatesAsync(
+			context.Session, context.CancellationTokenSource.Token, environmentName);
+		IReadOnlySet<string> registryRequests = await ResolveMobileRequestRegistryTypesAsync(
+			context.Session, context.CancellationTokenSource.Token, environmentName);
+		registryRequests.Should().NotBeEmpty(
+			because: "an empty registry makes every request look undeclared, so the 'neither source declares it' "
+				+ "assertions below would hold for reasons that have nothing to do with the conversion");
+		IReadOnlySet<string> coveredRequests = ResolveBundledCoveredRequests();
+		IReadOnlySet<string> mappedRequests = ResolveBundledMappedRequests();
+
+		// Act + Assert (per page) — convert EVERY seeded page; a conversion failure is a runtime regression,
+		// never a seed gap, so failures are collected and fail the test outright.
+		int pagesWithConvertedRequests = 0;
+		int unsupportedDropsChecked = 0;
+		string convertedSchemaName = string.Empty;
+		string unsupportedRequest = string.Empty;
+		List<string> failedCandidates = [];
+		foreach (string schemaName in candidates) {
+			MobilePageConversionGuide? guide = await ConvertOrCollectFailureAsync(
+				context.Session, context.CancellationTokenSource.Token, environmentName, schemaName, failedCandidates);
+			if (guide is null) {
+				continue;
+			}
+			RequestConversionInfo? conversions = guide.RequestConversions;
+			if (conversions is { ConvertedRequests.Count: > 0 }) {
+				pagesWithConvertedRequests++;
+				conversions.ConvertedRequests.Should().OnlyContain(
+					request => mappedRequests.Contains(request.WebRequest ?? string.Empty),
+					because: $"on '{schemaName}' a request CONVERTS only through a rules entry that names its mobile "
+						+ "target — the registry decides support, never the remap, so a converted request the rules "
+						+ "file does not target would ship a mobile request name nothing publishes");
+			}
+			IReadOnlySet<string> surviving = SurvivingMobileNames(guide);
+			foreach ((DroppedElement element, ReasonCode reason, string request) in UnsupportedRequestDrops(guide)) {
+				unsupportedDropsChecked++;
+				convertedSchemaName = schemaName;
+				unsupportedRequest = request;
+				IsRequestSupportedByCatalogs(request, coveredRequests, mappedRequests, registryRequests)
+					.Should().BeFalse(
+						because: $"'{element.WebName}' on '{schemaName}' was dropped under '{reason.Code}' for firing "
+							+ $"'{request}', so the rules-then-registry criterion must find it unsupported — a drop "
+							+ "for a request either catalog declares is the deleted MobileSupportedRequests constant "
+							+ "deciding again");
+				surviving.Contains(element.WebName ?? string.Empty).Should().BeFalse(
+					because: $"'{element.WebName}' on '{schemaName}' fires a request neither catalog declares, so it "
+						+ "would be a dead control — the guide reports it dropped and must not also instruct the "
+						+ "caller to build it");
+				if (ParamOf(reason, "scope") is not null) {
+					// Only the non-converting-scope path records the binding separately: on the leaf path the
+					// element's own drop entry IS the whole record, and requestConversions carries nothing for it.
+					conversions?.DroppedRequests.Should().Contain(
+						dropped => dropped.ElementName == element.WebName && dropped.WebRequest == request,
+						because: $"'{element.WebName}' was dropped inside a non-converting scope on '{schemaName}', so "
+							+ "the lost action must also reach requestConversions.droppedRequests — that collection is "
+							+ "what tells the caller which action the converted page no longer performs");
+				}
+			}
+		}
+
+		// Assert (aggregate) — never pass vacuously.
+		FailOnConversionFailures(failedCandidates, candidates.Count, environmentName);
+		if (unsupportedDropsChecked == 0) {
+			Assert.Ignore(
+				$"None of the {candidates.Count} seeded page(s) of '{ApplicationCode}' on environment '{environmentName}' "
+				+ "fires a request that is in NEITHER the bundled rules map NOR the live mobile request registry, so the "
+				+ "unsupported-request drop could not be exercised end to end (the classification contract was still "
+				+ $"checked: {pagesWithConvertedRequests} page(s) carried converted requests, every one of them targeted "
+				+ "by the rules file). The seed application is provisioned OUTSIDE this repository, so this gap is "
+				+ "closed by seeding, not by a code change: add a page with a crt.Button in the MainHeader whose clicked "
+				+ "fires an unknown request — a custom usr.AutoTestUnknownRequest, or any crt.* absent from both "
+				+ "catalogs. Until then the two-source drop decision stays pinned off-stand by "
+				+ "WebToMobileConversionServiceTests.");
+		}
+		TestContext.Out.WriteLine(
+			$"{unsupportedDropsChecked} unsupported-request drop(s) checked against both catalogs; the last was "
+			+ $"'{unsupportedRequest}' on seeded page '{convertedSchemaName}'.");
+	}
+
+	/// <summary>
+	/// ENG-96584: a request the bundled rules file does not cover but the live mobile request registry DOES
+	/// list is SUPPORTED, so nothing on the page may be dropped for not supporting it. Both drop shapes are
+	/// checked because the two conversion paths report the same verdict differently — the LEAF path drops the
+	/// <c>crt.Button</c> and names the request only in the element's own reason params, while the
+	/// non-converting-scope path (a header action) also strips the binding into
+	/// <c>requestConversions.droppedRequests</c>.
+	/// </summary>
+	private static void AssertRegistryDeclaredRequestsAreSupported(
+		MobilePageConversionGuide guide, IReadOnlySet<string> registryOnlyRequests, string schemaName) {
+		foreach ((DroppedElement element, ReasonCode reason, string request) in UnsupportedRequestDrops(guide)) {
+			registryOnlyRequests.Contains(request).Should().BeFalse(
+				because: $"'{element.WebName}' on '{schemaName}' was dropped under '{reason.Code}' for firing "
+					+ $"'{request}', which the live mobile request registry DOES list — support now falls back to the "
+					+ "registry for every request the rules file leaves uncovered, so this drop is the deleted "
+					+ "MobileSupportedRequests constant deciding again");
+		}
+		foreach (DroppedRequest dropped in guide.RequestConversions?.DroppedRequests ?? []) {
+			if (!(dropped.Reason ?? []).Any(code =>
+				code?.Code is ReasonCodes.DropUnsupportedRequest or ReasonCodes.DropUnknownRequest)) {
+				continue;
+			}
+			registryOnlyRequests.Contains(dropped.WebRequest ?? string.Empty).Should().BeFalse(
+				because: $"the '{dropped.Binding}' binding on '{dropped.ElementName}' ('{schemaName}') was stripped for "
+					+ $"firing '{dropped.WebRequest}', which the live mobile request registry DOES list");
+		}
+	}
+
+	/// <summary>
+	/// The product's own two-source support criterion, re-derived here from the two catalogs rather than
+	/// called: the versioned rules file wins when it covers the request (a named mobile target is supported,
+	/// a cleared one is not), and only a request it leaves uncovered falls back to the mobile request
+	/// registry. Re-deriving is the point — asking the analysis service would make every assertion agree with
+	/// the implementation by construction.
+	/// </summary>
+	private static bool IsRequestSupportedByCatalogs(
+		string request, IReadOnlySet<string> coveredRequests, IReadOnlySet<string> mappedRequests,
+		IReadOnlySet<string> registryRequests) =>
+		coveredRequests.Contains(request) ? mappedRequests.Contains(request) : registryRequests.Contains(request);
+
+	/// <summary>
+	/// Every element the converter dropped BECAUSE of the request it fires, paired with the reason and the
+	/// request that reason names. The two codes are the leaf path's and the non-converting scope's spellings
+	/// of one verdict, and both carry the request in <c>params.request</c>.
+	/// </summary>
+	private static IEnumerable<(DroppedElement Element, ReasonCode Reason, string Request)> UnsupportedRequestDrops(
+		MobilePageConversionGuide guide) {
+		foreach (DroppedElement element in guide.DroppedElements ?? []) {
+			foreach (ReasonCode reason in element.Reason ?? []) {
+				if (reason?.Code is not (ReasonCodes.DropUnsupportedRequest or ReasonCodes.DropUnknownRequest)) {
+					continue;
+				}
+				if (ParamOf(reason, "request") is { Length: > 0 } request) {
+					yield return (element, reason, request);
+				}
+			}
+		}
+	}
+
+	/// <summary>One request type the guide reports, with the collection that reported it and the element that
+	/// carries it — the join key every requestConversions collection shares.</summary>
+	private readonly record struct RequestMention(string Request, string Collection, string? ElementName, string? Binding);
+
+	/// <summary>
+	/// Every request type the guide MENTIONS, in whichever outcome recorded it — including the request named
+	/// in a dropped element's reason params, which is the ONLY place the leaf-path button drop reports one.
+	/// </summary>
+	/// <remarks>
+	/// Reading all four places is what keeps the registry guard's candidate selection independent of the
+	/// verdict it asserts: a converter that stopped consulting the registry moves its requests from
+	/// <c>flaggedRequests</c> into <c>droppedElements</c>, so a selection that looked only at the healthy
+	/// shape would report the regression as missing seed data.
+	/// </remarks>
+	private static List<RequestMention> MentionedRequests(MobilePageConversionGuide guide) {
+		RequestConversionInfo? conversions = guide.RequestConversions;
+		List<RequestMention> mentions = [
+			.. (conversions?.ConvertedRequests ?? [])
+				.Select(r => new RequestMention(r.WebRequest, "convertedRequests", r.ElementName, r.Binding)),
+			.. (conversions?.FlaggedRequests ?? [])
+				.Select(r => new RequestMention(r.Request, "flaggedRequests", r.ElementName, r.Binding)),
+			.. (conversions?.DroppedRequests ?? [])
+				.Select(r => new RequestMention(r.WebRequest, "droppedRequests", r.ElementName, r.Binding))
+		];
+		foreach ((DroppedElement element, ReasonCode _, string request) in UnsupportedRequestDrops(guide)) {
+			mentions.Add(new RequestMention(request, "droppedElements", element.WebName, null));
+		}
+		return [.. mentions.Where(mention => !string.IsNullOrWhiteSpace(mention.Request))];
+	}
+
+	/// <summary>The mobile names of the elements retargeted into the floating action button's menu.</summary>
+	private static IReadOnlySet<string> FabMenuItemNames(MobilePageConversionGuide guide) =>
+		guide.ViewConfigDiff
+			.Where(entry => entry.Operation == "insert" && entry.ParentName == "FloatingActionButton"
+				&& entry.PropertyName == "menuItems" && !string.IsNullOrWhiteSpace(entry.Name))
+			.Select(entry => entry.Name!)
+			.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+	/// <summary>
+	/// The mobile names the converted page actually carries. Read off <c>viewConfigDiff</c>, whose projection
+	/// is an allow-list of insert/merge, so a dropped element cannot leak in and no drop filter is needed.
+	/// </summary>
+	private static IReadOnlySet<string> SurvivingMobileNames(MobilePageConversionGuide guide) =>
+		guide.ViewConfigDiff
+			.Where(entry => !string.IsNullOrWhiteSpace(entry.Name))
+			.Select(entry => entry.Name!)
+			.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+	/// <summary>A reason code's string param, or null when the code does not carry it (null params are
+	/// dropped at the point the reason is built, so absent and null are the same thing here).</summary>
+	private static string? ParamOf(ReasonCode? reason, string key) =>
+		reason?.Params is not null && reason.Params.TryGetValue(key, out JsonNode? value)
+		&& value is JsonValue jsonValue && jsonValue.TryGetValue(out string? text)
+			? text
+			: null;
+
+	/// <summary>
+	/// The request types the LIVE mobile request registry publishes, read through the real MCP server with
+	/// the SAME version resolution the converter applies (the environment decides the platform version, and
+	/// the same CDN → cache chain serves the payload). Read rather than restated: the registry is data that
+	/// ships on its own cadence, and a second copy here would fail the suite on a registry update instead of
+	/// on a conversion regression.
+	/// </summary>
+	private static async Task<IReadOnlySet<string>> ResolveMobileRequestRegistryTypesAsync(
+		McpServerSession session, CancellationToken cancellationToken, string environmentName) {
+		CallToolResult callResult = await session.CallToolAsync(
+			RequestInfoTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-type"] = "mobile",
+					["environment-name"] = environmentName
+				}
+			},
+			cancellationToken);
+		(callResult.IsError == true).Should().BeFalse(
+			because: "the mobile request registry is what decides request support for the converter, so a "
+				+ "transport-level failure reading it leaves this guard with no criterion rather than a verdict");
+		RequestInfoResponse response = EntitySchemaStructuredResultParser.Extract<RequestInfoResponse>(callResult);
+		response.Success.Should().BeTrue(
+			because: $"get-request-info must serve the mobile registry before the converter's use of it can be "
+				+ $"judged. Error: {response.Error}");
+		return (response.Items ?? [])
+			.Select(item => item.RequestType)
+			.Where(requestType => !string.IsNullOrWhiteSpace(requestType))
+			.ToHashSet(StringComparer.OrdinalIgnoreCase);
+	}
+
+	/// <summary>
+	/// The request types the mobile registry declares and the bundled rules file leaves UNCOVERED — the set
+	/// whose support can only have come from the registry, which is exactly what the deleted
+	/// <c>MobileSupportedRequests</c> constant used to decide.
+	/// </summary>
+	private static async Task<IReadOnlySet<string>> ResolveRegistryOnlyRequestTypesAsync(
+		McpServerSession session, CancellationToken cancellationToken, string environmentName) {
+		IReadOnlySet<string> registryRequests =
+			await ResolveMobileRequestRegistryTypesAsync(session, cancellationToken, environmentName);
+		IReadOnlySet<string> coveredRequests = ResolveBundledCoveredRequests();
+		return registryRequests.Where(requestType => !coveredRequests.Contains(requestType))
+			.ToHashSet(StringComparer.OrdinalIgnoreCase);
+	}
+
+	/// <summary>
+	/// Every web request the bundled rules file has an entry for, whether or not that entry names a mobile
+	/// target. This is the set the rules file DECIDES: a covered request never reaches the registry fallback.
+	/// </summary>
+	private static IReadOnlySet<string> ResolveBundledCoveredRequests() =>
+		WebToMobilePageConversionRulesCatalog.LoadBundled().Requests
+			.Select(rule => rule.Web)
+			.Where(web => !string.IsNullOrWhiteSpace(web))
+			.ToHashSet(StringComparer.OrdinalIgnoreCase)!;
+
+	/// <summary>
+	/// The subset of <see cref="ResolveBundledCoveredRequests"/> whose entry names a mobile target — the
+	/// requests the rules file declares SUPPORTED, and the only ones a conversion may remap.
+	/// </summary>
+	private static IReadOnlySet<string> ResolveBundledMappedRequests() =>
+		WebToMobilePageConversionRulesCatalog.LoadBundled().Requests
+			.Where(rule => !string.IsNullOrWhiteSpace(rule.Web) && !string.IsNullOrWhiteSpace(rule.Mobile))
+			.Select(rule => rule.Web)
+			.ToHashSet(StringComparer.OrdinalIgnoreCase)!;
+
+	/// <summary>
+	/// Whether the conversion reports at least one finding verified DEFINITIONALLY missing (targetKind
+	/// web-page, state missing) — the one finding shape whose blanking (keep-and-blank, never remove) is
+	/// worth asserting. Selecting a candidate on <see cref="CarriesNavigatingAction"/> alone can satisfy a page
+	/// whose only navigating actions are crt.CreateRecordRequest against objects that DO have a mobile
+	/// default, or one that targets only its own primary entity — both real seed shapes that would iterate
+	/// zero findings and leave the keep-and-blank assertions unexercised.
+	/// </summary>
+	private static bool CarriesVerifiedMissingWebPageTarget(RequestConversionInfo conversions) =>
+		conversions.UnresolvedTargetRequests.Any(f =>
+			string.Equals(f.TargetKind, MobileActionTargetProbe.KindWebPage, StringComparison.OrdinalIgnoreCase)
+			&& string.Equals(f.State, UnresolvedTargetRequest.StateMissing, StringComparison.OrdinalIgnoreCase));
 
 	/// <summary>
 	/// Fails the test when any seeded page failed to convert, whether or not the search that collected the

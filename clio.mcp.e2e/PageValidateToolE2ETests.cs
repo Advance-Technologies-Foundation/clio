@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -1001,6 +1001,44 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 			because: "validation details are always included in the response");
 		response.Validation!.Warnings.Should().Contain(w => w.Contains("usr.NotARealComponentType"),
 			because: "the previously silent case has to name the type so a typo is distinguishable from a deliberate custom component");
+	}
+
+	[Test]
+	[Description("validate-page blocks a mobile metric whose aggregation column has no expression.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page rejects a mobile metric whose providing cannot produce a value")]
+	[AllureDescription("Sends a mobile body with the old document's metric shape and verifies validate-page blocks it and names the missing path.")]
+	public async Task PageValidateTool_Should_Reject_Mobile_Indicator_Widget_Without_Executable_Providing() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string mobileBodyWithDeadMetric = """
+			{
+			  "viewConfigDiff": [
+			    { "operation": "insert", "name": "TotalIndicator", "parentName": "MainContainer", "propertyName": "items",
+			      "values": { "type": "crt.IndicatorWidget",
+			                  "config": { "title": "Total",
+			                              "layout": { "color": "green" },
+			                              "text": { "template": "{0}", "metricMacros": "{0}" },
+			                              "data": { "providing": { "schemaName": "Contact",
+			                                                       "aggregation": { "column": { "columnPath": "Id" } } } } } } }
+			  ],
+			  "viewModelConfigDiff": [],
+			  "modelConfigDiff": []
+			}
+			""";
+
+		// Act
+		PageValidateResponse response = await CallAsync(
+			context.Session, context.CancellationTokenSource.Token, mobileBodyWithDeadMetric);
+
+		// Assert
+		response.Valid.Should().BeFalse(
+			because: "this shape cannot render a value");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.Errors.Should().Contain(
+			e => e.Contains("config.data.providing.aggregation.column.expression") && !e.Contains("config.layout"),
+			because: "the missing path is named");
 	}
 
 	[Test]
