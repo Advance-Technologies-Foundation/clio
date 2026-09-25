@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.IO.Compression;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -227,7 +226,7 @@ public sealed class ManagerMapResolveDataIdTests {
 	[Description("The ServerBuildTokens copy above equals the ElementTypes constants in the CrtProcessBuilder archive this clio bundles. Reads the bundled archive from the test output, as BundledProcessBuilderPackageTests does and for its reason: the file ships with the build, and a guard only in the integration lane would not guard the rebundle that breaks it.")]
 	public void ServerBuildTokens_ShouldMatchTheBundledPackage_WhenTheArchiveIsRebundled() {
 		// Arrange
-		string archive = ReadBundledArchiveAsText();
+		string archive = ReadBundledProcessDesignConstants();
 		Match elementTypes = Regex.Match(archive,
 			@"internal static class ElementTypes\s*\{(?<body>.*?)\n\t\t\}", RegexOptions.Singleline);
 
@@ -246,14 +245,35 @@ public sealed class ManagerMapResolveDataIdTests {
 				+ "and IsBuildable pins above, in the same change as the rebundle that ships it");
 	}
 
-	private static string ReadBundledArchiveAsText() {
+	// Through the production container reader, not a text scan of the whole archive: the constant lives in ONE
+	// file, and reading that file is what keeps a same-named class elsewhere in the archive out of the match.
+	private static string ReadBundledProcessDesignConstants() {
 		string archivePath = Path.Combine(AppContext.BaseDirectory, BundledPackages.ProcessBuilderPackageName,
 			BundledPackages.ProcessBuilderArchiveFileName);
-		using FileStream compressed = File.OpenRead(archivePath);
-		using GZipStream decompressor = new(compressed, CompressionMode.Decompress);
-		using MemoryStream buffer = new();
-		decompressor.CopyTo(buffer);
-		return Encoding.UTF8.GetString(buffer.ToArray());
+		IFileSystem fileSystem = new FileSystem(new System.IO.Abstractions.FileSystem());
+		ICompressionUtilities compression = new CompressionUtilities(fileSystem, new ZipFileWrapper());
+		compression.TryReadFileFromGZip(archivePath, "Files/src/cs/ProcessDesignConstants.cs", out byte[] content)
+			.Should().BeTrue(because: "the package declares its build tokens in ProcessDesignConstants.cs");
+		return Encoding.UTF8.GetString(content);
+	}
+
+	[Test]
+	[Description("The other direction of the IsBuildable pin: every kind it accepts is produced by at least one token the server builds. A kind accepted here with no server token would stop the UNBUILDABLE marker on an element the server still refuses.")]
+	public void IsBuildable_ShouldAcceptOnlyKindsAServerTokenProduces_WhenEveryEventTypeIsAsked() {
+		// Arrange
+		HashSet<ManagerMap.EventType> producedByServerTokens =
+			ServerBuildTokens.Select(ManagerMap.ResolveDataId).ToHashSet();
+
+		// Act
+		List<ManagerMap.EventType> acceptedWithoutAToken = Enum.GetValues<ManagerMap.EventType>()
+			.Where(ManagerMap.IsBuildable)
+			.Where(kind => !producedByServerTokens.Contains(kind))
+			.ToList();
+
+		// Assert
+		acceptedWithoutAToken.Should().BeEmpty(
+			because: "IsBuildable must describe what the server builds - a kind with no server token behind it is a "
+				+ "promise the build refuses");
 	}
 
 	[Test]

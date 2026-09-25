@@ -562,10 +562,35 @@ public sealed class CreateBusinessProcessToolE2ETests {
 	// unlabelled arrows), it is invisible in metadata because a caption lives in the schema RESOURCES,
 	// and the unit tests construct these records positionally in C# so the JSON member name is
 	// exercised nowhere else.
+	private static string BuildGatewayAndDeclaredBranchDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Gateway Branch E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "Start1", "type": "startEvent" },
+		    { "name": "Decide", "type": "exclusiveGateway", "caption": "Check the amount" },
+		    { "name": "EndApprove", "type": "endEvent", "caption": "Approval path" },
+		    { "name": "EndFast", "type": "endEvent", "caption": "Fast-track path" }
+		  ],
+		  "flows": [
+		    { "source": "Start1", "target": "Decide", "label": "Amount known" },
+		    { "source": "Decide", "target": "EndApprove", "kind": "conditional",
+		      "condition": "[#AmountParameter#] > 100", "label": "Above the threshold" },
+		    { "source": "Decide", "target": "EndFast", "kind": "default", "label": "Everything else" }
+		  ],
+		  "parameters": [
+		    { "name": "AmountParameter", "type": "Integer", "direction": "In", "caption": "Amount" }
+		  ]
+		}
+		""";
+
 	// A parallel join behind an exclusive choice: the two branches leave Decide by different flows and meet
 	// at a parallel gateway, which waits for both and gets one. The server builds it without a word (it has no
 	// R8 check), which is what makes it the pre-flight's case - it is ALSO a shape nobody should ship, so the
-	// E2E asserts the build and the warning, never that the process runs.
+	// E2E asserts the build and the warning, never that the process runs. Fan's two plain outgoing flows are an
+	// implicit split (R12) - a shape the BUILD reports as a notice - so the pre-flight must stay silent about it.
 	private static string BuildParallelJoinBehindAChoiceDescriptor(string processName) =>
 		$$"""
 		{
@@ -578,6 +603,9 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		    { "name": "Left", "type": "performTask" },
 		    { "name": "Right", "type": "performTask" },
 		    { "name": "Join", "type": "parallelGateway" },
+		    { "name": "Fan", "type": "performTask" },
+		    { "name": "FanA", "type": "performTask" },
+		    { "name": "FanB", "type": "performTask" },
 		    { "name": "End1", "type": "endEvent" }
 		  ],
 		  "flows": [
@@ -586,7 +614,11 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		    { "source": "Decide", "target": "Right", "kind": "default" },
 		    { "source": "Left", "target": "Join" },
 		    { "source": "Right", "target": "Join" },
-		    { "source": "Join", "target": "End1" }
+		    { "source": "Join", "target": "Fan" },
+		    { "source": "Fan", "target": "FanA" },
+		    { "source": "Fan", "target": "FanB" },
+		    { "source": "FanA", "target": "End1" },
+		    { "source": "FanB", "target": "End1" }
 		  ],
 		  "parameters": [
 		    { "name": "AmountParameter", "type": "Integer", "direction": "In", "caption": "Amount" }
@@ -646,30 +678,6 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		callResultJson.Should().NotContain("Pre-flight",
 			because: "a gateway with a conditional and a default branch carries no silent risk");
 	}
-
-	private static string BuildGatewayAndDeclaredBranchDescriptor(string processName) =>
-		$$"""
-		{
-		  "name": "{{processName}}",
-		  "caption": "Clio BP Gateway Branch E2E",
-		  "packageName": "Custom",
-		  "elements": [
-		    { "name": "Start1", "type": "startEvent" },
-		    { "name": "Decide", "type": "exclusiveGateway", "caption": "Check the amount" },
-		    { "name": "EndApprove", "type": "endEvent", "caption": "Approval path" },
-		    { "name": "EndFast", "type": "endEvent", "caption": "Fast-track path" }
-		  ],
-		  "flows": [
-		    { "source": "Start1", "target": "Decide", "label": "Amount known" },
-		    { "source": "Decide", "target": "EndApprove", "kind": "conditional",
-		      "condition": "[#AmountParameter#] > 100", "label": "Above the threshold" },
-		    { "source": "Decide", "target": "EndFast", "kind": "default", "label": "Everything else" }
-		  ],
-		  "parameters": [
-		    { "name": "AmountParameter", "type": "Integer", "direction": "In", "caption": "Amount" }
-		  ]
-		}
-		""";
 
 	[Test]
 	[Description("Over the real MCP path, create-business-process builds an exclusiveGateway ELEMENT with a declared conditional branch and a declared default branch, and the condition — written as a parameter NAME — comes back EXPANDED into its UId meta-path. This is the only e2e that sends flows[].kind, flows[].condition or a gateway type token at all; the unit tests construct those records positionally in C#, so the JSON binder is never exercised by them and a renamed or mistyped property would drop the value with the whole suite green.")]

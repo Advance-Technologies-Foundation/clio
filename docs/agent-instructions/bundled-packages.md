@@ -374,6 +374,13 @@ What it does beyond running the steps below:
 It deliberately does NOT commit. Step 8 — committing both repositories and naming the producing commit
 in the clio message — is a judgement call and stays with you.
 
+What it does NOT refresh, and what can therefore turn red on a rebundle: `ManagerMapResolveDataIdTests`
+compares its `ServerBuildTokens` list with the `ProcessDesignConstants.ElementTypes` constants inside the new
+archive (ENG-95244). A rebundle that adds an element type fails there until the token is added to that list,
+to `ManagerMap.ResolveDataId` and — for a new kind — to `ManagerMap.IsBuildable`, in the same change. That
+is deliberate: each of those is a decision about what `validate-process-graph` calls valid and buildable,
+and none of them can be derived from the archive by a script.
+
 ### On macOS
 
 Three things the script needs that a Mac does not have by default. None is a reason to fall back to the

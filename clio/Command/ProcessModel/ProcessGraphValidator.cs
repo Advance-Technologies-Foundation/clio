@@ -454,8 +454,11 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 						+ "the default branch; say so explicitly with kind 'default', or give it a condition, "
 						+ "so the diagram states which branch is the fallback.",
 				// ReportedByBuild, in both arms: the build NORMALISES a lone plain flow into the gateway's
-				// default with a notice, and refuses a second unconditional branch outright (FlowKindRules).
-				// The no-default warning below is the one of the pair the server says nothing about.
+				// default with a notice, and refuses a second unconditional branch outright
+				// (FlowKindRules.NormaliseForADecidingGateway, which looks at the SOURCE only). That covers the
+				// [default, plain->gateway] shape the paragraph above names too: it is this warning alone among
+				// the VALIDATOR's findings, and still a refusal on the build, so the create pre-flight has nothing
+				// to add. The no-default warning below is the one of the pair the server says nothing about.
 				node.Name, ReportedByBuild: true));
 		}
 

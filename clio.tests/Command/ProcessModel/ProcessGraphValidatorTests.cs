@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using Clio.Command.ProcessModel;
 using FluentAssertions;
 using NUnit.Framework;
@@ -1107,46 +1108,79 @@ public sealed class ProcessGraphValidatorTests {
 			because: "an unrecognized type stays an error, which is what it was before the marker existed");
 	}
 
+	// THE TABLE the create pre-flight filters on: every warning the validator can raise, each variant a separate
+	// row, with whether the create path reports that shape itself. A row flipped here moves a line into or out of
+	// every create call's output, so a change to it is a behaviour change and has to be one on purpose. A NEW
+	// warning rule defaults to ReportedByBuild=false - shown by the pre-flight - and belongs in this table.
+	private static IEnumerable<TestCaseData> WarningDispositions() {
+		yield return Row("R12 implicit split (build notice)", true, "R12",
+			[Node("s", "startEvent"), Node("t", "performTask"), Node("a", "performTask"), Node("b", "performTask"),
+				Node("e", "endEvent")],
+			[Seq("s", "t"), Seq("t", "a"), Seq("t", "b"), Seq("a", "e"), Seq("b", "e")]);
+		yield return Row("R7 plain flow, no default (normalised with a notice)", true, "R7",
+			[Node("s", "startEvent"), Node("x", "exclusiveGateway"), Node("a", "performTask"), Node("b", "performTask"),
+				Node("e", "endEvent")],
+			[Seq("s", "x"), new("x", "a", ProcessFlowKind.Conditional, "true"), Seq("x", "b"), Seq("a", "e"), Seq("b", "e")]);
+		yield return Row("R7 plain flow beside a default (refused)", true, "R7",
+			[Node("s", "startEvent"), Node("x", "exclusiveGateway"), Node("a", "performTask"), Node("b", "performTask"),
+				Node("e", "endEvent")],
+			[Seq("s", "x"), Def("x", "a"), Seq("x", "b"), Seq("a", "e"), Seq("b", "e")]);
+		yield return Row("R7 [default, plain->gateway] (refused: the build looks at the source only)", true, "R7",
+			[Node("s", "startEvent"), Node("x", "exclusiveGateway"), Node("a", "performTask"),
+				Node("y", "parallelGateway"), Node("e", "endEvent")],
+			[Seq("s", "x"), Def("x", "a"), Seq("x", "y"), Seq("a", "e"), Seq("y", "e")]);
+		yield return Row("R7 no default (silent on the server)", false, "R7",
+			[Node("s", "startEvent"), Node("x", "exclusiveGateway"), Node("a", "performTask"), Node("b", "performTask"),
+				Node("e", "endEvent")],
+			[Seq("s", "x"), new("x", "a", ProcessFlowKind.Conditional, "1 > 0"),
+				new("x", "b", ProcessFlowKind.Conditional, "2 > 1"), Seq("a", "e"), Seq("b", "e")]);
+		yield return Row("R9 no default on an inclusive gateway (silent on the server)", false, "R9",
+			[Node("s", "startEvent"), Node("x", "inclusiveGateway"), Node("a", "performTask"), Node("b", "performTask"),
+				Node("e", "endEvent")],
+			[Seq("s", "x"), new("x", "a", ProcessFlowKind.Conditional, "1 > 0"),
+				new("x", "b", ProcessFlowKind.Conditional, "2 > 1"), Seq("a", "e"), Seq("b", "e")]);
+		yield return Row("R8 parallel join behind a choice (silent on the server)", false, "R8",
+			[Node("s", "startEvent"), Node("x", "exclusiveGateway"), Node("a", "performTask"), Node("b", "performTask"),
+				Node("j", "parallelGateway"), Node("e", "endEvent")],
+			[Seq("s", "x"), new("x", "a", ProcessFlowKind.Conditional, "true"), Def("x", "b"), Seq("a", "j"),
+				Seq("b", "j"), Seq("j", "e")]);
+		yield return Row("R13 omitted condition (refused by FlowKindRules)", true, "R13",
+			[Node("s", "startEvent"), Node("t", "performTask"), Node("a", "performTask"), Node("b", "performTask"),
+				Node("e", "endEvent")],
+			[Seq("s", "t"), Cond("t", "a"), Def("t", "b"), Seq("a", "e"), Seq("b", "e")]);
+		yield return Row("R13 conditional flow off an event (built silently)", false, "R13",
+			[Node("s", "startEvent"), Node("t", "performTask"), Node("e", "endEvent")],
+			[new("s", "t", ProcessFlowKind.Conditional, "true"), Seq("t", "e")]);
+		yield return Row("R17 Add data into a non-Read data (silent on the server)", false, "R17",
+			[Node("s", "startEvent"), Node("a", "addData"), Node("t", "sendEmail"), Node("e", "endEvent")],
+			[Seq("s", "a"), Seq("a", "t"), Seq("t", "e")]);
+		yield return Row("UNBUILDABLE (refused as an unsupported type)", true, "UNBUILDABLE",
+			[Node("s", "startEvent"), Node("x", "scriptTask"), Node("e", "endEvent")],
+			[Seq("s", "x"), Seq("x", "e")]);
+	}
+
+	private static TestCaseData Row(string shape, bool reportedByBuild, string ruleId,
+			List<ProcessGraphNode> nodes, List<ProcessGraphEdge> edges) =>
+		new TestCaseData(ruleId, reportedByBuild, nodes, edges).SetArgDisplayNames(shape);
+
 	[Test]
-	[Description("ReportedByBuild is set on the warnings the create path reports itself - R12 (a build notice), R7 with a plain flow (normalised with a notice), R13 with an omitted condition (refused by FlowKindRules) - and NOT on the ones it is silent about: R7 without a default, R8, R13 off an event and R17. The create pre-flight shows exactly the second group, so a flag in the wrong place either repeats the server or hides a silent risk.")]
-	public void Validate_ShouldFlagOnlyTheWarningsTheBuildReports_WhenSeveralWarningsFire() {
-		// Arrange - one graph, every warning the flag decides between
-		List<ProcessGraphNode> nodes = [
-			Node("s", "startEvent"), Node("split", "performTask"), Node("a", "performTask"), Node("b", "performTask"),
-			Node("x1", "exclusiveGateway"), Node("m1", "performTask"), Node("m2", "performTask"),
-			Node("x2", "exclusiveGateway"), Node("c", "performTask"), Node("p", "parallelGateway"),
-			Node("add", "addData"), Node("send", "sendEmail"), Node("e", "endEvent")
-		];
-		List<ProcessGraphEdge> edges = [
-			// split: two plain outgoing flows off a task -> R12
-			Seq("s", "split"), Seq("split", "a"), Seq("split", "b"), Seq("a", "x1"), Seq("b", "x2"),
-			// x1: a conditional and a PLAIN flow -> R7, plain-flow variant
-			new("x1", "m1", ProcessFlowKind.Conditional, "true"), Seq("x1", "m2"), Seq("m1", "e"), Seq("m2", "e"),
-			// x2: two conditional flows and no default -> R7, no-default variant; x2 -> c carries no
-			// condition -> R13, omitted half. Both branches meet at the parallel join p -> R8.
-			new("x2", "p", ProcessFlowKind.Conditional, "true"), Cond("x2", "c"), Seq("c", "p"),
-			// add -> send: Add data into something that is not a Read data -> R17
-			Seq("p", "add"), Seq("add", "send"), Seq("send", "e")
-		];
+	[Description("Pins, per warning variant, whether the create path reports the shape itself (ReportedByBuild) - the table the create pre-flight filters on. R12, both plain-flow R7 arms (including [default, plain->gateway]), R13 with an omitted condition and UNBUILDABLE are reported by the build; R7/R9 with no default, R8, R13 off an event and R17 are not, and are what a create caller sees.")]
+	[TestCaseSource(nameof(WarningDispositions))]
+	public void Validate_ShouldFlagWhetherTheBuildReportsTheShape_ForEveryWarningVariant(string ruleId,
+			bool reportedByBuild, List<ProcessGraphNode> nodes, List<ProcessGraphEdge> edges) {
+		// Arrange
+		ProcessGraph graph = new(nodes, edges);
 
 		// Act
-		ProcessGraphValidationResult result = Validate(nodes, edges);
+		ProcessGraphValidationResult result = _validator.Validate(graph);
 
 		// Assert
-		result.Findings.Should().Contain(f => f.RuleId == "R12" && f.ReportedByBuild,
-			because: "the build raises an implicit parallel split as a notice of its own");
-		result.Findings.Should().Contain(f => f.RuleId == "R7" && f.NodeName == "x1" && f.ReportedByBuild,
-			because: "the build turns a lone plain flow off a deciding gateway into its default, with a notice");
-		result.Findings.Should().Contain(f => f.RuleId == "R7" && f.NodeName == "x2" && !f.ReportedByBuild,
-			because: "a gateway with no default at all is saved without a word, and suspends at run time");
-		result.Findings.Should().Contain(f => f.RuleId == "R13" && f.Edge != null && f.Edge.Source == "x2"
-				&& f.Edge.Condition == null && f.ReportedByBuild,
-			because: "FlowKindRules refuses a conditional flow with no condition, so the server's refusal is the "
-				+ "message the caller gets");
-		result.Findings.Should().Contain(f => f.RuleId == "R8" && !f.ReportedByBuild,
-			because: "nothing on the server looks for a parallel join behind a choice - the instance hangs");
-		result.Findings.Should().Contain(f => f.RuleId == "R17" && !f.ReportedByBuild,
-			because: "the chaining advice is clio's alone");
+		result.Findings.Where(finding => finding.RuleId == ruleId && finding.Severity == ProcessGraphSeverity.Warning)
+			.Should().NotBeEmpty(because: $"the shape is built to raise a {ruleId} warning")
+			.And.OnlyContain(finding => finding.ReportedByBuild == reportedByBuild,
+				because: reportedByBuild
+					? "the create path reports this shape itself, so the pre-flight must not repeat it"
+					: "nothing on the server reports this shape, so it is exactly what the pre-flight exists to show");
 	}
 
 	[Test]

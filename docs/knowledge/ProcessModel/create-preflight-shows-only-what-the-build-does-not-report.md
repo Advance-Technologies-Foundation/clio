@@ -27,8 +27,12 @@ normalisation of a lone plain flow into the gateway's default), so they are filt
 Every ERROR is filtered by severity: an error is by the validator's own rule a shape the build refuses.
 
 The mapper reads the descriptor the way `ProcessGraphBuilder` does — element names trimmed and matched
-case-insensitively, first declaration wins, flow kind trimmed and case-insensitive — and returns NO lines
-for a descriptor it cannot read that way (unknown kind, non-string condition, non-array `flows`).
+case-insensitively, flow kind trimmed and case-insensitive, `userTaskName` deciding the element for any
+user-task token when the validator knows that schema name — and returns NO lines for a descriptor it cannot
+read that way (unknown kind, non-string condition, non-array `flows`), nor for one the server refuses before
+it looks at a flow (two names differing only in case, an unknown or unbuildable element type). It never
+throws: a failing check, or a graph above 500 elements / 1000 flows (R8 is super-linear and runs before the
+POST), produces one "skipped" line instead; output is capped at 20 lines plus a count.
 
 **Why it is this way** — the server became the gate before this pre-flight existed: `ValidateStructure`
 (R1/R2/R3/R15) on create, `FlowKindRules` on both paths, and the platform's own validation, with nothing
@@ -46,4 +50,4 @@ become uneditable for any change. And map a flow endpoint case-sensitively and a
 `decide` off a gateway named `Decide` disappears from the graph, producing a false "no default" R7 on a
 gateway the server builds with one. When a rule's server-side behaviour changes, move its
 `ReportedByBuild` flag in the same change - a flag that says "the build reports it" after the build
-stopped reporting it hides a silent risk.
+stopped reporting it hides a silent risk. The flags are pinned per variant by `ProcessGraphValidatorTests.WarningDispositions`; a NEW warning rule defaults to `ReportedByBuild=false`, i.e. it is shown on every create, so it belongs in that table in the change that adds it.

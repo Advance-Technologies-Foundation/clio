@@ -1180,8 +1180,9 @@ public static class ManagerMap{
 
 	/// <summary>
 	/// Whether <c>create-business-process</c> / <c>modify-business-process</c> can build an element of this
-	/// kind. The ONE place clio decides it: the validator's <c>UNBUILDABLE</c> marker reads it, and nothing else
-	/// keeps a second list.
+	/// kind. The one place clio's CODE decides it: the validator's <c>UNBUILDABLE</c> marker and the create
+	/// pre-flight read it. Tool descriptions and guidance name the same kinds in prose; they point at the
+	/// finding rather than restating a list where they can.
 	/// </summary>
 	/// <remarks>
 	/// Keyed on <see cref="EventType"/> rather than on the token, because that is the granularity the build has:
@@ -1190,9 +1191,10 @@ public static class ManagerMap{
 	/// an event sub-process, a timer or message start, an intermediate event and the inclusive and event-based
 	/// gateways are separate platform classes the package has no handler for.
 	/// <para>The server's own list is <c>ProcessDesignConstants.ElementTypes</c> in CrtProcessBuilder, and
-	/// <c>ManagerMapResolveDataIdTests</c> pins that each of its tokens resolves to a kind this method accepts.
-	/// A kind added here without a server token would make the validator promise a build the server refuses,
-	/// so the pin only runs in one direction on purpose: a server token must never read as unbuildable.</para>
+	/// <c>ManagerMapResolveDataIdTests</c> pins it in BOTH directions: every server token resolves to a kind
+	/// this method accepts (a server token must never read as unbuildable), and every kind this method accepts
+	/// is produced by some server token (a kind added here without one would make the validator stop marking an
+	/// element the server still refuses).</para>
 	/// <para><see cref="EventType.Unknown"/> answers <see langword="false"/>, but the validator reports it as
 	/// <c>UNKNOWN</c> and does not add a second finding for the same node.</para>
 	/// </remarks>

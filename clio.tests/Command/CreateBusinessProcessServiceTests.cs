@@ -65,18 +65,10 @@ public sealed class CreateBusinessProcessServiceTests {
 		client.ExecutePostRequest(BuildUrl, Arg.Any<string>()).Returns(
 			"{\"BuildProcessResult\":{\"success\":true,\"schemaName\":\"UsrSampleProcess\","
 			+ "\"schemaUId\":\"5c58c4c4-134b-4744-9c67-96d9c69c9d55\"}}");
-		EnvironmentSettings env = new() { Uri = "http://sandbox", Login = "Supervisor", Password = "Supervisor" };
-		ISettingsRepository settings = Substitute.For<ISettingsRepository>();
-		settings.FindEnvironment(Env).Returns(env);
-		IApplicationClientFactory factory = Substitute.For<IApplicationClientFactory>();
-		factory.CreateEnvironmentClient(env).Returns(client);
-		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
-		urlBuilder.Build(ServiceUrlBuilder.KnownRoute.BuildProcess, env).Returns(BuildUrl);
 		IProcessDescriptorPreflight preflight = Substitute.For<IProcessDescriptorPreflight>();
 		preflight.CheckCreateDescriptor(Arg.Any<JsonObject>()).Returns(["Pre-flight R8 (advisory): Join hangs"]);
 		ILogger logger = Substitute.For<ILogger>();
-		CreateBusinessProcessService service = new(settings, factory, urlBuilder,
-			Substitute.For<IProcessPageFactsChecker>(), preflight, logger);
+		CreateBusinessProcessService service = CreateService(client, out _, preflight, logger);
 
 		// Act
 		CreateBusinessProcessResult result = service.BuildProcess(Env, new CreateBusinessProcessRequest(SampleDescriptor));
@@ -93,7 +85,7 @@ public sealed class CreateBusinessProcessServiceTests {
 	}
 
 	private static CreateBusinessProcessService CreateService(IApplicationClient client,
-			out EnvironmentSettings env) {
+			out EnvironmentSettings env, IProcessDescriptorPreflight preflight = null, ILogger logger = null) {
 		env = new EnvironmentSettings { Uri = "http://sandbox", Login = "Supervisor", Password = "Supervisor" };
 		ISettingsRepository settings = Substitute.For<ISettingsRepository>();
 		settings.FindEnvironment(Env).Returns(env);
@@ -102,7 +94,7 @@ public sealed class CreateBusinessProcessServiceTests {
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		urlBuilder.Build(ServiceUrlBuilder.KnownRoute.BuildProcess, env).Returns(BuildUrl);
 		return new CreateBusinessProcessService(settings, factory, urlBuilder, Substitute.For<IProcessPageFactsChecker>(),
-			Substitute.For<IProcessDescriptorPreflight>(), Substitute.For<ILogger>());
+			preflight ?? Substitute.For<IProcessDescriptorPreflight>(), logger ?? Substitute.For<ILogger>());
 	}
 
 	[Test]
