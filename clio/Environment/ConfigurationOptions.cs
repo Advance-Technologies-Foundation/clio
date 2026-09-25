@@ -169,10 +169,34 @@ namespace Clio
 		// appsettings.json and never appear in ShowSettingsTo output. Also [System.Text.Json...JsonIgnore]
 		// (review, belt-and-suspenders) so a future System.Text.Json serialization of these settings — the
 		// serializer the MCP tool DTOs use — can never emit the transient token/cookie either.
+		/// <summary>
+		/// The bearer token clio presents instead of logging in: either a per-request passthrough value, or
+		/// the <c>AccessToken</c> member of this environment's own entry in <c>appsettings.json</c>.
+		/// </summary>
+		/// <remarks>
+		/// A value assigned through this property is transient and is never serialized. A value read from
+		/// the settings file lives in <see cref="StoredAccessToken"/>, which writes it back unchanged so a
+		/// save does not delete it, and is returned here only while no transient value is set.
+		/// </remarks>
 		[YamlIgnore]
 		[Newtonsoft.Json.JsonIgnore]
 		[System.Text.Json.Serialization.JsonIgnore]
 		public string AccessToken {
+			get => _accessToken ?? StoredAccessToken;
+			set => _accessToken = value;
+		}
+
+		private string _accessToken;
+
+		// The settings-file half of AccessToken (issue #1624). It was not bound at all before, so a token
+		// written into an environment's entry was ignored on read and dropped on the next save, and the
+		// environment fell through to a forms login with no credentials. Private, so neither YAML nor
+		// System.Text.Json sees it, and only a value that came FROM the file can ever go back to it: a
+		// passthrough token assigned through AccessToken never reaches this member.
+		[YamlIgnore]
+		[System.Text.Json.Serialization.JsonIgnore]
+		[Newtonsoft.Json.JsonProperty(nameof(AccessToken), NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+		private string StoredAccessToken {
 			get; set;
 		}
 
@@ -309,6 +333,10 @@ namespace Clio
 			// Never inherited from the stored environment: an external-access token is per-invocation
 			// and is never persisted, so it can only come from the command line.
 			result.ExternalAccessToken = options.ExternalAccessToken;
+			// A bearer-only environment has nothing else to authenticate with: dropping the token here
+			// sent every command down a forms login carrying no user name at all (issue #1624).
+			result.AccessToken = this.AccessToken;
+			result.AccessTokenType = this.AccessTokenType;
 			if (this.Safe.HasValue && this.Safe.Value
 				&& !interactiveConsole.Prompt($"You try to apply the action on the production site {this.Uri}")) {
 				// Non-interactive hosts (MCP stdio / CI) fail closed here instead of blocking on
