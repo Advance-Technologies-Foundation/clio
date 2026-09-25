@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.Encodings.Web;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 
 namespace Clio.Command.ProcessModel;
@@ -16,9 +18,17 @@ public enum ProcessWritePayload {
 }
 
 /// <summary>A key CrtProcessBuilder does not accept, found in a caller's payload.</summary>
-/// <param name="Path">Where it sits, e.g. <c>flows[0].lable</c> or <c>operations[2].elementUpdate.email.subjct</c>.</param>
+/// <param name="Path">
+/// Where it sits, e.g. <c>flows[0].lable</c> or <c>operations[2].elementUpdate.email.subjct</c> - escaped and
+/// length-bounded, because the key text is the caller's and it is echoed into a message.
+/// </param>
 /// <param name="Hint">The nearest valid key, or the valid keys at that level when none is near.</param>
 public sealed record UnknownDescriptorKey(string Path, string Hint);
+
+/// <summary>The unknown keys of one payload: the first ones in full, and how many there were.</summary>
+/// <param name="Listed">At most <see cref="ProcessDescriptorKeyValidator.MaxListedKeys"/> keys, in document order.</param>
+/// <param name="Total">Every unknown key found, listed or not.</param>
+public sealed record DescriptorKeyReport(IReadOnlyList<UnknownDescriptorKey> Listed, int Total);
 
 /// <summary>
 /// Finds every key in a process write payload that CrtProcessBuilder's contracts do not declare - the keys its
@@ -33,11 +43,11 @@ public sealed record UnknownDescriptorKey(string Path, string Hint);
 /// </remarks>
 public interface IProcessDescriptorKeyValidator {
 
-	/// <summary>Walks the payload and returns every unknown key, in document order. Never throws.</summary>
+	/// <summary>Walks the payload and reports its unknown keys. Never throws on any parsed JSON.</summary>
 	/// <param name="payload">The parsed descriptor object or operations array, exactly as it will be posted.</param>
 	/// <param name="kind">Which payload it is.</param>
-	/// <returns>The unknown keys; empty when every key is one the server accepts.</returns>
-	IReadOnlyList<UnknownDescriptorKey> FindUnknownKeys(JsonNode payload, ProcessWritePayload kind);
+	/// <returns>The report; its <see cref="DescriptorKeyReport.Total"/> is zero when every key is one the server accepts.</returns>
+	DescriptorKeyReport FindUnknownKeys(JsonNode payload, ProcessWritePayload kind);
 }
 
 /// <inheritdoc cref="IProcessDescriptorKeyValidator" />
@@ -46,25 +56,36 @@ public sealed class ProcessDescriptorKeyValidator : IProcessDescriptorKeyValidat
 	/// <summary>The embedded schema's manifest resource name.</summary>
 	internal const string SchemaResourceName = "Clio.Command.ProcessModel.Schemas.process-builder-write-keys.schema.json";
 
+	/// <summary>
+	/// At most this many keys are listed, each with its hint; the rest are only counted. The hint is the costly
+	/// part - an edit distance against every valid key at that level - and the payload is the caller's, so its
+	/// cost is bounded by this count rather than by how many keys a payload can carry.
+	/// </summary>
+	internal const int MaxListedKeys = 20;
+
+	/// <summary>A key longer than this gets no near-match search: nothing that long is a typo of a contract member.</summary>
+	internal const int MaxHintedKeyLength = 64;
+
+	/// <summary>A path longer than this is cut: it is echoed into a message and the key text is the caller's.</summary>
+	internal const int MaxPathLength = 160;
+
 	private const string DefinitionPrefix = "#/$defs/";
 
 	// Parsed once per process: the schema is part of the assembly and never changes at run time.
 	private static readonly Lazy<WriteKeySchema> Schema = new(() => WriteKeySchema.Parse(ReadSchemaText()));
 
 	/// <inheritdoc />
-	public IReadOnlyList<UnknownDescriptorKey> FindUnknownKeys(JsonNode payload, ProcessWritePayload kind) {
-		List<UnknownDescriptorKey> unknown = [];
+	public DescriptorKeyReport FindUnknownKeys(JsonNode payload, ProcessWritePayload kind) {
+		Collector collector = new();
 		WriteKeySchema schema = Schema.Value;
 		if (kind == ProcessWritePayload.CreateDescriptor) {
-			Walk(payload, schema.CreateDescriptorRoot, string.Empty, schema, unknown);
-			return unknown;
-		}
-		if (payload is JsonArray operations) {
+			Walk(payload, schema.CreateDescriptorRoot, string.Empty, schema, collector);
+		} else if (payload is JsonArray operations) {
 			for (int index = 0; index < operations.Count; index++) {
-				Walk(operations[index], schema.ModifyOperationRoot, $"operations[{index}]", schema, unknown);
+				Walk(operations[index], schema.ModifyOperationRoot, $"operations[{index}]", schema, collector);
 			}
 		}
-		return unknown;
+		return new DescriptorKeyReport(collector.Listed, collector.Total);
 	}
 
 	/// <summary>The schema text shipped in this assembly. Exposed for the drift test.</summary>
@@ -78,27 +99,26 @@ public sealed class ProcessDescriptorKeyValidator : IProcessDescriptorKeyValidat
 	// A value that is not an object where a contract is declared is left alone: that is a TYPE mistake, which
 	// the server's deserializer refuses loudly, and inventing a key finding for it would describe the wrong
 	// problem. JSON null is legal for every contract member.
-	private static void Walk(JsonNode node, string contract, string path, WriteKeySchema schema,
-			List<UnknownDescriptorKey> unknown) {
+	private static void Walk(JsonNode node, string contract, string path, WriteKeySchema schema, Collector collector) {
 		if (node is not JsonObject obj || !schema.Contracts.TryGetValue(contract, out WriteContract declared)) {
 			return;
 		}
 		foreach ((string key, JsonNode value) in obj) {
 			string keyPath = path.Length == 0 ? key : $"{path}.{key}";
 			if (!declared.Members.TryGetValue(key, out WriteMember member)) {
-				unknown.Add(new UnknownDescriptorKey(keyPath, Hint(key, declared)));
+				collector.Add(keyPath, key, declared);
 				continue;
 			}
 			if (member.Contract is null) {
 				continue;
 			}
 			if (!member.IsList) {
-				Walk(value, member.Contract, keyPath, schema, unknown);
+				Walk(value, member.Contract, keyPath, schema, collector);
 				continue;
 			}
 			if (value is JsonArray items) {
 				for (int index = 0; index < items.Count; index++) {
-					Walk(items[index], member.Contract, $"{keyPath}[{index}]", schema, unknown);
+					Walk(items[index], member.Contract, $"{keyPath}[{index}]", schema, collector);
 				}
 			}
 		}
@@ -114,44 +134,79 @@ public sealed class ProcessDescriptorKeyValidator : IProcessDescriptorKeyValidat
 		if (sameLetters is not null) {
 			return $"did you mean '{sameLetters}'? Keys are case-sensitive";
 		}
-		int bound = key.Length <= 4 ? 1 : 2;
-		string nearest = declared.Members.Keys
-			.Select(valid => (Key: valid, Distance: EditDistance(key.ToLowerInvariant(), valid.ToLowerInvariant())))
-			.Where(candidate => candidate.Distance <= bound)
-			.OrderBy(candidate => candidate.Distance).ThenBy(candidate => candidate.Key, StringComparer.Ordinal)
-			.Select(candidate => candidate.Key)
-			.FirstOrDefault();
-		return nearest is not null
-			? $"did you mean '{nearest}'?"
-			: $"valid keys here: {string.Join(", ", declared.Members.Keys.OrderBy(valid => valid, StringComparer.Ordinal))}";
+		if (key.Length <= MaxHintedKeyLength) {
+			int bound = key.Length <= 4 ? 1 : 2;
+			string lowered = key.ToLowerInvariant();
+			string nearest = declared.LoweredKeys
+				// The distance is at least the length difference, so most candidates never reach the matrix.
+				.Where(candidate => Math.Abs(candidate.Lowered.Length - lowered.Length) <= bound)
+				.Select(candidate => (candidate.Key, Distance: EditDistance(lowered, candidate.Lowered)))
+				.Where(candidate => candidate.Distance <= bound)
+				.OrderBy(candidate => candidate.Distance).ThenBy(candidate => candidate.Key, StringComparer.Ordinal)
+				.Select(candidate => candidate.Key)
+				.FirstOrDefault();
+			if (nearest is not null) {
+				return $"did you mean '{nearest}'?";
+			}
+		}
+		return declared.ValidKeysText;
+	}
+
+	// The path is the caller's text: a key can carry a newline or an escape sequence that would forge a line of
+	// clio's own output, and any length. Encoded the way JSON would write it, then cut.
+	private static string Displayable(string path) {
+		string encoded = JsonEncodedText.Encode(path, JavaScriptEncoder.UnsafeRelaxedJsonEscaping).ToString();
+		return encoded.Length <= MaxPathLength ? encoded : encoded[..(MaxPathLength - 1)] + "…";
 	}
 
 	// Optimal string alignment distance: Levenshtein plus an adjacent transposition as ONE edit, so 'lable'
 	// is one step from 'label' rather than two - the typo that measured the silent drop in the first place.
+	// Three rolling rows (the transposition looks two back), so memory is linear in the key length.
 	private static int EditDistance(string left, string right) {
-		int[,] distance = new int[left.Length + 1, right.Length + 1];
-		for (int i = 0; i <= left.Length; i++) {
-			distance[i, 0] = i;
-		}
+		int[] twoBack = new int[right.Length + 1];
+		int[] previous = new int[right.Length + 1];
+		int[] current = new int[right.Length + 1];
 		for (int j = 0; j <= right.Length; j++) {
-			distance[0, j] = j;
+			previous[j] = j;
 		}
 		for (int i = 1; i <= left.Length; i++) {
+			current[0] = i;
 			for (int j = 1; j <= right.Length; j++) {
 				int cost = left[i - 1] == right[j - 1] ? 0 : 1;
-				distance[i, j] = Math.Min(Math.Min(distance[i - 1, j] + 1, distance[i, j - 1] + 1),
-					distance[i - 1, j - 1] + cost);
+				current[j] = Math.Min(Math.Min(previous[j] + 1, current[j - 1] + 1), previous[j - 1] + cost);
 				if (i > 1 && j > 1 && left[i - 1] == right[j - 2] && left[i - 2] == right[j - 1]) {
-					distance[i, j] = Math.Min(distance[i, j], distance[i - 2, j - 2] + 1);
+					current[j] = Math.Min(current[j], twoBack[j - 2] + 1);
 				}
 			}
+			(twoBack, previous, current) = (previous, current, twoBack);
 		}
-		return distance[left.Length, right.Length];
+		return previous[right.Length];
+	}
+
+	private sealed class Collector {
+		private readonly List<UnknownDescriptorKey> _listed = [];
+
+		internal IReadOnlyList<UnknownDescriptorKey> Listed => _listed;
+
+		internal int Total { get; private set; }
+
+		internal void Add(string path, string key, WriteContract declared) {
+			Total++;
+			if (_listed.Count < MaxListedKeys) {
+				_listed.Add(new UnknownDescriptorKey(Displayable(path), Hint(key, declared)));
+			}
+		}
 	}
 
 	private sealed record WriteMember(string Contract, bool IsList);
 
-	private sealed record WriteContract(IReadOnlyDictionary<string, WriteMember> Members);
+	private sealed record WriteContract(IReadOnlyDictionary<string, WriteMember> Members) {
+		internal IReadOnlyList<(string Key, string Lowered)> LoweredKeys { get; } =
+			Members.Keys.Select(key => (key, key.ToLowerInvariant())).ToList();
+
+		internal string ValidKeysText { get; } =
+			$"valid keys here: {string.Join(", ", Members.Keys.OrderBy(key => key, StringComparer.Ordinal))}";
+	}
 
 	// Reads the subset of JSON Schema the generator emits and nothing more: `$defs` of objects with
 	// `properties`, each property `{}` (a scalar), `{"$ref"}` (a contract) or `{"items":{"$ref"}}` (a list of

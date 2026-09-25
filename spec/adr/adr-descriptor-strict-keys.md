@@ -36,8 +36,9 @@ the bundled archive.**
    with one `$defs` entry per reachable write contract, `additionalProperties: false`, and a `$ref` /
    `items.$ref` for every contract-typed member. Scalar members are `{}`: this schema constrains KEYS, not
    values (value types are refused loudly by the server's deserializer already). Inheritance is flattened
-   into the derived definition. It is an embedded resource and names the CrtProcessBuilder version it was
-   generated from.
+   into the derived definition. It is an embedded resource. It deliberately records NO package version: a
+   version would force a regeneration on every rebundle, including documentation-only ones, while the drift
+   test already proves the file equals the bundled contracts.
 2. A unit test (Unit lane, Module `ProcessModel`, beside `BundledProcessBuilderPackageTests` and for its
    reason) reads `Contracts/*.cs` out of the bundled archive through the production
    `ICompressionUtilities`, parses them with Roslyn (syntax only), rebuilds the schema and compares it with
@@ -90,7 +91,7 @@ JsonSchema.Net once (test-only) to prove it is one.
 | Behind | Never reached — `RequiredPackageChecker` refuses the call on convergence first |
 | Equal | Refused before the POST |
 | Newer (a developer build pushed from a package branch) | Warning; the payload is sent unchanged |
-| Either version unreadable | Warning; mirrors convergence's "cannot decide, so warn and allow" |
+| Either version unreadable, or the bundled one carries a suffix | Warning; mirrors convergence's "cannot decide, so warn and allow" (`PackageVersion` ranks an empty suffix below any other, so a GA would read as older than an rc) |
 
 The two active package lines can stamp the same number on different content. An environment at the bundled
 number but from the other line could accept a key clio refuses. Accepted: convergence already refuses every
@@ -106,5 +107,6 @@ developer build.
   the path; normalizing a read-back is a non-goal.
 - A rebundle that changes the write contracts fails `ProcessBuilderWriteKeySchemaTests` until the schema is
   regenerated in the same change — the forcing function that keeps the key set equal to the shipped one.
+- Both versions are quoted through `TextUtilities.SanitizeVersionForDisplay` and every echoed key path is JSON-encoded and cut at 160 characters: a version suffix and a key are free text chosen by someone else. Only the first 20 unknown keys carry a hint (the edit distance is the costly part); the rest are counted.
 - Tool `[Description]`s do not grow (the create and modify contracts are at the payload-budget ceiling); the
   refusal message carries the explanation, and the guidance says it once.

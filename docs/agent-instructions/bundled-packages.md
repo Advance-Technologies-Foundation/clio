@@ -394,8 +394,8 @@ manual steps — all three were settled on 2026-09-16 and the script then ran en
 
 `clio/Command/ProcessModel/Schemas/process-builder-write-keys.schema.json` is the set of keys clio lets through
 to `ProcessDesignService` (ENG-95244, `spec/adr/adr-descriptor-strict-keys.md`). It is generated from
-`Files/src/cs/Contracts/*.cs` inside the archive, and `ProcessBuilderWriteKeySchemaTests` compares the two on
-every build. A rebundle that adds, renames or removes a `[DataMember]` therefore fails that test until the
+`Files/src/cs/Contracts/*.cs` inside the archive, and `ProcessBuilderWriteKeySchemaTests` compares the two in
+the Unit lane (it carries `Module=Common`, so the rebundle's own `Module=Common` check runs it). A rebundle that adds, renames or removes a `[DataMember]` therefore fails that test until the
 schema is regenerated in the same change:
 
 ```powershell

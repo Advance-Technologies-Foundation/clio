@@ -18,7 +18,7 @@ namespace Clio.Tests.Command.ProcessModel;
 internal static class ProcessDescriptorKeyGuardTestSupport {
 
 	/// <summary>The version both sides report, so an unknown key is refused rather than warned about.</summary>
-	internal const string SameVersion = "1.6.6.23";
+	internal const string SameVersion = "5.0.0.0";
 
 	internal static IProcessDescriptorKeyGuard Strict() {
 		IRequiredPackageChecker checker = Substitute.For<IRequiredPackageChecker>();

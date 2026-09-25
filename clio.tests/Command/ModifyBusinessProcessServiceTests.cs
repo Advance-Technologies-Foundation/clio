@@ -26,7 +26,8 @@ public sealed class ModifyBusinessProcessServiceTests {
 	private const string ModifyUrl = "http://sandbox/0/rest/ProcessDesignService/ModifyProcess";
 	private const string Operations = "[{\"op\":\"addParameter\",\"parameter\":{\"name\":\"Amount\",\"type\":\"Integer\"}}]";
 
-	private static ModifyBusinessProcessService CreateService(IApplicationClient client) {
+	private static ModifyBusinessProcessService CreateService(IApplicationClient client,
+			IProcessPageFactsChecker pageChecker = null) {
 		EnvironmentSettings env = new() { Uri = "http://sandbox", Login = "Supervisor", Password = "Supervisor" };
 		ISettingsRepository settings = Substitute.For<ISettingsRepository>();
 		settings.FindEnvironment(Env).Returns(env);
@@ -34,8 +35,9 @@ public sealed class ModifyBusinessProcessServiceTests {
 		factory.CreateEnvironmentClient(env).Returns(client);
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		urlBuilder.Build(ServiceUrlBuilder.KnownRoute.ModifyProcess, env).Returns(ModifyUrl);
-		return new ModifyBusinessProcessService(settings, factory, urlBuilder, Substitute.For<IProcessPageFactsChecker>(),
-			ProcessDescriptorKeyGuardTestSupport.Strict(), Substitute.For<ILogger>());
+		return new ModifyBusinessProcessService(settings, factory, urlBuilder,
+			pageChecker ?? Substitute.For<IProcessPageFactsChecker>(), ProcessDescriptorKeyGuardTestSupport.Strict(),
+			Substitute.For<ILogger>());
 	}
 
 	[Test]
@@ -245,7 +247,8 @@ public sealed class ModifyBusinessProcessServiceTests {
 	public void ModifyProcess_ShouldRefuseBeforePosting_WhenAnOperationKeyIsUnknown() {
 		// Arrange
 		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
-		ModifyBusinessProcessService service = CreateService(client);
+		IProcessPageFactsChecker pageChecker = Substitute.For<IProcessPageFactsChecker>();
+		ModifyBusinessProcessService service = CreateService(client, pageChecker);
 		const string operations = "[{\"op\":\"setFlow\",\"source\":\"S\",\"target\":\"E\",\"kind\":\"sequence\",\"lable\":\"Go\"}]";
 
 		// Act
@@ -255,6 +258,7 @@ public sealed class ModifyBusinessProcessServiceTests {
 		act.Should().Throw<InvalidOperationException>(
 				because: "the server would report an applied operation that changed nothing")
 			.WithMessage("*operations[0].lable*'label'*");
+		pageChecker.DidNotReceiveWithAnyArgs().CheckPreconfiguredPages(default, default);
 		client.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default);
 	}
 

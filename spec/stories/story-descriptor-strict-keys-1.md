@@ -14,7 +14,7 @@ Acceptance:
 - [ ] `clio/Command/ProcessModel/Schemas/process-builder-write-keys.schema.json` (draft 2020-12, embedded
       resource): one `$defs` entry per write contract reachable from `BuildProcessRequest` and
       `ProcessOperationDescriptor`, `additionalProperties: false`, `$ref` / `items.$ref` for contract members,
-      inheritance flattened, the source CrtProcessBuilder version recorded.
+      inheritance flattened; no package version recorded (the drift test is the provenance).
 - [ ] Unit test regenerates it with Roslyn from `Files/src/cs/Contracts/*.cs` read through
       `ICompressionUtilities` and fails on any difference, naming the regeneration command
       (`CLIO_REGENERATE_PROCESS_BUILDER_KEY_SCHEMA=1`). TC-U-01, TC-U-02, TC-U-15.

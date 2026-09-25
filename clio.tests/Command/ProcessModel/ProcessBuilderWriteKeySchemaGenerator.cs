@@ -40,16 +40,29 @@ internal static class ProcessBuilderWriteKeySchemaGenerator {
 	/// <summary>Parses every <c>[DataContract]</c> class in the sources, base members flattened in.</summary>
 	internal static IReadOnlyDictionary<string, IReadOnlyList<ContractMember>> ReadContracts(
 			IEnumerable<string> sources) {
-		List<ClassDeclarationSyntax> classes = sources
-			.Select(source => CSharpSyntaxTree.ParseText(source).GetRoot())
+		List<SyntaxNode> roots = sources.Select(source => CSharpSyntaxTree.ParseText(source).GetRoot()).ToList();
+		// Every shape below is one the generator cannot model faithfully, and a silent mis-read would pass the
+		// drift test - the test compares the generator with its own earlier output. So each one FAILS here,
+		// naming the contract, rather than producing a schema that refuses a key the server accepts (a field,
+		// a computed name, a partial class, a record) or never looks inside a collection it did not recognise.
+		RecordDeclarationSyntax record = roots.SelectMany(root => root.DescendantNodes().OfType<RecordDeclarationSyntax>())
+			.FirstOrDefault(declaration => HasAttribute(declaration.AttributeLists, "DataContract"));
+		if (record is not null) {
+			throw Unsupported(record.Identifier.Text, "is a record; only [DataContract] classes are modelled");
+		}
+		List<ClassDeclarationSyntax> classes = roots
 			.SelectMany(root => root.DescendantNodes().OfType<ClassDeclarationSyntax>())
 			.Where(declaration => HasAttribute(declaration.AttributeLists, "DataContract"))
 			.ToList();
+		string duplicate = classes.GroupBy(declaration => declaration.Identifier.Text, StringComparer.Ordinal)
+			.FirstOrDefault(group => group.Count() > 1)?.Key;
+		if (duplicate is not null) {
+			throw Unsupported(duplicate, "is declared more than once (a partial class, or two namespaces)");
+		}
 		HashSet<string> contractNames = classes.Select(declaration => declaration.Identifier.Text)
 			.ToHashSet(StringComparer.Ordinal);
 		Dictionary<string, ClassDeclarationSyntax> byName = classes
-			.GroupBy(declaration => declaration.Identifier.Text, StringComparer.Ordinal)
-			.ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+			.ToDictionary(declaration => declaration.Identifier.Text, StringComparer.Ordinal);
 		return byName.Keys.ToDictionary(name => name,
 			name => (IReadOnlyList<ContractMember>)CollectMembers(name, byName, contractNames),
 			StringComparer.Ordinal);
@@ -125,26 +138,53 @@ internal static class ProcessBuilderWriteKeySchemaGenerator {
 		if (baseContract is not null) {
 			members.AddRange(CollectMembers(baseContract, byName, contractNames));
 		}
+		FieldDeclarationSyntax field = declaration.Members.OfType<FieldDeclarationSyntax>()
+			.FirstOrDefault(candidate => HasAttribute(candidate.AttributeLists, "DataMember"));
+		if (field is not null) {
+			throw Unsupported(name, "carries a [DataMember] FIELD; only properties are modelled");
+		}
 		foreach (PropertyDeclarationSyntax property in declaration.Members.OfType<PropertyDeclarationSyntax>()) {
 			AttributeSyntax dataMember = FindAttribute(property.AttributeLists, "DataMember");
 			if (dataMember is null) {
 				continue;
 			}
-			string wireName = NamedArgument(dataMember, "Name") ?? property.Identifier.Text;
-			(string elementType, bool isList) = Unwrap(property.Type);
+			string wireName = WireName(name, property, dataMember);
+			(string elementType, bool isList) = Unwrap(name, property.Type, contractNames);
 			members.Add(new ContractMember(wireName, contractNames.Contains(elementType) ? elementType : null, isList));
 		}
 		return members;
 	}
 
-	private static (string ElementType, bool IsList) Unwrap(TypeSyntax type) => type switch {
-		NullableTypeSyntax nullable => Unwrap(nullable.ElementType),
+	private static (string ElementType, bool IsList) Unwrap(string contract, TypeSyntax type,
+			ISet<string> contractNames) => type switch {
+		NullableTypeSyntax nullable => Unwrap(contract, nullable.ElementType, contractNames),
 		ArrayTypeSyntax array => (TypeName(array.ElementType), true),
 		GenericNameSyntax generic when ListTypeNames.Contains(generic.Identifier.Text)
 			&& generic.TypeArgumentList.Arguments.Count == 1 => (TypeName(generic.TypeArgumentList.Arguments[0]), true),
-		QualifiedNameSyntax qualified => Unwrap(qualified.Right),
+		// Any OTHER generic that carries a contract (Collection<T>, HashSet<T>, Dictionary<,>) would be taken
+		// for a scalar and its items never walked - a false pass, so it is refused instead.
+		GenericNameSyntax generic when generic.TypeArgumentList.Arguments
+			.Any(argument => contractNames.Contains(TypeName(argument)))
+			=> throw Unsupported(contract, $"holds a contract in '{generic}', a collection the generator does not model"),
+		QualifiedNameSyntax qualified => Unwrap(contract, qualified.Right, contractNames),
 		_ => (TypeName(type), false)
 	};
+
+	// The wire name: the literal Name argument, or the property's own name when there is none. A Name that is
+	// not a literal (a const, nameof) cannot be read from syntax alone, so it is refused rather than guessed.
+	private static string WireName(string contract, PropertyDeclarationSyntax property, AttributeSyntax dataMember) {
+		AttributeArgumentSyntax nameArgument = dataMember.ArgumentList?.Arguments
+			.FirstOrDefault(argument => argument.NameEquals?.Name.Identifier.Text == "Name");
+		if (nameArgument is null) {
+			return property.Identifier.Text;
+		}
+		return nameArgument.Expression is LiteralExpressionSyntax literal
+			? literal.Token.ValueText
+			: throw Unsupported(contract, $"names '{property.Identifier.Text}' with a non-literal DataMember Name");
+	}
+
+	private static InvalidOperationException Unsupported(string contract, string what) =>
+		new($"Contract '{contract}' {what}. Teach ProcessBuilderWriteKeySchemaGenerator the shape before regenerating.");
 
 	private static string TypeName(TypeSyntax type) => type switch {
 		QualifiedNameSyntax qualified => TypeName(qualified.Right),
@@ -160,12 +200,4 @@ internal static class ProcessBuilderWriteKeySchemaGenerator {
 		lists.SelectMany(list => list.Attributes)
 			.FirstOrDefault(attribute => TypeName(attribute.Name) is { } attributeName
 				&& (attributeName == name || attributeName == name + "Attribute"));
-
-	private static string NamedArgument(AttributeSyntax attribute, string argumentName) =>
-		attribute.ArgumentList?.Arguments
-			.Where(argument => argument.NameEquals?.Name.Identifier.Text == argumentName)
-			.Select(argument => argument.Expression)
-			.OfType<LiteralExpressionSyntax>()
-			.Select(literal => literal.Token.ValueText)
-			.FirstOrDefault();
 }

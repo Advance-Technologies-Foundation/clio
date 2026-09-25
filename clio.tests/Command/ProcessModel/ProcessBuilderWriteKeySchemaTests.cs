@@ -37,6 +37,10 @@ public sealed class ProcessBuilderWriteKeySchemaTests {
 
 	[Test]
 	[Description("The write-key schema clio ships equals the one regenerated from Files/src/cs/Contracts/*.cs in the bundled CrtProcessBuilder archive. A rebundle that adds, renames or removes a [DataMember] fails here until the schema is regenerated in the same change - otherwise clio would refuse a key the server accepts, or pass one it drops.")]
+	// Module=Common as well as the fixture's ProcessModel: this is a pin on the bundled ARCHIVE, and the
+	// rebundle's own validation runs Module=Common (with BundledProcessBuilderPackageTests) - a ProcessModel-only
+	// tag would leave it out of exactly the run that brings the changed contracts.
+	[Property("Module", "Common")]
 	public void Schema_ShouldEqualTheOneGeneratedFromTheBundledContracts_WhenTheArchiveIsRebundled() {
 		// Arrange
 		string expected = ProcessBuilderWriteKeySchemaGenerator.Serialize(
@@ -131,5 +135,23 @@ public sealed class ProcessBuilderWriteKeySchemaTests {
 		}
 		return directory?.FullName
 			?? throw new InvalidOperationException("Run the regeneration from inside a clio checkout.");
+	}
+
+	[Test]
+	[Description("The generator REFUSES a contract shape it cannot model instead of mis-reading it - a [DataMember] field, a non-literal DataMember Name, a contract held in a collection it does not know. A silent mis-read would pass the drift test, because that test compares the generator with its own earlier output.")]
+	[TestCase("[DataContract] public class A { [DataMember(Name = \"x\")] public string X; }", "FIELD")]
+	[TestCase("[DataContract] public class A { [DataMember(Name = Names.X)] public string X { get; set; } }", "non-literal")]
+	[TestCase("[DataContract] public class B { } [DataContract] public class A { [DataMember] public HashSet<B> Items { get; set; } }", "HashSet<B>")]
+	public void ReadContracts_ShouldRefuse_WhenAContractShapeCannotBeModelled(string source, string expected) {
+		// Arrange
+		string[] sources = [source];
+
+		// Act
+		Action act = () => ProcessBuilderWriteKeySchemaGenerator.ReadContracts(sources);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+				because: "a schema built from a mis-read contract would refuse keys the server accepts, or skip keys it drops")
+			.WithMessage($"*{expected}*");
 	}
 }

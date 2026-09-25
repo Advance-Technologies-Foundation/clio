@@ -261,7 +261,7 @@ public class ModifyBusinessProcessTool(
 		 + "email "
 		 + "(sendEmail elements only, same block as create-business-process) rewrites the fields you pass — mode, "
 		 + "sender, subject, body, template, templateEntity, importance, ignoreErrors, performer replace the current value "
-		 + "IN PLACE. SWITCHING the message mode clears what the other mode owns, so describe stays re-appliable: a "
+		 + "IN PLACE. SWITCHING the message mode clears what the other mode owns, so describe reports one mode: a "
 		 + "template (or messageSource 'template') on a custom element clears Body and a constant Subject you do not "
 		 + "re-supply; a body (or messageSource 'custom') on a template element clears the template and its macro "
 		 + "source; get-guidance name=process-send-email-template owns switching in full. "

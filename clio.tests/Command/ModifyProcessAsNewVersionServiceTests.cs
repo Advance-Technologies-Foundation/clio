@@ -32,7 +32,8 @@ public sealed class ModifyProcessAsNewVersionServiceTests {
 		+ "\"versionSchemaUId\":\"5c58c4c4-134b-4744-9c67-96d9c69c9d55\",\"version\":2,\"isActiveVersion\":false,"
 		+ "\"versionRootSchemaUId\":\"11111111-2222-3333-4444-555555555555\",\"appliedOperations\":1}}";
 
-	private static ModifyProcessAsNewVersionService CreateService(IApplicationClient client) {
+	private static ModifyProcessAsNewVersionService CreateService(IApplicationClient client,
+			IProcessPageFactsChecker pageChecker = null) {
 		EnvironmentSettings env = new() { Uri = "http://sandbox", Login = "Supervisor", Password = "Supervisor" };
 		ISettingsRepository settings = Substitute.For<ISettingsRepository>();
 		settings.FindEnvironment(Env).Returns(env);
@@ -41,7 +42,8 @@ public sealed class ModifyProcessAsNewVersionServiceTests {
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		urlBuilder.Build(ServiceUrlBuilder.KnownRoute.ModifyProcessAsNewVersion, env).Returns(VersionUrl);
 		return new ModifyProcessAsNewVersionService(settings, factory, urlBuilder,
-			Substitute.For<IProcessPageFactsChecker>(), ProcessDescriptorKeyGuardTestSupport.Strict(), Substitute.For<ILogger>());
+			pageChecker ?? Substitute.For<IProcessPageFactsChecker>(), ProcessDescriptorKeyGuardTestSupport.Strict(),
+			Substitute.For<ILogger>());
 	}
 
 	[Test]
@@ -297,7 +299,8 @@ public sealed class ModifyProcessAsNewVersionServiceTests {
 	public void ModifyAsNewVersion_ShouldRefuseBeforeCreatingAVersion_WhenAnOperationKeyIsUnknown() {
 		// Arrange
 		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
-		ModifyProcessAsNewVersionService service = CreateService(client);
+		IProcessPageFactsChecker pageChecker = Substitute.For<IProcessPageFactsChecker>();
+		ModifyProcessAsNewVersionService service = CreateService(client, pageChecker);
 		const string operations = "[{\"op\":\"addParameter\",\"parameter\":{\"name\":\"Amount\",\"tpye\":\"Integer\"}}]";
 
 		// Act
@@ -308,6 +311,7 @@ public sealed class ModifyProcessAsNewVersionServiceTests {
 		act.Should().Throw<InvalidOperationException>(
 				because: "a mistyped parameter key would create a version whose parameter has no type")
 			.WithMessage("*operations[0].parameter.tpye*'type'*");
+		pageChecker.DidNotReceiveWithAnyArgs().CheckPreconfiguredPages(default, default);
 		client.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default);
 	}
 

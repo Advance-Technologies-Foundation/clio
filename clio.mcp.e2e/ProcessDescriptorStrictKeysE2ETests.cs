@@ -61,8 +61,10 @@ public sealed class ProcessDescriptorStrictKeysE2ETests {
 			because: "whichever branch ran, the caller is told which key is wrong and what it was meant to be");
 		if (newerThanBundle) {
 			TestContext.Out.WriteLine("Stand CrtProcessBuilder is NEWER than the bundle: the WARNING branch ran.");
-			json.Should().Contain("was sent").And.Contain(processName,
-				because: "on a newer environment the key may be valid, so the build goes ahead with a warning");
+			result.IsError.Should().NotBeTrue(because: "a warning never stops the build");
+			json.Should().Contain("will be sent").And.Contain("newer than the").And.Contain(processName)
+				.And.NotContain("nothing was sent",
+					because: "on a newer environment the key may be valid, so the build goes ahead with a warning");
 		} else {
 			TestContext.Out.WriteLine("Stand CrtProcessBuilder is not newer than the bundle: the REFUSAL branch ran.");
 			json.Should().Contain("nothing was sent",
@@ -119,8 +121,14 @@ public sealed class ProcessDescriptorStrictKeysE2ETests {
 		string json = JsonSerializer.Serialize(result);
 		json.Should().Contain("operations[0].lable").And.Contain("label",
 			because: "whichever branch ran, the caller is told which operation key is wrong");
-		json.Should().Contain(newerThanBundle ? "was sent" : "nothing was sent",
-			because: "the stand's package version decides between a warning and a refusal");
+		if (newerThanBundle) {
+			result.IsError.Should().NotBeTrue(because: "a warning never stops the modify");
+			json.Should().Contain("will be sent").And.NotContain("nothing was sent",
+				because: "on a newer environment the operation goes ahead with a warning, not a refusal");
+		} else {
+			json.Should().Contain("nothing was sent",
+				because: "on an environment at the bundled contract the key is dropped for certain, so it is refused");
+		}
 	}
 
 	[Test]
