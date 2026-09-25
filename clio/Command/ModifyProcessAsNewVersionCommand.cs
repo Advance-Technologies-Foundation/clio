@@ -83,6 +83,7 @@ public sealed class ModifyProcessAsNewVersionService(
 	IApplicationClientFactory applicationClientFactory,
 	IServiceUrlBuilder serviceUrlBuilder,
 	IProcessPageFactsChecker pageFactsChecker,
+	IProcessDescriptorKeyGuard keyGuard,
 	ILogger logger)
 	: IModifyProcessAsNewVersionService {
 	private static readonly JsonSerializerOptions JsonOptions = new() {
@@ -119,6 +120,11 @@ public sealed class ModifyProcessAsNewVersionService(
 		// An ABSENT operations array is a legal request — a version that is a pure snapshot of the source — so
 		// the empty case sends an empty array rather than being refused the way the in-place edit refuses it.
 		requestObject["operations"] = ParseOperations(request.OperationsJson);
+		// The key check first, for the reason the in-place edit runs it: an operation key the server does not
+		// declare is dropped in silence (ENG-95244) - and here the result is a version, which cannot be deleted.
+		foreach (string keyWarning in keyGuard.Enforce(requestObject["operations"], ProcessWritePayload.ModifyOperations)) {
+			logger.WriteWarning(keyWarning);
+		}
 
 		// The SAME pre-check both sibling write paths run, and skipping it here was not a decision anyone made:
 		// this path takes the identical operations vocabulary, so an invented button or data-source name survives

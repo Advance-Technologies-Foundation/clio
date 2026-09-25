@@ -8,6 +8,7 @@ using Clio.UserEnvironment;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
+using Clio.Tests.Command.ProcessModel;
 
 namespace Clio.Tests.Command;
 
@@ -33,7 +34,8 @@ public sealed class ModifyBusinessProcessServiceTests {
 		factory.CreateEnvironmentClient(env).Returns(client);
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		urlBuilder.Build(ServiceUrlBuilder.KnownRoute.ModifyProcess, env).Returns(ModifyUrl);
-		return new ModifyBusinessProcessService(settings, factory, urlBuilder, Substitute.For<IProcessPageFactsChecker>(), Substitute.For<ILogger>());
+		return new ModifyBusinessProcessService(settings, factory, urlBuilder, Substitute.For<IProcessPageFactsChecker>(),
+			ProcessDescriptorKeyGuardTestSupport.Strict(), Substitute.For<ILogger>());
 	}
 
 	[Test]
@@ -236,6 +238,24 @@ public sealed class ModifyBusinessProcessServiceTests {
 				+ "reading a stack trace and is unusable to the agent that receives it");
 		thrown.InnerException.Should().BeOfType<JsonException>(
 			because: "the parser failure is kept for a developer who does want it, just not as the message");
+	}
+
+	[Test]
+	[Description("An operation carrying a key CrtProcessBuilder does not declare (setFlow with lable - measured to answer '1 operation(s) applied' and change nothing) is refused before the ModifyProcess POST (ENG-95244, TC-U-13).")]
+	public void ModifyProcess_ShouldRefuseBeforePosting_WhenAnOperationKeyIsUnknown() {
+		// Arrange
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
+		ModifyBusinessProcessService service = CreateService(client);
+		const string operations = "[{\"op\":\"setFlow\",\"source\":\"S\",\"target\":\"E\",\"kind\":\"sequence\",\"lable\":\"Go\"}]";
+
+		// Act
+		Action act = () => service.ModifyProcess(Env, new ModifyBusinessProcessRequest("UsrProc", null, operations));
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+				because: "the server would report an applied operation that changed nothing")
+			.WithMessage("*operations[0].lable*'label'*");
+		client.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default);
 	}
 
 }

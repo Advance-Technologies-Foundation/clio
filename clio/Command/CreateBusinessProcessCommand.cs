@@ -253,6 +253,7 @@ public sealed class CreateBusinessProcessService(
 	IApplicationClientFactory applicationClientFactory,
 	IServiceUrlBuilder serviceUrlBuilder,
 	IProcessPageFactsChecker pageFactsChecker,
+	IProcessDescriptorKeyGuard keyGuard,
 	ILogger logger)
 	: ICreateBusinessProcessService {
 	private static readonly JsonSerializerOptions JsonOptions = new() {
@@ -277,6 +278,14 @@ public sealed class CreateBusinessProcessService(
 		JsonObject descriptor = ParseDescriptor(request.DescriptorJson);
 		if (!string.IsNullOrWhiteSpace(request.PackageNameOverride)) {
 			descriptor["packageName"] = request.PackageNameOverride;
+		}
+
+		// Before anything touches Creatio: a key the server's contracts do not declare is DROPPED by its deserializer
+		// while the call reports success (ENG-95244, measured), so this is the only point where a typo or a
+		// wrong-case key can be told apart from a key that landed. Refused here, or a warning when the
+		// environment's CrtProcessBuilder is newer than the one clio bundles - see IProcessDescriptorKeyGuard.
+		foreach (string keyWarning in keyGuard.Enforce(descriptor, ProcessWritePayload.CreateDescriptor)) {
+			logger.WriteWarning(keyWarning);
 		}
 
 		// Before the build, not after: a button or a data source the page does not have is accepted by the

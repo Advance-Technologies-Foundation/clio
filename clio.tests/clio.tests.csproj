@@ -31,6 +31,11 @@
     <!-- In-memory ASP.NET Core pipeline for ENG-93386 mcp-http auth pipeline tests (real
          TestServer request/response, not just config-object assertions). -->
     <PackageReference Include="Microsoft.AspNetCore.TestHost" />
+    <!-- ENG-95244: ProcessBuilderWriteKeySchemaTests regenerates the write-key schema from the bundled
+         CrtProcessBuilder contract SOURCES (syntax only), and evaluates the result with a real JSON Schema
+         validator to prove the file is one. Test-only: clio's runtime reads the generated file. -->
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
+    <PackageReference Include="JsonSchema.Net" />
   </ItemGroup>
   <PropertyGroup Label="SonarCube">
       <!-- Exclude the project from analysis -->

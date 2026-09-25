@@ -37,6 +37,10 @@ public static class ModifyBusinessProcessPrompt {
 		 conditional one, `condition`, so a branch can be declared as the flow is added rather than in two steps;
 		 `setFlow` (`source` + `target` + `kind`, plus `condition` for a conditional one) changes an EXISTING
 		 flow's kind in either direction, also in place.
+		 Operation keys are CASE-SENSITIVE and checked before anything is sent: a key the server's contract does not
+		 declare would be dropped in silence while the call reports "N operation(s) applied", so clio refuses it,
+		 naming its path (e.g. `operations[0].lable`) and the key it was meant to be. On an environment whose
+		 CrtProcessBuilder is newer than clio's bundle it is a warning instead.
 		 A conditional branch has TWO predicate dialects and its SOURCE decides which, not you. Off an element
 		 that enumerates RESULTS - among the types you can build, `approval`, `performTask`, `preconfiguredPage`,
 		 `openEditPage` with results by column, User dialog and Auto-generated page, each only once CONFIGURED

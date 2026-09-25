@@ -8,6 +8,7 @@ using Clio.UserEnvironment;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
+using Clio.Tests.Command.ProcessModel;
 
 namespace Clio.Tests.Command;
 
@@ -36,7 +37,7 @@ public sealed class CreateBusinessProcessServiceTests {
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		urlBuilder.Build(ServiceUrlBuilder.KnownRoute.BuildProcess, env).Returns(BuildUrl);
 		return new CreateBusinessProcessService(settings, factory, urlBuilder, pageButtonChecker,
-			Substitute.For<ILogger>());
+			ProcessDescriptorKeyGuardTestSupport.Strict(), Substitute.For<ILogger>());
 	}
 
 	[Test]
@@ -66,7 +67,8 @@ public sealed class CreateBusinessProcessServiceTests {
 		factory.CreateEnvironmentClient(env).Returns(client);
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		urlBuilder.Build(ServiceUrlBuilder.KnownRoute.BuildProcess, env).Returns(BuildUrl);
-		return new CreateBusinessProcessService(settings, factory, urlBuilder, Substitute.For<IProcessPageFactsChecker>(), Substitute.For<ILogger>());
+		return new CreateBusinessProcessService(settings, factory, urlBuilder, Substitute.For<IProcessPageFactsChecker>(),
+			ProcessDescriptorKeyGuardTestSupport.Strict(), Substitute.For<ILogger>());
 	}
 
 	[Test]
@@ -167,7 +169,8 @@ public sealed class CreateBusinessProcessServiceTests {
 		settings.FindEnvironment(Env).Returns((EnvironmentSettings)null);
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		var service = new CreateBusinessProcessService(settings,
-			Substitute.For<IApplicationClientFactory>(), urlBuilder, Substitute.For<IProcessPageFactsChecker>(), Substitute.For<ILogger>());
+			Substitute.For<IApplicationClientFactory>(), urlBuilder, Substitute.For<IProcessPageFactsChecker>(),
+			ProcessDescriptorKeyGuardTestSupport.Strict(), Substitute.For<ILogger>());
 
 		Action act = () => service.BuildProcess(Env, new CreateBusinessProcessRequest(SampleDescriptor));
 
@@ -219,6 +222,27 @@ public sealed class CreateBusinessProcessServiceTests {
 				+ "reaches an agent that cannot act on it");
 		thrown.InnerException.Should().BeOfType<JsonException>(
 			because: "the parser failure is kept for whoever does want it, just not as the message");
+	}
+
+	[Test]
+	[Description("A descriptor carrying a key CrtProcessBuilder does not declare (flows[].lable, measured to be dropped in silence) is refused BEFORE anything touches Creatio: no page-facts read and no BuildProcess POST (ENG-95244, TC-U-13).")]
+	public void BuildProcess_ShouldRefuseBeforeTouchingCreatio_WhenADescriptorKeyIsUnknown() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IProcessPageFactsChecker checker = Substitute.For<IProcessPageFactsChecker>();
+		CreateBusinessProcessService service = CreateService(client, out EnvironmentSettings _, checker);
+		const string descriptor = "{\"name\":\"UsrSampleProcess\",\"packageName\":\"Custom\","
+			+ "\"elements\":[],\"flows\":[{\"source\":\"S\",\"target\":\"E\",\"lable\":\"Go\"}]}";
+
+		// Act
+		Action act = () => service.BuildProcess(Env, new CreateBusinessProcessRequest(descriptor));
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+				because: "the server would drop the label and report success, which is the failure this refuses")
+			.WithMessage("*flows[0].lable*'label'*");
+		checker.DidNotReceiveWithAnyArgs().CheckPreconfiguredPages(default, default);
+		client.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default);
 	}
 
 }

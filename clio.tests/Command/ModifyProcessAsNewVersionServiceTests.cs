@@ -8,6 +8,7 @@ using Clio.UserEnvironment;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
+using Clio.Tests.Command.ProcessModel;
 
 namespace Clio.Tests.Command;
 
@@ -40,7 +41,7 @@ public sealed class ModifyProcessAsNewVersionServiceTests {
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		urlBuilder.Build(ServiceUrlBuilder.KnownRoute.ModifyProcessAsNewVersion, env).Returns(VersionUrl);
 		return new ModifyProcessAsNewVersionService(settings, factory, urlBuilder,
-			Substitute.For<IProcessPageFactsChecker>(), Substitute.For<ILogger>());
+			Substitute.For<IProcessPageFactsChecker>(), ProcessDescriptorKeyGuardTestSupport.Strict(), Substitute.For<ILogger>());
 	}
 
 	[Test]
@@ -290,4 +291,24 @@ public sealed class ModifyProcessAsNewVersionServiceTests {
 
 	// The service wraps the request under a "request" property (ProcessDesignService BodyStyle=Wrapped).
 	private static JsonNode Wrapped(string body) => JsonNode.Parse(body)["request"];
+
+	[Test]
+	[Description("An operation carrying a key CrtProcessBuilder does not declare is refused before the ModifyProcessAsNewVersion POST, so no version - which cannot be deleted - is created from a request the server would honour only in part (ENG-95244, TC-U-13).")]
+	public void ModifyAsNewVersion_ShouldRefuseBeforeCreatingAVersion_WhenAnOperationKeyIsUnknown() {
+		// Arrange
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
+		ModifyProcessAsNewVersionService service = CreateService(client);
+		const string operations = "[{\"op\":\"addParameter\",\"parameter\":{\"name\":\"Amount\",\"tpye\":\"Integer\"}}]";
+
+		// Act
+		Action act = () => service.ModifyAsNewVersion(Env,
+			new ModifyProcessAsNewVersionRequest("UsrProc", null, null, operations));
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+				because: "a mistyped parameter key would create a version whose parameter has no type")
+			.WithMessage("*operations[0].parameter.tpye*'type'*");
+		client.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default);
+	}
+
 }

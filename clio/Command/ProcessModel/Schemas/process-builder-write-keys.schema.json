@@ -1,0 +1,979 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Advance-Technologies-Foundation/clio/process-builder-write-keys.schema.json",
+  "title": "CrtProcessBuilder write-contract keys",
+  "description": "GENERATED - do not edit. The keys the CrtProcessBuilder ProcessDesignService accepts, one definition per [DataContract] class reachable from the create descriptor and a modify operation, read from Files/src/cs/Contracts/*.cs in clio/CrtProcessBuilder/CrtProcessBuilder.gz. Keys only: a scalar member is {}. Regenerate with CLIO_REGENERATE_PROCESS_BUILDER_KEY_SCHEMA=1 and the ProcessBuilderWriteKeySchemaTests fixture.",
+  "$ref": "#/$defs/BuildProcessRequest",
+  "x-modifyOperation": "#/$defs/ProcessOperationDescriptor",
+  "$defs": {
+    "AccessRightsEntryDescriptor": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "grantee": {
+          "$ref": "#/$defs/AccessRightsGranteeDescriptor"
+        },
+        "level": {},
+        "operations": {}
+      }
+    },
+    "AccessRightsGranteeDescriptor": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "contact": {},
+        "filter": {
+          "$ref": "#/$defs/FilterDescriptor"
+        },
+        "role": {},
+        "type": {}
+      }
+    },
+    "ActivityIntervalDescriptor": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "unit": {},
+        "value": {}
+      }
+    },
+    "AddDataConfigDescriptor": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "mode": {},
+        "selection": {},
+        "source": {},
+        "values": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/ChangeDataValueDescriptor"
+          }
+        }
+      }
+    },
+    "ApprovalApproverDescriptor": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "employee": {},
+        "role": {},
+        "type": {}
+      }
+    },
+    "ApprovalAuthorNotificationDescriptor": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "emailTemplate": {},
+        "recipient": {
+          "$ref": "#/$defs/ApprovalRecipientDescriptor"
+        }
+      }
+    },
+    "ApprovalDescriptor": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "allowDelegation": {},
+        "approver": {
+          "$ref": "#/$defs/ApprovalApproverDescriptor"
+        },
+        "ignoreEmailErrors": {},
+        "notifyApprover": {
+          "$ref": "#/$defs/ApprovalNotificationDescriptor"
+        },
+        "notifyAuthor": {
+          "$ref": "#/$defs/ApprovalAuthorNotificationDescriptor"
+        },
+        "object": {},
+        "purpose": {},
+        "recordId": {
+          "$ref": "#/$defs/ApprovalRecordDescriptor"
+        }
+      }
+    },
+    "ApprovalNotificationDescriptor": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "emailTemplate": {}
+      }
+    },
+    "ApprovalRecipientDescriptor": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "processParameter": {},
+        "value": {}
+      }
+    },
+    "ApprovalRecordDescriptor": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "processParameter": {},
+        "recordId": {},
+        "sourceElement": {},
+        "sourceElementParameter": {}
+      }
+    },
+    "BuildProcessRequest": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "caption": {},
+        "elements": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/ProcessElementDescriptor"
+          }
+        },
+        "flows": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/ProcessFlowDescriptor"
+          }
+        },
+        "mappings": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/ProcessMappingDescriptor"
+          }
+        },
+        "name": {},
+        "packageName": {},
+        "parameters": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/ProcessParameterDescriptor"
+          }
+        }
+      }
+    },
+    "ChangeAccessRightsDescriptor": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "add": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/AccessRightsEntryDescriptor"
+          }
+        },
+        "considerTimeInFilter": {},
+        "object": {},
+        "remove": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/AccessRightsEntryDescriptor"
+          }
+        }
+      }
+    },
+    "ChangeDataConfigDescriptor": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "source": {},
+        "values": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/ChangeDataValueDescriptor"
+          }
+        }
+      }
+    },
+    "ChangeDataValueDescriptor": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "column": {},
+        "expression": {},
+        "processParameter": {},
+        "selectionColumn": {},
+        "sourceElement": {},
+        "sourceElementParameter": {},
+        "value": {}
+      }
+    },
+    "DeleteDataConfigDescriptor": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "source": {}
+      }
+    },
+    "FilterConditionDescriptor": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "column": {},
+        "comparison": {},
+        "datePart": {},
+        "displayValue": {},
+        "elementParameter": {
+          "$ref": "#/$defs/FilterElementParameterRef"
+        },
+        "expression": {},
+        "macro": {},
+        "macroArgument": {},
+        "processParameter": {},
+        "value": {}
+      }
+    },
+    "FilterDescriptor": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "conditions": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/FilterConditionDescriptor"
+          }
+        },
+        "groups": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/FilterGroupDescriptor"
+          }
+        },
+        "logicalOperation": {},
+        "object": {}
+      }
+    },
+    "FilterElementParameterRef": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "elementName": {},
+        "parameter": {}
+      }
+    },
+    "FilterGroupDescriptor": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "conditions": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/FilterConditionDescriptor"
+          }
+        },
+        "groups": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/FilterGroupDescriptor"
+          }
+        },
+        "logicalOperation": {}
+      }
+    },
+    "FormulaTargetDescriptor": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "elementName": {},
+        "elementParameter": {},
+        "entityColumnUId": {},
+        "resultProcessParameter": {},
+        "unresolved": {}
+      }
+    },
+    "FormulaTaskDescriptor": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "body": {},
+        "elementName": {},
+        "elementParameter": {},
+        "entityColumnUId": {},
+        "resultProcessParameter": {},
+        "target": {
+          "$ref": "#/$defs/FormulaTargetDescriptor"
+        }
+      }
+    },
+    "LogActivityDescriptor": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "duration": {
+          "$ref": "#/$defs/ActivityIntervalDescriptor"
+        },
+        "enabled": {},
+        "priority": {},
+        "remindIn": {
+          "$ref": "#/$defs/ActivityIntervalDescriptor"
+        },
+        "showInCalendar": {},
+        "startIn": {
+          "$ref": "#/$defs/ActivityIntervalDescriptor"
+        }
+      }
+    },
+    "MultiInstanceOptionsDescriptor": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {},
+        "executionMode": {},
+        "ignoreErrors": {}
+      }
+    },
+    "OpenEditPageCompletionDescriptor": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "mode": {}
+      }
+    },
+    "OpenEditPageConfigDescriptor": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "completion": {
+          "$ref": "#/$defs/OpenEditPageCompletionDescriptor"
+        },
+        "defaultValues": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/ChangeDataValueDescriptor"
+          }
+        },
+        "editMode": {},
+        "hint": {},
+        "logActivity": {
+          "$ref": "#/$defs/LogActivityDescriptor"
+        },
+        "page": {},
+        "pageSchemaUId": {},
+        "performer": {
+          "$ref": "#/$defs/OpenEditPagePerformerDescriptor"
+        },
+        "recommendation": {},
+        "recordId": {
+          "$ref": "#/$defs/OpenEditPageRecordDescriptor"
+        },
+        "recordType": {},
+        "resultsByColumn": {
+          "$ref": "#/$defs/OpenEditPageResultsByColumnDescriptor"
+        }
+      }
+    },
+    "OpenEditPagePerformerDescriptor": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "contact": {},
+        "role": {},
+        "showPage": {},
+        "type": {}
+      }
+    },
+    "OpenEditPageRecordDescriptor": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "expression": {},
+        "processParameter": {},
+        "sourceElement": {},
+        "sourceElementParameter": {},
+        "value": {}
+      }
+    },
+    "OpenEditPageResultsByColumnDescriptor": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "column": {},
+        "enabled": {}
+      }
+    },
+    "PreconfiguredPageButtonDescriptor": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "caption": {},
+        "event": {},
+        "name": {},
+        "validate": {}
+      }
+    },
+    "PreconfiguredPageDataSourceDescriptor": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "entitySchemaName": {},
+        "name": {}
+      }
+    },
+    "PreconfiguredPageDescriptor": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "buttons": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/PreconfiguredPageButtonDescriptor"
+          }
+        },
+        "dataSources": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/PreconfiguredPageDataSourceDescriptor"
+          }
+        },
+        "page": {},
+        "performer": {
+          "$ref": "#/$defs/PreconfiguredPagePerformerDescriptor"
+        },
+        "recommendation": {}
+      }
+    },
+    "PreconfiguredPagePerformerDescriptor": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "contact": {},
+        "role": {},
+        "showPage": {},
+        "type": {}
+      }
+    },
+    "ProcessConnectionDescriptor": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "column": {},
+        "expression": {},
+        "processParameter": {},
+        "recordId": {},
+        "referenceSchema": {},
+        "sourceElement": {},
+        "sourceElementParameter": {}
+      }
+    },
+    "ProcessElementDescriptor": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "accessRights": {
+          "$ref": "#/$defs/ChangeAccessRightsDescriptor"
+        },
+        "addData": {
+          "$ref": "#/$defs/AddDataConfigDescriptor"
+        },
+        "approval": {
+          "$ref": "#/$defs/ApprovalDescriptor"
+        },
+        "caption": {},
+        "changeData": {
+          "$ref": "#/$defs/ChangeDataConfigDescriptor"
+        },
+        "deleteData": {
+          "$ref": "#/$defs/DeleteDataConfigDescriptor"
+        },
+        "email": {
+          "$ref": "#/$defs/SendEmailDescriptor"
+        },
+        "filter": {
+          "$ref": "#/$defs/FilterDescriptor"
+        },
+        "formula": {
+          "$ref": "#/$defs/FormulaTaskDescriptor"
+        },
+        "lane": {},
+        "name": {},
+        "openEditPage": {
+          "$ref": "#/$defs/OpenEditPageConfigDescriptor"
+        },
+        "performer": {
+          "$ref": "#/$defs/UserTaskPerformerDescriptor"
+        },
+        "preconfiguredPage": {
+          "$ref": "#/$defs/PreconfiguredPageDescriptor"
+        },
+        "readData": {
+          "$ref": "#/$defs/ReadDataConfigDescriptor"
+        },
+        "signal": {
+          "$ref": "#/$defs/ProcessSignalDescriptor"
+        },
+        "subProcess": {
+          "$ref": "#/$defs/SubProcessDescriptor"
+        },
+        "type": {},
+        "useBackgroundMode": {},
+        "userTaskName": {}
+      }
+    },
+    "ProcessElementUpdateDescriptor": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "accessRights": {
+          "$ref": "#/$defs/ChangeAccessRightsDescriptor"
+        },
+        "addData": {
+          "$ref": "#/$defs/AddDataConfigDescriptor"
+        },
+        "approval": {
+          "$ref": "#/$defs/ApprovalDescriptor"
+        },
+        "changeData": {
+          "$ref": "#/$defs/ChangeDataConfigDescriptor"
+        },
+        "deleteData": {
+          "$ref": "#/$defs/DeleteDataConfigDescriptor"
+        },
+        "email": {
+          "$ref": "#/$defs/SendEmailDescriptor"
+        },
+        "formula": {
+          "$ref": "#/$defs/FormulaTaskDescriptor"
+        },
+        "openEditPage": {
+          "$ref": "#/$defs/OpenEditPageConfigDescriptor"
+        },
+        "performer": {
+          "$ref": "#/$defs/UserTaskPerformerDescriptor"
+        },
+        "preconfiguredPage": {
+          "$ref": "#/$defs/PreconfiguredPageDescriptor"
+        },
+        "readData": {
+          "$ref": "#/$defs/ReadDataConfigDescriptor"
+        },
+        "subProcess": {
+          "$ref": "#/$defs/SubProcessDescriptor"
+        },
+        "useBackgroundMode": {}
+      }
+    },
+    "ProcessFlowDescriptor": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "condition": {},
+        "kind": {},
+        "label": {},
+        "results": {},
+        "source": {},
+        "target": {}
+      }
+    },
+    "ProcessMappingDescriptor": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "elementName": {},
+        "elementParameter": {},
+        "expression": {},
+        "processParameter": {},
+        "sourceElement": {},
+        "sourceElementParameter": {},
+        "targetProcessParameter": {},
+        "value": {}
+      }
+    },
+    "ProcessOperationDescriptor": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "condition": {},
+        "connections": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/ProcessConnectionDescriptor"
+          }
+        },
+        "element": {
+          "$ref": "#/$defs/ProcessElementDescriptor"
+        },
+        "elementName": {},
+        "elementUpdate": {
+          "$ref": "#/$defs/ProcessElementUpdateDescriptor"
+        },
+        "filter": {
+          "$ref": "#/$defs/FilterDescriptor"
+        },
+        "kind": {},
+        "label": {},
+        "mapping": {
+          "$ref": "#/$defs/ProcessMappingDescriptor"
+        },
+        "op": {},
+        "parameter": {
+          "$ref": "#/$defs/ProcessParameterDescriptor"
+        },
+        "parameterName": {},
+        "parameterUpdate": {
+          "$ref": "#/$defs/ProcessParameterUpdateDescriptor"
+        },
+        "results": {},
+        "signal": {
+          "$ref": "#/$defs/ProcessSignalDescriptor"
+        },
+        "source": {},
+        "target": {}
+      }
+    },
+    "ProcessParameterDescriptor": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "caption": {},
+        "description": {},
+        "direction": {},
+        "name": {},
+        "referenceSchema": {},
+        "type": {},
+        "typeFromElement": {},
+        "typeFromElementParameter": {},
+        "value": {}
+      }
+    },
+    "ProcessParameterUpdateDescriptor": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "caption": {},
+        "code": {},
+        "description": {},
+        "direction": {},
+        "referenceSchema": {},
+        "type": {},
+        "typeFromElement": {},
+        "typeFromElementParameter": {},
+        "value": {}
+      }
+    },
+    "ProcessSignalDescriptor": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "changedColumns": {},
+        "entity": {},
+        "on": {}
+      }
+    },
+    "ReadDataAggregationDescriptor": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "column": {},
+        "function": {}
+      }
+    },
+    "ReadDataConfigDescriptor": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "aggregation": {
+          "$ref": "#/$defs/ReadDataAggregationDescriptor"
+        },
+        "columns": {},
+        "mode": {},
+        "numberOfRecords": {},
+        "sort": {
+          "$ref": "#/$defs/ReadDataSortDescriptor"
+        },
+        "source": {}
+      }
+    },
+    "ReadDataSortDescriptor": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "column": {},
+        "direction": {}
+      }
+    },
+    "SendEmailDescriptor": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "bcc": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/SendEmailRecipientDescriptor"
+          }
+        },
+        "body": {},
+        "bodyFormat": {},
+        "cc": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/SendEmailRecipientDescriptor"
+          }
+        },
+        "ignoreErrors": {},
+        "importance": {},
+        "messageSource": {},
+        "mode": {},
+        "performer": {
+          "$ref": "#/$defs/UserTaskPerformerDescriptor"
+        },
+        "sender": {},
+        "subject": {},
+        "template": {},
+        "templateEntity": {
+          "$ref": "#/$defs/SendEmailTemplateEntityDescriptor"
+        },
+        "to": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/SendEmailRecipientDescriptor"
+          }
+        }
+      }
+    },
+    "SendEmailRecipientDescriptor": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "expression": {},
+        "processParameter": {},
+        "referenceSchema": {},
+        "value": {}
+      }
+    },
+    "SendEmailTemplateEntityDescriptor": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "expression": {},
+        "processParameter": {},
+        "sourceElement": {},
+        "sourceElementParameter": {}
+      }
+    },
+    "SubProcessDescriptor": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "multiInstanceOptions": {
+          "$ref": "#/$defs/MultiInstanceOptionsDescriptor"
+        },
+        "processName": {},
+        "processUId": {},
+        "resync": {}
+      }
+    },
+    "UserTaskPerformerDescriptor": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "contact": {},
+        "role": {},
+        "showPage": {},
+        "type": {}
+      }
+    }
+  }
+}

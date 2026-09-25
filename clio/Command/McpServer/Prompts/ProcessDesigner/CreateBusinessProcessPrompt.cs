@@ -32,6 +32,10 @@ public static class CreateBusinessProcessPrompt {
 		 and the server refuses a bad one rather than storing it;
 		 (3) supply a JSON descriptor with `name`
 		 (unique schema code), `caption`, `packageName`{(string.IsNullOrWhiteSpace(packageName) ? "" : $" (override: `{packageName}`)")} and the `elements` / `flows` / `parameters` / `mappings` arrays.
+		 Keys are CASE-SENSITIVE and checked before anything is sent: a key the server's contract does not declare
+		 (`lable`, `Label`, `sortt`) would be dropped in silence while the build reports success, so clio refuses
+		 it, naming its path and the key it was meant to be - fix it and call again. (On an environment whose
+		 CrtProcessBuilder is newer than clio's bundle it is a warning instead, and the build goes ahead.)
 		 To run the process when a record is added/changed/deleted, use a `signalStart` element (the platform-native
 		 trigger), not a page save handler; add `changedColumns` to fire an `on:modified` trigger only when specific
 		 columns change, and/or a `filter` to fire only for matching records. To send an email, add a `sendEmail`

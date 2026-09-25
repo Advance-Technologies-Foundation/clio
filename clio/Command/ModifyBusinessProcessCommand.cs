@@ -218,6 +218,7 @@ public sealed class ModifyBusinessProcessService(
 	IApplicationClientFactory applicationClientFactory,
 	IServiceUrlBuilder serviceUrlBuilder,
 	IProcessPageFactsChecker pageFactsChecker,
+	IProcessDescriptorKeyGuard keyGuard,
 	ILogger logger)
 	: IModifyBusinessProcessService {
 	private static readonly JsonSerializerOptions JsonOptions = new() {
@@ -252,6 +253,12 @@ public sealed class ModifyBusinessProcessService(
 			requestObject["uid"] = request.ProcessUid;
 		}
 		requestObject["operations"] = ParseOperations(request.OperationsJson);
+		// Before anything touches Creatio: an operation key the server's contracts do not declare is DROPPED while
+		// the call answers "N operation(s) applied" (ENG-95244, measured on setFlow with `lable`). Refused here,
+		// or a warning when the environment's CrtProcessBuilder is newer than the bundled one.
+		foreach (string keyWarning in keyGuard.Enforce(requestObject["operations"], ProcessWritePayload.ModifyOperations)) {
+			logger.WriteWarning(keyWarning);
+		}
 		// ALWAYS sent, true or false, because the server reads its ABSENCE as a third answer. A caller that
 		// omits the member is one built before the gate existed and unable to answer a refusal, so the server
 		// applies the edit rather than blocking a client that cannot respond; sending false is how this client

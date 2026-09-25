@@ -58,6 +58,15 @@
 		</AssemblyAttribute>
 	</ItemGroup>
 
+	<ItemGroup Label="ProcessBuilderWriteKeys">
+		<!-- The keys CrtProcessBuilder accepts, generated from the bundled archive's contracts and pinned to them by
+		     ProcessBuilderWriteKeySchemaTests (ENG-95244). LogicalName is explicit so the reader does not depend on
+		     MSBuild's manifest-name derivation. -->
+		<None Remove="Command\ProcessModel\Schemas\process-builder-write-keys.schema.json" />
+		<EmbeddedResource Include="Command\ProcessModel\Schemas\process-builder-write-keys.schema.json"
+			LogicalName="Clio.Command.ProcessModel.Schemas.process-builder-write-keys.schema.json" />
+	</ItemGroup>
+
 	<ItemGroup Label="ConversionRules">
 		<None Remove="Command\McpServer\Data\WebToMobilePageConversionRules.json" />
 		<EmbeddedResource Include="Command\McpServer\Data\WebToMobilePageConversionRules.json" />

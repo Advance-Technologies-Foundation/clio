@@ -390,6 +390,23 @@ manual steps — all three were settled on 2026-09-16 and the script then ran en
   die in SetUp). If you run the suite yourself in that configuration, `-SkipTests` here is honest; say so
   in the commit message along with what you ran instead.
 
+### The write-key schema moves with the contracts
+
+`clio/Command/ProcessModel/Schemas/process-builder-write-keys.schema.json` is the set of keys clio lets through
+to `ProcessDesignService` (ENG-95244, `spec/adr/adr-descriptor-strict-keys.md`). It is generated from
+`Files/src/cs/Contracts/*.cs` inside the archive, and `ProcessBuilderWriteKeySchemaTests` compares the two on
+every build. A rebundle that adds, renames or removes a `[DataMember]` therefore fails that test until the
+schema is regenerated in the same change:
+
+```powershell
+$env:CLIO_REGENERATE_PROCESS_BUILDER_KEY_SCHEMA = '1'
+dotnet test clio.tests/clio.tests.csproj --filter "FullyQualifiedName~ProcessBuilderWriteKeySchemaTests"
+Remove-Item Env:CLIO_REGENERATE_PROCESS_BUILDER_KEY_SCHEMA
+```
+
+Then rebuild and run it again without the variable. The script does not do this for you on purpose: every
+added or removed key in that diff changes what clio REFUSES, and a reviewer has to see it as such.
+
 ### Without the script
 
 The script requires `pwsh` (see above — on macOS it is one `dotnet tool install`). The steps below are
