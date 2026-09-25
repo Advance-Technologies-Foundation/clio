@@ -36,10 +36,10 @@ public interface IConnectedObjectsResolver {
 /// <inheritdoc />
 public class ConnectedObjectsResolver : IConnectedObjectsResolver {
 
-	// A fan-out grant goes to a whole audience at once (typically All external users), and on MCP nobody sees
-	// the target list before it is written. These objects expose the role/user directory, security
-	// configuration or platform metadata. Granting them as a SIDE EFFECT of a portal-section grant would make
-	// that data readable through DataService wherever record permissions do not also protect it.
+	// A fan-out grant goes to a whole role at once, and on MCP nobody sees the target list before it is
+	// written. These objects expose the role/user directory, security configuration or platform metadata;
+	// granting them as a SIDE EFFECT of a fan-out would make that data readable through DataService wherever
+	// record permissions do not also protect it.
 	private static readonly string[] ExcludedPrefixes = { "SysAdmin", "SysUser", "SysSchema", "SysPackage", "SysSettings" };
 
 	private static readonly string[] ExcludedSuffixes = { "Right", "Rights" };

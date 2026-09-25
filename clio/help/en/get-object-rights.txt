@@ -12,26 +12,23 @@ DESCRIPTION
     SysSchemaOperationRight / "Object permissions" layer (who may read/create/edit/delete ANY record of
     the entity). By default every role's rights are listed; pass --grantee to filter to one role.
 
-    An object that is not administered by operation permissions is available to all INTERNAL users only.
-    External/portal users are deny-by-default and reach an object only through an explicit grant, so
-    with --grantee such an object is never counted as covered: it is listed separately as having no
-    explicit grant (reachable only if the role is internal).
-    With --include-connected the root object's own lookup objects are read too; combined
-    with --grantee this lists the objects that role cannot READ — the same information as the
-    Freedom page designer's red "objects not available to external users" notification. The bar is READ
-    on every object, because that is what set-object-rights grants on connected lookups by default; the
-    operations each object holds are printed per object. Security and system lookups (SysAdmin*,
-    SysUser*, SysSchema*, SysPackage*, SysSettings*, *Right/*Rights) are skipped with a warning. An
-    object that could not be read, or a connected set that could not be enumerated, is reported as
-    unverified — never as covered.
+    The output is the facts of that layer, one line per object: the operations each role (or the
+    grantee) holds, "NO object operations granted" for a grantee without a row, or "not administered by
+    operation permissions". An object that is not administered is available to all INTERNAL users;
+    external users reach it only through an explicit grant. The command draws no coverage verdict.
+
+    With --include-connected the root object's own lookup objects are read too. Security and system
+    lookups (SysAdmin*, SysUser*, SysSchema*, SysPackage*, SysSettings*, *Right/*Rights) are not read as
+    connected objects and are named in a warning. A connected object that cannot be read, or a connected
+    set that cannot be enumerated, is reported with a warning.
 
 OPTIONS
     --entity-schema-name
         Object (entity schema) name to read (for example UsrOrder). Required.
 
     --grantee
-        Optional SysAdminUnit id to filter to one role (e.g. All external users =
-        720b771c-e7a7-4f31-9cfb-52cd21c3739f). When omitted, every role's rights are reported.
+        Optional SysAdminUnit id (role or user) to filter to one role. When omitted, every role's rights
+        are reported.
 
     --include-connected
         Also read every object referenced by the root object's OWN lookup columns.
@@ -40,8 +37,8 @@ OPTIONS
         Name of the registered environment to read.
 
 EXIT CODES
-    0   The check ran; per-object findings are printed (and, with --grantee, which objects that role
-        cannot read). Connected objects that could not be read are reported as unverified.
+    0   The read ran; per-object facts are printed. Connected objects that could not be read are reported
+        with a warning.
     1   The entity schema name was missing, --grantee was not a GUID, the named (root) object was not
         found, or its rights could not be read.
 
@@ -49,5 +46,5 @@ EXAMPLES
     List every role's object permissions:
         clio get-object-rights --entity-schema-name UsrOrder -e production
 
-    Check whether portal users have access to an object and its lookups:
-        clio get-object-rights --entity-schema-name UsrOrder --grantee 720b771c-e7a7-4f31-9cfb-52cd21c3739f --include-connected -e production
+    Read one role's operations on an object and its lookups:
+        clio get-object-rights --entity-schema-name UsrOrder --grantee <role-id> --include-connected -e production

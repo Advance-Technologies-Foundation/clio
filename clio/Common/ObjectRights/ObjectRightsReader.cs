@@ -71,7 +71,7 @@ public interface IObjectRightsReader {
 /// <summary>
 /// Grants or revokes object operation permissions for one role on an entity, via a read-modify-write against
 /// <c>RightManagementService.svc/GetAdministratedObject</c> + <c>SaveAdministratedObject</c>. This is the
-/// object-level analog of set-record-rights; it works for ANY role, not only the portal audience.
+/// object-level analog of set-record-rights; it works for ANY role.
 /// </summary>
 public interface IObjectRightsWriter {
 	/// <summary>

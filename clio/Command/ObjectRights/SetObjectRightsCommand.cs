@@ -16,8 +16,7 @@ public class SetObjectRightsOptions : RemoteCommandOptions {
 	public string EntitySchemaName { get; set; }
 
 	[Option("grantee", Required = true, HelpText =
-		"SysAdminUnit id (organizational/functional role or user) to grant/revoke. Names are not unique — pass the id. "
-		+ "Portal audience: All external users = 720b771c-e7a7-4f31-9cfb-52cd21c3739f")]
+		"SysAdminUnit id (organizational/functional role or user) to grant/revoke. Names are not unique — pass the id.")]
 	public string Grantee { get; set; }
 
 	[Option("operations", Required = false, HelpText =
@@ -34,7 +33,7 @@ public class SetObjectRightsOptions : RemoteCommandOptions {
 	public bool DisableOperationPermissions { get; set; }
 
 	[Option("include-connected", Required = false, HelpText =
-		"Also apply to every object referenced by the root object's own lookup columns (portal-section convenience)")]
+		"Also apply to every object referenced by the root object's own lookup columns")]
 	public bool IncludeConnected { get; set; }
 
 	[Option("connected-operations", Required = false, HelpText =
@@ -209,7 +208,7 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 
 	// Least-privilege default for CONNECTED lookup objects: read only. A role picks a lookup value with read;
 	// fanning create/edit out to every shared dictionary (status/type lookups, Currency, Contact, Account) would
-	// hand an untrusted audience such as the portal write access it never needed.
+	// hand a broad audience write access it never needed.
 	private static readonly ObjectOperation[] DefaultConnectedOperations = { ObjectOperation.Read };
 
 	private static string FormatOperations(IEnumerable<ObjectOperation> operations) =>

@@ -13,7 +13,6 @@ namespace Clio.Tests.Command.ObjectRights;
 [Property("Module", "Command")]
 public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptions> {
 
-	private static readonly Guid ExternalUsers = Guid.Parse("720b771c-e7a7-4f31-9cfb-52cd21c3739f");
 	private static readonly Guid Employees = Guid.Parse("a29a3ba5-4b0d-de11-9a51-005056c00008");
 
 	private GetObjectRightsCommand _command;
@@ -52,87 +51,87 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 	private static ObjectRightsInfo Administered(string name, params RoleOperationRights[] roles) =>
 		new(true, name, name, true, roles);
 
-	private static RoleOperationRights Ext(bool read, bool create, bool edit, bool del) =>
-		new(ExternalUsers, "All external users", read, create, edit, del);
+	private static readonly Guid Role = Guid.Parse("11111111-2222-3333-4444-555555555555");
 
-	[Test]
-	[Description("With a grantee filter, reports no missing objects when the grantee can read the root and every connected object.")]
-	public void Execute_ShouldReportNoMissing_WhenGranteeGrantedEverywhere() {
-		// Arrange
-		_connectedObjects.Resolve("UsrPortalSpike2", true)
-			.Returns(Resolution("UsrPortalSpike2", "UsrPSCategory"));
-		_rightsReader.GetObjectRights("UsrPortalSpike2", Arg.Any<CreatioRequestOptions>())
-			.Returns(Administered("UsrPortalSpike2", Ext(true, true, true, false)));
-		_rightsReader.GetObjectRights("UsrPSCategory", Arg.Any<CreatioRequestOptions>())
-			.Returns(Administered("UsrPSCategory", Ext(true, true, true, false)));
-		GetObjectRightsOptions options = new() {
-			EntitySchemaName = "UsrPortalSpike2", Grantee = ExternalUsers.ToString(), IncludeConnected = true
-		};
+	private static RoleOperationRights RoleRow(bool read, bool create, bool edit, bool del) =>
+		new(Role, "Sales managers", read, create, edit, del);
 
-		// Act
-		int exitCode = _command.Execute(options);
-
-		// Assert
-		exitCode.Should().Be(0, because: "the read completed");
-		_logger.Received().WriteInfo(Arg.Is<string>(m => m.Contains("can read every listed object")));
-		_logger.DidNotReceive().WriteWarning(Arg.Is<string>(m => m.Contains("cannot read")));
-	}
-
-	[Test]
-	[Description("With a grantee filter, lists a connected object where the grantee has no grant.")]
-	public void Execute_ShouldListMissing_WhenGranteeLacksOnConnected() {
-		// Arrange
-		_connectedObjects.Resolve("UsrPortalSpike2", true)
-			.Returns(Resolution("UsrPortalSpike2", "UsrPSCategory"));
-		_rightsReader.GetObjectRights("UsrPortalSpike2", Arg.Any<CreatioRequestOptions>())
-			.Returns(Administered("UsrPortalSpike2", Ext(true, true, true, false)));
-		_rightsReader.GetObjectRights("UsrPSCategory", Arg.Any<CreatioRequestOptions>())
-			.Returns(Administered("UsrPSCategory", new RoleOperationRights(Employees, "All employees", true, true, true, true)));
-		GetObjectRightsOptions options = new() {
-			EntitySchemaName = "UsrPortalSpike2", Grantee = ExternalUsers.ToString(), IncludeConnected = true
-		};
-
-		// Act
-		int exitCode = _command.Execute(options);
-
-		// Assert
-		exitCode.Should().Be(0, because: "a read that finds gaps still completes");
-		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("cannot read") && m.Contains("UsrPSCategory")));
-	}
+	private static ObjectRightsInfo NotAdministered(string name) =>
+		new(true, name, name, false, Array.Empty<RoleOperationRights>());
 
 	[Test]
 	[Description("Without a grantee filter, reports every role's operations on the object.")]
 	public void Execute_ShouldReportAllRoles_WhenNoGrantee() {
 		// Arrange
-		_rightsReader.GetObjectRights("UsrPortalSpike2", Arg.Any<CreatioRequestOptions>())
-			.Returns(Administered("UsrPortalSpike2",
-				Ext(true, true, true, false),
+		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>())
+			.Returns(Administered("UsrOrder",
+				RoleRow(true, true, true, false),
 				new RoleOperationRights(Employees, "All employees", true, true, true, true)));
-		GetObjectRightsOptions options = new() { EntitySchemaName = "UsrPortalSpike2" };
+		GetObjectRightsOptions options = new() { EntitySchemaName = "UsrOrder" };
 
 		// Act
 		int exitCode = _command.Execute(options);
 
 		// Assert
 		exitCode.Should().Be(0, because: "the read completed");
-		_logger.Received().WriteInfo(Arg.Is<string>(m => m.Contains("All external users")));
-		_logger.Received().WriteInfo(Arg.Is<string>(m => m.Contains("All employees")));
+		_logger.Received().WriteInfo(Arg.Is<string>(m => m.Contains("Sales managers") && m.Contains("read/create/edit")));
+		_logger.Received().WriteInfo(Arg.Is<string>(m => m.Contains("All employees") && m.Contains("read/create/edit/delete")));
 	}
 
 	[Test]
-	[Description("Reports an object that is not administered by operation permissions as available to all.")]
-	public void Execute_ShouldReportAvailable_WhenNotAdministratedByOperations() {
+	[Description("With a grantee filter, reports exactly the operations that role holds on each object — facts only, no coverage verdict.")]
+	public void Execute_ShouldReportGranteeOperationsPerObject_WithoutVerdict() {
 		// Arrange
-		_rightsReader.GetObjectRights("UsrOpen", Arg.Any<CreatioRequestOptions>())
-			.Returns(new ObjectRightsInfo(true, "UsrOpen", "Open", false, Array.Empty<RoleOperationRights>()));
-		GetObjectRightsOptions options = new() { EntitySchemaName = "UsrOpen" };
+		_connectedObjects.Resolve("UsrOrder", true).Returns(Resolution("UsrOrder", "UsrStatus"));
+		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>())
+			.Returns(Administered("UsrOrder", RoleRow(true, true, true, false)));
+		_rightsReader.GetObjectRights("UsrStatus", Arg.Any<CreatioRequestOptions>())
+			.Returns(Administered("UsrStatus", RoleRow(true, false, false, false)));
+		GetObjectRightsOptions options = new() { EntitySchemaName = "UsrOrder", Grantee = Role.ToString(), IncludeConnected = true };
 
 		// Act
 		int exitCode = _command.Execute(options);
 
 		// Assert
 		exitCode.Should().Be(0, because: "the read completed");
-		_logger.Received().WriteInfo(Arg.Is<string>(m => m.Contains("available to all")));
+		_logger.Received().WriteInfo(Arg.Is<string>(m => m.Contains("UsrOrder") && m.Contains("read/create/edit")));
+		_logger.Received().WriteInfo(Arg.Is<string>(m => m.Contains("UsrStatus") && m.EndsWith(": read.")));
+		_logger.DidNotReceive().WriteInfo(Arg.Is<string>(m => m.Contains("can read") || m.Contains("cannot read")));
+		_logger.DidNotReceive().WriteWarning(Arg.Is<string>(m => m.Contains("can read") || m.Contains("cannot read")));
+	}
+
+	[Test]
+	[Description("With a grantee filter, an administered object where the role has no row is reported as having no operations granted.")]
+	public void Execute_ShouldReportNoGrant_WhenGranteeHasNoRow() {
+		// Arrange
+		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>())
+			.Returns(Administered("UsrOrder", new RoleOperationRights(Employees, "All employees", true, true, true, true)));
+		GetObjectRightsOptions options = new() { EntitySchemaName = "UsrOrder", Grantee = Role.ToString() };
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		_logger.Received().WriteInfo(Arg.Is<string>(m => m.Contains("UsrOrder") && m.Contains("NO object operations granted")));
+	}
+
+	[TestCase(null)]
+	[TestCase("11111111-2222-3333-4444-555555555555")]
+	[Description("A non-administered object is reported with the general platform fact: open to internal users, reachable by external users only through an explicit grant — with or without a grantee.")]
+	public void Execute_ShouldReportNotAdministeredFact(string grantee) {
+		// Arrange
+		_rightsReader.GetObjectRights("UsrOpen", Arg.Any<CreatioRequestOptions>()).Returns(NotAdministered("UsrOpen"));
+		GetObjectRightsOptions options = new() { EntitySchemaName = "UsrOpen", Grantee = grantee };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "the read completed");
+		_logger.Received().WriteInfo(Arg.Is<string>(m =>
+				m.Contains("not administered by operation permissions")
+				&& m.Contains("available to all internal users")
+				&& m.Contains("external users reach it only through an explicit grant")));
 	}
 
 	[Test]
@@ -151,82 +150,19 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 	}
 
 	[Test]
-	[Description("A read failure on the ROOT object fails the check with exit code 1: the named object was not verified.")]
+	[Description("A read failure on the ROOT object fails with exit code 1: the named object was not read.")]
 	public void Execute_ShouldReturnError_WhenRootReadFails() {
 		// Arrange
-		_rightsReader.GetObjectRights("UsrPortalSpike2", Arg.Any<CreatioRequestOptions>())
-			.Returns(new ObjectRightsInfo(true, "UsrPortalSpike2", null, false, Array.Empty<RoleOperationRights>(),
-				ReadError: "Request Error"));
-		GetObjectRightsOptions options = new() { EntitySchemaName = "UsrPortalSpike2" };
+		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>())
+			.Returns(new ObjectRightsInfo(true, "UsrOrder", null, false, Array.Empty<RoleOperationRights>(), ReadError: "Request Error"));
+		GetObjectRightsOptions options = new() { EntitySchemaName = "UsrOrder" };
 
 		// Act
 		int exitCode = _command.Execute(options);
 
 		// Assert
-		exitCode.Should().Be(1, because: "the object the caller named could not be read, so the check did not happen");
+		exitCode.Should().Be(1, because: "the object the caller named could not be read");
 		_logger.Received().WriteError(Arg.Is<string>(m => m.Contains("could not read object rights")));
-	}
-
-	private GetObjectRightsOptions GranteeCheckWithConnected() {
-		_connectedObjects.Resolve("UsrPortalSpike2", true)
-			.Returns(Resolution("UsrPortalSpike2", "UsrPSCategory"));
-		_rightsReader.GetObjectRights("UsrPortalSpike2", Arg.Any<CreatioRequestOptions>())
-			.Returns(Administered("UsrPortalSpike2", Ext(true, true, true, false)));
-		return new GetObjectRightsOptions {
-			EntitySchemaName = "UsrPortalSpike2", Grantee = ExternalUsers.ToString(), IncludeConnected = true
-		};
-	}
-
-	[Test]
-	[Description("With a grantee filter, a connected object that is NOT administered by operation permissions is never counted as covered (external users are deny-by-default), but it is reported apart from 'cannot read', because an internal role can reach it.")]
-	public void Execute_ShouldReportNonAdministeredObjectSeparately_WhenGranteeFilterSet() {
-		// Arrange
-		GetObjectRightsOptions options = GranteeCheckWithConnected();
-		_rightsReader.GetObjectRights("UsrPSCategory", Arg.Any<CreatioRequestOptions>())
-			.Returns(new ObjectRightsInfo(true, "UsrPSCategory", "UsrPSCategory", false, Array.Empty<RoleOperationRights>()));
-
-		// Act
-		int exitCode = _command.Execute(options);
-
-		// Assert
-		exitCode.Should().Be(0, because: "the read completed");
-		_logger.DidNotReceive().WriteInfo(Arg.Is<string>(m => m.Contains("can read every listed object")));
-		_logger.Received().WriteWarning(Arg.Is<string>(m =>
-			m.Contains("no explicit grant") && m.Contains("reachable only if the role is internal") && m.Contains("UsrPSCategory")));
-		_logger.DidNotReceive().WriteWarning(Arg.Is<string>(m => m.Contains("cannot read")));
-	}
-
-	[Test]
-	[Description("With a grantee filter, a connected object whose rights could not be read never yields the unqualified all-clear line.")]
-	public void Execute_ShouldNotPrintAllClear_WhenConnectedObjectReadFails() {
-		// Arrange
-		GetObjectRightsOptions options = GranteeCheckWithConnected();
-		_rightsReader.GetObjectRights("UsrPSCategory", Arg.Any<CreatioRequestOptions>())
-			.Returns(new ObjectRightsInfo(true, "UsrPSCategory", null, false, Array.Empty<RoleOperationRights>(),
-				ReadError: "denied"));
-
-		// Act
-		_command.Execute(options);
-
-		// Assert
-		_logger.DidNotReceive().WriteInfo(Arg.Is<string>(m => m.Contains("can read every listed object")));
-		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("could not be read")));
-	}
-
-	[Test]
-	[Description("With a grantee filter, a connected object that is not found never yields the unqualified all-clear line.")]
-	public void Execute_ShouldNotPrintAllClear_WhenConnectedObjectNotFound() {
-		// Arrange
-		GetObjectRightsOptions options = GranteeCheckWithConnected();
-		_rightsReader.GetObjectRights("UsrPSCategory", Arg.Any<CreatioRequestOptions>())
-			.Returns(new ObjectRightsInfo(false, "UsrPSCategory", null, false, Array.Empty<RoleOperationRights>()));
-
-		// Act
-		_command.Execute(options);
-
-		// Assert
-		_logger.DidNotReceive().WriteInfo(Arg.Is<string>(m => m.Contains("can read every listed object")));
-		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("could not be read")));
 	}
 
 	[Test]
@@ -235,101 +171,66 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 		// Arrange
 		_rightsReader.GetObjectRights("UsrOrders", Arg.Any<CreatioRequestOptions>())
 			.Returns(new ObjectRightsInfo(false, "UsrOrders", null, false, Array.Empty<RoleOperationRights>()));
-		GetObjectRightsOptions options = new() { EntitySchemaName = "UsrOrders", Grantee = ExternalUsers.ToString() };
+		GetObjectRightsOptions options = new() { EntitySchemaName = "UsrOrders", Grantee = Role.ToString() };
 
 		// Act
 		int exitCode = _command.Execute(options);
 
 		// Assert
-		exitCode.Should().Be(1, because: "a missing root object means nothing was checked");
+		exitCode.Should().Be(1, because: "a missing root object means nothing was read");
 		_logger.Received().WriteError(Arg.Is<string>(m => m.Contains("UsrOrders") && m.Contains("not found")));
-		_logger.DidNotReceive().WriteInfo(Arg.Is<string>(m => m.Contains("can read")));
 	}
 
-	[Test]
-	[Description("When every read fails, no coverage sentence is printed at all and the check fails: nothing was verified.")]
-	public void Execute_ShouldReturnError_WhenEveryReadFails() {
+	[TestCase(true)]
+	[TestCase(false)]
+	[Description("A connected object that cannot be read or is not found is reported with a warning; the run still succeeds because the root was read.")]
+	public void Execute_ShouldWarn_WhenConnectedObjectUnreadable(bool found) {
 		// Arrange
-		_connectedObjects.Resolve("UsrPortalSpike2", true).Returns(Resolution("UsrPortalSpike2", "UsrPSCategory"));
-		_rightsReader.GetObjectRights(Arg.Any<string>(), Arg.Any<CreatioRequestOptions>())
-			.Returns(new ObjectRightsInfo(true, "x", null, false, Array.Empty<RoleOperationRights>(), ReadError: "denied"));
-		GetObjectRightsOptions options = new() {
-			EntitySchemaName = "UsrPortalSpike2", Grantee = ExternalUsers.ToString(), IncludeConnected = true
-		};
+		_connectedObjects.Resolve("UsrOrder", true).Returns(Resolution("UsrOrder", "UsrStatus"));
+		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>())
+			.Returns(Administered("UsrOrder", RoleRow(true, true, true, false)));
+		_rightsReader.GetObjectRights("UsrStatus", Arg.Any<CreatioRequestOptions>())
+			.Returns(found
+				? new ObjectRightsInfo(true, "UsrStatus", null, false, Array.Empty<RoleOperationRights>(), ReadError: "denied")
+				: new ObjectRightsInfo(false, "UsrStatus", null, false, Array.Empty<RoleOperationRights>()));
+		GetObjectRightsOptions options = new() { EntitySchemaName = "UsrOrder", IncludeConnected = true };
 
 		// Act
 		int exitCode = _command.Execute(options);
 
 		// Assert
-		exitCode.Should().Be(1, because: "the root object could not be read");
-		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("no object could be read")));
-		_logger.DidNotReceive().WriteInfo(Arg.Is<string>(m => m.Contains("can read")));
-		_logger.DidNotReceive().WriteWarning(Arg.Is<string>(m => m.Contains("can read the")));
+		exitCode.Should().Be(0, because: "the root object was read");
+		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("UsrStatus")
+				&& (m.Contains("could not read object rights") || m.Contains("schema not found"))));
 	}
 
 	[Test]
-	[Description("After the default portal grant (root read/create/edit, connected READ only) the check reports no missing connected object, so it never pushes a caller to widen shared lookups to write access.")]
-	public void Execute_ShouldNotListReadOnlyConnected_AfterDefaultConnectedGrant() {
+	[Description("A failed connected-object enumeration is reported with a warning; the root is still read.")]
+	public void Execute_ShouldWarn_WhenConnectedEnumerationFails() {
 		// Arrange
-		GetObjectRightsOptions options = GranteeCheckWithConnected();
-		_rightsReader.GetObjectRights("UsrPSCategory", Arg.Any<CreatioRequestOptions>())
-			.Returns(Administered("UsrPSCategory", Ext(true, false, false, false)));
-
-		// Act
-		int exitCode = _command.Execute(options);
-
-		// Assert
-		exitCode.Should().Be(0, because: "the read completed");
-		_logger.Received().WriteInfo(Arg.Is<string>(m => m.Contains("can read every listed object")));
-		_logger.DidNotReceive().WriteWarning(Arg.Is<string>(m => m.Contains("cannot read")));
-	}
-
-	[Test]
-	[Description("A grantee row without READ is listed as missing even when it holds other operations.")]
-	public void Execute_ShouldListMissing_WhenGranteeRowLacksRead() {
-		// Arrange
-		GetObjectRightsOptions options = GranteeCheckWithConnected();
-		_rightsReader.GetObjectRights("UsrPSCategory", Arg.Any<CreatioRequestOptions>())
-			.Returns(Administered("UsrPSCategory", Ext(false, true, true, false)));
-
-		// Act
-		_command.Execute(options);
-
-		// Assert
-		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("cannot read") && m.Contains("UsrPSCategory")));
-	}
-
-	[Test]
-	[Description("A failed connected-object enumeration is reported as unverified and never yields an all-clear for the root alone.")]
-	public void Execute_ShouldNotPrintAllClear_WhenConnectedEnumerationFails() {
-		// Arrange
-		_connectedObjects.Resolve("UsrPortalSpike2", true)
-			.Returns(new ConnectedObjectsResolution(new[] { "UsrPortalSpike2" }, Array.Empty<string>(), "schema read failed"));
-		_rightsReader.GetObjectRights("UsrPortalSpike2", Arg.Any<CreatioRequestOptions>())
-			.Returns(Administered("UsrPortalSpike2", Ext(true, true, true, false)));
-		GetObjectRightsOptions options = new() {
-			EntitySchemaName = "UsrPortalSpike2", Grantee = ExternalUsers.ToString(), IncludeConnected = true
-		};
+		_connectedObjects.Resolve("UsrOrder", true)
+			.Returns(new ConnectedObjectsResolution(new[] { "UsrOrder" }, Array.Empty<string>(), "schema read failed"));
+		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>())
+			.Returns(Administered("UsrOrder", RoleRow(true, true, true, false)));
+		GetObjectRightsOptions options = new() { EntitySchemaName = "UsrOrder", IncludeConnected = true };
 
 		// Act
 		int exitCode = _command.Execute(options);
 
 		// Assert
 		exitCode.Should().Be(0, because: "the root object itself was read");
-		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("UNVERIFIED") && m.Contains("schema read failed")));
-		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("could not be enumerated")));
-		_logger.DidNotReceive().WriteInfo(Arg.Is<string>(m => m.Contains("can read every listed object")));
+		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("Could not enumerate") && m.Contains("schema read failed")));
 	}
 
 	[Test]
-	[Description("A security/system lookup excluded from the fan-out is named in a warning.")]
+	[Description("A security/system lookup excluded from the connected set is named in a warning.")]
 	public void Execute_ShouldWarn_WhenConnectedObjectExcluded() {
 		// Arrange
-		_connectedObjects.Resolve("UsrPortalSpike2", true)
-			.Returns(new ConnectedObjectsResolution(new[] { "UsrPortalSpike2" }, new[] { "SysAdminUnit" }));
-		_rightsReader.GetObjectRights("UsrPortalSpike2", Arg.Any<CreatioRequestOptions>())
-			.Returns(Administered("UsrPortalSpike2", Ext(true, true, true, false)));
-		GetObjectRightsOptions options = new() { EntitySchemaName = "UsrPortalSpike2", IncludeConnected = true };
+		_connectedObjects.Resolve("UsrOrder", true)
+			.Returns(new ConnectedObjectsResolution(new[] { "UsrOrder" }, new[] { "SysAdminUnit" }));
+		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>())
+			.Returns(Administered("UsrOrder", RoleRow(true, true, true, false)));
+		GetObjectRightsOptions options = new() { EntitySchemaName = "UsrOrder", IncludeConnected = true };
 
 		// Act
 		_command.Execute(options);

@@ -33,7 +33,7 @@ public sealed class SetObjectRightsTool(
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
 	[Description("Grant or revoke OBJECT operation permissions (read/create/edit/delete) for one role on an object — the SysSchemaOperationRight / \"Object permissions\" layer (DESTRUCTIVE — changes access rights). " +
 		"Object-level analog of set-record-rights, and works for ANY role. Grants turn on the object's operation permissions when needed. " +
-		"grantee is a SysAdminUnit id (roles/users; names are not unique). Portal audience: All external users = 720b771c-e7a7-4f31-9cfb-52cd21c3739f. " +
+		"grantee is a SysAdminUnit id (roles/users; names are not unique). " +
 		"operations defaults to read/create/edit on the root object (delete not granted by default); revoke=true removes them (a role left with none is removed). " +
 		"include-connected also applies to the root object's own lookup objects (security/system objects such as SysAdminUnit are skipped), which get connected-operations (default read only); on revoke the lookups are touched only when connected-operations is given. Fails without writing if the lookups cannot be enumerated. Does NOT change column permissions. Read it back with get-object-rights. " +
 		"A revoke that would remove the root's LAST rights row is REFUSED unless disable-operation-permissions is set (it makes the object available to ALL internal users; never applied to lookups). " +
@@ -83,7 +83,7 @@ public sealed record SetObjectRightsArgs(
 	string EntitySchemaName,
 
 	[property: JsonPropertyName("grantee")]
-	[property: Description("SysAdminUnit id (role or user) to grant/revoke. Names are not unique — pass the id. All external users = 720b771c-e7a7-4f31-9cfb-52cd21c3739f.")]
+	[property: Description("SysAdminUnit id (role or user) to grant/revoke. Names are not unique — pass the id.")]
 	[property: Required]
 	string Grantee,
 
@@ -96,7 +96,7 @@ public sealed record SetObjectRightsArgs(
 	bool? Revoke = null,
 
 	[property: JsonPropertyName("include-connected")]
-	[property: Description("Also apply to the root object's own lookup objects, skipping security/system objects (portal-section convenience; default false).")]
+	[property: Description("Also apply to the root object's own lookup objects, skipping security/system objects (default false).")]
 	bool? IncludeConnected = null,
 
 	[property: JsonPropertyName("connected-operations")]

@@ -30,9 +30,9 @@ public sealed class GetObjectRightsTool(
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Read OBJECT operation permissions — who may read/create/edit/delete a whole entity (the SysSchemaOperationRight / \"Object permissions\" layer). " +
-		"Read-only companion of set-object-rights. Reports every role's rights on the object; pass grantee to filter to one role (e.g. All external users = 720b771c-e7a7-4f31-9cfb-52cd21c3739f). " +
-		"include-connected also reports the root object's own lookup objects (security/system objects are skipped); with a grantee it lists the objects that role cannot READ — the Freedom designer's red \"not available to external users\" list. Fails (success=false) when the root object cannot be read; never claims coverage for objects it could not read. " +
-		"An object not administered by operation permissions is available to all INTERNAL users only — external/portal users are deny-by-default, so with a grantee such an object is listed as still lacking access. " +
+		"Read-only companion of set-object-rights. Reports, per object, the operations every role holds; pass grantee to filter to one role. " +
+		"include-connected also reports the root object's own lookup objects (security/system objects are skipped). The output is facts only, with no coverage verdict. Fails (success=false) when the root object cannot be read; a connected object that cannot be read is reported with a warning. " +
+		"An object not administered by operation permissions is available to all INTERNAL users; external users reach it only through an explicit grant. " +
 		"Unknown or misspelled argument names are refused.")]
 	public ObjectRightsToolResponse GetObjectRights(
 		[Description("Parameters: environment-name, entity-schema-name (required); grantee, include-connected (optional).")]
@@ -71,11 +71,11 @@ public sealed record GetObjectRightsArgs(
 	string EntitySchemaName,
 
 	[property: JsonPropertyName("grantee")]
-	[property: Description("Optional SysAdminUnit id to filter to one role. All external users = 720b771c-e7a7-4f31-9cfb-52cd21c3739f. Omit to report every role.")]
+	[property: Description("Optional SysAdminUnit id (role or user) to filter to one role. Omit to report every role.")]
 	string Grantee = null,
 
 	[property: JsonPropertyName("include-connected")]
-	[property: Description("Also read the root object's own lookup objects (portal-section convenience; default false).")]
+	[property: Description("Also read the root object's own lookup objects, skipping security/system objects (default false).")]
 	bool? IncludeConnected = null
 ) {
 	/// <summary>Overflow bag for unknown JSON fields; a non-empty bag refuses the call.</summary>

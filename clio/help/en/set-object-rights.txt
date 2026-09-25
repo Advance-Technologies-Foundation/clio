@@ -11,13 +11,13 @@ DESCRIPTION
     Grants (or, with --revoke, revokes) object operation permissions for one role on an object — the
     SysSchemaOperationRight / "Object permissions" layer that decides who may read/create/edit/delete
     ANY record of an entity. This is the object-level analog of set-record-rights (which is per-record),
-    and it works for ANY role, not only the portal audience.
+    and it works for any role.
 
     It is a read-modify-write over the native RightManagementService: the object's per-role grid is
     read, the grantee's row is added/updated (or removed), and the object is saved. Granting to an
-    object that does not yet use operation permissions turns them on (Creatio then also grants
-    "All employees" by default so internal users keep access) — an access narrowing for every other
-    role, which the confirmation and the result line both name. It does NOT change column permissions.
+    object that does not yet use operation permissions turns them on — an access narrowing for every
+    other role, which the confirmation and the result line both name. Creatio may also add an
+    "All employees" row at that point (observed, not a documented contract); read the result back. It does NOT change column permissions.
 
     A revoke only ever narrows access. Removing an object's LAST rights row is the one case that would
     not: it turns operation permissions off, which makes the object available to ALL internal users. That
@@ -32,8 +32,7 @@ OPTIONS
 
     --grantee
         SysAdminUnit id (organizational/functional role or user) to grant or revoke. Names are not
-        unique, so the id is required. Portal audience: All external users =
-        720b771c-e7a7-4f31-9cfb-52cd21c3739f. Resolve other ids yourself (e.g. execute-esq on SysAdminUnit).
+        unique, so the id is required. Resolve it yourself (e.g. execute-esq on SysAdminUnit).
 
     --operations
         Comma-separated operations to grant/revoke: read, create, edit, delete. Default: read, create, edit (delete not granted by default).
@@ -48,8 +47,7 @@ OPTIONS
         applies to the root object only, never to connected lookups.
 
     --include-connected
-        Also apply to every object referenced by the root object's OWN lookup columns. This is the
-        convenience for making a Freedom portal section's object AND its lookups available in one call.
+        Also apply to every object referenced by the root object's OWN lookup columns.
         The connected lookups get --connected-operations (read only by default), NOT --operations.
         Security and system objects (SysAdmin*, SysUser*, SysSchema*, SysPackage*, SysSettings*,
         *Right/*Rights) are skipped with a warning; name one as --entity-schema-name to change it.
@@ -77,8 +75,8 @@ EXIT CODES
         objects are not attempted. A connected lookup that is not found only warns.
 
 EXAMPLES
-    Make an object readable by portal users, with its lookups read-only (grant the external audience):
-        clio set-object-rights --entity-schema-name UsrOrder --grantee 720b771c-e7a7-4f31-9cfb-52cd21c3739f --operations read --include-connected --confirm -e production
+    Make an object and its lookups readable by a role (lookups get read only):
+        clio set-object-rights --entity-schema-name UsrOrder --grantee <role-id> --operations read --include-connected --confirm -e production
 
     Grant a functional role the default read/create/edit on one object:
         clio set-object-rights --entity-schema-name UsrOrder --grantee <role-id> --confirm -e production
