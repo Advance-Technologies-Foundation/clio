@@ -4632,7 +4632,7 @@ stories:
     blocks: []
   - id: story-descriptor-strict-keys-1
     title: "Generated write-key schema, verified against the bundled archive"
-    status: in-progress
+    status: review
     jira: ENG-95244
     file: spec/stories/story-descriptor-strict-keys-1.md
     depends_on: []
@@ -4642,21 +4642,21 @@ stories:
       against the bundled archive's Contracts/*.cs (no package change, no rebundle).
   - id: story-descriptor-strict-keys-2
     title: "Key validator: unknown and wrongly-cased keys with path and hint"
-    status: in-progress
+    status: review
     jira: ENG-95244
     file: spec/stories/story-descriptor-strict-keys-2.md
     depends_on:
       - story-descriptor-strict-keys-1
   - id: story-descriptor-strict-keys-3
     title: "Guard on create, modify and modify-as-new-version with version-skew policy"
-    status: in-progress
+    status: review
     jira: ENG-95244
     file: spec/stories/story-descriptor-strict-keys-3.md
     depends_on:
       - story-descriptor-strict-keys-2
   - id: story-descriptor-strict-keys-4
     title: "MCP E2E, guidance and knowledge record"
-    status: in-progress
+    status: review
     jira: ENG-95244
     file: spec/stories/story-descriptor-strict-keys-4.md
     depends_on:

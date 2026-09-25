@@ -4,18 +4,18 @@
 **Spec**: [spec-descriptor-strict-keys.md](../prd/spec-descriptor-strict-keys.md) ·
 **ADR**: [adr-descriptor-strict-keys.md](../adr/adr-descriptor-strict-keys.md) ·
 **Test plan**: [tp-descriptor-strict-keys.md](../test-plans/tp-descriptor-strict-keys.md)
-Status: in-progress
+Status: review
 
 As a clio maintainer I want the set of keys CrtProcessBuilder accepts to be a checked-in JSON Schema that a
 unit test regenerates from the contract sources inside the bundled archive, so the enforced set can never
 drift from what clio ships.
 
 Acceptance:
-- [ ] `clio/Command/ProcessModel/Schemas/process-builder-write-keys.schema.json` (draft 2020-12, embedded
+- [x] `clio/Command/ProcessModel/Schemas/process-builder-write-keys.schema.json` (draft 2020-12, embedded
       resource): one `$defs` entry per write contract reachable from `BuildProcessRequest` and
       `ProcessOperationDescriptor`, `additionalProperties: false`, `$ref` / `items.$ref` for contract members,
       inheritance flattened; no package version recorded (the drift test is the provenance).
-- [ ] Unit test regenerates it with Roslyn from `Files/src/cs/Contracts/*.cs` read through
+- [x] Unit test regenerates it with Roslyn from `Files/src/cs/Contracts/*.cs` read through
       `ICompressionUtilities` and fails on any difference, naming the regeneration command
       (`CLIO_REGENERATE_PROCESS_BUILDER_KEY_SCHEMA=1`). TC-U-01, TC-U-02, TC-U-15.
-- [ ] `docs/agent-instructions/bundled-packages.md` says a contract-changing rebundle regenerates it.
+- [x] `docs/agent-instructions/bundled-packages.md` says a contract-changing rebundle regenerates it.

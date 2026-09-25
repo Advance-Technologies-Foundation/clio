@@ -4,13 +4,13 @@
 **Spec**: [spec-descriptor-strict-keys.md](../prd/spec-descriptor-strict-keys.md) ·
 **ADR**: [adr-descriptor-strict-keys.md](../adr/adr-descriptor-strict-keys.md) ·
 **Test plan**: [tp-descriptor-strict-keys.md](../test-plans/tp-descriptor-strict-keys.md)
-Status: in-progress
+Status: review
 
 As an agent building a process I want every key the server would drop to be reported with its JSON path and
 the nearest valid key, so a typo is fixed instead of silently lost.
 
 Acceptance:
-- [ ] `IProcessDescriptorKeyValidator` walks a create descriptor (root `BuildProcessRequest`) or an
+- [x] `IProcessDescriptorKeyValidator` walks a create descriptor (root `BuildProcessRequest`) or an
       operations array (items `ProcessOperationDescriptor`) against the schema, case-sensitively.
-- [ ] Hint: exact case-insensitive match ("keys are case-sensitive"), else closest by edit distance, else the
+- [x] Hint: exact case-insensitive match ("keys are case-sensitive"), else closest by edit distance, else the
       valid keys at that level. TC-U-03..TC-U-08, TC-U-12.
