@@ -1,0 +1,50 @@
+COMMAND TYPE
+    Object rights
+
+NAME
+    get-object-rights - Read object operation permissions (read/create/edit/delete per role) for an object
+
+SYNOPSIS
+    get-object-rights --entity-schema-name <EntitySchemaName> [--grantee <SysAdminUnitId>] [--include-connected] [OPTIONS]
+
+DESCRIPTION
+    Read-only companion of set-object-rights. Reports the object's per-role operation permissions — the
+    SysSchemaOperationRight / "Object permissions" layer (who may read/create/edit/delete ANY record of
+    the entity). By default every role's rights are listed; pass --grantee to filter to one role.
+
+    The output is the facts of that layer, one line per object: the operations each role (or the
+    grantee) holds, "NO object operations granted" for a grantee without a row, or "not administered by
+    operation permissions". An object that is not administered is available to all INTERNAL users;
+    external users reach it only through an explicit grant. The command draws no coverage verdict.
+
+    With --include-connected the root object's own lookup objects are read too. Security and system
+    lookups (SysAdmin*, SysUser*, SysSchema*, SysPackage*, SysSettings*, *Right/*Rights) are not read as
+    connected objects and are named in a warning. A connected object that cannot be read, or a connected
+    set that cannot be enumerated, is reported with a warning.
+
+OPTIONS
+    --entity-schema-name
+        Object (entity schema) name to read (for example UsrOrder). Required.
+
+    --grantee
+        Optional SysAdminUnit id (role or user) to filter to one role. When omitted, every role's rights
+        are reported.
+
+    --include-connected
+        Also read every object referenced by the root object's OWN lookup columns.
+
+    -e, --environment
+        Name of the registered environment to read.
+
+EXIT CODES
+    0   The read ran; per-object facts are printed. Connected objects that could not be read are reported
+        with a warning.
+    1   The entity schema name was missing, --grantee was not a GUID, the named (root) object was not
+        found, or its rights could not be read.
+
+EXAMPLES
+    List every role's object permissions:
+        clio get-object-rights --entity-schema-name UsrOrder -e production
+
+    Read one role's operations on an object and its lookups:
+        clio get-object-rights --entity-schema-name UsrOrder --grantee <role-id> --include-connected -e production

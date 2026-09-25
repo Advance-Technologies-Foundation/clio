@@ -341,7 +341,11 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		/// <summary>Read the database engine and runtime without ClioGate.</summary>
 		GetSystemEnvironmentInfo = 99,
 		/// <summary>OpenID Connect discovery document.</summary>
-		OpenIdConfiguration = 100
+		OpenIdConfiguration = 100,
+		/// <summary>Read one administrated object's per-role operation/record/column rights by schema UId.</summary>
+		GetAdministratedObject = 101,
+		/// <summary>Persist an administrated object's per-role operation/record/column rights (read-modify-write).</summary>
+		SaveAdministratedObject = 102
 
 	}
 
@@ -455,6 +459,8 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.RightsApplyChanges, "/rest/RightsService/ApplyChanges"},
 		{KnownRoute.ImageApiUpload, "/ImageAPIService/upload"},
 		{KnownRoute.GetEntitySchemaDesignItem, "ServiceModel/EntitySchemaDesignerService.svc/GetSchemaDesignItem"},
+		{KnownRoute.GetAdministratedObject, "ServiceModel/RightManagementService.svc/GetAdministratedObject"},
+		{KnownRoute.SaveAdministratedObject, "ServiceModel/RightManagementService.svc/SaveAdministratedObject"},
 	};
 
 	private EnvironmentSettings _environmentSettings;
