@@ -1,4 +1,5 @@
-﻿using System.Text;
+﻿using System.Collections.Concurrent;
+using System.Text;
 
 namespace Clio.Mcp.E2E.Support.Results;
 
@@ -110,16 +111,49 @@ internal sealed class TestResultsPayloadDumpSink : IMcpPayloadDumpSink {
 	private static readonly UTF8Encoding DumpEncoding = new(encoderShouldEmitUTF8Identifier: false);
 
 	/// <summary>
+	/// Name prefix of the per-process directory used when this assembly is not running from inside a
+	/// checkout. Self-identifying on purpose, so a reader can tell "published nowhere" from "in the
+	/// artifact", and fixed so a later run's retention sweep can recognise an earlier run's directory.
+	/// </summary>
+	internal const string FallbackDirectoryPrefix = "clio-mcp-e2e-payloads-not-published-";
+
+	/// <summary>
+	/// How long a dump survives before a later run's retention sweep deletes it (GitHub issue #1593).
+	/// </summary>
+	/// <remarks>
+	/// A window, not "everything before this run": <c>dotnet test</c> runs this multi-targeted project's
+	/// frameworks as parallel processes sharing one <c>TestResults</c>, so a cutoff at this process's own
+	/// start would delete what the sibling process wrote seconds earlier. Seven days keeps a failure's dump
+	/// through a weekend for whoever is debugging it and still bounds what a long-lived agent accumulates.
+	/// </remarks>
+	internal static readonly TimeSpan RetentionWindow = TimeSpan.FromDays(7);
+
+	/// <summary>
+	/// When this run started, as far as the dump directory is concerned: the moment this type was first
+	/// touched, which is before its first write.
+	/// </summary>
+	/// <remarks>
+	/// The retention cutoff is keyed on this rather than on the current time, so nothing this run wrote
+	/// can ever fall on the wrong side of it, however long the run lasts.
+	/// </remarks>
+	private static readonly DateTime RunStartUtc = DateTime.UtcNow;
+
+	/// <summary>Directories this process has already swept, so the sweep runs once per directory.</summary>
+	private static readonly ConcurrentDictionary<string, byte> SweptDirectories = new(StringComparer.Ordinal);
+
+	/// <summary>
 	/// The resolved dump directory, computed once per process.
 	/// </summary>
 	/// <remarks>
 	/// The answer is immutable for the process lifetime, but finding it walks every ancestor of the test
 	/// assembly's directory up to the drive root doing a filesystem probe per level. A burst of dumps — a
 	/// poll loop, or the sink's own repeated-write test — repeated that whole walk per write. The
-	/// directory is only resolved here; it is still created on every write, so a run that cleans its
-	/// working directory midway does not turn every later dump into a failure.
+	/// directory is only resolved here, never created: it is created by a write, so a run that cleans its
+	/// working directory midway does not turn every later dump into a failure, and a run that writes no
+	/// dump leaves no directory behind (GitHub issue #1593).
 	/// </remarks>
-	private static readonly Lazy<string> DumpDirectoryPath = new(ResolveDumpDirectory);
+	private static readonly Lazy<string> DumpDirectoryPath =
+		new(() => ResolveDumpDirectory(AppContext.BaseDirectory, Path.GetTempPath()));
 
 	/// <summary>
 	/// Where this sink writes. Exposed so <see cref="PayloadDumpReader"/> can refuse to touch a path that
@@ -127,14 +161,22 @@ internal sealed class TestResultsPayloadDumpSink : IMcpPayloadDumpSink {
 	/// </summary>
 	internal static string DumpDirectory => DumpDirectoryPath.Value;
 
+	/// <summary>
+	/// The last-write time before which a dump is old enough for the retention sweep to delete.
+	/// </summary>
+	internal static DateTime RetentionCutoffUtc => RunStartUtc - RetentionWindow;
+
 	/// <inheritdoc />
 	public McpPayloadDumpResult Write(string label, string rawPayload) {
 		try {
 			string directory = _directoryOverride ?? DumpDirectory;
+			bool isFallback = Path.GetFileName(Path.TrimEndingDirectorySeparator(directory))
+				.StartsWith(FallbackDirectoryPrefix, StringComparison.Ordinal);
 
 			// Created on every write rather than once: a run that cleans its working directory midway
 			// would otherwise turn every later dump into a write failure for no reason.
-			Directory.CreateDirectory(directory);
+			CreateDumpDirectory(directory, isFallback);
+			SweepOnce(directory, isFallback);
 
 			// The unique part is a GUID fragment, not a counter. Two NUnit workers run in parallel
 			// (NumberOfTestWorkers=2 in clio.mcp.e2e.runsettings), so a shared counter would be mutable
@@ -154,26 +196,118 @@ internal sealed class TestResultsPayloadDumpSink : IMcpPayloadDumpSink {
 	}
 
 	/// <summary>
-	/// Finds the repository's <c>TestResults/mcp-payloads</c>, or a temp-directory stand-in when this
-	/// assembly is not running from inside a checkout.
+	/// Deletes the dumps in <paramref name="directory"/> last written before <paramref name="cutoffUtc"/>.
 	/// </summary>
-	private static string ResolveDumpDirectory() {
-		string? repositoryRoot = FindRepositoryRoot(AppContext.BaseDirectory);
-		if (repositoryRoot is not null) {
-			return Path.Combine(repositoryRoot, TestResultsDirectoryName, DumpDirectoryName);
+	/// <remarks>
+	/// BEST-EFFORT, like <see cref="PayloadDumpReader.DeleteIfPresent"/>: it runs on the path whose job is
+	/// to report someone else's failure, so a file that is locked, already gone, or not ours to delete is
+	/// skipped rather than raised. Only this sink's own <c>*.json</c> files are considered, so anything else
+	/// sharing the directory is left alone.
+	/// </remarks>
+	/// <param name="directory">The dump directory to sweep. A missing directory is not an error.</param>
+	/// <param name="cutoffUtc">Dumps last written strictly before this instant are deleted.</param>
+	internal static void SweepExpiredDumps(string directory, DateTime cutoffUtc) {
+		foreach (string path in EnumerateBestEffort(() => Directory.EnumerateFiles(directory, "*.json"))) {
+			DeleteBestEffort(path, cutoffUtc, () => File.Delete(path), File.GetLastWriteTimeUtc);
+		}
+	}
+
+	/// <summary>
+	/// Deletes earlier runs' out-of-checkout fallback directories under <paramref name="tempRoot"/> that
+	/// were last written before <paramref name="cutoffUtc"/>.
+	/// </summary>
+	/// <remarks>
+	/// Each out-of-checkout run gets its own directory, so sweeping inside one run's directory would never
+	/// reach the others; the sweep runs over their shared parent instead, and only over directories carrying
+	/// <see cref="FallbackDirectoryPrefix"/>. Best-effort in the same way as
+	/// <see cref="SweepExpiredDumps"/>: another account's directory in a shared temp root is simply skipped.
+	/// </remarks>
+	/// <param name="tempRoot">The directory the fallback directories were created in.</param>
+	/// <param name="cutoffUtc">Directories last written strictly before this instant are deleted.</param>
+	internal static void SweepExpiredFallbackDirectories(string tempRoot, DateTime cutoffUtc) {
+		foreach (string path in EnumerateBestEffort(
+				() => Directory.EnumerateDirectories(tempRoot, FallbackDirectoryPrefix + "*"))) {
+			DeleteBestEffort(path, cutoffUtc, () => Directory.Delete(path, recursive: true),
+				Directory.GetLastWriteTimeUtc);
+		}
+	}
+
+	/// <summary>
+	/// Finds the repository's <c>TestResults/mcp-payloads</c>, or a per-process temp-directory stand-in when
+	/// this assembly is not running from inside a checkout. Creates nothing.
+	/// </summary>
+	/// <remarks>
+	/// The stand-in is a fresh, unguessable name rather than a fixed shared one: the temp directory is
+	/// world-readable on Linux and macOS agents, so a predictable name would leave every run's payloads
+	/// readable by any other account on the box. It is only NAMED here; the first write creates it with
+	/// owner-only permissions, so a run that never dumps leaves nothing in temp (GitHub issue #1593).
+	/// </remarks>
+	/// <param name="startDirectory">Where the walk for the checkout root starts.</param>
+	/// <param name="tempRoot">Where the out-of-checkout stand-in is placed.</param>
+	internal static string ResolveDumpDirectory(string startDirectory, string tempRoot) {
+		string? repositoryRoot = FindRepositoryRoot(startDirectory);
+		return repositoryRoot is not null
+			? Path.Combine(repositoryRoot, TestResultsDirectoryName, DumpDirectoryName)
+			: Path.Combine(tempRoot, FallbackDirectoryPrefix + Guid.NewGuid().ToString("N"));
+	}
+
+	private static void CreateDumpDirectory(string directory, bool isFallback) {
+		if (isFallback && !OperatingSystem.IsWindows()) {
+			// Owner-only, which is what Directory.CreateTempSubdirectory gave the stand-in before it
+			// became lazy. The name is a full GUID, so another account cannot pre-create it.
+			Directory.CreateDirectory(directory,
+				UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+			return;
 		}
 
-		// Out-of-checkout fallback. CreateTempSubdirectory, not a fixed shared name: the temp directory is
-		// world-readable on Linux and macOS agents and nothing ever sweeps these files, so a predictable
-		// name would leave every run's payloads readable by any other account on the box. The prefix keeps
-		// the directory self-identifying, so a reader can tell "published nowhere" from "in the artifact".
-		try {
-			return Directory.CreateTempSubdirectory("clio-mcp-e2e-payloads-not-published-").FullName;
+		Directory.CreateDirectory(directory);
+	}
+
+	/// <summary>
+	/// Runs the retention sweep the first time this process writes into <paramref name="directory"/>.
+	/// </summary>
+	/// <remarks>
+	/// On the first write rather than in a <c>[OneTimeTearDown]</c>: it needs no set-up fixture, it runs
+	/// even when the run is killed before teardown, and a run that never dumps costs nothing. The cutoff is
+	/// <see cref="RetentionCutoffUtc"/>, so this run's own dumps are never candidates.
+	/// </remarks>
+	private static void SweepOnce(string directory, bool isFallback) {
+		if (!SweptDirectories.TryAdd(Path.GetFullPath(directory), 0)) {
+			return;
 		}
-		catch (Exception) {
-			// Resolution must not throw: Write's own catch would turn this into a dump failure for every
-			// call, and a shared fallback directory is still better than no diagnostic at all.
-			return Path.Combine(Path.GetTempPath(), "clio-mcp-e2e-payloads-not-published", DumpDirectoryName);
+
+		if (isFallback) {
+			string? tempRoot = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(directory));
+			if (tempRoot is not null) {
+				SweepExpiredFallbackDirectories(tempRoot, RetentionCutoffUtc);
+			}
+
+			return;
+		}
+
+		SweepExpiredDumps(directory, RetentionCutoffUtc);
+	}
+
+	private static IEnumerable<string> EnumerateBestEffort(Func<IEnumerable<string>> enumerate) {
+		try {
+			// Materialized inside the try: the enumeration itself is where a missing or unreadable
+			// directory throws.
+			return [.. enumerate()];
+		}
+		catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) {
+			return [];
+		}
+	}
+
+	private static void DeleteBestEffort(string path, DateTime cutoffUtc, Action delete,
+		Func<string, DateTime> lastWriteTimeUtc) {
+		try {
+			if (lastWriteTimeUtc(path) < cutoffUtc) {
+				delete();
+			}
+		}
+		catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) {
+			// Intentionally ignored — a leftover dump is harmless; a hijacked test result is not.
 		}
 	}
 
