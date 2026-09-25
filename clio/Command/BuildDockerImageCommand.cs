@@ -31,8 +31,15 @@ public class BuildDockerImageOptions {
 	/// <summary>
 	/// Gets or sets the optional base image reference.
 	/// </summary>
+	/// <remarks>
+	/// For template <c>base</c> this is the image tag to build. For bundled <c>dev</c> and <c>prod</c>, and for a
+	/// custom template whose Dockerfile declares <c>ARG BASE_IMAGE</c> before its first <c>FROM</c> and uses it in
+	/// a <c>FROM</c>, it is passed as the <c>BASE_IMAGE</c> build argument after a local availability check. Any
+	/// other custom template is rejected when this option is set, instead of silently ignoring it. The value must
+	/// be a Docker image reference; anything else is rejected before a container CLI runs.
+	/// </remarks>
 	[Option("base-image", Required = false,
-		HelpText = "Optional base image reference. For template `base`, this is the image tag to build. For bundled `dev` and `prod`, this is the local base image clio uses instead of the default")]
+		HelpText = "Optional Docker image reference. For template `base`, this is the image tag to build. For bundled `dev` and `prod`, and for custom templates that declare `ARG BASE_IMAGE` before the first FROM and use it in a FROM, this is the local parent image passed as the `BASE_IMAGE` build argument instead of the template default. Any other custom template fails when this option is set")]
 	public string BaseImage { get; set; } = string.Empty;
 
 	/// <summary>
