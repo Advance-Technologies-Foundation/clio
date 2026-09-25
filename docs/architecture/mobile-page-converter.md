@@ -363,8 +363,11 @@ Invariants the caller must not violate are checked by the write/validate path, n
 ## 10. Rules file — `WebToMobilePageConversionRules.json`
 
 Loaded per version through `IWebToMobilePageConversionRulesCatalog` (local override → cache → CDN → bundled resource
-`Clio.Command.McpServer.Data.WebToMobilePageConversionRules.json`). Every section is a data switch: absent → the pass is
-a no-op.
+`Clio.Command.McpServer.Data.WebToMobilePageConversionRules.json`). Most sections are a data switch: absent → the pass is
+a no-op. `actionComponents` and `componentRemovals` are the exception and invert that polarity deliberately — absent, or
+present but carrying no usable rule, falls back to the BUNDLED section. Switching a sibling off disables a cleanup;
+switching these off ships controls the Mobile app cannot operate, so silence must not be able to do it. Both are
+validated on load, and a refusal sends the whole document to the bundled rules.
 
 | Section | Shape | Drives |
 |---|---|---|
@@ -450,7 +453,8 @@ E2E: the `clio.mcp.e2e` converter fixtures against a seeded stand.
 | `MobilePageConversionGuideTool.cs` | MCP tool: I/O, template resolution, refusals, `[Description]` trigger |
 | `ExcludedComponentsPass.cs` | Positional exclusion |
 | `WebToMobileAnalysisService.ComponentRemovals.cs` | Unsupported actions in both traversal shapes, and the `componentRemovals` filter evaluator |
-| `WebToMobileComponentRemovalRules.cs` | The `componentRemovals` filter grammar and its order-independent converter |
+| `WebToMobileComponentRemovalRules.cs` | The `componentRemovals` and `actionComponents` rule shapes |
+| `ComponentPropertyFilters.cs` | The filter grammar the rules are written in (`filterType`: `Group` / `IsEmpty`), reusable by any section needing the same question |
 | `PageBusinessRuleProbe.cs` · `MobileSectionRegistrationProbe.cs` | Best-effort environment probes |
 | `WebToMobilePageConversionRulesCatalog.cs` · `WebToMobilePageConversionRulesModels.cs` | Rules loading and model |
 | `clio/Command/McpServer/Data/WebToMobilePageConversionRules.json` | Bundled rules |

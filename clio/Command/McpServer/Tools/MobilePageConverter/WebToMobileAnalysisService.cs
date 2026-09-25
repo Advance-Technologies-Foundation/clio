@@ -862,6 +862,32 @@ public static partial class WebToMobileAnalysisService {
 		return collected;
 	}
 
+	/// <summary>
+	/// True when the node still holds a child component - as a single-object property or as a member of any
+	/// array, <c>items</c> INCLUDED.
+	/// </summary>
+	/// <remarks>
+	/// Deliberately wider than <see cref="ChildComponentSlots(JObject)"/>, which excludes <c>items</c> because
+	/// its callers walk that slot separately. The one caller here is the leaf drop, which discards every slot
+	/// at once, so <c>items</c> is exactly as much of a loss as <c>menuItems</c>. Allocates nothing, unlike the
+	/// cloning collectors: it answers a question asked of a node the walk is about to throw away.
+	/// </remarks>
+	private static bool HoldsChildComponents(JObject node) {
+		foreach (JProperty prop in node.Properties()) {
+			if (prop.Value is JObject single && IsComponentObject(single)) {
+				return true;
+			}
+			if (prop.Value is JArray array) {
+				foreach (JToken element in array) {
+					if (element is JObject component && IsComponentObject(component)) {
+						return true;
+					}
+				}
+			}
+		}
+		return false;
+	}
+
 	/// <summary>True when a System.Text.Json object is a view component — carries a string <c>type</c> starting
 	/// with <c>crt.</c>.</summary>
 	private static bool IsComponentObject(JsonObject obj) =>
@@ -2728,7 +2754,16 @@ public static partial class WebToMobileAnalysisService {
 			//    that is absent from the supported list, and dropping the whole component over it loses valid UI.
 			//    Their bindings are handled when the component is built (ProcessEventBindings keeps/flags an unknown
 			//    request rather than dropping).
+			//    A node that still HOLDS a component is exempt, and the exemption is the AC rather than a
+			//    softening of it: `continue` discards the whole subtree without visiting it, so a button whose
+			//    own click is dead but whose menu is alive would take its live menu items off the page with a
+			//    droppedElements entry naming only the button. AC2 removes a control that has no menu item AND
+			//    no click request; this one has a menu. Left to the normal path its dead binding is dropped and
+			//    RECORDED by ProcessEventBindings, its children get their own entries, and if every one of them
+			//    dies the componentRemovals fixed point removes the owner next round - which is the cascade,
+			//    reached with every loss reported instead of one entry standing for several.
 			if (IsActionOnlyType(ctx, type)
+				&& !HoldsChildComponents(node)
 				&& UnsupportedRequestOf(ctx, node) is { } unsupportedRequest) {
 				ctx.Out.Add(Drop(name, type,
 					UnsupportedRequestDropReason(ctx.RequestMap, unsupportedRequest, scope: null)));
@@ -4620,7 +4655,16 @@ public static partial class WebToMobileAnalysisService {
 	/// </para>
 	/// </summary>
 	private static bool IsActionOnlyType(ElementMapContext ctx, string type) =>
-		type is { Length: > 0 } && ctx.ActionComponentProperties.ContainsKey(type);
+		IsActionOnlyType(ctx.ActionComponentProperties, type);
+
+	/// <summary>
+	/// The same gate for a caller with no walk context — the removal pass, which runs after the walk. An
+	/// overload rather than a second expression: the two asking the question differently is the historic
+	/// "ActionButtonsContainer bug" in miniature.
+	/// </summary>
+	private static bool IsActionOnlyType(
+		IReadOnlyDictionary<string, IReadOnlyList<string>> actionComponents, string type) =>
+		type is { Length: > 0 } && actionComponents.ContainsKey(type);
 
 	/// <summary>The action property names to look at when the rules declare none for a type.</summary>
 	private static readonly IReadOnlyList<string> DefaultActionPropertyNames = ["clicked"];
@@ -4635,12 +4679,28 @@ public static partial class WebToMobileAnalysisService {
 	/// </remarks>
 	internal static IReadOnlyDictionary<string, IReadOnlyList<string>> ActionComponentPropertiesOf(
 		WebToMobilePageConversionRules rules) {
-		IReadOnlyList<ActionComponentRule> declared = rules?.ActionComponents is { Count: > 0 } fromRules
-			? fromRules
-			: WebToMobilePageConversionRulesCatalog.LoadBundled()?.ActionComponents ?? [];
+		IReadOnlyDictionary<string, IReadOnlyList<string>> declared =
+			ActionComponentPropertiesFrom(rules?.ActionComponents);
+		return declared.Count > 0
+			? declared
+			: ActionComponentPropertiesFrom(
+				WebToMobilePageConversionRulesCatalog.LoadBundled()?.ActionComponents);
+	}
+
+	/// <summary>
+	/// Indexes one <c>actionComponents</c> list by type, dropping an entry that names no type.
+	/// </summary>
+	/// <remarks>
+	/// Split out so the fallback above can test the RESULT rather than the input's <c>Count</c>. A document
+	/// declaring <c>[{ "type": "" }]</c> has a non-zero count and yields an empty gate, and an empty gate is
+	/// this section switched off - unsupported actions ship and the response says nothing. The catalog refuses
+	/// such a document on load; this is the second line, for a rules object that did not come through it.
+	/// </remarks>
+	private static IReadOnlyDictionary<string, IReadOnlyList<string>> ActionComponentPropertiesFrom(
+		IReadOnlyList<ActionComponentRule> declared) {
 		var byType = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
-		foreach (ActionComponentRule rule in declared) {
-			if (rule?.Type is not { Length: > 0 } type) {
+		foreach (ActionComponentRule rule in declared ?? []) {
+			if (rule?.Type is not { Length: > 0 } type || string.IsNullOrWhiteSpace(type)) {
 				continue;
 			}
 			IReadOnlyList<string> names = [
@@ -4659,10 +4719,22 @@ public static partial class WebToMobileAnalysisService {
 	/// <see cref="WebToMobilePageConversionRules.ComponentRemovals"/> — the thing a rules author reads.
 	/// </remarks>
 	internal static IReadOnlyList<ComponentRemovalRule> ComponentRemovalsOf(
-		WebToMobilePageConversionRules rules) =>
-		rules?.ComponentRemovals is { Count: > 0 } declared
+		WebToMobilePageConversionRules rules) {
+		IReadOnlyList<ComponentRemovalRule> declared = UsableRemovalRules(rules?.ComponentRemovals);
+		return declared.Count > 0
 			? declared
-			: WebToMobilePageConversionRulesCatalog.LoadBundled()?.ComponentRemovals ?? [];
+			: UsableRemovalRules(WebToMobilePageConversionRulesCatalog.LoadBundled()?.ComponentRemovals);
+	}
+
+	/// <summary>
+	/// The rules of a <c>componentRemovals</c> list that can match anything - the same emptiness test
+	/// <see cref="ActionComponentPropertiesFrom"/> applies, for the same reason: a section of rules that all
+	/// match nothing is this pass switched off, and switching it off silently is the failure the bundled
+	/// fallback exists to prevent.
+	/// </summary>
+	private static IReadOnlyList<ComponentRemovalRule> UsableRemovalRules(
+		IReadOnlyList<ComponentRemovalRule> declared) => [
+			.. (declared ?? []).Where(rule => rule?.Type is { Length: > 0 } && rule.Filters is not null)];
 
 	/// <summary>
 	/// The node's OWN action binding — the first property the rules name as this type's action that actually
@@ -4689,7 +4761,7 @@ public static partial class WebToMobileAnalysisService {
 	/// </summary>
 	/// <remarks>
 	/// Distinguishes a KNOWN-unsupported request (the versioned map clears its mobile target) from an UNKNOWN or
-	/// custom one (absent from both the versioned map and the bundled fallback set). clio can assert "not supported"
+	/// custom one (absent from both the versioned map and the mobile request registry). clio can assert "not supported"
 	/// only for the former; for the latter it can merely say it does not know it, so the developer can re-add the
 	/// action if that custom request IS implemented on mobile. Invariant 9.2 — a field must not assert what was not
 	/// established — is why the leaf path may not answer both cases with the stronger code.
@@ -4713,9 +4785,15 @@ public static partial class WebToMobileAnalysisService {
 	/// The System.Text.Json twin of <see cref="IsEventBinding(JToken)"/>, for the passes that run over BUILT
 	/// values rather than the source tree. An overload pair under one name rather than a second name, so the
 	/// shape has one definition — the walk reads Newtonsoft, everything after it reads STJ.
+	/// <para>
+	/// WHITESPACE is rejected here exactly as the twin rejects it. The two are the only reason the two
+	/// traversal shapes can be said to report identically, so a request of <c>"  "</c> answering YES on one
+	/// and NO on the other would break that claim in the one place nothing measures: the carried shape would
+	/// drop the item as an unknown request while the entry graph kept it.
+	/// </para>
 	/// </summary>
 	private static bool IsEventBinding(JsonNode value) =>
-		value is JsonObject obj && StringProp(obj, "request") is { Length: > 0 };
+		value is JsonObject obj && !string.IsNullOrWhiteSpace(StringProp(obj, "request"));
 
 	/// <summary>
 	/// Converts the source node's event-binding requests (actions) for mobile and writes the surviving
@@ -4972,11 +5050,13 @@ public static partial class WebToMobileAnalysisService {
 		ReclassifyRemovedTargetFindings(unresolvedTargets, emptyRemovedMobileNames);
 		ReclassifyRemovedTargetFindings(unresolvedTargets, excludedRemovedMobileNames);
 		// The component-removal pass gets NEITHER, and it passes no name set here at all. Its siblings purge
-		// because their removal has nothing to do with the finding - an emptied container tells the caller
-		// nothing about a missing navigation target. Here it is the other way round: the missing target is WHY the
-		// control had nothing left to do, so the finding is the only field that explains the removal. Purging it
-		// would leave a droppedElements entry carrying a bare reason code and no way to reach the diagnosis -
-		// exactly the loss ENG-94839 exists to prevent, arrived at from the other side.
+		// because they remove elements whose bindings were already recorded, leaving a record describing an
+		// element the map does not create. This pass cannot reach that state: a definitionally-absent target
+		// KEEPS the converted binding and blanks only its target param (see the blanking branch in
+		// ProcessOneEventBinding), so the element still carries a { request, params } object - and
+		// StillHasSomethingToLose refuses to remove any element that does. An element with an
+		// unresolvedTargetRequests finding is therefore never one this pass removed, and there is nothing to
+		// reconcile.
 		bool targetsProbed = actionTargetsProbe?.ProbeOk == true;
 		if (converted.Count == 0 && dropped.Count == 0 && flagged.Count == 0 && unresolvedTargets.Count == 0) {
 			return null;

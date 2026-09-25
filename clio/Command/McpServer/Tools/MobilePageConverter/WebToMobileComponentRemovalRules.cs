@@ -63,6 +63,19 @@ public sealed class ActionComponentRule {
 	/// The property names whose <c>{ request, params }</c> binding IS this component's action. Absent or
 	/// empty falls back to <c>clicked</c>.
 	/// </summary>
+	/// <remarks>
+	/// Read by ONE of the three gates that consult this section, and that asymmetry is deliberate rather
+	/// than an oversight. <c>ClassifyClicked</c> asks "does THIS component's action convert", to decide
+	/// whether a header control may be retargeted into the FAB, so it needs to know which property carries
+	/// the action. The leaf drop and its verbatim-carry twin ask a wider question — "does this component
+	/// carry ANY binding the Mobile app cannot fire" — and a component shipping a dead <c>valueChange</c>
+	/// is just as broken as one shipping a dead <c>clicked</c>.
+	/// <para>
+	/// So editing this list moves the FAB gate and leaves the two drop gates where they are. Narrowing those
+	/// two to the named properties would be a behaviour change of its own — a dead binding on an unnamed
+	/// property would start shipping — and is not what declaring an action property means today.
+	/// </para>
+	/// </remarks>
 	[JsonPropertyName("actionPropertyNames")]
 	public IReadOnlyList<string> ActionPropertyNames { get; init; } = [];
 }

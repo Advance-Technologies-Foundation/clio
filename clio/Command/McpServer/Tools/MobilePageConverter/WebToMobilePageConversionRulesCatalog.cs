@@ -46,14 +46,20 @@ public sealed class WebToMobilePageConversionRulesCatalog : IWebToMobilePageConv
 	/// the caller the loss is not real and must not be re-added. A code that means the WRONG thing is worse
 	/// than an unknown one, because the caller acts on it.
 	/// <para>
+	/// It is a set of ONE, and the singleton is the point rather than a shape waiting to be filled. Even
+	/// <c>drop-excluded-by-rule</c> - the nearest neighbour, minted by the sibling removal pass onto the same
+	/// record kind - is refused here: its article defines it as a deliberate exclusion that is NOT conversion
+	/// loss, and it carries positional params this pass does not produce. Widening the set is a decision about
+	/// what the response MEANS, so it belongs in a commit that says so, not in whatever push first needs it.
+	/// </para>
+	/// <para>
 	/// Written as constant references rather than reflected over the class, so renaming a code breaks this at
 	/// COMPILE time — and so no trimmer can quietly empty the set, which for a fail-closed check would turn
 	/// every conversion into a thrown exception.
 	/// </para>
 	/// </remarks>
 	private static readonly IReadOnlySet<string> RemovalReasonCodes = new HashSet<string>(StringComparer.Ordinal) {
-		ReasonCodes.DropUnsupportedRequest,
-		ReasonCodes.DropExcludedByRule
+		ReasonCodes.DropUnsupportedRequest
 	};
 
 	private readonly IWebToMobilePageConversionRulesRegistryClient _client;
@@ -93,9 +99,19 @@ public sealed class WebToMobilePageConversionRulesCatalog : IWebToMobilePageConv
 		if (string.IsNullOrWhiteSpace(json)) {
 			return null;
 		}
-		WebToMobilePageConversionRules rules =
-			JsonSerializer.Deserialize<WebToMobilePageConversionRules>(json, Options);
-		ValidateComponentRemovals(rules);
+		WebToMobilePageConversionRules rules;
+		try {
+			rules = JsonSerializer.Deserialize<WebToMobilePageConversionRules>(json, Options);
+		} catch (NotSupportedException ex) {
+			// System.Text.Json reports a MISSING or miscased polymorphic discriminator as NotSupportedException,
+			// not JsonException - and `filterType` is the first discriminator any section of this document has.
+			// GetRulesAsync catches JsonException to mean "unusable document, use the bundled rules", so left
+			// alone this one escapes the catalog entirely and every get-mobile-page-conversion-guide call fails
+			// until the CDN file is fixed. Restated as the exception the fallback is written against.
+			throw new JsonException(
+				"A componentRemovals filter does not declare a recognizable 'filterType' discriminator.", ex);
+		}
+		ValidateRules(rules);
 		return rules;
 	}
 
@@ -120,6 +136,40 @@ public sealed class WebToMobilePageConversionRulesCatalog : IWebToMobilePageConv
 	/// merely unlikely.
 	/// </para>
 	/// </remarks>
+	private static void ValidateRules(WebToMobilePageConversionRules rules) {
+		ValidateActionComponents(rules);
+		ValidateComponentRemovals(rules);
+	}
+
+	/// <summary>
+	/// Refuses an <c>actionComponents</c> section that would silently disable the drop rules.
+	/// </summary>
+	/// <remarks>
+	/// This section decides which component types are removed OUTRIGHT when their request does not convert -
+	/// the behaviour that was hard-coded to <c>crt.Button</c> before ENG-96178 and is now read from a
+	/// CDN-controlled document. Both failure directions are silent, which is why the check exists at all:
+	/// <c>[{ "type": "" }]</c> has a non-zero <c>Count</c>, so <c>ActionComponentPropertiesOf</c> prefers it
+	/// over the bundled section and then filters the entry away - leaving an EMPTY gate, under which
+	/// unsupported actions ship again and nothing in the response says the rule stopped running. A refusal
+	/// here reaches <see cref="GetRulesAsync"/>'s fallback instead, so the shipped list keeps running.
+	/// </remarks>
+	private static void ValidateActionComponents(WebToMobilePageConversionRules rules) {
+		foreach (ActionComponentRule rule in rules?.ActionComponents ?? []) {
+			if (rule is null) {
+				throw new JsonException("actionComponents carries a null rule.");
+			}
+			if (string.IsNullOrWhiteSpace(rule.Type)) {
+				throw new JsonException("An actionComponents rule declares no 'type'.");
+			}
+			foreach (string name in rule.ActionPropertyNames ?? []) {
+				if (string.IsNullOrWhiteSpace(name)) {
+					throw new JsonException(
+						$"The actionComponents rule for '{rule.Type}' declares a blank action property name.");
+				}
+			}
+		}
+	}
+
 	private static void ValidateComponentRemovals(WebToMobilePageConversionRules rules) {
 		foreach (ComponentRemovalRule rule in rules?.ComponentRemovals ?? []) {
 			if (rule is null) {
@@ -152,6 +202,18 @@ public sealed class WebToMobilePageConversionRulesCatalog : IWebToMobilePageConv
 					throw new JsonException(
 						$"A componentRemovals Group filter for '{type}' declares no 'items'.");
 				}
+				// The evaluator reads anything that is not `or` as `and`. That is the right DEFAULT for an
+				// absent value and the wrong answer for `"any"` or `"either"`, where the author asked for the
+				// other operation and gets the narrower one with no signal at all.
+				if (group.LogicalOperation is { Length: > 0 } operation
+					&& !string.Equals(
+						operation, ComponentPropertyLogicalOperations.And, StringComparison.OrdinalIgnoreCase)
+					&& !string.Equals(
+						operation, ComponentPropertyLogicalOperations.Or, StringComparison.OrdinalIgnoreCase)) {
+					throw new JsonException(
+						$"A componentRemovals Group filter for '{type}' names the logical operation "
+						+ $"'{operation}', which is neither 'and' nor 'or'.");
+				}
 				foreach (ComponentPropertyFilter item in group.Items) {
 					if (item is null) {
 						throw new JsonException(
@@ -171,8 +233,20 @@ public sealed class WebToMobilePageConversionRulesCatalog : IWebToMobilePageConv
 		}
 	}
 
-	/// <summary>Loads the bundled fallback rules embedded in the clio assembly.</summary>
-	internal static WebToMobilePageConversionRules LoadBundled() {
+	/// <summary>
+	/// The bundled fallback rules embedded in the clio assembly, parsed once.
+	/// </summary>
+	/// <remarks>
+	/// Memoized because it is read on the fallback path AND by the two sections whose absence falls back to
+	/// the bundled copy (<c>actionComponents</c>, <c>componentRemovals</c>) - up to three parses of the same
+	/// immutable embedded resource per conversion. <see cref="Lazy{T}"/> in its default thread-safe mode,
+	/// since the catalog is a singleton served to concurrent MCP calls.
+	/// </remarks>
+	internal static WebToMobilePageConversionRules LoadBundled() => BundledRules.Value;
+
+	private static readonly Lazy<WebToMobilePageConversionRules> BundledRules = new(LoadBundledCore);
+
+	private static WebToMobilePageConversionRules LoadBundledCore() {
 		Assembly assembly = typeof(WebToMobilePageConversionRulesCatalog).Assembly;
 		using Stream stream = assembly.GetManifestResourceStream(BundledResourceName)
 			?? throw new InvalidOperationException(

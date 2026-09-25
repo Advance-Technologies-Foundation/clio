@@ -115,12 +115,13 @@ public static partial class WebToMobileAnalysisService {
 	/// must not show up in the caller's report.
 	/// </para>
 	/// <para>
-	/// It purges nothing either, and that is the difference from its two sibling passes. Their removals have
-	/// nothing to do with the findings they purge, so a finding left behind would dangle. Here the
-	/// <c>unresolvedTargetRequests</c> finding is often WHY the control had nothing left to do, so it is the
-	/// only field that explains the removal and is deliberately kept. <c>ReclassifyRemovedBindings</c> is not
-	/// needed for a second reason: a converted or flagged outcome WRITES the binding into the values, and
-	/// <see cref="StillHasSomethingToLose"/> refuses any component that still carries one.
+	/// It purges nothing either, and that is the difference from its two sibling passes. They remove elements
+	/// whose bindings were already recorded, so a record left behind would describe an element the map does not
+	/// create. This pass cannot reach that state at all: a converted or flagged outcome WRITES the binding into
+	/// the values, and <see cref="StillHasSomethingToLose"/> refuses any component that still carries one. That
+	/// covers the <c>unresolvedTargetRequests</c> finding too - a definitionally-absent target keeps the
+	/// converted binding and blanks only its target param, so the element still holds a
+	/// <c>{ request, params }</c> object and this pass may not touch it.
 	/// </para>
 	/// <para>
 	/// <c>internal</c> rather than private for the same reason
@@ -331,7 +332,15 @@ public static partial class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, IReadOnlyList<string>> actionComponents,
 		IReadOnlyList<ComponentRemovalRule> removalRules) {
 		string type = StringProp(member, "type");
-		if (actionComponents.ContainsKey(type ?? string.Empty)
+		// Rule 1 answers before MatchingRemovalReason, so the veto that rule carries does not cover it - and
+		// ONE of the three applies here too. A dead binding is the reason for this removal, so the binding veto
+		// must not (it would refuse every rule-1 removal there is), and a carried node is addressed by no
+		// operation, so the surviving-child veto has nothing to read. The nested COMPONENT is the one real
+		// loss: a submenu is a crt.MenuItem holding crt.MenuItems, and removing the owner over its own dead
+		// click would take live children off the page reported as one entry naming only the owner. The prune
+		// runs post-order, so by the time this is asked the children left are the ones that survived.
+		if (IsActionOnlyType(actionComponents, type)
+			&& !CarriesComponents(member, depth: 0)
 			&& UnsupportedCarriedRequest(member, requestMap, mobileRequestTypes) is { Length: > 0 } dead) {
 			return UnsupportedRequestDropReason(requestMap, dead, scope: null);
 		}

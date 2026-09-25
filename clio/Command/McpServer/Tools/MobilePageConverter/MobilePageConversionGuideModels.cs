@@ -408,12 +408,13 @@ public static class ReasonCodes {
 	public const string DropRequestPropertyNotDeclared = "drop-request-property-not-declared";
 
 	/// <summary>
-	/// The request TYPE converts, but its navigation TARGET cannot exist on mobile, so the binding was
-	/// removed. Whether the COMPONENT survives is a SEPARATE question this code does not answer: one whose
-	/// only action this was is then removed for having nothing left to do, under
-	/// <see cref="DropUnsupportedRequest"/>, and the matching
-	/// <c>requestConversions.unresolvedTargetRequests</c> finding is deliberately kept as the only field
-	/// that explains that removal. Emitted only for a DEFINITIONAL absence — a
+	/// The request TYPE converts, but its navigation TARGET cannot exist on mobile. The COMPONENT always
+	/// stays, and so does its binding: only the target param is blanked, so the control is still on the page
+	/// and one param away from working once the target exists. The matching
+	/// <c>requestConversions.unresolvedTargetRequests</c> finding names what to repoint. A component whose
+	/// only action this was is NOT removed for having nothing left to do - it still carries a
+	/// <c>{ request, params }</c> object, which the removal pass treats as something to lose.
+	/// Emitted only for a DEFINITIONAL absence — a
 	/// verdict that needed no environment read — never for one a probe merely failed to confirm; the
 	/// softer verdicts are reported in <c>requestConversions.unresolvedTargetRequests</c> and remove
 	/// nothing. Params: <c>targetKind</c> and <c>target</c>, which is the pair that says what to fix.

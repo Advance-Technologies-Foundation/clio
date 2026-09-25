@@ -2866,6 +2866,16 @@ public sealed class WebToMobileConversionServiceTests {
 			]
 		};
 
+	/// <summary>
+	/// The two traversal shapes, for an assertion that must hold on both. Which one production takes is a
+	/// registry fact the caller cannot see, so a verdict that differed between them would be a report
+	/// changing for a reason the page does not contain.
+	/// </summary>
+	private static readonly IReadOnlyList<(string Shape, IReadOnlySet<string> Types)> BothMenuShapes = [
+		("entry-graph", MenuEntryGraphTypes),
+		("verbatim-carry", MenuCarriedTypes)
+	];
+
 	/// <summary>A settings button with no click of its own, holding the given menu items.</summary>
 	private static PageBundleInfo MenuButtonBundle(string menuItemsJson, string buttonExtras = "") =>
 		Bundle($$"""
@@ -2891,6 +2901,55 @@ public sealed class WebToMobileConversionServiceTests {
 	private static string[] CarriedMenuItemNames(MobilePageConversionGuide guide, string elementName) =>
 		[.. (Element(guide, elementName).Values?["menuItems"]?.AsArray() ?? [])
 			.Select(item => item?["name"]?.GetValue<string>())];
+
+	[Test]
+	[TestCaseSource(nameof(BothMenuShapes))]
+	[Description("A control whose own action is dead but which still HOLDS a live component is NOT removed over that dead action. The drop path answers before any veto, and on both shapes it discards the whole subtree unvisited - so without this exemption a submenu whose parent entry lost its request would take its live children off the page under one droppedElements entry naming only the parent, which breaks the promise that droppedElements accounts for every removal. AC2 agrees: it removes a control with no menu item AND no click request, and this one has a menu.")]
+	public void Analyze_ActionComponentWithADeadRequest_ThatStillHoldsALiveChild_IsNotRemoved(
+		(string Shape, IReadOnlySet<string> Types) shape) {
+		// Arrange - a submenu: the outer item's own click is dead, its nested item's click converts.
+		PageBundleInfo bundle = MenuButtonBundle("""
+			{ "name": "DeadParentItem", "type": "crt.MenuItem", "caption": "More",
+			  "clicked": { "request": "crt.PrintablesRequest", "params": {} },
+			  "menuItems": [ { "name": "LiveChildItem", "type": "crt.MenuItem", "caption": "Save",
+			                   "clicked": { "request": "crt.SaveRecordRequest", "params": {} } } ] }
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: shape.Types, rules: MenuRules());
+
+		// Assert
+		DroppedNames(guide).Should().NotContain("LiveChildItem",
+			because: $"on the {shape.Shape} shape a live child may never leave the page, and it certainly may "
+				+ "not leave it unreported");
+		string diff = JsonSerializer.Serialize(guide.ViewConfigDiff);
+		diff.Should().Contain("LiveChildItem",
+			because: "the child fires a request the Mobile app supports, so it belongs on the converted page "
+				+ "whatever happened to the action of the item that holds it");
+	}
+
+	[Test]
+	[Description("A component held in a SINGLE-OBJECT slot, not an array, vetoes its owner's removal the same way an array member does. This is the shape the review gate caught: the prune and the veto both walked arrays, so a button holding menuConfig: { type: crt.MenuItem } was removed as action-less and the live menu item left the page inside it - with no droppedElements entry at all, because a carried node is only ever reported when the prune is what removed it.")]
+	public void Analyze_ButtonHoldingAComponentInASingleObjectSlot_IsNotRemovedAsActionLess() {
+		// Arrange - no clicked and no menuItems, so both emptiness tests of the shipped rule match.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "SettingsButton", "type": "crt.Button", "caption": "Settings",
+				  "menuConfig": { "name": "NestedItem", "type": "crt.MenuItem", "caption": "Save",
+				                  "clicked": { "request": "crt.SaveRecordRequest", "params": {} } } } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: MenuCarriedTypes, rules: MenuRules());
+
+		// Assert
+		DroppedNames(guide).Should().NotContain("SettingsButton",
+			because: "removing it would take the live menu item with it, and a rule naming menuItems cannot "
+				+ "see a component one object deeper in a slot it does not name");
+		JsonSerializer.Serialize(guide.ViewConfigDiff).Should().Contain("NestedItem",
+			because: "the nested control survives WITH its owner - the loss this veto exists to prevent is "
+				+ "precisely one that nothing in the response would have mentioned");
+	}
 
 	[Test]
 	[Description("The defect, in the shape production actually meets: crt.MenuItem is absent from the published mobile registry, so a settings button's menuItems array is carried VERBATIM into its values and never passes through ProcessEventBindings. Before ENG-96178 the dead export action was therefore neither converted, nor flagged, nor dropped — it simply shipped, and no field of the response mentioned it. Asserting on the carried VALUES and not only on droppedElements is the point: a drop entry beside a surviving verbatim copy is exactly the shape that kept rendering the action on mobile.")]
@@ -3003,7 +3062,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("AC2 in the entry-graph shape: the menu items became their own element-map entries, the walk dropped every one of them, and the button that held them is then removed too — reported under its own code, because it was not dropped for a request of its own and is not an empty layout container either.")]
+	[Description("AC2 in the entry-graph shape: the menu items became their own element-map entries, the walk dropped every one of them, and the button that held them is then removed too — under drop-unsupported-request with NO params, which is the ACCEPTED COST of reusing one code rather than minting a second.")]
 	public void Analyze_MenuButton_WithEveryMenuItemDropped_IsRemovedAsHavingNoAction() {
 		// Arrange
 		PageBundleInfo bundle = MenuButtonBundle(ExportMenuItem);
@@ -3016,8 +3075,9 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "a button that opens an empty menu is chrome the user can press to no effect");
 		DroppedElement button = Dropped(guide, "SettingsButton");
 		Codes(button).Should().Equal([ReasonCodes.DropUnsupportedRequest],
-			because: "neither neighbouring code fits: drop-unsupported-request would blame a request the button "
-				+ "never had, and drop-empty-container would call a button a layout shell");
+			because: "the ticket reuses ONE code rather than minting a second, so a caller reads one cause "
+				+ "instead of rejoining two. The cost is visible right here: this button never had a request, "
+				+ "and it is still reported under a code that names one. Pinned so that stays a decision");
 		button.Reason![0].Params.Should().BeNull(
 			because: "the code declares no params — webName and webType already name the element, and each lost "
 				+ "menu item carries its own entry saying why it went");
@@ -3347,6 +3407,30 @@ public sealed class WebToMobileConversionServiceTests {
 				+ "insert into an element the diff never creates fails the whole paste");
 		map[1].Operation.Should().Be(ElementMapOperations.Insert,
 			because: "and the live submenu entry itself is untouched - it fires a request the mobile app supports");
+	}
+
+	[Test]
+	[Description("A request of nothing but WHITESPACE is not a binding, and both traversal shapes agree on that. The two IsEventBinding overloads are the only reason the shapes can be said to report identically, and they once disagreed here: the Newtonsoft twin rejected \"  \" through IsNullOrWhiteSpace while the STJ one accepted it on Length alone, so the carried shape dropped the item as an unknown request and the entry graph kept it. Nothing else in the suite compares the two on a value that is present but blank.")]
+	public void Analyze_MenuItemWithAWhitespaceRequest_IsTreatedIdenticallyInBothShapes() {
+		// Arrange — present, non-empty, and still not a request.
+		const string blank = """
+			{ "name": "BlankItem", "type": "crt.MenuItem", "caption": "Blank",
+			  "clicked": { "request": "  ", "params": {} } }
+			""";
+
+		// Act
+		MobilePageConversionGuide asEntries =
+			Analyze(MenuButtonBundle(blank), mobileTypes: MenuEntryGraphTypes, rules: MenuRules());
+		MobilePageConversionGuide asCarried =
+			Analyze(MenuButtonBundle(blank), mobileTypes: MenuCarriedTypes, rules: MenuRules());
+
+		// Assert
+		DroppedNames(asCarried).Should().BeEquivalentTo(DroppedNames(asEntries),
+			because: "a blank request is not a dead request on one path and a live one on the other — which is "
+				+ "exactly what a Length-only check made it");
+		DroppedNames(asEntries).Should().NotContain("BlankItem",
+			because: "whitespace is not a request the Mobile app fails to support; it is no request at all, so "
+				+ "nothing may be reported as lost over it");
 	}
 
 	[Test]
