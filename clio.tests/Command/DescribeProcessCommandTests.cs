@@ -242,6 +242,44 @@ public sealed class DescribeProcessCommandTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Writes a record-column source's sourceElement / sourceElementParameter / sourceColumn into the graph JSON and omits all three for a value without one - the re-serialization half of the round trip; the DTO has dropped server fields here before (ENG-91844).")]
+	public void Execute_ShouldWriteTheRecordColumnSource_OnlyWhenPresent() {
+		// Arrange
+		_describer.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>())
+			.Returns(new DescribeProcessResult {
+				Name = "UsrTaskProcess",
+				SchemaUId = "uid",
+				Elements = [],
+				Flows = [],
+				Parameters = [
+					new DescribedParameter {
+						Name = "Owner", UId = "u1", Type = "Lookup", Source = "Script", Value = "[#...#]",
+						SourceElement = "ReadContact", SourceElementParameter = "ResultEntity", SourceColumn = "Owner"
+					},
+					new DescribedParameter { Name = "Plain", UId = "u2", Type = "Integer", Source = "None" }
+				]
+			});
+		DescribeProcessOptions options = new() { Environment = "dev", ProcessName = "UsrTaskProcess" };
+		string written = null;
+		_logger.WriteInfo(Arg.Do<string>(value => written = value));
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "a found process is described successfully");
+		written.Should().Contain("\"sourceColumn\": \"Owner\"",
+			because: "the column must survive the clio DTO re-serialization");
+		written.Should().Contain("\"sourceElementParameter\": \"ResultEntity\"",
+			because: "so must the record parameter");
+		foreach (string field in new[] { "sourceElement", "sourceElementParameter", "sourceColumn" }) {
+			System.Text.RegularExpressions.Regex.Matches(written, $"\"{field}\"").Count.Should().Be(1,
+				because: $"a value with no record-column source carries no '{field}', not a null");
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Writes each element parameter's direction and isResult into the graph JSON (regression: the clio DescribedParameter DTO previously dropped these server fields on re-serialization, so callers could not tell an element's outputs — mappable as a source — from its plain inputs).")]
 	public void Execute_ShouldWriteParameterDirectionAndIsResult_WhenPresent() {
 		// Arrange — a user-task element exposing an output (IsResult true while Direction is Variable) and a plain input

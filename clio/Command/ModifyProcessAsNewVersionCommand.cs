@@ -28,7 +28,7 @@ namespace Clio.Command;
 // thing standing between the caller and a silently wrong version. The lockout argument that kept it at 1.6.1.0
 // for one review round (refusing the whole versioning route on a 1.6.1.x environment for a field most
 // operations arrays never carry) no longer buys anything: BundledPackageConvergence already refuses every
-// environment below the archive clio ships (1.6.6.14 today, 1.6.2.1 when this was written) on this same
+// environment below the archive clio ships (1.6.6.27 today, 1.6.2.1 when this was written) on this same
 // command, so the raise adds no refusal in
 // normal mode and is the one fail-closed refusal left in convergence's degraded warn-and-allow modes.
 // Raised to 1.6.6.14 by ENG-99856: `subProcess.multiInstanceOptions`, the dotted per-item path on
@@ -41,7 +41,15 @@ namespace Clio.Command;
 // The dotted path fails differently and just as quietly: an older server resolves `elementParameter` flat
 // only, finds no parameter of that name and refuses - loudly, but naming a parameter rather than the
 // package. 1.6.6.14 is the archive cut from crt-process-builder 13bd2a2.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.14",
+// Raised to 1.6.6.27 by ENG-91844: `sourceColumn` (mappings, changeData/addData/openEditPage values,
+// openEditPage recordId), a filter's `elementParameter.column` and the `[#Element.Parameter.Column#]` name in a
+// condition or formula body - ONE column of a record another element returned. Same failure shape as the
+// multi-instance raise: an older server's serializer DISCARDS both fields and answers success, so the source
+// silently widens to the WHOLE record - a mapping is then refused for incompatible types naming a parameter
+// rather than the package, and a filter compares its column against the record reference with no refusal at
+// all - while the three-segment name is passed through verbatim and fails the platform's gate as "Expression
+// expected". 1.6.6.27 is the archive cut from crt-process-builder b9173fb.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.27",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class ModifyProcessAsNewVersionOptions : EnvironmentOptions {
 	/// <summary>Process code (schema Name) of the SOURCE. Provide exactly one of <see cref="ProcessName"/> or <see cref="ProcessUid"/>.</summary>

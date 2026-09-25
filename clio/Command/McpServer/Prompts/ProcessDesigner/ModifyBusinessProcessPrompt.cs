@@ -97,7 +97,9 @@ public static class ModifyBusinessProcessPrompt {
 		 "assign to a team": the created Activity carries the role in its own OwnerRole column with an EMPTY
 		 owner, so never fake a team by writing a role id into the OwnerId parameter — that id is refused as
 		 referencing no Contact record; the retired CallUserTask is refused by name because its runtime ignores
-		 the assignment);
+		 the assignment; a performer taken FROM A RECORD — the contact's owner — is not a performer type at all:
+		 `addMapping` onto `OwnerId` from the read record's column, `sourceElement` + `sourceElementParameter:
+		 "ResultEntity"` + `sourceColumn: "Owner"`);
 		 and an `openEditPage` element's `openEditPage` block, where every omitted field keeps its stored value and a
 		 supplied `defaultValues` array replaces the whole set — but retargeting `page` or changing `editMode` is
 		 DESTRUCTIVE and requires the new mode-specific value (`defaultValues` for `add`, `recordId` for `edit`) in the
