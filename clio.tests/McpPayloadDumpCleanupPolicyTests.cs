@@ -115,7 +115,7 @@ public sealed class McpPayloadDumpCleanupPolicyTests {
 	}
 
 	[Test]
-	[Description("The guard flags a lenient catch that swallows a dumping parser's failure without deleting the dump, and exempts one that deletes or rethrows, so a scan that silently recognizes nothing cannot pass.")]
+	[Description("The guard flags a lenient catch that swallows a dumping parser's failure without always deleting the dump, and exempts one that always deletes or always rethrows, so a scan that silently recognizes nothing cannot pass.")]
 	public void FindLenientCatchSites_ShouldFlagOnlyTheSwallowingSiteWithoutADelete() {
 		// Arrange
 		const string source = """
@@ -149,6 +149,22 @@ public sealed class McpPayloadDumpCleanupPolicyTests {
 					}
 				}
 
+				public bool RethrowsOnlySometimes(object result, bool strict) {
+					try { Parser.Extract<int>(result); return true; }
+					catch (System.InvalidOperationException) {
+						if (strict) { throw; }
+						return false;
+					}
+				}
+
+				public bool DeletesOnlySometimes(object result, bool keep) {
+					try { Parser.Extract<int>(result); return true; }
+					catch (System.InvalidOperationException exception) {
+						if (!keep) { PayloadDumpReader.DeleteIfPresent(exception.Message); }
+						return false;
+					}
+				}
+
 				public bool CatchesSomethingElse(object result) {
 					try { Parser.Extract<int>(result); return true; }
 					catch (System.IO.IOException) { return false; }
@@ -161,12 +177,13 @@ public sealed class McpPayloadDumpCleanupPolicyTests {
 		IReadOnlyList<LenientCatchSite> sites = FindLenientCatchSites(sources);
 
 		// Assert
-		sites.Should().HaveCount(2,
-			because: "only Forgets and Deletes swallow a parse failure; Rethrows surfaces it and CatchesSomethingElse cannot receive it");
-		sites.Where(site => !site.Deletes).Select(site => site.Location).Should().ContainSingle(
-			because: "the site that swallows through a transitive helper without deleting is exactly the one this guard exists to catch")
-			.Which.Should().StartWith("Fixture.cs:13",
-				because: "the reported location must point at the offending catch clause");
+		sites.Should().HaveCount(4,
+			because: "Forgets, Deletes and the two conditional catches all have a path that swallows the parse failure; Rethrows always surfaces it and CatchesSomethingElse cannot receive it");
+		sites.Where(site => !site.Deletes).Select(site => site.Key).Should().BeEquivalentTo(
+			["Fixture.cs::Forgets", "Fixture.cs::RethrowsOnlySometimes", "Fixture.cs::DeletesOnlySometimes"],
+			because: "a swallow through a transitive helper, a rethrow on one branch only and a delete on one branch only each leave a passing test's dump behind");
+		sites.Single(site => site.Key == "Fixture.cs::Forgets").Location.Should().Be("Fixture.cs:13",
+			because: "the reported location must point at the offending catch clause");
 	}
 
 	private static IReadOnlyList<(string Path, SyntaxNode Root)> ParseE2ESources() {
@@ -356,11 +373,23 @@ public sealed class McpPayloadDumpCleanupPolicyTests {
 		return ParseFailureCatchTypes.Contains(typeName);
 	}
 
-	private static bool Throws(SyntaxNode node) =>
-		node.DescendantNodes().Any(child => child is ThrowStatementSyntax or ThrowExpressionSyntax);
+	/// <summary>
+	/// Whether the catch block ALWAYS throws: a top-level <c>throw</c> statement, after which nothing in the
+	/// block runs. A throw nested under an <c>if</c> does not count, because the other branch still
+	/// swallows the failure and leaves the dump behind.
+	/// </summary>
+	private static bool Throws(BlockSyntax block) =>
+		block.Statements.Any(statement => statement is ThrowStatementSyntax
+			|| statement is ExpressionStatementSyntax { Expression: ThrowExpressionSyntax });
 
-	private static bool Deletes(SyntaxNode node) =>
-		node.DescendantNodes()
+	/// <summary>
+	/// Whether the catch block ALWAYS deletes: a top-level <c>PayloadDumpReader</c> delete call. A delete
+	/// nested under an <c>if</c> does not count, because the other branch returns with the dump in place.
+	/// </summary>
+	private static bool Deletes(BlockSyntax block) =>
+		block.Statements
+			.OfType<ExpressionStatementSyntax>()
+			.Select(statement => statement.Expression)
 			.OfType<InvocationExpressionSyntax>()
 			.Any(invocation => invocation.Expression is MemberAccessExpressionSyntax {
 					Expression: IdentifierNameSyntax { Identifier.Text: ReaderTypeName }
