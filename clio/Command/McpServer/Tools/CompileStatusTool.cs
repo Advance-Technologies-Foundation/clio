@@ -64,7 +64,8 @@ public sealed class CompileStatusTool(ICompileOperationRegistry registry, IToolC
 			record.StartedUtc,
 			record.FinishedUtc,
 			record.ExitCode,
-			record.MessageTail);
+			record.MessageTail,
+			ProcessName: record.ProcessName);
 	}
 
 }
@@ -103,7 +104,7 @@ public sealed record CompileStatusResponse(
 	string EnvironmentName = null,
 
 	[property: JsonPropertyName("package-name")]
-	[Description("The single package compiled, or null for a full compilation.")]
+	[Description("The single package compiled, or null for a full compilation - or for a process-name compile, which sets process-name instead.")]
 	string PackageName = null,
 
 	[property: JsonPropertyName("started-utc")]
@@ -120,4 +121,8 @@ public sealed record CompileStatusResponse(
 	IReadOnlyList<string> MessageTail = null,
 
 	[property: JsonPropertyName("note")]
-	string Note = null);
+	string Note = null,
+
+	[property: JsonPropertyName("process-name")]
+	[Description("The business process whose package a process-name compile compiled; null otherwise.")]
+	string ProcessName = null);

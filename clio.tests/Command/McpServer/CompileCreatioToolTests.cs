@@ -141,6 +141,110 @@ public sealed class CompileCreatioToolTests
 
 	[Test]
 	[Category("Unit")]
+	[Description("process-name compiles through the CrtProcessBuilder package: the package requirement is checked first, the process compile command runs, and the tracked operation names the process so compile-status does not report it as a full compilation.")]
+	public async Task CompileCreatio_Should_Use_Process_Compilation_When_Process_Name_Is_Provided()
+	{
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.GetTenantKey(Arg.Any<EnvironmentOptions>()).Returns("sandbox-tenant");
+		commandResolver.GetTargetKey(Arg.Any<EnvironmentOptions>()).Returns("sandbox-target");
+		IRequiredPackageChecker checker = Substitute.For<IRequiredPackageChecker>();
+		commandResolver.Resolve<IRequiredPackageChecker>(Arg.Any<CompileBusinessProcessOptions>()).Returns(checker);
+		FakeCompileBusinessProcessCommand resolvedCommand = new();
+		commandResolver.Resolve<CompileBusinessProcessCommand>(Arg.Any<CompileBusinessProcessOptions>())
+			.Returns(resolvedCommand);
+		ICompileOperationRegistry registry = new CompileOperationRegistry();
+		CompileCreatioTool tool = new(ConsoleLogger.Instance, commandResolver, registry);
+
+		try
+		{
+			// Act
+			CommandExecutionResult result = await tool.CompileCreatio(
+				new CompileCreatioArgs("sandbox", ProcessName: " UsrProc "));
+
+			// Assert
+			result.ExitCode.Should().Be(0, because: "process-name should invoke the process compile path");
+			checker.Received(1).EnsureRequirements(Arg.Is<CompileBusinessProcessOptions>(options =>
+				options.ProcessName == "UsrProc"));
+			resolvedCommand.CapturedOptions!.ProcessName.Should().Be("UsrProc",
+				because: "the trimmed process name is forwarded to the command");
+			commandResolver.DidNotReceive().Resolve<CompilePackageCommand>(Arg.Any<CompilePackageOptions>());
+			commandResolver.DidNotReceive().Resolve<CompileConfigurationCommand>(Arg.Any<CompileConfigurationOptions>());
+			CompileOperationRecord tracked = registry.GetLatest("sandbox-tenant");
+			tracked!.ProcessName.Should().Be("UsrProc",
+				because: "a null package-name alone would read as a full compilation in compile-status");
+			tracked.PackageName.Should().BeNull(because: "the package is only known once the server answers");
+		}
+		finally
+		{
+			ConsoleLogger.Instance.ClearMessages();
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An older CrtProcessBuilder refuses process-name before anything is sent: the requirement failure is the result and the compile command is never run.")]
+	public async Task CompileCreatio_Should_Fail_Process_Compilation_When_The_Package_Is_Behind()
+	{
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.GetTenantKey(Arg.Any<EnvironmentOptions>()).Returns("sandbox-tenant");
+		commandResolver.GetTargetKey(Arg.Any<EnvironmentOptions>()).Returns("sandbox-target");
+		IRequiredPackageChecker checker = Substitute.For<IRequiredPackageChecker>();
+		checker.When(c => c.EnsureRequirements(Arg.Any<object>()))
+			.Do(_ => throw new InvalidOperationException("CrtProcessBuilder 1.6.6.32 or newer is required."));
+		commandResolver.Resolve<IRequiredPackageChecker>(Arg.Any<CompileBusinessProcessOptions>()).Returns(checker);
+		FakeCompileBusinessProcessCommand resolvedCommand = new();
+		commandResolver.Resolve<CompileBusinessProcessCommand>(Arg.Any<CompileBusinessProcessOptions>())
+			.Returns(resolvedCommand);
+		ICompileOperationRegistry registry = new CompileOperationRegistry();
+		CompileCreatioTool tool = new(ConsoleLogger.Instance, commandResolver, registry);
+
+		try
+		{
+			// Act
+			CommandExecutionResult result = await tool.CompileCreatio(
+				new CompileCreatioArgs("sandbox", ProcessName: "UsrProc"));
+
+			// Assert
+			result.ExitCode.Should().NotBe(0, because: "the package cannot serve the operation");
+			result.Output.Should().Contain(message => message.Value.ToString()!.Contains("1.6.6.32"),
+				because: "the refusal names the version the operation needs");
+			resolvedCommand.CapturedOptions.Should().BeNull(because: "nothing is sent to a package that is behind");
+			registry.GetLatest("sandbox-tenant")!.Status.Should().Be(CompileOperationStatus.Failed,
+				because: "the tracked operation must not stay Running after a refusal");
+		}
+		finally
+		{
+			ConsoleLogger.Instance.ClearMessages();
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("package-name and process-name together are refused: process-name already names the package it compiles.")]
+	public async Task CompileCreatio_Should_Reject_Package_And_Process_Name_Together()
+	{
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ICompileOperationRegistry registry = new CompileOperationRegistry();
+		CompileCreatioTool tool = new(ConsoleLogger.Instance, commandResolver, registry);
+
+		// Act
+		CommandExecutionResult result = await tool.CompileCreatio(
+			new CompileCreatioArgs("sandbox", "Custom", "UsrProc"));
+
+		// Assert
+		result.ExitCode.Should().Be(1, because: "the two modes are exclusive");
+		result.Output.Should().Contain(message => message.Value.ToString()!.Contains("process-name"),
+			because: "the refusal names the argument to keep");
+		commandResolver.DidNotReceive().Resolve<CompileBusinessProcessCommand>(Arg.Any<CompileBusinessProcessOptions>());
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Records a failed tracked operation when the resolved compile command reports a non-zero exit code.")]
 	public async Task CompileCreatio_Should_Record_Failed_Operation_When_Compile_Exits_NonZero()
 	{
@@ -417,12 +521,13 @@ public sealed class CompileCreatioToolTests
 
 	[Test]
 	[Category("Unit")]
-	[Description("Both compile-creatio prompt branches (full and package-only) carry the ENG-93157 heavy-operation warning and postpone option so the agent confirms before compiling.")]
+	[Description("All three compile-creatio prompt branches (full, package-only and process) carry the ENG-93157 heavy-operation warning and postpone option so the agent confirms before compiling.")]
 	public void CompileCreatioPrompt_Should_Warn_And_Offer_Postpone()
 	{
 		// Act
 		string fullPrompt = FsmAndCompilePrompt.CompileCreatio("sandbox");
 		string packagePrompt = FsmAndCompilePrompt.CompileCreatio("sandbox", "MyPackage");
+		string processPrompt = FsmAndCompilePrompt.CompileCreatio("sandbox", processName: "UsrProc");
 
 		// Assert
 		fullPrompt.Should().Contain("postpone",
@@ -433,6 +538,12 @@ public sealed class CompileCreatioToolTests
 			because: "the package-compilation prompt must offer the postpone option");
 		packagePrompt.Should().Contain("HEAVY operation",
 			because: "the package-compilation prompt must warn that compilation is heavy");
+		processPrompt.Should().Contain("postpone",
+			because: "the process-compilation prompt must offer the postpone option");
+		processPrompt.Should().Contain("HEAVY operation",
+			because: "the process-compilation prompt must warn that compilation is heavy");
+		processPrompt.Should().Contain("`process-name`",
+			because: "the process branch must tell the agent which argument to pass");
 	}
 
 	[Test]
@@ -579,6 +690,22 @@ public sealed class CompileCreatioToolTests
 			CapturedOptions = options;
 			ExecuteGate?.Wait();
 			return ExitCodeToReturn;
+		}
+	}
+
+	private sealed class FakeCompileBusinessProcessCommand : CompileBusinessProcessCommand
+	{
+		public CompileBusinessProcessOptions? CapturedOptions { get; private set; }
+
+		public FakeCompileBusinessProcessCommand()
+			: base(Substitute.For<ICompileBusinessProcessService>(), Substitute.For<ILogger>())
+		{
+		}
+
+		public override int Execute(CompileBusinessProcessOptions options)
+		{
+			CapturedOptions = options;
+			return 0;
 		}
 	}
 

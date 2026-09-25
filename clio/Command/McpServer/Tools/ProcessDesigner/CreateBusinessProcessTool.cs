@@ -346,7 +346,7 @@ public class CreateBusinessProcessTool(
 		 + "usings[]:[{namespace, alias?}]; helpers several of its scripts share go in top-level methods: C# CLASS "
 		 + "members as one string (Get/Set work there too). It is the last resort after no-code elements, formulas and a compiled "
 		 + "user task (read get-guidance name=process-script-task first); its result carries a compile-REQUIRED "
-		 + "warning instead of the note, and then a FULL compile-creatio (no package-name) is owed. Either signal "
+		 + "warning instead of the note, and then, after asking the user, compile-creatio with process-name is owed. Either signal "
 		 + "speaks for THIS call only: a compile an earlier save made owed is still owed. A SUCCESSFUL build can still report caveats as message-type \"Warning\" entries in "
 		 + "execution-log-messages (there is no separate warnings field) — a Pre-configured page whose "
 		 + "referenced page could not be loaded is built and SAVED carrying none of that page's parameters.")]

@@ -24,7 +24,9 @@ namespace Clio.Mcp.E2E;
 /// with a script task needs a compile, so its result must carry the server's compile-required warning and
 /// must NOT carry the compile-not-required note; an edit that leaves the C# alone gets the note back. The
 /// compile and the run themselves are a stand leg (docs/script-task-element-capture.md in the package repo):
-/// nothing here compiles the configuration, because that reloads the environment for every user.</para>
+/// nothing here compiles the configuration, because that reloads the environment for every user. The
+/// process-name compile is covered on the one path that compiles nothing - a process without C# - which proves
+/// the route, the package gate and the answer.</para>
 /// </summary>
 [TestFixture]
 [AllureNUnit]
@@ -43,6 +45,11 @@ public sealed class ScriptTaskElementToolE2ETests {
 
 	/// <summary>The cut that builds the element; named in the skip message so a developer knows what to install.</summary>
 	private const string MinimumPackageVersion = "1.6.6.30";
+
+	/// <summary>The cut that ships the CompileProcess operation compile-creatio's process-name mode calls.</summary>
+	private const string MinimumCompilePackageVersion = "1.6.6.32";
+
+	private const string CompileToolName = CompileCreatioTool.CompileCreatioToolName;
 
 	#region Methods: Tests
 
@@ -248,9 +255,74 @@ public sealed class ScriptTaskElementToolE2ETests {
 			because: "setMethods REPLACES the text, and an older server would drop it while answering success");
 	}
 
+	[Test]
+	[Description("compile-creatio's process-name mode reaches the package's CompileProcess over the real MCP path, and for a process without C# it compiles NOTHING and says so - the leg that proves the route, the requirement gate and the answer without reloading the environment for every user.")]
+	[AllureTag(CompileToolName)]
+	[AllureName("compile-creatio process-name compiles nothing for a process without C#")]
+	public async Task CompileCreatio_WithProcessName_ForAProcessWithoutCSharp_Should_CompileNothing() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context =
+			await ProcessDesignerE2EArrange.StartAsync("ScriptTask", MinimumCompilePackageVersion);
+		string processName = $"UsrClioBpNoCodeCompileE2e{Guid.NewGuid():N}";
+		string created = JsonSerializer.Serialize(await ProcessDesignerE2EArrange.CallToolAsync(context,
+			CreateToolName, new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["descriptor"] = BuildNoCodeDescriptor(processName)
+			}));
+		created.Should().Contain("created (UId:", because: "the arrange step must have built the process");
+
+		// Act
+		string compiled = JsonSerializer.Serialize(await ProcessDesignerE2EArrange.CallToolAsync(context,
+			CompileToolName, new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName
+			}));
+
+		// Assert
+		compiled.Should().Contain(ExitCodeZero, because: "a process without C# needs no compile, which is a success");
+		compiled.Should().Contain("nothing was compiled",
+			because: "the server's own predicate owes no compile, so none ran and the runtime was not reloaded");
+	}
+
+	[Test]
+	[Description("compile-creatio refuses process-name together with package-name before anything reaches the environment: process-name already names the package it compiles.")]
+	[AllureTag(CompileToolName)]
+	[AllureName("compile-creatio refuses process-name with package-name")]
+	public async Task CompileCreatio_WithProcessAndPackageName_Should_Refuse() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context =
+			await ProcessDesignerE2EArrange.StartAsync("ScriptTask", MinimumCompilePackageVersion);
+
+		// Act
+		string refused = JsonSerializer.Serialize(await ProcessDesignerE2EArrange.CallToolAsync(context,
+			CompileToolName, new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["package-name"] = "Custom",
+				["process-name"] = "UsrAnyProcess"
+			}));
+
+		// Assert
+		refused.Should().NotContain(ExitCodeZero, because: "the two modes are exclusive");
+		refused.Should().Contain("process-name", because: "the refusal names the argument to keep");
+	}
+
 	#endregion
 
 	#region Methods: Private
+
+	private static string BuildNoCodeDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP No Code Compile E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "Start1", "type": "startEvent" },
+		    { "name": "End1", "type": "endEvent" }
+		  ],
+		  "flows": [ { "source": "Start1", "target": "End1" } ]
+		}
+		""";
 
 	private static string BuildDescriptor(string processName, bool withMethods = false) =>
 		$$"""

@@ -287,7 +287,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"D33F9557DE73497061745C3CE9B6DE0A201C3257E1D9FC202DAF08E2D0E0FA16";
+		"B6E7320F0DF8A37A1EC177D73F9FFC0AE44456F7857836ABA1586579688A60C1";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -315,7 +315,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.6.31";
+	private const string ExpectedArchiveVersion = "1.6.6.32";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, written by
@@ -327,7 +327,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "07b508778caed277e88dc8b6986de1f5bc2b200a";
+	private const string ExpectedProducingCommit = "69af6d9c009f8ef45e979c816d43525cf7d082c6";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -353,7 +353,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1790356823000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1790364675000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
@@ -381,20 +381,21 @@ public class BundledProcessBuilderPackageTests {
 	/// sources.
 	/// </summary>
 	/// <remarks>
-	/// Five, NOT six, and the difference is worth writing down because it is the first thing anyone
+	/// Six, NOT seven, and the difference is worth writing down because it is the first thing anyone
 	/// recomputing this number gets wrong: it is not one gate per gated operation. Of the
 	/// <see cref="ExpectedOperationContractCount"/> operations, one is ungated
-	/// (<see cref="UngatedOperations"/>) and the remaining six are gated at five places, because
+	/// (<see cref="UngatedOperations"/>) and the remaining seven are gated at six places, because
 	/// <c>ProcessDesigner.Execute</c> is a SHARED boundary for the two read operations — it applies the guard
 	/// once and both <c>ListUserTasks</c> and <c>DescribeProcess</c> pass through it. The four write
-	/// operations do not use it (they own their own rollback and session-release error handling), so they
-	/// gate in their own handlers. Hence: 4 write handlers + 1 shared read boundary = 5, covering 6 gated
-	/// operations.
+	/// operations and <c>CompileProcess</c> do not use it (they own their own error handling), so they gate in
+	/// their own handlers. Hence: 5 handlers + 1 shared read boundary = 6, covering 7 gated operations.
+	/// <c>CompileProcess</c> also calls <c>EnsureCanCompileConfiguration</c>, which this count does not scan:
+	/// it is a second gate on the same operation, not a different operation's.
 	/// <para>
 	/// EXACT rather than a floor, but do NOT read more into that than it gives. A floor equal to the current
-	/// count already catches a dropped gate — remove one of the five and four remain — so exactness adds only
+	/// count already catches a dropped gate — remove one of the six and five remain — so exactness adds only
 	/// the detection of an ADDED call site, which is never a regression. Its real value is that the number is
-	/// now stated with its arithmetic: a reader who assumes one gate per operation concludes a floor of 6 sits
+	/// now stated with its arithmetic: a reader who assumes one gate per operation concludes a floor of 7 sits
 	/// one above the truth and that a correct archive would fail it, which is how this pin came to be reported
 	/// as broken when it was not. The arithmetic and the number are edited TOGETHER or not at all: a
 	/// derivation that no longer totals the pin gives a maintainer facing a red test a documented reason to
@@ -413,19 +414,22 @@ public class BundledProcessBuilderPackageTests {
 	/// (ProcessVersionSaveHandlerTests),
 	/// <c>SetActiveProcessVersion_ShouldRefuseBeforeAnyRepositoryCall_WhenTheCallerLacksTheOperation</c>
 	/// (ProcessVersionActivateHandlerTests),
+	/// <c>CompileProcess_WithoutProcessDesignRight_ShouldRefuseBeforeTheRepository</c>
+	/// (ProcessCompileHandlerTests),
 	/// <c>ListUserTasks_ShouldRefuseAndNotQueryCatalog_WhenGuardDenies</c> and
 	/// <c>DescribeProcess_ShouldRefuseAndNotQueryDescriber_WhenGuardDenies</c> (both
 	/// ProcessDesignerOrchestratorTests, the shared boundary) — plus <c>ProcessDesignGuardTests</c> for the
 	/// gate itself. Those are strictly stronger than any byte scan: they prove the guard is on the execution
-	/// path, not merely present in the text. Six named deny tests for six gated operations, five call sites
+	/// path, not merely present in the text. Seven named deny tests for seven gated operations, six call sites
 	/// because two of them share a boundary. The two version entries carry the package repository's own
 	/// naming rather than this file's, because a name invented here would be an enumeration of tests that do
 	/// not exist — which is worse than none.
 	/// <para>
 	/// Adding a gated operation WITHOUT adding its deny test leaves the pin satisfied by two gates landing on
-	/// a path the new operation never takes, and a count of five cannot tell the two apart. For the two
-	/// version operations that was checked rather than assumed: the shipped sources carry the gate in each
-	/// one's OWN handler — <c>ProcessVersionSaveHandler</c> and <c>ProcessVersionActivateHandler</c>, not the
+	/// a path the new operation never takes, and a count alone cannot tell the two apart. For the two
+	/// version operations and <c>CompileProcess</c> that was checked rather than assumed: the shipped sources
+	/// carry the gate in each one's OWN handler — <c>ProcessVersionSaveHandler</c>,
+	/// <c>ProcessVersionActivateHandler</c> and <c>ProcessCompileHandler</c>, not the
 	/// shared <c>ProcessDesigner.Execute</c> boundary — and both deny tests additionally assert the schema
 	/// repository received no calls at all, so an unauthorized caller cannot even learn whether the process
 	/// exists.
@@ -439,7 +443,7 @@ public class BundledProcessBuilderPackageTests {
 	/// counts, and neither should be able to drift on its own.
 	/// </para>
 	/// </remarks>
-	private const int ExpectedAuthorizationGateCallSites = 5;
+	private const int ExpectedAuthorizationGateCallSites = 6;
 
 	/// <summary>
 	/// Exact number of <c>[OperationContract]</c> methods the shipped service may expose.
@@ -451,7 +455,7 @@ public class BundledProcessBuilderPackageTests {
 	/// argued exception, so a second one must not be able to arrive unnoticed. Raise this together with the
 	/// allowlist, in the same commit, or not at all.
 	/// </remarks>
-	private const int ExpectedOperationContractCount = 7;
+	private const int ExpectedOperationContractCount = 8;
 
 	/// <summary>
 	/// The operations allowed to ship WITHOUT the authorization gate.
@@ -480,6 +484,7 @@ public class BundledProcessBuilderPackageTests {
 		typeof(Clio.Command.ModifyBusinessProcessOptions),
 		typeof(Clio.Command.ModifyProcessAsNewVersionOptions),
 		typeof(Clio.Command.SetActiveProcessVersionOptions),
+		typeof(Clio.Command.CompileBusinessProcessOptions),
 		typeof(Clio.Command.DescribeProcessOptions),
 		typeof(Clio.Command.ListUserTasksOptions),
 		typeof(Clio.Command.McpServer.Tools.ProcessDesigner.ValidateProcessGraphArgs)
@@ -640,8 +645,8 @@ public class BundledProcessBuilderPackageTests {
 	/// </summary>
 	/// <remarks>
 	/// A plain substring count over archive text cannot tell a live call from a commented-out one, and for the
-	/// authorization gate that gap is the whole guard: comment out all five
-	/// <c>_guard.EnsureCanManageProcessDesign()</c> calls and the count stays at five, the operation count is
+	/// authorization gate that gap is the whole guard: comment out all six
+	/// <c>_guard.EnsureCanManageProcessDesign()</c> calls and the count stays at six, the operation count is
 	/// unchanged, and both gate literals still match — because the guard CLASS is untouched — so an archive
 	/// with zero live gates passes every pin in this fixture. Line-level rather than token-level on purpose:
 	/// this is a text scan over sources it cannot parse, so it recognises the one form that actually occurs
@@ -779,9 +784,9 @@ public class BundledProcessBuilderPackageTests {
 				+ "let a portal user holding CanManageProcessDesign write a process carrying a script task");
 		callSites.Should().Be(ExpectedAuthorizationGateCallSites,
 			because: "the gate sits BELOW the service boundary, in the domain handlers, so it is these call "
-				+ "sites and not a per-[WebInvoke] attribute that authorize a request. Four write handlers plus "
-				+ "the one shared read boundary in ProcessDesigner.Execute cover all six gated operations — "
-				+ $"see {nameof(ExpectedAuthorizationGateCallSites)} for why that is five and not six. An "
+				+ "sites and not a per-[WebInvoke] attribute that authorize a request. Five handlers plus "
+				+ "the one shared read boundary in ProcessDesigner.Execute cover all seven gated operations — "
+				+ $"see {nameof(ExpectedAuthorizationGateCallSites)} for why that is six and not seven. An "
 				+ "archive rebuilt from a pre-gate prototype installs fine and answers the install command's "
 				+ "own probe BETTER than a gated one would, so this is the only place the property is checked");
 	}
@@ -967,17 +972,18 @@ public class BundledProcessBuilderPackageTests {
 			because: $"every gate must be visible to this scan and no other type may carry one. Add or remove "
 				+ $"a gate and {nameof(ProcessBuilderGatedTypes)} moves in the same commit, so a lost "
 				+ "declaration cannot pass as slack and a new one cannot arrive unreviewed");
-		// The loop EXECUTES today: four of the seven carry a version literal, and they do NOT all agree with
-		// each other — create, modify and modify-as-new-version at 1.6.6.14 since ENG-99856 (create and modify had
+		// The loop EXECUTES today: five of the eight carry a version literal, and they do NOT all agree with
+		// each other — create, modify and modify-as-new-version at 1.6.6.30 since ENG-92711 (create and modify had
 		// diverged before, when modify's page-change reconciliation promise needed a newer archive than create's;
-		// the new-version route followed because it shares the operations vocabulary and runs no read-back), and
-		// set-active-version at the 1.6.1.0 its operation first ships in. That spread is the reason the assertion counts literals
+		// the new-version route followed because it shares the operations vocabulary and runs no read-back),
+		// set-active-version at the 1.6.1.0 its operation first ships in, and the process compile at the
+		// 1.6.6.32 its CompileProcess operation first ships in. That spread is the reason the assertion counts literals
 		// rather than pinning a value: no single number describes the set. It was vacuous when written,
 		// deliberately — the invariant had to be in place before the first literal appeared, because the
 		// commit that adds one is exactly when it must already work. It replaces the old pin (descriptor
 		// version == a constant), which needed hand-synchronising on every rebundle and asserted a
 		// coincidence, not a rule.
-		versioned.Should().HaveCount(4,
+		versioned.Should().HaveCount(5,
 			because: "the version loop is the only automated coupling stopping an archive below the floor the "
 				+ "two version tools demand from shipping, so a literal silently becoming presence-only must "
 				+ "redden here rather than leave the loop iterating over fewer gates than exist");
@@ -1156,7 +1162,7 @@ public class BundledProcessBuilderPackageTests {
 			because: "there is no compiled assembly in the archive, so the sources ARE the payload; an "
 				+ "archive without them would compile to nothing");
 		archive.Should().Contain("class ProcessDesignService",
-			because: "the REST entry point clio's five KnownRoute entries call must be among the shipped "
+			because: "the REST entry point clio's KnownRoute entries call must be among the shipped "
 				+ "sources");
 		archive.Should().Contain("PingResponse Ping()",
 			because: "the ENTIRE install verdict now rests on this one operation — IsPackageOperational asks it "

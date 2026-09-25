@@ -341,7 +341,12 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		/// <summary>Read the database engine and runtime without ClioGate.</summary>
 		GetSystemEnvironmentInfo = 99,
 		/// <summary>OpenID Connect discovery document.</summary>
-		OpenIdConfiguration = 100
+		OpenIdConfiguration = 100,
+
+		/// <summary>
+		///     Compiles the package a business process lives in via the ProcessDesignService package.
+		/// </summary>
+		CompileProcess = 101
 
 	}
 
@@ -443,6 +448,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.ModifyProcess, "/rest/ProcessDesignService/ModifyProcess"},
 		{KnownRoute.ModifyProcessAsNewVersion, "/rest/ProcessDesignService/ModifyProcessAsNewVersion"},
 		{KnownRoute.SetActiveProcessVersion, "/rest/ProcessDesignService/SetActiveProcessVersion"},
+		{KnownRoute.CompileProcess, "/rest/ProcessDesignService/CompileProcess"},
 		{KnownRoute.LastCompilationResult, "api/ConfigurationStatus/GetLastCompilationResult"},
 		{KnownRoute.GetAvailableThemes, "ServiceModel/ThemeService.svc/GetAvailableThemes"},
 		{KnownRoute.ClearThemesCache, "ServiceModel/ThemeService.svc/ClearThemesCache"},

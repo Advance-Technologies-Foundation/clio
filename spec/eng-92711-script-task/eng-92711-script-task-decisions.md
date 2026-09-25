@@ -22,8 +22,9 @@ This file records only what the implementation decided and what the stand measur
 | Q3 | Validator rule R17 for a script-task target | Unchanged (advisory). | Out of the element's write path. |
 | Q4 | Set `UseSystemSecurityContext` like the designer? | Not set - and the designer does NOT set it either. | `base-process-schema.js` defaults it to `false`; nothing sets it on a new process. The shipped `FindContactForTA` has `IJ10 = true` by its author's choice. Script tasks of a clio-built process run with the caller's rights, same as a designer-built one. |
 | Q5 | Does `process-script-task` join the process guide set? | No banner change. | Kept ungated and routed, as `ProcessScriptTaskGuidanceTests` requires. |
-| Q6 | Hold or raise the `[RequiresPackage]` floor? | Raised to 1.6.6.30 (the bundled archive is 1.6.6.31, which carries review fixes clio does not depend on). | Silent-discard shape: an older server drops a build's top-level `usings[]` and `methods` (and a `scriptTask` block riding a setElement beside another field) while answering success. The type token and the two operations would be refused loudly, the usings would not. |
+| Q6 | Hold or raise the `[RequiresPackage]` floor? | Raised to 1.6.6.30 for create / modify / new version; the process compile (Q8) needs 1.6.6.32, where `CompileProcess` first ships. The bundled archive is 1.6.6.32. | Silent-discard shape: an older server drops a build's top-level `usings[]` and `methods` (and a `scriptTask` block riding a setElement beside another field) while answering success. The type token and the two operations would be refused loudly, the usings would not. |
 | Q7 | The userTask after-activity-save script | Out of scope. | Sibling compile trigger; the gate added here is keyed on the server's warning, so a later ticket only has to emit the same phrase. |
+| Q8 | Which compile makes a saved script task run? | The package compiles it: `CompileProcess` (`IWorkspaceBuilder.Build([package])`, the installer's path), reached through `compile-creatio process-name=<process>`, after asking the user. Not a side effect of the save. | On Creatio 10.x the Publish (`Build`) and `RebuildPackage` compile only packages a DESIGNER save marked, and a server-side save cannot mark one (the marking service is internal). Measured: `Build` compiled nothing, `RebuildPackage(Custom)` compiled nothing and then regenerated static content for 17 min, `--all` took 20 min; `CompileProcess` took 3 min 21 s and the edit ran. A mode of `compile-creatio` rather than a new tool, so the consent rule, the progress heartbeat, the response deadline with `compile-status`, and the one-build-at-a-time reservation are the same code. Not automatic, because a compile reloads the runtime for every user. |
 
 Also decided without asking:
 
@@ -44,11 +45,11 @@ Also decided without asking:
   the stand's own assemblies.
 - Never compiled: `Publish the "<name>" process before starting it`. Compiled: runs. Body edited and not
   compiled again: the PREVIOUS body runs, silently.
-- A changed-items build (`compile-configuration`, the designer Publish's `WorkspaceExplorerService.Build`)
-  did not pick up an edited body within 12 s; the full compile (`--all`, 20 min 43 s) regenerated the source
-  file with the new body and the next run returned the new result with no error in `BusinessProcess.log`.
-  Hence every surface says FULL `compile-creatio` - which is also what the MCP tool runs without
-  `package-name`.
+- Which compile picks an edit up (Q8, read from `Build.log`'s `compiled: N [...]`): `compile-configuration`
+  compiled 0 packages in 57 ms; `compile-package Custom` compiled 0 and spent 17 min on static content;
+  `--all` compiled 321 packages in 20 min; the package's `CompileProcess` compiled `Custom` in 3 min 21 s,
+  and the methods probe went from `63` to `84`. The mechanism is recorded in
+  `docs/knowledge/platform/a-server-side-process-save-is-invisible-to-the-optimized-compile.md`.
 - Run results were read from `BusinessProcess.log` as well as the returned value, because the
   `ProcessEngineService` Execute endpoint returns an output even when the process then fails.
 
