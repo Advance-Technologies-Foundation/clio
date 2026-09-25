@@ -375,7 +375,8 @@ It deliberately does NOT commit. Step 8 — committing both repositories and nam
 in the clio message — is a judgement call and stays with you.
 
 What it does NOT refresh, and what can therefore turn red on a rebundle: `ManagerMapResolveDataIdTests`
-compares its `ServerBuildTokens` list with the `ProcessDesignConstants.ElementTypes` constants inside the new
+(its archive test carries `Module=Common`, so the rebundle's `Module=Common` check runs it) compares its
+`ServerBuildTokens` list with the `ProcessDesignConstants.ElementTypes` constants inside the new
 archive (ENG-95244). A rebundle that adds an element type fails there until the token is added to that list,
 to `ManagerMap.ResolveDataId` and — for a new kind — to `ManagerMap.IsBuildable`, in the same change. That
 is deliberate: each of those is a decision about what `validate-process-graph` calls valid and buildable,

@@ -224,6 +224,10 @@ public sealed class ManagerMapResolveDataIdTests {
 
 	[Test]
 	[Description("The ServerBuildTokens copy above equals the ElementTypes constants in the CrtProcessBuilder archive this clio bundles. Reads the bundled archive from the test output, as BundledProcessBuilderPackageTests does and for its reason: the file ships with the build, and a guard only in the integration lane would not guard the rebundle that breaks it.")]
+	// Module=Common as well as the fixture's ProcessModel: this pins the bundled ARCHIVE, and the rebundle's own
+	// validation runs Module=Common (beside BundledProcessBuilderPackageTests); a ProcessModel-only tag would
+	// leave it out of exactly the run that brings the new token.
+	[Property("Module", "Common")]
 	public void ServerBuildTokens_ShouldMatchTheBundledPackage_WhenTheArchiveIsRebundled() {
 		// Arrange
 		string archive = ReadBundledProcessDesignConstants();
