@@ -126,8 +126,8 @@ public static class ApprovalBlockExpectation {
 	/// like — the nested approver binds normally and, on a CrtProcessBuilder before 1.6.6.32, the leftover flat
 	/// member is discarded unread: no write contract there implements <c>IExtensibleDataObject</c>, and
 	/// <c>DataContractJsonSerializer</c> drops an unknown member silently. From 1.6.6.32 the server refuses the
-	/// whole request for that member instead, naming it among the fields a write takes elsewhere - as
-	/// <c>approver.type</c> (ENG-95244).</para>
+	/// whole request for that member instead, naming <c>approverType</c> among the fields a write takes elsewhere,
+	/// with the note to write it as <c>approver.type</c> (ENG-95244).</para>
 	/// <para>So the flat member is read-shape evidence only when the nested form is ABSENT. Treating it as proof
 	/// regardless would report an element whose approver landed as unconfigured, and this marker short-circuits
 	/// <see cref="DropsFor"/> before the read-back is consulted, so nothing downstream could correct it. That
