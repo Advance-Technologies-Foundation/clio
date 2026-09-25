@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -15,6 +14,7 @@ using Clio.Common;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
+using Clio.Package;
 using FluentAssertions;
 using ModelContextProtocol.Protocol;
 
@@ -42,6 +42,7 @@ public sealed class SubProcessElementToolE2ETests {
 
 	private const string ToolName = CreateBusinessProcessTool.CreateBusinessProcessToolName;
 	private const string ModifyToolName = ModifyBusinessProcessTool.ModifyBusinessProcessToolName;
+	private const string AsNewVersionToolName = ModifyProcessAsNewVersionTool.ModifyProcessAsNewVersionToolName;
 	private const string DescribeToolName = DescribeProcessTool.ToolName;
 
 	// The caller's resource key for the element parameter's caption: captions are not metadata, they live in
@@ -51,10 +52,6 @@ public sealed class SubProcessElementToolE2ETests {
 	// The called process's OWN row for its parameter: a process parameter's caption is stored under
 	// Parameters.<name>.Caption (read off a stand, 2026-09-23).
 	private const string OrderIdCalleeCaptionKey = "Parameters.OrderId.Caption";
-
-	// Every value spliced into the caption SQL must match this: letters, digits, '_' and '.' - which is all a
-	// generated process name and a resource key contain.
-	private static readonly Regex SqlSafeIdentifier = new("^[A-Za-z0-9_.]+$", RegexOptions.CultureInvariant);
 
 	private const string Resync = """
 		[ { "op": "setElement", "elementName": "SubProcess1",
@@ -215,7 +212,7 @@ public sealed class SubProcessElementToolE2ETests {
 	[AllureName("modify-business-process resync stores the called process's current caption")]
 	public async Task ModifyBusinessProcess_Should_StoreTheCalleesCurrentCaption_OnOneResync() {
 		// Arrange
-		await using ArrangeContext context = await ArrangeAsync(needsSql: true);
+		await using ArrangeContext context = await ArrangeAsync();
 		string calleeName = $"UsrClioBpCapResyncCallee{Guid.NewGuid():N}";
 		string callerName = $"UsrClioBpCapResyncCaller{Guid.NewGuid():N}";
 		await ArrangeProcessAsync(context, BuildCaptionedCalleeDescriptor(calleeName), "called process");
@@ -242,7 +239,7 @@ public sealed class SubProcessElementToolE2ETests {
 	[AllureName("an incidental caller save stores the called process's current caption")]
 	public async Task ModifyBusinessProcess_Should_StoreTheCalleesCurrentCaption_OnAnIncidentalCallerSave() {
 		// Arrange
-		await using ArrangeContext context = await ArrangeAsync(needsSql: true);
+		await using ArrangeContext context = await ArrangeAsync();
 		string calleeName = $"UsrClioBpCapIncCallee{Guid.NewGuid():N}";
 		string callerName = $"UsrClioBpCapIncCaller{Guid.NewGuid():N}";
 		await ArrangeProcessAsync(context, BuildCaptionedCalleeDescriptor(calleeName), "called process");
@@ -316,8 +313,53 @@ public sealed class SubProcessElementToolE2ETests {
 		JsonSerializer.Serialize(callResult).Should().NotContain("created (UId:",
 			because: "the build has to be refused rather than saved - a self-referencing element is the platform's "
 				+ "one silent no-op, and the process would look healthy afterwards");
+		// The MESSAGE is the assertion that discriminates, not the absence of the success line. The process being
+		// created is a draft the schema manager cannot see, so a server that looks the name up and nothing else
+		// refuses this too - with "was not found on this environment", which sends the caller off to create the
+		// process first. That is what every CrtProcessBuilder before the host-draft check answered here.
 		JsonSerializer.Serialize(callResult).Should().Contain("cannot call itself",
 			because: "the refusal has to name what is wrong, or the caller cannot tell it from any other failure");
+	}
+
+	[TestCase("processName")]
+	[TestCase("processUId")]
+	[Description("Over the real MCP path, a NEW VERSION cannot call its own family either. modify-business-process-as-new-version edits a clone that is registered nowhere until it is saved, and the self-reference guard used to look the host's version family up through the schema manager - which missed and answered the clone's own UId, so selecting the root passed and a version was saved that calls itself the moment it is activated. Both selections reach the family comparison: by processUId directly, and by processName because the clone carries the source's NAME until it is renamed after the edit, and the host-name shortcut is taken only by a host that is its own family root - so the name resolves to the registered source.")]
+	[AllureTag(AsNewVersionToolName)]
+	[AllureName("modify-business-process-as-new-version refuses a sub-process element that calls its own process")]
+	public async Task ModifyProcessAsNewVersion_Should_RefuseASubProcessCallingItsOwnProcess(string selectBy) {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync();
+		string processName = $"UsrClioBpSubSelfVersion{Guid.NewGuid():N}";
+		CallToolResult created = await ArrangeProcessAsync(context, BuildCalleeDescriptor(processName), "source process");
+		string selection = selectBy == "processUId" ? CreatedUIdOf(created) : processName;
+
+		// Act - rewired so the element is on the path, which leaves the self-reference as the only thing wrong
+		CallToolResult callResult = await CallToolAsync(context, AsNewVersionToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["package-name"] = "Custom",
+			["operations"] = $$"""
+				[ { "op": "removeFlow", "source": "StartEvent1", "target": "EndEvent1" },
+				  { "op": "addElement", "element": { "name": "SubProcess1", "type": "subProcess",
+				      "caption": "Call this process", "subProcess": { "{{selectBy}}": "{{selection}}" } } },
+				  { "op": "addFlow", "source": "StartEvent1", "target": "SubProcess1" },
+				  { "op": "addFlow", "source": "SubProcess1", "target": "EndEvent1" } ]
+				"""
+		});
+
+		// Assert
+		McpCommandExecutionParser.Extract(callResult).ExitCode.Should().NotBe(0,
+			because: "the version must not be saved: the runtime resolves a called process through its family's "
+				+ "ACTIVE version, so once this version is activated the element calls itself without end - and the "
+				+ "platform's own guard compares exact schema UIds, so it lets a family member through and "
+				+ "synchronizes it as if it were any other process");
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		callResultJson.Should().Contain("cannot call itself",
+			because: "the refusal names the self-reference; a version saved successfully here is the defect");
+		callResultJson.Should().Contain("another version through",
+			because: "both selections reach the family comparison, and its refusal names the family's consequence "
+				+ "rather than the exact self-reference's silent no-op - which is what the name used to be answered "
+				+ "with, when the clone's own name took the host-name shortcut");
 	}
 
 	[Test]
@@ -458,6 +500,13 @@ public sealed class SubProcessElementToolE2ETests {
 
 	#region Methods: Arrange
 
+	/// <summary>The UId a successful create-business-process answer reports ("created (UId: ...").</summary>
+	private static string CreatedUIdOf(CallToolResult result) {
+		Match match = Regex.Match(JsonSerializer.Serialize(result), @"created \(UId: ([0-9a-fA-F-]{36})");
+		match.Success.Should().BeTrue(because: "the arrange step's create answer names the new process's UId");
+		return match.Groups[1].Value;
+	}
+
 	/// <summary>
 	/// Builds a process for an ARRANGE step and fails the test on the spot if it did not build.
 	/// <para>Discarding this result is how a broken arrange reaches the assertions disguised as the thing under
@@ -518,48 +567,44 @@ public sealed class SubProcessElementToolE2ETests {
 	}
 
 	/// <summary>
-	/// The caller's STORED rows for one resource key, every culture, read through <c>execute-sql-script</c>.
+	/// A process's STORED rows for one resource key, every culture, read from <c>SysLocalizableValue</c> through
+	/// <c>execute-esq</c>.
 	/// <para>The database and not <c>describe</c>, on purpose: the platform re-synchronizes on every read, so a
-	/// describe shows the called process's caption whether or not it was ever saved. Identifiers are
-	/// double-quoted, which PostgreSQL requires and MSSQL accepts; the statement has been RUN on MSSQL only.</para>
+	/// describe shows the called process's caption whether or not it was ever saved.</para>
+	/// <para>DataService and not <c>execute-sql-script</c>: a SQL read needs cliogate and is refused on a stand
+	/// with <c>DenyCustomQueryApiUsage</c>, while here both values travel as typed filter parameters and are never
+	/// spliced into a statement. The filter follows the <c>SysSchema</c> lookup (<c>SysSchema.Id</c>, the row id,
+	/// not the UId) to the schema's name. Run against an MSSQL .NET Framework stand on 2026-09-24, where it
+	/// returned exactly the row a SQL join on <c>SysSchemaId</c> returned; DataService builds the SQL itself, so
+	/// the read does not depend on the database engine.</para>
+	/// <para>Every culture is read and the callers expect ONE row: a server-side write stores the current culture
+	/// only, and these processes are created and edited through clio alone, so a second row would itself be a
+	/// finding.</para>
 	/// </summary>
 	private static async Task<IReadOnlyList<string?>> ReadStoredCaptionsAsync(ArrangeContext context,
 			string schemaName, string key) {
-		string directory = Path.Combine(Path.GetTempPath(), "clio-e2e-captions", Guid.NewGuid().ToString("N"));
-		Directory.CreateDirectory(directory);
-		try {
-			return await ReadStoredCaptionsIntoAsync(context, schemaName, key, Path.Combine(directory, "captions.json"));
-		} finally {
-			Directory.Delete(directory, recursive: true);
-		}
-	}
-
-	// Every culture is read and the callers expect ONE row: a server-side write stores the current culture only,
-	// and these processes are created and edited through clio alone, so a second row would itself be a finding.
-	private static async Task<IReadOnlyList<string?>> ReadStoredCaptionsIntoAsync(ArrangeContext context,
-			string schemaName, string key, string destination) {
-		// The two values are spliced into SQL, so they are held to a shape that cannot close the literal. Both are
-		// generated by this fixture today; the guard keeps it that way.
-		schemaName.Should().MatchRegex(SqlSafeIdentifier.ToString(),
-			because: "a schema name spliced into SQL must not be able to close the string literal");
-		key.Should().MatchRegex(SqlSafeIdentifier.ToString(),
-			because: "a resource key spliced into SQL must not be able to close the string literal");
-		string sql = "SELECT v.\"Value\" AS value FROM \"SysLocalizableValue\" v "
-			+ "INNER JOIN \"SysSchema\" s ON s.\"Id\" = v.\"SysSchemaId\" "
-			+ $"WHERE s.\"Name\" = '{schemaName}' AND v.\"Key\" = '{key}'";
-		CallToolResult result = await CallToolAsync(context, ExecuteSqlScriptTool.ToolName,
+		object query = SelectQueryHelper.BuildSelectQuery("SysLocalizableValue",
+			[new SelectQueryHelper.SelectQueryColumnDefinition("Value", "Value")],
+			[
+				new SelectQueryHelper.SelectQueryFilterDefinition("SysSchema.Name", schemaName,
+					SelectQueryHelper.TextDataValueType),
+				new SelectQueryHelper.SelectQueryFilterDefinition("Key", key, SelectQueryHelper.TextDataValueType)
+			]);
+		CallToolResult result = await CallToolAsync(context, ExecuteEsqTool.ToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
-				["script"] = sql,
-				["view"] = "json",
-				["destination-path"] = destination,
-				["silent"] = true
+				["query"] = JsonSerializer.SerializeToElement(query)
 			});
-		McpCommandExecutionParser.Extract(result).ExitCode.Should().Be(0,
-			because: "the caption rows have to be readable for this case to measure anything");
-		using JsonDocument document = JsonDocument.Parse(await File.ReadAllTextAsync(destination));
-		return document.RootElement.EnumerateArray()
-			.Select(row => row.GetProperty("value").GetString())
+		ExecuteEsqResponse response = EntitySchemaStructuredResultParser.Extract<ExecuteEsqResponse>(result);
+		response.Success.Should().BeTrue(
+			because: "the caption rows have to be readable for this case to measure anything, and the read failed "
+				+ "with: {0}",
+			response.Error);
+		JsonElement rows = response.Rows.GetValueOrDefault();
+		rows.ValueKind.Should().Be(JsonValueKind.Array,
+			because: "a SelectQuery answers with a rows array; anything else is a response shape this read cannot count");
+		return rows.EnumerateArray()
+			.Select(row => row.GetProperty("Value").GetString())
 			.ToList();
 	}
 
@@ -597,7 +642,7 @@ public sealed class SubProcessElementToolE2ETests {
 			toolName, new Dictionary<string, object?> { ["args"] = args }, context.CancellationTokenSource.Token);
 	}
 
-	private static async Task<ArrangeContext> ArrangeAsync(bool needsSql = false) {
+	private static async Task<ArrangeContext> ArrangeAsync() {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string? environmentName = settings.Sandbox.EnvironmentName;
@@ -612,12 +657,6 @@ public sealed class SubProcessElementToolE2ETests {
 				$"Sub-process MCP E2E requires a reachable configured sandbox environment. '{environmentName}' was not reachable.");
 		}
 
-		if (needsSql) {
-			// execute-sql-script runs through cliogate. The install gets its OWN budget: one that has to push the
-			// package can take minutes, and they must not come out of the case's five.
-			using CancellationTokenSource installTimeout = new(TimeSpan.FromMinutes(10));
-			await ClioCliCommandRunner.EnsureCliogateInstalledAsync(settings, environmentName!, installTimeout.Token);
-		}
 		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(5));
 		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
 		return new ArrangeContext(session, cancellationTokenSource, environmentName);
