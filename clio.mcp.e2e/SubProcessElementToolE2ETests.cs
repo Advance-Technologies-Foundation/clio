@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Allure.NUnit;
@@ -41,6 +42,7 @@ public sealed class SubProcessElementToolE2ETests {
 
 	private const string ToolName = CreateBusinessProcessTool.CreateBusinessProcessToolName;
 	private const string ModifyToolName = ModifyBusinessProcessTool.ModifyBusinessProcessToolName;
+	private const string AsNewVersionToolName = ModifyProcessAsNewVersionTool.ModifyProcessAsNewVersionToolName;
 	private const string DescribeToolName = DescribeProcessTool.ToolName;
 
 	// The caller's resource key for the element parameter's caption: captions are not metadata, they live in
@@ -311,8 +313,53 @@ public sealed class SubProcessElementToolE2ETests {
 		JsonSerializer.Serialize(callResult).Should().NotContain("created (UId:",
 			because: "the build has to be refused rather than saved - a self-referencing element is the platform's "
 				+ "one silent no-op, and the process would look healthy afterwards");
+		// The MESSAGE is the assertion that discriminates, not the absence of the success line. The process being
+		// created is a draft the schema manager cannot see, so a server that looks the name up and nothing else
+		// refuses this too - with "was not found on this environment", which sends the caller off to create the
+		// process first. That is what every CrtProcessBuilder before the host-draft check answered here.
 		JsonSerializer.Serialize(callResult).Should().Contain("cannot call itself",
 			because: "the refusal has to name what is wrong, or the caller cannot tell it from any other failure");
+	}
+
+	[TestCase("processName")]
+	[TestCase("processUId")]
+	[Description("Over the real MCP path, a NEW VERSION cannot call its own family either. modify-business-process-as-new-version edits a clone that is registered nowhere until it is saved, and the self-reference guard used to look the host's version family up through the schema manager - which missed and answered the clone's own UId, so selecting the root passed and a version was saved that calls itself the moment it is activated. Both selections reach the family comparison: by processUId directly, and by processName because the clone carries the source's NAME until it is renamed after the edit, and the host-name shortcut is taken only by a host that is its own family root - so the name resolves to the registered source.")]
+	[AllureTag(AsNewVersionToolName)]
+	[AllureName("modify-business-process-as-new-version refuses a sub-process element that calls its own process")]
+	public async Task ModifyProcessAsNewVersion_Should_RefuseASubProcessCallingItsOwnProcess(string selectBy) {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync();
+		string processName = $"UsrClioBpSubSelfVersion{Guid.NewGuid():N}";
+		CallToolResult created = await ArrangeProcessAsync(context, BuildCalleeDescriptor(processName), "source process");
+		string selection = selectBy == "processUId" ? CreatedUIdOf(created) : processName;
+
+		// Act - rewired so the element is on the path, which leaves the self-reference as the only thing wrong
+		CallToolResult callResult = await CallToolAsync(context, AsNewVersionToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["package-name"] = "Custom",
+			["operations"] = $$"""
+				[ { "op": "removeFlow", "source": "StartEvent1", "target": "EndEvent1" },
+				  { "op": "addElement", "element": { "name": "SubProcess1", "type": "subProcess",
+				      "caption": "Call this process", "subProcess": { "{{selectBy}}": "{{selection}}" } } },
+				  { "op": "addFlow", "source": "StartEvent1", "target": "SubProcess1" },
+				  { "op": "addFlow", "source": "SubProcess1", "target": "EndEvent1" } ]
+				"""
+		});
+
+		// Assert
+		McpCommandExecutionParser.Extract(callResult).ExitCode.Should().NotBe(0,
+			because: "the version must not be saved: the runtime resolves a called process through its family's "
+				+ "ACTIVE version, so once this version is activated the element calls itself without end - and the "
+				+ "platform's own guard compares exact schema UIds, so it lets a family member through and "
+				+ "synchronizes it as if it were any other process");
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		callResultJson.Should().Contain("cannot call itself",
+			because: "the refusal names the self-reference; a version saved successfully here is the defect");
+		callResultJson.Should().Contain("another version through",
+			because: "both selections reach the family comparison, and its refusal names the family's consequence "
+				+ "rather than the exact self-reference's silent no-op - which is what the name used to be answered "
+				+ "with, when the clone's own name took the host-name shortcut");
 	}
 
 	[Test]
@@ -452,6 +499,13 @@ public sealed class SubProcessElementToolE2ETests {
 	#endregion
 
 	#region Methods: Arrange
+
+	/// <summary>The UId a successful create-business-process answer reports ("created (UId: ...").</summary>
+	private static string CreatedUIdOf(CallToolResult result) {
+		Match match = Regex.Match(JsonSerializer.Serialize(result), @"created \(UId: ([0-9a-fA-F-]{36})");
+		match.Success.Should().BeTrue(because: "the arrange step's create answer names the new process's UId");
+		return match.Groups[1].Value;
+	}
 
 	/// <summary>
 	/// Builds a process for an ARRANGE step and fails the test on the spot if it did not build.

@@ -29,11 +29,11 @@ test: test-unit
 
 ## test-unit: run full unit test suite
 test-unit:
-	dotnet test clio.tests/clio.tests.csproj --filter "Category=Unit" --no-build
+	dotnet test clio.tests/clio.tests.csproj --filter "TestCategory=Unit" --no-build
 
 ## test-integration: run integration tests
 test-integration:
-	dotnet test clio.tests/clio.tests.csproj --filter "Category=Integration"
+	dotnet test clio.tests/clio.tests.csproj --filter "TestCategory=Integration"
 
 ## test-analyzers: run Roslyn analyzer tests only
 test-analyzers:
@@ -49,13 +49,13 @@ test-module:
 ifndef MODULE
 	$(error MODULE is not set. Usage: make test-module MODULE=Command)
 endif
-	dotnet test clio.tests/clio.tests.csproj --filter "Category=Unit&Module=$(MODULE)" --no-build
+	dotnet test clio.tests/clio.tests.csproj --filter "TestCategory=Unit&Module=$(MODULE)" --no-build
 
 ## test-filter: run tests with a custom --filter expression  (FILTER="...")
 ## Example: make test-filter FILTER="FullyQualifiedName~MyTest"
 test-filter:
 ifndef FILTER
-	$(error FILTER is not set. Usage: make test-filter FILTER="Category=Unit&Module=Command")
+	$(error FILTER is not set. Usage: make test-filter FILTER="TestCategory=Unit&Module=Command")
 endif
 	dotnet test clio.tests/clio.tests.csproj --filter "$(FILTER)" --no-build
 

@@ -1864,20 +1864,30 @@ public sealed class DescribedParameter {
 	public string Type { get; set; }
 
 	/// <summary>
-	/// Direction: <c>In</c>, <c>Out</c>, <c>Variable</c>, or <c>Internal</c>. Together with <see cref="IsResult"/>
-	/// lets a caller tell an element's output parameters (mappable as a source) from its inputs. Omitted when the
-	/// server (an older <c>CrtProcessBuilder</c>) does not report it.
+	/// Direction: <c>In</c>, <c>Out</c>, <c>Variable</c>, or <c>Internal</c>, as stored. Not by itself an output
+	/// marker — read <see cref="IsOutput"/>. Omitted when the server (an older <c>CrtProcessBuilder</c>) does not
+	/// report it.
 	/// </summary>
 	[JsonPropertyName("direction")]
 	public string Direction { get; set; }
 
 	/// <summary>
-	/// True when the parameter is a result (output) of its element. A parameter is an output — and therefore usable
-	/// as a mapping source — when <see cref="Direction"/> is <c>Out</c> OR this flag is true. Omitted when the server
-	/// (an older <c>CrtProcessBuilder</c>) does not report it.
+	/// The stored result flag, as the server reports it. Not by itself an output marker: a Read data element carries
+	/// it on <c>ResultEntity</c> in first-record mode only, so its other modes' outputs read back <c>false</c> here —
+	/// read <see cref="IsOutput"/>. Omitted when the server (an older <c>CrtProcessBuilder</c>) does not report it.
 	/// </summary>
 	[JsonPropertyName("isResult")]
 	public bool? IsResult { get; set; }
+
+	/// <summary>
+	/// True when the server reports the parameter as one of its element's OUTPUTS, usable as a mapping source
+	/// (<c>sourceElementParameter</c>). Derived server-side: the generic flag-or-direction rule for most elements,
+	/// the element's mode for Read data. Declared here because this type carries no extension-data bag — without the
+	/// property the field is dropped on the way to the caller, which is how it went missing (ENG-99967). Omitted when
+	/// the server (an older <c>CrtProcessBuilder</c>) does not report it.
+	/// </summary>
+	[JsonPropertyName("isOutput")]
+	public bool? IsOutput { get; set; }
 
 	/// <summary>
 	/// True when the parameter's declaration marks it required. Omitted when the server (an older

@@ -29,7 +29,7 @@ namespace Clio.Tests.Common;
 /// </para>
 /// <para>
 /// Kept in the <c>Unit</c> lane despite reading from disk (which <c>project-context.md</c> assigns to
-/// <c>Integration</c>). Deliberate: the pre-commit gate is <c>Category=Unit&amp;Module=X</c>, and a guard
+/// <c>Integration</c>). Deliberate: the pre-commit gate is <c>TestCategory=Unit&amp;Module=X</c>, and a guard
 /// that only runs in the integration lane would not guard the commit that breaks it. The I/O is a file
 /// this test project's own build output always carries, not an external dependency.
 /// </para>
@@ -271,7 +271,7 @@ public class BundledProcessBuilderPackageTests {
 	/// <para>
 	/// The entry-by-entry byte audit (every archive entry compared against
 	/// <c>git show &lt;ExpectedProducingCommit&gt;:&lt;path&gt;</c>; last measured on the 1.6.1.2 cut as 157 entries,
-	/// 156 byte-identical, the 157th being the restamped <c>descriptor.json</c>) was re-run on the 1.6.6.20 cut (209 entries) and came out clean: every entry identical except <c>descriptor.json</c>.
+	/// 156 byte-identical, the 157th being the restamped <c>descriptor.json</c>) was re-run on the 1.6.6.22 cut (209 entries) and came out clean: every entry identical except <c>descriptor.json</c>.
 	/// Its reproducibility rests on the export flags above, which are what made the earlier audit come out clean;
 	/// a reviewer can repeat the audit from the producing commit alone.
 	/// The INVARIANT, which is what this paragraph is for and the only part that cannot go stale: every entry in
@@ -287,7 +287,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"D658D8785A597733F24938F1E592A748C4DD508AFDE182C6A776E7C086EE268E";
+		"82B26CA557D8519C5F0DF6F2B77EF33B2DAD20FA540B579B3C0052EE2B20ED99";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -315,7 +315,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.6.20";
+	private const string ExpectedArchiveVersion = "1.6.6.24";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, written by
@@ -327,7 +327,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "101adcedd98bdf607a3ad1ba54ae701997cc8fa1";
+	private const string ExpectedProducingCommit = "3d9978c1b380f77b14e9e2613feba7fe00e0c8a6";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -353,7 +353,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1790245927000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1790324654000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.

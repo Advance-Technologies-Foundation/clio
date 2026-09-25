@@ -120,7 +120,7 @@ After completion, always print the final summary (both modes).
 
 1. Pick story-{name}-1 from `spec/sprint-status.yaml`
 2. Implement following the ADR implementation plan
-3. Run `dotnet test --filter "Category=Unit"` locally before PR
+3. Run `dotnet test clio.tests/clio.tests.csproj --filter "TestCategory=Unit"` locally before PR
 4. Update story Status to `done` when PR merges
 5. Run `/bmad-status` to see overall pipeline health
 ```

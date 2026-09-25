@@ -45,6 +45,7 @@ public sealed class BuildDockerImageService(
 	private const string DefaultBundledBaseImageReference = "creatio-base:8.0-v1";
 	private const string DatabaseSourceLabelName = "org.creatio.database-source";
 	private const string DbCapabilitySourceLabelName = "org.creatio.capability.db-source";
+	private const string DockerfileName = "Dockerfile";
 	private const string BuildContextDockerIgnoreFileName = ".dockerignore";
 	private const string BuildWithoutPullFlag = "--pull=false";
 	private const string DatabaseDirectoryName = "db";
@@ -61,6 +62,41 @@ public sealed class BuildDockerImageService(
 	private const string NetFrameworkConfig = "Web.config";
 	private static readonly TimeSpan DockerfileFromInstructionRegexTimeout = TimeSpan.FromSeconds(1);
 	private static readonly TimeSpan PathSanitizationRegexTimeout = TimeSpan.FromSeconds(1);
+	private static readonly TimeSpan InputValidationRegexTimeout = TimeSpan.FromSeconds(1);
+
+	// Dockerfile scanning for the custom-template --base-image contract. Instruction keywords are
+	// case-insensitive, the argument name is case-sensitive and exact, one ARG may declare several names,
+	// and comment lines never count. Line continuations are joined before matching.
+	private static readonly Regex DockerfileCommentLineRegex = new(
+		@"^[ \t]*#[^\n]*$", RegexOptions.Multiline | RegexOptions.CultureInvariant, InputValidationRegexTimeout);
+	private static readonly Regex DockerfileLineContinuationRegex = new(
+		@"\\[ \t]*\n", RegexOptions.CultureInvariant, InputValidationRegexTimeout);
+	private static readonly Regex DockerfileFirstFromInstructionRegex = new(
+		@"^[ \t]*(?i:FROM)\b", RegexOptions.Multiline | RegexOptions.CultureInvariant, InputValidationRegexTimeout);
+	private static readonly Regex BaseImageArgumentDeclarationRegex = new(
+		$@"^[ \t]*(?i:ARG)[ \t]+(?:\S+[ \t]+)*{Regex.Escape(BaseImageBuildArgumentName)}(?=[=\s]|$)",
+		RegexOptions.Multiline | RegexOptions.CultureInvariant,
+		InputValidationRegexTimeout);
+	private static readonly Regex FromInstructionUsingBaseImageRegex = new(
+		@"^[ \t]*(?i:FROM)[ \t][^\n]*\$(?:\{" + Regex.Escape(BaseImageBuildArgumentName) + @"(?::[-+][^}\n]*)?\}|"
+		+ Regex.Escape(BaseImageBuildArgumentName) + @"(?![A-Za-z0-9_]))",
+		RegexOptions.Multiline | RegexOptions.CultureInvariant,
+		InputValidationRegexTimeout);
+
+	// The image-reference grammar Docker itself enforces (github.com/distribution/reference): optional
+	// registry host[:port], lower-case slash-separated path components, optional tag, optional digest. It
+	// admits no whitespace, quote, control character, or leading '-', which is what keeps a --base-image
+	// value from injecting options into the quoted container CLI command lines built below.
+	private const int MaximumImageReferenceLength = 512;
+	private const string ImagePathComponentPattern = "[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*";
+	private const string ImageDomainComponentPattern = "(?:[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9])";
+	private static readonly Regex ImageReferenceRegex = new(
+		@"^(?:(?:" + ImageDomainComponentPattern + @"(?:\." + ImageDomainComponentPattern + @")*|\[[a-fA-F0-9:]+\])(?::[0-9]+)?/)?"
+		+ ImagePathComponentPattern + "(?:/" + ImagePathComponentPattern + ")*"
+		+ "(?::[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})?"
+		+ @"(?:@[A-Za-z][A-Za-z0-9]*(?:[-_+.][A-Za-z][A-Za-z0-9]*)*:[0-9a-fA-F]{32,})?\z",
+		RegexOptions.CultureInvariant,
+		InputValidationRegexTimeout);
 
 	private readonly ICodeServerArchiveCache _codeServerArchiveCache =
 		codeServerArchiveCache ?? throw new ArgumentNullException(nameof(codeServerArchiveCache));
@@ -85,7 +121,9 @@ public sealed class BuildDockerImageService(
 
 		string stagingRoot = string.Empty;
 		try {
+			EnsureBaseImageIsImageReference(options);
 			IReadOnlyList<BuildDockerTemplateRequest> templateRequests = ResolveTemplateRequests(options.Template);
+			EnsureCustomTemplatesCanConsumeBaseImage(templateRequests, options);
 			bool requiresSource = templateRequests.Any(request => !IsBaseTemplate(request.TemplateResolution));
 			string sourcePath = requiresSource ? ValidateSourcePath(options.SourcePath) : string.Empty;
 			string sourceLeafName = requiresSource ? GetSourceLeafName(sourcePath) : string.Empty;
@@ -321,6 +359,76 @@ public sealed class BuildDockerImageService(
 			.ToList();
 	}
 
+	// An explicit --base-image that a custom template cannot consume is a usage error, not a no-op: silently
+	// ignoring it lets the Dockerfile's own ARG default (or a fixed FROM) win and ships an image built on a
+	// parent the caller did not ask for. The check runs before the source is extracted or any CLI is probed.
+	private void EnsureCustomTemplatesCanConsumeBaseImage(
+		IReadOnlyList<BuildDockerTemplateRequest> templateRequests,
+		BuildDockerImageOptions options) {
+		foreach (BuildDockerTemplateRequest templateRequest in templateRequests) {
+			DockerTemplateResolution templateResolution = templateRequest.TemplateResolution;
+			if (!IsCustomTemplateWithRequestedBaseImage(templateResolution, options)) {
+				continue;
+			}
+
+			string dockerfilePath = _fileSystem.Combine(templateResolution.TemplatePath, DockerfileName);
+			if (DeclaresUsableBaseImageArgument(_fileSystem.ReadAllText(dockerfilePath))) {
+				continue;
+			}
+
+			throw new InvalidOperationException(
+				$"Custom template '{templateRequest.DisplayName}' does not declare 'ARG {BaseImageBuildArgumentName}' before its first FROM "
+				+ $"and use it in a FROM instruction ('{dockerfilePath}'), so '--base-image {options.BaseImage.Trim()}' cannot take effect. "
+				+ $"Declare it in the global scope and reference it (for example 'ARG {BaseImageBuildArgumentName}=<default>' followed by "
+				+ $"'FROM ${{{BaseImageBuildArgumentName}}}'), or omit '--base-image'.");
+		}
+	}
+
+	// A build argument reaches FROM only when it is declared in the global scope, i.e. before the first FROM;
+	// an ARG inside a stage is invisible to FROM. It also has to be referenced by some FROM to change a parent
+	// image. Any FROM counts: the usual `FROM ${BASE_IMAGE} AS base` + `FROM base AS final` layout inherits
+	// the requested parent transitively, so requiring the final FROM to name it would reject valid templates.
+	private static bool DeclaresUsableBaseImageArgument(string dockerfileContent) {
+		string normalized = dockerfileContent.Replace("\r\n", "\n", StringComparison.Ordinal);
+		string withoutComments = DockerfileCommentLineRegex.Replace(normalized, string.Empty);
+		string instructions = DockerfileLineContinuationRegex.Replace(withoutComments, " ");
+		Match firstFrom = DockerfileFirstFromInstructionRegex.Match(instructions);
+		if (!firstFrom.Success) {
+			return false;
+		}
+
+		return BaseImageArgumentDeclarationRegex.IsMatch(instructions[..firstFrom.Index])
+			&& FromInstructionUsingBaseImageRegex.IsMatch(instructions[firstFrom.Index..]);
+	}
+
+	// --base-image is interpolated into quoted Arguments strings (image inspect, --build-arg, -t), so it is
+	// validated once, before anything else runs. An empty value means the option was omitted; a value that is
+	// only whitespace is refused like any other malformed reference.
+	private void EnsureBaseImageIsImageReference(BuildDockerImageOptions options) {
+		if (string.IsNullOrEmpty(options.BaseImage) || IsDockerImageReference(options.BaseImage.Trim())) {
+			return;
+		}
+
+		string printableValue = new(options.BaseImage.Select(character => char.IsControl(character) ? '?' : character).ToArray());
+		throw new InvalidOperationException(
+			$"'--base-image {printableValue}' is not a valid Docker image reference. Use a reference such as 'creatio-base:8.0-v1', "
+			+ "'registry.example:5000/team/image:tag' or 'image@sha256:<digest>'; whitespace, quotes, control characters, "
+			+ "upper-case repository paths and a leading '-' are not allowed.");
+	}
+
+	private static bool IsDockerImageReference(string candidate) {
+		if (candidate.Length is 0 or > MaximumImageReferenceLength) {
+			return false;
+		}
+
+		try {
+			return ImageReferenceRegex.IsMatch(candidate);
+		}
+		catch (RegexMatchTimeoutException) {
+			return false;
+		}
+	}
+
 	private IReadOnlyList<string> ParseTemplateValues(string templateArgument) {
 		if (string.IsNullOrWhiteSpace(templateArgument)) {
 			throw new ArgumentException("Template is required.", nameof(templateArgument));
@@ -485,7 +593,7 @@ public sealed class BuildDockerImageService(
 		string sourceLeafName,
 		string localImageReference,
 		BuildDockerImageOptions options) {
-		string baseImageBuildArgument = BuildTemplateBaseImageBuildArgument(containerImageCli, templateResolution, options);
+		string baseImageBuildArgument = BuildTemplateBaseImageBuildArgument(templateResolution, options);
 		string buildkitHostArgument = BuildNerdctlBuildkitHostArgument(containerImageCli);
 		string imageLabelArguments = BuildTemplateImageLabelArguments(templateResolution, sourceLeafName);
 		return $"build {BuildWithoutPullFlag}{buildkitHostArgument}{baseImageBuildArgument}{imageLabelArguments} -t \"{localImageReference}\" \".\"";
@@ -531,10 +639,9 @@ public sealed class BuildDockerImageService(
 	}
 
 	private string BuildTemplateBaseImageBuildArgument(
-		ContainerImageCliKind containerImageCli,
 		DockerTemplateResolution templateResolution,
 		BuildDockerImageOptions options) {
-		if (!ShouldInjectBundledBaseImageBuildArgument(templateResolution, containerImageCli)) {
+		if (!UsesSelectableBaseImage(templateResolution, options)) {
 			return string.Empty;
 		}
 
@@ -861,7 +968,7 @@ public sealed class BuildDockerImageService(
 		}
 
 		if (templateResolution.IsBundled && IsBaseTemplate(templateResolution)) {
-			string dockerfilePath = _fileSystem.Combine(buildContextPath, "Dockerfile");
+			string dockerfilePath = _fileSystem.Combine(buildContextPath, DockerfileName);
 			string dockerfileContents = _fileSystem.ReadAllText(dockerfilePath);
 			Match fromMatch = Regex.Match(
 				dockerfileContents,
@@ -903,10 +1010,22 @@ public sealed class BuildDockerImageService(
 		return string.IsNullOrWhiteSpace(trimmed) ? "latest" : trimmed;
 	}
 
-	private bool ShouldInjectBundledBaseImageBuildArgument(
+	// Templates whose parent image clio selects through the BASE_IMAGE build argument: bundled dev/prod always
+	// (the default base when --base-image is omitted), and a custom template only when --base-image is given.
+	// A custom template reaching this point with --base-image is known to declare ARG BASE_IMAGE, because
+	// EnsureCustomTemplatesCanConsumeBaseImage rejected every other one before the build started.
+	private bool UsesSelectableBaseImage(DockerTemplateResolution templateResolution, BuildDockerImageOptions options) {
+		return ShouldUseBundledBaseImage(templateResolution)
+			|| IsCustomTemplateWithRequestedBaseImage(templateResolution, options);
+	}
+
+	// For a template named `base`, --base-image is the image tag to build, never a parent image.
+	private bool IsCustomTemplateWithRequestedBaseImage(
 		DockerTemplateResolution templateResolution,
-		ContainerImageCliKind containerImageCli) {
-		return ShouldUseBundledBaseImage(templateResolution);
+		BuildDockerImageOptions options) {
+		return !templateResolution.IsBundled
+			&& !IsBaseTemplate(templateResolution)
+			&& !string.IsNullOrWhiteSpace(options.BaseImage);
 	}
 
 	private bool ShouldUseBundledBaseImage(DockerTemplateResolution templateResolution) {
@@ -1041,7 +1160,12 @@ public sealed class BuildDockerImageService(
 		string imageReferenceToInspect = string.Empty;
 		string missingImageMessage = string.Empty;
 
-		if (ShouldUseBundledBaseImage(templateResolution)) {
+		if (IsCustomTemplateWithRequestedBaseImage(templateResolution, options)) {
+			imageReferenceToInspect = ResolveBaseImageReference(options);
+			missingImageMessage =
+				$"Base image '{imageReferenceToInspect}' is not available locally. Pull or tag it locally before building custom template '{templateResolution.Name}'.";
+		}
+		else if (ShouldUseBundledBaseImage(templateResolution)) {
 			imageReferenceToInspect = ResolveBaseImageReference(options);
 			missingImageMessage =
 				$"Base image '{imageReferenceToInspect}' is not available locally. Build it first with 'clio build-docker-image --template base'";
@@ -1081,7 +1205,8 @@ public sealed class BuildDockerImageService(
 			return 0;
 		}
 
-		if (ShouldUseBundledBaseImage(templateResolution) && TryRestoreCachedBaseImageArchive(containerImageCli, imageReferenceToInspect)) {
+		if (UsesSelectableBaseImage(templateResolution, options)
+			&& TryRestoreCachedBaseImageArchive(containerImageCli, imageReferenceToInspect)) {
 			ProcessExecutionResult restoredInspectResult =
 				ExecuteContainerCli(containerImageCli, $"image inspect \"{imageReferenceToInspect}\"", null);
 			if (WasSuccessful(restoredInspectResult)) {

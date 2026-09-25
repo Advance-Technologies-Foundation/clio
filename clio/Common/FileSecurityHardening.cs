@@ -37,6 +37,16 @@ public sealed class FileSecurityHardening : IFileSecurityHardening {
 	/// <inheritdoc />
 	public void HardenDirectory(string directoryPath) => Harden(directoryPath, OwnerOnlyDirectory);
 
+	/// <inheritdoc />
+	public bool IsOwnerOnly(string filePath) {
+		if (!OperatingSystem.IsLinux() && !OperatingSystem.IsMacOS()) {
+			return true;
+		}
+		UnixFileMode mode = File.GetUnixFileMode(filePath);
+		return (mode & (UnixFileMode.GroupRead | UnixFileMode.GroupWrite | UnixFileMode.GroupExecute |
+			UnixFileMode.OtherRead | UnixFileMode.OtherWrite | UnixFileMode.OtherExecute)) == 0;
+	}
+
 	private void Harden(string path, UnixFileMode mode) {
 		if (string.IsNullOrEmpty(path)) {
 			return;

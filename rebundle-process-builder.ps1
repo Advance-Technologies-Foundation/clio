@@ -679,7 +679,7 @@ Write-Host "    sha256    $sha"
 Write-Host @"
 
     Next, by hand, because they are judgement calls:
-      * run the guard fixture:  dotnet test clio.tests/clio.tests.csproj --filter "Category=Unit&Module=Common"
+      * run the guard fixture:  dotnet test clio.tests/clio.tests.csproj --filter "TestCategory=Unit&Module=Common"
       * install onto a stand and confirm the service answers
       * commit BOTH repositories, and say in the clio commit message which package-repo commit the bytes came from
 "@

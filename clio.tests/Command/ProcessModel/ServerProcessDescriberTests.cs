@@ -401,6 +401,28 @@ public sealed class ServerProcessDescriberTests {
 	}
 
 	[Test]
+	[Description("Deserializes an element parameter's isOutput from the server response into the DescribedParameter DTO. On a Read data collection element the shaped ResultCompositeObjectList carries isOutput true with isResult false, and without a declared property the field was dropped here, before any caller saw it (ENG-99967).")]
+	public void Describe_ShouldReadParameterIsOutput_WhenServerReportsIt() {
+		// Arrange — the raw server shape measured on a stand for a collection Read data element
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"read1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"usertask\","
+			+ "\"parameters\":[{\"name\":\"ResultCompositeObjectList\",\"uid\":\"p1\",\"type\":\"CompositeObjectList\",\"direction\":\"Variable\",\"isResult\":false,\"isOutput\":true,\"source\":\"None\"}]}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedParameter parameter = result.Value.Elements[0].Parameters[0];
+		parameter.IsOutput.Should().BeTrue(
+			because: "isOutput is the output marker the describe tool tells agents to read, and must be deserialized");
+		parameter.IsResult.Should().BeFalse(because: "the stored flag is read as reported, independently");
+	}
+
+	[Test]
 	[Description("Deserializes a collection parameter's provenance tag and its per-item shape (itemProperties, each a parameter with name/type/tag) into the DescribedParameter DTO - the design-time contract a consumer binds against - so the shape the server reports is not dropped by the client the way an untyped field would be (ENG-96230).")]
 	public void Describe_ShouldReadParameterTagAndItemProperties_WhenServerReportsThem() {
 		// Arrange — a process-level collection mirrored from a read element's shaped output, plus a scalar beside it
@@ -624,6 +646,9 @@ public sealed class ServerProcessDescriberTests {
 			because: "an omitted direction stays null so it serializes away (WhenWritingNull) for older servers");
 		parameter.IsResult.Should().BeNull(
 			because: "an omitted isResult stays null rather than defaulting to false, avoiding a misleading output");
+		parameter.IsOutput.Should().BeNull(
+			because: "an older package reports no isOutput; null keeps it absent, which is what the describe tool "
+				+ "tells an agent to expect there, rather than a false that reads as 'not an output'");
 	}
 
 	[Test]
