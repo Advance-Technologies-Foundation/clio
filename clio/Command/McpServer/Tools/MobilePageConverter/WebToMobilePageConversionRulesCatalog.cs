@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Text.Json;
 using System.Threading;
@@ -161,11 +162,9 @@ public sealed class WebToMobilePageConversionRulesCatalog : IWebToMobilePageConv
 			if (string.IsNullOrWhiteSpace(rule.Type)) {
 				throw new JsonException("An actionComponents rule declares no 'type'.");
 			}
-			foreach (string name in rule.ActionPropertyNames ?? []) {
-				if (string.IsNullOrWhiteSpace(name)) {
-					throw new JsonException(
-						$"The actionComponents rule for '{rule.Type}' declares a blank action property name.");
-				}
+			if ((rule.ActionPropertyNames ?? []).Any(string.IsNullOrWhiteSpace)) {
+				throw new JsonException(
+					$"The actionComponents rule for '{rule.Type}' declares a blank action property name.");
 			}
 		}
 	}

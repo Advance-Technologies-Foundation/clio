@@ -872,21 +872,10 @@ public static partial class WebToMobileAnalysisService {
 	/// at once, so <c>items</c> is exactly as much of a loss as <c>menuItems</c>. Allocates nothing, unlike the
 	/// cloning collectors: it answers a question asked of a node the walk is about to throw away.
 	/// </remarks>
-	private static bool HoldsChildComponents(JObject node) {
-		foreach (JProperty prop in node.Properties()) {
-			if (prop.Value is JObject single && IsComponentObject(single)) {
-				return true;
-			}
-			if (prop.Value is JArray array) {
-				foreach (JToken element in array) {
-					if (element is JObject component && IsComponentObject(component)) {
-						return true;
-					}
-				}
-			}
-		}
-		return false;
-	}
+	private static bool HoldsChildComponents(JObject node) =>
+		node.Properties().Any(prop =>
+			(prop.Value is JObject single && IsComponentObject(single))
+			|| (prop.Value is JArray array && array.OfType<JObject>().Any(IsComponentObject)));
 
 	/// <summary>True when a System.Text.Json object is a view component — carries a string <c>type</c> starting
 	/// with <c>crt.</c>.</summary>
