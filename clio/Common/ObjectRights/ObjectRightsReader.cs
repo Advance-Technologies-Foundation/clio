@@ -126,7 +126,8 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 		List<RoleOperationRights> roles = ReadOperationRows(node)
 			.Select(row => new RoleOperationRights(
 				GranteeId(row), Str(row["sysAdminUnit"]?["name"]) ?? "(unknown)",
-				Flag(row, "canRead"), Flag(row, "canAppend"), Flag(row, "canEdit"), Flag(row, "canDelete")))
+				Flag(row, FieldOf(ObjectOperation.Read)), Flag(row, FieldOf(ObjectOperation.Create)),
+				Flag(row, FieldOf(ObjectOperation.Edit)), Flag(row, FieldOf(ObjectOperation.Delete))))
 			.ToList();
 		return new ObjectRightsInfo(true, Str(node["name"]) ?? schemaName,
 			Str(node["caption"]), Flag(node, "administratedByOperations"), roles);
@@ -157,7 +158,15 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 		if (outcome == MutationOutcome.NoChange) {
 			return new ObjectRightsChange(true, false);
 		}
-		ObjectRightsChange saved = Save(node, requestOptions);
+		ObjectRightsChange saved;
+		try {
+			saved = Save(node, requestOptions);
+		}
+		catch (Exception ex) {
+			// An HTTP fault, a non-JSON error page or a timeout on the save: report it against THIS object so a
+			// fan-out names where it stopped and carries on with the rest, instead of aborting the whole run.
+			return new ObjectRightsChange(true, false, ex.Message);
+		}
 		if (saved.Error is not null) {
 			return saved;
 		}
@@ -208,8 +217,7 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 				existing[FieldOf(op)] = false;
 			}
 			// A row with no remaining rights is removed, mirroring the designer's "remove role".
-			if (!Flag(existing, "canRead") && !Flag(existing, "canAppend")
-				&& !Flag(existing, "canEdit") && !Flag(existing, "canDelete")) {
+			if (!OperationFields.Any(field => Flag(existing, field))) {
 				rows.Remove(existing);
 				// Reached only with disableOperationPermissions: the caller asked for the object to return to
 				// "available to all" rather than be left administered with zero grants.
@@ -231,9 +239,11 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 		if (existing is null) {
 			JsonObject row = new() {
 				["sysAdminUnit"] = new JsonObject { ["id"] = grantee.ToString() },
-				["canRead"] = false, ["canAppend"] = false, ["canEdit"] = false, ["canDelete"] = false,
 				["position"] = NextPosition(rows)
 			};
+			foreach (string field in OperationFields) {
+				row[field] = false;
+			}
 			foreach (ObjectOperation op in operations) {
 				row[FieldOf(op)] = true;
 			}
@@ -251,7 +261,7 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 
 	// Asked BEFORE the revoke clears anything, because the last-row refusal has to leave the row untouched.
 	private static bool WouldEmptyRow(JsonObject row, IReadOnlyCollection<ObjectOperation> operations) {
-		foreach (string field in new[] { "canRead", "canAppend", "canEdit", "canDelete" }) {
+		foreach (string field in OperationFields) {
 			if (Flag(row, field) && !operations.Any(op => FieldOf(op) == field)) {
 				return false;
 			}
@@ -261,7 +271,8 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 
 	// The four operation flags of a row, for change detection.
 	private static (bool read, bool append, bool edit, bool delete) Snapshot(JsonObject row) =>
-		(Flag(row, "canRead"), Flag(row, "canAppend"), Flag(row, "canEdit"), Flag(row, "canDelete"));
+		(Flag(row, FieldOf(ObjectOperation.Read)), Flag(row, FieldOf(ObjectOperation.Create)),
+			Flag(row, FieldOf(ObjectOperation.Edit)), Flag(row, FieldOf(ObjectOperation.Delete)));
 
 	// One past the highest existing position, so a new row never collides with an existing one even when the
 	// existing positions are non-contiguous (a prior designer-side removal can leave gaps).
@@ -275,6 +286,9 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 		return max + 1;
 	}
 
+	// Read-modify-write is last-writer-wins: SaveAdministratedObject carries no version, so a change another
+	// client saves between our read and our save is overwritten. Object permissions are changed rarely and by
+	// administrators, so this is accepted; re-read with get-object-rights when concurrent edits are possible.
 	private ObjectRightsChange Save(JsonObject node, CreatioRequestOptions requestOptions) {
 		JsonObject payload = node.DeepClone().AsObject();
 		// Mirror the platform client: only the collection we changed (operation rights) is sent; the record,
@@ -353,6 +367,10 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 	// non-string value the platform might return).
 	private static string Str(JsonNode node) =>
 		node is JsonValue value && value.TryGetValue(out string text) ? text : null;
+
+	// The wire names of the four operation flags, derived from FieldOf so the mapping lives in one place.
+	private static readonly string[] OperationFields =
+		Enum.GetValues<ObjectOperation>().Select(FieldOf).ToArray();
 
 	private static string FieldOf(ObjectOperation operation) => operation switch {
 		ObjectOperation.Read => "canRead",

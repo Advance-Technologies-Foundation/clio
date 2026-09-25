@@ -56,11 +56,15 @@ the object available to ALL internal users. Without it such a revoke changes not
 
 --include-connected
 Also apply to the root object's own lookup objects (portal-section convenience). The lookups get
---connected-operations (read only by default), not --operations.
+--connected-operations (read only by default), not --operations. Security and system objects
+(SysAdmin*, SysUser*, SysSchema*, SysPackage*, SysSettings*, *Right/*Rights) are skipped with a warning;
+name one as --entity-schema-name to change it. With --revoke the lookups are left untouched unless
+--connected-operations is given.
 
 --connected-operations LIST
-Operations for the connected lookup objects. Default: read — picking a lookup value only needs read, so
-create/edit are never fanned out to shared dictionaries unless passed here explicitly.
+Operations for the connected lookup objects. Default on a grant: read — picking a lookup value only needs
+read, so create/edit are never fanned out to shared dictionaries unless passed here explicitly. On a revoke
+there is no default: without this option the lookups are not changed.
 
 --confirm
 Confirm the destructive change without a prompt. Required in non-interactive runs.
@@ -77,10 +81,16 @@ Make an object readable by portal users, with its lookups read-only (grant the e
 clio set-object-rights --entity-schema-name UsrOrder --grantee 720b771c-e7a7-4f31-9cfb-52cd21c3739f --operations read --include-connected --confirm -e production
 ```
 
-Grant a functional role full access to one object:
+Grant a functional role the default read/create/edit on one object:
 
 ```bash
 clio set-object-rights --entity-schema-name UsrOrder --grantee <role-id> --confirm -e production
+```
+
+Grant a functional role full access, including delete:
+
+```bash
+clio set-object-rights --entity-schema-name UsrOrder --grantee <role-id> --operations read,create,edit,delete --confirm -e production
 ```
 
 Revoke delete from a role:
@@ -89,10 +99,11 @@ Revoke delete from a role:
 clio set-object-rights --entity-schema-name UsrOrder --grantee <role-id> --operations delete --revoke --confirm -e production
 ```
 
-Return an object to "available to all internal users" by removing its last role grant:
+Return an object to "available to all internal users" by removing its last role grant (revoke every
+operation, so the row is emptied even when the role also holds delete):
 
 ```bash
-clio set-object-rights --entity-schema-name UsrOrder --grantee <role-id> --revoke --disable-operation-permissions --confirm -e production
+clio set-object-rights --entity-schema-name UsrOrder --grantee <role-id> --operations read,create,edit,delete --revoke --disable-operation-permissions --confirm -e production
 ```
 
 ## Notes
@@ -109,6 +120,15 @@ clio set-object-rights --entity-schema-name UsrOrder --grantee <role-id> --revok
   a general capability. Connected lookups default to read only.
 - Exit code 1 also when the named (root) object is not found — nothing was written, so it is not reported
   as a success. A connected lookup that is not found only warns.
+- When the root change fails (error, not found, refused last-row revoke), the connected objects are not
+  attempted. A failure on one connected object is named and the rest are still attempted (exit code 1).
+- With `--include-connected`, if the connected objects cannot be enumerated nothing is written and the
+  command exits 1, rather than changing the root alone and reporting success.
+- `--disable-operation-permissions` applies to the root object only; a connected lookup is never turned
+  off as a side effect of a fan-out.
+- Read-modify-write is last-writer-wins: a change another client saves between the read and the save is
+  overwritten. Read the result back with `get-object-rights` when concurrent edits are possible.
 - On MCP, an unknown or misspelled argument name is refused before any write (the serializer would
-  otherwise drop it silently — e.g. `revok` would bind as a grant).
-```
+  otherwise drop it silently — e.g. `revok` would bind as a grant). On MCP the change is applied without
+  a prompt (the tool is flagged destructive), so check the targets first with
+  `get-object-rights --include-connected`.

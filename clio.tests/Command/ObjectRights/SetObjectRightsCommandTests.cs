@@ -20,6 +20,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 	private SetObjectRightsCommand _command;
 	private IObjectRightsWriter _rightsWriter;
 	private IConnectedObjectsResolver _connectedObjects;
+	private IInteractiveConsole _console;
 	private ILogger _logger;
 
 	public override void Setup() {
@@ -30,6 +31,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 	public override void TearDown() {
 		_rightsWriter.ClearReceivedCalls();
 		_connectedObjects.ClearReceivedCalls();
+		_console.ClearReceivedCalls();
 		_logger.ClearReceivedCalls();
 		base.TearDown();
 	}
@@ -38,14 +40,16 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		base.AdditionalRegistrations(containerBuilder);
 		_rightsWriter = Substitute.For<IObjectRightsWriter>();
 		_connectedObjects = Substitute.For<IConnectedObjectsResolver>();
+		_console = Substitute.For<IInteractiveConsole>();
 		_logger = Substitute.For<ILogger>();
 		_rightsWriter.SetObjectRights(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<ObjectOperation>>(),
 			Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>()).Returns(new ObjectRightsChange(true, true));
 		// Default: no fan-out — the resolver returns just the root object.
-		_connectedObjects.Resolve(Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<string>())
-			.Returns(callInfo => new[] { (string)callInfo[0] });
+		_connectedObjects.Resolve(Arg.Any<string>(), Arg.Any<bool>())
+			.Returns(callInfo => Resolution((string)callInfo[0]));
 		containerBuilder.AddTransient(_ => _rightsWriter);
 		containerBuilder.AddTransient(_ => _connectedObjects);
+		containerBuilder.AddTransient(_ => _console);
 		containerBuilder.AddTransient(_ => _logger);
 	}
 
@@ -95,8 +99,8 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 	[Description("Applies the change to every object the resolver returns when --include-connected is set.")]
 	public void Execute_ShouldFanOutToConnected_WhenIncludeConnectedSet() {
 		// Arrange
-		_connectedObjects.Resolve("UsrPortalSpike", true, Arg.Any<string>())
-			.Returns(new[] { "UsrPortalSpike", "UsrPSCategory" });
+		_connectedObjects.Resolve("UsrPortalSpike", true)
+			.Returns(Resolution("UsrPortalSpike", "UsrPSCategory"));
 		SetObjectRightsOptions options = new() {
 			EntitySchemaName = "UsrPortalSpike", Grantee = Grantee, IncludeConnected = true, Confirm = true
 		};
@@ -162,7 +166,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 	[Description("Refuses to apply the destructive change in a non-interactive run when --confirm is absent.")]
 	public void Execute_ShouldRefuse_WhenNonInteractiveAndConfirmAbsent() {
 		// Arrange
-		Assume.That(Console.IsInputRedirected, Is.True, "the confirm-gate refuse path requires redirected stdin");
+		_console.IsInteractive.Returns(false);
 		SetObjectRightsOptions options = new() { EntitySchemaName = "UsrPortalSpike", Grantee = Grantee, Confirm = false };
 
 		// Act
@@ -234,6 +238,9 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		_logger.Received().WriteInfo(Arg.Is<string>(m => m.Contains("available to ALL internal users")));
 	}
 
+	private static ConnectedObjectsResolution Resolution(params string[] objects) =>
+		new(objects, Array.Empty<string>());
+
 	private static bool IsExactly(IReadOnlyCollection<ObjectOperation> actual, params ObjectOperation[] expected) =>
 		actual.Count == expected.Length && expected.All(actual.Contains);
 
@@ -295,8 +302,8 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 	[Description("A connected lookup that is not found only warns: the root change still applied, so the run succeeds.")]
 	public void Execute_ShouldOnlyWarn_WhenConnectedSchemaNotFound() {
 		// Arrange
-		_connectedObjects.Resolve("UsrPortalSpike", true, Arg.Any<string>())
-			.Returns(new[] { "UsrPortalSpike", "UsrGone" });
+		_connectedObjects.Resolve("UsrPortalSpike", true)
+			.Returns(Resolution("UsrPortalSpike", "UsrGone"));
 		_rightsWriter.SetObjectRights("UsrGone", Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<ObjectOperation>>(),
 			Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>()).Returns(new ObjectRightsChange(false, false));
 		SetObjectRightsOptions options = new() {
@@ -315,8 +322,8 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 	[Description("Connected lookup objects get READ only by default, while the root keeps read/create/edit — create/edit are never fanned out to shared lookups implicitly.")]
 	public void Execute_ShouldGrantReadOnlyToConnected_WhenConnectedOperationsOmitted() {
 		// Arrange
-		_connectedObjects.Resolve("UsrPortalSpike", true, Arg.Any<string>())
-			.Returns(new[] { "UsrPortalSpike", "UsrPSCategory" });
+		_connectedObjects.Resolve("UsrPortalSpike", true)
+			.Returns(Resolution("UsrPortalSpike", "UsrPSCategory"));
 		SetObjectRightsOptions options = new() {
 			EntitySchemaName = "UsrPortalSpike", Grantee = Grantee, IncludeConnected = true, Confirm = true
 		};
@@ -338,8 +345,8 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 	[Description("--connected-operations widens the connected lookups explicitly when the caller asks for it.")]
 	public void Execute_ShouldApplyConnectedOperations_WhenExplicitlyWidened() {
 		// Arrange
-		_connectedObjects.Resolve("UsrPortalSpike", true, Arg.Any<string>())
-			.Returns(new[] { "UsrPortalSpike", "UsrPSCategory" });
+		_connectedObjects.Resolve("UsrPortalSpike", true)
+			.Returns(Resolution("UsrPortalSpike", "UsrPSCategory"));
 		SetObjectRightsOptions options = new() {
 			EntitySchemaName = "UsrPortalSpike", Grantee = Grantee, IncludeConnected = true,
 			ConnectedOperations = "read,edit", Confirm = true
@@ -386,5 +393,159 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		// Assert
 		exitCode.Should().Be(0, because: "the grant was applied");
 		_logger.Received().WriteInfo(Arg.Is<string>(m => m.Contains("turned ON")));
+	}
+
+	[Test]
+	[Description("An interactive run that the operator declines writes nothing and returns 0 (cancelled, not failed).")]
+	public void Execute_ShouldCancel_WhenInteractivePromptDeclined() {
+		// Arrange
+		_console.IsInteractive.Returns(true);
+		_console.Prompt(Arg.Any<string>()).Returns(false);
+		SetObjectRightsOptions options = new() { EntitySchemaName = "UsrPortalSpike", Grantee = Grantee, Confirm = false };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "a declined prompt is a cancellation");
+		_rightsWriter.DidNotReceiveWithAnyArgs().SetObjectRights(default, default, default, default, default, default);
+	}
+
+	[Test]
+	[Description("An --operations value made only of separators is rejected instead of writing an empty row.")]
+	public void Execute_ShouldReject_WhenOperationsHasOnlySeparators() {
+		// Arrange
+		SetObjectRightsOptions options = new() { EntitySchemaName = "UsrPortalSpike", Grantee = Grantee, Operations = ", ,", Confirm = true };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "an empty operation set would enable operation permissions while granting nothing");
+		_logger.Received().WriteError(Arg.Is<string>(m => m.Contains("no operation given")));
+		_rightsWriter.DidNotReceiveWithAnyArgs().SetObjectRights(default, default, default, default, default, default);
+	}
+
+	[Test]
+	[Description("A failed connected-object enumeration with --include-connected writes nothing and fails, instead of granting the root alone and reporting success.")]
+	public void Execute_ShouldFailWithoutWriting_WhenConnectedEnumerationFails() {
+		// Arrange
+		_connectedObjects.Resolve("UsrPortalSpike", true)
+			.Returns(new ConnectedObjectsResolution(new[] { "UsrPortalSpike" }, Array.Empty<string>(), "schema read failed"));
+		SetObjectRightsOptions options = new() {
+			EntitySchemaName = "UsrPortalSpike", Grantee = Grantee, IncludeConnected = true, Confirm = true
+		};
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "the requested fan-out could not be resolved");
+		_logger.Received().WriteError(Arg.Is<string>(m => m.Contains("schema read failed") && m.Contains("Nothing was changed")));
+		_rightsWriter.DidNotReceiveWithAnyArgs().SetObjectRights(default, default, default, default, default, default);
+	}
+
+	[Test]
+	[Description("A security/system lookup excluded by the resolver is named in a warning and never written.")]
+	public void Execute_ShouldWarnAndSkip_WhenConnectedObjectExcluded() {
+		// Arrange
+		_connectedObjects.Resolve("UsrPortalSpike", true)
+			.Returns(new ConnectedObjectsResolution(new[] { "UsrPortalSpike", "UsrPSCategory" }, new[] { "SysAdminUnit" }));
+		SetObjectRightsOptions options = new() {
+			EntitySchemaName = "UsrPortalSpike", Grantee = Grantee, IncludeConnected = true, Confirm = true
+		};
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "the root and the ordinary lookup were granted");
+		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("SysAdminUnit") && m.Contains("security/system object")));
+		_rightsWriter.DidNotReceive().SetObjectRights("SysAdminUnit", Arg.Any<Guid>(),
+			Arg.Any<IReadOnlyCollection<ObjectOperation>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>());
+	}
+
+	[Test]
+	[Description("--revoke --include-connected without --connected-operations changes the root only: the read-only grant default must not strip READ from shared lookups.")]
+	public void Execute_ShouldLeaveConnectedUntouched_WhenRevokeWithoutConnectedOperations() {
+		// Arrange
+		_connectedObjects.Resolve("UsrOrder", true).Returns(Resolution("UsrOrder", "Contact"));
+		SetObjectRightsOptions options = new() {
+			EntitySchemaName = "UsrOrder", Grantee = Grantee, Operations = "delete", Revoke = true,
+			IncludeConnected = true, Confirm = true
+		};
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "the root revoke succeeded");
+		_connectedObjects.Received(1).Resolve("UsrOrder", false);
+		_rightsWriter.DidNotReceive().SetObjectRights("Contact", Arg.Any<Guid>(),
+			Arg.Any<IReadOnlyCollection<ObjectOperation>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>());
+		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("leaves the connected objects untouched")));
+	}
+
+	[Test]
+	[Description("--revoke --include-connected with explicit --connected-operations revokes exactly those on the lookups, and never asks to turn a connected object's operation permissions off.")]
+	public void Execute_ShouldRevokeExplicitOpsOnConnected_WithoutDisablingThem() {
+		// Arrange
+		_connectedObjects.Resolve("UsrOrder", true).Returns(Resolution("UsrOrder", "Contact"));
+		SetObjectRightsOptions options = new() {
+			EntitySchemaName = "UsrOrder", Grantee = Grantee, Operations = "read", Revoke = true,
+			IncludeConnected = true, ConnectedOperations = "read", DisableOperationPermissions = true, Confirm = true
+		};
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		_rightsWriter.Received(1).SetObjectRights("UsrOrder", Arg.Any<Guid>(),
+			Arg.Any<IReadOnlyCollection<ObjectOperation>>(), Arg.Is(true), Arg.Is(true), Arg.Any<CreatioRequestOptions>());
+		_rightsWriter.Received(1).SetObjectRights("Contact", Arg.Any<Guid>(),
+			Arg.Is<IReadOnlyCollection<ObjectOperation>>(ops => IsExactly(ops, ObjectOperation.Read)),
+			Arg.Is(true), Arg.Is(false), Arg.Any<CreatioRequestOptions>());
+	}
+
+	[Test]
+	[Description("When the root change fails, the connected objects are not attempted, so no half-applied fan-out is left behind.")]
+	public void Execute_ShouldStopFanOut_WhenRootFails() {
+		// Arrange
+		_connectedObjects.Resolve("UsrPortalSpike", true).Returns(Resolution("UsrPortalSpike", "UsrPSCategory"));
+		_rightsWriter.SetObjectRights("UsrPortalSpike", Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<ObjectOperation>>(),
+			Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>()).Returns(new ObjectRightsChange(true, false, "boom"));
+		SetObjectRightsOptions options = new() {
+			EntitySchemaName = "UsrPortalSpike", Grantee = Grantee, IncludeConnected = true, Confirm = true
+		};
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "the root change failed");
+		_rightsWriter.DidNotReceive().SetObjectRights("UsrPSCategory", Arg.Any<Guid>(),
+			Arg.Any<IReadOnlyCollection<ObjectOperation>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>());
+		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("were not attempted")));
+	}
+
+	[Test]
+	[Description("A failure on one connected object is named, the remaining objects are still attempted, and the run exits 1.")]
+	public void Execute_ShouldNameFailedConnectedObject_AndContinue() {
+		// Arrange
+		_connectedObjects.Resolve("UsrPortalSpike", true).Returns(Resolution("UsrPortalSpike", "UsrA", "UsrB"));
+		_rightsWriter.SetObjectRights("UsrA", Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<ObjectOperation>>(),
+			Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>()).Returns(new ObjectRightsChange(true, false, "HTTP 500"));
+		SetObjectRightsOptions options = new() {
+			EntitySchemaName = "UsrPortalSpike", Grantee = Grantee, IncludeConnected = true, Confirm = true
+		};
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "one object failed");
+		_logger.Received().WriteError(Arg.Is<string>(m => m.Contains("UsrA") && m.Contains("HTTP 500")));
+		_rightsWriter.Received(1).SetObjectRights("UsrB", Arg.Any<Guid>(),
+			Arg.Any<IReadOnlyCollection<ObjectOperation>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>());
 	}
 }

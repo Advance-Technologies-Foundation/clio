@@ -20,6 +20,8 @@ public sealed class SetObjectRightsToolE2ETests : ObjectRightsToolE2ETestsBase {
 
 	protected override bool ExpectedDestructive => true;
 
+	protected override string UnknownArgumentName => "revok";
+
 	protected override Dictionary<string, object?> InvalidEnvironmentArgs(string environmentName) => new() {
 		["environment-name"] = environmentName,
 		["entity-schema-name"] = "Contact",

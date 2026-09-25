@@ -16,8 +16,13 @@ DESCRIPTION
     External/portal users are deny-by-default and reach an object only through an explicit grant, so
     with --grantee such an object is listed as still lacking access — never counted as covered.
     With --include-connected the root object's own lookup objects are read too; combined
-    with --grantee this lists the objects that role still lacks access to — the same information as the
-    Freedom page designer's red "objects not available to external users" notification.
+    with --grantee this lists the objects that role cannot READ — the same information as the
+    Freedom page designer's red "objects not available to external users" notification. The bar is READ
+    on every object, because that is what set-object-rights grants on connected lookups by default; the
+    operations each object holds are printed per object. Security and system lookups (SysAdmin*,
+    SysUser*, SysSchema*, SysPackage*, SysSettings*, *Right/*Rights) are skipped with a warning. An
+    object that could not be read, or a connected set that could not be enumerated, is reported as
+    unverified — never as covered.
 
 OPTIONS
     --entity-schema-name
@@ -35,8 +40,9 @@ OPTIONS
 
 EXIT CODES
     0   The check ran; per-object findings are printed (and, with --grantee, which objects that role
-        still lacks read/create/edit on).
-    1   The entity schema name was missing, --grantee was not a GUID, or the read failed.
+        cannot read). Connected objects that could not be read are reported as unverified.
+    1   The entity schema name was missing, --grantee was not a GUID, the named (root) object was not
+        found, or its rights could not be read.
 
 EXAMPLES
     List every role's object permissions:

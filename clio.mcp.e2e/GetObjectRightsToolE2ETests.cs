@@ -17,6 +17,8 @@ public sealed class GetObjectRightsToolE2ETests : ObjectRightsToolE2ETestsBase {
 
 	protected override bool ExpectedDestructive => false;
 
+	protected override string UnknownArgumentName => "grantee-id";
+
 	protected override Dictionary<string, object?> InvalidEnvironmentArgs(string environmentName) => new() {
 		["environment-name"] = environmentName,
 		["entity-schema-name"] = "Contact"

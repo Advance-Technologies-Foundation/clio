@@ -51,12 +51,14 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 
 	private readonly IObjectRightsWriter _rightsWriter;
 	private readonly IConnectedObjectsResolver _connectedObjects;
+	private readonly IInteractiveConsole _console;
 	private readonly ILogger _logger;
 
 	public SetObjectRightsCommand(IObjectRightsWriter rightsWriter,
-		IConnectedObjectsResolver connectedObjects, ILogger logger) {
+		IConnectedObjectsResolver connectedObjects, IInteractiveConsole console, ILogger logger) {
 		_rightsWriter = rightsWriter;
 		_connectedObjects = connectedObjects;
+		_console = console;
 		_logger = logger;
 	}
 
@@ -84,10 +86,35 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 			TimeOut = options.TimeOut, MaxAttempts = options.MaxAttempts, RetryDelay = options.RetryDelay
 		};
 
+		// A revoke fans out to the connected lookups only when the caller names the operations to take away there.
+		// The read-only default is a least-privilege default for a GRANT; applied to a revoke it would strip READ
+		// from shared dictionaries (Contact, Account, Currency) that other sections of the same audience still need.
+		bool explicitConnected = !string.IsNullOrWhiteSpace(options.ConnectedOperations);
+		bool fanOut = options.IncludeConnected && (!options.Revoke || explicitConnected);
+		if (options.IncludeConnected && !fanOut) {
+			_logger.WriteWarning(
+				"--include-connected with --revoke leaves the connected objects untouched unless "
+				+ "--connected-operations names what to revoke there; only the root object is changed.");
+		}
+
 		// Resolve the full target set BEFORE confirming, so the destructive prompt names every object that will
 		// be written (with --include-connected the fan-out can span several permission objects).
-		IReadOnlyList<string> objects =
-			_connectedObjects.Resolve(options.EntitySchemaName, options.IncludeConnected, "Changing");
+		ConnectedObjectsResolution resolution = _connectedObjects.Resolve(options.EntitySchemaName, fanOut);
+		if (resolution.EnumerationError is not null) {
+			// The caller asked for the root AND its lookups. Writing the root alone would report success while the
+			// lookups stay unreachable, so nothing is written.
+			_logger.WriteError(
+				$"Error: could not enumerate the connected objects of '{options.EntitySchemaName}' "
+				+ $"({resolution.EnumerationError}). Nothing was changed — re-run, or drop --include-connected "
+				+ "to change the root object only.");
+			return 1;
+		}
+		foreach (string excluded in resolution.Excluded) {
+			_logger.WriteWarning(
+				$"  {excluded}: security/system object — not included in the fan-out. Pass it as "
+				+ "--entity-schema-name to change it explicitly.");
+		}
+		IReadOnlyList<string> objects = resolution.Objects;
 		string verb = options.Revoke ? "Revoke" : "Grant";
 		string opList = FormatOperations(operations);
 		string connectedOpList = FormatOperations(connectedOperations);
@@ -99,8 +126,8 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 		change += ".";
 		if (options.Revoke && options.DisableOperationPermissions) {
 			// The operator approves the access WIDENING here, not just the revoke — so the prompt has to say it.
-			change += " Any object left with no rights rows has its operation permissions turned OFF"
-				+ " and becomes available to ALL internal users.";
+			change += $" If '{objects[0]}' is left with no rights rows, its operation permissions are turned OFF"
+				+ " and it becomes available to ALL internal users (connected objects are never turned off).";
 		}
 		if (!options.Revoke) {
 			// The mirror-image transition: granting to an object not administered yet NARROWS it for everyone else.
@@ -123,9 +150,11 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 				bool isRoot = index == 0;
 				IReadOnlyCollection<ObjectOperation> objectOperations = isRoot ? operations : connectedOperations;
 				string objectOpList = isRoot ? opList : connectedOpList;
+				// Turning operation permissions OFF is only ever approved for the object the caller named: a shared
+				// lookup made available to all internal users as a side effect would be a silent widening.
 				ObjectRightsChange result = _rightsWriter.SetObjectRights(
-					schemaName, grantee, objectOperations, options.Revoke, options.DisableOperationPermissions,
-					requestOptions);
+					schemaName, grantee, objectOperations, options.Revoke,
+					isRoot && options.DisableOperationPermissions, requestOptions);
 				if (result.Error != null) {
 					anyFailure = true;
 					_logger.WriteError($"  {schemaName}: {result.Error}");
@@ -142,7 +171,10 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 					_logger.WriteError(
 						$"  {schemaName}: grantee {grantee} holds the object's LAST rights row. Removing it would turn "
 						+ $"operation permissions OFF and make '{schemaName}' available to ALL internal users. "
-						+ "Nothing was changed — re-run with --disable-operation-permissions if that is what you want.");
+						+ (isRoot
+							? "Nothing was changed — re-run with --disable-operation-permissions if that is what you want."
+							: "Nothing was changed — a connected object is never turned off by a fan-out; name it as "
+								+ "--entity-schema-name to do that explicitly."));
 				} else if (result.Changed) {
 					string transition = result.OperationPermissionsDisabled
 						? " Operation permissions are now OFF on this object — it is available to ALL internal users."
@@ -153,6 +185,12 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 						$"  {schemaName}: {(options.Revoke ? "revoked" : "granted")} [{objectOpList}] for grantee {grantee}.{transition}");
 				} else {
 					_logger.WriteInfo($"  {schemaName}: already in the requested state (no change).");
+				}
+				if (isRoot && anyFailure && objects.Count > 1) {
+					// The root change did not happen, so changing its lookups would leave a half-applied state.
+					_logger.WriteWarning(
+						$"  The root object was not changed, so the {objects.Count - 1} connected object(s) were not attempted.");
+					break;
 				}
 			}
 			return anyFailure ? 1 : 0;
@@ -197,6 +235,13 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 					return false;
 			}
 		}
+		if (parsed.Count == 0) {
+			// Only separators (for example ","): an empty set would write an empty row on a grant, and could turn
+			// operation permissions ON for an object while granting nothing.
+			operations = Array.Empty<ObjectOperation>();
+			error = "Error: no operation given. Use read,create,edit,delete.";
+			return false;
+		}
 		operations = parsed.Distinct().ToArray();
 		return true;
 	}
@@ -207,16 +252,14 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 		if (options.Confirm) {
 			return ConfirmDecision.Approved;
 		}
-		if (Console.IsInputRedirected) {
+		if (!_console.IsInteractive) {
 			_logger.WriteError(
 				"Error: set-object-rights is destructive and needs confirmation. Re-run with --confirm to apply "
 				+ $"the change: {change}");
 			return ConfirmDecision.Refused;
 		}
 		_logger.WriteWarning($"About to change object permissions: {change}");
-		_logger.WriteInfo("Apply this change? (y/n)");
-		string answer = Console.ReadLine();
-		if (string.IsNullOrWhiteSpace(answer) || !answer.StartsWith("y", StringComparison.CurrentCultureIgnoreCase)) {
+		if (!_console.Prompt("Apply this change?")) {
 			_logger.WriteInfo("Object-permissions change cancelled.");
 			return ConfirmDecision.Cancelled;
 		}

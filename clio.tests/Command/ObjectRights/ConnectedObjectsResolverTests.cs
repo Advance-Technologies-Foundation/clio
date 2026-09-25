@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using Clio.Command;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Command.ObjectRights;
-using Clio.Common;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
@@ -16,24 +15,23 @@ namespace Clio.Tests.Command.ObjectRights;
 public class ConnectedObjectsResolverTests {
 
 	private IRemoteEntitySchemaColumnManager _columnManager;
-	private ILogger _logger;
 	private ConnectedObjectsResolver _resolver;
 
 	[SetUp]
 	public void SetUp() {
 		_columnManager = Substitute.For<IRemoteEntitySchemaColumnManager>();
-		_logger = Substitute.For<ILogger>();
-		_resolver = new ConnectedObjectsResolver(_columnManager, _logger);
+		_resolver = new ConnectedObjectsResolver(_columnManager);
 	}
 
 	[Test]
 	[Description("Returns only the root object and does not read the schema when include-connected is false.")]
 	public void Resolve_ShouldReturnRootOnly_WhenIncludeConnectedFalse() {
 		// Act
-		IReadOnlyList<string> result = _resolver.Resolve("UsrPortalSpike2", includeConnected: false, "Checking");
+		ConnectedObjectsResolution result = _resolver.Resolve("UsrPortalSpike2", includeConnected: false);
 
 		// Assert
-		result.Should().Equal(new[] { "UsrPortalSpike2" }, because: "without fan-out only the root is targeted");
+		result.Objects.Should().Equal(new[] { "UsrPortalSpike2" }, because: "without fan-out only the root is targeted");
+		result.EnumerationError.Should().BeNull(because: "nothing was enumerated, so nothing could fail");
 		_columnManager.DidNotReceive().GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>());
 	}
 
@@ -51,27 +49,62 @@ public class ConnectedObjectsResolverTests {
 				Column("UsrText", "own", null)));               // non-lookup — excluded
 
 		// Act
-		IReadOnlyList<string> result = _resolver.Resolve("UsrPortalSpike2", includeConnected: true, "Checking");
+		ConnectedObjectsResolution result = _resolver.Resolve("UsrPortalSpike2", includeConnected: true);
 
 		// Assert
-		result.Should().Equal(new[] { "UsrPortalSpike2", "UsrPSCategory", "UsrPSRegion" },
+		result.Objects.Should().Equal(new[] { "UsrPortalSpike2", "UsrPSCategory", "UsrPSRegion" },
 			because: "root first, then distinct own-lookup targets in order, without inherited/self/non-lookup columns");
+		result.Excluded.Should().BeEmpty(because: "none of the lookups is a security or system object");
 	}
 
 	[Test]
-	[Description("Falls back to the root object with a warning when the schema read fails.")]
-	public void Resolve_ShouldFallBackToRoot_WhenSchemaReadThrows() {
+	[Description("Security and system lookups (role/user directory, schema metadata, rights tables) are excluded from the fan-out and reported instead.")]
+	public void Resolve_ShouldExcludeSecurityAndSystemObjects_FromTheFanOut() {
+		// Arrange
+		_columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>())
+			.Returns(Schema("UsrPortalSpike2",
+				Column("UsrCategory", "own", "UsrPSCategory"),
+				Column("UsrRole", "own", "SysAdminUnit"),
+				Column("UsrUserRole", "own", "SysUserInRole"),
+				Column("UsrSchema", "own", "SysSchema"),
+				Column("UsrRight", "own", "SysContactRight"),
+				Column("UsrContact", "own", "Contact")));
+
+		// Act
+		ConnectedObjectsResolution result = _resolver.Resolve("UsrPortalSpike2", includeConnected: true);
+
+		// Assert
+		result.Objects.Should().Equal(new[] { "UsrPortalSpike2", "Contact", "UsrPSCategory" },
+			because: "an ordinary lookup is still fanned out to, a security or system object never is");
+		result.Excluded.Should().BeEquivalentTo(new[] { "SysAdminUnit", "SysContactRight", "SysSchema", "SysUserInRole" },
+			because: "the skipped objects are reported so the caller can warn about them");
+	}
+
+	[Test]
+	[Description("A security or system object named as the ROOT is still targeted: the exclusion applies to the fan-out only.")]
+	public void Resolve_ShouldKeepSystemRoot_WhenNamedExplicitly() {
+		// Act
+		ConnectedObjectsResolution result = _resolver.Resolve("SysAdminUnit", includeConnected: false);
+
+		// Assert
+		result.Objects.Should().Equal(new[] { "SysAdminUnit" },
+			because: "naming the object yourself is the explicit way to grant it");
+	}
+
+	[Test]
+	[Description("A failed schema read is reported as an enumeration error with the root alone; it does not throw.")]
+	public void Resolve_ShouldReportEnumerationError_WhenSchemaReadThrows() {
 		// Arrange
 		_columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>())
 			.Returns(_ => throw new InvalidOperationException("schema read failed"));
 
 		// Act
-		IReadOnlyList<string> result = _resolver.Resolve("UsrPortalSpike2", includeConnected: true, "Changing");
+		ConnectedObjectsResolution result = _resolver.Resolve("UsrPortalSpike2", includeConnected: true);
 
 		// Assert
-		result.Should().Equal(new[] { "UsrPortalSpike2" }, because: "a failed enumeration still checks the root");
-		_logger.Received().WriteWarning(Arg.Is<string>(m =>
-			m.Contains("Could not enumerate connected objects") && m.Contains("Changing")));
+		result.Objects.Should().Equal(new[] { "UsrPortalSpike2" }, because: "only the root is known");
+		result.EnumerationError.Should().Be("schema read failed",
+			because: "the caller must know the connected set is unknown, not empty");
 	}
 
 	private static EntitySchemaPropertyColumnInfo Column(string name, string source, string referenceSchemaName) =>

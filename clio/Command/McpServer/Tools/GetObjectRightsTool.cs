@@ -31,7 +31,7 @@ public sealed class GetObjectRightsTool(
 		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Read OBJECT operation permissions — who may read/create/edit/delete a whole entity (the SysSchemaOperationRight / \"Object permissions\" layer). " +
 		"Read-only companion of set-object-rights. Reports every role's rights on the object; pass grantee to filter to one role (e.g. All external users = 720b771c-e7a7-4f31-9cfb-52cd21c3739f). " +
-		"include-connected also reports the root object's own lookup objects (with a grantee this lists the objects that role still lacks access to — the Freedom designer's red \"not available to external users\" list). " +
+		"include-connected also reports the root object's own lookup objects (security/system objects are skipped); with a grantee it lists the objects that role cannot READ — the Freedom designer's red \"not available to external users\" list. Fails (success=false) when the root object cannot be read; never claims coverage for objects it could not read. " +
 		"An object not administered by operation permissions is available to all INTERNAL users only — external/portal users are deny-by-default, so with a grantee such an object is listed as still lacking access. " +
 		"Unknown or misspelled argument names are refused.")]
 	public ObjectRightsToolResponse GetObjectRights(

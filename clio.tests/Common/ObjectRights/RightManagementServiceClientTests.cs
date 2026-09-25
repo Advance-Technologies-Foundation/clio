@@ -384,4 +384,155 @@ public class RightManagementServiceClientTests {
 		result.Changed.Should().BeFalse(because: "nothing was saved");
 		result.OperationPermissionsEnabled.Should().BeFalse(because: "a failed save enabled nothing");
 	}
+
+	// ---- Save exception, multi-row revoke, projection (review round 4) ----
+
+	private static readonly Guid Employees = Guid.Parse("a29a3ba5-4b0d-de11-9a51-005056c00008");
+
+	private void GetReturnsTwoRowObject() =>
+		GetReturns("{\"success\":true,\"administratedObject\":{\"name\":\"UsrFoo\",\"administratedByOperations\":true,"
+			+ "\"entitySchemaOperationsRights\":["
+			+ "{\"id\":\"x\",\"position\":0,\"canRead\":true,\"canAppend\":true,\"canEdit\":true,\"canDelete\":true,"
+			+ "\"sysAdminUnit\":{\"id\":\"" + Grantee + "\",\"name\":\"All external users\"}},"
+			+ "{\"id\":\"y\",\"position\":1,\"canRead\":true,\"canAppend\":true,\"canEdit\":true,\"canDelete\":false,"
+			+ "\"sysAdminUnit\":{\"id\":\"" + Employees + "\",\"name\":\"All employees\"}}]}}");
+
+	private JsonElement[] SavedRows() =>
+		JsonDocument.Parse(_savedPayload).RootElement.GetProperty("administratedObject")
+			.GetProperty("entitySchemaOperationsRights").EnumerateArray().ToArray();
+
+	private static readonly ObjectOperation[] AllOperations =
+		{ ObjectOperation.Read, ObjectOperation.Create, ObjectOperation.Edit, ObjectOperation.Delete };
+
+	[Test]
+	[Description("An exception thrown by the SaveAdministratedObject POST is reported as this object's Error instead of escaping, so a fan-out can name where it stopped and continue.")]
+	public void SetObjectRights_ShouldReportError_WhenSaveThrows() {
+		// Arrange
+		GetReturns(NotAdministeredObject(""));
+		Post(SaveUrl).Returns(_ => throw new InvalidOperationException("HTTP 500"));
+
+		// Act
+		ObjectRightsChange result = _client.SetObjectRights("UsrFoo", Grantee, new[] { ObjectOperation.Read },
+			revoke: false, disableOperationPermissions: false, new CreatioRequestOptions());
+
+		// Assert
+		result.Error.Should().Contain("HTTP 500", because: "the transport failure is attributed to this object");
+		result.Changed.Should().BeFalse(because: "nothing was saved");
+	}
+
+	[TestCase(false)]
+	[TestCase(true)]
+	[Description("A full revoke of one role while another row remains removes only that role's row and keeps operation permissions ON, whatever the disable opt-in says.")]
+	public void SetObjectRights_ShouldKeepAdministered_WhenFullRevokeLeavesOtherRows(bool disable) {
+		// Arrange
+		GetReturnsTwoRowObject();
+
+		// Act
+		ObjectRightsChange result = _client.SetObjectRights("UsrFoo", Grantee, AllOperations,
+			revoke: true, disableOperationPermissions: disable, new CreatioRequestOptions());
+
+		// Assert
+		result.Changed.Should().BeTrue(because: "the grantee's row was removed");
+		result.RefusedLastRowRemoval.Should().BeFalse(because: "another row remains, so this is not the last row");
+		result.OperationPermissionsDisabled.Should().BeFalse(because: "operation permissions stay on while any row remains");
+		_savedPayload.Should().Contain("\"administratedByOperations\":true",
+			because: "removing one role must never make the object available to every internal user");
+		JsonElement[] rows = SavedRows();
+		rows.Should().HaveCount(1, because: "only the grantee's row is removed");
+		rows[0].GetProperty("sysAdminUnit").GetProperty("id").GetString().Should().Be(Employees.ToString(),
+			because: "the other role's row is kept untouched");
+	}
+
+	[Test]
+	[Description("A revoke for a grantee that holds no row is a no-op and does not call SaveAdministratedObject.")]
+	public void SetObjectRights_ShouldNotSave_WhenRevokingGranteeWithoutRow() {
+		// Arrange
+		GetReturns(AdministeredObject("base"));
+
+		// Act
+		ObjectRightsChange result = _client.SetObjectRights("UsrFoo", Grantee, AllOperations,
+			revoke: true, disableOperationPermissions: false, new CreatioRequestOptions());
+
+		// Assert
+		result.Changed.Should().BeFalse(because: "there was nothing to revoke");
+		_applicationClient.DidNotReceive().ExecutePostRequest(SaveUrl, Arg.Any<string>(), Arg.Any<int>(),
+			Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("The opt-in last-row revoke saves an empty rights array together with administratedByOperations=false.")]
+	public void SetObjectRights_ShouldSaveEmptyRows_WhenLastRowRemovedWithOptIn() {
+		// Arrange
+		GetReturnsSingleRowObject();
+
+		// Act
+		_client.SetObjectRights("UsrFoo", Grantee, AllOperations,
+			revoke: true, disableOperationPermissions: true, new CreatioRequestOptions());
+
+		// Assert
+		SavedRows().Should().BeEmpty(because: "the only row was removed");
+	}
+
+	[Test]
+	[Description("A grant to a new role writes exactly the requested flags: canRead/canAppend/canEdit true, canDelete false.")]
+	public void SetObjectRights_ShouldWriteExactFlags_WhenGrantingNewRole() {
+		// Arrange
+		GetReturns(AdministeredObject("base"));
+
+		// Act
+		_client.SetObjectRights("UsrFoo", Grantee,
+			new[] { ObjectOperation.Read, ObjectOperation.Create, ObjectOperation.Edit }, revoke: false,
+			disableOperationPermissions: false, new CreatioRequestOptions());
+
+		// Assert
+		JsonElement row = SavedRows().Single();
+		row.GetProperty("canRead").GetBoolean().Should().BeTrue(because: "read was requested");
+		row.GetProperty("canAppend").GetBoolean().Should().BeTrue(because: "create maps to canAppend");
+		row.GetProperty("canEdit").GetBoolean().Should().BeTrue(because: "edit was requested");
+		row.GetProperty("canDelete").GetBoolean().Should().BeFalse(because: "delete was not requested");
+	}
+
+	[Test]
+	[Description("GetObjectRights projects every wire field onto RoleOperationRights: canAppend->CanCreate, the grantee id and name, and the administration flag.")]
+	public void GetObjectRights_ShouldProjectEveryField_WhenRowsHaveDistinctFlags() {
+		// Arrange
+		GetReturns("{\"success\":true,\"administratedObject\":{\"name\":\"UsrFoo\",\"caption\":\"Foo\",\"administratedByOperations\":true,"
+			+ "\"entitySchemaOperationsRights\":["
+			+ "{\"canRead\":true,\"canAppend\":false,\"canEdit\":true,\"canDelete\":false,"
+			+ "\"sysAdminUnit\":{\"id\":\"" + Grantee + "\",\"name\":\"All external users\"}},"
+			+ "{\"canRead\":false,\"canAppend\":true,\"canEdit\":false,\"canDelete\":true,"
+			+ "\"sysAdminUnit\":{\"id\":\"" + Employees + "\",\"name\":\"All employees\"}}]}}");
+
+		// Act
+		ObjectRightsInfo info = _client.GetObjectRights("UsrFoo", new CreatioRequestOptions());
+
+		// Assert
+		info.AdministratedByOperations.Should().BeTrue(because: "the flag is read from the node");
+		info.Caption.Should().Be("Foo", because: "the caption is read from the node");
+		info.Roles.Should().BeEquivalentTo(new[] {
+			new RoleOperationRights(Grantee, "All external users", true, false, true, false),
+			new RoleOperationRights(Employees, "All employees", false, true, false, true)
+		}, options => options.WithStrictOrdering(),
+			because: "a swapped field would give a false coverage verdict");
+	}
+
+	[TestCase("{\"id\":\"not-a-guid\"}")]
+	[TestCase("{}")]
+	[Description("A missing or non-GUID grantee id reads as Guid.Empty, a missing name as (unknown), and non-bool flags as false.")]
+	public void GetObjectRights_ShouldFallBack_WhenRowFieldsAreMissingOrMalformed(string sysAdminUnit) {
+		// Arrange
+		GetReturns("{\"success\":true,\"administratedObject\":{\"name\":\"UsrFoo\",\"administratedByOperations\":true,"
+			+ "\"entitySchemaOperationsRights\":[{\"canRead\":\"true\",\"canAppend\":1,\"canEdit\":null,"
+			+ "\"sysAdminUnit\":" + sysAdminUnit + "}]}}");
+
+		// Act
+		ObjectRightsInfo info = _client.GetObjectRights("UsrFoo", new CreatioRequestOptions());
+
+		// Assert
+		RoleOperationRights role = info.Roles.Single();
+		role.GranteeId.Should().Be(Guid.Empty, because: "an unparseable id never matches a real grantee");
+		role.GranteeName.Should().Be("(unknown)", because: "a missing name falls back to a placeholder");
+		(role.CanRead || role.CanCreate || role.CanEdit || role.CanDelete).Should().BeFalse(
+			because: "a non-bool flag is not a grant");
+	}
 }

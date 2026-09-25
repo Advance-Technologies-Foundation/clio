@@ -41,8 +41,8 @@ public sealed class ObjectRightsToolBehaviourTests {
 		_writer = Substitute.For<IObjectRightsWriter>();
 		_reader = Substitute.For<IObjectRightsReader>();
 		_connected = Substitute.For<IConnectedObjectsResolver>();
-		_connected.Resolve(Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<string>())
-			.Returns(callInfo => new[] { (string)callInfo[0] });
+		_connected.Resolve(Arg.Any<string>(), Arg.Any<bool>())
+			.Returns(callInfo => new ConnectedObjectsResolution(new[] { (string)callInfo[0] }, Array.Empty<string>()));
 		_writer.SetObjectRights(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<ObjectOperation>>(),
 			Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>()).Returns(new ObjectRightsChange(true, true));
 		_reader.GetObjectRights(Arg.Any<string>(), Arg.Any<CreatioRequestOptions>())
@@ -51,13 +51,13 @@ public sealed class ObjectRightsToolBehaviourTests {
 		_capturedSet = null;
 		_capturedGet = null;
 		_resolver.Resolve<SetObjectRightsCommand>(Arg.Do<EnvironmentOptions>(o => _capturedSet = (SetObjectRightsOptions)o))
-			.Returns(_ => new SetObjectRightsCommand(_writer, _connected, _logger));
+			.Returns(_ => new SetObjectRightsCommand(_writer, _connected, Substitute.For<IInteractiveConsole>(), _logger));
 		_resolver.Resolve<GetObjectRightsCommand>(Arg.Do<EnvironmentOptions>(o => _capturedGet = (GetObjectRightsOptions)o))
 			.Returns(_ => new GetObjectRightsCommand(_reader, _connected, _logger));
 	}
 
 	private SetObjectRightsTool SetTool() =>
-		new(new SetObjectRightsCommand(_writer, _connected, _logger), _logger, _resolver);
+		new(new SetObjectRightsCommand(_writer, _connected, Substitute.For<IInteractiveConsole>(), _logger), _logger, _resolver);
 
 	private GetObjectRightsTool GetTool() =>
 		new(new GetObjectRightsCommand(_reader, _connected, _logger), _logger, _resolver);
@@ -177,7 +177,7 @@ public sealed class ObjectRightsToolBehaviourTests {
 	[Description("When the command throws, the tool fails and the service URI in the exception text is redacted.")]
 	public void SetObjectRights_ShouldFailRedacted_WhenCommandThrows() {
 		// Arrange
-		_connected.Resolve(Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<string>())
+		_connected.Resolve(Arg.Any<string>(), Arg.Any<bool>())
 			.Returns(_ => throw new InvalidOperationException("failed at " + SecretUri));
 
 		// Act
