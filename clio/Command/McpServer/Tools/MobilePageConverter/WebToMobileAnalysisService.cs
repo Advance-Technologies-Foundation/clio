@@ -4939,8 +4939,8 @@ public static partial class WebToMobileAnalysisService {
 		// many-to-one pair that involves a grid (GeneralInfoTab and GeneralInfoTabContainer -> AdditionalInfoTab)
 		// never competes here — the tab has no captured count and the grid is rejected by the guard below — but a
 		// future many-to-one pair of two GRIDS would need an explicit tie-break.
-		// The mobile side is admitted ONLY when its own type is MobileGridContainerComponentType: adaptive
-		// per-breakpoint columns is a property of that one component type, not of whatever element a
+		// A RENAMED pair's mobile side is admitted only when its own type is MobileGridContainerComponentType:
+		// adaptive per-breakpoint columns is a property of that one component type, not of whatever element a
 		// `containers` pair happens to rename a grid onto (the shipped case: the two-column web
 		// GeneralInfoTabContainer -> the declared AdditionalInfoTab, a crt.TabContainer). Without this guard, a
 		// pair that renames a grid onto a mobile element of a DIFFERENT type would attach the web grid's column
@@ -4950,6 +4950,10 @@ public static partial class WebToMobileAnalysisService {
 		// overwrites layoutConfig that is not already adaptive). The web side needs no matching check:
 		// gridContainerColumns is only ever populated from a node that actually declared a `columns` array (see
 		// CaptureSource).
+		// The guard does NOT cover the web-name fallback below: it still adds every web grid's count under its
+		// web name, unchecked, as it did before the guard existed. So a same-name pair (X -> X) whose mobile X is
+		// not a crt.GridContainer would still get adaptive columns. No shipped pair has that shape — the
+		// same-name pairs are grid-to-grid, or tabs, which carry no count.
 		var colsByMobileParent = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 		foreach (ElementMapEntry e in elementMap) {
 			if (e.WebName is { Length: > 0 }
