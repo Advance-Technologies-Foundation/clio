@@ -4,8 +4,9 @@ applies-to:
   - .github/scripts/Invoke-TestShard.ps1
   - .github/scripts/Rebalance-TestShards.ps1
   - clio.tests/TestSharding/
+  - AGENTS.md
 ticket: 1343
-date: 2026-09-03
+date: 2026-09-25
 ---
 
 **What is true** — shard base predicates must use the VSTest property name `TestCategory`. The NUnit
@@ -20,3 +21,11 @@ filters. See the adapter's `filterinvestigation.md` and `Execution.CheckFilter` 
 **What breaks if you ignore it** — every nominal unit shard silently executes the full `clio.tests`
 assembly. TRX files still look plausible because the same long non-parallel fixture can stall each run
 at a different result count, while hosted duration grows from roughly two minutes locally to 8-15 minutes.
+
+The same holds for the targeted form AGENTS.md prescribes, `Category=Unit&Module=X`, whenever the module
+selects more than 2,000 tests. Measured 2026-09-25 on Windows: `Category=Unit&Module=Command` took 3m42s-8m13s
+and its host started processes only non-selected Integration fixtures start, while
+`TestCategory=Unit&Module=Command` returned the identical 4989 results in 21 s. The unselected tests send no
+test events, so under `--blame-hang-timeout` those stretches read as inactivity and the host is killed and
+reported as "Test host process crashed", with whatever its stderr last held as the reason (see
+`the-git-process-fixture-must-not-reach-the-clio-tests-output.md`).

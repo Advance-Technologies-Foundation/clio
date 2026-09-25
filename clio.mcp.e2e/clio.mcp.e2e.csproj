@@ -47,7 +47,12 @@
 
 	<ItemGroup>
 		<ProjectReference Include="..\clio\clio.csproj" />
-		<ProjectReference Include="..\clio.process.fixture\clio.process.fixture.csproj" ReferenceOutputAssembly="false" />
+		<!-- Build-order only: the fixtures run the fake git from clio.process.fixture/bin/<configuration>/<tfm>.
+		     Private="false" keeps its apphost, deps.json and runtimeconfig.json out of this project's output and,
+		     transitively, out of clio.tests' output. ReferenceOutputAssembly="false" alone drops only git.dll and
+		     leaves a git apphost that cannot start, which a bare-name "git" launch finds before PATH. See
+		     docs/knowledge/Tests/the-git-process-fixture-must-not-reach-the-clio-tests-output.md. -->
+		<ProjectReference Include="..\clio.process.fixture\clio.process.fixture.csproj" ReferenceOutputAssembly="false" Private="false" />
 	</ItemGroup>
 
 	<ItemGroup>
