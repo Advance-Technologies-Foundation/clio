@@ -15,8 +15,7 @@ namespace Clio.Tests.Command.McpServer.Tools.MobilePageConverter;
 
 /// <summary>
 /// ENG-94951 regression: the General-information tab of a tabbed Freedom UI record page, and everything the
-/// page puts inside it, must land in the mobile template's general ("Details") tab content container — never
-/// as bare children of the mobile <c>Tabs</c> panel.
+/// page puts inside it, must land inside a mobile tab — never as bare children of the mobile <c>Tabs</c> panel.
 /// <para>
 /// The pinned page is the OOTB <c>Services_FormPage</c> (package <c>CrtCaseManagementApp</c>), captured with
 /// <c>clio get-page</c> together with the merged view configs of its web template
@@ -28,19 +27,14 @@ namespace Clio.Tests.Command.McpServer.Tools.MobilePageConverter;
 /// chrome, so chrome subtraction never runs and the bug is unreproducible.
 /// </para>
 /// <para>
-/// A later change moved where TWO of the pairs in this same shape land: the web profile island
-/// (<c>SideAreaProfileContainer</c>) now converts into its own dedicated <c>declaredElements</c> tab
-/// (<c>GeneralInformationTab</c>, a sibling of the template's own general tab under <c>Tabs</c>) instead of
-/// being squeezed into the general tab's content grid, and <c>GeneralInfoTabContainer</c> — the pair for a
-/// page that KEEPS that grid — now merges onto the profile Area card (<c>AreaProfileContainer</c>) instead of
-/// the general tab's whole grid (<c>GeneralTabContainer</c>). Both are exercised below.
-/// </para>
-/// <para>
-/// The declared tab is now the FIRST tab (index 0, the one selected on open), so the template's own general
-/// tab shifts to position 1 and page-authored tabs are numbered after it; and <c>CardContentWrapper</c> — the
-/// web wrapper around the side column — pairs onto the declared tab too, so the side column's other content
-/// (<c>TermsContainer</c>) shares that tab with the profile island. The wrapper's own web grid columns are NOT
-/// carried onto the declared tab: adaptive columns belong to a mobile <c>crt.GridContainer</c> only.
+/// A later change gave the web General-information tab a mobile tab of its own: the rules declare
+/// <c>AdditionalInfoTab</c> (<c>declaredElements</c>, index 1 — right after the template's own Details tab)
+/// and pair BOTH <c>GeneralInfoTab</c> and <c>GeneralInfoTabContainer</c> onto it, so the page's
+/// general-tab content lands there whichever of the two shapes the page has, stacked into the tab's
+/// synthesized Area card. The template's Details tab (<c>GeneralInfoTab</c> / <c>GeneralTabContainer</c>)
+/// is unchanged: it keeps the side column — the profile island in <c>AreaProfileContainer</c> and the
+/// wrapper's other content (<c>TermsContainer</c>). A kept content grid's web columns are NOT carried onto
+/// the declared tab: adaptive columns belong to a mobile <c>crt.GridContainer</c> only.
 /// </para>
 /// </summary>
 [TestFixture]
@@ -60,17 +54,15 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 	private const string MobileGeneralTabContainer = "GeneralTabContainer";
 
 	/// <summary>
-	/// The mobile profile Area card. This is now the merge target for <c>GeneralInfoTabContainer</c>
-	/// (a page that KEEPS the web template's content grid) — no longer <see cref="MobileGeneralTabContainer"/>.
-	/// A page that REMOVED the grid has its content directly in <see cref="MobileGeneralTab"/> instead.
+	/// The mobile profile Area card inside <see cref="MobileGeneralTabContainer"/> — the merge target of the web
+	/// profile island (<c>SideAreaProfileContainer</c>), so the island's fields land inside it.
 	/// </summary>
 	private const string MobileProfileContainer = "AreaProfileContainer";
 
 	/// <summary>
-	/// The mobile general TAB. Its web counterpart is a type-aligned twin (GeneralInfoTab to GeneralInfoTab), so
-	/// identity is honest, and children go into the twin the web page actually put them in. A page that KEPT the
-	/// template's content grid resolves its content through <see cref="MobileProfileContainer"/> instead;
-	/// a page that REMOVED it has content directly in the tab, which is a crt.TabContainer and hosts items.
+	/// The mobile template's own general ("Details") TAB. No web element pairs onto it any more — the web
+	/// general tab pairs onto <see cref="DeclaredAdditionalInfoTab"/> — so it keeps only what reaches its
+	/// content grid: the web side column.
 	/// </summary>
 	private const string MobileGeneralTab = "GeneralInfoTab";
 
@@ -78,12 +70,11 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 	private const string MobileTabsPanel = "Tabs";
 
 	/// <summary>
-	/// The tab the rules DECLARE for the web profile island. Both <c>SideAreaProfileContainer</c> and
-	/// <c>CardContentWrapper</c> pair onto it, so the published <c>nameMap</c> maps two source names to it.
+	/// The tab the rules DECLARE for the web general-information tab. Both <c>GeneralInfoTab</c> and
+	/// <c>GeneralInfoTabContainer</c> pair onto it, so the published <c>nameMap</c> may map two source names to it.
 	/// </summary>
-	private const string DeclaredGeneralInformationTab = "GeneralInformationTab";
+	private const string DeclaredAdditionalInfoTab = "AdditionalInfoTab";
 
-	/// <summary>Page-authored content the web page places directly inside the template-owned general tab.</summary>
 	/// <summary>The mobile component type an insert declares — it lives in <c>values.type</c>.</summary>
 	private static string TypeOf(ViewConfigDiffOperation operation) =>
 		operation?.Values?["type"]?.GetValue<string>();
@@ -117,6 +108,7 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 		return operation?.Name;
 	}
 
+	/// <summary>Page-authored content the web page places directly inside the template-owned general tab.</summary>
 	private static readonly string[] GeneralTabContent = [
 		"ServiceTeamMemberExpansionPanel", "ServicePactExpansionPanel"
 	];
@@ -129,36 +121,15 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 
 	/// <summary>
 	/// The profile-card fields the pinned page places directly inside its web <c>SideAreaProfileContainer</c>.
-	/// This content now converts into the declared <c>GeneralInformationTab</c> instead of the mobile profile
-	/// Area card.
+	/// They convert into the mobile profile Area card (<see cref="MobileProfileContainer"/>).
 	/// </summary>
 	private static readonly string[] SideProfileContent = [
 		"GeneralInfoLabel", "Name", "Status", "Calendar", "Category", "CaseCategory", "Owner"
 	];
 
-	/// <summary>
-	/// Whether <paramref name="webName"/> converts to an element nested (at any depth) inside the mobile
-	/// counterpart of <paramref name="ancestorWebName"/> — walking the synthesized wrapper chain a newly
-	/// inserted container gets, rather than requiring a direct parent match.
-	/// </summary>
-	private static bool DescendsFrom(MobilePageConversionGuide guide, string webName, string ancestorWebName) {
-		string ancestorMobileName = Element(guide, ancestorWebName).Name;
-		Dictionary<string, string> parentByName = guide.ViewConfigDiff
-			.Where(e => !string.IsNullOrEmpty(e.ParentName))
-			.ToDictionary(e => e.Name, e => e.ParentName, StringComparer.OrdinalIgnoreCase);
-		string current = Element(guide, webName).Name;
-		for (int guard = 0; guard < 20 && parentByName.TryGetValue(current, out string parent); guard++) {
-			if (string.Equals(parent, ancestorMobileName, StringComparison.OrdinalIgnoreCase)) {
-				return true;
-			}
-			current = parent;
-		}
-		return false;
-	}
-
 	[Test]
-	[Description("ENG-94951: content the web page puts directly inside the template-owned GeneralInfoTab is converted into the mobile general TAB - a crt.TabContainer, which hosts items - rather than being emitted as a bare child of the mobile Tabs panel, and the content nested inside it survives too.")]
-	public void Analyze_ShouldPlaceGeneralInfoTabContent_IntoTheMobileGeneralTab() {
+	[Description("ENG-94951: content the web page puts directly inside the template-owned GeneralInfoTab is converted into the declared AdditionalInfoTab — a crt.TabContainer, which hosts items — rather than being emitted as a bare child of the mobile Tabs panel, and the content nested inside it survives too. It does not land in the template's own Details tab, which keeps the side column.")]
+	public void Analyze_ShouldPlaceGeneralInfoTabContent_IntoTheDeclaredAdditionalInfoTab() {
 		// Arrange
 		JsonObject fixture = LoadFixture();
 
@@ -171,11 +142,13 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 			ViewConfigDiffOperation entry = Element(guide, name);
 			entry.Operation.Should().Be("insert",
 				because: $"'{name}' is page-authored content and must reach the mobile page");
-			entry.ParentName.Should().Be(MobileGeneralTab,
-				because: $"'{name}' sits directly under the web general tab on this page, and that tab is a "
-					+ "type-aligned twin that hosts items, so its children stay in it; parenting it to the Tabs "
-					+ "panel instead puts a non-tab child inside a crt.TabPanel, which renders nothing and is "
-					+ "exactly ENG-94951");
+			IsNestedIn(guide, entry.Name, DeclaredAdditionalInfoTab).Should().BeTrue(
+				because: $"'{name}' sits directly under the web general tab, which pairs onto the declared tab, so it "
+					+ "lands inside that tab (its synthesized Area card); parenting it to the Tabs panel instead puts a "
+					+ $"non-tab child inside a crt.TabPanel, which renders nothing and is exactly ENG-94951 — found "
+					+ $"parent '{entry.ParentName}'");
+			IsNestedIn(guide, entry.Name, MobileGeneralTab).Should().BeFalse(
+				because: $"'{name}' is general-tab content, and the template's Details tab keeps only the side column");
 		}
 		foreach (string name in GeneralTabLeafContent) {
 			Element(guide, name).Operation.Should().Be("insert",
@@ -222,7 +195,7 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 	}
 
 	[Test]
-	[Description("ENG-94951 over-correction guard: the mobile general tab and its content container are template twins, so the converter merges onto them; a fix that re-declared either one under Tabs would duplicate what the template already provides. This does NOT fail on the unfixed code — there the tab was dropped — it pins the shape of the fix.")]
+	[Description("ENG-94951 over-correction guard: the template's Details tab and its content grid are provided by the mobile template, so the converter never re-declares either one under Tabs; the web general tab's content gets the DECLARED AdditionalInfoTab instead, captioned by its own declared resource, while the template's own 'Details' caption stands untouched. This does NOT fail on the unfixed code — there the tab was dropped — it pins the shape of the fix.")]
 	public void Analyze_ShouldMergeTheGeneralTab_RatherThanRecreateIt() {
 		// Arrange
 		JsonObject fixture = LoadFixture();
@@ -232,62 +205,53 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 
 		// Assert
 		guide.ViewConfigDiff.Should().NotContain(
-			e => e.Operation == "insert" && string.Equals(e.Name, "GeneralInfoTab", StringComparison.OrdinalIgnoreCase),
-			because: "the mobile template already provides the general tab; inserting a second one under Tabs "
+			e => e.Operation == "insert" && string.Equals(e.Name, MobileGeneralTab, StringComparison.OrdinalIgnoreCase),
+			because: "the mobile template already provides the Details tab; inserting a second one under Tabs "
 				+ "would duplicate it");
 		guide.ViewConfigDiff.Should().NotContain(
 			e => e.Operation == "insert"
 				&& string.Equals(e.Name, MobileGeneralTabContainer, StringComparison.OrdinalIgnoreCase),
-			because: "the mobile template already provides the general tab's content grid — it is a merge "
+			because: "the mobile template already provides the Details tab's content grid — it is a merge "
 				+ "target, never an insert");
 		guide.ResourceStrings.Should().NotContainKey("GeneralInfoTab_caption",
-			because: "the container twin carries no caption, so the mobile template's own 'Details' must stand "
-				+ "instead of the web page's caption overwriting it");
+			because: "no web caption is carried onto the template's tab, so the mobile template's own 'Details' "
+				+ "must stand instead of the web page's caption overwriting it");
+		ViewConfigDiffOperation declaredTab = Element(guide, "GeneralInfoTab");
+		declaredTab.Values!["caption"]!.GetValue<string>().Should().Be("#ResourceString(AdditionalInfoTab_caption)#",
+			because: "the declared tab is captioned by the resource its declaration names");
+		guide.ResourceStrings.Should().ContainKey("AdditionalInfoTab_caption").WhoseValue.Should().Be(
+			"General information",
+			because: "the declared caption resource is registered with the page so the tab renders its name");
 	}
 
 	[Test]
-	[Description("A page that KEEPS the web template's GeneralInfoTabContainer now converts its content onto the profile Area card (AreaProfileContainer), not the general tab's whole content grid (GeneralTabContainer) — the pair moved when SideAreaProfileContainer stopped targeting AreaProfileContainer and got its own declared tab instead.")]
+	[Description("A page that KEEPS the web template's GeneralInfoTabContainer converts its content into the same declared AdditionalInfoTab: the grid pairs onto the tab exactly as the web tab itself does, so the tab is inserted once and the grid never reaches the mobile page under its own name.")]
 	public void Analyze_ShouldPlaceGeneralInfoTabContent_WhenThePageKeepsTheTemplateContentGrid() {
 		// Arrange — the fixture's own shape with the template's content grid put back around the page's content,
 		// which is what an ordinary tabbed page (one that did not remove it) looks like.
-		JsonObject fixture = LoadFixture();
-		JsonObject generalTab = FindNode(fixture["page"]!["viewConfig"]!, "GeneralInfoTab")
-			?? throw new AssertionException("fixture no longer carries GeneralInfoTab");
-		JsonArray tabItems = generalTab["items"]!.AsArray();
-		var restored = new JsonArray();
-		foreach (JsonNode child in tabItems.ToList()) {
-			tabItems.Remove(child);
-			restored.Add(child);
-		}
-		tabItems.Add(new JsonObject {
-			["name"] = "GeneralInfoTabContainer", ["type"] = "crt.GridContainer", ["items"] = restored
-		});
+		JsonObject fixture = WithTemplateContentGridRestored(LoadFixture());
 
 		// Act
 		MobilePageConversionGuide guide = Convert(fixture);
 
 		// Assert
 		foreach (string name in GeneralTabContent) {
-			Element(guide, name).ParentName.Should().Be(MobileProfileContainer,
-				because: $"'{name}' sits inside the template's content grid here, and that grid now pairs onto the "
-					+ "profile Area card, so the content lands there rather than in the general tab's own grid or "
-					+ "tab body");
+			IsNestedIn(guide, Element(guide, name).Name, DeclaredAdditionalInfoTab).Should().BeTrue(
+				because: $"'{name}' sits inside the template's content grid here, and that grid pairs onto the "
+					+ "declared tab, so the content lands in that tab");
 		}
 		NonTabChildrenOfTabStrips(guide).Should().BeEmpty(
 			because: "the shape a page keeps by default must not reintroduce the loss the ticket is about");
-		// Asserted on the TARGET name: the page's own content grid and the template's are the same element
-		// under two names, and viewConfigDiff addresses it by the mobile one.
-		guide.ViewConfigDiff.Should().ContainSingle(o => o.Operation == "merge" && o.Name == MobileProfileContainer,
-			because: "the page reuses the template's grid, so it merges onto the profile Area card exactly once — "
-				+ "the container-map twin (CardContentWrapper) and the general-tab twin no longer share this mobile "
-				+ "name, so the previous double-merge onto GeneralTabContainer no longer applies here");
-		guide.ViewConfigDiff.Should().NotContain(o => o.Operation == "insert" && o.Name == MobileProfileContainer,
-			because: "reusing the template's grid means never inserting a second one — that is the whole point");
+		guide.ViewConfigDiff.Should().ContainSingle(o => o.Name == DeclaredAdditionalInfoTab,
+			because: "the web tab and its grid both merge onto the declared tab, which is inserted exactly once — "
+				+ "a second operation on that name would be the double-merge a many-to-one pair must not produce");
+		guide.ViewConfigDiff.Should().NotContain(o => o.Name == "GeneralInfoTabContainer",
+			because: "the web grid is merged onto the declared tab, never carried to the mobile page as its own element");
 	}
 
 	[Test]
-	[Description("SideAreaProfileContainer no longer converts into a template-provided grid twin (AreaProfileContainer) placed by layoutConfig — it converts into the declared GeneralInformationTab tab instead, inserted exactly once under Tabs, with its own generated content grid hosting the profile fields. This supersedes the previous 'twin placed beside TermsContainer in the general tab's grid' shape.")]
-	public void Analyze_ShouldPlaceTheProfileIslandTwin_AsItsOwnDeclaredTab() {
+	[Description("A container twin the mobile template provides is a SIBLING of the inserts placed into its grid: a mobile crt.GridContainer places children by layoutConfig alone, so the twin must be placed too, contiguously and exactly once — an unplaced twin among placed siblings is not rendered at all. The profile island's own fields land inside the twin.")]
+	public void Analyze_ShouldPlaceTheTemplateTwin_BesideTheContentReHomedIntoItsGrid() {
 		// Arrange
 		JsonObject fixture = LoadFixture();
 
@@ -295,28 +259,31 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 		MobilePageConversionGuide guide = Convert(fixture);
 
 		// Assert
-		ViewConfigDiffOperation tab = Element(guide, "SideAreaProfileContainer");
-		tab.Operation.Should().Be("insert",
-			because: "the mobile template has no native counterpart for this tab; declaredElements creates it");
-		TypeOf(tab).Should().Be("crt.TabContainer",
-			because: "only a crt.TabContainer may be a child of the crt.TabPanel it is inserted into");
-		tab.ParentName.Should().Be(MobileTabsPanel,
-			because: "the declared tab is a sibling of the template's own general tab, under the same strip");
-		guide.ViewConfigDiff.Should().NotContain(o => o.Name == "AreaProfileContainer",
-			because: "this fixture removed GeneralInfoTabContainer (the pair that now targets AreaProfileContainer), "
-				+ "so nothing merges onto the profile Area card here — the profile content moved to the declared tab");
+		AdaptiveLayoutGroup grid = guide.AdaptiveLayout
+			.Single(g => g.Items.Any(i => i.Name == MobileProfileContainer));
+		IReadOnlyList<string> placed = [.. grid.Items.Select(i => i.Name)];
+		placed.Should().Equal(
+			[MobileProfileContainer, "TermsContainer"],
+			because: "the template's profile card is the general tab grid's first child and the wrapper's other "
+				+ "non-tab content follows it; a gap or a repeat means a phantom child took a row. The general "
+				+ "tab's own content is NOT here — it converts into the declared AdditionalInfoTab");
+		grid.Items.Select(i => i.LayoutConfigAdaptive!["small"]!["row"]!.GetValue<int>())
+			.Should().Equal([1, 2],
+				because: "rows must be contiguous — the mobile grid does not auto-place, so a skipped row is a "
+					+ "child that was counted but never rendered");
+		Element(guide, "SideAreaProfileContainer").Values!.AsObject()
+			.Should().ContainKey("layoutConfig",
+				because: "the twin is a merge, but without a layoutConfig it is the one unplaced child of a grid "
+					+ "whose every other child got a cell, and the mobile designer renders nothing for it");
 		foreach (string name in SideProfileContent) {
-			ViewConfigDiffOperation content = Element(guide, name);
-			content.Operation.Should().Be("insert",
-				because: $"'{name}' is page-authored content on the profile island and must reach the mobile page");
-			DescendsFrom(guide, name, "SideAreaProfileContainer").Should().BeTrue(
-				because: $"'{name}' sits inside the web profile island, so on mobile it must land inside the tab "
-					+ "that island now converts into — not scattered elsewhere or duplicated onto the general tab");
+			Element(guide, name).ParentName.Should().Be(MobileProfileContainer,
+				because: $"'{name}' sits inside the web profile island, so on mobile it lands inside the profile "
+					+ "Area card the island merges onto");
 		}
 	}
 
 	[Test]
-	[Description("A twin is placed only where the MOBILE template holds it: web Tabs sits inside CardContentWrapper (mapped to the declared GeneralInformationTab) while on mobile that tab sits inside Tabs, so trusting the web nesting would place the tab strip inside its own descendant — and twice, since two web twins share the mobile name.")]
+	[Description("A twin is placed only where the MOBILE template holds it: web Tabs sits inside CardContentWrapper (mapped to GeneralTabContainer) while on mobile GeneralTabContainer sits inside Tabs, so trusting the web nesting would place the tab strip inside its own descendant — and twice, since two web twins share the mobile name.")]
 	public void Analyze_ShouldNotPlaceATwin_WhereOnlyTheWebTreeNestsIt() {
 		// Arrange
 		JsonObject fixture = LoadFixture();
@@ -327,15 +294,15 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 		// Assert
 		foreach (AdaptiveLayoutGroup group in guide.AdaptiveLayout) {
 			group.Items.Should().NotContain(i => i.Name == MobileTabsPanel,
-				because: "the mobile tab strip contains the declared tab CardContentWrapper maps onto, not the other way round");
+				because: "the mobile tab strip contains the general tab's grid, not the other way round");
 			group.Items.Select(i => i.Name).Should().OnlyHaveUniqueItems(
 				because: "two web twins may share one mobile name; placing both would give the same element two cells");
 		}
 	}
 
 	[Test]
-	[Description("Creation of the declared GeneralInformationTab must not depend on the template declaring positional (:top/:bottom) entries — only the tabbed template has any, so gating declaredElements on them would leave the tab dead for every other template family. This supersedes the previous twin-placement invariant, which was gated the same way for the same reason.")]
-	public void Analyze_ShouldInsertTheDeclaredGeneralInformationTab_EvenWithNoPositionalPlacements() {
+	[Description("Twin placement and the declared tab must not depend on the template declaring positional (:top/:bottom) entries: only the tabbed template has any, so a mobile-parent map or a declaration supplied only alongside them would leave the fix dead for every other template family.")]
+	public void Analyze_ShouldPlaceTheTemplateTwin_EvenWithNoPositionalPlacements() {
 		// Arrange
 		JsonObject fixture = LoadFixture();
 
@@ -343,17 +310,20 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 		MobilePageConversionGuide guide = Convert(fixture, withPositionalPlacements: false);
 
 		// Assert
-		ViewConfigDiffOperation tab = Element(guide, "SideAreaProfileContainer");
-		tab.Operation.Should().Be("insert",
-			because: "declaredElements creates the tab from the mobile template's own declaration, independent of "
+		Element(guide, "SideAreaProfileContainer").Values!.AsObject().Should().ContainKey("layoutConfig",
+			because: "the mobile-parent map the placement reads is a property of the mobile TEMPLATE, not of the "
+				+ "positional rules — gating one on the other is what made this dead for five of six families");
+		ViewConfigDiffOperation declaredTab = Element(guide, "GeneralInfoTab");
+		declaredTab.Operation.Should().Be("insert",
+			because: "declaredElements creates the tab from the rule's own declaration, independent of "
 				+ "positionalPlacements");
-		tab.ParentName.Should().Be(MobileTabsPanel,
+		declaredTab.ParentName.Should().Be(MobileTabsPanel,
 			because: "the declared tab's parent comes from the declaration itself, not from positionalPlacements");
 	}
 
 	[Test]
-	[Description("Each source shape converts to where the WEB page put its content, and the two shapes differ on purpose: a page that KEPT the template's content grid resolves through that grid's own containers pair (onto the profile Area card), and a page that REMOVED it keeps its content in the tab body. The removed grid is a two-column layout with its own gap, so the web pages differ too -- normalising them into one mobile tree would override a layout decision the developer made.")]
-	public void Analyze_ShouldPlaceContentWhereTheWebPagePutIt_ForBothSourceShapes() {
+	[Description("Both source shapes of the web general tab — the page that REMOVED the template's content grid and the page that KEPT it — convert into the same place: the shipped rule pairs both the tab and its grid onto the declared AdditionalInfoTab, whose synthesized Area card stacks the content in a single column, so the two shapes produce one mobile tree.")]
+	public void Analyze_ShouldPlaceContentInTheDeclaredTab_ForBothSourceShapes() {
 		// Arrange - the pinned page (grid REMOVED) and the same page with the template's grid put back.
 		JsonObject removedGrid = LoadFixture();
 		JsonObject keptGrid = WithTemplateContentGridRestored(LoadFixture());
@@ -364,12 +334,12 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 
 		// Assert
 		foreach (string name in GeneralTabContent) {
-			Element(fromRemoved, name).ParentName.Should().Be(MobileGeneralTab,
-				because: $"the page removed the template's content grid and put '{name}' straight in the tab, "
-					+ "so the tab is where it belongs on mobile as well");
-			Element(fromKept, name).ParentName.Should().Be(MobileProfileContainer,
-				because: $"with the grid present '{name}' is its child, and that grid now pairs onto the profile "
-					+ "Area card — no separate redirect on the tab is involved");
+			ViewConfigDiffOperation removed = Element(fromRemoved, name);
+			IsNestedIn(fromRemoved, removed.Name, DeclaredAdditionalInfoTab).Should().BeTrue(
+				because: $"the page put '{name}' straight in the web tab, which pairs onto the declared tab");
+			Element(fromKept, name).ParentName.Should().Be(removed.ParentName,
+				because: $"with the grid present '{name}' is its child, and the grid pairs onto the same declared "
+					+ "tab, so it lands in the same Area card as in the removed-grid shape");
 		}
 		NonTabChildrenOfTabStrips(fromRemoved).Should().BeEmpty(
 			because: "neither shape may leave a non-tab child in the strip — that is the invariant ENG-94951 broke");
@@ -378,7 +348,7 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 	}
 
 	[Test]
-	[Description("The DEFAULT resolution, with no rules entry involved at all: strip both general-tab containers entries and the page still converts into a content-capable mobile container instead of the tab strip. The nearest such ancestor is CardContentWrapper, which now pairs onto the declared GeneralInformationTab, so the content lands in that tab's Area card. This is the class of the defect rather than its instance -- the rules file is CDN-fetched, so a published file that loses an entry must not be able to reproduce ENG-94951 on a user's machine.")]
+	[Description("The DEFAULT resolution, with no rules entry involved at all: strip both general-tab containers entries and the page still converts into the mobile general tab's grid, while the declared AdditionalInfoTab — which nothing reaches any more — is removed as empty. This is the class of the defect rather than its instance -- the rules file is CDN-fetched, so a published file that loses an entry must not be able to reproduce ENG-94951 on a user's machine.")]
 	public void Analyze_ShouldReHomeTabStripChildren_WhenNoContainersEntryMapsTheGeneralTab() {
 		// Arrange
 		JsonObject fixture = LoadFixture();
@@ -388,17 +358,17 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 
 		// Assert
 		foreach (string name in GeneralTabContent) {
-			ViewConfigDiffOperation content = Element(guide, name);
-			content.ParentName.Should().NotBe(MobileTabsPanel,
-				because: $"'{name}' would otherwise be hoisted into the tab strip and render as nothing");
-			IsNestedIn(guide, content.Name, DeclaredGeneralInformationTab).Should().BeTrue(
-				because: $"the walk carries the nearest ancestor that can hold arbitrary children; for this template "
-					+ "that is CardContentWrapper, whose mobile side is now the declared General information tab, so "
-					+ $"'{name}' lands inside that tab (its synthesized Area card) — found parent '{content.ParentName}'");
+			Element(guide, name).ParentName.Should().Be(MobileGeneralTabContainer,
+				because: $"'{name}' would otherwise be hoisted into the tab strip and render as nothing; the walk "
+					+ "carries the nearest ancestor that can hold arbitrary children, and for this template that "
+					+ "is the general tab's grid");
 		}
 		NonTabChildrenOfTabStrips(guide).Should().BeEmpty(
 			because: "the invariant must hold for ANY rules file, not only for one whose containers list "
 				+ "happens to be complete");
+		guide.ViewConfigDiff.Should().NotContain(o => o.Operation == "insert" && o.Name == DeclaredAdditionalInfoTab,
+			because: "with its pairs gone nothing lands in the declared tab, and an empty converter-created container "
+				+ "is removed rather than shipped as an empty tab");
 	}
 
 	[Test]
@@ -417,8 +387,8 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 	}
 
 	[Test]
-	[Description("The declared GeneralInformationTab is the FIRST mobile tab (index 0, the one selected when the page opens). The template's own general tab is a merge twin and never moves, so it shifts to position 1, and a page-authored tab is numbered after the SHIFTED native tab (index 2) — not squeezed in between the declared tab and the native tab at index 1.")]
-	public void Analyze_ShouldPutTheDeclaredTabFirst_AndNumberPageTabsAfterTheShiftedNativeTab() {
+	[Description("The template's Details tab keeps position 0 (a merge twin never moves), the declared AdditionalInfoTab takes index 1 as declared, and a page-authored tab is numbered after it (index 2) — the numbering pass skips the index the declaration claims.")]
+	public void Analyze_ShouldPlaceTheDeclaredTabAfterDetails_AndNumberPageTabsAfterIt() {
 		// Arrange
 		JsonObject fixture = LoadFixture();
 
@@ -426,99 +396,58 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 		MobilePageConversionGuide guide = Convert(fixture);
 
 		// Assert
-		ViewConfigDiffOperation declaredTab = Element(guide, "SideAreaProfileContainer");
-		declaredTab.Name.Should().Be(DeclaredGeneralInformationTab,
-			because: "the profile island converts into the tab the rules declare for it");
-		declaredTab.Index.Should().Be(0,
-			because: "the declared tab is the first tab, so it is the one selected when the mobile page opens");
-		ViewConfigDiffOperation nativeTab = Element(guide, MobileGeneralTab);
-		nativeTab.Operation.Should().Be("merge",
-			because: "the template's own general tab is a twin — it is merged, never re-inserted or re-indexed");
-		nativeTab.Index.Should().BeNull(
-			because: "a merge carries no index; the insert at 0 in front of it is what shifts it to position 1");
+		ViewConfigDiffOperation declaredTab = Element(guide, "GeneralInfoTab");
+		declaredTab.Name.Should().Be(DeclaredAdditionalInfoTab,
+			because: "the web general tab converts into the tab the rules declare for it");
+		declaredTab.Operation.Should().Be("insert",
+			because: "the mobile template has no such tab; the declaration creates it");
+		declaredTab.Index.Should().Be(1,
+			because: "the declared tab sits right after the template's Details tab, which keeps position 0");
 		Element(guide, "CaseHistoryTab").Index.Should().Be(2,
-			because: "position 0 is the declared tab and position 1 is the shifted native tab, so the first page "
-				+ "tab follows both; index 1 would place it between the declared and the native tab");
-	}
-
-	[TestCase(0, 2)]
-	[TestCase(1, 2)]
-	[TestCase(2, 1)]
-	[Description("Page-tab numbering under a template-owned Tabs is derived from where the native tab actually ends up, not from a fixed offset: a declared tab at the native tab's position (0) shifts the native tab right and page tabs start after it; a declared tab right after it (1) is skipped over; a declared tab further right (2) leaves index 1 free for the first page tab.")]
-	public void Analyze_ShouldNumberPageTabsAfterTheNativeTab_WhereverTheDeclaredTabSits(
-			int declaredIndex, int expectedPageTabIndex) {
-		// Arrange
-		JsonObject fixture = LoadFixture();
-		WebToMobilePageConversionRules rules = RulesWithDeclaredGeneralInformationTabAt(declaredIndex);
-
-		// Act
-		MobilePageConversionGuide guide = Convert(fixture, rules);
-
-		// Assert
-		Element(guide, "SideAreaProfileContainer").Index.Should().Be(declaredIndex,
-			because: "a declared tab keeps the index the rules declare for it, untouched by the numbering pass");
-		Element(guide, "CaseHistoryTab").Index.Should().Be(expectedPageTabIndex,
-			because: $"with the declared tab at {declaredIndex} and the native tab at the first position the "
-				+ "declaration leaves free, the page tab takes the next free position after the native tab");
+			because: "position 0 is the Details tab and position 1 is the declared tab, so the first page tab "
+				+ "follows both");
 	}
 
 	[Test]
-	[Description("CardContentWrapper now pairs onto the declared GeneralInformationTab, so the side column's content other than the profile island (TermsContainer) lands in that tab together with the profile fields — not in the template's general tab, where the web page's own general-tab content stays.")]
-	public void Analyze_ShouldPlaceTheSideColumnContent_IntoTheDeclaredGeneralInformationTab() {
+	[Description("A page whose web general tab holds nothing gets no empty mobile tab: the declared AdditionalInfoTab is removed as empty, the web tab's pairs are dropped with it, and page-authored tabs are numbered right after the Details tab (index 1) since the declared index is no longer claimed.")]
+	public void Analyze_ShouldDropTheDeclaredTab_WhenTheWebGeneralTabIsEmpty() {
 		// Arrange
-		JsonObject fixture = LoadFixture();
+		JsonObject fixture = WithGeneralInfoTabContentMovedToCaseHistoryTab(LoadFixture());
 
 		// Act
 		MobilePageConversionGuide guide = Convert(fixture);
 
 		// Assert
-		Element(guide, "CardContentWrapper").Name.Should().Be(DeclaredGeneralInformationTab,
-			because: "the wrapper's containers pair names the declared tab as its mobile side");
-		ViewConfigDiffOperation terms = Element(guide, "TermsContainer");
-		terms.Operation.Should().Be("insert", because: "TermsContainer is page content and must reach the mobile page");
-		IsNestedIn(guide, terms.Name, DeclaredGeneralInformationTab).Should().BeTrue(
-			because: "TermsContainer sits in the wrapper's side column, and the wrapper now maps onto the declared tab");
-		IsNestedIn(guide, terms.Name, MobileGeneralTab).Should().BeFalse(
-			because: "the side column no longer fills the template's general tab — that tab keeps only the content "
-				+ "the web page put in its own general tab");
-		foreach (string name in new[] { "TermsLabel", "ResponseTimeUnit", "ResolutionTimeValue" }) {
-			Element(guide, name).ParentName.Should().Be(terms.Name,
-				because: $"'{name}' keeps its own container when the container moves to the declared tab");
-		}
+		guide.ViewConfigDiff.Should().NotContain(o => o.Name == DeclaredAdditionalInfoTab,
+			because: "an empty converter-created tab is removed rather than shipped as an empty tab");
+		IsNestedIn(guide, Element(guide, GeneralTabContent[0]).Name, "CaseHistoryTab").Should().BeTrue(
+			because: "the moved content is still converted, inside the page tab that now holds it");
+		Element(guide, "CaseHistoryTab").Index.Should().Be(1,
+			because: "with the declared tab gone, index 1 is free and the first page tab follows the Details tab");
+	}
+
+	[Test]
+	[Description("A page that KEEPS a multi-column web GeneralInfoTabContainer does not carry its columns onto the declared AdditionalInfoTab: a crt.TabContainer has no columns input, so no adaptive group is built for the tab, and the content is stacked single-column in the tab's Area card instead of keeping an adaptive two-column placement that no later pass would overwrite.")]
+	public void Analyze_ShouldNotCarryTheKeptContentGridColumns_OntoTheDeclaredTab() {
+		// Arrange
+		JsonObject fixture = WithTemplateContentGridRestored(LoadFixture(), columns: 2);
+
+		// Act
+		MobilePageConversionGuide guide = Convert(fixture);
+
+		// Assert
+		guide.AdaptiveLayout.Should().NotContain(g => g.ContainerName == DeclaredAdditionalInfoTab,
+			because: "adaptive per-breakpoint columns is a property of crt.GridContainer only; the web grid's columns "
+				+ "must not be attached to a tab");
 		foreach (string name in GeneralTabContent) {
-			Element(guide, name).ParentName.Should().Be(MobileGeneralTab,
-				because: $"moving the side column must not drag the general tab's own content ('{name}') with it");
+			JsonNode layoutConfig = Element(guide, name).Values?["layoutConfig"];
+			layoutConfig.Should().NotBeNull(because: $"'{name}' is stacked into the tab's Area card by row");
+			layoutConfig!["adaptive"].Should().BeNull(
+				because: $"'{name}' does not sit in a multi-column mobile grid, so it must not keep the web grid's "
+					+ "adaptive placement");
+			layoutConfig["column"]!.GetValue<int>().Should().Be(1,
+				because: $"the Area card is a single-column grid, so '{name}' is placed in its only column");
 		}
-	}
-
-	[Test]
-	[Description("On the real page, CardContentWrapper is a two-column web crt.GridContainer that now pairs onto the declared GeneralInformationTab, a crt.TabContainer, which has no adaptive columns input: no adaptive group is built for the tab and none of its direct children is placed as if it sat in a multi-column grid, while a grid-to-grid conversion (TermsContainer) keeps its adaptive columns. This pins the end-to-end outcome on the pinned capture; the adaptive-pass guard itself is isolated by Analyze_MultiColumnGrid_RenamedOntoNonGrid_GetsNoAdaptive, because on this capture the outcome is the same with or without that guard.")]
-	public void Analyze_ShouldNotCarryGridColumns_OntoAMobileElementThatIsNotAGrid() {
-		// Arrange
-		JsonObject fixture = LoadFixture();
-
-		// Act
-		MobilePageConversionGuide guide = Convert(fixture);
-
-		// Assert
-		JsonArray wrapperColumns = FindNode(fixture["page"]!["viewConfig"]!, "CardContentWrapper")?["columns"]?.AsArray();
-		wrapperColumns.Should().NotBeNull(because: "the guard is only exercised if the web wrapper is a grid with columns");
-		wrapperColumns!.Count.Should().BeGreaterThan(1,
-			because: "a single-column grid would never get adaptive placement, so the guard would be vacuous");
-		TypeOf(Element(guide, "CardContentWrapper")).Should().Be("crt.TabContainer",
-			because: "the wrapper's mobile side is the declared tab, which is not a grid");
-		guide.AdaptiveLayout.Should().NotContain(g => g.ContainerName == DeclaredGeneralInformationTab,
-			because: "adaptive per-breakpoint columns is a property of crt.GridContainer only; the web wrapper's "
-				+ "columns must not be attached to a tab");
-		guide.ViewConfigDiff
-			.Where(o => o.Operation == "insert"
-				&& string.Equals(o.ParentName, DeclaredGeneralInformationTab, StringComparison.OrdinalIgnoreCase))
-			.Should().OnlyContain(o => o.Values == null || o.Values["layoutConfig"] == null
-					|| o.Values["layoutConfig"]!["adaptive"] == null,
-				because: "a direct child of the tab must not be placed as if it sat in the wrapper's multi-column grid");
-		guide.AdaptiveLayout.Should().Contain(g => g.ContainerName == "TermsContainer",
-			because: "a web grid that converts to a mobile crt.GridContainer still gets its adaptive columns — the "
-				+ "guard is about the mobile type, not about renaming");
 	}
 
 	// ── helpers ──────────────────────────────────────────────────────────────────────────────────
@@ -593,9 +522,11 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 
 	/// <summary>
 	/// Puts the web template's own <c>GeneralInfoTabContainer</c> back around the page's general-tab content —
-	/// the ordinary shape, which the pinned page (the reported one) removed.
+	/// the ordinary shape, which the pinned page (the reported one) removed. With <paramref name="columns"/> above
+	/// one the grid declares that many web columns and its children fill them left to right, row by row — the
+	/// multi-column layout the web template's own grid has.
 	/// </summary>
-	private static JsonObject WithTemplateContentGridRestored(JsonObject fixture) {
+	private static JsonObject WithTemplateContentGridRestored(JsonObject fixture, int columns = 0) {
 		JsonObject generalTab = FindNode(fixture["page"]!["viewConfig"]!, "GeneralInfoTab")
 			?? throw new AssertionException("fixture no longer carries GeneralInfoTab");
 		JsonArray tabItems = generalTab["items"]!.AsArray();
@@ -604,9 +535,37 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 			tabItems.Remove(child);
 			restored.Add(child);
 		}
-		tabItems.Add(new JsonObject {
+		var grid = new JsonObject {
 			["name"] = "GeneralInfoTabContainer", ["type"] = "crt.GridContainer", ["items"] = restored
-		});
+		};
+		if (columns > 1) {
+			grid["columns"] = new JsonArray([.. Enumerable.Repeat<JsonNode>("minmax(64px, 1fr)", columns)
+				.Select(column => column.DeepClone())]);
+			for (int i = 0; i < restored.Count; i++) {
+				restored[i]!["layoutConfig"] = new JsonObject {
+					["column"] = i % columns + 1, ["row"] = i / columns + 1, ["colSpan"] = 1, ["rowSpan"] = 1
+				};
+			}
+		}
+		tabItems.Add(grid);
+		return fixture;
+	}
+
+	/// <summary>
+	/// Moves the page's general-tab content out of the template-owned <c>GeneralInfoTab</c> into the
+	/// page-authored <c>CaseHistoryTab</c>, leaving the web general tab empty while keeping every name the
+	/// fixture's usability floor requires.
+	/// </summary>
+	private static JsonObject WithGeneralInfoTabContentMovedToCaseHistoryTab(JsonObject fixture) {
+		JsonNode viewConfig = fixture["page"]!["viewConfig"]!;
+		JsonArray generalTabItems = (FindNode(viewConfig, "GeneralInfoTab")
+			?? throw new AssertionException("fixture no longer carries GeneralInfoTab"))["items"]!.AsArray();
+		JsonArray historyTabItems = (FindNode(viewConfig, "CaseHistoryTab")
+			?? throw new AssertionException("fixture no longer carries CaseHistoryTab"))["items"]!.AsArray();
+		foreach (JsonNode child in generalTabItems.ToList()) {
+			generalTabItems.Remove(child);
+			historyTabItems.Add(child);
+		}
 		return fixture;
 	}
 
@@ -771,20 +730,6 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 			current = parent;
 		}
 		return false;
-	}
-
-	/// <summary>
-	/// The shipped rules with the declared <c>GeneralInformationTab</c> moved to <paramref name="index"/> —
-	/// the only knob the converted-tab numbering reads from a declaration under a template-owned Tabs.
-	/// </summary>
-	private static WebToMobilePageConversionRules RulesWithDeclaredGeneralInformationTabAt(int index) {
-		JsonObject rules = JsonNode.Parse(BundledRulesJson())!.AsObject();
-		JsonObject declared = rules["templates"]!.AsArray()
-			.Single(t => t!["web"]!.ToString() == "PageWithTabsFreedomTemplate")!["declaredElements"]!.AsArray()
-			.Single(d => d!["name"]!.ToString() == DeclaredGeneralInformationTab)!.AsObject();
-		declared["index"] = index;
-		using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(rules.ToJsonString()));
-		return WebToMobilePageConversionRulesCatalog.ParseStream(stream);
 	}
 
 	/// <summary>The web parent each named component sits under in the pinned page's merged view config.</summary>

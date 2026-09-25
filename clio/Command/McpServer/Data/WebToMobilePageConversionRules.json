@@ -48,23 +48,23 @@
       "note": "Tabbed record page (Tabs + Feed + Attachments). Preferred target for web tabbed record pages.",
       "declaredElements": [
         {
-          "name": "GeneralInformationTab",
+          "name": "AdditionalInfoTab",
           "type": "crt.TabContainer",
           "parentName": "Tabs",
           "propertyName": "items",
-          "index": 0,
-          "captionResource": { "key": "GeneralInformationTab_caption", "value": "General information" }
+          "index": 1,
+          "captionResource": { "key": "AdditionalInfoTab_caption", "value": "General information" }
         }
       ],
       "containers": [
         { "web": "Tabs", "mobile": "Tabs" },
-        { "web": "GeneralInfoTab", "mobile": "GeneralInfoTab" },
-        { "web": "GeneralInfoTabContainer", "mobile": "AreaProfileContainer" },
+        { "web": "GeneralInfoTab", "mobile": "AdditionalInfoTab" },
+        { "web": "GeneralInfoTabContainer", "mobile": "AdditionalInfoTab" },
         { "web": "FeedTabContainer", "mobile": "FeedContainer" },
         { "web": "AttachmentsTabContainer", "mobile": "AttachmentsContainer" },
         { "web": "CardToggleTabPanel", "mobile": "Tabs" },
-        { "web": "CardContentWrapper", "mobile": "GeneralInformationTab" },
-        { "web": "SideAreaProfileContainer", "mobile": "GeneralInformationTab" },
+        { "web": "CardContentWrapper", "mobile": "GeneralTabContainer" },
+        { "web": "SideAreaProfileContainer", "mobile": "AreaProfileContainer" },
         { "web": "CardContentWrapper:top", "mobile": "Tabs:top" },
         { "web": "CardContentWrapper:bottom", "mobile": "Tabs:bottom" }
       ],

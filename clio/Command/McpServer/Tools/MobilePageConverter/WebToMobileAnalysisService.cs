@@ -2706,9 +2706,9 @@ public static partial class WebToMobileAnalysisService {
 			//    never manufactures a mobile element from a web element under a different name.
 			if (ctx.Map.TryGetValue(name, out string twinMobileName)) {
 				// The twin's type is the MOBILE element's type when the mobile template is readable: a containers
-				// entry may pair elements of different types (GeneralInfoTab, a crt.TabContainer, merges onto
-				// GeneralTabContainer, a crt.GridContainer), and reporting the web type there would name a type
-				// the mobile element does not have — both to the model reading the guide and to
+				// entry may pair elements of different types (GeneralInfoTabContainer, a crt.GridContainer, merges
+				// onto the declared AdditionalInfoTab, a crt.TabContainer), and reporting the web type there would
+				// name a type the mobile element does not have — both to the model reading the guide and to
 				// ExcludedComponentsPass, which matches a filter's parentType against this field. A DECLARED mobile
 				// side has its type in the declaration whether or not the template was probed; only then does it fall
 				// back to the web type (the pair is same-type for every other shipped entry).
@@ -2731,13 +2731,14 @@ public static partial class WebToMobileAnalysisService {
 				// rules entry at all.
 				// Children go into the twin ITSELF, and a containers entry deliberately says nothing more than
 				// that. A web element the page did not remove is walked into its own entry, so a page that KEPT
-				// the template's content grid resolves its children through that grid's own pair
-				// (GeneralInfoTabContainer -> AreaProfileContainer); a page that REMOVED it has no such node, that
-				// pair never matches, and the children belong where the page put them — in the tab itself, which
-				// is a crt.TabContainer and hosts items. The two shapes DIFFER on web (the removed grid was a
-				// two-column layout with its own gap), so carrying the difference is the faithful conversion;
-				// redirecting the tab's children into a grid the page deleted would override a layout decision
-				// the developer made deliberately.
+				// the template's content grid resolves its children through that grid's own pair; a page that
+				// REMOVED it has no such node, that pair never matches, and the children belong where the page put
+				// them — in the tab's own twin, which is a crt.TabContainer and hosts items. Whether the two shapes
+				// convert apart is therefore the rules' decision, not this walk's: the shipped tabbed rule pairs
+				// BOTH the tab and its content grid onto the declared AdditionalInfoTab (GeneralInfoTab ->
+				// AdditionalInfoTab, GeneralInfoTabContainer -> AdditionalInfoTab), so both shapes land in that tab
+				// and BuildTabAreaLayers stacks them into its Area card; the web grid's two-column layout is not
+				// carried onto the tab (BuildAdaptiveLayout admits only a mobile grid).
 				if (items is not null) {
 					WalkElements(ctx, items, twinMobileName, sourceAncestors: Append(sourceAncestors, name),
 						hostableParentName: NearestHostable(ctx, twinMobileName, hostableParentName));
@@ -4931,20 +4932,24 @@ public static partial class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, string> mobileContainerParents = null) {
 		// Grid-container column counts are captured under the WEB container name, but children carry the MOBILE
 		// parent name in their element-map entries — a merge twin or relocated wrapper renames the container
-		// (e.g. CardContentWrapper -> GeneralTabContainer, GeneralInfoTabContainer -> AreaProfileContainer).
+		// (e.g. CardContentWrapper -> GeneralTabContainer, SideAreaProfileContainer -> AreaProfileContainer).
 		// Translate each count to the container's mobile name via its element-map entry so the lookup below
 		// matches renamed pairs; keep the web name as a fallback for containers that are not renamed.
-		// LAST WINS on a duplicate mobile name, which `containers` allows by design — a future many-to-one pair
-		// of two GRIDS would need an explicit tie-break.
+		// LAST WINS on a duplicate mobile name, which `containers` allows by design. Harmless as shipped: the one
+		// many-to-one pair that involves a grid (GeneralInfoTab and GeneralInfoTabContainer -> AdditionalInfoTab)
+		// never competes here — the tab has no captured count and the grid is rejected by the guard below — but a
+		// future many-to-one pair of two GRIDS would need an explicit tie-break.
 		// The mobile side is admitted ONLY when its own type is MobileGridContainerComponentType: adaptive
 		// per-breakpoint columns is a property of that one component type, not of whatever element a
-		// `containers` pair happens to rename a grid onto. Without this guard, a pair that renames a grid onto
-		// a mobile element of a DIFFERENT type would attach the web grid's column count to that element's name,
-		// and any of its children still parented to that name at this point would be placed as if they sat in
-		// a multi-column grid — a placement that can then outlive a later pass which would otherwise have
-		// re-homed them into their real, differently-shaped container (a later pass only overwrites layoutConfig
-		// that is not already adaptive). The web side needs no matching check: gridContainerColumns is only
-		// ever populated from a node that actually declared a `columns` array (see CaptureSource).
+		// `containers` pair happens to rename a grid onto (the shipped case: the two-column web
+		// GeneralInfoTabContainer -> the declared AdditionalInfoTab, a crt.TabContainer). Without this guard, a
+		// pair that renames a grid onto a mobile element of a DIFFERENT type would attach the web grid's column
+		// count to that element's name, and any of its children still parented to that name at this point would
+		// be placed as if they sat in a multi-column grid — a placement that can then outlive a later pass which
+		// would otherwise have re-homed them into their real, differently-shaped container (a later pass only
+		// overwrites layoutConfig that is not already adaptive). The web side needs no matching check:
+		// gridContainerColumns is only ever populated from a node that actually declared a `columns` array (see
+		// CaptureSource).
 		var colsByMobileParent = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 		foreach (ElementMapEntry e in elementMap) {
 			if (e.WebName is { Length: > 0 }
@@ -5752,38 +5757,32 @@ public static partial class WebToMobileAnalysisService {
 	private const string MobileTabsPanelComponentType = "crt.TabPanel";
 
 	/// <summary>
-	/// 0-based position the mobile tabbed template gives its own native tab (a merge twin, never renamed by
-	/// this pass) within the Tabs items, before any declared tab (declaredElements) is inserted in front of it.
+	/// 0-based index of the FIRST converted tab within the mobile Tabs items: 1 places it right after the
+	/// template's general tab (position 0) and before the template's Feed/Attachments tabs, which shift
+	/// right and stay last.
 	/// </summary>
-	private const int TemplateNativeTabIndex = 0;
+	private const int FirstConvertedTabIndex = 1;
 
 	/// <summary>
 	/// Assigns an explicit ordering index to every SURVIVING converted web tab inserted under the mobile
 	/// Tabs element, so the template's Feed/Attachments tabs stay LAST. The mobile tabbed template ships
-	/// its tabs as [native(0), Feed, Attachments]; an index-less insert appends AFTER them, which is how
+	/// its tabs as [general(0), Feed, Attachments]; an index-less insert appends AFTER them, which is how
 	/// converted tabs used to land past Feed/Attachments (the "keep them last" requirement lived only as
-	/// guidance prose, and the mechanical "no index — append" rule always won). Indexing survivors from the
-	/// position right after the native tab up in element-map order (= the web tree order) inserts each tab
-	/// right after the native tab and preserves the web page's own tab order; the template twins are
+	/// guidance prose, and the mechanical "no index — append" rule always won). Indexing survivors from
+	/// <see cref="FirstConvertedTabIndex"/> up in element-map order (= the web tree order) inserts each tab
+	/// right after the general tab and preserves the web page's own tab order; the template twins are
 	/// merges, never move, and get pushed last by construction.
-	/// <para>
-	/// A declared tab inserted AT OR BEFORE the native tab's position (e.g. a declared tab at index 0)
-	/// shifts the native tab right, so numbering starts after the native tab's SHIFTED position. Starting
-	/// from a fixed offset instead would put every converted tab between the declared tab and the native
-	/// tab. This relies on the declared inserts preceding the converted tab inserts in the viewConfigDiff,
-	/// which <see cref="EmitDeclaredElements"/> guarantees for a declaration under a template-owned Tabs.
-	/// </para>
 	/// <para>
 	/// Pass order is load-bearing (enforced at the call site): AFTER <see cref="RemoveEmptyContainers"/>
 	/// so a tab removed as empty is a drop by then and is never indexed (survivors stay contiguous), and
 	/// AFTER <see cref="CompactPositionalIndexes"/> — that compaction rebases each parent's indexed group
 	/// to 0, which over tab indexes would erase the first-tab offset and put the first converted tab BEFORE
-	/// the native tab. The two never meet in one group anyway (positional inserts target the Tabs
+	/// the general tab. The two never meet in one group anyway (positional inserts target the Tabs
 	/// anchor's PARENT, e.g. MainContainer, never Tabs itself), but the order makes that a non-issue by
 	/// construction. Synthesized tab-area layers are created later, INSIDE tabs, and are never matched.
 	/// The pass is UNCONDITIONAL: correct tab order is a correctness invariant, not an opt-in, and the
 	/// values it needs are constants of the mobile tabbed template (the Tabs element name, the tab
-	/// component type, the native tab owning position 0) rather than variable data — a rules file could
+	/// component type, the general tab owning position 0) rather than variable data — a rules file could
 	/// only ever restate them, and its absence would silently reorder tabs behind the guidance contract,
 	/// which promises the caller the indexes are already there. On a non-tabbed page nothing inserts a tab
 	/// under Tabs, so the loop matches nothing and the pass costs one map walk.
@@ -5791,9 +5790,9 @@ public static partial class WebToMobileAnalysisService {
 	/// </summary>
 	private static void AssignConvertedTabIndexes(List<ElementMapEntry> elementMap) {
 		// A Tabs strip this conversion INSERTS (the mobile template had none, so the rule DECLARED one —
-		// declaredElements) owns no template native tab at position 0: every tab under it is placed by the
-		// conversion, so numbering starts at 0. Positions a declared tab (declaredElements — a declared tab
-		// at 0, a declared extra tab) claims for itself are skipped, so the declared index and the converted
+		// declaredElements) owns no template general tab at position 0: every tab under it is placed by the
+		// conversion, so numbering starts at 0. Positions a declared tab (declaredElements — the declared general
+		// tab at 0, a declared extra tab) claims for itself are skipped, so the declared index and the converted
 		// order never collide — the declared tab keeps its own index untouched.
 		bool tabsCreatedByConverter = elementMap.Any(e =>
 			IsInsert(e)
@@ -5804,14 +5803,7 @@ public static partial class WebToMobileAnalysisService {
 				&& IsInsert(e)
 				&& string.Equals(e.ParentName, MobileTabsElementName, StringComparison.OrdinalIgnoreCase))
 			.Select(e => e.Index.Value));
-		int next = 0;
-		if (!tabsCreatedByConverter) {
-			int nativeTabPosition = TemplateNativeTabIndex;
-			while (declaredIndexes.Contains(nativeTabPosition)) {
-				nativeTabPosition++;
-			}
-			next = nativeTabPosition + 1;
-		}
+		int next = tabsCreatedByConverter ? 0 : FirstConvertedTabIndex;
 		foreach (ElementMapEntry entry in elementMap) {
 			if (IsInsert(entry)
 				&& !entry.DeclaredByRule
