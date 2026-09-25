@@ -154,8 +154,8 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 			because: "the web general tab's top-level content is moved into the Area card");
 		foreach (string name in GeneralTabContent) {
 			Element(guide, name).ParentName.Should().Be(layers.AreaName,
-				because: $"'{name}' must sit in the Area card; placed directly in the tab it renders without the white "
-					+ "area");
+				because: $"'{name}' must sit in the declared tab's Area card — placed directly in the tab it renders "
+					+ "without the white area, and it never belongs in the Details tab, which keeps only the side column");
 		}
 		foreach (string name in GeneralTabContent) {
 			ViewConfigDiffOperation entry = Element(guide, name);
@@ -166,8 +166,6 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 					+ "lands inside that tab (its synthesized Area card); parenting it to the Tabs panel instead puts a "
 					+ $"non-tab child inside a crt.TabPanel, which renders nothing and is exactly ENG-94951 — found "
 					+ $"parent '{entry.ParentName}'");
-			IsNestedIn(guide, entry.Name, MobileGeneralTab).Should().BeFalse(
-				because: $"'{name}' is general-tab content, and the template's Details tab keeps only the side column");
 		}
 		foreach (string name in GeneralTabLeafContent) {
 			Element(guide, name).Operation.Should().Be("insert",
@@ -215,7 +213,7 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 
 	[Test]
 	[Description("ENG-94951 over-correction guard: the template's Details tab and its content grid are provided by the mobile template, so the converter never re-declares either one under Tabs; the web general tab's content gets the DECLARED AdditionalInfoTab instead, captioned by its own declared resource, while the template's own 'Details' caption stands untouched. This does NOT fail on the unfixed code — there the tab was dropped — it pins the shape of the fix.")]
-	public void Analyze_ShouldMergeTheGeneralTab_RatherThanRecreateIt() {
+	public void Analyze_ShouldNotRedeclareTheDetailsTab_AndCaptionTheDeclaredTab() {
 		// Arrange
 		JsonObject fixture = LoadFixture();
 
@@ -457,6 +455,8 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 			because: "an empty converter-created tab is removed rather than shipped as an empty tab");
 		IsNestedIn(guide, Element(guide, GeneralTabContent[0]).Name, "CaseHistoryTab").Should().BeTrue(
 			because: "the moved content is still converted, inside the page tab that now holds it");
+		(guide.NameMap ?? new Dictionary<string, string>()).Values.Should().NotContain(DeclaredAdditionalInfoTab,
+			because: "no source element may be reported as renamed onto a tab the converted page does not have");
 		Element(guide, "CaseHistoryTab").Index.Should().Be(1,
 			because: "with the declared tab gone, index 1 is free and the first page tab follows the Details tab");
 	}
@@ -751,12 +751,19 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 
 	/// <summary>
 	/// Whether the operation named <paramref name="mobileName"/> is nested (at any depth) inside the mobile
-	/// element <paramref name="ancestorMobileName"/>, walking the parentName chain of viewConfigDiff.
+	/// element <paramref name="ancestorMobileName"/>, walking the parentName chain of viewConfigDiff. Two parented
+	/// operations sharing one name fail as an assertion, because the chain would be ambiguous.
 	/// </summary>
 	private static bool IsNestedIn(MobilePageConversionGuide guide, string mobileName, string ancestorMobileName) {
-		Dictionary<string, string> parentByName = guide.ViewConfigDiff
-			.Where(e => !string.IsNullOrEmpty(e.ParentName))
-			.ToDictionary(e => e.Name, e => e.ParentName, StringComparer.OrdinalIgnoreCase);
+		List<ViewConfigDiffOperation> parented = [.. guide.ViewConfigDiff.Where(e => !string.IsNullOrEmpty(e.ParentName))];
+		parented.GroupBy(e => e.Name, StringComparer.OrdinalIgnoreCase)
+			.Where(group => group.Count() > 1)
+			.Select(group => group.Key)
+			.Should().BeEmpty(
+				because: "each element is placed by one operation, so a name with two parents makes its nesting "
+					+ "ambiguous");
+		Dictionary<string, string> parentByName =
+			parented.ToDictionary(e => e.Name, e => e.ParentName, StringComparer.OrdinalIgnoreCase);
 		string current = mobileName;
 		for (int guard = 0; guard < 20 && parentByName.TryGetValue(current, out string parent); guard++) {
 			if (string.Equals(parent, ancestorMobileName, StringComparison.OrdinalIgnoreCase)) {
