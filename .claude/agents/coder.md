@@ -42,7 +42,7 @@ make it structured, not conversational.
 2. Build the affected project(s).
 3. Run ONLY the targeted test filter for the modules you changed (see CLAUDE.md
    module-to-source map), e.g.
-   `dotnet test clio.tests/clio.tests.csproj --filter "Category=Unit&Module=Command" --no-build`.
+   `dotnet test clio.tests/clio.tests.csproj --filter "TestCategory=Unit&Module=Command" --no-build`.
    Run the full suite only if you touched `BindingsModule.cs`, `Program.cs`, `clio/Common/`,
    or spanned >3 modules.
 4. If tests fail, fix and re-run. Do not return with failing targeted tests unless you are

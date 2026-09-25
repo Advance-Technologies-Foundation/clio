@@ -17,7 +17,7 @@ namespace Clio.Tests;
 /// </remarks>
 [TestFixture]
 [Category("Unit")]
-// Without a Module trait no targeted Category=Unit&Module=X run executes this guard.
+// Without a Module trait no targeted TestCategory=Unit&Module=X run executes this guard.
 [Property("Module", "Core")]
 public sealed class TestOutputDirectoryTests {
 

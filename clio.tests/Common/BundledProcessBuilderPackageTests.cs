@@ -29,7 +29,7 @@ namespace Clio.Tests.Common;
 /// </para>
 /// <para>
 /// Kept in the <c>Unit</c> lane despite reading from disk (which <c>project-context.md</c> assigns to
-/// <c>Integration</c>). Deliberate: the pre-commit gate is <c>Category=Unit&amp;Module=X</c>, and a guard
+/// <c>Integration</c>). Deliberate: the pre-commit gate is <c>TestCategory=Unit&amp;Module=X</c>, and a guard
 /// that only runs in the integration lane would not guard the commit that breaks it. The I/O is a file
 /// this test project's own build output always carries, not an external dependency.
 /// </para>
