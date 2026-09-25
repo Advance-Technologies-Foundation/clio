@@ -21,13 +21,15 @@ namespace Clio.Mcp.E2E;
 /// </summary>
 /// <remarks>
 /// <para>The refusal lives in the PACKAGE, not in clio: clio forwards the payload and relays the server's message. So
-/// these tests need CrtProcessBuilder 1.6.6.30 or later on the stand - an older package drops such a key in silence
+/// these tests need CrtProcessBuilder 1.6.6.32 or later on the stand - an older package drops such a key in silence
 /// exactly as before - and they are ignored, with the reason, when it is behind.</para>
 /// <para>They are also the only check that a HOST really keeps undeclared keys: the package can prove its own reader
 /// works, but not that the platform binds the request with a serializer that fills the extension data. Run them on
 /// both a .NET Framework and a .NET Core stand before a release.</para>
-/// <para>The describe-echo case feeds a described element back unchanged but for its caption: the refusal must name
-/// the read-only fields as such (not as typos), and the caption - a declared key - must not be saved either.</para>
+/// <para>The describe-echo case feeds a described element back unchanged: the refusal must name its read-only fields
+/// as such, once per place, and list none of them as a typo. That a refusal saves nothing is the package handler
+/// tests' claim (the repository is never reached); a start event offers no declared field whose change would prove it
+/// here.</para>
 /// <para><c>lable</c> on a flow and on a <c>setFlow</c> operation are the misspellings the ENG-95244 stand probe
 /// measured (the operation used to answer "1 operation(s) applied" and change nothing); <c>tpye</c> is the parameter
 /// case of the package's own unit tests.</para>
@@ -43,7 +45,7 @@ public sealed class ProcessRequestUnknownKeyE2ETests {
 	private const string ModifyToolName = "modify-business-process";
 	private const string AsNewVersionToolName = "modify-business-process-as-new-version";
 	private const string DescribeToolName = "describe-business-process";
-	private const string MinimumPackageVersion = "1.6.6.30";
+	private const string MinimumPackageVersion = "1.6.6.32";
 	private const string Subject = "unknown request keys";
 	private const string Refused = "The request was refused and nothing was saved";
 
@@ -126,7 +128,7 @@ public sealed class ProcessRequestUnknownKeyE2ETests {
 	}
 
 	[Test]
-	[Description("Over the real MCP path, an element copied verbatim from describe into a setElement elementUpdate is refused as a whole: its read-only fields are named once per place under 'Read-only fields copied from describe', no key is mistaken for a typo, and the caption the echo also carried is not saved.")]
+	[Description("Over the real MCP path, an element copied verbatim from describe into a setElement elementUpdate is refused as a whole: its read-only fields are named once per place under 'Read-only fields copied from describe', and no key is listed one by one as a typo.")]
 	[AllureTag(ModifyToolName)]
 	[AllureTag(DescribeToolName)]
 	[AllureName("modify-business-process refuses a described element fed back verbatim and names its read-only fields")]
@@ -138,12 +140,12 @@ public sealed class ProcessRequestUnknownKeyE2ETests {
 		(await CreateAsync(context, processName, "label")).ExitCode.Should().Be(0,
 			because: "the process to modify must exist");
 		JsonObject described = DescribedProcessGraph.Read(await DescribeAsync(context, processName));
-		JsonObject start = ElementNamed(described, "Start1");
-		string captionBefore = start["caption"]?.GetValue<string>();
-		JsonObject echo = (JsonObject)start.DeepClone();
-		echo["caption"] = "Echoed caption";
 		var operations = new JsonArray {
-			new JsonObject { ["op"] = "setElement", ["elementName"] = "Start1", ["elementUpdate"] = echo }
+			new JsonObject {
+				["op"] = "setElement",
+				["elementName"] = "Start1",
+				["elementUpdate"] = ElementNamed(described, "Start1").DeepClone()
+			}
 		};
 
 		// Act
@@ -162,11 +164,10 @@ public sealed class ProcessRequestUnknownKeyE2ETests {
 			because: "the fields describe added are named as read-only, not as typos");
 		output.Should().MatchRegex(@"operations\[\]\.elementUpdate: [^;.]*\buid\b",
 			because: "the read-only fields are named once per place, the element's uid among them");
-		output.Should().NotContain(" - did you mean",
-			because: "a verbatim describe echo holds no misspelled key, so none may be reported as one");
-		JsonObject after = ElementNamed(DescribedProcessGraph.Read(await DescribeAsync(context, processName)), "Start1");
-		after["caption"]?.GetValue<string>().Should().Be(captionBefore,
-			because: "a refused edit saves nothing, not even the declared caption it carried");
+		output.Should().NotMatchRegex(@"operations\[0\]\.\S+ - ",
+			because: "a verbatim describe echo holds no misspelled key, so no key may be listed one by one with a hint");
+		output.Should().NotContain("more not listed",
+			because: "nothing a describe echo carries is pushed past the listing cap");
 	}
 
 	[Test]

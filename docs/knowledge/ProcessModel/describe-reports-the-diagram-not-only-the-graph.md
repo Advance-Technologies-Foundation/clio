@@ -27,5 +27,5 @@ designer and looking, which is the situation ENG-95890/ENG-98448 exist to end.
 
 **One trap** — a field an agent can SEE is a field it will try to set. The tool description and the
 prompt both say the three are read-only for that reason. Echoed back into a write, they are REFUSED by
-CrtProcessBuilder 1.6.6.30 and later, each named as a read-only describe field (ENG-95244); an older package
+CrtProcessBuilder 1.6.6.32 and later, each named as a read-only describe field (ENG-95244); an older package
 ignored them in silence.
