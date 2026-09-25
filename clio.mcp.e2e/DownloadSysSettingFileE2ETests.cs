@@ -47,13 +47,15 @@ public sealed class DownloadSysSettingFileE2ETests : McpContractFixtureBase {
 			["environment-name"] = settings.Sandbox.EnvironmentName, ["code"] = code, ["name"] = code,
 			["value-type-name"] = "Binary"
 		});
-		EntitySchemaStructuredResultParser.Extract<SysSettingCreateResult>(created).Success.Should().BeTrue(
-			because: "the download precondition is a real Binary setting");
+		SysSettingCreateResult createResult = EntitySchemaStructuredResultParser.Extract<SysSettingCreateResult>(created);
+		createResult.Success.Should().BeTrue(
+			because: "the download precondition is a real Binary setting ({0})", Describe(createResult));
 		CallToolResult uploaded = await Run(context, SysSettingUpdateTool.UpdateSysSettingToolName, new() {
 			["environment-name"] = settings.Sandbox.EnvironmentName, ["code"] = code, ["value-file-path"] = source
 		});
-		EntitySchemaStructuredResultParser.Extract<SysSettingUpdateResult>(uploaded).Success.Should().BeTrue(
-			because: "the server must accept the actual source file before verifying readback");
+		SysSettingUpdateResult uploadResult = EntitySchemaStructuredResultParser.Extract<SysSettingUpdateResult>(uploaded);
+		uploadResult.Success.Should().BeTrue(
+			because: "the server must accept the actual source file before verifying readback ({0})", Describe(uploadResult));
 		string cliFile = Path.Combine(directory, "cli.chosen");
 		string mcpFile = Path.Combine(directory, "mcp.chosen");
 
@@ -66,10 +68,10 @@ public sealed class DownloadSysSettingFileE2ETests : McpContractFixtureBase {
 		WireResult result = EntitySchemaStructuredResultParser.Extract<WireResult>(downloaded);
 
 		// Assert
-		AllureApi.Step("CLI returns success", () => cli.ExitCode.Should().Be(0, because: "the real CLI must save the Binary value"));
+		AllureApi.Step("CLI returns success", () => cli.ExitCode.Should().Be(0, because: "the real CLI must save the Binary value (stdout: {0}; stderr: {1})", cli.StandardOutput, cli.StandardError));
 		AllureApi.Step("CLI saves exact bytes", () => File.ReadAllBytes(cliFile).Should().Equal(bytes, because: "text encoding and binary content are opaque"));
 		AllureApi.Step("MCP invocation succeeds", () => downloaded.IsError.Should().NotBeTrue(because: "clio-run must reach the long-tail tool"));
-		AllureApi.Step("MCP exit code is zero", () => result.ExitCode.Should().Be(0, because: "the file was published successfully"));
+		AllureApi.Step("MCP exit code is zero", () => result.ExitCode.Should().Be(0, because: "the file was published successfully ({0})", Describe(result)));
 		AllureApi.Step("MCP includes Info", () => result.Output.Should().Contain(m => m.GetProperty("message-type").GetString() == "Info", because: "success must include execution diagnostics"));
 		AllureApi.Step("MCP reports path", () => result.FileName.Should().Be(mcpFile, because: "the caller controls the filename"));
 		AllureApi.Step("MCP reports bytes", () => result.ByteCount.Should().Be(bytes.Length, because: "metadata counts the exact saved bytes"));
@@ -127,6 +129,16 @@ public sealed class DownloadSysSettingFileE2ETests : McpContractFixtureBase {
 		}
 		return settings;
 	}
+
+	/// <summary>
+	/// Serializes a structured tool result for assertion messages, so a refusal by the stand's file-security
+	/// policy (for example <c>FileExtensionsDenyList</c>) shows its error and category in the TeamCity output.
+	/// </summary>
+	private static string Describe<T>(T result) => System.Text.Json.JsonSerializer.Serialize(result, DiagnosticJsonOptions);
+
+	private static readonly System.Text.Json.JsonSerializerOptions DiagnosticJsonOptions = new() {
+		Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+	};
 
 	private static Task<CallToolResult> Run(ArrangeContext context, string tool, Dictionary<string, object?> args) =>
 		context.Session.CallToolAsync(ClioRunTool.ToolName, new Dictionary<string, object?> {

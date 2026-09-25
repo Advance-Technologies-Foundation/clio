@@ -72,23 +72,24 @@ public sealed class ExecuteSqlScriptToolE2ETests : McpContractFixtureBase {
 			await context.Session.CallToolAsync(ExecuteSqlScriptTool.ToolName,
 				new Dictionary<string, object?> { ["args"] = args }, context.CancellationTokenSource.Token));
 		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(result);
+		string diagnostics = DescribeExecution(execution);
 
 		// Assert
 		AllureApi.Step("Verify transport success", () => result.IsError.Should().NotBeTrue(
-			because: "export must complete without an MCP error"));
+			because: "export must complete without an MCP error ({0})", diagnostics));
 		AllureApi.Step("Verify command success", () => execution.ExitCode.Should().Be(0,
-			because: "the SELECT and file export must succeed"));
+			because: "the SELECT and file export must succeed ({0})", diagnostics));
 		AllureApi.Step("Verify informational completion", () => execution.Output.Should().Contain(
 			message => message.MessageType == LogDecoratorType.Info,
-			because: "silent mode retains the completion message"));
+			because: "silent mode retains the completion message ({0})", diagnostics));
 		AllureApi.Step("Verify silent output omits the result body", () => execution.Output.Should().NotContain(
 			message => message.Value != null && message.Value.Contains(expected),
 			because: "a file export must not flood the MCP response with SQL input or result values"));
 		AllureApi.Step("Verify the saved path is returned", () => execution.Output.Should().Contain(
 			message => message.Value != null && message.Value.Contains(destination),
-			because: "the caller needs the artifact location for later inspection"));
+			because: "the caller needs the artifact location for later inspection ({0})", diagnostics));
 		AllureApi.Step("Verify destination exists", () => File.Exists(destination).Should().BeTrue(
-			because: "the destination is the durable result for later inspection"));
+			because: "the destination is the durable result for later inspection ({0})", diagnostics));
 		string value;
 		if (view == "xlsx") {
 			using SpreadsheetDocument workbook = SpreadsheetDocument.Open(destination, false);
@@ -125,10 +126,11 @@ public sealed class ExecuteSqlScriptToolE2ETests : McpContractFixtureBase {
 				["view"] = view, ["destination-path"] = destination, ["silent"] = true
 			}}, context.CancellationTokenSource.Token);
 		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(result);
+		string diagnostics = DescribeExecution(execution);
 
 		// Assert
 		AllureApi.Step("Verify empty query succeeds", () => execution.ExitCode.Should().Be(0,
-			because: "zero rows is a successful query"));
+			because: "zero rows is a successful query ({0})", diagnostics));
 		if (view == "xlsx") {
 			using SpreadsheetDocument workbook = SpreadsheetDocument.Open(destination, false);
 			AllureApi.Step("Verify workbook has no data rows", () => workbook.WorkbookPart!.WorksheetParts.Single()
@@ -196,5 +198,16 @@ public sealed class ExecuteSqlScriptToolE2ETests : McpContractFixtureBase {
 			because: "silent mode suppresses results, not failures"));
 		AllureApi.Step("Verify no output file was created", () => File.Exists(destination).Should().BeFalse(
 			because: "failed queries and invalid destinations must not produce a successful-looking file"));
+	}
+
+	/// <summary>
+	/// Renders the command envelope for assertion messages, so a failure on a stand that refuses the operation
+	/// (for example <c>DenyCustomQueryApiUsage</c>) shows the server's reason in the TeamCity output.
+	/// </summary>
+	private static string DescribeExecution(CommandExecutionEnvelope execution) {
+		string messages = execution.Output is null || execution.Output.Count == 0
+			? "<no messages>"
+			: string.Join(" | ", execution.Output.Select(message => $"{message.MessageType}: {message.Value}"));
+		return $"ExitCode={execution.ExitCode}; Messages={messages}";
 	}
 }
