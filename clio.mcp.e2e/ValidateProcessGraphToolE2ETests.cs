@@ -147,6 +147,8 @@ public sealed class ValidateProcessGraphToolE2ETests {
 	[TestCase("readData")]
 	[TestCase("changeData")]
 	[TestCase("changeAccessRights")]
+	// The last server build token ManagerMap still resolved to Unknown (ENG-95244).
+	[TestCase("deleteData")]
 	public async Task ValidateProcessGraph_Should_ClassifyBuildTokens_AsKnownTypes(string elementType) {
 		// Arrange
 		await using ArrangeContext arrangeContext = await ArrangeAsync();
@@ -175,6 +177,43 @@ public sealed class ValidateProcessGraphToolE2ETests {
 					+ "not be reported as an unrecognized element type the way it was before the token was mapped");
 		response.HasErrors.Should().BeFalse(
 			because: $"Start -> {elementType} -> End violates no connection rule once the node type is recognized");
+	}
+
+	[Test]
+	[Description("Over the real MCP path, a node of a type the build cannot create comes back as an UNBUILDABLE WARNING naming it, while the graph reports no error - the marker that replaces 'a passing graph is not necessarily buildable' as prose (ENG-95244).")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-process-graph marks an unbuildable element with an UNBUILDABLE warning")]
+	[TestCase("inclusiveGateway")]
+	[TestCase("startEventTimer")]
+	[TestCase("scriptTask")]
+	public async Task ValidateProcessGraph_Should_MarkUnbuildableElements_WithAWarning(string elementType) {
+		// Arrange
+		await using ArrangeContext arrangeContext = await ArrangeAsync();
+		string environmentName = await ResolveEnvironmentOrIgnoreAsync();
+		bool isStart = elementType.StartsWith("startEvent", StringComparison.Ordinal);
+		Dictionary<string, object?> graph = new() {
+			["environment-name"] = environmentName,
+			["nodes"] = isStart
+				? new[] { Node("x", elementType), Node("t", "performTask"), Node("e", "endEvent") }
+				: new[] { Node("s", "startEvent"), Node("x", elementType), Node("e", "endEvent") },
+			["edges"] = isStart
+				? new[] { Edge("x", "t", "sequence"), Edge("t", "e", "sequence") }
+				: new[] { Edge("s", "x", "sequence"), Edge("x", "e", "sequence") }
+		};
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(arrangeContext, graph);
+		ValidateProcessGraphResponse response = EntitySchemaStructuredResultParser.Extract<ValidateProcessGraphResponse>(callResult);
+
+		// Assert
+		response.Success.Should().BeTrue(because: "the graph is well formed");
+		(response.Findings ?? new List<ValidateProcessGraphFinding>())
+			.Should().Contain(finding => finding.RuleId == "UNBUILDABLE" && finding.Severity == "warning"
+				&& finding.NodeName == "x",
+				because: $"'{elementType}' passes the connection rules and create-business-process refuses it, so "
+					+ "the node itself must carry the marker over the real server path");
+		response.HasErrors.Should().BeFalse(
+			because: "an unbuildable element is still a valid plan, so the marker is a warning");
 	}
 
 	[Test]

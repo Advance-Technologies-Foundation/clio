@@ -253,6 +253,7 @@ public sealed class CreateBusinessProcessService(
 	IApplicationClientFactory applicationClientFactory,
 	IServiceUrlBuilder serviceUrlBuilder,
 	IProcessPageFactsChecker pageFactsChecker,
+	IProcessDescriptorPreflight graphPreflight,
 	ILogger logger)
 	: ICreateBusinessProcessService {
 	private static readonly JsonSerializerOptions JsonOptions = new() {
@@ -288,6 +289,13 @@ public sealed class CreateBusinessProcessService(
 		}
 		foreach (string pageWarning in pageCheck?.Warnings ?? []) {
 			logger.WriteWarning(pageWarning);
+		}
+
+		// Advisory, and it never decides anything: the build below is posted whatever this says, because the
+		// server is the gate for every rule it enforces and this reports only the ones it does not (ENG-95244).
+		// Before the POST so the lines reach the caller on a refused build as well as on a successful one.
+		foreach (string graphWarning in graphPreflight.CheckCreateDescriptor(descriptor)) {
+			logger.WriteWarning(graphWarning);
 		}
 
 		using IOwnedApplicationClient client = applicationClientFactory.CreateOwnedEnvironmentClient(environmentSettings);

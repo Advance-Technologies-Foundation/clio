@@ -562,6 +562,91 @@ public sealed class CreateBusinessProcessToolE2ETests {
 	// unlabelled arrows), it is invisible in metadata because a caption lives in the schema RESOURCES,
 	// and the unit tests construct these records positionally in C# so the JSON member name is
 	// exercised nowhere else.
+	// A parallel join behind an exclusive choice: the two branches leave Decide by different flows and meet
+	// at a parallel gateway, which waits for both and gets one. The server builds it without a word (it has no
+	// R8 check), which is what makes it the pre-flight's case - it is ALSO a shape nobody should ship, so the
+	// E2E asserts the build and the warning, never that the process runs.
+	private static string BuildParallelJoinBehindAChoiceDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Pre-flight R8 E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "Start1", "type": "startEvent" },
+		    { "name": "Decide", "type": "exclusiveGateway" },
+		    { "name": "Left", "type": "performTask" },
+		    { "name": "Right", "type": "performTask" },
+		    { "name": "Join", "type": "parallelGateway" },
+		    { "name": "End1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "Start1", "target": "Decide" },
+		    { "source": "Decide", "target": "Left", "kind": "conditional", "condition": "[#AmountParameter#] > 100" },
+		    { "source": "Decide", "target": "Right", "kind": "default" },
+		    { "source": "Left", "target": "Join" },
+		    { "source": "Right", "target": "Join" },
+		    { "source": "Join", "target": "End1" }
+		  ],
+		  "parameters": [
+		    { "name": "AmountParameter", "type": "Integer", "direction": "In", "caption": "Amount" }
+		  ]
+		}
+		""";
+
+	[Test]
+	[Description("Over the real MCP path, a descriptor whose parallel join waits behind an exclusive choice is BUILT - the pre-flight never blocks - and the result carries a 'Pre-flight R8' warning, the risk the server does not check (the instance would hang in Running with no error). The only E2E that proves the pre-flight is wired into the create path at all: its unit tests call the service with a substitute client (ENG-95244).")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process builds a risky graph and reports the R8 pre-flight warning")]
+	public async Task CreateBusinessProcess_Should_ReportAPreflightWarning_AndStillBuild_WhenAParallelJoinWaitsBehindAChoice() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpPreflightE2e{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildParallelJoinBehindAChoiceDescriptor(processName)
+		});
+
+		// Assert
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		callResult.IsError.Should().NotBeTrue(
+			because: "the pre-flight is advisory, and the server accepts this graph");
+		callResultJson.Should().Contain(processName,
+			because: "a warning must never stop the build - the process has to be created");
+		callResultJson.Should().Contain("Pre-flight R8",
+			because: "the parallel join behind a choice is the one risk here the server says nothing about, and the "
+				+ "pre-flight exists to put it in front of the caller");
+		callResultJson.Should().NotContain("Pre-flight R12",
+			because: "a shape the build reports itself must not be repeated by the pre-flight");
+	}
+
+	[Test]
+	[Description("Over the real MCP path, a clean descriptor carries no pre-flight line at all, so the ordinary successful create pays no noise for the check (ENG-95244).")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process adds no pre-flight line to a clean build")]
+	public async Task CreateBusinessProcess_Should_AddNoPreflightLine_WhenTheGraphIsClean() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpCleanE2e{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildGatewayAndDeclaredBranchDescriptor(processName)
+		});
+
+		// Assert
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		callResult.IsError.Should().NotBeTrue(
+			because: "the gateway descriptor is a valid, buildable graph");
+		callResultJson.Should().Contain(processName,
+			because: "a successful build reports the created schema name");
+		callResultJson.Should().NotContain("Pre-flight",
+			because: "a gateway with a conditional and a default branch carries no silent risk");
+	}
+
 	private static string BuildGatewayAndDeclaredBranchDescriptor(string processName) =>
 		$$"""
 		{

@@ -15,7 +15,7 @@
 > independent of it. The names `clioprocessbuilder` and `cli-process-builder` are left in place below as
 > the historical record.
 
-**Jira**: [ENG-90883](https://creatio.atlassian.net/browse/ENG-90883) (Approach 1 of [ENG-91447](https://creatio.atlassian.net/browse/ENG-91447); follow-ups [ENG-91842](https://creatio.atlassian.net/browse/ENG-91842))
+**Jira**: [ENG-90883](https://creatio.atlassian.net/browse/ENG-90883) (Approach 1 of [ENG-91447](https://creatio.atlassian.net/browse/ENG-91447); follow-ups [ENG-91842](https://creatio.atlassian.net/browse/ENG-91842), [ENG-95244](https://creatio.atlassian.net/browse/ENG-95244) — the validator on the write path)
 
 **Confluence**:
 - [Research: Add business process generation via AI instructions](https://creatio.atlassian.net/wiki/spaces/TER/pages/4702928908) — three-approaches investigation; §3 records the Approach 1 + package decision
@@ -45,8 +45,8 @@ flowchart TB
 
   subgraph clio["clio (Layer 2, outside Creatio)"]
     verbs["MCP tools / prompts (no public CLI verbs):<br/>create-business-process, modify-business-process,<br/>describe-business-process, list-user-tasks"]
-    validator["R1–R17 graph validator<br/>(validate-process-graph)"]
-    validator -. "pre-flight" .-> verbs
+    validator["R1–R20 graph validator<br/>(validate-process-graph)"]
+    validator -. "advisory pre-flight,<br/>create-business-process only" .-> verbs
   end
 
   subgraph pkg["Creatio package: clioprocessbuilder"]
@@ -71,7 +71,14 @@ _The boundary this ADR governs is the REST edge between **clio** and the **packa
 Deliver process design as a **backend command-driven "non-visual designer"**, packaged as a **cliogate-style Creatio configuration package `clioprocessbuilder`** (a new sibling to `cliogate`), with a clear two-layer split:
 
 - **Package layer (`clioprocessbuilder`, in Creatio)** — owns build/modify/read/serialize via the platform managers. Exposed as a thin WCF service `ProcessDesignService` (`[ServiceContract] : BaseService`) at **`/rest/ProcessDesignService/<Method>`** (wrapped body style; `Build()` prepends `0/` on net472). The service is a transport shell that resolves the domain orchestrator `IProcessDesigner` from a per-request DI scope (`ClioProcessBuilderApp` composition root) and delegates.
-- **clio layer (Layer 2)** — owns intent/MCP/orchestration: `ServiceUrlBuilder.KnownRoute` entries, `Command<TOptions>` command classes (`create-business-process`, `modify-business-process`, `list-user-tasks`, `describe-business-process`) exposed **only** as MCP tools (no public CLI verbs — see "Feature gating"), their MCP tools/prompts/guidance, and the R1–R17 `IProcessGraphValidator` (common-core) used as pre-flight.
+- **clio layer (Layer 2)** — owns intent/MCP/orchestration: `ServiceUrlBuilder.KnownRoute` entries, `Command<TOptions>` command classes (`create-business-process`, `modify-business-process`, `list-user-tasks`, `describe-business-process`) exposed **only** as MCP tools (no public CLI verbs — see "Feature gating"), their MCP tools/prompts/guidance, and the R1–R20 `IProcessGraphValidator` (common-core), exposed as `validate-process-graph` and run by `create-business-process` as an **advisory** pre-flight — never as a gate, and not at all on the modify path (see "The validator on the write path" below).
+
+### The validator on the write path (ENG-95244)
+
+- **The server is the gate.** On create, the package's `ValidateStructure` covers clio's R1/R2/R3/R15; `FlowKindRules` covers R11/R13/R14/R18/R19/R20 on create **and** modify; the platform's own process validation runs on both; nothing is persisted on a refusal. The places where clio's rules and the server's part are pinned package-side by `ProcessValidateBuildDivergenceTests`.
+- **Create: advisory pre-flight.** Before the POST, `CreateBusinessProcessService` maps `elements[]`/`flows[]` to a `ProcessGraph` (`IProcessDescriptorPreflight`) and writes, as warnings, only the findings the server does **not** report: R8 (a parallel join behind a choice — the instance hangs in Running with no error), R7/R9 with no default branch, R13 off an event, and R17. It never blocks. Errors are not shown, because an error is by the validator's own rule a shape the build refuses and the server's message for it is authoritative; warnings the build also reports (R12 as a notice; the plain-flow R7/R9 as a notice, or as a refusal beside a declared default; R13 with no condition and `UNBUILDABLE` as refusals) carry `ProcessGraphFinding.ReportedByBuild` and are not repeated either. A descriptor the pre-flight cannot read the way the server does (an unknown flow kind, a non-string condition) produces no lines at all rather than a verdict on a different graph.
+- **Modify: nothing, deliberately.** `modify-business-process` and `modify-business-process-as-new-version` take operations, not a graph, and a whole-graph check would judge the process being edited rather than the edit: 37 processes shipped in 7.8.0 carry a start event the whole-graph rules reject, so they would become uneditable for any change (`docs/knowledge/ProcessModel/start-event-arity-is-enforced-on-create-not-modify.md`). Per-operation authoring rules belong in `FlowKindRules`, where they already are; a package-side "do not make it worse" guard is a separate, optional item.
+- **Buildability has one source.** `ManagerMap.IsBuildable` decides which element kinds create/modify can build; the validator reports every other recognized kind as an `UNBUILDABLE` warning, and `ManagerMapResolveDataIdTests` pins the server's whole token list (`ProcessDesignConstants.ElementTypes`, compared against the bundled archive) as recognized and buildable.
 
 ### Service surface
 - `BuildProcess({name, caption, packageName, elements[], flows[], parameters[], mappings[]})` — declarative descriptor in; builds the lane, materializes elements, connects flows, adds parameters (optionally with a constant default value) and mappings, auto-lays-out, saves.
@@ -126,26 +133,43 @@ element kinds the backend designer can **build** today:
 | Element kind | `create`/`modify` descriptor `type` (= describe `buildType`) | describe runtime `type` | `validate-process-graph` node `type` (diagram-js data-id) | Role |
 |---|---|---|---|---|
 | Start event | `startevent` | `ProcessSchemaStartEvent` | `startEvent` | Start |
-| Signal start event | `signalstart` | `ProcessSchemaStartEvent` (signal-configured) | `startEventSignal` | Start |
+| Signal start event | `signalstart` | `ProcessSchemaStartSignalEvent` | `startEventSignal` | Start |
 | End event | `endevent` | `ProcessSchemaTerminateEvent` | `endEvent` | End |
-| User task | `usertask` (+ `userTaskName`) | `ProcessSchemaUserTask` | `userTask` (or `<schema>UserTask`, e.g. `readDataUserTask`) | Activity |
+| User task (generic) | `usertask` (+ `userTaskName`) | `ProcessSchemaUserTask` | `userTask` (or `<schema>UserTask`) | Activity |
+| Read / Modify / Add / Delete data | `readdata` / `changedata` / `adddata` / `deletedata` | `ProcessSchemaUserTask` | `readDataUserTask` / `changeDataUserTask` / `addDataUserTask` / `deleteDataUserTask` | Activity |
+| Change access rights | `changeaccessrights` | `ProcessSchemaUserTask` | `changeAdminRightsUserTask` | Activity |
+| Perform task | `performtask` | `ProcessSchemaUserTask` | `activityUserTask` | Activity |
+| Send email | `sendemail` | `ProcessSchemaUserTask` | `emailTemplateUserTask` | Activity |
+| Approval | `approval` | `ProcessSchemaUserTask` | `approvalUserTask` | Activity |
+| Open edit page | `openeditpage` | `ProcessSchemaUserTask` | `openEditPageUserTask` | Activity |
+| Pre-configured page | `preconfiguredpage` | `ProcessSchemaUserTask` | `preconfiguredPageUserTask` | Activity |
+| Formula | `formulatask` | `ProcessSchemaFormulaTask` | `formulaTask` | Activity |
+| Exclusive (OR) gateway | `exclusivegateway` | `ProcessSchemaExclusiveGateway` | `exclusiveGateway` | Gateway |
+| Parallel (AND) gateway | `parallelgateway` | `ProcessSchemaParallelGateway` | `parallelGateway` | Gateway |
+| Sub-process | `subprocess` | `ProcessSchemaSubProcess` | `callActivity` | Activity |
+
+The descriptor column is the server's `ProcessDesignConstants.ElementTypes`, matched case-insensitively
+(`ProcessElementFactory`); a camelCase spelling such as `readData` is the same token.
 
 Notes:
 
-- **Casing differs by surface.** `create`/`modify` and describe's `buildType` use the lowercase token
-  (`startevent`); `validate-process-graph` uses the camelCase diagram-js data-id (`startEvent`). They
-  are **not** interchangeable — translate, don't copy.
-- **The validator vocabulary is a superset.** `validate-process-graph` also recognizes gateways
-  (`exclusiveGateway`, `parallelGateway`, `inclusiveGateway`, `eventBasedGateway`), intermediate events
-  (`intermediateCatchEvent…` / `intermediateThrowEvent…`), and other tasks (`scriptTask`, `formulaTask`,
-  `webService`, `callActivity`) so it can pre-flight hand-authored graphs — but those element kinds are
-  **not buildable** yet by `create` / `modify` (see the flows-vs-elements caveat below). Any specific
-  `<schema>UserTask` data-id (suffix `UserTask`) validates as a user-task activity.
+- **Casing and vocabulary differ by surface, and the validator bridges them.** `create`/`modify` and
+  describe's `buildType` use the collapsed token (`startevent`); the canvas uses the diagram-js data-id
+  (`startEvent`). `validate-process-graph` accepts **both** spellings, case-insensitively, through
+  `ManagerMap.ResolveDataId`, so a described graph can be validated without translation. The reverse is
+  not true — `create`/`modify` accept only the descriptor tokens.
+- **The validator vocabulary is a superset, and says so per node.** `validate-process-graph` also
+  recognizes the inclusive and event-based gateways, timer/message starts, intermediate events
+  (`intermediateCatchEvent…` / `intermediateThrowEvent…`), `scriptTask`, `webService` and the event
+  sub-process (`eventSubProcessExpanded`), so it can check hand-authored graphs — and reports each such
+  node as an `UNBUILDABLE` warning, because `create` / `modify` refuse those types. `ManagerMap.IsBuildable`
+  is the one place that decision lives. Any specific `<schema>UserTask` data-id (suffix `UserTask`)
+  validates as a buildable user-task activity.
 - **`describe.type` is never consumable.** It is the runtime .NET class name; always round-trip through
   `buildType`, not `type`.
-- **Extensibility caveat (flows vs elements)**: the "new element kind = one handler + one DI line" property holds for **elements**. **Flows are different** — only plain sequence flows are buildable; conditional/default flows and gateways require contract changes (`ProcessFlowDescriptor` already reserves optional `kind`/`condition`, and a non-sequence kind is rejected until implemented) plus branch-aware layout.
+- **Extensibility caveat (flows vs elements)**: the "new element kind = one handler + one DI line" property holds for **elements**. **Flows are different**: all three flow kinds are buildable declaratively (`flows[].kind` with `flows[].condition`, or `flows[].results` for a branch decided by an activity result), but each new kind or predicate slot was a contract change plus a `FlowKindRules` entry plus branch-aware layout, not a handler.
 - **Feature gating**: the feature is **MCP-only**. There are **no public CLI verbs** — the MCP tools run the command classes directly via `InternalExecute<TCommand>` (never the `[Verb]`/`Program.cs` dispatch), and the descriptor JSON is an AI-translation target, not a human authoring format, so a CLI verb would carry a doc/help/wiki/test/alias maintenance tail with no consumer (YAGNI). The command classes, services, DI, options classes and MCP surface remain; a CLI verb can be added if a concrete human/CI consumer (e.g. descriptor-as-code provisioning) appears. **Go-live (2026-08-28, ENG-96132):** `[FeatureToggle("process-designer")]` was removed from all five MCP tools and five prompts, and the `process-modeling` guidance article's `requiredFeatures` gate was dropped in `clio-knowledge` (published first) — business process creation now works by default with no feature flag. The surface stays long-tail (non-resident); regression is pinned by `ProcessDesignerGoLiveTests` and the rewritten `InstallProcessBuilderContractToolE2ETests`. The cross-repo ordering is not prose-only: `WorkspaceTemplateGuidanceDriftTests.UngatedMcpTools_ShouldNameOnlyUngatedGuidance_WhenDirectingAgentsToRead` fails CI if an un-gated tool's description names a guidance article the pinned generation still lists as feature-gated, so an out-of-order publish cannot merge silently.
-- **Trade-offs / open items**: package delivery/install wiring (ship `.gz` like `cliogate`) and reusing the R1–R17 validator as BuildProcess pre-flight are still open; `setElement`, element-mapping edit/clear ops, non-constant parameter defaults, and **changing an existing parameter's data type** remain TODO; the deploy loop on the dev stand is manual (compile/restart over MCP time out).
+- **Trade-offs / open items**: package delivery is closed (`install-process-builder`, see the note at the top), and so is the validator's place on the write path (advisory on create, absent on modify — see "The validator on the write path" above). Still open: a descriptor has no key schema, so a misspelled or wrongly-cased optional key is dropped by the server in silence (ENG-95244, strict descriptor keys); `setElement`, element-mapping edit/clear ops, non-constant parameter defaults, and **changing an existing parameter's data type** remain TODO; the deploy loop on the dev stand is manual (compile/restart over MCP time out).
 
 ## Notes
 

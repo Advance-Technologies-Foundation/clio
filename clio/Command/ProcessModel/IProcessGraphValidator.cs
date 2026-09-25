@@ -73,16 +73,27 @@ public enum ProcessGraphSeverity {
 /// A single validation finding against one of the connection rules (R1–R20).
 /// </summary>
 /// <param name="Severity">Whether the finding blocks building or is advisory.</param>
-/// <param name="RuleId">The rule identifier (e.g. <c>R1</c>, <c>R14</c>, or <c>UNKNOWN</c> for an unrecognized element type).</param>
+/// <param name="RuleId">
+/// The rule identifier (e.g. <c>R1</c>, <c>R14</c>, <c>UNKNOWN</c> for an unrecognized element type, or
+/// <c>UNBUILDABLE</c> for a recognized one the build path has no handler for).
+/// </param>
 /// <param name="Message">A human-readable explanation.</param>
 /// <param name="NodeName">The offending node name, when the finding is about a node.</param>
 /// <param name="Edge">The offending edge, when the finding is about a flow.</param>
+/// <param name="ReportedByBuild">
+/// <see langword="true"/> when <c>create-business-process</c> reports this same shape itself, server-side — as a
+/// refusal or as a build notice — so a pre-flight that repeated it before the POST would only duplicate the
+/// server's own message. Set on WARNINGS only, and deliberately: an <see cref="ProcessGraphSeverity.Error"/> is by
+/// this validator's rule a shape the build refuses, so a consumer excludes errors by severity and this flag says
+/// nothing about them. Not part of the <c>validate-process-graph</c> response.
+/// </param>
 public sealed record ProcessGraphFinding(
 	ProcessGraphSeverity Severity,
 	string RuleId,
 	string Message,
 	string NodeName = null,
-	ProcessGraphEdge Edge = null);
+	ProcessGraphEdge Edge = null,
+	bool ReportedByBuild = false);
 
 /// <summary>
 /// The outcome of validating a process graph.
@@ -98,7 +109,8 @@ public sealed record ProcessGraphValidationResult(bool HasErrors, IReadOnlyList<
 /// </summary>
 /// <remarks>
 /// Node types are classified through <see cref="ManagerMap.ResolveDataId"/> / <see cref="ManagerMap.ResolveRole"/>
-/// — the single source of truth — rather than a re-derived taxonomy. This is a fast pre-check; the
+/// — the single source of truth — rather than a re-derived taxonomy, and whether a kind can be built at all
+/// through <see cref="ManagerMap.IsBuildable"/>. This is a fast pre-check; the
 /// authoritative build/save happens server-side in the <c>ProcessDesignService</c> package. The rule
 /// definitions are published in the <c>process-modeling</c> MCP guidance resource
 /// The detailed authoring contract is delivered by the external process-modeling knowledge article.

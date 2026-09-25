@@ -1,4 +1,12 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.IO.Compression;
+using System.Linq;
+using System.Text;
+using System.Text.RegularExpressions;
 using Clio.Command.ProcessModel;
+using Clio.Common;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -146,6 +154,8 @@ public sealed class ManagerMapResolveDataIdTests {
 	[TestCase("changeData", ManagerMap.EventType.UserTask)]          // build token for the Modify data element
 	[TestCase("changeAccessRights", ManagerMap.EventType.UserTask)]  // build token for Change access rights (ENG-92717)
 	[TestCase("changeaccessrights", ManagerMap.EventType.UserTask)]  // lowercase build/describe spelling
+	[TestCase("deleteData", ManagerMap.EventType.UserTask)]          // build token for Delete data - Unknown until ENG-95244
+	[TestCase("deletedata", ManagerMap.EventType.UserTask)]          // lowercase build/describe spelling
 	public void ResolveDataId_ShouldAcceptBuildAndDescribeTokensCaseInsensitively_WhenVocabularyOrCaseDrifts(
 			string token, ManagerMap.EventType expected) {
 		// Act
@@ -178,5 +188,96 @@ public sealed class ManagerMapResolveDataIdTests {
 		// Assert
 		actual.Should().Be(expected,
 			because: "the validator operates on coarse roles, so each EventType must map to exactly one role");
+	}
+
+	// The element type tokens the SERVER builds, copied from CrtProcessBuilder
+	// Files/src/cs/ProcessDesignConstants.cs, class ElementTypes (the archive bundled in
+	// clio/CrtProcessBuilder/CrtProcessBuilder.gz, 1.6.6.23). The server resolves a descriptor `type` through
+	// the handlers' SupportedTypes, case-insensitively (ProcessElementFactory), so this list IS the build
+	// vocabulary. A copy on its own would not notice a token the package ADDS, and that is how deletedata sat at
+	// Unknown while earlier tokens were pinned one incident at a time - so
+	// ServerBuildTokens_ShouldMatchTheBundledPackage compares the copy with the archive, and the rebundle that
+	// brings a new token fails there, which is the moment someone has to add its ResolveDataId arm.
+	private static readonly string[] ServerBuildTokens = [
+		"startevent", "signalstart", "endevent", "usertask", "readdata", "changedata", "deletedata", "adddata",
+		"changeaccessrights", "performtask", "formulatask", "sendemail", "approval", "openeditpage",
+		"preconfiguredpage", "exclusivegateway", "parallelgateway", "subprocess"
+	];
+
+	[Test]
+	[Description("EVERY element type token the server builds (ProcessDesignConstants.ElementTypes) resolves to a known EventType, and ManagerMap.IsBuildable accepts it. One missing arm is a hard UNKNOWN error from validate-process-graph on a graph the server builds correctly - the false red ENG-95244 found for deleteData after addData, preconfiguredPage and subProcess had each been found the same way.")]
+	[TestCaseSource(nameof(ServerBuildTokens))]
+	public void ResolveDataId_ShouldResolveToABuildableKind_WhenTheTokenIsOneTheServerBuilds(string serverToken) {
+		// Arrange
+		string spelledAsInAGuide = serverToken;
+
+		// Act
+		ManagerMap.EventType eventType = ManagerMap.ResolveDataId(spelledAsInAGuide);
+		bool buildable = ManagerMap.IsBuildable(eventType);
+
+		// Assert
+		eventType.Should().NotBe(ManagerMap.EventType.Unknown,
+			because: $"'{serverToken}' is a token CrtProcessBuilder builds, so the validator must recognize it "
+				+ "or it reports a hard error on a correct graph");
+		buildable.Should().BeTrue(
+			because: $"'{serverToken}' is built by the server, so the UNBUILDABLE marker must never fire on it");
+	}
+
+	[Test]
+	[Description("The ServerBuildTokens copy above equals the ElementTypes constants in the CrtProcessBuilder archive this clio bundles. Reads the bundled archive from the test output, as BundledProcessBuilderPackageTests does and for its reason: the file ships with the build, and a guard only in the integration lane would not guard the rebundle that breaks it.")]
+	public void ServerBuildTokens_ShouldMatchTheBundledPackage_WhenTheArchiveIsRebundled() {
+		// Arrange
+		string archive = ReadBundledArchiveAsText();
+		Match elementTypes = Regex.Match(archive,
+			@"internal static class ElementTypes\s*\{(?<body>.*?)\n\t\t\}", RegexOptions.Singleline);
+
+		// Act
+		List<string> archiveTokens = Regex.Matches(elementTypes.Groups["body"].Value,
+				@"public const string \w+ = ""(?<token>[^""]+)"";")
+			.Select(match => match.Groups["token"].Value)
+			.ToList();
+
+		// Assert
+		elementTypes.Success.Should().BeTrue(
+			because: "the archive ships SOURCE, and ProcessDesignConstants.ElementTypes is where the package "
+				+ "declares its build tokens - if the anchor moved, this guard has to move with it");
+		archiveTokens.Should().BeEquivalentTo(ServerBuildTokens,
+			because: "a token the package adds must reach ServerBuildTokens, and through it the ResolveDataId "
+				+ "and IsBuildable pins above, in the same change as the rebundle that ships it");
+	}
+
+	private static string ReadBundledArchiveAsText() {
+		string archivePath = Path.Combine(AppContext.BaseDirectory, BundledPackages.ProcessBuilderPackageName,
+			BundledPackages.ProcessBuilderArchiveFileName);
+		using FileStream compressed = File.OpenRead(archivePath);
+		using GZipStream decompressor = new(compressed, CompressionMode.Decompress);
+		using MemoryStream buffer = new();
+		decompressor.CopyTo(buffer);
+		return Encoding.UTF8.GetString(buffer.ToArray());
+	}
+
+	[Test]
+	[Description("IsBuildable refuses the element kinds the build has no handler for - inclusive and event-based gateways, timer and message starts, intermediate events, script and web-service tasks, the event sub-process - and Unknown. These are the kinds the UNBUILDABLE marker names.")]
+	[TestCase(ManagerMap.EventType.InclusiveGateway)]
+	[TestCase(ManagerMap.EventType.EventBasedGateway)]
+	[TestCase(ManagerMap.EventType.StartTimer)]
+	[TestCase(ManagerMap.EventType.StartMessageEvent)]
+	[TestCase(ManagerMap.EventType.IntermediateCatchSignalEvent)]
+	[TestCase(ManagerMap.EventType.IntermediateThrowSignalEvent)]
+	[TestCase(ManagerMap.EventType.ScriptTask)]
+	[TestCase(ManagerMap.EventType.WebServiceTask)]
+	[TestCase(ManagerMap.EventType.EventSubProcess)]
+	[TestCase(ManagerMap.EventType.Unknown)]
+	public void IsBuildable_ShouldReturnFalse_WhenTheBuildHasNoHandlerForTheKind(ManagerMap.EventType eventType) {
+		// Arrange
+		ManagerMap.EventType kind = eventType;
+
+		// Act
+		bool buildable = ManagerMap.IsBuildable(kind);
+
+		// Assert
+		buildable.Should().BeFalse(
+			because: $"create-business-process refuses a {kind} element as 'not supported yet', so calling it "
+				+ "buildable would promise a build that fails");
 	}
 }

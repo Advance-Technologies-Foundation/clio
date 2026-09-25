@@ -92,7 +92,12 @@ public static class CreateBusinessProcessPrompt {
 		 no error and the instance stuck at `Running`.
 		 A SUCCESSFUL build can still report caveats, and they arrive as `message-type: "Warning"` entries in
 		 `execution-log-messages` — there is no separate `warnings` field on the response, so looking for one
-		 and finding nothing is not evidence there were none.
+		 and finding nothing is not evidence there were none. Lines that begin `Pre-flight` are clio's own:
+		 before posting, the tool runs the `validate-process-graph` connection rules over `elements` / `flows`
+		 and reports only what the server does not check - R7/R9 (a deciding gateway with no default branch,
+		 which suspends the run when nothing matches), R8 (a parallel join behind a choice, which hangs in
+		 Running with no error), R13 (a conditional flow off an event) and R17. They never block the build;
+		 fix each one or confirm it with the user, then re-check with `describe-business-process`.
 		 To grant or revoke record permissions on records matching a filter, add a `changeAccessRights` element
 		 with an `accessRights` block (target object + `add`/`remove` permission entries) plus the element's record
 		 `filter` — WHICH records get them; without one the runtime acts on EVERY record; with one that has no conditions it silently does nothing. When the descriptor contains a `changeAccessRights` element, confirm it the way a

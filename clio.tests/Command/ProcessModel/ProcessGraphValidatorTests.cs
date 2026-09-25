@@ -69,6 +69,10 @@ public sealed class ProcessGraphValidatorTests {
 	[TestCase("addDataUserTask")]
 	[TestCase("AddDataUserTask")]
 	[TestCase("adddatausertask")]
+	// The BUILD token - what a create descriptor carries and describe reports as buildType. Only the data-id
+	// used to fire, so a graph written in build tokens never raised R17 (ENG-95244).
+	[TestCase("addData")]
+	[TestCase("adddata")]
 	public void Validate_ShouldRaiseR17_WhenAddDataChainsIntoANonReadDataInAnySourceCasing(string addDataType) {
 		// Arrange
 		List<ProcessGraphNode> nodes =
@@ -1014,5 +1018,151 @@ public sealed class ProcessGraphValidatorTests {
 		result.Findings.Should().NotContain(f => f.Message.Contains("to itself"),
 			because: "an edge that connects nothing is not a self-loop, and the self-loop remediation - route "
 				+ "it back through a gateway - has nothing to do with the caller's mistake");
+	}
+
+	[Test]
+	[Description("A recognized element the build path cannot create gets an UNBUILDABLE WARNING naming the node: the rules cover the whole BPMN catalog, so the graph is a valid plan, but create-business-process refuses the type and the tool used to say so only in prose (ENG-95244).")]
+	[TestCase("inclusiveGateway")]
+	[TestCase("eventBasedGateway")]
+	[TestCase("startEventTimer")]
+	[TestCase("startEventMessage")]
+	[TestCase("intermediateCatchEventSignal")]
+	[TestCase("intermediateThrowEvent")]
+	[TestCase("scriptTask")]
+	[TestCase("webService")]
+	[TestCase("eventSubProcessExpanded")]
+	public void Validate_ShouldMarkTheNodeUnbuildable_WhenItsTypeHasNoBuildHandler(string unbuildableType) {
+		// Arrange
+		List<ProcessGraphNode> nodes = [Node("s", "startEvent"), Node("x", unbuildableType), Node("e", "endEvent")];
+		List<ProcessGraphEdge> edges = [Seq("s", "x"), Seq("x", "e")];
+
+		// Act
+		ProcessGraphValidationResult result = Validate(nodes, edges);
+
+		// Assert
+		ProcessGraphFinding unbuildable = result.Findings.Should().ContainSingle(f => f.RuleId == "UNBUILDABLE",
+			because: $"'{unbuildableType}' is known to the rules and refused by the build, and that is exactly "
+				+ "the fork an agent planning a build needs to see before it calls create").Which;
+		unbuildable.Severity.Should().Be(ProcessGraphSeverity.Warning,
+			because: "the graph is still a valid plan the designer can finish by hand, so the marker must not "
+				+ "block a shape-only check");
+		unbuildable.NodeName.Should().Be("x",
+			because: "the finding has to name WHICH element to replace");
+		unbuildable.ReportedByBuild.Should().BeTrue(
+			because: "create refuses the element type itself, so the create pre-flight must not repeat it");
+	}
+
+	[Test]
+	[Description("No buildable element kind is marked UNBUILDABLE - every token the server's ProcessDesignConstants.ElementTypes lists, plus the diagram data-ids of the same kinds. A false marker would tell an agent to route around an element create builds.")]
+	[TestCase("startEvent")]
+	[TestCase("signalStart")]
+	[TestCase("startEventSignal")]
+	[TestCase("endEvent")]
+	[TestCase("userTask")]
+	[TestCase("readData")]
+	[TestCase("changeData")]
+	[TestCase("deleteData")]
+	[TestCase("addData")]
+	[TestCase("changeAccessRights")]
+	[TestCase("performTask")]
+	[TestCase("formulaTask")]
+	[TestCase("sendEmail")]
+	[TestCase("approval")]
+	[TestCase("openEditPage")]
+	[TestCase("preconfiguredPage")]
+	[TestCase("exclusiveGateway")]
+	[TestCase("parallelGateway")]
+	[TestCase("subProcess")]
+	[TestCase("callActivity")]
+	[TestCase("readDataUserTask")]
+	public void Validate_ShouldNotMarkTheNodeUnbuildable_WhenTheBuildHasAHandlerForIt(string buildableType) {
+		// Arrange
+		List<ProcessGraphNode> nodes = [Node("s", "startEvent"), Node("x", buildableType), Node("e", "endEvent")];
+		List<ProcessGraphEdge> edges = [Seq("s", "x"), Seq("x", "e")];
+
+		// Act
+		ProcessGraphValidationResult result = Validate(nodes, edges);
+
+		// Assert
+		result.Findings.Should().NotContain(f => f.RuleId == "UNBUILDABLE",
+			because: $"'{buildableType}' is built by create-business-process, so marking it unbuildable is the "
+				+ "false-red half of the vocabulary fork this marker exists to close");
+	}
+
+	[Test]
+	[Description("An UNRECOGNIZED type carries only its UNKNOWN error, never an UNBUILDABLE marker as well: one node, one finding about its type.")]
+	public void Validate_ShouldNotMarkAnUnknownTypeUnbuildable_WhenItAlreadyHasAnUnknownError() {
+		// Arrange
+		List<ProcessGraphNode> nodes = [Node("s", "startEvent"), Node("x", "noSuchElement"), Node("e", "endEvent")];
+		List<ProcessGraphEdge> edges = [Seq("s", "x"), Seq("x", "e")];
+
+		// Act
+		ProcessGraphValidationResult result = Validate(nodes, edges);
+
+		// Assert
+		result.Findings.Should().ContainSingle(f => f.NodeName == "x",
+			because: "the type is the one problem with this node, and two findings saying so in different words "
+				+ "would read as two problems");
+		result.Findings.Should().Contain(f => f.RuleId == "UNKNOWN" && f.NodeName == "x",
+			because: "an unrecognized type stays an error, which is what it was before the marker existed");
+	}
+
+	[Test]
+	[Description("ReportedByBuild is set on the warnings the create path reports itself - R12 (a build notice), R7 with a plain flow (normalised with a notice), R13 with an omitted condition (refused by FlowKindRules) - and NOT on the ones it is silent about: R7 without a default, R8, R13 off an event and R17. The create pre-flight shows exactly the second group, so a flag in the wrong place either repeats the server or hides a silent risk.")]
+	public void Validate_ShouldFlagOnlyTheWarningsTheBuildReports_WhenSeveralWarningsFire() {
+		// Arrange - one graph, every warning the flag decides between
+		List<ProcessGraphNode> nodes = [
+			Node("s", "startEvent"), Node("split", "performTask"), Node("a", "performTask"), Node("b", "performTask"),
+			Node("x1", "exclusiveGateway"), Node("m1", "performTask"), Node("m2", "performTask"),
+			Node("x2", "exclusiveGateway"), Node("c", "performTask"), Node("p", "parallelGateway"),
+			Node("add", "addData"), Node("send", "sendEmail"), Node("e", "endEvent")
+		];
+		List<ProcessGraphEdge> edges = [
+			// split: two plain outgoing flows off a task -> R12
+			Seq("s", "split"), Seq("split", "a"), Seq("split", "b"), Seq("a", "x1"), Seq("b", "x2"),
+			// x1: a conditional and a PLAIN flow -> R7, plain-flow variant
+			new("x1", "m1", ProcessFlowKind.Conditional, "true"), Seq("x1", "m2"), Seq("m1", "e"), Seq("m2", "e"),
+			// x2: two conditional flows and no default -> R7, no-default variant; x2 -> c carries no
+			// condition -> R13, omitted half. Both branches meet at the parallel join p -> R8.
+			new("x2", "p", ProcessFlowKind.Conditional, "true"), Cond("x2", "c"), Seq("c", "p"),
+			// add -> send: Add data into something that is not a Read data -> R17
+			Seq("p", "add"), Seq("add", "send"), Seq("send", "e")
+		];
+
+		// Act
+		ProcessGraphValidationResult result = Validate(nodes, edges);
+
+		// Assert
+		result.Findings.Should().Contain(f => f.RuleId == "R12" && f.ReportedByBuild,
+			because: "the build raises an implicit parallel split as a notice of its own");
+		result.Findings.Should().Contain(f => f.RuleId == "R7" && f.NodeName == "x1" && f.ReportedByBuild,
+			because: "the build turns a lone plain flow off a deciding gateway into its default, with a notice");
+		result.Findings.Should().Contain(f => f.RuleId == "R7" && f.NodeName == "x2" && !f.ReportedByBuild,
+			because: "a gateway with no default at all is saved without a word, and suspends at run time");
+		result.Findings.Should().Contain(f => f.RuleId == "R13" && f.Edge != null && f.Edge.Source == "x2"
+				&& f.Edge.Condition == null && f.ReportedByBuild,
+			because: "FlowKindRules refuses a conditional flow with no condition, so the server's refusal is the "
+				+ "message the caller gets");
+		result.Findings.Should().Contain(f => f.RuleId == "R8" && !f.ReportedByBuild,
+			because: "nothing on the server looks for a parallel join behind a choice - the instance hangs");
+		result.Findings.Should().Contain(f => f.RuleId == "R17" && !f.ReportedByBuild,
+			because: "the chaining advice is clio's alone");
+	}
+
+	[Test]
+	[Description("R13's OTHER half - a conditional flow off an event - is not flagged: the build stores it silently, so it is one of the findings the create pre-flight shows.")]
+	public void Validate_ShouldNotFlagTheR13OriginWarning_WhenAConditionalFlowLeavesAnEvent() {
+		// Arrange
+		List<ProcessGraphNode> nodes = [Node("s", "startEvent"), Node("t", "performTask"), Node("e", "endEvent")];
+		List<ProcessGraphEdge> edges = [new("s", "t", ProcessFlowKind.Conditional, "true"), Seq("t", "e")];
+
+		// Act
+		ProcessGraphValidationResult result = Validate(nodes, edges);
+
+		// Assert
+		result.Findings.Should().ContainSingle(f => f.RuleId == "R13",
+			because: "a conditional flow off a start event is the origin half of R13");
+		result.Findings.Should().Contain(f => f.RuleId == "R13" && !f.ReportedByBuild,
+			because: "the build builds this shape without complaint (a divergence pinned on the package side)");
 	}
 }

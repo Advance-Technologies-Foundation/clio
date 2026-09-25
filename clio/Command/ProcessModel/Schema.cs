@@ -1138,11 +1138,15 @@ public static class ManagerMap{
 			// tokens whose data-ids (readDataUserTask / changeDataUserTask / changeAdminRightsUserTask) already
 			// resolve through that suffix arm, while the token a descriptor actually carries does not end in
 			// "usertask" and would otherwise fall to Unknown — a hard validator Error on a graph that builds fine.
-			// "preconfiguredpage" is the same case once more, and it was the last build token still missing: the
-			// element's own data-id is PreconfiguredPageUserTask, which the suffix arm below covers, while the
-			// token a DESCRIPTOR carries does not end in "usertask" and fell to Unknown.
+			// "preconfiguredpage" is the same case once more. It was NOT the last build token missing, which is what
+			// this comment used to say: "deletedata" (ProcessDesignConstants.ElementTypes.DeleteData) still fell to
+			// Unknown, so describe-then-validate on any process with a Delete data element reported a hard UNKNOWN
+			// error on an element the server had just built (ENG-95244). ManagerMapResolveDataIdTests now pins the
+			// WHOLE server token list rather than one token per incident, so the next token added on the package
+			// side fails a test here instead of reaching an agent as a false error.
 			"usertask" or "performtask" or "sendemail" or "approval" or "openeditpage" or "readdata"
-					or "changedata" or "adddata" or "changeaccessrights" or "preconfiguredpage" => EventType.UserTask,
+					or "changedata" or "adddata" or "deletedata" or "changeaccessrights"
+					or "preconfiguredpage" => EventType.UserTask,
 			var i when i.StartsWith("intermediatecatchevent", StringComparison.Ordinal) => EventType.IntermediateCatchSignalEvent,
 			var i when i.StartsWith("intermediatethrowevent", StringComparison.Ordinal) => EventType.IntermediateThrowSignalEvent,
 			// every system/user action element ends with the "usertask" suffix and is an activity.
@@ -1173,6 +1177,30 @@ public static class ManagerMap{
 			or EventType.WebServiceTask or EventType.SubProcess or EventType.EventSubProcess => ProcessElementRole.Activity,
 		_ => ProcessElementRole.Other
 	};
+
+	/// <summary>
+	/// Whether <c>create-business-process</c> / <c>modify-business-process</c> can build an element of this
+	/// kind. The ONE place clio decides it: the validator's <c>UNBUILDABLE</c> marker reads it, and nothing else
+	/// keeps a second list.
+	/// </summary>
+	/// <remarks>
+	/// Keyed on <see cref="EventType"/> rather than on the token, because that is the granularity the build has:
+	/// every user task — dedicated token or <c>userTask</c> + <c>userTaskName</c> — goes through one generic
+	/// handler, so <see cref="EventType.UserTask"/> is buildable as a whole, while a script task, a web service,
+	/// an event sub-process, a timer or message start, an intermediate event and the inclusive and event-based
+	/// gateways are separate platform classes the package has no handler for.
+	/// <para>The server's own list is <c>ProcessDesignConstants.ElementTypes</c> in CrtProcessBuilder, and
+	/// <c>ManagerMapResolveDataIdTests</c> pins that each of its tokens resolves to a kind this method accepts.
+	/// A kind added here without a server token would make the validator promise a build the server refuses,
+	/// so the pin only runs in one direction on purpose: a server token must never read as unbuildable.</para>
+	/// <para><see cref="EventType.Unknown"/> answers <see langword="false"/>, but the validator reports it as
+	/// <c>UNKNOWN</c> and does not add a second finding for the same node.</para>
+	/// </remarks>
+	/// <param name="eventType">The element kind, as <see cref="ResolveDataId"/> classified it.</param>
+	/// <returns><see langword="true"/> when the build path has a handler for the kind.</returns>
+	public static bool IsBuildable(EventType eventType) => eventType is EventType.StartEvent
+		or EventType.StartSignalEvent or EventType.EndEvent or EventType.UserTask or EventType.FormulaTask
+		or EventType.ExclusiveGateway or EventType.ParallelGateway or EventType.SubProcess;
 }
 
 

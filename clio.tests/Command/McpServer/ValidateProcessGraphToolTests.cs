@@ -520,9 +520,13 @@ public sealed class ValidateProcessGraphToolTests {
 				&& f.Message.Contains("None of the conditions were met after the element"),
 			because: "an inclusive gateway reports R9, not R7, and the warning quotes the process-log line the "
 				+ "operator will actually read rather than an exception type they cannot search for");
-		response.Findings.Should().NotContain(f => f.NodeName == "merge",
+		response.Findings.Should().NotContain(f => f.NodeName == "merge" && f.RuleId != "UNBUILDABLE",
 			because: "the converging inclusive gateway has one way out, so every arity-scoped rule leaves "
 				+ "it alone - the same exemption the exclusive one gets");
+		response.Findings.Where(f => f.RuleId == "UNBUILDABLE").Select(f => f.NodeName).Should()
+			.BeEquivalentTo(["split", "merge"],
+				because: "an inclusive gateway is a type the build cannot create, whatever its arity - the marker "
+					+ "is about the element kind, which is why it is the one finding merge may carry");
 		response.HasErrors.Should().BeFalse(
 			because: "two conditional branches with no default is legal - 65 shipped exclusive gateways are "
 				+ "in exactly that shape, which is why R7/R9 is a warning");
@@ -648,6 +652,68 @@ public sealed class ValidateProcessGraphToolTests {
 		response.Success.Should().BeTrue(because: "a duplicate name is reported as a finding, not an unhandled exception");
 		response.Findings.Should().Contain(f => f.RuleId == "DUP" && f.Severity == "error" && f.NodeName == "a",
 			because: "the duplicate element name must surface as a DUP error against the offending node");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An element the build cannot create reaches the response as an UNBUILDABLE WARNING naming the node, and the graph still reports no errors: the marker tells a planning agent which node to replace without blocking the shape check (ENG-95244).")]
+	public void Validate_ShouldSurfaceUnbuildableWarning_WhenANodeTypeCannotBeBuilt() {
+		// Arrange
+		List<ProcessGraphNodeArg> nodes = [N("s", "startEventTimer"), N("t", "performTask"), N("e", "endEvent")];
+		List<ProcessGraphEdgeArg> edges = [E("s", "t"), E("t", "e")];
+
+		// Act
+		ValidateProcessGraphResponse response = Validate(nodes, edges);
+
+		// Assert
+		response.Findings.Should().ContainSingle(
+			f => f.RuleId == "UNBUILDABLE" && f.Severity == "warning" && f.NodeName == "s",
+			because: "a timer start passes the connection rules and is refused by create-business-process, and "
+				+ "that fork has to be visible on the node rather than in a sentence of the tool description");
+		response.HasErrors.Should().BeFalse(
+			because: "an unbuildable node is still a valid plan, so it must not turn a shape check red");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A graph with a Delete data element written as its build token (deleteData) validates with no UNKNOWN error. It was the last server build token ManagerMap still resolved to Unknown, so describe-then-validate on any process with a Delete data element used to report a hard error on an element the server had built (ENG-95244).")]
+	public void Validate_ShouldAcceptDeleteData_WhenWrittenAsTheBuildToken() {
+		// Arrange
+		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("d", "deleteData"), N("e", "endEvent")];
+		List<ProcessGraphEdgeArg> edges = [E("s", "d"), E("d", "e")];
+
+		// Act
+		ValidateProcessGraphResponse response = Validate(nodes, edges);
+
+		// Assert
+		response.Findings.Should().BeEmpty(
+			because: "Start -> Delete data -> End is a buildable, rule-clean graph");
+		response.HasErrors.Should().BeFalse(
+			because: "a false UNKNOWN error here sends an agent to 'fix' an element that works");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The prompt names the UNBUILDABLE finding instead of restating an element list, and no longer calls formula tasks unbuildable - a restated list it said it did not keep, which went stale after formulaTask shipped. The tool description names the finding too, and says what the create pre-flight reports.")]
+	public void AgentFacingSurfaces_ShouldPointAtTheUnbuildableFinding_WhenDescribingTheBuildableSlice() {
+		// Arrange
+		string prompt = Clio.Command.McpServer.Prompts.ProcessDesigner.ValidateProcessGraphPrompt.ProcessDesignGuidance();
+		string description = ((System.ComponentModel.DescriptionAttribute)typeof(ValidateProcessGraphTool)
+			.GetMethod(nameof(ValidateProcessGraphTool.Validate))!
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false).Single()).Description;
+
+		// Act
+		string flattenedPrompt = string.Join(" ", prompt.Split((char[])null, StringSplitOptions.RemoveEmptyEntries));
+
+		// Assert
+		flattenedPrompt.Should().NotContain("formula and script tasks",
+			because: "formulaTask is buildable, and the prompt is what tells an agent what it may plan with");
+		flattenedPrompt.Should().Contain("UNBUILDABLE",
+			because: "the finding, derived from ManagerMap.IsBuildable, is the one list that cannot go stale");
+		description.Should().Contain("UNBUILDABLE WARNING",
+			because: "the tool contract an agent reads before calling must name the marker it will receive");
+		description.Should().Contain("Pre-flight",
+			because: "the description says what create-business-process does with these same rules");
 	}
 
 	[Test]

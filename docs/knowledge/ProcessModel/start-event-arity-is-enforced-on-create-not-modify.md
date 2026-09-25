@@ -38,3 +38,5 @@ somewhere else entirely, so it reads as a tool defect rather than as a pre-exist
 process being edited. If the authoring shape must be refused, refuse the `addFlow` that would give a
 start event its second outgoing flow, per operation, where `FlowKindRules` already sits. Whole-graph
 guard and per-operation authoring rule are different tools; this is the axis to keep them on.
+
+The same axis decides where clio's own validator runs on the write path (ENG-95244): `create-business-process` runs it as an advisory pre-flight over the descriptor it is about to post, and the modify tools run none - see [create-preflight-shows-only-what-the-build-does-not-report](create-preflight-shows-only-what-the-build-does-not-report.md).

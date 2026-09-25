@@ -36,7 +36,7 @@ public sealed class CreateBusinessProcessServiceTests {
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		urlBuilder.Build(ServiceUrlBuilder.KnownRoute.BuildProcess, env).Returns(BuildUrl);
 		return new CreateBusinessProcessService(settings, factory, urlBuilder, pageButtonChecker,
-			Substitute.For<ILogger>());
+			Substitute.For<IProcessDescriptorPreflight>(), Substitute.For<ILogger>());
 	}
 
 	[Test]
@@ -57,6 +57,41 @@ public sealed class CreateBusinessProcessServiceTests {
 		client.DidNotReceive().ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>());
 	}
 
+	[Test]
+	[Description("The graph pre-flight is ADVISORY (ENG-95244): its lines are written as warnings BEFORE the POST, and the build is posted anyway. The server is the gate for every rule it enforces, so a pre-flight that stopped the call would move a refusal earlier at best and block a build the server accepts at worst.")]
+	public void BuildProcess_ShouldWritePreflightWarningsAndStillPost_WhenThePreflightReportsARisk() {
+		// Arrange
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
+		client.ExecutePostRequest(BuildUrl, Arg.Any<string>()).Returns(
+			"{\"BuildProcessResult\":{\"success\":true,\"schemaName\":\"UsrSampleProcess\","
+			+ "\"schemaUId\":\"5c58c4c4-134b-4744-9c67-96d9c69c9d55\"}}");
+		EnvironmentSettings env = new() { Uri = "http://sandbox", Login = "Supervisor", Password = "Supervisor" };
+		ISettingsRepository settings = Substitute.For<ISettingsRepository>();
+		settings.FindEnvironment(Env).Returns(env);
+		IApplicationClientFactory factory = Substitute.For<IApplicationClientFactory>();
+		factory.CreateEnvironmentClient(env).Returns(client);
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		urlBuilder.Build(ServiceUrlBuilder.KnownRoute.BuildProcess, env).Returns(BuildUrl);
+		IProcessDescriptorPreflight preflight = Substitute.For<IProcessDescriptorPreflight>();
+		preflight.CheckCreateDescriptor(Arg.Any<JsonObject>()).Returns(["Pre-flight R8 (advisory): Join hangs"]);
+		ILogger logger = Substitute.For<ILogger>();
+		CreateBusinessProcessService service = new(settings, factory, urlBuilder,
+			Substitute.For<IProcessPageFactsChecker>(), preflight, logger);
+
+		// Act
+		CreateBusinessProcessResult result = service.BuildProcess(Env, new CreateBusinessProcessRequest(SampleDescriptor));
+
+		// Assert
+		result.SchemaName.Should().Be("UsrSampleProcess",
+			because: "a pre-flight finding never stops the build");
+		Received.InOrder(() => {
+			logger.WriteWarning("Pre-flight R8 (advisory): Join hangs");
+			client.ExecutePostRequest(BuildUrl, Arg.Any<string>());
+		});
+		preflight.Received(1).CheckCreateDescriptor(Arg.Is<JsonObject>(descriptor =>
+			descriptor["name"]!.GetValue<string>() == "UsrSampleProcess"));
+	}
+
 	private static CreateBusinessProcessService CreateService(IApplicationClient client,
 			out EnvironmentSettings env) {
 		env = new EnvironmentSettings { Uri = "http://sandbox", Login = "Supervisor", Password = "Supervisor" };
@@ -66,7 +101,8 @@ public sealed class CreateBusinessProcessServiceTests {
 		factory.CreateEnvironmentClient(env).Returns(client);
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		urlBuilder.Build(ServiceUrlBuilder.KnownRoute.BuildProcess, env).Returns(BuildUrl);
-		return new CreateBusinessProcessService(settings, factory, urlBuilder, Substitute.For<IProcessPageFactsChecker>(), Substitute.For<ILogger>());
+		return new CreateBusinessProcessService(settings, factory, urlBuilder, Substitute.For<IProcessPageFactsChecker>(),
+			Substitute.For<IProcessDescriptorPreflight>(), Substitute.For<ILogger>());
 	}
 
 	[Test]
@@ -167,7 +203,8 @@ public sealed class CreateBusinessProcessServiceTests {
 		settings.FindEnvironment(Env).Returns((EnvironmentSettings)null);
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		var service = new CreateBusinessProcessService(settings,
-			Substitute.For<IApplicationClientFactory>(), urlBuilder, Substitute.For<IProcessPageFactsChecker>(), Substitute.For<ILogger>());
+			Substitute.For<IApplicationClientFactory>(), urlBuilder, Substitute.For<IProcessPageFactsChecker>(),
+			Substitute.For<IProcessDescriptorPreflight>(), Substitute.For<ILogger>());
 
 		Action act = () => service.BuildProcess(Env, new CreateBusinessProcessRequest(SampleDescriptor));
 

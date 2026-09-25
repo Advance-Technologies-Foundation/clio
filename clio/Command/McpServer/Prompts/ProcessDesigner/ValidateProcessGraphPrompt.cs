@@ -17,10 +17,11 @@ public static class ValidateProcessGraphPrompt {
 	/// <param name="goal">The plain-language automation the user described.</param>
 	/// <returns>The prompt text.</returns>
 	[McpServerPrompt(Name = "validate-process-graph")]
-	// The buildable slice is deliberately NOT restated in the prompt text below: one list, in
-	// ValidateProcessGraphTool's own [Description]. A second copy is what went stale - this prompt told
-	// the agent to warn about designs "the builder cannot create yet" while the list it warned from was
-	// two element kinds short.
+	// The buildable slice is deliberately NOT restated in the prompt text below. The comment that said so
+	// stood above a paragraph that restated it anyway, and that copy went stale exactly as predicted: it
+	// still called formula tasks unbuildable long after formulaTask shipped. The source of truth is now
+	// ManagerMap.IsBuildable, surfaced per node as the UNBUILDABLE finding, so the prompt names the finding
+	// and never the list (ENG-95244).
 	[Description("Returns the canonical validate-then-drive flow for designing a Creatio business process from a plain-language goal.")]
 	public static string ProcessDesignGuidance(
 		[Description("The plain-language automation the user wants (e.g. 'when a contact is added, read it and send an email').")]
@@ -42,16 +43,18 @@ public static class ValidateProcessGraphPrompt {
 		   the branch is decided by an activity RESULT, where neither fix is wanted: a formula is
 		   unmaintainable on such a source and `sequence` deletes the branch. Declare the selection as the
 		   edge's `results` instead and the warning goes away. Treating
-		   it as optional buys a failed `create-business-process` one round trip later.
+		   it as optional buys a failed `create-business-process` one round trip later. An `UNBUILDABLE`
+		   warning is not optional either: that node is a type the builder cannot create, so replace it
+		   with a buildable element, or tell the user that part needs the Process Designer.
 		4. Only after a clean validation, build the process with `create-business-process` (or edit an
 		   existing one with `modify-business-process`) — clio builds and saves it server-side in one call.
+		   `create-business-process` re-runs these rules before posting and writes the ones the server does
+		   not check as `Pre-flight` warnings; they never block the build, so read them in the result.
 		   Then verify with `describe-business-process`.
-		Note: a clean validation does NOT mean every node is buildable — the rules cover the full BPMN
-		catalog, while the builder creates the slice `validate-process-graph`'s own tool description
-		publishes, joined by all three flow kinds declaratively (`flows[].kind` with
-		`flows[].condition`). Still out of reach:
-		inclusiveGateway, eventBasedGateway, timer/message starts, intermediate events, and formula and
-		script tasks. Branching on an activity RESULT is NOT on that list any more: it is declared as the
+		Note: the rules cover the full BPMN catalog, while the builder creates a narrower slice, joined by
+		all three flow kinds declaratively (`flows[].kind` with `flows[].condition`). Every node outside that
+		slice is reported as `UNBUILDABLE`, so read the findings rather than a list of element names.
+		Branching on an activity RESULT is buildable: it is declared as the
 		edge's `results`, exactly as step 3 above says, and a formula on such a connector is refused by
 		the build. The Sub-process element
 		(`callActivity` here, `subProcess` in a descriptor) IS buildable; the EVENT and EXPANDED

@@ -16,8 +16,8 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 		(nodes, edges) = NameTheNameless(nodes, edges, findings);
 
 		// Group elements by name once. First occurrence wins for the lookup used downstream; any name that
-		// appears more than once is an error — the server doesn't guard duplicates on the build/modify
-		// path, where two same-name nodes break name-based flow/describe round-tripping.
+		// appears more than once is an error — two same-name nodes break name-based flow/describe
+		// round-tripping, and the build refuses them too ("Duplicate element name", ProcessGraphBuilder).
 		List<IGrouping<string, ProcessGraphNode>> nodeGroups = nodes.GroupBy(node => node.Name).ToList();
 		Dictionary<string, ProcessGraphNode> nodeByName = nodeGroups.ToDictionary(group => group.Key, group => group.First());
 		findings.AddRange(nodeGroups
@@ -26,6 +26,7 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 				$"Duplicate element name '{group.Key}'. Element names must be unique within a process.", group.Key)));
 
 		CheckUnknownTypes(nodes, findings);
+		CheckUnbuildableTypes(nodes, findings);
 		CheckMissingNodeFlows(edges, nodeByName, findings);
 
 		(Dictionary<string, List<ProcessGraphEdge>> outgoing, Dictionary<string, List<ProcessGraphEdge>> incoming) =
@@ -152,6 +153,28 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 		}
 	}
 
+	// UNBUILDABLE (warning) — a type the rules know and the build path cannot create. The rules cover the whole
+	// BPMN catalog on purpose, so a graph with an inclusive gateway or a timer start can be checked for shape;
+	// what it cannot do is promise a build, and "a passing graph is NOT necessarily buildable" used to live only
+	// in prose an agent had to remember. A WARNING, not an error: the graph is still a valid plan, a designer can
+	// add the element by hand, and an error would block the shape check this tool is also for. Marked
+	// ReportedByBuild because create-business-process refuses the type itself ("is not supported yet"), so the
+	// create pre-flight does not repeat it. An Unknown type is skipped: it already has its own error above, and
+	// one node must not carry two findings that both say "this type is the problem".
+	private static void CheckUnbuildableTypes(IReadOnlyList<ProcessGraphNode> nodes, List<ProcessGraphFinding> findings) {
+		foreach (ProcessGraphNode node in nodes) {
+			EventType eventType = TypeOf(node);
+			if (eventType == EventType.Unknown || ManagerMap.IsBuildable(eventType)) {
+				continue;
+			}
+			findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Warning, "UNBUILDABLE",
+				$"Element '{node.Name}' has type '{node.Type}', which the connection rules know but "
+				+ "create-business-process and modify-business-process cannot build: the build refuses the "
+				+ "element type. Plan a buildable element instead, or add this one in the Process Designer.",
+				node.Name, ReportedByBuild: true));
+		}
+	}
+
 	// R15 (missing-node) — every flow needs a valid source and target node (guidance R15, not the R2 end-arity rule).
 	private static void CheckMissingNodeFlows(IReadOnlyList<ProcessGraphEdge> edges,
 			IReadOnlyDictionary<string, ProcessGraphNode> nodeByName, List<ProcessGraphFinding> findings) {
@@ -240,9 +263,11 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 		CheckDefaultFlowRules(node, eventType, outs, nodeByName, findings);
 
 		// R12 (warning) — multiple outgoing sequence flows from a non-gateway = implicit parallel split.
+		// ReportedByBuild: the build raises the same shape as a notice (ReportImplicitParallelSplits).
 		if (role != Role.Gateway && outs.Count(o => o.FlowKind == ProcessFlowKind.Sequence) > 1) {
 			findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Warning, "R12",
-				$"Element '{node.Name}' has multiple outgoing sequence flows (implicit parallel split) — confirm intent.", node.Name));
+				$"Element '{node.Name}' has multiple outgoing sequence flows (implicit parallel split) — confirm intent.", node.Name,
+				ReportedByBuild: true));
 		}
 
 		CheckStrayBranchBesideACondition(node, outs, findings);
@@ -428,7 +453,10 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 					: $"Diverging gateway '{node.Name}' has a plain sequence flow. At run time it is taken as "
 						+ "the default branch; say so explicitly with kind 'default', or give it a condition, "
 						+ "so the diagram states which branch is the fallback.",
-				node.Name));
+				// ReportedByBuild, in both arms: the build NORMALISES a lone plain flow into the gateway's
+				// default with a notice, and refuses a second unconditional branch outright (FlowKindRules).
+				// The no-default warning below is the one of the pair the server says nothing about.
+				node.Name, ReportedByBuild: true));
 		}
 
 		// R7 / R9 (warning) — a diverging or-gateway should have a default flow. Stays a WARNING because 65
@@ -463,9 +491,13 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 	// resolves both to an Activity, so a raw-literal comparison would warn "chain a Read data" while
 	// pointing at a node that already IS one — and would do it only for the spelling the MCP tools
 	// advertise.
+	// The SOURCE side was the half that still compared one spelling: only the data-id addDataUserTask
+	// fired, so a graph written in build tokens (addData, which is what a create descriptor carries and what
+	// describe reports as buildType) never raised R17 at all - and the create pre-flight feeds exactly
+	// those tokens (ENG-95244).
 	private static void CheckAddDataChaining(ProcessGraphNode node, List<ProcessGraphEdge> outs,
 			IReadOnlyDictionary<string, ProcessGraphNode> nodeByName, List<ProcessGraphFinding> findings) {
-		if (NormalizedType(node.Type) != "adddatausertask") {
+		if (NormalizedType(node.Type) is not ("adddatausertask" or "adddata")) {
 			return;
 		}
 		foreach (ProcessGraphEdge edge in outs) {
@@ -627,7 +659,10 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 				+ "activity RESULT rather than by text, in which case neither fix applies and neither is "
 				+ "wanted: pass the selection as 'results' on this edge and the warning goes away. 337 "
 				+ "shipped flows are that shape, and describe-business-process reports them with "
-				+ "branchesOnActivityResult and results.", edge.Source, edge));
+				+ "branchesOnActivityResult and results.", edge.Source, edge,
+				// ReportedByBuild: FlowKindRules.EnsureConditionMatchesKind refuses exactly this shape on
+				// create and on modify, so the server's refusal is the message a create caller gets.
+				ReportedByBuild: true));
 		}
 	}
 
