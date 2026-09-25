@@ -249,6 +249,24 @@ internal sealed class McpE2eSelectionCoverageTests {
 	}
 
 	[Test]
+	[Description("A tool file whose fixture file declares a NoEnvironment fixture next to a Creatio fixture still runs on TeamCity, because the tier is classified per fixture rather than per file (issue #1572).")]
+	public void Script_ShouldKeepTeamCityRun_WhenFixtureFileMixesTiers() {
+		// Arrange
+		string[] changed = ["clio/Command/McpServer/Tools/EmailTemplateTool.cs"];
+
+		// Act
+		JsonElement selection = RunSelection(changed, includeNoEnvironment: false);
+
+		// Assert
+		selection.GetProperty("mode").GetString().Should().Be("subset",
+			because: "EmailTemplateToolLiveE2ETests carries McpE2E.Creatio, not McpE2E.NoEnvironment, so the GitHub NoEnvironment tier does not run it and TeamCity must");
+		selection.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().Contain("EmailTemplateToolLiveE2ETests",
+			because: "the Creatio fixture declared in the same file as the NoEnvironment one has to stay in the TeamCity subset");
+		selection.GetProperty("filter").GetString().Should().Contain("FullyQualifiedName~Clio.Mcp.E2E.EmailTemplateToolLiveE2ETests",
+			because: "the filter TeamCity receives must name the Creatio fixture");
+	}
+
+	[Test]
 	[Description("A full run that keeps the NoEnvironment tier sends no filter at all, so the TeamCity parameter default applies unchanged.")]
 	public void Script_ShouldSendNoFilter_WhenFullRunKeepsNoEnvironmentTier() {
 		// Arrange

@@ -159,6 +159,9 @@ registration file whose diff contains anything other than registration statement
 A subset whose fixtures are all positively `McpE2E.NoEnvironment` also becomes mode **none**: the
 NoEnvironment tier already ran on GitHub. This is checked *before* the size cap, so a large
 NoEnvironment-only selection skips the build instead of becoming a full run.
+The tier is read per fixture: the text from the end of the previous top-level type to the end of
+the fixture's own body, so a file that declares a NoEnvironment fixture next to a Creatio one
+(`EmailTemplateToolE2ETests.cs`) still sends the Creatio fixture to TeamCity.
 
 The subset filter is composed as
 `(FullyQualifiedName~Clio.Mcp.E2E.A|FullyQualifiedName~Clio.Mcp.E2E.B)&TestCategory!=McpE2E.NoEnvironment&<baseFilter>`.

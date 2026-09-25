@@ -89,18 +89,36 @@ $fixtureRoot = Join-Path $root $manifest.fixtureRoot
 $fixtureDeclaration = '(?m)^(?:public|internal)(?:[ \t]+(?:sealed|static|partial))*[ \t]+class[ \t]+([A-Za-z_]\w*)\b'
 $fixtureSources = @{}     # fixture class name -> source text of its file
 $fixturesByFile = @{}     # file base name     -> fixture class names declared in it
-$fixtureNoEnvironmentOnly = @{}  # fixture class name -> $true when its file is positively NoEnvironment and has no Sandbox test
+$fixtureNoEnvironmentOnly = @{}  # fixture class name -> $true when its own declaration is positively NoEnvironment and has no Sandbox test
 foreach ($file in Get-ChildItem -LiteralPath $fixtureRoot -Filter '*.cs' -File) {
     $text = Read-Text $file.FullName
     if ($text -cnotmatch '\[\s*(Test|TestFixture|TestCase|TestCaseSource|Theory)\b') { continue }
-    $classes = @([regex]::Matches($text, $fixtureDeclaration) | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique)
+    $declarations = @([regex]::Matches($text, $fixtureDeclaration))
+    $classes = @($declarations | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique)
     if ($classes.Count -eq 0) { continue }
     $fixturesByFile[$file.BaseName] = $classes
-    # Positive classification only: a fixture that carries neither tier (bare Category("E2E")) runs on
-    # TeamCity under the base filter and nowhere on GitHub, so it must never be treated as covered.
-    $hasSandbox = $text.Contains('McpE2E.Sandbox') -or $text.Contains('McpE2ECategories.Sandbox')
-    $hasNoEnvironment = $text.Contains('McpE2E.NoEnvironment') -or $text.Contains('McpE2ECategories.NoEnvironment')
-    foreach ($class in $classes) { $fixtureSources[$class] = $text; $fixtureNoEnvironmentOnly[$class] = ($hasNoEnvironment -and -not $hasSandbox) }
+    # The tier is read per fixture, not per file: one file may declare a NoEnvironment fixture next to
+    # a Creatio one (EmailTemplateToolE2ETests.cs), and a file-wide verdict would skip TeamCity for
+    # both. A fixture's segment runs from just after the column-0 closing brace that ends the previous
+    # top-level type (so its class-level attributes are included) to the same point before the next
+    # declaration (so its method-level Category attributes are included and the next fixture's are not).
+    $segmentStarts = @(foreach ($declaration in $declarations) {
+        $closingBraces = @([regex]::Matches($text.Substring(0, $declaration.Index), '(?m)^\}'))
+        if ($closingBraces.Count -eq 0) { 0 } else { $closingBraces[-1].Index + 1 }
+    })
+    $verdicts = @{}
+    for ($i = 0; $i -lt $declarations.Count; $i++) {
+        $segmentEnd = if ($i + 1 -lt $declarations.Count) { $segmentStarts[$i + 1] } else { $text.Length }
+        $segment = $text.Substring($segmentStarts[$i], $segmentEnd - $segmentStarts[$i])
+        # Positive classification only: a fixture that carries neither tier (bare Category("E2E")) runs on
+        # TeamCity under the base filter and nowhere on GitHub, so it must never be treated as covered.
+        $hasSandbox = $segment.Contains('McpE2E.Sandbox') -or $segment.Contains('McpE2ECategories.Sandbox')
+        $hasNoEnvironment = $segment.Contains('McpE2E.NoEnvironment') -or $segment.Contains('McpE2ECategories.NoEnvironment')
+        $name = $declarations[$i].Groups[1].Value
+        # A partial class declared twice in one file is NoEnvironment-only only if every part is.
+        $verdicts[$name] = ($hasNoEnvironment -and -not $hasSandbox) -and ($verdicts[$name] -ne $false)
+    }
+    foreach ($class in $classes) { $fixtureSources[$class] = $text; $fixtureNoEnvironmentOnly[$class] = $verdicts[$class] }
 }
 
 # --- tool inventory: what each Tools/**/*.cs declares ----------------------------------------------
