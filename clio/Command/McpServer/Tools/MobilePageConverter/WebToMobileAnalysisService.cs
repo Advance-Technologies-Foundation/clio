@@ -41,7 +41,6 @@ using JsonValue = System.Text.Json.Nodes.JsonValue;
 [SuppressMessage("Minor Code Smell", "S1192:String literals should not be duplicated", Justification = "Freedom UI JSON keys (items/merge/insert/request/…) read more clearly inline than behind constants in this converter.")]
 [SuppressMessage("Minor Code Smell", "S3267:Loops should be simplified with LINQ", Justification = "Explicit loops with side effects (element-map emission, ref accumulation) are clearer than a LINQ rewrite here.")]
 [SuppressMessage("Major Code Smell", "S125:Sections of code should not be commented out", Justification = "The flagged lines are explanatory design notes, not commented-out code.")]
-[SuppressMessage("Info Code Smell", "S1135:Track uses of TODO tags", Justification = "The TODO tracks ENG-93027 (dynamic mobile-request set) and is intentionally retained as a pointer.")]
 [SuppressMessage("Major Code Smell", "S3358:Ternary operators should not be nested", Justification = "The nested ternaries express a compact fallback chain that reads clearly in context.")]
 [SuppressMessage("Major Code Smell", "S2589:Boolean expressions should not be gratuitous", Justification = "The flagged null checks guard values the analyzer cannot prove non-null across the Newtonsoft/STJ boundary; removing them would risk an NRE on malformed bundles.")]
 // Split across three files: the conversion walk here, the ENG-96589 property prune in
@@ -90,9 +89,12 @@ public static partial class WebToMobileAnalysisService {
 	/// as <paramref name="mobileTemplateViewModelConfig"/> to diff the page's modelConfig. Null when no
 	/// template rule matched or the template bundle could not be read.</param>
 	/// <param name="actionTargetsProbe">Read-only probe of whether each action's NAVIGATION TARGET exists on
-	/// mobile (ENG-94839), surfaced as <c>requestConversions.unresolvedTargetRequests</c>. Null - or a probe
+	/// mobile, surfaced as <c>requestConversions.unresolvedTargetRequests</c>. Null - or a probe
 	/// that could not reach the environment - leaves every target unknown and changes no conversion decision:
 	/// the report is a warning, nothing is dropped on target grounds.</param>
+	/// <param name="existingMobilePages">Mobile page(s) already found for the entity/page being converted
+	/// (the reuse-vs-convert fact, playbook step 2a). Carried onto the guide unchanged; null becomes an
+	/// empty list.</param>
 		public static MobilePageConversionGuide Analyze(
 		PageBundleInfo bundle,
 		IReadOnlySet<string> mobileTypes,
@@ -101,6 +103,7 @@ public static partial class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, ComponentRegistryEntry> mobileByType,
 		WebToMobilePageConversionRules rules,
 		TemplateMappingRule templateRule,
+		IReadOnlySet<string> mobileRequestTypes,
 		string sourcePage,
 		string sourceTemplate,
 		string suggestedTarget,
@@ -119,12 +122,17 @@ public static partial class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, JObject> webTemplateBaselineNodes = null,
 		JObject webTemplateResources = null,
 		MobileActionTargetProbeResult actionTargetsProbe = null,
+		IReadOnlyList<ExistingMobilePageInfo> existingMobilePages = null,
 		MobileRegistryGeneration mobileRegistryGeneration = null) {
 		ArgumentNullException.ThrowIfNull(bundle);
 		ArgumentNullException.ThrowIfNull(mobileTypes);
 		ArgumentNullException.ThrowIfNull(webTypes);
 		ArgumentNullException.ThrowIfNull(rules);
 
+		// A request is supported when the mobile request registry lists it. A caller that supplies no
+		// catalog leaves the versioned rules file as the only source of support, which is what the
+		// hermetic element-mapping tests rely on.
+		ArgumentNullException.ThrowIfNull(mobileRequestTypes);
 		IReadOnlyDictionary<string, string> map =
 			containerNameMap ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 		IReadOnlyDictionary<string, ComponentMappingRule> componentMap =
@@ -213,7 +221,7 @@ public static partial class WebToMobileAnalysisService {
 		// from the map, and an absent key reads as Unknown. Gating on the flag instead threw away the verdicts
 		// the probe had ALREADY settled without the environment (a web-page target is dead by construction),
 		// so a page carrying one web-page target plus one object target silently lost the web-page warning
-		// that the same page without the object target reports fine (ENG-94839).
+		// that the same page without the object target reports fine.
 		IReadOnlyDictionary<string, ActionTargetResolution> actionTargets =
 			actionTargetsProbe?.TargetsByKey
 			?? new Dictionary<string, ActionTargetResolution>(StringComparer.OrdinalIgnoreCase);
@@ -233,7 +241,7 @@ public static partial class WebToMobileAnalysisService {
 			positionalParentByAnchor, positionalAnchorByWebAnchor,
 			mobileTypesByName, mobileTemplateNodesByName, webBaselineNodes, webTemplateResources,
 			declaredElements,
-			actionTargets, unresolvedTargets);
+			actionTargets, unresolvedTargets, mobileRequestTypes);
 
 		// Removes components an excludedComponents rule bans from a host (type-agnostic — which
 		// type/host/property is banned comes entirely from the rules), in the two shapes a banned component
@@ -271,7 +279,8 @@ public static partial class WebToMobileAnalysisService {
 		// names BECAUSE their removals are layout cleanup, and if WalkConsumers ever learns to descend
 		// menuItems (see the excluded-components-phase-b knowledge record, which anticipates exactly that),
 		// a dead action's attributes SHOULD go with it — that removal is genuine loss.
-		ApplyComponentRemovals(elementMap, requestMap, actionComponentProperties, componentRemovals);
+		ApplyComponentRemovals(
+			elementMap, requestMap, mobileRequestTypes, actionComponentProperties, componentRemovals);
 
 		// Deterministic empty-container removal: a converter-created layout container whose items
 		// receive NO surviving child is converted to a drop, bottom-up so emptiness cascades. Deliberately
@@ -461,6 +470,7 @@ public static partial class WebToMobileAnalysisService {
 			DroppedElements = ProjectDroppedElements(elementMap),
 			MobileContracts = contracts,
 			SectionRegistration = sectionRegistration,
+			ExistingMobilePages = existingMobilePages ?? [],
 			PageBusinessRules = pageBusinessRules,
 			RequestConversions = requestConversions,
 			AdaptiveLayout = adaptiveLayout.Count > 0 ? adaptiveLayout : null,
@@ -2102,9 +2112,6 @@ public static partial class WebToMobileAnalysisService {
 		return referenced;
 	}
 
-
-
-
 	private static bool HasContent(string section, string empty) =>
 		!string.IsNullOrWhiteSpace(section) &&
 		!string.Equals(section.Trim(), empty, StringComparison.Ordinal);
@@ -2150,7 +2157,8 @@ public static partial class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, IReadOnlyList<string>> ActionComponentProperties,
 		IReadOnlyDictionary<string, ActionTargetResolution> ActionTargets,
 		List<UnresolvedTargetRequest> UnresolvedTargetRequests,
-		IReadOnlyDictionary<string, string> DeclaredTypesByName);
+		IReadOnlyDictionary<string, string> DeclaredTypesByName,
+		IReadOnlySet<string> MobileRequestTypes);
 
 	/// <summary>
 	/// The set of NON-CONVERTING scope container names — declared EXPLICITLY by the rules'
@@ -2196,7 +2204,8 @@ public static partial class WebToMobileAnalysisService {
 		JObject webBaselineResources,
 		IReadOnlyList<DeclaredElementRule> declaredElements,
 		IReadOnlyDictionary<string, ActionTargetResolution> actionTargets,
-		List<UnresolvedTargetRequest> unresolvedTargetRequests) {
+		List<UnresolvedTargetRequest> unresolvedTargetRequests,
+		IReadOnlySet<string> mobileRequestTypes) {
 		var declaredTypesByName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 		foreach (DeclaredElementRule declared in declaredElements ?? []) {
 			declaredTypesByName.TryAdd(declared.Name, declared.Type);
@@ -2217,7 +2226,8 @@ public static partial class WebToMobileAnalysisService {
 			ContentContainerTypesOf(rules),
 			actionComponentProperties,
 			actionTargets, unresolvedTargetRequests,
-			declaredTypesByName);
+			declaredTypesByName,
+			mobileRequestTypes);
 		EmitDeclaredElements(ctx, declaredElements);
 		WalkElements(ctx, tree, mobileParentName: null);
 		return ctx.Out;
@@ -3122,14 +3132,14 @@ public static partial class WebToMobileAnalysisService {
 		None,
 		/// <summary>An ACTION-ONLY component (see <see cref="IsActionOnlyType"/>) whose clicked request is NOT
 		/// supported on mobile — the versioned map clears its target, OR it is covered by neither the versioned map
-		/// nor the bundled supported set (an unknown <c>crt.*</c> or a custom <c>usr.*</c> request). A dead control,
-		/// so it is NOT retargeted into the FAB. Only those two types classify here: any OTHER component type with an
-		/// unsupported clicked is <see cref="Convertible"/> — kept and flagged by
+		/// nor the mobile request registry (an unknown <c>crt.*</c> or a custom <c>usr.*</c> request). A dead control,
+		/// so it is NOT retargeted into the FAB. Only a type the rules declare action-only classifies here: any OTHER
+		/// component type with an unsupported clicked is <see cref="Convertible"/> — kept and flagged by
 		/// <see cref="ProcessEventBindings"/>, not dropped, matching the leaf policy (which gates on the same
 		/// predicate) and the tool contract.</summary>
 		Unsupported,
-		/// <summary>The clicked request is supported on mobile (mapped to a mobile target, or present in the bundled
-		/// supported set), OR the node is not an action-only component (an unsupported clicked on another component
+		/// <summary>The clicked request is supported on mobile (mapped to a mobile target, or published by the mobile
+		/// request registry), OR the node is not an action-only component (an unsupported clicked on another component
 		/// type is kept and flagged, not dropped) — the action converts.</summary>
 		Convertible
 	}
@@ -3154,7 +3164,7 @@ public static partial class WebToMobileAnalysisService {
 			return ClickedConvertibility.None;
 		}
 		request = clicked["request"].ToString();
-		if (IsRequestSupported(ctx.RequestMap, request)) {
+		if (IsRequestSupported(ctx.RequestMap, ctx.MobileRequestTypes, request)) {
 			return ClickedConvertibility.Convertible;
 		}
 		// Same DROP policy as the leaf path, through the same predicate: only an action-only component becomes a
@@ -3553,13 +3563,13 @@ public static partial class WebToMobileAnalysisService {
 			// interaction enters a twin merge). An unchanged binding is inherited and left to the template element.
 			if (IsEventBinding(prop.Value)) {
 				if (!JToken.DeepEquals(baseline[prop.Name], prop.Value)) {
-					// canRemoveBinding: false — `values` here is a DELTA MERGE payload, not the element's whole
-					// mobileValues. Omitting a key from a merge means "keep the mobile template element's own
-					// value" (see MobileValues), so nothing would actually be removed and the mobile control
-					// may well keep firing the template's own request. Report the dead target; do not claim a
-					// removal that the merge cannot perform.
-					ProcessOneEventBinding(ctx, mobileName, prop.Name, (JObject)prop.Value, values,
-						canRemoveBinding: false);
+					// `values` here is a DELTA MERGE payload, not the element's whole mobileValues. Omitting a
+					// key from a merge means "keep the mobile template element's own value" (see MobileValues),
+					// so an unsupported request is dropped by omission rather than an explicit removal. A
+					// definitionally-absent target (a web page) is still written into the merge with its target
+					// param blanked: the page's own binding wins over the template's, just with the broken part
+					// cleared — and BindingRemoved reports that blanking regardless of which writer performed it.
+					ProcessOneEventBinding(ctx, mobileName, prop.Name, (JObject)prop.Value, values);
 				}
 				continue;
 			}
@@ -4540,35 +4550,9 @@ public static partial class WebToMobileAnalysisService {
 	}
 
 	/// <summary>
-	/// OFFLINE-FALLBACK set of requests the Creatio Mobile app supports (from the monorepo
-	/// <c>@CrtInterfaceDesignerMobileRequest</c> decorators). The AUTHORITATIVE source is the versioned rules
-	/// file's <c>requests</c> section (<see cref="ElementMapContext.RequestMap"/>): an entry with a mobile
-	/// target is supported, an entry that clears the target is unsupported. This constant is consulted only for
-	/// a request the versioned file does not cover, so a CDN rules update can enable/disable a request without a
-	/// clio release. TODO(ENG-93027): fold this constant into the versioned file —
-	/// https://creatio.atlassian.net/browse/ENG-93027.
-	/// </summary>
-	private static readonly HashSet<string> MobileSupportedRequests = new(StringComparer.OrdinalIgnoreCase) {
-		"crt.AddCommunicationOptionsRequest",
-		"crt.CancelRecordChangesRequest",
-		"crt.ClosePageRequest",
-		"crt.CreateRecordRequest",
-		"crt.DeleteRecordRequest",
-		"crt.LoadDataRequest",
-		"crt.OpenPageRequest",
-		"crt.RunBusinessProcessRequest",
-		"crt.SaveRecordRequest",
-		"crt.SetAttributeFromBarcodeRequest",
-		"crt.SetAttributeFromNfcRequest",
-		"crt.UpdateQuickFilterGroupRequest",
-		"crt.UpdateRecordRequest",
-		"crt.UploadFileRequest"
-	};
-
-	/// <summary>
 	/// The first event-binding request on the node the Creatio Mobile app does not support (or null when every
 	/// binding is supported), per the shared <see cref="IsRequestSupported"/> criterion — the versioned rules file
-	/// first, then the bundled <see cref="MobileSupportedRequests"/> fallback.
+	/// first, then the mobile request registry.
 	/// </summary>
 	private static string UnsupportedRequestOf(ElementMapContext ctx, JObject node) {
 		foreach (JProperty prop in node.Properties()) {
@@ -4576,7 +4560,7 @@ public static partial class WebToMobileAnalysisService {
 				continue;
 			}
 			string webRequest = ((JObject)prop.Value)["request"].ToString();
-			if (!IsRequestSupported(ctx.RequestMap, webRequest)) {
+			if (!IsRequestSupported(ctx.RequestMap, ctx.MobileRequestTypes, webRequest)) {
 				return webRequest;
 			}
 		}
@@ -4589,19 +4573,35 @@ public static partial class WebToMobileAnalysisService {
 	/// non-converting-scope / FAB gate) so the two never diverge — the bug where a header button with an unsupported
 	/// request was dropped on the leaf path but moved into the FAB on the scope path. The versioned rules file wins
 	/// (an entry with a mobile target is supported, an entry that clears the target is unsupported); a request the
-	/// file does not cover falls back to the bundled <see cref="MobileSupportedRequests"/> set, so anything absent —
-	/// an unknown <c>crt.*</c> or a custom <c>usr.*</c> request — is unsupported.
+	/// file does not cover falls back to the mobile request registry — the set the mobile runtime itself
+	/// publishes — so anything absent from both, an unknown <c>crt.*</c> or a custom <c>usr.*</c> request, is
+	/// unsupported.
 	/// <para>
-	/// Takes the request MAP rather than the walk context so <see cref="ApplyComponentRemovals"/> — which runs one pass
-	/// later, with no context to hand — asks the same question through the same function instead of restating the
-	/// two-tier rule. A third caller of one criterion keeps the invariant; a second copy of it would not.
+	/// Takes the request MAP and the registry SET rather than the walk context, so
+	/// <see cref="ApplyComponentRemovals"/> — which runs one pass later, with no context to hand — asks the same
+	/// question through the same function instead of restating the two-tier rule. A third caller of one
+	/// criterion keeps the invariant; a second copy of it would not.
+	/// </para>
+	/// <para>
+	/// Widening the fallback from the deleted 14-entry constant to the registry was measured, not incidental:
+	/// 38 types gain support (the registry-plus-rules union minus the constant-plus-rules union, against a
+	/// 65-entry registry) and none is lost. Of those 38, 12 are ALSO declared as web request types in
+	/// creatio-ui — ComboboxLoadData, CreateCalendarRecord, CreateRecordFromLookup,
+	/// HandleViewModelAttributeChange, HandleViewModelInit, PhoneLinkClick, SaveAttributeToProfile,
+	/// SearchFilter, SelectFile, SetViewModelAttribute, UploadImage, WidgetDrilldown — measured over the 427
+	/// types declared there via <c>@CrtRequest</c>; the other 26 are mobile-runtime-internal and cannot appear
+	/// in a web page schema being converted, so they are inert in practice. Residual risk, accepted: because the
+	/// fallback is now a 65-entry set rather than a 14-entry one, a future web request whose name coincides with
+	/// a mobile-internal one would be treated as supported — the short constant blocked that by being short.
 	/// </para>
 	/// </summary>
 	private static bool IsRequestSupported(
-		IReadOnlyDictionary<string, RequestMappingRule> requestMap, string webRequest) =>
+		IReadOnlyDictionary<string, RequestMappingRule> requestMap,
+		IReadOnlySet<string> mobileRequestTypes,
+		string webRequest) =>
 		requestMap.TryGetValue(webRequest, out RequestMappingRule rule)
 			? !string.IsNullOrWhiteSpace(rule.Mobile)
-			: MobileSupportedRequests.Contains(webRequest);
+			: mobileRequestTypes.Contains(webRequest);
 
 	/// <summary>
 	/// Whether a dead action REMOVES this component type — declared by the rules' <c>actionComponents</c>
@@ -4727,8 +4727,7 @@ public static partial class WebToMobileAnalysisService {
 	private static void ProcessEventBindings(ElementMapContext ctx, JObject node, JObject values, string elementName) {
 		foreach (JProperty prop in node.Properties()) {
 			if (IsEventBinding(prop.Value)) {
-				ProcessOneEventBinding(ctx, elementName, prop.Name, (JObject)prop.Value, values,
-					canRemoveBinding: true);
+				ProcessOneEventBinding(ctx, elementName, prop.Name, (JObject)prop.Value, values);
 			}
 		}
 	}
@@ -4743,18 +4742,8 @@ public static partial class WebToMobileAnalysisService {
 	/// <param name="binding">The event property, e.g. <c>clicked</c>.</param>
 	/// <param name="source">The source binding's <c>{ request, params }</c> object.</param>
 	/// <param name="values">The values object being built.</param>
-	/// <param name="canRemoveBinding">
-	/// Whether omitting <paramref name="binding"/> from <paramref name="values"/> actually REMOVES the action.
-	/// True for the insert builder, whose <paramref name="values"/> becomes the element's entire
-	/// <c>mobileValues</c>. FALSE for the twin delta, whose <paramref name="values"/> is a merge payload where
-	/// an omitted key means "keep the template element's own value" — so a removal is not something that
-	/// writer can perform, and reporting one would tell the caller the control "renders and does nothing" when
-	/// it may still fire the mobile template's own request. The removal decision belongs to the WRITER as much
-	/// as to the target kind, which is why it is a parameter rather than a property of the resolution.
-	/// </param>
 	private static void ProcessOneEventBinding(
-		ElementMapContext ctx, string elementName, string binding, JObject source, JObject values,
-		bool canRemoveBinding) {
+		ElementMapContext ctx, string elementName, string binding, JObject source, JObject values) {
 		string webRequest = source["request"].ToString();
 		values.Remove(binding); // own this property regardless of the prune loop
 
@@ -4762,23 +4751,49 @@ public static partial class WebToMobileAnalysisService {
 			if (!string.IsNullOrWhiteSpace(rule.Mobile)) {
 				// The request type converts. Its DESTINATION is the second question, and it is reported
 				// separately: whether the action is also REMOVED depends on how strong the absence verdict is,
-				// which MobileActionTargetProbe.StripsBindingOnMissing owns. The COMPONENT always stays.
+				// which MobileActionTargetProbe.BlanksTargetOnMissing owns. The COMPONENT always stays.
 				ActionTargetResolution target = ResolvedTargetOf(ctx, rule, source);
 				if (target is { State: ActionTargetState.Missing or ActionTargetState.Unknown }) {
 					bool missing = target.State == ActionTargetState.Missing;
-					// Removed only for a DEFINITIONAL absence (a web page cannot open on mobile, and no
-					// environment read was involved). An object's add-on verdict is a report, never a removal:
-					// it cannot prove absence, and stripping on it would cost a working action.
-					bool removed = missing
-						&& canRemoveBinding
-						&& MobileActionTargetProbe.StripsBindingOnMissing(target.Kind);
+					// A DEFINITIONAL absence means the target cannot open on mobile at all (a web page
+					// cannot open on mobile, and no environment read was involved) — the converted
+					// request stays on the element, but the target param it would point at is blanked,
+					// regardless of which writer is calling.
+					bool definitionallyAbsent = missing
+						&& MobileActionTargetProbe.BlanksTargetOnMissing(target.Kind);
+					// BindingRemoved reports whether the target param was blanked — true exactly when the
+					// absence is definitional, independent of which writer (insert or twin-merge delta) is
+					// calling: both writers blank the same way, so the flag is a fact about the target, not
+					// about writer capability.
 					ctx.UnresolvedTargetRequests.Add(new UnresolvedTargetRequest {
 						ElementName = elementName, Binding = binding, WebRequest = webRequest,
 						TargetKind = target.Kind, Target = target.Target,
 						State = missing ? UnresolvedTargetRequest.StateMissing : UnresolvedTargetRequest.StateUnknown,
-						BindingRemoved = removed
+						BindingRemoved = definitionallyAbsent,
+						ResolvedCandidateSchemaName = target.ResolvedCandidateSchemaName
 					});
-					if (removed) {
+					if (definitionallyAbsent) {
+						// The request still converts (mobile name + paramMap applied) — only the target
+						// param is blanked, so the control stays on the element and reconfigurable in
+						// Mobile Designer instead of losing its action silently. `params` is guaranteed a
+						// JObject here — ResolvedTargetOf only resolves a target when source["params"] is
+						// one and TargetParam is set on it, and ApplyParamMap never changes that shape.
+						var blankedClone = (JObject)source.DeepClone();
+						blankedClone["request"] = rule.Mobile;
+						ApplyParamMap(blankedClone, rule.ParamMap);
+						// Mirrors ApplyParamMap's own guard exactly: a null/whitespace mapped value is a rename
+						// ApplyParamMap itself skips (the rules file is external, versioned data this build has
+						// never seen), so the two must agree on what "effective" means here — otherwise this
+						// blanks a param ApplyParamMap never renamed to, and either throws on a null key or
+						// leaves the real (dead) rule.TargetParam value untouched.
+						string effectiveTargetParam =
+							rule.ParamMap != null
+							&& rule.ParamMap.TryGetValue(rule.TargetParam, out string mappedParam)
+							&& !string.IsNullOrWhiteSpace(mappedParam)
+								? mappedParam
+								: rule.TargetParam;
+						((JObject)blankedClone["params"])[effectiveTargetParam] = "";
+						values[binding] = blankedClone;
 						ctx.DroppedRequests.Add(new DroppedRequest {
 							ElementName = elementName, Binding = binding, WebRequest = webRequest,
 							Reason = [Reason(ReasonCodes.DropRequestTargetMissing,
@@ -4853,6 +4868,77 @@ public static partial class WebToMobileAnalysisService {
 		}
 	}
 
+	/// <summary>
+	/// The versioned rules file's <c>requests</c> entries whose mobile target the mobile request registry does
+	/// not list, as <c>web -&gt; mobile</c> pairs. Support is derived from the registry, so an entry naming a
+	/// mobile request the runtime never publishes converts a binding into a type the app cannot dispatch — the
+	/// failure is silent on the page. Every entry passes today; this is the regression guard that keeps a later
+	/// rules-file edit from reintroducing one. An empty registry yields no findings, so a caller with no catalog
+	/// loaded reports nothing rather than flagging all of them.
+	/// </summary>
+	/// <summary>
+	/// Request types that open a page chosen by one of their own parameters, and whose target the converter
+	/// therefore cannot verify without a rules entry. Each is published by the mobile request registry and
+	/// mapped by no rules entry today, so registry membership alone would make it supported: the binding
+	/// would convert by identity, with no <c>paramMap</c> and no <c>targetParam</c>/<c>targetKind</c> pair
+	/// for the unresolved-target probe to use, and could look valid while opening nothing on the device.
+	/// <para>
+	/// Named, not derived. Deriving the set from the parameter NAMES the rules use as targets
+	/// (<c>entityName</c>, <c>schemaName</c>) was tried and rejected: the same names mean a FILE schema on
+	/// <c>crt.OpenFileRequest</c> and <c>crt.OpenSignatureServiceRequest</c>, which that rule withheld too.
+	/// Each entry below was read in the mobile runtime and opens a page. The list is a stopgap that shrinks
+	/// on its own: a type leaves it by gaining a rules entry, which is what the lookup below checks.
+	/// </para>
+	/// </summary>
+	private static readonly IReadOnlySet<string> TargetCarryingRequestsPendingRules =
+		new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"crt.CreateCalendarRecordRequest",
+			"crt.CreateRecordFromLookupRequest",
+			"crt.CopyCalendarRecordRequest",
+			"crt.CreateRecordWithGeodataRequest",
+			"crt.SelectSurveyRequest"
+		};
+
+	/// <summary>
+	/// The subset of <see cref="TargetCarryingRequestsPendingRules"/> the registry publishes and the rules
+	/// do not map — the types to withhold from registry-derived support on this run.
+	/// </summary>
+	public static IReadOnlySet<string> TargetCarryingRegistryOnlyRequests(
+		WebToMobilePageConversionRules rules, IEnumerable<RequestRegistryEntry> registryEntries) {
+		var withheld = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		if (registryEntries is null) {
+			return withheld;
+		}
+		var mapped = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		foreach (RequestMappingRule rule in rules?.Requests ?? []) {
+			if (!string.IsNullOrWhiteSpace(rule?.Web)) {
+				mapped.Add(rule.Web);
+			}
+		}
+		foreach (RequestRegistryEntry entry in registryEntries) {
+			if (!string.IsNullOrWhiteSpace(entry?.RequestType)
+				&& TargetCarryingRequestsPendingRules.Contains(entry.RequestType)
+				&& !mapped.Contains(entry.RequestType)) {
+				withheld.Add(entry.RequestType);
+			}
+		}
+		return withheld;
+	}
+
+	public static IReadOnlyList<string> UnknownMobileRequestTargets(
+		WebToMobilePageConversionRules rules, IReadOnlySet<string> mobileRequestTypes) {
+		if (mobileRequestTypes is null || mobileRequestTypes.Count == 0) {
+			return [];
+		}
+		var unknown = new List<string>();
+		foreach (RequestMappingRule rule in rules?.Requests ?? []) {
+			if (!string.IsNullOrWhiteSpace(rule?.Mobile) && !mobileRequestTypes.Contains(rule.Mobile)) {
+				unknown.Add($"{rule.Web} -> {rule.Mobile}");
+			}
+		}
+		return unknown;
+	}
+
 	/// <summary>Builds the web-request → mapping-rule lookup (case-insensitive) from the resolved rules.</summary>
 	private static IReadOnlyDictionary<string, RequestMappingRule> BuildRequestMap(WebToMobilePageConversionRules rules) {
 		var map = new Dictionary<string, RequestMappingRule>(StringComparer.OrdinalIgnoreCase);
@@ -4901,10 +4987,13 @@ public static partial class WebToMobileAnalysisService {
 			FlaggedRequests = flagged,
 			UnresolvedTargetRequests = unresolvedTargets,
 			TargetsProbed = targetsProbed,
-			// Carried whenever the probe set one, not only on total failure: a check that ran but hit its
-			// per-object ceiling is incomplete in a way TargetsProbed alone cannot express. Redacted at the
-			// point it is built.
-			TargetsNote = actionTargetsProbe?.Note
+			// Carried whenever the probe set one — not only when the source page's package could not be
+			// resolved: it also fires when the per-call probe ceiling clips the object-target list, and when a
+			// candidate-web-page lookup fails for a verified-missing object (the two compose into one note
+			// rather than either silently replacing the other — see
+			// MobileActionTargetProbe.CandidateFailureAccumulator.ComposeNote). Redacted at the point it is built.
+			TargetsNote = actionTargetsProbe?.Note,
+			MissingTargetPages = MissingTargetPageQueueBuilder.Build(unresolvedTargets)
 		};
 	}
 
@@ -6872,4 +6961,5 @@ public static partial class WebToMobileAnalysisService {
 		}
 	}
 }
+
 

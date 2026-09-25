@@ -58,7 +58,7 @@ public sealed class PageUpdateCommandBaselineTests {
 			new PageDesignerHierarchySchema { UId = SchemaUId, Name = SchemaName, PackageUId = "test-pkg-uid" }
 		]);
 		_guard = Substitute.For<IPageBaselineGuard>();
-		_command = new PageUpdateCommand(_applicationClient, serviceUrlBuilder, logger, _guard, new PersistedResourceKeyReader(), hierarchyClient);
+		_command = new PageUpdateCommand(_applicationClient, serviceUrlBuilder, logger, _guard, new PersistedResourceKeyReader(), hierarchyClient, viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 	}
 
 	private void StubChecksumByUId(params string[] responses) {

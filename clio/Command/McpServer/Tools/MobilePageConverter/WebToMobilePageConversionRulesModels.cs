@@ -648,13 +648,13 @@ public sealed class ExcludedComponentFilterRule {
 /// Maps a web request (action) to its mobile counterpart. A request is dispatched declaratively from a
 /// component's event binding (<c>clicked</c> / <c>valueChange</c> / <c>updated</c>) as
 /// <c>{ "request": "crt.X", "params": { ... } }</c>. An empty/null <see cref="Mobile"/> means the
-/// request is NOT supported on mobile. A request absent from this map falls back to the bundled offline
-/// supported set; one absent from BOTH is unknown/custom. Support decides handling by component type: an
-/// ACTION-ONLY component — a <c>crt.Button</c> or a <c>crt.MenuItem</c>, which exist only to fire an
-/// action — whose request is unsupported or unknown is DROPPED, while any other component type keeps the
-/// binding verbatim and flags it for manual review, because it has a purpose beyond the action and
-/// dropping it would lose valid UI. A button left with no surviving menu item and no click request of its
-/// own then goes too (ENG-96178).
+/// request is NOT supported on mobile. A request absent from this map falls back to the mobile request
+/// registry; one absent from BOTH is unknown/custom. Support decides handling by component type: an
+/// ACTION-ONLY component — one the rules' <c>actionComponents</c> section declares, today a
+/// <c>crt.Button</c> or a <c>crt.MenuItem</c>, which exist only to fire an action — whose request is
+/// unsupported or unknown is DROPPED, while any other component type keeps the binding verbatim and flags
+/// it for manual review, because it has a purpose beyond the action and dropping it would lose valid UI.
+/// A control left with no action of its own and no menu item under it then goes too (ENG-96178).
 /// </summary>
 public sealed class RequestMappingRule {
 	/// <summary>Web request type, e.g. "crt.SaveRecordRequest".</summary>
@@ -887,5 +887,6 @@ public sealed class ViewConfigTemplateRule {
 	[JsonPropertyName("preserveSourceProperties")]
 	public bool PreserveSourceProperties { get; init; }
 }
+
 
 

@@ -60,10 +60,15 @@ public sealed class ToolContractPayloadBudgetTests {
 	// pinned where it stands.
 	// Registration and Classic parameter-page discovery add two independent long-tail tools.
 	// The combined default index measures 44986 bytes; round to the next 256-byte step (45056).
+	// Re-pinned deliberately for issue #1221: odata-read-to-file is one more long-tail tool, and one more
+	// tool is exactly what this ceiling is defined to grow by. Measured 45223 bytes on the default surface
+	// with it registered - 237 bytes for its index entry, which is one entry's worth and nothing else: the
+	// index carries only the FIRST SENTENCE of a description (BuildPurpose), so the sentences this branch
+	// adds to odata-read's own [Description] cost the index nothing. Next 256-byte step is 45312 (177).
 	// Serialization uses the default JSON encoder,
 	// which escapes non-ASCII (a purpose ellipsis is written as a 6-byte escape), so it over-counts the real
 	// UTF-8 wire size — conservative, which is the safe direction for a ceiling.
-	private const int MaxCompactIndexSerializedBytes = 176 * 256;
+	private const int MaxCompactIndexSerializedBytes = 177 * 256;
 
 	// Worst-case ceiling for ONE named full contract, measured as the SERIALIZED contract in UTF-8 bytes
 	// — the same quantity the index ratchet above measures, and what the agent actually receives.

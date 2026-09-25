@@ -94,6 +94,10 @@ public static partial class WebToMobileAnalysisService {
 	/// <param name="requestMap">
 	/// The versioned request rules — the first tier of <see cref="IsRequestSupported"/>.
 	/// </param>
+	/// <param name="mobileRequestTypes">
+	/// The mobile request registry — its second tier. Both are passed rather than read from the walk context,
+	/// which no longer exists by the time this pass runs.
+	/// </param>
 	/// <param name="actionComponents">
 	/// The declared action components, by type — a type listed here has its whole component removed when its
 	/// request does not convert. See <see cref="ActionComponentPropertiesOf"/>.
@@ -129,9 +133,10 @@ public static partial class WebToMobileAnalysisService {
 	internal static void ApplyComponentRemovals(
 		List<ElementMapEntry> elementMap,
 		IReadOnlyDictionary<string, RequestMappingRule> requestMap,
+		IReadOnlySet<string> mobileRequestTypes,
 		IReadOnlyDictionary<string, IReadOnlyList<string>> actionComponents,
 		IReadOnlyList<ComponentRemovalRule> removalRules) {
-		PruneCarriedComponents(elementMap, requestMap, actionComponents, removalRules);
+		PruneCarriedComponents(elementMap, requestMap, mobileRequestTypes, actionComponents, removalRules);
 		RemoveMatchingEntries(elementMap, removalRules);
 	}
 
@@ -159,22 +164,30 @@ public static partial class WebToMobileAnalysisService {
 	private static void PruneCarriedComponents(
 		List<ElementMapEntry> elementMap,
 		IReadOnlyDictionary<string, RequestMappingRule> requestMap,
+		IReadOnlySet<string> mobileRequestTypes,
 		IReadOnlyDictionary<string, IReadOnlyList<string>> actionComponents,
 		IReadOnlyList<ComponentRemovalRule> removalRules) {
-		for (int i = 0; i < elementMap.Count; i++) {
-			ElementMapEntry host = elementMap[i];
+		// A WHILE loop rather than a for: this walk INSERTS into the list it is walking, so the step is not a
+		// constant — writing that as `i += removed.Count` in a for body hides it from the reader and trips
+		// Sonar S127. What it steps over are the drop entries the prune just produced, already judged.
+		int index = 0;
+		while (index < elementMap.Count) {
+			ElementMapEntry host = elementMap[index];
 			if (host.Values is null || (!IsInsert(host) && !IsMerge(host))) {
+				index++;
 				continue;
 			}
 			List<ElementMapEntry> removed = [];
-			PruneCarriedComponentsIn(host.Values, requestMap, actionComponents, removalRules, removed, depth: 0);
+			PruneCarriedComponentsIn(
+				host.Values, requestMap, mobileRequestTypes, actionComponents, removalRules, removed, depth: 0);
 			if (removed.Count == 0) {
+				index++;
 				continue;
 			}
 			// Directly after its host: a nested node has no tree position of its own, and the host is the
 			// nearest thing the report can honestly order it by (the other passes keep tree order in place).
-			elementMap.InsertRange(i + 1, removed);
-			i += removed.Count;
+			elementMap.InsertRange(index + 1, removed);
+			index += removed.Count + 1;
 		}
 	}
 
@@ -189,6 +202,7 @@ public static partial class WebToMobileAnalysisService {
 	private static void PruneCarriedComponentsIn(
 		JsonNode node,
 		IReadOnlyDictionary<string, RequestMappingRule> requestMap,
+		IReadOnlySet<string> mobileRequestTypes,
 		IReadOnlyDictionary<string, IReadOnlyList<string>> actionComponents,
 		IReadOnlyList<ComponentRemovalRule> removalRules,
 		List<ElementMapEntry> removed,
@@ -205,7 +219,8 @@ public static partial class WebToMobileAnalysisService {
 					}
 					if (value is JsonArray array) {
 						bool emptied =
-							PruneCarriedComponentsFrom(array, requestMap, actionComponents, removalRules, removed, depth)
+							PruneCarriedComponentsFrom(
+								array, requestMap, mobileRequestTypes, actionComponents, removalRules, removed, depth)
 							&& array.Count == 0;
 						if (emptied) {
 							// REMOVE the key rather than leave []: on a merge an empty array is a delta that
@@ -215,11 +230,13 @@ public static partial class WebToMobileAnalysisService {
 						}
 						continue;
 					}
-					PruneCarriedComponentsIn(value, requestMap, actionComponents, removalRules, removed, depth);
+					PruneCarriedComponentsIn(
+						value, requestMap, mobileRequestTypes, actionComponents, removalRules, removed, depth);
 					// A single-object component slot, judged after its own subtree exactly as an array member is.
 					if (value is JsonObject member
 						&& IsComponentObject(member)
-						&& CarriedRemovalReason(member, requestMap, actionComponents, removalRules) is { } reason
+						&& CarriedRemovalReason(member, requestMap, mobileRequestTypes, actionComponents, removalRules)
+						is { } reason
 						&& StringProp(member, "name") is { Length: > 0 } name) {
 						removed.Add(Drop(name, StringProp(member, "type"), reason));
 						obj.Remove(key);
@@ -229,7 +246,8 @@ public static partial class WebToMobileAnalysisService {
 			case JsonArray items:
 				// An array reached from an array — no object in between, so the branch above never saw it.
 				// PruneCarriedComponentsFrom routes its non-object members back here, which closes that gap.
-				PruneCarriedComponentsFrom(items, requestMap, actionComponents, removalRules, removed, depth);
+				PruneCarriedComponentsFrom(
+					items, requestMap, mobileRequestTypes, actionComponents, removalRules, removed, depth);
 				break;
 			default:
 				break;
@@ -257,6 +275,7 @@ public static partial class WebToMobileAnalysisService {
 	private static bool PruneCarriedComponentsFrom(
 			JsonArray array,
 			IReadOnlyDictionary<string, RequestMappingRule> requestMap,
+			IReadOnlySet<string> mobileRequestTypes,
 			IReadOnlyDictionary<string, IReadOnlyList<string>> actionComponents,
 			IReadOnlyList<ComponentRemovalRule> removalRules,
 			List<ElementMapEntry> removed,
@@ -267,12 +286,15 @@ public static partial class WebToMobileAnalysisService {
 				// Not a component — but it can still CONTAIN one. An array nested directly inside this array
 				// is the case with no object in between, which the object branch above never sees.
 				if (array[i] is not null) {
-					PruneCarriedComponentsIn(array[i], requestMap, actionComponents, removalRules, removed, depth + 1);
+					PruneCarriedComponentsIn(
+						array[i], requestMap, mobileRequestTypes, actionComponents, removalRules, removed, depth + 1);
 				}
 				continue;
 			}
-			PruneCarriedComponentsIn(member, requestMap, actionComponents, removalRules, removed, depth + 1);
-			if (CarriedRemovalReason(member, requestMap, actionComponents, removalRules) is not { } reason
+			PruneCarriedComponentsIn(
+				member, requestMap, mobileRequestTypes, actionComponents, removalRules, removed, depth + 1);
+			if (CarriedRemovalReason(member, requestMap, mobileRequestTypes, actionComponents, removalRules)
+					is not { } reason
 				|| StringProp(member, "name") is not { Length: > 0 } name) {
 				continue;
 			}
@@ -305,11 +327,12 @@ public static partial class WebToMobileAnalysisService {
 	private static ReasonCode CarriedRemovalReason(
 		JsonObject member,
 		IReadOnlyDictionary<string, RequestMappingRule> requestMap,
+		IReadOnlySet<string> mobileRequestTypes,
 		IReadOnlyDictionary<string, IReadOnlyList<string>> actionComponents,
 		IReadOnlyList<ComponentRemovalRule> removalRules) {
 		string type = StringProp(member, "type");
 		if (actionComponents.ContainsKey(type ?? string.Empty)
-			&& UnsupportedCarriedRequest(member, requestMap) is { Length: > 0 } dead) {
+			&& UnsupportedCarriedRequest(member, requestMap, mobileRequestTypes) is { Length: > 0 } dead) {
 			return UnsupportedRequestDropReason(requestMap, dead, scope: null);
 		}
 		// Rule 2, on the node itself: no operation addresses a carried node, so every expression resolves
@@ -325,11 +348,13 @@ public static partial class WebToMobileAnalysisService {
 	/// <see cref="IsRequestSupported"/> criterion.
 	/// </summary>
 	private static string UnsupportedCarriedRequest(
-		JsonObject node, IReadOnlyDictionary<string, RequestMappingRule> requestMap) {
+		JsonObject node,
+		IReadOnlyDictionary<string, RequestMappingRule> requestMap,
+		IReadOnlySet<string> mobileRequestTypes) {
 		foreach (KeyValuePair<string, JsonNode> property in node) {
 			if (IsEventBinding(property.Value)
 				&& StringProp((JsonObject)property.Value, "request") is { Length: > 0 } request
-				&& !IsRequestSupported(requestMap, request)) {
+				&& !IsRequestSupported(requestMap, mobileRequestTypes, request)) {
 				return request;
 			}
 		}
