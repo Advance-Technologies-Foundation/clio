@@ -71,8 +71,11 @@ public class RightManagementServiceClientTests {
 		_savedPayload.Should().Contain(Grantee.ToString(), because: "the new row carries the grantee id");
 		_savedPayload.Should().Contain("\"canRead\":true", because: "read was granted");
 		_savedPayload.Should().Contain("\"canDelete\":false", because: "delete was not requested");
-		_savedPayload.Should().Contain("\"entitySchemaRecordDefRights\":null", because: "unchanged collections are nulled");
-		_savedPayload.Should().Contain("\"entitySchemaColumnsRights\":null", because: "unchanged collections are nulled");
+		JsonElement saved = JsonDocument.Parse(_savedPayload).RootElement.GetProperty("administratedObject");
+		foreach (string collection in new[] { "entitySchemaRecordDefRights", "entitySchemaColumnsRights", "entityOperationGrantees" }) {
+			saved.GetProperty(collection).ValueKind.Should().Be(JsonValueKind.Null,
+				because: $"the untouched collection '{collection}' is sent as null so the save leaves it alone");
+		}
 	}
 
 	private void GetReturnsSingleRowObject() =>
@@ -175,7 +178,7 @@ public class RightManagementServiceClientTests {
 	private const string BaseUId = "11111111-1111-1111-1111-111111111111";
 	private const string LayerUId = "22222222-2222-2222-2222-222222222222";
 
-	private const string InBandFault = "{\"success\":false,\"errorInfo\":{\"message\":\"Request Error\"}}";
+	private const string InBandJsonFault = "{\"success\":false,\"errorInfo\":{\"message\":\"Request Error\"}}";
 
 	private void SelectReturnsUIds(params string[] uIds) =>
 		Post(SelectUrl).Returns("{\"success\":true,\"rows\":["
@@ -248,7 +251,7 @@ public class RightManagementServiceClientTests {
 	public void SetObjectRights_ShouldSaveSecondCandidateNode_WhenFirstCandidateFaults() {
 		// Arrange
 		SelectReturnsUIds(BaseUId, LayerUId);
-		GetReturnsFor(BaseUId, InBandFault);
+		GetReturnsFor(BaseUId, InBandJsonFault);
 		GetReturnsFor(LayerUId, AdministeredObject("from-second"));
 
 		// Act
@@ -266,8 +269,8 @@ public class RightManagementServiceClientTests {
 	public void RightManagementServiceClient_ShouldReportError_WhenAllCandidatesFault() {
 		// Arrange
 		SelectReturnsUIds(BaseUId, LayerUId);
-		GetReturnsFor(BaseUId, InBandFault);
-		GetReturnsFor(LayerUId, InBandFault);
+		GetReturnsFor(BaseUId, InBandJsonFault);
+		GetReturnsFor(LayerUId, InBandJsonFault);
 
 		// Act
 		ObjectRightsInfo info = _client.GetObjectRights("UsrFoo", new CreatioRequestOptions());
@@ -301,7 +304,7 @@ public class RightManagementServiceClientTests {
 	public void GetObjectRights_ShouldDeduplicateAndDropEmptyUIds_WhenRowsRepeat() {
 		// Arrange
 		SelectReturnsUIds(BaseUId, BaseUId, "00000000-0000-0000-0000-000000000000");
-		GetReturnsFor(BaseUId, InBandFault);
+		GetReturnsFor(BaseUId, InBandJsonFault);
 
 		// Act
 		_client.GetObjectRights("UsrFoo", new CreatioRequestOptions());
@@ -534,5 +537,189 @@ public class RightManagementServiceClientTests {
 		role.GranteeName.Should().Be("(unknown)", because: "a missing name falls back to a placeholder");
 		(role.CanRead || role.CanCreate || role.CanEdit || role.CanDelete).Should().BeFalse(
 			because: "a non-bool flag is not a grant");
+	}
+
+	// ---- Review round 5: real fault shapes in the probe loop, existing-row grants/revokes, non-administered revoke ----
+
+	private const string HtmlRequestErrorPage =
+		"<?xml version=\"1.0\" encoding=\"utf-8\"?><!DOCTYPE html><html><body>Request Error</body></html>";
+
+	private void GetThrowsFor(string uId, Exception exception) =>
+		_applicationClient.ExecutePostRequest(GetUrl, Arg.Is<string>(body => body.Contains(uId)), Arg.Any<int>(),
+			Arg.Any<int>(), Arg.Any<int>()).Returns(_ => throw exception);
+
+	private void GetReturnsRows(bool administered, params string[] rows) =>
+		GetReturns("{\"success\":true,\"administratedObject\":{\"name\":\"UsrFoo\",\"administratedByOperations\":"
+			+ (administered ? "true" : "false") + ",\"entitySchemaOperationsRights\":[" + string.Join(",", rows) + "]}}");
+
+	private static string FlagRow(Guid grantee, int position, bool read, bool append, bool edit, bool delete) =>
+		"{\"id\":\"r" + position + "\",\"position\":" + position + ",\"canRead\":" + Lower(read) + ",\"canAppend\":"
+		+ Lower(append) + ",\"canEdit\":" + Lower(edit) + ",\"canDelete\":" + Lower(delete)
+		+ ",\"sysAdminUnit\":{\"id\":\"" + grantee + "\"}}";
+
+	private static string Lower(bool value) => value ? "true" : "false";
+
+	private void AssertNoSave(string because) =>
+		_applicationClient.DidNotReceive().ExecutePostRequest(SaveUrl, Arg.Any<string>(), Arg.Any<int>(),
+			Arg.Any<int>(), Arg.Any<int>());
+
+	[Test]
+	[Description("A first candidate answering with the real non-JSON 'Request Error' page is skipped, and the save uses the second candidate's node.")]
+	public void SetObjectRights_ShouldUseSecondCandidate_WhenFirstReturnsHtmlErrorPage() {
+		// Arrange
+		SelectReturnsUIds(BaseUId, LayerUId);
+		GetReturnsFor(BaseUId, HtmlRequestErrorPage);
+		GetReturnsFor(LayerUId, AdministeredObject("from-second"));
+
+		// Act
+		ObjectRightsChange result = _client.SetObjectRights("UsrFoo", Grantee, new[] { ObjectOperation.Read },
+			revoke: false, disableOperationPermissions: false, new CreatioRequestOptions());
+
+		// Assert
+		result.Error.Should().BeNull(because: "the second candidate answered");
+		_savedPayload.Should().Contain("from-second", because: "the node that actually answered is the one saved");
+	}
+
+	[Test]
+	[Description("A first candidate whose request throws (HTTP 500) is skipped, and the read uses the second candidate.")]
+	public void GetObjectRights_ShouldUseSecondCandidate_WhenFirstRequestThrows() {
+		// Arrange
+		SelectReturnsUIds(BaseUId, LayerUId);
+		GetThrowsFor(BaseUId, new InvalidOperationException("HTTP 500"));
+		GetReturnsFor(LayerUId, AdministeredObject("from-second"));
+
+		// Act
+		ObjectRightsInfo info = _client.GetObjectRights("UsrFoo", new CreatioRequestOptions());
+
+		// Assert
+		info.ReadError.Should().BeNull(because: "the second candidate answered");
+		info.Caption.Should().Be("from-second", because: "a throwing candidate must not end the probe loop");
+	}
+
+	[Test]
+	[Description("When every candidate throws or returns an HTML page, the read reports a ReadError and the write reports an Error without saving.")]
+	public void RightManagementServiceClient_ShouldReportError_WhenEveryCandidateFailsWithRealFaults() {
+		// Arrange
+		SelectReturnsUIds(BaseUId, LayerUId);
+		GetReturnsFor(BaseUId, HtmlRequestErrorPage);
+		GetThrowsFor(LayerUId, new InvalidOperationException("HTTP 500"));
+
+		// Act
+		ObjectRightsInfo info = _client.GetObjectRights("UsrFoo", new CreatioRequestOptions());
+		ObjectRightsChange change = _client.SetObjectRights("UsrFoo", Grantee, new[] { ObjectOperation.Read },
+			revoke: false, disableOperationPermissions: false, new CreatioRequestOptions());
+
+		// Assert
+		info.ReadError.Should().NotBeNullOrEmpty(because: "a failed read is surfaced, never reported as available");
+		change.Error.Should().NotBeNullOrEmpty(because: "the write reports the read failure");
+		AssertNoSave("nothing may be saved when no candidate could be read");
+	}
+
+	[Test]
+	[Description("A SysSchema SelectQuery that throws is reported as a read error / write error, not as an escaping exception.")]
+	public void RightManagementServiceClient_ShouldReportError_WhenSelectQueryThrows() {
+		// Arrange
+		Post(SelectUrl).Returns(_ => throw new InvalidOperationException("select failed"));
+
+		// Act
+		ObjectRightsInfo info = _client.GetObjectRights("UsrFoo", new CreatioRequestOptions());
+		ObjectRightsChange change = _client.SetObjectRights("UsrFoo", Grantee, new[] { ObjectOperation.Read },
+			revoke: false, disableOperationPermissions: false, new CreatioRequestOptions());
+
+		// Assert
+		info.ReadError.Should().Contain("select failed", because: "the resolution failure is surfaced");
+		change.Error.Should().Contain("select failed", because: "the write reports the resolution failure");
+		AssertNoSave("nothing may be saved when the object could not be resolved");
+	}
+
+	[Test]
+	[Description("Granting an extra operation to an existing row keeps every flag the row already held and adds only the requested one.")]
+	public void SetObjectRights_ShouldKeepExistingFlags_WhenGrantingToExistingRow() {
+		// Arrange
+		GetReturnsRows(true, FlagRow(Grantee, 0, read: true, append: false, edit: false, delete: true));
+
+		// Act
+		ObjectRightsChange result = _client.SetObjectRights("UsrFoo", Grantee, new[] { ObjectOperation.Edit },
+			revoke: false, disableOperationPermissions: false, new CreatioRequestOptions());
+
+		// Assert
+		result.Changed.Should().BeTrue(because: "edit was added");
+		JsonElement row = SavedRows().Single();
+		row.GetProperty("canRead").GetBoolean().Should().BeTrue(because: "read was already held and must survive");
+		row.GetProperty("canDelete").GetBoolean().Should().BeTrue(because: "delete was not requested but was held");
+		row.GetProperty("canEdit").GetBoolean().Should().BeTrue(because: "edit was requested");
+		row.GetProperty("canAppend").GetBoolean().Should().BeFalse(because: "create was neither held nor requested");
+	}
+
+	[Test]
+	[Description("Revoking an operation the grantee does not hold changes nothing and does not save, on a multi-row object.")]
+	public void SetObjectRights_ShouldNotSave_WhenRevokingOperationNotHeld() {
+		// Arrange
+		GetReturnsRows(true,
+			FlagRow(Grantee, 0, read: true, append: false, edit: false, delete: false),
+			FlagRow(Employees, 1, read: true, append: true, edit: true, delete: true));
+
+		// Act
+		ObjectRightsChange result = _client.SetObjectRights("UsrFoo", Grantee, new[] { ObjectOperation.Delete },
+			revoke: true, disableOperationPermissions: false, new CreatioRequestOptions());
+
+		// Assert
+		result.Changed.Should().BeFalse(because: "the grantee never held delete");
+		AssertNoSave("a no-op revoke must not save");
+	}
+
+	[Test]
+	[Description("Re-running a partial revoke on the object's only row is a no-op, not a last-row refusal.")]
+	public void SetObjectRights_ShouldReportNoChange_WhenPartialRevokeIsRerunOnOnlyRow() {
+		// Arrange — the first run already cleared create, so the row keeps read only.
+		GetReturnsRows(true, FlagRow(Grantee, 0, read: true, append: false, edit: false, delete: false));
+
+		// Act
+		ObjectRightsChange result = _client.SetObjectRights("UsrFoo", Grantee, new[] { ObjectOperation.Create },
+			revoke: true, disableOperationPermissions: false, new CreatioRequestOptions());
+
+		// Assert
+		result.Changed.Should().BeFalse(because: "create is already gone");
+		result.RefusedLastRowRemoval.Should().BeFalse(because: "nothing would be removed, so there is nothing to refuse");
+		AssertNoSave("a re-run that changes nothing must not save");
+	}
+
+	[Test]
+	[Description("Revoking on an object's only row whose flags are already all false is a no-op, not a last-row refusal.")]
+	public void SetObjectRights_ShouldReportNoChange_WhenOnlyRowAlreadyHoldsNothing() {
+		// Arrange
+		GetReturnsRows(true, FlagRow(Grantee, 0, read: false, append: false, edit: false, delete: false));
+
+		// Act
+		ObjectRightsChange result = _client.SetObjectRights("UsrFoo", Grantee, AllOperations,
+			revoke: true, disableOperationPermissions: false, new CreatioRequestOptions());
+
+		// Assert
+		result.Changed.Should().BeFalse(because: "the grantee holds nothing to revoke");
+		result.RefusedLastRowRemoval.Should().BeFalse(because: "a revoke that changes nothing is never refused");
+		AssertNoSave("nothing changed");
+	}
+
+	[TestCase(false, false)]
+	[TestCase(true, false)]
+	[TestCase(true, true)]
+	[Description("A revoke on an object that is not administered by operation permissions restricts nothing: it reports RevokeOnNotAdministered, never a refusal or a change, and does not save — with or without a stale row, and whatever the disable opt-in says.")]
+	public void SetObjectRights_ShouldReportRevokeOnNotAdministered_WhenObjectNotAdministered(bool staleRow, bool disable) {
+		// Arrange
+		if (staleRow) {
+			GetReturnsRows(false, FlagRow(Grantee, 0, read: true, append: false, edit: false, delete: false));
+		} else {
+			GetReturnsRows(false);
+		}
+
+		// Act
+		ObjectRightsChange result = _client.SetObjectRights("UsrFoo", Grantee, new[] { ObjectOperation.Read },
+			revoke: true, disableOperationPermissions: disable, new CreatioRequestOptions());
+
+		// Assert
+		result.RevokeOnNotAdministered.Should().BeTrue(because: "every internal user reaches a non-administered object");
+		result.Changed.Should().BeFalse(because: "nothing was written");
+		result.RefusedLastRowRemoval.Should().BeFalse(because: "the object is already open to internal users");
+		AssertNoSave("no restriction can be written to a non-administered object");
 	}
 }

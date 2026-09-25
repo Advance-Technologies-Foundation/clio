@@ -1,4 +1,6 @@
 using System.Collections.Generic;
+using Allure.Net.Commons;
+using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
@@ -23,7 +25,14 @@ public abstract class ObjectRightsToolE2ETestsBase : McpContractFixtureBase {
 	/// <summary>A payload that binds all required args, pointing at the given (unknown) environment.</summary>
 	protected abstract Dictionary<string, object?> InvalidEnvironmentArgs(string environmentName);
 
+	// The shared tests below run once per concrete fixture, so the tool-under-test tag cannot be a compile-time
+	// [AllureTag] on the base method; it is added at runtime from the fixture's ToolName instead.
+	[SetUp]
+	public void TagToolUnderTest() => AllureApi.AddTags(ToolName);
+
 	[Test]
+	[AllureName("object-rights tool is discoverable with the expected destructive flag")]
+	[AllureDescription("The tool appears in the get-tool-contract compact index of the lazy MCP surface, flagged destructive for set-object-rights and read-only for get-object-rights.")]
 	[Description("Exposes the object-rights tool via the get-tool-contract compact index on the lazy MCP surface with the expected destructive classification.")]
 	public async Task Tool_Should_Be_Discoverable_On_Lazy_Surface_With_Expected_Destructive_Flag() {
 		// Arrange
@@ -52,6 +61,8 @@ public abstract class ObjectRightsToolE2ETestsBase : McpContractFixtureBase {
 	}
 
 	[Test]
+	[AllureName("object-rights tool binds its args and reports an unknown environment")]
+	[AllureDescription("A valid payload binds through the real MCP server and fails on the missing environment before any rights access.")]
 	[Description("Binds the object-rights tool arguments through the real MCP server and returns a structured failure for an unknown environment before any rights access.")]
 	public async Task Tool_Should_Bind_Arguments_And_Report_Invalid_Environment() {
 		// Arrange
@@ -78,6 +89,8 @@ public abstract class ObjectRightsToolE2ETestsBase : McpContractFixtureBase {
 	protected abstract string UnknownArgumentName { get; }
 
 	[Test]
+	[AllureName("object-rights tool refuses a misspelled argument before any work")]
+	[AllureDescription("A near-miss argument name is refused through the real MCP transport before the environment is resolved, so a typo can never be dropped silently.")]
 	[Description("Refuses a misspelled argument through the real MCP transport and long-tail dispatch BEFORE environment resolution, so a typo such as 'revok' can never be dropped silently and turn a revoke into a grant.")]
 	public async Task Tool_Should_Refuse_Unknown_Argument_Before_Environment_Resolution() {
 		// Arrange
@@ -104,6 +117,8 @@ public abstract class ObjectRightsToolE2ETestsBase : McpContractFixtureBase {
 	}
 
 	[Test]
+	[AllureName("object-rights tool returns a rename hint for a camelCase alias")]
+	[AllureDescription("A camelCase environmentName is rejected with the exact environment-name rename hint.")]
 	[Description("Rejects a camelCase alias of environment-name through the real MCP server with the exact rename hint.")]
 	public async Task Tool_Should_Return_RenameHint_When_CamelCase_Alias_Is_Passed() {
 		// Arrange

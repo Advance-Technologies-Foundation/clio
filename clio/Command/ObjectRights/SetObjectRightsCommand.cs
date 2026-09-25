@@ -70,14 +70,14 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 			_logger.WriteError("Error: --grantee must be a SysAdminUnit id (GUID).");
 			return 1;
 		}
-		if (!TryParseOperations(options.Operations, DefaultOperations, out IReadOnlyCollection<ObjectOperation> operations,
-				out string opError)) {
+		if (!TryParseOperations("--operations", options.Operations, DefaultOperations,
+				out IReadOnlyCollection<ObjectOperation> operations, out string opError)) {
 			_logger.WriteError(opError);
 			return 1;
 		}
-		if (!TryParseOperations(options.ConnectedOperations, DefaultConnectedOperations,
+		if (!TryParseOperations("--connected-operations", options.ConnectedOperations, DefaultConnectedOperations,
 				out IReadOnlyCollection<ObjectOperation> connectedOperations, out string connectedError)) {
-			_logger.WriteError(connectedError.Replace("Error: ", "Error: --connected-operations: "));
+			_logger.WriteError(connectedError);
 			return 1;
 		}
 
@@ -104,8 +104,8 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 			// lookups stay unreachable, so nothing is written.
 			_logger.WriteError(
 				$"Error: could not enumerate the connected objects of '{options.EntitySchemaName}' "
-				+ $"({resolution.EnumerationError}). Nothing was changed — re-run, or drop --include-connected "
-				+ "to change the root object only.");
+				+ $"({resolution.EnumerationError}). Nothing was changed. Check that the object name exists; if it "
+				+ "does, re-run, or drop --include-connected to change the root object only.");
 			return 1;
 		}
 		foreach (string excluded in resolution.Excluded) {
@@ -164,6 +164,16 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 					_logger.WriteError($"  {schemaName}: schema not found — nothing was changed. Check the object name.");
 				} else if (!result.Found) {
 					_logger.WriteWarning($"  {schemaName}: schema not found (skipped).");
+				} else if (result.RevokeOnNotAdministered) {
+					string message = $"  {schemaName}: not administered by operation permissions — every internal user "
+						+ "can reach it, so a revoke cannot restrict it. Nothing was changed. To limit access, grant the "
+						+ "roles that should keep it (that turns operation permissions on).";
+					if (isRoot) {
+						anyFailure = true;
+						_logger.WriteError(message);
+					} else {
+						_logger.WriteWarning(message);
+					}
 				} else if (result.RefusedLastRowRemoval) {
 					// Nothing was written, so this is not a success: the revoke the operator asked for did not happen.
 					anyFailure = true;
@@ -201,8 +211,7 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 	}
 
 	// Least-privilege default for the ROOT object: read/create/edit (the access a role needs to work with an
-	// object). delete is NOT granted by default — pass it in --operations explicitly. This matches the
-	// read/create/edit "has access" check in get-object-rights.
+	// object). delete is NOT granted by default — pass it in --operations explicitly.
 	private static readonly ObjectOperation[] DefaultOperations =
 		{ ObjectOperation.Read, ObjectOperation.Create, ObjectOperation.Edit };
 
@@ -214,7 +223,7 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 	private static string FormatOperations(IEnumerable<ObjectOperation> operations) =>
 		string.Join("/", operations.Select(op => op.ToString().ToLowerInvariant()));
 
-	private static bool TryParseOperations(string raw, IReadOnlyCollection<ObjectOperation> defaults,
+	private static bool TryParseOperations(string optionName, string raw, IReadOnlyCollection<ObjectOperation> defaults,
 		out IReadOnlyCollection<ObjectOperation> operations, out string error) {
 		error = null;
 		if (string.IsNullOrWhiteSpace(raw)) {
@@ -230,7 +239,7 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 				case "delete": parsed.Add(ObjectOperation.Delete); break;
 				default:
 					operations = Array.Empty<ObjectOperation>();
-					error = $"Error: unknown operation '{token}'. Use read,create,edit,delete.";
+					error = $"Error: {optionName}: unknown operation '{token}'. Use read,create,edit,delete.";
 					return false;
 			}
 		}
@@ -238,7 +247,7 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 			// Only separators (for example ","): an empty set would write an empty row on a grant, and could turn
 			// operation permissions ON for an object while granting nothing.
 			operations = Array.Empty<ObjectOperation>();
-			error = "Error: no operation given. Use read,create,edit,delete.";
+			error = $"Error: {optionName}: no operation given. Use read,create,edit,delete.";
 			return false;
 		}
 		operations = parsed.Distinct().ToArray();

@@ -19,7 +19,8 @@ It is a read-modify-write over the native `RightManagementService`: the object's
 the grantee's row is added/updated (or removed when a revoke empties it), and the object is saved.
 Granting to an object that does not yet use operation permissions **turns them on** — an access
 **narrowing** for every other role, which the confirmation and the result line both name. Creatio may also
-add an `All employees` row at that point (observed, not a documented contract); read the result back. It does **not** change column permissions.
+add an `All employees` row with read/create/edit/delete at that point (observed on Creatio 8.3.4 for the
+root and for connected lookups alike, not a documented contract); read the result back. It does **not** change column permissions.
 
 A revoke only ever narrows access. Removing an object's **last** rights row is the one case that would
 not: it turns operation permissions off, which makes the object available to **all internal users**. That

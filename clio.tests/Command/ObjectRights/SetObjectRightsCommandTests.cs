@@ -548,4 +548,152 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		_rightsWriter.Received(1).SetObjectRights("UsrB", Arg.Any<Guid>(),
 			Arg.Any<IReadOnlyCollection<ObjectOperation>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>());
 	}
+
+	// ---- Review round 5 ----
+
+	[Test]
+	[Description("A revoke on a ROOT object that is not administered fails with exit code 1 and says the object stays open to every internal user.")]
+	public void Execute_ShouldFail_WhenRevokingOnNotAdministeredRoot() {
+		// Arrange
+		_rightsWriter.SetObjectRights(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<ObjectOperation>>(),
+			Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>())
+			.Returns(new ObjectRightsChange(true, false, RevokeOnNotAdministered: true));
+		SetObjectRightsOptions options = new() { EntitySchemaName = "UsrOpen", Grantee = Grantee, Revoke = true, Confirm = true };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "the restriction the caller asked for did not happen");
+		_logger.Received().WriteError(Arg.Is<string>(m => m.Contains("UsrOpen") && m.Contains("not administered")
+			&& m.Contains("cannot restrict")));
+		_logger.DidNotReceive().WriteInfo(Arg.Is<string>(m => m.Contains("no change") || m.Contains("revoked")));
+	}
+
+	[Test]
+	[Description("A revoke that meets a non-administered CONNECTED object only warns; the root revoke still counts.")]
+	public void Execute_ShouldWarn_WhenRevokingOnNotAdministeredConnected() {
+		// Arrange
+		_connectedObjects.Resolve("UsrOrder", true).Returns(Resolution("UsrOrder", "UsrStatus"));
+		_rightsWriter.SetObjectRights("UsrStatus", Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<ObjectOperation>>(),
+			Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>())
+			.Returns(new ObjectRightsChange(true, false, RevokeOnNotAdministered: true));
+		SetObjectRightsOptions options = new() {
+			EntitySchemaName = "UsrOrder", Grantee = Grantee, Revoke = true, IncludeConnected = true,
+			ConnectedOperations = "read", Confirm = true
+		};
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "the root revoke succeeded; the lookup was open to internal users anyway");
+		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("UsrStatus") && m.Contains("cannot restrict")));
+	}
+
+	[Test]
+	[Description("A refused last-row revoke on a CONNECTED object fails and says a fan-out never turns a lookup off, instead of suggesting the disable flag.")]
+	public void Execute_ShouldExplain_WhenConnectedLastRowRefused() {
+		// Arrange
+		_connectedObjects.Resolve("UsrOrder", true).Returns(Resolution("UsrOrder", "UsrStatus"));
+		_rightsWriter.SetObjectRights("UsrStatus", Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<ObjectOperation>>(),
+			Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>())
+			.Returns(new ObjectRightsChange(true, false, RefusedLastRowRemoval: true));
+		SetObjectRightsOptions options = new() {
+			EntitySchemaName = "UsrOrder", Grantee = Grantee, Revoke = true, IncludeConnected = true,
+			ConnectedOperations = "read", Confirm = true
+		};
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "the connected revoke did not happen");
+		_logger.Received().WriteError(Arg.Is<string>(m => m.Contains("UsrStatus")
+			&& m.Contains("never turned off by a fan-out") && !m.Contains("re-run with --disable-operation-permissions")));
+	}
+
+	[Test]
+	[Description("An exception thrown by the writer is caught and reported with exit code 1.")]
+	public void Execute_ShouldReturnError_WhenWriterThrows() {
+		// Arrange
+		_rightsWriter.SetObjectRights(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<ObjectOperation>>(),
+			Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>())
+			.Returns(_ => throw new InvalidOperationException("boom"));
+		SetObjectRightsOptions options = new() { EntitySchemaName = "UsrOrder", Grantee = Grantee, Confirm = true };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "an unexpected failure is not a success");
+		_logger.Received().WriteError(Arg.Is<string>(m => m.Contains("boom")));
+	}
+
+	[Test]
+	[Description("An interactive run that the operator approves applies the change.")]
+	public void Execute_ShouldApply_WhenInteractivePromptApproved() {
+		// Arrange
+		_console.IsInteractive.Returns(true);
+		_console.Prompt(Arg.Any<string>()).Returns(true);
+		SetObjectRightsOptions options = new() { EntitySchemaName = "UsrOrder", Grantee = Grantee, Confirm = false };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "the operator approved the change");
+		_rightsWriter.Received(1).SetObjectRights("UsrOrder", Arg.Any<Guid>(),
+			Arg.Any<IReadOnlyCollection<ObjectOperation>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>());
+	}
+
+	[Test]
+	[Description("The confirmation text for a grant names every target object, both operation sets, and the enable-narrowing note.")]
+	public void Execute_ShouldNameTargetsAndNarrowing_InGrantConfirmation() {
+		// Arrange
+		_console.IsInteractive.Returns(false);
+		_connectedObjects.Resolve("UsrOrder", true).Returns(Resolution("UsrOrder", "UsrStatus", "UsrPartner"));
+		SetObjectRightsOptions options = new() { EntitySchemaName = "UsrOrder", Grantee = Grantee, IncludeConnected = true };
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		_logger.Received().WriteError(Arg.Is<string>(m =>
+			m.Contains("Grant object operations [read/create/edit]") && m.Contains("'UsrOrder'")
+			&& m.Contains("[read] on 2 connected object(s) (UsrStatus, UsrPartner)")
+			&& m.Contains("has them turned ON")));
+	}
+
+	[Test]
+	[Description("The confirmation text for a revoke with the disable opt-in names the widening to ALL internal users for the root.")]
+	public void Execute_ShouldNameWidening_InDisableConfirmation() {
+		// Arrange
+		_console.IsInteractive.Returns(false);
+		SetObjectRightsOptions options = new() {
+			EntitySchemaName = "UsrOrder", Grantee = Grantee, Revoke = true, DisableOperationPermissions = true
+		};
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		_logger.Received().WriteError(Arg.Is<string>(m => m.Contains("Revoke object operations")
+			&& m.Contains("available to ALL internal users") && m.Contains("connected objects are never turned off")));
+	}
+
+	[Test]
+	[Description("An invalid --connected-operations value names the option in the error.")]
+	public void Execute_ShouldNameOption_WhenConnectedOperationsInvalid() {
+		// Arrange
+		SetObjectRightsOptions options = new() {
+			EntitySchemaName = "UsrOrder", Grantee = Grantee, IncludeConnected = true, ConnectedOperations = "readd", Confirm = true
+		};
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		_logger.Received().WriteError("Error: --connected-operations: unknown operation 'readd'. Use read,create,edit,delete.");
+	}
 }

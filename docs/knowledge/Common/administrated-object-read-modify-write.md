@@ -28,8 +28,10 @@ handles, none visible from the service signatures:
    whole object, mutate `entitySchemaOperationsRights` (rows carry `id`, `position`, `canRead`,
    `canAppend` (= Create), `canEdit`, `canDelete`, `sysAdminUnit`), and POST it back under
    `{"administratedObject": ...}`. Granting to a not-yet-administered object sets
-   `administratedByOperations=true`; the server then also grants `All employees` by default. Row
-   `position` matters (lower rows widen).
+   `administratedByOperations=true`, and the server then adds an `All employees` row with
+   read/create/edit/delete on its own. Observed on Creatio 8.3.4.2845 (.NET Framework, stand
+   `kravchuk_0922`, 2026-09-25) for the root AND for every connected lookup the fan-out enabled, section
+   objects and plain dictionaries alike; not verified on other versions, so read the object back.
 
 3. **The save sends the collections it did NOT change as `null`** — `entitySchemaRecordDefRights`,
    `entitySchemaColumnsRights`, `entityOperationGrantees`. This mirrors the Freedom "Object permissions"

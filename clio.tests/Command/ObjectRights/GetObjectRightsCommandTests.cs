@@ -109,9 +109,10 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 		GetObjectRightsOptions options = new() { EntitySchemaName = "UsrOrder", Grantee = Role.ToString() };
 
 		// Act
-		_command.Execute(options);
+		int exitCode = _command.Execute(options);
 
 		// Assert
+		exitCode.Should().Be(0, because: "a missing row is a fact, not a failure");
 		_logger.Received().WriteInfo(Arg.Is<string>(m => m.Contains("UsrOrder") && m.Contains("NO object operations granted")));
 	}
 
@@ -237,5 +238,83 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 
 		// Assert
 		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("SysAdminUnit") && m.Contains("security/system object")));
+	}
+
+	// ---- Review round 5 ----
+
+	[TestCase("not-a-guid")]
+	[TestCase("00000000-0000-0000-0000-000000000000")]
+	[Description("An invalid or empty-GUID --grantee is an input error and reads nothing.")]
+	public void Execute_ShouldReturnError_WhenGranteeInvalid(string grantee) {
+		// Arrange
+		GetObjectRightsOptions options = new() { EntitySchemaName = "UsrOrder", Grantee = grantee };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "grantee must be a SysAdminUnit id");
+		_logger.Received().WriteError(Arg.Is<string>(m => m.Contains("--grantee")));
+		_rightsReader.DidNotReceive().GetObjectRights(Arg.Any<string>(), Arg.Any<CreatioRequestOptions>());
+	}
+
+	[Test]
+	[Description("An administered object with no role rows is reported as such.")]
+	public void Execute_ShouldReportNoRoleGrants_WhenAdministeredWithoutRows() {
+		// Arrange
+		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>()).Returns(Administered("UsrOrder"));
+		GetObjectRightsOptions options = new() { EntitySchemaName = "UsrOrder" };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "the read completed");
+		_logger.Received().WriteInfo("  UsrOrder: administered by operations, no role grants.");
+	}
+
+	[Test]
+	[Description("An exception thrown by the reader is caught and reported with exit code 1.")]
+	public void Execute_ShouldReturnError_WhenReaderThrows() {
+		// Arrange
+		_rightsReader.GetObjectRights(Arg.Any<string>(), Arg.Any<CreatioRequestOptions>())
+			.Returns(_ => throw new InvalidOperationException("boom"));
+		GetObjectRightsOptions options = new() { EntitySchemaName = "UsrOrder" };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "an unexpected failure is not a success");
+		_logger.Received().WriteError(Arg.Is<string>(m => m.Contains("boom")));
+	}
+
+	[Test]
+	[Description("With a grantee, the command prints exactly the header and one fact line per object — nothing else, so no verdict can creep back in.")]
+	public void Execute_ShouldPrintExactlyTheFactLines_WithGrantee() {
+		// Arrange
+		_connectedObjects.Resolve("UsrOrder", true).Returns(Resolution("UsrOrder", "UsrStatus", "UsrOpen"));
+		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>())
+			.Returns(Administered("UsrOrder", RoleRow(true, true, true, false)));
+		_rightsReader.GetObjectRights("UsrStatus", Arg.Any<CreatioRequestOptions>())
+			.Returns(Administered("UsrStatus", new RoleOperationRights(Employees, "All employees", true, true, true, true)));
+		_rightsReader.GetObjectRights("UsrOpen", Arg.Any<CreatioRequestOptions>()).Returns(NotAdministered("UsrOpen"));
+		System.Collections.Generic.List<string> lines = new();
+		_logger.When(l => l.WriteInfo(Arg.Any<string>())).Do(call => lines.Add((string)call[0]));
+		_logger.When(l => l.WriteWarning(Arg.Any<string>())).Do(call => lines.Add((string)call[0]));
+		GetObjectRightsOptions options = new() { EntitySchemaName = "UsrOrder", Grantee = Role.ToString(), IncludeConnected = true };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "the read completed");
+		lines.Should().Equal(new[] {
+			$"Object operation permissions for 'UsrOrder' and its connected objects (grantee {Role}):",
+			$"  UsrOrder: Sales managers ({Role}): read/create/edit.",
+			$"  UsrStatus: grantee {Role} has NO object operations granted.",
+			"  UsrOpen: not administered by operation permissions — available to all internal users; "
+				+ "external users reach it only through an explicit grant."
+		}, because: "the output is the facts, one line per object, and nothing more");
 	}
 }

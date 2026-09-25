@@ -50,13 +50,19 @@ public sealed record ObjectRightsInfo(
 /// yet. That NARROWS access for every other internal role (only listed roles can reach it afterwards), so the
 /// caller is told explicitly rather than learning it from a later access complaint.
 /// </param>
+/// <param name="RevokeOnNotAdministered">
+/// A revoke was asked for on an object that is not administered by operation permissions. Every internal
+/// user can reach such an object whatever its rows say, so no per-role revoke can restrict it; nothing was
+/// written and the caller must not be told the restriction happened.
+/// </param>
 public sealed record ObjectRightsChange(
 	bool Found,
 	bool Changed,
 	string Error = null,
 	bool OperationPermissionsDisabled = false,
 	bool RefusedLastRowRemoval = false,
-	bool OperationPermissionsEnabled = false);
+	bool OperationPermissionsEnabled = false,
+	bool RevokeOnNotAdministered = false);
 
 /// <summary>
 /// Reads object operation permissions (the SysSchemaOperationRight layer) for an entity, using the native
@@ -155,6 +161,9 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 		if (outcome == MutationOutcome.RefusedLastRowRemoval) {
 			return new ObjectRightsChange(true, false, RefusedLastRowRemoval: true);
 		}
+		if (outcome == MutationOutcome.RevokeOnNotAdministered) {
+			return new ObjectRightsChange(true, false, RevokeOnNotAdministered: true);
+		}
 		if (outcome == MutationOutcome.NoChange) {
 			return new ObjectRightsChange(true, false);
 		}
@@ -183,7 +192,8 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 		Changed,
 		ChangedAndEnabled,
 		ChangedAndDisabled,
-		RefusedLastRowRemoval
+		RefusedLastRowRemoval,
+		RevokeOnNotAdministered
 	}
 
 	// Applies the grant/revoke to the object node's operation-rights rows in place; reports whether anything
@@ -200,10 +210,22 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 			.FirstOrDefault(row => GranteeId(row) == grantee);
 
 		if (revoke) {
+			// A revoke on an object that is not administered restricts nothing: every internal user reaches it
+			// regardless of its rows (a stale row included). Report that instead of "no change" or "revoked", and
+			// never let the last-row refusal fire here with its "would open it to all internal users" message —
+			// the object already is open to them.
+			if (!Flag(node, "administratedByOperations")) {
+				return MutationOutcome.RevokeOnNotAdministered;
+			}
 			if (existing is null) {
 				return MutationOutcome.NoChange;
 			}
 			(bool, bool, bool, bool) before = Snapshot(existing);
+			// Revoking operations the grantee does not hold changes nothing — decided before the last-row check,
+			// so a no-op re-run on an object's only row is "no change", not a refusal.
+			if (!operations.Any(op => Flag(existing, FieldOf(op)))) {
+				return MutationOutcome.NoChange;
+			}
 			// Removing the object's LAST rights row leaves only two possible end states, and neither may happen as
 			// a side effect of a per-grantee revoke: keep administratedByOperations on and the object is reachable
 			// by NOBODY, or turn it off and the object becomes reachable by EVERY internal user — an access

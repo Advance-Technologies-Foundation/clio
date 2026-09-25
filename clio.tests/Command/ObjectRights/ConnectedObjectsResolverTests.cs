@@ -107,6 +107,39 @@ public class ConnectedObjectsResolverTests {
 			because: "the caller must know the connected set is unknown, not empty");
 	}
 
+	[TestCase("SysPackageSchemaData")]
+	[TestCase("SysSettingsValue")]
+	[TestCase("UsrOrderRights")]
+	[TestCase("sysadminunit")]
+	[TestCase("SYSUSERINROLE")]
+	[Description("Every excluded family is matched — SysPackage*, SysSettings*, the Rights suffix — and matching ignores case.")]
+	public void Resolve_ShouldExcludeEveryFamily_CaseInsensitive(string referenced) {
+		// Arrange
+		_columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>())
+			.Returns(Schema("UsrOrder", Column("UsrRef", "own", referenced)));
+
+		// Act
+		ConnectedObjectsResolution result = _resolver.Resolve("UsrOrder", includeConnected: true);
+
+		// Assert
+		result.Objects.Should().Equal(new[] { "UsrOrder" }, because: $"'{referenced}' is a security or system object");
+		result.Excluded.Should().Equal(new[] { referenced }, because: "the exclusion is reported");
+	}
+
+	[Test]
+	[Description("The own-column source is matched without regard to case.")]
+	public void Resolve_ShouldTreatSourceCaseInsensitively() {
+		// Arrange
+		_columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>())
+			.Returns(Schema("UsrOrder", Column("UsrStatus", "OWN", "UsrStatus")));
+
+		// Act
+		ConnectedObjectsResolution result = _resolver.Resolve("UsrOrder", includeConnected: true);
+
+		// Assert
+		result.Objects.Should().Equal(new[] { "UsrOrder", "UsrStatus" }, because: "'OWN' is an own column");
+	}
+
 	private static EntitySchemaPropertyColumnInfo Column(string name, string source, string referenceSchemaName) =>
 		new(Name: name, UId: Guid.NewGuid(), Source: source, Title: null, Description: null,
 			Type: referenceSchemaName is null ? "Text" : "Lookup", Required: false, Indexed: false,

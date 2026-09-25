@@ -30,6 +30,9 @@ public sealed class SetObjectRightsToolE2ETests : ObjectRightsToolE2ETestsBase {
 	};
 
 	[Test]
+	[AllureTag(SetObjectRightsTool.ToolName)]
+	[AllureName("set-object-rights binds the disable-operation-permissions opt-in")]
+	[AllureDescription("The disable-operation-permissions argument binds through the real MCP server and still fails on the missing environment, not as an unknown argument.")]
 	[Description("Binds the disable-operation-permissions opt-in through the real MCP server, so an agent can request the last-row revoke that a revoke never performs implicitly.")]
 	public async Task Tool_Should_Bind_DisableOperationPermissions_OptIn() {
 		// Arrange
