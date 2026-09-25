@@ -1,4 +1,4 @@
-# Mobile page converter
+﻿# Mobile page converter
 
 Tool `get-mobile-page-conversion-guide` · `[FeatureToggle("mobile-page-converter")]` (off by default) ·
 `clio/Command/McpServer/Tools/MobilePageConverter/`
@@ -112,6 +112,7 @@ Thirty-two fields, three caller actions. A "report" field is never planned from;
  3. BuildElementMap                → working map (merge / insert / drop / relocate-children)
                                      request bindings remapped / stripped / flagged in place
     ├ RemoveExcludedComponents     rules-driven positional bans
+    ├ ApplyComponentRemovals       unsupported actions (entry-graph + verbatim carry); then componentRemovals rules
     ├ RemoveEmptyContainers        bottom-up, cascades
     ├ CompactPositionalIndexes
     ├ AssignConvertedTabIndexes
@@ -138,6 +139,7 @@ Each one fails silently when broken.
 |---|---|
 | Step 4 after every map-mutating pass | Per-type answer says "what will happen to this type" while the caller reads "what happened to these elements"; `mobileContracts` follows the suggestions, so the contract set is wrong in both directions |
 | `RemoveExcludedComponents` before `RemoveEmptyContainers` | A branch the exclusion empties does not cascade away |
+| `ApplyComponentRemovals` after `RemoveExcludedComponents`, before `RemoveEmptyContainers` | An exclusion can take the last menu item off a button, so running earlier keeps a button the page no longer needs; running later leaves the container it emptied shipping as a shell |
 | `RemoveEmptyContainers` before `InitializeContainerChildSlots` | Emptiness is read as slot *absence*; a seeded slot makes every container look occupied and disables the pass |
 | `CompactPositionalIndexes` before `AssignConvertedTabIndexes` | Compaction rebases each parent's indexed group to 0; over tab indexes it moves the first web tab before the template's general tab |
 | `BuildRequestConversionInfo` after both removal passes | A binding on a removed element is reported as converted for an element the map says not to create |
@@ -218,6 +220,42 @@ Conflict kinds (closed): `changed-named-element` · `changed-scalar` · `nameles
 map is applied while each insert's values are built. Not in the map → `flag-request-unmapped`; unsupported → dropped;
 element removed by a later pass → reported as discarded. Summary: `requestConversions`.
 
+Whether a dead request removes the whole ELEMENT is decided by type, and the types are DECLARED: `rules.actionComponents`
+names `crt.Button` and `crt.MenuItem`, plus the properties that carry their action. Both exist only to fire one; anything
+else keeps its binding and is flagged, because dropping it would lose valid UI. An absent or empty section falls back to
+the bundled list rather than matching nothing — the opposite polarity to every other rules section, because switching this
+one off would make unsupported actions SHIP rather than visibly disabling a cleanup.
+
+`ApplyComponentRemovals` then runs TWO rules that are different in kind. The first — "the request does not convert" — is
+code, and covers the shape the walk cannot see: a menu item carried VERBATIM inside its button's `values` (the normal
+shape, since the registry does not declare `crt.MenuItem`, so it never reaches `ProcessEventBindings` at all). It cannot
+be data, because the dead binding is PRESENT on the node and no emptiness test can tell a live request from a dead one.
+
+The second — "this control has nothing left to do" — IS data: `rules.componentRemovals`, a type plus a filter tree of
+`IsEmpty` tests combined by `Group` (`and` / `or`; anything unrecognised reads as `and`, the narrower). It is expressible
+as data precisely because it asks about ABSENCE. An expression resolves against the MERGED state of the property, in
+three tiers — child operations addressing this component by `parentName` + `propertyName`, then the operations named for
+it folded in order, then its own value — and that is what lets ONE filter cover both traversal shapes: a carried node is
+addressed by no operation, so it falls to the third tier. The shipped rules remove a `crt.Button` with neither `clicked`
+nor `menuItems` and a `crt.MenuItem` with no `clicked`, both under `drop-unsupported-request`. Reusing that code is a
+recorded cost, not an oversight: a button that never had a request is reported under a code naming one.
+
+Three guards hold whatever a rule says — a component is never removed while it still owns a live event binding, still
+carries a nested component anywhere in its values (as an array member OR as a single-object slot), or is still named as
+the `parentName` of a surviving operation. They are not narrowings of a rule but the three ways this pass could do damage
+that NOTHING reports: an orphaned `requestConversions` record describing an element the map does not create; a live
+control leaving the page inside its owner with no `drop` entry of its own; and an orphaned child insert, which makes the
+platform differ reject the WHOLE pasted diff with “is not a container for other items”.
+
+A control whose `clicked` was STRIPPED because its navigation target cannot exist on mobile is removed by the same rule
+once that leaves it with nothing to do. ENG-94839 forbade the PROBE from removing such a control and assigned the removal
+here. Its `unresolvedTargetRequests` finding is deliberately NOT purged, unlike the empty-container and exclusion passes'
+— for them the finding is unrelated to the removal, here it is the only field that explains it.
+
+The two traversal shapes must report IDENTICALLY. Which one runs depends on whether the published registry declares
+`crt.MenuItem` — invisible on the caller's page, so it must not reach the caller's report. That is why the pass mints no
+`droppedRequests` record: the walk does not on the entry-graph path, so neither does it on the carried one.
+
 **Page business rules** (add-on metadata, read by `PageBusinessRuleProbe`): an action converts only for elements that
 survive (`merge`/`insert`), names remapped web → mobile. Condition operand paths are remapped from the source DS column
 path to the mobile viewModel attribute name via the source `viewModelConfig`. Dropped whole: mixed AND/OR, unsupported
@@ -250,6 +288,7 @@ Pairs to keep distinct:
 
 - `drop-unsupported-request` — the **element** is gone · `drop-request-unsupported` — the element survives, its binding was removed.
 - `drop-container-no-mobile-equivalent` — a **container**, flattened, children preserved · `drop-type-not-in-mobile-registry` — a **leaf**, genuine loss.
+- `drop-unsupported-request` — clio can ASSERT the request is unavailable (the rules file clears its target) · `drop-unknown-request` — clio has never seen it, so the developer may well re-add the action. Both paths make this distinction; the leaf one used to answer both with the stronger code.
 
 ### 8.2 `params`
 
@@ -324,8 +363,11 @@ Invariants the caller must not violate are checked by the write/validate path, n
 ## 10. Rules file — `WebToMobilePageConversionRules.json`
 
 Loaded per version through `IWebToMobilePageConversionRulesCatalog` (local override → cache → CDN → bundled resource
-`Clio.Command.McpServer.Data.WebToMobilePageConversionRules.json`). Every section is a data switch: absent → the pass is
-a no-op.
+`Clio.Command.McpServer.Data.WebToMobilePageConversionRules.json`). Most sections are a data switch: absent → the pass is
+a no-op. `actionComponents` and `componentRemovals` are the exception and invert that polarity deliberately — absent, or
+present but carrying no usable rule, falls back to the BUNDLED section. Switching a sibling off disables a cleanup;
+switching these off ships controls the Mobile app cannot operate, so silence must not be able to do it. Both are
+validated on load, and a refusal sends the whole document to the bundled rules.
 
 | Section | Shape | Drives |
 |---|---|---|
@@ -395,7 +437,7 @@ E2E: the `clio.mcp.e2e` converter fixtures against a seeded stand.
 | A property nested inside an `object`-typed input (e.g. `crt.ChartWidget.config`) is never pruned | Deliberate: the prune is top-level only while such an input is opaque. Contextual validity and MISSING properties are a different class of defect |
 | A stand whose registry path still serves the web-derived catalog carries undeclared properties | Deliberate: membership in that generation is not a valid mobile-support test. Resolves itself per version as the regenerated files are published — the gate reads the payload, so no clio release is involved |
 | A stand whose version has no published registry (`8.3.5`, `9.0.0`) is measured against `latest` | Accepted: the chain falls back, and the response reports `resolvedFrom: environment-superset` with a `versionWarning`. Not silent, not refused |
-| `crt.MenuItem` has no inline contract | Rules emit it; the mobile registry does not describe it |
+| `crt.MenuItem` has no inline contract | Rules emit it; the mobile registry does not describe it. That absence also decides which traversal a button's menu takes — `ApplyComponentRemovals` covers both shapes and the regression suite pins that they report identically |
 | `adaptiveLayout`, `tabAreaLayers`, `modelConfig`, `viewModelConfig` re-serialize data the operations / diffs carry | Provenance the caller reads, not applies; removal is a contract decision |
 | A type whose every instance vanishes is reported per type, not per element | `componentSuggestions` only |
 | `BuildRootMergeDiff` fallback is indistinguishable by field | A root merge and a targeted diff share the `*Diff` field |
@@ -410,9 +452,13 @@ E2E: the `clio.mcp.e2e` converter fixtures against a seeded stand.
 | `MobilePageConversionGuideModels.cs` | Wire contract, `ReasonCodes`, `DataSectionConflict` |
 | `MobilePageConversionGuideTool.cs` | MCP tool: I/O, template resolution, refusals, `[Description]` trigger |
 | `ExcludedComponentsPass.cs` | Positional exclusion |
+| `WebToMobileAnalysisService.ComponentRemovals.cs` | Unsupported actions in both traversal shapes, and the `componentRemovals` filter evaluator |
+| `WebToMobileComponentRemovalRules.cs` | The `componentRemovals` and `actionComponents` rule shapes |
+| `ComponentPropertyFilters.cs` | The filter grammar the rules are written in (`filterType`: `Group` / `IsEmpty`), reusable by any section needing the same question |
 | `PageBusinessRuleProbe.cs` · `MobileSectionRegistrationProbe.cs` | Best-effort environment probes |
 | `WebToMobilePageConversionRulesCatalog.cs` · `WebToMobilePageConversionRulesModels.cs` | Rules loading and model |
 | `clio/Command/McpServer/Data/WebToMobilePageConversionRules.json` | Bundled rules |
 | `clio/Command/PageConversionModels.cs` | `ComponentMappingCategory` and shared DTOs |
 | `clio/Command/McpServer/Tools/MobileDiffApplyValidator.cs` · `clio/Command/SchemaValidationService.cs` | Downstream enforcement (§9.4) |
 | `clio-knowledge/guidance/mcp/guides/platform/mobile/` | `web-to-mobile-conversion.md` (procedure) · `web-to-mobile-reason-codes.md` (dictionary) · `page-modification.md` |
+

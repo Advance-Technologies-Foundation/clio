@@ -591,6 +591,63 @@ public sealed class WebToMobileRealPageRegressionTests {
 			},
 			mobileRequestTypes: NoRequestRegistry);
 
+	/// <summary>
+	/// The dead menu actions the OOTB <c>Leads_FormPage</c> ships, by name. DERIVED from the conversion, not
+	/// authored: re-derive rather than relax if the fixture is refreshed against a changed page.
+	/// </summary>
+	private static readonly IReadOnlyList<string> DeadMenuActionsOnLeadsFormPage = [
+		"AddNextStepsButton",
+		"CreateEmailButton",
+		"CreateTaskButton",
+		"ExplainProbabilityScoreButton",
+		"LeadsByCustomerExportDataButton",
+		"LeadsByCustomerImportDataButton",
+		"LeadsByCustomerSettingsButton",
+		"OpportunitiesByCustomerExportDataButton",
+		"OpportunitiesByCustomerImportDataButton",
+		"OpportunitiesByCustomerSettingsButton",
+		"ProductsExportDataButton",
+		"ProductsImportDataButton",
+		"ProductsSettingsButton",
+		"SimilarLeadExportDataButton",
+		"SimilarLeadSettingsButton",
+		"StageHistoryExportDataButton",
+		"StageHistorySettingsButton"
+	];
+
+	[Test]
+	[Description("ENG-96178 on the page it was reported against: every menu item of the OOTB Leads_FormPage whose request the Mobile app cannot fire is removed, and the set is pinned BY NAME with an equality assertion so the rule cannot quietly widen into working UI. The other gate for this criterion is the sandbox E2E, which Assert.Ignores without a seeded page carrying a dead menu action — so without this test the production shape that motivated the ticket is not checked by any run that always executes.")]
+	public void Analyze_EveryDeadMenuAction_IsRemovedAndReported_OnTheRealLeadsFormPage() {
+		// Arrange
+		JsonObject fixture = LoadFixture();
+
+		// Act
+		MobilePageConversionGuide guide = ConvertAsTheToolDoes(fixture);
+
+		// Assert
+		IReadOnlyList<string> removed = [
+			.. guide.DroppedElements
+				.Where(drop => drop.Reason.Any(reason =>
+					reason.Code == ReasonCodes.DropUnsupportedRequest
+					|| reason.Code == ReasonCodes.DropUnknownRequest))
+				.Select(drop => drop.WebName)
+				.OrderBy(name => name, StringComparer.Ordinal)];
+		removed.Should().BeEquivalentTo(DeadMenuActionsOnLeadsFormPage,
+			because: "the pinned set is the whole blast radius of this rule on a real page — an EQUALITY "
+				+ "assertion, because the danger is symmetric: a name missing means a dead action still ships, "
+				+ "a name added means the rule reached a control that works");
+
+		// And the removal reached the CANVAS, which is the failure the ticket was actually about: a carried
+		// menu item has no operation of its own, so an element-map removal that left the values untouched
+		// would report the drop and still render the action.
+		string diff = JsonSerializer.Serialize(guide.ViewConfigDiff);
+		foreach (string name in DeadMenuActionsOnLeadsFormPage) {
+			diff.Should().NotContain($"\"{name}\"",
+				because: $"'{name}' was reported as removed, so no operation may create it and no surviving "
+					+ "element may still carry it nested inside its values");
+		}
+	}
+
 	[Test]
 	[Description("The central promise — \"paste viewConfigDiff verbatim\" — put through the Creatio differ clones on the real page, hermetically. The only other oracle that applies converter output lives in the sandbox E2E fixture, which Assert.Ignores without a stand, so the promise had no gate that runs on every build: a regression making the emitted diff unappliable would reach a user before anything went red.")]
 	public void Analyze_ViewConfigDiff_ShouldApplyThroughTheCreatioDiffer_OnTheRealLeadsFormPageShape() {

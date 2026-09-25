@@ -43,11 +43,12 @@ using JsonValue = System.Text.Json.Nodes.JsonValue;
 [SuppressMessage("Major Code Smell", "S125:Sections of code should not be commented out", Justification = "The flagged lines are explanatory design notes, not commented-out code.")]
 [SuppressMessage("Major Code Smell", "S3358:Ternary operators should not be nested", Justification = "The nested ternaries express a compact fallback chain that reads clearly in context.")]
 [SuppressMessage("Major Code Smell", "S2589:Boolean expressions should not be gratuitous", Justification = "The flagged null checks guard values the analyzer cannot prove non-null across the Newtonsoft/STJ boundary; removing them would risk an NRE on malformed bundles.")]
-// Split across two files: the conversion walk here, and the ENG-96589 property prune in
-// WebToMobilePropertyPrune.cs, which needs this file's private registry and reason helpers. Attributes sit
-// on the TYPE, so the [SuppressMessage] block above governs that file's MEMBERS as well — but not anything
-// outside the type declaration there, such as its file-header comment. Keep that comment free of
-// code-shaped text rather than adding a second suppression block.
+// Split across three files: the conversion walk here, the ENG-96589 property prune in
+// WebToMobilePropertyPrune.cs, and the ENG-96178 component-removal pass in
+// WebToMobileAnalysisService.ComponentRemovals.cs. Both of those need this file's private registry and
+// reason helpers. Attributes sit on the TYPE, so the [SuppressMessage] block above governs those files'
+// MEMBERS as well - but not anything outside the type declaration there, such as a file-header comment.
+// Keep those comments free of code-shaped text rather than adding a second suppression block.
 public static partial class WebToMobileAnalysisService {
 
 	private const string GuidanceArticleName = "freedom-page-web-to-mobile-conversion";
@@ -225,9 +226,18 @@ public static partial class WebToMobileAnalysisService {
 			actionTargetsProbe?.TargetsByKey
 			?? new Dictionary<string, ActionTargetResolution>(StringComparer.OrdinalIgnoreCase);
 		List<UnresolvedTargetRequest> unresolvedTargets = [];
+		// The two rules-driven tables this conversion needs, resolved ONCE because each falls back to parsing
+		// the whole bundled document. actionComponents is genuinely SHARED — the walk reads it through the
+		// element-map context and the removal pass reads it again — so a second resolution would be a second
+		// place to keep in step. componentRemovals has one consumer today and is resolved here only to keep the
+		// two reads of the bundled document side by side.
+		IReadOnlyDictionary<string, IReadOnlyList<string>> actionComponentProperties =
+			ActionComponentPropertiesOf(rules);
+		IReadOnlyList<ComponentRemovalRule> componentRemovals = ComponentRemovalsOf(rules);
 		List<ElementMapEntry> elementMap = BuildElementMap(
 			tree, map, componentMap, mobileTypes, mobileByType, webByType, rules, attrToColumn, resources,
 			requestMap, convertedRequests, droppedRequests, flaggedRequests, sourceLayouts, gridContainerColumns,
+			actionComponentProperties,
 			positionalParentByAnchor, positionalAnchorByWebAnchor,
 			mobileTypesByName, mobileTemplateNodesByName, webBaselineNodes, webTemplateResources,
 			declaredElements,
@@ -246,6 +256,31 @@ public static partial class WebToMobileAnalysisService {
 		// web names → BuildMobileViewModelConfig (removal is layout cleanup — referenced attributes are KEPT).
 		HashSet<string> excludedRemovedNames = ExcludedComponentsPass.RemoveExcludedComponents(
 			elementMap, rules, out HashSet<string> excludedRemovedMobileNames);
+
+		// Removes actions the Creatio Mobile app cannot fire, and every component a `componentRemovals` rule
+		// matches (ENG-96178). Its own file states the two shapes it covers and why the walk cannot; the ORDER
+		// is fixed here. AFTER RemoveExcludedComponents, which can take the last menu item off a button. BEFORE
+		// RemoveEmptyContainers, so a container this pass empties cascades away there rather than shipping as
+		// a shell. And BEFORE InitializeContainerChildSlots, which is the ordering constraint with no second
+		// chance: that
+		// pass seeds an empty array into every slot whose children SURVIVED, so after it a healthy menu button
+		// and a dead one are indistinguishable to an emptiness test.
+		//
+		// Unlike the two passes around it, it reconciles NOTHING afterwards. ReclassifyRemovedBindings is not
+		// needed because nothing it removes can still own a converted or flagged record — both outcomes write
+		// the binding into the values, and the pass refuses any component that still carries one. And the target
+		// findings are deliberately KEPT; see below.
+		//
+		// Nor are they threaded into BuildMobileViewModelConfig's keep-set, and MEASURED today that changes
+		// nothing: WalkConsumers descends `items` only, so a $Attr inside a menu was never credited to the
+		// menu item — it belongs to the host, which is still there or has its own entry. Both traversal
+		// shapes keep such an attribute, pinned by Analyze_CarriedMenuItems_KeepAttributesCreditedToTheHost.
+		// The omission is still deliberate rather than incidental: the two passes around this one add their
+		// names BECAUSE their removals are layout cleanup, and if WalkConsumers ever learns to descend
+		// menuItems (see the excluded-components-phase-b knowledge record, which anticipates exactly that),
+		// a dead action's attributes SHOULD go with it — that removal is genuine loss.
+		ApplyComponentRemovals(
+			elementMap, requestMap, mobileRequestTypes, actionComponentProperties, componentRemovals);
 
 		// Deterministic empty-container removal: a converter-created layout container whose items
 		// receive NO surviving child is converted to a drop, bottom-up so emptiness cascades. Deliberately
@@ -826,6 +861,21 @@ public static partial class WebToMobileAnalysisService {
 		}
 		return collected;
 	}
+
+	/// <summary>
+	/// True when the node still holds a child component - as a single-object property or as a member of any
+	/// array, <c>items</c> INCLUDED.
+	/// </summary>
+	/// <remarks>
+	/// Deliberately wider than <see cref="ChildComponentSlots(JObject)"/>, which excludes <c>items</c> because
+	/// its callers walk that slot separately. The one caller here is the leaf drop, which discards every slot
+	/// at once, so <c>items</c> is exactly as much of a loss as <c>menuItems</c>. Allocates nothing, unlike the
+	/// cloning collectors: it answers a question asked of a node the walk is about to throw away.
+	/// </remarks>
+	private static bool HoldsChildComponents(JObject node) =>
+		node.Properties().Any(prop =>
+			(prop.Value is JObject single && IsComponentObject(single))
+			|| (prop.Value is JArray array && array.OfType<JObject>().Any(IsComponentObject)));
 
 	/// <summary>True when a System.Text.Json object is a view component — carries a string <c>type</c> starting
 	/// with <c>crt.</c>.</summary>
@@ -2119,6 +2169,7 @@ public static partial class WebToMobileAnalysisService {
 		JObject WebBaselineResources,
 		IReadOnlySet<string> ScopeContainerNames,
 		IReadOnlySet<string> ContentContainerTypes,
+		IReadOnlyDictionary<string, IReadOnlyList<string>> ActionComponentProperties,
 		IReadOnlyDictionary<string, ActionTargetResolution> ActionTargets,
 		List<UnresolvedTargetRequest> UnresolvedTargetRequests,
 		IReadOnlyDictionary<string, string> DeclaredTypesByName,
@@ -2159,6 +2210,7 @@ public static partial class WebToMobileAnalysisService {
 		List<FlaggedRequest> flaggedRequests,
 		Dictionary<string, JObject> sourceLayouts,
 		Dictionary<string, int> gridContainerColumns,
+		IReadOnlyDictionary<string, IReadOnlyList<string>> actionComponentProperties,
 		IReadOnlyDictionary<string, string> positionalParentByAnchor,
 		IReadOnlyDictionary<string, string> positionalAnchorByWebAnchor,
 		IReadOnlyDictionary<string, string> mobileTypesByName,
@@ -2187,6 +2239,7 @@ public static partial class WebToMobileAnalysisService {
 			webBaselineResources,
 			CollectScopeContainerNames(rules),
 			ContentContainerTypesOf(rules),
+			actionComponentProperties,
 			actionTargets, unresolvedTargetRequests,
 			declaredTypesByName,
 			mobileRequestTypes);
@@ -2684,16 +2737,25 @@ public static partial class WebToMobileAnalysisService {
 			// column count — the adaptive pass reads both to build the per-breakpoint mobile layout.
 			CaptureSource(ctx, name, node);
 
-			// 0. drop — ONLY a crt.Button whose clicked request the Creatio Mobile app does not support: it would
-			//    be a dead button, so it is removed. Other component types are NOT dropped for an unsupported
-			//    request — some components legitimately use a SYSTEM request that is absent from the supported
-			//    list, and dropping the whole component over it loses valid UI. Their bindings are handled when
-			//    the component is built (ProcessEventBindings keeps/flags an unknown request rather than dropping).
-			if (string.Equals(type, "crt.Button", StringComparison.OrdinalIgnoreCase)
+			// 0. drop — an ACTION-ONLY component (crt.Button or crt.MenuItem, see IsActionOnlyType) whose request
+			//    the Creatio Mobile app does not support: it would render and do nothing, so it is removed. Other
+			//    component types are NOT dropped for an unsupported request — some legitimately use a SYSTEM request
+			//    that is absent from the supported list, and dropping the whole component over it loses valid UI.
+			//    Their bindings are handled when the component is built (ProcessEventBindings keeps/flags an unknown
+			//    request rather than dropping).
+			//    A node that still HOLDS a component is exempt, and the exemption is the AC rather than a
+			//    softening of it: `continue` discards the whole subtree without visiting it, so a button whose
+			//    own click is dead but whose menu is alive would take its live menu items off the page with a
+			//    droppedElements entry naming only the button. AC2 removes a control that has no menu item AND
+			//    no click request; this one has a menu. Left to the normal path its dead binding is dropped and
+			//    RECORDED by ProcessEventBindings, its children get their own entries, and if every one of them
+			//    dies the componentRemovals fixed point removes the owner next round - which is the cascade,
+			//    reached with every loss reported instead of one entry standing for several.
+			if (IsActionOnlyType(ctx, type)
+				&& !HoldsChildComponents(node)
 				&& UnsupportedRequestOf(ctx, node) is { } unsupportedRequest) {
 				ctx.Out.Add(Drop(name, type,
-					Reason(ReasonCodes.DropUnsupportedRequest,
-						("request", Nz(unsupportedRequest)), ("scope", null))));
+					UnsupportedRequestDropReason(ctx.RequestMap, unsupportedRequest, scope: null)));
 				continue;
 			}
 
@@ -3093,44 +3155,47 @@ public static partial class WebToMobileAnalysisService {
 	private enum ClickedConvertibility {
 		/// <summary>No <c>clicked</c> event binding — a container-only node (e.g. a dropdown), not itself an action.</summary>
 		None,
-		/// <summary>A <c>crt.Button</c> whose clicked request is NOT supported on mobile — the versioned map clears its
-		/// target, OR it is covered by neither the versioned map nor the mobile request registry (an unknown
-		/// <c>crt.*</c> or a custom <c>usr.*</c> request). A dead button, so it is NOT retargeted into the FAB. Only a
-		/// <c>crt.Button</c> classifies here: another component type (e.g. a <c>crt.MenuItem</c>) with an unsupported
-		/// clicked is <see cref="Convertible"/> — kept and flagged by <see cref="ProcessEventBindings"/>, not dropped,
-		/// matching the leaf policy (<see cref="UnsupportedRequestOf"/> gates on <c>crt.Button</c>) and the tool
-		/// contract.</summary>
+		/// <summary>An ACTION-ONLY component (see <see cref="IsActionOnlyType"/>) whose clicked request is NOT
+		/// supported on mobile — the versioned map clears its target, OR it is covered by neither the versioned map
+		/// nor the mobile request registry (an unknown <c>crt.*</c> or a custom <c>usr.*</c> request). A dead control,
+		/// so it is NOT retargeted into the FAB. Only a type the rules declare action-only classifies here: any OTHER
+		/// component type with an unsupported clicked is <see cref="Convertible"/> — kept and flagged by
+		/// <see cref="ProcessEventBindings"/>, not dropped, matching the leaf policy (which gates on the same
+		/// predicate) and the tool contract.</summary>
 		Unsupported,
 		/// <summary>The clicked request is supported on mobile (mapped to a mobile target, or published by the mobile
-		/// request registry), OR the node is not a <c>crt.Button</c> (an unsupported clicked on another component type is
-		/// kept and flagged, not dropped) — the action converts.</summary>
+		/// request registry), OR the node is not an action-only component (an unsupported clicked on another component
+		/// type is kept and flagged, not dropped) — the action converts.</summary>
 		Convertible
 	}
 
 	/// <summary>
 	/// Classifies a node's OWN <c>clicked</c> binding — the gate for converting an action inside a non-converting
-	/// scope (e.g. a header button → FAB menu item). Only <c>clicked</c> is considered (a DIFFERENT secondary
+	/// scope (e.g. a header button → FAB menu item). Only the properties the rules' <c>actionComponents</c>
+	/// section names for this type are considered — <c>clicked</c> for everything today (a DIFFERENT secondary
 	/// binding being unsupported does not disqualify the action). Support is decided by the SAME authoritative
 	/// criterion as <see cref="UnsupportedRequestOf"/> (<see cref="IsRequestSupported"/>) so the leaf and scope paths
-	/// never diverge on WHAT is supported. The DROP policy also matches the leaf path: only a <c>crt.Button</c> with
-	/// an unsupported clicked is <see cref="ClickedConvertibility.Unsupported"/> (a dead button, not retargeted into
-	/// the FAB); another component type (e.g. a <c>crt.MenuItem</c>) may legitimately use a system/custom request
-	/// absent from the supported set, so it stays <see cref="ClickedConvertibility.Convertible"/> and its binding is
-	/// kept and flagged by <see cref="ProcessEventBindings"/> rather than dropped — matching the shipped tool contract
-	/// ("ONLY a crt.Button whose request the mobile app does not support is DROPPED").
+	/// never diverge on WHAT is supported. The DROP policy also matches the leaf path, through the one shared
+	/// <see cref="IsActionOnlyType"/> predicate: only an action-only component with an unsupported clicked is
+	/// <see cref="ClickedConvertibility.Unsupported"/> (a dead control, not retargeted into the FAB). Any other
+	/// component type may legitimately use a system/custom request absent from the supported set, so it stays
+	/// <see cref="ClickedConvertibility.Convertible"/> and its binding is kept and flagged by
+	/// <see cref="ProcessEventBindings"/> rather than dropped — matching the shipped tool contract ("ONLY a
+	/// crt.Button or a crt.MenuItem whose request the mobile app does not support is DROPPED", ENG-96178).
 	/// </summary>
 	private static ClickedConvertibility ClassifyClicked(ElementMapContext ctx, JObject node, out string request) {
 		request = null;
-		if (node["clicked"] is not JObject clicked || !IsEventBinding(clicked)) {
+		if (ActionBindingOf(ctx, node, node["type"]?.ToString()) is not { } clicked) {
 			return ClickedConvertibility.None;
 		}
 		request = clicked["request"].ToString();
-		if (IsRequestSupported(ctx, request)) {
+		if (IsRequestSupported(ctx.RequestMap, ctx.MobileRequestTypes, request)) {
 			return ClickedConvertibility.Convertible;
 		}
-		// Same DROP policy as the leaf path: only a crt.Button becomes a dead action worth dropping. Another component
-		// type keeps its unsupported binding (flagged), so it is not disqualified from the FAB here.
-		return string.Equals(node["type"]?.ToString(), "crt.Button", StringComparison.OrdinalIgnoreCase)
+		// Same DROP policy as the leaf path, through the same predicate: only an action-only component becomes a
+		// dead action worth dropping. Another component type keeps its unsupported binding (flagged), so it is not
+		// disqualified from the FAB here.
+		return IsActionOnlyType(ctx, node["type"]?.ToString())
 			? ClickedConvertibility.Unsupported
 			: ClickedConvertibility.Convertible;
 	}
@@ -3242,15 +3307,7 @@ public static partial class WebToMobileAnalysisService {
 			return Reason(ReasonCodes.DropTargetMissing, ("missingParent", Nz(target.Parent)), ("scope", scope));
 		}
 		if (clicked == ClickedConvertibility.Unsupported) {
-			// Distinguish a KNOWN-unsupported request (the versioned map clears its mobile target) from an
-			// UNKNOWN/custom one (absent from both the versioned map and the mobile request registry). clio can assert
-			// "not supported" only for the former; for the latter it can merely say it does not know it, so the
-			// developer can re-add the action manually if that custom request IS implemented on mobile.
-			bool knownUnsupported = ctx.RequestMap.TryGetValue(request, out RequestMappingRule rule)
-				&& string.IsNullOrWhiteSpace(rule.Mobile);
-			return knownUnsupported
-				? Reason(ReasonCodes.DropUnsupportedRequest, ("request", Nz(request)), ("scope", scope))
-				: Reason(ReasonCodes.DropUnknownRequest, ("request", Nz(request)), ("scope", scope));
+			return UnsupportedRequestDropReason(ctx.RequestMap, request, scope);
 		}
 		if (scopedType is null) {
 			return Reason(ReasonCodes.DropNoRuleInScope, ("scope", scope));
@@ -4528,7 +4585,7 @@ public static partial class WebToMobileAnalysisService {
 				continue;
 			}
 			string webRequest = ((JObject)prop.Value)["request"].ToString();
-			if (!IsRequestSupported(ctx, webRequest)) {
+			if (!IsRequestSupported(ctx.RequestMap, ctx.MobileRequestTypes, webRequest)) {
 				return webRequest;
 			}
 		}
@@ -4545,6 +4602,12 @@ public static partial class WebToMobileAnalysisService {
 	/// publishes — so anything absent from both, an unknown <c>crt.*</c> or a custom <c>usr.*</c> request, is
 	/// unsupported.
 	/// <para>
+	/// Takes the request MAP and the registry SET rather than the walk context, so
+	/// <see cref="ApplyComponentRemovals"/> — which runs one pass later, with no context to hand — asks the same
+	/// question through the same function instead of restating the two-tier rule. A third caller of one
+	/// criterion keeps the invariant; a second copy of it would not.
+	/// </para>
+	/// <para>
 	/// Widening the fallback from the deleted 14-entry constant to the registry was measured, not incidental:
 	/// 38 types gain support (the registry-plus-rules union minus the constant-plus-rules union, against a
 	/// 65-entry registry) and none is lost. Of those 38, 12 are ALSO declared as web request types in
@@ -4557,10 +4620,147 @@ public static partial class WebToMobileAnalysisService {
 	/// a mobile-internal one would be treated as supported — the short constant blocked that by being short.
 	/// </para>
 	/// </summary>
-	private static bool IsRequestSupported(ElementMapContext ctx, string webRequest) =>
-		ctx.RequestMap.TryGetValue(webRequest, out RequestMappingRule rule)
+	private static bool IsRequestSupported(
+		IReadOnlyDictionary<string, RequestMappingRule> requestMap,
+		IReadOnlySet<string> mobileRequestTypes,
+		string webRequest) =>
+		requestMap.TryGetValue(webRequest, out RequestMappingRule rule)
 			? !string.IsNullOrWhiteSpace(rule.Mobile)
-			: ctx.MobileRequestTypes.Contains(webRequest);
+			: mobileRequestTypes.Contains(webRequest);
+
+	/// <summary>
+	/// Whether a dead action REMOVES this component type — declared by the rules' <c>actionComponents</c>
+	/// section (<c>crt.Button</c> and <c>crt.MenuItem</c> today). Read from one table because three gates
+	/// consult it — the leaf drop, <see cref="ClassifyClicked"/>'s scope/FAB gate and
+	/// <see cref="ApplyComponentRemovals"/> one pass later — and the first two diverging is the historic
+	/// "ActionButtonsContainer bug" (pinned by
+	/// <c>Analyze_Fab_HeaderButton_UnsupportedPlatformRequest_Dropped_AndRecorded</c>).
+	/// <para>
+	/// The set is DECLARED rather than open deliberately. Another component may legitimately bind a SYSTEM or
+	/// custom request the supported set does not name, and dropping the whole component over it would lose valid
+	/// UI — so it keeps its binding and is flagged by <see cref="ProcessEventBindings"/> instead (pinned by
+	/// <c>Analyze_NonButtonUnsupportedRequest_ComponentKept</c>). A button and a menu item are different in kind:
+	/// neither has any purpose beyond firing its action, so one whose action cannot fire is chrome the user can
+	/// press to no effect (ENG-96178).
+	/// </para>
+	/// </summary>
+	private static bool IsActionOnlyType(ElementMapContext ctx, string type) =>
+		IsActionOnlyType(ctx.ActionComponentProperties, type);
+
+	/// <summary>
+	/// The same gate for a caller with no walk context — the removal pass, which runs after the walk. An
+	/// overload rather than a second expression: the two asking the question differently is the historic
+	/// "ActionButtonsContainer bug" in miniature.
+	/// </summary>
+	private static bool IsActionOnlyType(
+		IReadOnlyDictionary<string, IReadOnlyList<string>> actionComponents, string type) =>
+		type is { Length: > 0 } && actionComponents.ContainsKey(type);
+
+	/// <summary>The action property names to look at when the rules declare none for a type.</summary>
+	private static readonly IReadOnlyList<string> DefaultActionPropertyNames = ["clicked"];
+
+	/// <summary>
+	/// The rules' <c>actionComponents</c> section as a type → action-property-names lookup, falling back to the
+	/// BUNDLED section when the loaded rules declare none.
+	/// </summary>
+	/// <remarks>
+	/// The fallback polarity, and why this section has the opposite one to its siblings, is stated on
+	/// <see cref="WebToMobilePageConversionRules.ActionComponents"/> — the thing a rules author reads.
+	/// </remarks>
+	internal static IReadOnlyDictionary<string, IReadOnlyList<string>> ActionComponentPropertiesOf(
+		WebToMobilePageConversionRules rules) {
+		IReadOnlyDictionary<string, IReadOnlyList<string>> declared =
+			ActionComponentPropertiesFrom(rules?.ActionComponents);
+		return declared.Count > 0
+			? declared
+			: ActionComponentPropertiesFrom(
+				WebToMobilePageConversionRulesCatalog.LoadBundled()?.ActionComponents);
+	}
+
+	/// <summary>
+	/// Indexes one <c>actionComponents</c> list by type, dropping an entry that names no type.
+	/// </summary>
+	/// <remarks>
+	/// Split out so the fallback above can test the RESULT rather than the input's <c>Count</c>. A document
+	/// declaring <c>[{ "type": "" }]</c> has a non-zero count and yields an empty gate, and an empty gate is
+	/// this section switched off - unsupported actions ship and the response says nothing. The catalog refuses
+	/// such a document on load; this is the second line, for a rules object that did not come through it.
+	/// </remarks>
+	private static IReadOnlyDictionary<string, IReadOnlyList<string>> ActionComponentPropertiesFrom(
+		IReadOnlyList<ActionComponentRule> declared) {
+		var byType = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
+		foreach (ActionComponentRule rule in declared ?? []) {
+			if (rule?.Type is not { Length: > 0 } type || string.IsNullOrWhiteSpace(type)) {
+				continue;
+			}
+			IReadOnlyList<string> names = [
+				.. (rule.ActionPropertyNames ?? []).Where(name => !string.IsNullOrWhiteSpace(name))];
+			byType[type] = names is { Count: > 0 } ? names : DefaultActionPropertyNames;
+		}
+		return byType;
+	}
+
+	/// <summary>
+	/// The rules' <c>componentRemovals</c> section, falling back to the BUNDLED section when the loaded rules
+	/// declare none — the same polarity as <see cref="ActionComponentPropertiesOf"/>, and for the same reason.
+	/// </summary>
+	/// <remarks>
+	/// The fallback polarity, and why this section has the opposite one to its siblings, is stated on
+	/// <see cref="WebToMobilePageConversionRules.ComponentRemovals"/> — the thing a rules author reads.
+	/// </remarks>
+	internal static IReadOnlyList<ComponentRemovalRule> ComponentRemovalsOf(
+		WebToMobilePageConversionRules rules) {
+		IReadOnlyList<ComponentRemovalRule> declared = UsableRemovalRules(rules?.ComponentRemovals);
+		return declared.Count > 0
+			? declared
+			: UsableRemovalRules(WebToMobilePageConversionRulesCatalog.LoadBundled()?.ComponentRemovals);
+	}
+
+	/// <summary>
+	/// The rules of a <c>componentRemovals</c> list that can match anything - the same emptiness test
+	/// <see cref="ActionComponentPropertiesFrom"/> applies, for the same reason: a section of rules that all
+	/// match nothing is this pass switched off, and switching it off silently is the failure the bundled
+	/// fallback exists to prevent.
+	/// </summary>
+	private static IReadOnlyList<ComponentRemovalRule> UsableRemovalRules(
+		IReadOnlyList<ComponentRemovalRule> declared) => [
+			.. (declared ?? []).Where(rule => rule?.Type is { Length: > 0 } && rule.Filters is not null)];
+
+	/// <summary>
+	/// The node's OWN action binding — the first property the rules name as this type's action that actually
+	/// carries a <c>{ request, params }</c> object, or <see langword="null"/> when it binds none.
+	/// </summary>
+	private static JObject ActionBindingOf(ElementMapContext ctx, JObject node, string type) {
+		IReadOnlyList<string> properties =
+			type is { Length: > 0 }
+			&& ctx.ActionComponentProperties.TryGetValue(type, out IReadOnlyList<string> declared)
+				? declared
+				: DefaultActionPropertyNames;
+		foreach (string property in properties) {
+			if (node?[property] is JObject binding && IsEventBinding(binding)) {
+				return binding;
+			}
+		}
+		return null;
+	}
+
+	/// <summary>
+	/// The drop reason for an action-only component removed because its request does not convert — shared by the
+	/// leaf path, the non-converting-scope path (<see cref="ScopeDropReason"/>) and
+	/// <see cref="ApplyComponentRemovals"/>, so one cause cannot acquire two spellings.
+	/// </summary>
+	/// <remarks>
+	/// Distinguishes a KNOWN-unsupported request (the versioned map clears its mobile target) from an UNKNOWN or
+	/// custom one (absent from both the versioned map and the mobile request registry). clio can assert "not supported"
+	/// only for the former; for the latter it can merely say it does not know it, so the developer can re-add the
+	/// action if that custom request IS implemented on mobile. Invariant 9.2 — a field must not assert what was not
+	/// established — is why the leaf path may not answer both cases with the stronger code.
+	/// </remarks>
+	private static ReasonCode UnsupportedRequestDropReason(
+		IReadOnlyDictionary<string, RequestMappingRule> requestMap, string request, JsonNode scope) =>
+		requestMap.TryGetValue(request, out RequestMappingRule rule) && string.IsNullOrWhiteSpace(rule.Mobile)
+			? Reason(ReasonCodes.DropUnsupportedRequest, ("request", Nz(request)), ("scope", scope))
+			: Reason(ReasonCodes.DropUnknownRequest, ("request", Nz(request)), ("scope", scope));
 
 	/// <summary>
 	/// A component event binding is a property whose value is an object carrying a string <c>request</c>
@@ -4570,6 +4770,20 @@ public static partial class WebToMobileAnalysisService {
 	private static bool IsEventBinding(JToken value) =>
 		value is JObject obj && obj["request"] is JValue { Type: JTokenType.String } req
 		&& !string.IsNullOrWhiteSpace(req.ToString());
+
+	/// <summary>
+	/// The System.Text.Json twin of <see cref="IsEventBinding(JToken)"/>, for the passes that run over BUILT
+	/// values rather than the source tree. An overload pair under one name rather than a second name, so the
+	/// shape has one definition — the walk reads Newtonsoft, everything after it reads STJ.
+	/// <para>
+	/// WHITESPACE is rejected here exactly as the twin rejects it. The two are the only reason the two
+	/// traversal shapes can be said to report identically, so a request of <c>"  "</c> answering YES on one
+	/// and NO on the other would break that claim in the one place nothing measures: the carried shape would
+	/// drop the item as an unknown request while the entry graph kept it.
+	/// </para>
+	/// </summary>
+	private static bool IsEventBinding(JsonNode value) =>
+		value is JsonObject obj && !string.IsNullOrWhiteSpace(StringProp(obj, "request"));
 
 	/// <summary>
 	/// Converts the source node's event-binding requests (actions) for mobile and writes the surviving
@@ -4825,6 +5039,14 @@ public static partial class WebToMobileAnalysisService {
 		}
 		ReclassifyRemovedTargetFindings(unresolvedTargets, emptyRemovedMobileNames);
 		ReclassifyRemovedTargetFindings(unresolvedTargets, excludedRemovedMobileNames);
+		// The component-removal pass gets NEITHER, and it passes no name set here at all. Its siblings purge
+		// because they remove elements whose bindings were already recorded, leaving a record describing an
+		// element the map does not create. This pass cannot reach that state: a definitionally-absent target
+		// KEEPS the converted binding and blanks only its target param (see the blanking branch in
+		// ProcessOneEventBinding), so the element still carries a { request, params } object - and
+		// StillHasSomethingToLose refuses to remove any element that does. An element with an
+		// unresolvedTargetRequests finding is therefore never one this pass removed, and there is nothing to
+		// reconcile.
 		bool targetsProbed = actionTargetsProbe?.ProbeOk == true;
 		if (converted.Count == 0 && dropped.Count == 0 && flagged.Count == 0 && unresolvedTargets.Count == 0) {
 			return null;
@@ -6833,3 +7055,5 @@ public static partial class WebToMobileAnalysisService {
 		}
 	}
 }
+
+

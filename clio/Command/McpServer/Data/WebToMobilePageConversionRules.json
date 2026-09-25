@@ -1,4 +1,4 @@
-{
+﻿{
   "version": "latest",
   "defaultMobileTemplate": "BaseMobilePageTemplate",
   "mobileFormPageTemplates": ["BaseMobilePageTemplate", "MobilePageWithTabsFreedomTemplate"],
@@ -295,6 +295,35 @@
           "note": "ENG-95081: the panel's tools strip is a compact icon-only header row on mobile, which a search field does not fit. Positional only - crt.SearchFilter elsewhere on the page converts normally."
         }
       ]
+    }
+  ],
+  "componentRemovals": [
+    {
+      "type": "crt.Button",
+      "reason": "drop-unsupported-request",
+      "filters": {
+        "filterType": "Group",
+        "logicalOperation": "and",
+        "items": [
+          { "filterType": "IsEmpty", "leftExpression": "clicked" },
+          { "filterType": "IsEmpty", "leftExpression": "menuItems" }
+        ]
+      }
+    },
+    {
+      "type": "crt.MenuItem",
+      "reason": "drop-unsupported-request",
+      "filters": { "filterType": "IsEmpty", "leftExpression": "clicked" }
+    }
+  ],
+  "actionComponents": [
+    {
+      "type": "crt.Button",
+      "actionPropertyNames": ["clicked"]
+    },
+    {
+      "type": "crt.MenuItem",
+      "actionPropertyNames": ["clicked"]
     }
   ],
   "nonConvertingScopeContainers": ["MainHeader"],
