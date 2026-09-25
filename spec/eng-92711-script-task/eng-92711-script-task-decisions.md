@@ -22,7 +22,7 @@ This file records only what the implementation decided and what the stand measur
 | Q3 | Validator rule R17 for a script-task target | Unchanged (advisory). | Out of the element's write path. |
 | Q4 | Set `UseSystemSecurityContext` like the designer? | Not set - and the designer does NOT set it either. | `base-process-schema.js` defaults it to `false`; nothing sets it on a new process. The shipped `FindContactForTA` has `IJ10 = true` by its author's choice. Script tasks of a clio-built process run with the caller's rights, same as a designer-built one. |
 | Q5 | Does `process-script-task` join the process guide set? | No banner change. | Kept ungated and routed, as `ProcessScriptTaskGuidanceTests` requires. |
-| Q6 | Hold or raise the `[RequiresPackage]` floor? | Raised to 1.6.6.30. | Silent-discard shape: an older server drops a build's top-level `usings[]` (and a `scriptTask` block riding a setElement beside another field) while answering success. The type token and the two operations would be refused loudly, the usings would not. |
+| Q6 | Hold or raise the `[RequiresPackage]` floor? | Raised to 1.6.6.30 (the bundled archive is 1.6.6.31, which carries review fixes clio does not depend on). | Silent-discard shape: an older server drops a build's top-level `usings[]` and `methods` (and a `scriptTask` block riding a setElement beside another field) while answering success. The type token and the two operations would be refused loudly, the usings would not. |
 | Q7 | The userTask after-activity-save script | Out of scope. | Sibling compile trigger; the gate added here is keyed on the server's warning, so a later ticket only has to emit the same phrase. |
 
 Also decided without asking:

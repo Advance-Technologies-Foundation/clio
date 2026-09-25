@@ -515,7 +515,7 @@ public sealed class ServerProcessDescriberTests {
 
 	[Test]
 	[Description("Deserializes the scriptTask block, the process-level usings and the process methods by name (ENG-92711). The describe output is re-serialized from this model, so a member it does not declare reaches nobody; the body is what a caller edits and the variant flag decides which parameter-access style compiles, so both are asserted individually, as are the namespace and the alias of each using.")]
-	public void Describe_ShouldReadTheScriptTaskBlockAndTheUsings_WhenServerReportsThem() {
+	public void Describe_ShouldReadTheScriptTaskBlockUsingsAndMethods_WhenServerReportsThem() {
 		// Arrange - a script task and two usings reported the way CrtProcessBuilder 1.6.6.30 writes them
 		IApplicationClient client = ClientReturning(
 			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
@@ -526,7 +526,7 @@ public sealed class ServerProcessDescriberTests {
 			+ "\"flows\":[],\"parameters\":[],"
 			+ "\"usings\":[{\"namespace\":\"System.Linq\",\"alias\":null},"
 			+ "{\"namespace\":\"Terrasoft.Core.Configuration.SysSettings\",\"alias\":\"SysSettings\"}],"
-			+ "\"methods\":\"private int Doubled(int v) => v * 2;\"}}");
+			+ "\"methods\":\"private int Doubled(int v) => v * 2;\",\"compiledMethods\":\"public void Old() { }\",\"legacyMethodCount\":2}}");
 		ServerProcessDescriber describer = CreateDescriber(client);
 
 		// Act
@@ -547,7 +547,10 @@ public sealed class ServerProcessDescriberTests {
 			because: "the alias is what makes an aliased type name compile, so losing it breaks the round trip");
 		result.Value.Methods.Should().Be("private int Doubled(int v) => v * 2;",
 			because: "the process methods are read back verbatim so a caller can edit and resend them");
-		result.Value.CompiledMethods.Should().BeNull(because: "a field the server did not send stays null");
+		result.Value.CompiledMethods.Should().Be("public void Old() { }",
+			because: "the compiled variant's text is read back too, so a typo in its wire name would lose it");
+		result.Value.LegacyMethodCount.Should().Be(2,
+			because: "the count is the only sign of the older list that makes setMethods refuse");
 	}
 
 	[Test]

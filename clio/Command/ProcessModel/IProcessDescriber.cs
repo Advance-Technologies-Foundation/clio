@@ -404,6 +404,13 @@ public class DescribeProcessResult {
 	public string CompiledMethods { get; set; }
 
 	/// <summary>
+	/// How many methods the process still keeps in the older per-method list, which has no text form here;
+	/// while it holds an interpreted method, <c>setMethods</c> is refused. <c>null</c> when there are none.
+	/// </summary>
+	[JsonPropertyName("legacyMethodCount")]
+	public int? LegacyMethodCount { get; set; }
+
+	/// <summary>
 	/// Captures every other field the server returns at the graph root so the description round-trips
 	/// losslessly: a newer <c>CrtProcessBuilder</c> reporting something this build does not declare reaches the
 	/// command output verbatim instead of being discarded without a trace.
