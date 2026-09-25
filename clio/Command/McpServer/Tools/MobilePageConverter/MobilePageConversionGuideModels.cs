@@ -290,6 +290,12 @@ public static class ReasonCodes {
 	public const string DropContainerNoMobileEquivalent = "drop-container-no-mobile-equivalent";
 
 	/// <summary>
+	/// A child the mobile parent does not host as an element: its data now travels inside the parent's
+	/// <c>params.property</c> as a descriptor, so nothing is lost. Params: <c>parentName</c>, <c>property</c>.
+	/// </summary>
+	public const string DropFoldedIntoParent = "drop-folded-into-parent";
+
+	/// <summary>
 	/// An <c>excludedComponents</c> rule matched. Params: <c>hostType</c>, <c>host</c>, <c>slot</c> —
 	/// <c>slot</c> absent when the rule bans the type from the host's default child collection.
 	/// </summary>

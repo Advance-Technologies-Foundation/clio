@@ -7754,6 +7754,40 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("ENG-96589: a literal caption is registered under the element's own key with the literal as its text, so the mobile validator's no-inline-literal rule holds on the converter's own output.")]
+	public void Analyze_LiteralCaption_RegisteredUnderElementKey() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "SaveButton", "type": "crt.Button", "caption": "Save" } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = Analyze(bundle,
+			mobileTypes: new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "crt.FlexContainer", "crt.Button" });
+
+		Element(guide, "SaveButton").Values!.AsObject()["caption"]!.GetValue<string>()
+			.Should().Be("#ResourceString(SaveButton_caption)#");
+		guide.ResourceStrings!["SaveButton_caption"].Should().Be("Save",
+			because: "the invented key must carry the web text, or the device renders the raw token");
+	}
+
+	[Test]
+	[Description("ENG-96589: an icon-only button's literal caption is registered like any other — the mobile Button falls back to that text when it cannot resolve the web icon, so dropping it could leave an empty button.")]
+	public void Analyze_IconOnlyButtonLiteralCaption_RegisteredUnderElementKey() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "AddNextStepsButton", "type": "crt.Button", "caption": "NextSteps.Caption",
+				  "icon": "add-button-icon", "iconPosition": "only-icon" } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = Analyze(bundle,
+			mobileTypes: new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "crt.FlexContainer", "crt.Button" });
+
+		Element(guide, "AddNextStepsButton").Values!.AsObject()["caption"]!.GetValue<string>()
+			.Should().Be("#ResourceString(AddNextStepsButton_caption)#");
+		guide.ResourceStrings!["AddNextStepsButton_caption"].Should().Be("NextSteps.Caption");
+	}
+
+	[Test]
 	[Description("Localized strings referenced ANYWHERE in an element's carried values — including NESTED ones (config.title, text.template) — are collected and resolved into guide.resourceStrings for registration, and the tokens stay verbatim in mobileValues.")]
 	public void Analyze_NestedResourceStrings_CollectedIntoResourceStrings() {
 		PageBundleInfo bundle = Bundle("""

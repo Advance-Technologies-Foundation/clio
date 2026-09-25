@@ -57,6 +57,7 @@ public sealed class MobileDropReasonCodeVocabularyTests {
 		// an element that did not reach the mobile page
 		"drop-empty-container",
 		"drop-container-no-mobile-equivalent",
+		"drop-folded-into-parent",
 		"drop-excluded-by-rule",
 		"drop-parent-excluded",
 		"drop-inherited-chrome",

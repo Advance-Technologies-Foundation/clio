@@ -235,7 +235,7 @@ two spellings; the `drop-` prefix is not asserted — `flag-` and `skip-` are fi
 
 ```
 NOT LOSS          drop-inherited-chrome  drop-excluded-by-rule  drop-parent-excluded
-                  drop-empty-container   drop-container-no-mobile-equivalent
+                  drop-empty-container   drop-container-no-mobile-equivalent  drop-folded-into-parent
 GENUINE LOSS      drop-unsupported-request  drop-unknown-request  drop-type-not-in-mobile-registry
 RULES DEFECT      drop-target-missing
 IN SCOPE          drop-no-rule-in-scope  drop-not-an-action-in-scope  drop-non-converting-scope
@@ -250,6 +250,7 @@ Pairs to keep distinct:
 
 - `drop-unsupported-request` — the **element** is gone · `drop-request-unsupported` — the element survives, its binding was removed.
 - `drop-container-no-mobile-equivalent` — a **container**, flattened, children preserved · `drop-type-not-in-mobile-registry` — a **leaf**, genuine loss.
+- `drop-folded-into-parent` — a **child** the mobile parent does not host as an element (`crt.TimelineTile`); its data is a descriptor in `params.parentName`.`params.property`, so nothing is lost.
 
 ### 8.2 `params`
 

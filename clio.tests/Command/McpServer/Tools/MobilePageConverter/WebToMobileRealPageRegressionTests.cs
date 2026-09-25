@@ -462,6 +462,96 @@ public sealed class WebToMobileRealPageRegressionTests {
 			because: "the caller must be told the targets were not checked");
 	}
 
+	private static readonly string[] TimelineTileNames =
+		["TimelineTile_Call", "TimelineTile_Email", "TimelineTile_Task", "TimelineTile_SysFile", "TimelineTile_Feed"];
+
+	[Test]
+	[Description("ENG-96589 on the real page: the five web crt.TimelineTile children reach mobile as descriptors in crt.Timeline.items, in source order, never as crt.TimelineTile inserts.")]
+	public void Analyze_ShouldFoldTimelineTilesIntoTimelineItems_OnTheRealLeadsFormPageShape() {
+		// Arrange
+		JsonObject fixture = LoadFixture();
+		IReadOnlySet<string> mobileTypes = MobileTypesResolvingSearchFilter(fixture["viewConfig"]!);
+
+		// Act
+		MobilePageConversionGuide guide = Convert(fixture, mobileTypes, BundledRules());
+
+		// Assert
+		guide.ViewConfigDiff.Should().NotContain(op => TypeOf(op) == "crt.TimelineTile",
+			because: "a crt.TimelineTile element has no mobile widget and is dropped at deserialisation");
+		ViewConfigDiffOperation timeline = guide.ViewConfigDiff.Single(op => op.Name == "Timeline");
+		JsonArray items = timeline.Values!["items"]!.AsArray();
+		items.Select(item => item!["data"]?["schemaType"]?.GetValue<string>() ?? item!["data"]?["schemaName"]?.GetValue<string>())
+			.Should().Equal(["Call", "Email", "Activity", "SysFile", "Feed"],
+				because: "the mobile timeline renders its tiles from items, in the order the web page declared them");
+		items.Select(item => item!["linkedColumn"]?.GetValue<string>())
+			.Should().Equal(["Lead", "Lead", "Lead", null, "Lead"],
+				because: "linkedColumn is what ties each tile's records to the master record");
+	}
+
+	[Test]
+	[Description("ENG-96589: a folded tile carries only what the mobile runtime reads, so no undeclared $TimelineTile_*_Items binding or other web-only property reaches the page.")]
+	public void Analyze_ShouldCarryOnlyRuntimeReadKeysOnFoldedTimelineTiles_OnTheRealLeadsFormPageShape() {
+		// Arrange
+		JsonObject fixture = LoadFixture();
+		IReadOnlySet<string> mobileTypes = MobileTypesResolvingSearchFilter(fixture["viewConfig"]!);
+
+		// Act
+		MobilePageConversionGuide guide = Convert(fixture, mobileTypes, BundledRules());
+
+		// Assert
+		JsonArray items = guide.ViewConfigDiff.Single(op => op.Name == "Timeline").Values!["items"]!.AsArray();
+		items.SelectMany(item => item!.AsObject().Select(pair => pair.Key)).Distinct()
+			.Should().BeSubsetOf(["linkedColumn", "sortedByColumn", "ownerColumn", "columnsFlexConfig", "data"],
+				because: "TimelineTileConfig.fromJson reads nothing else; filters, classes, icon and visible are web-only");
+		JsonSerializer.Serialize(guide.ViewConfigDiff).Should().NotContain("$TimelineTile_",
+			because: "no page declares those attributes, so a binding to one is an undeclared reference");
+	}
+
+	[Test]
+	[Description("ENG-96589: each folded tile is still accounted for, as a droppedElements entry that names the parent and slot now carrying its data.")]
+	public void Analyze_ShouldReportEachFoldedTimelineTile_OnTheRealLeadsFormPageShape() {
+		// Arrange
+		JsonObject fixture = LoadFixture();
+		IReadOnlySet<string> mobileTypes = MobileTypesResolvingSearchFilter(fixture["viewConfig"]!);
+
+		// Act
+		MobilePageConversionGuide guide = Convert(fixture, mobileTypes, BundledRules());
+
+		// Assert
+		List<DroppedElement> folded = [.. (guide.DroppedElements ?? [])
+			.Where(e => e.Reason!.Any(r => r.Code == ReasonCodes.DropFoldedIntoParent))];
+		folded.Select(e => e.WebName).Should().BeEquivalentTo(TimelineTileNames,
+			because: "every source element must stay accounted for in viewConfigDiff or droppedElements");
+		folded.Should().OnlyContain(e => e.Reason!.Any(r => r.Code == ReasonCodes.DropFoldedIntoParent
+				&& r.Params!["parentName"]!.GetValue<string>() == "Timeline"
+				&& r.Params["property"]!.GetValue<string>() == "items"),
+			because: "the params tell the caller where the tile's data went, so it re-inserts nothing");
+	}
+
+	[Test]
+	[Description("ENG-96589 on the real page: the converted body passes the mobile no-inline-literal rule — AddNextStepsButton's literal caption \"NextSteps.Caption\" is registered under its own key.")]
+	public void Analyze_ShouldEmitNoInlineTextLiteral_OnTheRealLeadsFormPageShape() {
+		// Arrange
+		JsonObject fixture = LoadFixture();
+		IReadOnlySet<string> mobileTypes = MobileTypesResolvingSearchFilter(fixture["viewConfig"]!);
+
+		// Act
+		MobilePageConversionGuide guide = Convert(fixture, mobileTypes, BundledRules());
+		string body = new JsonObject {
+			["viewConfigDiff"] = JsonSerializer.SerializeToNode(guide.ViewConfigDiff),
+			["viewModelConfigDiff"] = JsonSerializer.SerializeToNode(guide.ViewModelConfigDiff),
+		}.ToJsonString();
+		SchemaValidationResult literals = SchemaValidationService.ValidateMobileLocalizableTextLiterals(body);
+
+		// Assert
+		literals.Errors.Should().BeEmpty(
+			because: "a converted page its own validator refuses sends the agent into hand edits");
+		guide.ViewConfigDiff.Single(op => op.Name == "AddNextStepsButton").Values!["caption"]!.GetValue<string>()
+			.Should().Be("#ResourceString(AddNextStepsButton_caption)#");
+		guide.ResourceStrings!["AddNextStepsButton_caption"].Should().Be("NextSteps.Caption",
+			because: "the invented key must carry the web text, or the device renders the raw token");
+	}
+
 	/// <summary>The child-collection slots an entry's prebuilt <c>mobileValues</c> physically declares, ordered.</summary>
 	private static IReadOnlyList<string> DeclaredChildSlots(ViewConfigDiffOperation entry) =>
 		entry.Values is JsonObject values

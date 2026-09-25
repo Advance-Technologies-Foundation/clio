@@ -3195,7 +3195,7 @@ public static class SchemaValidationService
 		(value.StartsWith(ResourceBindingPrefix, StringComparison.OrdinalIgnoreCase) ||
 		 ResourceStringReferencePattern.IsMatch(value));
 
-	private static bool IsInlineUserVisibleTextLiteral(string? value) {
+	internal static bool IsInlineUserVisibleTextLiteral(string? value) {
 		if (string.IsNullOrWhiteSpace(value)) {
 			return false;
 		}
