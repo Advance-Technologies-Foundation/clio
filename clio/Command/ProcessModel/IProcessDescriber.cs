@@ -1917,7 +1917,7 @@ public sealed class DescribedParameter {
 	/// <c>[Element].[Parameter].[EntityColumn]</c> meta path): the element's name. Reported with
 	/// <see cref="SourceElementParameter"/> and <see cref="SourceColumn"/> only when the server can name all three
 	/// AND those names re-apply to the identical stored value, so the trio feeds straight back into
-	/// <c>addMapping</c>. Null for every other value, and omitted by a <c>CrtProcessBuilder</c> older than 1.6.6.25.
+	/// <c>addMapping</c>. Null for every other value, and omitted by a <c>CrtProcessBuilder</c> older than 1.6.6.27.
 	/// </summary>
 	[JsonPropertyName("sourceElement")]
 	public string SourceElement { get; set; }

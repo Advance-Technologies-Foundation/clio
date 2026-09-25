@@ -17,7 +17,7 @@ namespace Clio.Mcp.E2E;
 /// <summary>
 /// End-to-end coverage for ONE column of a record another element returned as a value source (ENG-91844) over
 /// the real MCP path. NOT in CI — run manually, gated on the <c>process-designer</c> feature and a reachable
-/// environment carrying CrtProcessBuilder 1.6.6.25 or later.
+/// environment carrying CrtProcessBuilder 1.6.6.27 or later.
 /// <para>The motivating session: an agent could not assign a Perform task to a read contact's <c>Owner</c>, nor
 /// branch on the contact's <c>DoNotUseCall</c>, and built two filtered signal starts instead of one gateway. These
 /// tests build exactly that shape by NAME - <c>sourceColumn</c> on the mapping, <c>[#Read.ResultEntity.Column#]</c>
@@ -36,7 +36,7 @@ public sealed class RecordColumnSourceToolE2ETests {
 	private const string ModifyToolName = ModifyBusinessProcessTool.ModifyBusinessProcessToolName;
 
 	/// <summary>The cut that resolves <c>sourceColumn</c>; named in the skip message so a developer knows what to install.</summary>
-	private const string MinimumPackageVersion = "1.6.6.25";
+	private const string MinimumPackageVersion = "1.6.6.27";
 
 	#region Methods: Tests
 

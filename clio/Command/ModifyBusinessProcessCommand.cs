@@ -178,15 +178,15 @@ namespace Clio.Command;
 // The dotted path fails differently and just as quietly: an older server resolves `elementParameter` flat
 // only, finds no parameter of that name and refuses - loudly, but naming a parameter rather than the
 // package. 1.6.6.14 is the archive cut from crt-process-builder 13bd2a2.
-// Raised to 1.6.6.25 by ENG-91844: `sourceColumn` (mappings, changeData/addData/openEditPage values,
+// Raised to 1.6.6.27 by ENG-91844: `sourceColumn` (mappings, changeData/addData/openEditPage values,
 // openEditPage recordId), a filter's `elementParameter.column` and the `[#Element.Parameter.Column#]` name in a
 // condition or formula body - ONE column of a record another element returned. Same failure shape as the
 // multi-instance raise: an older server's serializer DISCARDS both fields and answers success, so the source
 // silently widens to the WHOLE record - a mapping is then refused for incompatible types naming a parameter
 // rather than the package, and a filter compares its column against the record reference with no refusal at
 // all - while the three-segment name is passed through verbatim and fails the platform's gate as "Expression
-// expected". 1.6.6.25 is the archive cut from crt-process-builder 0bb4aa5.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.25",
+// expected". 1.6.6.27 is the archive cut from crt-process-builder b9173fb.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.27",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class ModifyBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Process code (schema Name) to edit. Provide exactly one of <see cref="ProcessName"/> or <see cref="ProcessUid"/>.</summary>

@@ -52,7 +52,9 @@ Command: `dotnet test clio.tests/clio.tests.csproj --filter "Category=Unit&(Modu
 
 | ID | Case | Evidence |
 |---|---|---|
-| TC-S-01 | Item 0 probe: the three-segment token saves into `OwnerId`, runs, and the created Activity's Owner is the contact's owner | recorded in the PR description |
-| TC-S-02 | The motivating scenario end to end: Contact added → Read contact (Id = RecordId) → gateway on DoNotUseCall → Perform task with `OwnerId <- Owner`; both branches run on a matching and a non-matching contact | recorded in the PR description |
+| TC-S-01 | Item 0 probe: the three-segment token saves into `OwnerId`, runs, and the created Activity's Owner is the contact's owner | PASS 2026-09-25, Creatio 10.1.37 NF/MSSQL, 1.6.6.27: saved through the pre-save gate; Activity "Probe task for the contact's owner" Owner = Email Supervisor (the read contact's owner; the starter is Supervisor) |
+| TC-S-02 | The motivating scenario end to end: Contact added → Read contact (Id = RecordId) → gateway on DoNotUseCall → Perform task with `OwnerId <- Owner`; both branches run on a matching and a non-matching contact | PASS 2026-09-25: DoNotUseCall=false → "Call the contact", Owner = Email Supervisor; DoNotUseCall=true → "Send an email to the contact" (SysProcessElementLog) |
+| TC-S-03 | What the designer stores for an element-column pick | Measured: shipped `LeadManagementHandoff.ActivityUserTaskBANT.OwnerId` is Script with the prefixed token, and describe decodes it (byte-identical to the builder's encoding) |
+| TC-I-* | `RecordColumnSourceToolE2ETests` against the stand | PASS 3/3 on net10.0 and net8.0 |
 
 Browser (designer) read-back is the owner's check, not the agent's.
