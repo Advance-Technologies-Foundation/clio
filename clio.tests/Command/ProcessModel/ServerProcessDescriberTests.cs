@@ -514,6 +514,39 @@ public sealed class ServerProcessDescriberTests {
 	}
 
 	[Test]
+	[Description("Deserializes the scriptTask block and the process-level usings by name (ENG-92711). The describe output is re-serialized from this model, so a member it does not declare reaches nobody; the body is what a caller edits and the variant flag decides which parameter-access style compiles, so both are asserted individually, as are the namespace and the alias of each using.")]
+	public void Describe_ShouldReadTheScriptTaskBlockAndTheUsings_WhenServerReportsThem() {
+		// Arrange - a script task and two usings reported the way CrtProcessBuilder 1.6.6.29 writes them
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000002\",\"name\":\"CalcTotal\","
+			+ "\"type\":\"ProcessSchemaScriptTask\",\"buildType\":\"scripttask\","
+			+ "\"scriptTask\":{\"body\":\"Set(\\\"Total\\\", 1);\\nreturn true;\",\"forInterpretedProcess\":true},"
+			+ "\"parameters\":[]}],"
+			+ "\"flows\":[],\"parameters\":[],"
+			+ "\"usings\":[{\"namespace\":\"System.Linq\",\"alias\":null},"
+			+ "{\"namespace\":\"Terrasoft.Core.Configuration.SysSettings\",\"alias\":\"SysSettings\"}]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedScriptTask block = result.Value.Elements[0].ScriptTask;
+		block.Should().NotBeNull(because: "a null here is the silent-drop signature of an undeclared block");
+		block.Body.Should().Be("Set(\"Total\", 1);\nreturn true;",
+			because: "the body is reported verbatim so a caller can edit it and send it back");
+		block.ForInterpretedProcess.Should().BeTrue(
+			because: "the flag tells a caller whether Get/Set compile in this element");
+		result.Value.Usings.Should().HaveCount(2, because: "both usings the server reported must survive");
+		result.Value.Usings[0].Namespace.Should().Be("System.Linq", because: "the namespace is read by name");
+		result.Value.Usings[0].Alias.Should().BeNull(because: "a plain using carries no alias");
+		result.Value.Usings[1].Alias.Should().Be("SysSettings",
+			because: "the alias is what makes an aliased type name compile, so losing it breaks the round trip");
+	}
+
+	[Test]
 	[Description("Deserializes the whole subProcess block - every one of its five members by name. A member the DTO does not declare, or one whose JsonPropertyName drifts from the server's DataMember, is dropped SILENTLY on re-serialize, so each name is asserted individually rather than by spot check. Before this element the read-back carried no reference to the called process at all.")]
 	public void Describe_ShouldReadTheSubProcessBlock_WhenServerReportsIt() {
 		// Arrange - a call activity reported the way CrtProcessBuilder writes it

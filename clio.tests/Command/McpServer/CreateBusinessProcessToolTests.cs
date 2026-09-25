@@ -277,19 +277,49 @@ public class CreateBusinessProcessToolTests {
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("create-business-process drops the compile-not-required note when the server warns that the process cannot run until the configuration is compiled - the warning a Script task produces (ENG-92711). The two cannot both be acted on, and the note used to be appended unconditionally.")]
+	public void CreateBusinessProcess_Should_Not_Emit_CompileNotRequiredNote_When_The_Server_Requires_A_Compile() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeCreateBusinessProcessCommand resolvedCommand = new(warning: "Process 'UsrSampleProcess' carries C# in script task 'CalcTotal', so it cannot run until the configuration is compiled. Run compile-creatio on this environment after the save.");
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateBusinessProcessCommand>(Arg.Any<CreateBusinessProcessOptions>())
+			.Returns(resolvedCommand);
+		CreateBusinessProcessTool tool = new(new FakeCreateBusinessProcessCommand(), ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.CreateBusinessProcess(
+			new CreateBusinessProcessArgs("docker_fix2", SampleDescriptor, "MyApp"));
+
+		// Assert
+		result.ExitCode.Should().Be(0, because: "a build that needs a compile still succeeded");
+		(result.Note ?? string.Empty).Should().NotContain(CommandExecutionResult.CompileNotRequiredNote,
+			because: "the server said this process cannot run until the configuration is compiled, and a note saying the opposite is what sends an agent past the compile");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
 	private sealed class FakeCreateBusinessProcessCommand : CreateBusinessProcessCommand {
 		private readonly int _exitCode;
+		private readonly string? _warning;
 
 		public CreateBusinessProcessOptions? CapturedOptions { get; private set; }
 
-		public FakeCreateBusinessProcessCommand(int exitCode = 0)
+		public FakeCreateBusinessProcessCommand(int exitCode = 0, string? warning = null)
 			: base(Substitute.For<ICreateBusinessProcessService>(), Substitute.For<IProcessDescriber>(),
 				Substitute.For<ILogger>()) {
 			_exitCode = exitCode;
+			_warning = warning;
 		}
 
 		public override int Execute(CreateBusinessProcessOptions options) {
 			CapturedOptions = options;
+			// The real command writes the server's warnings through the logger the tool captures; the fake
+			// writes one the same way.
+			if (_warning != null) {
+				ConsoleLogger.Instance.WriteWarning(_warning);
+			}
 			return _exitCode;
 		}
 	}

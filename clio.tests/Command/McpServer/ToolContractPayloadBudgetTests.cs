@@ -118,6 +118,14 @@ public sealed class ToolContractPayloadBudgetTests {
 	// so an author who edited a different one is not sent to the wrong file. If it starts firing on
 	// edits that are NOT budget decisions, re-pin it deliberately and say so here — never widen it in
 	// passing.
+	//
+	// ENG-92711 (the Script task element) paid for its text the same way, by SWAP: create-business-process
+	// dropped the floor-history paragraph about 1.4.0.58/.60 and the 88%/65% condition statistics - provenance,
+	// nothing decided at call time - and spent the room on the scriptTask block, usings[], and the compile
+	// signal becoming conditional; modify-business-process shortened the same history and lost a
+	// parenthetical. Re-measured by lowering the ceiling: modify-business-process 34785, create-business-process
+	// 34603, describe-business-process 32786 (which gained the scriptTask block and usings[]). Modify is 31
+	// bytes under the ceiling now, so the warning above still holds for it.
 	private const int MaxToolContractSerializedBytes = 136 * 256;
 
 	[Test]

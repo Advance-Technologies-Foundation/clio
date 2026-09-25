@@ -381,6 +381,14 @@ public class DescribeProcessResult {
 	public List<DescribedParameter> Parameters { get; set; }
 
 	/// <summary>
+	/// The process's own using directives (Process properties -> Methods -> Usings), in the shape a build's
+	/// <c>usings[]</c> takes. The namespaces the platform's code generator always imports are not listed.
+	/// <c>null</c> on a server that predates CrtProcessBuilder 1.6.6.29.
+	/// </summary>
+	[JsonPropertyName("usings")]
+	public List<DescribedUsing> Usings { get; set; }
+
+	/// <summary>
 	/// Captures every other field the server returns at the graph root so the description round-trips
 	/// losslessly: a newer <c>CrtProcessBuilder</c> reporting something this build does not declare reaches the
 	/// command output verbatim instead of being discarded without a trace.
@@ -675,6 +683,14 @@ public sealed class DescribedElement {
 	/// </remarks>
 	[JsonPropertyName("formula")]
 	public DescribedFormula Formula { get; set; }
+
+	/// <summary>
+	/// For a Script task (CrtProcessBuilder 1.6.6.29 and later): its C# body and which of the platform's two
+	/// script variants it is. <c>null</c> for other element kinds - a Formula task included, although its class
+	/// derives from the script task's - and on a server that predates the element.
+	/// </summary>
+	[JsonPropertyName("scriptTask")]
+	public DescribedScriptTask ScriptTask { get; set; }
 
 	/// <summary>
 	/// Captures every other field the server reports on an element so the description round-trips losslessly:
@@ -1964,6 +1980,42 @@ public sealed class DescribedFormula {
 	/// <summary>Where the result is written. <c>null</c> when the element has no target yet.</summary>
 	[JsonPropertyName("target")]
 	public DescribedFormulaTarget Target { get; set; }
+
+	/// <summary>Anything a newer server reports that this build does not declare.</summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
+}
+
+/// <summary>A Script task read back: its C# body and which script variant it is.</summary>
+public sealed class DescribedScriptTask {
+
+	/// <summary>The C# body, verbatim as stored.</summary>
+	[JsonPropertyName("body")]
+	public string Body { get; set; }
+
+	/// <summary>
+	/// The designer's "For interpreted process" option. <c>true</c> - every script task clio builds - means the
+	/// body reaches parameters through <c>Get&lt;T&gt;("Name")</c> / <c>Set("Name", value)</c>; <c>false</c> is the
+	/// older compiled variant, where parameters are plain properties and Get/Set do not compile.
+	/// </summary>
+	[JsonPropertyName("forInterpretedProcess")]
+	public bool ForInterpretedProcess { get; set; }
+
+	/// <summary>Anything a newer server reports that this build does not declare.</summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
+}
+
+/// <summary>One process-level using directive, in the shape a build's <c>usings[]</c> entry takes.</summary>
+public sealed class DescribedUsing {
+
+	/// <summary>The imported namespace, or the type when <see cref="Alias"/> is set.</summary>
+	[JsonPropertyName("namespace")]
+	public string Namespace { get; set; }
+
+	/// <summary>The alias of a <c>using Alias = Namespace;</c> directive; <c>null</c> for a plain one.</summary>
+	[JsonPropertyName("alias")]
+	public string Alias { get; set; }
 
 	/// <summary>Anything a newer server reports that this build does not declare.</summary>
 	[JsonExtensionData]
