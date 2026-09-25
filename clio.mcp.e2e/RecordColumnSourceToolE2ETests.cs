@@ -96,10 +96,13 @@ public sealed class RecordColumnSourceToolE2ETests {
 		await using ProcessDesignerArrangeContext context =
 			await ProcessDesignerE2EArrange.StartAsync("Record column source", MinimumPackageVersion);
 		string processName = $"UsrClioBpRecordColumnModE2e{Guid.NewGuid():N}";
-		await ProcessDesignerE2EArrange.CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
-			["environment-name"] = context.EnvironmentName,
-			["descriptor"] = BuildPlainTaskDescriptor(processName)
-		});
+		CallToolResult created = await ProcessDesignerE2EArrange.CallToolAsync(context, CreateToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["descriptor"] = BuildPlainTaskDescriptor(processName)
+			});
+		JsonSerializer.Serialize(created).Should().Contain("created (UId:",
+			because: "the process the modify calls edit must exist, or every assertion below fails for the wrong reason");
 
 		// Act
 		CallToolResult refused = await ProcessDesignerE2EArrange.CallToolAsync(context, ModifyToolName,
@@ -108,6 +111,8 @@ public sealed class RecordColumnSourceToolE2ETests {
 				["process-name"] = processName,
 				["operations"] = AddOwnerMapping("Account")
 			});
+		JsonObject afterRefusal =
+			DescribedProcessGraph.Read(await ProcessDesignerE2EArrange.DescribeAsync(context, processName));
 		CallToolResult applied = await ProcessDesignerE2EArrange.CallToolAsync(context, ModifyToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
@@ -121,6 +126,11 @@ public sealed class RecordColumnSourceToolE2ETests {
 			because: "an Account id in a Contact owner field would silently assign nobody, so the refusal names the column");
 		refusal.Should().Contain("incompatible",
 			because: "the refusal says WHY - the lookup objects differ");
+		JsonObject? ownerAfterRefusal = OptionalParameterNamed(ElementNamed(afterRefusal, "Call"), "OwnerId");
+		(ownerAfterRefusal?["sourceColumn"]?.GetValue<string>()).Should().BeNull(
+			because: "a refused addMapping changes nothing, so OwnerId carries no column source afterwards");
+		(ownerAfterRefusal?["value"]?.GetValue<string>() ?? string.Empty).Should().NotContain("[EntityColumn:",
+			because: "nor a stored column reference that describe merely failed to name");
 		JsonSerializer.Serialize(applied).Should().NotContain("incompatible",
 			because: "Contact.Owner fits a Contact-lookup OwnerId");
 		JsonObject graph = DescribedProcessGraph.Read(await ProcessDesignerE2EArrange.DescribeAsync(context, processName));
@@ -232,9 +242,17 @@ public sealed class RecordColumnSourceToolE2ETests {
 
 	/// <summary>The described parameter with that name on an element.</summary>
 	private static JsonObject ParameterNamed(JsonObject element, string name) =>
-		element["parameters"]!.AsArray()
+		OptionalParameterNamed(element, name)
+		?? throw new InvalidOperationException($"Element parameter '{name}' is not described.");
+
+	/// <summary>
+	/// The described parameter with that name on an element, or null: describe omits an unbound input, so
+	/// absence is a legitimate answer after a write that must change nothing.
+	/// </summary>
+	private static JsonObject? OptionalParameterNamed(JsonObject element, string name) =>
+		(element["parameters"]?.AsArray() ?? new JsonArray())
 			.Select(parameter => parameter!.AsObject())
-			.Single(parameter => parameter["name"]!.GetValue<string>() == name);
+			.SingleOrDefault(parameter => parameter["name"]!.GetValue<string>() == name);
 
 	#endregion
 

@@ -94,8 +94,9 @@ public static class DescribeProcessPrompt {
 		process is unlabelled.
 		Note: expressions (mapping formulas, filters) are returned RAW, not decoded into semantics — narrate
 		structure, types, flow, and parameter sources; where a condition/filter is not decodable, say so
-		explicitly instead of guessing. The one decoded source is a value reading ONE column of another
-		element's record: it also carries `sourceElement` / `sourceElementParameter` / `sourceColumn` — narrate
-		it by those names ("the owner of the contact read by ReadContact").
+		explicitly instead of guessing. Among PARAMETER values, the one decoded into names is a value reading ONE
+		column of another element's record: it also carries `sourceElement` / `sourceElementParameter` /
+		`sourceColumn` — narrate it by those names ("the owner of the contact read by ReadContact"). A changeData
+		value and a connection carry their own decoded sources, as the describe tool describes.
 		""";
 }
