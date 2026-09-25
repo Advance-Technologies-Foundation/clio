@@ -151,6 +151,37 @@ public sealed class SubProcessMultiInstanceToolE2ETests {
 	}
 
 	[Test]
+	[Description("Over the real MCP path, describe-business-process reports a collection Read data element's ResultCompositeObjectList as an OUTPUT - isOutput true - with its per-column shape, while the result flag stays off as the designer leaves it. This is the source a multi-instance input binds from, and ENG-99967 found it missing at exactly this surface: the server reported isOutput, and clio's typed parameter model dropped it on the way to the caller. A unit test on either side cannot see that seam; only the real MCP path crosses it.")]
+	[AllureTag(DescribeToolName)]
+	[AllureName("describe-business-process reports the collection output of a Read data element as an output")]
+	public async Task DescribeBusinessProcess_Should_ReportTheCollectionOutput_AsAnOutputWithItsShape() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync();
+		string processName = $"UsrClioBpReadCollection{Guid.NewGuid():N}";
+		await ArrangeProcessAsync(context, BuildCollectionReadDescriptor(processName), "collection read");
+
+		// Act
+		DescribeProcessResult graph = await DescribeAsync(context, processName);
+
+		// Assert
+		DescribedParameter shaped = graph.Elements.Single(candidate => candidate.Name == "ReadData1")
+			.Parameters.SingleOrDefault(parameter => parameter.Name == "ResultCompositeObjectList");
+		shaped.Should().NotBeNull(
+			because: "the shaped collection output is the only one a multi-instance input can bind from, so it has "
+				+ "to be discoverable through describe on an element that flags nothing");
+		shaped!.IsOutput.Should().Be(true,
+			because: "isOutput is the marker the describe tool tells agents to read. Asserted against TRUE, so a "
+				+ "clio model that drops the field - null here - fails instead of reading as unknown");
+		shaped.IsResult.Should().NotBe(true,
+			because: "the designer flags nothing in collection mode, and a flag here is what hid this output from "
+				+ "the designer's own mapping pickers");
+		shaped.ItemProperties.Should().NotBeNull(
+			because: "the per-column shape travels with the output - it is what a Collection parameter mirrors");
+		shaped.ItemProperties!.Select(item => item.Name).Should().Contain("Name",
+			because: "the one selected column has to arrive as the shape's item property");
+	}
+
+	[Test]
 	[Description("Over the real MCP path, a mapping whose target is inside the OUTPUT collection is refused - on the collection ITSELF as well as on one of its items, because the first version of this refusal covered the items only and let the collection through. The platform derives those values and clears them on every synchronization, so the write is erased with no error at any layer - the caller would see a successful build and an element that quietly delivers nothing. The refusal is the only thing that tells them, and it has to say what to do instead: map FROM the collection.")]
 	[AllureTag(ToolName)]
 	[AllureName("create-business-process refuses a mapping into the output collection")]
@@ -567,6 +598,27 @@ public sealed class SubProcessMultiInstanceToolE2ETests {
 		      "sourceElement": "ReadData1", "sourceElementParameter": "ResultCompositeObjectList" },
 		    { "elementName": "SubProcess1", "elementParameter": "InputRecordCollection.ItemName",
 		      "sourceElement": "ReadData1", "sourceElementParameter": "ResultCompositeObjectList.Name" }
+		  ]
+		}
+		""";
+
+	// A lone Read data element in COLLECTION mode - no callee, no mapping - so a describe failure is about the
+	// Read data output and nothing else.
+	private static string BuildCollectionReadDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP collection read E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "ReadData1", "type": "readData", "caption": "Read contacts",
+		      "readData": { "source": "Contact", "mode": "collection", "columns": ["Name"], "numberOfRecords": 3 } },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "ReadData1" },
+		    { "source": "ReadData1", "target": "EndEvent1" }
 		  ]
 		}
 		""";

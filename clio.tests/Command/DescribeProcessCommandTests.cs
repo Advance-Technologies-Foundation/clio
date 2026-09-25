@@ -284,6 +284,44 @@ public sealed class DescribeProcessCommandTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Writes each element parameter's isOutput into the graph JSON. Same regression class as direction/isResult above: the DTO has no extension-data bag, so a field it does not declare is dropped on re-serialization. isOutput is the field the describe tool tells agents to read, and on a Read data collection element it is the only mark ResultCompositeObjectList carries (ENG-99967).")]
+	public void Execute_ShouldWriteParameterIsOutput_WhenPresent() {
+		// Arrange — a Read data collection element: the shaped output is an output while carrying no result flag
+		_describer.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>())
+			.Returns(new DescribeProcessResult {
+				Name = "UsrReadProcess",
+				SchemaUId = "uid",
+				Elements = [
+					new DescribedElement {
+						Name = "ReadLeads", Uid = "e1", Type = "ProcessSchemaUserTask", BuildType = "usertask",
+						Parameters = [
+							new DescribedParameter {
+								Name = "ResultCompositeObjectList", UId = "p1", Type = "CompositeObjectList",
+								Direction = "Variable", IsResult = false, IsOutput = true, Source = "None"
+							}
+						]
+					}
+				],
+				Flows = [],
+				Parameters = []
+			});
+		DescribeProcessOptions options = new() { Environment = "dev", ProcessName = "UsrReadProcess" };
+		string written = null;
+		_logger.WriteInfo(Arg.Do<string>(value => written = value));
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "a found process is described successfully");
+		written.Should().Contain("\"isOutput\": true",
+			because: "isOutput is the output marker agents are told to key on, and must survive the clio DTO");
+		written.Should().Contain("\"isResult\": false",
+			because: "the stored flag is still reported beside it, truthfully");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Requires exactly one identity: with more than one provided it errors before contacting the server.")]
 	public void Execute_ShouldErrorWithoutReading_WhenMultipleIdentitiesProvided() {
 		// Arrange
