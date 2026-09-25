@@ -15,8 +15,8 @@ grant is an operation-permission row for `All external users` in `SysSchemaOpera
 checks (creatio-ui `lib.studio-enterprise.related-pages-designer` → `ObjectPermissionsService`).
 `PortalSchemaAccessList` (package CrtNUI/SSP) belongs to the CLASSIC self-service portal and stays EMPTY in
 the Freedom flow. So `get-object-rights` says "available to all internal users (external users still need
-an explicit grant)" for such an object, and with `--grantee` it lists the object as one the role cannot
-read.
+an explicit grant)" for such an object, and with `--grantee` it never counts the object as covered: it lists it
+separately as having no explicit grant (reachable only if the role is internal).
 
 **Why it is this way** — internal roles usually hold the "View/Add/Edit/Delete any data" system
 operations. Those OUTRANK object permissions, so an unadministered object is open to internal users.
@@ -28,5 +28,5 @@ same `administratedByOperations: false` means "open" for one audience and "close
 all-clear for the portal audience, and the agent skips the grant it still needs. The portal section then
 shows empty lists or blank lookups for external users, even though the page binding and workplace are
 correct, because the object itself is invisible to them. Any change to the coverage rule in
-`GetObjectRightsCommand` has to keep a non-administered object counted as missing whenever a grantee is
+`GetObjectRightsCommand` has to keep a non-administered object out of the all-clear whenever a grantee is
 being checked.

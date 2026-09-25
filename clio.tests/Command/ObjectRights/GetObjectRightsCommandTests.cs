@@ -178,8 +178,8 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 	}
 
 	[Test]
-	[Description("With a grantee filter, a connected object that is NOT administered by operation permissions is listed as lacking access — never counted as covered — because external users are deny-by-default.")]
-	public void Execute_ShouldListNonAdministeredObjectAsMissing_WhenGranteeFilterSet() {
+	[Description("With a grantee filter, a connected object that is NOT administered by operation permissions is never counted as covered (external users are deny-by-default), but it is reported apart from 'cannot read', because an internal role can reach it.")]
+	public void Execute_ShouldReportNonAdministeredObjectSeparately_WhenGranteeFilterSet() {
 		// Arrange
 		GetObjectRightsOptions options = GranteeCheckWithConnected();
 		_rightsReader.GetObjectRights("UsrPSCategory", Arg.Any<CreatioRequestOptions>())
@@ -191,7 +191,9 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 		// Assert
 		exitCode.Should().Be(0, because: "the read completed");
 		_logger.DidNotReceive().WriteInfo(Arg.Is<string>(m => m.Contains("can read every listed object")));
-		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("cannot read") && m.Contains("UsrPSCategory")));
+		_logger.Received().WriteWarning(Arg.Is<string>(m =>
+			m.Contains("no explicit grant") && m.Contains("reachable only if the role is internal") && m.Contains("UsrPSCategory")));
+		_logger.DidNotReceive().WriteWarning(Arg.Is<string>(m => m.Contains("cannot read")));
 	}
 
 	[Test]

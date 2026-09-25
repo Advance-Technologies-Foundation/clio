@@ -60,6 +60,7 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 			ConnectedObjectsResolution resolution =
 				_connectedObjects.Resolve(options.EntitySchemaName, options.IncludeConnected);
 			List<string> granteeMissing = new();
+			List<string> granteeNotAdministered = new();
 			int skipped = 0;
 			int read = 0;
 			bool rootFailed = false;
@@ -101,11 +102,12 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 				read++;
 				if (!info.AdministratedByOperations) {
 					// Not administered = reachable by every INTERNAL user, not by everyone: external/portal users are
-					// deny-by-default and reach an object only through an explicit grant. So when a grantee is being
-					// checked, a non-administered object is NOT covered for it — counting it as covered would print
-					// an all-clear and an agent would skip the grant it still needs.
+					// deny-by-default and reach an object only through an explicit grant. The tool cannot tell whether
+					// the grantee is internal or external, so such an object is never counted as covered (no all-clear
+					// that would let an agent skip a portal grant), but it is reported apart from "cannot read": for an
+					// internal role it IS reachable.
 					if (granteeFilter is not null) {
-						granteeMissing.Add(schemaName);
+						granteeNotAdministered.Add(schemaName);
 						_logger.WriteWarning(
 							$"  {schemaName}: not administered by operation permissions — available to all INTERNAL users "
 							+ $"only; grantee {granteeFilter} has no explicit grant (external users are deny-by-default).");
@@ -120,7 +122,7 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 			}
 
 			if (granteeFilter is not null) {
-				ReportGranteeSummary(granteeFilter.Value, granteeMissing, read, skipped,
+				ReportGranteeSummary(granteeFilter.Value, granteeMissing, granteeNotAdministered, read, skipped,
 					resolution.EnumerationError is not null);
 			}
 			return rootFailed ? 1 : 0;
@@ -135,8 +137,8 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 	// role, and it is what set-object-rights grants on connected lookups by default. Demanding create/edit here
 	// would list every read-only connected lookup as "missing" and push the caller to widen them to write access.
 	// The operations each object DOES hold are printed per object above.
-	private void ReportGranteeSummary(Guid grantee, List<string> granteeMissing, int read, int skipped,
-		bool enumerationFailed) {
+	private void ReportGranteeSummary(Guid grantee, List<string> granteeMissing,
+		List<string> granteeNotAdministered, int read, int skipped, bool enumerationFailed) {
 		List<string> unverified = new();
 		if (skipped > 0) {
 			unverified.Add($"{skipped} object(s) could not be read");
@@ -145,9 +147,18 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 			unverified.Add("the connected objects could not be enumerated");
 		}
 		string unverifiedNote = unverified.Count == 0 ? "" : $" Could not verify: {string.Join("; ", unverified)}.";
-		if (granteeMissing.Count > 0) {
-			_logger.WriteWarning(
-				$"Objects grantee {grantee} cannot read: {string.Join(", ", granteeMissing)}.{unverifiedNote}");
+		if (granteeMissing.Count > 0 || granteeNotAdministered.Count > 0) {
+			if (granteeMissing.Count > 0) {
+				_logger.WriteWarning(
+					$"Objects grantee {grantee} cannot read: {string.Join(", ", granteeMissing)}.{unverifiedNote}");
+			}
+			if (granteeNotAdministered.Count > 0) {
+				_logger.WriteWarning(
+					$"Objects with no explicit grant for grantee {grantee} (not administered by operation permissions — "
+					+ "reachable only if the role is internal; external users need a grant): "
+					+ $"{string.Join(", ", granteeNotAdministered)}."
+					+ (granteeMissing.Count > 0 ? "" : unverifiedNote));
+			}
 			return;
 		}
 		if (read == 0) {
