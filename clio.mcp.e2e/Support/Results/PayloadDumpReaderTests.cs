@@ -143,6 +143,57 @@ public sealed class PayloadDumpReaderTests {
 	}
 
 	[Test]
+	[Description("Retries a delete refused by a transient lock and removes the dump once the lock is released, so a locked file on the Windows agent no longer leaves a green build's payload in the artifact (GitHub issue #1592).")]
+	public void DeleteIfPresent_ShouldRetryAndRemoveTheFile_WhenATransientLockReleases() {
+		// Arrange
+		string dumpPath = WriteDump("{\"locked\":true}");
+		string message = $"IsError=True Content=1 block(s) Payload=\"{dumpPath}\"";
+		int attempts = 0;
+		List<TimeSpan> waits = [];
+		void LockedTwiceThenDelete(string path) {
+			attempts++;
+			if (attempts < PayloadDumpReader.DeleteAttempts) {
+				throw new IOException("The process cannot access the file because it is being used by another process.");
+			}
+
+			File.Delete(path);
+		}
+
+		// Act
+		PayloadDumpReader.DeleteIfPresent(message, LockedTwiceThenDelete, waits.Add);
+
+		// Assert
+		File.Exists(dumpPath).Should().BeFalse(
+			because: "a lock that clears within the retry window must not leave a passing test's payload in the published artifact");
+		attempts.Should().Be(PayloadDumpReader.DeleteAttempts,
+			because: "the delete is retried until it succeeds, not abandoned on the first refusal");
+		waits.Should().HaveCount(PayloadDumpReader.DeleteAttempts - 1,
+			because: "each retry waits once for the lock holder to let go, and a successful attempt waits for nothing");
+	}
+
+	[Test]
+	[Description("Gives up without throwing when every delete attempt is refused, keeping the never-throw contract of a lenient catch site.")]
+	public void DeleteIfPresent_ShouldNotThrow_WhenEveryAttemptIsRefused() {
+		// Arrange
+		string dumpPath = WriteDump("{}");
+		string message = $"IsError=True Content=1 block(s) Payload=\"{dumpPath}\"";
+		int attempts = 0;
+		void AlwaysLocked(string path) {
+			attempts++;
+			throw new UnauthorizedAccessException("Access to the path is denied.");
+		}
+
+		// Act
+		Action act = () => PayloadDumpReader.DeleteIfPresent(message, AlwaysLocked, _ => { });
+
+		// Assert
+		act.Should().NotThrow(
+			because: "every call site swallows a parse failure on a PASSING test, and an IO error here would replace that outcome");
+		attempts.Should().Be(PayloadDumpReader.DeleteAttempts,
+			because: "the retry is bounded, so a permanently locked file costs a fixed number of attempts rather than hanging the test");
+	}
+
+	[Test]
 	[Description("Returns the dump's content and removes the file, so one run's artifacts cannot be mistaken for the next run's evidence.")]
 	public void ReadAndDelete_ShouldReturnTheContentAndRemoveTheFile() {
 		// Arrange
