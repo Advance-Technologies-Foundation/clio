@@ -339,7 +339,9 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		/// <summary>Execute selected package SQL scripts.</summary>
 		InstallSqlScripts = 98,
 		/// <summary>Read the database engine and runtime without ClioGate.</summary>
-		GetSystemEnvironmentInfo = 99
+		GetSystemEnvironmentInfo = 99,
+		/// <summary>OpenID Connect discovery document.</summary>
+		OpenIdConfiguration = 100
 
 	}
 
@@ -358,6 +360,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.SaveSqlScriptSchema, "/ServiceModel/SqlScriptSchemaDesignerService.svc/SaveSchema"},
 		{KnownRoute.InstallSqlScripts, "/ServiceModel/WorkspaceExplorerService.svc/InstallSqlScripts"},
 		{KnownRoute.GetSystemEnvironmentInfo, CreatioServicePaths.GetSystemEnvironmentInfo},
+		{KnownRoute.OpenIdConfiguration, "/.well-known/openid-configuration"},
 		{KnownRoute.GetPackageProperties, "ServiceModel/PackageService.svc/GetPackageProperties"},
 		{KnownRoute.AdministrationSaveRole, "/rest/AdministrationService/SaveRole"},
 		{KnownRoute.AdministrationSaveChiefsRole, "/rest/AdministrationService/SaveChiefsRole"},

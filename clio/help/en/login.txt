@@ -1,0 +1,18 @@
+NAME
+    login - sign in to an SSO-enabled Creatio environment
+
+ALIASES
+    signin
+
+SYNOPSIS
+    login [options]
+
+OPTIONS
+    --no-browser       Print the authorization URL and read the full redirect URL from stdin
+    --timeout          Callback timeout in milliseconds (default: 120000)
+    --force            Ignore an existing cached session
+    --Environment -e  Environment name
+
+EXAMPLES
+    clio login -e work
+    clio login -e work --no-browser

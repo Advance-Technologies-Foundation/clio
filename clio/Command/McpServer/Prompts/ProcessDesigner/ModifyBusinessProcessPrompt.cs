@@ -86,7 +86,8 @@ public static class ModifyBusinessProcessPrompt {
 		 because the platform stores one as the literal `true`. `setFilter`/`clearFilter`
 		 set or remove a `signalStart`'s record filter, `setSignal` reconfigures a `signalStart`'s record trigger
 		 and its tracked-change `changedColumns` in place, and `setElement` changes element-level fields in place —
-		 `useBackgroundMode` on any element kind, a `sendEmail` element's `email` block, where the fields you
+		 `useBackgroundMode` on an element kind that offers it (it takes effect only on a start event and an
+		 element that waits — `process-element-catalog`), a `sendEmail` element's `email` block, where the fields you
 		 pass (`mode`, `sender`, `subject`, `body`, `importance`, `ignoreErrors`, `performer`) replace the current
 		 value but `to`/`cc`/`bcc` recipients match-or-append (an address the line already carries is a no-op, a new one is appended),
 		 a Change access rights
