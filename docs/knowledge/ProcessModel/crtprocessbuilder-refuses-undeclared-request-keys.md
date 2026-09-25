@@ -1,5 +1,5 @@
 ---
-description: From CrtProcessBuilder 1.6.6.29 the SERVER refuses a build/modify/save-as-new-version payload carrying a key its contract does not declare (read-only describe fields included), so clio must never send an optional key "an older server simply ignores", and clio deliberately has no payload-key check of its own
+description: From CrtProcessBuilder 1.6.6.30 the SERVER refuses a build/modify/save-as-new-version payload carrying a key its contract does not declare (read-only describe fields included), so clio must never send an optional key "an older server simply ignores", and clio deliberately has no payload-key check of its own
 applies-to:
   - clio/CrtProcessBuilder/CrtProcessBuilder.gz
   - clio/Command/CreateBusinessProcessCommand.cs
@@ -9,13 +9,13 @@ ticket: ENG-95244
 date: 2026-09-25
 ---
 
-**What is true** — CrtProcessBuilder 1.6.6.29+ refuses a write whose payload carries an undeclared or wrongly-cased
-key at any level: nothing is saved, and the message names each key's path with a hint - the key meant, or the
-operation that writes it (setFilter, setConnections, addMapping) - and lists every read-only field copied from
-describe once per place, so one retry strips them all. clio relays that text as
-exit code 1 (modify also names the operation); it checks MCP tool ARGUMENTS, never payload keys. Two exceptions
-stay silent: a key next to the `request` wrapper, and a host where the check reports itself unavailable - the write
-then goes ahead with a warning that it was not checked. Details: the package's `.ai/specs/ENG-95244-unknown-request-keys.md`.
+**What is true** — CrtProcessBuilder 1.6.6.30+ refuses a write whose payload carries an undeclared or wrongly-cased
+key at any level: nothing is saved, and the message names each misspelled key's path with the key meant, and lists
+the fields copied from describe once per place - those a write takes elsewhere with where (setFilter,
+setConnections, addMapping), the read-only ones to remove - so one retry fixes them all. clio relays that text as
+exit code 1 (modify also names the operation); it checks MCP tool ARGUMENTS, never payload keys. Two gaps remain: a
+key next to the `request` wrapper passes in silence, and on a host where the check reports itself unavailable the
+write goes ahead with a warning that it was not checked. Details: the package's `.ai/specs/ENG-95244-unknown-request-keys.md`.
 
 **Why it is this way** — in the package, every client is covered and no copy of the contract drifts; a clio-side
 check (clio#1673) was built and closed for that reason and because it weakened to a warning on version skew.
