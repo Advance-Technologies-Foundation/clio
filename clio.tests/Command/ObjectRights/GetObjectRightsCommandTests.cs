@@ -163,4 +163,64 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 		exitCode.Should().Be(0, because: "a per-object read failure does not abort the read");
 		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("could not read object rights")));
 	}
+
+	private GetObjectRightsOptions GranteeCheckWithConnected() {
+		_connectedObjects.Resolve("UsrPortalSpike2", true, Arg.Any<string>())
+			.Returns(new[] { "UsrPortalSpike2", "UsrPSCategory" });
+		_rightsReader.GetObjectRights("UsrPortalSpike2", Arg.Any<CreatioRequestOptions>())
+			.Returns(Administered("UsrPortalSpike2", Ext(true, true, true, false)));
+		return new GetObjectRightsOptions {
+			EntitySchemaName = "UsrPortalSpike2", Grantee = ExternalUsers.ToString(), IncludeConnected = true
+		};
+	}
+
+	[Test]
+	[Description("With a grantee filter, a connected object that is NOT administered by operation permissions is listed as lacking access — never counted as covered — because external users are deny-by-default.")]
+	public void Execute_ShouldListNonAdministeredObjectAsMissing_WhenGranteeFilterSet() {
+		// Arrange
+		GetObjectRightsOptions options = GranteeCheckWithConnected();
+		_rightsReader.GetObjectRights("UsrPSCategory", Arg.Any<CreatioRequestOptions>())
+			.Returns(new ObjectRightsInfo(true, "UsrPSCategory", "UsrPSCategory", false, Array.Empty<RoleOperationRights>()));
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "the read completed");
+		_logger.DidNotReceive().WriteInfo(Arg.Is<string>(m => m.Contains("already has read/create/edit")));
+		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("lacks read/create/edit") && m.Contains("UsrPSCategory")));
+	}
+
+	[Test]
+	[Description("With a grantee filter, a connected object whose rights could not be read never yields the unqualified all-clear line.")]
+	public void Execute_ShouldNotPrintAllClear_WhenConnectedObjectReadFails() {
+		// Arrange
+		GetObjectRightsOptions options = GranteeCheckWithConnected();
+		_rightsReader.GetObjectRights("UsrPSCategory", Arg.Any<CreatioRequestOptions>())
+			.Returns(new ObjectRightsInfo(true, "UsrPSCategory", null, false, Array.Empty<RoleOperationRights>(),
+				ReadError: "denied"));
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		_logger.DidNotReceive().WriteInfo(Arg.Is<string>(m => m.Contains("already has read/create/edit on every listed object")));
+		_logger.Received().WriteInfo(Arg.Is<string>(m => m.Contains("could not be read")));
+	}
+
+	[Test]
+	[Description("With a grantee filter, a connected object that is not found never yields the unqualified all-clear line.")]
+	public void Execute_ShouldNotPrintAllClear_WhenConnectedObjectNotFound() {
+		// Arrange
+		GetObjectRightsOptions options = GranteeCheckWithConnected();
+		_rightsReader.GetObjectRights("UsrPSCategory", Arg.Any<CreatioRequestOptions>())
+			.Returns(new ObjectRightsInfo(false, "UsrPSCategory", null, false, Array.Empty<RoleOperationRights>()));
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		_logger.DidNotReceive().WriteInfo(Arg.Is<string>(m => m.Contains("already has read/create/edit on every listed object")));
+		_logger.Received().WriteInfo(Arg.Is<string>(m => m.Contains("could not be read")));
+	}
 }

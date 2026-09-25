@@ -14,8 +14,10 @@ Read-only companion of `set-object-rights`. Reports the object's **per-role oper
 the `SysSchemaOperationRight` / "Object permissions" layer (who may read/create/edit/delete ANY record
 of the entity). By default every role's rights are listed; pass `--grantee` to filter to one role.
 
-An object that is not administered by operation permissions is reported as available to all (no grant
-needed). With `--include-connected` the root object's own lookup objects are read too; combined with
+An object that is not administered by operation permissions is available to all **internal** users only.
+External/portal users are deny-by-default and reach an object only through an explicit grant, so with
+`--grantee` such an object is listed as still lacking access — never counted as covered. With
+`--include-connected` the root object's own lookup objects are read too; combined with
 `--grantee` this lists the objects that role still lacks access to — the same information as the Freedom
 page designer's red "objects not available to external users" notification.
 

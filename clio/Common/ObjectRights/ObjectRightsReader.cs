@@ -45,12 +45,18 @@ public sealed record ObjectRightsInfo(
 /// The revoke would have removed the object's LAST operation-rights row and the caller did not ask to turn
 /// operation permissions off, so nothing was written.
 /// </param>
+/// <param name="OperationPermissionsEnabled">
+/// The grant turned <c>administratedByOperations</c> ON for an object that did not use operation permissions
+/// yet. That NARROWS access for every other internal role (only listed roles can reach it afterwards), so the
+/// caller is told explicitly rather than learning it from a later access complaint.
+/// </param>
 public sealed record ObjectRightsChange(
 	bool Found,
 	bool Changed,
 	string Error = null,
 	bool OperationPermissionsDisabled = false,
-	bool RefusedLastRowRemoval = false);
+	bool RefusedLastRowRemoval = false,
+	bool OperationPermissionsEnabled = false);
 
 /// <summary>
 /// Reads object operation permissions (the SysSchemaOperationRight layer) for an entity, using the native
@@ -152,15 +158,21 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 			return new ObjectRightsChange(true, false);
 		}
 		ObjectRightsChange saved = Save(node, requestOptions);
-		return outcome == MutationOutcome.ChangedAndDisabled && saved.Error is null
-			? saved with { OperationPermissionsDisabled = true }
-			: saved;
+		if (saved.Error is not null) {
+			return saved;
+		}
+		return outcome switch {
+			MutationOutcome.ChangedAndDisabled => saved with { OperationPermissionsDisabled = true },
+			MutationOutcome.ChangedAndEnabled => saved with { OperationPermissionsEnabled = true },
+			_ => saved
+		};
 	}
 
 	/// <summary>The end state <see cref="MutateOperationRow"/> left the object node in.</summary>
 	private enum MutationOutcome {
 		NoChange,
 		Changed,
+		ChangedAndEnabled,
 		ChangedAndDisabled,
 		RefusedLastRowRemoval
 	}
@@ -210,9 +222,12 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 			return before != Snapshot(existing) ? MutationOutcome.Changed : MutationOutcome.NoChange;
 		}
 
-		// Enabling operation permissions is itself a change; track it so a re-grant that alters nothing is a no-op.
+		// Enabling operation permissions is itself a change (and an access NARROWING for every other internal
+		// role), so it is tracked separately: a re-grant that alters nothing stays a no-op, and a grant that
+		// flips the object from "available to all internal users" to "only listed roles" is reported as such.
 		bool enabledNow = !Flag(node, "administratedByOperations");
 		node["administratedByOperations"] = true;
+		MutationOutcome changed = enabledNow ? MutationOutcome.ChangedAndEnabled : MutationOutcome.Changed;
 		if (existing is null) {
 			JsonObject row = new() {
 				["sysAdminUnit"] = new JsonObject { ["id"] = grantee.ToString() },
@@ -223,14 +238,14 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 				row[FieldOf(op)] = true;
 			}
 			rows.Add(row);
-			return MutationOutcome.Changed;
+			return changed;
 		}
 		(bool, bool, bool, bool) grantBefore = Snapshot(existing);
 		foreach (ObjectOperation op in operations) {
 			existing[FieldOf(op)] = true;
 		}
 		return enabledNow || grantBefore != Snapshot(existing)
-			? MutationOutcome.Changed
+			? changed
 			: MutationOutcome.NoChange;
 	}
 
@@ -349,12 +364,20 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 
 	// Resolves an entity schema name to its candidate UId(s) via a DataService SelectQuery over SysSchema,
 	// filtered to the EntitySchemaManager layer. A granted/extended schema has more than one row (base +
-	// replacing schema); all are returned as candidates, in a deterministic order so which one is used does
-	// not vary run to run.
+	// replacing layers); heavily layered OOTB objects (Contact, Account) can have many. The query is ORDERED
+	// server-side by ExtendParent ascending — false first, i.e. the BASE row — BEFORE the row cap applies:
+	// rowCount is applied to an otherwise unordered result, so without the order the base (administrable) row
+	// can fall outside the window depending on the data (the same trap ClassicEntitySchemaQuery.ColumnOrderedAsc
+	// documents). The server order is kept, so the base row is probed first and the replacing layers — which
+	// fault on GetAdministratedObject — are only tried if it does not answer. Deterministic run to run.
 	private IReadOnlyList<Guid> ResolveEntitySchemaUIds(string schemaName, CreatioRequestOptions requestOptions) {
 		object query = SelectQueryHelper.BuildSelectQuery(
 			"SysSchema",
-			new[] { new SelectQueryHelper.SelectQueryColumnDefinition("UId", "UId") },
+			new[] {
+				new SelectQueryHelper.SelectQueryColumnDefinition("ExtendParent", "ExtendParent",
+					OrderDirection: 1, OrderPosition: 0),
+				new SelectQueryHelper.SelectQueryColumnDefinition("UId", "UId")
+			},
 			new[] {
 				new SelectQueryHelper.SelectQueryFilterDefinition("Name", schemaName, SelectQueryHelper.TextDataValueType),
 				new SelectQueryHelper.SelectQueryFilterDefinition("ManagerName", "EntitySchemaManager", SelectQueryHelper.TextDataValueType)
@@ -367,7 +390,7 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 
 		return response.Rows is null
 			? Array.Empty<Guid>()
-			: response.Rows.Select(row => row.UId).Where(uId => uId != Guid.Empty).Distinct().OrderBy(uId => uId).ToList();
+			: response.Rows.Select(row => row.UId).Where(uId => uId != Guid.Empty).Distinct().ToList();
 	}
 
 	private sealed class GetAdministratedObjectNodeResponse

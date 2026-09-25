@@ -7,9 +7,10 @@ namespace Clio.Command.McpServer.Tools;
 
 /// <summary>
 /// Structured response shared by the object-rights MCP tools (get-object-rights / set-object-rights):
-/// success plus the command's collected output. The error path is redacted here because a structured
-/// success-return is not scrubbed by the MCP pipeline, and command/service failures can carry request
-/// URIs, paths or session tokens.
+/// success plus the command's collected output. BOTH paths are redacted here, because a structured
+/// return is not scrubbed by the MCP pipeline and a SUCCESSFUL run can still carry raw service text: a
+/// per-object read failure is reported as a warning with exit 0, and the connected-object fallback logs the
+/// exception message — either can embed the request URI or an HTML error body from the service.
 /// </summary>
 public sealed class ObjectRightsToolResponse {
 
@@ -24,16 +25,18 @@ public sealed class ObjectRightsToolResponse {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string? Error { get; init; }
 
-	/// <summary>Builds the response from a completed command execution (error path redacted).</summary>
+	/// <summary>Builds the response from a completed command execution (output and error both redacted).</summary>
 	public static ObjectRightsToolResponse From(CommandExecutionResult result) {
 		string? messages = ResolveMessages(result);
+		string? redacted = messages is null ? null : SensitiveErrorTextRedactor.Redact(messages);
 		return result.ExitCode == 0
-			? new ObjectRightsToolResponse { Success = true, Output = messages }
-			: new ObjectRightsToolResponse {
-				Success = false,
-				Error = messages is null ? null : SensitiveErrorTextRedactor.Redact(messages)
-			};
+			? new ObjectRightsToolResponse { Success = true, Output = redacted }
+			: new ObjectRightsToolResponse { Success = false, Error = redacted };
 	}
+
+	/// <summary>Builds a failure response from an argument-validation message (already caller-safe text).</summary>
+	public static ObjectRightsToolResponse FromValidationError(string message) =>
+		new() { Success = false, Error = message };
 
 	/// <summary>Builds a failure response from an exception, with the message redacted.</summary>
 	public static ObjectRightsToolResponse FromError(Exception exception) =>

@@ -37,6 +37,11 @@ public class SetObjectRightsOptions : RemoteCommandOptions {
 		"Also apply to every object referenced by the root object's own lookup columns (portal-section convenience)")]
 	public bool IncludeConnected { get; set; }
 
+	[Option("connected-operations", Required = false, HelpText =
+		"Operations applied to the CONNECTED lookup objects with --include-connected. Default: read — picking a "
+		+ "lookup value only needs read, so create/edit are not fanned out to shared dictionaries unless passed here.")]
+	public string ConnectedOperations { get; set; }
+
 	[Option("confirm", Required = false, HelpText =
 		"Confirm the destructive change without a prompt (required in non-interactive runs)")]
 	public bool Confirm { get; set; }
@@ -64,8 +69,14 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 			_logger.WriteError("Error: --grantee must be a SysAdminUnit id (GUID).");
 			return 1;
 		}
-		if (!TryParseOperations(options.Operations, out IReadOnlyCollection<ObjectOperation> operations, out string opError)) {
+		if (!TryParseOperations(options.Operations, DefaultOperations, out IReadOnlyCollection<ObjectOperation> operations,
+				out string opError)) {
 			_logger.WriteError(opError);
+			return 1;
+		}
+		if (!TryParseOperations(options.ConnectedOperations, DefaultConnectedOperations,
+				out IReadOnlyCollection<ObjectOperation> connectedOperations, out string connectedError)) {
+			_logger.WriteError(connectedError.Replace("Error: ", "Error: --connected-operations: "));
 			return 1;
 		}
 
@@ -78,15 +89,23 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 		IReadOnlyList<string> objects =
 			_connectedObjects.Resolve(options.EntitySchemaName, options.IncludeConnected, "Changing");
 		string verb = options.Revoke ? "Revoke" : "Grant";
-		string opList = string.Join("/", operations.Select(op => op.ToString().ToLowerInvariant()));
-		string targets = objects.Count == 1
-			? $"'{objects[0]}'"
-			: $"{objects.Count} objects ({string.Join(", ", objects)})";
-		string change = $"{verb} object operations [{opList}] for grantee {grantee} on {targets}.";
+		string opList = FormatOperations(operations);
+		string connectedOpList = FormatOperations(connectedOperations);
+		string change = $"{verb} object operations [{opList}] for grantee {grantee} on '{objects[0]}'";
+		if (objects.Count > 1) {
+			change += $", and [{connectedOpList}] on {objects.Count - 1} connected object(s) "
+				+ $"({string.Join(", ", objects.Skip(1))})";
+		}
+		change += ".";
 		if (options.Revoke && options.DisableOperationPermissions) {
 			// The operator approves the access WIDENING here, not just the revoke — so the prompt has to say it.
 			change += " Any object left with no rights rows has its operation permissions turned OFF"
 				+ " and becomes available to ALL internal users.";
+		}
+		if (!options.Revoke) {
+			// The mirror-image transition: granting to an object not administered yet NARROWS it for everyone else.
+			change += " An object that does not use operation permissions yet has them turned ON, after which only"
+				+ " the listed roles can reach it.";
 		}
 
 		ConfirmDecision decision = ConfirmApply(options, change);
@@ -99,12 +118,22 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 
 		try {
 			bool anyFailure = false;
-			foreach (string schemaName in objects) {
+			for (int index = 0; index < objects.Count; index++) {
+				string schemaName = objects[index];
+				bool isRoot = index == 0;
+				IReadOnlyCollection<ObjectOperation> objectOperations = isRoot ? operations : connectedOperations;
+				string objectOpList = isRoot ? opList : connectedOpList;
 				ObjectRightsChange result = _rightsWriter.SetObjectRights(
-					schemaName, grantee, operations, options.Revoke, options.DisableOperationPermissions, requestOptions);
+					schemaName, grantee, objectOperations, options.Revoke, options.DisableOperationPermissions,
+					requestOptions);
 				if (result.Error != null) {
 					anyFailure = true;
 					_logger.WriteError($"  {schemaName}: {result.Error}");
+				} else if (!result.Found && isRoot) {
+					// The object the caller NAMED does not exist (typically a typo): nothing was written, so this is
+					// neither applied, a no-op nor cancelled — it must not report success.
+					anyFailure = true;
+					_logger.WriteError($"  {schemaName}: schema not found — nothing was changed. Check the object name.");
 				} else if (!result.Found) {
 					_logger.WriteWarning($"  {schemaName}: schema not found (skipped).");
 				} else if (result.RefusedLastRowRemoval) {
@@ -115,11 +144,13 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 						+ $"operation permissions OFF and make '{schemaName}' available to ALL internal users. "
 						+ "Nothing was changed — re-run with --disable-operation-permissions if that is what you want.");
 				} else if (result.Changed) {
-					string widened = result.OperationPermissionsDisabled
+					string transition = result.OperationPermissionsDisabled
 						? " Operation permissions are now OFF on this object — it is available to ALL internal users."
-						: "";
+						: result.OperationPermissionsEnabled
+							? " Operation permissions were turned ON for this object — only the listed roles can reach it now."
+							: "";
 					_logger.WriteInfo(
-						$"  {schemaName}: {(options.Revoke ? "revoked" : "granted")} [{opList}] for grantee {grantee}.{widened}");
+						$"  {schemaName}: {(options.Revoke ? "revoked" : "granted")} [{objectOpList}] for grantee {grantee}.{transition}");
 				} else {
 					_logger.WriteInfo($"  {schemaName}: already in the requested state (no change).");
 				}
@@ -132,14 +163,25 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 		}
 	}
 
-	private static bool TryParseOperations(string raw, out IReadOnlyCollection<ObjectOperation> operations,
-		out string error) {
+	// Least-privilege default for the ROOT object: read/create/edit (the access a role needs to work with an
+	// object). delete is NOT granted by default — pass it in --operations explicitly. This matches the
+	// read/create/edit "has access" check in get-object-rights.
+	private static readonly ObjectOperation[] DefaultOperations =
+		{ ObjectOperation.Read, ObjectOperation.Create, ObjectOperation.Edit };
+
+	// Least-privilege default for CONNECTED lookup objects: read only. A role picks a lookup value with read;
+	// fanning create/edit out to every shared dictionary (status/type lookups, Currency, Contact, Account) would
+	// hand an untrusted audience such as the portal write access it never needed.
+	private static readonly ObjectOperation[] DefaultConnectedOperations = { ObjectOperation.Read };
+
+	private static string FormatOperations(IEnumerable<ObjectOperation> operations) =>
+		string.Join("/", operations.Select(op => op.ToString().ToLowerInvariant()));
+
+	private static bool TryParseOperations(string raw, IReadOnlyCollection<ObjectOperation> defaults,
+		out IReadOnlyCollection<ObjectOperation> operations, out string error) {
 		error = null;
 		if (string.IsNullOrWhiteSpace(raw)) {
-			// Least-privilege default: read/create/edit (the access a role needs to work with an object, and
-			// what the portal "make available" flow grants). delete is NOT granted by default — pass it in
-			// --operations explicitly. This matches the read/create/edit "has access" check in get-object-rights.
-			operations = new[] { ObjectOperation.Read, ObjectOperation.Create, ObjectOperation.Edit };
+			operations = defaults;
 			return true;
 		}
 		List<ObjectOperation> parsed = new();

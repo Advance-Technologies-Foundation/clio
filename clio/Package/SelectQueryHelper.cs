@@ -141,8 +141,8 @@ internal static class SelectQueryHelper
 						expressionType = 0,
 						columnPath = column.Path
 					},
-					orderDirection = 0,
-					orderPosition = -1,
+					orderDirection = column.OrderDirection,
+					orderPosition = column.OrderPosition,
 					isVisible = true
 				},
 				StringComparer.Ordinal);
@@ -221,8 +221,8 @@ internal static class SelectQueryHelper
 						expressionType = 0,
 						columnPath = column.Path
 					},
-					orderDirection = 0,
-					orderPosition = -1,
+					orderDirection = column.OrderDirection,
+					orderPosition = column.OrderPosition,
 					isVisible = true
 				},
 				StringComparer.Ordinal);
@@ -279,7 +279,11 @@ internal static class SelectQueryHelper
 		};
 	}
 
-	internal sealed record SelectQueryColumnDefinition(string Path, string Alias);
+	/// <summary>A selected column. <paramref name="OrderDirection"/>: 0 = none, 1 = ascending, 2 = descending;
+	/// <paramref name="OrderPosition"/>: -1 = not ordered. Ordering matters whenever a row cap could cut off the
+	/// row the caller wants, because <c>rowCount</c> is applied to an otherwise unordered result.</summary>
+	internal sealed record SelectQueryColumnDefinition(string Path, string Alias, int OrderDirection = 0,
+		int OrderPosition = -1);
 
 	internal sealed record SelectQueryFilterDefinition(
 		string ColumnPath,

@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Command.ObjectRights;
 using Clio.Common;
@@ -17,6 +19,10 @@ public sealed class SetObjectRightsTool(
 
 	internal const string ToolName = "set-object-rights";
 
+	internal const string ValidArguments =
+		"Valid: environment-name, entity-schema-name, grantee, operations, revoke, include-connected, "
+		+ "connected-operations, disable-operation-permissions.";
+
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
 		Lifetime = McpToolExecutionLifetime.PerCall,
@@ -28,13 +34,22 @@ public sealed class SetObjectRightsTool(
 	[Description("Grant or revoke OBJECT operation permissions (read/create/edit/delete) for one role on an object — the SysSchemaOperationRight / \"Object permissions\" layer (DESTRUCTIVE — changes access rights). " +
 		"Object-level analog of set-record-rights, and works for ANY role. Grants turn on the object's operation permissions when needed. " +
 		"grantee is a SysAdminUnit id (roles/users; names are not unique). Portal audience: All external users = 720b771c-e7a7-4f31-9cfb-52cd21c3739f. " +
-		"operations defaults to read/create/edit (delete not granted by default); revoke=true removes them (a role left with none is removed). " +
-		"include-connected also applies to the root object's own lookup objects (the portal-section convenience). Does NOT change column permissions. Read it back with get-object-rights. " +
-		"A revoke that would remove an object's LAST rights row is REFUSED unless disable-operation-permissions is set, because turning operation permissions off makes the object available to ALL internal users.")]
+		"operations defaults to read/create/edit on the root object (delete not granted by default); revoke=true removes them (a role left with none is removed). " +
+		"include-connected also applies to the root object's own lookup objects, which get connected-operations (default read only — create/edit are never fanned out to shared lookups implicitly). Does NOT change column permissions. Read it back with get-object-rights. " +
+		"A revoke that would remove an object's LAST rights row is REFUSED unless disable-operation-permissions is set, because turning operation permissions off makes the object available to ALL internal users. " +
+		"Unknown or misspelled argument names are REFUSED before any write.")]
 	public ObjectRightsToolResponse SetObjectRights(
-		[Description("Parameters: environment-name, entity-schema-name, grantee (required); operations, revoke, include-connected, disable-operation-permissions (optional).")]
+		[Description("Parameters: environment-name, entity-schema-name, grantee (required); operations, revoke, include-connected, connected-operations, disable-operation-permissions (optional).")]
 		[Required]
 		SetObjectRightsArgs args) {
+		// A long-tail tool reached through clio-run: the flat-argument classifier never sees this wrapped payload,
+		// and the serializer silently DROPS unknown keys. On an auto-confirmed destructive tool that turns a typo
+		// into the opposite change ({"revok":true} binds Revoke=false and GRANTS), so refuse before any write.
+		string? aliasError = McpToolArgumentSupport.BuildLegacyAliasError(
+			args.ExtensionData, McpToolArgumentSupport.EnvironmentNameAliases, ".", ValidArguments);
+		if (!string.IsNullOrWhiteSpace(aliasError)) {
+			return ObjectRightsToolResponse.FromValidationError(aliasError);
+		}
 		try {
 			SetObjectRightsOptions options = new() {
 				Environment = args.EnvironmentName,
@@ -43,6 +58,7 @@ public sealed class SetObjectRightsTool(
 				Operations = args.Operations,
 				Revoke = args.Revoke ?? false,
 				IncludeConnected = args.IncludeConnected ?? false,
+				ConnectedOperations = args.ConnectedOperations,
 				DisableOperationPermissions = args.DisableOperationPermissions ?? false,
 				// --confirm is a CLI-only interactive gate; on MCP the Destructive flag is the safety mechanism,
 				// so confirm the apply here (the command otherwise refuses in a non-interactive run).
@@ -83,7 +99,15 @@ public sealed record SetObjectRightsArgs(
 	[property: Description("Also apply to the root object's own lookup objects (portal-section convenience; default false).")]
 	bool? IncludeConnected = null,
 
+	[property: JsonPropertyName("connected-operations")]
+	[property: Description("Operations applied to the connected lookup objects when include-connected is set. Default: read (picking a lookup value only needs read). Widen explicitly only when the grantee must author lookup records.")]
+	string ConnectedOperations = null,
+
 	[property: JsonPropertyName("disable-operation-permissions")]
 	[property: Description("Allow a revoke to remove the object's LAST rights row, turning the object's operation permissions OFF and making it available to ALL internal users (default false, which refuses such a revoke). Only set this when widening access to every internal user is the intent.")]
 	bool? DisableOperationPermissions = null
-);
+) {
+	/// <summary>Overflow bag for unknown JSON fields; a non-empty bag refuses the call before any write.</summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
+}

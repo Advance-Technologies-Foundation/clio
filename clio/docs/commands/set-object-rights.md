@@ -18,8 +18,8 @@ works for **any** role, not only the portal audience.
 It is a read-modify-write over the native `RightManagementService`: the object's per-role grid is read,
 the grantee's row is added/updated (or removed when a revoke empties it), and the object is saved.
 Granting to an object that does not yet use operation permissions **turns them on** (Creatio then also
-grants `All employees` by default so internal users keep access). It does **not** change column
-permissions.
+grants `All employees` by default so internal users keep access) — an access **narrowing** for every other
+role, which the confirmation and the result line both name. It does **not** change column permissions.
 
 A revoke only ever narrows access. Removing an object's **last** rights row is the one case that would
 not: it turns operation permissions off, which makes the object available to **all internal users**. That
@@ -31,7 +31,7 @@ interactive run it asks for a `y/n` confirmation.
 ## Synopsis
 
 ```bash
-clio set-object-rights --entity-schema-name <EntitySchemaName> --grantee <SysAdminUnitId> [--operations read,create,edit,delete] [--revoke] [--disable-operation-permissions] [--include-connected] --confirm -e <environment>
+clio set-object-rights --entity-schema-name <EntitySchemaName> --grantee <SysAdminUnitId> [--operations read,create,edit,delete] [--revoke] [--disable-operation-permissions] [--include-connected] [--connected-operations read,...] --confirm -e <environment>
 ```
 
 ## Options
@@ -55,7 +55,12 @@ Allow a revoke to remove the object's LAST rights row, turning operation permiss
 the object available to ALL internal users. Without it such a revoke changes nothing and exits 1.
 
 --include-connected
-Also apply to the root object's own lookup objects (portal-section convenience).
+Also apply to the root object's own lookup objects (portal-section convenience). The lookups get
+--connected-operations (read only by default), not --operations.
+
+--connected-operations LIST
+Operations for the connected lookup objects. Default: read — picking a lookup value only needs read, so
+create/edit are never fanned out to shared dictionaries unless passed here explicitly.
 
 --confirm
 Confirm the destructive change without a prompt. Required in non-interactive runs.
@@ -66,10 +71,10 @@ Registered environment to change.
 
 ## Examples
 
-Make an object and its lookups available to portal users (grant the external audience):
+Make an object readable by portal users, with its lookups read-only (grant the external audience):
 
 ```bash
-clio set-object-rights --entity-schema-name UsrOrder --grantee 720b771c-e7a7-4f31-9cfb-52cd21c3739f --operations read,create,edit --include-connected --confirm -e production
+clio set-object-rights --entity-schema-name UsrOrder --grantee 720b771c-e7a7-4f31-9cfb-52cd21c3739f --operations read --include-connected --confirm -e production
 ```
 
 Grant a functional role full access to one object:
@@ -101,5 +106,9 @@ clio set-object-rights --entity-schema-name UsrOrder --grantee <role-id> --revok
   widening it avoided. Neither of the two possible end states — administered with zero grants (reachable
   by nobody) or unadministered (reachable by everybody) — is a side effect a per-role revoke may cause.
 - The portal-section flow uses `--grantee <All external users> --include-connected`; this is one case of
-  a general capability.
+  a general capability. Connected lookups default to read only.
+- Exit code 1 also when the named (root) object is not found — nothing was written, so it is not reported
+  as a success. A connected lookup that is not found only warns.
+- On MCP, an unknown or misspelled argument name is refused before any write (the serializer would
+  otherwise drop it silently — e.g. `revok` would bind as a grant).
 ```

@@ -3,6 +3,7 @@ description: object operation rights are read/written via RightManagementService
 applies-to:
   - clio/Common/ObjectRights/ObjectRightsReader.cs
   - clio/Common/ServiceUrlBuilder.cs
+  - clio/Package/SelectQueryHelper.cs
 ticket: ENG-99741
 date: 2026-09-22
 ---
@@ -18,6 +19,10 @@ handles, none visible from the service signatures:
    ONLY the administrable UId and FAULTS with a non-JSON "Request Error" HTML page on the other, and the
    order the rows come back in is NOT deterministic. `RightManagementServiceClient` therefore resolves
    ALL candidate UIds and tries each, using the first that returns a parseable `administratedObject`.
+   Heavily layered OOTB objects (Contact, Account — reached through `--include-connected`) can carry many
+   layers, and the candidate `SelectQuery` has a row cap that `rowCount` applies to an UNORDERED result,
+   so the query is ordered server-side by `ExtendParent` ascending (base row, `false`, first) BEFORE the cap
+   and probed in that order — the same trap `ClassicEntitySchemaQuery.ColumnOrderedAsc` documents.
 
 2. **`SaveAdministratedObject` is a read-modify-write** — there is no per-right endpoint. You GET the
    whole object, mutate `entitySchemaOperationsRights` (rows carry `id`, `position`, `canRead`,

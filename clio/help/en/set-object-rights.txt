@@ -5,7 +5,7 @@ NAME
     set-object-rights - Grant or revoke object operation permissions (read/create/edit/delete) for a role on an object
 
 SYNOPSIS
-    set-object-rights --entity-schema-name <EntitySchemaName> --grantee <SysAdminUnitId> [--operations read,create,edit,delete] [--revoke] [--disable-operation-permissions] [--include-connected] [--confirm] [OPTIONS]
+    set-object-rights --entity-schema-name <EntitySchemaName> --grantee <SysAdminUnitId> [--operations read,create,edit,delete] [--revoke] [--disable-operation-permissions] [--include-connected] [--connected-operations read,...] [--confirm] [OPTIONS]
 
 DESCRIPTION
     Grants (or, with --revoke, revokes) object operation permissions for one role on an object — the
@@ -16,7 +16,8 @@ DESCRIPTION
     It is a read-modify-write over the native RightManagementService: the object's per-role grid is
     read, the grantee's row is added/updated (or removed), and the object is saved. Granting to an
     object that does not yet use operation permissions turns them on (Creatio then also grants
-    "All employees" by default so internal users keep access). It does NOT change column permissions.
+    "All employees" by default so internal users keep access) — an access narrowing for every other
+    role, which the confirmation and the result line both name. It does NOT change column permissions.
 
     A revoke only ever narrows access. Removing an object's LAST rights row is the one case that would
     not: it turns operation permissions off, which makes the object available to ALL internal users. That
@@ -48,6 +49,12 @@ OPTIONS
     --include-connected
         Also apply to every object referenced by the root object's OWN lookup columns. This is the
         convenience for making a Freedom portal section's object AND its lookups available in one call.
+        The connected lookups get --connected-operations (read only by default), NOT --operations.
+
+    --connected-operations
+        Operations applied to the connected lookup objects with --include-connected. Default: read —
+        picking a lookup value only needs read, so create/edit are never fanned out to shared
+        dictionaries (status/type lookups, Currency, Contact, Account) unless passed here explicitly.
 
     --confirm
         Confirm the destructive change without a prompt. Required in non-interactive runs.
@@ -58,12 +65,13 @@ OPTIONS
 EXIT CODES
     0   The change was applied (or was already in the requested state, or cancelled at the prompt).
     1   An input was invalid (missing entity-schema-name, grantee not a GUID, unknown operation),
-        confirmation was missing in a non-interactive run, the write failed, or a revoke was refused
-        because it would have removed the object's last rights row.
+        confirmation was missing in a non-interactive run, the named (root) object was not found, the
+        write failed, or a revoke was refused because it would have removed the object's last rights row.
+        A connected lookup that is not found only warns.
 
 EXAMPLES
-    Make an object and its lookups available to portal users (grant the external audience):
-        clio set-object-rights --entity-schema-name UsrOrder --grantee 720b771c-e7a7-4f31-9cfb-52cd21c3739f --operations read,create,edit --include-connected --confirm -e production
+    Make an object readable by portal users, with its lookups read-only (grant the external audience):
+        clio set-object-rights --entity-schema-name UsrOrder --grantee 720b771c-e7a7-4f31-9cfb-52cd21c3739f --operations read --include-connected --confirm -e production
 
     Grant a functional role full access to one object:
         clio set-object-rights --entity-schema-name UsrOrder --grantee <role-id> --confirm -e production

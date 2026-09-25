@@ -80,8 +80,20 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 					continue;
 				}
 				if (!info.AdministratedByOperations) {
-					_logger.WriteInfo(
-						$"  {schemaName}: not administered by operation permissions — available to all.");
+					// Not administered = reachable by every INTERNAL user, not by everyone: external/portal users are
+					// deny-by-default and reach an object only through an explicit grant. So when a grantee is being
+					// checked, a non-administered object is NOT covered for it — counting it as covered would print
+					// an all-clear and an agent would skip the grant it still needs.
+					if (granteeFilter is not null) {
+						granteeMissing.Add(schemaName);
+						_logger.WriteWarning(
+							$"  {schemaName}: not administered by operation permissions — available to all INTERNAL users "
+							+ $"only; grantee {granteeFilter} has no explicit grant (external users are deny-by-default).");
+					} else {
+						_logger.WriteInfo(
+							$"  {schemaName}: not administered by operation permissions — available to all internal users "
+							+ "(external users still need an explicit grant).");
+					}
 					continue;
 				}
 				ReportObject(schemaName, info, granteeFilter, granteeMissing);
