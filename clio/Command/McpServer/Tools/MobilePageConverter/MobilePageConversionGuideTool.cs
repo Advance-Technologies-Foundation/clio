@@ -39,15 +39,22 @@ public class MobilePageConversionGuideTool {
 	private readonly ILogger _logger;
 	private readonly IMobileComponentInfoCatalog _mobileCatalog;
 	private readonly IComponentInfoCatalog _webCatalog;
+	private readonly IMobileRequestInfoCatalog _mobileRequestCatalog;
 	private readonly IWebToMobilePageConversionRulesCatalog _rulesCatalog;
 	private readonly IPlatformVersionResolverFactory _versionResolverFactory;
 	private readonly ISettingsRepository _settingsRepository;
 
+	[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+		Justification = "The tool resolves three registry catalogs, the rules catalog and three ambient services; " +
+			"the mobile request catalog joined them when request support stopped coming from a bundled constant. " +
+			"Grouping independent DI collaborators into a parameter object would hide the contract without " +
+			"reducing behavior.")]
 	public MobilePageConversionGuideTool(
 		IToolCommandResolver commandResolver,
 		ILogger logger,
 		IMobileComponentInfoCatalog mobileCatalog,
 		IComponentInfoCatalog webCatalog,
+		IMobileRequestInfoCatalog mobileRequestCatalog,
 		IWebToMobilePageConversionRulesCatalog rulesCatalog,
 		IPlatformVersionResolverFactory versionResolverFactory,
 		ISettingsRepository settingsRepository) {
@@ -55,6 +62,7 @@ public class MobilePageConversionGuideTool {
 		_logger = logger;
 		_mobileCatalog = mobileCatalog;
 		_webCatalog = webCatalog;
+		_mobileRequestCatalog = mobileRequestCatalog;
 		_rulesCatalog = rulesCatalog;
 		_versionResolverFactory = versionResolverFactory;
 		_settingsRepository = settingsRepository;
@@ -150,19 +158,54 @@ public class MobilePageConversionGuideTool {
 		// back to "latest"/bundled, this reports environment-superset (+ versionWarning) instead of the
 		// false "environment" (exact). When the mobile and web catalogs land on different tiers, report the
 		// worse one so a superset/fallback on either side is never hidden.
-		ComponentCatalogState mobileState =
-			await _mobileCatalog.LoadAsync(version, cancellationToken).ConfigureAwait(false);
-		ComponentCatalogState webState =
-			await _webCatalog.LoadAsync(version, cancellationToken).ConfigureAwait(false);
+		// Each load is guarded on its own so the failure names the catalog that could not be read: on a cold
+		// cache with no network these throw, and an unguarded throw escapes the tool instead of returning the
+		// structured failure every other unreachable-dependency path here returns.
+		ComponentCatalogState mobileState;
+		try {
+			mobileState = await _mobileCatalog.LoadAsync(version, cancellationToken).ConfigureAwait(false);
+		} catch (Exception ex) when (ex is not OperationCanceledException) {
+			return Fail(args, sourceType, $"Failed to load the MOBILE component catalog for version '{version}': {ex.Message}");
+		}
+		ComponentCatalogState webState;
+		try {
+			webState = await _webCatalog.LoadAsync(version, cancellationToken).ConfigureAwait(false);
+		} catch (Exception ex) when (ex is not OperationCanceledException) {
+			return Fail(args, sourceType, $"Failed to load the WEB component catalog for version '{version}': {ex.Message}");
+		}
+		// Request support is derived from the mobile request registry, so its served version is part of the
+		// answer — but it is reported on its own channel, NOT folded into resolvedFrom. The request registry
+		// has no versioned CDN copy yet, so it is always served as "latest"; folding it would downgrade every
+		// exact-version conversion to environment-superset and attach a component-worded remedy ("pass an
+		// explicit version") that cannot clear it. Revisit once the registry ships versioned folders (AC-2).
+		RequestCatalogState mobileRequestState;
+		try {
+			mobileRequestState = await _mobileRequestCatalog.LoadAsync(version, cancellationToken).ConfigureAwait(false);
+		} catch (Exception ex) when (ex is not OperationCanceledException) {
+			return Fail(args, sourceType, $"Failed to load the MOBILE request catalog for version '{version}': {ex.Message}");
+		}
 		string resolvedFrom = WorseResolvedFrom(
 			ComponentInfoResolution.MapResolvedFrom(versionResolution.Source, versionResolution.ResolvedVersion, mobileState.ResolvedVersion),
 			ComponentInfoResolution.MapResolvedFrom(versionResolution.Source, versionResolution.ResolvedVersion, webState.ResolvedVersion));
+		string requestRegistryWarning = BuildRequestRegistryWarning(version, mobileRequestState.ResolvedVersion);
 		IReadOnlyList<ComponentRegistryEntry> mobileEntries = mobileState.Entries;
 		IReadOnlyList<ComponentRegistryEntry> webEntries = webState.Entries;
 		HashSet<string> mobileTypes = new(mobileEntries.Select(e => e.ComponentType), StringComparer.OrdinalIgnoreCase);
 		HashSet<string> webTypes = new(webEntries.Select(e => e.ComponentType), StringComparer.OrdinalIgnoreCase);
 		IReadOnlyDictionary<string, ComponentRegistryEntry> mobileByType = IndexByComponentType(mobileEntries);
 		IReadOnlyDictionary<string, ComponentRegistryEntry> webByType = IndexByComponentType(webEntries);
+		WebToMobilePageConversionRules rules = await _rulesCatalog.GetRulesAsync(version, cancellationToken).ConfigureAwait(false);
+		// A registry-published request that declares a navigation target parameter but has no rules entry is
+		// WITHHELD: with no targetParam/targetKind pair the unresolved-target probe never runs and no paramMap
+		// applies, so the binding would convert by identity and could look valid while opening nothing on the
+		// device. Such a request stays unsupported — the pre-registry behaviour — until it earns a rules entry.
+		IReadOnlySet<string> withheldRequestTypes =
+			WebToMobileAnalysisService.TargetCarryingRegistryOnlyRequests(rules, mobileRequestState.Entries);
+		HashSet<string> mobileRequestTypes = new(
+			mobileRequestState.Entries
+				.Select(e => e.RequestType)
+				.Where(type => !withheldRequestTypes.Contains(type)),
+			StringComparer.OrdinalIgnoreCase);
 		// ENG-96589 — what the converter may treat as an authoritative statement of what mobile supports.
 		// The question is about the PAYLOAD that was actually loaded, not about the stand: each version's
 		// registry describes the mobile runtime that version runs, so membership in the file the chain
@@ -171,7 +214,7 @@ public class MobilePageConversionGuideTool {
 		var mobileRegistryGeneration =
 			new WebToMobileAnalysisService.MobileRegistryGeneration(mobileState.GlobalReferences?.BaseInputs);
 
-		WebToMobilePageConversionRules rules = await _rulesCatalog.GetRulesAsync(version, cancellationToken).ConfigureAwait(false);
+		string rulesWarning = BuildRulesWarning(rules, mobileRequestTypes);
 		// Resolve the effective web template, climbing past same-named replacing layers when the page is a
 		// replacing schema over a same-named base (parentSchemaName == schemaName). Feeds template-rule
 		// resolution, chrome subtraction, and the reported sourceTemplate — all from one value.
@@ -277,6 +320,7 @@ public class MobilePageConversionGuideTool {
 				webTemplateBaselineNodes: webTemplateBaseline.Nodes,
 				webTemplateResources: webTemplateBaseline.Resources,
 				actionTargetsProbe: actionTargets,
+				mobileRequestTypes: mobileRequestTypes,
 				existingMobilePages: existingMobilePages,
 				mobileRegistryGeneration: mobileRegistryGeneration);
 		} catch (Exception ex) {
@@ -291,8 +335,10 @@ public class MobilePageConversionGuideTool {
 			ResolvedTargetVersion = version,
 			ResolvedFrom = resolvedFrom,
 			VersionWarning = ComponentInfoResolution.GetVersionWarning(resolvedFrom),
+			RequestRegistryWarning = requestRegistryWarning,
 			RequiresVersionConfirmation = ComponentInfoResolution.RequiresVersionConfirmation(resolvedFrom),
-			ResolvedFromReason = ComponentInfoResolution.GetFallbackReason(resolvedFrom, versionResolution.Reason)
+			ResolvedFromReason = ComponentInfoResolution.GetFallbackReason(resolvedFrom, versionResolution.Reason),
+			RulesWarning = rulesWarning
 		};
 	}
 
@@ -831,6 +877,43 @@ public class MobilePageConversionGuideTool {
 			+ "no same-name twins — the mobile page would ship duplicates of elements its own template already "
 			+ "provides. Verify the source package is installed in the target environment and that the template "
 			+ "schema is reachable, then re-run.");
+	}
+
+	/// <summary>
+	/// Caveat when the mobile request registry was served from a version other than the one resolved for the
+	/// component catalogs; null when the two agree. Kept off <c>resolvedFrom</c> on purpose: the registry has
+	/// no versioned CDN copy yet, so it always answers "latest", and folding that in would mark every
+	/// exact-version conversion approximate and offer a remedy the caller cannot act on.
+	/// </summary>
+	internal static string BuildRequestRegistryWarning(string requestedVersion, string servedVersion) {
+		if (string.IsNullOrWhiteSpace(servedVersion)
+			|| string.Equals(requestedVersion, servedVersion, StringComparison.OrdinalIgnoreCase)) {
+			return null;
+		}
+		return $"Request support was read from the '{servedVersion}' mobile request registry, not from "
+			+ $"'{requestedVersion}'. The registry is published under a single rolling version, so this is "
+			+ "expected today and cannot be narrowed by passing a version. It means the set of supported "
+			+ $"request types may include types a '{requestedVersion}' runtime does not dispatch; confirm any "
+			+ "converted action that the page did not already use.";
+	}
+
+	/// <summary>
+	/// Caveat when the versioned rules file maps a web request onto a mobile request type the mobile request
+	/// registry does not publish; null when every entry resolves. Such a binding is rewritten into a request the
+	/// app cannot dispatch and the failure is silent on the page, so it has to reach the caller.
+	/// </summary>
+	internal static string BuildRulesWarning(
+		WebToMobilePageConversionRules rules, IReadOnlySet<string> mobileRequestTypes) {
+		IReadOnlyList<string> unknown =
+			WebToMobileAnalysisService.UnknownMobileRequestTargets(rules, mobileRequestTypes);
+		if (unknown.Count == 0) {
+			return null;
+		}
+		string pairs = string.Join(", ", unknown);
+		return $"The conversion rules map {pairs} onto mobile request types the mobile request "
+			+ "registry does not publish. A binding converted through such an entry becomes a request type the app "
+			+ "cannot dispatch: the action does nothing and fails silently on the page. Review every affected "
+			+ "action manually before shipping the converted page.";
 	}
 
 	private static MobilePageConversionGuideResponse Fail(MobilePageConversionGuideArgs args, string sourceType, string error) =>

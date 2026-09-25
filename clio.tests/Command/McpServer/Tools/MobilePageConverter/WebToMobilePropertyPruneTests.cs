@@ -28,6 +28,12 @@ namespace Clio.Tests.Command.McpServer.Tools.MobilePageConverter;
 [Property("Module", "McpServer")]
 public sealed class WebToMobilePropertyPruneTests {
 
+	/// <summary>No mobile request registry: support comes from the versioned rules alone, which is
+	/// what these component-level fixtures are about. Passed explicitly because the parameter is
+	/// required — an omitted registry must be a visible decision, not a silent empty default.</summary>
+	private static readonly IReadOnlySet<string> NoRequestRegistry =
+		new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
 	// ---------------------------------------------------------------- enablement gate
 
 	[Test]
@@ -717,7 +723,8 @@ public sealed class WebToMobilePropertyPruneTests {
 			// payload is the page's delta over it, so an empty baseline makes the delta the page's own values —
 			// which is what puts the undeclared key into a merge payload at all.
 			webTemplateBaselineNodes: autoTwinNames?.ToDictionary(pair => pair.Key, _ => new JObject()),
-			mobileRegistryGeneration: generation);
+			mobileRegistryGeneration: generation,
+			mobileRequestTypes: NoRequestRegistry);
 	}
 
 	/// <summary>

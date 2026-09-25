@@ -1,3 +1,4 @@
+using System.Linq;
 using Clio.Common;
 using Clio.Tests.Command;
 using FluentAssertions;
@@ -30,5 +31,23 @@ public sealed class RightManagementServiceRouteTests : BaseClioModuleTests {
 			because: ".NET Core exposes the native ServiceModel .svc service at the application root");
 		frameworkUrl.Should().Be("https://localhost/site/0/" + endpoint,
 			because: ".NET Framework requires the workspace prefix before the same ServiceModel .svc endpoint");
+	}
+
+	[Test]
+	[Description("Every KnownRoute member has its own numeric value, so a merge that keeps both sides of a numbering collision fails here instead of crashing the KnownRoutes initializer at runtime.")]
+	public void KnownRoute_ValuesAreDistinct() {
+		// Arrange
+		string[] names = System.Enum.GetNames<ServiceUrlBuilder.KnownRoute>();
+
+		// Act
+		var duplicates = names
+			.GroupBy(name => (int)System.Enum.Parse<ServiceUrlBuilder.KnownRoute>(name))
+			.Where(group => group.Count() > 1)
+			.Select(group => $"{group.Key}: {string.Join(", ", group)}")
+			.ToList();
+
+		// Assert
+		duplicates.Should().BeEmpty(
+			because: "C# accepts duplicate enum values, but the KnownRoutes dictionary initializer throws on the duplicate key and breaks every clio command");
 	}
 }

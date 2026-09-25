@@ -340,10 +340,12 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		InstallSqlScripts = 98,
 		/// <summary>Read the database engine and runtime without ClioGate.</summary>
 		GetSystemEnvironmentInfo = 99,
+		/// <summary>OpenID Connect discovery document.</summary>
+		OpenIdConfiguration = 100,
 		/// <summary>Read one administrated object's per-role operation/record/column rights by schema UId.</summary>
-		GetAdministratedObject = 100,
+		GetAdministratedObject = 101,
 		/// <summary>Persist an administrated object's per-role operation/record/column rights (read-modify-write).</summary>
-		SaveAdministratedObject = 101
+		SaveAdministratedObject = 102
 
 	}
 
@@ -362,6 +364,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.SaveSqlScriptSchema, "/ServiceModel/SqlScriptSchemaDesignerService.svc/SaveSchema"},
 		{KnownRoute.InstallSqlScripts, "/ServiceModel/WorkspaceExplorerService.svc/InstallSqlScripts"},
 		{KnownRoute.GetSystemEnvironmentInfo, CreatioServicePaths.GetSystemEnvironmentInfo},
+		{KnownRoute.OpenIdConfiguration, "/.well-known/openid-configuration"},
 		{KnownRoute.GetPackageProperties, "ServiceModel/PackageService.svc/GetPackageProperties"},
 		{KnownRoute.AdministrationSaveRole, "/rest/AdministrationService/SaveRole"},
 		{KnownRoute.AdministrationSaveChiefsRole, "/rest/AdministrationService/SaveChiefsRole"},

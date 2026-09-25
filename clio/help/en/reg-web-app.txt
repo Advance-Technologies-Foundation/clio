@@ -40,6 +40,14 @@ OPTIONS
                                         true for .NET Core / NET8,
                                         false for .NET Framework
 
+    --auth-flow                         Authentication flow: client-credentials or authorization-code
+
+    --clientId                          Public OAuth client id for authorization-code flow
+
+    --redirect-port                     Loopback OAuth callback port
+
+    --redirect-uri                      Registered OAuth redirect URI for paste-back mode
+
 EXAMPLE
     clio reg-web-app <ENVIRONMENT_NAME> -u http://mysite.creatio.com -l administrator -p password
         creates new environment, named <ENVIRONMENT_NAME> or updates existing environment settings
