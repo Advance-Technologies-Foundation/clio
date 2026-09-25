@@ -165,6 +165,36 @@ public sealed class McpPayloadDumpCleanupPolicyTests {
 					}
 				}
 
+				public bool ReturnsBeforeRethrow(object result, bool lenient) {
+					try { Parser.Extract<int>(result); return true; }
+					catch (System.InvalidOperationException) {
+						if (lenient) { return false; }
+						throw;
+					}
+				}
+
+				public bool ReturnsBeforeDelete(object result, bool keep) {
+					try { Parser.Extract<int>(result); return true; }
+					catch (System.InvalidOperationException exception) {
+						if (keep) { return false; }
+						PayloadDumpReader.DeleteIfPresent(exception.Message);
+						return false;
+					}
+				}
+
+				public bool SwallowsThroughAHelperThatDeletesOnlyIoFailures(object result) {
+					try { DeletesOnlyIoFailures(result); return true; }
+					catch (System.InvalidOperationException) { return false; }
+				}
+
+				private static int DeletesOnlyIoFailures(object result) {
+					try { return Parser.Extract<int>(result); }
+					catch (System.IO.IOException exception) {
+						PayloadDumpReader.DeleteIfPresent(exception.Message);
+						return 0;
+					}
+				}
+
 				public bool CatchesSomethingElse(object result) {
 					try { Parser.Extract<int>(result); return true; }
 					catch (System.IO.IOException) { return false; }
@@ -177,11 +207,18 @@ public sealed class McpPayloadDumpCleanupPolicyTests {
 		IReadOnlyList<LenientCatchSite> sites = FindLenientCatchSites(sources);
 
 		// Assert
-		sites.Should().HaveCount(4,
-			because: "Forgets, Deletes and the two conditional catches all have a path that swallows the parse failure; Rethrows always surfaces it and CatchesSomethingElse cannot receive it");
+		sites.Should().HaveCount(7,
+			because: "every catch but Rethrows and CatchesSomethingElse has a path that swallows the parse failure; Rethrows always surfaces it, CatchesSomethingElse and the IOException catch inside DeletesOnlyIoFailures cannot receive it");
 		sites.Where(site => !site.Deletes).Select(site => site.Key).Should().BeEquivalentTo(
-			["Fixture.cs::Forgets", "Fixture.cs::RethrowsOnlySometimes", "Fixture.cs::DeletesOnlySometimes"],
-			because: "a swallow through a transitive helper, a rethrow on one branch only and a delete on one branch only each leave a passing test's dump behind");
+			[
+				"Fixture.cs::Forgets",
+				"Fixture.cs::RethrowsOnlySometimes",
+				"Fixture.cs::DeletesOnlySometimes",
+				"Fixture.cs::ReturnsBeforeRethrow",
+				"Fixture.cs::ReturnsBeforeDelete",
+				"Fixture.cs::SwallowsThroughAHelperThatDeletesOnlyIoFailures"
+			],
+			because: "a swallow through a transitive helper, a rethrow or delete on one branch only, an early return that skips either, and a helper whose deleting catch cannot receive the parse failure each leave a passing test's dump behind");
 		sites.Single(site => site.Key == "Fixture.cs::Forgets").Location.Should().Be("Fixture.cs:13",
 			because: "the reported location must point at the offending catch clause");
 	}
@@ -352,7 +389,9 @@ public sealed class McpPayloadDumpCleanupPolicyTests {
 		node.Ancestors()
 			.OfType<TryStatementSyntax>()
 			.Any(tryStatement => tryStatement.Block.Span.Contains(node.Span)
-				&& tryStatement.Catches.Any(catchClause => Deletes(catchClause.Block)));
+				&& tryStatement.Catches.Any(catchClause => catchClause.Filter is null
+					&& CanCatchParseFailure(catchClause)
+					&& Deletes(catchClause.Block)));
 
 	private static bool IsDiagnosticsDescribe(InvocationExpressionSyntax invocation) =>
 		invocation.Expression is MemberAccessExpressionSyntax {
@@ -374,27 +413,49 @@ public sealed class McpPayloadDumpCleanupPolicyTests {
 	}
 
 	/// <summary>
-	/// Whether the catch block ALWAYS throws: a top-level <c>throw</c> statement, after which nothing in the
-	/// block runs. A throw nested under an <c>if</c> does not count, because the other branch still
-	/// swallows the failure and leaves the dump behind.
+	/// Whether the catch block ALWAYS throws: a top-level <c>throw</c> statement that no earlier statement
+	/// can jump past. A throw nested under an <c>if</c>, or preceded by a conditional <c>return</c>, does not
+	/// count, because that other path still swallows the failure and leaves the dump behind.
 	/// </summary>
 	private static bool Throws(BlockSyntax block) =>
-		block.Statements.Any(statement => statement is ThrowStatementSyntax
+		FirstUnconditional(block, statement => statement is ThrowStatementSyntax
 			|| statement is ExpressionStatementSyntax { Expression: ThrowExpressionSyntax });
 
 	/// <summary>
-	/// Whether the catch block ALWAYS deletes: a top-level <c>PayloadDumpReader</c> delete call. A delete
-	/// nested under an <c>if</c> does not count, because the other branch returns with the dump in place.
+	/// Whether the catch block ALWAYS deletes: a top-level <c>PayloadDumpReader</c> delete call that no
+	/// earlier statement can jump past. A delete nested under an <c>if</c>, or after a conditional
+	/// <c>return</c>, does not count, because the other path returns with the dump in place.
 	/// </summary>
 	private static bool Deletes(BlockSyntax block) =>
-		block.Statements
-			.OfType<ExpressionStatementSyntax>()
-			.Select(statement => statement.Expression)
-			.OfType<InvocationExpressionSyntax>()
-			.Any(invocation => invocation.Expression is MemberAccessExpressionSyntax {
-					Expression: IdentifierNameSyntax { Identifier.Text: ReaderTypeName }
-				} access
-				&& DeletingMembers.Contains(access.Name.Identifier.Text));
+		FirstUnconditional(block, statement => statement is ExpressionStatementSyntax {
+				Expression: InvocationExpressionSyntax {
+					Expression: MemberAccessExpressionSyntax {
+						Expression: IdentifierNameSyntax { Identifier.Text: ReaderTypeName }
+					} access
+				}
+			}
+			&& DeletingMembers.Contains(access.Name.Identifier.Text));
+
+	/// <summary>
+	/// Whether a top-level statement matching <paramref name="qualifies"/> is reached on every path: no
+	/// statement before it contains a jump (<c>return</c>, <c>throw</c>, <c>break</c>, <c>continue</c>,
+	/// <c>goto</c>, <c>yield break</c>) that could leave the block first.
+	/// </summary>
+	private static bool FirstUnconditional(BlockSyntax block, Func<StatementSyntax, bool> qualifies) {
+		foreach (StatementSyntax statement in block.Statements) {
+			if (qualifies(statement)) {
+				return true;
+			}
+
+			if (statement.DescendantNodesAndSelf().Any(node => node is ReturnStatementSyntax
+				or ThrowStatementSyntax or ThrowExpressionSyntax or BreakStatementSyntax
+				or ContinueStatementSyntax or GotoStatementSyntax or YieldStatementSyntax)) {
+				return false;
+			}
+		}
+
+		return false;
+	}
 
 	private static string EnclosingMemberName(SyntaxNode node) =>
 		node.Ancestors()
