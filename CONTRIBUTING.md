@@ -72,7 +72,7 @@ environment without an explicit user gesture and disposable target confirmation.
 | Command | What it does |
 |---|---|
 | `make test` | Full unit suite |
-| `make test-unit` | Explicit unit suite (`Category=Unit`) |
+| `make test-unit` | Explicit unit suite (`TestCategory=Unit`) |
 | `make test-integration` | Integration tests |
 | `make test-analyzers` | Roslyn analyzer tests only |
 | `make test-mcp-e2e` | MCP end-to-end tests |
@@ -190,7 +190,7 @@ Every push triggers GitHub Actions (`.github/workflows/`):
 | Stage | Runs on | What fails the build |
 |-------|---------|---------------------|
 | Build + Roslyn analyzers | Every push | CLIO001-CLIO004 warnings |
-| Unit tests (`Category=Unit`) | Every push | Any failing test |
+| Unit tests (`TestCategory!=Integration`, sharded) | Every push | Any failing test |
 | Integration tests | PR merge | Any failing test |
 | SonarCloud | PR | New code smells / duplications |
 | MCP E2E tests | Manual / release | Failing MCP tool contracts |

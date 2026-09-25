@@ -30,7 +30,7 @@ namespace Clio.Tests;
 /// </remarks>
 [TestFixture]
 [Category("Unit")]
-// Without a Module trait the repository's own smart-regression filter (Category=Unit&Module=X)
+// Without a Module trait the repository's own smart-regression filter (TestCategory=Unit&Module=X)
 // never runs this fixture, so an author who adds an unreachable product file sees their targeted
 // tests pass and learns about the pin only from full CI - at which point the path of least
 // resistance is to regenerate the list rather than to review it.

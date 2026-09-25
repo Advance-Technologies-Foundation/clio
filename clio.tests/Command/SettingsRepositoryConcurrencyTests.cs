@@ -702,7 +702,7 @@ public sealed class SettingsRepositoryProcessConcurrencyTests {
 // only", and this fixture's whole purpose is real disk I/O — Directory.CreateDirectory, a real
 // System.IO.Abstractions.FileSystem, real File.Replace, real Flush(flushToDisk: true). Tagging it Unit put
 // per-host filesystem behaviour (File.Replace semantics, temp-directory policy, AV interference) inside
-// the Category=Unit&Module=Command smart-regression filter that exists to keep the per-push loop fast.
+// the TestCategory=Unit&Module=Command smart-regression filter that exists to keep the per-push loop fast.
 [Category("Integration")]
 [Property("Module", "Command")]
 // Own fixture, not merged into SettingsRepositoryConcurrencyTests above, for two reasons that are both

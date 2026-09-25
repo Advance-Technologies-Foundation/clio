@@ -383,7 +383,7 @@ Three sources of truth, kept in step:
 | Free text on the wire | Apply §9.1 first; if it survives, add its row to the table there |
 | Silent behaviour, workaround, rejected alternative | Record under `docs/knowledge/McpServer/` (`grep -ril mobile docs/knowledge/McpServer/`), `applies-to` pointing at the file |
 
-Validation before commit: `dotnet test clio.tests/clio.tests.csproj --filter "Category=Unit&Module=McpServer" --no-build`.
+Validation before commit: `dotnet test clio.tests/clio.tests.csproj --filter "TestCategory=Unit&Module=McpServer" --no-build`.
 E2E: the `clio.mcp.e2e` converter fixtures against a seeded stand.
 
 ---
