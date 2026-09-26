@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Clio;
@@ -288,5 +289,26 @@ public sealed class ProcessDesignerEmittedSchemaTests {
 			because: required
 				? $"'{wireName}' is the edit itself on this tool, so it stays mandatory"
 				: "absent operations is the documented snapshot form, so the argument must stay optional");
+	}
+
+	[TestCase(CreateBusinessProcessTool.CreateBusinessProcessToolName, "descriptor")]
+	[TestCase(ModifyBusinessProcessTool.ModifyBusinessProcessToolName, "operations")]
+	[TestCase(ModifyProcessAsNewVersionTool.ModifyProcessAsNewVersionToolName, "operations")]
+	[Category("Unit")]
+	[Description("The contract get-tool-contract derives for a process write tool types its JSON-document argument as 'any', not 'object': the operations argument is an ARRAY, and the typeless schema used to be reported as an object (ENG-100153).")]
+	public void DerivedContract_Should_TypeTheJsonDocumentArgument_AsAny(string toolName, string wireName) {
+		// Arrange
+		ToolContractGetTool tool = new(BuildProductionRegistry());
+
+		// Act
+		ToolContractDefinition contract = tool.GetToolContracts(new ToolContractGetArgs([toolName])).Tools!.Single();
+		ToolContractField field = contract.InputSchema.Properties.Single(property => property.Name == wireName);
+
+		// Assert
+		field.Type.Should().Be(McpToolRegistrySchemaContract.AnyType,
+			because: $"'{wireName}' accepts the JSON value or a string holding it; 'object' would tell the caller the "
+				+ "operations array is an object, and 'string' would restate the pre-ENG-100153 contract");
+		field.Description.Should().Contain("string holding the same JSON is also accepted",
+			because: "the derived contract carries the emitted description, which names both accepted forms");
 	}
 }

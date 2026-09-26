@@ -107,8 +107,8 @@ public class ModifyProcessAsNewVersionTool(
 		// Absent, null and an empty string all mean "no operations" here - the snapshot form - so only a
 		// value that is actually present goes through the object-or-string reader (ENG-100153).
 		string operationsJson = string.Empty;
-		if (HasOperations(args.Operations)
-			&& !McpToolArgumentSupport.TryReadJsonDocumentArgument(args.Operations!.Value, JsonValueKind.Array,
+		if (args.Operations is { } operations && !McpToolArgumentSupport.IsAbsentJsonDocument(operations)
+			&& !McpToolArgumentSupport.TryReadJsonDocumentArgument(operations, JsonValueKind.Array,
 				"operations", out operationsJson, out string operationsError)) {
 			return CommandExecutionResult.FromError(operationsError);
 		}
@@ -136,11 +136,6 @@ public class ModifyProcessAsNewVersionTool(
 
 		return result.WithCompileNotRequiredNote();
 	}
-
-	private static bool HasOperations(JsonElement? operations) =>
-		operations is { } value
-		&& value.ValueKind is not (JsonValueKind.Undefined or JsonValueKind.Null)
-		&& !(value.ValueKind == JsonValueKind.String && string.IsNullOrWhiteSpace(value.GetString()));
 }
 
 /// <summary>

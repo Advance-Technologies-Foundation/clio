@@ -377,37 +377,57 @@ internal static class McpToolArgumentSupport {
 	/// </para>
 	/// </remarks>
 	/// <param name="value">The bound argument; <see cref="JsonValueKind.Undefined"/> when the key was absent.</param>
-	/// <param name="expectedKind">The container kind the document must be: an object or an array.</param>
+	/// <param name="expectedKind">
+	/// The container kind the document must be: <see cref="JsonValueKind.Object"/> or
+	/// <see cref="JsonValueKind.Array"/>; any other kind is a programming error and throws.
+	/// </param>
 	/// <param name="argumentName">The wire name, used in the refusal.</param>
 	/// <param name="json">The JSON text to hand to the command, or empty on refusal.</param>
 	/// <param name="error">The refusal, or empty when <paramref name="json"/> is usable.</param>
 	/// <returns><see langword="true"/> when <paramref name="json"/> holds text for the command to parse.</returns>
 	public static bool TryReadJsonDocumentArgument(JsonElement value, JsonValueKind expectedKind,
 		string argumentName, out string json, out string error) {
+		if (expectedKind is not (JsonValueKind.Object or JsonValueKind.Array)) {
+			throw new ArgumentOutOfRangeException(nameof(expectedKind), expectedKind,
+				"A JSON-document argument is an object or an array.");
+		}
 		json = string.Empty;
 		error = string.Empty;
 		string expected = expectedKind == JsonValueKind.Array ? "a JSON array" : "a JSON object";
+		if (IsAbsentJsonDocument(value)) {
+			error = $"{argumentName} is required and cannot be empty.";
+			return false;
+		}
 		switch (value.ValueKind) {
-			case JsonValueKind.Undefined:
-			case JsonValueKind.Null:
-				error = $"{argumentName} is required and cannot be empty.";
-				return false;
 			case JsonValueKind.String:
-				string text = value.GetString() ?? string.Empty;
-				if (string.IsNullOrWhiteSpace(text)) {
-					error = $"{argumentName} is required and cannot be empty.";
-					return false;
-				}
-				json = text;
+				json = value.GetString()!;
 				return true;
 			default:
 				if (value.ValueKind != expectedKind) {
 					error = $"{argumentName} must be {expected}, or a string holding one. "
-						+ $"Received a JSON {value.ValueKind.ToString().ToLowerInvariant()}.";
+						+ $"Received a JSON {DescribeKind(value.ValueKind)}.";
 					return false;
 				}
 				json = value.GetRawText();
 				return true;
 		}
 	}
+
+	/// <summary>
+	/// Whether a JSON-document argument carries nothing: absent, JSON <c>null</c>, or a string that is empty or
+	/// whitespace. <see cref="TryReadJsonDocumentArgument"/> refuses such a value as missing; a tool whose
+	/// argument is optional tests it first and treats it as "not supplied".
+	/// </summary>
+	/// <param name="value">The bound argument; <see cref="JsonValueKind.Undefined"/> when the key was absent.</param>
+	/// <returns><see langword="true"/> when the argument carries no document.</returns>
+	public static bool IsAbsentJsonDocument(JsonElement value) =>
+		value.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null
+		|| (value.ValueKind == JsonValueKind.String && string.IsNullOrWhiteSpace(value.GetString()));
+
+	// The JSON name of a value kind: True and False are both a boolean to the caller who sent it.
+	private static string DescribeKind(JsonValueKind kind) =>
+		kind switch {
+			JsonValueKind.True or JsonValueKind.False => "boolean",
+			_ => kind.ToString().ToLowerInvariant()
+		};
 }

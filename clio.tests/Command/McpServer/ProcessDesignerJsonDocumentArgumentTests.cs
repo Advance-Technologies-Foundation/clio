@@ -76,13 +76,16 @@ public sealed class ProcessDesignerJsonDocumentArgumentTests {
 		// Assert
 		result.IsError.Should().NotBe(true,
 			because: "the string form is the long-standing contract and must stay accepted");
+		command.CapturedOptions.Should().NotBeNull(
+			because: "the call must reach the command before what it received can be asserted");
 		command.CapturedOptions!.DescriptorJson.Should().Be(Descriptor,
 			because: "a string descriptor is forwarded verbatim - the command, not the tool, parses and words its errors");
 	}
 
 	[TestCase("[]", "a JSON array")]
 	[TestCase("42", "a JSON number")]
-	[TestCase("true", "a JSON true")]
+	[TestCase("true", "a JSON boolean")]
+	[TestCase("false", "a JSON boolean")]
 	[Category("Unit")]
 	[Description("create-business-process refuses a descriptor that is neither an object nor a string, naming both accepted forms, without dispatching the command.")]
 	public async Task CreateBusinessProcess_Should_RefuseADescriptorOfAnotherKind(string descriptor, string received) {
@@ -118,6 +121,8 @@ public sealed class ProcessDesignerJsonDocumentArgumentTests {
 		// Assert
 		result.IsError.Should().NotBe(true,
 			because: "an operations array is the natural call and must bind rather than be refused as a non-string");
+		command.CapturedOptions.Should().NotBeNull(
+			because: "the call must reach the command before what it received can be asserted");
 		JsonDocumentsShouldBeEqual(command.CapturedOptions!.OperationsJson, Operations,
 			because: "the command must receive the operations the caller sent");
 	}
@@ -138,6 +143,8 @@ public sealed class ProcessDesignerJsonDocumentArgumentTests {
 		// Assert
 		result.IsError.Should().NotBe(true,
 			because: "the string form is the long-standing contract and must stay accepted");
+		command.CapturedOptions.Should().NotBeNull(
+			because: "the call must reach the command before what it received can be asserted");
 		command.CapturedOptions!.OperationsJson.Should().Be(Operations,
 			because: "a string is forwarded verbatim");
 	}
@@ -176,6 +183,8 @@ public sealed class ProcessDesignerJsonDocumentArgumentTests {
 		// Assert
 		result.IsError.Should().NotBe(true,
 			because: "an operations array is the natural call and must bind rather than be refused as a non-string");
+		command.CapturedOptions.Should().NotBeNull(
+			because: "the call must reach the command before what it received can be asserted");
 		JsonDocumentsShouldBeEqual(command.CapturedOptions!.OperationsJson, Operations,
 			because: "the command must receive the operations the caller sent");
 	}
@@ -197,6 +206,8 @@ public sealed class ProcessDesignerJsonDocumentArgumentTests {
 		// Assert
 		result.IsError.Should().NotBe(true,
 			because: "no operations is the documented way to snapshot the source unchanged as a new version");
+		command.CapturedOptions.Should().NotBeNull(
+			because: "the call must reach the command before what it received can be asserted");
 		command.CapturedOptions!.OperationsJson.Should().BeEmpty(
 			because: "the snapshot form reaches the command as no operations, exactly as before ENG-100153");
 	}

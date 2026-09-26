@@ -13,10 +13,4 @@ internal static class JsonArgument {
 	/// sends when it serializes the document itself.
 	/// </summary>
 	internal static JsonElement Text(string json) => JsonSerializer.SerializeToElement(json);
-
-	/// <summary>The VALUE form: the document itself, parsed from its JSON text.</summary>
-	internal static JsonElement Value(string json) {
-		using JsonDocument document = JsonDocument.Parse(json);
-		return document.RootElement.Clone();
-	}
 }
