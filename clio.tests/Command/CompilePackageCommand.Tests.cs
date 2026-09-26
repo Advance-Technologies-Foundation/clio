@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Clio.Command;
 using Clio.Common;
 using Clio.Package;
@@ -148,5 +148,58 @@ public class CompilePackageCommandTestCase : BaseCommandTests<CompilePackageOpti
 		exitCode.Should().Be(1,
 			because: "a build failure after confirmation must surface as exit code 1, unchanged by the confirmation gate");
 		_packageBuilder.Received(1).Rebuild(Arg.Any<string[]>());
+	}
+
+	[Test]
+	[Description("--wait asks the package builder to block until the build has finished, with the 600-second default --wait-timeout, instead of returning when the build was accepted (issue #1632).")]
+	public void Execute_ShouldRebuildWithWaitOptions_WhenWaitIsSet() {
+		// Arrange
+		CompilePackageCommand command = Container.GetRequiredService<CompilePackageCommand>();
+		CompilePackageOptions options = new() { PackageName = "UsrPackage", Environment = "dev", Wait = true };
+
+		// Act
+		int exitCode = command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "a waited build that finished cleanly is a success");
+		_packageBuilder.Received(1).Rebuild(Arg.Is<string[]>(names => names.Length == 1 && names[0] == "UsrPackage"),
+			Arg.Is<PackageCompilationWaitOptions>(wait => wait.Timeout == TimeSpan.FromSeconds(600)));
+		_packageBuilder.DidNotReceive().Rebuild(Arg.Any<string[]>());
+	}
+
+	[Test]
+	[Description("A --wait-timeout outside 1..3600 seconds is rejected before anything is compiled, so a typo cannot turn into an unbounded or zero-length wait (issue #1632).")]
+	public void Execute_ShouldRejectOutOfRangeWaitTimeout_WithoutCompiling() {
+		// Arrange
+		CompilePackageCommand command = Container.GetRequiredService<CompilePackageCommand>();
+		CompilePackageOptions options = new() {
+			PackageName = "UsrPackage", Environment = "dev", Wait = true, WaitTimeout = 0
+		};
+
+		// Act
+		int exitCode = command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "an out-of-range wait bound is a usage error");
+		_packageBuilder.DidNotReceive().Rebuild(Arg.Any<string[]>(), Arg.Any<PackageCompilationWaitOptions>());
+		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("--wait-timeout", StringComparison.Ordinal)));
+	}
+
+	[Test]
+	[Description("When Creatio reports a failed package build the command exits 1 and prints the failure summary instead of Done (issue #1633).")]
+	public void Execute_ShouldExitNonZeroWithoutDone_WhenBuildReportsCompileError() {
+		// Arrange
+		CompilePackageCommand command = Container.GetRequiredService<CompilePackageCommand>();
+		CompilePackageOptions options = new() { PackageName = "UsrPackage", Environment = "dev" };
+		_packageBuilder.When(builder => builder.Rebuild(Arg.Any<string[]>()))
+			.Do(_ => throw new PackageCompilationException("Package compilation failed for 'UsrPackage' (build result 1)."));
+
+		// Act
+		int exitCode = command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "a C# compile error must not end in exit code 0");
+		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("Package compilation failed", StringComparison.Ordinal)));
+		_logger.DidNotReceive().WriteInfo("Done");
 	}
 }

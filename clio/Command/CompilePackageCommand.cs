@@ -9,6 +9,16 @@ namespace Clio.Command;
 public class CompilePackageOptions : EnvironmentNameOptions
 {
 
+	#region Constants: Internal
+
+	/// <summary>Default for <see cref="WaitTimeout"/>, the same 600 s <c>restart --wait-ready</c> uses.</summary>
+	internal const int DefaultWaitTimeoutSeconds = 600;
+
+	/// <summary>Upper bound for <see cref="WaitTimeout"/>, the same bound <c>restart --ready-timeout</c> has.</summary>
+	internal const int MaxWaitTimeoutSeconds = 3600;
+
+	#endregion
+
 	#region Properties: Public
 
 
@@ -19,6 +29,24 @@ public class CompilePackageOptions : EnvironmentNameOptions
 	}
 
 	public string[] PackageNames => PackageName.Split(',');
+
+	/// <summary>
+	/// Blocks until the environment has finished building instead of returning when the build was accepted.
+	/// </summary>
+	[Option("wait", Required = false, Default = false,
+		HelpText = "Block until the environment reports that the build finished (its build result, or compilation activity that has stopped), instead of returning when the build is accepted")]
+	public bool Wait { get; set; }
+
+	/// <summary>
+	/// Upper bound, in seconds, on how long <see cref="Wait"/> waits for each package build.
+	/// </summary>
+	/// <remarks>
+	/// Initialized here as well as in the attribute: the attribute default applies only when the parser
+	/// builds the options, and the MCP tool constructs them directly.
+	/// </remarks>
+	[Option("wait-timeout", Required = false, Default = DefaultWaitTimeoutSeconds,
+		HelpText = "Max seconds to wait for each package build when --wait is set (default: 600, max: 3600)")]
+	public int WaitTimeout { get; set; } = DefaultWaitTimeoutSeconds;
 
 	#endregion
 
@@ -68,7 +96,8 @@ public class CompilePackageCommand : Command<CompilePackageOptions>
 		string environmentPart = string.IsNullOrWhiteSpace(options.Environment)
 			? string.Empty
 			: $" -e {options.Environment}";
-		return $"Compilation postponed. Nothing was compiled. Run it later with: clio compile-package {options.PackageName}{environmentPart}";
+		string waitPart = options.Wait ? " --wait" : string.Empty;
+		return $"Compilation postponed. Nothing was compiled. Run it later with: clio compile-package {options.PackageName}{environmentPart}{waitPart}";
 	}
 
 	#endregion
@@ -82,12 +111,24 @@ public class CompilePackageCommand : Command<CompilePackageOptions>
 			// reachable on an interactive, non-silent terminal.
 			return InteractiveConsoleExtensions.DeclinedExitCode;
 		}
+		if (options.Wait && options.WaitTimeout is <= 0 or > CompilePackageOptions.MaxWaitTimeoutSeconds) {
+			_logger.WriteError(
+				$"--wait-timeout must be between 1 and {CompilePackageOptions.MaxWaitTimeoutSeconds} seconds; got {options.WaitTimeout}.");
+			return 1;
+		}
 		try {
-			_packageBuilder.Rebuild(options.PackageNames);
+			if (options.Wait) {
+				_packageBuilder.Rebuild(options.PackageNames,
+					new PackageCompilationWaitOptions(TimeSpan.FromSeconds(options.WaitTimeout)));
+			} else {
+				_packageBuilder.Rebuild(options.PackageNames);
+			}
 			_logger.WriteInfo("Done");
 			return 0;
 		} catch (Exception e) {
-			_logger.WriteError(e.Message);
+			// GetReadableMessageException, not .Message: a monitoring failure arrives as a chain whose outer
+			// link only names the operation, and .Message printed "could not be monitored" without the reason.
+			_logger.WriteError(e.GetReadableMessageException());
 			return 1;
 		}
 	}

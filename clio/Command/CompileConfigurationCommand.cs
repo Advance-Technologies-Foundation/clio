@@ -26,6 +26,21 @@ public class CompileConfigurationOptions : RemoteCommandOptions
 	public bool All {
 		get; set;
 	}
+	/// <summary>
+	/// Accepted for symmetry with <c>compile-package --wait</c>; it changes nothing, because this command
+	/// always blocks until the build has ended.
+	/// </summary>
+	/// <remarks>
+	/// Since issue #1422 completion is observed on the environment (the build response, the runtime reload
+	/// that ends a build, or compilation activity that has stopped), bounded by <c>--timeout</c>. A script
+	/// written against the <c>compile-package</c> form can pass the same flag here without failing to parse.
+	/// </remarks>
+	[Option("wait", Required = false, Default = false,
+		HelpText = "Accepted for symmetry with compile-package --wait. compile-configuration always blocks until the build has ended, bounded by --timeout")]
+	public bool Wait {
+		get; set;
+	}
+
 	// No DefaultTimeout override. RemoteCommandOptions.GetTimeOut already declares 60 minutes for
 	// `compile-configuration`, and this class used to override it with Timeout.Infinite - which also
 	// silently discarded any --timeout the caller passed. An unbounded wait is what let a build whose

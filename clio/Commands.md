@@ -168,7 +168,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`compile-configuration`](docs/commands/compile-configuration.md) - Compile the full configuration in Creatio, `cc`, `compile-remote`
 <a id="compile-package"></a>
 <a id="comp-pkg"></a>
-- [`compile-package`](docs/commands/compile-package.md) - Compile one or more packages in Creatio, `comp-pkg`
+- [`compile-package`](docs/commands/compile-package.md) - Compile one or more packages in Creatio; fails with the CSxxxx diagnostics on a compile error, `--wait` blocks until the build has finished, `comp-pkg`
 <a id="compressApp"></a>
 <a id="comp-app"></a>
 - [`compressApp`](docs/commands/compressApp.md) - Archive an application directory into ZIP, `comp-app`

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
@@ -47,7 +47,7 @@ public sealed class CompileCreatioTool(
 		RequiresClientRequests = McpToolClientRequests.Progress,
 		SharedFileResource = McpToolSharedFileResource.ConfigurationBuild,
 		StartsOperation = true)]
-	[Description("BEFORE CALLING: compilation is a HEAVY operation that forces a runtime reload affecting EVERY user connected to the environment. Every time (not once per session), first warn the user of that impact and ask whether to compile now or postpone; call this tool ONLY after the user confirms. A repeated or explicit request to compile is NOT itself that confirmation, and a prior in-session warning or answer is NOT standing consent — re-ask before every call, including an identical repeat. If the user postpones, do NOT call this tool — tell them it can be run later. Long-running, may take several minutes; recompiles a registered Creatio environment and forces a runtime reload. Omit `package-name` to run a full compilation (`clio cc -e ENV_NAME --all`). Provide `package-name` to compile only one package. Call only when: (1) C# schemas were added or modified, (2) `set-fsm-mode` has just been toggled, or (3) the runtime reports a missing-in-runtime/schema-not-found error. Do NOT call after `create-app`, `update-page`, `sync-pages`, `update-entity-schema`, `create-page`, or any Freedom UI page-body edit — those changes are AMD modules applied at runtime and DDL is handled by `update-entity-schema`. Do NOT decide to compile a business process from a raw status column: never read the raw process record (odata/esq — e.g. `VwSysProcess`) to judge readiness — use `describe-business-process`. A freshly-saved process shows `NeedInstall`, `NeedUpdateSourceCode` and `NeedUpdateStructure` all = true, and NONE of them is a compile trigger (`NeedInstall` is a DB-install marker); inferring `compile` from a column NAME is the trap here. Within a process, compile ONLY for C# YOU authored — a Script Task, or a user task carrying an after-activity-save script (case (1) above); everything else (add/read/modify data, formulas, connections, signals, using an already-compiled user task) runs with no compile. A CUSTOM user-task SCHEMA is a separate obligation: creating or changing one needs a compile. Long-running: streams notifications/progress while compiling. If the MCP response deadline is reached first, returns exit-code 0 with an in-progress note carrying an operation-id — the compile is still running server-side; do NOT retry, poll compile-status instead.")]
+	[Description("BEFORE CALLING: compilation is a HEAVY operation that forces a runtime reload affecting EVERY user connected to the environment. Every time (not once per session), first warn the user of that impact and ask whether to compile now or postpone; call this tool ONLY after the user confirms. A repeated or explicit request to compile is NOT itself that confirmation, and a prior in-session warning or answer is NOT standing consent — re-ask before every call, including an identical repeat. If the user postpones, do NOT call this tool — tell them it can be run later. Long-running, may take several minutes; recompiles a registered Creatio environment and forces a runtime reload. Omit `package-name` to run a full compilation (`clio cc -e ENV_NAME --all`). Provide `package-name` to compile only one package; that call waits for the finished build and fails (exit-code 1) with the CSxxxx compiler diagnostics when the C# does not compile, leaving the previously compiled assembly in place. Call only when: (1) C# schemas were added or modified, (2) `set-fsm-mode` has just been toggled, or (3) the runtime reports a missing-in-runtime/schema-not-found error. Do NOT call after `create-app`, `update-page`, `sync-pages`, `update-entity-schema`, `create-page`, or any Freedom UI page-body edit — those changes are AMD modules applied at runtime and DDL is handled by `update-entity-schema`. Do NOT decide to compile a business process from a raw status column: never read the raw process record (odata/esq — e.g. `VwSysProcess`) to judge readiness — use `describe-business-process`. A freshly-saved process shows `NeedInstall`, `NeedUpdateSourceCode` and `NeedUpdateStructure` all = true, and NONE of them is a compile trigger (`NeedInstall` is a DB-install marker); inferring `compile` from a column NAME is the trap here. Within a process, compile ONLY for C# YOU authored — a Script Task, or a user task carrying an after-activity-save script (case (1) above); everything else (add/read/modify data, formulas, connections, signals, using an already-compiled user task) runs with no compile. A CUSTOM user-task SCHEMA is a separate obligation: creating or changing one needs a compile. Long-running: streams notifications/progress while compiling. If the MCP response deadline is reached first, returns exit-code 0 with an in-progress note carrying an operation-id — the compile is still running server-side; do NOT retry, poll compile-status instead.")]
 	public async Task<CommandExecutionResult> CompileCreatio(
 		[Description("Compilation parameters")] [Required] CompileCreatioArgs args,
 		global::ModelContextProtocol.Server.McpServer server = null,
@@ -178,10 +178,14 @@ public sealed class CompileCreatioTool(
 
 	private CommandExecutionResult ExecutePackageCompile(string environmentName, string packageName)
 	{
+		// Wait = true: without it the command returns when the environment's compilation activity first
+		// pauses, which can be before a later project - and its compile error - has been built (issue #1632).
+		// An agent treats this tool's result as proof the C# compiled, so it gets the finished build's verdict.
 		CompilePackageOptions options = new()
 		{
 			Environment = environmentName,
-			PackageName = packageName
+			PackageName = packageName,
+			Wait = true
 		};
 		CompilePackageCommand command = commandResolver.Resolve<CompilePackageCommand>(options);
 		return Execute(command, options);
