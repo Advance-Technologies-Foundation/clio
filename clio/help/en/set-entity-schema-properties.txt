@@ -74,6 +74,9 @@ NOTES
       OData entities rebuild
     - at least one settable property must be supplied, otherwise the command reports an error
     - a caption change is merged per culture; captions for cultures you do not list are preserved
+    - every caption culture must exist in the Languages section (System Designer -> Languages).
+      A culture the environment does not have fails before anything is saved, listing the
+      available cultures; an inactive culture is saved with a warning
     - naming a column that does not exist on the schema fails with a clear error
 
 REPORTING BUGS

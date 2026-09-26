@@ -6,7 +6,8 @@ applies-to:
   - clio/Command/McpServer/Tools/PageBaselineStore.cs
   - clio/Command/McpServer/Tools/PageUpdateTool.cs
   - clio/Command/McpServer/Tools/PageSyncTool.cs
-ticket: GH-1320, GH-1464, GH-1538
+  - clio/Command/LocalizePageCommand.cs
+ticket: GH-1320, GH-1464, GH-1538, ENG-90576
 date: 2026-09-15
 ---
 
@@ -68,6 +69,13 @@ Tying the two together (GH-1538) meant a successful PINNED same-target save left
 superseded checksum, and the caller's next UNPINNED save of the same page conflicted with its own
 previous save. The cost of the fix is one baseline read under its lock on a pinned selector save — the
 same read the unpinned selector path already performed.
+
+**`localize-page` writes the page too, but arms no check.** It re-reads the schema immediately before
+its save and changes only resource values, so it never calls `TryArm`. After a save it calls
+`RefreshAfterSave`, which moves an EXISTING, environment-matched `meta.json` forward through
+`RefreshOrDrop` (the single writer) and does nothing when there is none. Without that refresh the
+caller's next `update-page` is refused as "modified outside this session" for its own translation
+(ADR `adr-page-localization.md` F9, D8).
 
 **`sync-pages` carries the same contract.** `PageSyncPageInput` has a per-page `checksum`, and
 `BuildUpdateRequest` passes it VERBATIM into `PageUpdateOptions.ExpectedChecksum` — `TryArm` is the

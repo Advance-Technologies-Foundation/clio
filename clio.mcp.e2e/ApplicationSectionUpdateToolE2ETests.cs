@@ -246,7 +246,7 @@ public sealed class ApplicationSectionUpdateToolE2ETests {
 			because: "the readback must expose the created section code so update-app-section can target it");
 
 		createdSectionCode = createResponse.Section.Code;
-		_createdSectionCode = createdSectionCode;
+		_createdSectionCodes.Add(createdSectionCode);
 		_createdSectionEnvironmentName = environmentName;
 
 		// Act 2: update the section's caption and description
@@ -297,6 +297,183 @@ public sealed class ApplicationSectionUpdateToolE2ETests {
 			because: "the post-update section must reflect the new caption that update-app-section was asked to apply");
 		updateResponse.Section.Description.Should().Be(updatedDescription,
 			because: "the post-update section must reflect the new description that update-app-section was asked to apply");
+	}
+
+	[Category("McpE2E.Sandbox")]
+	[Test]
+	[Description("Starts the real clio MCP server, invokes update-app-section with caption-culture but no caption, and verifies the validation failure (ENG-90576 story 4).")]
+	[AllureFeature(SectionUpdateToolName)]
+	[AllureTag(SectionUpdateToolName)]
+	[AllureName("Application section update rejects caption-culture without caption")]
+	[AllureDescription("Uses the real clio MCP server to call update-app-section with caption-culture and only an icon change, and verifies the tool rejects it before any write because caption-culture names the language of the caption.")]
+	public async Task ApplicationSectionUpdate_Should_Reject_CaptionCulture_Without_Caption() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
+		McpServerSession session = await GetOrStartSharedSessionAsync(settings, cancellationTokenSource.Token);
+
+		// Act
+		CallToolResult callResult = await session.CallToolAsync(
+			SectionUpdateToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["application-code"] = "UsrOrdersApp",
+					["section-code"] = "UsrOrders",
+					["icon-background"] = "#247EE5",
+					["caption-culture"] = "es-ES"
+				}
+			},
+			cancellationTokenSource.Token);
+		ApplicationSectionUpdateContextResponseEnvelope response = ApplicationResultParser.ExtractSectionUpdate(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "argument validation failures should stay inside the response payload");
+		response.Success.Should().BeFalse(
+			because: "caption-culture without caption has nothing to write in that culture");
+		response.Error.Should().Contain("caption-culture requires caption",
+			because: "the failure should tell the agent to send the caption with its culture");
+	}
+
+	[Category("McpE2E.Sandbox")]
+	[Test]
+	[Description("Starts the real clio MCP server, invokes update-app-section with a caption-culture the environment does not have (xx-XX), and verifies the failure names the Languages section and lists the available cultures before any write (ENG-90576 ADR D4/D11).")]
+	[AllureFeature(SectionUpdateToolName)]
+	[AllureTag(SectionUpdateToolName)]
+	[AllureName("Application section update rejects a culture the environment does not have")]
+	[AllureDescription("Uses the real clio MCP server to call update-app-section with caption-culture xx-XX. The culture is looked up in SysCulture only, before the application is read, so the call fails with the Languages-section message instead of a .NET culture-name error.")]
+	public async Task ApplicationSectionUpdate_Should_Report_Languages_Section_For_Unknown_CaptionCulture() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
+		McpServerSession session = await GetOrStartSharedSessionAsync(settings, cancellationTokenSource.Token);
+
+		// Act
+		CallToolResult callResult = await session.CallToolAsync(
+			SectionUpdateToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["application-code"] = "UsrOrdersApp",
+					["section-code"] = "UsrOrders",
+					["caption"] = "X",
+					["caption-culture"] = "xx-XX"
+				}
+			},
+			cancellationTokenSource.Token);
+		ApplicationSectionUpdateContextResponseEnvelope response = ApplicationResultParser.ExtractSectionUpdate(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a culture the environment does not have is reported inside the response payload");
+		response.Success.Should().BeFalse(
+			because: "the platform would drop a value in that culture and still report success");
+		response.Error.Should().Contain("Languages section",
+				because: "the failure must tell the agent where to add the culture")
+			.And.Contain("Available:", because: "the failure must list the cultures the environment has");
+	}
+
+	[Category("McpE2E.Sandbox")]
+	[Test]
+	[Description("TC-E2E-40: creates a section, writes its title in es-ES with caption-culture, then changes only its icon, and verifies that the default-culture title is unchanged and the es-ES title survives the icon update (ENG-90576 story 4, ADR D11/F11).")]
+	[AllureFeature(SectionUpdateToolName)]
+	[AllureTag(SectionUpdateToolName)]
+	[AllureName("Application section update writes a title in another culture and keeps it")]
+	[AllureDescription("Uses the real clio MCP server: create-app-section, update-app-section caption + caption-culture es-ES, then an icon-only update-app-section. The platform deletes every non-default culture on each section update; clio must write them back, so the icon-only call reports es-ES among preserved cultures.")]
+	public async Task ApplicationSectionUpdate_Should_Write_CaptionCulture_And_Keep_It_Across_Updates() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string? environmentName = settings.Sandbox.EnvironmentName;
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("AllowDestructiveMcpTests is false — skipping destructive update-app-section caption-culture test.");
+		}
+
+		if (string.IsNullOrWhiteSpace(environmentName)) {
+			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to point at the seeded sandbox before running this test.");
+		}
+
+		string defaultCaption = $"E2E Lcz {Guid.NewGuid():N}"[..20];
+		const string spanishCaption = "Pedidos E2E";
+		// Same budget reasoning as ApplicationSectionUpdate_Should_Return_Structured_Readback_Data: gated creates and
+		// updates can each take ~3 minutes under the transient-platform retry gate.
+		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(15));
+		McpServerSession session = await GetOrStartSharedSessionAsync(settings, cancellationTokenSource.Token);
+		CallToolResult createResult = await TransientPlatformConditionRetryGate.InvokeWithRetryAsync(
+			attemptToken => session.CallToolAsync(
+				SectionCreateToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["environment-name"] = environmentName,
+						["application-code"] = ApplicationCode,
+						["caption"] = defaultCaption
+					}
+				},
+				attemptToken),
+			reauthenticateAsync: null,
+			cancellationTokenSource.Token);
+		ApplicationSectionContextResponseEnvelope createResponse = ApplicationResultParser.ExtractSectionCreate(createResult);
+		createResponse.Success.Should().BeTrue(
+			because: $"create-app-section must succeed before the culture write can be verified. Error: {createResponse.Error}. Actual: {DescribeCallResult(createResult)}");
+		string sectionCode = createResponse.Section!.Code;
+		_createdSectionCodes.Add(sectionCode);
+		_createdSectionEnvironmentName = environmentName;
+
+		// Act 1: the Spanish title
+		CallToolResult cultureResult = await TransientPlatformConditionRetryGate.InvokeWithRetryAsync(
+			attemptToken => session.CallToolAsync(
+				SectionUpdateToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["environment-name"] = environmentName,
+						["application-code"] = ApplicationCode,
+						["section-code"] = sectionCode,
+						["caption"] = spanishCaption,
+						["caption-culture"] = "es-ES"
+					}
+				},
+				attemptToken),
+			reauthenticateAsync: null,
+			cancellationTokenSource.Token);
+		ApplicationSectionUpdateContextResponseEnvelope cultureResponse = ApplicationResultParser.ExtractSectionUpdate(cultureResult);
+
+		// Act 2: an icon-only update, which on the platform deletes every non-default culture
+		CallToolResult iconResult = await TransientPlatformConditionRetryGate.InvokeWithRetryAsync(
+			attemptToken => session.CallToolAsync(
+				SectionUpdateToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["environment-name"] = environmentName,
+						["application-code"] = ApplicationCode,
+						["section-code"] = sectionCode,
+						["icon-background"] = "#247EE5"
+					}
+				},
+				attemptToken),
+			reauthenticateAsync: null,
+			cancellationTokenSource.Token);
+		ApplicationSectionUpdateContextResponseEnvelope iconResponse = ApplicationResultParser.ExtractSectionUpdate(iconResult);
+
+		// Assert
+		cultureResponse.Success.Should().BeTrue(
+			because: $"writing the section title in es-ES must succeed. Error: {cultureResponse.Error}. Actual: {DescribeCallResult(cultureResult)}");
+		cultureResponse.CaptionCulture.Should().Be("es-ES",
+			because: "the response must name the culture the caption was written in");
+		cultureResponse.CaptionCultureValue.Should().Be(spanishCaption,
+			because: "the response returns the es-ES title read back from the environment");
+		cultureResponse.Section!.Caption.Should().Be(defaultCaption,
+			because: "writing es-ES must not change the title in the connected user's culture");
+		iconResponse.Success.Should().BeTrue(
+			because: $"the icon-only update must succeed. Error: {iconResponse.Error}. Actual: {DescribeCallResult(iconResult)}");
+		iconResponse.PreservedCultures.Should().Contain("es-ES",
+			because: "clio writes back and re-reads the es-ES title the platform deletes on every section update");
+		iconResponse.Section!.Caption.Should().Be(defaultCaption,
+			because: "the icon-only update must not change the default-culture title");
 	}
 
 	[Category("McpE2E.NoEnvironment")]
@@ -443,7 +620,7 @@ public sealed class ApplicationSectionUpdateToolE2ETests {
 
 	private static McpServerSession? _sharedSession;
 
-	private static string? _createdSectionCode;
+	private static readonly List<string> _createdSectionCodes = [];
 	private static string? _createdSectionEnvironmentName;
 
 	[OneTimeTearDown]
@@ -459,7 +636,7 @@ public sealed class ApplicationSectionUpdateToolE2ETests {
 	}
 
 	/// <summary>
-	/// Removes the section this fixture created — once, not per test.
+	/// Removes the sections this fixture created — once, not per test.
 	/// </summary>
 	/// <remarks>
 	/// The stand is disposable per build, so the removal is not owed to the stand. It is owed to
@@ -468,14 +645,20 @@ public sealed class ApplicationSectionUpdateToolE2ETests {
 	/// adds a Form and a List page to that set.
 	/// </remarks>
 	private static async Task RemoveCreatedSectionAsync() {
-		if (string.IsNullOrWhiteSpace(_createdSectionCode) || _sharedSession is null) {
+		if (_sharedSession is null) {
 			return;
 		}
-		string sectionCode = _createdSectionCode;
-		_createdSectionCode = null;
+		string[] sectionCodes = [.. _createdSectionCodes];
+		_createdSectionCodes.Clear();
+		foreach (string sectionCode in sectionCodes) {
+			await RemoveSectionAsync(sectionCode);
+		}
+	}
+
+	private static async Task RemoveSectionAsync(string sectionCode) {
 		try {
 			using CancellationTokenSource cleanupCts = new(TimeSpan.FromMinutes(1));
-			await _sharedSession.CallToolAsync(
+			await _sharedSession!.CallToolAsync(
 				SectionDeleteToolName,
 				new Dictionary<string, object?> {
 					["args"] = new Dictionary<string, object?> {

@@ -1,0 +1,106 @@
+COMMAND TYPE
+    Development commands
+
+NAME
+    localize-page - Add or update translations of a Freedom UI page's captions in one culture
+
+SYNOPSIS
+    localize-page --schema-name <page> --culture <culture> [--resources <json>] [--caption <text>] [--output-directory <dir>] [OPTIONS]
+
+DESCRIPTION
+    Writes the values of a Freedom UI page's localizable strings and of the page
+    title (schema caption) in ONE culture, for example es-ES, without changing
+    any other culture. The default culture (en-US) is never touched: --culture
+    en-US is refused; change en-US values with update-page --resources.
+
+    For every supplied key the stored value list is read, the target culture's
+    value is set (added when missing) and the complete list is saved back, so
+    every other culture of the key is preserved.
+
+    With neither --resources nor --caption the command is report-only: it saves
+    nothing and returns which keys are still untranslated in that culture.
+
+    The culture must exist in the environment's Languages section (SysCulture).
+    An absent culture fails before anything is read or written, with the list of
+    available cultures. An inactive culture is written and reported with a
+    warning, because users cannot select it until it is activated; after activation
+    a full configuration compile (compile-configuration --all) is needed before
+    the UI loads in that culture.
+
+    Only existing keys are translated: the keys get-page shows, i.e. the page's
+    own keys and every key of its template hierarchy. A key that only a parent
+    template declares gets a page-level override holding just that culture; its
+    en-US text keeps coming from the parent. Register a new key with update-page
+    first. A value that Creatio cannot store in a schema resource (a control
+    character other than tab, LF or CR, U+FFFE, U+FFFF or a lone surrogate half)
+    or a null value fails the call before anything is saved, naming the key.
+    A caption bound to an entity column through a data
+    source ($Resources.Strings.<Attribute>) is not a page resource: translate it
+    with update-entity-schema or modify-entity-schema-column title-localizations.
+
+    The command edits the existing page schema in the design package and never
+    creates a replacing schema. After a save it re-reads the page and fails when
+    a written value was not stored. Re-running with the same values saves
+    nothing. When a .clio-pages/<page>/meta.json baseline from get-page exists
+    (pass the same --output-directory as get-page when it used one) and it still
+    matches the page as it was right before the save, its checksum is refreshed
+    so the next update-page is not refused as an external modification. A stale
+    baseline (the page changed after that get-page) is left unchanged and a
+    warning says that update-page will report the conflict. When the save
+    succeeds but the read-back fails, saved is true and success is false.
+
+    The result is printed as JSON: success, schemaName, schemaUId, packageName,
+    culture, cultureActive, saved, written, unchanged, captionOutcome
+    (written | unchanged | null), coverage { keys, translated, missing,
+    sameAsDefault, captionSameAsDefault }, warnings, error.
+    coverage covers the same key set as get-page. sameAsDefault lists keys whose
+    value equals the resolved en-US value: right after
+    create-page the page title holds the English text in every culture, so such
+    values usually still need a translation.
+
+    cliogate is not required.
+
+OPTIONS
+    --schema-name
+        Page schema name. Required.
+
+    --culture
+        Target culture, for example es-ES. Matched case-insensitively and
+        written in the environment's canonical spelling. en-US is refused.
+        Required.
+
+    --resources
+        JSON object mapping existing resource keys to their value in the
+        target culture, for example '{"UsrName_caption":"Nombre"}'.
+
+    --caption
+        Page title in the target culture.
+
+    --output-directory
+        Directory that anchors the .clio-pages baseline lookup. Pass the value
+        given to get-page --output-directory. Does not change where the page
+        is saved.
+
+    -e, --environment
+        Name of the registered environment.
+
+    -u, --uri / -l, --login / -p, --password / OAuth options
+        Standard direct-connection options, when targeting an unregistered site.
+
+EXIT CODES
+    0   Success (for a save: every written value was read back).
+    1   The call failed; the JSON result carries the error.
+
+EXAMPLES
+    Report which captions still need a Spanish translation (saves nothing):
+        clio localize-page --schema-name UsrApp_FormPage --culture es-ES -e dev
+
+    Translate two captions and the page title into Spanish:
+        clio localize-page --schema-name UsrApp_FormPage --culture es-ES --resources '{"UsrName_caption":"Nombre","UsrStatus_caption":"Estado"}' --caption "Solicitud" -e dev
+
+NOTES
+    - Aliases: none.
+    - Page captions only. Object and column titles are translated with the
+      entity-schema tools (title-localizations).
+    - A server save does not update workspace metadata or culture resource XML;
+      capture the package with restore-workspace before a push-workspace.

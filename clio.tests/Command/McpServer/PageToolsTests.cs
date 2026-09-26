@@ -1492,6 +1492,8 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(callInfo => $"http://test{callInfo.Arg<string>()}");
+		serviceUrlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>())
+			.Returns(ci => serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoutes[ci.Arg<ServiceUrlBuilder.KnownRoute>()]));
 		JObject metadataResponse = CreateMetadataResponse(
 			"UsrApp_FormPage",
 			"11111111-2222-3333-4444-555555555555",
@@ -1715,6 +1717,8 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(callInfo => $"http://test{callInfo.Arg<string>()}");
+		serviceUrlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>())
+			.Returns(ci => serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoutes[ci.Arg<ServiceUrlBuilder.KnownRoute>()]));
 		JObject metadataResponse = CreateMetadataResponse(
 			"UsrBad_FormPage",
 			"bad-schema-uid",
@@ -1786,6 +1790,8 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(callInfo => $"http://test{callInfo.Arg<string>()}");
+		serviceUrlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>())
+			.Returns(ci => serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoutes[ci.Arg<ServiceUrlBuilder.KnownRoute>()]));
 		JObject metadataResponse = CreateMetadataResponse(
 			"UsrUnseeded_FormPage",
 			"unseeded-schema-uid",
@@ -1854,6 +1860,8 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		serviceUrlBuilder.Build(Arg.Any<string>()).Returns("http://test/url");
+		serviceUrlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>())
+			.Returns(ci => serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoutes[ci.Arg<ServiceUrlBuilder.KnownRoute>()]));
 		JObject metadataResponse = new() {
 			["success"] = true,
 			["rows"] = new JArray()
@@ -1977,6 +1985,8 @@ public class PageToolsTests
 		IServiceUrlBuilder getServiceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger getLogger = Substitute.For<ILogger>();
 		getServiceUrlBuilder.Build(Arg.Any<string>()).Returns(callInfo => $"http://test{callInfo.Arg<string>()}");
+		getServiceUrlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>())
+			.Returns(ci => getServiceUrlBuilder.Build(ServiceUrlBuilder.KnownRoutes[ci.Arg<ServiceUrlBuilder.KnownRoute>()]));
 		JObject metadataResponse = CreateMetadataResponse(
 			"UsrRoundTrip_FormPage",
 			"roundtrip-page-uid",
@@ -2051,17 +2061,15 @@ public class PageToolsTests
 	}
 
 	[Test]
-	[Description("TryUpdatePage calls ServiceUrlBuilder without /0/ prefix for both GetSchema and SaveSchema")]
+	[Description("On .NET Core, TryUpdatePage posts GetSchema and SaveSchema to the designer-service URLs the real ServiceUrlBuilder builds from KnownRoute, with no 0/ prefix anywhere in the posted URLs.")]
 	public void TryUpdatePage_UsesCorrectDesignerServiceUrls_WithoutDoubleZeroPrefix() {
+		// Arrange — a real ServiceUrlBuilder in .NET Core mode, so the framework prefix rule is exercised.
 		var applicationClient = Substitute.For<IApplicationClient>();
-		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IServiceUrlBuilder serviceUrlBuilder = new ServiceUrlBuilder(new EnvironmentSettings {
+			Uri = "http://test",
+			IsNetCore = true
+		});
 		var logger = Substitute.For<ILogger>();
-		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery")
-			.Returns("http://test/DataService/json/SyncReply/SelectQuery");
-		serviceUrlBuilder.Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema")
-			.Returns("http://test/0/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema");
-		serviceUrlBuilder.Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema")
-			.Returns("http://test/0/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema");
 		var metadataResponse = new JObject {
 			["success"] = true,
 			["rows"] = new JArray {
@@ -2077,14 +2085,15 @@ public class PageToolsTests
 			}
 		};
 		var saveResponse = new JObject { ["success"] = true };
-		int callIndex = 0;
+		List<string> postedUrls = [];
 		applicationClient.ExecutePostRequest(
 			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(ci => {
-				callIndex++;
-				if (callIndex == 1) return metadataResponse.ToString();
-				if (callIndex == 2) return getSchemaResponse.ToString();
-				return saveResponse.ToString();
+				string url = ci.ArgAt<string>(0);
+				postedUrls.Add(url);
+				if (url.EndsWith("/GetSchema", StringComparison.Ordinal)) return getSchemaResponse.ToString();
+				if (url.EndsWith("/SaveSchema", StringComparison.Ordinal)) return saveResponse.ToString();
+				return metadataResponse.ToString();
 			});
 		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), CreateHierarchyClientFor("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"), viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 		var options = new PageUpdateOptions {
@@ -2092,13 +2101,20 @@ public class PageToolsTests
 			Body = validBody,
 			DryRun = false
 		};
+
+		// Act
 		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
-		result.Should().BeTrue();
-		response.Success.Should().BeTrue();
-		response.BodyLength.Should().Be(validBody.Length);
-		serviceUrlBuilder.Received(1).Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema");
-		serviceUrlBuilder.Received(1).Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema");
-		serviceUrlBuilder.DidNotReceive().Build(Arg.Is<string>(s => s.Contains("/0/ServiceModel")));
+
+		// Assert
+		result.Should().BeTrue(because: "a valid body must be saved");
+		response.Success.Should().BeTrue(because: "the fake designer service accepts the save");
+		response.BodyLength.Should().Be(validBody.Length, because: "the saved body is the one supplied");
+		postedUrls.Should().Contain("http://test/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema",
+			because: "GetSchema must go to the KnownRoute URL without the .NET Framework 0/ prefix on .NET Core");
+		postedUrls.Should().Contain("http://test/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema",
+			because: "SaveSchema must go to the KnownRoute URL without the .NET Framework 0/ prefix on .NET Core");
+		postedUrls.Should().NotContain(url => url.Contains("/0/", StringComparison.Ordinal),
+			because: "no request of the .NET Core path may carry a 0/ prefix, doubled or single");
 	}
 
 	[Test]
@@ -2128,8 +2144,8 @@ public class PageToolsTests
 		result.Should().BeTrue();
 		response.DryRun.Should().BeTrue();
 		response.BodyLength.Should().Be(validBody.Length);
-		serviceUrlBuilder.DidNotReceive().Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema");
-		serviceUrlBuilder.DidNotReceive().Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema");
+		serviceUrlBuilder.DidNotReceive().Build(ServiceUrlBuilder.KnownRoute.GetClientUnitDesignerSchema);
+		serviceUrlBuilder.DidNotReceive().Build(ServiceUrlBuilder.KnownRoute.SaveClientUnitDesignerSchema);
 	}
 
 	[Test]
@@ -2142,6 +2158,8 @@ public class PageToolsTests
 		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
 		serviceUrlBuilder.Build(Arg.Any<string>())
 			.Returns(callInfo => "http://test" + callInfo.Arg<string>());
+		serviceUrlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>())
+			.Returns(ci => serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoutes[ci.Arg<ServiceUrlBuilder.KnownRoute>()]));
 		applicationClient.ExecutePostRequest(
 				Arg.Is<string>(url => url.Contains("SelectQuery")),
 				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
@@ -2194,6 +2212,8 @@ public class PageToolsTests
 		ILogger logger = Substitute.For<ILogger>();
 		serviceUrlBuilder.Build(Arg.Any<string>())
 			.Returns(callInfo => "http://test" + callInfo.Arg<string>());
+		serviceUrlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>())
+			.Returns(ci => serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoutes[ci.Arg<ServiceUrlBuilder.KnownRoute>()]));
 		string savedPayload = null;
 		applicationClient.ExecutePostRequest(
 				Arg.Is<string>(url => url.Contains("SelectQuery")),
@@ -2274,6 +2294,8 @@ public class PageToolsTests
 		ILogger logger = Substitute.For<ILogger>();
 		serviceUrlBuilder.Build(Arg.Any<string>())
 			.Returns(callInfo => "http://test" + callInfo.Arg<string>());
+		serviceUrlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>())
+			.Returns(ci => serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoutes[ci.Arg<ServiceUrlBuilder.KnownRoute>()]));
 		applicationClient.ExecutePostRequest(
 				Arg.Is<string>(url => url.Contains("SelectQuery")),
 				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
@@ -2331,6 +2353,8 @@ public class PageToolsTests
 		ILogger logger = Substitute.For<ILogger>();
 		serviceUrlBuilder.Build(Arg.Any<string>())
 			.Returns(callInfo => "http://test" + callInfo.Arg<string>());
+		serviceUrlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>())
+			.Returns(ci => serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoutes[ci.Arg<ServiceUrlBuilder.KnownRoute>()]));
 		applicationClient.ExecutePostRequest(
 				Arg.Is<string>(url => url.Contains("SelectQuery")),
 				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
@@ -2397,6 +2421,8 @@ public class PageToolsTests
 		ILogger logger = Substitute.For<ILogger>();
 		serviceUrlBuilder.Build(Arg.Any<string>())
 			.Returns(callInfo => "http://test" + callInfo.Arg<string>());
+		serviceUrlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>())
+			.Returns(ci => serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoutes[ci.Arg<ServiceUrlBuilder.KnownRoute>()]));
 		applicationClient.ExecutePostRequest(
 				Arg.Is<string>(url => url.Contains("SelectQuery")),
 				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
@@ -2441,6 +2467,8 @@ public class PageToolsTests
 		ILogger logger = Substitute.For<ILogger>();
 		serviceUrlBuilder.Build(Arg.Any<string>())
 			.Returns(callInfo => "http://test" + callInfo.Arg<string>());
+		serviceUrlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>())
+			.Returns(ci => serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoutes[ci.Arg<ServiceUrlBuilder.KnownRoute>()]));
 		applicationClient.ExecutePostRequest(
 				Arg.Is<string>(url => url.Contains("SelectQuery")),
 				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
@@ -2608,6 +2636,8 @@ public class PageToolsTests
 		ILogger logger = Substitute.For<ILogger>();
 		serviceUrlBuilder.Build(Arg.Any<string>())
 			.Returns(callInfo => "http://test" + callInfo.Arg<string>());
+		serviceUrlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>())
+			.Returns(ci => serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoutes[ci.Arg<ServiceUrlBuilder.KnownRoute>()]));
 		applicationClient.ExecutePostRequest(
 				Arg.Is<string>(url => url.Contains("SelectQuery")),
 				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
@@ -2764,6 +2794,8 @@ public class PageToolsTests
 		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		var logger = Substitute.For<ILogger>();
 		serviceUrlBuilder.Build(Arg.Any<string>()).Returns("http://test/url");
+		serviceUrlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>())
+			.Returns(ci => serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoutes[ci.Arg<ServiceUrlBuilder.KnownRoute>()]));
 		var metadataResponse = new JObject {
 			["success"] = true,
 			["rows"] = new JArray()
@@ -2917,8 +2949,8 @@ public class PageToolsTests
 		// The persisted-resource-key rescue (issue #1320) must NOT fire here: this body is blocked by a
 		// standard-field BINDING error, and a persisted key can never clear one. The "no Creatio I/O for a
 		// rejected body" cost contract therefore still holds - not one read, not one write.
-		serviceUrlBuilder.DidNotReceive().Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema");
-		serviceUrlBuilder.DidNotReceive().Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema");
+		serviceUrlBuilder.DidNotReceive().Build(ServiceUrlBuilder.KnownRoute.GetClientUnitDesignerSchema);
+		serviceUrlBuilder.DidNotReceive().Build(ServiceUrlBuilder.KnownRoute.SaveClientUnitDesignerSchema);
 	}
 
 	[Test]
@@ -2948,8 +2980,8 @@ public class PageToolsTests
 			.And.Contain("viewConfigDiff")
 			.And.Contain("viewModelConfig/viewModelConfigDiff",
 				because: "the response should explain the correct validator binding location");
-		serviceUrlBuilder.DidNotReceive().Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema");
-		serviceUrlBuilder.DidNotReceive().Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema");
+		serviceUrlBuilder.DidNotReceive().Build(ServiceUrlBuilder.KnownRoute.GetClientUnitDesignerSchema);
+		serviceUrlBuilder.DidNotReceive().Build(ServiceUrlBuilder.KnownRoute.SaveClientUnitDesignerSchema);
 	}
 
 	[Test]
@@ -4147,6 +4179,8 @@ public class PageToolsTests
 		const string replacingUId = "088384f8-5379-4f4c-b71a-3e86d5117909";
 		const string designPackageUId = "082ea278-3ea9-4cca-96da-d5bb999b141e";
 		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(ci => "http://test" + ci.ArgAt<string>(0));
+		serviceUrlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>())
+			.Returns(ci => serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoutes[ci.Arg<ServiceUrlBuilder.KnownRoute>()]));
 		hierarchyClient.GetDesignPackageUId(originalUId).Returns(designPackageUId);
 		hierarchyClient.GetParentSchemas(originalUId, designPackageUId).Returns(new List<PageDesignerHierarchySchema> {
 			new() { UId = replacingUId, Name = "Accounts_ListPage", PackageUId = designPackageUId, PackageName = "CrtCustomer360App_pcsejrm" },
@@ -4203,6 +4237,8 @@ public class PageToolsTests
 		const string originalPackageUId = "2ecba2bd-b810-47a5-a1b1-08c888529d6c";
 		const string virtualDesignPackageUId = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
 		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(ci => "http://test" + ci.ArgAt<string>(0));
+		serviceUrlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>())
+			.Returns(ci => serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoutes[ci.Arg<ServiceUrlBuilder.KnownRoute>()]));
 		hierarchyClient.GetDesignPackageUId(originalUId).Returns(virtualDesignPackageUId);
 		hierarchyClient.GetParentSchemas(originalUId, virtualDesignPackageUId).Returns(new List<PageDesignerHierarchySchema> {
 			new() { UId = originalUId, Name = "Accounts_ListPage", PackageUId = originalPackageUId, PackageName = "CrtCustomer360App" }
@@ -4290,6 +4326,8 @@ public class PageToolsTests
 		const string originalPackageUId = "2ecba2bd-b810-47a5-a1b1-08c888529d6c";
 		const string virtualDesignPackageUId = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
 		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(ci => "http://test" + ci.ArgAt<string>(0));
+		serviceUrlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>())
+			.Returns(ci => serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoutes[ci.Arg<ServiceUrlBuilder.KnownRoute>()]));
 		hierarchyClient.GetDesignPackageUId(originalUId).Returns(virtualDesignPackageUId);
 		hierarchyClient.GetParentSchemas(originalUId, virtualDesignPackageUId).Returns(new List<PageDesignerHierarchySchema> {
 			new() { UId = originalUId, Name = "Accounts_ListPage", PackageUId = originalPackageUId, PackageName = "CrtCustomer360App" }
@@ -4356,6 +4394,8 @@ public class PageToolsTests
 		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		var logger = Substitute.For<ILogger>();
 		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(ci => "http://test" + ci.ArgAt<string>(0));
+		serviceUrlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>())
+			.Returns(ci => serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoutes[ci.Arg<ServiceUrlBuilder.KnownRoute>()]));
 		const string uid = "aaaaaaaa-bbbb-cccc-dddd-111111111111";
 		string validBody = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
 		var metadataResponse = new JObject { ["success"] = true, ["rows"] = new JArray { new JObject { ["UId"] = uid } } };
@@ -4444,6 +4484,8 @@ public class PageToolsTests
 		const string originalUId = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
 		const string designPkg = "11111111-2222-3333-4444-555555555555";
 		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(ci => "http://test" + ci.ArgAt<string>(0));
+		serviceUrlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>())
+			.Returns(ci => serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoutes[ci.Arg<ServiceUrlBuilder.KnownRoute>()]));
 		hierarchyClient.GetDesignPackageUId(originalUId).Returns(designPkg);
 		hierarchyClient.GetParentSchemas(originalUId, designPkg).Returns(new List<PageDesignerHierarchySchema> {
 			new() { UId = originalUId, Name = "Test_FormPage", PackageUId = designPkg, PackageName = "DesignPkg" }
@@ -4498,6 +4540,8 @@ public class PageToolsTests
 		const string schemaUId = "c787571c-c8ca-4c9b-b05b-7ccbe0271a76";
 		const string packageUId = "51a0fc55-ce4f-a533-0340-b70a0c04b905";
 		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(ci => "http://test" + ci.ArgAt<string>(0));
+		serviceUrlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>())
+			.Returns(ci => serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoutes[ci.Arg<ServiceUrlBuilder.KnownRoute>()]));
 		hierarchyClient.GetDesignPackageUId(schemaUId).Returns(packageUId);
 		var hierarchySchema = new PageDesignerHierarchySchema {
 			UId = schemaUId,
@@ -4575,6 +4619,8 @@ public class PageToolsTests
 		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		var logger = Substitute.For<ILogger>();
 		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(ci => "http://test" + ci.ArgAt<string>(0));
+		serviceUrlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>())
+			.Returns(ci => serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoutes[ci.Arg<ServiceUrlBuilder.KnownRoute>()]));
 		applicationClient.ExecutePostRequest(
 				Arg.Is<string>(url => url.Contains("SelectQuery")),
 				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
@@ -4631,6 +4677,8 @@ public class PageToolsTests
 		const string designPkg = "520a3697-4d73-c598-38d4-a7501f8c8e9b";
 		const string schemaName = "UsrSupersededDrop_FormPage";
 		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(ci => "http://test" + ci.ArgAt<string>(0));
+		serviceUrlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>())
+			.Returns(ci => serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoutes[ci.Arg<ServiceUrlBuilder.KnownRoute>()]));
 		hierarchyClient.GetDesignPackageUId(originalUId).Returns(designPkg);
 		hierarchyClient.GetParentSchemas(originalUId, designPkg).Returns(new List<PageDesignerHierarchySchema> {
 			new() { UId = originalUId, Name = schemaName, PackageUId = designPkg, PackageName = "UsrSupersededDropPackage" }
@@ -4703,6 +4751,8 @@ public class PageToolsTests
 		const string originalUId = "86416224-550a-4087-87d9-d4ebc9aa69c8";
 		const string designPkg = "520a3697-4d73-c598-38d4-a7501f8c8e9b";
 		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(ci => "http://test" + ci.ArgAt<string>(0));
+		serviceUrlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>())
+			.Returns(ci => serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoutes[ci.Arg<ServiceUrlBuilder.KnownRoute>()]));
 		hierarchyClient.GetDesignPackageUId(originalUId).Returns(designPkg);
 		hierarchyClient.GetParentSchemas(originalUId, designPkg).Returns(new List<PageDesignerHierarchySchema> {
 			new() { UId = originalUId, Name = "Opportunities_ListPage", PackageUId = designPkg, PackageName = "CrtWaterfallPipelineInLeadOppMgmt" }
@@ -4753,6 +4803,8 @@ public class PageToolsTests
 		const string originalUId = "86416224-550a-4087-87d9-d4ebc9aa69c8";
 		const string designPkg = "520a3697-4d73-c598-38d4-a7501f8c8e9b";
 		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(call => "http://test" + call.ArgAt<string>(0));
+		serviceUrlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>())
+			.Returns(ci => serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoutes[ci.Arg<ServiceUrlBuilder.KnownRoute>()]));
 		hierarchyClient.GetDesignPackageUId(originalUId).Returns(designPkg);
 		hierarchyClient.GetParentSchemas(originalUId, designPkg).Returns(new List<PageDesignerHierarchySchema> {
 			new() { UId = originalUId, Name = "UsrValidator_FormPage", PackageUId = designPkg, PackageName = "UsrValidator" }
@@ -4811,6 +4863,8 @@ public class PageToolsTests
 		const string originalUId = "86416224-550a-4087-87d9-d4ebc9aa69c8";
 		const string designPkg = "520a3697-4d73-c598-38d4-a7501f8c8e9b";
 		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(ci => "http://test" + ci.ArgAt<string>(0));
+		serviceUrlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>())
+			.Returns(ci => serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoutes[ci.Arg<ServiceUrlBuilder.KnownRoute>()]));
 		hierarchyClient.GetDesignPackageUId(originalUId).Returns(designPkg);
 		hierarchyClient.GetParentSchemas(originalUId, designPkg).Returns(new List<PageDesignerHierarchySchema> {
 			new() { UId = originalUId, Name = "UsrFcp_FormPage", PackageUId = designPkg, PackageName = "UsrFcp" }
@@ -4874,6 +4928,8 @@ public class PageToolsTests
 		const string originalUId = "86416224-550a-4087-87d9-d4ebc9aa69c8";
 		const string designPkg = "520a3697-4d73-c598-38d4-a7501f8c8e9b";
 		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(ci => "http://test" + ci.ArgAt<string>(0));
+		serviceUrlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>())
+			.Returns(ci => serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoutes[ci.Arg<ServiceUrlBuilder.KnownRoute>()]));
 		hierarchyClient.GetDesignPackageUId(originalUId).Returns(designPkg);
 		hierarchyClient.GetParentSchemas(originalUId, designPkg).Returns(new List<PageDesignerHierarchySchema> {
 			new() { UId = originalUId, Name = "UsrFcp_FormPage", PackageUId = designPkg, PackageName = "UsrFcp" }
@@ -6220,6 +6276,8 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		serviceUrlBuilder.Build(Arg.Any<string>())
 			.Returns(callInfo => "http://test" + callInfo.Arg<string>());
+		serviceUrlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>())
+			.Returns(ci => serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoutes[ci.Arg<ServiceUrlBuilder.KnownRoute>()]));
 		ILogger logger = Substitute.For<ILogger>();
 		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();

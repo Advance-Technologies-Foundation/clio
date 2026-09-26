@@ -24,6 +24,8 @@ public class PageParentSaveGuardTests {
         _hierarchy=Substitute.For<IPageDesignerHierarchyClient>();
         var urls=Substitute.For<IServiceUrlBuilder>();
         urls.Build(Arg.Any<string>()).Returns(x=>x.Arg<string>());
+        urls.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>())
+        	.Returns(ci => urls.Build(ServiceUrlBuilder.KnownRoutes[ci.Arg<ServiceUrlBuilder.KnownRoute>()]));
         _client.ExecutePostRequest(Arg.Is<string>(x=>x.EndsWith("SelectQuery")),Arg.Any<string>(),Arg.Any<int>(),Arg.Any<int>(),Arg.Any<int>()).Returns("{\"success\":true,\"rows\":[{\"UId\":\""+Uid+"\"}]}");
         _client.ExecutePostRequest(Arg.Is<string>(x=>x.EndsWith("GetSchema")),Arg.Any<string>(),Arg.Any<int>(),Arg.Any<int>(),Arg.Any<int>()).Returns(JsonConvert.SerializeObject(new {success=true,schema=new {name="UsrProof",body=Body("[]")}}));
         _client.ExecutePostRequest(Arg.Is<string>(x=>x.EndsWith("SaveSchema")),Arg.Any<string>(),Arg.Any<int>(),Arg.Any<int>(),Arg.Any<int>()).Returns("{\"success\":true}");

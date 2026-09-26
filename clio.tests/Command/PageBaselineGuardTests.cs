@@ -805,4 +805,97 @@ public sealed class PageBaselineGuardTests {
 		// Assert
 		warning.Should().BeNull(because: "a successful refresh must not decorate a clean response with a warning");
 	}
+
+	[Test]
+	[Description("RefreshAfterSave moves the baseline forward when its checksum equals the schema checksum read right before the save, and finds it under the supplied output-directory.")]
+	public void RefreshAfterSave_ShouldRefreshBaseline_WhenBaselineMatchesPreSaveChecksum() {
+		// Arrange
+		AddMetaWithBaseline("dev", "checksum-before");
+		int metadataReads = 0;
+
+		// Act
+		string warning = _guard.RefreshAfterSave(
+			new EnvironmentOptions { Environment = "dev" }, SchemaName, SchemaUId, OutputDirectory, "checksum-before",
+			() => {
+				metadataReads++;
+				return ("checksum-after", "modified-after");
+			});
+
+		// Assert
+		warning.Should().BeNull(because: "a current baseline is refreshed without anything to report");
+		metadataReads.Should().Be(1, because: "the post-save checksum is read once for a current baseline");
+		PageMetaFileModel meta = JsonSerializer.Deserialize<PageMetaFileModel>(_fileSystem.GetFile(_metaPath).TextContents);
+		meta.Baseline.Checksum.Should().Be("checksum-after",
+			because: "the caller's next update-page must compare against the checksum of its own save");
+	}
+
+	[Test]
+	[Description("RefreshAfterSave leaves a stale baseline (checksum differs from the pre-save checksum) untouched and returns the stale warning, so update-page still reports the external change.")]
+	public void RefreshAfterSave_ShouldLeaveBaselineAndWarn_WhenBaselineIsStale() {
+		// Arrange
+		AddMetaWithBaseline("dev", "checksum-at-get-page");
+		string before = _fileSystem.GetFile(_metaPath).TextContents;
+		int metadataReads = 0;
+
+		// Act
+		string warning = _guard.RefreshAfterSave(
+			new EnvironmentOptions { Environment = "dev" }, SchemaName, SchemaUId, OutputDirectory, "checksum-after-external-edit",
+			() => {
+				metadataReads++;
+				return ("checksum-after", "modified-after");
+			});
+
+		// Assert
+		warning.Should().Be(string.Format(PageBaselineGuard.StaleBaselineWarningFormat, SchemaName),
+			because: "the caller must learn that the next update-page will report a conflict");
+		_fileSystem.GetFile(_metaPath).TextContents.Should().Be(before,
+			because: "refreshing a stale baseline would erase the only record of the external change");
+		metadataReads.Should().Be(0, because: "no post-save read is needed when nothing is refreshed");
+	}
+
+	[Test]
+	[Description("RefreshAfterSave treats an unreadable pre-save checksum as unproven: it leaves the baseline untouched and returns the unproven-baseline warning, not the stale one, because nothing shows the page changed after get-page.")]
+	public void RefreshAfterSave_ShouldLeaveBaselineAndWarn_WhenPreSaveChecksumIsUnknown() {
+		// Arrange
+		AddMetaWithBaseline("dev", "checksum-before");
+		string before = _fileSystem.GetFile(_metaPath).TextContents;
+		int metadataReads = 0;
+
+		// Act
+		string warning = _guard.RefreshAfterSave(
+			new EnvironmentOptions { Environment = "dev" }, SchemaName, SchemaUId, OutputDirectory, null,
+			() => {
+				metadataReads++;
+				return ("checksum-after", "modified-after");
+			});
+
+		// Assert
+		warning.Should().Be(string.Format(PageBaselineGuard.UnprovenBaselineWarningFormat, SchemaName),
+			because: "a failed pre-save read proves nothing about an external change, so the stale text would mislead the caller");
+		warning.Should().NotBe(string.Format(PageBaselineGuard.StaleBaselineWarningFormat, SchemaName),
+			because: "the stale text claims the page changed after get-page, which is not known here");
+		_fileSystem.GetFile(_metaPath).TextContents.Should().Be(before,
+			because: "without the pre-save checksum the baseline must not be moved forward");
+		metadataReads.Should().Be(0, because: "no post-save read is needed when nothing is refreshed");
+	}
+
+	[Test]
+	[Description("RefreshAfterSave removes a current baseline when the post-save checksum could not be read, and returns a warning telling the caller to run get-page again instead of reporting success silently.")]
+	public void RefreshAfterSave_ShouldDropBaselineAndWarn_WhenSavedChecksumIsUnknown() {
+		// Arrange
+		AddMetaWithBaseline("dev", "checksum-before");
+
+		// Act
+		string warning = _guard.RefreshAfterSave(
+			new EnvironmentOptions { Environment = "dev" }, SchemaName, SchemaUId, OutputDirectory, "checksum-before",
+			() => (null, "modified-after"));
+
+		// Assert
+		warning.Should().Be(string.Format(PageBaselineGuard.DroppedBaselineWarningFormat, SchemaName),
+			because: "the caller must learn that the baseline is gone and get-page has to run again before update-page");
+		PageMetaFileModel meta = JsonSerializer.Deserialize<PageMetaFileModel>(_fileSystem.GetFile(_metaPath).TextContents);
+		meta.Baseline.Should().BeNull(
+			because: "a baseline that cannot be moved to the saved checksum would make the next update-page report a false conflict");
+	}
 }
+

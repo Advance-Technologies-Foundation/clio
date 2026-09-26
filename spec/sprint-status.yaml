@@ -4630,3 +4630,63 @@ stories:
     description: Accept explanatory comments while preserving required schema markers for issue 1641
     depends_on: []
     blocks: []
+
+  # --- page-localization (ENG-90576) — added 2026-09-26 ---
+  # Order: 1 -> 2; 3 can start once story 1's ICreatioCultureCatalog exists (stack on it or wait for its merge).
+  # Guidance changes are a separate clio-knowledge PR (six items listed in the ADR) and must land before or with the release.
+  - id: story-page-localization-1
+    title: "localize-page command: per-culture write, SysCulture check, CLI docs"
+    feature: "page-localization"
+    size: M
+    status: review
+    jira: ENG-90576
+    file: spec/stories/story-page-localization-1.md
+    prd: spec/prd/spec-page-localization.md
+    adr: spec/adr/adr-page-localization.md
+    test_plan: spec/test-plans/tp-page-localization.md
+    depends_on: []
+    blocks:
+      - story-page-localization-2
+      - story-page-localization-3
+
+  - id: story-page-localization-2
+    title: "localize-page MCP tool: contract, unit tests, E2E"
+    feature: "page-localization"
+    size: M
+    status: review
+    jira: ENG-90576
+    file: spec/stories/story-page-localization-2.md
+    prd: spec/prd/spec-page-localization.md
+    adr: spec/adr/adr-page-localization.md
+    test_plan: spec/test-plans/tp-page-localization.md
+    depends_on:
+      - story-page-localization-1
+    blocks: []
+
+  - id: story-page-localization-3
+    title: "Entity caption writes refuse cultures absent from SysCulture (merge semantics unchanged, measured)"
+    feature: "page-localization"
+    size: S
+    status: review
+    jira: ENG-90576
+    file: spec/stories/story-page-localization-3.md
+    prd: spec/prd/spec-page-localization.md
+    adr: spec/adr/adr-page-localization.md
+    test_plan: spec/test-plans/tp-page-localization.md
+    depends_on:
+      - story-page-localization-1
+    blocks: []
+
+  - id: story-page-localization-4
+    title: "update-app-section caption-culture: section title in another culture; keep other cultures (platform deletes them on every section update)"
+    feature: "page-localization"
+    size: M
+    status: review
+    jira: ENG-90576
+    file: spec/stories/story-page-localization-4.md
+    prd: spec/prd/spec-page-localization.md
+    adr: spec/adr/adr-page-localization.md
+    test_plan: spec/test-plans/tp-page-localization.md
+    depends_on:
+      - story-page-localization-1
+    blocks: []

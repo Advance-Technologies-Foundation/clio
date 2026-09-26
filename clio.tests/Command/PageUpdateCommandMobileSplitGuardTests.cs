@@ -47,7 +47,9 @@ public sealed class PageUpdateCommandMobileSplitGuardTests
 		_serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		_serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns(SelectQueryUrl);
 		_serviceUrlBuilder.Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema").Returns(GetSchemaUrl);
+		_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetClientUnitDesignerSchema).Returns(GetSchemaUrl);
 		_serviceUrlBuilder.Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema").Returns(SaveSchemaUrl);
+		_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.SaveClientUnitDesignerSchema).Returns(SaveSchemaUrl);
 		// Name → UId lookup.
 		_applicationClient.ExecutePostRequest(
 				SelectQueryUrl, Arg.Is<string>(b => !b.Contains("byUId") && !b.Contains("byPackage")),

@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using Clio.Command;
 using Clio.Command.EntitySchemaDesigner;
+using Clio.Command.Localization;
 using Clio.Common;
 using Clio.Common.EntitySchema;
 using Clio.Common.Responses;
@@ -30,6 +31,7 @@ internal sealed class UpdateEntitySchemaCommandBatchExecutionTests : BaseClioMod
 	private IRemoteEntitySchemaDesignerClient _designerClient = null!;
 	private IRuntimeEntitySchemaReader _runtimeEntitySchemaReader = null!;
 	private ILogger _logger = null!;
+	private ICreatioCultureCatalog _cultureCatalog = null!;
 	private EntityDesignSchemaDto _loadedSchema = null!;
 	private EntityDesignSchemaDto? _savedSchema;
 
@@ -96,6 +98,39 @@ internal sealed class UpdateEntitySchemaCommandBatchExecutionTests : BaseClioMod
 		containerBuilder.AddTransient(_ => _designerClient);
 		containerBuilder.AddTransient(_ => _runtimeEntitySchemaReader);
 		containerBuilder.AddTransient(_ => _logger);
+		_cultureCatalog = Substitute.For<ICreatioCultureCatalog>();
+		_cultureCatalog.GetCultures().Returns([new CreatioCulture("en-US", true), new CreatioCulture("de-DE", true)]);
+		containerBuilder.AddTransient(_ => _cultureCatalog);
+	}
+
+	[Test]
+	[Description("TC-U-33: update-entity-schema with one operation carrying a culture absent from SysCulture fails before any save, so the valid operations of the batch are not written either (ENG-90576 story 3).")]
+	public void Execute_ShouldFailBeforeAnySave_WhenOneBatchOperationHasAbsentCulture() {
+		// Arrange
+		_loadedSchema = CreateSchema([
+			CreateGuidColumn("Id", IdColumnUId),
+			CreateTextColumn("Status", StatusColumnUId, "Old status")
+		]);
+		UpdateEntitySchemaOptions options = new() {
+			Environment = "dev",
+			CaptionCulture = "en-US",
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Operations = [
+				"""{"action":"modify","column-name":"Status","title-localizations":{"en-US":"Status","de-DE":"Status DE"}}""",
+				"""{"action":"add","column-name":"UsrPlate","type":"Text","title-localizations":{"en-US":"Plate","fi-FI":"Rekisterikilpi"}}"""
+			]
+		};
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "a batch containing a caption the environment would drop must fail as a whole");
+		_savedSchema.Should().BeNull(because: "the culture check runs before the single batch save");
+		_designerClient.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(), Arg.Any<RemoteCommandOptions>());
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.StartsWith("Culture 'fi-FI' is not available in this environment. Add it in the Languages section", StringComparison.Ordinal)));
 	}
 
 	[Test]

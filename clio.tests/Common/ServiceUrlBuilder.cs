@@ -191,6 +191,20 @@ internal class ServiceUrlBuilderCommandTests
 			yield return new(true, "https://localhost", ServiceUrlBuilder.KnownRoute.GetSystemEnvironmentInfo, "https://localhost/ServiceModel/ApplicationInfoService.svc/GetSystemEnvironmentInfo");
 			yield return new(false, "https://localhost", ServiceUrlBuilder.KnownRoute.BatchQuery, "https://localhost/0/DataService/json/SyncReply/BatchQuery");
 			yield return new(true, "https://localhost", ServiceUrlBuilder.KnownRoute.BatchQuery, "https://localhost/DataService/json/SyncReply/BatchQuery");
+			// ENG-90576 (localize-page): page designer schema read/save and the post-save script-cache reset.
+			yield return new(false, "https://localhost", ServiceUrlBuilder.KnownRoute.GetClientUnitDesignerSchema, "https://localhost/0/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema");
+			yield return new(true, "https://localhost", ServiceUrlBuilder.KnownRoute.GetClientUnitDesignerSchema, "https://localhost/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema");
+			yield return new(false, "https://localhost", ServiceUrlBuilder.KnownRoute.SaveClientUnitDesignerSchema, "https://localhost/0/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema");
+			yield return new(true, "https://localhost", ServiceUrlBuilder.KnownRoute.SaveClientUnitDesignerSchema, "https://localhost/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema");
+			yield return new(false, "https://localhost", ServiceUrlBuilder.KnownRoute.ResetScriptCache, "https://localhost/0/rest/WorkplaceService/ResetScriptCache");
+			yield return new(true, "https://localhost", ServiceUrlBuilder.KnownRoute.ResetScriptCache, "https://localhost/rest/WorkplaceService/ResetScriptCache");
+			// ENG-90576 story 4 (update-app-section caption-culture): section localization rows and the package binding re-save.
+			yield return new(false, "https://localhost", ServiceUrlBuilder.KnownRoute.SelectLocalizationQuery, "https://localhost/0/DataService/json/SyncReply/SelectLocalizationQuery");
+			yield return new(true, "https://localhost", ServiceUrlBuilder.KnownRoute.SelectLocalizationQuery, "https://localhost/DataService/json/SyncReply/SelectLocalizationQuery");
+			yield return new(false, "https://localhost", ServiceUrlBuilder.KnownRoute.UpdateLocalizationQuery, "https://localhost/0/DataService/json/SyncReply/UpdateLocalizationQuery");
+			yield return new(true, "https://localhost", ServiceUrlBuilder.KnownRoute.UpdateLocalizationQuery, "https://localhost/DataService/json/SyncReply/UpdateLocalizationQuery");
+			yield return new(false, "https://localhost", ServiceUrlBuilder.KnownRoute.GetSchemaDataDesignItem, "https://localhost/0/ServiceModel/SchemaDataDesignerService.svc/GetSchema");
+			yield return new(true, "https://localhost", ServiceUrlBuilder.KnownRoute.GetSchemaDataDesignItem, "https://localhost/ServiceModel/SchemaDataDesignerService.svc/GetSchema");
 			// Registered WITHOUT a leading slash, unlike the /rest/... entries, so both prefix shapes are
 			// pinned here rather than left to CreateUrl's normalisation happening to be right.
 			yield return new TestCaseDataWithKnownRoutes(false, "http://localhost",

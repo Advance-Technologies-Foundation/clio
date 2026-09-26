@@ -250,7 +250,8 @@ public class BindingsModule {
 		services.AddTransient(sp => new EntitySchemaColumnResolvers(
 			sp.GetRequiredService<IEntitySchemaDefaultValueSourceResolver>(),
 			sp.GetRequiredService<ILookupDefaultDisplayValueResolver>(),
-			sp.GetRequiredService<IEntitySchemaCaptionCultureResolver>()));
+			sp.GetRequiredService<IEntitySchemaCaptionCultureResolver>(),
+			sp.GetRequiredService<Clio.Command.Localization.ICultureAvailabilityGuard>()));
 		services.AddSingleton<IWorkspacePathBuilder, WorkspacePathBuilder>();
 		services.AddTransient<IVsProjectFactory, VsProjectFactory>();
 		services.AddTransient<ICreatioPkgProjectCreator, CreatioPkgProjectCreator>();
@@ -469,6 +470,9 @@ public class BindingsModule {
 		services.AddTransient<IApplicationSectionCreateService, ApplicationSectionCreateService>();
 		services.AddTransient<CreateAppSectionCommand>();
 		services.AddTransient<IApplicationSectionUpdateService, ApplicationSectionUpdateService>();
+		services.AddTransient<IApplicationSectionLocalizationClient, ApplicationSectionLocalizationClient>();
+		services.AddTransient<ISectionLocalizationPlanner, SectionLocalizationPlanner>();
+		services.AddTransient<Clio.Command.Localization.ICreatioCultureCatalogFactory, Clio.Command.Localization.CreatioCultureCatalogFactory>();
 		services.AddTransient<UpdateAppSectionCommand>();
 		services.AddTransient<IAddonSchemaDesignerClient, AddonSchemaDesignerClient>();
 		services.AddTransient<ISchemaTransferClient, SchemaTransferClient>();
@@ -525,6 +529,9 @@ public class BindingsModule {
 		services.AddTransient<ProcessPageFactsCommand>();
 		services.AddTransient<GetPageHierarchyCommand>();
 		services.AddTransient<PageUpdateCommand>();
+		services.AddTransient<LocalizePageCommand>();
+		services.AddTransient<ILocalizePageService, LocalizePageCommand>();
+		services.AddTransient<Clio.Command.Localization.ICreatioCultureCatalog, Clio.Command.Localization.CreatioCultureCatalog>();
 		// Shared page conflict-baseline + file-output services consumed by both the CLI verbs
 		// (get-page / update-page) and the MCP tools (get-page / update-page / sync-pages).
 		services.AddTransient<IPageBaselineGuard, PageBaselineGuard>();
@@ -694,6 +701,7 @@ public class BindingsModule {
 		services.AddTransient<WithdrawTelemetryConsentTool>();
 		services.AddTransient<PageGetTool>();
 		services.AddTransient<PageUpdateTool>();
+		services.AddTransient<LocalizePageTool>();
 		services.AddTransient<PageCreateTool>();
 		services.AddTransient<CreateRelatedPageAddonTool>();
 		services.AddTransient<GetRelatedPageAddonTool>();

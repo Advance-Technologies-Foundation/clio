@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using Clio.Command;
+using Clio.Command.Localization;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
 using Clio.UserEnvironment;
@@ -21,6 +23,7 @@ public sealed class ApplicationSectionUpdateServiceTests {
 	private IServiceUrlBuilder _serviceUrlBuilder = null!;
 	private IApplicationInfoService _applicationInfoService = null!;
 	private ICaptionCultureResolver _captionCultureResolver = null!;
+	private IApplicationSectionLocalizationClient _sectionLocalizationClient = null!;
 	private EnvironmentSettings _environmentSettings = null!;
 	private ApplicationSectionUpdateService _sut = null!;
 
@@ -44,12 +47,19 @@ public sealed class ApplicationSectionUpdateServiceTests {
 		_captionCultureResolver = Substitute.For<ICaptionCultureResolver>();
 		_captionCultureResolver.Resolve(Arg.Any<EnvironmentOptions>(), Arg.Any<string?>()).Returns("en-US");
 		_captionCultureResolver.Resolve(Arg.Any<EnvironmentSettings>(), Arg.Any<string?>()).Returns("en-US");
+		_sectionLocalizationClient = Substitute.For<IApplicationSectionLocalizationClient>();
+		_sectionLocalizationClient
+			.ReadLocalizations(Arg.Any<IApplicationClient>(), Arg.Any<EnvironmentSettings>(), Arg.Any<string>())
+			.Returns(new List<SectionLocalizationRow>());
 		_sut = new ApplicationSectionUpdateService(
 			_settingsRepository,
 			_applicationClientFactory,
 			_serviceUrlBuilder,
 			_applicationInfoService,
-			_captionCultureResolver);
+			_captionCultureResolver,
+			_sectionLocalizationClient,
+			new SectionLocalizationPlanner(_sectionLocalizationClient),
+			Substitute.For<ICreatioCultureCatalogFactory>());
 	}
 
 	[Test]

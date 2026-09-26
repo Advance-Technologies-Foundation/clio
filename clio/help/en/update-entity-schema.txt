@@ -96,6 +96,9 @@ NOTES
       validation error and requests explicit code/Guid input
     - this is the clio-native alternative to frontend-style entity.update.operationsJson
     - Binary, Image, and File operations do not support default-value or default-value-source Const
+    - every caption culture must exist in the Languages section (System Designer -> Languages).
+      A culture the environment does not have fails the whole batch before anything is saved, listing the
+      available cultures; an inactive culture is saved with a warning
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio

@@ -72,6 +72,44 @@ public interface IPageBaselineGuard {
 	/// strictly worse than the silent loss it replaces. The warning is what makes the loss visible.
 	/// </returns>
 	string RefreshOrDrop(string metaFilePath, PageUpdateOptions options, PageUpdateResponse response);
+
+	/// <summary>
+	/// After a successful save made by a command that does not arm a conflict check (for example
+	/// <c>localize-page</c>): when an on-disk <c>.clio-pages/{schema}/meta.json</c> baseline exists for
+	/// <paramref name="schemaName"/> in the same environment AND still describes the schema as it was right
+	/// before this save, moves its checksum forward (through <see cref="RefreshOrDrop"/>, the single
+	/// <c>meta.json</c> writer). Without it the caller's next <c>update-page</c> is refused as "modified outside
+	/// this session" for a save it made itself.
+	/// </summary>
+	/// <remarks>
+	/// A baseline whose checksum differs from <paramref name="preSaveChecksum"/> was already stale: somebody
+	/// changed the page after the <c>get-page</c> that wrote it. Refreshing it would erase the only local record
+	/// of that change and let the next <c>update-page</c> overwrite it silently, so the file is left untouched
+	/// and <see cref="StaleBaselineWarningFormat"/> is returned instead. When the pre-save checksum could not be
+	/// read the baseline can not be proven current, so it is also left untouched and
+	/// <see cref="UnprovenBaselineWarningFormat"/> is returned. When the post-save checksum could not be read the
+	/// baseline block is removed and <see cref="DroppedBaselineWarningFormat"/> is returned, so the caller knows to
+	/// run <c>get-page</c> again.
+	/// </remarks>
+	/// <param name="environment">Environment identity of the save, recorded in the refreshed baseline.</param>
+	/// <param name="schemaName">Page schema name the baseline is keyed by.</param>
+	/// <param name="savedSchemaUId">UId of the schema that was saved.</param>
+	/// <param name="outputDirectory">Optional anchor of the <c>.clio-pages</c> tree (the <c>output-directory</c>
+	/// passed to <c>get-page</c>); <see langword="null"/> resolves it the way <c>get-page</c> does by default.</param>
+	/// <param name="preSaveChecksum"><c>SysSchema.Checksum</c> of the saved schema read immediately before the save;
+	/// <see langword="null"/> when that read failed.</param>
+	/// <param name="readSavedMetadata">Reads the post-save <c>SysSchema</c> checksum and modification date. Called
+	/// only when a matching, current baseline exists, so a page without one costs no extra request. A
+	/// <see langword="null"/> checksum removes the baseline block instead of keeping a stale one, and is reported.</param>
+	/// <returns><see langword="null"/> when nothing had to be reported; otherwise a diagnostic the caller surfaces as
+	/// a response warning. Never throws for a baseline problem.</returns>
+	string RefreshAfterSave(
+		EnvironmentOptions environment,
+		string schemaName,
+		string savedSchemaUId,
+		string outputDirectory,
+		string preSaveChecksum,
+		Func<(string Checksum, string ModifiedOn)> readSavedMetadata);
 }
 
 /// <inheritdoc />
@@ -86,6 +124,31 @@ public sealed class PageBaselineGuard : IPageBaselineGuard {
 	internal const string PinnedChecksumMergeAdvice =
 		"If it was copied out of a conflict response rather than from a fresh get-page, this save "
 		+ "overwrites the change that caused the conflict - re-read the page and merge before saving.";
+
+	/// <summary>
+	/// Warning returned by <see cref="RefreshAfterSave"/> when the on-disk baseline did not describe the page as
+	/// it was right before the save. <c>{0}</c> is the schema name.
+	/// </summary>
+	internal const string StaleBaselineWarningFormat =
+		"The .clio-pages baseline of '{0}' was stale (the page changed after the get-page that wrote it), so it was "
+		+ "left unchanged; update-page will report the conflict. Re-read the page with get-page and merge before saving.";
+
+	/// <summary>
+	/// Warning returned by <see cref="RefreshAfterSave"/> when the checksum read right before the save failed, so the
+	/// on-disk baseline could not be compared with the page as it was before the save. <c>{0}</c> is the schema name.
+	/// </summary>
+	internal const string UnprovenBaselineWarningFormat =
+		"The .clio-pages baseline of '{0}' was left unchanged because the page checksum could not be read before the "
+		+ "save, so the baseline could not be proven current; update-page may report a conflict for this save. Re-read "
+		+ "the page with get-page before update-page.";
+
+	/// <summary>
+	/// Warning returned by <see cref="RefreshAfterSave"/> when the baseline was current but the checksum read after
+	/// the save failed, so the baseline was removed instead of refreshed. <c>{0}</c> is the schema name.
+	/// </summary>
+	internal const string DroppedBaselineWarningFormat =
+		"The .clio-pages baseline of '{0}' was removed because the saved checksum could not be read; run get-page "
+		+ "again before update-page.";
 
 	private readonly IFileSystem _fileSystem;
 	private readonly IInterprocessFileGate _fileGate;
@@ -405,6 +468,49 @@ public sealed class PageBaselineGuard : IPageBaselineGuard {
 	/// </summary>
 	private static string JoinWarnings(List<string> warnings) =>
 		warnings.Count == 0 ? null : string.Join(" ", warnings);
+
+	/// <inheritdoc />
+	public string RefreshAfterSave(
+		EnvironmentOptions environment,
+		string schemaName,
+		string savedSchemaUId,
+		string outputDirectory,
+		string preSaveChecksum,
+		Func<(string Checksum, string ModifiedOn)> readSavedMetadata) {
+		PageUpdateOptions identity = new() {
+			SchemaName = schemaName,
+			Environment = environment?.Environment,
+			Uri = environment?.Uri
+		};
+		string metaFilePath = TryResolveMetaFilePath(
+			identity, string.IsNullOrWhiteSpace(outputDirectory) ? null : outputDirectory);
+		if (metaFilePath is null) {
+			return null;
+		}
+		PageBaselineInfo baseline = PageBaselineStore.TryReadBaseline(
+			_fileSystem, _fileGate, metaFilePath, out string readWarning);
+		if (baseline is null || !PageBaselineStore.MatchesEnvironment(baseline, identity.Environment, identity.Uri)) {
+			return string.IsNullOrWhiteSpace(readWarning) ? null : readWarning.Trim();
+		}
+		if (string.IsNullOrWhiteSpace(preSaveChecksum)) {
+			return string.Format(UnprovenBaselineWarningFormat, schemaName);
+		}
+		if (!string.Equals(baseline.Checksum, preSaveChecksum.Trim(), StringComparison.Ordinal)) {
+			return string.Format(StaleBaselineWarningFormat, schemaName);
+		}
+		(string checksum, string modifiedOn) = readSavedMetadata();
+		if (string.IsNullOrWhiteSpace(checksum)) {
+			string deleteWarning = PageBaselineStore.DeleteBaseline(_fileSystem, _fileGate, metaFilePath);
+			return string.IsNullOrWhiteSpace(deleteWarning)
+				? string.Format(DroppedBaselineWarningFormat, schemaName)
+				: deleteWarning.Trim();
+		}
+		return RefreshOrDrop(metaFilePath, identity, new PageUpdateResponse {
+			NewChecksum = checksum,
+			NewModifiedOn = modifiedOn,
+			SavedSchemaUId = savedSchemaUId
+		});
+	}
 
 	/// <inheritdoc />
 	public string RefreshOrDrop(string metaFilePath, PageUpdateOptions options, PageUpdateResponse response) {

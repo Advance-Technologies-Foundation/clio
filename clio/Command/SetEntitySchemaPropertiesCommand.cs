@@ -93,7 +93,7 @@ public class SetEntitySchemaPropertiesOptions : RemoteCommandOptions
 	/// </summary>
 	[Option("title-localizations", Required = false,
 		HelpText = "New schema caption per culture as JSON, e.g. '{\"en-US\":\"Mention language\"}'. "
-			+ "Mutually exclusive with --title")]
+			+ "Mutually exclusive with --title. Each culture must exist in the Languages section")]
 	public string? TitleLocalizations { get; set; }
 
 	/// <summary>

@@ -1,7 +1,9 @@
 ---
 description: a schema resource value is written into an XML ATTRIBUTE by XmlWriter.WriteAttributeString and nothing in the platform sets CheckCharacters, so the framework default of true applies - an XML-invalid character in a caption throws on somebody else's later package export, naming neither the caption nor the flow
 applies-to:
+  - clio/Command/XmlAttributeText.cs
   - clio/Command/ProcessModel/FlowLabelExpectation.cs
+  - clio/Command/LocalizePageCommand.cs
   - clio/CrtProcessBuilder/CrtProcessBuilder.gz
   - clio.tests/Common/BundledProcessBuilderPackageTests.cs
 ticket: ENG-91853
@@ -39,7 +41,12 @@ So a caption must be filtered at the point it is stored, and `CrtProcessBuilder`
 - **A label that filters to EMPTY must be refused, not stored.** An empty caption is how a caption is
   CLEARED, so storing the filtered result would delete an existing designer-authored label while
   reporting that a new one was set.
-- **The rule is hand-mirrored in clio** as `FlowLabelExpectation.IsUnstorable`, because clio predicts
+- **The rule is hand-mirrored in clio** as `XmlAttributeText.IsUnstorable` / `ContainsUnstorable`
+  (`FlowLabelExpectation.IsUnstorable` delegates to it). Its control-character test is `char.IsControl`,
+  which covers C0, `U+007F` and the C1 range `U+0080`-`U+009F`, so clio rejects `U+007F`-`U+009F` too
+  although XML 1.0 allows them. `localize-page` uses the same rule to REFUSE a
+  page resource or caption value before saving (naming the key), so the displaced export failure above cannot
+  start from a translation. `FlowLabelExpectation` uses it because clio predicts
   what the server will store in order to compare a read-back. If the two halves disagree, clio
   reports "the label came back DIFFERENT" on a write that landed exactly as sent — and the two quoted
   strings in that message can look identical, because the character at fault is invisible. What

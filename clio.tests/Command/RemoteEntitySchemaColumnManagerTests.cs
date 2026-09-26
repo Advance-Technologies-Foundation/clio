@@ -7,6 +7,7 @@ using System.Reflection;
 using System.Text.Json;
 using Clio.Command;
 using Clio.Command.EntitySchemaDesigner;
+using Clio.Command.Localization;
 using Clio.Common;
 using Clio.Common.Responses;
 using Clio.Package;
@@ -35,6 +36,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 	private Clio.Common.EntitySchema.IRuntimeEntitySchemaReader _runtimeEntitySchemaReader;
 	private ILookupDefaultDisplayValueResolver _lookupDefaultDisplayValueResolver;
 	private IEntitySchemaCaptionCultureResolver _captionCultureResolver;
+	private ICreatioCultureCatalog _cultureCatalog;
 	private IEntitySchemaDependencyResolver _dependencyResolver;
 	private IEntitySchemaPublisher _entitySchemaPublisher;
 	private ILogger _logger;
@@ -72,6 +74,13 @@ internal class RemoteEntitySchemaColumnManagerTests
 		_captionCultureResolver
 			.ResolveEffectiveCulture(Arg.Any<EnvironmentOptions>(), Arg.Any<string?>())
 			.Returns("en-US");
+		_cultureCatalog = Substitute.For<ICreatioCultureCatalog>();
+		// Default: every culture the existing cases write is an active SysCulture row, so the pre-save
+		// culture check is transparent to them; es-ES is present but inactive for the warning case.
+		_cultureCatalog.GetCultures().Returns([
+			new CreatioCulture("en-US", true), new CreatioCulture("uk-UA", true),
+			new CreatioCulture("de-DE", true), new CreatioCulture("es-ES", false)
+		]);
 		_dependencyResolver = Substitute.For<IEntitySchemaDependencyResolver>();
 		// Stubbed here, not per test: an unstubbed member returning a reference type answers with null, and a
 		// null resolution would fail the load path with a NullReferenceException before any assertion runs.
@@ -139,7 +148,8 @@ internal class RemoteEntitySchemaColumnManagerTests
 			new EntitySchemaColumnResolvers(
 				_defaultValueSourceResolver,
 				_lookupDefaultDisplayValueResolver,
-				_captionCultureResolver),
+				_captionCultureResolver,
+				new CultureAvailabilityGuard(_cultureCatalog, _logger)),
 			_designerClient,
 			_runtimeEntitySchemaReader,
 			_dependencyResolver,
@@ -3388,6 +3398,208 @@ internal class RemoteEntitySchemaColumnManagerTests
 		// Assert
 		act.Should().Throw<EntitySchemaDesignerException>(because: "a silently ignored flag is not a successful update")
 			.WithMessage("*Database-view flag was not persisted*", because: "the failure must identify the property that failed readback");
+	}
+
+	[Test]
+	[Description("TC-U-30: set-entity-schema-properties with a title culture that is not a SysCulture row fails before the designer save, naming the Languages section and the available cultures (ENG-90576 story 3).")]
+	public void Execute_ShouldFailBeforeSave_WhenTitleLocalizationCultureIsAbsent() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)]);
+		SetupLoadedSchema();
+		var options = new SetEntitySchemaPropertiesOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			ParsedTitleLocalizations = new Dictionary<string, string> { ["fi-FI"] = "Ajoneuvo" }
+		};
+
+		// Act
+		Action act = () => _manager.SetSchemaProperties(options);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>()
+			.WithMessage("Culture 'fi-FI' is not available in this environment. Add it in the Languages section "
+				+ "(System Designer → Languages) first. Available: en-US, uk-UA, de-DE, es-ES.",
+				because: "the designer would drop the fi-FI caption and still answer success, so the command must refuse it with the localize-page wording");
+		_designerClient.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(), Arg.Any<RemoteCommandOptions>());
+		_savedSchema.Should().BeNull(because: "no designer save may happen for a refused culture");
+	}
+
+	[Test]
+	[Description("TC-U-31: set-entity-schema-properties with an inactive SysCulture culture saves the caption and logs the inactive-culture warning (ENG-90576 story 3).")]
+	public void Execute_ShouldSaveAndWarn_WhenTitleLocalizationCultureIsInactive() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)]);
+		SetupLoadedSchema();
+		var options = new SetEntitySchemaPropertiesOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			ParsedTitleLocalizations = new Dictionary<string, string> { ["es-ES"] = "Vehículo" }
+		};
+
+		// Act
+		_manager.SetSchemaProperties(options);
+
+		// Assert
+		_savedSchema.Should().NotBeNull(because: "an inactive culture is a SysCulture row, so the translation is stored");
+		_savedSchema.Caption.Should().Contain(value => value.CultureName == "es-ES" && value.Value == "Vehículo",
+			because: "the requested es-ES caption must reach the designer save");
+		_logger.Received(1).WriteWarning(CultureMessages.FormatCultureInactive("es-ES"));
+	}
+
+	[Test]
+	[Description("A scalar --title anchored to a --caption-culture the environment does not have fails before the save: the resolved effective culture is checked like a map key (ENG-90576 story 3, AC-1).")]
+	public void SetSchemaProperties_ShouldFailBeforeSave_WhenScalarTitleCultureIsAbsent() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)]);
+		SetupLoadedSchema();
+		_captionCultureResolver
+			.ResolveEffectiveCulture(Arg.Any<EnvironmentOptions>(), Arg.Any<string?>())
+			.Returns("fi-FI");
+		var options = new SetEntitySchemaPropertiesOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Ajoneuvo",
+			CaptionCulture = "fi-FI"
+		};
+
+		// Act
+		Action act = () => _manager.SetSchemaProperties(options);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>().WithMessage("Culture 'fi-FI' is not available*",
+			because: "the scalar title is stored under the effective culture, which the environment does not have");
+		_designerClient.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(), Arg.Any<RemoteCommandOptions>());
+	}
+
+	[Test]
+	[Description("A schema-property write that changes no caption does not read SysCulture, so the primary-display-column-only call keeps making no extra remote request (ENG-90576 story 3).")]
+	public void SetSchemaProperties_ShouldNotReadCultures_WhenNoCaptionIsWritten() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId), CreateTextColumn("Caption", NameColumnUId)],
+			primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		var options = new SetEntitySchemaPropertiesOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			PrimaryDisplayColumn = "Caption"
+		};
+
+		// Act
+		_manager.SetSchemaProperties(options);
+
+		// Assert
+		_savedSchema.Should().NotBeNull(because: "the primary-display column change is still saved");
+		_cultureCatalog.DidNotReceive().GetCultures();
+	}
+
+	[Test]
+	[Description("TC-U-32: a column modify whose title map carries a culture absent from SysCulture fails before the designer save, even with en-US present (ENG-90576 story 3).")]
+	public void ModifyColumn_ShouldFailBeforeSave_WhenColumnTitleCultureIsAbsent() {
+		// Arrange
+		EntitySchemaColumnDto statusColumn = CreateTextColumn("UsrVehicleStatus", NameColumnUId);
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId), statusColumn]);
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "modify",
+			ColumnName = "UsrVehicleStatus",
+			TitleLocalizations = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+				["en-US"] = "Vehicle Status",
+				["fi-FI"] = "Ajoneuvon tila"
+			}
+		};
+
+		// Act
+		Action act = () => _manager.ModifyColumn(options);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>()
+			.WithMessage("Culture 'fi-FI' is not available in this environment.*Available: en-US, uk-UA, de-DE, es-ES.",
+				because: "the designer would drop the fi-FI column caption and still answer success");
+		_designerClient.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(), Arg.Any<RemoteCommandOptions>());
+	}
+
+	[Test]
+	[Description("A column description map is checked like the title map: an absent culture fails before the save (ENG-90576 story 3, AC-1).")]
+	public void ModifyColumn_ShouldFailBeforeSave_WhenColumnDescriptionCultureIsAbsent() {
+		// Arrange
+		EntitySchemaColumnDto statusColumn = CreateTextColumn("UsrVehicleStatus", NameColumnUId);
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId), statusColumn]);
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "modify",
+			ColumnName = "UsrVehicleStatus",
+			DescriptionLocalizations = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+				["en-US"] = "Status of the vehicle",
+				["xx-XX"] = "x"
+			}
+		};
+
+		// Act
+		Action act = () => _manager.ModifyColumn(options);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>().WithMessage("Culture 'xx-XX' is not available*",
+			because: "a description in a culture the environment does not have would be dropped silently");
+		_designerClient.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(), Arg.Any<RemoteCommandOptions>());
+	}
+
+	[Test]
+	[Description("TC-U-35: a failed SysCulture read fails the column write before the save instead of skipping the check (ENG-90576 story 3, AC-6).")]
+	public void Execute_ShouldFail_WhenCultureCatalogReadFails() {
+		// Arrange
+		EntitySchemaColumnDto statusColumn = CreateTextColumn("UsrVehicleStatus", NameColumnUId);
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId), statusColumn]);
+		SetupLoadedSchema();
+		_cultureCatalog.GetCultures().Returns(_ => throw new InvalidOperationException("SysCulture read failed: 403"));
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "modify",
+			ColumnName = "UsrVehicleStatus",
+			TitleLocalizations = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+				["en-US"] = "Vehicle Status"
+			}
+		};
+
+		// Act
+		Action act = () => _manager.ModifyColumn(options);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>().WithMessage("SysCulture read failed: 403",
+			because: "an unverifiable culture must not be written as if it had been checked");
+		_designerClient.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(), Arg.Any<RemoteCommandOptions>());
+	}
+
+	[Test]
+	[Description("A column batch reads SysCulture once for all operations, and a remove-only or scalar-property-only operation adds no culture to check (ENG-90576 story 3, AC-1).")]
+	public void ModifyColumns_ShouldReadCulturesOnce_WhenSeveralOperationsWriteCaptions() {
+		// Arrange
+		EntitySchemaColumnDto statusColumn = CreateTextColumn("UsrVehicleStatus", NameColumnUId);
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId), statusColumn]);
+		SetupLoadedSchema();
+		ModifyEntitySchemaColumnOptions[] operations = [
+			new() {
+				Package = "UsrPkg", SchemaName = "UsrVehicle", Action = "modify", ColumnName = "UsrVehicleStatus",
+				TitleLocalizations = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+					["en-US"] = "Vehicle Status", ["de-DE"] = "Fahrzeugstatus"
+				}
+			},
+			new() {
+				Package = "UsrPkg", SchemaName = "UsrVehicle", Action = "add", ColumnName = "UsrPlate", Type = "Text",
+				Title = "Plate"
+			}
+		];
+
+		// Act
+		_manager.ModifyColumns(operations);
+
+		// Assert
+		_savedSchema.Should().NotBeNull(because: "every culture of the batch is an active SysCulture row");
+		_cultureCatalog.Received(1).GetCultures();
 	}
 
 	private void SetupLoadedSchema() {
