@@ -8,6 +8,7 @@ using System.Text;
 using System.Text.Json;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
+using Clio.Tests.Common;
 using FluentAssertions;
 using ModelContextProtocol.Server;
 using NSubstitute;
@@ -2139,4 +2140,76 @@ public sealed class ODataReadToolTests {
 			because: "nothing reached $select, so the element was neither split nor pasted into a URL - the same invariant the accepted-shape normalizer test proves directly");
 	}
 
+	private static ODataFilterCondition Condition(string field, string op, string jsonValue) =>
+		new() { Field = field, Op = op, Value = JsonDocument.Parse(jsonValue).RootElement.Clone() };
+
+	private static IEnumerable<TestCaseData> Issue1550Cases() {
+		yield return new TestCaseData(
+				new ODataReadArgs {
+					EnvironmentName = "dev", Entity = "SysSchema",
+					Filters = new ODataFilters { All = [Condition("CreatedOn", "gt", "\"2026-09-15T06:00:00Z\"")] }
+				},
+				CreatioResponseErrorStructuredDetailTests.DateFilterBody,
+				ODataReadErrorCodes.InvalidQuery,
+				"a filter compares a 'Edm.DateTimeOffset' column with a 'Edm.String' value (operator 'GreaterThan')")
+			.SetName("Issue 1550 case 1 - date filter");
+		yield return new TestCaseData(
+				new ODataReadArgs { EnvironmentName = "dev", Entity = "SysSchema", Select = Columns("Id", "MetaData") },
+				CreatioResponseErrorStructuredDetailTests.BinaryColumnSelectBody,
+				ODataReadErrorCodes.ServerReportedError,
+				"binary (Edm.Stream) column")
+			.SetName("Issue 1550 case 2 - binary column in select");
+		yield return new TestCaseData(
+				new ODataReadArgs {
+					EnvironmentName = "dev", Entity = "SysSchema",
+					Filters = new ODataFilters { All = [Condition("UId", "eq", "\"2b4c6a55-4d52-4505-8e3c-f105d913136e\"")] }
+				},
+				CreatioResponseErrorStructuredDetailTests.GuidAsStringFilterBody,
+				ODataReadErrorCodes.InvalidQuery,
+				"a filter compares a 'Edm.Guid' column with a 'Edm.String' value (operator 'Equal')")
+			.SetName("Issue 1550 case 3 - filter on SysSchema.UId");
+		yield return new TestCaseData(
+				new ODataReadArgs {
+					EnvironmentName = "dev", Entity = "SysSchema",
+					Filters = new ODataFilters {
+						Any = [
+							Condition("UId", "eq", "\"2b4c6a55-4d52-4505-8e3c-f105d913136e\""),
+							Condition("UId", "eq", "\"25d7c1ab-1de0-4501-b402-02e0e5a72d6e\""),
+							Condition("UId", "eq", "\"16be3651-8fe2-4159-8dd0-a803d4683dd3\"")
+						]
+					}
+				},
+				CreatioResponseErrorStructuredDetailTests.GuidAsStringFilterBody,
+				ODataReadErrorCodes.InvalidQuery,
+				"a filter compares a 'Edm.Guid' column with a 'Edm.String' value (operator 'Equal')")
+			.SetName("Issue 1550 case 4 - any group of eq clauses on SysSchema.UId");
+		yield return new TestCaseData(
+				new ODataReadArgs { EnvironmentName = "dev", Entity = "SysSchema", Select = Columns("Id", "Foo") },
+				CreatioResponseErrorStructuredDetailTests.UnknownPropertyBody,
+				ODataReadErrorCodes.InvalidQuery,
+				"unknown property 'Foo' on 'SysSchema'")
+			.SetName("Issue 1550 - unknown column in select");
+	}
+
+	[TestCaseSource(nameof(Issue1550Cases))]
+	[Category("Unit")]
+	[Description("Issue #1550: each of the reported server-side rejections yields its own one-line structured hint instead of one generic sentence, and none of the server's free-form wording.")]
+	public void Read_Should_Distinguish_Server_Rejections_By_Their_Structured_Detail(
+			ODataReadArgs args, string body, string expectedErrorCode, string expectedFact) {
+		// Arrange
+		ODataReadTool tool = BuildToolReturning(body, out IApplicationClient _);
+
+		// Act
+		ODataReadResponse response = tool.Read(args);
+
+		// Assert
+		response.Success.Should().BeFalse(because: "every body here is an OData error envelope");
+		response.ErrorCode.Should().Be(expectedErrorCode,
+			because: "the structured hint is additive and must not change the classification callers branch on");
+		response.Error.Should().Contain(expectedFact,
+			because: "four unrelated mistakes used to produce one identical message; the validated identifiers tell them apart");
+		response.Error.Should().NotContainAny(
+			["The query specified in the URI is not valid", "A binary operator", "Value cannot be null", "Terrasoft.Configuration"],
+			because: "the server's free-form wording is still withheld from a transcript a model reads as trusted content");
+	}
 }
