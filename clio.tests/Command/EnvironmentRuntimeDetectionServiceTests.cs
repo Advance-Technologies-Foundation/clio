@@ -630,6 +630,110 @@ public sealed class EnvironmentRuntimeDetectionServiceTests {
 			because: "no HTTP status came back at all, which is a connectivity problem regardless of how the exception text reads");
 	}
 
+	[Test]
+	[Description("Describes a mix of 404, 410 and 503 probe outcomes neutrally by the statuses observed, instead of claiming every probe answered a server error.")]
+	public void Detect_Should_Name_The_Observed_Statuses_When_Probe_Failures_Mix_Absence_And_Server_Errors() {
+		// Arrange
+		IApplicationClientFactory applicationClientFactory = Substitute.For<IApplicationClientFactory>();
+		IHttpClientFactory httpClientFactory = CreateHttpClientFactory(new Dictionary<string, HttpStatusCode> {
+			[BuildHealthUrl(true)] = HttpStatusCode.NotFound,
+			[BuildHealthUrl(false)] = HttpStatusCode.NotFound,
+			[BuildUiMarkerUrl(true)] = HttpStatusCode.Gone,
+			[BuildUiMarkerUrl(false)] = HttpStatusCode.ServiceUnavailable
+		});
+		IOwnedApplicationClient netCoreClient = Substitute.For<IOwnedApplicationClient>();
+		IOwnedApplicationClient netFrameworkClient = Substitute.For<IOwnedApplicationClient>();
+		ConfigureFactory(applicationClientFactory, netCoreClient, netFrameworkClient);
+		ConfigureClientWarmup(netCoreClient, true);
+		ConfigureClientWarmup(netFrameworkClient, false);
+		ConfigureServiceThrows(netCoreClient, true, new HttpRequestException("404 Not Found."));
+		ConfigureServiceThrows(netFrameworkClient, false, new HttpRequestException("503 Service Unavailable."));
+		EnvironmentRuntimeDetectionService sut = new(applicationClientFactory, httpClientFactory, new ServiceUrlBuilderFactory());
+
+		// Act
+		Action act = () => sut.Detect(CreateEnvironment());
+
+		// Assert
+		InvalidOperationException exception = act.Should().Throw<InvalidOperationException>(
+				because: "no probe route was served, so the runtime cannot be classified")
+			.Which;
+		exception.Message.Should().Contain("served none of the probed routes (observed: HTTP 404, HTTP 410, HTTP 503)",
+			because: "a mixed set of failures has to be described by the statuses that actually came back");
+		exception.Message.Should().NotContain("every probe answered an HTTP server error",
+			because: "only one of the four probes returned a 5xx, so the server-error wording would be false");
+		exception.Message.Should().NotContain("every probe answered 404",
+			because: "two probes did not answer 404, so the absence wording would be false too");
+	}
+
+	[Test]
+	[Description("Describes a mix of transport failures and 503 probe outcomes as observed, instead of claiming every probe answered a server error.")]
+	public void Detect_Should_Name_No_Response_When_Probe_Failures_Mix_Transport_Failures_And_Server_Errors() {
+		// Arrange
+		IApplicationClientFactory applicationClientFactory = Substitute.For<IApplicationClientFactory>();
+		IHttpClientFactory httpClientFactory = CreateHttpClientFactory(
+			new Dictionary<string, HttpStatusCode> {
+				[BuildUiMarkerUrl(true)] = HttpStatusCode.ServiceUnavailable,
+				[BuildUiMarkerUrl(false)] = HttpStatusCode.ServiceUnavailable
+			},
+			new Dictionary<string, Exception> {
+				[BuildHealthUrl(true)] = new HttpRequestException("Connection refused"),
+				[BuildHealthUrl(false)] = new HttpRequestException("Connection refused")
+			});
+		IOwnedApplicationClient netCoreClient = Substitute.For<IOwnedApplicationClient>();
+		IOwnedApplicationClient netFrameworkClient = Substitute.For<IOwnedApplicationClient>();
+		ConfigureFactory(applicationClientFactory, netCoreClient, netFrameworkClient);
+		ConfigureClientWarmup(netCoreClient, true);
+		ConfigureClientWarmup(netFrameworkClient, false);
+		ConfigureServiceThrows(netCoreClient, true, new HttpRequestException("503 Service Unavailable."));
+		ConfigureServiceThrows(netFrameworkClient, false, new HttpRequestException("503 Service Unavailable."));
+		EnvironmentRuntimeDetectionService sut = new(applicationClientFactory, httpClientFactory, new ServiceUrlBuilderFactory());
+
+		// Act
+		Action act = () => sut.Detect(CreateEnvironment());
+
+		// Assert
+		InvalidOperationException exception = act.Should().Throw<InvalidOperationException>(
+				because: "no probe route was served, so the runtime cannot be classified")
+			.Which;
+		exception.Message.Should().Contain("(observed: HTTP 503, no response)",
+			because: "the probes that never got an HTTP answer must be named alongside the status that did come back");
+		exception.Message.Should().NotContain("every probe answered an HTTP server error",
+			because: "two probes got no HTTP response at all, so they did not answer a server error");
+	}
+
+	[Test]
+	[Description("Calls a mix of 404 and 410 probe outcomes an absent route rather than claiming every probe answered 404.")]
+	public void Detect_Should_Report_An_Absent_Route_Without_Claiming_404_When_Some_Probes_Answer_Gone() {
+		// Arrange
+		IApplicationClientFactory applicationClientFactory = Substitute.For<IApplicationClientFactory>();
+		IHttpClientFactory httpClientFactory = CreateHttpClientFactory(new Dictionary<string, HttpStatusCode> {
+			[BuildHealthUrl(true)] = HttpStatusCode.NotFound,
+			[BuildHealthUrl(false)] = HttpStatusCode.NotFound,
+			[BuildUiMarkerUrl(true)] = HttpStatusCode.Gone,
+			[BuildUiMarkerUrl(false)] = HttpStatusCode.Gone
+		});
+		IOwnedApplicationClient netCoreClient = Substitute.For<IOwnedApplicationClient>();
+		IOwnedApplicationClient netFrameworkClient = Substitute.For<IOwnedApplicationClient>();
+		ConfigureFactory(applicationClientFactory, netCoreClient, netFrameworkClient);
+		ConfigureClientWarmup(netCoreClient, true);
+		ConfigureClientWarmup(netFrameworkClient, false);
+		ConfigureServiceThrows(netCoreClient, true, new HttpRequestException("404 Not Found."));
+		ConfigureServiceThrows(netFrameworkClient, false, new HttpRequestException("404 Not Found."));
+		EnvironmentRuntimeDetectionService sut = new(applicationClientFactory, httpClientFactory, new ServiceUrlBuilderFactory());
+
+		// Act
+		Action act = () => sut.Detect(CreateEnvironment());
+
+		// Assert
+		InvalidOperationException exception = act.Should().Throw<InvalidOperationException>(
+				because: "a URL where no Creatio route exists cannot be classified into a runtime")
+			.Which;
+		exception.Message.Should().Contain("every probe reported the route as absent (answered HTTP 404, HTTP 410)",
+			because: "a 410 is an absence too, but it is not a 404, so the message has to name both statuses");
+		exception.Message.Should().NotContain("every probe answered 404",
+			because: "two probes answered 410, so claiming a uniform 404 would misreport what came back");
+	}
+
 	private static void ConfigureFactory(
 		IApplicationClientFactory applicationClientFactory,
 		IOwnedApplicationClient netCoreClient,
