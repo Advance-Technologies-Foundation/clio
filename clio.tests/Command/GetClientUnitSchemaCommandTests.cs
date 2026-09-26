@@ -64,7 +64,7 @@ internal class GetClientUnitSchemaCommandTests : BaseCommandTests<GetClientUnitS
 	public override void Setup() {
 		base.Setup();
 		_serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns(SelectQueryUrl);
-		_serviceUrlBuilder.Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema").Returns(GetSchemaUrl);
+		_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetClientUnitDesignerSchema).Returns(GetSchemaUrl);
 		_command = Container.GetRequiredService<GetClientUnitSchemaCommand>();
 	}
 

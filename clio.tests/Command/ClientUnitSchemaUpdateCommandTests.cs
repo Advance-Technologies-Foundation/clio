@@ -54,8 +54,8 @@ internal class ClientUnitSchemaUpdateCommandTests : BaseCommandTests<ClientUnitS
 		_saveRequestBody = null;
 		_saveResponseJson = """{"success": true}""";
 		_serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns(SelectQueryUrl);
-		_serviceUrlBuilder.Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema").Returns(GetSchemaUrl);
-		_serviceUrlBuilder.Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema").Returns(SaveSchemaUrl);
+		_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetClientUnitDesignerSchema).Returns(GetSchemaUrl);
+		_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.SaveClientUnitDesignerSchema).Returns(SaveSchemaUrl);
 		_applicationClient.ExecutePostRequest(default, default).ReturnsForAnyArgs(ci => Route(
 			ci.ArgAt<string>(0), ci.ArgAt<string>(1)));
 		_command = Container.GetRequiredService<ClientUnitSchemaUpdateCommand>();

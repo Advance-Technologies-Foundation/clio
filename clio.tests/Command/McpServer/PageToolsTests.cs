@@ -1399,16 +1399,15 @@ public class PageToolsTests
 	}
 
 	[Test]
-	[Description("TryGetPage uses the GetParentSchemas designer endpoint without duplicating the /0 prefix")]
+	[Description("On .NET Framework, TryGetPage posts the hierarchy read to the GetParentSchemas designer URL the real ServiceUrlBuilder builds from KnownRoute, with exactly one 0/ prefix.")]
 	public void TryGetPage_UsesGetParentSchemasDesignerEndpoint() {
-		// Arrange
+		// Arrange — a real ServiceUrlBuilder in .NET Framework mode, so the 0/ prefix rule is exercised.
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
-		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IServiceUrlBuilder serviceUrlBuilder = new ServiceUrlBuilder(new EnvironmentSettings {
+			Uri = "http://test",
+			IsNetCore = false
+		});
 		ILogger logger = Substitute.For<ILogger>();
-		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery")
-			.Returns("http://test/DataService/json/SyncReply/SelectQuery");
-		serviceUrlBuilder.Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/GetParentSchemas")
-			.Returns("http://test/0/ServiceModel/ClientUnitSchemaDesignerService.svc/GetParentSchemas");
 		JObject metadataResponse = CreateMetadataResponse(
 			"TestPage_FormPage",
 			"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
@@ -1459,14 +1458,20 @@ public class PageToolsTests
 					]
 					""")
 			});
-		int callIndex = 0;
+		List<string> postedUrls = [];
 		applicationClient.ExecutePostRequest(
 				Arg.Any<string>(),
 				Arg.Any<string>(),
 				Arg.Any<int>(),
 				Arg.Any<int>(),
 				Arg.Any<int>())
-			.Returns(_ => ++callIndex == 1 ? metadataResponse.ToString() : hierarchyResponse.ToString());
+			.Returns(ci => {
+				string url = ci.ArgAt<string>(0);
+				postedUrls.Add(url);
+				return url.EndsWith("/GetParentSchemas", StringComparison.Ordinal)
+					? hierarchyResponse.ToString()
+					: metadataResponse.ToString();
+			});
 		PageGetCommand command = CreatePageGetCommand(applicationClient, serviceUrlBuilder, logger);
 		PageGetOptions options = new() { SchemaName = "TestPage_FormPage" };
 
@@ -1480,8 +1485,11 @@ public class PageToolsTests
 			because: "the page read should return a success envelope");
 		response.Bundle.Name.Should().Be("TestPage_FormPage",
 			because: "the designer hierarchy should be interpreted in current-page-first order");
-		serviceUrlBuilder.Received(1).Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/GetParentSchemas");
-		serviceUrlBuilder.DidNotReceive().Build(Arg.Is<string>(path => path.Contains("/0/ServiceModel")));
+		postedUrls.Should().ContainSingle(
+			url => url == "http://test/0/ServiceModel/ClientUnitSchemaDesignerService.svc/GetParentSchemas",
+			because: "the hierarchy read must post to the GetParentSchemas designer route with a single 0/ prefix on .NET Framework");
+		postedUrls.Should().NotContain(url => url.Contains("/0/0/"),
+			because: "the framework prefix must be applied exactly once");
 	}
 
 	[Test]
