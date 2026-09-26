@@ -321,8 +321,10 @@ public sealed class ProcessDesignerEmittedSchemaTests {
 		// Arrange
 		ToolContractGetTool tool = new(BuildProductionRegistry());
 
-		// Act
-		ToolContractDefinition contract = tool.GetToolContracts(new ToolContractGetArgs([toolName])).Tools!.Single();
+		// Act - detail "full": the contract under test is the complete one. A default named lookup may be
+		// fitted to one inline reply (ENG-100154), which cuts field descriptions to their first sentence.
+		ToolContractDefinition contract = tool.GetToolContracts(
+			new ToolContractGetArgs([toolName], "full")).Tools!.Single();
 		ToolContractField field = contract.InputSchema.Properties.Single(property => property.Name == wireName);
 
 		// Assert
