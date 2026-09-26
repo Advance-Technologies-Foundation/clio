@@ -217,7 +217,7 @@ public class ModifyBusinessProcessTool(
 		 + "element's data configuration: omitted fields keep their stored value, pass columns:[] to reset to ALL "
 		 + "columns (first only). Changing the mode is a real conversion, REFUSED while ANY other parameter still "
 		 + "maps from the element (each mode produces a different output parameter); a conversion that proceeds "
-		 + "clears the previous mode's parameters and moves the result flag to the new mode's output. Retargeting "
+		 + "clears the previous mode's parameters and moves the output to the new mode's parameter. Retargeting "
 		 + "source is refused the same way and, proceeding, clears columns/sort/filter bound to the old entity - "
 		 + "re-supply them (and setFilter) in the same batch. get-guidance name=process-read-data owns the full "
 		 + "per-mode transition table (collection's columns/numberOfRecords rules, the output-parameter mapping "

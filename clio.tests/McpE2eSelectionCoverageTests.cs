@@ -30,7 +30,7 @@ namespace Clio.Tests;
 /// </remarks>
 [TestFixture]
 [Category("Unit")]
-// Without a Module trait the repository's own smart-regression filter (Category=Unit&Module=X)
+// Without a Module trait the repository's own smart-regression filter (TestCategory=Unit&Module=X)
 // never runs this fixture, so an author who adds an unreachable product file sees their targeted
 // tests pass and learns about the pin only from full CI - at which point the path of least
 // resistance is to regenerate the list rather than to review it.
@@ -759,9 +759,10 @@ internal sealed class McpE2eSelectionCoverageTests {
 		}
 
 		/// <summary>
-		/// Resolved from PATH rather than left as the bare name "git": the test project's own output
-		/// directory contains a git.dll (clio.process.fixture builds one), and the process launcher
-		/// picks that up first and fails with "The application to execute does not exist".
+		/// Resolved from PATH rather than left as the bare name "git": a bare-name launch searches the test
+		/// host's own directory first, and a git-named file there (clio.process.fixture's apphost used to be
+		/// copied in without its git.dll) wins over the real Git. TestOutputDirectoryTests keeps that directory
+		/// clear; this stays as defence in depth.
 		/// </summary>
 		private static readonly string GitExecutable = FindGit();
 

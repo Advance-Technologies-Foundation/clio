@@ -148,7 +148,7 @@ Write-Host "    version   $appVersion`n    build zip $sourceSha`n    archive   $
 Write-Host @"
 
     Next, by hand:
-      * dotnet test clio.tests/clio.tests.csproj --filter "Category=Unit&Module=Common"
+      * dotnet test clio.tests/clio.tests.csproj --filter "TestCategory=Unit&Module=Common"
       * install onto a stand and confirm Ping answers
       * commit the archive and the pins together; name the build zip SHA-256 in the message
 "@
