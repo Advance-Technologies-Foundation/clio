@@ -1595,14 +1595,24 @@ public class BindingsModule {
 	}
 
 	/// <summary>
-	/// Creates <see cref="JsonSerializerOptions"/> for MCP tool/prompt argument deserialization.
+	/// Creates <see cref="JsonSerializerOptions"/> for MCP tool/prompt argument deserialization and for the
+	/// text a tool's return value is serialized into.
 	/// Enables out-of-order metadata properties so that the
 	/// <c>"type"</c> polymorphic discriminator does not have to be the first JSON property —
 	/// LLMs do not guarantee JSON property ordering.
 	/// </summary>
+	/// <remarks>
+	/// The RELAXED encoder (ENG-99970): the default one escapes for embedding in HTML, writing a quote inside a
+	/// string as <c>\u0022</c>, an apostrophe, backtick, dash or any non-ASCII character as a six-character
+	/// sequence. A tool result is read by an agent over JSON-RPC and never embedded in a page, so that
+	/// escaping only costs: guidance articles (backticks, dashes) came back ~10% larger, and a result that
+	/// carries JSON inside a string - describe-business-process's graph - paid six characters for every
+	/// quote. JSON parsers read both forms identically.
+	/// </remarks>
 	internal static JsonSerializerOptions CreateMcpSerializerOptions() {
 		JsonSerializerOptions options = new(McpJsonUtilities.DefaultOptions);
 		options.AllowOutOfOrderMetadataProperties = true;
+		options.Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping;
 		return options;
 	}
 

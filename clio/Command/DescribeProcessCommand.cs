@@ -1,3 +1,4 @@
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Command.ProcessModel;
@@ -47,9 +48,18 @@ public class DescribeProcessCommand(IProcessDescriber describer, ILogger logger)
 	/// uses" via a hand copy, and deleting <c>DefaultIgnoreCondition</c> here left the whole unit suite green
 	/// while every plain flow began shipping <c>"condition": null</c> to the caller — which is precisely what
 	/// those tests exist to prevent. A copy of a value cannot pin the value.</para>
+	/// <para>COMPACT and with the relaxed encoder on purpose (ENG-99970). The description travels to an agent
+	/// as a STRING inside the command result, so it is JSON encoded a second time: indentation, line breaks
+	/// and every escaped character are paid twice. Indented, the graph of a ten-element process reached
+	/// 53-62 thousand characters on the wire - over Claude Code's inline limit, so every describe of the
+	/// measured process build was spilled to a file and grepped back, 22-26 shell turns per run. Compact
+	/// JSON is the same value, and this command has no CLI verb whose human reader it would inconvenience.
+	/// The relaxed encoder keeps a non-ASCII caption as its characters instead of a <c>\uXXXX</c> sequence
+	/// whose backslash the outer encoding then doubles.</para>
 	/// </summary>
 	internal static readonly JsonSerializerOptions OutputOptions = new() {
-		WriteIndented = true,
+		WriteIndented = false,
+		Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
 		DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
 	};
 
