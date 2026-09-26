@@ -19,6 +19,13 @@ namespace Clio.Command.McpServer.Tools;
 /// </remarks>
 internal static class McpToolRegistrySchemaContract {
 	private const string ObjectType = "object";
+
+	/// <summary>
+	/// The type reported for a member that accepts ANY JSON value, which the SDK emits with no schema
+	/// keyword at all (a <see cref="JsonElement"/> argument, ENG-100153).
+	/// </summary>
+	internal const string AnyType = "any";
+
 	private const string TypePropertyName = "type";
 	private const string PropertiesPropertyName = "properties";
 	private const string RequiredPropertyName = "required";
@@ -201,12 +208,27 @@ internal static class McpToolRegistrySchemaContract {
 	}
 
 	private static string ReadType(JsonElement propertyValue) {
+		if (IsUnconstrained(propertyValue)) {
+			return AnyType;
+		}
 		if (propertyValue.ValueKind != JsonValueKind.Object ||
 			!propertyValue.TryGetProperty(TypePropertyName, out JsonElement typeElement)) {
 			return ObjectType;
 		}
 		return NormalizeType(typeElement);
 	}
+
+	// A schema that constrains nothing: the boolean `true` schema, or an object carrying only annotations.
+	// The SDK emits a JsonElement member this way - `{"description":"..."}` - and reporting it as "object"
+	// told a caller that the process-designer `operations` ARRAY was an object (ENG-100153). Anything with
+	// a real keyword ($ref, anyOf, properties, ...) keeps the old "object" fallback.
+	private static bool IsUnconstrained(JsonElement propertyValue) =>
+		propertyValue.ValueKind == JsonValueKind.True
+		|| (propertyValue.ValueKind == JsonValueKind.Object
+			&& propertyValue.EnumerateObject().All(member => AnnotationKeywords.Contains(member.Name)));
+
+	private static readonly HashSet<string> AnnotationKeywords =
+		[DescriptionPropertyName, "default", "title", "examples", "readOnly", "writeOnly", "deprecated"];
 
 	// JSON-schema `type` is either a scalar string ("string") or an array of candidates where the SDK
 	// emits nullable shapes as ["string","null"]. Collapse to the first non-null concrete type.

@@ -2,7 +2,6 @@
 description: measured - the MCP SDK emits an optional POSITIONAL JsonElement?/JsonNode?/object? args parameter as {"default":null} and silently drops its [Description]; an init property keeps it
 applies-to:
   - clio/Command/McpServer/Tools/ProcessDesigner/ModifyProcessAsNewVersionTool.cs
-  - clio/Command/McpServer/Tools/McpToolArgumentSupport.cs
   - clio/Command/McpServer/Tools/McpToolRegistrySchemaContract.cs
   - clio.tests/Command/McpServer/ProcessDesignerEmittedSchemaTests.cs
 ticket: ENG-100153
@@ -22,9 +21,9 @@ JsonElement? F {get;init} (init property)          -> {"description":"F desc"}  
 JsonElement  E = default  (positional)             -> schema generation THROWS
 ```
 
-None of them carries a `type`: a "any JSON value" member is emitted typeless, and
-`McpToolRegistrySchemaContract.ReadType` then reports it as `"object"` in the derived contract — for an
-array argument too.
+None of them carries a `type`: an "any JSON value" member is emitted typeless. The derived contract
+reports such a member as `"any"` (`McpToolRegistrySchemaContract.AnyType`); before ENG-100153 it fell
+through to `"object"`, which described the `operations` ARRAY as an object.
 
 **Why it is this way** — the SDK's schema for a JSON-value type is the boolean `true` schema; for a
 defaulted parameter it builds the node from the default value, and the description is not attached to
