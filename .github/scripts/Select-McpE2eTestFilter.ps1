@@ -18,7 +18,8 @@
 # { fixtures: { <file base name>: [fixture names] }, reachability: { <fixture>: [tool files that select it] },
 #   uncoveredTools: [tool files no fixture names],
 #   uncoveredEntryPoints: [MCP resource/prompt files no fixture names],
-#   unreachableProductFiles: [files no fixture can observe], lexerResidue: [files that survived blanking] }.
+#   unreachableProductFiles: [files no fixture can observe], lexerResidue: [files that survived blanking],
+#   noEnvironmentOnly: { <fixture>: true when none of its tests survives the TeamCity subset filter } }.
 # clio.tests/McpE2eSelectionCoverageTests.cs compares that inventory with reflection over the compiled
 # e2e assembly, so this script is the single owner of the textual rules and the guard only checks that
 # the text-based view and the compiled view agree.
@@ -89,36 +90,106 @@ $fixtureRoot = Join-Path $root $manifest.fixtureRoot
 $fixtureDeclaration = '(?m)^(?:public|internal)(?:[ \t]+(?:sealed|static|partial))*[ \t]+class[ \t]+([A-Za-z_]\w*)\b'
 $fixtureSources = @{}     # fixture class name -> source text of its file
 $fixturesByFile = @{}     # file base name     -> fixture class names declared in it
-$fixtureNoEnvironmentOnly = @{}  # fixture class name -> $true when its own declaration is positively NoEnvironment and has no Sandbox test
+$fixtureNoEnvironmentOnly = @{}  # fixture class name -> $true when none of its tests survives the TeamCity subset filter
+
+# The tier is read from Category attributes, never from free text: a doc comment that mentions a tier
+# must not flip the verdict. A constant argument resolves only through McpE2ECategories; any other
+# constant stays unknown, which reads as "not NoEnvironment" - the safe direction.
+$baseFilterExcluded = @([regex]::Matches([string]$manifest.baseFilter, 'TestCategory!=([^&|()\s]+)') | ForEach-Object { $_.Groups[1].Value })
+$categoryConstants = @{}
+$categoryConstantsPath = Join-Path $fixtureRoot 'Support/Configuration/McpE2ECategories.cs'
+if (Test-Path -LiteralPath $categoryConstantsPath) {
+    foreach ($m in [regex]::Matches((Read-Text $categoryConstantsPath), 'const\s+string\s+(\w+)\s*=\s*"([^"]+)"')) {
+        $categoryConstants["McpE2ECategories.$($m.Groups[1].Value)"] = $m.Groups[2].Value
+    }
+}
+$testAttribute = '[\[,]\s*(?:NUnit\.Framework\.)?(?:Test|TestCase|TestCaseSource|Theory)\s*[\],(]'
+
+function Remove-Comments([string] $Text) {
+    # Block comments, then line comments not preceded by ':' so a URL literal keeps its tail.
+    $withoutBlocks = [regex]::Replace($Text, '(?s)/\*.*?\*/', ' ')
+    return [regex]::Replace($withoutBlocks, '(?m)(?<!:)//.*$', '')
+}
+
+function Get-Categories([string] $AttributeText) {
+    @([regex]::Matches($AttributeText, '\bCategory(?:Attribute)?\s*\(\s*(?:"([^"]*)"|([\w.]+))\s*\)') | ForEach-Object {
+        if ($_.Groups[1].Success) { $_.Groups[1].Value }
+        elseif ($categoryConstants.ContainsKey($_.Groups[2].Value)) { $categoryConstants[$_.Groups[2].Value] }
+        else { '?' + $_.Groups[2].Value }
+    })
+}
+
+# Category sets of the test methods in a class body: one entry per run of attribute lines that carries
+# a test attribute. A run ends at the first line that is not attribute-only, so a one-line
+# `[Test] public void A() => ...;` is its own run. A multi-line attribute ends the run early and can
+# only lose categories, which reads as "not NoEnvironment".
+function Get-TestMethodCategories([string] $Body) {
+    $methods = New-Object System.Collections.Generic.List[object]
+    $run = New-Object System.Text.StringBuilder
+    foreach ($line in ($Body -split '\r?\n')) {
+        $trimmed = $line.Trim()
+        if ($trimmed.StartsWith('[')) {
+            [void]$run.Append($trimmed).Append("`n")
+            if ($trimmed.EndsWith(']')) { continue }
+        } elseif ($trimmed.Length -eq 0 -and $run.Length -gt 0) {
+            continue
+        }
+        if ($run.Length -gt 0) {
+            $attributes = $run.ToString()
+            if ($attributes -cmatch $testAttribute) { $methods.Add(@(Get-Categories $attributes)) }
+            [void]$run.Clear()
+        }
+    }
+    return , $methods
+}
+
+# NoEnvironment-only means no test of the fixture survives the TeamCity subset filter
+# (TestCategory!=McpE2E.NoEnvironment&<baseFilter>): the class itself carries McpE2E.NoEnvironment, or
+# every test method carries it or a category baseFilter excludes, and at least one carries it.
+# McpE2E.Sandbox anywhere keeps the fixture on TeamCity, as before. A fixture with no visible test
+# (all inherited from a base in another file) is never NoEnvironment-only.
+function Test-NoEnvironmentOnly([string] $ClassAttributes, [string] $Body) {
+    $classCategories = @(Get-Categories $ClassAttributes)
+    $methods = Get-TestMethodCategories $Body
+    $all = @($classCategories) + @($methods | ForEach-Object { $_ })
+    if ($all -contains 'McpE2E.Sandbox') { return $false }
+    if ($classCategories -contains 'McpE2E.NoEnvironment') { return $true }
+    if ($methods.Count -eq 0) { return $false }
+    $anyNoEnvironment = $false
+    foreach ($categories in $methods) {
+        if (@($categories) -contains 'McpE2E.NoEnvironment') { $anyNoEnvironment = $true; continue }
+        if (-not (@($categories) | Where-Object { $baseFilterExcluded -contains $_ })) { return $false }
+    }
+    return $anyNoEnvironment
+}
+
 foreach ($file in Get-ChildItem -LiteralPath $fixtureRoot -Filter '*.cs' -File) {
     $text = Read-Text $file.FullName
     if ($text -cnotmatch '\[\s*(Test|TestFixture|TestCase|TestCaseSource|Theory)\b') { continue }
-    $declarations = @([regex]::Matches($text, $fixtureDeclaration))
-    $classes = @($declarations | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique)
+    $classes = @([regex]::Matches($text, $fixtureDeclaration) | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique)
     if ($classes.Count -eq 0) { continue }
     $fixturesByFile[$file.BaseName] = $classes
     # The tier is read per fixture, not per file: one file may declare a NoEnvironment fixture next to
     # a Creatio one (EmailTemplateToolE2ETests.cs), and a file-wide verdict would skip TeamCity for
-    # both. A fixture's segment runs from just after the column-0 closing brace that ends the previous
-    # top-level type (so its class-level attributes are included) to the same point before the next
-    # declaration (so its method-level Category attributes are included and the next fixture's are not).
+    # both. The verdict is read from a comment-free copy of the file. A fixture's class attributes run from just after the column-0 closing brace that ends the
+    # previous top-level type to its declaration; its body runs from the declaration to the same point
+    # before the next declaration, so the next fixture's attributes are not included.
+    $code = Remove-Comments $text
+    $declarations = @([regex]::Matches($code, $fixtureDeclaration))
     $segmentStarts = @(foreach ($declaration in $declarations) {
-        $closingBraces = @([regex]::Matches($text.Substring(0, $declaration.Index), '(?m)^\}'))
+        $closingBraces = @([regex]::Matches($code.Substring(0, $declaration.Index), '(?m)^\}'))
         if ($closingBraces.Count -eq 0) { 0 } else { $closingBraces[-1].Index + 1 }
     })
     $verdicts = @{}
     for ($i = 0; $i -lt $declarations.Count; $i++) {
-        $segmentEnd = if ($i + 1 -lt $declarations.Count) { $segmentStarts[$i + 1] } else { $text.Length }
-        $segment = $text.Substring($segmentStarts[$i], $segmentEnd - $segmentStarts[$i])
-        # Positive classification only: a fixture that carries neither tier (bare Category("E2E")) runs on
-        # TeamCity under the base filter and nowhere on GitHub, so it must never be treated as covered.
-        $hasSandbox = $segment.Contains('McpE2E.Sandbox') -or $segment.Contains('McpE2ECategories.Sandbox')
-        $hasNoEnvironment = $segment.Contains('McpE2E.NoEnvironment') -or $segment.Contains('McpE2ECategories.NoEnvironment')
+        $segmentEnd = if ($i + 1 -lt $declarations.Count) { $segmentStarts[$i + 1] } else { $code.Length }
+        $classAttributes = $code.Substring($segmentStarts[$i], $declarations[$i].Index - $segmentStarts[$i])
+        $body = $code.Substring($declarations[$i].Index, $segmentEnd - $declarations[$i].Index)
         $name = $declarations[$i].Groups[1].Value
         # A partial class declared twice in one file is NoEnvironment-only only if every part is.
-        $verdicts[$name] = ($hasNoEnvironment -and -not $hasSandbox) -and ($verdicts[$name] -ne $false)
+        $verdicts[$name] = (Test-NoEnvironmentOnly $classAttributes $body) -and ($verdicts[$name] -ne $false)
     }
-    foreach ($class in $classes) { $fixtureSources[$class] = $text; $fixtureNoEnvironmentOnly[$class] = $verdicts[$class] }
+    foreach ($class in $classes) { $fixtureSources[$class] = $text; $fixtureNoEnvironmentOnly[$class] = [bool]$verdicts[$class] }
 }
 
 # --- tool inventory: what each Tools/**/*.cs declares ----------------------------------------------
@@ -888,6 +959,8 @@ if ($Inventory) {
     foreach ($key in ($fixturesByFile.Keys | Sort-Object)) { $fixturesOut[$key] = @($fixturesByFile[$key] | Sort-Object) }
     $reachOut = [ordered]@{}
     foreach ($key in ($reachability.Keys | Sort-Object)) { $reachOut[$key] = @($reachability[$key] | Sort-Object) }
+    $noEnvironmentOut = [ordered]@{}
+    foreach ($key in ($fixtureNoEnvironmentOnly.Keys | Sort-Object)) { $noEnvironmentOut[$key] = $fixtureNoEnvironmentOnly[$key] }
     # Every product file the graph says no fixture can observe. Pinned in the repository, because
     # skipping the build for such a file is only safe while a human agrees the file is really
     # outside the MCP surface - a silent addition here is a test that stopped running.
@@ -928,7 +1001,7 @@ if ($Inventory) {
         if (@(Select-FixturesForEntryPoint $relative).Count -eq 0) { $uncoveredEntryPoints.Add($relative) }
     }
     [pscustomobject]@{
-        fixtures = $fixturesOut; reachability = $reachOut
+        fixtures = $fixturesOut; reachability = $reachOut; noEnvironmentOnly = $noEnvironmentOut
         uncoveredTools = @($uncovered | Sort-Object)
         uncoveredEntryPoints = @($uncoveredEntryPoints)
         unreachableProductFiles = @($unreachable)

@@ -161,7 +161,12 @@ NoEnvironment tier already ran on GitHub. This is checked *before* the size cap,
 NoEnvironment-only selection skips the build instead of becoming a full run.
 The tier is read per fixture: the text from the end of the previous top-level type to the end of
 the fixture's own body, so a file that declares a NoEnvironment fixture next to a Creatio one
-(`EmailTemplateToolE2ETests.cs`) still sends the Creatio fixture to TeamCity.
+(`EmailTemplateToolE2ETests.cs`) still sends the Creatio fixture to TeamCity. Only `Category(...)`
+attributes count, with comments removed first. A fixture is NoEnvironment-only when its class carries
+`McpE2E.NoEnvironment`, or every test method carries it or a category `baseFilter` excludes (and at
+least one carries it); `McpE2E.Sandbox` anywhere keeps it on TeamCity. `-Inventory` prints the
+verdicts as `noEnvironmentOnly`, and `McpE2eSelectionCoverageTests` checks every `true` against the
+compiled categories.
 
 The subset filter is composed as
 `(FullyQualifiedName~Clio.Mcp.E2E.A|FullyQualifiedName~Clio.Mcp.E2E.B)&TestCategory!=McpE2E.NoEnvironment&<baseFilter>`.
