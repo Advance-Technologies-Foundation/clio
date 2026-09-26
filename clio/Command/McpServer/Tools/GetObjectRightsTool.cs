@@ -10,6 +10,7 @@ using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
 
+/// <summary>MCP surface of <c>get-object-rights</c>: reads the per-role object operation permissions of an object.</summary>
 [McpServerToolType]
 public sealed class GetObjectRightsTool(
 	GetObjectRightsCommand command,
@@ -26,7 +27,8 @@ public sealed class GetObjectRightsTool(
 		Location = McpToolExecutionLocation.Worker,
 		Lifetime = McpToolExecutionLifetime.PerCall,
 		OperationFamily = McpToolOperationFamily.None,
-		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		// With include-connected the read makes several sequential round-trips per object.
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillExtended,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Read OBJECT operation permissions — who may read/create/edit/delete a whole entity (the SysSchemaOperationRight / \"Object permissions\" layer). " +
@@ -59,6 +61,7 @@ public sealed class GetObjectRightsTool(
 	}
 }
 
+/// <summary>Arguments of the <c>get-object-rights</c> MCP tool.</summary>
 public sealed record GetObjectRightsArgs(
 	[property: JsonPropertyName("environment-name")]
 	[property: Description(McpToolDescriptions.EnvironmentName)]

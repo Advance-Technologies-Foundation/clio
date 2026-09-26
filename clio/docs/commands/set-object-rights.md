@@ -32,7 +32,7 @@ interactive run it asks for a `y/n` confirmation.
 ## Synopsis
 
 ```bash
-clio set-object-rights --entity-schema-name <EntitySchemaName> --grantee <SysAdminUnitId> [--operations read,create,edit,delete] [--revoke] [--disable-operation-permissions] [--include-connected] [--connected-operations read,...] --confirm -e <environment>
+clio set-object-rights --entity-schema-name <EntitySchemaName> --grantee <SysAdminUnitId> [--operations read,create,edit,delete] [--revoke] [--disable-operation-permissions] [--include-connected] [--connected-operations read,...] [--allow-security-object] --confirm -e <environment>
 ```
 
 ## Options
@@ -65,6 +65,11 @@ name one as --entity-schema-name to change it. With --revoke the lookups are lef
 Operations for the connected lookup objects. Default on a grant: read — picking a lookup value only needs
 read, so create/edit are never fanned out to shared dictionaries unless passed here explicitly. On a revoke
 there is no default: without this option the lookups are not changed.
+
+--allow-security-object
+Allow granting create/edit/delete when the ROOT object is a security or system object (SysAdmin*, SysUser*,
+SysSchema*, SysPackage*, SysSettings*, *Right/*Rights). Without it such a root may only be granted read.
+A revoke on such a root is always allowed.
 
 --confirm
 Confirm the destructive change without a prompt. Required in non-interactive runs.
@@ -116,6 +121,13 @@ clio set-object-rights --entity-schema-name UsrOrder --grantee <role-id> --opera
 - A revoke of the object's last rights row without that flag writes nothing and exits 1, naming the
   widening it avoided. Neither of the two possible end states — administered with zero grants (reachable
   by nobody) or unadministered (reachable by everybody) — is a side effect a per-role revoke may cause.
+- The grantee must exist in `SysAdminUnit`: an unknown id fails before anything is written, and the
+  confirmation names the grantee by name.
+- When a grant turns operation permissions ON for an object, the object is read back and the result names
+  the roles that hold rights afterwards. If only the grantee does — every other internal user lost access —
+  the command fails (exit 1) and says so; if the read-back fails, it warns.
+- With `--include-connected` a call makes several sequential round-trips per object and can take minutes
+  (the MCP tool runs on the extended budget).
 - Exit code 1 also when the named (root) object is not found — nothing was written, so it is not reported
   as a success. A connected lookup that is not found only warns.
 - When the root change fails (error, not found, refused last-row revoke), the connected objects are not

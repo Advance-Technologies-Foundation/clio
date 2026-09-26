@@ -76,7 +76,8 @@ public class ConnectedObjectsResolver : IConnectedObjectsResolver {
 		return new ConnectedObjectsResolution(objects, excluded);
 	}
 
-	private static bool IsSecurityOrSystemObject(string schemaName) =>
+	/// <summary>Whether <paramref name="schemaName"/> is a security or system object that the fan-out never reaches.</summary>
+	public static bool IsSecurityOrSystemObject(string schemaName) =>
 		ExcludedPrefixes.Any(prefix => schemaName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
 		|| ExcludedSuffixes.Any(suffix => schemaName.EndsWith(suffix, StringComparison.OrdinalIgnoreCase));
 }

@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Net.Http;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Clio.Package;
@@ -36,33 +39,72 @@ public sealed record ObjectRightsInfo(
 	IReadOnlyList<RoleOperationRights> Roles,
 	string ReadError = null);
 
+/// <summary>What a set-object-rights write did to one object. Exactly one outcome applies.</summary>
+public enum ObjectRightsOutcome {
+	/// <summary>The schema name resolved to no object; nothing was written.</summary>
+	NotFound,
+	/// <summary>The object could not be read or saved; see <see cref="ObjectRightsChange.Error"/>.</summary>
+	Failed,
+	/// <summary>The object was already in the requested state; nothing was written.</summary>
+	NoChange,
+	/// <summary>The grantee's rights were changed and saved.</summary>
+	Changed,
+	/// <summary>
+	/// The grant turned <c>administratedByOperations</c> ON for an object that did not use operation permissions
+	/// yet. That can NARROW access for every other internal role, so the saved object is read back and the roles
+	/// that actually hold rights afterwards are reported in <see cref="ObjectRightsChange.RolesAfterEnable"/>.
+	/// </summary>
+	ChangedAndEnabled,
+	/// <summary>
+	/// The revoke removed the object's last rights row AND turned <c>administratedByOperations</c> off, so the
+	/// object is now available to every internal user. Only ever reached when the caller asked for it.
+	/// </summary>
+	ChangedAndDisabled,
+	/// <summary>
+	/// The revoke would have removed the object's last EFFECTIVE grant and the caller did not ask to turn
+	/// operation permissions off; nothing was written.
+	/// </summary>
+	RefusedLastRowRemoval,
+	/// <summary>
+	/// A revoke was asked for on an object that is not administered by operation permissions. Every internal user
+	/// can reach such an object whatever its rows say, so no per-role revoke can restrict it; nothing was written.
+	/// </summary>
+	RevokeOnNotAdministered
+}
+
 /// <summary>The result of a set-object-rights write for one object.</summary>
-/// <param name="OperationPermissionsDisabled">
-/// The write removed the object's last operation-rights row AND turned <c>administratedByOperations</c> off,
-/// so the object is now available to every internal user. Only ever true when the caller asked for it.
+/// <param name="Outcome">What happened to the object.</param>
+/// <param name="Error">The failure reason when <paramref name="Outcome"/> is <see cref="ObjectRightsOutcome.Failed"/>.</param>
+/// <param name="RolesAfterEnable">
+/// For <see cref="ObjectRightsOutcome.ChangedAndEnabled"/>: the roles that hold rights after the save, read back
+/// from the server. <see langword="null"/> when the read-back itself failed (<see cref="ReadBackError"/>).
 /// </param>
-/// <param name="RefusedLastRowRemoval">
-/// The revoke would have removed the object's LAST operation-rights row and the caller did not ask to turn
-/// operation permissions off, so nothing was written.
-/// </param>
-/// <param name="OperationPermissionsEnabled">
-/// The grant turned <c>administratedByOperations</c> ON for an object that did not use operation permissions
-/// yet. That NARROWS access for every other internal role (only listed roles can reach it afterwards), so the
-/// caller is told explicitly rather than learning it from a later access complaint.
-/// </param>
-/// <param name="RevokeOnNotAdministered">
-/// A revoke was asked for on an object that is not administered by operation permissions. Every internal
-/// user can reach such an object whatever its rows say, so no per-role revoke can restrict it; nothing was
-/// written and the caller must not be told the restriction happened.
-/// </param>
+/// <param name="ReadBackError">Why the read-back after enabling could not be done.</param>
 public sealed record ObjectRightsChange(
-	bool Found,
-	bool Changed,
+	ObjectRightsOutcome Outcome,
 	string Error = null,
-	bool OperationPermissionsDisabled = false,
-	bool RefusedLastRowRemoval = false,
-	bool OperationPermissionsEnabled = false,
-	bool RevokeOnNotAdministered = false);
+	IReadOnlyList<RoleOperationRights> RolesAfterEnable = null,
+	string ReadBackError = null) {
+
+	/// <summary>The object exists (every outcome except <see cref="ObjectRightsOutcome.NotFound"/>).</summary>
+	public bool Found => Outcome != ObjectRightsOutcome.NotFound;
+
+	/// <summary>A change was saved.</summary>
+	public bool Changed => Outcome is ObjectRightsOutcome.Changed or ObjectRightsOutcome.ChangedAndEnabled
+		or ObjectRightsOutcome.ChangedAndDisabled;
+
+	/// <summary>Shorthand for <see cref="ObjectRightsOutcome.ChangedAndEnabled"/>.</summary>
+	public bool OperationPermissionsEnabled => Outcome == ObjectRightsOutcome.ChangedAndEnabled;
+
+	/// <summary>Shorthand for <see cref="ObjectRightsOutcome.ChangedAndDisabled"/>.</summary>
+	public bool OperationPermissionsDisabled => Outcome == ObjectRightsOutcome.ChangedAndDisabled;
+
+	/// <summary>Shorthand for <see cref="ObjectRightsOutcome.RefusedLastRowRemoval"/>.</summary>
+	public bool RefusedLastRowRemoval => Outcome == ObjectRightsOutcome.RefusedLastRowRemoval;
+
+	/// <summary>Shorthand for <see cref="ObjectRightsOutcome.RevokeOnNotAdministered"/>.</summary>
+	public bool RevokeOnNotAdministered => Outcome == ObjectRightsOutcome.RevokeOnNotAdministered;
+}
 
 /// <summary>
 /// Reads object operation permissions (the SysSchemaOperationRight layer) for an entity, using the native
@@ -83,41 +125,53 @@ public interface IObjectRightsWriter {
 	/// <summary>
 	/// Grants (or, when <paramref name="revoke"/> is true, revokes) the given <paramref name="operations"/> for
 	/// role <paramref name="grantee"/> on <paramref name="schemaName"/>. Turns on operation permissions for the
-	/// object when granting to an object that does not yet use them. Returns whether a change was written.
+	/// object when granting to an object that does not yet use them, and then reads the object back.
 	/// </summary>
 	/// <param name="disableOperationPermissions">
-	/// Allows a revoke to remove the object's LAST operation-rights row, which turns
-	/// <c>administratedByOperations</c> off and thereby makes the object available to EVERY internal user.
-	/// That is an access WIDENING, so it is never done implicitly: with this false such a revoke writes nothing
-	/// and reports <see cref="ObjectRightsChange.RefusedLastRowRemoval"/> instead.
+	/// Allows a revoke to remove the object's LAST effective grant, which turns <c>administratedByOperations</c>
+	/// off and thereby makes the object available to EVERY internal user. That is an access WIDENING, so it is
+	/// never done implicitly: with this false such a revoke writes nothing and reports
+	/// <see cref="ObjectRightsOutcome.RefusedLastRowRemoval"/> instead.
 	/// </param>
 	ObjectRightsChange SetObjectRights(string schemaName, Guid grantee,
 		IReadOnlyCollection<ObjectOperation> operations, bool revoke, bool disableOperationPermissions,
 		CreatioRequestOptions requestOptions);
 }
 
+/// <summary>Resolves a SysAdminUnit (role or user) id to its name, to confirm a grantee exists before a write.</summary>
+public interface IGranteeLookup {
+	/// <summary>
+	/// Returns the name of the SysAdminUnit <paramref name="grantee"/>, or <see langword="null"/> when no such
+	/// role or user exists.
+	/// </summary>
+	string ResolveGranteeName(Guid grantee, CreatioRequestOptions requestOptions);
+}
+
 /// <summary>
 /// Client for the native Creatio <c>RightManagementService</c>. Resolves an entity schema name to its UId via
 /// DataService (the clio name→UId convention) and reads/writes the object's per-role operation rights.
 /// </summary>
-public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsReader, IObjectRightsWriter {
+public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsReader, IObjectRightsWriter,
+	IGranteeLookup {
 
 	private readonly IApplicationClient _applicationClient;
 	private readonly IServiceUrlBuilder _urlBuilder;
 
+	/// <summary>Creates the client over the given application client and URL builder.</summary>
 	public RightManagementServiceClient(IApplicationClient applicationClient, IServiceUrlBuilder urlBuilder)
 		: base(applicationClient, urlBuilder) {
 		_applicationClient = applicationClient;
 		_urlBuilder = urlBuilder;
 	}
 
+	/// <inheritdoc />
 	public ObjectRightsInfo GetObjectRights(string schemaName, CreatioRequestOptions requestOptions) {
 		JsonObject node;
 		string error;
 		try {
 			(node, error) = TryGetAdministratedObject(schemaName, requestOptions);
 		}
-		catch (Exception ex) {
+		catch (Exception ex) when (IsServiceFailure(ex)) {
 			return new ObjectRightsInfo(true, schemaName, null, false, Array.Empty<RoleOperationRights>(),
 				ReadError: ex.Message);
 		}
@@ -128,17 +182,11 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 				? new ObjectRightsInfo(true, schemaName, null, false, Array.Empty<RoleOperationRights>(), ReadError: error)
 				: new ObjectRightsInfo(false, schemaName, null, false, Array.Empty<RoleOperationRights>());
 		}
-
-		List<RoleOperationRights> roles = ReadOperationRows(node)
-			.Select(row => new RoleOperationRights(
-				GranteeId(row), Str(row["sysAdminUnit"]?["name"]) ?? "(unknown)",
-				Flag(row, FieldOf(ObjectOperation.Read)), Flag(row, FieldOf(ObjectOperation.Create)),
-				Flag(row, FieldOf(ObjectOperation.Edit)), Flag(row, FieldOf(ObjectOperation.Delete))))
-			.ToList();
 		return new ObjectRightsInfo(true, Str(node["name"]) ?? schemaName,
-			Str(node["caption"]), Flag(node, "administratedByOperations"), roles);
+			Str(node["caption"]), Flag(node, "administratedByOperations"), ProjectRoles(node));
 	}
 
+	/// <inheritdoc />
 	public ObjectRightsChange SetObjectRights(string schemaName, Guid grantee,
 		IReadOnlyCollection<ObjectOperation> operations, bool revoke, bool disableOperationPermissions,
 		CreatioRequestOptions requestOptions) {
@@ -147,118 +195,133 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 		try {
 			(node, error) = TryGetAdministratedObject(schemaName, requestOptions);
 		}
-		catch (Exception ex) {
-			return new ObjectRightsChange(true, false, ex.Message);
+		catch (Exception ex) when (IsServiceFailure(ex)) {
+			return new ObjectRightsChange(ObjectRightsOutcome.Failed, ex.Message);
 		}
 		if (node is null) {
 			// error set = a real read failure (do not silently no-op); error null = schema not found.
 			return error is not null
-				? new ObjectRightsChange(true, false, error)
-				: new ObjectRightsChange(false, false);
+				? new ObjectRightsChange(ObjectRightsOutcome.Failed, error)
+				: new ObjectRightsChange(ObjectRightsOutcome.NotFound);
 		}
 
-		MutationOutcome outcome = MutateOperationRow(node, grantee, operations, revoke, disableOperationPermissions);
-		if (outcome == MutationOutcome.RefusedLastRowRemoval) {
-			return new ObjectRightsChange(true, false, RefusedLastRowRemoval: true);
+		ObjectRightsOutcome outcome = MutateOperationRows(node, grantee, operations, revoke, disableOperationPermissions);
+		if (outcome is ObjectRightsOutcome.NoChange or ObjectRightsOutcome.RefusedLastRowRemoval
+			or ObjectRightsOutcome.RevokeOnNotAdministered) {
+			return new ObjectRightsChange(outcome);
 		}
-		if (outcome == MutationOutcome.RevokeOnNotAdministered) {
-			return new ObjectRightsChange(true, false, RevokeOnNotAdministered: true);
-		}
-		if (outcome == MutationOutcome.NoChange) {
-			return new ObjectRightsChange(true, false);
-		}
-		ObjectRightsChange saved;
+		string saveError;
 		try {
-			saved = Save(node, requestOptions);
+			saveError = Save(node, requestOptions);
 		}
-		catch (Exception ex) {
+		catch (Exception ex) when (IsServiceFailure(ex)) {
 			// An HTTP fault, a non-JSON error page or a timeout on the save: report it against THIS object so a
 			// fan-out names where it stopped and carries on with the rest, instead of aborting the whole run.
-			return new ObjectRightsChange(true, false, ex.Message);
+			return new ObjectRightsChange(ObjectRightsOutcome.Failed, ex.Message);
 		}
-		if (saved.Error is not null) {
-			return saved;
+		if (saveError is not null) {
+			return new ObjectRightsChange(ObjectRightsOutcome.Failed, saveError);
 		}
-		return outcome switch {
-			MutationOutcome.ChangedAndDisabled => saved with { OperationPermissionsDisabled = true },
-			MutationOutcome.ChangedAndEnabled => saved with { OperationPermissionsEnabled = true },
-			_ => saved
-		};
+		return outcome == ObjectRightsOutcome.ChangedAndEnabled
+			? ReadBackAfterEnable(schemaName, requestOptions)
+			: new ObjectRightsChange(outcome);
 	}
 
-	/// <summary>The end state <see cref="MutateOperationRow"/> left the object node in.</summary>
-	private enum MutationOutcome {
-		NoChange,
-		Changed,
-		ChangedAndEnabled,
-		ChangedAndDisabled,
-		RefusedLastRowRemoval,
-		RevokeOnNotAdministered
+	/// <inheritdoc />
+	public string ResolveGranteeName(Guid grantee, CreatioRequestOptions requestOptions) {
+		object query = SelectQueryHelper.BuildSelectQuery(
+			"SysAdminUnit",
+			new[] { new SelectQueryHelper.SelectQueryColumnDefinition("Name", "Name") },
+			new[] { new SelectQueryHelper.SelectQueryFilterDefinition("Id", grantee, SelectQueryHelper.GuidDataValueType) },
+			1);
+		GranteeSelectResponse response = SelectQueryHelper.ExecuteSelectQuery<GranteeSelectResponse>(
+			_applicationClient, _urlBuilder, query, requestOptions.TimeOut, requestOptions.MaxAttempts,
+			requestOptions.RetryDelay);
+		return response.Rows?.FirstOrDefault()?.Name;
 	}
 
-	// Applies the grant/revoke to the object node's operation-rights rows in place; reports whether anything
-	// ACTUALLY changed (so an unchanged re-run reports "no change" and skips the save). All other fields of the
-	// node are left untouched so the save round-trips faithfully.
-	private static MutationOutcome MutateOperationRow(JsonObject node, Guid grantee,
+	// Turning operation permissions on is where access can silently NARROW for every other internal role: on
+	// Creatio 8.3.4 the server adds an "All employees" row with full rights at that point, but that is observed,
+	// not a documented contract. So the saved object is read back and the roles that actually hold rights are
+	// returned, letting the caller tell "internal users kept access" from "only the grantee can reach it now".
+	private ObjectRightsChange ReadBackAfterEnable(string schemaName, CreatioRequestOptions requestOptions) {
+		ObjectRightsInfo after = GetObjectRights(schemaName, requestOptions);
+		return after.ReadError is not null || !after.Found
+			? new ObjectRightsChange(ObjectRightsOutcome.ChangedAndEnabled,
+				ReadBackError: after.ReadError ?? "the object was not found on read-back")
+			: new ObjectRightsChange(ObjectRightsOutcome.ChangedAndEnabled, RolesAfterEnable: after.Roles);
+	}
+
+	// Applies the grant/revoke to EVERY row of the grantee (a duplicate row must not keep access a revoke took
+	// away) in place; reports what ACTUALLY changed, so an unchanged re-run reports "no change" and skips the
+	// save. All other fields of the node are left untouched so the save round-trips faithfully.
+	private static ObjectRightsOutcome MutateOperationRows(JsonObject node, Guid grantee,
 		IReadOnlyCollection<ObjectOperation> operations, bool revoke, bool disableOperationPermissions) {
 		JsonArray rows = node["entitySchemaOperationsRights"] as JsonArray;
 		if (rows is null) {
 			rows = new JsonArray();
 			node["entitySchemaOperationsRights"] = rows;
 		}
-		JsonObject existing = rows.OfType<JsonObject>()
-			.FirstOrDefault(row => GranteeId(row) == grantee);
+		List<JsonObject> granteeRows = rows.OfType<JsonObject>().Where(row => GranteeId(row) == grantee).ToList();
+		return revoke
+			? Revoke(node, rows, granteeRows, operations, disableOperationPermissions)
+			: Grant(node, rows, granteeRows, grantee, operations);
+	}
 
-		if (revoke) {
-			// A revoke on an object that is not administered restricts nothing: every internal user reaches it
-			// regardless of its rows (a stale row included). Report that instead of "no change" or "revoked", and
-			// never let the last-row refusal fire here with its "would open it to all internal users" message —
-			// the object already is open to them.
-			if (!Flag(node, "administratedByOperations")) {
-				return MutationOutcome.RevokeOnNotAdministered;
-			}
-			if (existing is null) {
-				return MutationOutcome.NoChange;
-			}
-			(bool, bool, bool, bool) before = Snapshot(existing);
-			// Revoking operations the grantee does not hold changes nothing — decided before the last-row check,
-			// so a no-op re-run on an object's only row is "no change", not a refusal.
-			if (!operations.Any(op => Flag(existing, FieldOf(op)))) {
-				return MutationOutcome.NoChange;
-			}
-			// Removing the object's LAST rights row leaves only two possible end states, and neither may happen as
-			// a side effect of a per-grantee revoke: keep administratedByOperations on and the object is reachable
-			// by NOBODY, or turn it off and the object becomes reachable by EVERY internal user — an access
-			// WIDENING, the opposite of what a revoke asks for. The caller has to choose the second one explicitly.
-			// Decided before the flags are cleared, so a refusal leaves the row exactly as it was.
-			bool lastRow = rows.Count == 1 && ReferenceEquals(rows[0], existing);
-			if (lastRow && !disableOperationPermissions && WouldEmptyRow(existing, operations)) {
-				return MutationOutcome.RefusedLastRowRemoval;
-			}
+	private static ObjectRightsOutcome Revoke(JsonObject node, JsonArray rows, List<JsonObject> granteeRows,
+		IReadOnlyCollection<ObjectOperation> operations, bool disableOperationPermissions) {
+		// A revoke on an object that is not administered restricts nothing: every internal user reaches it
+		// regardless of its rows (a stale row included). Report that instead of "no change" or "revoked", and
+		// never let the last-row refusal fire here with its "would open it to all internal users" message —
+		// the object already is open to them.
+		if (!Flag(node, "administratedByOperations")) {
+			return ObjectRightsOutcome.RevokeOnNotAdministered;
+		}
+		// Revoking operations the grantee does not hold changes nothing — decided before the last-grant check,
+		// so a no-op re-run is "no change", not a refusal.
+		if (!granteeRows.Any(row => operations.Any(op => Flag(row, FieldOf(op))))) {
+			return ObjectRightsOutcome.NoChange;
+		}
+		// Removing the object's LAST effective grant leaves only two possible end states, and neither may happen as
+		// a side effect of a per-grantee revoke: keep administratedByOperations on and the object is reachable by
+		// NOBODY, or turn it off and it becomes reachable by EVERY internal user — an access WIDENING. The caller
+		// has to choose the second one explicitly. "Last" counts effective grants, not rows: another row whose
+		// flags are all false grants nothing and must not let the refusal be skipped.
+		bool othersGrantSomething = rows.OfType<JsonObject>()
+			.Where(row => !granteeRows.Contains(row))
+			.Any(row => OperationFields.Any(field => Flag(row, field)));
+		bool leavesGranteeSomething = granteeRows.Any(row => !WouldEmptyRow(row, operations));
+		if (!othersGrantSomething && !leavesGranteeSomething && !disableOperationPermissions) {
+			return ObjectRightsOutcome.RefusedLastRowRemoval;
+		}
+		foreach (JsonObject row in granteeRows) {
 			foreach (ObjectOperation op in operations) {
-				existing[FieldOf(op)] = false;
+				row[FieldOf(op)] = false;
 			}
 			// A row with no remaining rights is removed, mirroring the designer's "remove role".
-			if (!OperationFields.Any(field => Flag(existing, field))) {
-				rows.Remove(existing);
-				// Reached only with disableOperationPermissions: the caller asked for the object to return to
-				// "available to all" rather than be left administered with zero grants.
-				if (rows.Count == 0 && Flag(node, "administratedByOperations")) {
-					node["administratedByOperations"] = false;
-					return MutationOutcome.ChangedAndDisabled;
-				}
-				return MutationOutcome.Changed;
+			if (!OperationFields.Any(field => Flag(row, field))) {
+				rows.Remove(row);
 			}
-			return before != Snapshot(existing) ? MutationOutcome.Changed : MutationOutcome.NoChange;
 		}
+		// Only reachable with disableOperationPermissions: the caller asked for the object to return to "available
+		// to all internal users" rather than be left administered with no effective grant.
+		bool anyGrantLeft = rows.OfType<JsonObject>().Any(row => OperationFields.Any(field => Flag(row, field)));
+		if (!anyGrantLeft) {
+			node["administratedByOperations"] = false;
+			return ObjectRightsOutcome.ChangedAndDisabled;
+		}
+		return ObjectRightsOutcome.Changed;
+	}
 
-		// Enabling operation permissions is itself a change (and an access NARROWING for every other internal
-		// role), so it is tracked separately: a re-grant that alters nothing stays a no-op, and a grant that
-		// flips the object from "available to all internal users" to "only listed roles" is reported as such.
+	private static ObjectRightsOutcome Grant(JsonObject node, JsonArray rows, List<JsonObject> granteeRows,
+		Guid grantee, IReadOnlyCollection<ObjectOperation> operations) {
+		// Enabling operation permissions is itself a change (and possibly an access NARROWING for every other
+		// internal role), so it is tracked separately: a re-grant that alters nothing stays a no-op, and a grant
+		// that flips the object from "available to all internal users" to "only listed roles" is reported as such.
 		bool enabledNow = !Flag(node, "administratedByOperations");
 		node["administratedByOperations"] = true;
-		MutationOutcome changed = enabledNow ? MutationOutcome.ChangedAndEnabled : MutationOutcome.Changed;
-		if (existing is null) {
+		ObjectRightsOutcome changed = enabledNow ? ObjectRightsOutcome.ChangedAndEnabled : ObjectRightsOutcome.Changed;
+		if (granteeRows.Count == 0) {
 			JsonObject row = new() {
 				["sysAdminUnit"] = new JsonObject { ["id"] = grantee.ToString() },
 				["position"] = NextPosition(rows)
@@ -272,29 +335,20 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 			rows.Add(row);
 			return changed;
 		}
-		(bool, bool, bool, bool) grantBefore = Snapshot(existing);
-		foreach (ObjectOperation op in operations) {
-			existing[FieldOf(op)] = true;
-		}
-		return enabledNow || grantBefore != Snapshot(existing)
-			? changed
-			: MutationOutcome.NoChange;
-	}
-
-	// Asked BEFORE the revoke clears anything, because the last-row refusal has to leave the row untouched.
-	private static bool WouldEmptyRow(JsonObject row, IReadOnlyCollection<ObjectOperation> operations) {
-		foreach (string field in OperationFields) {
-			if (Flag(row, field) && !operations.Any(op => FieldOf(op) == field)) {
-				return false;
+		bool rowChanged = false;
+		foreach (JsonObject row in granteeRows) {
+			foreach (ObjectOperation op in operations) {
+				rowChanged |= !Flag(row, FieldOf(op));
+				row[FieldOf(op)] = true;
 			}
 		}
-		return true;
+		return enabledNow || rowChanged ? changed : ObjectRightsOutcome.NoChange;
 	}
 
-	// The four operation flags of a row, for change detection.
-	private static (bool read, bool append, bool edit, bool delete) Snapshot(JsonObject row) =>
-		(Flag(row, FieldOf(ObjectOperation.Read)), Flag(row, FieldOf(ObjectOperation.Create)),
-			Flag(row, FieldOf(ObjectOperation.Edit)), Flag(row, FieldOf(ObjectOperation.Delete)));
+	// True when the revoke would leave the row with no operation at all. Asked BEFORE the revoke clears anything,
+	// because the last-grant refusal has to leave the rows untouched.
+	private static bool WouldEmptyRow(JsonObject row, IReadOnlyCollection<ObjectOperation> operations) =>
+		!OperationFields.Any(field => Flag(row, field) && !operations.Any(op => FieldOf(op) == field));
 
 	// One past the highest existing position, so a new row never collides with an existing one even when the
 	// existing positions are non-contiguous (a prior designer-side removal can leave gaps).
@@ -311,7 +365,8 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 	// Read-modify-write is last-writer-wins: SaveAdministratedObject carries no version, so a change another
 	// client saves between our read and our save is overwritten. Object permissions are changed rarely and by
 	// administrators, so this is accepted; re-read with get-object-rights when concurrent edits are possible.
-	private ObjectRightsChange Save(JsonObject node, CreatioRequestOptions requestOptions) {
+	// Returns null on success, otherwise the service's failure message.
+	private string Save(JsonObject node, CreatioRequestOptions requestOptions) {
 		JsonObject payload = node.DeepClone().AsObject();
 		// Mirror the platform client: only the collection we changed (operation rights) is sent; the record,
 		// column and entity-operation collections are sent as null ("leave untouched") so the save neither
@@ -324,28 +379,30 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 			new JsonObject { ["administratedObject"] = payload },
 			requestOptions);
 		return response is { Success: true }
-			? new ObjectRightsChange(true, true)
-			: new ObjectRightsChange(true, false, response?.ErrorInfo?.Message ?? "SaveAdministratedObject reported failure.");
+			? null
+			: response?.ErrorInfo?.Message ?? "SaveAdministratedObject reported failure.";
 	}
 
 	// Returns the first candidate UId that describes the object as a mutable JSON node, or (null, error):
 	// error null means the schema name resolved to no candidate (not found); error set means every candidate
-	// answered but with a fault (a wrong replacing-schema UId, or an in-band success:false).
+	// answered but with a fault. The FIRST candidate's error is kept: it is the base row, whose real cause (a
+	// timeout, a permission error) is what the caller needs, not the opaque "Request Error" page a later
+	// replacing layer answers with.
 	private (JsonObject node, string error) TryGetAdministratedObject(
 		string schemaName, CreatioRequestOptions requestOptions) {
 		IReadOnlyList<Guid> candidates = ResolveEntitySchemaUIds(schemaName, requestOptions);
 		if (candidates.Count == 0) {
 			return (null, null);
 		}
-		string lastError = null;
+		string firstError = null;
 		foreach (Guid candidate in candidates) {
 			JsonObject node = TryFetchNode(candidate, requestOptions, out string error);
 			if (node is not null) {
 				return (node, null);
 			}
-			lastError = error;
+			firstError ??= error;
 		}
-		return (null, lastError);
+		return (null, firstError);
 	}
 
 	// Fetches GetAdministratedObject for one UId. Returns the administratedObject node on a clean success
@@ -363,7 +420,7 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 				new GetAdministratedObjectRequest { SchemaUId = schemaUId },
 				requestOptions);
 		}
-		catch (Exception ex) {
+		catch (Exception ex) when (IsServiceFailure(ex)) {
 			error = ex.Message;
 			return null;
 		}
@@ -375,6 +432,22 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 			: "GetAdministratedObject returned no administrated object.";
 		return null;
 	}
+
+	// The failures a call to the Creatio service can produce and that must be attributed to one object rather
+	// than end the run: a transport fault, a timeout, a non-JSON or empty body (InvalidOperationException from
+	// PostAndDeserialize), an authentication rejection, an oversized response. Programming errors
+	// (NullReferenceException, ArgumentException, ...) are deliberately NOT caught here.
+	private static bool IsServiceFailure(Exception exception) =>
+		exception is InvalidOperationException or HttpRequestException or TimeoutException or IOException
+			or JsonException or UnauthorizedAccessException or ResponseTooLargeException;
+
+	private static List<RoleOperationRights> ProjectRoles(JsonObject node) =>
+		ReadOperationRows(node)
+			.Select(row => new RoleOperationRights(
+				GranteeId(row), Str(row["sysAdminUnit"]?["name"]) ?? "(unknown)",
+				Flag(row, FieldOf(ObjectOperation.Read)), Flag(row, FieldOf(ObjectOperation.Create)),
+				Flag(row, FieldOf(ObjectOperation.Edit)), Flag(row, FieldOf(ObjectOperation.Delete))))
+			.ToList();
 
 	private static IEnumerable<JsonObject> ReadOperationRows(JsonObject node) =>
 		(node["entitySchemaOperationsRights"] as JsonArray)?.OfType<JsonObject>() ?? Enumerable.Empty<JsonObject>();
@@ -461,5 +534,17 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 	{
 		[JsonPropertyName("UId")]
 		public Guid UId { get; set; }
+	}
+
+	private sealed class GranteeSelectResponse : SelectQueryHelper.SelectQueryResponseBaseDto
+	{
+		[JsonPropertyName("rows")]
+		public List<GranteeRow> Rows { get; set; }
+	}
+
+	private sealed class GranteeRow
+	{
+		[JsonPropertyName("Name")]
+		public string Name { get; set; }
 	}
 }

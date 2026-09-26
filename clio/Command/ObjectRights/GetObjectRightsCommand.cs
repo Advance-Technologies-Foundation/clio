@@ -6,6 +6,7 @@ using CommandLine;
 
 namespace Clio.Command.ObjectRights;
 
+/// <summary>Options of <c>get-object-rights</c>: read the per-role object operation permissions of an object.</summary>
 [Verb("get-object-rights", HelpText =
 	"Read object operation permissions (read/create/edit/delete per role) for an object and, optionally, its connected objects")]
 public class GetObjectRightsOptions : RemoteCommandOptions {
@@ -35,6 +36,7 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 	private readonly IConnectedObjectsResolver _connectedObjects;
 	private readonly ILogger _logger;
 
+	/// <summary>Creates the command.</summary>
 	public GetObjectRightsCommand(IObjectRightsReader rightsReader,
 		IConnectedObjectsResolver connectedObjects, ILogger logger) {
 		_rightsReader = rightsReader;

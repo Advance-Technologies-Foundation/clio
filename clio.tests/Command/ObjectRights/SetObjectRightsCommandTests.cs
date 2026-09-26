@@ -21,6 +21,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 	private IObjectRightsWriter _rightsWriter;
 	private IConnectedObjectsResolver _connectedObjects;
 	private IInteractiveConsole _console;
+	private IGranteeLookup _granteeLookup;
 	private ILogger _logger;
 
 	public override void Setup() {
@@ -32,6 +33,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		_rightsWriter.ClearReceivedCalls();
 		_connectedObjects.ClearReceivedCalls();
 		_console.ClearReceivedCalls();
+		_granteeLookup.ClearReceivedCalls();
 		_logger.ClearReceivedCalls();
 		base.TearDown();
 	}
@@ -41,15 +43,18 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		_rightsWriter = Substitute.For<IObjectRightsWriter>();
 		_connectedObjects = Substitute.For<IConnectedObjectsResolver>();
 		_console = Substitute.For<IInteractiveConsole>();
+		_granteeLookup = Substitute.For<IGranteeLookup>();
+		_granteeLookup.ResolveGranteeName(Arg.Any<Guid>(), Arg.Any<CreatioRequestOptions>()).Returns("All external users");
 		_logger = Substitute.For<ILogger>();
 		_rightsWriter.SetObjectRights(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<ObjectOperation>>(),
-			Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>()).Returns(new ObjectRightsChange(true, true));
+			Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>()).Returns(new ObjectRightsChange(ObjectRightsOutcome.Changed));
 		// Default: no fan-out — the resolver returns just the root object.
 		_connectedObjects.Resolve(Arg.Any<string>(), Arg.Any<bool>())
 			.Returns(callInfo => Resolution((string)callInfo[0]));
 		containerBuilder.AddTransient(_ => _rightsWriter);
 		containerBuilder.AddTransient(_ => _connectedObjects);
 		containerBuilder.AddTransient(_ => _console);
+		containerBuilder.AddTransient(_ => _granteeLookup);
 		containerBuilder.AddTransient(_ => _logger);
 	}
 
@@ -184,7 +189,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 	public void Execute_ShouldReturnError_WhenWriterFails() {
 		// Arrange
 		_rightsWriter.SetObjectRights(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<ObjectOperation>>(),
-			Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>()).Returns(new ObjectRightsChange(true, false, "boom"));
+			Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>()).Returns(new ObjectRightsChange(ObjectRightsOutcome.Failed, "boom"));
 		SetObjectRightsOptions options = new() { EntitySchemaName = "UsrPortalSpike", Grantee = Grantee, Confirm = true };
 
 		// Act
@@ -201,7 +206,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		// Arrange
 		_rightsWriter.SetObjectRights(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<ObjectOperation>>(),
 				Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>())
-			.Returns(new ObjectRightsChange(true, false, RefusedLastRowRemoval: true));
+			.Returns(new ObjectRightsChange(ObjectRightsOutcome.RefusedLastRowRemoval));
 		SetObjectRightsOptions options = new() {
 			EntitySchemaName = "UsrPortalSpike", Grantee = Grantee, Revoke = true, Confirm = true
 		};
@@ -221,7 +226,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		// Arrange
 		_rightsWriter.SetObjectRights(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<ObjectOperation>>(),
 				Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>())
-			.Returns(new ObjectRightsChange(true, true, OperationPermissionsDisabled: true));
+			.Returns(new ObjectRightsChange(ObjectRightsOutcome.ChangedAndDisabled));
 		SetObjectRightsOptions options = new() {
 			EntitySchemaName = "UsrPortalSpike", Grantee = Grantee, Revoke = true,
 			DisableOperationPermissions = true, Confirm = true
@@ -287,7 +292,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 	public void Execute_ShouldFail_WhenRootSchemaNotFound() {
 		// Arrange
 		_rightsWriter.SetObjectRights("UsrOrders", Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<ObjectOperation>>(),
-			Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>()).Returns(new ObjectRightsChange(false, false));
+			Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>()).Returns(new ObjectRightsChange(ObjectRightsOutcome.NotFound));
 		SetObjectRightsOptions options = new() { EntitySchemaName = "UsrOrders", Grantee = Grantee, Confirm = true };
 
 		// Act
@@ -305,7 +310,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		_connectedObjects.Resolve("UsrPortalSpike", true)
 			.Returns(Resolution("UsrPortalSpike", "UsrGone"));
 		_rightsWriter.SetObjectRights("UsrGone", Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<ObjectOperation>>(),
-			Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>()).Returns(new ObjectRightsChange(false, false));
+			Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>()).Returns(new ObjectRightsChange(ObjectRightsOutcome.NotFound));
 		SetObjectRightsOptions options = new() {
 			EntitySchemaName = "UsrPortalSpike", Grantee = Grantee, IncludeConnected = true, Confirm = true
 		};
@@ -384,7 +389,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		// Arrange
 		_rightsWriter.SetObjectRights(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<ObjectOperation>>(),
 			Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>())
-			.Returns(new ObjectRightsChange(true, true, OperationPermissionsEnabled: true));
+			.Returns(new ObjectRightsChange(ObjectRightsOutcome.ChangedAndEnabled, RolesAfterEnable: new[] { new RoleOperationRights(Guid.Parse("a29a3ba5-4b0d-de11-9a51-005056c00008"), "All employees", true, true, true, true), new RoleOperationRights(Guid.Parse(Grantee), "All external users", true, false, false, false) }));
 		SetObjectRightsOptions options = new() { EntitySchemaName = "UsrPortalSpike", Grantee = Grantee, Confirm = true };
 
 		// Act
@@ -513,7 +518,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		// Arrange
 		_connectedObjects.Resolve("UsrPortalSpike", true).Returns(Resolution("UsrPortalSpike", "UsrPSCategory"));
 		_rightsWriter.SetObjectRights("UsrPortalSpike", Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<ObjectOperation>>(),
-			Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>()).Returns(new ObjectRightsChange(true, false, "boom"));
+			Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>()).Returns(new ObjectRightsChange(ObjectRightsOutcome.Failed, "boom"));
 		SetObjectRightsOptions options = new() {
 			EntitySchemaName = "UsrPortalSpike", Grantee = Grantee, IncludeConnected = true, Confirm = true
 		};
@@ -534,7 +539,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		// Arrange
 		_connectedObjects.Resolve("UsrPortalSpike", true).Returns(Resolution("UsrPortalSpike", "UsrA", "UsrB"));
 		_rightsWriter.SetObjectRights("UsrA", Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<ObjectOperation>>(),
-			Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>()).Returns(new ObjectRightsChange(true, false, "HTTP 500"));
+			Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>()).Returns(new ObjectRightsChange(ObjectRightsOutcome.Failed, "HTTP 500"));
 		SetObjectRightsOptions options = new() {
 			EntitySchemaName = "UsrPortalSpike", Grantee = Grantee, IncludeConnected = true, Confirm = true
 		};
@@ -557,7 +562,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		// Arrange
 		_rightsWriter.SetObjectRights(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<ObjectOperation>>(),
 			Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>())
-			.Returns(new ObjectRightsChange(true, false, RevokeOnNotAdministered: true));
+			.Returns(new ObjectRightsChange(ObjectRightsOutcome.RevokeOnNotAdministered));
 		SetObjectRightsOptions options = new() { EntitySchemaName = "UsrOpen", Grantee = Grantee, Revoke = true, Confirm = true };
 
 		// Act
@@ -577,7 +582,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		_connectedObjects.Resolve("UsrOrder", true).Returns(Resolution("UsrOrder", "UsrStatus"));
 		_rightsWriter.SetObjectRights("UsrStatus", Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<ObjectOperation>>(),
 			Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>())
-			.Returns(new ObjectRightsChange(true, false, RevokeOnNotAdministered: true));
+			.Returns(new ObjectRightsChange(ObjectRightsOutcome.RevokeOnNotAdministered));
 		SetObjectRightsOptions options = new() {
 			EntitySchemaName = "UsrOrder", Grantee = Grantee, Revoke = true, IncludeConnected = true,
 			ConnectedOperations = "read", Confirm = true
@@ -598,7 +603,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		_connectedObjects.Resolve("UsrOrder", true).Returns(Resolution("UsrOrder", "UsrStatus"));
 		_rightsWriter.SetObjectRights("UsrStatus", Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<ObjectOperation>>(),
 			Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>())
-			.Returns(new ObjectRightsChange(true, false, RefusedLastRowRemoval: true));
+			.Returns(new ObjectRightsChange(ObjectRightsOutcome.RefusedLastRowRemoval));
 		SetObjectRightsOptions options = new() {
 			EntitySchemaName = "UsrOrder", Grantee = Grantee, Revoke = true, IncludeConnected = true,
 			ConnectedOperations = "read", Confirm = true
@@ -695,5 +700,143 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 
 		// Assert
 		_logger.Received().WriteError("Error: --connected-operations: unknown operation 'readd'. Use read,create,edit,delete.");
+	}
+
+	// ---- Final review ----
+
+	private static readonly Guid EmployeesId = Guid.Parse("a29a3ba5-4b0d-de11-9a51-005056c00008");
+
+	private void WriterReturnsEnabled(params RoleOperationRights[] rolesAfter) =>
+		_rightsWriter.SetObjectRights(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<ObjectOperation>>(),
+			Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>())
+			.Returns(new ObjectRightsChange(ObjectRightsOutcome.ChangedAndEnabled, RolesAfterEnable: rolesAfter));
+
+	[Test]
+	[Description("After turning operation permissions on, the result names the roles that actually hold rights, read back from the server.")]
+	public void Execute_ShouldNameRolesAfterEnable_WhenOthersKeptAccess() {
+		// Arrange
+		WriterReturnsEnabled(
+			new RoleOperationRights(EmployeesId, "All employees", true, true, true, true),
+			new RoleOperationRights(Guid.Parse(Grantee), "All external users", true, false, false, false));
+		SetObjectRightsOptions options = new() { EntitySchemaName = "UsrOrder", Grantee = Grantee, Operations = "read", Confirm = true };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "internal users kept access through All employees");
+		_logger.Received().WriteInfo(Arg.Is<string>(m => m.Contains("turned ON")
+			&& m.Contains("roles with rights now: All employees (read/create/edit/delete)")));
+	}
+
+	[Test]
+	[Description("When the read-back after enabling shows only the grantee, the run fails loudly: every other internal user lost access.")]
+	public void Execute_ShouldFail_WhenOnlyGranteeHoldsRightsAfterEnable() {
+		// Arrange
+		WriterReturnsEnabled(new RoleOperationRights(Guid.Parse(Grantee), "All external users", true, false, false, false));
+		SetObjectRightsOptions options = new() { EntitySchemaName = "UsrOrder", Grantee = Grantee, Operations = "read", Confirm = true };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "the grant cut every other internal user off the object");
+		_logger.Received().WriteError(Arg.Is<string>(m => m.Contains("UsrOrder") && m.Contains("LOST access")));
+	}
+
+	[Test]
+	[Description("A failed read-back after enabling is reported as a warning, not as a verified outcome.")]
+	public void Execute_ShouldWarn_WhenReadBackAfterEnableFails() {
+		// Arrange
+		_rightsWriter.SetObjectRights(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<ObjectOperation>>(),
+			Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>())
+			.Returns(new ObjectRightsChange(ObjectRightsOutcome.ChangedAndEnabled, ReadBackError: "timeout"));
+		SetObjectRightsOptions options = new() { EntitySchemaName = "UsrOrder", Grantee = Grantee, Confirm = true };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "the grant itself was saved");
+		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("reading it back failed") && m.Contains("timeout")));
+	}
+
+	[Test]
+	[Description("A grantee id that does not exist in SysAdminUnit fails before anything is written.")]
+	public void Execute_ShouldFail_WhenGranteeDoesNotExist() {
+		// Arrange
+		_granteeLookup.ResolveGranteeName(Arg.Any<Guid>(), Arg.Any<CreatioRequestOptions>()).Returns((string)null);
+		SetObjectRightsOptions options = new() { EntitySchemaName = "UsrOrder", Grantee = Grantee, Confirm = true };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "granting to a principal nobody holds would only cut others off");
+		_logger.Received().WriteError(Arg.Is<string>(m => m.Contains("was not found in SysAdminUnit")));
+		_rightsWriter.DidNotReceiveWithAnyArgs().SetObjectRights(default, default, default, default, default, default);
+	}
+
+	[Test]
+	[Description("The confirmation text names the grantee by name as well as by id.")]
+	public void Execute_ShouldNameGrantee_InConfirmation() {
+		// Arrange
+		_console.IsInteractive.Returns(false);
+		SetObjectRightsOptions options = new() { EntitySchemaName = "UsrOrder", Grantee = Grantee };
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		_logger.Received().WriteError(Arg.Is<string>(m => m.Contains($"'All external users' ({Grantee})")));
+	}
+
+	[Test]
+	[Description("A security/system ROOT object may only be granted read without --allow-security-object.")]
+	public void Execute_ShouldRefuse_WhenGrantingBeyondReadOnSecurityRoot() {
+		// Arrange
+		SetObjectRightsOptions options = new() { EntitySchemaName = "SysUserInRole", Grantee = Grantee, Confirm = true };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "create/edit on a security object is a privilege-escalation path");
+		_logger.Received().WriteError(Arg.Is<string>(m => m.Contains("security/system object") && m.Contains("--allow-security-object")));
+		_rightsWriter.DidNotReceiveWithAnyArgs().SetObjectRights(default, default, default, default, default, default);
+	}
+
+	[TestCase("read", false)]
+	[TestCase("read,create,edit", true)]
+	[Description("A security/system root accepts read, and accepts more with the explicit opt-in.")]
+	public void Execute_ShouldAllowSecurityRoot_WhenReadOnlyOrOptedIn(string operations, bool allow) {
+		// Arrange
+		SetObjectRightsOptions options = new() {
+			EntitySchemaName = "SysUserInRole", Grantee = Grantee, Operations = operations,
+			AllowSecurityObject = allow, Confirm = true
+		};
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "read-only, or an explicit opt-in, is allowed");
+		_rightsWriter.Received(1).SetObjectRights("SysUserInRole", Arg.Any<Guid>(),
+			Arg.Any<IReadOnlyCollection<ObjectOperation>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>());
+	}
+
+	[Test]
+	[Description("A revoke on a security/system root is always allowed: it only narrows access.")]
+	public void Execute_ShouldAllowRevoke_OnSecurityRoot() {
+		// Arrange
+		SetObjectRightsOptions options = new() {
+			EntitySchemaName = "SysUserInRole", Grantee = Grantee, Operations = "read,create,edit", Revoke = true, Confirm = true
+		};
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "a revoke never escalates privilege");
 	}
 }

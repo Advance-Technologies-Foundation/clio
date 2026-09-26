@@ -7,6 +7,7 @@ using CommandLine;
 
 namespace Clio.Command.ObjectRights;
 
+/// <summary>Options of <c>set-object-rights</c>: grant or revoke a role's object operation permissions.</summary>
 [Verb("set-object-rights", HelpText =
 	"Grant or revoke object operation permissions (read/create/edit/delete) for a role on an object (destructive)")]
 public class SetObjectRightsOptions : RemoteCommandOptions {
@@ -41,22 +42,34 @@ public class SetObjectRightsOptions : RemoteCommandOptions {
 		+ "lookup value only needs read, so create/edit are not fanned out to shared dictionaries unless passed here.")]
 	public string ConnectedOperations { get; set; }
 
+	[Option("allow-security-object", Required = false, HelpText =
+		"Allow granting create/edit/delete when the ROOT object is a security or system object (SysAdmin*, SysUser*, "
+		+ "SysSchema*, SysPackage*, SysSettings*, *Right/*Rights). Without it such a root may only be granted read.")]
+	public bool AllowSecurityObject { get; set; }
+
 	[Option("confirm", Required = false, HelpText =
 		"Confirm the destructive change without a prompt (required in non-interactive runs)")]
 	public bool Confirm { get; set; }
 }
 
+/// <summary>
+/// <c>set-object-rights</c>: grants or revokes a role's object operation permissions on an object and, with
+/// <c>--include-connected</c>, on the object's own lookup objects. Destructive and confirm-gated.
+/// </summary>
 public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 
 	private readonly IObjectRightsWriter _rightsWriter;
 	private readonly IConnectedObjectsResolver _connectedObjects;
+	private readonly IGranteeLookup _granteeLookup;
 	private readonly IInteractiveConsole _console;
 	private readonly ILogger _logger;
 
-	public SetObjectRightsCommand(IObjectRightsWriter rightsWriter,
-		IConnectedObjectsResolver connectedObjects, IInteractiveConsole console, ILogger logger) {
+	/// <summary>Creates the command.</summary>
+	public SetObjectRightsCommand(IObjectRightsWriter rightsWriter, IConnectedObjectsResolver connectedObjects,
+		IGranteeLookup granteeLookup, IInteractiveConsole console, ILogger logger) {
 		_rightsWriter = rightsWriter;
 		_connectedObjects = connectedObjects;
+		_granteeLookup = granteeLookup;
 		_console = console;
 		_logger = logger;
 	}
@@ -114,10 +127,37 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 				+ "--entity-schema-name to change it explicitly.");
 		}
 		IReadOnlyList<string> objects = resolution.Objects;
+
+		// The grantee must exist: granting to an unknown id would turn operation permissions on for a principal
+		// nobody holds — cutting access for everyone else — and still report "granted".
+		string granteeName;
+		try {
+			granteeName = _granteeLookup.ResolveGranteeName(grantee, requestOptions);
+		}
+		catch (Exception ex) {
+			_logger.WriteError($"Error: could not check grantee {grantee}: {ex.Message}");
+			return 1;
+		}
+		if (granteeName is null) {
+			_logger.WriteError($"Error: grantee {grantee} was not found in SysAdminUnit. Nothing was changed — pass the "
+				+ "id of an existing role or user.");
+			return 1;
+		}
+		string granteeLabel = $"'{granteeName}' ({grantee})";
+
+		// The fan-out never reaches security/system objects; naming one as the root is the explicit way to change
+		// it. Even then a grant beyond read is a privilege-escalation path, so it needs its own opt-in.
+		if (!options.Revoke && ConnectedObjectsResolver.IsSecurityOrSystemObject(objects[0])
+			&& operations.Any(op => op != ObjectOperation.Read) && !options.AllowSecurityObject) {
+			_logger.WriteError($"Error: '{objects[0]}' is a security/system object, so only read may be granted on it "
+				+ "without --allow-security-object. Nothing was changed.");
+			return 1;
+		}
+
 		string verb = options.Revoke ? "Revoke" : "Grant";
 		string opList = FormatOperations(operations);
 		string connectedOpList = FormatOperations(connectedOperations);
-		string change = $"{verb} object operations [{opList}] for grantee {grantee} on '{objects[0]}'";
+		string change = $"{verb} object operations [{opList}] for grantee {granteeLabel} on '{objects[0]}'";
 		if (objects.Count > 1) {
 			change += $", and [{connectedOpList}] on {objects.Count - 1} connected object(s) "
 				+ $"({string.Join(", ", objects.Skip(1))})";
@@ -129,9 +169,9 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 				+ " and it becomes available to ALL internal users (connected objects are never turned off).";
 		}
 		if (!options.Revoke) {
-			// The mirror-image transition: granting to an object not administered yet NARROWS it for everyone else.
+			// The mirror-image transition: granting to an object not administered yet can NARROW it for everyone else.
 			change += " An object that does not use operation permissions yet has them turned ON, after which only"
-				+ " the listed roles can reach it.";
+				+ " the roles listed on it can reach it (the result names them).";
 		}
 
 		ConfirmDecision decision = ConfirmApply(options, change);
@@ -154,47 +194,7 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 				ObjectRightsChange result = _rightsWriter.SetObjectRights(
 					schemaName, grantee, objectOperations, options.Revoke,
 					isRoot && options.DisableOperationPermissions, requestOptions);
-				if (result.Error != null) {
-					anyFailure = true;
-					_logger.WriteError($"  {schemaName}: {result.Error}");
-				} else if (!result.Found && isRoot) {
-					// The object the caller NAMED does not exist (typically a typo): nothing was written, so this is
-					// neither applied, a no-op nor cancelled — it must not report success.
-					anyFailure = true;
-					_logger.WriteError($"  {schemaName}: schema not found — nothing was changed. Check the object name.");
-				} else if (!result.Found) {
-					_logger.WriteWarning($"  {schemaName}: schema not found (skipped).");
-				} else if (result.RevokeOnNotAdministered) {
-					string message = $"  {schemaName}: not administered by operation permissions — every internal user "
-						+ "can reach it, so a revoke cannot restrict it. Nothing was changed. To limit access, grant the "
-						+ "roles that should keep it (that turns operation permissions on).";
-					if (isRoot) {
-						anyFailure = true;
-						_logger.WriteError(message);
-					} else {
-						_logger.WriteWarning(message);
-					}
-				} else if (result.RefusedLastRowRemoval) {
-					// Nothing was written, so this is not a success: the revoke the operator asked for did not happen.
-					anyFailure = true;
-					_logger.WriteError(
-						$"  {schemaName}: grantee {grantee} holds the object's LAST rights row. Removing it would turn "
-						+ $"operation permissions OFF and make '{schemaName}' available to ALL internal users. "
-						+ (isRoot
-							? "Nothing was changed — re-run with --disable-operation-permissions if that is what you want."
-							: "Nothing was changed — a connected object is never turned off by a fan-out; name it as "
-								+ "--entity-schema-name to do that explicitly."));
-				} else if (result.Changed) {
-					string transition = result.OperationPermissionsDisabled
-						? " Operation permissions are now OFF on this object — it is available to ALL internal users."
-						: result.OperationPermissionsEnabled
-							? " Operation permissions were turned ON for this object — only the listed roles can reach it now."
-							: "";
-					_logger.WriteInfo(
-						$"  {schemaName}: {(options.Revoke ? "revoked" : "granted")} [{objectOpList}] for grantee {grantee}.{transition}");
-				} else {
-					_logger.WriteInfo($"  {schemaName}: already in the requested state (no change).");
-				}
+				anyFailure |= Report(result, schemaName, isRoot, grantee, granteeLabel, objectOpList, options.Revoke);
 				if (isRoot && anyFailure && objects.Count > 1) {
 					// The root change did not happen, so changing its lookups would leave a half-applied state.
 					_logger.WriteWarning(
@@ -208,6 +208,91 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 			_logger.WriteError($"Error: {ex.Message}");
 			return 1;
 		}
+	}
+
+	// Reports one object's result and returns whether it counts as a failure of the run. One outcome, one branch:
+	// the switch over ObjectRightsOutcome replaces an order-dependent chain of boolean checks.
+	private bool Report(ObjectRightsChange result, string schemaName, bool isRoot, Guid grantee, string granteeLabel,
+		string objectOpList, bool revoke) {
+		switch (result.Outcome) {
+			case ObjectRightsOutcome.Failed:
+				_logger.WriteError($"  {schemaName}: {result.Error}");
+				return true;
+			case ObjectRightsOutcome.NotFound when isRoot:
+				// The object the caller NAMED does not exist (typically a typo): nothing was written, so this is
+				// neither applied, a no-op nor cancelled — it must not report success.
+				_logger.WriteError($"  {schemaName}: schema not found — nothing was changed. Check the object name.");
+				return true;
+			case ObjectRightsOutcome.NotFound:
+				_logger.WriteWarning($"  {schemaName}: schema not found (skipped).");
+				return false;
+			case ObjectRightsOutcome.RevokeOnNotAdministered: {
+				string message = $"  {schemaName}: not administered by operation permissions — every internal user "
+					+ "can reach it, so a revoke cannot restrict it. Nothing was changed. To limit access, grant the "
+					+ "roles that should keep it (that turns operation permissions on).";
+				if (isRoot) {
+					_logger.WriteError(message);
+					return true;
+				}
+				_logger.WriteWarning(message);
+				return false;
+			}
+			case ObjectRightsOutcome.RefusedLastRowRemoval:
+				// Nothing was written, so this is not a success: the revoke the operator asked for did not happen.
+				_logger.WriteError(
+					$"  {schemaName}: grantee {granteeLabel} holds the object's LAST effective grant. Removing it would "
+					+ $"turn operation permissions OFF and make '{schemaName}' available to ALL internal users. "
+					+ (isRoot
+						? "Nothing was changed — re-run with --disable-operation-permissions if that is what you want."
+						: "Nothing was changed — a connected object is never turned off by a fan-out; name it as "
+							+ "--entity-schema-name to do that explicitly."));
+				return true;
+			case ObjectRightsOutcome.NoChange:
+				_logger.WriteInfo($"  {schemaName}: already in the requested state (no change).");
+				return false;
+			case ObjectRightsOutcome.ChangedAndDisabled:
+				_logger.WriteInfo($"  {schemaName}: {(revoke ? "revoked" : "granted")} [{objectOpList}] for grantee "
+					+ $"{granteeLabel}. Operation permissions are now OFF on this object — it is available to ALL internal users.");
+				return false;
+			case ObjectRightsOutcome.ChangedAndEnabled:
+				return ReportEnabled(result, schemaName, grantee, granteeLabel, objectOpList);
+			default:
+				_logger.WriteInfo($"  {schemaName}: {(revoke ? "revoked" : "granted")} [{objectOpList}] for grantee {granteeLabel}.");
+				return false;
+		}
+	}
+
+	// Turning operation permissions on can cut every other internal role off the object. The writer read the object
+	// back, so report who actually holds rights now, and fail loudly when only the grantee does.
+	private bool ReportEnabled(ObjectRightsChange result, string schemaName, Guid grantee, string granteeLabel,
+		string objectOpList) {
+		string head = $"  {schemaName}: granted [{objectOpList}] for grantee {granteeLabel}. Operation permissions were "
+			+ "turned ON for this object";
+		if (result.RolesAfterEnable is null) {
+			_logger.WriteWarning($"{head}, but reading it back failed ({result.ReadBackError}) — check with "
+				+ "get-object-rights which roles can still reach it.");
+			return false;
+		}
+		IReadOnlyList<RoleOperationRights> others = result.RolesAfterEnable
+			.Where(role => role.GranteeId != grantee && (role.CanRead || role.CanCreate || role.CanEdit || role.CanDelete))
+			.ToList();
+		if (others.Count == 0) {
+			_logger.WriteError($"{head}, and only the grantee holds rights now — every other internal user LOST access to "
+				+ $"'{schemaName}'. Grant the roles that should keep it (for example All employees).");
+			return true;
+		}
+		_logger.WriteInfo($"{head}; roles with rights now: {string.Join(", ", others.Select(Describe))}.");
+		return false;
+	}
+
+	private static string Describe(RoleOperationRights role) {
+		string[] ops = new[] {
+			role.CanRead ? "read" : null,
+			role.CanCreate ? "create" : null,
+			role.CanEdit ? "edit" : null,
+			role.CanDelete ? "delete" : null
+		}.Where(op => op != null).ToArray();
+		return $"{role.GranteeName} ({string.Join("/", ops)})";
 	}
 
 	// Least-privilege default for the ROOT object: read/create/edit (the access a role needs to work with an

@@ -14,13 +14,16 @@ namespace Clio.Command.McpServer.Tools;
 /// </summary>
 public sealed class ObjectRightsToolResponse {
 
+	/// <summary>Whether the command exited with code 0.</summary>
 	[JsonPropertyName("success")]
 	public bool Success { get; init; }
 
+	/// <summary>The command's collected log output on success (redacted).</summary>
 	[JsonPropertyName("output")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string? Output { get; init; }
 
+	/// <summary>The failure text (redacted) when <see cref="Success"/> is false.</summary>
 	[JsonPropertyName("error")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string? Error { get; init; }

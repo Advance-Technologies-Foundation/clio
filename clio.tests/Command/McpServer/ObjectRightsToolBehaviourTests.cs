@@ -44,23 +44,29 @@ public sealed class ObjectRightsToolBehaviourTests {
 		_connected.Resolve(Arg.Any<string>(), Arg.Any<bool>())
 			.Returns(callInfo => new ConnectedObjectsResolution(new[] { (string)callInfo[0] }, Array.Empty<string>()));
 		_writer.SetObjectRights(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<ObjectOperation>>(),
-			Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>()).Returns(new ObjectRightsChange(true, true));
+			Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>()).Returns(new ObjectRightsChange(ObjectRightsOutcome.Changed));
 		_reader.GetObjectRights(Arg.Any<string>(), Arg.Any<CreatioRequestOptions>())
 			.Returns(new ObjectRightsInfo(true, "UsrFoo", "UsrFoo", true, Array.Empty<RoleOperationRights>()));
 		_resolver = Substitute.For<IToolCommandResolver>();
 		_capturedSet = null;
 		_capturedGet = null;
 		_resolver.Resolve<SetObjectRightsCommand>(Arg.Do<EnvironmentOptions>(o => _capturedSet = (SetObjectRightsOptions)o))
-			.Returns(_ => new SetObjectRightsCommand(_writer, _connected, Substitute.For<IInteractiveConsole>(), _logger));
+			.Returns(_ => new SetObjectRightsCommand(_writer, _connected, Granted(), Substitute.For<IInteractiveConsole>(), _logger));
 		_resolver.Resolve<GetObjectRightsCommand>(Arg.Do<EnvironmentOptions>(o => _capturedGet = (GetObjectRightsOptions)o))
 			.Returns(_ => new GetObjectRightsCommand(_reader, _connected, _logger));
 	}
 
 	private SetObjectRightsTool SetTool() =>
-		new(new SetObjectRightsCommand(_writer, _connected, Substitute.For<IInteractiveConsole>(), _logger), _logger, _resolver);
+		new(new SetObjectRightsCommand(_writer, _connected, Granted(), Substitute.For<IInteractiveConsole>(), _logger), _logger, _resolver);
 
 	private GetObjectRightsTool GetTool() =>
 		new(new GetObjectRightsCommand(_reader, _connected, _logger), _logger, _resolver);
+
+	private static IGranteeLookup Granted() {
+		IGranteeLookup lookup = Substitute.For<IGranteeLookup>();
+		lookup.ResolveGranteeName(Arg.Any<Guid>(), Arg.Any<CreatioRequestOptions>()).Returns("Grantee");
+		return lookup;
+	}
 
 	private static T Bind<T>(string json) =>
 		JsonSerializer.Deserialize<T>(json, Clio.BindingsModule.CreateMcpSerializerOptions())!;

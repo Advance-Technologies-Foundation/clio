@@ -722,4 +722,109 @@ public class RightManagementServiceClientTests {
 		result.RefusedLastRowRemoval.Should().BeFalse(because: "the object is already open to internal users");
 		AssertNoSave("no restriction can be written to a non-administered object");
 	}
+
+	// ---- Final review ----
+
+	[Test]
+	[Description("A revoke removes the grantee's operations from EVERY row it holds, so a duplicate row cannot keep access the revoke took away.")]
+	public void SetObjectRights_ShouldRevokeAllDuplicateRows_WhenGranteeHasSeveral() {
+		// Arrange
+		GetReturnsRows(true,
+			FlagRow(Grantee, 0, read: true, append: false, edit: false, delete: false),
+			FlagRow(Grantee, 1, read: true, append: false, edit: false, delete: false),
+			FlagRow(Employees, 2, read: true, append: true, edit: true, delete: true));
+
+		// Act
+		ObjectRightsChange result = _client.SetObjectRights("UsrFoo", Grantee, new[] { ObjectOperation.Read },
+			revoke: true, disableOperationPermissions: false, new CreatioRequestOptions());
+
+		// Assert
+		result.Outcome.Should().Be(ObjectRightsOutcome.Changed, because: "the grantee's rows were removed");
+		SavedRows().Should().OnlyContain(row => row.GetProperty("sysAdminUnit").GetProperty("id").GetString() == Employees.ToString(),
+			because: "no row of the grantee may survive the revoke");
+	}
+
+	[Test]
+	[Description("The last-grant guard counts effective grants: a sibling row whose flags are all false does not stop the refusal.")]
+	public void SetObjectRights_ShouldRefuse_WhenOnlySiblingRowGrantsNothing() {
+		// Arrange
+		GetReturnsRows(true,
+			FlagRow(Grantee, 0, read: true, append: false, edit: false, delete: false),
+			FlagRow(Employees, 1, read: false, append: false, edit: false, delete: false));
+
+		// Act
+		ObjectRightsChange result = _client.SetObjectRights("UsrFoo", Grantee, AllOperations,
+			revoke: true, disableOperationPermissions: false, new CreatioRequestOptions());
+
+		// Assert
+		result.Outcome.Should().Be(ObjectRightsOutcome.RefusedLastRowRemoval,
+			because: "after the revoke nobody would hold any operation on the object");
+		AssertNoSave("a refused revoke writes nothing");
+	}
+
+	[Test]
+	[Description("When every candidate fails, the FIRST candidate's error is reported, not a later layer's opaque page.")]
+	public void GetObjectRights_ShouldReportFirstCandidateError_WhenEveryCandidateFails() {
+		// Arrange
+		SelectReturnsUIds(BaseUId, LayerUId);
+		GetThrowsFor(BaseUId, new TimeoutException("base timed out"));
+		GetReturnsFor(LayerUId, HtmlRequestErrorPage);
+
+		// Act
+		ObjectRightsInfo info = _client.GetObjectRights("UsrFoo", new CreatioRequestOptions());
+
+		// Assert
+		info.ReadError.Should().Contain("base timed out", because: "the base row's real cause is what the caller needs");
+	}
+
+	[Test]
+	[Description("After a grant turns operation permissions on, the object is read back and the roles that hold rights are returned.")]
+	public void SetObjectRights_ShouldReadBackRoles_WhenGrantEnablesOperationPermissions() {
+		// Arrange
+		string before = NotAdministeredObject("");
+		string after = "{\"success\":true,\"administratedObject\":{\"name\":\"UsrFoo\",\"administratedByOperations\":true,"
+			+ "\"entitySchemaOperationsRights\":[" + FlagRow(Employees, 0, true, true, true, true) + ","
+			+ FlagRow(Grantee, 1, true, false, false, false) + "]}}";
+		Post(GetUrl).Returns(before, after);
+
+		// Act
+		ObjectRightsChange result = _client.SetObjectRights("UsrFoo", Grantee, new[] { ObjectOperation.Read },
+			revoke: false, disableOperationPermissions: false, new CreatioRequestOptions());
+
+		// Assert
+		result.Outcome.Should().Be(ObjectRightsOutcome.ChangedAndEnabled, because: "the grant enabled operation permissions");
+		result.RolesAfterEnable.Should().Contain(role => role.GranteeId == Employees && role.CanDelete,
+			because: "the read-back reports the server-added All employees row");
+	}
+
+	[Test]
+	[Description("A failed read-back after enabling keeps the enabled outcome and carries the read-back error.")]
+	public void SetObjectRights_ShouldCarryReadBackError_WhenReadBackFails() {
+		// Arrange
+		Post(GetUrl).Returns(NotAdministeredObject(""), InBandJsonFault);
+
+		// Act
+		ObjectRightsChange result = _client.SetObjectRights("UsrFoo", Grantee, new[] { ObjectOperation.Read },
+			revoke: false, disableOperationPermissions: false, new CreatioRequestOptions());
+
+		// Assert
+		result.Outcome.Should().Be(ObjectRightsOutcome.ChangedAndEnabled, because: "the save itself succeeded");
+		result.RolesAfterEnable.Should().BeNull(because: "the roles could not be read back");
+		result.ReadBackError.Should().Contain("Request Error", because: "the read-back failure is reported");
+	}
+
+	[Test]
+	[Description("ResolveGranteeName returns the SysAdminUnit name, or null when the id does not exist.")]
+	public void ResolveGranteeName_ShouldReturnNameOrNull() {
+		// Arrange
+		Post(SelectUrl).Returns("{\"success\":true,\"rows\":[{\"Name\":\"All external users\"}]}", "{\"success\":true,\"rows\":[]}");
+
+		// Act
+		string found = _client.ResolveGranteeName(Grantee, new CreatioRequestOptions());
+		string missing = _client.ResolveGranteeName(Guid.NewGuid(), new CreatioRequestOptions());
+
+		// Assert
+		found.Should().Be("All external users", because: "an existing SysAdminUnit resolves to its name");
+		missing.Should().BeNull(because: "a missing id resolves to nothing");
+	}
 }

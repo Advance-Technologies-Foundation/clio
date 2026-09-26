@@ -5,7 +5,7 @@ NAME
     set-object-rights - Grant or revoke object operation permissions (read/create/edit/delete) for a role on an object
 
 SYNOPSIS
-    set-object-rights --entity-schema-name <EntitySchemaName> --grantee <SysAdminUnitId> [--operations read,create,edit,delete] [--revoke] [--disable-operation-permissions] [--include-connected] [--connected-operations read,...] [--confirm] [OPTIONS]
+    set-object-rights --entity-schema-name <EntitySchemaName> --grantee <SysAdminUnitId> [--operations read,create,edit,delete] [--revoke] [--disable-operation-permissions] [--include-connected] [--connected-operations read,...] [--allow-security-object] [--confirm] [OPTIONS]
 
 DESCRIPTION
     Grants (or, with --revoke, revokes) object operation permissions for one role on an object — the
@@ -61,6 +61,11 @@ OPTIONS
         dictionaries (status/type lookups, Currency, Contact, Account) unless passed here explicitly.
         On a revoke there is no default: without this option the lookups are not changed.
 
+    --allow-security-object
+        Allow granting create/edit/delete when the ROOT object is a security or system object
+        (SysAdmin*, SysUser*, SysSchema*, SysPackage*, SysSettings*, *Right/*Rights). Without it such a
+        root may only be granted read. A revoke on such a root is always allowed.
+
     --confirm
         Confirm the destructive change without a prompt. Required in non-interactive runs.
 
@@ -72,7 +77,9 @@ EXIT CODES
     1   An input was invalid (missing entity-schema-name, grantee not a GUID, unknown operation),
         confirmation was missing in a non-interactive run, the named (root) object was not found, the
         connected objects could not be enumerated, a write failed, or a revoke was refused because it
-        would have removed the object's last rights row. When the root change fails the connected
+        would have removed the object's last rights row, the grantee does not exist, a grant beyond read
+        targeted a security/system root without --allow-security-object, or turning operation permissions
+        on left only the grantee with rights. When the root change fails the connected
         objects are not attempted. A connected lookup that is not found only warns.
 
 EXAMPLES
@@ -92,5 +99,11 @@ EXAMPLES
         clio set-object-rights --entity-schema-name UsrOrder --grantee <role-id> --operations read,create,edit,delete --revoke --disable-operation-permissions --confirm -e production
 
 NOTES
+    The grantee must exist in SysAdminUnit; an unknown id fails before anything is written.
+
+    When a grant turns operation permissions ON, the object is read back and the result names the roles
+    that hold rights afterwards. If only the grantee does, the command fails (exit 1): every other
+    internal user lost access. With --include-connected a call can take minutes.
+
     Read-modify-write is last-writer-wins: a change another client saves between the read and the save
     is overwritten. Read the result back with get-object-rights when concurrent edits are possible.

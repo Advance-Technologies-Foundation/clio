@@ -10,6 +10,10 @@ using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
 
+/// <summary>
+/// MCP surface of <c>set-object-rights</c>: grants or revokes a role's object operation permissions. Destructive; on
+/// MCP the Destructive flag is the only gate, so the call is applied without a prompt.
+/// </summary>
 [McpServerToolType]
 public sealed class SetObjectRightsTool(
 	SetObjectRightsCommand command,
@@ -21,13 +25,15 @@ public sealed class SetObjectRightsTool(
 
 	internal const string ValidArguments =
 		"Valid: environment-name, entity-schema-name, grantee, operations, revoke, include-connected, "
-		+ "connected-operations, disable-operation-permissions.";
+		+ "connected-operations, disable-operation-permissions, allow-security-object.";
 
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
 		Lifetime = McpToolExecutionLifetime.PerCall,
 		OperationFamily = McpToolOperationFamily.None,
-		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		// A fan-out makes several sequential round-trips per object; the default window can kill the worker
+		// part-way through a destructive change.
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillExtended,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
@@ -37,9 +43,11 @@ public sealed class SetObjectRightsTool(
 		"operations defaults to read/create/edit on the root object (delete not granted by default); revoke=true removes them (a role left with none is removed). " +
 		"include-connected also applies to the root object's own lookup objects (security/system objects such as SysAdminUnit are skipped), which get connected-operations (default read only); on revoke the lookups are touched only when connected-operations is given. Fails without writing if the lookups cannot be enumerated. Does NOT change column permissions. Read it back with get-object-rights. " +
 		"A revoke that would remove the root's LAST rights row is REFUSED unless disable-operation-permissions is set (it makes the object available to ALL internal users; never applied to lookups). " +
+		"The grantee must exist in SysAdminUnit. A security/system ROOT object may only be granted read unless allow-security-object is set. " +
+		"With include-connected the call can take minutes. " +
 		"Unknown or misspelled argument names are REFUSED before any write.")]
 	public ObjectRightsToolResponse SetObjectRights(
-		[Description("Parameters: environment-name, entity-schema-name, grantee (required); operations, revoke, include-connected, connected-operations, disable-operation-permissions (optional).")]
+		[Description("Parameters: environment-name, entity-schema-name, grantee (required); operations, revoke, include-connected, connected-operations, disable-operation-permissions, allow-security-object (optional).")]
 		[Required]
 		SetObjectRightsArgs args) {
 		// A long-tail tool reached through clio-run: the flat-argument classifier never sees this wrapped payload,
@@ -60,6 +68,7 @@ public sealed class SetObjectRightsTool(
 				IncludeConnected = args.IncludeConnected ?? false,
 				ConnectedOperations = args.ConnectedOperations,
 				DisableOperationPermissions = args.DisableOperationPermissions ?? false,
+				AllowSecurityObject = args.AllowSecurityObject ?? false,
 				// --confirm is a CLI-only interactive gate; on MCP the Destructive flag is the safety mechanism,
 				// so confirm the apply here (the command otherwise refuses in a non-interactive run).
 				Confirm = true
@@ -71,6 +80,7 @@ public sealed class SetObjectRightsTool(
 	}
 }
 
+/// <summary>Arguments of the <c>set-object-rights</c> MCP tool.</summary>
 public sealed record SetObjectRightsArgs(
 	[property: JsonPropertyName("environment-name")]
 	[property: Description(McpToolDescriptions.EnvironmentName)]
@@ -105,7 +115,11 @@ public sealed record SetObjectRightsArgs(
 
 	[property: JsonPropertyName("disable-operation-permissions")]
 	[property: Description("Allow a revoke to remove the object's LAST rights row, turning the object's operation permissions OFF and making it available to ALL internal users (default false, which refuses such a revoke). Only set this when widening access to every internal user is the intent.")]
-	bool? DisableOperationPermissions = null
+	bool? DisableOperationPermissions = null,
+
+	[property: JsonPropertyName("allow-security-object")]
+	[property: Description("Allow granting create/edit/delete when the ROOT object is a security or system object (SysAdmin*, SysUser*, SysSchema*, SysPackage*, SysSettings*, *Right/*Rights). Default false: such a root may only be granted read.")]
+	bool? AllowSecurityObject = null
 ) {
 	/// <summary>Overflow bag for unknown JSON fields; a non-empty bag refuses the call before any write.</summary>
 	[JsonExtensionData]
