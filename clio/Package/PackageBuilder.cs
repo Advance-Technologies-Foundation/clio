@@ -40,9 +40,11 @@
 		/// <see cref="Rebuild(IEnumerable{string})"/>.
 		/// </param>
 		/// <remarks>
-		/// The build has finished when the environment answers the rebuild request - that answer carries
-		/// Creatio's own verdict and compiler diagnostics - or, when it never answers, when its compilation
-		/// history has stayed quiet long enough that no further project is plausibly still building.
+		/// A failure answer ends the build at once - it carries Creatio's own verdict and compiler diagnostics.
+		/// A success answer does not: the build has finished only once compilation history has recorded at
+		/// least one row for it and then stayed quiet long enough that no further project is plausibly still
+		/// building. When the environment never answers, the history decides the same way. A build that
+		/// leaves no history row within the timeout fails with <see cref="TimeoutException"/>.
 		/// </remarks>
 		/// <exception cref="PackageCompilationException">Creatio reported that a package build failed.</exception>
 		/// <exception cref="TimeoutException">A build did not finish within <see cref="PackageCompilationWaitOptions.Timeout"/>.</exception>
@@ -238,14 +240,19 @@
 		/// <param name="observed">What the poll thread has observed so far.</param>
 		/// <param name="responseAt">When the success answer was first seen.</param>
 		/// <returns>
-		/// <see langword="true"/> when neither the answer nor any history row is more recent than the wait
-		/// window. Measured from the later of the two, so a host that answered before writing any history is
-		/// still given the full window to write it.
+		/// <see langword="true"/> when at least one history row has been observed and neither the answer nor
+		/// any history row is more recent than the wait window.
 		/// </returns>
+		/// <remarks>
+		/// The answer alone is never completion evidence: a .NET 8 host answers "success" on acceptance and
+		/// writes its first history row 60-120 s later (PR #1688 review). Without a row the build keeps being
+		/// observed and, if none ever arrives, ends in a timeout rather than an inferred success.
+		/// </remarks>
 		private bool HasSettledSince(CompilationProgressSnapshot observed, DateTime responseAt) {
-			DateTime lastEvidence = observed.LastActivityAt is { } activity && activity > responseAt
-				? activity
-				: responseAt;
+			if (observed.LastActivityAt is not { } activity) {
+				return false;
+			}
+			DateTime lastEvidence = activity > responseAt ? activity : responseAt;
 			return HasSettled(observed with { LastActivityAt = lastEvidence }, waited: true, requestEnded: true);
 		}
 
@@ -424,22 +431,7 @@
 			Thread pollThread = StartPollThread(baselineCreatedOn, cts, progress, pollFaultBox);
 
 			while (DateTime.UtcNow < timeoutAt) {
-				//Observed on the MAIN thread, so the fault is reported rather than silently ending the
-				//poll and letting the loop run to its full timeout with nothing watching the compile.
-				Exception pollFault = Volatile.Read(ref pollFaultBox[0]);
-				if (pollFault is not null) {
-					EndMonitoring();
-					//The fault is CHAINED, not interpolated. Interpolating its message made
-					//DescribeOuterContext treat this wrapper's own text as redundant (outer.Message contains
-					//the carrier's) and drop it, so the line lost every mention of the compile - the wrappers'
-					//context was destroyed by the very interpolation meant to carry it. Chained, EVERY link
-					//prints: this wrapper names the operation and the poller's own wrapper below it carries
-					//the give-up window and the failed-round count. That middle link survives only because
-					//DescribeChainAboveCarrier walks the whole chain - before issue #1376 the renderer kept
-					//just the outermost message and this three-link shape lost its diagnosis silently.
-					throw new InvalidOperationException(
-						"Package compilation could not be monitored", pollFault);
-				}
+				ThrowIfPollFaulted(pollFaultBox, EndMonitoring);
 
 				if (httpTask.Status == TaskStatus.RanToCompletion) {
 					responseAt ??= DateTime.UtcNow;
@@ -476,24 +468,10 @@
 			}
 
 			EndMonitoring();
-			throw waited
-				? new TimeoutException(
-					$"Package compilation of '{packageName}' did not finish within {budget.TotalSeconds:0} s. The "
-					+ "build may still be running on the environment; check `clio last-compilation-log` before "
-					+ "compiling again.")
-				: new TimeoutException($"Package compilation did not complete within {CompilationTimeoutMinutes} minutes.");
+			throw CreateTimeout(packageName, waited, budget,
+				answeredWithoutHistory: responseAt.HasValue && !progress.Snapshot().LastActivityAt.HasValue);
 
-			// A waited build keeps observing after its request has ended without an answer, so that fault is
-			// no longer news: it is observed here instead of being rethrown by StopMonitoring.
-			void EndMonitoring() {
-				if (httpTask.IsFaulted) {
-					cts.Cancel();
-					JoinPollThread(pollThread);
-					_ = httpTask.Exception;
-					return;
-				}
-				StopMonitoring(cts, pollThread, httpTask);
-			}
+			void EndMonitoring() => EndCompileMonitoring(cts, pollThread, httpTask);
 
 			async Task<string> SendCompilationRequestAsync(CancellationToken cancellationToken) {
 				using IOwnedApplicationClient client = CreateClient();
@@ -503,6 +481,69 @@
 					? null
 					: await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 			}
+		}
+
+		/// <summary>
+		/// Ends the monitoring of one compile, whatever state its request is in.
+		/// </summary>
+		/// <remarks>
+		/// A waited build keeps observing after its request has ended without an answer, so that fault is
+		/// no longer news: it is observed here instead of being rethrown by StopMonitoring.
+		/// </remarks>
+		private static void EndCompileMonitoring(CancellationTokenSource cts, Thread pollThread, Task httpTask) {
+			if (httpTask.IsFaulted) {
+				cts.Cancel();
+				JoinPollThread(pollThread);
+				_ = httpTask.Exception;
+				return;
+			}
+			StopMonitoring(cts, pollThread, httpTask);
+		}
+
+		/// <summary>
+		/// Reports a fault the poll thread gave up with, on the MAIN thread, so it is not silently lost while
+		/// the loop runs to its full timeout with nothing watching the compile.
+		/// </summary>
+		/// <remarks>
+		/// The fault is CHAINED, not interpolated. Interpolating its message made DescribeOuterContext treat
+		/// this wrapper's own text as redundant (outer.Message contains the carrier's) and drop it, so the line
+		/// lost every mention of the compile - the wrappers' context was destroyed by the very interpolation
+		/// meant to carry it. Chained, EVERY link prints: this wrapper names the operation and the poller's own
+		/// wrapper below it carries the give-up window and the failed-round count. That middle link survives
+		/// only because DescribeChainAboveCarrier walks the whole chain - before issue #1376 the renderer kept
+		/// just the outermost message and this three-link shape lost its diagnosis silently.
+		/// </remarks>
+		private static void ThrowIfPollFaulted(Exception[] pollFaultBox, Action endMonitoring) {
+			Exception pollFault = Volatile.Read(ref pollFaultBox[0]);
+			if (pollFault is null) {
+				return;
+			}
+			endMonitoring();
+			throw new InvalidOperationException("Package compilation could not be monitored", pollFault);
+		}
+
+		/// <summary>
+		/// Builds the exception for a compile that did not finish within its budget.
+		/// </summary>
+		/// <param name="packageName">The package being built.</param>
+		/// <param name="waited">Whether the caller asked to wait for the build to finish.</param>
+		/// <param name="budget">The time the build was given.</param>
+		/// <param name="answeredWithoutHistory">
+		/// Whether the environment answered but wrote no compilation history, so the user does not read the
+		/// timeout as a hung request.
+		/// </param>
+		private static TimeoutException CreateTimeout(string packageName, bool waited, TimeSpan budget,
+			bool answeredWithoutHistory) {
+			if (!waited) {
+				return new TimeoutException(
+					$"Package compilation did not complete within {CompilationTimeoutMinutes} minutes.");
+			}
+			string reason = answeredWithoutHistory
+				? $"The environment accepted the build of '{packageName}' but wrote no compilation history within "
+					+ $"{budget.TotalSeconds:0} s, so there is no evidence it finished."
+				: $"Package compilation of '{packageName}' did not finish within {budget.TotalSeconds:0} s.";
+			return new TimeoutException(reason + " The build may still be running on the environment; check "
+				+ "`clio last-compilation-log` before compiling again.");
 		}
 
 		/// <summary>

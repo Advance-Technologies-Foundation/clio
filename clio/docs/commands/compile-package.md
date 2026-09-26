@@ -131,7 +131,9 @@ previous build until the error is fixed and the package is compiled again
 carries the verdict and the diagnostics. A success answer, or a dropped connection
 without an answer, is followed by waiting until compilation history has been quiet
 for 45 seconds (longer after a slower project has been seen), because some hosts
-answer while projects are still building. If the request stays open without an
+answer while projects are still building. The quiet is counted only once at least
+one compilation-history row has been written: a success answer followed by no
+history is not taken as a finished build. If the request stays open without an
 answer, 5 minutes of quiet end the wait. When `--wait-timeout` elapses first, the
 command exits with code 1 and the build may still be running on the environment
 - Progress monitoring tolerates an environment that briefly stops answering: while

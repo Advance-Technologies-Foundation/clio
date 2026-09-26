@@ -258,6 +258,54 @@ public sealed class PackageBuilderVerdictTests {
 			.WithMessage("*'UsrPackage'*did not finish within 1 s*");
 	}
 
+	[Test]
+	[Description("With --wait, a success answer followed by a quiet spell with NO compilation history is not completion evidence: a first history row that arrives after the settle window and carries a compile error still fails the build (issue #1632: a .NET 8 host answers at once and writes its first row 60-120 s later).")]
+	public void Rebuild_ShouldFailOnLateFirstHistoryError_WhenWaitedSuccessAnswerHasNoHistory() {
+		// Arrange
+		RespondWith(_ => Task.FromResult(Response(SucceededResponse)));
+		_poller.When(value => value.Poll(Arg.Any<DateTime>(), Arg.Any<CancellationToken>(),
+			Arg.Any<Action<CompilationHistory>>())).Do(call => {
+			CancellationToken cancellation = call.ArgAt<CancellationToken>(1);
+			if (cancellation.WaitHandle.WaitOne(TimeSpan.FromSeconds(2))) {
+				return;
+			}
+			call.ArgAt<Action<CompilationHistory>>(2)(new CompilationHistory {
+				CreatedOn = DateTime.UtcNow,
+				ProjectName = "Terrasoft.Configuration.Dev.csproj",
+				Result = false,
+				ErrorsWarnings = "[{\"Line\":5,\"Column\":26,\"ErrorNumber\":\"CS0246\",\"ErrorText\":\"EntitySchema not found\","
+					+ "\"IsWarning\":false,\"FileName\":\"UsrProbe.Custom.cs\"}]"
+			});
+			cancellation.WaitHandle.WaitOne();
+		});
+		PackageBuilder sut = CreateSut();
+
+		// Act
+		Action act = () => sut.Rebuild(["UsrPackage"], new PackageCompilationWaitOptions(TimeSpan.FromSeconds(30)));
+
+		// Assert
+		act.Should().Throw<PackageCompilationException>(
+			because: "acceptance plus silence is not proof the build finished; the first history row decides");
+		_logger.Received(1).WriteError("(CS0246) in UsrProbe.Custom.cs at (5,26): EntitySchema not found");
+	}
+
+	[Test]
+	[Description("With --wait, a success answer after which the environment writes no compilation history at all fails with a timeout that says no history was written, instead of the answer being taken as completion (issue #1632).")]
+	public void Rebuild_ShouldTimeOut_WhenWaitedSuccessAnswerIsNeverFollowedByHistory() {
+		// Arrange
+		RespondWith(_ => Task.FromResult(Response(SucceededResponse)));
+		_poller.When(value => value.Poll(Arg.Any<DateTime>(), Arg.Any<CancellationToken>(),
+			Arg.Any<Action<CompilationHistory>>())).Do(call => call.ArgAt<CancellationToken>(1).WaitHandle.WaitOne());
+		PackageBuilder sut = CreateSut();
+
+		// Act
+		Action act = () => sut.Rebuild(["UsrPackage"], new PackageCompilationWaitOptions(TimeSpan.FromSeconds(2)));
+
+		// Assert
+		act.Should().Throw<TimeoutException>(because: "without any history row there is no evidence the build finished")
+			.WithMessage("*accepted*'UsrPackage'*no compilation history within 2 s*");
+	}
+
 	private PackageBuilder CreateSut() =>
 		new(_settings, _factory, _urlBuilder, _logger, _poller) {
 			SettleWindowOverride = TimeSpan.FromMilliseconds(200),
