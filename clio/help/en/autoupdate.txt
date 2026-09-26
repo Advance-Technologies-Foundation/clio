@@ -20,7 +20,8 @@ DESCRIPTION
     appsettings.json underneath a running host breaks it for the rest of its
     session. The marker that says so lives in <user-home>/.clio/mcp-hosts, per
     USER rather than per clio home, because the update replaces one per-user
-    tool installation whatever CLIO_HOME each process uses. The deferral prints one line:
+    tool installation whatever CLIO_HOME each process uses. The deferral prints one
+    line to stderr, so stdout still carries only the command's own output:
 
         [INF] - clio self-update deferred: MCP host pid <N> (version <X>) is running
 

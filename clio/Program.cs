@@ -1746,7 +1746,10 @@ internal class Program {
 			// Only when the update would actually have run. A line saying an update was deferred,
 			// printed on every command of a session whose schedule is disabled or not yet due,
 			// describes something that was never going to happen.
-			ConsoleLogger.Instance.WriteInfo(
+			// Stderr, not WriteInfo's stdout: the line precedes the output of EVERY command, so callers
+			// that read stdout (Clio Explorer parsing `clio info -s`, issue #1665) received it as the
+			// first line of data.
+			((ConsoleLogger)ConsoleLogger.Instance).WriteInfoToStderr(
 				$"clio self-update deferred: MCP host pid {residentHost.ProcessId} "
 				+ $"(version {residentHost.ClioVersion}) is running");
 		}
