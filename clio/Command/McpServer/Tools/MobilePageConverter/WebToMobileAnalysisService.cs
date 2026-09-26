@@ -2706,9 +2706,9 @@ public static partial class WebToMobileAnalysisService {
 			//    never manufactures a mobile element from a web element under a different name.
 			if (ctx.Map.TryGetValue(name, out string twinMobileName)) {
 				// The twin's type is the MOBILE element's type when the mobile template is readable: a containers
-				// entry may pair elements of different types (GeneralInfoTab, a crt.TabContainer, merges onto
-				// GeneralTabContainer, a crt.GridContainer), and reporting the web type there would name a type
-				// the mobile element does not have — both to the model reading the guide and to
+				// entry may pair elements of different types (GeneralInfoTabContainer, a crt.GridContainer, merges
+				// onto the declared AdditionalInfoTab, a crt.TabContainer), and reporting the web type there would
+				// name a type the mobile element does not have — both to the model reading the guide and to
 				// ExcludedComponentsPass, which matches a filter's parentType against this field. A DECLARED mobile
 				// side has its type in the declaration whether or not the template was probed; only then does it fall
 				// back to the web type (the pair is same-type for every other shipped entry).
@@ -2731,13 +2731,14 @@ public static partial class WebToMobileAnalysisService {
 				// rules entry at all.
 				// Children go into the twin ITSELF, and a containers entry deliberately says nothing more than
 				// that. A web element the page did not remove is walked into its own entry, so a page that KEPT
-				// the template's content grid resolves its children through that grid's own pair
-				// (GeneralInfoTabContainer -> GeneralTabContainer); a page that REMOVED it has no such node, that
-				// pair never matches, and the children belong where the page put them — in the tab itself, which
-				// is a crt.TabContainer and hosts items. The two shapes DIFFER on web (the removed grid was a
-				// two-column layout with its own gap), so carrying the difference is the faithful conversion;
-				// redirecting the tab's children into a grid the page deleted would override a layout decision
-				// the developer made deliberately.
+				// the template's content grid resolves its children through that grid's own pair; a page that
+				// REMOVED it has no such node, that pair never matches, and the children belong where the page put
+				// them — in the tab's own twin, which is a crt.TabContainer and hosts items. Whether the two shapes
+				// convert apart is therefore the rules' decision, not this walk's: the shipped tabbed rule pairs
+				// BOTH the tab and its content grid onto the declared AdditionalInfoTab (GeneralInfoTab ->
+				// AdditionalInfoTab, GeneralInfoTabContainer -> AdditionalInfoTab), so both shapes land in that tab
+				// and BuildTabAreaLayers stacks them into its Area card; the web grid's two-column layout is not
+				// carried onto the tab (BuildAdaptiveLayout admits only a mobile grid).
 				if (items is not null) {
 					WalkElements(ctx, items, twinMobileName, sourceAncestors: Append(sourceAncestors, name),
 						hostableParentName: NearestHostable(ctx, twinMobileName, hostableParentName));
@@ -4910,6 +4911,12 @@ public static partial class WebToMobileAnalysisService {
 	}
 
 	/// <summary>
+	/// Mobile component type that supports adaptive per-breakpoint columns. The mobile registry gives this
+	/// ONE type a <c>columns</c> input; no other component type declares one.
+	/// </summary>
+	private const string MobileGridContainerComponentType = "crt.GridContainer";
+
+	/// <summary>
 	/// Builds the per-breakpoint layout for every MULTI-column <c>crt.GridContainer</c>: on the phone
 	/// (<c>small</c>) it collapses to ONE column and stacks the children in tree order; on tablet/desktop
 	/// (<c>medium</c> / <c>large</c>) it keeps the web column count and each child's web placement. A grid
@@ -4928,12 +4935,30 @@ public static partial class WebToMobileAnalysisService {
 		// (e.g. CardContentWrapper -> GeneralTabContainer, SideAreaProfileContainer -> AreaProfileContainer).
 		// Translate each count to the container's mobile name via its element-map entry so the lookup below
 		// matches renamed pairs; keep the web name as a fallback for containers that are not renamed.
-		// LAST WINS on a duplicate mobile name, which `containers` allows by design. Harmless as shipped: only
-		// a GRID container has a captured count, so a tab twin (GeneralInfoTab, a crt.TabContainer) never
-		// competes here — but a future many-to-one pair of two GRIDS would need an explicit tie-break.
+		// LAST WINS on a duplicate mobile name, which `containers` allows by design. Harmless as shipped: the one
+		// many-to-one pair that involves a grid (GeneralInfoTab and GeneralInfoTabContainer -> AdditionalInfoTab)
+		// never competes here — the tab has no captured count and the grid is rejected by the guard below — but a
+		// future many-to-one pair of two GRIDS would need an explicit tie-break.
+		// A RENAMED pair's mobile side is admitted only when its own type is MobileGridContainerComponentType:
+		// adaptive per-breakpoint columns is a property of that one component type, not of whatever element a
+		// `containers` pair happens to rename a grid onto (the shipped case: the two-column web
+		// GeneralInfoTabContainer -> the declared AdditionalInfoTab, a crt.TabContainer). Without this guard, a
+		// pair that renames a grid onto a mobile element of a DIFFERENT type would attach the web grid's column
+		// count to that element's name, and any of its children still parented to that name at this point would
+		// be placed as if they sat in a multi-column grid — a placement that can then outlive a later pass which
+		// would otherwise have re-homed them into their real, differently-shaped container (a later pass only
+		// overwrites layoutConfig that is not already adaptive). The web side needs no matching check:
+		// gridContainerColumns is only ever populated from a node that actually declared a `columns` array (see
+		// CaptureSource).
+		// The guard does NOT cover the web-name fallback below: it still adds every web grid's count under its
+		// web name, unchecked, as it did before the guard existed. So a same-name pair (X -> X) whose mobile X is
+		// not a crt.GridContainer would still get adaptive columns. No shipped pair has that shape — the
+		// same-name pairs are grid-to-grid, or tabs, which carry no count.
 		var colsByMobileParent = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 		foreach (ElementMapEntry e in elementMap) {
-			if (e.WebName is { Length: > 0 } && gridContainerColumns.TryGetValue(e.WebName, out int cols)) {
+			if (e.WebName is { Length: > 0 }
+				&& gridContainerColumns.TryGetValue(e.WebName, out int cols)
+				&& string.Equals(e.MobileType, MobileGridContainerComponentType, StringComparison.OrdinalIgnoreCase)) {
 				colsByMobileParent[string.IsNullOrEmpty(e.Name) ? e.WebName : e.Name] = cols;
 			}
 		}
@@ -6214,8 +6239,8 @@ public static partial class WebToMobileAnalysisService {
 	private static void InitializeContainerChildSlots(List<ElementMapEntry> elementMap,
 		IReadOnlyDictionary<string, ComponentRegistryEntry> mobileByType) {
 		// occupiedSlots keys purely on Name, not on entry identity. Name is NOT unique across the
-		// element map: `containers` is a MANY-TO-ONE map by design (CardContentWrapper and GeneralInfoTab both
-		// merge onto GeneralTabContainer), so two entries can share one mobile name. This stays safe because the
+		// element map: `containers` is a MANY-TO-ONE map by design (Tabs and CardToggleTabPanel both
+		// merge onto Tabs), so two entries can share one mobile name. This stays safe because the
 		// loop below is gated on Operation == "insert" and every duplicate produced by that map is a MERGE — the
 		// insert side keeps its own uniqueness: Freedom UI requires unique component names on a page (the web
 		// source this walk consumes), and the only NAME-GENERATING path, StableSuffix in BuildTabAreaLayers,
