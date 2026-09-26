@@ -5,6 +5,7 @@
 	using System.Threading;
 	using System.Threading.Tasks;
 	using System.Collections.Generic;
+	using System.Linq;
 	using Clio.Common;
 	using Clio.CreatioModel;
 
@@ -15,9 +16,39 @@
 
 		#region Methods: Public
 
+		/// <summary>
+		/// Builds the packages incrementally, one request per package.
+		/// </summary>
+		/// <param name="packagesNames">Names of the packages to build.</param>
+		/// <exception cref="PackageCompilationException">Creatio reported that a package build failed.</exception>
 		void Build(IEnumerable<string> packagesNames);
 
+		/// <summary>
+		/// Rebuilds the packages, returning as soon as the environment's compilation activity pauses.
+		/// </summary>
+		/// <param name="packagesNames">Names of the packages to rebuild.</param>
+		/// <exception cref="PackageCompilationException">Creatio reported that a package build failed.</exception>
 		void Rebuild(IEnumerable<string> packagesNames);
+
+		/// <summary>
+		/// Rebuilds the packages and, when <paramref name="waitOptions"/> is supplied, blocks until the environment
+		/// has finished building each one instead of returning when the build was accepted.
+		/// </summary>
+		/// <param name="packagesNames">Names of the packages to rebuild.</param>
+		/// <param name="waitOptions">
+		/// How long to wait for each build to finish; <see langword="null"/> behaves like
+		/// <see cref="Rebuild(IEnumerable{string})"/>.
+		/// </param>
+		/// <remarks>
+		/// A failure answer ends the build at once - it carries Creatio's own verdict and compiler diagnostics.
+		/// A success answer does not: the build has finished only once compilation history has recorded at
+		/// least one row for it and then stayed quiet long enough that no further project is plausibly still
+		/// building. When the environment never answers, the history decides the same way. A build that
+		/// leaves no history row within the timeout fails with <see cref="TimeoutException"/>.
+		/// </remarks>
+		/// <exception cref="PackageCompilationException">Creatio reported that a package build failed.</exception>
+		/// <exception cref="TimeoutException">A build did not finish within <see cref="PackageCompilationWaitOptions.Timeout"/>.</exception>
+		void Rebuild(IEnumerable<string> packagesNames, PackageCompilationWaitOptions waitOptions);
 
 		#endregion
 
@@ -34,6 +65,35 @@
 
 		private const int CompilationSettleSeconds = 5;
 		private const int CompilationTimeoutMinutes = 10;
+
+		#endregion
+
+		#region Constants: Internal
+
+		/// <summary>
+		/// How long compilation history must stay quiet before a WAITED build whose request ended without an
+		/// answer is considered finished.
+		/// </summary>
+		/// <remarks>
+		/// The default path settles after <see cref="CompilationSettleSeconds"/>, which is shorter than the
+		/// measured gaps between two projects of one build (about 31-33 s on a live stand, see
+		/// <see cref="CompilationSettleTracker.BaseQuietWindowSeconds"/>). That is what lets the default path
+		/// return while a later package is still compiling, and why a waited build uses the tracker's window
+		/// instead - scaled up once a slower project than the window has been seen.
+		/// </remarks>
+		internal static readonly TimeSpan WaitSettleWindow =
+			TimeSpan.FromSeconds(CompilationSettleTracker.BaseQuietWindowSeconds);
+
+		/// <summary>
+		/// How long compilation history must stay quiet before a WAITED build whose request is still open is
+		/// considered finished anyway.
+		/// </summary>
+		/// <remarks>
+		/// While the request is open its answer is the better evidence, because it carries the verdict. This
+		/// only ends the wait when an intermediary holds the connection open and the answer never arrives;
+		/// it is the same five minutes <c>compile-configuration</c> uses for that case.
+		/// </remarks>
+		internal static readonly TimeSpan WaitQuietFallback = TimeSpan.FromMinutes(5);
 
 		#endregion
 
@@ -65,6 +125,19 @@
 
 		#endregion
 
+		#region Properties: Internal
+
+		/// <summary>Test seam overriding <see cref="CompilationSettleSeconds"/>; <see langword="null"/> in production.</summary>
+		internal TimeSpan? SettleWindowOverride { get; set; }
+
+		/// <summary>Test seam overriding <see cref="WaitSettleWindow"/>; <see langword="null"/> in production.</summary>
+		internal TimeSpan? WaitSettleWindowOverride { get; set; }
+
+		/// <summary>Test seam overriding <see cref="WaitQuietFallback"/>; <see langword="null"/> in production.</summary>
+		internal TimeSpan? WaitQuietFallbackOverride { get; set; }
+
+		#endregion
+
 		#region Methods: Private
 
 		private static string CreateRequestData(string packageName) => "{ \"packageName\":\"" + packageName + "\" }";
@@ -76,7 +149,8 @@
 				.Replace(" ", string.Empty)
 				.Replace(",", "\",\"");
 
-		private void Compilation(IEnumerable<string> packagesNames, bool force) {
+		private void Compilation(IEnumerable<string> packagesNames, bool force,
+			PackageCompilationWaitOptions waitOptions = null) {
 			string compilationName = force ? "rebuild" : "build";
 			string fullBuildPackageUrl = _serviceUrlBuilder.Build(
 				force
@@ -89,10 +163,13 @@
 				string requestData = CreateRequestData(safePackageName);
 
 				if (_compilationHistoryPoller is not null) {
-					CompileWithPolling(fullBuildPackageUrl, requestData);
+					CompileWithPolling(fullBuildPackageUrl, requestData, safePackageName, waitOptions, suggestWait: force);
 				} else {
 					using IOwnedApplicationClient applicationClient = CreateClient();
-					applicationClient.ExecutePostRequest(fullBuildPackageUrl, requestData);
+					string responseBody = applicationClient.ExecutePostRequest(fullBuildPackageUrl, requestData);
+					ApplyVerdict(new BuildVerdictEvidence(safePackageName,
+						PackageBuildResultParser.TryParseResponse(responseBody), History: null,
+						CompletionInferred: false, Waited: waitOptions is not null, SuggestWait: force));
 				}
 
 				_logger.WriteLine($"End {compilationName} packages ({safePackageName}).");
@@ -100,13 +177,175 @@
 		}
 
 		/// <summary>
-		/// <see langword="true"/> when no compilation-history activity has been seen for
-		/// <see cref="CompilationSettleSeconds"/>, which is how a response-less 8.3.3+ compile signals
-		/// that it finished.
+		/// Decides from compilation history alone whether the build has finished.
 		/// </summary>
-		private static bool HasSettled(DateTime? lastActivityAt)
-			=> lastActivityAt.HasValue
-				&& (DateTime.UtcNow - lastActivityAt.Value).TotalSeconds >= CompilationSettleSeconds;
+		/// <param name="observed">What the poll thread has observed so far.</param>
+		/// <param name="waited">Whether the caller asked to wait for the build to finish.</param>
+		/// <param name="requestEnded">Whether the build request has ended without an answer.</param>
+		/// <returns><see langword="true"/> when the history has been quiet for the applicable window.</returns>
+		/// <remarks>
+		/// Nothing is concluded before the first row: an empty history is a build that has not started
+		/// writing yet, not one that finished.
+		/// </remarks>
+		private bool HasSettled(CompilationProgressSnapshot observed, bool waited, bool requestEnded) {
+			if (!observed.LastActivityAt.HasValue) {
+				return false;
+			}
+			TimeSpan quiet = DateTime.UtcNow - observed.LastActivityAt.Value;
+			if (!waited) {
+				return quiet >= (SettleWindowOverride ?? TimeSpan.FromSeconds(CompilationSettleSeconds));
+			}
+			// An error row settles on the short window even while the request is open: a compile error stops
+			// the build (the same rule CompilationSettleTracker applies), and on a loaded stand the failure
+			// answer was measured arriving minutes after the row that already carried the diagnostics.
+			if (!requestEnded && !observed.HasErrors) {
+				return quiet >= (WaitQuietFallbackOverride ?? WaitQuietFallback);
+			}
+			TimeSpan window = WaitSettleWindowOverride ?? WaitSettleWindow;
+			TimeSpan scaled = TimeSpan.FromSeconds(
+				observed.SlowestDurationSeconds * CompilationSettleTracker.DurationScaleFactor);
+			return quiet >= (scaled > window ? scaled : window);
+		}
+
+		/// <summary>
+		/// Concludes a build whose request has been answered, unless it is a waited build that must keep
+		/// being observed.
+		/// </summary>
+		/// <param name="answered">The answer and how the build was requested.</param>
+		/// <param name="progress">What the poll thread has observed so far.</param>
+		/// <param name="endMonitoring">Stops the poll thread and releases the request.</param>
+		/// <returns><see langword="true"/> when the build was concluded (successfully, or by throwing).</returns>
+		/// <remarks>
+		/// A waited build does NOT stop at a success answer: a host that compiles in the background can
+		/// answer "accepted" while projects are still being built (issue #1632), so it is concluded only once
+		/// neither the answer nor the history is more recent than the wait window. A failure answer is final -
+		/// Creatio does not report a build as failed and then keep building it.
+		/// </remarks>
+		private bool TryConcludeOnAnswer(AnsweredBuild answered, CompilationProgress progress, Action endMonitoring) {
+			CompilationProgressSnapshot observed = progress.Snapshot();
+			bool final = !answered.Waited || answered.Response is { Success: false }
+				|| HasSettledSince(observed, answered.AnsweredAt);
+			if (!final) {
+				return false;
+			}
+			endMonitoring();
+			ApplyVerdict(new BuildVerdictEvidence(answered.PackageName, answered.Response, progress.Snapshot(),
+				CompletionInferred: false, Waited: answered.Waited, SuggestWait: answered.SuggestWait));
+			return true;
+		}
+
+		/// <summary>
+		/// Decides whether a waited build that has answered "success" has also stopped building.
+		/// </summary>
+		/// <param name="observed">What the poll thread has observed so far.</param>
+		/// <param name="responseAt">When the success answer was first seen.</param>
+		/// <returns>
+		/// <see langword="true"/> when at least one history row has been observed and neither the answer nor
+		/// any history row is more recent than the wait window.
+		/// </returns>
+		/// <remarks>
+		/// The answer alone is never completion evidence: a .NET 8 host answers "success" on acceptance and
+		/// writes its first history row 60-120 s later (PR #1688 review). Without a row the build keeps being
+		/// observed and, if none ever arrives, ends in a timeout rather than an inferred success.
+		/// </remarks>
+		private bool HasSettledSince(CompilationProgressSnapshot observed, DateTime responseAt) {
+			if (observed.LastActivityAt is not { } activity) {
+				return false;
+			}
+			DateTime lastEvidence = activity > responseAt ? activity : responseAt;
+			return HasSettled(observed with { LastActivityAt = lastEvidence }, waited: true, requestEnded: true);
+		}
+
+		/// <summary>
+		/// Turns what is known about a finished build into success, or a <see cref="PackageCompilationException"/>.
+		/// </summary>
+		/// <param name="evidence">The response verdict (if any) and the history observations (if any).</param>
+		/// <remarks>
+		/// The response verdict and the history both have to be clean: under-claiming success is the safe
+		/// direction when either reports an error, the same rule <c>compile-configuration</c> applies.
+		/// When the environment gave no verdict the history decides alone, and the user is told so, because
+		/// a success concluded that way is weaker evidence than Creatio's own answer.
+		/// </remarks>
+		private void ApplyVerdict(BuildVerdictEvidence evidence) {
+			CompilationProgressSnapshot history = evidence.History;
+			bool historyFailed = history?.HasErrors == true;
+			PackageBuildResult response = evidence.Response;
+			if (response is null) {
+				WarnVerdictMissing(evidence, historyFailed);
+				if (historyFailed) {
+					Fail(evidence.PackageName, null, history.Diagnostics, null, history.ErrorDetails);
+				}
+				return;
+			}
+			if (response.Success && !historyFailed) {
+				return;
+			}
+			List<PackageBuildDiagnostic> responseErrors = response.Errors.ToList();
+			IEnumerable<PackageBuildDiagnostic> diagnostics = responseErrors.Count > 0
+				? responseErrors
+				: history?.Diagnostics ?? [];
+			Fail(evidence.PackageName, response.BuildResult, diagnostics, response.ErrorMessage, history?.ErrorDetails);
+		}
+
+		/// <summary>
+		/// Tells the user that the outcome is not Creatio's own verdict, and why.
+		/// </summary>
+		private void WarnVerdictMissing(BuildVerdictEvidence evidence, bool historyFailed) {
+			if (!evidence.CompletionInferred) {
+				_logger.WriteWarning(
+					$"The environment did not report a build result for '{evidence.PackageName}' (empty or "
+					+ "unrecognized response); the outcome is taken from the compilation history only.");
+				return;
+			}
+			if (evidence.Waited) {
+				_logger.WriteWarning(
+					$"The environment never answered the build request for '{evidence.PackageName}'; completion "
+					+ "was inferred from its compilation history having stopped.");
+				return;
+			}
+			if (!historyFailed && evidence.SuggestWait) {
+				_logger.WriteWarning(
+					$"The environment has not reported the build result for '{evidence.PackageName}' yet. Completion "
+					+ $"was inferred from {CompilationSettleSeconds} s without new compilation history, so a later "
+					+ "project may still be building and a compile error in it would not be seen here. Run "
+					+ "`clio compile-package --wait` to block until the build finishes.");
+			}
+		}
+
+		/// <summary>
+		/// Writes the diagnostics, then throws the failure summary.
+		/// </summary>
+		private void Fail(string packageName, int? buildResult, IEnumerable<PackageBuildDiagnostic> diagnostics,
+			string errorMessage, string rawHistoryErrors) {
+			List<PackageBuildDiagnostic> errors = diagnostics.Where(diagnostic => !diagnostic.IsWarning).ToList();
+			foreach (PackageBuildDiagnostic diagnostic in errors) {
+				_logger.WriteError(diagnostic.ToString());
+			}
+			if (errors.Count == 0 && !string.IsNullOrWhiteSpace(rawHistoryErrors)) {
+				// The history payload was not in the expected shape; show it as it came rather than lose it.
+				_logger.WriteError(rawHistoryErrors);
+			}
+			string resultPart = buildResult is { } value ? $" (build result {value})" : string.Empty;
+			string messagePart = string.IsNullOrWhiteSpace(errorMessage)
+				? string.Empty
+				: $" Creatio reported: {errorMessage.Trim().TrimEnd('.')}.";
+			throw new PackageCompilationException(
+				$"Package compilation failed for '{packageName}'{resultPart}.{messagePart} The new code was not "
+				+ "loaded: the environment keeps running the previous build until the errors are fixed and the "
+				+ "package is compiled again.");
+		}
+
+		/// <summary>
+		/// Reports one compilation-history row, so the output names the projects that were built meanwhile.
+		/// </summary>
+		private void ReportHistoryRow(CompilationHistory record) {
+			bool failed = CompilationProgress.IsErrorRow(record);
+			// Worded as what the history shows, not as "this build rebuilt X": another trigger (an OData
+			// rebuild, a second client) can write a row inside the same window.
+			_logger.WriteInfo(
+				$"Compilation history: {record.ProjectName} built in {record.DurationInSeconds} s, "
+				+ (failed ? "failed" : "succeeded"));
+		}
 
 		/// <summary>
 		/// Ends the monitoring of a response-less compile: stops the poll thread and cancels, then
@@ -169,15 +408,22 @@
 		// In Creatio 8.3.3+, RebuildPackage no longer sends back an HTTP response —
 		// the server compiles in the background and drops the connection. Use a cancellable
 		// asynchronous request while the CompilationHistoryPoller detects completion via OData.
-		private void CompileWithPolling(string url, string requestData) {
+		// Where the response DOES arrive it carries Creatio's own verdict (success, buildResult and the
+		// compiler diagnostics), so it is read rather than discarded: discarding it is how a C# compile
+		// error used to end in "Done" and exit code 0 (issue #1633).
+		private void CompileWithPolling(string url, string requestData, string packageName,
+			PackageCompilationWaitOptions waitOptions, bool suggestWait) {
 			CompilationHistory baseline = TryGetBaseline();
 			DateTime baselineCreatedOn = baseline?.CreatedOn ?? DateTime.MinValue;
 
-			DateTime timeoutAt = DateTime.UtcNow.AddMinutes(CompilationTimeoutMinutes);
-			CompilationProgress progress = new();
+			bool waited = waitOptions is not null;
+			DateTime? responseAt = null;
+			TimeSpan budget = waitOptions?.Timeout ?? TimeSpan.FromMinutes(CompilationTimeoutMinutes);
+			DateTime timeoutAt = DateTime.UtcNow.Add(budget);
+			CompilationProgress progress = new(ReportHistoryRow);
 
 			using CancellationTokenSource cts = new();
-			Task httpTask = SendCompilationRequestAsync(cts.Token);
+			Task<string> httpTask = SendCompilationRequestAsync(cts.Token);
 			// Published through a ONE-ELEMENT HOLDER with Volatile.Write/Read, not a plain captured local: the
 			// write happens on the poll thread and the read on the main thread's spin loop below, so without an
 			// explicit barrier there is no happens-before edge and the JIT may hoist the read out of the loop.
@@ -185,54 +431,119 @@
 			Thread pollThread = StartPollThread(baselineCreatedOn, cts, progress, pollFaultBox);
 
 			while (DateTime.UtcNow < timeoutAt) {
-				//Observed on the MAIN thread, so the fault is reported rather than silently ending the
-				//poll and letting the loop run to its full timeout with nothing watching the compile.
-				Exception pollFault = Volatile.Read(ref pollFaultBox[0]);
-				if (pollFault is not null) {
-					StopMonitoring(cts, pollThread, httpTask);
-					//The fault is CHAINED, not interpolated. Interpolating its message made
-					//DescribeOuterContext treat this wrapper's own text as redundant (outer.Message contains
-					//the carrier's) and drop it, so the line lost every mention of the compile - the wrappers'
-					//context was destroyed by the very interpolation meant to carry it. Chained, EVERY link
-					//prints: this wrapper names the operation and the poller's own wrapper below it carries
-					//the give-up window and the failed-round count. That middle link survives only because
-					//DescribeChainAboveCarrier walks the whole chain - before issue #1376 the renderer kept
-					//just the outermost message and this three-link shape lost its diagnosis silently.
-					throw new InvalidOperationException(
-						"Package compilation could not be monitored", pollFault);
+				ThrowIfPollFaulted(pollFaultBox, EndMonitoring);
+
+				if (httpTask.Status == TaskStatus.RanToCompletion) {
+					responseAt ??= DateTime.UtcNow;
+					if (TryConcludeOnAnswer(new AnsweredBuild(packageName,
+							PackageBuildResultParser.TryParseResponse(httpTask.Result), responseAt.Value, waited,
+							suggestWait), progress, EndMonitoring)) {
+						return;
+					}
+					Thread.Sleep(500);
+					continue;
 				}
 
-				if (httpTask.IsCompleted) {
+				if (httpTask.IsCompleted && !waited) {
+					// The request failed without an answer. Without --wait that is reported as it always was.
 					cts.Cancel();
 					JoinPollThread(pollThread);
 					httpTask.GetAwaiter().GetResult();
 					return;
 				}
 
-				//ONE snapshot per iteration, taken under the same lock Observe writes under: the three
-				//fields are written on the poll thread and read here, so an unsynchronized read could be
-				//hoisted out of the loop (a settle the poll thread saw is never observed, and the compile
-				//reports a timeout instead) or mix a fresh HasErrors with a stale ErrorDetails.
+				//ONE snapshot per iteration, taken under the same lock Observe writes under: the fields are
+				//written on the poll thread and read here, so an unsynchronized read could be hoisted out of
+				//the loop (a settle the poll thread saw is never observed, and the compile reports a timeout
+				//instead) or mix a fresh HasErrors with stale diagnostics.
 				CompilationProgressSnapshot observed = progress.Snapshot();
-				if (HasSettled(observed.LastActivityAt)) {
-					StopMonitoring(cts, pollThread, httpTask);
-					if (observed.HasErrors) {
-						throw new InvalidOperationException($"Package compilation failed: {observed.ErrorDetails}");
-					}
+				if (HasSettled(observed, waited, requestEnded: httpTask.IsCompleted)) {
+					EndMonitoring();
+					ApplyVerdict(new BuildVerdictEvidence(packageName, Response: null, observed,
+						CompletionInferred: true, Waited: waited, SuggestWait: suggestWait));
 					return;
 				}
 
 				Thread.Sleep(500);
 			}
 
-			StopMonitoring(cts, pollThread, httpTask);
-			throw new TimeoutException($"Package compilation did not complete within {CompilationTimeoutMinutes} minutes.");
+			EndMonitoring();
+			throw CreateTimeout(packageName, waited, budget,
+				answeredWithoutHistory: responseAt.HasValue && !progress.Snapshot().LastActivityAt.HasValue);
 
-			async Task SendCompilationRequestAsync(CancellationToken cancellationToken) {
+			void EndMonitoring() => EndCompileMonitoring(cts, pollThread, httpTask);
+
+			async Task<string> SendCompilationRequestAsync(CancellationToken cancellationToken) {
 				using IOwnedApplicationClient client = CreateClient();
-				using HttpResponseMessage _ = await client.ExecutePostRequestAsync(
+				using HttpResponseMessage response = await client.ExecutePostRequestAsync(
 					url, requestData, Timeout.Infinite, cancellationToken: cancellationToken).ConfigureAwait(false);
+				return response.Content is null
+					? null
+					: await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 			}
+		}
+
+		/// <summary>
+		/// Ends the monitoring of one compile, whatever state its request is in.
+		/// </summary>
+		/// <remarks>
+		/// A waited build keeps observing after its request has ended without an answer, so that fault is
+		/// no longer news: it is observed here instead of being rethrown by StopMonitoring.
+		/// </remarks>
+		private static void EndCompileMonitoring(CancellationTokenSource cts, Thread pollThread, Task httpTask) {
+			if (httpTask.IsFaulted) {
+				cts.Cancel();
+				JoinPollThread(pollThread);
+				_ = httpTask.Exception;
+				return;
+			}
+			StopMonitoring(cts, pollThread, httpTask);
+		}
+
+		/// <summary>
+		/// Reports a fault the poll thread gave up with, on the MAIN thread, so it is not silently lost while
+		/// the loop runs to its full timeout with nothing watching the compile.
+		/// </summary>
+		/// <remarks>
+		/// The fault is CHAINED, not interpolated. Interpolating its message made DescribeOuterContext treat
+		/// this wrapper's own text as redundant (outer.Message contains the carrier's) and drop it, so the line
+		/// lost every mention of the compile - the wrappers' context was destroyed by the very interpolation
+		/// meant to carry it. Chained, EVERY link prints: this wrapper names the operation and the poller's own
+		/// wrapper below it carries the give-up window and the failed-round count. That middle link survives
+		/// only because DescribeChainAboveCarrier walks the whole chain - before issue #1376 the renderer kept
+		/// just the outermost message and this three-link shape lost its diagnosis silently.
+		/// </remarks>
+		private static void ThrowIfPollFaulted(Exception[] pollFaultBox, Action endMonitoring) {
+			Exception pollFault = Volatile.Read(ref pollFaultBox[0]);
+			if (pollFault is null) {
+				return;
+			}
+			endMonitoring();
+			throw new InvalidOperationException("Package compilation could not be monitored", pollFault);
+		}
+
+		/// <summary>
+		/// Builds the exception for a compile that did not finish within its budget.
+		/// </summary>
+		/// <param name="packageName">The package being built.</param>
+		/// <param name="waited">Whether the caller asked to wait for the build to finish.</param>
+		/// <param name="budget">The time the build was given.</param>
+		/// <param name="answeredWithoutHistory">
+		/// Whether the environment answered but wrote no compilation history, so the user does not read the
+		/// timeout as a hung request.
+		/// </param>
+		private static TimeoutException CreateTimeout(string packageName, bool waited, TimeSpan budget,
+			bool answeredWithoutHistory) {
+			if (!waited) {
+				return new TimeoutException(
+					$"Package compilation did not complete within {CompilationTimeoutMinutes} minutes.");
+			}
+			string reason = answeredWithoutHistory
+				? $"The environment accepted the build of '{packageName}' but wrote no compilation history within "
+					+ $"{budget.TotalSeconds:0} s, so there is no evidence it finished."
+				: $"Package compilation of '{packageName}' did not finish within {budget.TotalSeconds:0} s.";
+			return new TimeoutException(reason + " The build may still be running on the environment; check "
+				+ "`clio last-compilation-log` before compiling again.");
 		}
 
 		/// <summary>
@@ -272,9 +583,9 @@
 			private const string EmptyErrorsWarnings = "[]";
 
 			/// <summary>
-			/// Guards all three fields. A lock rather than <c>Volatile</c> per field, for two reasons:
+			/// Guards every field below. A lock rather than <c>Volatile</c> per field, for two reasons:
 			/// <c>DateTime?</c> is a 16-byte struct, so its write is not atomic and volatile could not make
-			/// it so; and the wait loop wants a CONSISTENT view of all three at once, which per-field
+			/// it so; and the wait loop wants a CONSISTENT view of all of them at once, which per-field
 			/// barriers cannot give it.
 			/// </summary>
 			private readonly object _gate = new();
@@ -285,22 +596,42 @@
 
 			private string _errorDetails;
 
+			private int _slowestDurationSeconds;
+
+			private readonly List<PackageBuildDiagnostic> _diagnostics = [];
+
+			private readonly Action<CompilationHistory> _onRecord;
+
+			/// <param name="onRecord">Invoked for every observed record, outside the lock.</param>
+			public CompilationProgress(Action<CompilationHistory> onRecord) {
+				_onRecord = onRecord;
+			}
+
+			/// <summary>
+			/// Whether a history row reports a failed build: a failed result with a non-empty payload.
+			/// </summary>
+			internal static bool IsErrorRow(CompilationHistory record) =>
+				!record.Result && !string.IsNullOrEmpty(record.ErrorsWarnings)
+				&& record.ErrorsWarnings != EmptyErrorsWarnings;
+
 			public void Observe(CompilationHistory record) {
 				lock (_gate) {
 					_lastActivityAt = DateTime.UtcNow;
-					if (record.Result || string.IsNullOrEmpty(record.ErrorsWarnings)
-							|| record.ErrorsWarnings == EmptyErrorsWarnings) {
-						return;
+					_slowestDurationSeconds = Math.Max(_slowestDurationSeconds, record.DurationInSeconds);
+					if (IsErrorRow(record)) {
+						_hasErrors = true;
+						_errorDetails = record.ErrorsWarnings;
+						_diagnostics.AddRange(PackageBuildResultParser.ParseHistoryDiagnostics(record.ErrorsWarnings));
 					}
-					_hasErrors = true;
-					_errorDetails = record.ErrorsWarnings;
 				}
+				_onRecord?.Invoke(record);
 			}
 
 			/// <summary>One consistent view of what the poll thread has observed so far.</summary>
 			public CompilationProgressSnapshot Snapshot() {
 				lock (_gate) {
-					return new CompilationProgressSnapshot(_lastActivityAt, _hasErrors, _errorDetails);
+					return new CompilationProgressSnapshot(_lastActivityAt, _hasErrors, _errorDetails,
+						_slowestDurationSeconds, [.. _diagnostics]);
 				}
 			}
 
@@ -310,8 +641,35 @@
 		/// An immutable view of <see cref="CompilationProgress"/> taken under its lock, so the wait loop
 		/// never mixes a fresh error flag with stale error text.
 		/// </summary>
-		private readonly record struct CompilationProgressSnapshot(
-			DateTime? LastActivityAt, bool HasErrors, string ErrorDetails);
+		private sealed record CompilationProgressSnapshot(
+			DateTime? LastActivityAt, bool HasErrors, string ErrorDetails, int SlowestDurationSeconds,
+			IReadOnlyList<PackageBuildDiagnostic> Diagnostics);
+
+		/// <summary>
+		/// A package build whose request has been answered.
+		/// </summary>
+		/// <param name="PackageName">The package being built.</param>
+		/// <param name="Response">The verdict parsed from the answer; <see langword="null"/> when it carried none.</param>
+		/// <param name="AnsweredAt">When the answer was first seen.</param>
+		/// <param name="Waited">Whether the caller asked to wait for the build to finish.</param>
+		/// <param name="SuggestWait">Whether an early success may point the user at <c>--wait</c>.</param>
+		private sealed record AnsweredBuild(string PackageName, PackageBuildResult Response, DateTime AnsweredAt,
+			bool Waited, bool SuggestWait);
+
+		/// <summary>
+		/// Everything a verdict on one finished package build is made from.
+		/// </summary>
+		/// <param name="PackageName">The package that was built.</param>
+		/// <param name="Response">Creatio's verdict from the build response; <see langword="null"/> when it gave none.</param>
+		/// <param name="History">What compilation history showed; <see langword="null"/> when it was not watched.</param>
+		/// <param name="CompletionInferred">Whether completion was concluded from history going quiet.</param>
+		/// <param name="Waited">Whether the caller asked to wait for the build to finish.</param>
+		/// <param name="SuggestWait">
+		/// Whether an early, inferred success should point the user at <c>compile-package --wait</c>; only the
+		/// rebuild that command drives can act on that advice.
+		/// </param>
+		private sealed record BuildVerdictEvidence(string PackageName, PackageBuildResult Response,
+			CompilationProgressSnapshot History, bool CompletionInferred, bool Waited, bool SuggestWait);
 
 		private static void ObserveCancelledRequest(Task request, CancellationTokenSource cancellation) {
 			try {
@@ -330,6 +688,9 @@
 		public void Build(IEnumerable<string> packagesNames) => Compilation(packagesNames, false);
 
 		public void Rebuild(IEnumerable<string> packagesNames) => Compilation(packagesNames, true);
+
+		public void Rebuild(IEnumerable<string> packagesNames, PackageCompilationWaitOptions waitOptions) =>
+			Compilation(packagesNames, true, waitOptions);
 
 		#endregion
 
