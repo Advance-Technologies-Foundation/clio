@@ -312,6 +312,7 @@ internal sealed class CommandHelpCatalog {
 			"list-pages",
 			"update-client-unit-schema",
 			"update-page",
+			"localize-page",
 			"run",
 			"save-state",
 			"show-package-file-content",

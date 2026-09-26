@@ -80,7 +80,11 @@ public sealed record ApplicationSectionUpdateContextResponse(
 	[property: JsonPropertyName("application-version")] string? ApplicationVersion = null,
 	[property: JsonPropertyName("previous-section")] ApplicationSectionResult? PreviousSection = null,
 	[property: JsonPropertyName("section")] ApplicationSectionResult? Section = null,
-	[property: JsonPropertyName("error")] string? Error = null);
+	[property: JsonPropertyName("error")] string? Error = null,
+	[property: JsonPropertyName("caption-culture")] string? CaptionCulture = null,
+	[property: JsonPropertyName("caption-culture-value")] string? CaptionCultureValue = null,
+	[property: JsonPropertyName("preserved-cultures")] IReadOnlyList<string>? PreservedCultures = null,
+	[property: JsonPropertyName("warnings")] IReadOnlyList<string>? Warnings = null);
 
 /// <summary>
 /// Structured section item returned by the <c>create-app-section</c> MCP tool.

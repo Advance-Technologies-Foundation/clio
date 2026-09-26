@@ -65,10 +65,12 @@ public sealed class ToolContractPayloadBudgetTests {
 	// with it registered - 237 bytes for its index entry, which is one entry's worth and nothing else: the
 	// index carries only the FIRST SENTENCE of a description (BuildPurpose), so the sentences this branch
 	// adds to odata-read's own [Description] cost the index nothing. Next 256-byte step is 45312 (177).
+	// Re-pinned for ENG-90576: localize-page is one more long-tail tool. Measured 45442 bytes on the
+	// default surface with it registered (130 bytes for its index entry); next 256-byte step is 45568 (178).
 	// Serialization uses the default JSON encoder,
 	// which escapes non-ASCII (a purpose ellipsis is written as a 6-byte escape), so it over-counts the real
 	// UTF-8 wire size — conservative, which is the safe direction for a ceiling.
-	private const int MaxCompactIndexSerializedBytes = 177 * 256;
+	private const int MaxCompactIndexSerializedBytes = 178 * 256;
 
 	// Worst-case ceiling for ONE named full contract, measured as the SERIALIZED contract in UTF-8 bytes
 	// — the same quantity the index ratchet above measures, and what the agent actually receives.

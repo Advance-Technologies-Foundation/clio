@@ -279,6 +279,56 @@ internal static class SelectQueryHelper
 		};
 	}
 
+	/// <summary>
+	/// Builds a DataService parameter expression (<c>expressionType: 2</c>) that carries a literal value, as used
+	/// in <c>columnValues</c> of an update query and on the right side of a comparison filter.
+	/// </summary>
+	/// <param name="dataValueType">DataService data value type of <paramref name="value"/>.</param>
+	/// <param name="value">The literal value.</param>
+	/// <returns>The expression, ready for JSON serialization.</returns>
+	internal static object BuildParameterExpression(int dataValueType, object value) =>
+		new
+		{
+			expressionType = 2,
+			parameter = new
+			{
+				dataValueType,
+				value
+			}
+		};
+
+	/// <summary>
+	/// Builds the filter group of an update query that targets one record by its <c>Id</c> column.
+	/// </summary>
+	/// <param name="id">Record identifier.</param>
+	/// <param name="dataValueType">DataService data value type the identifier is sent as. Callers keep the type
+	/// the endpoint was verified with; the value is not converted.</param>
+	/// <returns>The filter group, ready for JSON serialization.</returns>
+	internal static object BuildIdFilter(string id, int dataValueType) =>
+		new
+		{
+			filterType = 6,
+			isEnabled = true,
+			trimDateTimeParameterToDate = false,
+			logicalOperation = 0,
+			items = new
+			{
+				primaryFilter = new
+				{
+					filterType = 1,
+					comparisonType = 3,
+					isEnabled = true,
+					trimDateTimeParameterToDate = false,
+					leftExpression = new
+					{
+						expressionType = 0,
+						columnPath = "Id"
+					},
+					rightExpression = BuildParameterExpression(dataValueType, id)
+				}
+			}
+		};
+
 	internal sealed record SelectQueryColumnDefinition(string Path, string Alias);
 
 	internal sealed record SelectQueryFilterDefinition(

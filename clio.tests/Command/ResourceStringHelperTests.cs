@@ -320,4 +320,75 @@ public sealed class ResourceStringHelperTests {
 		registered.Should().Equal(["UsrStatus", "UsrName"],
 			because: "both Usr keys should be registered when no DS-bound filtering is applied");
 	}
+
+	[Test]
+	[Description("TC-U-15: the per-culture setter replaces only the requested culture's value; every other culture object, its extra properties and the order of the list are left as they were.")]
+	public void SetCultureValue_ShouldReplaceOnlyThatCulture_WhenEntryHasSeveralCultures() {
+		// Arrange
+		JObject entry = JObject.Parse("""
+			{"uId":"id-1","name":"Title","parentSchemaUId":"owner","values":[
+				{"cultureName":"en-US","value":"Title"},
+				{"cultureName":"es-ES","value":"Viejo","extra":"kept"},
+				{"cultureName":"de-DE","value":"Titel"}]}
+			""");
+
+		// Act
+		bool changed = ResourceStringHelper.SetCultureValue(entry, "es-ES", "Título");
+
+		// Assert
+		changed.Should().BeTrue(because: "the stored es-ES value differed from the supplied one");
+		JArray values = (JArray)entry["values"];
+		values.Select(v => v["cultureName"].ToString()).Should().Equal(["en-US", "es-ES", "de-DE"],
+			because: "the setter must not reorder, add or drop culture objects when the culture already exists");
+		values[0]["value"].ToString().Should().Be("Title", because: "en-US must stay untouched");
+		values[2]["value"].ToString().Should().Be("Titel", because: "de-DE must stay untouched");
+		values[1]["value"].ToString().Should().Be("Título", because: "only the requested culture's value changes");
+		values[1]["extra"].ToString().Should().Be("kept", because: "other properties of the culture object are preserved");
+		entry["parentSchemaUId"].ToString().Should().Be("owner", because: "the entry's inheritance marker is not the setter's concern");
+	}
+
+	[Test]
+	[Description("TC-U-15: the per-culture setter reports no change and writes nothing when the stored value already equals the supplied one, and appends a culture object when the culture is missing.")]
+	public void SetCultureValue_ShouldReportUnchangedOrAppend_WhenValueIsEqualOrCultureIsMissing() {
+		// Arrange
+		JArray values = JArray.Parse("""[{"cultureName":"en-US","value":"Save"}]""");
+
+		// Act
+		bool unchanged = ResourceStringHelper.SetCultureValue(values, "en-us", "Save");
+		bool appended = ResourceStringHelper.SetCultureValue(values, "es-ES", "Guardar");
+
+		// Assert
+		unchanged.Should().BeFalse(because: "an equal value (culture matched case-insensitively) is not a change");
+		appended.Should().BeTrue(because: "a missing culture is added");
+		values.Should().HaveCount(2, because: "exactly one culture object is appended for the missing culture");
+		ResourceStringHelper.GetCultureValue(values, "es-ES").Should().Be("Guardar",
+			because: "the appended culture carries the supplied value");
+	}
+
+	[Test]
+	[Description("TC-U-16: CleanAndMerge, now routed through the per-culture setter, still creates new keys with a single en-US value and still writes a supplied value into en-US only.")]
+	public void CleanAndMerge_ShouldStillWriteDefaultCulture_WhenRoutedThroughCultureSetter() {
+		// Arrange
+		JArray existing = JArray.Parse("""
+			[{"uId":"id-1","name":"Title","values":[{"cultureName":"es-ES","value":"Título"}]}]
+			""");
+		var resources = new Dictionary<string, string> { ["Title"] = "Title v2", ["NewKey"] = "New" };
+
+		// Act
+		(JArray cleaned, List<string> registered) = ResourceStringHelper.CleanAndMerge(existing, resources, []);
+
+		// Assert
+		registered.Should().Equal(["NewKey"], because: "only the key absent from the schema is registered");
+		JArray titleValues = (JArray)cleaned.Single(e => e["name"].ToString() == "Title")["values"];
+		titleValues.Select(v => v["cultureName"].ToString()).Should().Equal(["es-ES", ResourceStringHelper.DefaultCultureName],
+			because: "the existing es-ES value is preserved and the missing en-US value is appended after it");
+		ResourceStringHelper.GetCultureValue(titleValues, "es-ES").Should().Be("Título",
+			because: "update-page must not change a non-default culture");
+		ResourceStringHelper.GetCultureValue(titleValues, "en-US").Should().Be("Title v2",
+			because: "update-page writes the supplied value into en-US");
+		JArray newValues = (JArray)cleaned.Single(e => e["name"].ToString() == "NewKey")["values"];
+		newValues.Should().ContainSingle(because: "a newly registered key starts with the default culture only");
+		newValues[0]["cultureName"].ToString().Should().Be("en-US", because: "new keys are authored in en-US");
+		newValues[0]["value"].ToString().Should().Be("New", because: "the supplied value is stored");
+	}
 }

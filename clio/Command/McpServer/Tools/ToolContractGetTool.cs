@@ -824,6 +824,7 @@ internal static class ToolContractCatalog {
 			[ComponentInfoTool.ToolName] = BuildComponentInfo(),
 			[RequestInfoTool.ToolName] = BuildRequestInfo(),
 			[PageUpdateTool.ToolName] = BuildPageUpdate(),
+			[LocalizePageTool.ToolName] = BuildLocalizePage(),
 			[PageValidateTool.ToolName] = BuildPageValidate(),
 			[ApplicationDeleteTool.ToolName] = BuildApplicationDelete(),
 			[CreateEntityBusinessRuleTool.BusinessRuleCreateToolName] = BuildEntityBusinessRuleCreate(),
@@ -909,6 +910,7 @@ internal static class ToolContractCatalog {
 		ComponentInfoTool.ToolName,
 		RequestInfoTool.ToolName,
 		PageUpdateTool.ToolName,
+		LocalizePageTool.ToolName,
 		PageValidateTool.ToolName,
 		ApplicationDeleteTool.ToolName,
 		SchemaNamePrefixTool.GetSchemaNamePrefixToolName,
@@ -1946,7 +1948,8 @@ internal static class ToolContractCatalog {
 					Field(CaptionFieldName, StringType, "Optional updated section caption."),
 					Field(DescriptionFieldName, StringType, "Optional updated section description."),
 					Field(IconIdFieldName, StringType, "Optional updated icon GUID."),
-					Field(IconBackgroundFieldName, StringType, "Optional updated icon background color in #RRGGBB format.")
+					Field(IconBackgroundFieldName, StringType, "Optional updated icon background color in #RRGGBB format."),
+					Field("caption-culture", StringType, "Optional culture the caption is written in (e.g. 'es-ES'); requires caption. Precedence: caption-culture > detected profile culture > en-US. Other languages of the section title are kept. The culture must exist in the Languages section: an unknown culture fails before any write, an inactive one is written with a warning.")
 				],
 				Validators: [
 					new ToolContractValidator(
@@ -1962,7 +1965,7 @@ internal static class ToolContractCatalog {
 							"captionLocalizations",
 							"nameLocalizations"
 						],
-						Context: "update-app-section stays scalar-only; localized captions belong to follow-up schema tools.")
+						Context: "update-app-section stays scalar-only: send one language per call with caption + caption-culture instead of a localization map.")
 				]),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -1977,8 +1980,12 @@ internal static class ToolContractCatalog {
 				Field(ApplicationCodeFieldName, StringType, InstalledApplicationCodeDescription),
 				Field(ApplicationVersionFieldName, StringType, InstalledApplicationVersionDescription),
 				Field("previous-section", ObjectType, "Section metadata before the update."),
-				Field("section", ObjectType, "Section metadata after the update."),
-				Field(ErrorFieldName, StringType, FailureMessageDescription)
+				Field("section", ObjectType, "Section metadata after the update (caption in the connected user's profile culture)."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription),
+				Field("caption-culture", StringType, "Culture the caption was written in; absent when no caption was sent."),
+				Field("caption-culture-value", StringType, "The stored section caption in caption-culture."),
+				Field("preserved-cultures", ArrayType, "Non-default cultures whose other stored section values (title, description) were kept; can include the target culture when its description was kept."),
+				Field("warnings", ArrayType, "Non-fatal findings, for example an inactive culture or a package data binding that could not be refreshed.")
 			),
 			CommonErrorContract,
 			[
@@ -1995,6 +2002,13 @@ internal static class ToolContractCatalog {
 					[ApplicationCodeFieldName] = ExamplePackageName,
 					[SectionCodeFieldName] = "UsrOrders",
 					[CaptionFieldName] = "Orders"
+				}),
+				Example("Add the Spanish section title and keep the other languages", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[ApplicationCodeFieldName] = ExamplePackageName,
+					[SectionCodeFieldName] = "UsrOrders",
+					[CaptionFieldName] = "Pedidos",
+					["caption-culture"] = "es-ES"
 				}),
 				Example("Update section description and icon metadata", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
@@ -4234,7 +4248,7 @@ internal static class ToolContractCatalog {
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PackageNameFieldName, OperationsFieldName],
 				EnvironmentPackageFields(
-					Field(OperationsFieldName, ArrayType, "Ordered schema operations. Supported `type` values: create-lookup, create-entity, update-entity, seed-data. For create-entity, `is-db-view` maps to a separately provisioned SQL view without generating a table; seed-rows are rejected and an existing mismatched storage kind is a collision. Omission preserves metadata. Set `is-virtual` to true to create a virtual schema without a physical table; it defaults to false and cannot be combined with `seed-rows`. For update-entity, supply `update-operations` (add/modify/remove) or a `columns` add-batch. A standalone `seed-data` operation inserts `seed-rows` into an existing schema (used by resume-plan when a create succeeded but its inline seeding failed). Column fields are unified with get-app-info and are the same for the create-entity/create-lookup `columns` array: `column-name` (alias `name`), `type` (alias `data-value-type`), `reference-schema-name` (alias `reference-schema`), `required` (alias `is-required`) — so a column read from get-app-info can be sent back by adding the `action` verb. Default values are accepted on create-entity/create-lookup `columns` items and on `update-operations` items: `default-value-config` with `source` Const (its `value` is the scalar — for a lookup column the STABLE RECORD GUID of the target record, which must exist at write time), Settings (`value-source` = setting code), SystemValue (`value-source` = system value GUID), or Sequence (`sequence-prefix` + `sequence-number-of-chars`); `source: None` removes an existing default. The legacy shorthand `default-value-source: Const|None` (+ `default-value` for Const) is also accepted. A column read from get-app-info reports its default as `default-value-config` — send it back as-is to re-apply, or set `source: None` to clear it. For an add, `title-localizations` is OPTIONAL: when omitted, `en-US` is auto-derived from a scalar `title`/`caption` or the column name (the `en-US` value must be English when supplied). " + ColumnTypeVocabularyDescription + " Applies to column types in both columns and update-operations. Read columns back with get-entity-schema-properties after writing. For date-only Freedom UI fields, explicitly set pickerType: \"date\" on crt.DateTimePicker.")),
+					Field(OperationsFieldName, ArrayType, "Ordered schema operations. Supported `type` values: create-lookup, create-entity, update-entity, seed-data. For create-entity, `is-db-view` maps to a separately provisioned SQL view without generating a table; seed-rows are rejected and an existing mismatched storage kind is a collision. Omission preserves metadata. Set `is-virtual` to true to create a virtual schema without a physical table; it defaults to false and cannot be combined with `seed-rows`. For update-entity, supply `update-operations` (add/modify/remove) or a `columns` add-batch. A standalone `seed-data` operation inserts `seed-rows` into an existing schema (used by resume-plan when a create succeeded but its inline seeding failed). Column fields are unified with get-app-info and are the same for the create-entity/create-lookup `columns` array: `column-name` (alias `name`), `type` (alias `data-value-type`), `reference-schema-name` (alias `reference-schema`), `required` (alias `is-required`) — so a column read from get-app-info can be sent back by adding the `action` verb. Default values are accepted on create-entity/create-lookup `columns` items and on `update-operations` items: `default-value-config` with `source` Const (its `value` is the scalar — for a lookup column the STABLE RECORD GUID of the target record, which must exist at write time), Settings (`value-source` = setting code), SystemValue (`value-source` = system value GUID), or Sequence (`sequence-prefix` + `sequence-number-of-chars`); `source: None` removes an existing default. The legacy shorthand `default-value-source: Const|None` (+ `default-value` for Const) is also accepted. A column read from get-app-info reports its default as `default-value-config` — send it back as-is to re-apply, or set `source: None` to clear it. For an add, `title-localizations` is OPTIONAL: when omitted, `en-US` is auto-derived from a scalar `title`/`caption` or the column name (the `en-US` value must be English when supplied). Each culture must exist in the environment's Languages section (SysCulture); an absent culture fails before any save, an inactive one is written with a warning. " + ColumnTypeVocabularyDescription + " Applies to column types in both columns and update-operations. Read columns back with get-entity-schema-properties after writing. For date-only Freedom UI fields, explicitly set pickerType: \"date\" on crt.DateTimePicker.")),
 				Validators: [
 					new ToolContractValidator(
 						"sync-schemas-operations-localizations",
@@ -5480,6 +5494,77 @@ internal static class ToolContractCatalog {
 						PageSyncTool.ToolName
 					])
 			]);
+	}
+
+	private static ToolContractDefinition BuildLocalizePage() {
+		return new ToolContractDefinition(
+			LocalizePageTool.ToolName,
+			"Translates the captions of ONE Freedom UI page into ONE additional culture without changing en-US or any other culture. " +
+			"Writes the supplied `resources` values and the page title `caption` in `culture` only; with both omitted the call is report-only and saves nothing. " +
+			"A value that already equals the stored one is reported in `unchanged`, and a call that changes nothing does not save (`saved: false`), so a re-run is safe. " +
+			"Keys are the page's resource keys as get-page shows them, inherited ones included; an unknown key fails the whole call before saving - register new keys with update-page first. " +
+			"The culture must exist in the environment's Languages section (SysCulture): an absent culture fails before any write, an inactive one is written with a warning. " +
+			"The default culture en-US is refused - change en-US values with update-page `resources`. " +
+			"A value carrying a character Creatio cannot store in a schema resource (a control character other than tab/LF/CR, U+FFFE, U+FFFF, a lone surrogate) fails the call before saving. " +
+			"Data-source-bound field labels are entity column captions - translate them with title-localizations on the entity tools. " +
+			"Read get-guidance name=page-schema-resources before translating a page.",
+			new ToolInputSchemaContract(
+				[SchemaNameFieldName, "culture"],
+				EnvironmentOrExplicitConnectionFields(
+					Field(SchemaNameFieldName, StringType, "Freedom UI page schema name."),
+					Field("culture", StringType, "Target culture, for example 'es-ES'. Matched case-insensitively against the environment's SysCulture names."),
+					Field(ResourcesFieldName, StringType, "Optional JSON object string mapping existing resource keys to their value in `culture`. Omit together with `caption` for a report-only call."),
+					Field("caption", StringType, "Optional page title in `culture`."),
+					Field("output-directory", StringType, "Optional. Directory that anchors the `.clio-pages` baseline lookup \u2014 pass the same value that was passed to get-page when it differs from the auto-detected workspace root. After a save the baseline is refreshed only when it still matches the page as it was before the save; a stale baseline is left unchanged with a warning, so the next update-page reports the conflict. Does NOT change where the page is saved.")),
+				AnyOf: EnvironmentOrExplicitConnectionRequirements()),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[
+					SuccessFalseSignal
+				],
+				Field(SuccessFieldName, BooleanType, "True when every supplied value is stored (verified by reading the schema back) or, for a report-only call, when coverage was read."),
+				Field("schemaName", StringType, "Page schema name."),
+				Field("schemaUId", StringType, "UId of the edited schema (the page's schema in its design package)."),
+				Field("packageName", StringType, "Package of the edited schema."),
+				Field("culture", StringType, "Target culture in the SysCulture spelling."),
+				Field("cultureActive", BooleanType, "Whether the target culture is active; false means users cannot select it yet."),
+				Field("saved", BooleanType, "Whether the schema was saved; false for a report-only call and for a call whose values were already stored."),
+				Field("written", ArrayType, "Keys whose value in `culture` was written."),
+				Field("unchanged", ArrayType, "Supplied keys whose value in `culture` already equalled the supplied one."),
+				Field("captionOutcome", StringType, "`written` or `unchanged` when `caption` was supplied; absent otherwise."),
+				Field("coverage", ObjectType, "Coverage in `culture` after the call: `keys` (all resource keys of the page hierarchy, the get-page count), `translated`, `missing` (keys with no value in `culture`), `sameAsDefault` (keys whose value equals en-US - review, may be untranslated) and `captionSameAsDefault`."),
+				Field("warnings", ArrayType, "Non-fatal findings: an inactive culture, the workspace-capture reminder after a server save, a stale or unrefreshable .clio-pages baseline."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription)
+			),
+			CommonErrorContract,
+			[
+				SchemaNameParameterAlias(),
+				EnvironmentNameParameterAlias()
+			],
+			[],
+			[
+				Example("Read coverage of a page in es-ES (report-only)", new Dictionary<string, object?> {
+					[SchemaNameFieldName] = "UsrTaskApp_FormPage",
+					["culture"] = "es-ES",
+					[EnvironmentNameFieldName] = ExampleEnvironmentName
+				}),
+				Example("Translate one key and the page title into es-ES", new Dictionary<string, object?> {
+					[SchemaNameFieldName] = "UsrTaskApp_FormPage",
+					["culture"] = "es-ES",
+					[ResourcesFieldName] = "{\"UsrDetailsTab_caption\":\"Detalles\"}",
+					["caption"] = "Tarea",
+					[EnvironmentNameFieldName] = ExampleEnvironmentName
+				})
+			],
+			Flow(
+				[
+					LocalizePageTool.ToolName,
+					LocalizePageTool.ToolName,
+					PageGetTool.ToolName
+				],
+				"Call report-only first, translate the `missing` keys and review `sameAsDefault`, write them, then read the page back with get-page."),
+			[],
+			[]);
 	}
 
 	private static ToolContractDefinition BuildPageValidate() {

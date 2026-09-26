@@ -178,7 +178,8 @@ public static class ApplicationPrompt {
 		 Pass `application-code` `{applicationCode}` as the installed application selector.
 		 Pass `section-code` `{sectionCode}` as the existing section selector inside that application.
 		 Use `caption`, `description`, `icon-id`, and `icon-background` as optional top-level partial update fields. Omit any field that should remain unchanged.
-		 Author the `caption`/`description` in the connected user's profile language (detect once via `get-user-culture`): the caption is localized under the profile, so clio rejects a caption whose script does not match it (e.g. Cyrillic for an `en-US` profile).
+		 Author the `caption`/`description` in the connected user's profile language (detect once via `get-user-culture`): clio rejects text whose script does not match the language it is stored under (e.g. Cyrillic for an `en-US` profile).
+		 To add or change the section title in ANOTHER language, send `caption` in that language together with `caption-culture` (for example `es-ES`), one language per call; the title in the other languages is kept. The culture must exist in the Languages section.
 		 When updating a broken JSON-style section heading, provide a new plain-text `caption`.
 		 Wrap all tool arguments under the top-level `args` JSON object exactly as advertised by the tool schema; do not flatten or rename canonical fields.
 		 Do not send `title-localizations`, `description-localizations`, `caption-localizations`, or other localization-map fields to `update-app-section`.

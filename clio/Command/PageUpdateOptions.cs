@@ -1143,7 +1143,7 @@
 				["schemaUId"] = schemaUId,
 				["useFullHierarchy"] = false
 			};
-			string url = _serviceUrlBuilder.Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema");
+			string url = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetClientUnitDesignerSchema);
 			string json = _applicationClient.ExecutePostRequest(url, request.ToString(Formatting.None));
 			var response = JObject.Parse(json);
 			if (!(response["success"]?.Value<bool>() ?? false) || response["schema"] is not JObject loaded) {
@@ -1193,7 +1193,7 @@
 		}
 
 		private bool TrySaveSchema(JObject schemaToSave, out PageUpdateResponse response) {
-			string saveUrl = _serviceUrlBuilder.Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema");
+			string saveUrl = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.SaveClientUnitDesignerSchema);
 			string saveJson = _applicationClient.ExecutePostRequest(saveUrl, schemaToSave.ToString(Formatting.None));
 			var saveResponse = JObject.Parse(saveJson);
 			if (saveResponse["success"]?.Value<bool>() ?? false) {
@@ -1218,7 +1218,7 @@
 		/// </summary>
 		private void TryResetScriptCache() {
 			try {
-				string resetUrl = _serviceUrlBuilder.Build("/rest/WorkplaceService/ResetScriptCache");
+				string resetUrl = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.ResetScriptCache);
 				_applicationClient.ExecutePostRequest(resetUrl, string.Empty);
 			} catch {
 				// Cache reset is best-effort; never block a successful save on it.

@@ -122,6 +122,7 @@ cliogate must be installed on the target Creatio environment.
 - Post-save verification evaluates the final ordered batch state. A later operation may intentionally re-add a column name removed earlier in the same batch.
 - `--caption-culture <VALUE>` overrides the culture for written column captions/descriptions (e.g. `en-US`, `uk-UA`) across the whole batch. Precedence: override > the connected user's profile culture (see `get-user-culture`) > `en-US`. When omitted, clio resolves the profile culture and falls back to `en-US` if it cannot be resolved.
 - Each `title-localizations` / `description-localizations` value must be written in the language of its culture key. The `en-US` value must be English; a value in a script that does not match a Latin-script culture key (e.g. Cyrillic under `en-US`) is rejected — put localized text under its own culture key such as `uk-UA`.
+- **Culture must exist in the environment.** Every culture a caption or description is written in (each `title-localizations` / `description-localizations` key and the effective `--caption-culture`) must be a culture of the Languages section (System Designer → Languages). Creatio silently drops a value in a culture it does not have and still reports success, so clio checks the cultures before saving and fails the whole batch with `Culture '<c>' is not available in this environment. Add it in the Languages section (System Designer → Languages) first. Available: …`. A culture that exists but is inactive is saved, and a warning is printed.
 
 ## See also
 

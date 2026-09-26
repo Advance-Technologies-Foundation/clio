@@ -142,6 +142,9 @@ NOTES
       record cannot be read)
     - Binary, Image, and File columns do not support --default-value or --default-value-source Const
     - After save, the schema is reloaded immediately; save is treated as failed if the mutated column cannot be read back
+    - every caption culture must exist in the Languages section (System Designer -> Languages).
+      A culture the environment does not have fails before anything is saved, listing the
+      available cultures; an inactive culture is saved with a warning
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio

@@ -460,9 +460,9 @@ public sealed class ApplicationSectionUpdateTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.Progress,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Updates metadata of a section inside an existing application in Creatio through backend MCP and returns structured section readback data before and after the update. Long-running: streams notifications/progress while working — await completion and do not retry on a perceived timeout.")]
+	[Description("Updates metadata of a section inside an existing application in Creatio through backend MCP and returns structured section readback data before and after the update. To add or change the section title in another language, send caption with caption-culture (for example es-ES); translations in other languages are kept. Long-running: streams notifications/progress while working — await completion and do not retry on a perceived timeout.")]
 	public async Task<ApplicationSectionUpdateContextResponse> ApplicationSectionUpdate(
-		[Description("Parameters: environment-name (required unless passthrough), application-code, section-code (required); caption, description, icon-id, icon-background (optional partial update fields)")]
+		[Description("Parameters: environment-name (required unless passthrough), application-code, section-code (required); caption, description, icon-id, icon-background (optional partial update fields); caption-culture (optional, requires caption: the culture the caption is written in)")]
 		[Required]
 		ApplicationSectionUpdateArgs args,
 		global::ModelContextProtocol.Server.McpServer server,
@@ -488,7 +488,8 @@ public sealed class ApplicationSectionUpdateTool(
 				ApplicationSectionUpdateToolName,
 				() => ExecuteWithCleanLog(options, () => {
 					// Resolve the tenant FIRST: mixed header + environment-name input is rejected here by
-					// the resolver's transport policy before ANY Creatio-reaching call (AC-05).
+					// the resolver's transport policy before ANY Creatio-reaching call (AC-05). The service reads
+					// SysCulture for caption-culture through its own client of THIS tenant, so no catalog is resolved here.
 					EnvironmentSettings settings = _commandResolver.Resolve<EnvironmentSettings>(options);
 					return applicationSectionUpdateService.UpdateSection(
 						settings,
@@ -498,7 +499,8 @@ public sealed class ApplicationSectionUpdateTool(
 							args.Caption,
 							args.Description,
 							args.IconId,
-							resolvedIconBackground));
+							resolvedIconBackground,
+							args.CaptionCulture));
 				}),
 				cancellationToken).ConfigureAwait(false);
 			return ApplicationToolHelper.CreateSectionUpdateContextResponse(ApplicationToolResultMapper.Map(result));

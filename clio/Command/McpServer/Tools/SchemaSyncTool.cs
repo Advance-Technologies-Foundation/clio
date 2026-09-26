@@ -1487,7 +1487,7 @@ public sealed record SchemaSyncOperation(
 	string SchemaName,
 
 	[property: JsonPropertyName("title-localizations")]
-	[property: Description("Schema title/caption localizations for create operations. Must include en-US.")]
+	[property: Description("Schema title/caption localizations for create operations. Must include en-US. Each culture must exist in the environment's Languages section; an absent culture fails before saving.")]
 	Dictionary<string, string>? TitleLocalizations = null,
 
 	[property: JsonPropertyName("parent-schema-name")]

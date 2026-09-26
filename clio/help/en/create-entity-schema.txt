@@ -151,6 +151,9 @@ NOTES
       expected async gap — wait and retry rather than running a full compile.
       If requesting the rebuild fails, it is logged as a warning and schema
       creation still succeeds
+    - every caption culture must exist in the Languages section (System Designer -> Languages).
+      A culture the environment does not have fails before anything is saved, listing the
+      available cultures; an inactive culture is saved with a warning
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio

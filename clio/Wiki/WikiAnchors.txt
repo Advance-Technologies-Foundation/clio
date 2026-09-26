@@ -164,6 +164,7 @@ list-app-sections:list-app-sections
 list-entity-client-schemas:list-entity-client-schemas,migration-unit-resolve
 list-pages:list-pages,page-list
 update-page:update-page,page-update
+localize-page:localize-page
 create-page:create-page,page-create
 list-page-templates:list-page-templates,page-templates,page-templates-list
 create-related-page-addon:create-related-page-addon,related-page-addon,set-related-pages
