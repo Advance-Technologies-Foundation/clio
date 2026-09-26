@@ -2801,22 +2801,46 @@ public static class SchemaValidationService
 	/// </returns>
 	public static SchemaValidationResult ValidateLocalizableTextLiterals(string jsBody) {
 		var result = new SchemaValidationResult { IsValid = true };
-		if (string.IsNullOrEmpty(jsBody)) {
-			return result;
-		}
-		if (!PageSchemaSectionReader.TryRead(jsBody, out string vcdContent, SchemaViewConfigDiff, SchemaDiffMarker)) {
-			return result;
-		}
-		if (!TryParseJsonDocument(vcdContent, out JsonDocument vcdDoc, out _)) {
-			return result;
-		}
-		using (vcdDoc) {
-			ScanViewConfigDiffForTextLiterals(vcdDoc.RootElement, result);
-		}
+		ScanWebBodyForTextLiterals(jsBody, result, violations: null);
 		if (result.Errors.Count > 0) {
 			result.IsValid = false;
 		}
 		return result;
+	}
+
+	/// <summary>
+	/// Returns the view nodes of a web page body whose user-visible text property is an inline literal, as
+	/// structured (node, property) pairs instead of diagnostic sentences. It runs the SAME scan as
+	/// <see cref="ValidateLocalizableTextLiterals"/>, so a node is reported here exactly when the MCP
+	/// <c>update-page</c> / <c>validate-page</c> / <c>sync-pages</c> gate rejects it as an inline literal. The
+	/// inverse rejection (a resource binding on a literal-only property such as <c>crt.ImageInput.tooltip</c>)
+	/// is not reported. Used by <c>push-workspace</c>, which only warns about these nodes (issue #1639).
+	/// </summary>
+	/// <param name="jsBody">Raw JavaScript body of a Freedom UI page schema (marker-delimited).</param>
+	/// <returns>
+	/// The inline-literal nodes in document order; empty when the body has no <c>SCHEMA_VIEW_CONFIG_DIFF</c>
+	/// section, the section is not valid JSON, or every user-visible text value follows the rule.
+	/// </returns>
+	public static IReadOnlyList<LocalizableTextViolation> FindLocalizableTextViolations(string jsBody) {
+		var violations = new List<LocalizableTextViolation>();
+		ScanWebBodyForTextLiterals(jsBody, new SchemaValidationResult { IsValid = true }, violations);
+		return violations;
+	}
+
+	private static void ScanWebBodyForTextLiterals(
+		string jsBody, SchemaValidationResult result, List<LocalizableTextViolation>? violations) {
+		if (string.IsNullOrEmpty(jsBody)) {
+			return;
+		}
+		if (!PageSchemaSectionReader.TryRead(jsBody, out string vcdContent, SchemaViewConfigDiff, SchemaDiffMarker)) {
+			return;
+		}
+		if (!TryParseJsonDocument(vcdContent, out JsonDocument vcdDoc, out _)) {
+			return;
+		}
+		using (vcdDoc) {
+			ScanViewConfigDiffForTextLiterals(vcdDoc.RootElement, result, violations);
+		}
 	}
 
 	/// <summary>
@@ -2991,7 +3015,7 @@ public static class SchemaValidationService
 			JsonElement root = document.RootElement;
 			if (root.ValueKind == JsonValueKind.Object &&
 			    root.TryGetProperty(ViewConfigDiffPropertyName, out JsonElement viewConfigDiff)) {
-				ScanViewConfigDiffForTextLiterals(viewConfigDiff, result);
+				ScanViewConfigDiffForTextLiterals(viewConfigDiff, result, violations: null);
 			}
 		}
 		if (result.Errors.Count > 0) {
@@ -3000,7 +3024,8 @@ public static class SchemaValidationService
 		return result;
 	}
 
-	private static void ScanViewConfigDiffForTextLiterals(JsonElement viewConfigDiff, SchemaValidationResult result) {
+	private static void ScanViewConfigDiffForTextLiterals(JsonElement viewConfigDiff, SchemaValidationResult result,
+		List<LocalizableTextViolation>? violations) {
 		if (viewConfigDiff.ValueKind != JsonValueKind.Array) {
 			return;
 		}
@@ -3025,7 +3050,7 @@ public static class SchemaValidationService
 			// from their own "type" sibling (entryRootType is not threaded into the recursion), so the
 			// exemption never bleeds into a nested non-exempt node.
 			string entryRootType = ResolveEntryRootType(values, ownerName, entryNameToType);
-			ScanNodeForTextLiterals(values, ownerName, entryRootType, result);
+			ScanNodeForTextLiterals(values, ownerName, entryRootType, result, violations);
 		}
 	}
 
@@ -3072,7 +3097,7 @@ public static class SchemaValidationService
 	// its own AND is the entry root; nested children are recursed with an empty entryRootType so a nested
 	// non-exempt node can never inherit an ancestor's exemption.
 	private static void ScanNodeForTextLiterals(JsonElement node, string ownerName, string entryRootType,
-		SchemaValidationResult result, bool isGalleryItemConfig = false) {
+		SchemaValidationResult result, List<LocalizableTextViolation>? violations, bool isGalleryItemConfig = false) {
 		switch (node.ValueKind) {
 			case JsonValueKind.Object:
 				string currentName = TryGetNodeName(node, out string nodeName) ? nodeName : ownerName;
@@ -3089,14 +3114,14 @@ public static class SchemaValidationService
 					if (IsExemptFromTextScan(currentType, property, isGalleryItemConfig)) {
 						continue;
 					}
-					ScanTextPropertyForLiterals(currentName, currentType, property, result);
-					ScanNodeForTextLiterals(property.Value, currentName, string.Empty, result,
+					ScanTextPropertyForLiterals(currentName, currentType, property, result, violations);
+					ScanNodeForTextLiterals(property.Value, currentName, string.Empty, result, violations,
 						currentType == "crt.Gallery" && property.NameEquals("itemConfig"));
 				}
 				break;
 			case JsonValueKind.Array:
 				foreach (JsonElement item in node.EnumerateArray()) {
-					ScanNodeForTextLiterals(item, ownerName, string.Empty, result);
+					ScanNodeForTextLiterals(item, ownerName, string.Empty, result, violations);
 				}
 				break;
 		}
@@ -3106,7 +3131,8 @@ public static class SchemaValidationService
 	// for an exempt (component, property) pair a localizable-resource binding is rejected (it renders empty),
 	// and everywhere else an inline user-visible literal is rejected (it should be a localizable binding).
 	private static void ScanTextPropertyForLiterals(
-		string currentName, string currentType, JsonProperty property, SchemaValidationResult result) {
+		string currentName, string currentType, JsonProperty property, SchemaValidationResult result,
+		List<LocalizableTextViolation>? violations) {
 		if (property.Value.ValueKind != JsonValueKind.String ||
 		    !LocalizableTextProperties.Contains(property.Name)) {
 			return;
@@ -3122,6 +3148,7 @@ public static class SchemaValidationService
 			}
 		} else if (IsInlineUserVisibleTextLiteral(textValue)) {
 			result.Errors.Add(BuildTextLiteralError(currentName, property.Name, textValue));
+			violations?.Add(new LocalizableTextViolation(currentName, property.Name));
 		}
 	}
 
@@ -5676,6 +5703,14 @@ public enum SchemaValidationErrorKind {
 	/// </summary>
 	UnresolvedLabelResource
 }
+
+/// <summary>
+/// One view node whose user-visible text property is an inline literal instead of a localizable-string
+/// binding (<see cref="SchemaValidationService.FindLocalizableTextViolations"/>).
+/// </summary>
+/// <param name="NodeName">The view node's <c>name</c>, or the nearest named ancestor; empty when none is named.</param>
+/// <param name="PropertyName">The offending text property, e.g. <c>caption</c>.</param>
+public sealed record LocalizableTextViolation(string NodeName, string PropertyName);
 
 public class SchemaValidationResult
 {

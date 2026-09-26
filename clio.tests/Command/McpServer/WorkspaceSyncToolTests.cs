@@ -395,7 +395,8 @@ public sealed class WorkspaceSyncToolTests {
 				Substitute.For<ILogger>(),
 				new LinkWorkspaceWithTideRepositoryCommand(
 					Substitute.For<ATF.Repository.Providers.IDataProvider>(),
-					Substitute.For<IWorkspace>())) {
+					Substitute.For<IWorkspace>()),
+				Substitute.For<IWorkspacePageTextInspector>()) {
 		}
 
 		public override int Execute(PushWorkspaceCommandOptions options) {

@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using Clio.Command.StartProcess;
 using Clio.Command.TIDE;
@@ -45,16 +47,24 @@ public class PushWorkspaceCommand : Command<PushWorkspaceCommandOptions>{
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
 
 	private readonly IWorkspace _workspace;
+	private readonly IWorkspacePageTextInspector _pageTextInspector;
 	private readonly UnlockPackageCommand _unlockPackageCommand;
 
 	#endregion
 
 	#region Constructors: Public
 
+	[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+		Justification = "The command composes independent DI collaborators (workspace, unlock and TIDE-link "
+			+ "commands, client factory, environment settings, URL builder, logger); the page text inspector "
+			+ "joined them for the issue #1639 warning. Grouping them into a parameter object would hide the "
+			+ "injected contract without changing behaviour, which is how the other multi-collaborator commands "
+			+ "in this assembly are handled.")]
 	public PushWorkspaceCommand(IWorkspace workspace, UnlockPackageCommand unlockPackageCommand,
 		IApplicationClientFactory applicationClientFactory, EnvironmentSettings environmentSettings,
 		IServiceUrlBuilder serviceUrlBuilder, ILogger logger,
-		LinkWorkspaceWithTideRepositoryCommand linkWorkspaceWithTideRepositoryCommand) {
+		LinkWorkspaceWithTideRepositoryCommand linkWorkspaceWithTideRepositoryCommand,
+		IWorkspacePageTextInspector pageTextInspector) {
 		workspace.CheckArgumentNull(nameof(workspace));
 		_workspace = workspace;
 		_unlockPackageCommand = unlockPackageCommand;
@@ -63,6 +73,7 @@ public class PushWorkspaceCommand : Command<PushWorkspaceCommandOptions>{
 		_serviceUrlBuilder = serviceUrlBuilder;
 		_logger = logger;
 		_linkWorkspaceWithTideRepositoryCommand = linkWorkspaceWithTideRepositoryCommand;
+		_pageTextInspector = pageTextInspector;
 	}
 
 	#endregion
@@ -98,6 +109,27 @@ public class PushWorkspaceCommand : Command<PushWorkspaceCommandOptions>{
 		_logger.WriteInfo($"Run process id {response.ProcessId}");
 	}
 
+	// Reports, without blocking the push, every page schema whose user-visible text the MCP update-page gate
+	// would reject (issue #1639). push-workspace keeps installing such pages: most stock and existing
+	// repository schemas use inline literals, so refusing them would break working source deployments.
+	private void WarnAboutNonLocalizablePageText() {
+		IReadOnlyList<PageTextFinding> findings;
+		try {
+			findings = _pageTextInspector.Inspect(_workspace.GetFilteredPackages());
+		}
+		catch (Exception e) {
+			_logger.WriteWarning($"Could not check page schemas for non-localizable text: {e.Message}");
+			return;
+		}
+		foreach (PageTextFinding finding in findings) {
+			_logger.WriteWarning(
+				$"Page schema '{finding.SchemaName}' (package '{finding.PackageName}') sets user-visible text as " +
+				$"inline literals: {string.Join(", ", finding.Elements)}. push-workspace installs it anyway, but " +
+				"the MCP update-page tool rejects the same body: bind each value via $Resources.Strings.<Key> or " +
+				"#ResourceString(<Key>)# and register the key in the schema resources. See the page-schema-resources guide.");
+		}
+	}
+
 	#endregion
 
 	#region Methods: Public
@@ -106,6 +138,7 @@ public class PushWorkspaceCommand : Command<PushWorkspaceCommandOptions>{
 		try {
 			_logger.WriteInfo("Push workspace...");
 			CallbackInfo(options.CallbackProcess, "Push workspace...");
+			WarnAboutNonLocalizablePageText();
 			_workspace.Install(
 				useApplicationInstaller: options.UseApplicationInstaller,
 				createBackup: options.SkipBackup != true);
