@@ -32,9 +32,9 @@ internal sealed record SchemaDesignerKind(
 	internal static readonly SchemaDesignerKind ClientUnit = new(
 		"ClientUnitSchemaManager",
 		"ClientUnitSchemaDesignerService",
-		"/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema",
-		"/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema",
-		"/ServiceModel/ClientUnitSchemaDesignerService.svc/CreateNewSchema");
+		ServiceUrlBuilder.KnownRoutes[ServiceUrlBuilder.KnownRoute.GetClientUnitDesignerSchema],
+		ServiceUrlBuilder.KnownRoutes[ServiceUrlBuilder.KnownRoute.SaveClientUnitDesignerSchema],
+		ServiceUrlBuilder.KnownRoutes[ServiceUrlBuilder.KnownRoute.CreateNewClientUnitDesignerSchema]);
 }
 
 /// <summary>
@@ -392,9 +392,7 @@ internal static class SchemaDesignerHelper {
 			["schemaUId"] = schemaUId,
 			["useFullHierarchy"] = useFullHierarchy
 		};
-		string designerUrl = kind == SchemaDesignerKind.SqlScript
-			? urlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetSqlScriptSchema)
-			: urlBuilder.Build(kind.GetRoute);
+		string designerUrl = BuildGetUrl(urlBuilder, kind);
 		string json = client.ExecutePostRequest(designerUrl, request.ToString(Formatting.None));
 		(JObject response, string parseError) = ParseServiceResponse(
 			DesignerOperation(kind, "GetSchema"), designerUrl, json, DesignerServiceHint);
@@ -439,9 +437,7 @@ internal static class SchemaDesignerHelper {
 		SchemaDesignerKind kind,
 		out bool outcomeUnknown) {
 		outcomeUnknown = false;
-		string saveUrl = kind == SchemaDesignerKind.SqlScript
-			? urlBuilder.Build(ServiceUrlBuilder.KnownRoute.SaveSqlScriptSchema)
-			: urlBuilder.Build(kind.SaveRoute);
+		string saveUrl = BuildSaveUrl(urlBuilder, kind);
 		string json;
 		try {
 			json = kind == SchemaDesignerKind.SqlScript
@@ -462,12 +458,35 @@ internal static class SchemaDesignerHelper {
 		return PageSchemaMetadataHelper.ParseSaveErrorMessage(response, "Failed to save schema");
 	}
 
+	// Designer kinds whose routes are registered in ServiceUrlBuilder.KnownRoutes are built through the
+	// KnownRoute overload; the remaining kinds still carry their route as a string.
+	private static string BuildGetUrl(IServiceUrlBuilder urlBuilder, SchemaDesignerKind kind) {
+		if (kind == SchemaDesignerKind.SqlScript)
+			return urlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetSqlScriptSchema);
+		if (kind == SchemaDesignerKind.ClientUnit)
+			return urlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetClientUnitDesignerSchema);
+		return urlBuilder.Build(kind.GetRoute);
+	}
+
+	private static string BuildSaveUrl(IServiceUrlBuilder urlBuilder, SchemaDesignerKind kind) {
+		if (kind == SchemaDesignerKind.SqlScript)
+			return urlBuilder.Build(ServiceUrlBuilder.KnownRoute.SaveSqlScriptSchema);
+		if (kind == SchemaDesignerKind.ClientUnit)
+			return urlBuilder.Build(ServiceUrlBuilder.KnownRoute.SaveClientUnitDesignerSchema);
+		return urlBuilder.Build(kind.SaveRoute);
+	}
+
+	private static string BuildCreateUrl(IServiceUrlBuilder urlBuilder, SchemaDesignerKind kind) =>
+		kind == SchemaDesignerKind.ClientUnit
+			? urlBuilder.Build(ServiceUrlBuilder.KnownRoute.CreateNewClientUnitDesignerSchema)
+			: urlBuilder.Build(kind.CreateRoute);
+
 	internal static (JObject schema, string error) CreateNewSchema(
 		IApplicationClient client,
 		IServiceUrlBuilder urlBuilder,
 		string packageUId,
 		SchemaDesignerKind kind) {
-		string createUrl = urlBuilder.Build(kind.CreateRoute);
+		string createUrl = BuildCreateUrl(urlBuilder, kind);
 		var request = new JObject { ["packageUId"] = packageUId };
 		string json = client.ExecutePostRequest(createUrl, request.ToString(Formatting.None));
 		(JObject response, string parseError) = ParseServiceResponse(

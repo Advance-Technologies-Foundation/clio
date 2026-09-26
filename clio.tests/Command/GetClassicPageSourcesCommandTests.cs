@@ -56,6 +56,7 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		_ioFileSystem = new System.IO.Abstractions.TestingHelpers.MockFileSystem();
 		_logger = Substitute.For<ILogger>();
 		_serviceUrlBuilder.Build(Arg.Any<string>()).Returns("http://localhost/svc");
+		_serviceUrlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>()).Returns("http://localhost/svc");
 		_applicationClient.ExecutePostRequest(default, default).ReturnsForAnyArgs(ci => Route(ci.ArgAt<string>(1)));
 		// Default: no hierarchy -> LoadChainAndSeed falls back to the legacy per-layer fan-out, so the existing
 		// tests exercise (and keep asserting) that fallback path. The hierarchy-path tests configure this explicitly.

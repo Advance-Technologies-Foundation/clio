@@ -44,8 +44,6 @@ namespace Clio.Command {
 	/// </summary>
 	public class PageCreateCommand : Command<PageCreateOptions>
 	{
-		private const string SchemaSaveRoute = "/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema";
-		private const string SchemaGetRoute = "/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema";
 		private const string SelectQueryRoute = "/DataService/json/SyncReply/SelectQuery";
 		private const string ClientUnitManagerName = "ClientUnitSchemaManager";
 
@@ -318,7 +316,7 @@ namespace Clio.Command {
 				["schemaUId"] = templateUId,
 				["useFullHierarchy"] = false
 			};
-			string url = _serviceUrlBuilder.Build(SchemaGetRoute);
+			string url = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetClientUnitDesignerSchema);
 			string responseJson = _applicationClient.ExecutePostRequest(url, request.ToString(Formatting.None));
 			var response = JObject.Parse(responseJson);
 			if (!(response["success"]?.Value<bool>() ?? false) || response["schema"] is not JObject schema) {
@@ -332,7 +330,7 @@ namespace Clio.Command {
 
 		private bool TrySaveSchema(JObject schemaToSave, out string error) {
 			error = null;
-			string url = _serviceUrlBuilder.Build(SchemaSaveRoute);
+			string url = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.SaveClientUnitDesignerSchema);
 			string responseJson = _applicationClient.ExecutePostRequest(url, schemaToSave.ToString(Formatting.None));
 			var response = JObject.Parse(responseJson);
 			if (response["success"]?.Value<bool>() ?? false) {

@@ -479,6 +479,36 @@ public sealed class SchemaDesignerHelperTests {
 			because: "a JSON errorInfo:null carries no message, so the generic failure message is used without throwing on the JValue-null");
 	}
 
+	[Test]
+	[Description("For the ClientUnit designer kind, LoadSchema, SaveSchema and CreateNewSchema post to the URLs the real ServiceUrlBuilder builds from the ClientUnitSchemaDesignerService KnownRoutes, with exactly one 0/ prefix on .NET Framework.")]
+	public void ClientUnitDesignerCalls_ShouldPostToKnownRouteUrls() {
+		// Arrange — a real builder in .NET Framework mode; every designer call answers with a schema payload.
+		IServiceUrlBuilder urlBuilder = new ServiceUrlBuilder(new EnvironmentSettings {
+			Uri = "http://host",
+			IsNetCore = false
+		});
+		var client = Substitute.For<IApplicationClient>();
+		var postedUrls = new System.Collections.Generic.List<string>();
+		client.ExecutePostRequest(default, default).ReturnsForAnyArgs(ci => {
+			postedUrls.Add(ci.ArgAt<string>(0));
+			return """{"success": true, "schema": {"uId": "layer-uid"}}""";
+		});
+
+		// Act
+		SchemaDesignerHelper.LoadSchema(client, urlBuilder, "layer-uid", SchemaDesignerKind.ClientUnit, "ContactPageV2");
+		SchemaDesignerHelper.SaveSchema(client, urlBuilder, new JObject(), SchemaDesignerKind.ClientUnit, out _);
+		SchemaDesignerHelper.CreateNewSchema(client, urlBuilder, "package-uid", SchemaDesignerKind.ClientUnit);
+
+		// Assert
+		postedUrls.Should().Equal(
+			new[] {
+				"http://host/0/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema",
+				"http://host/0/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema",
+				"http://host/0/ServiceModel/ClientUnitSchemaDesignerService.svc/CreateNewSchema"
+			},
+			because: "the ClientUnit designer read, save and create must use the registered KnownRoutes, prefixed with 0/ exactly once on .NET Framework");
+	}
+
 	// Builds an IApplicationClient/IServiceUrlBuilder pair whose SelectQuery POST returns the given response JSON,
 	// regardless of the URL, body, or optional timeout/retry arguments.
 	private static (IApplicationClient client, IServiceUrlBuilder urlBuilder) MakeSelectQueryClient(string responseJson) {
