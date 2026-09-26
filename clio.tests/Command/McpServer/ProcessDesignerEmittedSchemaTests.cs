@@ -262,4 +262,31 @@ public sealed class ProcessDesignerEmittedSchemaTests {
 					+ "naming it on a write tool is the exact mistake a live agent made, and an older server "
 					+ "discards an unknown member silently");
 	}
+
+	[TestCase(CreateBusinessProcessTool.CreateBusinessProcessToolName, "descriptor", true)]
+	[TestCase(ModifyBusinessProcessTool.ModifyBusinessProcessToolName, "operations", true)]
+	[TestCase(ModifyProcessAsNewVersionTool.ModifyProcessAsNewVersionToolName, "operations", false)]
+	[Category("Unit")]
+	[Description("The JSON-document argument of each process write tool is emitted with its description intact, keeps its required status, and is no longer typed as a string (ENG-100153). The SDK drops the description of an optional positional JsonElement? = null, and for these non-resident tools that description is the only one an agent reads.")]
+	public void ProcessWriteTools_Should_AdvertiseTheirJsonDocumentArgument_AsAValueWithADescription(
+			string toolName, string wireName, bool required) {
+		// Arrange & Act
+		using JsonDocument schema = EmittedInputSchema(toolName);
+		JsonElement args = ArgsSchema(schema);
+		JsonElement property = args.GetProperty("properties").GetProperty(wireName);
+
+		// Assert
+		property.TryGetProperty("description", out JsonElement description).Should().BeTrue(
+			because: $"'{wireName}' must carry its description - it says both accepted forms, and a derived "
+				+ "contract has nothing else to show the agent");
+		description.GetString().Should().Contain("string holding the same JSON is also accepted",
+			because: "the description must say that the long-standing string form still works");
+		property.TryGetProperty("type", out JsonElement type).Should().BeFalse(
+			because: $"a 'type' on '{wireName}' would restrict it to one JSON kind, and it accepts two: the value and a "
+				+ $"string holding it (emitted: {type})");
+		RequiredNames(args).Contains(wireName).Should().Be(required,
+			because: required
+				? $"'{wireName}' is the edit itself on this tool, so it stays mandatory"
+				: "absent operations is the documented snapshot form, so the argument must stay optional");
+	}
 }

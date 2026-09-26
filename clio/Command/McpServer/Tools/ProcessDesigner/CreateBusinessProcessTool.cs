@@ -376,13 +376,14 @@ public class CreateBusinessProcessTool(
 			return CommandExecutionResult.FromError("environment-name is required and cannot be empty.");
 		}
 
-		if (string.IsNullOrWhiteSpace(args.Descriptor)) {
-			return CommandExecutionResult.FromError("descriptor is required and cannot be empty.");
+		if (!McpToolArgumentSupport.TryReadJsonDocumentArgument(args.Descriptor, JsonValueKind.Object,
+				"descriptor", out string descriptorJson, out string descriptorError)) {
+			return CommandExecutionResult.FromError(descriptorError);
 		}
 
 		CreateBusinessProcessOptions options = new() {
 			Environment = args.EnvironmentName,
-			DescriptorJson = args.Descriptor,
+			DescriptorJson = descriptorJson,
 			PackageName = args.PackageName ?? string.Empty
 		};
 		// A business process built by clio is interpreted and runs as-is — it never needs compilation
@@ -412,12 +413,13 @@ public sealed record CreateBusinessProcessArgs(
 	[property: Required]
 	string EnvironmentName,
 
+	// JsonElement, not string: the descriptor is passed as the JSON object itself, and a string holding the
+	// same JSON keeps working. McpToolArgumentSupport.TryReadJsonDocumentArgument says why (ENG-100153).
 	[property: JsonPropertyName("descriptor")]
-	[property: Description("The process descriptor (name, caption, packageName, elements[], flows[], "
-		+ "parameters[], mappings[]) SERIALIZED AS A JSON STRING - not a nested object. Passing a real object "
-		+ "fails with \"Cannot get the value of a token type 'StartObject' as a string\".")]
+	[property: Description("The process descriptor as a JSON object (name, caption, packageName, elements[], "
+		+ "flows[], parameters[], mappings[]). A string holding the same JSON is also accepted.")]
 	[property: Required]
-	string Descriptor,
+	JsonElement Descriptor,
 
 	[property: JsonPropertyName("package-name")]
 	[property: Description("Optional package name that overrides the descriptor's packageName.")]

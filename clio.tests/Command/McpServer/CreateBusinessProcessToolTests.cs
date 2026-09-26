@@ -52,7 +52,7 @@ public class CreateBusinessProcessToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.CreateBusinessProcess(
-			new CreateBusinessProcessArgs("docker_fix2", SampleDescriptor, "MyApp"));
+			new CreateBusinessProcessArgs("docker_fix2", JsonArgument.Text(SampleDescriptor), "MyApp"));
 
 		// Assert
 		result.ExitCode.Should().Be(0,
@@ -84,7 +84,7 @@ public class CreateBusinessProcessToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.CreateBusinessProcess(
-			new CreateBusinessProcessArgs("docker_fix2", SampleDescriptor, "MyApp"));
+			new CreateBusinessProcessArgs("docker_fix2", JsonArgument.Text(SampleDescriptor), "MyApp"));
 
 		// Assert
 		result.ExitCode.Should().Be(0, because: "the fake command reports a successful create");
@@ -107,7 +107,7 @@ public class CreateBusinessProcessToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.CreateBusinessProcess(
-			new CreateBusinessProcessArgs("docker_fix2", SampleDescriptor, "MyApp"));
+			new CreateBusinessProcessArgs("docker_fix2", JsonArgument.Text(SampleDescriptor), "MyApp"));
 
 		// Assert
 		result.ExitCode.Should().NotBe(0, because: "the fake command reports a failed create");
@@ -140,7 +140,7 @@ public class CreateBusinessProcessToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.CreateBusinessProcess(
-			new CreateBusinessProcessArgs("docker_fix2", sendEmailDescriptor, null));
+			new CreateBusinessProcessArgs("docker_fix2", JsonArgument.Text(sendEmailDescriptor), null));
 
 		// Assert
 		result.ExitCode.Should().Be(0,
@@ -179,7 +179,7 @@ public class CreateBusinessProcessToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.CreateBusinessProcess(
-			new CreateBusinessProcessArgs("docker_fix2", openEditPageDescriptor, null));
+			new CreateBusinessProcessArgs("docker_fix2", JsonArgument.Text(openEditPageDescriptor), null));
 
 		// Assert
 		result.ExitCode.Should().Be(0,
@@ -205,7 +205,7 @@ public class CreateBusinessProcessToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.CreateBusinessProcess(
-			new CreateBusinessProcessArgs("   ", SampleDescriptor, null));
+			new CreateBusinessProcessArgs("   ", JsonArgument.Text(SampleDescriptor), null));
 
 		// Assert
 		result.ExitCode.Should().Be(-1,
@@ -226,7 +226,7 @@ public class CreateBusinessProcessToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.CreateBusinessProcess(
-			new CreateBusinessProcessArgs("docker_fix2", "   ", null));
+			new CreateBusinessProcessArgs("docker_fix2", JsonArgument.Text("   "), null));
 
 		// Assert
 		result.ExitCode.Should().Be(-1,
@@ -263,7 +263,7 @@ public class CreateBusinessProcessToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.CreateBusinessProcess(
-			new CreateBusinessProcessArgs("docker_fix2", accessRightsDescriptor, null));
+			new CreateBusinessProcessArgs("docker_fix2", JsonArgument.Text(accessRightsDescriptor), null));
 
 		// Assert
 		result.ExitCode.Should().Be(0,

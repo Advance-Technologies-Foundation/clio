@@ -70,7 +70,7 @@ public class ModifyBusinessProcessToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.ModifyBusinessProcess(
-			new ModifyBusinessProcessArgs("docker_fix2", SampleOperations, "UsrSampleProcess", null));
+			new ModifyBusinessProcessArgs("docker_fix2", JsonArgument.Text(SampleOperations), "UsrSampleProcess", null));
 
 		// Assert
 		result.ExitCode.Should().Be(0,
@@ -102,7 +102,7 @@ public class ModifyBusinessProcessToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.ModifyBusinessProcess(
-			new ModifyBusinessProcessArgs("docker_fix2", SampleOperations, "UsrSampleProcess", null));
+			new ModifyBusinessProcessArgs("docker_fix2", JsonArgument.Text(SampleOperations), "UsrSampleProcess", null));
 
 		// Assert
 		result.ExitCode.Should().Be(0, because: "the fake command reports a successful edit");
@@ -125,7 +125,7 @@ public class ModifyBusinessProcessToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.ModifyBusinessProcess(
-			new ModifyBusinessProcessArgs("docker_fix2", SampleOperations, "UsrSampleProcess", null));
+			new ModifyBusinessProcessArgs("docker_fix2", JsonArgument.Text(SampleOperations), "UsrSampleProcess", null));
 
 		// Assert
 		result.ExitCode.Should().NotBe(0, because: "the fake command reports a failed edit");
@@ -155,7 +155,7 @@ public class ModifyBusinessProcessToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.ModifyBusinessProcess(
-			new ModifyBusinessProcessArgs("docker_fix2", sendEmailOps, "UsrSampleProcess", null));
+			new ModifyBusinessProcessArgs("docker_fix2", JsonArgument.Text(sendEmailOps), "UsrSampleProcess", null));
 
 		// Assert
 		result.ExitCode.Should().Be(0,
@@ -190,7 +190,7 @@ public class ModifyBusinessProcessToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.ModifyBusinessProcess(
-			new ModifyBusinessProcessArgs("docker_fix2", changeDataOps, "UsrSampleProcess", null));
+			new ModifyBusinessProcessArgs("docker_fix2", JsonArgument.Text(changeDataOps), "UsrSampleProcess", null));
 
 		// Assert
 		result.ExitCode.Should().Be(0,
@@ -224,7 +224,7 @@ public class ModifyBusinessProcessToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.ModifyBusinessProcess(
-			new ModifyBusinessProcessArgs("docker_fix2", openEditPageOps, "UsrSampleProcess", null));
+			new ModifyBusinessProcessArgs("docker_fix2", JsonArgument.Text(openEditPageOps), "UsrSampleProcess", null));
 
 		// Assert
 		result.ExitCode.Should().Be(0,
@@ -275,7 +275,7 @@ public class ModifyBusinessProcessToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.ModifyBusinessProcess(
-			new ModifyBusinessProcessArgs("   ", SampleOperations, "UsrSampleProcess", null));
+			new ModifyBusinessProcessArgs("   ", JsonArgument.Text(SampleOperations), "UsrSampleProcess", null));
 
 		// Assert
 		result.ExitCode.Should().Be(-1,
@@ -296,7 +296,7 @@ public class ModifyBusinessProcessToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.ModifyBusinessProcess(
-			new ModifyBusinessProcessArgs("docker_fix2", SampleOperations, null, null));
+			new ModifyBusinessProcessArgs("docker_fix2", JsonArgument.Text(SampleOperations), null, null));
 
 		// Assert
 		result.ExitCode.Should().Be(-1,
@@ -317,7 +317,7 @@ public class ModifyBusinessProcessToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.ModifyBusinessProcess(new ModifyBusinessProcessArgs(
-			"docker_fix2", SampleOperations, "UsrSampleProcess", "5c58c4c4-134b-4744-9c67-96d9c69c9d55"));
+			"docker_fix2", JsonArgument.Text(SampleOperations), "UsrSampleProcess", "5c58c4c4-134b-4744-9c67-96d9c69c9d55"));
 
 		// Assert
 		result.ExitCode.Should().Be(-1,
@@ -338,7 +338,7 @@ public class ModifyBusinessProcessToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.ModifyBusinessProcess(
-			new ModifyBusinessProcessArgs("docker_fix2", "   ", "UsrSampleProcess", null));
+			new ModifyBusinessProcessArgs("docker_fix2", JsonArgument.Text("   "), "UsrSampleProcess", null));
 
 		// Assert
 		result.ExitCode.Should().Be(-1,
@@ -370,7 +370,7 @@ public class ModifyBusinessProcessToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.ModifyBusinessProcess(
-			new ModifyBusinessProcessArgs("docker_fix2", accessRightsOps, "UsrSampleProcess", null));
+			new ModifyBusinessProcessArgs("docker_fix2", JsonArgument.Text(accessRightsOps), "UsrSampleProcess", null));
 
 		// Assert
 		result.ExitCode.Should().Be(0,
