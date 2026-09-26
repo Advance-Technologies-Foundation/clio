@@ -26,5 +26,6 @@ through an unrelated shape. Before these members the only way to check one was a
 designer and looking, which is the situation ENG-95890/ENG-98448 exist to end.
 
 **One trap** — a field an agent can SEE is a field it will try to set. The tool description and the
-prompt both say the three are read-only for that reason; echoing them back into a modify changes nothing
-and is not an error, it is just noise.
+prompt both say the three are read-only for that reason. Echoed back into a write, they are REFUSED by
+CrtProcessBuilder 1.6.6.36 and later, each named as a read-only describe field (ENG-95244); an older package
+ignored them in silence.
