@@ -101,7 +101,7 @@ internal static class PackageBuildResultParser {
 	private static List<PackageBuildDiagnostic> ToDiagnostics(IEnumerable<DiagnosticPayload> payloads) =>
 		payloads?.Where(payload => payload is not null)
 			.Select(payload => new PackageBuildDiagnostic(payload.ErrorNumber, payload.ErrorText, payload.FileName,
-				payload.Line, payload.Column, payload.Warning || payload.IsWarning))
+				payload.Line ?? 0, payload.Column ?? 0, payload.Warning || payload.IsWarning))
 			.ToList() ?? [];
 
 	private sealed class ResponsePayload {
@@ -138,11 +138,13 @@ internal static class PackageBuildResultParser {
 		[JsonPropertyName("fileName")]
 		public string FileName { get; set; }
 
+		// Nullable so a diagnostic without a position does not make the whole verdict unreadable - an
+		// unreadable verdict falls back to history alone, which would hide a failure the answer reported.
 		[JsonPropertyName("line")]
-		public int Line { get; set; }
+		public int? Line { get; set; }
 
 		[JsonPropertyName("column")]
-		public int Column { get; set; }
+		public int? Column { get; set; }
 
 		[JsonPropertyName("warning")]
 		public bool Warning { get; set; }

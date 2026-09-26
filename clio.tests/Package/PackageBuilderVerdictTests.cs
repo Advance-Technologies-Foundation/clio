@@ -89,6 +89,25 @@ public sealed class PackageBuilderVerdictTests {
 	}
 
 	[Test]
+	[Description("A failure answer whose diagnostic carries no position (line/column null) is still read as a failure, instead of the whole verdict being dropped and the build falling back to clean history (issue #1633).")]
+	public void Rebuild_ShouldThrow_WhenFailureAnswerHasDiagnosticWithoutPosition() {
+		// Arrange
+		RespondWith(_ => Task.FromResult(Response(
+			"{\"success\":false,\"buildResult\":1,\"errors\":[{\"errorNumber\":\"CS0006\",\"errorText\":\"Metadata file not found\","
+			+ "\"fileName\":null,\"line\":null,\"column\":null,\"warning\":false}]}")));
+		StubPollWithRows();
+		PackageBuilder sut = CreateSut();
+
+		// Act
+		Action act = () => sut.Rebuild(["UsrPackage"]);
+
+		// Assert
+		act.Should().Throw<PackageCompilationException>(
+			because: "a missing position is not a reason to ignore Creatio's success:false");
+		_logger.Received(1).WriteError("(CS0006): Metadata file not found");
+	}
+
+	[Test]
 	[Description("An empty build response - an older host, or a proxy that answered without a body - keeps the old behaviour of succeeding on clean history, and warns that the environment did not report a result (issue #1633 guard for absent results).")]
 	public void Rebuild_ShouldWarnAndSucceed_WhenResponseCarriesNoResult() {
 		// Arrange
