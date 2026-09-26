@@ -52,7 +52,7 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 		CallToolResult result = await context.Session.CallToolAsync(
 			ToolContractGetTool.ToolName,
 			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> { ["tool-names"] = new[] { "create-business-process" } }
+				["args"] = new Dictionary<string, object?> { ["tool-names"] = new[] { CreateBusinessProcessTool.CreateBusinessProcessToolName } }
 			},
 			context.CancellationTokenSource.Token);
 		string text = string.Concat((result.Content ?? []).OfType<TextContentBlock>().Select(block => block.Text));
@@ -60,12 +60,14 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 		// Assert
 		AllureApi.Step("Assert the apostrophe arrives as itself", () =>
 			text.Should().Contain("descriptor's packageName",
-				because: "the create-business-process package-name field says so, and an apostrophe needs no escaping"));
+				because: "the process-build tool's package-name field says so, and an apostrophe needs no escaping"));
 		AllureApi.Step("Assert no HTML escape survives", () => {
 			text.Should().NotContain("\\u0027",
 				because: "the default encoder wrote an apostrophe as six characters; a JSON-RPC reader needs none of them");
 			text.Should().NotContain("\\u0022",
 				because: "the default encoder wrote a quote inside a string as six characters, not the two JSON needs");
+			text.Should().Contain("\\\"",
+				because: "anti-vacuity: the contract carries quotes inside strings, so the short escape must be there");
 		});
 	}
 

@@ -276,9 +276,10 @@ public sealed class DescribeProcessCommandTests {
 
 		// Assert
 		result.Should().Be(0, because: "a found process is described successfully");
-		written.Should().Contain("\"direction\":\"Variable\"",
+		JsonNode parameter = JsonNode.Parse(written)!["elements"]![0]!["parameters"]![0]!;
+		parameter["direction"]!.GetValue<string>().Should().Be("Variable",
 			because: "a parameter's direction must survive the clio DTO re-serialization so callers can classify it");
-		written.Should().Contain("\"isResult\":true",
+		parameter["isResult"]!.GetValue<bool>().Should().BeTrue(
 			because: "an element output (IsResult true) marks a parameter usable as a mapping source even when its direction is Variable, and must not be dropped by the clio DTO");
 	}
 
@@ -314,9 +315,10 @@ public sealed class DescribeProcessCommandTests {
 
 		// Assert
 		result.Should().Be(0, because: "a found process is described successfully");
-		written.Should().Contain("\"isOutput\":true",
+		JsonNode parameter = JsonNode.Parse(written)!["elements"]![0]!["parameters"]![0]!;
+		parameter["isOutput"]!.GetValue<bool>().Should().BeTrue(
 			because: "isOutput is the output marker agents are told to key on, and must survive the clio DTO");
-		written.Should().Contain("\"isResult\":false",
+		parameter["isResult"]!.GetValue<bool>().Should().BeFalse(
 			because: "the stored flag is still reported beside it, truthfully");
 	}
 

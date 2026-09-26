@@ -1,4 +1,3 @@
-using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Command.ProcessModel;
@@ -51,15 +50,15 @@ public class DescribeProcessCommand(IProcessDescriber describer, ILogger logger)
 	/// <para>COMPACT and with the relaxed encoder on purpose (ENG-99970). The description travels to an agent
 	/// as a STRING inside the command result, so it is JSON encoded a second time: indentation, line breaks
 	/// and every escaped character are paid twice. Indented, the graph of a ten-element process reached
-	/// 53-62 thousand characters on the wire - over Claude Code's inline limit, so every describe of the
-	/// measured process build was spilled to a file and grepped back, 22-26 shell turns per run. Compact
+	/// 53-62 thousand characters of result text - over Claude Code's inline limit, so every describe of the
+	/// measured process builds was spilled to a file and grepped back, 14-26 Grep calls per run. Compact
 	/// JSON is the same value, and this command has no CLI verb whose human reader it would inconvenience.
-	/// The relaxed encoder keeps a non-ASCII caption as its characters instead of a <c>\uXXXX</c> sequence
-	/// whose backslash the outer encoding then doubles.</para>
+	/// The MCP result encoder keeps a non-ASCII caption as its characters instead of a <c>\uXXXX</c> sequence
+	/// whose backslash the outer encoding then doubles, and still escapes invisible Format characters.</para>
 	/// </summary>
 	internal static readonly JsonSerializerOptions OutputOptions = new() {
 		WriteIndented = false,
-		Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+		Encoder = Clio.Command.McpServer.McpResultJsonEncoder.Instance,
 		DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
 	};
 
