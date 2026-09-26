@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using Clio.Command.StartProcess;
 using Clio.Command.TIDE;
@@ -53,6 +54,12 @@ public class PushWorkspaceCommand : Command<PushWorkspaceCommandOptions>{
 
 	#region Constructors: Public
 
+	[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+		Justification = "The command composes independent DI collaborators (workspace, unlock and TIDE-link "
+			+ "commands, client factory, environment settings, URL builder, logger); the page text inspector "
+			+ "joined them for the issue #1639 warning. Grouping them into a parameter object would hide the "
+			+ "injected contract without changing behaviour, which is how the other multi-collaborator commands "
+			+ "in this assembly are handled.")]
 	public PushWorkspaceCommand(IWorkspace workspace, UnlockPackageCommand unlockPackageCommand,
 		IApplicationClientFactory applicationClientFactory, EnvironmentSettings environmentSettings,
 		IServiceUrlBuilder serviceUrlBuilder, ILogger logger,
