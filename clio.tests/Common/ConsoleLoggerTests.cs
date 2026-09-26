@@ -120,6 +120,44 @@ internal class ConsoleLoggerTests
 	}
 
 	[Test]
+	[Description("Sends the console copy of WriteInfoToStderr to stderr outside --json while the log file still receives it like any [INF] line.")]
+	public void WriteInfoToStderr_ShouldWriteConsoleCopyToStderr_AndKeepLogFileCopy() {
+		// Arrange
+		Program.AddTimeStampToOutput = false;
+		ConsoleLogger logger = (ConsoleLogger)ConsoleLogger.Instance;
+		logger.Start();
+		logger.FlushAndSnapshotMessages();
+		TextWriter originalOut = Console.Out;
+		TextWriter originalError = Console.Error;
+		TextWriter originalLogFile = logger.LogFileWriter;
+		StringWriter stdout = new();
+		StringWriter stderr = new();
+		StringWriter logFile = new();
+		Console.SetOut(stdout);
+		Console.SetError(stderr);
+		logger.LogFileWriter = logFile;
+
+		// Act
+		try {
+			logger.WriteInfoToStderr("startup notice");
+			logger.FlushAndSnapshotMessages();
+		}
+		finally {
+			logger.LogFileWriter = originalLogFile;
+			Console.SetOut(originalOut);
+			Console.SetError(originalError);
+		}
+
+		// Assert
+		stderr.ToString().Should().Contain("[INF] - startup notice",
+			because: "the console copy of a startup notice must stay off stdout, which carries command output");
+		stdout.ToString().Should().NotContain("startup notice",
+			because: "programs that read stdout would otherwise receive the notice as data");
+		logFile.ToString().Should().Contain("[INF] - startup notice",
+			because: "a --log file records the notice exactly as it records WriteInfo");
+	}
+
+	[Test]
 	[Description("Flushes queued log messages before returning a preserved snapshot")]
 	public void FlushAndSnapshotMessages_Should_DrainQueuedMessages_BeforeReturningSnapshot() {
 		// Arrange
