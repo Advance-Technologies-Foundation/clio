@@ -126,7 +126,7 @@ public sealed class PushWorkspaceTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Pushes the local workspace at `workspace-path` to the specified Creatio environment")]
+	[Description("Pushes the local workspace at `workspace-path` to the specified Creatio environment. Emits a non-blocking warning per Freedom UI page schema whose user-visible text is an inline literal (the same text update-page rejects), naming the schema and elements.")]
 	public CommandExecutionResult PushWorkspace(
 		[Description("Push-workspace parameters")] [Required] PushWorkspaceArgs args
 	) {

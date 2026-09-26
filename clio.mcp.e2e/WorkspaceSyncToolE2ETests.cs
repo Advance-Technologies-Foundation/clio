@@ -69,6 +69,30 @@ public sealed class WorkspaceSyncToolE2ETests : McpContractFixtureBase {
 
 	[Category("McpE2E.Sandbox")]
 	[Test]
+	[Description("Pushes a workspace whose Freedom UI page sets a caption as an inline literal through MCP and verifies the push still succeeds while a warning names the schema and the offending element (issue #1639).")]
+	[AllureTag(PushToolName)]
+	[AllureName("Push workspace warns about inline page literals without failing")]
+	[AllureDescription("Adds a BlankPageTemplate child page with an inline-literal label caption to a fresh workspace package, invokes push-workspace through MCP, and verifies exit code 0 plus a Warning message carrying the schema name and the node.property the update-page gate would reject.")]
+	public async Task PushWorkspace_ShouldWarnAndSucceed_WhenPageHasInlineLiteralCaption() {
+		// Arrange
+		await using WorkspaceSyncArrangeContext arrangeContext = await ArrangeSandboxWorkspaceAsync();
+		string schemaName = $"{arrangeContext.PackageName}_Page";
+		AddInlineLiteralPageSchema(arrangeContext.WorkspacePath, arrangeContext.PackageName, schemaName);
+
+		// Act
+		WorkspaceCommandActResult pushResult = await ActWorkspaceCommandAsync(arrangeContext, PushToolName, arrangeContext.WorkspacePath);
+
+		// Assert
+		AssertToolCallSucceeded(pushResult);
+		AssertCommandExitCode(pushResult, 0, "the inline-literal check is advisory and must not fail push-workspace");
+		AssertIncludesWarningMessage(pushResult, $"Page schema '{schemaName}'",
+			"push-workspace should name the page schema whose text update-page would reject");
+		AssertIncludesWarningMessage(pushResult, "UsrLiteralLabel.caption",
+			"push-workspace should name the offending node and property");
+	}
+
+	[Category("McpE2E.Sandbox")]
+	[Test]
 	[Description("Creates a workspace and package with the real clio CLI, restores the configured package through MCP, and verifies its metadata while unrelated package content is preserved.")]
 	[AllureTag(PushToolName)]
 	[AllureTag(RestoreToolName)]
@@ -534,6 +558,47 @@ public sealed class WorkspaceSyncToolE2ETests : McpContractFixtureBase {
 	private static PackageMetadata ReadPackageMetadata(string workspacePath, string packageName) {
 		string descriptorPath = FindPackageDescriptorPath(workspacePath, packageName);
 		return ReadPackageMetadataFromDescriptor(descriptorPath);
+	}
+
+	// Writes a minimal BlankPageTemplate child page (descriptor, properties, metadata, body) that installs on the
+	// sandbox and carries one inline-literal caption. BlankPageTemplate's UId is a platform constant; the
+	// metadata references the owning package UId, read from the package descriptor.
+	private static void AddInlineLiteralPageSchema(string workspacePath, string packageName, string schemaName) {
+		const string BlankPageTemplateUId = "f691e828-0b36-42a7-898f-c337e9af67d0";
+		const string ClientUnitSchemaManagerUId = "f594acf1-d43f-4feb-87c2-45a1ec655d99";
+		string packageDescriptorPath = FindPackageDescriptorPath(workspacePath, packageName);
+		string packageUId;
+		using (JsonDocument document = JsonDocument.Parse(File.ReadAllText(packageDescriptorPath))) {
+			packageUId = document.RootElement.GetProperty("Descriptor").GetProperty("UId").GetString()!;
+		}
+		string schemaUId = Guid.NewGuid().ToString();
+		string schemaPath = Path.Combine(Path.GetDirectoryName(packageDescriptorPath)!, "Schemas", schemaName);
+		Directory.CreateDirectory(schemaPath);
+		File.WriteAllText(Path.Combine(schemaPath, "descriptor.json"),
+			"{\"Descriptor\":{\"UId\":\"" + schemaUId + "\",\"Name\":\"" + schemaName + "\"," +
+			"\"Parent\":{\"UId\":\"" + BlankPageTemplateUId + "\",\"Name\":\"BlankPageTemplate\"}," +
+			"\"ManagerName\":\"ClientUnitSchemaManager\",\"Caption\":\"" + schemaName + "\",\"DependsOn\":[]}}");
+		File.WriteAllText(Path.Combine(schemaPath, "properties.json"),
+			"{\"Properties\":{\"Group\":\"Page\",\"SchemaType\":\"AngularSchema\"}}");
+		File.WriteAllText(Path.Combine(schemaPath, "metadata.json"),
+			$"= MetaData.Schema.UId \"{schemaUId}\"\n" +
+			$"= MetaData.Schema.A2 \"{schemaName}\"\n" +
+			$"= MetaData.Schema.A5 \"{ClientUnitSchemaManagerUId}\"\n" +
+			$"= MetaData.Schema.B6 \"{packageUId}\"\n" +
+			$"= MetaData.Schema.HD1 \"{BlankPageTemplateUId}\"\n");
+		File.WriteAllText(Path.Combine(schemaPath, $"{schemaName}.js"),
+			$"define(\"{schemaName}\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ {{\n" +
+			"\treturn {\n" +
+			"\t\tviewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\": \"insert\", \"name\": \"UsrLiteralLabel\", " +
+			"\"values\": {\"type\": \"crt.Label\", \"caption\": \"Inline literal caption\", \"visible\": true}, " +
+			"\"parentName\": \"MainContainer\", \"propertyName\": \"items\", \"index\": 0}]/**SCHEMA_VIEW_CONFIG_DIFF*/,\n" +
+			"\t\tviewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/,\n" +
+			"\t\tmodelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/,\n" +
+			"\t\thandlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/,\n" +
+			"\t\tconverters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/,\n" +
+			"\t\tvalidators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/\n" +
+			"\t};\n" +
+			"});\n");
 	}
 
 	private static string FindPackageDescriptorPath(string workspacePath, string packageName) {

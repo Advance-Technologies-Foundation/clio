@@ -6422,7 +6422,8 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildPushWorkspace() {
 		return new ToolContractDefinition(
 			PushWorkspaceTool.PushWorkspaceToolName,
-			"Pushes the local workspace at workspace-path to the specified Creatio environment using the application installer.",
+			"Pushes the local workspace at workspace-path to the specified Creatio environment using the application installer. " +
+			"Before installing, it emits one non-blocking warning message per Freedom UI page schema whose user-visible text (caption, label, title, tooltip, placeholder) is an inline literal - the same text update-page rejects - naming the schema, its package, and the offending <node>.<property> elements; bind the text via $Resources.Strings.<Key> or #ResourceString(<Key>)# to clear it (see get-guidance page-schema-resources).",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, WorkspacePathFieldName],
 				[

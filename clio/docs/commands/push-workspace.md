@@ -50,6 +50,21 @@ clio push-workspace -e dev --use-application-installer
 Push the workspace using ApplicationInstaller
 ```
 
+## Notes
+
+Before installing, `push-workspace` checks every Freedom UI page schema in the
+workspace packages for user-visible text (`caption`, `label`, `title`, `tooltip`,
+`placeholder`) written as an inline literal. The MCP `update-page` tool rejects
+such text; `push-workspace` still installs it, but prints one warning per page
+schema with the schema name and the offending `<node>.<property>` elements, for example:
+
+```text
+[WAR] - Page schema 'UsrApp_FormPage' (package 'UsrApp') sets user-visible text as inline literals: UsrLabel.caption. ...
+```
+
+Bind the text via `$Resources.Strings.<Key>` or `#ResourceString(<Key>)#` and
+register the key in the schema resources to clear the warning.
+
 ## See Also
 
 create-workspace - Create a workspace
