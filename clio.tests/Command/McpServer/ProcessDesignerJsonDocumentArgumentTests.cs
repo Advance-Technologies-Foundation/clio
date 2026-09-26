@@ -192,6 +192,7 @@ public sealed class ProcessDesignerJsonDocumentArgumentTests {
 	[TestCase("", Description = "operations omitted")]
 	[TestCase(",\"operations\":null", Description = "operations null")]
 	[TestCase(",\"operations\":\"\"", Description = "operations an empty string")]
+	[TestCase(",\"operations\":\"   \"", Description = "operations a whitespace-only string")]
 	[Category("Unit")]
 	[Description("modify-business-process-as-new-version still treats absent, null and empty-string operations as the snapshot form, forwarding no operations rather than refusing the call.")]
 	public async Task ModifyProcessAsNewVersion_Should_KeepTheSnapshotForm_WhenOperationsAreAbsent(string operations) {
@@ -210,6 +211,24 @@ public sealed class ProcessDesignerJsonDocumentArgumentTests {
 			because: "the call must reach the command before what it received can be asserted");
 		command.CapturedOptions!.OperationsJson.Should().BeEmpty(
 			because: "the snapshot form reaches the command as no operations, exactly as before ENG-100153");
+	}
+
+	[TestCase(JsonValueKind.String)]
+	[TestCase(JsonValueKind.Number)]
+	[TestCase(JsonValueKind.Undefined)]
+	[Category("Unit")]
+	[Description("The JSON-document reader accepts only Object or Array as the expected kind, and throws on any other: a caller passing String would make every string argument 'the expected kind' and silently skip the kind check.")]
+	public void TryReadJsonDocumentArgument_Should_Throw_WhenTheExpectedKindIsNotAContainer(JsonValueKind expectedKind) {
+		// Arrange
+		JsonElement value = JsonDocument.Parse("{}").RootElement.Clone();
+
+		// Act
+		System.Action act = () => McpToolArgumentSupport.TryReadJsonDocumentArgument(value, expectedKind, "descriptor",
+			out _, out _);
+
+		// Assert
+		act.Should().Throw<System.ArgumentOutOfRangeException>(
+			because: "a non-container expected kind is a programming error, not a caller mistake to word back");
 	}
 
 	private static McpServerTool CreateTool(FakeCreateCommand command) {
