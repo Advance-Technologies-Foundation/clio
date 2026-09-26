@@ -113,6 +113,75 @@ public sealed class CreateBusinessProcessToolE2ETests {
 	}
 
 	[Test]
+	[Description("Over the real MCP path, create-business-process builds a process from a descriptor sent as a JSON OBJECT rather than a string (ENG-100153), and describe reads it back. Before that change the binder refused the object before the tool ran, so an agent had to serialize and escape the descriptor through a shell.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process builds a process from an object descriptor")]
+	public async Task CreateBusinessProcess_Should_BuildProcess_FromAnObjectDescriptor() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpE2e{Guid.NewGuid():N}";
+		using JsonDocument descriptor = JsonDocument.Parse(BuildDescriptor(processName));
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = descriptor.RootElement.Clone()
+		});
+
+		// Assert
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		callResultJson.Should().NotContain("invalid-parameter-type",
+			because: "an object descriptor must bind; the refusal this replaces came from the binder, before the tool body");
+		callResultJson.Should().Contain(processName,
+			because: "a successful build from an object descriptor reports the created schema name, exactly as the string form does");
+		string describeJson = JsonSerializer.Serialize(await DescribeAsync(context, processName));
+		describeJson.Should().Contain("task1",
+			because: "the read-back graph must contain the element the object descriptor declared - an echo is not a build");
+	}
+
+	[Test]
+	[Description("Over the real MCP path, with no Creatio needed, an OBJECT descriptor gets past the binder into the tool body: the call is answered by the tool's own environment check rather than by an invalid-parameter-type refusal (ENG-100153). This is the binder layer the unit tests reach only through an in-process SDK adapter.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process binds an object descriptor over the real server")]
+	public async Task CreateBusinessProcess_Should_BindAnObjectDescriptor_BeforeTheToolRuns() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: false);
+		using JsonDocument descriptor = JsonDocument.Parse(BuildDescriptor("UsrAccount_Onboard"));
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = "   ",
+			["descriptor"] = descriptor.RootElement.Clone()
+		});
+
+		// Assert
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		callResultJson.Should().NotContain("invalid-parameter-type",
+			because: "the object descriptor must bind rather than be refused as a non-string before the tool runs");
+		callResultJson.Should().Contain("environment-name is required and cannot be empty",
+			because: "the tool's own first guard answering proves the call reached the tool body with the object bound");
+	}
+
+	[Test]
+	[Description("Over the real MCP path, with no Creatio needed, a descriptor that is neither an object nor a string holding one is refused by the tool with a message naming both accepted forms (ENG-100153).")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process refuses a descriptor of the wrong JSON kind")]
+	public async Task CreateBusinessProcess_Should_RefuseADescriptorOfTheWrongKind() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: false);
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = "sandbox",
+			["descriptor"] = new[] { 1, 2, 3 }
+		});
+
+		// Assert
+		JsonSerializer.Serialize(callResult).Should().Contain("descriptor must be a JSON object, or a string holding one",
+			because: "an array is not a descriptor, and the refusal must name both forms the tool accepts");
+	}
+
+	[Test]
 	[Description("Over the real MCP path, create-business-process accepts the ENG-92127 type-mirror (typeFromElement) parameter, and describe-business-process reads the built process back with each parameter's direction surfaced.")]
 	[AllureTag(ToolName)]
 	[AllureName("create-business-process mirrors an element parameter's type and describe surfaces direction")]

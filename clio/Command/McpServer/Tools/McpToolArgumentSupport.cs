@@ -356,4 +356,58 @@ internal static class McpToolArgumentSupport {
 		}
 		return matrix[left.Length, right.Length];
 	}
+
+	/// <summary>
+	/// Reads a JSON-document argument that a caller may send EITHER as the JSON value itself or as a string
+	/// holding its JSON text, and returns the text the command layer parses.
+	/// </summary>
+	/// <remarks>
+	/// ENG-100153. The process-designer tools used to bind these arguments as <see cref="string"/>, so the
+	/// natural call - the descriptor as a JSON object - was refused by the binder before the tool ran, and an
+	/// agent had to serialize, escape and re-check the document through a shell to hand over a value it
+	/// already held. Binding as <see cref="JsonElement"/> and normalizing here accepts both forms without a
+	/// converter: a converter can only reject by throwing into the binder, which answers with a statement
+	/// about a .NET type instead of this contract (see
+	/// <c>docs/knowledge/McpServer/odata-read-column-lists-bind-loosely-on-purpose.md</c>).
+	/// <para>
+	/// A string is returned VERBATIM, never parsed here: that keeps the long-standing string form
+	/// byte-identical, and leaves "not valid JSON" / "must be a JSON object" to the command, which already
+	/// words them. A value of the expected kind is returned as its raw JSON text, so the command sees the
+	/// same document the caller sent.
+	/// </para>
+	/// </remarks>
+	/// <param name="value">The bound argument; <see cref="JsonValueKind.Undefined"/> when the key was absent.</param>
+	/// <param name="expectedKind">The container kind the document must be: an object or an array.</param>
+	/// <param name="argumentName">The wire name, used in the refusal.</param>
+	/// <param name="json">The JSON text to hand to the command, or empty on refusal.</param>
+	/// <param name="error">The refusal, or empty when <paramref name="json"/> is usable.</param>
+	/// <returns><see langword="true"/> when <paramref name="json"/> holds text for the command to parse.</returns>
+	public static bool TryReadJsonDocumentArgument(JsonElement value, JsonValueKind expectedKind,
+		string argumentName, out string json, out string error) {
+		json = string.Empty;
+		error = string.Empty;
+		string expected = expectedKind == JsonValueKind.Array ? "a JSON array" : "a JSON object";
+		switch (value.ValueKind) {
+			case JsonValueKind.Undefined:
+			case JsonValueKind.Null:
+				error = $"{argumentName} is required and cannot be empty.";
+				return false;
+			case JsonValueKind.String:
+				string text = value.GetString() ?? string.Empty;
+				if (string.IsNullOrWhiteSpace(text)) {
+					error = $"{argumentName} is required and cannot be empty.";
+					return false;
+				}
+				json = text;
+				return true;
+			default:
+				if (value.ValueKind != expectedKind) {
+					error = $"{argumentName} must be {expected}, or a string holding one. "
+						+ $"Received a JSON {value.ValueKind.ToString().ToLowerInvariant()}.";
+					return false;
+				}
+				json = value.GetRawText();
+				return true;
+		}
+	}
 }

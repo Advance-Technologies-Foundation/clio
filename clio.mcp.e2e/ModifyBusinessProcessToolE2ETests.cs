@@ -53,6 +53,31 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	}
 
 	[Test]
+	[Description("Over the real MCP path, with no Creatio needed, operations sent as a JSON ARRAY get past the binder into the tool body - the call is answered by the tool's own environment check, not by an invalid-parameter-type refusal (ENG-100153).")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process binds an operations array over the real server")]
+	public async Task ModifyBusinessProcess_Should_BindAnOperationsArray_BeforeTheToolRuns() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: false);
+		using JsonDocument operations = JsonDocument.Parse(
+			"[{\"op\":\"removeElement\",\"elementName\":\"NotifyAccountOwner\"}]");
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = "   ",
+			["process-name"] = "UsrAccount_Onboard",
+			["operations"] = operations.RootElement.Clone()
+		});
+
+		// Assert
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		callResultJson.Should().NotContain("invalid-parameter-type",
+			because: "an operations array must bind rather than be refused as a non-string before the tool runs");
+		callResultJson.Should().Contain("environment-name",
+			because: "the tool's own first guard answering proves the call reached the tool body with the array bound");
+	}
+
+	[Test]
 	[Description("Over the real MCP path, setFlow re-kinds an existing flow in place — the operation ENG-91853 added and the one nothing else in this suite sends. Two directions in one call, because they fail differently: sequence -> conditional must store the condition, and conditional -> sequence is the clear-condition route. The source is an ORDINARY element, and that is the correction: an earlier version of this test asked for kind sequence on a flow out of a GATEWAY, which the builder refuses whenever a conditional sibling exists, so its expected outcome was unreachable and the operation before it could never have been committed either. Unit tests build the operation record positionally in C#, so the JSON binder for op/kind/condition is exercised nowhere else.")]
 	[AllureTag(ToolName)]
 	[AllureName("modify-business-process re-kinds a flow with setFlow in both directions")]

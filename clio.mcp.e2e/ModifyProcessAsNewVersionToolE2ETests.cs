@@ -58,6 +58,31 @@ public sealed class ModifyProcessAsNewVersionToolE2ETests {
 	}
 
 	[Test]
+	[Description("Over the real MCP path, with no Creatio needed, operations sent as a JSON ARRAY get past the binder into the tool body - the call is answered by the tool's own environment check, not by an invalid-parameter-type refusal (ENG-100153).")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process-as-new-version binds an operations array over the real server")]
+	public async Task ModifyProcessAsNewVersion_Should_BindAnOperationsArray_BeforeTheToolRuns() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: false);
+		using JsonDocument operations = JsonDocument.Parse(
+			"[{\"op\":\"removeElement\",\"elementName\":\"NotifyAccountOwner\"}]");
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = "   ",
+			["process-name"] = "UsrAccount_Onboard",
+			["operations"] = operations.RootElement.Clone()
+		});
+
+		// Assert
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		callResultJson.Should().NotContain("invalid-parameter-type",
+			because: "an operations array must bind rather than be refused as a non-string before the tool runs");
+		callResultJson.Should().Contain("environment-name",
+			because: "the tool's own first guard answering proves the call reached the tool body with the array bound");
+	}
+
+	[Test]
 	[Description("Over the real MCP path, builds a process and then saves an EDITED copy of it as a new version, then reads the family back through describe-business-process to confirm the new member exists, is inactive, and carries the edit.")]
 	[AllureTag(ToolName)]
 	[AllureName("modify-business-process-as-new-version creates an inactive version carrying the edit")]
