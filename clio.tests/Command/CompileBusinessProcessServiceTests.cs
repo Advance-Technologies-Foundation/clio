@@ -270,6 +270,8 @@ public sealed class CompileBusinessProcessCommandTests {
 		_logger.Received(1).WriteError(Arg.Is<string>(message => message.StartsWith("UsrOther.Custom.cs(5,1)")
 			&& message.Contains("[another schema of the package]")));
 		_logger.Received(1).WriteError("... and 3 more error(s) not listed.");
+		// A compile that ran and failed tells the caller its consent was spent on this one.
+		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("ask the user again")));
 	}
 
 	[Test]

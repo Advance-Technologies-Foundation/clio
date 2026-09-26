@@ -272,6 +272,23 @@ public sealed class CompileCreatioToolTests
 		commandResolver.DidNotReceive().Resolve<CompileConfigurationCommand>(Arg.Any<CompileConfigurationOptions>());
 	}
 
+	[TestCase("", null)]
+	[TestCase("   ", null)]
+	[TestCase(null, " ")]
+	[Category("Unit")]
+	[Description("The compile prompt treats a blank package-name or process-name the way the tool does: not as omitted, so it never hands out the full-compilation guidance for an empty scoped request.")]
+	public void CompileCreatioPrompt_Should_NotOfferAFullCompile_ForABlankScope(string? packageName, string? processName)
+	{
+		// Act
+		string prompt = FsmAndCompilePrompt.CompileCreatio("sandbox", packageName, processName);
+
+		// Assert
+		prompt.Should().Contain("is not a request for a full compilation",
+			because: "the tool refuses a blank scope, and the prompt must not contradict it");
+		prompt.Should().NotContain("--all`",
+			because: "the full-compilation guidance belongs to an omitted scope, not an empty one");
+	}
+
 	[TestCase("")]
 	[TestCase("   ")]
 	[Category("Unit")]

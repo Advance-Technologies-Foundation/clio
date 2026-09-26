@@ -288,6 +288,13 @@ public class CompileBusinessProcessCommand(
 		if (omitted > 0) {
 			logger.WriteError($"... and {omitted} more error(s) not listed.");
 		}
+		// Measured in a manual run (ENG-92711 TC-06): after a failed compile the agent fixed its code and compiled
+		// again on the strength of the first answer. Each compile reloads the runtime for every user, so the
+		// consent covers one call; the failure says so where the retry is decided.
+		if (result.Compiled) {
+			logger.WriteError("Fix the code, then ask the user again before the next compile: their answer covered "
+				+ "this compile only, and every compile reloads the runtime for every user of the environment.");
+		}
 	}
 }
 

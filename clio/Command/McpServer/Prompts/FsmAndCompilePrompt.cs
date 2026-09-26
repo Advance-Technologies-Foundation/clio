@@ -58,7 +58,17 @@ public static class FsmAndCompilePrompt
 		string? packageName = null,
 		[Description("Optional business process code: compile the package that process is in")]
 		string? processName = null) =>
-		!string.IsNullOrWhiteSpace(processName)
+		// A blank scope is refused by the tool rather than read as "omitted", so the prompt does not hand out the
+		// full-compilation guidance for one either.
+		(processName is not null && string.IsNullOrWhiteSpace(processName))
+			|| (packageName is not null && string.IsNullOrWhiteSpace(packageName))
+			? $"""
+			  An empty `package-name` or `process-name` is not a request for a full compilation: `{Tools.CompileCreatioTool.CompileCreatioToolName}`
+			  refuses it. Ask the user which package or business process to compile on `{environmentName}`, or omit both
+			  arguments for a full compilation - after warning the user that any compile reloads the runtime for every
+			  connected user and getting their confirmation.
+			  """
+			: !string.IsNullOrWhiteSpace(processName)
 			? $"""
 			  Compilation is a HEAVY operation that forces a runtime reload affecting every user connected to
 			  `{environmentName}`. First warn the user and ask whether to compile now or postpone (every time, not

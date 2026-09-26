@@ -9,7 +9,7 @@ This file records only what the implementation decided and what the stand measur
 
 | Repository | What |
 |---|---|
-| crt-process-builder | `scriptTask` element (create, addElement, setElement, describe); process-level `usings[]`, `addUsing` / `removeUsing`, describe `usings[]`; process methods `methods`, `setMethods`, describe `methods` / `compiledMethods`; the save-time script notices; the `CompileProcess` endpoint (Q8); CrtProcessBuilder 1.6.6.33 |
+| crt-process-builder | `scriptTask` element (create, addElement, setElement, describe); process-level `usings[]`, `addUsing` / `removeUsing`, describe `usings[]`; process methods `methods`, `setMethods`, describe `methods` / `compiledMethods`; the save-time script notices; the `CompileProcess` endpoint (Q8); CrtProcessBuilder 1.6.6.34 (`CompileProcess` works from 1.6.6.33) |
 | clio | describe DTOs (`DescribedScriptTask`, `DescribedUsing`); create/modify compile note GATED on the server's compile-required warning instead of appended unconditionally; tool descriptions; `compile-creatio process-name` (Q8) with `compile-status` naming the process; `[RequiresPackage]` 1.6.6.30 for create / modify / new version and 1.6.6.33 for the process compile; bundled archive 1.6.6.34; unit + E2E coverage |
 | clio-knowledge | `process-script-task` rewritten around WHEN to use a script task, how clio builds one, default namespaces, usings and aliases; catalog / modeling / routing no longer call it unbuildable; libraryVersion 1.15.80 |
 
