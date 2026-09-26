@@ -31,7 +31,8 @@ handles, none visible from the service signatures:
    `administratedByOperations=true`, and the server then adds an `All employees` row with
    read/create/edit/delete on its own. Observed on Creatio 8.3.4.2845 (.NET Framework, stand
    `kravchuk_0922`, 2026-09-25) for the root AND for every connected lookup the fan-out enabled, section
-   objects and plain dictionaries alike; not verified on other versions, so read the object back.
+   objects and plain dictionaries alike; not verified on other versions, so the client reads the object
+   back after enabling and `set-object-rights` fails when only the grantee holds rights afterwards.
 
 3. **The save sends the collections it did NOT change as `null`** — `entitySchemaRecordDefRights`,
    `entitySchemaColumnsRights`, `entityOperationGrantees`. This mirrors the Freedom "Object permissions"

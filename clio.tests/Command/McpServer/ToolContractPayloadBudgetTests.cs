@@ -63,8 +63,9 @@ public sealed class ToolContractPayloadBudgetTests {
 	// Baseline before this branch (issue #1221): odata-read-to-file put the default index at a measured
 	// 45223 bytes, pinned to 177 * 256 = 45312. ENG-99741 then adds the matched set-object-rights /
 	// get-object-rights long-tail pair (object-level access grant + its read companion) — two ordinary
-	// long-tail additions, not sustained catalog growth — which grow the index by two more entries; the
-	// ceiling is re-pinned to the next 256-byte step above the re-measured size (see the assertion output).
+	// long-tail additions, not sustained catalog growth — which grow the index by two more entries. Re-measured
+	// at 45697 bytes on the default surface after merging master at 5796d1a88 (ENG-99741 final review), so the
+	// ceiling is re-pinned to the next 256-byte step: 179 * 256 = 45824.
 	// Serialization uses the default JSON encoder,
 	// which escapes non-ASCII (a purpose ellipsis is written as a 6-byte escape), so it over-counts the real
 	// UTF-8 wire size — conservative, which is the safe direction for a ceiling.
