@@ -41,7 +41,7 @@ internal static class ProcessDesignerE2EArrange {
 	/// sends the developer to the test instead of to the stand.
 	/// </param>
 	internal static async Task<ProcessDesignerArrangeContext> StartAsync(string subject,
-			string minimumPackageVersion) {
+			string minimumPackageVersion, TimeSpan? sessionTimeout = null) {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string environmentName = settings.Sandbox.EnvironmentName;
@@ -54,7 +54,8 @@ internal static class ProcessDesignerE2EArrange {
 				+ $"'{environmentName}' was not reachable.");
 		}
 		await EnsurePackageIsNewEnoughAsync(settings, environmentName, subject, minimumPackageVersion);
-		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
+		// Three minutes covers every save-and-read scenario; a fixture that waits for a compile passes a longer one.
+		CancellationTokenSource cancellationTokenSource = new(sessionTimeout ?? TimeSpan.FromMinutes(3));
 		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
 		return new ProcessDesignerArrangeContext(session, cancellationTokenSource, environmentName);
 	}

@@ -50,8 +50,9 @@ public static class ValidateProcessGraphPrompt {
 		catalog, while the builder creates the slice `validate-process-graph`'s own tool description
 		publishes, joined by all three flow kinds declaratively (`flows[].kind` with
 		`flows[].condition`). Still out of reach:
-		inclusiveGateway, eventBasedGateway, timer/message starts, intermediate events, and formula and
-		script tasks. Branching on an activity RESULT is NOT on that list any more: it is declared as the
+		inclusiveGateway, eventBasedGateway, timer/message starts and intermediate events; the Formula
+		and Script task elements are buildable (a Script task makes the process need a compile).
+		Branching on an activity RESULT is NOT on that list any more: it is declared as the
 		edge's `results`, exactly as step 3 above says, and a formula on such a connector is refused by
 		the build. The Sub-process element
 		(`callActivity` here, `subProcess` in a descriptor) IS buildable; the EVENT and EXPANDED

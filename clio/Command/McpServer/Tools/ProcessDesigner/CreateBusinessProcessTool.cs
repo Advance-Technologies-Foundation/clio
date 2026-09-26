@@ -47,7 +47,7 @@ public class CreateBusinessProcessTool(
 		 + "BEFORE CALLING with an accessRights block: that block changes who can read, edit or delete LIVE records. Show the user the target object, the element record filter that decides WHICH records are affected, and every grantee with its operations and level - calling out level:delegate as onward re-sharing, level:restrict as the platform Deny level, which is DESTRUCTIVE rather than inert: it DOWNGRADES an existing Allow row for that grantee to Deny, and on a fresh insert denies the two operations you did not name, so it deserves the same confirmation as a remove, a remove entry as a revoke, and a supplied add/remove as a REPLACEMENT that drops every entry it does not restate - and get an explicit yes. An ABSENT filter is the WIDE state, not a safe one: the element then applies the change to EVERY record of its object, with record permissions disabled, and nothing warns you. The element has no output parameters, so nothing at run time will report what it did. "
 		 + "The descriptor is an object with: name (schema code), caption, packageName, elements[] "
 		 + "({name (the element handle/local code), type:startEvent|signalStart|endEvent|userTask|sendEmail|approval|exclusiveGateway|parallelGateway|formulaTask|"
-		 + "openEditPage|preconfiguredPage|subProcess (aliases readData/changeData/addData/deleteData/changeAccessRights/performTask), caption, userTaskName?, "
+		 + "openEditPage|preconfiguredPage|subProcess|scriptTask (aliases readData/changeData/addData/deleteData/changeAccessRights/performTask), caption, userTaskName?, "
 		+ "addData? (addData elements only - CREATES records: {source:<EntityName> (required), mode?:one|selection, selection?:<EntityName> (required in selection mode), values?:[{column, and exactly ONE of value|processParameter|sourceElement+sourceElementParameter|selectionColumn|expression}]} - values may be OMITTED or empty (inserts a row of the target's defaults; a required column left unset WARNS rather than refuses). WHICH selection records qualify is the element's separate filter, over the SELECTION object. ONLY output: the new record's id, on RecordId (NOT listed by describe-business-process - map it by name); get-guidance name=process-add-data owns the block in full), "
 		 + "approval? (approval elements only — the designer's Approval element, which requests a visa on a record: "
 		 + "{object:<EntityName> (required on a first configuration — the object whose record goes for approval, "
@@ -295,20 +295,14 @@ public class CreateBusinessProcessTool(
 		 + "element output as a process output); source is exactly one of {sourceElement, sourceElementParameter} "
 		 + "(another element's output), processParameter, value, or expression. An 'expression' is a FORMULA, "
 		 + "validated by the PLATFORM at the pre-save gate — so a bad one aborts the whole build with 'Process "
-		 + "validation failed' and nothing is created. On CrtProcessBuilder this clio requires 1.6.6.14 (for "
-		 + "subProcess.multiInstanceOptions {enabled, executionMode, ignoreErrors}), which is "
+		 + "validation failed' and nothing is created. On CrtProcessBuilder this clio requires 1.6.6.30 (for "
+		 + "scriptTask, usings[], methods and subProcess.multiInstanceOptions {enabled, executionMode, ignoreErrors}), which is "
 		 + "NOT where that collapse happened: 1.4.0.41 is where the PACKAGE stopped validating formulas a second "
 		 + "time and the platform's gate became the only one, and .44 is simply the first archive carrying that "
 		 + "AND the ENG-96325 lookup-constant contract. Below .41 a refused formula still fails, "
-		 + "with the package's own wording. The floor first left .44 for 1.4.0.60 for a different KIND of "
-		 + "reason. flows[].kind and the two gateway type tokens arrive in .58, which accepts them; what .60 adds "
-		 + "is the by-name condition expansion, and below it a flows[].condition can only reference a system "
-		 + "setting - 88% of real conditions name a "
-		 + "parameter, which needs the server-side expansion. That expansion reaches 65% of them, not all: a "
-		 + "condition on a COLUMN of a read record ([Element].[Parameter].[EntityColumn], 242 of the 487 "
-		 + "element-output conditions in the shipped product) has a third segment the name form cannot say, "
-		 + "and still belongs to the modify step. The capability, not the wording of a refusal, is what this "
-		 + "floor buys. "
+		 + "with the package's own wording. The by-name condition expansion does not reach a condition on a "
+		 + "COLUMN of a read record ([Element].[Parameter].[EntityColumn]): its third segment has no name form, "
+		 + "so it still belongs to the modify step. "
 		 + "(Shared with modify-business-process. A conditional branch IS built here, through flows[].kind and "
 		 + "flows[].condition above; a branch on an activity RESULT is built here too, from 1.6.2.23, with flows[].results.) "
 		 + "The formula itself: ONE line, "
@@ -344,11 +338,16 @@ public class CreateBusinessProcessTool(
 		 + "owned by get-guidance name=process-element-catalog; accessRights by name=process-access-rights; an "
 		 + "`expression` mapping source or a conditional-flow condition by name=process-formulas. Use "
 		 + "list-user-tasks to discover valid userTaskName values. Requires the ProcessDesignService "
-		 + "(CrtProcessBuilder) package; install with install-process-builder. After a successful create the "
-		 + "process is INTERPRETED and runs as-is: do NOT run compile-creatio, and do NOT infer a compile need "
-		 + "from a raw `VwSysProcess` read — verify with describe-business-process, whose response carries a "
-		 + "compile-not-required note; a compile is needed only for a Script Task (custom C#), which clio "
-		 + "cannot author. A SUCCESSFUL build can still report caveats as message-type \"Warning\" entries in "
+		 + "(CrtProcessBuilder) package; install with install-process-builder. A process with no scriptTask or methods is "
+		 + "INTERPRETED and runs as-is, and the result carries the compile-not-required note: do NOT run compile-creatio, "
+		 + "and do NOT infer a compile need from a raw `VwSysProcess` read. A scriptTask is C# the platform compiles - "
+		 + "scriptTask:{body} holds method STATEMENTS ending in return true; reading and writing parameters ONLY "
+		 + "through Get/Set by case-sensitive name, and namespaces beyond the defaults go in top-level "
+		 + "usings[]:[{namespace, alias?}]; helpers several of its scripts share go in top-level methods: C# CLASS "
+		 + "members as one string (Get/Set work there too). It is the last resort after no-code elements, formulas and a compiled "
+		 + "user task (read get-guidance name=process-script-task first); its result carries a compile-REQUIRED "
+		 + "warning instead of the note, and then, after asking the user, compile-creatio with process-name is owed. Either signal "
+		 + "speaks for THIS call only: a compile an earlier save made owed is still owed. A SUCCESSFUL build can still report caveats as message-type \"Warning\" entries in "
 		 + "execution-log-messages (there is no separate warnings field) — a Pre-configured page whose "
 		 + "referenced page could not be loaded is built and SAVED carrying none of that page's parameters.")]
 	[McpToolExecution(
@@ -385,21 +384,12 @@ public class CreateBusinessProcessTool(
 			DescriptorJson = args.Descriptor,
 			PackageName = args.PackageName ?? string.Empty
 		};
-		// A business process built by clio is interpreted and runs as-is — it never needs compilation
-		// (clio cannot author a Script Task or an after-activity-save script, the only in-process C#).
-		// Emit the deterministic post-op note on success (same channel as update-entity-schema / create-page)
-		// so "created" is not mistaken for "must be compiled to run" — the note is the one reply the caller
-		// cannot skip. Do NOT run compile-creatio, and do not infer one from a raw process read (ENG-95706).
+		// A process with no script task is interpreted and runs as-is, and the deterministic post-op note says
+		// so - the one reply the caller cannot skip (ENG-95706). A script task is the exception: the server
+		// then warns that the process cannot run "until the configuration is compiled", and the gate drops the
+		// note rather than contradict it (ENG-92711). The gate appends, so a command-set note stays.
 		CommandExecutionResult result = InternalExecute<CreateBusinessProcessCommand>(options);
-		if (result.ExitCode != 0) {
-			return result;
-		}
-		// Append (not clobber) so a command-set success note is preserved (mirrors PageCreateTool).
-		return result with {
-			Note = string.IsNullOrWhiteSpace(result.Note)
-				? CommandExecutionResult.CompileNotRequiredNote
-				: result.Note + " " + CommandExecutionResult.CompileNotRequiredNote
-		};
+		return result.ExitCode != 0 ? result : result.WithCompileNotRequiredNote();
 	}
 }
 
@@ -414,7 +404,7 @@ public sealed record CreateBusinessProcessArgs(
 
 	[property: JsonPropertyName("descriptor")]
 	[property: Description("The process descriptor (name, caption, packageName, elements[], flows[], "
-		+ "parameters[], mappings[]) SERIALIZED AS A JSON STRING - not a nested object. Passing a real object "
+		+ "parameters[], mappings[], usings[], methods) SERIALIZED AS A JSON STRING - not a nested object. Passing a real object "
 		+ "fails with \"Cannot get the value of a token type 'StartObject' as a string\".")]
 	[property: Required]
 	string Descriptor,

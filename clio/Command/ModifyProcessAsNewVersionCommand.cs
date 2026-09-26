@@ -28,7 +28,7 @@ namespace Clio.Command;
 // thing standing between the caller and a silently wrong version. The lockout argument that kept it at 1.6.1.0
 // for one review round (refusing the whole versioning route on a 1.6.1.x environment for a field most
 // operations arrays never carry) no longer buys anything: BundledPackageConvergence already refuses every
-// environment below the archive clio ships (1.6.6.14 today, 1.6.2.1 when this was written) on this same
+// environment below the archive clio ships (1.6.2.1 when this was written; see the bundled archive) on this same
 // command, so the raise adds no refusal in
 // normal mode and is the one fail-closed refusal left in convergence's degraded warn-and-allow modes.
 // Raised to 1.6.6.14 by ENG-99856: `subProcess.multiInstanceOptions`, the dotted per-item path on
@@ -41,7 +41,14 @@ namespace Clio.Command;
 // The dotted path fails differently and just as quietly: an older server resolves `elementParameter` flat
 // only, finds no parameter of that name and refuses - loudly, but naming a parameter rather than the
 // package. 1.6.6.14 is the archive cut from crt-process-builder 13bd2a2.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.14",
+// Raised to 1.6.6.30 by ENG-92711: the Script task (`type:"scriptTask"` + its `scriptTask` block), the
+// process-level `usings[]` and `methods`, and the `addUsing` / `removeUsing` / `setMethods` operations. The
+// same silent-discard shape once more: the scriptTask TYPE and the three operations are refused loudly by
+// an older server, but a build's top-level `usings[]` and `methods` - and a `scriptTask` block riding a
+// setElement beside another field - are dropped by
+// its serializer while the call answers success, and the process then fails its compile on a namespace
+// nobody knows was lost.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.30",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class ModifyProcessAsNewVersionOptions : EnvironmentOptions {
 	/// <summary>Process code (schema Name) of the SOURCE. Provide exactly one of <see cref="ProcessName"/> or <see cref="ProcessUid"/>.</summary>

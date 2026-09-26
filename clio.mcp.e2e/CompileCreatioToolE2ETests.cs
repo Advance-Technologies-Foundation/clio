@@ -136,6 +136,31 @@ public sealed class CompileCreatioToolE2ETests : McpContractFixtureBase
 			because: "looking up a tracked operation is a successful lookup whatever the compile's own outcome, so a false here would mean the poll itself failed rather than the compile");
 	}
 
+	[Test]
+	[AllureTag(ToolName)]
+	[AllureDescription("Starts the real clio MCP server and calls compile-creatio with a blank package-name. The tool must refuse it before anything is resolved or reserved: read as 'no package-name', a blank would run a FULL compile - a runtime reload for every user - that the user never agreed to.")]
+	[AllureName("Compile Creatio refuses a blank package-name")]
+	[Description("A blank package-name is refused through the real MCP server, and no compile operation is tracked for the environment, so nothing was started.")]
+	public async Task CompileCreatio_WithABlankPackageName_Should_RefuseWithoutStartingACompile()
+	{
+		// Arrange
+		await using var arrangeContext = Arrange();
+		string environmentName = $"blank-package-env-{Guid.NewGuid():N}";
+
+		// Act
+		CompileCreatioActResult actResult = await ActAsync(arrangeContext, environmentName, packageName: "   ");
+		CompileStatusResponse status = await ActStatusAsync(arrangeContext, environmentName);
+
+		// Assert
+		AssertToolCallFailed(actResult);
+		string combinedOutput = string.Join(Environment.NewLine,
+			(actResult.Execution.Output ?? []).Select(message => message.Value?.ToString()));
+		combinedOutput.Should().Contain("`package-name` is empty",
+			because: "the refusal names the blank argument instead of reporting an environment failure");
+		status.Status.Should().Be("not-found",
+			because: "the refusal comes before the operation is registered, so no compile was started or reserved");
+	}
+
 	private static async Task<CompileStatusResponse> ActStatusAsync(
 		ArrangeContext arrangeContext,
 		string environmentName)
@@ -156,7 +181,8 @@ public sealed class CompileCreatioToolE2ETests : McpContractFixtureBase
 
 	private static async Task<CompileCreatioActResult> ActAsync(
 		ArrangeContext arrangeContext,
-		string environmentName)
+		string environmentName,
+		string? packageName = null)
 	{
 		return await AllureApi.Step("Act by invoking compile-creatio through MCP", async () =>
 		{
@@ -165,12 +191,16 @@ public sealed class CompileCreatioToolE2ETests : McpContractFixtureBase
 			toolNames.Should().Contain(ToolName,
 				because: "the compile-creatio MCP tool must be discoverable via the get-tool-contract compact index before the end-to-end call can be executed");
 
+			Dictionary<string, object?> args = new() {
+				["environment-name"] = environmentName
+			};
+			if (packageName is not null) {
+				args["package-name"] = packageName;
+			}
 			CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
 				ToolName,
 				new Dictionary<string, object?> {
-					["args"] = new Dictionary<string, object?> {
-						["environment-name"] = environmentName
-					}
+					["args"] = args
 				},
 				arrangeContext.CancellationTokenSource.Token);
 			CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);

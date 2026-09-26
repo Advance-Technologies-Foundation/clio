@@ -64,10 +64,10 @@ namespace Clio.Tests
                 because: "the install hint must be consistent across all process-designer gates");
         }
 
-        [TestCase(typeof(CreateBusinessProcessOptions), "1.6.6.14")]
-        [TestCase(typeof(ModifyBusinessProcessOptions), "1.6.6.14")]
+        [TestCase(typeof(CreateBusinessProcessOptions), "1.6.6.30")]
+        [TestCase(typeof(ModifyBusinessProcessOptions), "1.6.6.30")]
         [Test]
-        [Description("Create and Modify declare a VERSIONED requirement naming the newest behaviour clio DEPENDS ON or ADVERTISES that an older server may not have. Two requirement lines meet here and no released archive carries both, so the literal is the version cut from the merged package source. From master: the element-level performer block and its reference-existence guard (1.3.1.1), the formula validator behind a mappings[] expression source, and the PlatformValidationMessage rewrite these descriptions promise (1.4.0.44) — a tightened validator takes a literal because convergence only warns. From ENG-92713: the approver an older server discards while answering success, a notification switched on with no template, an author notification with no recipient, the approver preserved across a user<->manager switch (1.4.7.0), and describe telling a WRITTEN ignoreEmailErrors from the schema-level default (1.4.11.0) — which clio ADVERTISES to agents as 'absence means not written, never off'. A rebundle that changes only documentation must NOT move this pin (1.4.8.0 and 1.4.10.0 did not); one that changes what the server reports or accepts must. ENG-95986 moved it to 1.6.2.1 for the Send email template members, and ENG-99856 to 1.6.6.14 for the multi-instance Sub-process block - the same silent-discard shape both times: an older server ACCEPTS `subProcess.multiInstanceOptions`, ignores it, saves a plain sub-process element and answers success, so the caller learns nothing and neither command reads back. The bundled-archive guard asserts the shipped archive satisfies the literal, so it can never demand a version clio does not carry.")]
+        [Description("Create and Modify declare a VERSIONED requirement naming the newest behaviour clio DEPENDS ON or ADVERTISES that an older server may not have. Two requirement lines meet here and no released archive carries both, so the literal is the version cut from the merged package source. From master: the element-level performer block and its reference-existence guard (1.3.1.1), the formula validator behind a mappings[] expression source, and the PlatformValidationMessage rewrite these descriptions promise (1.4.0.44) — a tightened validator takes a literal because convergence only warns. From ENG-92713: the approver an older server discards while answering success, a notification switched on with no template, an author notification with no recipient, the approver preserved across a user<->manager switch (1.4.7.0), and describe telling a WRITTEN ignoreEmailErrors from the schema-level default (1.4.11.0) — which clio ADVERTISES to agents as 'absence means not written, never off'. A rebundle that changes only documentation must NOT move this pin (1.4.8.0 and 1.4.10.0 did not); one that changes what the server reports or accepts must. ENG-95986 moved it to 1.6.2.1 for the Send email template members, and ENG-99856 to 1.6.6.14 for the multi-instance Sub-process block - the same silent-discard shape both times: an older server ACCEPTS `subProcess.multiInstanceOptions`, ignores it, saves a plain sub-process element and answers success, so the caller learns nothing and neither command reads back. ENG-92711 moved it to 1.6.6.30 for the Script task and the process-level usings and methods: the scriptTask TYPE and addUsing/removeUsing/setMethods are refused loudly by an older server, but a build's top-level usings[] and methods are dropped by its serializer in the same silent way. The bundled-archive guard asserts the shipped archive satisfies the literal, so it can never demand a version clio does not carry.")]
         public void OptionsType_ShouldDeclareVersionedProcessBuilderRequirement_WhenTheCommandShipsVersionedOperations(
             Type optionsType, string expectedVersion)
         {
@@ -103,10 +103,10 @@ namespace Clio.Tests
                     + "next versioned operation ships, move this pin WITH the rebundle in the same commit ENG-91853 raises BOTH to 1.6.0.2 and closes the one-patch gap - not by discarding the rule above but by applying it: the gateway ELEMENTS, the three declarative flow kinds and the by-name condition expansion are advertised by create (it builds them) AND by modify (setFlow re-kinds a flow in place), so both commands depend on the same newer archive. 1.6.0.2 and not 1.6.0.1 because master and this branch BOTH stamped 1.6.0.1, on different content - two archives at one version, which is the case where an environment already carrying it is never offered the other. The number is the first cut from a package source that merges both lines.");
         }
 
-        [TestCase(typeof(ModifyProcessAsNewVersionOptions), "1.6.6.14")]
+        [TestCase(typeof(ModifyProcessAsNewVersionOptions), "1.6.6.30")]
         [TestCase(typeof(SetActiveProcessVersionOptions), "1.6.1.0")]
         [Test]
-        [Description("The two versioning commands declare a version for a STRICTER reason than their siblings: the versioning OPERATIONS do not exist before the 1.6.1.0 archive at all. Create/Modify name a version because an older server MISHANDLES a newer input form; these name a version because an older server has no such route, and answers a 404 the caller would read as a transport fault rather than 'your package is behind'. modify-process-as-new-version then moved to 1.6.2.1 with ENG-95986 and to 1.6.6.14 with ENG-99856, both for the same reason: it shares the operations vocabulary, which now advertises the Send email template members and `subProcess.multiInstanceOptions`, it runs no read-back, and convergence already refuses everything below the shipped archive on it - so the raise adds no lockout and keeps the route fail-closed in convergence's degraded modes. set-active-business-process-version carries no operations and stays at 1.6.1.0. The bundled-archive guard asserts the shipped archive satisfies every literal, so a floor can never demand a version clio does not carry.")]
+        [Description("The two versioning commands declare a version for a STRICTER reason than their siblings: the versioning OPERATIONS do not exist before the 1.6.1.0 archive at all. Create/Modify name a version because an older server MISHANDLES a newer input form; these name a version because an older server has no such route, and answers a 404 the caller would read as a transport fault rather than 'your package is behind'. modify-process-as-new-version then moved to 1.6.2.1 with ENG-95986 and to 1.6.6.14 with ENG-99856, both for the same reason: it shares the operations vocabulary, which now advertises the Send email template members and `subProcess.multiInstanceOptions`, it runs no read-back, and convergence already refuses everything below the shipped archive on it - so the raise adds no lockout and keeps the route fail-closed in convergence's degraded modes. set-active-business-process-version carries no operations and stays at 1.6.1.0. Modify-as-new-version moved with the vocabulary to 1.6.6.30 (ENG-92711), for a scriptTask block riding a setElement, which an older server drops while answering success. The bundled-archive guard asserts the shipped archive satisfies every literal, so a floor can never demand a version clio does not carry.")]
         public void VersioningOptionsType_ShouldDeclareTheVersionTheOperationFirstShippedIn(Type optionsType,
             string expectedVersion)
         {
@@ -123,6 +123,23 @@ namespace Clio.Tests
                     + "(ENG-99856). Presence-only "
                     + "would let the call reach an older package and come back a 404 - the one failure shape that "
                     + "reads as clio being broken rather than the environment being behind");
+            requirement.Hint.Should().Be(ExpectedProcessBuilderHint,
+                because: "the install hint must be consistent across all process-designer gates");
+        }
+
+        [Test]
+        [Description("compile-creatio's process-name mode names the archive CompileProcess first works in. 1.6.6.32 was a local cut that answered 'nothing to compile' for a process the runtime does not interpret, and an older package has no route at all, so a presence-only gate would let the call reach one and come back a 404 or a false 'no compile needed'. A lowered literal passes the count of versioned literals, so the number itself is pinned here.")]
+        public void CompileBusinessProcessOptions_ShouldDeclareTheVersionCompileProcessFirstWorksIn()
+        {
+            // Arrange & Act
+            RequiresPackageAttribute requirement = GetProcessBuilderRequirement(typeof(CompileBusinessProcessOptions));
+
+            // Assert
+            requirement.Should().NotBeNull(
+                because: "the process-name compile calls an operation only a recent package carries, so the gate must fire");
+            requirement!.Version.Should().Be("1.6.6.33",
+                because: "1.6.6.33 is the first archive whose CompileProcess compiles a process the runtime does not "
+                    + "interpret; below it the call answers a 404 or reports that nothing needed compiling");
             requirement.Hint.Should().Be(ExpectedProcessBuilderHint,
                 because: "the install hint must be consistent across all process-designer gates");
         }

@@ -189,6 +189,8 @@ internal class ServiceUrlBuilderCommandTests
 			yield return new(true, "https://localhost", ServiceUrlBuilder.KnownRoute.InstallSqlScripts, "https://localhost/ServiceModel/WorkspaceExplorerService.svc/InstallSqlScripts");
 			yield return new(false, "https://localhost", ServiceUrlBuilder.KnownRoute.GetSystemEnvironmentInfo, "https://localhost/0/ServiceModel/ApplicationInfoService.svc/GetSystemEnvironmentInfo");
 			yield return new(true, "https://localhost", ServiceUrlBuilder.KnownRoute.GetSystemEnvironmentInfo, "https://localhost/ServiceModel/ApplicationInfoService.svc/GetSystemEnvironmentInfo");
+			yield return new(false, "https://localhost", ServiceUrlBuilder.KnownRoute.CompileProcess, "https://localhost/0/rest/ProcessDesignService/CompileProcess");
+			yield return new(true, "https://localhost", ServiceUrlBuilder.KnownRoute.CompileProcess, "https://localhost/rest/ProcessDesignService/CompileProcess");
 			yield return new(false, "https://localhost", ServiceUrlBuilder.KnownRoute.BatchQuery, "https://localhost/0/DataService/json/SyncReply/BatchQuery");
 			yield return new(true, "https://localhost", ServiceUrlBuilder.KnownRoute.BatchQuery, "https://localhost/DataService/json/SyncReply/BatchQuery");
 			// Registered WITHOUT a leading slash, unlike the /rest/... entries, so both prefix shapes are

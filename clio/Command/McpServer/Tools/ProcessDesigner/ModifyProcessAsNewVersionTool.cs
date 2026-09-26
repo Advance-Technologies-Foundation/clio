@@ -80,15 +80,17 @@ public class ModifyProcessAsNewVersionTool(
 		 + "half-created version to clean up. Note that a version can never be DELETED — the platform has no such "
 		 + "operation — so every version you create is permanent; take that into account before creating one "
 		 + "speculatively. Requires the ProcessDesignService (CrtProcessBuilder) package on the target "
-		 + "environment at CrtProcessBuilder 1.6.6.14 or newer — an older package is refused up front, naming the "
+		 + "environment at CrtProcessBuilder 1.6.6.30 or newer — an older package is refused up front, naming the "
 		 + "version this operation needs; install or update it with install-process-builder. (The operation itself "
-		 + "first exists in 1.6.1.0; the floor moved to 1.6.2.1 and then to 1.6.6.14 for the same reason twice - the "
-		 + "operations vocabulary grew email.messageSource/template/templateEntity and then "
-		 + "subProcess.multiInstanceOptions, each of which an older server silently discards while "
+		 + "first exists in 1.6.1.0; the floor moved to 1.6.2.1, 1.6.6.14 and 1.6.6.30 for the same reason each time - the "
+		 + "operations vocabulary grew email.messageSource/template/templateEntity, then "
+		 + "subProcess.multiInstanceOptions, then a scriptTask block on setElement, each of which an older server silently discards while "
 		 + "answering success, and this route runs NO read-back check that could tell you.) After a successful save the version normally stays INTERPRETED and "
 		 + "runs as-is once activated, so compile-creatio is not needed — UNLESS the response warns that the "
 		 + "version cannot execute until the configuration is compiled, which happens when the source process "
-		 + "was itself not interpretable. Heed the warning over this sentence: run compile-creatio in that case. "
+		 + "was itself not interpretable, or when the process carries a script task or process methods (a version "
+		 + "is a new process name, whose generated code does not exist until compiled). Heed the warning over this "
+		 + "sentence: in either case, ask the user and run compile-creatio with process-name set to the NEW version. "
 		 + "Use describe-business-process to inspect the family.")]
 	public CommandExecutionResult ModifyProcessAsNewVersion(
 		[Description("modify-business-process-as-new-version parameters")] [Required]
@@ -114,12 +116,14 @@ public class ModifyProcessAsNewVersionTool(
 		// Same post-op note as the in-place edit: a saved version is interpreted and runs as-is once activated,
 		// so "saved" must not be read as "must be compiled" (ENG-95706).
 		//
-		// CONDITIONAL, unlike the in-place sibling's, and the difference is real rather than defensive. A clone
+		// CONDITIONAL, as the in-place sibling's now is too (ENG-92711), and here it was first. A clone
 		// inherits IsInterpretable through the metadata round-trip and the server never recomputes it, so a
 		// version taken from a non-interpretable source is saved with IsInterpretable false and the package
 		// warns that it cannot execute until the configuration is compiled. Appending the note anyway put that
 		// warning and its exact opposite in one response - and an agent that believed the note would activate
-		// a version that throws NotImplementedException out of CreateProcess on first run.
+		// a version that throws NotImplementedException out of CreateProcess on first run. A version of a process
+		// with a script task is the second case: interpretable, yet its MethodsWrapper does not exist until a
+		// compile, and the package (from 1.6.6.30) warns in the same phrase.
 		CommandExecutionResult result = InternalExecute<ModifyProcessAsNewVersionCommand>(options);
 		if (result.ExitCode != 0) {
 			return result;

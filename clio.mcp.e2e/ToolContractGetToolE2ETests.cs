@@ -1246,6 +1246,32 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 
 	[Test]
 	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("get-tool-contract serves compile-creatio's process-name argument")]
+	[Description("compile-creatio is long-tail, so an agent learns its arguments from the served contract: the process-name mode - the compile a script task saved by create/modify-business-process needs - must be in it, with an example.")]
+	public async Task ToolContractGet_Should_Serve_CompileCreatio_ProcessName() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		ToolContractGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["tool-names"] = new[] { CompileCreatioTool.CompileCreatioToolName }
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "the compile-creatio contract must be discoverable through the executable clio MCP catalog");
+		ToolContractDefinition contract = response.Tools!.Single();
+		contract.InputSchema.Properties.Should().Contain(field => field.Name == "process-name",
+			because: "the served contract is where an agent finds the process compile");
+		contract.Examples.Should().Contain(example => example.Arguments.ContainsKey("process-name"),
+			because: "an example keeps an agent from reaching for package-name instead");
+	}
+
+	[Test]
+	[AllureTag(ToolContractGetTool.ToolName)]
 	[AllureName("get-tool-contract advertises that a business process's NeedInstall is not a compile trigger")]
 	[Description("ENG-95706: the real MCP server must serve the compile-creatio contract with a create-business-process anti-pattern (a process is interpreted; NeedInstall=true is not a compile trigger; compile only for a Script Task) and a matching Script-Task carve-out precondition, so the steering that stops an agent forcing a full compile off a process's NeedInstall flag is verified end to end, not only in unit tests.")]
 	public async Task ToolContractGet_Should_Advertise_ProcessNeedInstall_Is_Not_A_Compile_Trigger() {
