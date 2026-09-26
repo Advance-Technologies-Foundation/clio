@@ -109,4 +109,4 @@ the page body.
 
 - [x] AC-1..AC-13 met; TC-U-21..25 and TC-E2E-01..05 implemented; unit green; E2E green on a live stand
   (`eng90576`, 2026-09-26, local run; TeamCity run still to do).
-- [ ] clio-knowledge guidance PR opened with the ADR's six changes and linked from the clio PR.
+- [x] clio-knowledge guidance PR opened with the ADR's six changes and linked from the clio PR (clio-knowledge#238).
