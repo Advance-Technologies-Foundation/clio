@@ -1,7 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Net.Http;
 using System.Text.Json.Nodes;
+using System.Threading.Tasks;
 using Clio.Command;
 using Clio.Common;
 using Clio.UserEnvironment;
@@ -126,6 +129,27 @@ public sealed class CompileBusinessProcessServiceTests {
 		// Assert
 		act.Should().Throw<NotSupportedException>(because: "the failure is reported as what it is")
 			.WithMessage("Client defect.", because: "no transport wrapper claims the compile may still be running");
+	}
+
+	[Test]
+	[Description("The transport failure as the client really raises it - wrapped in AggregateException, because Creatio's client reads Task.Result - still says the outcome is unknown. A compile reloads the runtime and drops the connection, so this is the likeliest failure of all, and a bare type filter would turn it into a plain error that invites a retry the platform refuses.")]
+	[TestCase(typeof(TaskCanceledException))]
+	[TestCase(typeof(HttpRequestException))]
+	[TestCase(typeof(IOException))]
+	public void Compile_ShouldSayTheOutcomeIsUnknown_WhenTheClientWrapsTheTransportFault(Type faultType) {
+		// Arrange
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
+		Exception fault = (Exception)Activator.CreateInstance(faultType, "The connection was lost.")!;
+		client.ExecutePostRequest(CompileUrl, Arg.Any<string>(), Arg.Any<int>())
+			.Returns(_ => throw new AggregateException(fault));
+		CompileBusinessProcessService service = CreateService(client);
+
+		// Act
+		Action act = () => service.Compile(Env, new CompileBusinessProcessRequest("UsrProc", null));
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(because: "the wrapped fault is still a call that did not answer")
+			.WithMessage("*UNKNOWN*last-compilation-log*", because: "the caller must read the log before compiling again");
 	}
 
 	[Test]

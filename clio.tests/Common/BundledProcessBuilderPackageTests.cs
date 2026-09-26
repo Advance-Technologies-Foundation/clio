@@ -1165,7 +1165,8 @@ public class BundledProcessBuilderPackageTests {
 		archive.Should().Contain($"CompileRequiredMarker = \"{marker}\"",
 			because: "the create/modify compile demand is built around this constant, and clio recognises the demand "
 				+ "only by this exact substring");
-		archive.Should().Contain($"cannot execute {marker}",
+		// The opening quote makes the probe match the string literal only: the same words are in its doc comment.
+		archive.Should().Contain($"\"The version was saved but cannot execute {marker}",
 			because: "the new-version warning must carry the same marker, or a version of a script-task process is "
 				+ "reported as needing no compile");
 		archive.Should().Contain("then run compile-creatio with process-name set to this process",

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -100,8 +101,7 @@ public sealed class CompileBusinessProcessService(
 		string responseBody;
 		try {
 			responseBody = client.ExecutePostRequest(url, requestBody, CompileTimeoutMs);
-		} catch (Exception exception) when (exception is WebException or HttpRequestException or IOException
-			or SocketException or TimeoutException or OperationCanceledException) {
+		} catch (Exception exception) when (IsTransportFault(exception)) {
 			// A timeout or a dropped connection mid-compile says nothing about the compile itself, and a retry
 			// while it still runs is refused by the platform rather than queued - so the caller is told so.
 			throw new InvalidOperationException(
@@ -142,6 +142,19 @@ public sealed class CompileBusinessProcessService(
 					error.Code, error.Message, error.InThisProcess))
 				.ToList(),
 			result.ErrorCount);
+	}
+
+	// Only a call that did not come back leaves the compile's fate open. Creatio's client reads Task.Result, so
+	// an HttpClient timeout, a dropped connection or a recycled app pool arrives wrapped in AggregateException
+	// (docs/knowledge/Common/webexception-derives-from-invalidoperationexception.md): unwrap it recursively,
+	// and let an empty aggregate - which names no fault - surface as itself.
+	private static bool IsTransportFault(Exception exception) {
+		if (exception is AggregateException aggregate) {
+			ReadOnlyCollection<Exception> inner = aggregate.Flatten().InnerExceptions;
+			return inner.Count > 0 && inner.All(IsTransportFault);
+		}
+		return exception is WebException or HttpRequestException or IOException or SocketException
+			or TimeoutException or OperationCanceledException;
 	}
 
 	private sealed class ResponseEnvelope {
