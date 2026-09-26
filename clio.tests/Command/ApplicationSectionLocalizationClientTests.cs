@@ -170,4 +170,24 @@ public sealed class ApplicationSectionLocalizationClientTests {
 		refreshed.Should().BeFalse(because: "there is nothing to re-save");
 		_client.DidNotReceive().ExecutePostRequest("route:SaveSchemaData", Arg.Any<string>());
 	}
+
+	[Test]
+	[Description("Rejects a binding whose bound rows carry no record id instead of re-saving it with an empty record set.")]
+	public void RefreshSectionPackageBinding_Should_Throw_WhenBoundRowsHaveNoRecordIds() {
+		// Arrange
+		_client.ExecutePostRequest("route:Select", Arg.Any<string>())
+			.Returns("""{"success":true,"rows":[{"UId":"binding-uid"}]}""");
+		_client.ExecutePostRequest("route:GetSchemaDataDesignItem", Arg.Any<string>())
+			.Returns("""{"success":true,"schema":{"uId":"binding-uid","name":"SysModule_UsrOrders","columns":[{"name":"Caption"}],"boundRecordIds":null}}""");
+		_client.ExecutePostRequest("route:GetBoundSchemaData", Arg.Any<string>())
+			.Returns("""{"success":true,"items":"[{\"Id\":\"\",\"Caption\":\"Orders\"},{\"Caption\":\"Other\"}]"}""");
+
+		// Act
+		Action act = () => _sut.RefreshSectionPackageBinding(_client, _settings, "pkg-uid", "UsrOrders");
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(because: "an empty bound-record set would wipe the binding's data")
+			.WithMessage("*no record ids*SysModule_UsrOrders*");
+		_client.DidNotReceive().ExecutePostRequest("route:SaveSchemaData", Arg.Any<string>());
+	}
 }

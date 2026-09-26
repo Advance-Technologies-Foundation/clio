@@ -126,7 +126,7 @@ public sealed class ApplicationSectionLocalizationClient(IServiceUrlBuilder serv
 
 		return response.Rows
 			.Where(row => !string.IsNullOrWhiteSpace(row.CultureName))
-			.Select(row => new SectionLocalizationRow(row.CultureName!, row.Caption, row.Description, row.ModuleHeader))
+			.Select(row => new SectionLocalizationRow(row.CultureName, row.Caption, row.Description, row.ModuleHeader))
 			.ToList();
 	}
 
@@ -242,20 +242,18 @@ public sealed class ApplicationSectionLocalizationClient(IServiceUrlBuilder serv
 				$"SchemaDataDesignerService.GetBoundSchemaData returned no rows for binding '{bindingName}'.");
 		}
 
-		JsonArray ids = [];
-		foreach (JsonNode? item in JsonNode.Parse(itemsJson) as JsonArray ?? []) {
-			string? id = item?["Id"]?.GetValue<string>();
-			if (!string.IsNullOrWhiteSpace(id)) {
-				ids.Add(id);
-			}
-		}
-
-		if (ids.Count == 0) {
+		JsonArray items = JsonNode.Parse(itemsJson) as JsonArray ?? [];
+		JsonNode[] ids = items
+			.Select(item => item?["Id"]?.GetValue<string>())
+			.Where(id => !string.IsNullOrWhiteSpace(id))
+			.Select(id => (JsonNode)JsonValue.Create(id))
+			.ToArray();
+		if (ids.Length == 0) {
 			throw new InvalidOperationException(
 				$"SchemaDataDesignerService.GetBoundSchemaData returned no record ids for binding '{bindingName}'.");
 		}
 
-		return ids;
+		return new JsonArray(ids);
 	}
 
 	private sealed class LocalizationSelectResponse : SelectQueryHelper.SelectQueryResponseBaseDto {

@@ -713,6 +713,13 @@ internal static class ToolContractCatalog {
 
 	/// <summary>Response member every odata-* tool stamps, on success and on failure alike.</summary>
 	private const string CorrelationIdFieldName = "correlation-id";
+	private const string CaptionCultureFieldName = "caption-culture";
+	private const string WarningsFieldName = "warnings";
+	private const string ExampleOrdersSectionCode = "UsrOrders";
+	private const string ExampleTaskAppFormPageSchemaName = "UsrTaskApp_FormPage";
+	private const string CultureFieldName = "culture";
+	private const string CamelCasePackageNameFieldName = "packageName";
+	private const string ExampleSpanishCultureName = "es-ES";
 
 	/// <summary>
 	/// The odata-read variant. Only this tool withholds the server's wording from <c>error</c> and routes
@@ -1949,7 +1956,7 @@ internal static class ToolContractCatalog {
 					Field(DescriptionFieldName, StringType, "Optional updated section description."),
 					Field(IconIdFieldName, StringType, "Optional updated icon GUID."),
 					Field(IconBackgroundFieldName, StringType, "Optional updated icon background color in #RRGGBB format."),
-					Field("caption-culture", StringType, "Optional culture the caption is written in (e.g. 'es-ES'); requires caption. Precedence: caption-culture > detected profile culture > en-US. Other languages of the section title are kept. The culture must exist in the Languages section: an unknown culture fails before any write, an inactive one is written with a warning.")
+					Field(CaptionCultureFieldName, StringType, "Optional culture the caption is written in (e.g. 'es-ES'); requires caption. Precedence: caption-culture > detected profile culture > en-US. Other languages of the section title are kept. The culture must exist in the Languages section: an unknown culture fails before any write, an inactive one is written with a warning.")
 				],
 				Validators: [
 					new ToolContractValidator(
@@ -1982,10 +1989,10 @@ internal static class ToolContractCatalog {
 				Field("previous-section", ObjectType, "Section metadata before the update."),
 				Field("section", ObjectType, "Section metadata after the update (caption in the connected user's profile culture)."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription),
-				Field("caption-culture", StringType, "Culture the caption was written in; absent when no caption was sent."),
+				Field(CaptionCultureFieldName, StringType, "Culture the caption was written in; absent when no caption was sent."),
 				Field("caption-culture-value", StringType, "The stored section caption in caption-culture."),
 				Field("preserved-cultures", ArrayType, "Non-default cultures whose other stored section values (title, description) were kept; can include the target culture when its description was kept."),
-				Field("warnings", ArrayType, "Non-fatal findings, for example an inactive culture or a package data binding that could not be refreshed.")
+				Field(WarningsFieldName, ArrayType, "Non-fatal findings, for example an inactive culture or a package data binding that could not be refreshed.")
 			),
 			CommonErrorContract,
 			[
@@ -2000,20 +2007,20 @@ internal static class ToolContractCatalog {
 				Example("Update a broken section heading with a plain-text caption", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
 					[ApplicationCodeFieldName] = ExamplePackageName,
-					[SectionCodeFieldName] = "UsrOrders",
+					[SectionCodeFieldName] = ExampleOrdersSectionCode,
 					[CaptionFieldName] = "Orders"
 				}),
 				Example("Add the Spanish section title and keep the other languages", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
 					[ApplicationCodeFieldName] = ExamplePackageName,
-					[SectionCodeFieldName] = "UsrOrders",
+					[SectionCodeFieldName] = ExampleOrdersSectionCode,
 					[CaptionFieldName] = "Pedidos",
-					["caption-culture"] = "es-ES"
+					[CaptionCultureFieldName] = ExampleSpanishCultureName
 				}),
 				Example("Update section description and icon metadata", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
 					[ApplicationCodeFieldName] = ExamplePackageName,
-					[SectionCodeFieldName] = "UsrOrders",
+					[SectionCodeFieldName] = ExampleOrdersSectionCode,
 					[DescriptionFieldName] = "Order processing workspace",
 					[IconIdFieldName] = "11111111-1111-1111-1111-111111111111",
 					[IconBackgroundFieldName] = "#1F5F8B"
@@ -2077,7 +2084,7 @@ internal static class ToolContractCatalog {
 				Example("Delete a section from an existing app", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
 					[ApplicationCodeFieldName] = ExamplePackageName,
-					[SectionCodeFieldName] = "UsrOrders"
+					[SectionCodeFieldName] = ExampleOrdersSectionCode
 				})
 			],
 			Flow(
@@ -2855,7 +2862,7 @@ internal static class ToolContractCatalog {
 			Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
 			Field("source", StringType, "Response source identifier."),
 			Field(CorrelationIdFieldName, StringType, correlationDescription),
-			Field("warnings", ArrayType, "Non-fatal warnings."),
+			Field(WarningsFieldName, ArrayType, "Non-fatal warnings."),
 			..bodyFields,
 			Field(ErrorFieldName, ObjectType, "Structured Data Forge error payload.")
 		];
@@ -4408,7 +4415,7 @@ internal static class ToolContractCatalog {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
 					[PagesFieldName] = new object[] {
 						new Dictionary<string, object?> {
-							[SchemaNameFieldName] = "UsrTaskApp_FormPage",
+							[SchemaNameFieldName] = ExampleTaskAppFormPageSchemaName,
 							["body"] = "/* contents of the body.js written by get-page (files.bodyFile) */ define(...)",
 							[ResourcesFieldName] = "{\"UsrDetailsTab_caption\":\"Details\"}"
 						}
@@ -4597,7 +4604,7 @@ internal static class ToolContractCatalog {
 			[],
 			[
 				Example("Read an existing FormPage body", new Dictionary<string, object?> {
-					[SchemaNameFieldName] = "UsrTaskApp_FormPage",
+					[SchemaNameFieldName] = ExampleTaskAppFormPageSchemaName,
 					[EnvironmentNameFieldName] = ExampleEnvironmentName
 				})
 			],
@@ -5155,7 +5162,7 @@ internal static class ToolContractCatalog {
 					Field("simple-lookup", BooleanType, "Optional simple-lookup flag. Lookup columns only."),
 					Field("cascade", BooleanType, "Optional cascade-connection flag. Lookup columns only."),
 					Field("do-not-control-integrity", BooleanType, "Optional do-not-control-integrity flag. Lookup columns only."),
-					Field("caption-culture", StringType, "Optional culture override for the written column caption/description (e.g. 'en-US', 'uk-UA'). Precedence: caption-culture > detected profile culture > en-US; supplying it skips the profile-culture lookup."),
+					Field(CaptionCultureFieldName, StringType, "Optional culture override for the written column caption/description (e.g. 'en-US', 'uk-UA'). Precedence: caption-culture > detected profile culture > en-US; supplying it skips the profile-culture lookup."),
 					Field("default-value-source", StringType, "Legacy optional default source shorthand. Supports only Const or None."),
 					Field("default-value", StringType, "Legacy optional default value shorthand for Const."),
 					Field(DefaultValueConfigFieldName, ObjectType, "Structured default value metadata with source None, Const, Settings, SystemValue, or Sequence. Settings value-source accepts code/name/id and resolves to code. SystemValue value-source accepts GUID/alias/caption and resolves to GUID. For a lookup column, a Const value is the referenced record GUID and is validated to exist in the referenced schema before save (an unknown GUID is rejected). For Sequence (text columns only), set the static prefix via sequence-prefix (e.g. LN-) or a value mask ending with {0} (e.g. LN-{0} produces LN-00001), not both; a mask with static text after {0} is rejected with a validation error."),
@@ -5438,7 +5445,7 @@ internal static class ToolContractCatalog {
 				Field("dryRun", BooleanType, "Whether the call ran in validation mode."),
 				Field("appendProjection", ObjectType, "What the append merge did — or, on a dry run, WOULD do — to the page's viewConfigDiff. Present for `mode: append` whenever a merge ran; absent for `replace` (writes verbatim) and absent when the stored body is empty (nothing to merge into). Counts: `currentOperationCount`, `incomingOperationCount`, `projectedOperationCount` (compare this against the count you expect), `addedOperationCount`. THREE DISTINCT LOSS CHANNELS, each with its own fix — do not read any one of them as the whole story: `droppedOperations`/`droppedOperationCount` = entries from the SERVER body the merge does not carry over (the further-duplicate exception described in `mode`), which also raise a `warnings` entry each; `collapsedIncomingOperations`/`collapsedIncomingOperationCount` = entries from YOUR OWN fragment that a later entry in the same fragment supersedes, so only the last spelling of an identity survives — the likeliest one to hit, reported here as data and deliberately NOT warned about because the fragment is yours to read; `viewConfigDiffApplied` = false means the current web body has no SCHEMA_VIEW_CONFIG_DIFF marker pair, so EVERY count above describes an array the write discards — use `mode: replace`. `replacedOperations`/`replacedOperationCount` is NOT a loss: the operation survives carrying your values. Named lists are capped in length; every count is exact. Speaks for `viewConfigDiff` ONLY: the sibling `*_DIFF` arrays append unconditionally and cannot lose an entry, but handlers are NOT covered — they dedupe by `request` and the merge drops every current handler whose `request` your fragment carries, so a current body holding one `request` twice keeps neither. Inspect the handlers section yourself when that shape is possible."),
 				Field("resourcesRegistered", NumberType, "Number of registered resources."),
-				Field("warnings", ArrayType, "Advisory non-fatal warnings; omitted when there are none. The save already succeeded — never retry on a warning. Covers an operation the differ will silently drop because another operation for the same component name cancels it (see `mode`), an `insert` this body replaced with a `merge`/`move`/`remove`, an existing operation an `append` could not preserve because the fragment superseded an identity the page carried twice (re-read with get-page), an `append` whose merged viewConfigDiff cannot be written back at all because the current body has no marker pair (see `appendProjection.viewConfigDiffApplied`), page-body lint findings, and the best-effort Designer Presence push."),
+				Field(WarningsFieldName, ArrayType, "Advisory non-fatal warnings; omitted when there are none. The save already succeeded — never retry on a warning. Covers an operation the differ will silently drop because another operation for the same component name cancels it (see `mode`), an `insert` this body replaced with a `merge`/`move`/`remove`, an existing operation an `append` could not preserve because the fragment superseded an identity the page carried twice (re-read with get-page), an `append` whose merged viewConfigDiff cannot be written back at all because the current body has no marker pair (see `appendProjection.viewConfigDiffApplied`), page-body lint findings, and the best-effort Designer Presence push."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
 			),
 			CommonErrorContract,
@@ -5455,7 +5462,7 @@ internal static class ToolContractCatalog {
 			],
 			[
 				Example("Dry-run validate one page body read from the get-page files.bodyFile", new Dictionary<string, object?> {
-					[SchemaNameFieldName] = "UsrTaskApp_FormPage",
+					[SchemaNameFieldName] = ExampleTaskAppFormPageSchemaName,
 					["body"] = "/* contents of the body.js written by get-page (files.bodyFile) */ define(...)",
 					[ResourcesFieldName] = "{\"UsrDetailsTab_caption\":\"Details\"}",
 					[DryRunFieldName] = true,
@@ -5509,10 +5516,10 @@ internal static class ToolContractCatalog {
 			"Data-source-bound field labels are entity column captions - translate them with title-localizations on the entity tools. " +
 			"Read get-guidance name=page-schema-resources before translating a page.",
 			new ToolInputSchemaContract(
-				[SchemaNameFieldName, "culture"],
+				[SchemaNameFieldName, CultureFieldName],
 				EnvironmentOrExplicitConnectionFields(
 					Field(SchemaNameFieldName, StringType, "Freedom UI page schema name."),
-					Field("culture", StringType, "Target culture, for example 'es-ES'. Matched case-insensitively against the environment's SysCulture names."),
+					Field(CultureFieldName, StringType, "Target culture, for example 'es-ES'. Matched case-insensitively against the environment's SysCulture names."),
 					Field(ResourcesFieldName, StringType, "Optional JSON object string mapping existing resource keys to their value in `culture`. Omit together with `caption` for a report-only call."),
 					Field("caption", StringType, "Optional page title in `culture`."),
 					Field("output-directory", StringType, "Optional. Directory that anchors the `.clio-pages` baseline lookup \u2014 pass the same value that was passed to get-page when it differs from the auto-detected workspace root. After a save the baseline is refreshed only when it still matches the page as it was before the save; a stale baseline is left unchanged with a warning, so the next update-page reports the conflict. Does NOT change where the page is saved.")),
@@ -5525,15 +5532,15 @@ internal static class ToolContractCatalog {
 				Field(SuccessFieldName, BooleanType, "True when every supplied value is stored (verified by reading the schema back) or, for a report-only call, when coverage was read."),
 				Field("schemaName", StringType, "Page schema name."),
 				Field("schemaUId", StringType, "UId of the edited schema (the page's schema in its design package)."),
-				Field("packageName", StringType, "Package of the edited schema."),
-				Field("culture", StringType, "Target culture in the SysCulture spelling."),
+				Field(CamelCasePackageNameFieldName, StringType, "Package of the edited schema."),
+				Field(CultureFieldName, StringType, "Target culture in the SysCulture spelling."),
 				Field("cultureActive", BooleanType, "Whether the target culture is active; false means users cannot select it yet."),
 				Field("saved", BooleanType, "Whether the schema was saved; false for a report-only call and for a call whose values were already stored."),
 				Field("written", ArrayType, "Keys whose value in `culture` was written."),
 				Field("unchanged", ArrayType, "Supplied keys whose value in `culture` already equalled the supplied one."),
 				Field("captionOutcome", StringType, "`written` or `unchanged` when `caption` was supplied; absent otherwise."),
 				Field("coverage", ObjectType, "Coverage in `culture` after the call: `keys` (all resource keys of the page hierarchy, the get-page count), `translated`, `missing` (keys with no value in `culture`), `sameAsDefault` (keys whose value equals en-US - review, may be untranslated) and `captionSameAsDefault`."),
-				Field("warnings", ArrayType, "Non-fatal findings: an inactive culture, the workspace-capture reminder after a server save, a stale or unrefreshable .clio-pages baseline."),
+				Field(WarningsFieldName, ArrayType, "Non-fatal findings: an inactive culture, the workspace-capture reminder after a server save, a stale or unrefreshable .clio-pages baseline."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
 			),
 			CommonErrorContract,
@@ -5544,13 +5551,13 @@ internal static class ToolContractCatalog {
 			[],
 			[
 				Example("Read coverage of a page in es-ES (report-only)", new Dictionary<string, object?> {
-					[SchemaNameFieldName] = "UsrTaskApp_FormPage",
-					["culture"] = "es-ES",
+					[SchemaNameFieldName] = ExampleTaskAppFormPageSchemaName,
+					[CultureFieldName] = ExampleSpanishCultureName,
 					[EnvironmentNameFieldName] = ExampleEnvironmentName
 				}),
 				Example("Translate one key and the page title into es-ES", new Dictionary<string, object?> {
-					[SchemaNameFieldName] = "UsrTaskApp_FormPage",
-					["culture"] = "es-ES",
+					[SchemaNameFieldName] = ExampleTaskAppFormPageSchemaName,
+					[CultureFieldName] = ExampleSpanishCultureName,
 					[ResourcesFieldName] = "{\"UsrDetailsTab_caption\":\"Detalles\"}",
 					["caption"] = "Tarea",
 					[EnvironmentNameFieldName] = ExampleEnvironmentName
@@ -5741,7 +5748,7 @@ internal static class ToolContractCatalog {
 	}
 
 	private static ToolContractAlias PackageNameParameterAlias() {
-		return Alias(ParameterScope, PackageNameFieldName, "packageName", RejectedStatus,
+		return Alias(ParameterScope, PackageNameFieldName, CamelCasePackageNameFieldName, RejectedStatus,
 			$"Use '{PackageNameFieldName}' instead of 'packageName'.");
 	}
 
@@ -6165,13 +6172,13 @@ internal static class ToolContractCatalog {
 			CreateUiProjectTool.CreateUiProjectToolName,
 			"Scaffolds a Freedom UI Angular remote-module project inside an existing clio workspace. Writes under <workspaceDirectory>/projects/<projectName> and <workspaceDirectory>/packages/<packageName>. It DOES read the environment once: a SysPackage lookup runs unconditionally to check whether the package already exists (UiProjectCreator.Create), so the tool needs a reachable environment even though it changes nothing on it. The MCP wrapper pins the process working directory to workspaceDirectory and runs the underlying CLI in silent mode, so the interactive 'download package?' prompt is auto-answered 'no'.",
 			new ToolInputSchemaContract(
-				[WorkspaceDirectoryFieldName, ProjectNameFieldName, "packageName", VendorPrefixFieldName],
+				[WorkspaceDirectoryFieldName, ProjectNameFieldName, CamelCasePackageNameFieldName, VendorPrefixFieldName],
 				[
 					Field(WorkspaceDirectoryFieldName, StringType,
 						"Absolute path to an existing clio workspace directory. MUST contain '.clio/workspaceSettings.json'. Relative paths, network-share paths, and non-workspace directories are rejected. Call 'create-workspace' first when the target directory is not yet a workspace."),
 					Field(ProjectNameFieldName, StringType,
 						"Angular project name in snake_case. MUST match '^[0-9a-z_]+$' (lowercase letters, digits, underscores). Examples: 'rss_reader', 'task_board'. Translate any PascalCase/camelCase/kebab-case user input into snake_case before sending."),
-					Field("packageName", StringType,
+					Field(CamelCasePackageNameFieldName, StringType,
 						"Clio package name that will host the project. MUST be a simple identifier matching '^[A-Za-z0-9_]+$' — path separators, '..', and absolute paths are rejected so scaffolding cannot escape the workspace. Conventionally PascalCase (e.g., 'UsrRssReader', 'RssReader'). Created if missing; reused if it already exists."),
 					Field(VendorPrefixFieldName, StringType,
 						"Vendor prefix; 1-50 lowercase letters only ('^[a-z]{1,50}$'). Examples: 'usr', 'crt', 'acme'. Uppercase and digits are rejected by the options validator."),
@@ -6196,7 +6203,7 @@ internal static class ToolContractCatalog {
 					new ToolContractValidator(
 						"regex",
 						"invalid-package-name",
-						Field: "packageName",
+						Field: CamelCasePackageNameFieldName,
 						Context: "packageName must match ^[A-Za-z0-9_]+$ (simple identifier). Path separators, '..', and absolute paths are rejected so scaffolding stays inside the workspace.",
 						Required: true),
 					new ToolContractValidator(
@@ -6217,13 +6224,13 @@ internal static class ToolContractCatalog {
 				Example("Scaffold a default RSS reader remote module", new Dictionary<string, object?> {
 					[WorkspaceDirectoryFieldName] = @"C:\Projects\Workspaces\newModule",
 					[ProjectNameFieldName] = "rss_reader",
-					["packageName"] = "RssReader",
+					[CamelCasePackageNameFieldName] = "RssReader",
 					[VendorPrefixFieldName] = "usr"
 				}),
 				Example("Scaffold an empty-template project for a specific Creatio version", new Dictionary<string, object?> {
 					[WorkspaceDirectoryFieldName] = @"C:\Projects\Workspaces\son",
 					[ProjectNameFieldName] = "kpi_widget",
-					["packageName"] = "UsrKpiWidgets",
+					[CamelCasePackageNameFieldName] = "UsrKpiWidgets",
 					[VendorPrefixFieldName] = "usr",
 					[EmptyFieldName] = true,
 					[CreatioVersionFieldName] = "8.1.2"

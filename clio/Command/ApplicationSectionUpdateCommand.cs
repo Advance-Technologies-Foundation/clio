@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -83,6 +84,8 @@ public interface IApplicationSectionUpdateService {
 /// <summary>
 /// Default ApplicationSection DataService-backed implementation for existing-app section updates.
 /// </summary>
+[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+	Justification = "Service composes its required collaborators (settings repository, client factory, URL builder, application-info service, caption-culture resolver, section-localization client, localization planner, culture-catalog factory) via constructor injection; grouping them into a parameter object would hide which dependency each step uses and gain nothing behaviorally.")]
 public sealed class ApplicationSectionUpdateService(
 	ISettingsRepository settingsRepository,
 	IApplicationClientFactory applicationClientFactory,
@@ -190,7 +193,7 @@ public sealed class ApplicationSectionUpdateService(
 		// A non-default profile culture has its own localization row; prefer it over the SelectQuery value, which
 		// falls back to the default culture when that row is missing.
 		string currentProfileCaption = captionThroughSection
-			? resolvedRequest.Caption!
+			? resolvedRequest.Caption
 			: SectionLocalizationPlanner.ReadCell(snapshot, SectionLocalizationPlanner.CaptionColumn, profileCulture)
 				?? previousSection.Caption ?? string.Empty;
 		SectionLocalizationPlan plan = localizationPlanner.BuildPlan(new SectionLocalizationPlanInput(
@@ -198,7 +201,7 @@ public sealed class ApplicationSectionUpdateService(
 			sectionUpdateNeeded,
 			profileCulture,
 			targetCulture,
-			captionThroughLocalization ? request.Caption!.Trim() : null,
+			captionThroughLocalization ? request.Caption.Trim() : null,
 			captionThroughSection,
 			currentProfileCaption,
 			resolvedRequest.ShouldUpdateDescription));
