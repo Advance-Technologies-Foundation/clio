@@ -23,7 +23,7 @@ as the first positional argument.
 
 The build result Creatio returns is read. When a package does not compile, the
 command prints the compiler diagnostics (CSxxxx code, file, line, column,
-message), states that the previously compiled assembly is kept, and exits with
+message), states that the new code was not loaded, and exits with
 code 1 instead of printing `Done`.
 
 By default the command returns as soon as the environment's compilation activity
@@ -100,9 +100,9 @@ restart run next sees the new assembly
 
     On a compile error it prints instead, and exits with code 1:
     - (CSxxxx) in <FILE> at (<LINE>,<COLUMN>): <MESSAGE>, one line per error
-    - Package compilation failed for '<PACKAGE_NAME>' (build result <N>). Nothing
-      was replaced: the environment keeps running the previously compiled
-      assembly until the errors are fixed and the package is compiled again.
+    - Package compilation failed for '<PACKAGE_NAME>' (build result <N>). The new
+      code was not loaded: the environment keeps running the previous build until
+      the errors are fixed and the package is compiled again.
 
 Without `--wait`, when the build ended only because compilation activity paused, a
 warning says the result was not reported yet and suggests `--wait`. When the
@@ -125,8 +125,8 @@ compiled, exit code 2) and prints how to run it later. Non-interactive hosts
 - The command performs rebuild, not incremental build
 - Package names are split by comma before execution
 - When one package compilation fails, the command exits with code 1
-- A failed build does not replace the package assembly: the environment keeps
-serving the previous build until the error is fixed and the package is compiled again
+- A failed build does not load the new code: the environment keeps serving the
+previous build until the error is fixed and the package is compiled again
 - With `--wait`, a failure answer to the build request ends the build at once: it
 carries the verdict and the diagnostics. A success answer, or a dropped connection
 without an answer, is followed by waiting until compilation history has been quiet

@@ -193,7 +193,10 @@
 			if (!waited) {
 				return quiet >= (SettleWindowOverride ?? TimeSpan.FromSeconds(CompilationSettleSeconds));
 			}
-			if (!requestEnded) {
+			// An error row settles on the short window even while the request is open: a compile error stops
+			// the build (the same rule CompilationSettleTracker applies), and on a loaded stand the failure
+			// answer was measured arriving minutes after the row that already carried the diagnostics.
+			if (!requestEnded && !observed.HasErrors) {
 				return quiet >= (WaitQuietFallbackOverride ?? WaitQuietFallback);
 			}
 			TimeSpan window = WaitSettleWindowOverride ?? WaitSettleWindow;
@@ -320,8 +323,8 @@
 				? string.Empty
 				: $" Creatio reported: {errorMessage.Trim().TrimEnd('.')}.";
 			throw new PackageCompilationException(
-				$"Package compilation failed for '{packageName}'{resultPart}.{messagePart} Nothing was replaced: the "
-				+ "environment keeps running the previously compiled assembly until the errors are fixed and the "
+				$"Package compilation failed for '{packageName}'{resultPart}.{messagePart} The new code was not "
+				+ "loaded: the environment keeps running the previous build until the errors are fixed and the "
 				+ "package is compiled again.");
 		}
 

@@ -20,6 +20,11 @@ C# schema in `Custom`:
 - `api/ConfigurationStatus/GetLastCompilationResult` IS updated by a package rebuild (it showed the
   CS0246 after the failed rebuild and `success:true` after the fixed one), but it carries no
   timestamp.
+- After the failed rebuild (and deleting the broken schema), the next two `Custom` rebuilds were
+  answered `success:false` with `errorInfo.message` "Could not find file
+  …\Terrasoft.Configuration\bin\Terrasoft.Configuration.dll"; one `compile-configuration`
+  restored the file and the package rebuild succeeded again. The failure message therefore says the
+  new code was not loaded, not that the old assembly file is intact on disk.
 - The history rows of one package rebuild (`Terrasoft.Configuration.Dev.csproj`, then
   `Terrasoft.Configuration.ODataEntities.csproj`) arrived 8 s apart, and the default
   `compile-package` settled 5 s after the first one - before the second was written.

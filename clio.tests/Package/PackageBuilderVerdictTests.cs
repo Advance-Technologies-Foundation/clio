@@ -70,7 +70,7 @@ public sealed class PackageBuilderVerdictTests {
 	}
 
 	[Test]
-	[Description("A build response that reports a C# compile error fails the build with its CSxxxx diagnostic (file, line, message) and says the previous assembly is kept, instead of the response being discarded and the build reported as done (issue #1633).")]
+	[Description("A build response that reports a C# compile error fails the build with its CSxxxx diagnostic (file, line, message) and says the previous build keeps running, instead of the response being discarded and the build reported as done (issue #1633).")]
 	public void Rebuild_ShouldThrowWithDiagnostics_WhenResponseReportsCompileError() {
 		// Arrange
 		RespondWith(_ => Task.FromResult(Response(FailedResponse)));
@@ -83,7 +83,7 @@ public sealed class PackageBuilderVerdictTests {
 		// Assert
 		act.Should().Throw<PackageCompilationException>(
 				because: "Creatio answered success:false, which is a failed build whatever the history showed")
-			.WithMessage("*'UsrPackage'*build result 1*previously compiled assembly*");
+			.WithMessage("*'UsrPackage'*build result 1*previous build*");
 		_logger.Received(1).WriteError(
 			"(CS0246) in UsrProbe.Custom.cs at (5,26): The type or namespace name 'EntitySchema' could not be found");
 	}
@@ -195,6 +195,33 @@ public sealed class PackageBuilderVerdictTests {
 		waitsForQuiet.Should().Throw<PackageCompilationException>(
 			because: "a success answer is not proof the build finished; the error row written after it must still fail a waited build");
 		_logger.Received(1).WriteError("(CS1002) in UsrSecond.cs at (3,1): ; expected");
+	}
+
+	[Test]
+	[Description("With --wait and the request still open, a compilation-history row carrying a compile error ends the build on the short settle window with its diagnostics, instead of waiting minutes for a failure answer a loaded stand may deliver late (issue #1633).")]
+	public void Rebuild_ShouldFailOnHistoryError_WhenWaitedRequestStaysOpen() {
+		// Arrange
+		RespondWith(call => DelayedResponseAsync(SucceededResponse, Timeout.InfiniteTimeSpan, call.ArgAt<CancellationToken>(5)));
+		_poller.When(value => value.Poll(Arg.Any<DateTime>(), Arg.Any<CancellationToken>(),
+			Arg.Any<Action<CompilationHistory>>())).Do(call => {
+			call.ArgAt<Action<CompilationHistory>>(2)(new CompilationHistory {
+				CreatedOn = DateTime.UtcNow,
+				ProjectName = "Terrasoft.Configuration.Dev.csproj",
+				Result = false,
+				ErrorsWarnings = "[{\"Line\":5,\"Column\":26,\"ErrorNumber\":\"CS0246\",\"ErrorText\":\"EntitySchema not found\","
+					+ "\"IsWarning\":false,\"FileName\":\"UsrProbe.Custom.cs\"}]"
+			});
+			call.ArgAt<CancellationToken>(1).WaitHandle.WaitOne();
+		});
+		PackageBuilder sut = CreateSut();
+
+		// Act
+		Action act = () => sut.Rebuild(["UsrPackage"], new PackageCompilationWaitOptions(TimeSpan.FromSeconds(30)));
+
+		// Assert
+		act.Should().Throw<PackageCompilationException>(
+			because: "a compile error in the history stops the build even though the request has not been answered");
+		_logger.Received(1).WriteError("(CS0246) in UsrProbe.Custom.cs at (5,26): EntitySchema not found");
 	}
 
 	[Test]
