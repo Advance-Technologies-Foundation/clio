@@ -59,7 +59,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	public async Task ModifyBusinessProcess_Should_ReadAnOperationsArray_AndRefuseAnObject() {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: false);
-		const string unregisteredEnvironment = "clio-e2e-unregistered-environment";
+		string unregisteredEnvironment = $"clio-e2e-unregistered-{Guid.NewGuid():N}";
 		using JsonDocument operations = JsonDocument.Parse(
 			"[{\"op\":\"removeElement\",\"elementName\":\"NotifyAccountOwner\"}]");
 		using JsonDocument notAnArray = JsonDocument.Parse("{\"op\":\"removeElement\"}");
@@ -83,6 +83,11 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			because: "an operations array must bind rather than be refused as a non-string before the tool runs");
 		arrayResultJson.Should().NotContain("operations must be a JSON array",
 			because: "the array passed the tool's reader - the call stops later, on the unregistered environment");
+		arrayResultJson.Should().Contain(unregisteredEnvironment,
+			because: "the array call must get as far as resolving the environment, the step AFTER the reader - a "
+				+ "reader that refused the array as missing would answer before naming it");
+		arrayResultJson.Should().Contain("not found",
+			because: "the unregistered environment is what stops the array call, which proves the reader let it through");
 		objectResultJson.Should().Contain("operations must be a JSON array, or a string holding one",
 			because: "the same call with an object reaches the reader and is refused by it, which proves the array "
 				+ "above was read, not merely bound");
