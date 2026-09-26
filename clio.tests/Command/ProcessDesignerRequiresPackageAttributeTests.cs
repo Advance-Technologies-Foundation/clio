@@ -128,6 +128,23 @@ namespace Clio.Tests
         }
 
         [Test]
+        [Description("compile-creatio's process-name mode names the archive CompileProcess first works in. 1.6.6.32 was a local cut that answered 'nothing to compile' for a process the runtime does not interpret, and an older package has no route at all, so a presence-only gate would let the call reach one and come back a 404 or a false 'no compile needed'. A lowered literal passes the count of versioned literals, so the number itself is pinned here.")]
+        public void CompileBusinessProcessOptions_ShouldDeclareTheVersionCompileProcessFirstWorksIn()
+        {
+            // Arrange & Act
+            RequiresPackageAttribute requirement = GetProcessBuilderRequirement(typeof(CompileBusinessProcessOptions));
+
+            // Assert
+            requirement.Should().NotBeNull(
+                because: "the process-name compile calls an operation only a recent package carries, so the gate must fire");
+            requirement!.Version.Should().Be("1.6.6.33",
+                because: "1.6.6.33 is the first archive whose CompileProcess compiles a process the runtime does not "
+                    + "interpret; below it the call answers a 404 or reports that nothing needed compiling");
+            requirement.Hint.Should().Be(ExpectedProcessBuilderHint,
+                because: "the install hint must be consistent across all process-designer gates");
+        }
+
+        [Test]
         [Description("get-process-signature must NOT be gated on the process-builder package: it reads the built-in DataService (ProcessSchemaRequest / VwProcessLib), not ProcessDesignService, so gating its public CLI verb on the experimental package was a shipped-capability regression (PR #715).")]
         public void GetProcessSignatureOptions_ShouldNotDeclareProcessBuilderRequirement_BecauseItUsesTheBuiltInDataService()
         {

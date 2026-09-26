@@ -246,12 +246,12 @@ public sealed class ScriptTaskElementToolE2ETests {
 		JsonObject regraph = DescribedProcessGraph.Read(await ProcessDesignerE2EArrange.DescribeAsync(context, processName));
 
 		// Assert
-		graph["methods"]?.GetValue<string>().Should().Be("private int Doubled(int value) => value * 2;",
+		graph["methods"]!.GetValue<string>().Should().Be("private int Doubled(int value) => value * 2;",
 			because: "the methods are stored and read back verbatim");
 		edited.Should().Contain(ExitCodeZero, because: "replacing the methods is a valid edit");
 		edited.Should().Contain(CommandExecutionResult.CompileRequiredWarningMarker,
 			because: "new methods are new C# for the class the script tasks compile into");
-		regraph["methods"]?.GetValue<string>().Should().Be("private int Doubled(int value) => value * 3;",
+		regraph["methods"]!.GetValue<string>().Should().Be("private int Doubled(int value) => value * 3;",
 			because: "setMethods REPLACES the text, and an older server would drop it while answering success");
 	}
 

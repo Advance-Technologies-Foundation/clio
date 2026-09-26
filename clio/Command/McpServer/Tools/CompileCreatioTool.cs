@@ -13,7 +13,7 @@ using ModelContextProtocol.Server;
 namespace Clio.Command.McpServer.Tools;
 
 /// <summary>
-/// MCP tool surface for full Creatio compilation and package-only compilation.
+/// MCP tool surface for Creatio compilation: full, one package, or the package a business process is in.
 /// </summary>
 [McpServerToolType]
 public sealed class CompileCreatioTool(
@@ -58,6 +58,14 @@ public sealed class CompileCreatioTool(
 		{
 			return new CommandExecutionResult(1, [
 				new ErrorMessage("`package-name` must contain exactly one package name. Comma-separated package lists are not supported by `compile-creatio`.")
+			]);
+		}
+
+		if (args.PackageName is not null && string.IsNullOrWhiteSpace(args.PackageName))
+		{
+			// The same rule as a blank process-name: an empty scoped request must not become a FULL compile.
+			return new CommandExecutionResult(1, [
+				new ErrorMessage("`package-name` is empty. Pass the package name, or omit the argument for a full compilation.")
 			]);
 		}
 
@@ -288,7 +296,7 @@ public sealed record CompileCreatioArgs(
 	string EnvironmentName,
 
 	[property: JsonPropertyName("package-name")]
-	[Description("Optional package name. When omitted, the tool performs a full compilation.")]
+	[Description("Optional package name: compiles that one package. When both package-name and process-name are omitted, the tool performs a full compilation. Exclusive with process-name.")]
 	string? PackageName = null,
 
 	[property: JsonPropertyName("process-name")]

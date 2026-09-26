@@ -27,6 +27,8 @@ unrecognised verb:
 - describe-business-process
 - list-user-tasks
 - validate-process-graph
+- compile-creatio in its `process-name` mode, the compile a script task or process
+  methods need (CrtProcessBuilder 1.6.6.33 or later)
 
 Each refuses to run against an environment where the package is missing **or older than
 the version bundled with clio**, and names this command in the refusal.

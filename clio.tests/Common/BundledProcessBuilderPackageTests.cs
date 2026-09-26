@@ -287,7 +287,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"071D812F99C52AD779EA29437B47EC4CD45C69321147B4BDEED27D22469CEEB6";
+		"81F89E54786016AC6CCE4B54AB58E773659E84B163366C30E1F19A7EFA1778BB";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -315,7 +315,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.6.33";
+	private const string ExpectedArchiveVersion = "1.6.6.34";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, written by
@@ -327,7 +327,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "7326c262506687b1ed3a9c37e481c06d756b8e1a";
+	private const string ExpectedProducingCommit = "0fffd31d25955ecb342d5349f2dcbcfff02e52e6";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -353,7 +353,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1790368061000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1790388354000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
@@ -1152,6 +1152,27 @@ public class BundledProcessBuilderPackageTests {
 				+ "second schema is not inert: a ProcessSchema can carry a script task, and a client schema "
 				+ "reaches the UI — both would install and run under the package's own name, below the "
 				+ "CanManageProcessDesign gate that protects everything the service itself does");
+	}
+
+	[Test]
+	[Description("clio decides that a save needs a compile by matching CommandExecutionResult.CompileRequiredWarningMarker inside the server's warning text, and only the manual E2E ever exercised that match. If the server wording drifts, clio appends 'compile-creatio not required' to the result of a process that carries a script task, and the agent never compiles it. The same probe pins that both server warnings route the compile to process-name rather than to a package or a full compile.")]
+	public void BundledArchive_ShouldCarryTheCompileRequiredMarkerAndTheProcessNameRoute() {
+		// Arrange
+		string archive = ReadBundledArchiveAsText();
+		string marker = Clio.Command.McpServer.Tools.CommandExecutionResult.CompileRequiredWarningMarker;
+
+		// Act & Assert
+		archive.Should().Contain($"CompileRequiredMarker = \"{marker}\"",
+			because: "the create/modify compile demand is built around this constant, and clio recognises the demand "
+				+ "only by this exact substring");
+		archive.Should().Contain($"cannot execute {marker}",
+			because: "the new-version warning must carry the same marker, or a version of a script-task process is "
+				+ "reported as needing no compile");
+		archive.Should().Contain("then run compile-creatio with process-name set to this process",
+			because: "the compile demand must route to the process-name mode: on Creatio 10.x a package-name compile "
+				+ "misses a server-side save and the process keeps running its previous code");
+		archive.Should().Contain("compile-creatio with process-name set to the new version",
+			because: "the new-version warning must route the compile of the version to process-name as well");
 	}
 
 	[Test]

@@ -366,7 +366,7 @@ public class ModifyBusinessProcessTool(
 		 + "first. For a setFlowCondition operation or an 'expression' mapping source read get-guidance "
 			 + "name=process-formulas - it owns the accepted vocabulary, the reference syntax, what each "
 			 + "refusal names, and the length bound. "
-			 + "Requires the ProcessDesignService (CrtProcessBuilder) package; install with install-process-builder. Unless the edit adds a scriptTask, replaces its body or changes a using or the methods, the process stays INTERPRETED and the result carries the compile-not-required note: do NOT run compile-creatio, and do NOT infer a compile need from a raw `VwSysProcess` read. Such an edit warns compile-REQUIRED instead: then, after asking the user, run compile-creatio with process-name (name=process-script-task).")]
+			 + "Requires the ProcessDesignService (CrtProcessBuilder) package; install with install-process-builder. Unless the edit adds a scriptTask, replaces its body or changes a using or the methods, the process stays INTERPRETED and the result carries the compile-not-required note: do NOT run compile-creatio, and do NOT infer a compile need from a raw `VwSysProcess` read. Such an edit warns compile-REQUIRED instead: then, after asking the user, run compile-creatio with process-name (read name=process-script-task before adding one).")]
 	public CommandExecutionResult ModifyBusinessProcess(
 		[Description("modify-business-process parameters")] [Required] ModifyBusinessProcessArgs args
 	) {

@@ -112,6 +112,23 @@ public sealed class CompileBusinessProcessServiceTests {
 	}
 
 	[Test]
+	[Description("A failure that is not a transport fault is NOT relabelled 'outcome unknown': only a call that did not come back leaves the compile's fate open, and dressing a local defect up as a possibly-running compile would send the caller to wait and read logs instead of fixing it.")]
+	public void Compile_ShouldNotClaimAnUnknownOutcome_WhenTheFailureIsNotATransportFault() {
+		// Arrange
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
+		client.ExecutePostRequest(CompileUrl, Arg.Any<string>(), Arg.Any<int>())
+			.Returns(_ => throw new NotSupportedException("Client defect."));
+		CompileBusinessProcessService service = CreateService(client);
+
+		// Act
+		Action act = () => service.Compile(Env, new CompileBusinessProcessRequest("UsrProc", null));
+
+		// Assert
+		act.Should().Throw<NotSupportedException>(because: "the failure is reported as what it is")
+			.WithMessage("Client defect.", because: "no transport wrapper claims the compile may still be running");
+	}
+
+	[Test]
 	[Description("A transport failure mid-compile says the outcome is unknown and not to compile again blindly: the compile may still be running, and the platform refuses a second one.")]
 	public void Compile_ShouldSayTheOutcomeIsUnknown_WhenTheCallFails() {
 		// Arrange
@@ -179,7 +196,7 @@ public sealed class CompileBusinessProcessCommandTests {
 			errors ?? [], errorCount);
 
 	[Test]
-	[Description("A clean compile exits 0 and says which package was compiled, how long it took, and that the process now runs its saved code.")]
+	[Description("A clean compile exits 0 and says which package was compiled and how long it took, and asks for a run to verify it rather than promising activation: a reload without restart was measured on .NET Framework only.")]
 	public void Execute_ShouldReportTheCompiledPackage_OnSuccess() {
 		// Arrange
 		CompileBusinessProcessResult result = Result(success: true);
@@ -189,8 +206,10 @@ public sealed class CompileBusinessProcessCommandTests {
 
 		// Assert
 		exitCode.Should().Be(0, because: "the compile succeeded");
+		// Activation without a restart is not promised for a .NET host, where it was never measured.
 		_logger.Received(1).WriteInfo(Arg.Is<string>(message => message.Contains("Compiled package 'Custom'")
-			&& message.Contains("3:21") && message.Contains("now runs the code it was saved with")));
+			&& message.Contains("3:21") && message.Contains("Verify on a run")
+			&& message.Contains("restart the application")));
 	}
 
 	[Test]

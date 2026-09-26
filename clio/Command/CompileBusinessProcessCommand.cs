@@ -1,6 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Net;
+using System.Net.Http;
+using System.Net.Sockets;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
@@ -96,7 +100,8 @@ public sealed class CompileBusinessProcessService(
 		string responseBody;
 		try {
 			responseBody = client.ExecutePostRequest(url, requestBody, CompileTimeoutMs);
-		} catch (Exception exception) when (exception is not ArgumentException) {
+		} catch (Exception exception) when (exception is WebException or HttpRequestException or IOException
+			or SocketException or TimeoutException or OperationCanceledException) {
 			// A timeout or a dropped connection mid-compile says nothing about the compile itself, and a retry
 			// while it still runs is refused by the platform rather than queued - so the caller is told so.
 			throw new InvalidOperationException(
@@ -234,10 +239,14 @@ public class CompileBusinessProcessCommand(
 				return 0;
 			}
 
+			// Measured on a .NET Framework stand only: the reload the package triggers after a clean compile made
+			// the process run the new code with no restart. A .NET host was not measured, so the line does not
+			// promise it there and points at the restart core-rules asks for after any compile.
 			logger.WriteInfo(
 				$"Compiled package '{result.PackageName}' ({DescribePackageType(result.PackageType)}) in "
-				+ $"{TimeSpan.FromMilliseconds(result.DurationMs):m\\:ss}. Process '{result.ProcessName}' now runs "
-				+ "the code it was saved with.");
+				+ $"{TimeSpan.FromMilliseconds(result.DurationMs):m\\:ss}. Verify on a run that process "
+				+ $"'{result.ProcessName}' executes the saved code; on a .NET (Core) host restart the application "
+				+ "first, as after any compile.");
 			return 0;
 		} catch (Exception exception) {
 			logger.WriteError(exception.Message);
@@ -291,7 +300,7 @@ public sealed record CompileBusinessProcessError(string? FileName, int Line, int
 /// <summary>
 /// What the server compiled for a process and what the compiler reported.
 /// </summary>
-/// <param name="Success">True when the process now runs the code it was saved with, or needed no compile.</param>
+/// <param name="Success">True when the compile succeeded, or the process needed no compile.</param>
 /// <param name="ErrorMessage">Why the call failed.</param>
 /// <param name="ProcessName">The process resolved.</param>
 /// <param name="PackageName">The package compiled.</param>

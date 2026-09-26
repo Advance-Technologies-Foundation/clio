@@ -272,6 +272,24 @@ public sealed class CompileCreatioToolTests
 		commandResolver.DidNotReceive().Resolve<CompileConfigurationCommand>(Arg.Any<CompileConfigurationOptions>());
 	}
 
+	[TestCase("")]
+	[TestCase("   ")]
+	[Category("Unit")]
+	[Description("A blank package-name is refused rather than read as 'no package-name', which would run a FULL compile the user never agreed to.")]
+	public async Task CompileCreatio_Should_Reject_A_Blank_Package_Name(string packageName)
+	{
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		CompileCreatioTool tool = new(ConsoleLogger.Instance, commandResolver, new CompileOperationRegistry());
+
+		// Act
+		CommandExecutionResult result = await tool.CompileCreatio(new CompileCreatioArgs("sandbox", PackageName: packageName));
+
+		// Assert
+		result.ExitCode.Should().Be(1, because: "an empty scoped request is not a request for a full compile");
+		commandResolver.DidNotReceive().Resolve<CompileConfigurationCommand>(Arg.Any<CompileConfigurationOptions>());
+	}
+
 	[Test]
 	[Category("Unit")]
 	[Description("package-name and process-name together are refused: process-name already names the package it compiles.")]
@@ -761,7 +779,11 @@ public sealed class CompileCreatioToolTests
 		// Assert
 		description.Should().Contain("compile-creatio with process-name",
 			because: "the save's compile demand is answered by the process-name mode");
-		description.Should().Contain("ask", because: "a compile reloads the runtime for every user, so it is asked for");
+		description.Should().MatchRegex(@"\bask(ing)? the user\b",
+			because: "a compile reloads the runtime for every user, so it is asked for");
+		description.Should().NotMatchRegex(@"(?i)\bfull compile-creatio\b|--all",
+			because: "the server compiles a not-interpretable process through process-name too, so no branch of the "
+				+ "route may send the agent to a full compile of about 20 minutes");
 	}
 
 	private sealed class FakeCompileBusinessProcessCommand : CompileBusinessProcessCommand

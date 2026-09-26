@@ -10,7 +10,7 @@ This file records only what the implementation decided and what the stand measur
 | Repository | What |
 |---|---|
 | crt-process-builder | `scriptTask` element (create, addElement, setElement, describe); process-level `usings[]`, `addUsing` / `removeUsing`, describe `usings[]`; process methods `methods`, `setMethods`, describe `methods` / `compiledMethods`; the save-time script notices; the `CompileProcess` endpoint (Q8); CrtProcessBuilder 1.6.6.33 |
-| clio | describe DTOs (`DescribedScriptTask`, `DescribedUsing`); create/modify compile note GATED on the server's compile-required warning instead of appended unconditionally; tool descriptions; `compile-creatio process-name` (Q8) with `compile-status` naming the process; `[RequiresPackage]` 1.6.6.30 for create / modify / new version and 1.6.6.33 for the process compile; bundled archive 1.6.6.33; unit + E2E coverage |
+| clio | describe DTOs (`DescribedScriptTask`, `DescribedUsing`); create/modify compile note GATED on the server's compile-required warning instead of appended unconditionally; tool descriptions; `compile-creatio process-name` (Q8) with `compile-status` naming the process; `[RequiresPackage]` 1.6.6.30 for create / modify / new version and 1.6.6.33 for the process compile; bundled archive 1.6.6.34; unit + E2E coverage |
 | clio-knowledge | `process-script-task` rewritten around WHEN to use a script task, how clio builds one, default namespaces, usings and aliases; catalog / modeling / routing no longer call it unbuildable; libraryVersion 1.15.80 |
 
 ## Decisions (the review's open questions, answered)
@@ -22,7 +22,7 @@ This file records only what the implementation decided and what the stand measur
 | Q3 | Validator rule R17 for a script-task target | Unchanged (advisory). | Out of the element's write path. |
 | Q4 | Set `UseSystemSecurityContext` like the designer? | Not set - and the designer does NOT set it either. | `base-process-schema.js` defaults it to `false`; nothing sets it on a new process. The shipped `FindContactForTA` has `IJ10 = true` by its author's choice. Script tasks of a clio-built process run with the caller's rights, same as a designer-built one. |
 | Q5 | Does `process-script-task` join the process guide set? | No banner change. | Kept ungated and routed, as `ProcessScriptTaskGuidanceTests` requires. |
-| Q6 | Hold or raise the `[RequiresPackage]` floor? | Raised to 1.6.6.30 for create / modify / new version; the process compile (Q8) needs 1.6.6.33, the first cut where `CompileProcess` handles a process the runtime does not interpret (1.6.6.32 was a local cut only). The bundled archive is 1.6.6.33. | Silent-discard shape: an older server drops a build's top-level `usings[]` and `methods` (and a `scriptTask` block riding a setElement beside another field) while answering success. The type token and the two operations would be refused loudly, the usings would not. |
+| Q6 | Hold or raise the `[RequiresPackage]` floor? | Raised to 1.6.6.30 for create / modify / new version; the process compile (Q8) needs 1.6.6.33, the first cut where `CompileProcess` handles a process the runtime does not interpret (1.6.6.32 was a local cut only). The bundled archive is 1.6.6.34. | Silent-discard shape: an older server drops a build's top-level `usings[]` and `methods` (and a `scriptTask` block riding a setElement beside another field) while answering success. The type token and the three operations (`addUsing`, `removeUsing`, `setMethods`) would be refused loudly, the usings and methods would not. |
 | Q7 | The userTask after-activity-save script | Out of scope. | Sibling compile trigger; the gate added here is keyed on the server's warning, so a later ticket only has to emit the same phrase. |
 | Q8 | Which compile makes a saved script task run? | The package compiles it: `CompileProcess` (`IWorkspaceBuilder.Build([package])`, the installer's path), reached through `compile-creatio process-name=<process>`, after asking the user. Not a side effect of the save. | On Creatio 10.x the Publish (`Build`) and `RebuildPackage` compile only packages a DESIGNER save marked, and a server-side save cannot mark one (the marking service is internal). Measured: `Build` compiled nothing, `RebuildPackage(Custom)` compiled nothing and then regenerated static content for 17 min, `--all` took 20 min; `CompileProcess` took 3 min 21 s and the edit ran. A mode of `compile-creatio` rather than a new tool, so the consent rule, the progress heartbeat, the response deadline with `compile-status`, and the one-build-at-a-time reservation are the same code. Not automatic, because a compile reloads the runtime for every user. |
 
@@ -34,7 +34,8 @@ Also decided without asking:
 - `Get`/`Set` names are checked on every save and reported as NOTICES, never refusals: only string literals
   are visible, and the platform's lookup is case-sensitive while every package lookup is not.
 - The compile demand is raised only when the request changed C# (a new script task, a replaced body, a
-  changed using); an unrelated edit keeps the compile-not-required note.
+  changed using, changed methods); an unrelated edit keeps the compile-not-required note. A new version
+  of a process that carries C# always raises it: the version is a new process name with no compiled code.
 
 ## Measured on the stand (local `Creatio`, .NET Framework, 2026-09-25)
 
