@@ -1,5 +1,5 @@
 ---
-description: a default named get-tool-contract lookup is FITTED to one inline reply (18 KB) and returns large contracts SHORT - a test or tool that needs the full text must pass detail=full, and a destructive tool's confirmation duty survives shortening only when worded "explicit yes"
+description: a default named get-tool-contract lookup is FITTED to one inline reply (18 KB) and returns large contracts SHORT - a test or tool that needs the full text must pass detail=full, and a safety duty survives shortening only when its wording matches the SafetyDuty pattern
 applies-to:
   - clio/Command/McpServer/Tools/ToolContractShortForm.cs
   - clio/Command/McpServer/Tools/ToolContractGetTool.cs
@@ -18,25 +18,32 @@ write contract and four business-rule/page contracts are over the budget alone, 
 short (`create-business-process` 34 KB -> 3 KB). `detail: "full"` returns everything; `detail: "short"`
 shortens everything.
 
-Two properties are carried by conventions the code relies on rather than enforces:
+Which text survives is decided by a pattern, not by structure:
 
-- A destructive tool's short form keeps its description's lead (up to 1 500 chars - the purpose plus the
-  call-time safety warning the catalog puts second) AND every clause containing `explicit yes`, wherever it
-  stands. That phrase is how the whole catalog words a confirmation duty; the deleteData "count, name the
-  object, get an explicit yes" duty sits ~14 000 characters into `create-business-process` and survives only
-  because of it.
-- A non-destructive tool keeps only a 600-char lead, which is what lets seven process contracts fit together.
+- Every sentence matching `ToolContractShortForm.SafetyDuty` is kept, in the description AND in field
+  descriptions (a matching field description is kept whole), for EVERY tool. The pattern covers the ways
+  the catalog words a duty today: "explicit yes", "explicitly confirms", "ASK FIRST", "on your own
+  initiative", "Never chain", "permanent", "irreversible", "destructive", "do not retry" and a few more.
+- A destructive tool whose description OPENS with its warning (a matching sentence starts inside the
+  first 600 characters) keeps a lead of up to 1 500 characters, so the rest of that warning block - which
+  has sentences with no marker, such as "An ABSENT filter is the WIDE state ... nothing warns you" - stays
+  too. Every other tool keeps a 600-character lead. That split is what lets the seven process contracts
+  fit one reply together (18.3 KB of the 18 KB budget, measured on 2026-09-26: there is little headroom).
 
 **Why it is this way** — agent CLIs do not show a large tool result inline: Copilot CLI spilled every result
 from 21.3 KB up in the CAADT transcripts, and the agent then spent 3-9 shell turns per process run grepping
 the dumped contract back. Fitting (rather than "always short") leaves every small contract - where examples
-earn their place - byte-identical to before.
+earn their place - byte-identical to before. The first short form kept only clauses worded "explicit yes"
+and lost the ask-first rule of `set-active-business-process-version`, the never-chain and permanence rules
+of `modify-business-process-as-new-version`, and the confirmation duty in `update-page`'s `force` field.
 
 **What breaks if you ignore it** — a test that asserts a large contract's description, examples or field
 text through a default lookup now asserts the SHORT form: it fails if it checks deep text, and worse, it
 PASSES VACUOUSLY if it measures size - `GetToolContracts_ShouldKeepLargestContractWithinBudget_WhenEveryIndexedToolIsNamed`
 stayed green while measuring short forms until it was given `detail=full`. Pass
-`ToolContractShortForm.FullDetail` whenever the full text is the subject. And a new confirmation duty
-written as "ask the user first" or "confirm with them" in a destructive tool's description is silently
-dropped from its short form; word it "get an explicit yes", which
-`DefaultLookup_Should_KeepEveryConfirmationDuty_OfEveryDestructiveTool` counts across the catalog.
+`ToolContractShortForm.FullDetail` whenever the full text is the subject. A new duty worded outside the
+pattern ("check with them before", "make sure they want it") is silently dropped from the short form, and
+`ShortLookup_Should_KeepEverySafetySentence_OfEveryTool` cannot see it, because that test uses the same
+pattern: word the duty with one of the phrases above, or add the new wording to `SafetyDuty`. Adding a
+long description to any process tool can push the seven-contract reply over the budget, which
+`GetToolContracts_ShouldFitTheSevenProcessDesignerContractsInline_WhenRequestedTogether` reports.

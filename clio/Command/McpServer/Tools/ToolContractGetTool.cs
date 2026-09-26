@@ -926,9 +926,6 @@ internal static class ToolContractCatalog {
 		SysSettingUpdateTool.UpdateSysSettingToolName
 	];
 
-	/// <summary>The <c>detail</c> value that opts into the legacy full-contract dump for a no-names request.</summary>
-	private const string FullDetail = "full";
-
 	/// <summary>The one-line purpose is truncated to this many characters for the compact index.</summary>
 	private const int MaxPurposeLength = 120;
 
@@ -1013,7 +1010,9 @@ internal static class ToolContractCatalog {
 		IMcpToolInvokerRegistry? toolInvokerRegistry,
 		string? detail,
 		bool legacyNoNamesFullShape) {
-		if (string.Equals(detail, FullDetail, StringComparison.OrdinalIgnoreCase)) {
+		// The same value that returns a named contract complete (ENG-100154) opts a no-names request into the
+		// legacy full-contract dump.
+		if (ToolContractShortForm.IsDetail(detail, ToolContractShortForm.FullDetail)) {
 			return new ToolContractGetResponse(
 				true,
 				CanonicalToolNames.Select(name => Contracts[name]).ToArray());
@@ -1348,7 +1347,7 @@ internal static class ToolContractCatalog {
 			ToolContractGetTool.ToolName,
 			"Returns clio MCP tool contracts. Omit tool-names for a compact index of all tools (name + one-line purpose + safety flags) for cheap discovery; pass tool-names to expand those tools' executable contracts; pass detail=full (with no tool-names) to expand every tool's full contract. "
 			+ "A named lookup is FITTED to one inline reply by default: every contract comes back in full when the reply fits, and otherwise the largest are replaced by their SHORT form until it does. "
-			+ "A short contract carries detail=\"short\" and full-contract-bytes, keeps the purpose and the safety lead of its description, the input schema with its required list and validators, the error codes, preconditions, aliases, defaults, flows, deprecations and anti-patterns, and says in its description what it left out (the rest of the description, the examples, field descriptions past their first sentence). "
+			+ "A short contract carries detail=\"short\" and full-contract-bytes, keeps the purpose of its description and every safety sentence - a confirmation, ask-first or irreversibility duty - wherever it stands, in the description or in a field, plus the input schema with its required list and validators, the error codes, preconditions, aliases, defaults, flows, deprecations and anti-patterns, and says in its description what it left out (the rest of the description, the examples, other field descriptions past their first sentence). "
 			+ "Pass detail=full with tool-names to get every named contract complete, or detail=short to get them all short.",
 			new ToolInputSchemaContract(
 				[],
@@ -1373,14 +1372,14 @@ internal static class ToolContractCatalog {
 			[
 				Example("Return the compact index of all clio MCP tools (cheap discovery)", new Dictionary<string, object?>()),
 				Example("Return the full contracts of every tool (legacy behavior)", new Dictionary<string, object?> {
-					["detail"] = "full"
+					["detail"] = ToolContractShortForm.FullDetail
 				}),
 				Example("Return the contract for list-apps, update-page, and modify-entity-schema-column", new Dictionary<string, object?> {
 					["tool-names"] = new[] { "list-apps", "update-page", "modify-entity-schema-column" }
 				}),
 				Example("Return one short contract's complete form, examples included", new Dictionary<string, object?> {
 					["tool-names"] = new[] { "create-business-process" },
-					["detail"] = "full"
+					["detail"] = ToolContractShortForm.FullDetail
 				})
 			],
 			Flow(["get-tool-contract"], "Call with no args first for the compact index of all tools, then call with specific tool-names for full schemas before execution."),

@@ -16,9 +16,10 @@ namespace Clio.Tests.Command.McpServer;
 /// named lookup's reply inline.
 /// </summary>
 /// <remarks>
-/// The rules are driven directly over synthetic contracts so each one is pinned on its own, and then once
-/// over the real catalog for the two claims that matter to a caller: a destructive tool's safety lead
-/// survives shortening, and an explicit <c>detail=full</c> still returns everything.
+/// The rules are driven directly over synthetic contracts so each one is pinned on its own, and then over
+/// the real catalog for the claims that matter to a caller: no safety sentence of any tool - in its
+/// description or in a field description - is lost to shortening, and an explicit <c>detail=full</c> still
+/// returns everything.
 /// </remarks>
 [TestFixture]
 [Property("Module", "McpServer")]
@@ -110,20 +111,44 @@ public sealed class ToolContractShortFormTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("A destructive tool keeps the longer lead that holds its safety warning; any other tool keeps the shorter one.")]
-	public void Shorten_Should_KeepALongerLead_ForADestructiveTool() {
+	[Description("A destructive tool whose description opens with a safety warning keeps the longer lead that holds the whole warning block; the same description on a non-destructive tool keeps the ordinary one.")]
+	public void Shorten_Should_KeepTheWarningBlock_ForADestructiveToolThatOpensWithIt() {
 		// Arrange
-		ToolContractDefinition full = BuildContract("probe-tool", descriptionSentences: 200, examples: 0);
+		ToolContractDefinition baseline = BuildContract("probe-tool", descriptionSentences: 200, examples: 0);
+		ToolContractDefinition full = baseline with {
+			Description = "Deletes records. This is irreversible. An absent filter reaches every record and nothing "
+				+ "warns you. " + baseline.Description
+		};
 
 		// Act
 		string destructiveLead = ToolContractShortForm.Shorten(full, destructive: true).Description;
 		string otherLead = ToolContractShortForm.Shorten(full, destructive: false).Description;
 
 		// Assert
-		destructiveLead.Length.Should().BeGreaterThan(otherLead.Length,
-			because: "the room a destructive tool keeps is where its confirmation duty is written");
-		otherLead.Length.Should().BeLessThan(ToolContractShortForm.MaxNonDestructiveLeadChars + 200,
+		destructiveLead.Length.Should().BeGreaterThan(ToolContractShortForm.MaxOrdinaryLeadChars + 200,
+			because: "the warning block runs past the ordinary lead, and a destructive tool keeps all of it");
+		otherLead.Length.Should().BeLessThan(ToolContractShortForm.MaxOrdinaryLeadChars + 200,
 			because: "a non-destructive tool gives up that room so a multi-tool reply can fit");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A destructive tool whose warning comes LATE keeps only the ordinary lead, with the warning appended as a safety sentence, so the long lead is not spent on reference text.")]
+	public void Shorten_Should_KeepTheOrdinaryLead_ForADestructiveToolWhoseWarningComesLate() {
+		// Arrange
+		ToolContractDefinition baseline = BuildContract("probe-tool", descriptionSentences: 200, examples: 0);
+		ToolContractDefinition full = baseline with {
+			Description = baseline.Description + " ASK FIRST: never on your own initiative."
+		};
+
+		// Act
+		string shortForm = ToolContractShortForm.Shorten(full, destructive: true).Description;
+
+		// Assert
+		shortForm.Should().Contain("ASK FIRST: never on your own initiative.",
+			because: "the late warning is still kept, as a safety sentence");
+		shortForm.Length.Should().BeLessThan(ToolContractShortForm.MaxOrdinaryLeadChars + 400,
+			because: "the lead before the warning is reference text, and the long lead would spend the reply on it");
 	}
 
 	[Test]
@@ -205,13 +230,15 @@ public sealed class ToolContractShortFormTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("A destructive tool's short form keeps a confirmation duty stated deep in its description, not only the warning it opens with; a non-destructive tool's short form carries no such clause.")]
-	public void Shorten_Should_KeepAConfirmationClauseBeyondTheLead_ForADestructiveTool() {
+	[Description("A safety sentence stated deep in the description survives shortening for ANY tool, destructive or not, while the reference text around it is left out.")]
+	public void Shorten_Should_KeepASafetySentenceBeyondTheLead_ForAnyTool() {
 		// Arrange
 		ToolContractDefinition full = BuildContract("probe-tool", descriptionSentences: 200, examples: 0) with {
 			Description = BuildContract("probe-tool", 200, 0).Description
 				+ " Before deleting a record you MUST count the matches, name the object and get an explicit yes."
 				+ " Trailing reference text follows."
+				+ " ASK FIRST: do not call this on your own initiative after a build."
+				+ " More trailing reference text."
 		};
 
 		// Act
@@ -219,50 +246,131 @@ public sealed class ToolContractShortFormTests {
 		string other = ToolContractShortForm.Shorten(full, destructive: false).Description;
 
 		// Assert
-		destructive.Should().Contain(
-			"Before deleting a record you MUST count the matches, name the object and get an explicit yes.",
-			because: "a confirmation duty is kept wherever the description states it, or the short form hands the "
-				+ "caller a destructive capability without the duty that goes with it");
-		destructive.Should().NotContain("Trailing reference text",
-			because: "only the clause is kept, not the reference text after it");
-		other.Should().NotContain("explicit yes",
-			because: "the clause is kept for destructive tools; this one has nothing to confirm");
+		foreach (string description in new[] { destructive, other }) {
+			description.Should().Contain(
+				"Before deleting a record you MUST count the matches, name the object and get an explicit yes.",
+				because: "a confirmation duty is kept wherever the description states it, or the short form hands "
+					+ "the caller a capability without the duty that goes with it");
+			description.Should().Contain("ASK FIRST: do not call this on your own initiative after a build.",
+				because: "an ask-first rule is a safety duty too, and a non-destructive tool can carry one "
+					+ "(set-active-business-process-version is not destructive and is ask-first)");
+			description.Should().NotContain("Trailing reference text",
+				because: "only the safety sentences are kept, not the reference text between them");
+		}
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Over the real catalog, every destructive tool's default short form states each confirmation duty its full description states, counted by the 'explicit yes' phrase the catalog words every duty with.")]
-	public void DefaultLookup_Should_KeepEveryConfirmationDuty_OfEveryDestructiveTool() {
+	[Description("A safety sentence longer than the per-sentence cap is cut to a window around its marker, so a marker inside a run-on reference paragraph cannot pull the whole paragraph into the short form.")]
+	public void SafetySentences_Should_CutARunOnSentence_AroundItsMarker() {
 		// Arrange
-		IFeatureToggleService featureToggle = Substitute.For<IFeatureToggleService>();
-		featureToggle.IsEnabled(Arg.Any<Type>()).Returns(true);
-		McpToolInvokerRegistry registry = new(Substitute.For<IServiceProvider>(), typeof(SchemaSyncTool).Assembly,
-			featureToggle, JsonSerializerOptions.Default);
-		ToolContractGetTool tool = new(registry);
+		string filler = string.Join(" ", Enumerable.Repeat("word", 400));
+		string text = filler + " this step is irreversible " + filler + ".";
+
+		// Act
+		IReadOnlyList<string> sentences = ToolContractShortForm.SafetySentences(text, 0);
+
+		// Assert
+		sentences.Should().ContainSingle(because: "the text is one sentence with one marker");
+		sentences[0].Should().Contain("this step is irreversible",
+			because: "the window is centred on the marker");
+		sentences[0].Length.Should().BeLessThanOrEqualTo(ToolContractShortForm.MaxSafetySentenceChars + 2,
+			because: "the cap plus the two ellipses bounds what one run-on sentence can cost");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A field description that states a safety duty is kept whole; any other is cut to its first sentence, and a leading 'Optional.' label does not count as that sentence.")]
+	public void Shorten_Should_KeepASafetyFieldWhole_AndSkipALabelWhenCuttingAnOrdinaryOne() {
+		// Arrange
+		ToolContractDefinition baseline = BuildContract("probe-tool", descriptionSentences: 200, examples: 0);
+		ToolContractDefinition full = baseline with {
+			InputSchema = baseline.InputSchema with {
+				Properties = [
+					new ToolContractField("force", "boolean",
+						"Optional. Overwrites remote changes. Set true ONLY after the user explicitly confirms overwriting changes made outside this session."),
+					new ToolContractField("page-name", "string",
+						"Optional. The page to read. Everything after this sentence is reference text.")
+				]
+			}
+		};
+
+		// Act
+		ToolContractDefinition shortForm = ToolContractShortForm.Shorten(full, destructive: false);
+
+		// Assert
+		shortForm.InputSchema.Properties.Single(field => field.Name == "force").Description.Should().Be(
+			full.InputSchema.Properties.Single(field => field.Name == "force").Description,
+			because: "the confirmation duty of a flag lives in the field description, and cutting it to "
+				+ "'Optional.' would hand the caller the flag without the duty");
+		shortForm.InputSchema.Properties.Single(field => field.Name == "page-name").Description.Should().Be(
+			"Optional. The page to read.",
+			because: "a label is not a description; the first real sentence is kept after it");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Over the real catalog at detail=short, every sentence the safety pattern matches in a tool's full description is in its short description, and every field description carrying one is kept whole.")]
+	public void ShortLookup_Should_KeepEverySafetySentence_OfEveryTool() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
 		string[] names = (tool.GetToolContracts().Index ?? []).Select(entry => entry.Name).ToArray();
 
 		// Act
 		List<string> lost = [];
-		int shortened = 0;
-		foreach (string name in names.Where(registry.IsDestructive)) {
-			ToolContractDefinition shortForm = tool.GetToolContracts(new ToolContractGetArgs([name])).Tools!.Single();
-			if (shortForm.Detail is null) {
-				continue;
-			}
-			shortened++;
+		int checkedSentences = 0;
+		int checkedFields = 0;
+		foreach (string name in names) {
 			ToolContractDefinition full = tool.GetToolContracts(
 				new ToolContractGetArgs([name], ToolContractShortForm.FullDetail)).Tools!.Single();
-			int inFull = Occurrences(full.Description, ToolContractShortForm.ConfirmationMarker);
-			int inShort = Occurrences(shortForm.Description, ToolContractShortForm.ConfirmationMarker);
-			if (inShort < inFull) {
-				lost.Add($"{name}: {inShort} of {inFull}");
+			ToolContractDefinition shortForm = tool.GetToolContracts(
+				new ToolContractGetArgs([name], ToolContractShortForm.ShortDetail)).Tools!.Single();
+			foreach (string sentence in ToolContractShortForm.SafetySentences(full.Description ?? string.Empty, 0)) {
+				checkedSentences++;
+				if (!shortForm.Description.Contains(sentence.Trim('…'), StringComparison.Ordinal)) {
+					lost.Add($"{name}: \"{sentence[..Math.Min(80, sentence.Length)]}\"");
+				}
+			}
+			IEnumerable<(ToolContractField Full, ToolContractField Short)> fields =
+				(full.InputSchema?.Properties ?? []).Zip(shortForm.InputSchema?.Properties ?? [])
+				.Concat((full.OutputContract?.Fields ?? []).Zip(shortForm.OutputContract?.Fields ?? []));
+			foreach ((ToolContractField fullField, ToolContractField shortField) in fields
+				         .Where(pair => ToolContractShortForm.SafetyDuty.IsMatch(pair.Full.Description ?? string.Empty))) {
+				checkedFields++;
+				if (shortField.Description != fullField.Description) {
+					lost.Add($"{name}.{fullField.Name}: field description cut");
+				}
 			}
 		}
 
 		// Assert
-		shortened.Should().BeGreaterThan(0,
-			because: "anti-vacuity: the destructive process tools are far over the budget, so some must be short");
-		lost.Should().BeEmpty(because: "a short form must not drop a confirmation duty its full form states");
+		checkedSentences.Should().BeGreaterThan(20,
+			because: "anti-vacuity: the catalog words many safety duties, and a pattern that matched none "
+				+ "would pass this test while protecting nothing");
+		checkedFields.Should().BeGreaterThan(0,
+			because: "anti-vacuity: flags such as update-page's force carry their duty in the field description");
+		lost.Should().BeEmpty(because: "a short form must not drop a safety sentence its full form states");
+	}
+
+	[TestCase("set-active-business-process-version", "ASK FIRST")]
+	[TestCase("modify-business-process-as-new-version", "Never chain the two")]
+	[TestCase("modify-business-process-as-new-version", "permanent")]
+	[Category("Unit")]
+	[Description("Over the real catalog, the duties the first short form was reviewed for losing - ask-first, never-chain, permanence - are in the short form of the tool that states them.")]
+	public void ShortLookup_Should_KeepTheReviewedDuty(string toolName, string duty) {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractDefinition full = tool.GetToolContracts(
+			new ToolContractGetArgs([toolName], ToolContractShortForm.FullDetail)).Tools!.Single();
+		ToolContractDefinition shortForm = tool.GetToolContracts(
+			new ToolContractGetArgs([toolName], ToolContractShortForm.ShortDetail)).Tools!.Single();
+
+		// Assert
+		full.Description.Should().Contain(duty, because: "anti-vacuity: the full contract states the duty");
+		shortForm.Description.Should().Contain(duty,
+			because: "a short form keyed on one confirmation phrase dropped this duty, which is why the pattern exists");
 	}
 
 	[TestCase("create-business-process")]
@@ -279,8 +387,11 @@ public sealed class ToolContractShortFormTests {
 		// Assert
 		contract.Detail.Should().Be(ToolContractShortForm.ShortDetail,
 			because: $"{toolName}'s full contract is several times the inline budget, so the default read is short");
-		contract.Description.Should().Contain("BEFORE CALLING with an accessRights block",
-			because: "the confirmation duty is the one part of the description a short form must not lose");
+		int also = contract.Description.IndexOf(" Also: ", StringComparison.Ordinal);
+		string lead = also < 0 ? contract.Description : contract.Description[..also];
+		lead.Should().Contain("BEFORE CALLING with an accessRights block",
+			because: "the confirmation duty is the warning the description LEADS with, so it must be in the lead "
+				+ "and not merely recovered later as a matched sentence");
 		contract.Description.Should().Contain("get an explicit yes",
 			because: "the warning must survive to its instruction, not just its heading");
 	}
@@ -305,15 +416,6 @@ public sealed class ToolContractShortFormTests {
 			because: "the full description is the one the short form stands in for");
 		ToolContractShortForm.MeasureBytes(full).Should().Be(shortForm.FullContractBytes,
 			because: "the size the short form advertises is the size detail=full actually returns");
-	}
-
-	private static int Occurrences(string text, string value) {
-		int count = 0;
-		for (int index = text.IndexOf(value, StringComparison.OrdinalIgnoreCase); index >= 0;
-			index = text.IndexOf(value, index + value.Length, StringComparison.OrdinalIgnoreCase)) {
-			count++;
-		}
-		return count;
 	}
 
 	private static int MeasureReply(IReadOnlyList<ToolContractDefinition> contracts) =>

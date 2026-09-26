@@ -1529,9 +1529,16 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 				because: "the required list survives shortening"));
 		AllureApi.Step("Assert the full form is one flag away", () =>
 			fullContract.Detail.Should().BeNull(because: "detail=full returns the complete contract, unmarked"));
-		AllureApi.Step("Assert the advertised size is the real one", () =>
+		AllureApi.Step("Assert the full description is the one the short form stands in for", () =>
 			fullContract.Description.Length.Should().BeGreaterThan(shortContract.Description.Length * 5,
-				because: "the full description is the one the short form stands in for"));
+				because: "the short form leaves out the reference detail of the description"));
+		AllureApi.Step("Assert the advertised size is the real one", () =>
+			shortContract.FullContractBytes.Should().Be(ToolContractShortForm.MeasureBytes(fullContract),
+				because: "full-contract-bytes tells the caller what detail=full will cost before it asks, so it must "
+					+ "be the size of the contract detail=full actually returns"));
+		AllureApi.Step("Assert the short form keeps the confirmation duty", () =>
+			shortContract.Description.Should().Contain("get an explicit yes",
+				because: "the short form over the wire must carry the duty the full form states"));
 	}
 
 	[Test]
