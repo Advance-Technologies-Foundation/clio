@@ -562,7 +562,7 @@ public sealed class DescribedElement {
 	/// the runtime applies stored values in either editing mode, so hiding one would hide live configuration. Drop
 	/// the one that does not belong to the reported <c>editMode</c> before re-applying. One field is also reshaped
 	/// rather than dropped: <c>completionMode</c> is reported FLAT and is written NESTED, so re-apply it as
-	/// <c>completion:{mode:…}</c>. Fed back flat, the key is refused by CrtProcessBuilder 1.6.6.32 and later as a
+	/// <c>completion:{mode:…}</c>. Fed back flat, the key is refused by CrtProcessBuilder 1.6.6.36 and later as a
 	/// read-only describe field; an older package left the element on its stored mode while its filter stayed — the
 	/// mismatched pair the write contract warns about.
 	/// </summary>

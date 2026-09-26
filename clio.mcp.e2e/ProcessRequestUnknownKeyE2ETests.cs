@@ -21,7 +21,7 @@ namespace Clio.Mcp.E2E;
 /// </summary>
 /// <remarks>
 /// <para>The refusal lives in the PACKAGE, not in clio: clio forwards the payload and relays the server's message. So
-/// these tests need CrtProcessBuilder 1.6.6.32 or later on the stand - an older package drops such a key in silence
+/// these tests need CrtProcessBuilder 1.6.6.36 or later on the stand - an older package drops such a key in silence
 /// exactly as before - and they are ignored, with the reason, when it is behind.</para>
 /// <para>They are also the only check that a HOST really keeps undeclared keys: the package can prove its own reader
 /// works, but not that the platform binds the request with a serializer that fills the extension data. Run them on
@@ -45,7 +45,7 @@ public sealed class ProcessRequestUnknownKeyE2ETests {
 	private const string ModifyToolName = "modify-business-process";
 	private const string AsNewVersionToolName = "modify-business-process-as-new-version";
 	private const string DescribeToolName = "describe-business-process";
-	private const string MinimumPackageVersion = "1.6.6.32";
+	private const string MinimumPackageVersion = "1.6.6.36";
 	private const string Subject = "unknown request keys";
 	private const string Refused = "The request was refused and nothing was saved";
 

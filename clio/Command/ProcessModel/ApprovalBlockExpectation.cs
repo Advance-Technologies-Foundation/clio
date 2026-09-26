@@ -123,9 +123,9 @@ public static class ApprovalBlockExpectation {
 	/// object on write — so the two cannot coexist and a <c>JsonValue</c> there is proof on its own that the
 	/// notification bound nothing. The approver uses DIFFERENT keys: <c>approverType</c> on read,
 	/// <c>approver</c> on write. Those CAN coexist, and a PARTIALLY translated block is exactly what that looks
-	/// like — the nested approver binds normally and, on a CrtProcessBuilder before 1.6.6.32, the leftover flat
+	/// like — the nested approver binds normally and, on a CrtProcessBuilder before 1.6.6.36, the leftover flat
 	/// member is discarded unread: no write contract there implements <c>IExtensibleDataObject</c>, and
-	/// <c>DataContractJsonSerializer</c> drops an unknown member silently. From 1.6.6.32 the server refuses the
+	/// <c>DataContractJsonSerializer</c> drops an unknown member silently. From 1.6.6.36 the server refuses the
 	/// whole request for that member instead, naming <c>approverType</c> among the fields a write takes elsewhere,
 	/// with the note to write it as <c>approver.type</c> (ENG-95244).</para>
 	/// <para>So the flat member is read-shape evidence only when the nested form is ABSENT. Treating it as proof
@@ -133,7 +133,7 @@ public static class ApprovalBlockExpectation {
 	/// <see cref="DropsFor"/> before the read-back is consulted, so nothing downstream could correct it. That
 	/// matters more than its narrow shape suggests: behind the version floor every other
 	/// <see cref="ApprovalDropKind"/> describes a server too old to reach this code at all, which left this the
-	/// marker that fired in ordinary operation - until 1.6.6.32, where such a block no longer saves at all. It still
+	/// marker that fired in ordinary operation - until 1.6.6.36, where such a block no longer saves at all. It still
 	/// decides for a package from the other line, or for an environment where the server's key check reports itself
 	/// unavailable.</para>
 	/// </summary>

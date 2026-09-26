@@ -1,5 +1,5 @@
 ---
-description: From CrtProcessBuilder 1.6.6.32 the SERVER refuses a build/modify/save-as-new-version payload carrying a key its contract does not declare (read-only describe fields included), so clio must never send an optional key "an older server simply ignores", and clio deliberately has no payload-key check of its own
+description: From CrtProcessBuilder 1.6.6.36 the SERVER refuses a build/modify/save-as-new-version payload carrying a key its contract does not declare (read-only describe fields included), so clio must never send an optional key "an older server simply ignores", and clio deliberately has no payload-key check of its own
 applies-to:
   - clio/CrtProcessBuilder/CrtProcessBuilder.gz
   - clio/Command/CreateBusinessProcessCommand.cs
@@ -9,7 +9,7 @@ ticket: ENG-95244
 date: 2026-09-25
 ---
 
-**What is true** — CrtProcessBuilder 1.6.6.32+ refuses a write whose payload carries an undeclared or wrongly-cased
+**What is true** — CrtProcessBuilder 1.6.6.36+ refuses a write whose payload carries an undeclared or wrongly-cased
 key at any level: nothing is saved, and the message names each misspelled key's path with the key meant (or, with
 no near match, the keys valid there), and lists the fields copied from describe once per place - those a write takes
 elsewhere with where (setFilter, setConnections, addMapping), the read-only ones to remove - so a whole read-back is
