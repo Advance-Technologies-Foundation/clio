@@ -154,6 +154,59 @@ public sealed class ScriptTaskElementToolE2ETests {
 	}
 
 	[Test]
+	[Description("addUsing stores an aliased using on an existing process and removeUsing takes it away again, both read back by describe. The alias is what resolves CS0104 between Terrasoft.Configuration.SysSettings and Terrasoft.Core.Configuration.SysSettings, so it must survive the modify path as well as the build path; each edit changes the usings the script tasks compile under, so each owes a compile.")]
+	[AllureTag(ModifyToolName)]
+	[AllureName("modify-business-process adds and removes an aliased using")]
+	public async Task ModifyBusinessProcess_Should_AddAndRemoveAnAliasedUsing() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context =
+			await ProcessDesignerE2EArrange.StartAsync("ScriptTask", MinimumPackageVersion);
+		string processName = $"UsrClioBpScriptTaskAddAliasE2e{Guid.NewGuid():N}";
+		string created = JsonSerializer.Serialize(await ProcessDesignerE2EArrange.CallToolAsync(context,
+			CreateToolName, new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["descriptor"] = BuildDescriptor(processName, withSysSettingsAlias: false)
+			}));
+		created.Should().Contain("created (UId:", because: "the arrange step must have built the process");
+
+		// Act
+		string added = JsonSerializer.Serialize(await ProcessDesignerE2EArrange.CallToolAsync(context,
+			ModifyToolName, new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName,
+				["operations"] = """[{"op":"addUsing","using":{"namespace":"Terrasoft.Core.Configuration.SysSettings","alias":"SysSettings"}}]"""
+			}));
+		string usingsAfterAdd = DescribedProcessGraph.Read(
+			await ProcessDesignerE2EArrange.DescribeAsync(context, processName))["usings"]!.ToJsonString();
+		string removed = JsonSerializer.Serialize(await ProcessDesignerE2EArrange.CallToolAsync(context,
+			ModifyToolName, new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName,
+				["operations"] = """[{"op":"removeUsing","using":{"namespace":"Terrasoft.Core.Configuration.SysSettings"}}]"""
+			}));
+		string usingsAfterRemove = DescribedProcessGraph.Read(
+			await ProcessDesignerE2EArrange.DescribeAsync(context, processName))["usings"]!.ToJsonString();
+
+		// Assert
+		added.Should().Contain(ExitCodeZero, because: "an alias on a non-default type is a valid using");
+		added.Should().Contain(CommandExecutionResult.CompileRequiredWarningMarker,
+			because: "a changed using changes what the script tasks compile under");
+		added.Should().NotContain(CommandExecutionResult.CompileNotRequiredNote,
+			because: "the note must never contradict the server's compile-required warning");
+		usingsAfterAdd.Should().Contain("Terrasoft.Core.Configuration.SysSettings",
+			because: "the added using is read back by namespace");
+		usingsAfterAdd.Should().Contain("\"alias\":\"SysSettings\"",
+			because: "the alias is what makes the aliased type name compile, so the modify path must store it too");
+		removed.Should().Contain(ExitCodeZero, because: "removing a using the process declares is a valid edit");
+		removed.Should().Contain(CommandExecutionResult.CompileRequiredWarningMarker,
+			because: "a removed using changes what the script tasks compile under as well");
+		usingsAfterRemove.Should().NotContain("Terrasoft.Core.Configuration.SysSettings",
+			because: "removeUsing takes the aliased entry away by its namespace");
+		usingsAfterRemove.Should().Contain("Terrasoft.Configuration",
+			because: "the other usings of the process are left alone");
+	}
+
+	[Test]
 	[Description("addUsing refuses an alias on a namespace the generated code already imports: the platform's generator drops such an entry together with its alias, so the alias would not exist at compile time.")]
 	[AllureTag(ModifyToolName)]
 	[AllureName("modify-business-process refuses an alias on a default namespace")]
@@ -334,7 +387,8 @@ public sealed class ScriptTaskElementToolE2ETests {
 		}
 		""";
 
-	private static string BuildDescriptor(string processName, bool withMethods = false) =>
+	private static string BuildDescriptor(string processName, bool withMethods = false,
+			bool withSysSettingsAlias = true) =>
 		$$"""
 		{
 		  "name": "{{processName}}",
@@ -343,8 +397,9 @@ public sealed class ScriptTaskElementToolE2ETests {
 		  {{(withMethods ? "\"methods\": \"private int Doubled(int value) => value * 2;\"," : string.Empty)}}
 		  "usings": [
 		    { "namespace": "System.Linq" },
-		    { "namespace": "Terrasoft.Configuration" },
-		    { "namespace": "Terrasoft.Core.Configuration.SysSettings", "alias": "SysSettings" }
+		    { "namespace": "Terrasoft.Configuration" }{{(withSysSettingsAlias
+			    ? ",\n    { \"namespace\": \"Terrasoft.Core.Configuration.SysSettings\", \"alias\": \"SysSettings\" }"
+			    : string.Empty)}}
 		  ],
 		  "parameters": [
 		    { "name": "Amount", "type": "Integer", "direction": "In" },
