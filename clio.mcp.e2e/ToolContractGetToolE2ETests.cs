@@ -125,6 +125,7 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 			context.Session,
 			context.CancellationTokenSource.Token,
 			new Dictionary<string, object?> {
+				["detail"] = ToolContractShortForm.FullDetail,
 				["tool-names"] = new[] {
 					CreateEntitySchemaTool.CreateEntitySchemaToolName,
 					SchemaSyncTool.ToolName,
@@ -189,6 +190,7 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 			context.Session,
 			context.CancellationTokenSource.Token,
 			new Dictionary<string, object?> {
+				["detail"] = ToolContractShortForm.FullDetail,
 				["tool-names"] = new[] {
 					ApplicationGetListTool.ApplicationGetListToolName,
 					PageListTool.ToolName,
@@ -842,6 +844,7 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 			context.Session,
 			context.CancellationTokenSource.Token,
 			new Dictionary<string, object?> {
+				["detail"] = ToolContractShortForm.FullDetail,
 				["tool-names"] = new[] {
 					CreateEntityBusinessRuleTool.BusinessRuleCreateToolName
 				}
@@ -1485,6 +1488,83 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 		AllureApi.Step("Assert a body-file example is included", () =>
 			contract.Examples.Should().Contain(example => example.Arguments.ContainsKey("body-file"),
 				because: "the live contract should demonstrate the file handoff"));
+	}
+
+	[Test]
+	[Description("Over the real stdio server, the DEFAULT lookup of create-business-process - a 34 KB contract in full - comes back in its short form, inside the inline reply budget, marked short and sized, and detail=full still returns it complete (ENG-100154).")]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("get-tool-contract fits a large contract inline and keeps the full form one flag away")]
+	public async Task GetToolContracts_ShouldReturnTheShortForm_ByDefault_AndTheFullFormOnRequest() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		const string toolName = "create-business-process";
+
+		// Act
+		CallToolResult shortResult = await context.Session.CallToolAsync(
+			ToolContractGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> { ["tool-names"] = new[] { toolName } }
+			},
+			context.CancellationTokenSource.Token);
+		ToolContractGetResponse full = await CallAsync(context.Session, context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["tool-names"] = new[] { toolName },
+				["detail"] = ToolContractShortForm.FullDetail
+			});
+		string shortText = string.Concat((shortResult.Content ?? []).OfType<TextContentBlock>().Select(block => block.Text));
+		ToolContractDefinition shortContract =
+			EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(shortResult).Tools!.Single();
+		ToolContractDefinition fullContract = full.Tools!.Single();
+
+		// Assert
+		AllureApi.Step("Assert the default reply fits inline", () =>
+			System.Text.Encoding.UTF8.GetByteCount(shortText).Should().BeLessThanOrEqualTo(
+				ToolContractShortForm.InlineReplyBudgetBytes,
+				because: "the reply the agent receives is what an agent CLI decides to show inline or spill to a file"));
+		AllureApi.Step("Assert the default contract is marked short", () =>
+			shortContract.Detail.Should().Be(ToolContractShortForm.ShortDetail,
+				because: "a short contract must say so over the wire, or its omissions read as absences"));
+		AllureApi.Step("Assert the short form keeps the call-time contract", () =>
+			shortContract.InputSchema.Required.Should().Contain("descriptor",
+				because: "the required list survives shortening"));
+		AllureApi.Step("Assert the full form is one flag away", () =>
+			fullContract.Detail.Should().BeNull(because: "detail=full returns the complete contract, unmarked"));
+		AllureApi.Step("Assert the advertised size is the real one", () =>
+			fullContract.Description.Length.Should().BeGreaterThan(shortContract.Description.Length * 5,
+				because: "the full description is the one the short form stands in for"));
+	}
+
+	[Test]
+	[Description("Over the real stdio server, the request measured in the CAADT transcripts - seven process-designer contracts in one call - is answered inside the inline reply budget with every requested contract present (ENG-100154).")]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("get-tool-contract fits seven process-designer contracts in one inline reply")]
+	public async Task GetToolContracts_ShouldFitSevenProcessDesignerContracts_InOneInlineReply() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string[] processTools = [
+			"create-business-process", "modify-business-process", "describe-business-process",
+			"validate-process-graph", "list-user-tasks", "modify-business-process-as-new-version",
+			"set-active-business-process-version"
+		];
+
+		// Act
+		CallToolResult result = await context.Session.CallToolAsync(
+			ToolContractGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> { ["tool-names"] = processTools }
+			},
+			context.CancellationTokenSource.Token);
+		string text = string.Concat((result.Content ?? []).OfType<TextContentBlock>().Select(block => block.Text));
+		ToolContractGetResponse response = EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(result);
+
+		// Assert
+		AllureApi.Step("Assert every requested contract is returned", () =>
+			response.Tools!.Select(contract => contract.Name).Should().BeEquivalentTo(processTools,
+				because: "fitting shortens contracts, it never drops one"));
+		AllureApi.Step("Assert the reply fits inline", () =>
+			System.Text.Encoding.UTF8.GetByteCount(text).Should().BeLessThanOrEqualTo(
+				ToolContractShortForm.InlineReplyBudgetBytes,
+				because: "this request answered with well over 100 KB before ENG-100154"));
 	}
 
 	private static async Task<ToolContractGetResponse> CallAsync(

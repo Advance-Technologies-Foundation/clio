@@ -146,6 +146,9 @@ EXAMPLES
     Use your MCP client to call get-tool-contract {"tool-names":["get-page","get-component-info","sync-pages"]}.
         Bootstrap page inspection/editing and discover whether get-component-info is needed before mutating the page body file get-page writes.
 
+    Use your MCP client to call get-tool-contract {"tool-names":["create-business-process"],"detail":"full"}.
+        A named lookup is fitted to one inline reply by default: every contract comes back in full when the reply fits, and otherwise the largest come back in a SHORT form (marked "detail":"short" with "full-contract-bytes") that keeps the purpose and safety lead, the input schema, the error codes, preconditions and flows, and leaves out the rest of the description and the examples. Pass "detail":"full" for the complete contracts, or "detail":"short" for all short.
+
     Use your MCP client to call get-guidance with an unknown name, inspect availableGuides,
     then call get-guidance again with the selected name.
         Discover and read the currently installed publisher-owned guidance catalog.
