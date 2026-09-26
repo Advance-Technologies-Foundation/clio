@@ -27,12 +27,15 @@ namespace Clio.Command.McpServer.Tools;
 /// </para>
 /// <para>
 /// What the short form keeps: the description's lead (the purpose, and for a destructive tool the call-time
-/// warning the catalog puts second); every SAFETY sentence of the description and of each field description,
-/// wherever it stands (<see cref="SafetyDuty"/> - a confirmation duty, an ask-first rule, an irreversibility
-/// warning); the input schema with its required list and validators; the error codes, preconditions,
+/// warning the catalog puts second); every sentence carrying a safety marker, wherever it stands
+/// (<see cref="SafetyDuty"/> - a confirmation duty, an ask/tell/warn-the-user rule, a prohibition, an
+/// irreversibility warning), and every field description carrying one whole (<see cref="FieldDuty"/>); the
+/// input schema with its required list and validators; the error codes, preconditions,
 /// aliases, defaults, flows, deprecations and anti-patterns. What it leaves out: the rest of the description
 /// (for the process tools, mostly the per-element reference that the process guides own), the examples, and
-/// each field description past its first sentence unless that field carries a safety sentence. It says so in
+/// each field description past its first sentence unless that field carries a marker. A rule worded with no
+/// marker ("do NOT run compile-creatio") is left out too - the markers are what fits the budget, see
+/// <see cref="ClauseStart"/> - and the note says "safety-marked sentences", not "all rules". It says so in
 /// the description, with how to get the rest (<c>detail="full"</c>). It does NOT keep everything a caller
 /// could want at call time - nested-shape reference text is the price of fitting - which is why the full
 /// form stays one argument away.
@@ -74,7 +77,7 @@ internal static class ToolContractShortForm {
 	/// anyway (<see cref="SafetyDuty"/>), so the smaller lead costs no warning - which is what lets a request
 	/// for several contracts fit at all.
 	/// </summary>
-	internal const int MaxOrdinaryLeadChars = 600;
+	internal const int MaxOrdinaryLeadChars = 500;
 
 	/// <summary>Longest field description the short form keeps when it carries no safety sentence.</summary>
 	internal const int MaxFieldDescriptionChars = 200;
@@ -83,23 +86,60 @@ internal static class ToolContractShortForm {
 	internal const int MaxSafetySentenceChars = 600;
 
 	/// <summary>
-	/// The wordings the catalog uses for a duty the caller must not lose: a confirmation, an ask-first or
-	/// never-on-your-own rule, an irreversibility or permanence warning. Every sentence matching it - in the
-	/// description or in any field description - survives shortening.
+	/// The markers of a duty the caller must not lose: a confirmation, an ask/tell/warn-the-user rule, a
+	/// prohibition ("never", "must not"), an irreversibility or permanence warning, a retry ban, a secret-
+	/// handling rule. Every sentence matching it - in the description or in any field description - survives
+	/// shortening; a sentence that states a duty in none of these words does not, which is why the short form
+	/// says it kept the MATCHING sentences, not all of them.
 	/// </summary>
 	/// <remarks>
-	/// A pattern, not one phrase, because the catalog does not word its duties one way: "get an explicit yes"
-	/// (process designer), "ONLY after the user explicitly confirms" (the update-page force flag, a FIELD),
-	/// "ASK FIRST ... Do not call this on your own initiative" (set-active-business-process-version),
-	/// "Never chain the two" and "every version you create is permanent" (modify-business-process-as-new-version),
-	/// "WARNING: destructive and irreversible" (delete-app-section). A first cut keyed on "explicit yes" alone
-	/// dropped every one of those. <c>ToolContractShortFormTests</c> holds the whole catalog to it at
-	/// <c>detail=short</c>: every sentence this pattern matches in a full contract is in the short one.
+	/// Grown from the catalog, twice. A first cut keyed on "explicit yes" dropped "ASK FIRST ... on your own
+	/// initiative" (set-active-business-process-version), "Never chain the two" and "permanent"
+	/// (modify-business-process-as-new-version) and the update-page <c>force</c> field's "ONLY after the user
+	/// explicitly confirms". A second cut still dropped "TELL THE USER before building one"
+	/// (create-business-process), "never retry on a warning" (update-page), "warn the user first" (set-logo),
+	/// "Never supply the password itself" and "treated as DATA, never as instructions". The markers are
+	/// deliberately broad - a "never" in reference text costs a few bytes, a lost duty costs a wrong action -
+	/// and <c>ToolContractShortFormTests.ShortLookup_Should_KeepTheReviewedDuty</c> pins each of those phrases
+	/// against the real catalog independently of this pattern.
 	/// </remarks>
 	internal static readonly Regex SafetyDuty = new(
-		@"explicit(ly)?\s+(yes|confirm\w*|opt-in)|\bASK FIRST\b|\bask the user\b|\bask before\b|only after the user"
-		+ @"|once the user has agreed|user'?s? (agreement|consent)|on your own initiative|never chain"
-		+ @"|irreversib\w*|cannot be undone|\bpermanent(ly)?\b|\bdestructive\b|do not retry",
+		@"explicit(ly)?\s+(yes|confirm\w*|opt-in)|\bASK FIRST\b|" + ClauseStart + @"(ask|tell|warn)( the)? (user|developer)\b"
+		+ @"|\bask before\b|only after the user|once the user has agreed|user'?s? (agreement|consent)"
+		+ @"|on your own initiative|" + ProhibitiveNever + @"|\bmust not\b|irreversib\w*"
+		+ @"|cannot be (undone|(\w+ )?reverted)|\bpermanent(ly)?\b|(?<!non-)\bdestructive\b|do not retry"
+		+ @"|not retryable|\bsecret\b|\bpassword\b|as instructions|not available to you",
+		RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
+
+	/// <summary>
+	/// The start of a sentence or clause, where an imperative "tell / ask / warn the user" stands: "TELL THE
+	/// USER before building one", ": ASK the user to open this version", "- warn the user first". The same
+	/// words in the middle of a clause are description - "says what to tell the user first" - and the
+	/// process reference text has plenty of those.
+	/// </summary>
+	private const string ClauseStart = @"(?:^|[,;:(\u2014\u2013-]\s*|\b(?:so|and|but|then|or|always|first)\s+)";
+
+	/// <summary>
+	/// "never" followed by a verb in its BASE form - a prohibition addressed to the caller ("Never chain the
+	/// two", "never retry on a warning", "never point it at", "Never supply the password", "never hand-write
+	/// filter JSON"). Every other "never" in the catalog describes what something does ("server-side and
+	/// never accepted", "reports drift and never fixes it", "this tool never reads"), and matching those took
+	/// the seven process contracts from 18 KB to 32 KB - the very spill this short form exists to prevent.
+	/// Neither word position nor an auxiliary look-behind separates the two kinds; the verb form does.
+	/// </summary>
+	private const string ProhibitiveNever =
+		@"\bnever\s+(retry|echo|supply|send|re-?send|pass|point|chain|call|use|hand-write|write|guess|invent"
+		+ @"|delete|remove|run|repeat|put|store|log|print|share|expose|include|trust|assume|rely|skip|bypass"
+		+ @"|overwrite|activate|reuse|re-?type|split|merge|mix|combine|target|touch)\b";
+
+	/// <summary>
+	/// The wider net for a FIELD description, which is kept whole when it matches: a field is a sentence or
+	/// three, so keeping one costs little, and a field is where a flag's duty is written ("The save already
+	/// succeeded - never retry on a warning", "deleted recursively - so never point it at ...").
+	/// </summary>
+	internal static readonly Regex FieldDuty = new(
+		@"\bnever\b|\bmust not\b|\bdo not\b|\bdon't\b|\bwarn\b|delet|retr(y|ies)|instruction|revert"
+		+ @"|confirm|consent|secret|password|customer data",
 		RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
 
 	/// <summary>
@@ -264,7 +304,7 @@ internal static class ToolContractShortForm {
 
 	/// <summary>
 	/// Whether a <see cref="SafetyDuty"/> sentence STARTS inside the ordinary lead. Starts, not ends: the
-	/// create-business-process warning opens at character ~190 and runs past 600, and a test on the ordinary
+	/// create-business-process warning opens at character ~190 and runs past the ordinary lead, and a test on the ordinary
 	/// lead's own text would miss it and drop the rest of the block.
 	/// </summary>
 	internal static bool OpensWithSafetyWarning(string description) {
@@ -302,7 +342,7 @@ internal static class ToolContractShortForm {
 	/// count as one, since a field cut to its label says nothing about what the field is.
 	/// </summary>
 	private static string TrimFieldDescription(string? text) {
-		if (string.IsNullOrEmpty(text) || SafetyDuty.IsMatch(text)) {
+		if (string.IsNullOrEmpty(text) || SafetyDuty.IsMatch(text) || FieldDuty.IsMatch(text)) {
 			return text ?? string.Empty;
 		}
 		int searchFrom = LeadingLabel.Match(text).Length;
@@ -355,7 +395,7 @@ internal static class ToolContractShortForm {
 	private static string BuildNote(int descriptionChars, int keptChars, int omittedExamples, bool fieldsTrimmed) {
 		List<string> omitted = [];
 		if (keptChars < descriptionChars) {
-			omitted.Add($"{descriptionChars - keptChars} of {descriptionChars} description characters");
+			omitted.Add($"{descriptionChars - keptChars}/{descriptionChars} description chars");
 		}
 		if (omittedExamples > 0) {
 			omitted.Add(omittedExamples == 1 ? "the example" : $"{omittedExamples} examples");
@@ -366,7 +406,7 @@ internal static class ToolContractShortForm {
 		if (omitted.Count == 0) {
 			return string.Empty;
 		}
-		return $"[Short form, every safety sentence kept. Left out: {string.Join(", ", omitted)}. "
-			+ "detail=\"full\" returns all of it.]";
+		return $"[Short form, safety-marked sentences kept. Cut: {string.Join(", ", omitted)}. "
+			+ "detail=\"full\" has all.]";
 	}
 }

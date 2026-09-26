@@ -1,5 +1,5 @@
 ---
-description: a default named get-tool-contract lookup is FITTED to one inline reply (18 KB) and returns large contracts SHORT - a test or tool that needs the full text must pass detail=full, and a safety duty survives shortening only when its wording matches the SafetyDuty pattern
+description: a default named get-tool-contract lookup is FITTED to one inline reply (18 KB) and returns large contracts SHORT - a test or tool that needs the full text must pass detail=full, and a duty survives shortening only when its wording carries a SafetyDuty marker; widening the markers blows the budget
 applies-to:
   - clio/Command/McpServer/Tools/ToolContractShortForm.cs
   - clio/Command/McpServer/Tools/ToolContractGetTool.cs
@@ -18,32 +18,41 @@ write contract and four business-rule/page contracts are over the budget alone, 
 short (`create-business-process` 34 KB -> 3 KB). `detail: "full"` returns everything; `detail: "short"`
 shortens everything.
 
-Which text survives is decided by a pattern, not by structure:
+Which text survives is decided by word patterns, not by structure, and the patterns are a compromise
+MEASURED against the budget:
 
-- Every sentence matching `ToolContractShortForm.SafetyDuty` is kept, in the description AND in field
-  descriptions (a matching field description is kept whole), for EVERY tool. The pattern covers the ways
-  the catalog words a duty today: "explicit yes", "explicitly confirms", "ASK FIRST", "on your own
-  initiative", "Never chain", "permanent", "irreversible", "destructive", "do not retry" and a few more.
-- A destructive tool whose description OPENS with its warning (a matching sentence starts inside the
-  first 600 characters) keeps a lead of up to 1 500 characters, so the rest of that warning block - which
-  has sentences with no marker, such as "An ABSENT filter is the WIDE state ... nothing warns you" - stays
-  too. Every other tool keeps a 600-character lead. That split is what lets the seven process contracts
-  fit one reply together (18.3 KB of the 18 KB budget, measured on 2026-09-26: there is little headroom).
+- A description sentence survives when it carries a `SafetyDuty` marker: "explicit yes/confirm", "ASK
+  FIRST", "on your own initiative", "must not", "irreversible", "permanent", "destructive", "do not retry",
+  "secret", "password", "as instructions", "not available to you", "tell/ask/warn the user" at the START of
+  a clause, and "never" followed by a base-form verb from a fixed list ("never retry", "Never chain",
+  "never point"). A matching FIELD description is kept whole, and fields use the wider `FieldDuty` net
+  (any "never", "do not", "delet", "retry", "confirm", ...), because a field is short.
+- A destructive tool whose description OPENS with its warning (a marker sentence starts inside the first
+  500 characters) keeps a lead of up to 1 500 characters, so the unmarked sentences of that warning block
+  stay too. Every other tool keeps a 500-character lead.
+- Seven process contracts in one call measured 18 062 of 18 432 bytes on 2026-09-26: there is little
+  headroom.
+
+Known gap, by decision: ordinary imperatives - "do NOT run compile-creatio", "Do NOT remove the flow and
+add a plain one", "do not paraphrase" - are NOT markers and are dropped from the process contracts' short
+forms. The same rules are in the process guidance (`core-rules`, the process articles) the agent reads
+before building. The short form's note therefore says it kept the "safety-marked sentences", not all rules.
 
 **Why it is this way** — agent CLIs do not show a large tool result inline: Copilot CLI spilled every result
 from 21.3 KB up in the CAADT transcripts, and the agent then spent 3-9 shell turns per process run grepping
-the dumped contract back. Fitting (rather than "always short") leaves every small contract - where examples
-earn their place - byte-identical to before. The first short form kept only clauses worded "explicit yes"
-and lost the ask-first rule of `set-active-business-process-version`, the never-chain and permanence rules
-of `modify-business-process-as-new-version`, and the confirmation duty in `update-page`'s `force` field.
+the dumped contract back. Fitting (rather than "always short") leaves every small contract byte-identical
+to before. Every widening was measured on the seven-contract request: any "never" took it to 32 KB (the
+process reference text says "the runtime never writes", "this tool never reads" dozens of times), "and/,
+never" to 24 KB, an emphatic "do NOT" to 21 KB. Each is the spill the short form exists to remove.
 
 **What breaks if you ignore it** — a test that asserts a large contract's description, examples or field
 text through a default lookup now asserts the SHORT form: it fails if it checks deep text, and worse, it
 PASSES VACUOUSLY if it measures size - `GetToolContracts_ShouldKeepLargestContractWithinBudget_WhenEveryIndexedToolIsNamed`
 stayed green while measuring short forms until it was given `detail=full`. Pass
 `ToolContractShortForm.FullDetail` whenever the full text is the subject. A new duty worded outside the
-pattern ("check with them before", "make sure they want it") is silently dropped from the short form, and
-`ShortLookup_Should_KeepEverySafetySentence_OfEveryTool` cannot see it, because that test uses the same
-pattern: word the duty with one of the phrases above, or add the new wording to `SafetyDuty`. Adding a
-long description to any process tool can push the seven-contract reply over the budget, which
-`GetToolContracts_ShouldFitTheSevenProcessDesignerContractsInline_WhenRequestedTogether` reports.
+markers is silently dropped from a short form, and the pattern-driven test
+`ShortLookup_Should_KeepEverySafetySentence_OfEveryTool` cannot see it, because it uses the same pattern:
+add the duty to the hand-written `ShortLookup_Should_KeepTheReviewedDuty` cases, which fail on a miss.
+Widening a marker, or lengthening a process tool's description, can push the seven-contract reply over
+the budget, which `GetToolContracts_ShouldFitTheSevenProcessDesignerContractsInline_WhenRequestedTogether`
+reports.

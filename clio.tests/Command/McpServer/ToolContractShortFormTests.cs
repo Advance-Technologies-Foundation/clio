@@ -17,9 +17,9 @@ namespace Clio.Tests.Command.McpServer;
 /// </summary>
 /// <remarks>
 /// The rules are driven directly over synthetic contracts so each one is pinned on its own, and then over
-/// the real catalog for the claims that matter to a caller: no safety sentence of any tool - in its
-/// description or in a field description - is lost to shortening, and an explicit <c>detail=full</c> still
-/// returns everything.
+/// the real catalog for the claims that matter to a caller: a sentence carrying a safety marker - in the
+/// description or in a field description - is not lost to shortening, a hand-written list of known duties
+/// survives independently of the marker pattern, and an explicit <c>detail=full</c> still returns everything.
 /// </remarks>
 [TestFixture]
 [Property("Module", "McpServer")]
@@ -310,7 +310,7 @@ public sealed class ToolContractShortFormTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Over the real catalog at detail=short, every sentence the safety pattern matches in a tool's full description is in its short description, and every field description carrying one is kept whole.")]
+	[Description("Over the real catalog at detail=short, every sentence the safety pattern matches in a tool's full description is in its short description, and every field description carrying one is kept whole. This pins the MECHANISM - nothing downstream of the walker drops a matched sentence - and by construction cannot see a duty worded outside the pattern; ShortLookup_Should_KeepTheReviewedDuty is the independent oracle for that.")]
 	public void ShortLookup_Should_KeepEverySafetySentence_OfEveryTool() {
 		// Arrange
 		ToolContractGetTool tool = BuildToolWithRegistry();
@@ -335,7 +335,8 @@ public sealed class ToolContractShortFormTests {
 				(full.InputSchema?.Properties ?? []).Zip(shortForm.InputSchema?.Properties ?? [])
 				.Concat((full.OutputContract?.Fields ?? []).Zip(shortForm.OutputContract?.Fields ?? []));
 			foreach ((ToolContractField fullField, ToolContractField shortField) in fields
-				         .Where(pair => ToolContractShortForm.SafetyDuty.IsMatch(pair.Full.Description ?? string.Empty))) {
+				         .Where(pair => ToolContractShortForm.SafetyDuty.IsMatch(pair.Full.Description ?? string.Empty)
+					         || ToolContractShortForm.FieldDuty.IsMatch(pair.Full.Description ?? string.Empty))) {
 				checkedFields++;
 				if (shortField.Description != fullField.Description) {
 					lost.Add($"{name}.{fullField.Name}: field description cut");
@@ -353,10 +354,24 @@ public sealed class ToolContractShortFormTests {
 	}
 
 	[TestCase("set-active-business-process-version", "ASK FIRST")]
+	[TestCase("set-active-business-process-version", "on your own initiative")]
 	[TestCase("modify-business-process-as-new-version", "Never chain the two")]
 	[TestCase("modify-business-process-as-new-version", "permanent")]
+	[TestCase("create-business-process", "get an explicit yes")]
+	[TestCase("create-business-process", "TELL THE USER before building one")]
+	[TestCase("modify-business-process", "get an explicit yes")]
+	[TestCase("update-page", "never retry on a warning")]
+	[TestCase("update-page", "ONLY after the user explicitly confirms")]
+	[TestCase("get-page", "never point it at")]
+	[TestCase("set-logo", "warn the user first")]
+	[TestCase("get-telemetry-consent", "ASK THE DEVELOPER")]
+	[TestCase("deploy-identity", "Never echo the generated client secret")]
+	[TestCase("manage-user", "Never supply the password")]
+	[TestCase("odata-create", "must not be blindly re-sent")]
+	[TestCase("send-telemetry", "never customer data")]
+	[TestCase("delete-app-section", "irreversible")]
 	[Category("Unit")]
-	[Description("Over the real catalog, the duties the first short form was reviewed for losing - ask-first, never-chain, permanence - are in the short form of the tool that states them.")]
+	[Description("Over the real catalog at detail=short, each duty a review found a short form dropping is still in the short contract - description or field. An oracle independent of SafetyDuty: the list is written by hand, so a wording the pattern misses fails here instead of passing the pattern-driven test.")]
 	public void ShortLookup_Should_KeepTheReviewedDuty(string toolName, string duty) {
 		// Arrange
 		ToolContractGetTool tool = BuildToolWithRegistry();
@@ -368,10 +383,17 @@ public sealed class ToolContractShortFormTests {
 			new ToolContractGetArgs([toolName], ToolContractShortForm.ShortDetail)).Tools!.Single();
 
 		// Assert
-		full.Description.Should().Contain(duty, because: "anti-vacuity: the full contract states the duty");
-		shortForm.Description.Should().Contain(duty,
-			because: "a short form keyed on one confirmation phrase dropped this duty, which is why the pattern exists");
+		AllText(full).Should().Contain(duty, because: "anti-vacuity: the full contract states the duty");
+		AllText(shortForm).Should().Contain(duty,
+			because: "an earlier short form dropped this duty; the short form must hand it to the caller");
 	}
+
+	// The description and every input and output field description of a contract, which is where a
+	// duty can be written.
+	private static string AllText(ToolContractDefinition contract) =>
+		string.Join("\n", new[] { contract.Description ?? string.Empty }
+			.Concat((contract.InputSchema?.Properties ?? []).Select(field => field.Description ?? string.Empty))
+			.Concat((contract.OutputContract?.Fields ?? []).Select(field => field.Description ?? string.Empty)));
 
 	[TestCase("create-business-process")]
 	[TestCase("modify-business-process")]
