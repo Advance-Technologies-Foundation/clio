@@ -279,6 +279,8 @@ public sealed class CompileCreatioToolTests
 	[Description("The compile prompt treats a blank package-name or process-name the way the tool does: not as omitted, so it never hands out the full-compilation guidance for an empty scoped request.")]
 	public void CompileCreatioPrompt_Should_NotOfferAFullCompile_ForABlankScope(string? packageName, string? processName)
 	{
+		// Arrange
+
 		// Act
 		string prompt = FsmAndCompilePrompt.CompileCreatio("sandbox", packageName, processName);
 

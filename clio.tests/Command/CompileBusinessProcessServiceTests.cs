@@ -215,9 +215,24 @@ public sealed class CompileBusinessProcessCommandTests {
 
 	private static CompileBusinessProcessResult Result(bool success, bool compileRequired = true,
 			IReadOnlyList<CompileBusinessProcessError> errors = null, int errorCount = 0,
-			string errorMessage = null) =>
-		new(success, errorMessage, "UsrProc", "Custom", "general", compileRequired, compileRequired, 201000,
-			errors ?? [], errorCount);
+			string errorMessage = null, bool? compiled = null) =>
+		new(success, errorMessage, "UsrProc", "Custom", "general", compileRequired, compiled ?? compileRequired,
+			201000, errors ?? [], errorCount);
+
+	[Test]
+	[Description("A failure where no compile ran - the process was not found, say - does not tell the caller to ask again before 'the next compile': no consent was spent, and the line would read as if a compile had happened.")]
+	public void Execute_ShouldNotAskAgain_WhenTheFailureRanNoCompile() {
+		// Arrange
+		CompileBusinessProcessResult result = Result(success: false, compiled: false,
+			errorMessage: "Process 'UsrProc' was not found.");
+
+		// Act
+		int exitCode = Execute(result);
+
+		// Assert
+		exitCode.Should().Be(1, because: "the call failed");
+		_logger.DidNotReceive().WriteError(Arg.Is<string>(message => message.Contains("ask the user again")));
+	}
 
 	[Test]
 	[Description("A clean compile exits 0 and says which package was compiled and how long it took, and asks for a run to verify it rather than promising activation: a reload without restart was measured on .NET Framework only.")]
