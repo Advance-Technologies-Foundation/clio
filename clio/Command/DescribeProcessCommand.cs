@@ -1,3 +1,5 @@
+using System;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Command.ProcessModel;
@@ -84,7 +86,45 @@ public class DescribeProcessCommand(IProcessDescriber describer, ILogger logger)
 			return 1;
 		}
 
-		logger.WriteInfo(JsonSerializer.Serialize(description.Value, OutputOptions));
+		logger.WriteInfo(JsonSerializer.Serialize(OmitDecodedFilterPayloads(description.Value), OutputOptions));
 		return 0;
+	}
+
+	/// <summary>
+	/// The note written in place of a raw filter value that <see cref="DescribedElement.Filter"/> reports decoded.
+	/// </summary>
+	internal const string DecodedFilterNote = "decoded into the element's filter";
+
+	// The element parameters whose stored value is the raw platform filter the server decodes into Filter.
+	private static readonly string[] FilterParameterNames = ["DataSourceFilters", "EntityFilters"];
+
+	/// <summary>
+	/// Leaves out the raw platform filter of every element whose <see cref="DescribedElement.Filter"/> already
+	/// reports it decoded (ENG-99970), and says so on the parameter.
+	/// </summary>
+	/// <remarks>
+	/// The raw value is the platform's serialized FilterGroup, a JSON string nested inside another: about 1 900
+	/// characters for one Read data element, ~15% of a measured describe, and a duplicate of the ~300-character
+	/// <c>filter</c> beside it, which is the form that round-trips into a <c>create</c> / <c>modify</c> filter. No
+	/// measured agent read it. It is kept whenever <c>Filter</c> is null: describe decodes only the modern filter
+	/// wrapper, so for a legacy designer-built filter the raw value is the only evidence that a filter exists
+	/// (<c>AccessRightsBlockExpectation</c> relies on the same fact). Changed on the result being written, which
+	/// this command owns; the describer's model is not shared.
+	/// </remarks>
+	internal static DescribeProcessResult OmitDecodedFilterPayloads(DescribeProcessResult result) {
+		foreach (DescribedElement element in result?.Elements ?? []) {
+			if (element?.Filter is null || element.Parameters is null) {
+				continue;
+			}
+			foreach (DescribedParameter parameter in element.Parameters) {
+				if (parameter is not null
+					&& !string.IsNullOrEmpty(parameter.Value)
+					&& FilterParameterNames.Contains(parameter.Name, StringComparer.OrdinalIgnoreCase)) {
+					parameter.Value = null;
+					parameter.ValueOmitted = DecodedFilterNote;
+				}
+			}
+		}
+		return result;
 	}
 }

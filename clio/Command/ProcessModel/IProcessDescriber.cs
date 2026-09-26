@@ -1912,6 +1912,16 @@ public sealed class DescribedParameter {
 	public string Value { get; set; }
 
 	/// <summary>
+	/// Set in place of <see cref="Value"/> when describe-business-process leaves the stored value out, saying where
+	/// its content is reported instead - today only the raw platform filter of <c>DataSourceFilters</c> /
+	/// <c>EntityFilters</c>, whenever <see cref="DescribedElement.Filter"/> carries it decoded (ENG-99970).
+	/// <para>Null otherwise, and always null on the model the describer returns: the value is left out only when
+	/// the graph is written for the caller, so clio's own read-backs still see it.</para>
+	/// </summary>
+	[JsonPropertyName("valueOmitted")]
+	public string ValueOmitted { get; set; }
+
+	/// <summary>
 	/// What the designer SHOWS for <see cref="Value"/> — for a Lookup constant the referenced record's name (for
 	/// example <c>Call</c> beside the bare id in <see cref="Value"/>), for a mapping the source parameter's caption.
 	/// Read-only: <see cref="Value"/> alone is what round-trips back into <c>addMapping</c> / <c>setParameter</c>,

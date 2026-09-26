@@ -557,4 +557,87 @@ public sealed class DescribeProcessCommandTests {
 			because: "no member was flagged active, so naming one would be an invention");
 	}
 
+	[TestCase("readData", "DataSourceFilters")]
+	[TestCase("signalStart", "EntityFilters")]
+	[Category("Unit")]
+	[Description("Leaves out the raw platform filter of an element whose filter the server already decodes, and says where it is instead: the raw FilterGroup was ~15% of a measured describe, duplicated the decoded filter beside it, and no measured agent read it (ENG-99970).")]
+	public void Execute_ShouldOmitTheRawFilterValue_WhenTheFilterIsDecoded(string buildType, string filterParameter) {
+		// Arrange
+		_describer.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>())
+			.Returns(new DescribeProcessResult {
+				Name = "UsrFilteredProcess",
+				SchemaUId = "uid",
+				Elements = [
+					new DescribedElement {
+						Name = "Filtered1", Uid = "e1", BuildType = buildType,
+						Filter = new DescribedFilter { Object = "Contact" },
+						Parameters = [
+							new DescribedParameter {
+								Name = filterParameter, UId = "p1", Type = "Text", Source = "ConstValue",
+								Value = "{\"className\":\"Terrasoft.FilterGroup\",\"items\":{}}"
+							},
+							new DescribedParameter {
+								Name = "ResultType", UId = "p2", Type = "Integer", Source = "ConstValue", Value = "0"
+							}
+						]
+					}
+				],
+				Flows = [],
+				Parameters = []
+			});
+		string written = null;
+		_logger.WriteInfo(Arg.Do<string>(value => written = value));
+
+		// Act
+		int result = _command.Execute(new DescribeProcessOptions { Environment = "dev", ProcessName = "UsrFilteredProcess" });
+
+		// Assert
+		result.Should().Be(0, because: "a found process is described successfully");
+		JsonNode element = JsonNode.Parse(written)!["elements"]![0]!;
+		JsonNode filterParameterNode = element["parameters"]![0]!;
+		filterParameterNode["value"].Should().BeNull(
+			because: "the raw FilterGroup duplicates the decoded filter and is left out of the graph the caller reads");
+		filterParameterNode["valueOmitted"]!.GetValue<string>().Should().Be(DescribeProcessCommand.DecodedFilterNote,
+			because: "an omitted value must say where its content is, or the parameter reads as empty");
+		element["filter"]!["object"]!.GetValue<string>().Should().Be("Contact",
+			because: "the decoded filter is what carries the content now, and it stays");
+		element["parameters"]![1]!["value"]!.GetValue<string>().Should().Be("0",
+			because: "only the raw filter is left out; every other parameter value is written as stored");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Keeps the raw filter value when the server could not decode the filter: describe decodes only the modern wrapper, so for a legacy designer-built filter the raw value is the only evidence that a filter exists.")]
+	public void Execute_ShouldKeepTheRawFilterValue_WhenTheFilterIsNotDecoded() {
+		// Arrange
+		_describer.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>())
+			.Returns(new DescribeProcessResult {
+				Name = "UsrLegacyFilter",
+				SchemaUId = "uid",
+				Elements = [
+					new DescribedElement {
+						Name = "Read1", Uid = "e1", BuildType = "readData", Filter = null,
+						Parameters = [
+							new DescribedParameter {
+								Name = "DataSourceFilters", UId = "p1", Type = "Text", Source = "ConstValue",
+								Value = "a legacy FilterEdit payload"
+							}
+						]
+					}
+				],
+				Flows = [],
+				Parameters = []
+			});
+		string written = null;
+		_logger.WriteInfo(Arg.Do<string>(value => written = value));
+
+		// Act
+		_command.Execute(new DescribeProcessOptions { Environment = "dev", ProcessName = "UsrLegacyFilter" });
+
+		// Assert
+		JsonNode parameter = JsonNode.Parse(written)!["elements"]![0]!["parameters"]![0]!;
+		parameter["value"]!.GetValue<string>().Should().Be("a legacy FilterEdit payload",
+			because: "with no decoded filter the raw value is the only sign a filter narrows this element");
+		parameter["valueOmitted"].Should().BeNull(because: "nothing was left out");
+	}
 }
