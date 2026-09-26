@@ -30,10 +30,12 @@ namespace Clio.Mcp.E2E;
 /// <c>McpE2E__AllowDestructiveMcpTests=true</c>.</para>
 /// <para>A process that reached the successful compile is left on the stand under a unique
 /// <c>UsrClioBpCompileLifecycleE2e*</c> name, like the other process-designer fixtures leave theirs: deleting a
-/// process whose code was compiled into the shared assembly would owe yet another compile. A run that stops
-/// BEFORE the alias lands deletes its process instead: a script task that does not compile, left in
-/// <c>Custom</c>, would fail every later process-name compile of that package with CS0104 - this test's next run
-/// included. Its failed compile never reached the assembly, so the delete owes nothing.</para>
+/// process whose code was compiled into the shared assembly would owe yet another compile. Any other run deletes
+/// its process - it stopped before the alias landed, or the second compile failed: a script task that does not
+/// compile, left in <c>Custom</c>, would fail every later process-name compile of that package, this test's next
+/// run included, and its failed compile never reached the assembly, so the delete owes nothing. A run cut off
+/// while a compile may still be running keeps the process and says so, since deleting under a running compile is
+/// not safe.</para>
 /// </remarks>
 [TestFixture]
 [Category("McpE2E.Sandbox")]
@@ -78,9 +80,13 @@ public sealed class ScriptTaskCompileLifecycleE2ETests {
 			because: "a new script task owes a compile before it can run");
 
 		bool aliasLanded = false;
+		bool compileMayBeRunning = false;
+		CompileOutcome? secondCompile = null;
 		try {
 			// Act
+			compileMayBeRunning = true;
 			CompileOutcome firstCompile = await CompileAndWaitAsync(context, processName);
+			compileMayBeRunning = false;
 			string aliased = JsonSerializer.Serialize(await ProcessDesignerE2EArrange.CallToolAsync(context,
 				ModifyBusinessProcessTool.ModifyBusinessProcessToolName, new Dictionary<string, object?> {
 					["environment-name"] = context.EnvironmentName,
@@ -88,7 +94,9 @@ public sealed class ScriptTaskCompileLifecycleE2ETests {
 					["operations"] = """[{"op":"addUsing","using":{"namespace":"Terrasoft.Core.Configuration.SysSettings","alias":"SysSettings"}}]"""
 				}));
 			aliasLanded = aliased.Contains(ExitCodeZero, StringComparison.Ordinal);
-			CompileOutcome secondCompile = await CompileAndWaitAsync(context, processName);
+			compileMayBeRunning = true;
+			secondCompile = await CompileAndWaitAsync(context, processName);
+			compileMayBeRunning = false;
 			CallToolResult ran = await ProcessDesignerE2EArrange.CallToolAsync(context, RunProcessTool.ToolName,
 				new Dictionary<string, object?> {
 					["environment-name"] = context.EnvironmentName,
@@ -109,7 +117,14 @@ public sealed class ScriptTaskCompileLifecycleE2ETests {
 				because: "the alias names the one SysSettings the body means: {0}", secondCompile.Text);
 			AssertRunReturnsTheComputedValues(ran);
 		} finally {
-			if (!aliasLanded) {
+			// A compile whose outcome is unknown may still be running, and deleting a schema under it is not safe;
+			// otherwise the process is deleted unless it reached the successful compile, since a process whose
+			// code does not compile breaks every later compile of its package.
+			if (compileMayBeRunning) {
+				await TestContext.Error.WriteLineAsync($"The compile outcome is unknown; retained '{processName}'. "
+					+ "Delete it once the compile has stopped, or every later process-name compile of its package "
+					+ "may fail on it.");
+			} else if (!aliasLanded || secondCompile?.Succeeded != true) {
 				await DeleteProcessAsync(context.EnvironmentName, processName);
 			}
 		}
