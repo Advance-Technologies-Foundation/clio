@@ -25,3 +25,7 @@ no `UserName` (earlier, a login as `Supervisor`), and `list-pages` still answere
 against a permissive backend. Making such a member persistable by removing the attribute breaks the
 other guarantee: a passthrough token assigned at runtime is written into `appsettings.json` by the
 next save.
+
+`Fill` carries the stored token only when the call passes no explicit login, password, client id or
+client secret. `ApplicationClientFactory` checks the bearer before every other credential, so a
+carried token would run the call as the stored principal even when the caller named another one.

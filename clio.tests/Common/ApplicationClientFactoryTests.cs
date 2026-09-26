@@ -66,6 +66,64 @@ internal sealed class ApplicationClientFactoryTests {
 	#endregion
 
 	[Test]
+	[Description("Fill does not carry a settings-file AccessToken when the caller supplies explicit login/password or client credentials, because the factory would otherwise present the stored bearer instead of the explicit identity (issue #1624 review).")]
+	[TestCase("principal-b", "fake-password-b", null, null)]
+	[TestCase(null, null, "client-b", "fake-secret-b")]
+	public void Fill_ShouldNotCarryStoredBearer_WhenExplicitCredentialsAreSupplied(
+		string login, string password, string clientId, string clientSecret) {
+		// Arrange
+		EnvironmentSettings stored = Newtonsoft.Json.JsonConvert.DeserializeObject<EnvironmentSettings>(
+			"""{ "Uri": "https://bearer.creatio.com", "AccessToken": "fake-principal-a" }""");
+		EnvironmentOptions options = new() {
+			Login = login, Password = password, ClientId = clientId, ClientSecret = clientSecret
+		};
+
+		// Act
+		EnvironmentSettings filled = stored.Fill(options, NonInteractiveConsole.Shared);
+
+		// Assert
+		filled.AccessToken.Should().BeNullOrEmpty(
+			because: "the factory checks the bearer before any other credential, so a carried token would override the explicit identity");
+	}
+
+	[Test]
+	[Description("A stored-bearer environment filled with explicit login/password builds a forms-login client, not the bearer client that would present the stored principal (issue #1624 review).")]
+	public void CreateClient_ShouldUseExplicitLogin_WhenStoredBearerEnvironmentIsFilledWithLoginPassword() {
+		// Arrange
+		IReauthExecutor noReauthExecutor = Substitute.For<IReauthExecutor>();
+		ApplicationClientFactory sut = new(noReauthExecutor,
+			Substitute.For<Clio.Common.ExternalAccess.IExternalAccessSessionProvider>());
+		EnvironmentSettings stored = Newtonsoft.Json.JsonConvert.DeserializeObject<EnvironmentSettings>(
+			"""{ "Uri": "https://bearer.creatio.com", "AccessToken": "fake-principal-a" }""");
+		EnvironmentOptions options = new() { Login = "principal-b", Password = "fake-password-b" };
+
+		// Act
+		IApplicationClient client = sut.CreateClient(stored.Fill(options, NonInteractiveConsole.Shared));
+
+		// Assert
+		ReadReauthExecutor(client).Should().NotBeSameAs(noReauthExecutor,
+			because: "only token-based branches use the no-reauth executor; the forms-login branch re-logs in with the explicit credentials");
+	}
+
+	[Test]
+	[Description("A settings-file AccessToken is carried by Fill and routes the client through the bearer branch when no explicit credentials are supplied (issue #1624).")]
+	public void CreateClient_ShouldPresentStoredBearer_WhenFillReceivesNoExplicitCredentials() {
+		// Arrange
+		IReauthExecutor noReauthExecutor = Substitute.For<IReauthExecutor>();
+		ApplicationClientFactory sut = new(noReauthExecutor,
+			Substitute.For<Clio.Common.ExternalAccess.IExternalAccessSessionProvider>());
+		EnvironmentSettings stored = Newtonsoft.Json.JsonConvert.DeserializeObject<EnvironmentSettings>(
+			"""{ "Uri": "https://bearer.creatio.com", "AccessToken": "fake-principal-a" }""");
+
+		// Act
+		IApplicationClient client = sut.CreateClient(stored.Fill(new EnvironmentOptions(), NonInteractiveConsole.Shared));
+
+		// Assert
+		ReadReauthExecutor(client).Should().BeSameAs(noReauthExecutor,
+			because: "a bearer-only environment has nothing else to authenticate with");
+	}
+
+	[Test]
 	[Description("CreateClient builds a CreatioClientAdapter via the bearer branch when AccessToken is set")]
 	public void CreateClient_ShouldBuildAdapter_WhenAccessTokenIsSet() {
 		// Arrange

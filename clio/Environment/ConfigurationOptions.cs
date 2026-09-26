@@ -335,8 +335,13 @@ namespace Clio
 			result.ExternalAccessToken = options.ExternalAccessToken;
 			// A bearer-only environment has nothing else to authenticate with: dropping the token here
 			// sent every command down a forms login carrying no user name at all (issue #1624).
-			result.AccessToken = this.AccessToken;
-			result.AccessTokenType = this.AccessTokenType;
+			// The factory prefers any bearer over login/password or client credentials, so an inherited
+			// token would silently override credentials the caller supplied explicitly for this call:
+			// explicit credentials win and the stored token is not carried.
+			if (!HasExplicitCredentials(options)) {
+				result.AccessToken = this.AccessToken;
+				result.AccessTokenType = this.AccessTokenType;
+			}
 			if (this.Safe.HasValue && this.Safe.Value
 				&& !interactiveConsole.Prompt($"You try to apply the action on the production site {this.Uri}")) {
 				// Non-interactive hosts (MCP stdio / CI) fail closed here instead of blocking on
@@ -349,6 +354,12 @@ namespace Clio
 			ApplyDbServerOptions(result, options);
 			return result;
 		}
+
+		private static bool HasExplicitCredentials(EnvironmentOptions options) =>
+			!string.IsNullOrEmpty(options.Login)
+			|| !string.IsNullOrEmpty(options.Password)
+			|| !string.IsNullOrEmpty(options.ClientId)
+			|| !string.IsNullOrEmpty(options.ClientSecret);
 
 		private static void ApplyDbServerOptions(EnvironmentSettings result, EnvironmentOptions options) {
 			if (System.Uri.TryCreate(options.DbServerUri, UriKind.Absolute, out Uri uri)) {
