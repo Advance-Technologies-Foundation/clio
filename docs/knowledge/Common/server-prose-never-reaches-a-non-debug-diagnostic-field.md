@@ -14,6 +14,7 @@ applies-to:
   - clio/Common/UntrustedText.cs
   - clio/Common/ServerReportedFailureText.cs
   - clio/Command/McpServer/Tools/ODataReadTool.cs
+  - clio/Common/CreatioResponseError.StructuredDetail.cs
 ticket: GH-1333, GH-1378
 date: 2026-09-03
 ---
@@ -151,3 +152,13 @@ reads as clio malfunctioning (the same reason `ISysSettingsManager` prints `ForC
 its warning is captured by `CompileCreatioTool` into an MCP result. Both treatments are deliberate, and
 which one applies is decided by the SINK, not by the class of text.
 
+**Update (issue #1550)** — the odata-read paths (`ODataReadTool`, `ODataFileContract`) now append
+`CreatioResponseError.DescribeStructuredODataError`: an `error.code` matching `^[A-Za-z0-9_.:-]{1,64}$`
+and the identifiers captured by four measured Creatio wordings (unknown property, column path not
+found, operand-type mismatch, the null `property` argument of a binary-column `$select`). This is not
+an exception to the rule above: a pattern captures only bounded ASCII identifiers, the sentence around
+them is clio's own, and a message that matches no pattern contributes nothing. Two measured facts the
+code alone does not make obvious: Creatio sends `"code":""` on every OData error seen so far, so the
+code half is dormant on current builds; and the identifier set is the whole reason four unrelated
+mistakes stopped reading identically. Widening a capture group to "anything between the quotes"
+reopens the leak.

@@ -597,8 +597,11 @@ public sealed class ODataReadToFileToolTests {
 		response.ErrorCode.Should().Be(ODataReadErrorCodes.ServerReportedError,
 			because: "an error the SERVER reported must be classified as such, not lumped in with a body that simply is not OData - a caller branching on the code treats the two differently");
 		response.Error.Should().Be(
-			CreatioResponseError.DescribeServerReportedReadError(ODataErrorKind.ServerError),
-			because: "the file path must answer a server error with the same locally authored sentence the inline read uses");
+			CreatioResponseError.DescribeServerReportedReadError(ODataErrorKind.ServerError,
+				structuredDetail: "From the error payload (validated identifiers only): code '500'"),
+			because: "the file path must answer a server error with the same locally authored sentence the inline read uses, including the validated error.code (issue #1550)");
+		response.Error.Should().NotContain("boom",
+			because: "the free-form error.message is server prose and must stay out of the transcript");
 		fileSystem.File.Exists(outputFile).Should().BeFalse(
 			because: "an error payload must not be persisted under a name that suggests a successful read");
 	}

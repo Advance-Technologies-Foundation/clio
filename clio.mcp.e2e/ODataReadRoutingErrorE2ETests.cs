@@ -223,7 +223,7 @@ public sealed class ODataReadRoutingErrorE2ETests {
 	[AllureTag(ODataReadTool.ToolName)]
 	[AllureName("odata-read classifies an unknown filter property as invalid-query")]
 	[AllureDescription("Serves the OData v4 error body Creatio returns for a property the entity type has not got, and verifies odata-read reports error-code invalid-query with a correlation-id and none of the server's own wording.")]
-	[Description("GH-1407 case 4: a filter on a property the entity does not expose is reported as error-code invalid-query, naming the caller's own field, with a correlation-id and no server prose.")]
+	[Description("GH-1407 case 4 / issue #1550: a filter on a property the entity does not expose is reported as error-code invalid-query, naming the caller's own field and the validated unknown-property identifiers, with a correlation-id and no server prose.")]
 	public async Task ODataRead_Should_Classify_An_Unknown_Filter_Property_As_Invalid_Query() {
 		await RunAgainstRoutingErrorStubAsync(async (session, environmentName, _, cancellationToken) => {
 			// Act
@@ -255,6 +255,10 @@ public sealed class ODataReadRoutingErrorE2ETests {
 				because: "the caller's own field name is the only text that may be echoed, and without it the caller cannot tell which member was rejected");
 			response.Error.Should().NotContain("Terrasoft.Configuration.OData",
 				because: "the server's own wording must not reach a field a model reads as trusted content");
+			response.Error.Should().Contain($"unknown property 'Nope' on '{InvalidQueryEntity}'",
+				because: "issue #1550: the validated property and entity identifiers from the error payload tell this rejection apart from every other invalid query");
+			response.Error.Should().NotContain("Could not find a property named",
+				because: "only the identifiers are restated; the server sentence they came from is withheld");
 		}, invalidQueryEntity: InvalidQueryEntity);
 	}
 
@@ -297,6 +301,8 @@ public sealed class ODataReadRoutingErrorE2ETests {
 				because: "GH-1407 reports that the navigation path succeeds where the raw column fails, and the caller had no way to discover it");
 			response.Error.Should().NotContain("Column by path",
 				because: "the sentence the classification was derived from is the server's own and stays on the debug channel");
+			response.Error.Should().Contain($"column path 'SysSettingsId' not found in schema '{InvalidQueryEntity}'",
+				because: "issue #1550: the column path and schema identifiers parsed from the nested message name the rejected member in clio's own sentence");
 			response.CorrelationId.Should().NotBeNullOrWhiteSpace(
 				because: "the correlation-id is the only bridge from this response to that debug line");
 		}, invalidQueryEntity: InvalidQueryEntity);
