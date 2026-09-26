@@ -12,6 +12,7 @@ using System.Threading.Tasks;
 using Clio.Mcp.E2E;
 using FluentAssertions;
 using NUnit.Framework;
+using NUnit.Framework.Interfaces;
 using YamlDotNet.Serialization;
 
 namespace Clio.Tests;
@@ -246,6 +247,107 @@ internal sealed class McpE2eSelectionCoverageTests {
 		selection.GetProperty("filter").GetString().Should().Be(
 			"TestCategory!=McpE2E.NoEnvironment&TestCategory!=McpE2E.ProcessDesigner&TestCategory!=McpE2E.Manual",
 			because: "a full pull-request run still hands the NoEnvironment tier to GitHub");
+	}
+
+	[Test]
+	[Description("A tool file whose fixture file declares a NoEnvironment fixture next to a Creatio fixture still runs on TeamCity, because the tier is classified per fixture rather than per file (issue #1572).")]
+	public void Script_ShouldKeepTeamCityRun_WhenFixtureFileMixesTiers() {
+		// Arrange
+		string[] changed = ["clio/Command/McpServer/Tools/EmailTemplateTool.cs"];
+
+		// Act
+		JsonElement selection = RunSelection(changed, includeNoEnvironment: false);
+
+		// Assert
+		selection.GetProperty("mode").GetString().Should().Be("subset",
+			because: "EmailTemplateToolLiveE2ETests carries McpE2E.Creatio, not McpE2E.NoEnvironment, so the GitHub NoEnvironment tier does not run it and TeamCity must");
+		selection.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().Contain("EmailTemplateToolLiveE2ETests",
+			because: "the Creatio fixture declared in the same file as the NoEnvironment one has to stay in the TeamCity subset");
+		selection.GetProperty("filter").GetString().Should().Contain("FullyQualifiedName~Clio.Mcp.E2E.EmailTemplateToolLiveE2ETests",
+			because: "the filter TeamCity receives must name the Creatio fixture");
+	}
+
+	[Test]
+	[Description("In a synthetic repository, the NoEnvironment verdict is read per fixture from Category attributes only: a method-level Creatio test keeps its fixture on TeamCity, a comment that mentions a tier changes nothing, a baseFilter-excluded category counts as covered, and a partial class is NoEnvironment-only only if every part is.")]
+	public void Inventory_ShouldClassifyNoEnvironmentPerFixture_FromCategoryAttributesOnly() {
+		// Arrange
+		using SyntheticRepository repo = SyntheticRepository.Create();
+		repo.WriteFile("clio.mcp.e2e/OmegaMixedE2ETests.cs",
+			"/// <summary>Mentions McpE2E.Sandbox only in a comment.</summary>\n" +
+			"[TestFixture]\n[Category(\"McpE2E.NoEnvironment\")]\npublic sealed class OmegaContractE2ETests {\n" +
+			"\t[Test] public void Advertises() => Call(\"alpha-run\");\n}\n\n" +
+			"[TestFixture]\npublic sealed class OmegaMethodTierE2ETests {\n" +
+			"\t[Test, Category(\"McpE2E.NoEnvironment\")] public void Contract() => Call(\"alpha-run\");\n" +
+			"\t[Test, Category(\"McpE2E.Creatio\")] public void Live() => Call(\"alpha-run\");\n}\n\n" +
+			"[TestFixture]\npublic sealed class OmegaExcludedE2ETests {\n" +
+			"\t[Test, Category(\"McpE2E.NoEnvironment\")] public void Contract() => Call(\"alpha-run\");\n" +
+			"\t[Test]\n\t[Category(\"McpE2E.Manual\")]\n\tpublic void ManualOnly() => Call(\"alpha-run\");\n}\n\n" +
+			"/// Carries no <c>[Category(\"McpE2E.NoEnvironment\")]</c> tag.\n" +
+			"[TestFixture]\npublic sealed class OmegaCommentE2ETests {\n" +
+			"\t// [Category(\"McpE2E.NoEnvironment\")]\n\t[Test, Category(OmegaCommentE2ETests.Live)] public void Works() => Call(\"alpha-run\");\n}\n\n" +
+			"public partial class OmegaPartialE2ETests {\n" +
+			"\t[Test, Category(\"McpE2E.NoEnvironment\")] public void Contract() => Call(\"alpha-run\");\n}\n\n" +
+			"public partial class OmegaPartialE2ETests {\n" +
+			"\t[Test] public void Bare() => Call(\"alpha-run\");\n}\n");
+
+		// Act
+		JsonElement verdicts = RunScript(ps => ps.AddParameter("Inventory"), repo.Root).GetProperty("noEnvironmentOnly");
+
+		// Assert
+		verdicts.GetProperty("OmegaContractE2ETests").GetBoolean().Should().BeTrue(
+			because: "a class-level McpE2E.NoEnvironment covers every test, and a tier named only in a doc comment must not flip that");
+		verdicts.GetProperty("OmegaMethodTierE2ETests").GetBoolean().Should().BeFalse(
+			because: "the McpE2E.Creatio method survives the TeamCity subset filter, so skipping TeamCity would run it nowhere (review finding on PR #1679)");
+		verdicts.GetProperty("OmegaExcludedE2ETests").GetBoolean().Should().BeTrue(
+			because: "a McpE2E.Manual method is excluded by baseFilter, so nothing of this fixture runs on TeamCity either way");
+		verdicts.GetProperty("OmegaCommentE2ETests").GetBoolean().Should().BeFalse(
+			because: "a commented-out Category attribute is not a tier, and an unresolved constant reads as not NoEnvironment");
+		verdicts.GetProperty("OmegaPartialE2ETests").GetBoolean().Should().BeFalse(
+			because: "one part of the partial class has an untiered test, and a neighbour part must not make it look covered");
+	}
+
+	[Test]
+	[Description("Every fixture the script classifies as NoEnvironment-only has, by reflection over the compiled e2e assembly, no test that survives the TeamCity subset filter, so skipping TeamCity for it never leaves a test running nowhere.")]
+	public void NoEnvironmentVerdicts_ShouldAgreeWithCompiledCategories() {
+		// Arrange
+		JsonElement manifest = ReadManifest();
+		string noEnvironment = manifest.GetProperty("noEnvironmentCategory").GetString()!;
+		string[] excluded = manifest.GetProperty("baseFilter").GetString()!.Split('&')
+			.Select(clause => clause.Replace("TestCategory!=", string.Empty, StringComparison.Ordinal))
+			.ToArray();
+		Dictionary<string, Type> compiled = GetFixtureTypes().ToDictionary(fixture => fixture.Name, StringComparer.Ordinal);
+		string[] claimed = Inventory.Value.GetProperty("noEnvironmentOnly").EnumerateObject()
+			.Where(verdict => verdict.Value.GetBoolean())
+			.Select(verdict => verdict.Name)
+			.ToArray();
+
+		// Act
+		string[] wrong = claimed
+			.Where(name => !compiled.TryGetValue(name, out Type? fixture) || GetTeamCityRunnableTests(fixture, noEnvironment, excluded).Any())
+			.OrderBy(name => name, StringComparer.Ordinal)
+			.ToArray();
+
+		// Assert
+		claimed.Should().NotBeEmpty(because: "the guard is meaningless if the script classifies no fixture as NoEnvironment-only");
+		wrong.Should().BeEmpty(
+			because: "a fixture classified NoEnvironment-only skips TeamCity, so every one of its tests has to carry McpE2E.NoEnvironment or a category the base filter excludes");
+	}
+
+	/// <summary>
+	/// Test methods of the fixture whose effective categories (class and method, inherited included) pass
+	/// <c>TestCategory!=McpE2E.NoEnvironment&amp;&lt;baseFilter&gt;</c>, i.e. the tests a TeamCity subset run executes.
+	/// </summary>
+	private static IEnumerable<string> GetTeamCityRunnableTests(Type fixture, string noEnvironment, string[] excluded) {
+		HashSet<string> classCategories = fixture.GetCustomAttributes<CategoryAttribute>(inherit: true)
+			.Select(attribute => attribute.Name).ToHashSet(StringComparer.Ordinal);
+		return fixture.GetMethods(BindingFlags.Public | BindingFlags.Instance)
+			.Where(method => method.GetCustomAttributes(inherit: true).Any(attribute => attribute is ITestBuilder or ISimpleTestBuilder))
+			.Where(method => {
+				HashSet<string> categories = new(classCategories, StringComparer.Ordinal);
+				categories.UnionWith(method.GetCustomAttributes<CategoryAttribute>(inherit: true).Select(attribute => attribute.Name));
+				return !categories.Contains(noEnvironment) && !categories.Overlaps(excluded);
+			})
+			.Select(method => method.Name);
 	}
 
 	[Test]
@@ -747,6 +849,13 @@ internal sealed class McpE2eSelectionCoverageTests {
 			Directory.CreateDirectory(Path.GetDirectoryName(path)!);
 			File.WriteAllText(path, content);
 			return CommitAll(message);
+		}
+
+		/// <summary>Adds or replaces one file in the layout without committing.</summary>
+		public void WriteFile(string relative, string content) {
+			string path = Path.Combine(Root, relative.Replace('/', Path.DirectorySeparatorChar));
+			Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+			File.WriteAllText(path, content);
 		}
 
 		public string ReadFile(string relative) =>
