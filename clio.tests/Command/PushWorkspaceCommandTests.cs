@@ -44,7 +44,7 @@ public class PushWorkspaceCommandTests : BaseCommandTests<PushWorkspaceCommandOp
 	public void Execute_ShouldWarnAndStillInstall_WhenPageHasInlineLiterals() {
 		// Arrange
 		_inspector.Inspect(Arg.Any<System.Collections.Generic.IEnumerable<string>>())
-			.Returns([new PageTextFinding("UsrPkg", "UsrPkg_FormPage", ["UsrLabel.caption", "UsrTab.caption"])]);
+			.Returns([new PageTextFinding("UsrPkg", "UsrPkg_FormPage", ["UsrLabel.caption", "UsrTab.caption"], [])]);
 
 		// Act
 		int exitCode = _command.Execute(new PushWorkspaceCommandOptions());
@@ -86,5 +86,42 @@ public class PushWorkspaceCommandTests : BaseCommandTests<PushWorkspaceCommandOp
 		exitCode.Should().Be(0, because: "an advisory check must not block the deployment it advises on");
 		_workspace.Received(1).Install(Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<bool>());
 		_logger.Received(1).WriteWarning(Arg.Is<string>(message => message.Contains("unreadable file")));
+	}
+
+	[Test]
+	[Description("Emits a separate warning naming the elements when a literal-only property is bound to a localizable resource.")]
+	public void Execute_ShouldWarnSeparately_WhenLiteralOnlyPropertyIsResourceBound() {
+		// Arrange
+		_inspector.Inspect(Arg.Any<System.Collections.Generic.IEnumerable<string>>())
+			.Returns([new PageTextFinding("UsrPkg", "UsrPkg_FormPage", [], ["UsrPhoto.tooltip"])]);
+
+		// Act
+		int exitCode = _command.Execute(new PushWorkspaceCommandOptions());
+
+		// Assert
+		exitCode.Should().Be(0, because: "the literal-only check is a warning and must never fail push-workspace");
+		_workspace.Received(1).Install(Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<bool>());
+		_logger.Received(1).WriteWarning(Arg.Is<string>(message =>
+			message.Contains("'UsrPkg_FormPage'") &&
+			message.Contains("literal-only") &&
+			message.Contains("UsrPhoto.tooltip")));
+		_logger.DidNotReceive().WriteWarning(Arg.Is<string>(message => message.Contains("inline literals")));
+	}
+
+	[Test]
+	[Description("Reports an unreadable workspace once, through the command error, without a preceding inspection warning.")]
+	public void Execute_ShouldReportErrorOnce_WhenWorkspacePackagesCannotBeRead() {
+		// Arrange
+		_workspace.GetFilteredPackages().Returns(_ => throw new InvalidOperationException("settings unreadable"));
+
+		// Act
+		int exitCode = _command.Execute(new PushWorkspaceCommandOptions());
+
+		// Assert
+		exitCode.Should().Be(1, because: "an unreadable workspace fails push-workspace as it did before the check");
+		_logger.Received(1).WriteError("settings unreadable");
+		_logger.DidNotReceive().WriteWarning(Arg.Any<string>());
+		_inspector.DidNotReceive().Inspect(Arg.Any<System.Collections.Generic.IEnumerable<string>>());
+		_workspace.DidNotReceive().Install(Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<bool>());
 	}
 }

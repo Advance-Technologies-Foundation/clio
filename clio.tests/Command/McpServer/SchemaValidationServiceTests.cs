@@ -3385,6 +3385,74 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
+	[Description("FindLocalizableTextViolations reports exactly the nodes the ValidateLocalizableTextLiterals gate rejects: a nested named child, an unnamed child under its nearest named ancestor, and never the crt.Gallery itemConfig mapping.")]
+	public void FindLocalizableTextViolations_ShouldMatchGate_WhenBodyHasNestedAndExemptNodes() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""
+			[{"operation":"insert","name":"UsrContainer","values":{"type":"crt.FlexContainer","items":[{"name":"UsrChild","type":"crt.Label","caption":"Child caption"},{"type":"crt.Label","caption":"Anonymous caption"}]}},
+			{"operation":"insert","name":"UsrGallery","values":{"type":"crt.Gallery","itemConfig":{"templateValuesMapping":{"caption":"GalleryDS_Name"}}}}]
+			""",
+			"[]");
+
+		// Act
+		IReadOnlyList<LocalizableTextViolation> violations = SchemaValidationService.FindLocalizableTextViolations(body);
+		SchemaValidationResult gate = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		violations.Should().Equal(
+			[
+				new LocalizableTextViolation("UsrChild", "caption", LocalizableTextViolationKind.InlineLiteral),
+				new LocalizableTextViolation("UsrContainer", "caption", LocalizableTextViolationKind.InlineLiteral)
+			],
+			because: "a nested named child is reported by its own name, an unnamed child under its nearest named ancestor, and the Gallery mapping is exempt");
+		gate.Errors.Should().HaveCount(violations.Count,
+			because: "the structured scan must report exactly the nodes the update-page gate rejects");
+		gate.Errors[0].Should().Contain("UsrChild").And.Contain("Child caption",
+			because: "violations and gate errors are produced by the same branch in document order");
+		gate.Errors[1].Should().Contain("UsrContainer").And.Contain("Anonymous caption",
+			because: "violations and gate errors are produced by the same branch in document order");
+	}
+
+	[Test]
+	[Description("FindLocalizableTextViolations reports a resource binding on crt.ImageInput.tooltip as its own kind, matching the gate's literal-required rejection.")]
+	public void FindLocalizableTextViolations_ShouldReportLiteralOnlyKind_WhenImageInputTooltipIsResourceBound() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"UsrPhoto","values":{"type":"crt.ImageInput","value":"$UsrPhoto","tooltip":"$Resources.Strings.PhotoTip"}}]""",
+			"[]");
+
+		// Act
+		IReadOnlyList<LocalizableTextViolation> violations = SchemaValidationService.FindLocalizableTextViolations(body);
+		SchemaValidationResult gate = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		violations.Should().Equal(
+			[new LocalizableTextViolation("UsrPhoto", "tooltip", LocalizableTextViolationKind.ResourceBindingOnLiteralOnlyProperty)],
+			because: "the gate rejects this binding because it renders empty, so the scan must report it as the literal-only kind");
+		gate.Errors.Should().ContainSingle(
+			because: "the structured scan and the gate must agree on the single rejected node");
+	}
+
+	[Test]
+	[Description("FindMobileLocalizableTextViolations reports the same nodes the ValidateMobileLocalizableTextLiterals gate rejects for a plain-JSON mobile body.")]
+	public void FindMobileLocalizableTextViolations_ShouldMatchGate_WhenMobileCaptionIsInlineLiteral() {
+		// Arrange
+		const string body = """{"viewConfigDiff":[{"operation":"insert","name":"UsrLabel","values":{"type":"crt.Label","caption":"Hello"}}]}""";
+
+		// Act
+		IReadOnlyList<LocalizableTextViolation> violations = SchemaValidationService.FindMobileLocalizableTextViolations(body);
+		SchemaValidationResult gate = SchemaValidationService.ValidateMobileLocalizableTextLiterals(body);
+
+		// Assert
+		violations.Should().Equal(
+			[new LocalizableTextViolation("UsrLabel", "caption", LocalizableTextViolationKind.InlineLiteral)],
+			because: "the mobile scan must report the inline caption literal the mobile gate rejects");
+		gate.Errors.Should().ContainSingle(error => error.Contains("UsrLabel"),
+			because: "the structured scan and the mobile gate must agree on the rejected node");
+	}
+
+	[Test]
 	[Description("A literal tooltip on crt.ImageInput is allowed — the control renders the raw text and never reads a localizable resource, so the mandated resource form would show no tooltip (ENG-92940).")]
 	public void ValidateLocalizableTextLiterals_ImageInputTooltipLiteral_ReturnsValid() {
 		// Arrange

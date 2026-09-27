@@ -71,8 +71,9 @@ public sealed class WorkspaceSyncToolE2ETests : McpContractFixtureBase {
 	[Test]
 	[Description("Pushes a workspace whose Freedom UI page sets a caption as an inline literal through MCP and verifies the push still succeeds while a warning names the schema and the offending element (issue #1639).")]
 	[AllureTag(PushToolName)]
+	[AllureTag(PackageListToolName)]
 	[AllureName("Push workspace warns about inline page literals without failing")]
-	[AllureDescription("Adds a BlankPageTemplate child page with an inline-literal label caption to a fresh workspace package, invokes push-workspace through MCP, and verifies exit code 0 plus a Warning message carrying the schema name and the node.property the update-page gate would reject.")]
+	[AllureDescription("Adds a BlankPageTemplate child page with an inline-literal label caption to a fresh workspace package, invokes push-workspace through MCP, and verifies exit code 0, a Warning message carrying the schema name and the node.property the update-page gate would reject, and that list-packages returns the pushed package.")]
 	public async Task PushWorkspace_ShouldWarnAndSucceed_WhenPageHasInlineLiteralCaption() {
 		// Arrange
 		await using WorkspaceSyncArrangeContext arrangeContext = await ArrangeSandboxWorkspaceAsync();
@@ -81,6 +82,7 @@ public sealed class WorkspaceSyncToolE2ETests : McpContractFixtureBase {
 
 		// Act
 		WorkspaceCommandActResult pushResult = await ActWorkspaceCommandAsync(arrangeContext, PushToolName, arrangeContext.WorkspacePath);
+		PackageListActResult packageListResult = await ActGetPkgListAsync(arrangeContext, arrangeContext.PackageName);
 
 		// Assert
 		AssertToolCallSucceeded(pushResult);
@@ -89,6 +91,7 @@ public sealed class WorkspaceSyncToolE2ETests : McpContractFixtureBase {
 			"push-workspace should name the page schema whose text update-page would reject");
 		AssertIncludesWarningMessage(pushResult, "UsrLiteralLabel.caption",
 			"push-workspace should name the offending node and property");
+		AssertPackageWasPublished(packageListResult, arrangeContext.PackageMetadata);
 	}
 
 	[Category("McpE2E.Sandbox")]

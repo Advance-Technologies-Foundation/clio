@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
+using System.Linq;
 using System.Text.Json;
 using Clio.Command.StartProcess;
 using Clio.Command.TIDE;
@@ -113,20 +114,32 @@ public class PushWorkspaceCommand : Command<PushWorkspaceCommandOptions>{
 	// would reject (issue #1639). push-workspace keeps installing such pages: most stock and existing
 	// repository schemas use inline literals, so refusing them would break working source deployments.
 	private void WarnAboutNonLocalizablePageText() {
+		// Read outside the advisory try: an unreadable workspace makes Install fail with the same exception,
+		// which the Execute handler reports once, instead of a warning followed by the same error.
+		List<string> packageNames = _workspace.GetFilteredPackages().ToList();
 		IReadOnlyList<PageTextFinding> findings;
 		try {
-			findings = _pageTextInspector.Inspect(_workspace.GetFilteredPackages());
+			findings = _pageTextInspector.Inspect(packageNames);
 		}
 		catch (Exception e) {
 			_logger.WriteWarning($"Could not check page schemas for non-localizable text: {e.Message}");
 			return;
 		}
 		foreach (PageTextFinding finding in findings) {
-			_logger.WriteWarning(
-				$"Page schema '{finding.SchemaName}' (package '{finding.PackageName}') sets user-visible text as " +
-				$"inline literals: {string.Join(", ", finding.Elements)}. push-workspace installs it anyway, but " +
-				"the MCP update-page tool rejects the same body: bind each value via $Resources.Strings.<Key> or " +
-				"#ResourceString(<Key>)# and register the key in the schema resources. See the page-schema-resources guide.");
+			if (finding.Elements.Count > 0) {
+				_logger.WriteWarning(
+					$"Page schema '{finding.SchemaName}' (package '{finding.PackageName}') sets user-visible text as " +
+					$"inline literals: {string.Join(", ", finding.Elements)}. push-workspace installs it anyway, but " +
+					"the MCP update-page tool rejects the same body: bind each value via $Resources.Strings.<Key> or " +
+					"#ResourceString(<Key>)# and register the key in the schema resources. See the page-schema-resources guide.");
+			}
+			if (finding.LiteralOnlyElements.Count > 0) {
+				_logger.WriteWarning(
+					$"Page schema '{finding.SchemaName}' (package '{finding.PackageName}') binds literal-only text " +
+					$"properties to localizable resources: {string.Join(", ", finding.LiteralOnlyElements)}. These " +
+					"components never read localizable strings, so the text renders empty at runtime, and the MCP " +
+					"update-page tool rejects the same body: set each value as a plain literal. See the page-schema-resources guide.");
+			}
 		}
 	}
 

@@ -52,8 +52,8 @@ Push the workspace using ApplicationInstaller
 
 ## Notes
 
-Before installing, `push-workspace` checks every Freedom UI page schema in the
-workspace packages for user-visible text (`caption`, `label`, `title`, `tooltip`,
+Before installing, `push-workspace` checks every Freedom UI page schema (web and
+mobile) in the workspace packages for user-visible text (`caption`, `label`, `title`, `tooltip`,
 `placeholder`) written as an inline literal. The MCP `update-page` tool rejects
 such text; `push-workspace` still installs it, but prints one warning per page
 schema with the schema name and the offending `<node>.<property>` elements, for example:
@@ -64,6 +64,11 @@ schema with the schema name and the offending `<node>.<property>` elements, for 
 
 Bind the text via `$Resources.Strings.<Key>` or `#ResourceString(<Key>)#` and
 register the key in the schema resources to clear the warning.
+
+A second warning names literal-only properties (for example
+`crt.ImageInput.tooltip`) bound to a localizable resource. `update-page` rejects
+them too, because such text renders empty at runtime; set those values as plain
+literals.
 
 ## See Also
 

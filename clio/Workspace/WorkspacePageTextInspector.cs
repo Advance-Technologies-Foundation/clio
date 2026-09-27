@@ -21,8 +21,9 @@ public interface IWorkspacePageTextInspector {
 
 	/// <summary>
 	/// Scans the <c>Schemas/&lt;SchemaName&gt;/*.js</c> files of the given workspace packages and returns one
-	/// finding per Freedom UI page schema that carries at least one offending text value. Schemas without a
-	/// <c>SCHEMA_VIEW_CONFIG_DIFF</c> section (classic client modules, entity and source-code schemas) are skipped.
+	/// finding per Freedom UI page schema (web or mobile) that carries at least one offending text value. Web
+	/// bodies without a <c>SCHEMA_VIEW_CONFIG_DIFF</c> section (classic client modules, entity and source-code
+	/// schemas) and plain-JSON bodies without a <c>viewConfigDiff</c> array are skipped.
 	/// </summary>
 	/// <param name="packageNames">Workspace package names, resolved against the workspace packages folder.</param>
 	/// <returns>The findings ordered by package, then schema name; empty when nothing breaks the rule.</returns>
@@ -34,8 +35,14 @@ public interface IWorkspacePageTextInspector {
 /// </summary>
 /// <param name="PackageName">The workspace package that owns the schema.</param>
 /// <param name="SchemaName">The page schema name (its folder under <c>Schemas</c>).</param>
-/// <param name="Elements">Offending values as <c>&lt;node&gt;.&lt;property&gt;</c>, e.g. <c>UsrLabel.caption</c>.</param>
-public sealed record PageTextFinding(string PackageName, string SchemaName, IReadOnlyList<string> Elements);
+/// <param name="Elements">
+/// Inline literals that must be localizable bindings, as <c>&lt;node&gt;.&lt;property&gt;</c>, e.g. <c>UsrLabel.caption</c>.
+/// </param>
+/// <param name="LiteralOnlyElements">
+/// Localizable bindings on literal-only properties that render empty at runtime, e.g. <c>UsrPhoto.tooltip</c>.
+/// </param>
+public sealed record PageTextFinding(string PackageName, string SchemaName, IReadOnlyList<string> Elements,
+	IReadOnlyList<string> LiteralOnlyElements);
 
 /// <inheritdoc />
 public sealed class WorkspacePageTextInspector(IWorkspacePathBuilder workspacePathBuilder, IFileSystem fileSystem)
@@ -43,6 +50,7 @@ public sealed class WorkspacePageTextInspector(IWorkspacePathBuilder workspacePa
 
 	private const string SchemasFolderName = "Schemas";
 	private const string ViewConfigDiffMarker = "SCHEMA_VIEW_CONFIG_DIFF";
+	private const string MobileViewConfigDiffKey = "\"viewConfigDiff\"";
 
 	/// <inheritdoc />
 	public IReadOnlyList<PageTextFinding> Inspect(IEnumerable<string> packageNames) {
@@ -54,29 +62,45 @@ public sealed class WorkspacePageTextInspector(IWorkspacePathBuilder workspacePa
 				continue;
 			}
 			foreach (string schemaPath in fileSystem.GetDirectories(schemasPath).OrderBy(p => p, StringComparer.Ordinal)) {
-				IReadOnlyList<string> elements = InspectSchema(schemaPath);
-				if (elements.Count > 0) {
-					findings.Add(new PageTextFinding(packageName, Path.GetFileName(schemaPath), elements));
+				List<LocalizableTextViolation> violations = InspectSchema(schemaPath);
+				if (violations.Count > 0) {
+					findings.Add(new PageTextFinding(packageName, Path.GetFileName(schemaPath),
+						FormatElements(violations, LocalizableTextViolationKind.InlineLiteral),
+						FormatElements(violations, LocalizableTextViolationKind.ResourceBindingOnLiteralOnlyProperty)));
 				}
 			}
 		}
 		return findings;
 	}
 
-	private IReadOnlyList<string> InspectSchema(string schemaPath) {
-		List<string> elements = [];
+	private List<LocalizableTextViolation> InspectSchema(string schemaPath) {
+		List<LocalizableTextViolation> violations = [];
 		foreach (string filePath in fileSystem.GetFiles(schemaPath, "*.js", SearchOption.TopDirectoryOnly)) {
-			string body = fileSystem.ReadAllText(filePath);
-			// Cheap pre-filter: only Freedom UI page bodies carry this marker, so every other schema is
-			// skipped without parsing.
-			if (!body.Contains(ViewConfigDiffMarker, StringComparison.Ordinal)) {
-				continue;
-			}
-			elements.AddRange(SchemaValidationService.FindLocalizableTextViolations(body)
-				.Select(FormatElement));
+			violations.AddRange(FindViolations(fileSystem.ReadAllText(filePath)));
 		}
-		return elements.Distinct(StringComparer.Ordinal).ToList();
+		return violations;
 	}
+
+	// Mobile Freedom UI pages are plain JSON with a viewConfigDiff key; web pages are AMD modules whose
+	// viewConfigDiff sits between SCHEMA_VIEW_CONFIG_DIFF markers. Each goes through the scan update-page
+	// applies to that page type.
+	private static IReadOnlyList<LocalizableTextViolation> FindViolations(string body) =>
+		PageSchemaTypeExtensions.FromBody(body) switch {
+			PageSchemaType.Mobile when body.Contains(MobileViewConfigDiffKey, StringComparison.Ordinal)
+				=> SchemaValidationService.FindMobileLocalizableTextViolations(body),
+			// Cheap pre-filter: only Freedom UI web page bodies carry this marker, so every other web schema
+			// is skipped without parsing.
+			PageSchemaType.Web when body.Contains(ViewConfigDiffMarker, StringComparison.Ordinal)
+				=> SchemaValidationService.FindLocalizableTextViolations(body),
+			_ => []
+		};
+
+	private static List<string> FormatElements(IEnumerable<LocalizableTextViolation> violations,
+		LocalizableTextViolationKind kind) =>
+		violations.Where(violation => violation.Kind == kind)
+			.Select(FormatElement)
+			.Distinct(StringComparer.Ordinal)
+			.ToList();
 
 	private static string FormatElement(LocalizableTextViolation violation) =>
 		string.IsNullOrWhiteSpace(violation.NodeName)

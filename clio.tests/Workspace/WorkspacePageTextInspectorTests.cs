@@ -79,17 +79,61 @@ public class WorkspacePageTextInspectorTests : BaseClioModuleTests {
 			because: "only Freedom UI page bodies are subject to the localizable-text rule, and a package without schemas has nothing to check");
 	}
 
+	[Test]
+	[Description("Reports a mobile Freedom UI page (plain-JSON body) whose caption is an inline literal, as update-page does for mobile pages.")]
+	public void Inspect_ShouldReportMobilePage_WhenCaptionIsInlineLiteral() {
+		// Arrange
+		AddSchema("UsrMobile",
+			"{\"viewConfigDiff\": [{\"operation\": \"insert\", \"name\": \"UsrLabel\", " +
+			"\"values\": {\"type\": \"crt.Label\", \"caption\": \"Hello\"}}]}");
+
+		// Act
+		IReadOnlyList<PageTextFinding> findings = _inspector.Inspect([PackageName]);
+
+		// Assert
+		findings.Should().ContainSingle(
+			because: "update-page rejects inline literals on mobile pages too, so push-workspace must warn about them");
+		findings[0].SchemaName.Should().Be("UsrMobile",
+			because: "the finding must name the mobile page schema");
+		findings[0].Elements.Should().Equal(["UsrLabel.caption"],
+			because: "the finding must name the offending mobile view node and property");
+		findings[0].LiteralOnlyElements.Should().BeEmpty(
+			because: "the mobile body carries no resource binding on a literal-only property");
+	}
+
+	[Test]
+	[Description("Reports a resource binding on a literal-only property (crt.ImageInput.tooltip) separately from inline literals.")]
+	public void Inspect_ShouldReportLiteralOnlyElements_WhenImageInputTooltipIsResourceBound() {
+		// Arrange
+		AddSchema("UsrPkg_FormPage", PageBody("\"caption\": \"$Resources.Strings.UsrLabel_caption\"",
+			"{\"operation\": \"insert\", \"name\": \"UsrPhoto\", \"values\": {\"type\": \"crt.ImageInput\", " +
+			"\"tooltip\": \"$Resources.Strings.UsrPhoto_tooltip\"}, \"parentName\": \"MainContainer\", " +
+			"\"propertyName\": \"items\", \"index\": 1}"));
+
+		// Act
+		IReadOnlyList<PageTextFinding> findings = _inspector.Inspect([PackageName]);
+
+		// Assert
+		findings.Should().ContainSingle(
+			because: "update-page rejects a resource binding on crt.ImageInput.tooltip because it renders empty");
+		findings[0].Elements.Should().BeEmpty(
+			because: "the label caption is correctly bound and must not be reported as an inline literal");
+		findings[0].LiteralOnlyElements.Should().Equal(["UsrPhoto.tooltip"],
+			because: "the literal-only binding must be reported on its own list so the warning can say to use a literal");
+	}
+
 	private void AddSchema(string schemaName, string body) =>
 		FileSystem.AddFile(
 			Path.Combine(PackagesFolderPath, PackageName, "Schemas", schemaName, $"{schemaName}.js"),
 			new MockFileData(body));
 
-	private static string PageBody(string captionProperty) =>
+	private static string PageBody(string captionProperty, string? extraOperation = null) =>
 		"define(\"UsrPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ {\n" +
 		"\treturn {\n" +
 		"\t\tviewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\": \"insert\", \"name\": \"UsrLabel\", " +
 		"\"values\": {\"type\": \"crt.Label\", " + captionProperty + "}, \"parentName\": \"MainContainer\", " +
-		"\"propertyName\": \"items\", \"index\": 0}]/**SCHEMA_VIEW_CONFIG_DIFF*/,\n" +
+		"\"propertyName\": \"items\", \"index\": 0}" +
+		(extraOperation is null ? string.Empty : ", " + extraOperation) + "]/**SCHEMA_VIEW_CONFIG_DIFF*/,\n" +
 		"\t\tviewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/,\n" +
 		"\t\tmodelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/,\n" +
 		"\t\thandlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/,\n" +

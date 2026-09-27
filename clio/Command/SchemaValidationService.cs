@@ -2809,16 +2809,18 @@ public static class SchemaValidationService
 	}
 
 	/// <summary>
-	/// Returns the view nodes of a web page body whose user-visible text property is an inline literal, as
-	/// structured (node, property) pairs instead of diagnostic sentences. It runs the SAME scan as
-	/// <see cref="ValidateLocalizableTextLiterals"/>, so a node is reported here exactly when the MCP
-	/// <c>update-page</c> / <c>validate-page</c> / <c>sync-pages</c> gate rejects it as an inline literal. The
-	/// inverse rejection (a resource binding on a literal-only property such as <c>crt.ImageInput.tooltip</c>)
-	/// is not reported. Used by <c>push-workspace</c>, which only warns about these nodes (issue #1639).
+	/// Returns the view nodes of a web page body whose user-visible text property breaks the localizable-text
+	/// rule, as structured (node, property, kind) values instead of diagnostic sentences. It runs the SAME scan
+	/// as <see cref="ValidateLocalizableTextLiterals"/>, so a node is reported here exactly when the MCP
+	/// <c>update-page</c> / <c>validate-page</c> / <c>sync-pages</c> gate rejects it: an inline literal is
+	/// reported as <see cref="LocalizableTextViolationKind.InlineLiteral"/>, and a resource binding on a
+	/// literal-only property (such as <c>crt.ImageInput.tooltip</c>) as
+	/// <see cref="LocalizableTextViolationKind.ResourceBindingOnLiteralOnlyProperty"/>. Used by
+	/// <c>push-workspace</c>, which only warns about these nodes (issue #1639).
 	/// </summary>
 	/// <param name="jsBody">Raw JavaScript body of a Freedom UI page schema (marker-delimited).</param>
 	/// <returns>
-	/// The inline-literal nodes in document order; empty when the body has no <c>SCHEMA_VIEW_CONFIG_DIFF</c>
+	/// The offending nodes in document order; empty when the body has no <c>SCHEMA_VIEW_CONFIG_DIFF</c>
 	/// section, the section is not valid JSON, or every user-visible text value follows the rule.
 	/// </returns>
 	public static IReadOnlyList<LocalizableTextViolation> FindLocalizableTextViolations(string jsBody) {
@@ -3002,26 +3004,47 @@ public static class SchemaValidationService
 	/// <returns>A <see cref="SchemaValidationResult"/> with the same contract as the web variant.</returns>
 	public static SchemaValidationResult ValidateMobileLocalizableTextLiterals(string body) {
 		var result = new SchemaValidationResult { IsValid = true };
+		ScanMobileBodyForTextLiterals(body, result, violations: null);
+		if (result.Errors.Count > 0) {
+			result.IsValid = false;
+		}
+		return result;
+	}
+
+	/// <summary>
+	/// Mobile counterpart of <see cref="FindLocalizableTextViolations"/>: runs the SAME scan as
+	/// <see cref="ValidateMobileLocalizableTextLiterals"/> over a plain-JSON mobile page body and returns the
+	/// offending nodes as structured values.
+	/// </summary>
+	/// <param name="body">Plain-JSON mobile page body.</param>
+	/// <returns>
+	/// The offending nodes in document order; empty when the body is not a JSON object with a
+	/// <c>viewConfigDiff</c> array, or every user-visible text value follows the rule.
+	/// </returns>
+	public static IReadOnlyList<LocalizableTextViolation> FindMobileLocalizableTextViolations(string body) {
+		var violations = new List<LocalizableTextViolation>();
+		ScanMobileBodyForTextLiterals(body, new SchemaValidationResult { IsValid = true }, violations);
+		return violations;
+	}
+
+	private static void ScanMobileBodyForTextLiterals(
+		string body, SchemaValidationResult result, List<LocalizableTextViolation>? violations) {
 		if (string.IsNullOrWhiteSpace(body)) {
-			return result;
+			return;
 		}
 		JsonDocument document;
 		try {
 			document = JsonDocument.Parse(body);
 		} catch {
-			return result;
+			return;
 		}
 		using (document) {
 			JsonElement root = document.RootElement;
 			if (root.ValueKind == JsonValueKind.Object &&
 			    root.TryGetProperty(ViewConfigDiffPropertyName, out JsonElement viewConfigDiff)) {
-				ScanViewConfigDiffForTextLiterals(viewConfigDiff, result, violations: null);
+				ScanViewConfigDiffForTextLiterals(viewConfigDiff, result, violations);
 			}
 		}
-		if (result.Errors.Count > 0) {
-			result.IsValid = false;
-		}
-		return result;
 	}
 
 	private static void ScanViewConfigDiffForTextLiterals(JsonElement viewConfigDiff, SchemaValidationResult result,
@@ -3145,10 +3168,13 @@ public static class SchemaValidationService
 			// the mirror of the inline-literal rule applied to everything else (ENG-92940).
 			if (IsLocalizableResourceReference(textValue)) {
 				result.Errors.Add(BuildLiteralRequiredError(currentName, currentType, property.Name, textValue));
+				violations?.Add(new LocalizableTextViolation(currentName, property.Name,
+					LocalizableTextViolationKind.ResourceBindingOnLiteralOnlyProperty));
 			}
 		} else if (IsInlineUserVisibleTextLiteral(textValue)) {
 			result.Errors.Add(BuildTextLiteralError(currentName, property.Name, textValue));
-			violations?.Add(new LocalizableTextViolation(currentName, property.Name));
+			violations?.Add(new LocalizableTextViolation(currentName, property.Name,
+				LocalizableTextViolationKind.InlineLiteral));
 		}
 	}
 
@@ -5705,12 +5731,28 @@ public enum SchemaValidationErrorKind {
 }
 
 /// <summary>
-/// One view node whose user-visible text property is an inline literal instead of a localizable-string
-/// binding (<see cref="SchemaValidationService.FindLocalizableTextViolations"/>).
+/// Why a user-visible text value breaks the localizable-text rule.
+/// </summary>
+public enum LocalizableTextViolationKind {
+
+	/// <summary>An inline literal where a localizable-string binding is required.</summary>
+	InlineLiteral,
+
+	/// <summary>
+	/// A localizable-string binding on a literal-only property (e.g. <c>crt.ImageInput.tooltip</c>); the
+	/// component never reads localizable strings, so the text renders empty at runtime.
+	/// </summary>
+	ResourceBindingOnLiteralOnlyProperty
+}
+
+/// <summary>
+/// One view node whose user-visible text property breaks the localizable-text rule
+/// (<see cref="SchemaValidationService.FindLocalizableTextViolations"/>).
 /// </summary>
 /// <param name="NodeName">The view node's <c>name</c>, or the nearest named ancestor; empty when none is named.</param>
 /// <param name="PropertyName">The offending text property, e.g. <c>caption</c>.</param>
-public sealed record LocalizableTextViolation(string NodeName, string PropertyName);
+/// <param name="Kind">Which side of the rule the value breaks.</param>
+public sealed record LocalizableTextViolation(string NodeName, string PropertyName, LocalizableTextViolationKind Kind);
 
 public class SchemaValidationResult
 {
