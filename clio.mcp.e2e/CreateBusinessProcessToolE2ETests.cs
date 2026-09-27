@@ -430,7 +430,7 @@ public sealed class CreateBusinessProcessToolE2ETests {
 	}
 
 	[Test]
-	[Description("Over the real MCP path, a Read data element with a plain record filter is described with its filter DECODED, the server's filterDecodedCompletely true, and the raw platform FilterGroup of its DataSourceFilters parameter left out and marked rather than repeated (ENG-99970: the raw value was 16-27% of a measured describe result). Needs CrtProcessBuilder 1.6.6.38 on the stand; an older package does not judge the decode and the raw value stays.")]
+	[Description("Over the real MCP path, a Read data element with a plain record filter is described with its filter DECODED, the server's filterDecodedCompletely true, and the raw platform FilterGroup of its DataSourceFilters parameter left out and marked rather than repeated (ENG-99970: the raw value was 16-27% of a measured describe result). Needs CrtProcessBuilder 1.6.6.39 on the stand; an older package does not judge the decode and the raw value stays.")]
 	[AllureTag(ToolName)]
 	[AllureName("describe-business-process leaves out a completely decoded Read data filter's raw value")]
 	public async Task CreateBusinessProcess_Should_DescribeAReadDataFilter_WithoutItsRawValue() {
