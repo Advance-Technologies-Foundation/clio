@@ -6003,7 +6003,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildCompileCreatio() {
 		return new ToolContractDefinition(
 			CompileCreatioTool.CompileCreatioToolName,
-			"Recompiles a registered Creatio environment and forces a runtime reload. Long-running (often several minutes). Reserved for C# schema changes, FSM-mode transitions, and schema-missing runtime errors. Freedom UI page-body edits (validators, handlers, converters) do NOT require compilation — those changes are AMD modules served at runtime.",
+			"Recompiles a registered Creatio environment and forces a runtime reload. Long-running (often several minutes). Reserved for C# schema changes, FSM-mode transitions, schema-missing runtime errors, and a culture just activated in the Languages section. Freedom UI page-body edits (validators, handlers, converters) do NOT require compilation — those changes are AMD modules served at runtime.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName],
 				[
@@ -6028,7 +6028,7 @@ internal static class ToolContractCatalog {
 					FsmModeTool.SetFsmModeToolName,
 					CompileCreatioTool.CompileCreatioToolName
 				],
-				"Call only after C# schema work, after `set-fsm-mode`, or in response to a runtime schema-missing error. Skip this tool entirely when the work touches only Freedom UI page bodies or DDL changes routed through `update-entity-schema`."),
+				"Call only after C# schema work, after `set-fsm-mode`, in response to a runtime schema-missing error, or after a culture was activated in the Languages section. Skip this tool entirely when the work touches only Freedom UI page bodies or DDL changes routed through `update-entity-schema`."),
 			[],
 			[],
 			AntiPatterns: [
@@ -6056,6 +6056,7 @@ internal static class ToolContractCatalog {
 				"`set-fsm-mode` was just toggled (full compilation only).",
 				"C# schemas were added or modified in the targeted package.",
 				"The runtime reported a missing-in-runtime or schema-not-found error that maps to a compilation gap.",
+				"A culture was activated in the Languages section and no full compilation has run since (full compilation only): until then the UI does not load in that culture.",
 				"Caller must NOT call this tool after `create-app`, `update-page`, `sync-pages`, `update-entity-schema`, `create-page`, `create-entity-business-rules`, or `create-page-business-rules`.",
 				"After `create-business-process`/`modify-business-process`, compile ONLY when the process carries C# you authored — a Script Task, or a user task with an after-activity-save script (the `C# schemas were added or modified` case above). Otherwise the process runs with no compile. A raw process read (e.g. `VwSysProcess`) shows `NeedInstall`, `NeedUpdateSourceCode` and `NeedUpdateStructure` all true on a fresh process; none is a compile trigger — read status with `describe-business-process`, not a raw process read. (A CUSTOM user-task SCHEMA is separate: creating/changing one needs a compile.)"
 			]);
