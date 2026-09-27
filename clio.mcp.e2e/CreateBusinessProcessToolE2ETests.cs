@@ -430,9 +430,9 @@ public sealed class CreateBusinessProcessToolE2ETests {
 	}
 
 	[Test]
-	[Description("Over the real MCP path, a Read data element with a record filter is described with its filter DECODED and the raw platform FilterGroup of its DataSourceFilters parameter left out and marked, not repeated (ENG-99970: the raw value was ~15-20% of a measured describe and duplicated the decoded filter).")]
+	[Description("Over the real MCP path, a Read data element with a plain record filter is described with its filter DECODED, the server's filterDecodedCompletely true, and the raw platform FilterGroup of its DataSourceFilters parameter left out and marked rather than repeated (ENG-99970: the raw value was 16-27% of a measured describe result). Needs CrtProcessBuilder 1.6.6.37 on the stand; an older package does not judge the decode and the raw value stays.")]
 	[AllureTag(ToolName)]
-	[AllureName("describe-business-process leaves out a decoded Read data filter's raw value")]
+	[AllureName("describe-business-process leaves out a completely decoded Read data filter's raw value")]
 	public async Task CreateBusinessProcess_Should_DescribeAReadDataFilter_WithoutItsRawValue() {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
@@ -443,17 +443,21 @@ public sealed class CreateBusinessProcessToolE2ETests {
 			["environment-name"] = context.EnvironmentName,
 			["descriptor"] = BuildFilteredReadDataDescriptor(processName)
 		});
-		string describeJson = JsonSerializer.Serialize(await DescribeAsync(context, processName));
+		DescribeProcessResult graph = ParseDescribeGraph(await DescribeAsync(context, processName));
 
 		// Assert
 		JsonSerializer.Serialize(callResult).Should().Contain(processName,
 			because: "a Read data element with a record filter must build (run against an environment with a writable Custom package)");
-		describeJson.Should().Contain("ClioReadFilterProbe",
-			because: "the decoded filter carries the condition value, so it is still in the graph");
-		describeJson.Should().NotContain("Terrasoft.FilterGroup",
-			because: "the raw platform filter duplicates the decoded one and is left out of the graph");
-		describeJson.Should().Contain("decoded into the element",
-			because: "the DataSourceFilters parameter says where its left-out value is, so it does not read as empty");
+		DescribedElement read = graph.Elements.Single(element => element.Name == "ReadContact1");
+		read.Filter.Should().NotBeNull(because: "the Read data element's filter is decoded");
+		read.Filter!.Conditions.Should().Contain(condition => condition.Value == "ClioReadFilterProbe",
+			because: "the decoded filter carries the condition value");
+		read.FilterDecodedCompletely.Should().BeTrue(
+			because: "a plain contains condition is carried back without loss, and the server says so");
+		DescribedParameter raw = read.Parameters.Single(parameter => parameter.Name == "DataSourceFilters");
+		raw.Value.Should().BeNull(because: "the raw FilterGroup duplicates a completely decoded filter and is left out");
+		raw.ValueOmitted.Should().Be("decoded into the element's filter",
+			because: "the parameter says where its left-out value is, so it does not read as empty");
 	}
 
 	[Test]

@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Text.Json.Nodes;
 using Clio.Command;
 using Clio.Command.ProcessModel;
@@ -557,87 +558,108 @@ public sealed class DescribeProcessCommandTests {
 			because: "no member was flagged active, so naming one would be an invention");
 	}
 
-	[TestCase("readData", "DataSourceFilters")]
-	[TestCase("signalStart", "EntityFilters")]
+	[TestCase(true, false, TestName = "a complete decode leaves the raw value out")]
+	[TestCase(false, true, TestName = "an incomplete decode keeps the raw value")]
+	[TestCase(null, true, TestName = "an older server that does not judge keeps the raw value")]
 	[Category("Unit")]
-	[Description("Leaves out the raw platform filter of an element whose filter the server already decodes, and says where it is instead: the raw FilterGroup was ~15% of a measured describe, duplicated the decoded filter beside it, and no measured agent read it (ENG-99970).")]
-	public void Execute_ShouldOmitTheRawFilterValue_WhenTheFilterIsDecoded(string buildType, string filterParameter) {
+	[Description("Leaves out a Read data element's raw platform filter only when the server judged its decoded filter COMPLETE: the raw FilterGroup is 16-27% of a measured describe and a duplicate when the decode is complete, but the only full record when it is not - an Exists leaf read as equal, one value of a multi-value lookup, a disabled condition (ENG-99970).")]
+	public void Execute_ShouldOmitTheRawFilterValue_OnlyWhenTheDecodeIsComplete(bool? decodedCompletely,
+		bool rawValueKept) {
 		// Arrange
 		_describer.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>())
-			.Returns(new DescribeProcessResult {
-				Name = "UsrFilteredProcess",
-				SchemaUId = "uid",
-				Elements = [
-					new DescribedElement {
-						Name = "Filtered1", Uid = "e1", BuildType = buildType,
-						Filter = new DescribedFilter { Object = "Contact" },
-						Parameters = [
-							new DescribedParameter {
-								Name = filterParameter, UId = "p1", Type = "Text", Source = "ConstValue",
-								Value = "{\"className\":\"Terrasoft.FilterGroup\",\"items\":{}}"
-							},
-							new DescribedParameter {
-								Name = "ResultType", UId = "p2", Type = "Integer", Source = "ConstValue", Value = "0"
-							}
-						]
-					}
-				],
-				Flows = [],
-				Parameters = []
-			});
+			.Returns(FilteredProcess(("Read1", decodedCompletely, "DataSourceFilters")));
 		string written = null;
 		_logger.WriteInfo(Arg.Do<string>(value => written = value));
 
 		// Act
-		int result = _command.Execute(new DescribeProcessOptions { Environment = "dev", ProcessName = "UsrFilteredProcess" });
+		int result = _command.Execute(new DescribeProcessOptions { Environment = "dev", ProcessName = "UsrFiltered" });
 
 		// Assert
 		result.Should().Be(0, because: "a found process is described successfully");
 		JsonNode element = JsonNode.Parse(written)!["elements"]![0]!;
-		JsonNode filterParameterNode = element["parameters"]![0]!;
-		filterParameterNode["value"].Should().BeNull(
-			because: "the raw FilterGroup duplicates the decoded filter and is left out of the graph the caller reads");
-		filterParameterNode["valueOmitted"]!.GetValue<string>().Should().Be(DescribeProcessCommand.DecodedFilterNote,
-			because: "an omitted value must say where its content is, or the parameter reads as empty");
+		JsonNode filterParameter = element["parameters"]![0]!;
+		if (rawValueKept) {
+			filterParameter["value"]!.GetValue<string>().Should().Be(RawFilter,
+				because: "without the server's word that the decode is complete, the raw value may be the only full record");
+			filterParameter["valueOmitted"].Should().BeNull(because: "nothing was left out");
+		} else {
+			filterParameter["value"].Should().BeNull(
+				because: "a completely decoded filter makes the raw FilterGroup a duplicate, and it is left out");
+			filterParameter["valueOmitted"]!.GetValue<string>().Should().Be(DescribeProcessCommand.DecodedFilterNote,
+				because: "an omitted value must say where its content is, or the parameter reads as empty");
+		}
 		element["filter"]!["object"]!.GetValue<string>().Should().Be("Contact",
-			because: "the decoded filter is what carries the content now, and it stays");
+			because: "the decoded filter is always written, whichever way the raw value goes");
 		element["parameters"]![1]!["value"]!.GetValue<string>().Should().Be("0",
-			because: "only the raw filter is left out; every other parameter value is written as stored");
+			because: "only the raw filter is ever left out; every other parameter value is written as stored");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Keeps the raw filter value when the server could not decode the filter: describe decodes only the modern wrapper, so for a legacy designer-built filter the raw value is the only evidence that a filter exists.")]
-	public void Execute_ShouldKeepTheRawFilterValue_WhenTheFilterIsNotDecoded() {
+	[Description("Judges each element on its OWN decode: an element whose filter decoded completely loses its raw value while its neighbour, whose decode was incomplete, keeps it - and the parameter name is matched case-insensitively.")]
+	public void Execute_ShouldJudgeEachElement_OnItsOwnDecode() {
 		// Arrange
 		_describer.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>())
-			.Returns(new DescribeProcessResult {
-				Name = "UsrLegacyFilter",
-				SchemaUId = "uid",
-				Elements = [
-					new DescribedElement {
-						Name = "Read1", Uid = "e1", BuildType = "readData", Filter = null,
-						Parameters = [
-							new DescribedParameter {
-								Name = "DataSourceFilters", UId = "p1", Type = "Text", Source = "ConstValue",
-								Value = "a legacy FilterEdit payload"
-							}
-						]
-					}
-				],
-				Flows = [],
-				Parameters = []
-			});
+			.Returns(FilteredProcess(("Complete1", true, "datasourcefilters"), ("Partial1", false, "DataSourceFilters")));
 		string written = null;
 		_logger.WriteInfo(Arg.Do<string>(value => written = value));
 
 		// Act
-		_command.Execute(new DescribeProcessOptions { Environment = "dev", ProcessName = "UsrLegacyFilter" });
+		_command.Execute(new DescribeProcessOptions { Environment = "dev", ProcessName = "UsrFiltered" });
+
+		// Assert
+		JsonNode elements = JsonNode.Parse(written)!["elements"]!;
+		elements[0]!["parameters"]![0]!["value"].Should().BeNull(
+			because: "the first element's decode is complete, and the name matches whatever its casing");
+		elements[1]!["parameters"]![0]!["value"]!.GetValue<string>().Should().Be(RawFilter,
+			because: "the second element's decode is incomplete; another element's verdict says nothing about it");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Keeps the raw filter value when the server could not decode the filter at all: describe decodes only the modern wrapper, so for a legacy designer-built filter the raw value is the only evidence that a filter exists.")]
+	public void Execute_ShouldKeepTheRawFilterValue_WhenTheFilterIsNotDecoded() {
+		// Arrange
+		DescribeProcessResult process = FilteredProcess(("Read1", null, "DataSourceFilters"));
+		process.Elements[0].Filter = null;
+		_describer.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>()).Returns(process);
+		string written = null;
+		_logger.WriteInfo(Arg.Do<string>(value => written = value));
+
+		// Act
+		_command.Execute(new DescribeProcessOptions { Environment = "dev", ProcessName = "UsrFiltered" });
 
 		// Assert
 		JsonNode parameter = JsonNode.Parse(written)!["elements"]![0]!["parameters"]![0]!;
-		parameter["value"]!.GetValue<string>().Should().Be("a legacy FilterEdit payload",
+		parameter["value"]!.GetValue<string>().Should().Be(RawFilter,
 			because: "with no decoded filter the raw value is the only sign a filter narrows this element");
 		parameter["valueOmitted"].Should().BeNull(because: "nothing was left out");
 	}
+
+	private const string RawFilter = "{\"className\":\"Terrasoft.FilterGroup\",\"items\":{}}";
+
+	// A process whose elements each carry a decoded Contact filter, the given verdict, a raw filter parameter under
+	// the given name and one ordinary parameter.
+	private static DescribeProcessResult FilteredProcess(
+		params (string Name, bool? DecodedCompletely, string FilterParameterName)[] elements) =>
+		new() {
+			Name = "UsrFiltered",
+			SchemaUId = "uid",
+			Elements = elements.Select(element => new DescribedElement {
+				Name = element.Name, Uid = element.Name, BuildType = "readData",
+				Filter = new DescribedFilter { Object = "Contact" },
+				FilterDecodedCompletely = element.DecodedCompletely,
+				Parameters = [
+					new DescribedParameter {
+						Name = element.FilterParameterName, UId = element.Name + "-p1", Type = "Text", Source = "ConstValue",
+						Value = RawFilter
+					},
+					new DescribedParameter {
+						Name = "ResultType", UId = element.Name + "-p2", Type = "Integer", Source = "ConstValue", Value = "0"
+					}
+				]
+			}).ToList(),
+			Flows = [],
+			Parameters = []
+		};
 }

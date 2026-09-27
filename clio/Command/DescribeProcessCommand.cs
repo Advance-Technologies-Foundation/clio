@@ -1,5 +1,4 @@
 using System;
-using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Command.ProcessModel;
@@ -95,31 +94,37 @@ public class DescribeProcessCommand(IProcessDescriber describer, ILogger logger)
 	/// </summary>
 	internal const string DecodedFilterNote = "decoded into the element's filter";
 
-	// The element parameters whose stored value is the raw platform filter the server decodes into Filter.
-	private static readonly string[] FilterParameterNames = ["DataSourceFilters", "EntityFilters"];
+	// The data-element parameter whose stored value is the raw platform filter the server decodes into Filter. A
+	// signal start's EntityFilters is a design-mode property, not a parameter, so it never reaches this list.
+	private const string DataSourceFiltersParameterName = "DataSourceFilters";
 
 	/// <summary>
-	/// Leaves out the raw platform filter of every element whose <see cref="DescribedElement.Filter"/> already
-	/// reports it decoded (ENG-99970), and says so on the parameter.
+	/// Leaves out the raw platform filter of every element whose decoded <see cref="DescribedElement.Filter"/> the
+	/// server judged COMPLETE (<see cref="DescribedElement.FilterDecodedCompletely"/>), and says so on the parameter
+	/// (ENG-99970).
 	/// </summary>
 	/// <remarks>
 	/// The raw value is the platform's serialized FilterGroup, a JSON string nested inside another: about 1 900
-	/// characters for one Read data element, ~15% of a measured describe, and a duplicate of the ~300-character
-	/// <c>filter</c> beside it, which is the form that round-trips into a <c>create</c> / <c>modify</c> filter. No
-	/// measured agent read it. It is kept whenever <c>Filter</c> is null: describe decodes only the modern filter
-	/// wrapper, so for a legacy designer-built filter the raw value is the only evidence that a filter exists
-	/// (<c>AccessRightsBlockExpectation</c> relies on the same fact). Changed on the result being written, which
-	/// this command owns; the describer's model is not shared.
+	/// characters for one Read data element, 16-27% of a measured describe result, and - when the decode is
+	/// complete - a duplicate of the ~300-character <c>filter</c> beside it. No measured agent read it.
+	/// <para>A non-null <c>Filter</c> is NOT enough: the server's reader is best-effort and returns a filter while
+	/// reading an Exists or Between leaf as <c>equal</c>, keeping one value of a multi-value lookup, or reading a
+	/// disabled condition as active - and the raw value is then the only full record, which an agent resending
+	/// <c>filter</c> to <c>setFilter</c> would otherwise overwrite without knowing. So the value is left out only on
+	/// the server's <c>true</c>; <c>false</c>, and the absent flag of an older <c>CrtProcessBuilder</c>, keep it, as
+	/// does a null <c>Filter</c> (a legacy filter describe cannot decode at all). Changed on the result being
+	/// written, which this command owns; the describer returns a fresh model per call and clio's own read-backs
+	/// (create, modify, <c>AccessRightsBlockExpectation</c>) run their own describe, so none of them sees it.</para>
 	/// </remarks>
 	internal static DescribeProcessResult OmitDecodedFilterPayloads(DescribeProcessResult result) {
 		foreach (DescribedElement element in result?.Elements ?? []) {
-			if (element?.Filter is null || element.Parameters is null) {
+			if (element?.Filter is null || element.FilterDecodedCompletely != true || element.Parameters is null) {
 				continue;
 			}
 			foreach (DescribedParameter parameter in element.Parameters) {
 				if (parameter is not null
 					&& !string.IsNullOrEmpty(parameter.Value)
-					&& FilterParameterNames.Contains(parameter.Name, StringComparer.OrdinalIgnoreCase)) {
+					&& string.Equals(parameter.Name, DataSourceFiltersParameterName, StringComparison.OrdinalIgnoreCase)) {
 					parameter.Value = null;
 					parameter.ValueOmitted = DecodedFilterNote;
 				}
