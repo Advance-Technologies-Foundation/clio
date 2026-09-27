@@ -541,7 +541,7 @@ public sealed class DescribedElement {
 	/// <c>true</c> when nothing was left out or approximated, <c>false</c> when the stored filter holds what the
 	/// high-level shape cannot carry (an Exists or Between leaf, a disabled condition, a multi-value lookup, an
 	/// aggregation, ...). Null when there is no filter, and always null from a <c>CrtProcessBuilder</c> older than
-	/// 1.6.6.37, which does not judge it (ENG-99970).
+	/// 1.6.6.38, which does not judge it (ENG-99970).
 	/// </summary>
 	[JsonPropertyName("filterDecodedCompletely")]
 	public bool? FilterDecodedCompletely { get; set; }
