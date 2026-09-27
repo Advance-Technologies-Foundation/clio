@@ -79,7 +79,7 @@ public sealed class GetTargetPackageToolE2ETests : McpContractFixtureBase {
 	[Test]
 	[AllureTag(GetPkgListTool.GetPkgListToolName)]
 	[AllureName("list-packages sends a write-target question to get-target-package")]
-	[Description("Reads list-packages as tools/list advertises it and verifies the description says the list cannot tell whether a package accepts changes and names get-target-package for that question - agents otherwise guess a target package from package names, 2-7 calls per process build in the ENG-99970 runs.")]
+	[Description("Reads list-packages both ways an agent can - as tools/list advertises it and as get-tool-contract serves its curated contract - and verifies each says the list cannot tell whether a package accepts changes and names get-target-package for that question - agents otherwise guess a target package from package names, 2-7 calls per process build in the ENG-99970 runs.")]
 	public async Task GetPkgList_Should_Route_The_Write_Target_Question_To_GetTargetPackage() {
 		// Arrange
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
@@ -87,18 +87,33 @@ public sealed class GetTargetPackageToolE2ETests : McpContractFixtureBase {
 		// Act
 		IList<McpClientTool> tools = await context.Session.ListToolsAsync(context.CancellationTokenSource.Token);
 		string description = tools.Single(tool => tool.Name == GetPkgListTool.GetPkgListToolName).Description;
+		CallToolResult contractResult = await context.Session.CallToolAsync(
+			ToolContractGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["tool-names"] = new[] { GetPkgListTool.GetPkgListToolName }
+				}
+			},
+			context.CancellationTokenSource.Token);
+		ToolContractGetResponse contracts =
+			EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(contractResult);
 
 		// Assert
 		description.Should().Contain("does not say whether a package accepts changes",
 			because: "the rows carry name, version, maintainer and uId only, so an agent that looks for a writable package there can only guess");
 		description.Should().Contain(GetTargetPackageTool.ToolName,
 			because: "the description must name the tool that answers the question, since list-packages is resident and get-target-package is not");
+		contracts.Success.Should().BeTrue(
+			because: $"the list-packages contract must be served before its description can be read. Error: {contracts.Error?.Message}");
+		contracts.Tools!.Single(definition => definition.Name == GetPkgListTool.GetPkgListToolName).Description
+			.Should().Contain(GetPkgListTool.WriteTargetNote,
+				because: "the curated contract, not the attribute, is what get-tool-contract readers see, so the routing note must be in both");
 	}
 
 	[Test]
 	[AllureTag(CreateBusinessProcessTool.CreateBusinessProcessToolName)]
 	[AllureName("create-business-process names get-target-package for the descriptor's packageName")]
-	[Description("Reads create-business-process through get-tool-contract, the way a lazy-surface caller does, and verifies the descriptor's packageName is described as resolved by get-target-package rather than guessed.")]
+	[Description("Reads create-business-process through get-tool-contract with no detail, the way a lazy-surface caller does by default, and verifies the contract names get-target-package for packageName - also when the reply is fitted and the contract comes back in its short form, which keeps only the opening of the description.")]
 	public async Task CreateBusinessProcess_Should_Name_GetTargetPackage_For_The_PackageName() {
 		// Arrange
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
@@ -120,7 +135,7 @@ public sealed class GetTargetPackageToolE2ETests : McpContractFixtureBase {
 		contracts.Success.Should().BeTrue(
 			because: $"the contract must be served before its description can be read. Error: {contracts.Error?.Message}");
 		string description = contracts.Tools!.Single(definition => definition.Name == toolName).Description;
-		description.Should().Contain("packageName (from get-target-package)",
-			because: "the server refuses a missing or read-only packageName, and the descriptor field is where a caller decides which package to name");
+		description.Should().Contain("Take packageName from get-target-package.",
+			because: "the server refuses a missing or read-only packageName, and a default read may return the short form, which keeps only the description's opening - the sentence must stand there to survive it");
 	}
 }
