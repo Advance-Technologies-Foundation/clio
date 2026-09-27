@@ -5,7 +5,7 @@ NAME
     set-object-rights - Grant or revoke object operation permissions (read/create/edit/delete) for a role on an object
 
 SYNOPSIS
-    set-object-rights --entity-schema-name <EntitySchemaName> --grantee <SysAdminUnitId> [--operations read,create,edit,delete] [--revoke] [--disable-operation-permissions] [--include-connected] [--connected-operations read,...] [--allow-security-object] [--confirm | --preview | --confirmation-token <token>] [OPTIONS]
+    set-object-rights --entity-schema-name <EntitySchemaName> --grantee <SysAdminUnitId> [--operations read,create,edit,delete] [--revoke] [--disable-operation-permissions] [--include-connected] [--connected-operations read,...] [--allow-security-object] [--confirm | --preview | --confirmation-code <token>] [OPTIONS]
 
 DESCRIPTION
     Grants (or, with --revoke, revokes) object operation permissions for one role on an object — the
@@ -71,9 +71,9 @@ OPTIONS
 
     --preview
         Write nothing: list every object the call would change, its current state and what it would get,
-        and print a confirmation-token.
+        and print a confirmation-code.
 
-    --confirmation-token
+    --confirmation-code
         Apply the change only if the targets and their rights are still exactly what the preview with
         that token showed; otherwise refuse and change nothing. On MCP a call without confirm is a
         preview, and confirm=true requires this token.

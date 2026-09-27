@@ -846,18 +846,18 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		exitCode.Should().Be(0, because: "a revoke never escalates privilege");
 	}
 
-	// ---- Preview / confirmation token (M1) ----
+	// ---- Preview / confirmation code (M1) ----
 
-	private string CapturePreviewToken(SetObjectRightsOptions options) {
+	private string CapturePreviewCode(SetObjectRightsOptions options) {
 		string token = null;
-		_logger.When(l => l.WriteInfo(Arg.Is<string>(m => m.StartsWith("confirmation-token: "))))
-			.Do(call => token = ((string)call[0]).Substring("confirmation-token: ".Length));
+		_logger.When(l => l.WriteInfo(Arg.Is<string>(m => m.StartsWith("confirmation-code: "))))
+			.Do(call => token = ((string)call[0]).Substring("confirmation-code: ".Length));
 		_command.Execute(options);
 		return token;
 	}
 
 	[Test]
-	[Description("A preview writes nothing and lists every target with its current state, including that operation permissions will be turned ON, plus a confirmation token.")]
+	[Description("A preview writes nothing and lists every target with its current state, including that operation permissions will be turned ON, plus a confirmation code.")]
 	public void Execute_ShouldListTargetsAndWriteNothing_WhenPreview() {
 		// Arrange
 		_connectedObjects.Resolve("UsrOrder", true).Returns(Resolution("UsrOrder", "UsrStatus"));
@@ -879,7 +879,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 			&& m.Contains("grantee holds read")));
 		_logger.Received().WriteInfo(Arg.Is<string>(m => m.Contains("UsrStatus (connected): grant [read]")
 			&& m.Contains("they will be turned ON")));
-		_logger.Received().WriteInfo(Arg.Is<string>(m => m.StartsWith("confirmation-token: ")));
+		_logger.Received().WriteInfo(Arg.Is<string>(m => m.StartsWith("confirmation-code: ")));
 	}
 
 	[Test]
@@ -887,10 +887,10 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 	public void Execute_ShouldApply_WhenTokenMatchesPreview() {
 		// Arrange
 		SetObjectRightsOptions preview = new() { EntitySchemaName = "UsrOrder", Grantee = Grantee, Operations = "read", Preview = true };
-		string token = CapturePreviewToken(preview);
+		string token = CapturePreviewCode(preview);
 		_console.IsInteractive.Returns(false);
 		SetObjectRightsOptions confirmed = new() {
-			EntitySchemaName = "UsrOrder", Grantee = Grantee, Operations = "read", ConfirmationToken = token
+			EntitySchemaName = "UsrOrder", Grantee = Grantee, Operations = "read", ConfirmationCode = token
 		};
 
 		// Act
@@ -911,10 +911,10 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		SetObjectRightsOptions preview = new() {
 			EntitySchemaName = "UsrOrder", Grantee = Grantee, Operations = "read", IncludeConnected = true, Preview = true
 		};
-		string token = CapturePreviewToken(preview);
+		string token = CapturePreviewCode(preview);
 		_connectedObjects.Resolve("UsrOrder", true).Returns(Resolution("UsrOrder", "UsrNewLookup"));
 		SetObjectRightsOptions confirmed = new() {
-			EntitySchemaName = "UsrOrder", Grantee = Grantee, Operations = "read", IncludeConnected = true, ConfirmationToken = token
+			EntitySchemaName = "UsrOrder", Grantee = Grantee, Operations = "read", IncludeConnected = true, ConfirmationCode = token
 		};
 
 		// Act
@@ -922,7 +922,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 
 		// Assert
 		exitCode.Should().Be(1, because: "the user approved a different set of targets");
-		_logger.Received().WriteError(Arg.Is<string>(m => m.Contains("confirmation token does not match")));
+		_logger.Received().WriteError(Arg.Is<string>(m => m.Contains("confirmation code does not match")));
 		_rightsWriter.DidNotReceiveWithAnyArgs().SetObjectRights(default, default, default, default, default, default);
 	}
 
@@ -930,11 +930,11 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 	[Description("A token from a preview of different arguments (another operation set) is refused.")]
 	public void Execute_ShouldRefuse_WhenArgumentsDifferFromPreview() {
 		// Arrange
-		string token = CapturePreviewToken(new SetObjectRightsOptions {
+		string token = CapturePreviewCode(new SetObjectRightsOptions {
 			EntitySchemaName = "UsrOrder", Grantee = Grantee, Operations = "read", Preview = true
 		});
 		SetObjectRightsOptions confirmed = new() {
-			EntitySchemaName = "UsrOrder", Grantee = Grantee, Operations = "read,create,edit", ConfirmationToken = token
+			EntitySchemaName = "UsrOrder", Grantee = Grantee, Operations = "read,create,edit", ConfirmationCode = token
 		};
 
 		// Act

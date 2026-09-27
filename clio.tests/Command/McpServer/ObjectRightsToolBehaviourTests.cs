@@ -127,12 +127,12 @@ public sealed class ObjectRightsToolBehaviourTests {
 		_capturedSet.ConnectedOperations.Should().BeNull(because: "omitted connected-operations fall to read-only");
 		_capturedSet.IncludeConnected.Should().BeFalse(because: "fan-out is opt-in");
 		_capturedSet.Preview.Should().BeTrue(because: "a call without confirm is a preview that writes nothing");
-		_capturedSet.ConfirmationToken.Should().BeNull(because: "no token is passed on a preview");
+		_capturedSet.ConfirmationCode.Should().BeNull(because: "no token is passed on a preview");
 		_capturedSet.Confirm.Should().BeFalse(because: "the tool no longer confirms the apply on its own");
 	}
 
 	[Test]
-	[Description("confirm=true without a confirmation-token is refused before the command is resolved.")]
+	[Description("confirm=true without a confirmation-code is refused before the command is resolved.")]
 	public void SetObjectRights_ShouldRefuseConfirm_WhenTokenMissing() {
 		// Arrange
 		SetObjectRightsArgs args = new("dev", "UsrFoo", Grantee, Confirm: true);
@@ -142,7 +142,7 @@ public sealed class ObjectRightsToolBehaviourTests {
 
 		// Assert
 		response.Success.Should().BeFalse(because: "a confirmed write must carry the token from the preview the user approved");
-		response.Error.Should().Contain("confirmation-token", because: "the refusal names what is missing");
+		response.Error.Should().Contain("confirmation-code", because: "the refusal names what is missing");
 		_resolver.DidNotReceive().Resolve<SetObjectRightsCommand>(Arg.Any<EnvironmentOptions>());
 	}
 
@@ -150,14 +150,14 @@ public sealed class ObjectRightsToolBehaviourTests {
 	[Description("confirm=true with a token maps to a confirmed call carrying that token, not a preview.")]
 	public void SetObjectRights_ShouldMapConfirmAndToken() {
 		// Arrange
-		SetObjectRightsArgs args = new("dev", "UsrFoo", Grantee, Confirm: true, ConfirmationToken: "abc123");
+		SetObjectRightsArgs args = new("dev", "UsrFoo", Grantee, Confirm: true, ConfirmationCode: "abc123");
 
 		// Act
 		SetTool().SetObjectRights(args);
 
 		// Assert
 		_capturedSet.Preview.Should().BeFalse(because: "a confirmed call writes");
-		_capturedSet.ConfirmationToken.Should().Be("abc123", because: "the token is passed to the command, which checks it");
+		_capturedSet.ConfirmationCode.Should().Be("abc123", because: "the token is passed to the command, which checks it");
 	}
 
 	[Test]
@@ -275,5 +275,18 @@ public sealed class ObjectRightsToolBehaviourTests {
 		response.Success.Should().BeFalse(because: "an exception is a failure");
 		response.Error.Should().Contain("[redacted-uri]", because: "exception text is redacted");
 		response.Error.Should().NotContain("tenant.example", because: "the host must not leak");
+	}
+
+	[Test]
+	[Description("The preview's confirmation code survives the MCP output redaction; a value after a '...-token:' key would be masked and the agent could never confirm.")]
+	public void PreviewConfirmationCode_ShouldSurviveOutputRedaction() {
+		// Arrange
+		const string line = "confirmation-code: 0123456789abcdef";
+
+		// Act
+		string redacted = Clio.Common.SensitiveErrorTextRedactor.Redact(line);
+
+		// Assert
+		redacted.Should().Be(line, because: "the agent must be able to read the code back from the preview output");
 	}
 }

@@ -27,14 +27,14 @@ not: it turns operation permissions off, which makes the object available to **a
 is refused unless `--disable-operation-permissions` asks for it explicitly.
 
 **Destructive.** In a non-interactive run it refuses to apply unless `--confirm` is passed; in an
-interactive run it asks for a `y/n` confirmation. `--preview` / `--confirmation-token` split it into a
+interactive run it asks for a `y/n` confirmation. `--preview` / `--confirmation-code` split it into a
 preview that writes nothing and a confirmed call bound to that preview — the only mode on MCP, where
 nobody can be prompted: a call without `confirm` is a preview, and `confirm=true` requires the token.
 
 ## Synopsis
 
 ```bash
-clio set-object-rights --entity-schema-name <EntitySchemaName> --grantee <SysAdminUnitId> [--operations read,create,edit,delete] [--revoke] [--disable-operation-permissions] [--include-connected] [--connected-operations read,...] [--allow-security-object] (--confirm | --preview | --confirmation-token <token>) -e <environment>
+clio set-object-rights --entity-schema-name <EntitySchemaName> --grantee <SysAdminUnitId> [--operations read,create,edit,delete] [--revoke] [--disable-operation-permissions] [--include-connected] [--connected-operations read,...] [--allow-security-object] (--confirm | --preview | --confirmation-code <token>) -e <environment>
 ```
 
 ## Options
@@ -78,9 +78,9 @@ Confirm the destructive change without a prompt. Required in non-interactive run
 
 --preview
 Write nothing: list every object the call would change, its current state (whether operation
-permissions are on, what the grantee holds) and what it would get, and print a `confirmation-token`.
+permissions are on, what the grantee holds) and what it would get, and print a `confirmation-code`.
 
---confirmation-token TOKEN
+--confirmation-code TOKEN
 Apply the change only if the targets and their rights are still exactly what the preview with that
 token showed; otherwise refuse and change nothing.
 

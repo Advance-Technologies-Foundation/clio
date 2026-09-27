@@ -131,19 +131,19 @@ public sealed class ObjectRightsSandboxE2ETests : DataBindingDbFixtureBase {
 		disabled.Output.Should().Contain("now OFF", because: "the object is available to all internal users again");
 	}
 
-	// The MCP write is two-step: a call without confirm returns a preview and a confirmation-token and writes
+	// The MCP write is two-step: a call without confirm returns a preview and a confirmation-code and writes
 	// nothing; the confirmed call must carry that token.
 	private static async Task<ObjectRightsToolResponse> PreviewThenConfirmAsync(
 		DataBindingDbArrangeContext arrangeContext, Dictionary<string, object?> args) {
 		ObjectRightsToolResponse preview = await CallRightsAsync(arrangeContext, SetObjectRightsTool.ToolName, args);
 		preview.Success.Should().BeTrue(because: $"the preview must succeed. Error: {preview.Error}");
 		System.Text.RegularExpressions.Match token = System.Text.RegularExpressions.Regex.Match(
-			preview.Output ?? string.Empty, @"confirmation-token: (?<token>[0-9a-f]+)");
-		token.Success.Should().BeTrue(because: $"the preview must print a confirmation token. Output: {preview.Output}");
+			preview.Output ?? string.Empty, @"confirmation-code: (?<token>[0-9a-f]+)");
+		token.Success.Should().BeTrue(because: $"the preview must print a confirmation code. Output: {preview.Output}");
 		preview.Output.Should().Contain("PREVIEW — nothing was changed", because: "a preview writes nothing");
 		Dictionary<string, object?> confirmed = new(args) {
 			["confirm"] = true,
-			["confirmation-token"] = token.Groups["token"].Value
+			["confirmation-code"] = token.Groups["token"].Value
 		};
 		return await CallRightsAsync(arrangeContext, SetObjectRightsTool.ToolName, confirmed);
 	}

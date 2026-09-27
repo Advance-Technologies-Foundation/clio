@@ -55,13 +55,13 @@ public class SetObjectRightsOptions : RemoteCommandOptions {
 
 	[Option("preview", Required = false, HelpText =
 		"Write nothing: list every object the call would change, its current state and what it would get, and print "
-		+ "a confirmation token for --confirmation-token")]
+		+ "a confirmation code for --confirmation-code")]
 	public bool Preview { get; set; }
 
-	[Option("confirmation-token", Required = false, HelpText =
+	[Option("confirmation-code", Required = false, HelpText =
 		"Token from a --preview run. The change is applied only if the target objects and their rights are still "
 		+ "exactly what that preview showed")]
-	public string ConfirmationToken { get; set; }
+	public string ConfirmationCode { get; set; }
 }
 
 /// <summary>
@@ -189,23 +189,24 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 				+ " the roles listed on it can reach it (the result names them).";
 		}
 
-		// Preview and token confirmation. On MCP the command cannot ask anyone, so the change is split in two calls:
-		// a preview that writes nothing and returns a token for the exact targets and their current rights, and a
-		// confirmed call that must carry that token. A token that no longer matches (a new lookup, rights changed
+		// Preview and code confirmation. On MCP the command cannot ask anyone, so the change is split in two calls:
+		// a preview that writes nothing and returns a code for the exact targets and their current rights, and a
+		// confirmed call that must carry that code. It is called a CODE, not a token, on purpose: the MCP output
+		// redactor masks the value after any "...-token:" key, which would hide it from the agent. A code that no longer matches (a new lookup, rights changed
 		// by someone else) means the user approved something other than what would now be written.
-		if (options.Preview || !string.IsNullOrWhiteSpace(options.ConfirmationToken)) {
+		if (options.Preview || !string.IsNullOrWhiteSpace(options.ConfirmationCode)) {
 			List<string> state = DescribeTargets(objects, grantee, operations, connectedOperations, options, requestOptions);
-			string token = ComputeToken(state, grantee, operations, connectedOperations, options);
+			string code = ComputeCode(state, grantee, operations, connectedOperations, options);
 			if (options.Preview) {
 				_logger.WriteInfo($"PREVIEW — nothing was changed. {change}");
 				foreach (string line in state) {
 					_logger.WriteInfo($"  {line}");
 				}
-				_logger.WriteInfo($"confirmation-token: {token}");
+				_logger.WriteInfo($"confirmation-code: {code}");
 				return 0;
 			}
-			if (!string.Equals(options.ConfirmationToken.Trim(), token, StringComparison.OrdinalIgnoreCase)) {
-				_logger.WriteError("Error: the confirmation token does not match — the target objects or their rights "
+			if (!string.Equals(options.ConfirmationCode.Trim(), code, StringComparison.OrdinalIgnoreCase)) {
+				_logger.WriteError("Error: the confirmation code does not match — the target objects or their rights "
 					+ "changed since the preview, or the arguments differ. Nothing was changed; run a new preview.");
 				return 1;
 			}
@@ -247,9 +248,9 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 		}
 	}
 
-	// One line per target for the preview, and the input of the confirmation token: the object, its role in the
+	// One line per target for the preview, and the input of the confirmation code: the object, its role in the
 	// call, whether operation permissions are on, and what the grantee holds now. Any change to these between the
-	// preview and the confirmed call changes the token.
+	// preview and the confirmed call changes the code.
 	private List<string> DescribeTargets(IReadOnlyList<string> objects, Guid grantee,
 		IReadOnlyCollection<ObjectOperation> operations, IReadOnlyCollection<ObjectOperation> connectedOperations,
 		SetObjectRightsOptions options, CreatioRequestOptions requestOptions) {
@@ -289,7 +290,7 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 
 	// A short, stable fingerprint of the arguments and the described target state. It is not a secret and not a
 	// signature: it only proves the confirmed call is about the same targets, in the same state, that were shown.
-	private static string ComputeToken(IEnumerable<string> state, Guid grantee,
+	private static string ComputeCode(IEnumerable<string> state, Guid grantee,
 		IReadOnlyCollection<ObjectOperation> operations, IReadOnlyCollection<ObjectOperation> connectedOperations,
 		SetObjectRightsOptions options) {
 		string material = string.Join("\n", new[] {
