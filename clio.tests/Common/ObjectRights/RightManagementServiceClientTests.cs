@@ -1,6 +1,10 @@
 using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Net.Http;
 using System.Text.Json;
+using System.Threading.Tasks;
 using Clio.Common;
 using Clio.Common.ObjectRights;
 using FluentAssertions;
@@ -96,7 +100,7 @@ public class RightManagementServiceClientTests {
 
 		// Assert
 		result.Changed.Should().BeTrue(because: "the row was removed");
-		result.OperationPermissionsDisabled.Should().BeTrue(
+		result.Outcome.Should().Be(ObjectRightsOutcome.ChangedAndDisabled,
 			because: "the caller must be told the object is now available to every internal user");
 		_savedPayload.Should().Contain("\"administratedByOperations\":false",
 			because: "the caller explicitly asked to return the object to available-to-all");
@@ -114,7 +118,7 @@ public class RightManagementServiceClientTests {
 			revoke: true, disableOperationPermissions: false, new CreatioRequestOptions());
 
 		// Assert
-		result.RefusedLastRowRemoval.Should().BeTrue(because: "the caller did not ask to turn operation permissions off");
+		result.Outcome.Should().Be(ObjectRightsOutcome.RefusedLastRowRemoval,because: "the caller did not ask to turn operation permissions off");
 		result.Changed.Should().BeFalse(because: "nothing was written");
 		_applicationClient.DidNotReceive().ExecutePostRequest(SaveUrl, Arg.Any<string>(), Arg.Any<int>(),
 			Arg.Any<int>(), Arg.Any<int>());
@@ -134,7 +138,7 @@ public class RightManagementServiceClientTests {
 			new CreatioRequestOptions());
 
 		// Assert
-		result.RefusedLastRowRemoval.Should().BeFalse(because: "the row keeps canRead, so it is not removed");
+		result.Outcome.Should().NotBe(ObjectRightsOutcome.RefusedLastRowRemoval,because: "the row keeps canRead, so it is not removed");
 		result.Changed.Should().BeTrue(because: "canAppend was cleared");
 		_savedPayload.Should().Contain("\"administratedByOperations\":true",
 			because: "a narrowing revoke never touches the object's administration flag");
@@ -329,7 +333,7 @@ public class RightManagementServiceClientTests {
 
 		// Assert
 		result.Changed.Should().BeTrue(because: "enabling operation permissions and adding a row is a change");
-		result.OperationPermissionsEnabled.Should().BeTrue(
+		result.Outcome.Should().Be(ObjectRightsOutcome.ChangedAndEnabled,
 			because: "the flip narrows access for every other internal role, so it must be reported");
 		_savedPayload.Should().Contain("\"administratedByOperations\":true", because: "the grant turns operation permissions on");
 		_savedPayload.Should().Contain(Grantee.ToString(), because: "the grantee row is added");
@@ -347,7 +351,7 @@ public class RightManagementServiceClientTests {
 
 		// Assert
 		result.Changed.Should().BeTrue(because: "turning operation permissions on is itself a change");
-		result.OperationPermissionsEnabled.Should().BeTrue(because: "the object was not administered before");
+		result.Outcome.Should().Be(ObjectRightsOutcome.ChangedAndEnabled,because: "the object was not administered before");
 		_savedPayload.Should().NotBeNull(because: "the enablement must be saved even though the row flags did not change");
 	}
 
@@ -385,7 +389,7 @@ public class RightManagementServiceClientTests {
 		// Assert
 		result.Error.Should().Be("denied", because: "the service's failure message is surfaced");
 		result.Changed.Should().BeFalse(because: "nothing was saved");
-		result.OperationPermissionsEnabled.Should().BeFalse(because: "a failed save enabled nothing");
+		result.Outcome.Should().NotBe(ObjectRightsOutcome.ChangedAndEnabled,because: "a failed save enabled nothing");
 	}
 
 	// ---- Save exception, multi-row revoke, projection (review round 4) ----
@@ -436,8 +440,8 @@ public class RightManagementServiceClientTests {
 
 		// Assert
 		result.Changed.Should().BeTrue(because: "the grantee's row was removed");
-		result.RefusedLastRowRemoval.Should().BeFalse(because: "another row remains, so this is not the last row");
-		result.OperationPermissionsDisabled.Should().BeFalse(because: "operation permissions stay on while any row remains");
+		result.Outcome.Should().NotBe(ObjectRightsOutcome.RefusedLastRowRemoval,because: "another row remains, so this is not the last row");
+		result.Outcome.Should().NotBe(ObjectRightsOutcome.ChangedAndDisabled,because: "operation permissions stay on while any row remains");
 		_savedPayload.Should().Contain("\"administratedByOperations\":true",
 			because: "removing one role must never make the object available to every internal user");
 		JsonElement[] rows = SavedRows();
@@ -680,7 +684,7 @@ public class RightManagementServiceClientTests {
 
 		// Assert
 		result.Changed.Should().BeFalse(because: "create is already gone");
-		result.RefusedLastRowRemoval.Should().BeFalse(because: "nothing would be removed, so there is nothing to refuse");
+		result.Outcome.Should().NotBe(ObjectRightsOutcome.RefusedLastRowRemoval,because: "nothing would be removed, so there is nothing to refuse");
 		AssertNoSave("a re-run that changes nothing must not save");
 	}
 
@@ -696,7 +700,7 @@ public class RightManagementServiceClientTests {
 
 		// Assert
 		result.Changed.Should().BeFalse(because: "the grantee holds nothing to revoke");
-		result.RefusedLastRowRemoval.Should().BeFalse(because: "a revoke that changes nothing is never refused");
+		result.Outcome.Should().NotBe(ObjectRightsOutcome.RefusedLastRowRemoval,because: "a revoke that changes nothing is never refused");
 		AssertNoSave("nothing changed");
 	}
 
@@ -717,9 +721,9 @@ public class RightManagementServiceClientTests {
 			revoke: true, disableOperationPermissions: disable, new CreatioRequestOptions());
 
 		// Assert
-		result.RevokeOnNotAdministered.Should().BeTrue(because: "every internal user reaches a non-administered object");
+		result.Outcome.Should().Be(ObjectRightsOutcome.RevokeOnNotAdministered,because: "every internal user reaches a non-administered object");
 		result.Changed.Should().BeFalse(because: "nothing was written");
-		result.RefusedLastRowRemoval.Should().BeFalse(because: "the object is already open to internal users");
+		result.Outcome.Should().NotBe(ObjectRightsOutcome.RefusedLastRowRemoval,because: "the object is already open to internal users");
 		AssertNoSave("no restriction can be written to a non-administered object");
 	}
 
@@ -826,5 +830,50 @@ public class RightManagementServiceClientTests {
 		// Assert
 		found.Should().Be("All external users", because: "an existing SysAdminUnit resolves to its name");
 		missing.Should().BeNull(because: "a missing id resolves to nothing");
+		_applicationClient.Received().ExecutePostRequest(SelectUrl,
+			Arg.Is<string>(body => body.Contains("SysAdminUnit") && body.Contains(Grantee.ToString())),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	private static IEnumerable<TestCaseData> ServiceFailures() {
+		yield return new TestCaseData(new HttpRequestException("503")).SetName("ServiceFailure_HttpRequest");
+		yield return new TestCaseData(new IOException("reset")).SetName("ServiceFailure_IO");
+		yield return new TestCaseData(new JsonException("not json")).SetName("ServiceFailure_Json");
+		yield return new TestCaseData(new UnauthorizedAccessException("401")).SetName("ServiceFailure_Unauthorized");
+		yield return new TestCaseData(new TimeoutException("timeout")).SetName("ServiceFailure_Timeout");
+		yield return new TestCaseData(new TaskCanceledException("HTTP timeout")).SetName("ServiceFailure_TaskCanceled");
+	}
+
+	[TestCaseSource(nameof(ServiceFailures))]
+	[Description("A failure of the Creatio service (transport, timeout, non-JSON body, authentication) is attributed to the object: the read reports a ReadError and the write a Failed outcome, instead of ending the run.")]
+	public void ObjectRights_ShouldReportFailure_WhenServiceFails(Exception failure) {
+		// Arrange
+		Post(GetUrl).Returns(_ => throw failure);
+
+		// Act
+		ObjectRightsInfo info = _client.GetObjectRights("UsrFoo", new CreatioRequestOptions());
+		ObjectRightsChange change = _client.SetObjectRights("UsrFoo", Grantee, new[] { ObjectOperation.Read },
+			revoke: false, disableOperationPermissions: false, new CreatioRequestOptions());
+
+		// Assert
+		info.ReadError.Should().NotBeNull(because: "a service failure is reported on the object it happened to");
+		change.Outcome.Should().Be(ObjectRightsOutcome.Failed, because: "nothing could be read, so nothing was saved");
+		_savedPayload.Should().BeNull(because: "no save may follow a failed read");
+	}
+
+	[Test]
+	[Description("A programming error (not a service failure) is not swallowed as an object's read error: it escapes, so a bug is not reported as 'could not read'.")]
+	public void ObjectRights_ShouldThrow_WhenProgrammingErrorOccurs() {
+		// Arrange
+		Post(GetUrl).Returns(_ => throw new NullReferenceException("bug"));
+
+		// Act
+		Action read = () => _client.GetObjectRights("UsrFoo", new CreatioRequestOptions());
+		Action write = () => _client.SetObjectRights("UsrFoo", Grantee, new[] { ObjectOperation.Read },
+			revoke: false, disableOperationPermissions: false, new CreatioRequestOptions());
+
+		// Assert
+		read.Should().Throw<NullReferenceException>(because: "only service failures are attributed to the object");
+		write.Should().Throw<NullReferenceException>(because: "only service failures are attributed to the object");
 	}
 }

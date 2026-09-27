@@ -11,8 +11,9 @@ using ModelContextProtocol.Server;
 namespace Clio.Command.McpServer.Tools;
 
 /// <summary>
-/// MCP surface of <c>set-object-rights</c>: grants or revokes a role's object operation permissions. Destructive; on
-/// MCP the Destructive flag is the only gate, so the call is applied without a prompt.
+/// MCP surface of <c>set-object-rights</c>: grants or revokes a role's object operation permissions. Destructive and
+/// two-step: a call without <c>confirm</c> is a preview that writes nothing and returns a confirmation code; the
+/// confirmed call must carry that code, and the command refuses it when the state it was computed from changed.
 /// </summary>
 [McpServerToolType]
 public sealed class SetObjectRightsTool(
@@ -43,18 +44,19 @@ public sealed class SetObjectRightsTool(
 		"operations defaults to read/create/edit on the root object (delete not granted by default); revoke=true removes them (a role left with none is removed). " +
 		"include-connected also applies to the root object's own lookup objects (security/system objects such as SysAdminUnit are skipped), which get connected-operations (default read only); on revoke the lookups are touched only when connected-operations is given. Fails without writing if the lookups cannot be enumerated. Does NOT change column permissions. Read it back with get-object-rights. " +
 		"A revoke that would remove the root's LAST rights row is REFUSED unless disable-operation-permissions is set (it makes the object available to ALL internal users; never applied to lookups). " +
-		"The grantee must exist in SysAdminUnit. A security/system ROOT object may only be granted read unless allow-security-object is set. " +
+		"The grantee must exist in SysAdminUnit. A security/system ROOT object may only be granted read, and never have its operation permissions turned off, unless allow-security-object is set. " +
 		"With include-connected the call can take minutes. " +
 		"TWO-STEP: a call WITHOUT confirm writes nothing and returns a PREVIEW (every target object, its current state, and whether operation permissions will be turned ON) plus a confirmation-code. " +
-		"Show the preview to the user; only after they approve, call again with confirm=true and that confirmation-code. The write is refused when the code no longer matches the targets (they changed since the preview). " +
+		"Show the preview to the user; only after they approve, call again with confirm=true and that confirmation-code. The write is refused when the targets or any role's rights on them changed since the preview, or the arguments differ. " +
+		"The code is a state fingerprint, not a secret: it proves the confirmed call matches the preview, not that the user approved it. " +
 		"Unknown or misspelled argument names are REFUSED before any write.")]
 	public ObjectRightsToolResponse SetObjectRights(
 		[Description("Parameters: environment-name, entity-schema-name, grantee (required); operations, revoke, include-connected, connected-operations, disable-operation-permissions, allow-security-object, confirm, confirmation-code (optional).")]
 		[Required]
 		SetObjectRightsArgs args) {
 		// A long-tail tool reached through clio-run: the flat-argument classifier never sees this wrapped payload,
-		// and the serializer silently DROPS unknown keys. On an auto-confirmed destructive tool that turns a typo
-		// into the opposite change ({"revok":true} binds Revoke=false and GRANTS), so refuse before any write.
+		// and the serializer silently DROPS unknown keys. On a destructive tool that turns a typo into the opposite
+		// change ({"revok":true} binds Revoke=false and GRANTS), so refuse before any preview or write.
 		string? aliasError = McpToolArgumentSupport.BuildLegacyAliasError(
 			args.ExtensionData, McpToolArgumentSupport.EnvironmentNameAliases, ".", ValidArguments);
 		if (!string.IsNullOrWhiteSpace(aliasError)) {
@@ -132,11 +134,11 @@ public sealed record SetObjectRightsArgs(
 	bool? Confirm = null,
 
 	[property: JsonPropertyName("confirmation-code")]
-	[property: Description("The confirmation-code from the preview the user approved. Required with confirm=true; the write is refused when the targets or their rights changed since that preview.")]
+	[property: Description("The confirmation-code from the preview the user approved. Required with confirm=true; the write is refused when the targets or any role's rights on them changed since that preview. Ignored without confirm=true.")]
 	string ConfirmationCode = null,
 
 	[property: JsonPropertyName("allow-security-object")]
-	[property: Description("Allow granting create/edit/delete when the ROOT object is a security or system object (SysAdmin*, SysUser*, SysSchema*, SysPackage*, SysSettings*, SysLic*, SysProcess*, Vw*, *Right/*Rights). Default false: such a root may only be granted read.")]
+	[property: Description("Allow granting create/edit/delete, or a revoke with disable-operation-permissions, when the ROOT object is a security or system object (SysAdmin*, SysUser*, SysSchema*, SysPackage*, SysSettings*, SysLic*, SysProcess*, Vw*, *Right/*Rights). Default false: such a root may only be granted read.")]
 	bool? AllowSecurityObject = null
 ) {
 	/// <summary>Overflow bag for unknown JSON fields; a non-empty bag refuses the call before any write.</summary>

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using Clio.Common;
 using Clio.Common.ObjectRights;
@@ -135,13 +136,8 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 	}
 
 	private static string Describe(RoleOperationRights role) {
-		string[] ops = new[] {
-			role.CanRead ? "read" : null,
-			role.CanCreate ? "create" : null,
-			role.CanEdit ? "edit" : null,
-			role.CanDelete ? "delete" : null
-		}.Where(op => op != null).ToArray();
-		string granted = ops.Length == 0 ? "no operations" : string.Join("/", ops);
+		IReadOnlyList<string> ops = role.OperationNames();
+		string granted = ops.Count == 0 ? "no operations" : string.Join("/", ops);
 		return $"{role.GranteeName} ({role.GranteeId}): {granted}";
 	}
 }

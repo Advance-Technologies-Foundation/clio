@@ -25,7 +25,17 @@ public sealed record RoleOperationRights(
 	bool CanRead,
 	bool CanCreate,
 	bool CanEdit,
-	bool CanDelete);
+	bool CanDelete) {
+
+	/// <summary>The role holds at least one operation (an all-false row grants nothing).</summary>
+	public bool HasAnyOperation => CanRead || CanCreate || CanEdit || CanDelete;
+
+	/// <summary>The operations the role holds, in grid order: read, create, edit, delete.</summary>
+	public IReadOnlyList<string> OperationNames() =>
+		new[] { CanRead ? "read" : null, CanCreate ? "create" : null, CanEdit ? "edit" : null, CanDelete ? "delete" : null }
+			.Where(op => op is not null)
+			.ToArray();
+}
 
 /// <summary>
 /// The result of reading one object's operation-permissions state: whether it was found, whether it is
@@ -86,24 +96,9 @@ public sealed record ObjectRightsChange(
 	IReadOnlyList<RoleOperationRights> RolesAfterEnable = null,
 	string ReadBackError = null) {
 
-	/// <summary>The object exists (every outcome except <see cref="ObjectRightsOutcome.NotFound"/>).</summary>
-	public bool Found => Outcome != ObjectRightsOutcome.NotFound;
-
-	/// <summary>A change was saved.</summary>
+	/// <summary>A change was saved (<see cref="ObjectRightsOutcome.Changed"/>, <c>ChangedAndEnabled</c> or <c>ChangedAndDisabled</c>).</summary>
 	public bool Changed => Outcome is ObjectRightsOutcome.Changed or ObjectRightsOutcome.ChangedAndEnabled
 		or ObjectRightsOutcome.ChangedAndDisabled;
-
-	/// <summary>Shorthand for <see cref="ObjectRightsOutcome.ChangedAndEnabled"/>.</summary>
-	public bool OperationPermissionsEnabled => Outcome == ObjectRightsOutcome.ChangedAndEnabled;
-
-	/// <summary>Shorthand for <see cref="ObjectRightsOutcome.ChangedAndDisabled"/>.</summary>
-	public bool OperationPermissionsDisabled => Outcome == ObjectRightsOutcome.ChangedAndDisabled;
-
-	/// <summary>Shorthand for <see cref="ObjectRightsOutcome.RefusedLastRowRemoval"/>.</summary>
-	public bool RefusedLastRowRemoval => Outcome == ObjectRightsOutcome.RefusedLastRowRemoval;
-
-	/// <summary>Shorthand for <see cref="ObjectRightsOutcome.RevokeOnNotAdministered"/>.</summary>
-	public bool RevokeOnNotAdministered => Outcome == ObjectRightsOutcome.RevokeOnNotAdministered;
 }
 
 /// <summary>
@@ -436,10 +431,11 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 	// The failures a call to the Creatio service can produce and that must be attributed to one object rather
 	// than end the run: a transport fault, a timeout, a non-JSON or empty body (InvalidOperationException from
 	// PostAndDeserialize), an authentication rejection, an oversized response. Programming errors
-	// (NullReferenceException, ArgumentException, ...) are deliberately NOT caught here.
-	private static bool IsServiceFailure(Exception exception) =>
+	// (NullReferenceException, ArgumentException, ...) are deliberately NOT caught here. An HTTP timeout surfaces
+	// as TaskCanceledException, hence OperationCanceledException.
+	internal static bool IsServiceFailure(Exception exception) =>
 		exception is InvalidOperationException or HttpRequestException or TimeoutException or IOException
-			or JsonException or UnauthorizedAccessException or ResponseTooLargeException;
+			or JsonException or UnauthorizedAccessException or ResponseTooLargeException or OperationCanceledException;
 
 	private static List<RoleOperationRights> ProjectRoles(JsonObject node) =>
 		ReadOperationRows(node)

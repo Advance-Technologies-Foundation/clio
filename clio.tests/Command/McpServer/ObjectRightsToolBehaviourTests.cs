@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Command.ObjectRights;
@@ -14,8 +16,8 @@ namespace Clio.Tests.Command.McpServer;
 
 /// <summary>
 /// Behaviour of the object-rights MCP tools beyond their attributes: how the args map onto the command options
-/// (the only guard on the auto-confirmed destructive path), the refusal of unknown/misspelled argument names
-/// before any write, and redaction of both the success and the failure payloads.
+/// and the two-step preview/confirm protocol of the destructive tool, the refusal of unknown/misspelled argument
+/// names before any write, and redaction of both the success and the failure payloads.
 /// </summary>
 [TestFixture]
 [Category("Unit")]
@@ -107,7 +109,7 @@ public sealed class ObjectRightsToolBehaviourTests {
 	}
 
 	[Test]
-	[Description("With only the required args, the tool maps to a non-revoking, non-disabling, auto-confirmed grant with the default operation sets.")]
+	[Description("With only the required args, the tool maps to a PREVIEW of a non-revoking, non-disabling grant with the default operation sets.")]
 	public void SetObjectRights_ShouldMapRequiredArgsToSafeDefaults() {
 		// Arrange
 		SetObjectRightsArgs args = new("dev", "UsrFoo", Grantee);
@@ -116,7 +118,7 @@ public sealed class ObjectRightsToolBehaviourTests {
 		ObjectRightsToolResponse response = SetTool().SetObjectRights(args);
 
 		// Assert
-		response.Success.Should().BeTrue(because: "the grant succeeded");
+		response.Success.Should().BeTrue(because: "the preview succeeded");
 		_capturedSet.Should().NotBeNull(because: "the command must have been resolved for the call");
 		_capturedSet.Environment.Should().Be("dev", because: "environment-name maps onto Environment");
 		_capturedSet.EntitySchemaName.Should().Be("UsrFoo", because: "entity-schema-name maps through");
@@ -127,28 +129,31 @@ public sealed class ObjectRightsToolBehaviourTests {
 		_capturedSet.ConnectedOperations.Should().BeNull(because: "omitted connected-operations fall to read-only");
 		_capturedSet.IncludeConnected.Should().BeFalse(because: "fan-out is opt-in");
 		_capturedSet.Preview.Should().BeTrue(because: "a call without confirm is a preview that writes nothing");
-		_capturedSet.ConfirmationCode.Should().BeNull(because: "no token is passed on a preview");
+		_capturedSet.ConfirmationCode.Should().BeNull(because: "no code is passed on a preview");
+		_capturedSet.AllowSecurityObject.Should().BeFalse(because: "the security-object opt-in is explicit only");
+		_writer.DidNotReceiveWithAnyArgs().SetObjectRights(default, default, default, default, default, default);
 		_capturedSet.Confirm.Should().BeFalse(because: "the tool no longer confirms the apply on its own");
 	}
 
-	[Test]
-	[Description("confirm=true without a confirmation-code is refused before the command is resolved.")]
-	public void SetObjectRights_ShouldRefuseConfirm_WhenTokenMissing() {
+	[TestCase(null)]
+	[TestCase("   ")]
+	[Description("confirm=true without a confirmation-code (missing or blank) is refused before the command is resolved.")]
+	public void SetObjectRights_ShouldRefuseConfirm_WhenCodeMissing(string code) {
 		// Arrange
-		SetObjectRightsArgs args = new("dev", "UsrFoo", Grantee, Confirm: true);
+		SetObjectRightsArgs args = new("dev", "UsrFoo", Grantee, Confirm: true, ConfirmationCode: code);
 
 		// Act
 		ObjectRightsToolResponse response = SetTool().SetObjectRights(args);
 
 		// Assert
-		response.Success.Should().BeFalse(because: "a confirmed write must carry the token from the preview the user approved");
+		response.Success.Should().BeFalse(because: "a confirmed write must carry the code from the preview the user approved");
 		response.Error.Should().Contain("confirmation-code", because: "the refusal names what is missing");
 		_resolver.DidNotReceive().Resolve<SetObjectRightsCommand>(Arg.Any<EnvironmentOptions>());
 	}
 
 	[Test]
-	[Description("confirm=true with a token maps to a confirmed call carrying that token, not a preview.")]
-	public void SetObjectRights_ShouldMapConfirmAndToken() {
+	[Description("confirm=true with a code maps to a confirmed call carrying that code, not a preview.")]
+	public void SetObjectRights_ShouldMapConfirmAndCode() {
 		// Arrange
 		SetObjectRightsArgs args = new("dev", "UsrFoo", Grantee, Confirm: true, ConfirmationCode: "abc123");
 
@@ -157,7 +162,22 @@ public sealed class ObjectRightsToolBehaviourTests {
 
 		// Assert
 		_capturedSet.Preview.Should().BeFalse(because: "a confirmed call writes");
-		_capturedSet.ConfirmationCode.Should().Be("abc123", because: "the token is passed to the command, which checks it");
+		_capturedSet.ConfirmationCode.Should().Be("abc123", because: "the code is passed to the command, which checks it");
+	}
+
+	[Test]
+	[Description("A confirmation-code passed without confirm=true is ignored: the call stays a preview and writes nothing.")]
+	public void SetObjectRights_ShouldStayPreview_WhenCodeGivenWithoutConfirm() {
+		// Arrange
+		SetObjectRightsArgs args = new("dev", "UsrFoo", Grantee, ConfirmationCode: "abc123");
+
+		// Act
+		SetTool().SetObjectRights(args);
+
+		// Assert
+		_capturedSet.Preview.Should().BeTrue(because: "only confirm=true turns the call into a write");
+		_capturedSet.ConfirmationCode.Should().BeNull(because: "a code alone is not an approval");
+		_writer.DidNotReceiveWithAnyArgs().SetObjectRights(default, default, default, default, default, default);
 	}
 
 	[Test]
@@ -180,7 +200,8 @@ public sealed class ObjectRightsToolBehaviourTests {
 	public void SetObjectRights_ShouldMapOptInAndConnectedOperations_WhenProvided() {
 		// Arrange
 		SetObjectRightsArgs args = new("dev", "UsrFoo", Grantee, Operations: "read", Revoke: true,
-			IncludeConnected: true, ConnectedOperations: "read,edit", DisableOperationPermissions: true);
+			IncludeConnected: true, ConnectedOperations: "read,edit", DisableOperationPermissions: true,
+			AllowSecurityObject: true);
 
 		// Act
 		SetTool().SetObjectRights(args);
@@ -191,6 +212,7 @@ public sealed class ObjectRightsToolBehaviourTests {
 		_capturedSet.IncludeConnected.Should().BeTrue(because: "include-connected maps through");
 		_capturedSet.ConnectedOperations.Should().Be("read,edit", because: "connected-operations maps through");
 		_capturedSet.Operations.Should().Be("read", because: "operations maps through");
+		_capturedSet.AllowSecurityObject.Should().BeTrue(because: "allow-security-object maps through");
 	}
 
 	[Test]
@@ -278,15 +300,28 @@ public sealed class ObjectRightsToolBehaviourTests {
 	}
 
 	[Test]
-	[Description("The preview's confirmation code survives the MCP output redaction; a value after a '...-token:' key would be masked and the agent could never confirm.")]
-	public void PreviewConfirmationCode_ShouldSurviveOutputRedaction() {
+	[Description("Through the tool: a call without confirm writes nothing and returns a confirmation-code the agent can read back from the redacted output (a value after a '...-token:' key would be masked); the confirmed call with that code writes once.")]
+	public void SetObjectRights_ShouldPreviewThenApply_WithCodeFromPreviewOutput() {
 		// Arrange
-		const string line = "confirmation-code: 0123456789abcdef";
+		List<LogMessage> messages = new();
+		_logger.LogMessages.Returns(messages);
+		_logger.When(l => l.WriteInfo(Arg.Any<string>())).Do(call => messages.Add(new InfoMessage((string)call[0])));
+		SetObjectRightsArgs previewArgs = new("dev", "UsrFoo", Grantee, Operations: "read");
 
 		// Act
-		string redacted = Clio.Common.SensitiveErrorTextRedactor.Redact(line);
+		ObjectRightsToolResponse preview = SetTool().SetObjectRights(previewArgs);
+		int writesDuringPreview = _writer.ReceivedCalls().Count();
+		Match code = Regex.Match(preview.Output ?? string.Empty, "confirmation-code: (?<code>[0-9a-f]{16})");
+		messages.Clear();
+		ObjectRightsToolResponse confirmed = SetTool().SetObjectRights(
+			previewArgs with { Confirm = true, ConfirmationCode = code.Groups["code"].Value });
 
 		// Assert
-		redacted.Should().Be(line, because: "the agent must be able to read the code back from the preview output");
+		preview.Success.Should().BeTrue(because: "a preview is not a failure");
+		writesDuringPreview.Should().Be(0, because: "a preview writes nothing");
+		code.Success.Should().BeTrue(because: $"the agent must read the code from the redacted output. Output: {preview.Output}");
+		confirmed.Success.Should().BeTrue(because: $"the code matches the unchanged targets. Error: {confirmed.Error}");
+		_writer.Received(1).SetObjectRights("UsrFoo", Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<ObjectOperation>>(),
+			Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>());
 	}
 }

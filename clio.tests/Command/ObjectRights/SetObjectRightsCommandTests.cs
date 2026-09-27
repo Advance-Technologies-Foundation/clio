@@ -390,23 +390,6 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 	}
 
 	[Test]
-	[Description("Reports the access NARROWING when a grant turns operation permissions ON for an object that did not use them.")]
-	public void Execute_ShouldReportEnablement_WhenGrantTurnsOperationPermissionsOn() {
-		// Arrange
-		_rightsWriter.SetObjectRights(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<ObjectOperation>>(),
-			Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>())
-			.Returns(new ObjectRightsChange(ObjectRightsOutcome.ChangedAndEnabled, RolesAfterEnable: new[] { new RoleOperationRights(Guid.Parse("a29a3ba5-4b0d-de11-9a51-005056c00008"), "All employees", true, true, true, true), new RoleOperationRights(Guid.Parse(Grantee), "All external users", true, false, false, false) }));
-		SetObjectRightsOptions options = new() { EntitySchemaName = "UsrPortalSpike", Grantee = Grantee, Confirm = true };
-
-		// Act
-		int exitCode = _command.Execute(options);
-
-		// Assert
-		exitCode.Should().Be(0, because: "the grant was applied");
-		_logger.Received().WriteInfo(Arg.Is<string>(m => m.Contains("turned ON")));
-	}
-
-	[Test]
 	[Description("An interactive run that the operator declines writes nothing and returns 0 (cancelled, not failed).")]
 	public void Execute_ShouldCancel_WhenInteractivePromptDeclined() {
 		// Arrange
@@ -832,7 +815,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 	}
 
 	[Test]
-	[Description("A revoke on a security/system root is always allowed: it only narrows access.")]
+	[Description("A plain revoke on a security/system root is allowed without the opt-in: it only narrows access.")]
 	public void Execute_ShouldAllowRevoke_OnSecurityRoot() {
 		// Arrange
 		SetObjectRightsOptions options = new() {
@@ -843,17 +826,19 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		int exitCode = _command.Execute(options);
 
 		// Assert
-		exitCode.Should().Be(0, because: "a revoke never escalates privilege");
+		exitCode.Should().Be(0, because: "a revoke that cannot turn permissions off never widens access");
+		_rightsWriter.Received(1).SetObjectRights("SysUserInRole", Arg.Any<Guid>(),
+			Arg.Any<IReadOnlyCollection<ObjectOperation>>(), true, false, Arg.Any<CreatioRequestOptions>());
 	}
 
 	// ---- Preview / confirmation code (M1) ----
 
 	private string CapturePreviewCode(SetObjectRightsOptions options) {
-		string token = null;
+		string code = null;
 		_logger.When(l => l.WriteInfo(Arg.Is<string>(m => m.StartsWith("confirmation-code: "))))
-			.Do(call => token = ((string)call[0]).Substring("confirmation-code: ".Length));
+			.Do(call => code = ((string)call[0]).Substring("confirmation-code: ".Length));
 		_command.Execute(options);
-		return token;
+		return code;
 	}
 
 	[Test]
@@ -862,8 +847,11 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		// Arrange
 		_connectedObjects.Resolve("UsrOrder", true).Returns(Resolution("UsrOrder", "UsrStatus"));
 		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>())
-			.Returns(new ObjectRightsInfo(true, "UsrOrder", null, true,
-				new[] { new RoleOperationRights(Guid.Parse(Grantee), "All external users", true, false, false, false) }));
+			.Returns(new ObjectRightsInfo(true, "UsrOrder", null, true, new[] {
+				new RoleOperationRights(Guid.Parse(Grantee), "All external users", true, false, false, false),
+				new RoleOperationRights(Guid.Parse(Grantee), "All external users", false, false, true, false),
+				new RoleOperationRights(EmployeesId, "All employees", true, true, true, true)
+			}));
 		SetObjectRightsOptions options = new() {
 			EntitySchemaName = "UsrOrder", Grantee = Grantee, Operations = "read", IncludeConnected = true, Preview = true
 		};
@@ -876,45 +864,46 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		_rightsWriter.DidNotReceiveWithAnyArgs().SetObjectRights(default, default, default, default, default, default);
 		_logger.Received().WriteInfo(Arg.Is<string>(m => m.StartsWith("PREVIEW — nothing was changed.")));
 		_logger.Received().WriteInfo(Arg.Is<string>(m => m.Contains("UsrOrder (root): grant [read]")
-			&& m.Contains("grantee holds read")));
+			&& m.Contains("grantee holds read/edit")
+			&& m.Contains("other roles with rights: All employees (read/create/edit/delete)")));
 		_logger.Received().WriteInfo(Arg.Is<string>(m => m.Contains("UsrStatus (connected): grant [read]")
 			&& m.Contains("they will be turned ON")));
 		_logger.Received().WriteInfo(Arg.Is<string>(m => m.StartsWith("confirmation-code: ")));
 	}
 
 	[Test]
-	[Description("A confirmed call with the token from an unchanged preview applies the change without prompting.")]
-	public void Execute_ShouldApply_WhenTokenMatchesPreview() {
+	[Description("A confirmed call with the code from an unchanged preview applies the change without prompting.")]
+	public void Execute_ShouldApply_WhenCodeMatchesPreview() {
 		// Arrange
 		SetObjectRightsOptions preview = new() { EntitySchemaName = "UsrOrder", Grantee = Grantee, Operations = "read", Preview = true };
-		string token = CapturePreviewCode(preview);
+		string code = CapturePreviewCode(preview);
 		_console.IsInteractive.Returns(false);
 		SetObjectRightsOptions confirmed = new() {
-			EntitySchemaName = "UsrOrder", Grantee = Grantee, Operations = "read", ConfirmationCode = token
+			EntitySchemaName = "UsrOrder", Grantee = Grantee, Operations = "read", ConfirmationCode = code
 		};
 
 		// Act
 		int exitCode = _command.Execute(confirmed);
 
 		// Assert
-		token.Should().NotBeNullOrWhiteSpace(because: "the preview must print a token");
+		code.Should().NotBeNullOrWhiteSpace(because: "the preview must print a code");
 		exitCode.Should().Be(0, because: "the targets are exactly what the preview showed");
 		_rightsWriter.Received(1).SetObjectRights("UsrOrder", Arg.Any<Guid>(),
 			Arg.Any<IReadOnlyCollection<ObjectOperation>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>());
 	}
 
 	[Test]
-	[Description("A token from a preview whose targets have since changed (a new lookup, or rights changed) is refused and nothing is written.")]
+	[Description("A code from a preview whose target set has since changed (a new lookup) is refused and nothing is written.")]
 	public void Execute_ShouldRefuse_WhenTargetsChangedSincePreview() {
 		// Arrange
 		_connectedObjects.Resolve("UsrOrder", true).Returns(Resolution("UsrOrder"));
 		SetObjectRightsOptions preview = new() {
 			EntitySchemaName = "UsrOrder", Grantee = Grantee, Operations = "read", IncludeConnected = true, Preview = true
 		};
-		string token = CapturePreviewCode(preview);
+		string code = CapturePreviewCode(preview);
 		_connectedObjects.Resolve("UsrOrder", true).Returns(Resolution("UsrOrder", "UsrNewLookup"));
 		SetObjectRightsOptions confirmed = new() {
-			EntitySchemaName = "UsrOrder", Grantee = Grantee, Operations = "read", IncludeConnected = true, ConfirmationCode = token
+			EntitySchemaName = "UsrOrder", Grantee = Grantee, Operations = "read", IncludeConnected = true, ConfirmationCode = code
 		};
 
 		// Act
@@ -927,14 +916,14 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 	}
 
 	[Test]
-	[Description("A token from a preview of different arguments (another operation set) is refused.")]
+	[Description("A code from a preview of different arguments (another operation set) is refused.")]
 	public void Execute_ShouldRefuse_WhenArgumentsDifferFromPreview() {
 		// Arrange
-		string token = CapturePreviewCode(new SetObjectRightsOptions {
+		string code = CapturePreviewCode(new SetObjectRightsOptions {
 			EntitySchemaName = "UsrOrder", Grantee = Grantee, Operations = "read", Preview = true
 		});
 		SetObjectRightsOptions confirmed = new() {
-			EntitySchemaName = "UsrOrder", Grantee = Grantee, Operations = "read,create,edit", ConfirmationCode = token
+			EntitySchemaName = "UsrOrder", Grantee = Grantee, Operations = "read,create,edit", ConfirmationCode = code
 		};
 
 		// Act
@@ -943,5 +932,243 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		// Assert
 		exitCode.Should().Be(1, because: "the preview approved read only");
 		_rightsWriter.DidNotReceiveWithAnyArgs().SetObjectRights(default, default, default, default, default, default);
+	}
+
+	private void RootRightsAre(bool administered, params RoleOperationRights[] roles) =>
+		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>())
+			.Returns(new ObjectRightsInfo(true, "UsrOrder", null, administered, roles));
+
+	[Test]
+	[Description("A code from a preview is refused when the object's operation permissions were turned on and the grantee got a row in between.")]
+	public void Execute_ShouldRefuse_WhenRightsChangedSincePreview() {
+		// Arrange
+		RootRightsAre(false);
+		string code = CapturePreviewCode(new SetObjectRightsOptions {
+			EntitySchemaName = "UsrOrder", Grantee = Grantee, Operations = "read", Preview = true
+		});
+		RootRightsAre(true, new RoleOperationRights(Guid.Parse(Grantee), "All external users", true, false, false, false));
+
+		// Act
+		int exitCode = _command.Execute(new SetObjectRightsOptions {
+			EntitySchemaName = "UsrOrder", Grantee = Grantee, Operations = "read", ConfirmationCode = code
+		});
+
+		// Assert
+		exitCode.Should().Be(1, because: "the user approved turning permissions ON, which is no longer what happens");
+		_logger.Received().WriteError(Arg.Is<string>(m => m.Contains("confirmation code does not match")));
+		_rightsWriter.DidNotReceiveWithAnyArgs().SetObjectRights(default, default, default, default, default, default);
+	}
+
+	[Test]
+	[Description("A code is refused when ANOTHER role's row changed since the preview: that row decides whether a revoke with the disable opt-in narrows the object or opens it to every internal user.")]
+	public void Execute_ShouldRefuse_WhenOtherRoleRowChangedSincePreview() {
+		// Arrange
+		RoleOperationRights granteeRow = new(Guid.Parse(Grantee), "All external users", true, false, false, false);
+		RootRightsAre(true, granteeRow, new RoleOperationRights(EmployeesId, "All employees", true, true, true, true));
+		SetObjectRightsOptions preview = new() {
+			EntitySchemaName = "UsrOrder", Grantee = Grantee, Operations = "read", Revoke = true,
+			DisableOperationPermissions = true, Preview = true
+		};
+		string code = CapturePreviewCode(preview);
+		RootRightsAre(true, granteeRow);
+
+		// Act
+		int exitCode = _command.Execute(new SetObjectRightsOptions {
+			EntitySchemaName = "UsrOrder", Grantee = Grantee, Operations = "read", Revoke = true,
+			DisableOperationPermissions = true, ConfirmationCode = code
+		});
+
+		// Assert
+		exitCode.Should().Be(1, because: "the revoke would now turn the object OFF, which the preview did not show");
+		_rightsWriter.DidNotReceiveWithAnyArgs().SetObjectRights(default, default, default, default, default, default);
+	}
+
+	[TestCase(true, false, TestName = "Execute_ShouldRefuse_WhenDisableFlagAddedSincePreview")]
+	[TestCase(false, true, TestName = "Execute_ShouldRefuse_WhenAllowSecurityFlagAddedSincePreview")]
+	[Description("A code from a preview is refused when a flag that changes the outcome was added only to the confirmed call.")]
+	public void Execute_ShouldRefuse_WhenFlagAddedSincePreview(bool disable, bool allowSecurity) {
+		// Arrange
+		string code = CapturePreviewCode(new SetObjectRightsOptions {
+			EntitySchemaName = "UsrOrder", Grantee = Grantee, Operations = "read", Revoke = disable, Preview = true
+		});
+
+		// Act
+		int exitCode = _command.Execute(new SetObjectRightsOptions {
+			EntitySchemaName = "UsrOrder", Grantee = Grantee, Operations = "read", Revoke = disable,
+			DisableOperationPermissions = disable, AllowSecurityObject = allowSecurity, ConfirmationCode = code
+		});
+
+		// Assert
+		exitCode.Should().Be(1, because: "the user approved the call without that flag");
+		_rightsWriter.DidNotReceiveWithAnyArgs().SetObjectRights(default, default, default, default, default, default);
+	}
+
+	[Test]
+	[Description("The code does not depend on the order the operations were typed in.")]
+	public void Execute_ShouldApply_WhenOperationsReordered() {
+		// Arrange
+		string code = CapturePreviewCode(new SetObjectRightsOptions {
+			EntitySchemaName = "UsrOrder", Grantee = Grantee, Operations = "read,edit", Preview = true
+		});
+
+		// Act
+		int exitCode = _command.Execute(new SetObjectRightsOptions {
+			EntitySchemaName = "UsrOrder", Grantee = Grantee, Operations = "edit,read", ConfirmationCode = code
+		});
+
+		// Assert
+		exitCode.Should().Be(0, because: "the same operations in another order are the same change");
+	}
+
+	[TestCase(true, TestName = "Execute_ShouldFailPreview_WhenRootUnreadable")]
+	[TestCase(false, TestName = "Execute_ShouldFailPreview_WhenRootNotFound")]
+	[Description("A preview of a root that could not be read, or does not exist, fails and issues no confirmation code.")]
+	public void Execute_ShouldFailPreview_WhenRootCannotBeDescribed(bool readError) {
+		// Arrange
+		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>())
+			.Returns(readError
+				? new ObjectRightsInfo(false, "UsrOrder", null, false, Array.Empty<RoleOperationRights>(), "HTTP 500")
+				: new ObjectRightsInfo(false, "UsrOrder", null, false, Array.Empty<RoleOperationRights>()));
+
+		// Act
+		int exitCode = _command.Execute(new SetObjectRightsOptions {
+			EntitySchemaName = "UsrOrder", Grantee = Grantee, Operations = "read", Preview = true
+		});
+
+		// Assert
+		exitCode.Should().Be(1, because: "there is nothing the user could approve");
+		_logger.Received().WriteError(Arg.Is<string>(m => m.Contains("no confirmation code was issued")));
+		_logger.DidNotReceive().WriteInfo(Arg.Is<string>(m => m.StartsWith("confirmation-code: ")));
+	}
+
+	[Test]
+	[Description("A root that WAS written but lost other users' access still gets its lookups: stopping there would leave the root granted and its lookups not.")]
+	public void Execute_ShouldStillFanOut_WhenRootWrittenButOthersLostAccess() {
+		// Arrange
+		_connectedObjects.Resolve("UsrOrder", true).Returns(Resolution("UsrOrder", "UsrStatus"));
+		_rightsWriter.SetObjectRights("UsrOrder", Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<ObjectOperation>>(),
+				Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>())
+			.Returns(new ObjectRightsChange(ObjectRightsOutcome.ChangedAndEnabled, RolesAfterEnable: new[] {
+				new RoleOperationRights(Guid.Parse(Grantee), "All external users", true, false, false, false)
+			}));
+		SetObjectRightsOptions options = new() {
+			EntitySchemaName = "UsrOrder", Grantee = Grantee, Operations = "read", IncludeConnected = true, Confirm = true
+		};
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "internal users lost access to the root");
+		_logger.Received().WriteError(Arg.Is<string>(m => m.Contains("LOST access") && m.Contains("already saved")));
+		_rightsWriter.Received(1).SetObjectRights("UsrStatus", Arg.Any<Guid>(),
+			Arg.Any<IReadOnlyCollection<ObjectOperation>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>());
+		_logger.DidNotReceive().WriteWarning(Arg.Is<string>(m => m.Contains("root object was not changed")));
+	}
+
+	[Test]
+	[Description("Granting All employees itself is not reported as 'others lost access' when its row is the only one after enabling.")]
+	public void Execute_ShouldSucceed_WhenGranteeIsAllEmployees() {
+		// Arrange
+		WriterReturnsEnabled(new RoleOperationRights(EmployeesId, "All employees", true, true, true, false));
+		SetObjectRightsOptions options = new() {
+			EntitySchemaName = "UsrOrder", Grantee = EmployeesId.ToString(), Confirm = true
+		};
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "every internal user keeps access through All employees");
+		_logger.Received().WriteInfo(Arg.Is<string>(m => m.Contains("roles with rights now: All employees (read/create/edit)")));
+	}
+
+	[Test]
+	[Description("A read-back after enabling that shows no role with rights at all fails with its own message.")]
+	public void Execute_ShouldFail_WhenReadBackShowsNoRoleWithRights() {
+		// Arrange
+		WriterReturnsEnabled(new RoleOperationRights(EmployeesId, "All employees", false, false, false, false));
+		SetObjectRightsOptions options = new() { EntitySchemaName = "UsrOrder", Grantee = Grantee, Confirm = true };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "nobody can reach the object");
+		_logger.Received().WriteError(Arg.Is<string>(m => m.Contains("NO role with rights")));
+	}
+
+	[TestCase(false, 1, TestName = "Execute_ShouldRefuseDisable_OnSecurityRootWithoutOptIn")]
+	[TestCase(true, 0, TestName = "Execute_ShouldAllowDisable_OnSecurityRootWithOptIn")]
+	[Description("A revoke that may turn a security/system root's operation permissions OFF needs --allow-security-object: turning it off opens the table to every internal user.")]
+	public void Execute_ShouldGateDisable_OnSecurityRoot(bool allow, int expectedExitCode) {
+		// Arrange
+		SetObjectRightsOptions options = new() {
+			EntitySchemaName = "SysUserInRole", Grantee = Grantee, Operations = "read", Revoke = true,
+			DisableOperationPermissions = true, AllowSecurityObject = allow, Confirm = true
+		};
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(expectedExitCode, because: "only the explicit opt-in may open a security table");
+		_rightsWriter.Received(allow ? 1 : 0).SetObjectRights("SysUserInRole", Arg.Any<Guid>(),
+			Arg.Any<IReadOnlyCollection<ObjectOperation>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>());
+	}
+
+	[Test]
+	[Description("The last-grant refusal on a security/system root does not suggest --disable-operation-permissions.")]
+	public void Execute_ShouldNotHintDisable_WhenLastGrantRefusedOnSecurityRoot() {
+		// Arrange
+		_rightsWriter.SetObjectRights(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<ObjectOperation>>(),
+			Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>())
+			.Returns(new ObjectRightsChange(ObjectRightsOutcome.RefusedLastRowRemoval));
+		SetObjectRightsOptions options = new() {
+			EntitySchemaName = "SysUserInRole", Grantee = Grantee, Operations = "read", Revoke = true, Confirm = true
+		};
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "the revoke did not happen");
+		_logger.Received().WriteError(Arg.Is<string>(m => m.Contains("LAST effective grant")
+			&& !m.Contains("--disable-operation-permissions")));
+	}
+
+	[Test]
+	[Description("A grantee lookup that fails at the service fails the run before anything is read or written.")]
+	public void Execute_ShouldFail_WhenGranteeLookupFails() {
+		// Arrange
+		_granteeLookup.ResolveGranteeName(Arg.Any<Guid>(), Arg.Any<CreatioRequestOptions>())
+			.Returns(_ => throw new InvalidOperationException("HTTP 500"));
+		SetObjectRightsOptions options = new() { EntitySchemaName = "UsrOrder", Grantee = Grantee, Preview = true };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "an unchecked grantee must not be written");
+		_logger.Received().WriteError(Arg.Is<string>(m => m.Contains("could not check grantee") && m.Contains("HTTP 500")));
+		_rightsReader.DidNotReceiveWithAnyArgs().GetObjectRights(default, default);
+		_rightsWriter.DidNotReceiveWithAnyArgs().SetObjectRights(default, default, default, default, default, default);
+	}
+
+	[Test]
+	[Description("An object already in the requested state is reported as no change, and the run succeeds.")]
+	public void Execute_ShouldReportNoChange_WhenAlreadyInRequestedState() {
+		// Arrange
+		_rightsWriter.SetObjectRights(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<ObjectOperation>>(),
+			Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>())
+			.Returns(new ObjectRightsChange(ObjectRightsOutcome.NoChange));
+		SetObjectRightsOptions options = new() { EntitySchemaName = "UsrOrder", Grantee = Grantee, Confirm = true };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "nothing to change is not a failure");
+		_logger.Received().WriteInfo(Arg.Is<string>(m => m.Contains("UsrOrder: already in the requested state")));
 	}
 }

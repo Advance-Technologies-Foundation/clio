@@ -1,5 +1,7 @@
+using System;
 using System.Collections.Generic;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
@@ -39,18 +41,18 @@ public sealed class ObjectRightsSandboxE2ETests : DataBindingDbFixtureBase {
 	private const string AllEmployees = "a29a3ba5-4b0d-de11-9a51-005056c00008";
 
 	[Test]
-	[Description("On a real stand: a read grant with include-connected turns operation permissions on for a disposable object and its lookup, the server-added All employees row is reported, record and column administration stay untouched, a last-grant revoke is refused, and the disable opt-in turns permissions off again.")]
+	[Description("On a real stand: a preview writes nothing, a read grant with include-connected confirmed by its code turns operation permissions on for a disposable object and its lookup, the server-added All employees row is reported, a replayed stale code is refused, record and column administration stay untouched, a last-grant revoke is refused, and the disable opt-in turns permissions off again.")]
 	[AllureTag(SetObjectRightsTool.ToolName)]
 	[AllureTag(GetObjectRightsTool.ToolName)]
 	[AllureName("object-rights read-modify-write round-trips on a real Creatio stand")]
-	[AllureDescription("Creates a disposable lookup and an object referencing it, grants All external users read with include-connected, reads it back, checks record/column administration is untouched, then proves the last-grant refusal and the disable-operation-permissions path. The fixture package is deleted in teardown.")]
+	[AllureDescription("Creates a disposable lookup and an object referencing it, previews and then grants All external users read with include-connected, checks the preview wrote nothing and a stale code is refused, reads it back, checks record/column administration is untouched, then proves the last-grant refusal and the disable-operation-permissions path. The fixture package is deleted in teardown.")]
 	public async Task ObjectRights_Should_RoundTrip_On_A_Real_Stand() {
 		TeamCityRunGuard.IgnoreIfRunningUnderTeamCityOrGitHubActions(
 			"create-entity-schema publishes configuration and starts the global OData rebuild, which makes every "
 			+ "concurrent test on the shared stand fail. Run this scenario by hand against a leased sandbox.");
 		// Arrange
 		await using DataBindingDbArrangeContext arrangeContext = await ArrangeAsync(requireEnvironment: true);
-		string suffix = System.Guid.NewGuid().ToString("N").Substring(0, 10);
+		string suffix = Guid.NewGuid().ToString("N").Substring(0, 10);
 		string lookupName = $"UsrOrLkp{suffix}";
 		string rootName = $"UsrOrRoot{suffix}";
 
@@ -77,14 +79,23 @@ public sealed class ObjectRightsSandboxE2ETests : DataBindingDbFixtureBase {
 			});
 		AssertCommandExitCode(rootResult, 0, "the disposable root object must exist before its rights are changed");
 
-		// Act — preview, then grant read to the external audience on the root and its own lookup with the token
-		ObjectRightsToolResponse grant = await PreviewThenConfirmAsync(arrangeContext,
-			new Dictionary<string, object?> {
-				["environment-name"] = arrangeContext.EnvironmentName,
-				["entity-schema-name"] = rootName,
-				["grantee"] = ExternalUsers,
-				["operations"] = "read",
-				["include-connected"] = true
+		// Act — preview, then grant read to the external audience on the root and its own lookup with the code
+		Dictionary<string, object?> grantArgs = new() {
+			["environment-name"] = arrangeContext.EnvironmentName,
+			["entity-schema-name"] = rootName,
+			["grantee"] = ExternalUsers,
+			["operations"] = "read",
+			["include-connected"] = true
+		};
+		(ObjectRightsToolResponse grant, string grantCode) = await PreviewThenConfirmAsync(arrangeContext, grantArgs,
+			async () => {
+				// Assert — the preview wrote nothing: the root is still not administered
+				ObjectRightsToolResponse beforeConfirm = await CallRightsAsync(arrangeContext,
+					GetObjectRightsTool.ToolName, new Dictionary<string, object?> {
+						["environment-name"] = arrangeContext.EnvironmentName,
+						["entity-schema-name"] = rootName
+					});
+				beforeConfirm.Output.Should().Contain("not administered", because: "a preview must not write anything");
 			});
 
 		// Assert — both objects were turned on, and the result names the roles that hold rights afterwards
@@ -92,6 +103,16 @@ public sealed class ObjectRightsSandboxE2ETests : DataBindingDbFixtureBase {
 		grant.Output.Should().Contain($"{rootName}: granted [read]", because: "the root result line is reported");
 		grant.Output.Should().Contain($"{lookupName}: granted [read]", because: "the connected lookup is granted read");
 		grant.Output.Should().Contain("turned ON", because: "both objects were not administered before the grant");
+		grant.Output.Should().Contain("roles with rights now: All employees",
+			because: "the server adds an All employees row when operation permissions are turned on, and it is reported");
+
+		// Act — replay the now-stale code of the applied grant
+		ObjectRightsToolResponse replay = await CallRightsAsync(arrangeContext, SetObjectRightsTool.ToolName,
+			new Dictionary<string, object?>(grantArgs) { ["confirm"] = true, ["confirmation-code"] = grantCode });
+
+		// Assert — the rights changed since that preview, so the code no longer matches
+		replay.Success.Should().BeFalse(because: "a code is bound to the state its preview showed");
+		replay.Error.Should().Contain("confirmation code does not match", because: "the refusal says why");
 
 		// Act — read the rights back
 		ObjectRightsToolResponse read = await CallRightsAsync(arrangeContext, GetObjectRightsTool.ToolName,
@@ -115,8 +136,8 @@ public sealed class ObjectRightsSandboxE2ETests : DataBindingDbFixtureBase {
 			because: "the object-rights save must not touch column administration");
 
 		// Act — remove the grantee, then try to remove the last remaining grant without the opt-in
-		ObjectRightsToolResponse revokeExternal = await RevokeAllAsync(arrangeContext, rootName, ExternalUsers, disable: false);
-		ObjectRightsToolResponse refused = await RevokeAllAsync(arrangeContext, rootName, AllEmployees, disable: false);
+		(ObjectRightsToolResponse revokeExternal, _) = await RevokeAllAsync(arrangeContext, rootName, ExternalUsers, disable: false);
+		(ObjectRightsToolResponse refused, _) = await RevokeAllAsync(arrangeContext, rootName, AllEmployees, disable: false);
 
 		// Assert — the grantee revoke applies; the last-grant revoke is refused
 		revokeExternal.Success.Should().BeTrue(because: $"another role still holds rights. Error: {revokeExternal.Error}");
@@ -124,7 +145,7 @@ public sealed class ObjectRightsSandboxE2ETests : DataBindingDbFixtureBase {
 		refused.Error.Should().Contain("LAST effective grant", because: "the refusal names the access widening it avoided");
 
 		// Act — the explicit opt-in turns operation permissions off again
-		ObjectRightsToolResponse disabled = await RevokeAllAsync(arrangeContext, rootName, AllEmployees, disable: true);
+		(ObjectRightsToolResponse disabled, _) = await RevokeAllAsync(arrangeContext, rootName, AllEmployees, disable: true);
 
 		// Assert
 		disabled.Success.Should().BeTrue(because: $"the caller asked for the widening. Error: {disabled.Error}");
@@ -132,23 +153,25 @@ public sealed class ObjectRightsSandboxE2ETests : DataBindingDbFixtureBase {
 	}
 
 	// The MCP write is two-step: a call without confirm returns a preview and a confirmation-code and writes
-	// nothing; the confirmed call must carry that token.
-	private static async Task<ObjectRightsToolResponse> PreviewThenConfirmAsync(
-		DataBindingDbArrangeContext arrangeContext, Dictionary<string, object?> args) {
+	// nothing; the confirmed call must carry that code. Returns the confirmed result and the code it used.
+	private static async Task<(ObjectRightsToolResponse Response, string Code)> PreviewThenConfirmAsync(
+		DataBindingDbArrangeContext arrangeContext, Dictionary<string, object?> args, Func<Task>? betweenPreviewAndConfirm = null) {
 		ObjectRightsToolResponse preview = await CallRightsAsync(arrangeContext, SetObjectRightsTool.ToolName, args);
 		preview.Success.Should().BeTrue(because: $"the preview must succeed. Error: {preview.Error}");
-		System.Text.RegularExpressions.Match token = System.Text.RegularExpressions.Regex.Match(
-			preview.Output ?? string.Empty, @"confirmation-code: (?<token>[0-9a-f]+)");
-		token.Success.Should().BeTrue(because: $"the preview must print a confirmation code. Output: {preview.Output}");
+		Match code = Regex.Match(preview.Output ?? string.Empty, @"confirmation-code: (?<code>[0-9a-f]+)");
+		code.Success.Should().BeTrue(because: $"the preview must print a confirmation code. Output: {preview.Output}");
 		preview.Output.Should().Contain("PREVIEW — nothing was changed", because: "a preview writes nothing");
+		if (betweenPreviewAndConfirm is not null) {
+			await betweenPreviewAndConfirm();
+		}
 		Dictionary<string, object?> confirmed = new(args) {
 			["confirm"] = true,
-			["confirmation-code"] = token.Groups["token"].Value
+			["confirmation-code"] = code.Groups["code"].Value
 		};
-		return await CallRightsAsync(arrangeContext, SetObjectRightsTool.ToolName, confirmed);
+		return (await CallRightsAsync(arrangeContext, SetObjectRightsTool.ToolName, confirmed), code.Groups["code"].Value);
 	}
 
-	private static Task<ObjectRightsToolResponse> RevokeAllAsync(DataBindingDbArrangeContext arrangeContext,
+	private static Task<(ObjectRightsToolResponse Response, string Code)> RevokeAllAsync(DataBindingDbArrangeContext arrangeContext,
 		string schemaName, string grantee, bool disable) =>
 		PreviewThenConfirmAsync(arrangeContext, new Dictionary<string, object?> {
 			["environment-name"] = arrangeContext.EnvironmentName,

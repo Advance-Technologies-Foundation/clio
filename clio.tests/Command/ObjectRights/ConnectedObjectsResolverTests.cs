@@ -115,7 +115,7 @@ public class ConnectedObjectsResolverTests {
 	[TestCase("UsrOrderRights")]
 	[TestCase("sysadminunit")]
 	[TestCase("SYSUSERINROLE")]
-	[Description("Every excluded family is matched — SysPackage*, SysSettings*, the Rights suffix — and matching ignores case.")]
+	[Description("Every excluded family is matched — SysPackage*, SysSettings*, SysLic*, SysProcess*, Vw*, the Rights suffix — and matching ignores case.")]
 	public void Resolve_ShouldExcludeEveryFamily_CaseInsensitive(string referenced) {
 		// Arrange
 		_columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>())

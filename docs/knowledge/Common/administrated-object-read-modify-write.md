@@ -32,7 +32,9 @@ handles, none visible from the service signatures:
    read/create/edit/delete on its own. Observed on Creatio 8.3.4.2845 (.NET Framework, stand
    `kravchuk_0922`, 2026-09-25) for the root AND for every connected lookup the fan-out enabled, section
    objects and plain dictionaries alike; not verified on other versions, so the client reads the object
-   back after enabling and `set-object-rights` fails when only the grantee holds rights afterwards.
+   back after enabling and `set-object-rights` fails when only the grantee holds rights afterwards
+   (unless the grantee is `All employees` itself). That failure comes AFTER the save, so the fan-out
+   still continues to the lookups rather than leaving the root granted and its lookups not.
 
 3. **The save sends the collections it did NOT change as `null`** — `entitySchemaRecordDefRights`,
    `entitySchemaColumnsRights`, `entityOperationGrantees`. This mirrors the Freedom "Object permissions"

@@ -29,12 +29,12 @@ is refused unless `--disable-operation-permissions` asks for it explicitly.
 **Destructive.** In a non-interactive run it refuses to apply unless `--confirm` is passed; in an
 interactive run it asks for a `y/n` confirmation. `--preview` / `--confirmation-code` split it into a
 preview that writes nothing and a confirmed call bound to that preview — the only mode on MCP, where
-nobody can be prompted: a call without `confirm` is a preview, and `confirm=true` requires the token.
+nobody can be prompted: a call without `confirm` is a preview, and `confirm=true` requires the code.
 
 ## Synopsis
 
 ```bash
-clio set-object-rights --entity-schema-name <EntitySchemaName> --grantee <SysAdminUnitId> [--operations read,create,edit,delete] [--revoke] [--disable-operation-permissions] [--include-connected] [--connected-operations read,...] [--allow-security-object] (--confirm | --preview | --confirmation-code <token>) -e <environment>
+clio set-object-rights --entity-schema-name <EntitySchemaName> --grantee <SysAdminUnitId> [--operations read,create,edit,delete] [--revoke] [--disable-operation-permissions] [--include-connected] [--connected-operations read,...] [--allow-security-object] (--confirm | --preview | --confirmation-code <code>) -e <environment>
 ```
 
 ## Options
@@ -69,20 +69,24 @@ read, so create/edit are never fanned out to shared dictionaries unless passed h
 there is no default: without this option the lookups are not changed.
 
 --allow-security-object
-Allow granting create/edit/delete when the ROOT object is a security or system object (SysAdmin*, SysUser*,
-SysSchema*, SysPackage*, SysSettings*, SysLic*, SysProcess*, Vw*, *Right/*Rights). Without it such a root may only be granted read.
-A revoke on such a root is always allowed.
+Allow granting create/edit/delete, or a revoke with --disable-operation-permissions, when the ROOT object is
+a security or system object (SysAdmin*, SysUser*, SysSchema*, SysPackage*, SysSettings*, SysLic*, SysProcess*,
+Vw*, *Right/*Rights). Without it such a root may only be granted read. A plain revoke on such a root is allowed:
+without --disable-operation-permissions it cannot open the table to every internal user.
 
 --confirm
 Confirm the destructive change without a prompt. Required in non-interactive runs.
 
 --preview
 Write nothing: list every object the call would change, its current state (whether operation
-permissions are on, what the grantee holds) and what it would get, and print a `confirmation-code`.
+permissions are on, what the grantee holds, which other roles hold rights) and what it would get, and
+print a `confirmation-code`. A root that cannot be read or does not exist fails the preview (exit 1) and no
+code is issued.
 
---confirmation-code TOKEN
-Apply the change only if the targets and their rights are still exactly what the preview with that
-token showed; otherwise refuse and change nothing.
+--confirmation-code CODE
+Apply the change only if the arguments, the targets and every role's rights on them are still exactly
+what the preview with that code showed; otherwise refuse and change nothing. The code is a state
+fingerprint, not a secret: it proves the confirmed call matches the preview, not that anyone approved it.
 
 -e, --environment NAME
 Registered environment to change.
@@ -135,13 +139,15 @@ clio set-object-rights --entity-schema-name UsrOrder --grantee <role-id> --opera
   confirmation names the grantee by name.
 - When a grant turns operation permissions ON for an object, the object is read back and the result names
   the roles that hold rights afterwards. If only the grantee does — every other internal user lost access —
-  the command fails (exit 1) and says so; if the read-back fails, it warns.
+  the command fails (exit 1) and says the change is already saved; if the read-back fails, it warns. Granting
+  `All employees` itself is not such a failure.
 - With `--include-connected` a call makes several sequential round-trips per object and can take minutes
   (the MCP tool runs on the extended budget).
 - Exit code 1 also when the named (root) object is not found — nothing was written, so it is not reported
   as a success. A connected lookup that is not found only warns.
-- When the root change fails (error, not found, refused last-row revoke), the connected objects are not
-  attempted. A failure on one connected object is named and the rest are still attempted (exit code 1).
+- When the root change did not happen (error, not found, refused last-row revoke), the connected objects are
+  not attempted. A root that was written but reported a problem (other users lost access) still gets its
+  lookups, so the root and its lookups are never left half-applied. A failure on one connected object is named and the rest are still attempted (exit code 1).
 - With `--include-connected`, if the connected objects cannot be enumerated nothing is written and the
   command exits 1, rather than changing the root alone and reporting success.
 - `--disable-operation-permissions` applies to the root object only; a connected lookup is never turned
