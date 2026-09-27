@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
+using Clio.Command.McpServer.Tools.ProcessDesigner;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
@@ -17,7 +19,9 @@ namespace Clio.Mcp.E2E;
 /// End-to-end coverage for the get-target-package MCP probe. Resolving a real package needs a live Creatio
 /// environment, so the hermetic CI-safe assertions are that the real clio MCP server makes the probe reachable
 /// on the lazy surface, and that its args wrapper binds to a structured validation error naming the missing
-/// kebab-case field.
+/// kebab-case field. The list-packages and create-business-process description checks live here, not in those
+/// tools' own fixtures, because those fixtures are Sandbox / process-designer tier and CI's hermetic run
+/// excludes them; the live no-package path is in <see cref="GetTargetPackageSandboxE2ETests"/>.
 /// </summary>
 [TestFixture]
 [Category("McpE2E.NoEnvironment")]
@@ -70,5 +74,53 @@ public sealed class GetTargetPackageToolE2ETests : McpContractFixtureBase {
 			because: "the failure must name the exact kebab-case field the caller has to add");
 		result.ResolutionFailed.Should().NotBeTrue(
 			because: "an argument mistake is not a definitive answer about the environment's packages — flagging it as one would send the agent asking the user for another package");
+	}
+
+	[Test]
+	[AllureTag(GetPkgListTool.GetPkgListToolName)]
+	[AllureName("list-packages sends a write-target question to get-target-package")]
+	[Description("Reads list-packages as tools/list advertises it and verifies the description says the list cannot tell whether a package accepts changes and names get-target-package for that question - agents otherwise guess a target package from package names, 2-7 calls per process build in the ENG-99970 runs.")]
+	public async Task GetPkgList_Should_Route_The_Write_Target_Question_To_GetTargetPackage() {
+		// Arrange
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		IList<McpClientTool> tools = await context.Session.ListToolsAsync(context.CancellationTokenSource.Token);
+		string description = tools.Single(tool => tool.Name == GetPkgListTool.GetPkgListToolName).Description;
+
+		// Assert
+		description.Should().Contain("does not say whether a package accepts changes",
+			because: "the rows carry name, version, maintainer and uId only, so an agent that looks for a writable package there can only guess");
+		description.Should().Contain(GetTargetPackageTool.ToolName,
+			because: "the description must name the tool that answers the question, since list-packages is resident and get-target-package is not");
+	}
+
+	[Test]
+	[AllureTag(CreateBusinessProcessTool.CreateBusinessProcessToolName)]
+	[AllureName("create-business-process names get-target-package for the descriptor's packageName")]
+	[Description("Reads create-business-process through get-tool-contract, the way a lazy-surface caller does, and verifies the descriptor's packageName is described as resolved by get-target-package rather than guessed.")]
+	public async Task CreateBusinessProcess_Should_Name_GetTargetPackage_For_The_PackageName() {
+		// Arrange
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
+		const string toolName = CreateBusinessProcessTool.CreateBusinessProcessToolName;
+
+		// Act
+		CallToolResult contractResult = await context.Session.CallToolAsync(
+			ToolContractGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["tool-names"] = new[] { toolName }
+				}
+			},
+			context.CancellationTokenSource.Token);
+		ToolContractGetResponse contracts =
+			EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(contractResult);
+
+		// Assert
+		contracts.Success.Should().BeTrue(
+			because: $"the contract must be served before its description can be read. Error: {contracts.Error?.Message}");
+		string description = contracts.Tools!.Single(definition => definition.Name == toolName).Description;
+		description.Should().Contain("packageName (from get-target-package)",
+			because: "the server refuses a missing or read-only packageName, and the descriptor field is where a caller decides which package to name");
 	}
 }

@@ -4504,7 +4504,8 @@ internal static class ToolContractCatalog {
 		return new ToolContractDefinition(
 			GetPkgListTool.GetPkgListToolName,
 			"Lists packages installed in a registered Creatio environment as bounded, name-ordered pages. " +
-			"The response always reports the full filtered total and whether more matches remain after the returned page.",
+			"The response always reports the full filtered total and whether more matches remain after the returned page. " +
+			GetPkgListTool.WriteTargetNote,
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName],
 				[
