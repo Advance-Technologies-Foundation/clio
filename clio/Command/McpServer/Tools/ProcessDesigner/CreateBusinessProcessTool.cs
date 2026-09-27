@@ -40,7 +40,7 @@ public class CreateBusinessProcessTool(
 		 OpenWorld = false),
 	 // The FIRST sentence is what the get-tool-contract compact index shows as this tool's one-line
 	 // purpose, and that index is the only discovery surface a non-resident tool has. It must therefore
-	 // say what the tool DOES; the accessRights warning below is no less binding for standing second,
+	 // say what the tool DOES; the accessRights warning below is no less binding for standing third,
 	 // because an agent reads the full contract before calling. See
 	 // docs/knowledge/McpServer/first-sentence-of-a-description-becomes-the-compact-index-purpose.md
 	 // The packageName sentence stands second, in the opening a shortened contract keeps; placed inside the
