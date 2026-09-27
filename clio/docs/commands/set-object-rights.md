@@ -27,12 +27,14 @@ not: it turns operation permissions off, which makes the object available to **a
 is refused unless `--disable-operation-permissions` asks for it explicitly.
 
 **Destructive.** In a non-interactive run it refuses to apply unless `--confirm` is passed; in an
-interactive run it asks for a `y/n` confirmation.
+interactive run it asks for a `y/n` confirmation. `--preview` / `--confirmation-token` split it into a
+preview that writes nothing and a confirmed call bound to that preview — the only mode on MCP, where
+nobody can be prompted: a call without `confirm` is a preview, and `confirm=true` requires the token.
 
 ## Synopsis
 
 ```bash
-clio set-object-rights --entity-schema-name <EntitySchemaName> --grantee <SysAdminUnitId> [--operations read,create,edit,delete] [--revoke] [--disable-operation-permissions] [--include-connected] [--connected-operations read,...] [--allow-security-object] --confirm -e <environment>
+clio set-object-rights --entity-schema-name <EntitySchemaName> --grantee <SysAdminUnitId> [--operations read,create,edit,delete] [--revoke] [--disable-operation-permissions] [--include-connected] [--connected-operations read,...] [--allow-security-object] (--confirm | --preview | --confirmation-token <token>) -e <environment>
 ```
 
 ## Options
@@ -57,7 +59,7 @@ the object available to ALL internal users. Without it such a revoke changes not
 --include-connected
 Also apply to the root object's own lookup objects. The lookups get
 --connected-operations (read only by default), not --operations. Security and system objects
-(SysAdmin*, SysUser*, SysSchema*, SysPackage*, SysSettings*, *Right/*Rights) are skipped with a warning;
+(SysAdmin*, SysUser*, SysSchema*, SysPackage*, SysSettings*, SysLic*, SysProcess*, Vw*, *Right/*Rights) are skipped with a warning;
 name one as --entity-schema-name to change it. With --revoke the lookups are left untouched unless
 --connected-operations is given.
 
@@ -68,11 +70,19 @@ there is no default: without this option the lookups are not changed.
 
 --allow-security-object
 Allow granting create/edit/delete when the ROOT object is a security or system object (SysAdmin*, SysUser*,
-SysSchema*, SysPackage*, SysSettings*, *Right/*Rights). Without it such a root may only be granted read.
+SysSchema*, SysPackage*, SysSettings*, SysLic*, SysProcess*, Vw*, *Right/*Rights). Without it such a root may only be granted read.
 A revoke on such a root is always allowed.
 
 --confirm
 Confirm the destructive change without a prompt. Required in non-interactive runs.
+
+--preview
+Write nothing: list every object the call would change, its current state (whether operation
+permissions are on, what the grantee holds) and what it would get, and print a `confirmation-token`.
+
+--confirmation-token TOKEN
+Apply the change only if the targets and their rights are still exactly what the preview with that
+token showed; otherwise refuse and change nothing.
 
 -e, --environment NAME
 Registered environment to change.

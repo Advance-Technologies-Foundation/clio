@@ -18,7 +18,7 @@ DESCRIPTION
     external users reach it only through an explicit grant. The command draws no coverage verdict.
 
     With --include-connected the root object's own lookup objects are read too. Security and system
-    lookups (SysAdmin*, SysUser*, SysSchema*, SysPackage*, SysSettings*, *Right/*Rights) are not read as
+    lookups (SysAdmin*, SysUser*, SysSchema*, SysPackage*, SysSettings*, SysLic*, SysProcess*, Vw*, *Right/*Rights) are not read as
     connected objects and are named in a warning. A connected object that cannot be read, or a connected
     set that cannot be enumerated, is reported with a warning.
 

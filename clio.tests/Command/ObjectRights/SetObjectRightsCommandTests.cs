@@ -19,6 +19,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 
 	private SetObjectRightsCommand _command;
 	private IObjectRightsWriter _rightsWriter;
+	private IObjectRightsReader _rightsReader;
 	private IConnectedObjectsResolver _connectedObjects;
 	private IInteractiveConsole _console;
 	private IGranteeLookup _granteeLookup;
@@ -31,6 +32,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 
 	public override void TearDown() {
 		_rightsWriter.ClearReceivedCalls();
+		_rightsReader.ClearReceivedCalls();
 		_connectedObjects.ClearReceivedCalls();
 		_console.ClearReceivedCalls();
 		_granteeLookup.ClearReceivedCalls();
@@ -41,6 +43,9 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
 		base.AdditionalRegistrations(containerBuilder);
 		_rightsWriter = Substitute.For<IObjectRightsWriter>();
+		_rightsReader = Substitute.For<IObjectRightsReader>();
+		_rightsReader.GetObjectRights(Arg.Any<string>(), Arg.Any<CreatioRequestOptions>())
+			.Returns(callInfo => new ObjectRightsInfo(true, (string)callInfo[0], null, false, Array.Empty<RoleOperationRights>()));
 		_connectedObjects = Substitute.For<IConnectedObjectsResolver>();
 		_console = Substitute.For<IInteractiveConsole>();
 		_granteeLookup = Substitute.For<IGranteeLookup>();
@@ -52,6 +57,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		_connectedObjects.Resolve(Arg.Any<string>(), Arg.Any<bool>())
 			.Returns(callInfo => Resolution((string)callInfo[0]));
 		containerBuilder.AddTransient(_ => _rightsWriter);
+		containerBuilder.AddTransient(_ => _rightsReader);
 		containerBuilder.AddTransient(_ => _connectedObjects);
 		containerBuilder.AddTransient(_ => _console);
 		containerBuilder.AddTransient(_ => _granteeLookup);
@@ -838,5 +844,104 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 
 		// Assert
 		exitCode.Should().Be(0, because: "a revoke never escalates privilege");
+	}
+
+	// ---- Preview / confirmation token (M1) ----
+
+	private string CapturePreviewToken(SetObjectRightsOptions options) {
+		string token = null;
+		_logger.When(l => l.WriteInfo(Arg.Is<string>(m => m.StartsWith("confirmation-token: "))))
+			.Do(call => token = ((string)call[0]).Substring("confirmation-token: ".Length));
+		_command.Execute(options);
+		return token;
+	}
+
+	[Test]
+	[Description("A preview writes nothing and lists every target with its current state, including that operation permissions will be turned ON, plus a confirmation token.")]
+	public void Execute_ShouldListTargetsAndWriteNothing_WhenPreview() {
+		// Arrange
+		_connectedObjects.Resolve("UsrOrder", true).Returns(Resolution("UsrOrder", "UsrStatus"));
+		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>())
+			.Returns(new ObjectRightsInfo(true, "UsrOrder", null, true,
+				new[] { new RoleOperationRights(Guid.Parse(Grantee), "All external users", true, false, false, false) }));
+		SetObjectRightsOptions options = new() {
+			EntitySchemaName = "UsrOrder", Grantee = Grantee, Operations = "read", IncludeConnected = true, Preview = true
+		};
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "a preview is not a failure");
+		_rightsWriter.DidNotReceiveWithAnyArgs().SetObjectRights(default, default, default, default, default, default);
+		_logger.Received().WriteInfo(Arg.Is<string>(m => m.StartsWith("PREVIEW — nothing was changed.")));
+		_logger.Received().WriteInfo(Arg.Is<string>(m => m.Contains("UsrOrder (root): grant [read]")
+			&& m.Contains("grantee holds read")));
+		_logger.Received().WriteInfo(Arg.Is<string>(m => m.Contains("UsrStatus (connected): grant [read]")
+			&& m.Contains("they will be turned ON")));
+		_logger.Received().WriteInfo(Arg.Is<string>(m => m.StartsWith("confirmation-token: ")));
+	}
+
+	[Test]
+	[Description("A confirmed call with the token from an unchanged preview applies the change without prompting.")]
+	public void Execute_ShouldApply_WhenTokenMatchesPreview() {
+		// Arrange
+		SetObjectRightsOptions preview = new() { EntitySchemaName = "UsrOrder", Grantee = Grantee, Operations = "read", Preview = true };
+		string token = CapturePreviewToken(preview);
+		_console.IsInteractive.Returns(false);
+		SetObjectRightsOptions confirmed = new() {
+			EntitySchemaName = "UsrOrder", Grantee = Grantee, Operations = "read", ConfirmationToken = token
+		};
+
+		// Act
+		int exitCode = _command.Execute(confirmed);
+
+		// Assert
+		token.Should().NotBeNullOrWhiteSpace(because: "the preview must print a token");
+		exitCode.Should().Be(0, because: "the targets are exactly what the preview showed");
+		_rightsWriter.Received(1).SetObjectRights("UsrOrder", Arg.Any<Guid>(),
+			Arg.Any<IReadOnlyCollection<ObjectOperation>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>());
+	}
+
+	[Test]
+	[Description("A token from a preview whose targets have since changed (a new lookup, or rights changed) is refused and nothing is written.")]
+	public void Execute_ShouldRefuse_WhenTargetsChangedSincePreview() {
+		// Arrange
+		_connectedObjects.Resolve("UsrOrder", true).Returns(Resolution("UsrOrder"));
+		SetObjectRightsOptions preview = new() {
+			EntitySchemaName = "UsrOrder", Grantee = Grantee, Operations = "read", IncludeConnected = true, Preview = true
+		};
+		string token = CapturePreviewToken(preview);
+		_connectedObjects.Resolve("UsrOrder", true).Returns(Resolution("UsrOrder", "UsrNewLookup"));
+		SetObjectRightsOptions confirmed = new() {
+			EntitySchemaName = "UsrOrder", Grantee = Grantee, Operations = "read", IncludeConnected = true, ConfirmationToken = token
+		};
+
+		// Act
+		int exitCode = _command.Execute(confirmed);
+
+		// Assert
+		exitCode.Should().Be(1, because: "the user approved a different set of targets");
+		_logger.Received().WriteError(Arg.Is<string>(m => m.Contains("confirmation token does not match")));
+		_rightsWriter.DidNotReceiveWithAnyArgs().SetObjectRights(default, default, default, default, default, default);
+	}
+
+	[Test]
+	[Description("A token from a preview of different arguments (another operation set) is refused.")]
+	public void Execute_ShouldRefuse_WhenArgumentsDifferFromPreview() {
+		// Arrange
+		string token = CapturePreviewToken(new SetObjectRightsOptions {
+			EntitySchemaName = "UsrOrder", Grantee = Grantee, Operations = "read", Preview = true
+		});
+		SetObjectRightsOptions confirmed = new() {
+			EntitySchemaName = "UsrOrder", Grantee = Grantee, Operations = "read,create,edit", ConfirmationToken = token
+		};
+
+		// Act
+		int exitCode = _command.Execute(confirmed);
+
+		// Assert
+		exitCode.Should().Be(1, because: "the preview approved read only");
+		_rightsWriter.DidNotReceiveWithAnyArgs().SetObjectRights(default, default, default, default, default, default);
 	}
 }

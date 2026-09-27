@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 using Clio.Common;
 using Clio.Common.ObjectRights;
 using CommandLine;
@@ -44,12 +46,22 @@ public class SetObjectRightsOptions : RemoteCommandOptions {
 
 	[Option("allow-security-object", Required = false, HelpText =
 		"Allow granting create/edit/delete when the ROOT object is a security or system object (SysAdmin*, SysUser*, "
-		+ "SysSchema*, SysPackage*, SysSettings*, *Right/*Rights). Without it such a root may only be granted read.")]
+		+ "SysSchema*, SysPackage*, SysSettings*, SysLic*, SysProcess*, Vw*, *Right/*Rights). Without it such a root may only be granted read.")]
 	public bool AllowSecurityObject { get; set; }
 
 	[Option("confirm", Required = false, HelpText =
 		"Confirm the destructive change without a prompt (required in non-interactive runs)")]
 	public bool Confirm { get; set; }
+
+	[Option("preview", Required = false, HelpText =
+		"Write nothing: list every object the call would change, its current state and what it would get, and print "
+		+ "a confirmation token for --confirmation-token")]
+	public bool Preview { get; set; }
+
+	[Option("confirmation-token", Required = false, HelpText =
+		"Token from a --preview run. The change is applied only if the target objects and their rights are still "
+		+ "exactly what that preview showed")]
+	public string ConfirmationToken { get; set; }
 }
 
 /// <summary>
@@ -59,15 +71,18 @@ public class SetObjectRightsOptions : RemoteCommandOptions {
 public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 
 	private readonly IObjectRightsWriter _rightsWriter;
+	private readonly IObjectRightsReader _rightsReader;
 	private readonly IConnectedObjectsResolver _connectedObjects;
 	private readonly IGranteeLookup _granteeLookup;
 	private readonly IInteractiveConsole _console;
 	private readonly ILogger _logger;
 
 	/// <summary>Creates the command.</summary>
-	public SetObjectRightsCommand(IObjectRightsWriter rightsWriter, IConnectedObjectsResolver connectedObjects,
-		IGranteeLookup granteeLookup, IInteractiveConsole console, ILogger logger) {
+	public SetObjectRightsCommand(IObjectRightsWriter rightsWriter, IObjectRightsReader rightsReader,
+		IConnectedObjectsResolver connectedObjects, IGranteeLookup granteeLookup, IInteractiveConsole console,
+		ILogger logger) {
 		_rightsWriter = rightsWriter;
+		_rightsReader = rightsReader;
 		_connectedObjects = connectedObjects;
 		_granteeLookup = granteeLookup;
 		_console = console;
@@ -174,12 +189,34 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 				+ " the roles listed on it can reach it (the result names them).";
 		}
 
-		ConfirmDecision decision = ConfirmApply(options, change);
-		if (decision == ConfirmDecision.Cancelled) {
-			return 0;
-		}
-		if (decision == ConfirmDecision.Refused) {
-			return 1;
+		// Preview and token confirmation. On MCP the command cannot ask anyone, so the change is split in two calls:
+		// a preview that writes nothing and returns a token for the exact targets and their current rights, and a
+		// confirmed call that must carry that token. A token that no longer matches (a new lookup, rights changed
+		// by someone else) means the user approved something other than what would now be written.
+		if (options.Preview || !string.IsNullOrWhiteSpace(options.ConfirmationToken)) {
+			List<string> state = DescribeTargets(objects, grantee, operations, connectedOperations, options, requestOptions);
+			string token = ComputeToken(state, grantee, operations, connectedOperations, options);
+			if (options.Preview) {
+				_logger.WriteInfo($"PREVIEW — nothing was changed. {change}");
+				foreach (string line in state) {
+					_logger.WriteInfo($"  {line}");
+				}
+				_logger.WriteInfo($"confirmation-token: {token}");
+				return 0;
+			}
+			if (!string.Equals(options.ConfirmationToken.Trim(), token, StringComparison.OrdinalIgnoreCase)) {
+				_logger.WriteError("Error: the confirmation token does not match — the target objects or their rights "
+					+ "changed since the preview, or the arguments differ. Nothing was changed; run a new preview.");
+				return 1;
+			}
+		} else {
+			ConfirmDecision decision = ConfirmApply(options, change);
+			if (decision == ConfirmDecision.Cancelled) {
+				return 0;
+			}
+			if (decision == ConfirmDecision.Refused) {
+				return 1;
+			}
 		}
 
 		try {
@@ -208,6 +245,60 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 			_logger.WriteError($"Error: {ex.Message}");
 			return 1;
 		}
+	}
+
+	// One line per target for the preview, and the input of the confirmation token: the object, its role in the
+	// call, whether operation permissions are on, and what the grantee holds now. Any change to these between the
+	// preview and the confirmed call changes the token.
+	private List<string> DescribeTargets(IReadOnlyList<string> objects, Guid grantee,
+		IReadOnlyCollection<ObjectOperation> operations, IReadOnlyCollection<ObjectOperation> connectedOperations,
+		SetObjectRightsOptions options, CreatioRequestOptions requestOptions) {
+		List<string> lines = new();
+		for (int index = 0; index < objects.Count; index++) {
+			string schemaName = objects[index];
+			string role = index == 0 ? "root" : "connected";
+			string ops = FormatOperations(index == 0 ? operations : connectedOperations);
+			ObjectRightsInfo info = _rightsReader.GetObjectRights(schemaName, requestOptions);
+			string current;
+			if (info.ReadError is not null) {
+				current = "could not read its rights";
+			} else if (!info.Found) {
+				current = "not found";
+			} else if (!info.AdministratedByOperations) {
+				current = options.Revoke
+					? "not administered by operation permissions (a revoke cannot restrict it)"
+					: "not administered by operation permissions — they will be turned ON";
+			} else {
+				RoleOperationRights row = info.Roles.FirstOrDefault(r => r.GranteeId == grantee);
+				current = row is null ? "administered; grantee has NO grant" : $"administered; grantee holds {Operations(row)}";
+			}
+			lines.Add($"{schemaName} ({role}): {(options.Revoke ? "revoke" : "grant")} [{ops}]. Now: {current}.");
+		}
+		return lines;
+	}
+
+	private static string Operations(RoleOperationRights role) {
+		string[] ops = new[] {
+			role.CanRead ? "read" : null,
+			role.CanCreate ? "create" : null,
+			role.CanEdit ? "edit" : null,
+			role.CanDelete ? "delete" : null
+		}.Where(op => op != null).ToArray();
+		return ops.Length == 0 ? "no operations" : string.Join("/", ops);
+	}
+
+	// A short, stable fingerprint of the arguments and the described target state. It is not a secret and not a
+	// signature: it only proves the confirmed call is about the same targets, in the same state, that were shown.
+	private static string ComputeToken(IEnumerable<string> state, Guid grantee,
+		IReadOnlyCollection<ObjectOperation> operations, IReadOnlyCollection<ObjectOperation> connectedOperations,
+		SetObjectRightsOptions options) {
+		string material = string.Join("\n", new[] {
+			grantee.ToString(), FormatOperations(operations.OrderBy(op => op)),
+			FormatOperations(connectedOperations.OrderBy(op => op)), options.Revoke.ToString(),
+			options.DisableOperationPermissions.ToString(), options.AllowSecurityObject.ToString()
+		}.Concat(state));
+		byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(material));
+		return Convert.ToHexString(hash, 0, 8).ToLowerInvariant();
 	}
 
 	// Reports one object's result and returns whether it counts as a failure of the run. One outcome, one branch:

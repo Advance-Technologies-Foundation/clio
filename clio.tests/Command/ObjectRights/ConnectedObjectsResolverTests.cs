@@ -108,6 +108,9 @@ public class ConnectedObjectsResolverTests {
 	}
 
 	[TestCase("SysPackageSchemaData")]
+	[TestCase("SysLicPackage")]
+	[TestCase("SysProcessData")]
+	[TestCase("VwSysSchemaInfo")]
 	[TestCase("SysSettingsValue")]
 	[TestCase("UsrOrderRights")]
 	[TestCase("sysadminunit")]

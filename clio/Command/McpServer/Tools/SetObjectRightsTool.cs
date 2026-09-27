@@ -25,7 +25,7 @@ public sealed class SetObjectRightsTool(
 
 	internal const string ValidArguments =
 		"Valid: environment-name, entity-schema-name, grantee, operations, revoke, include-connected, "
-		+ "connected-operations, disable-operation-permissions, allow-security-object.";
+		+ "connected-operations, disable-operation-permissions, allow-security-object, confirm, confirmation-token.";
 
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
@@ -45,9 +45,11 @@ public sealed class SetObjectRightsTool(
 		"A revoke that would remove the root's LAST rights row is REFUSED unless disable-operation-permissions is set (it makes the object available to ALL internal users; never applied to lookups). " +
 		"The grantee must exist in SysAdminUnit. A security/system ROOT object may only be granted read unless allow-security-object is set. " +
 		"With include-connected the call can take minutes. " +
+		"TWO-STEP: a call WITHOUT confirm writes nothing and returns a PREVIEW (every target object, its current state, and whether operation permissions will be turned ON) plus a confirmation-token. " +
+		"Show the preview to the user; only after they approve, call again with confirm=true and that confirmation-token. The write is refused when the token no longer matches the targets (they changed since the preview). " +
 		"Unknown or misspelled argument names are REFUSED before any write.")]
 	public ObjectRightsToolResponse SetObjectRights(
-		[Description("Parameters: environment-name, entity-schema-name, grantee (required); operations, revoke, include-connected, connected-operations, disable-operation-permissions, allow-security-object (optional).")]
+		[Description("Parameters: environment-name, entity-schema-name, grantee (required); operations, revoke, include-connected, connected-operations, disable-operation-permissions, allow-security-object, confirm, confirmation-token (optional).")]
 		[Required]
 		SetObjectRightsArgs args) {
 		// A long-tail tool reached through clio-run: the flat-argument classifier never sees this wrapped payload,
@@ -57,6 +59,12 @@ public sealed class SetObjectRightsTool(
 			args.ExtensionData, McpToolArgumentSupport.EnvironmentNameAliases, ".", ValidArguments);
 		if (!string.IsNullOrWhiteSpace(aliasError)) {
 			return ObjectRightsToolResponse.FromValidationError(aliasError);
+		}
+		bool confirmed = args.Confirm ?? false;
+		if (confirmed && string.IsNullOrWhiteSpace(args.ConfirmationToken)) {
+			return ObjectRightsToolResponse.FromValidationError(
+				"confirm=true requires the confirmation-token returned by a preview call: call set-object-rights without "
+				+ "confirm first, show the preview to the user, then repeat the call with confirm=true and that token.");
 		}
 		try {
 			SetObjectRightsOptions options = new() {
@@ -69,9 +77,11 @@ public sealed class SetObjectRightsTool(
 				ConnectedOperations = args.ConnectedOperations,
 				DisableOperationPermissions = args.DisableOperationPermissions ?? false,
 				AllowSecurityObject = args.AllowSecurityObject ?? false,
-				// --confirm is a CLI-only interactive gate; on MCP the Destructive flag is the safety mechanism,
-				// so confirm the apply here (the command otherwise refuses in a non-interactive run).
-				Confirm = true
+				// MCP cannot prompt anyone, so the command's own confirmation is replaced by a two-step protocol: a
+				// call without confirm is a PREVIEW that writes nothing and returns a token; the confirmed call must
+				// carry that token, and the command refuses it when the targets changed since the preview.
+				Preview = !confirmed,
+				ConfirmationToken = confirmed ? args.ConfirmationToken : null
 			};
 			return ObjectRightsToolResponse.From(InternalExecute<SetObjectRightsCommand>(options));
 		} catch (Exception ex) {
@@ -117,8 +127,16 @@ public sealed record SetObjectRightsArgs(
 	[property: Description("Allow a revoke to remove the object's LAST rights row, turning the object's operation permissions OFF and making it available to ALL internal users (default false, which refuses such a revoke). Only set this when widening access to every internal user is the intent.")]
 	bool? DisableOperationPermissions = null,
 
+	[property: JsonPropertyName("confirm")]
+	[property: Description("Apply the change. Default false: the call only returns a PREVIEW and a confirmation-token. Pass true only after the user approved that preview, together with confirmation-token.")]
+	bool? Confirm = null,
+
+	[property: JsonPropertyName("confirmation-token")]
+	[property: Description("The confirmation-token from the preview the user approved. Required with confirm=true; the write is refused when the targets or their rights changed since that preview.")]
+	string ConfirmationToken = null,
+
 	[property: JsonPropertyName("allow-security-object")]
-	[property: Description("Allow granting create/edit/delete when the ROOT object is a security or system object (SysAdmin*, SysUser*, SysSchema*, SysPackage*, SysSettings*, *Right/*Rights). Default false: such a root may only be granted read.")]
+	[property: Description("Allow granting create/edit/delete when the ROOT object is a security or system object (SysAdmin*, SysUser*, SysSchema*, SysPackage*, SysSettings*, SysLic*, SysProcess*, Vw*, *Right/*Rights). Default false: such a root may only be granted read.")]
 	bool? AllowSecurityObject = null
 ) {
 	/// <summary>Overflow bag for unknown JSON fields; a non-empty bag refuses the call before any write.</summary>

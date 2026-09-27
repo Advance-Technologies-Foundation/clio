@@ -51,13 +51,13 @@ public sealed class ObjectRightsToolBehaviourTests {
 		_capturedSet = null;
 		_capturedGet = null;
 		_resolver.Resolve<SetObjectRightsCommand>(Arg.Do<EnvironmentOptions>(o => _capturedSet = (SetObjectRightsOptions)o))
-			.Returns(_ => new SetObjectRightsCommand(_writer, _connected, Granted(), Substitute.For<IInteractiveConsole>(), _logger));
+			.Returns(_ => new SetObjectRightsCommand(_writer, _reader, _connected, Granted(), Substitute.For<IInteractiveConsole>(), _logger));
 		_resolver.Resolve<GetObjectRightsCommand>(Arg.Do<EnvironmentOptions>(o => _capturedGet = (GetObjectRightsOptions)o))
 			.Returns(_ => new GetObjectRightsCommand(_reader, _connected, _logger));
 	}
 
 	private SetObjectRightsTool SetTool() =>
-		new(new SetObjectRightsCommand(_writer, _connected, Granted(), Substitute.For<IInteractiveConsole>(), _logger), _logger, _resolver);
+		new(new SetObjectRightsCommand(_writer, _reader, _connected, Granted(), Substitute.For<IInteractiveConsole>(), _logger), _logger, _resolver);
 
 	private GetObjectRightsTool GetTool() =>
 		new(new GetObjectRightsCommand(_reader, _connected, _logger), _logger, _resolver);
@@ -126,7 +126,38 @@ public sealed class ObjectRightsToolBehaviourTests {
 		_capturedSet.Operations.Should().BeNull(because: "omitted operations fall to the command's least-privilege default");
 		_capturedSet.ConnectedOperations.Should().BeNull(because: "omitted connected-operations fall to read-only");
 		_capturedSet.IncludeConnected.Should().BeFalse(because: "fan-out is opt-in");
-		_capturedSet.Confirm.Should().BeTrue(because: "on MCP the Destructive flag is the gate, so the tool confirms the apply");
+		_capturedSet.Preview.Should().BeTrue(because: "a call without confirm is a preview that writes nothing");
+		_capturedSet.ConfirmationToken.Should().BeNull(because: "no token is passed on a preview");
+		_capturedSet.Confirm.Should().BeFalse(because: "the tool no longer confirms the apply on its own");
+	}
+
+	[Test]
+	[Description("confirm=true without a confirmation-token is refused before the command is resolved.")]
+	public void SetObjectRights_ShouldRefuseConfirm_WhenTokenMissing() {
+		// Arrange
+		SetObjectRightsArgs args = new("dev", "UsrFoo", Grantee, Confirm: true);
+
+		// Act
+		ObjectRightsToolResponse response = SetTool().SetObjectRights(args);
+
+		// Assert
+		response.Success.Should().BeFalse(because: "a confirmed write must carry the token from the preview the user approved");
+		response.Error.Should().Contain("confirmation-token", because: "the refusal names what is missing");
+		_resolver.DidNotReceive().Resolve<SetObjectRightsCommand>(Arg.Any<EnvironmentOptions>());
+	}
+
+	[Test]
+	[Description("confirm=true with a token maps to a confirmed call carrying that token, not a preview.")]
+	public void SetObjectRights_ShouldMapConfirmAndToken() {
+		// Arrange
+		SetObjectRightsArgs args = new("dev", "UsrFoo", Grantee, Confirm: true, ConfirmationToken: "abc123");
+
+		// Act
+		SetTool().SetObjectRights(args);
+
+		// Assert
+		_capturedSet.Preview.Should().BeFalse(because: "a confirmed call writes");
+		_capturedSet.ConfirmationToken.Should().Be("abc123", because: "the token is passed to the command, which checks it");
 	}
 
 	[Test]

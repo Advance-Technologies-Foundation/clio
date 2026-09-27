@@ -40,7 +40,8 @@ public class ConnectedObjectsResolver : IConnectedObjectsResolver {
 	// written. These objects expose the role/user directory, security configuration or platform metadata;
 	// granting them as a SIDE EFFECT of a fan-out would make that data readable through DataService wherever
 	// record permissions do not also protect it.
-	private static readonly string[] ExcludedPrefixes = { "SysAdmin", "SysUser", "SysSchema", "SysPackage", "SysSettings" };
+	private static readonly string[] ExcludedPrefixes =
+		{ "SysAdmin", "SysUser", "SysSchema", "SysPackage", "SysSettings", "SysLic", "SysProcess", "Vw" };
 
 	private static readonly string[] ExcludedSuffixes = { "Right", "Rights" };
 
