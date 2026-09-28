@@ -4,6 +4,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Clio.Command.Localization;
 using Clio.Common;
 using Clio.Common.Responses;
 using Clio.Package;
@@ -40,6 +41,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 	private readonly IEntitySchemaCaptionCultureResolver _captionCultureResolver;
 	private readonly IEntitySchemaPublisher _entitySchemaPublisher;
 	private readonly FindEntitySchemaCommand _findEntitySchemaCommand;
+	private readonly ICultureAvailabilityGuard _cultureAvailabilityGuard;
 
 	#endregion
 
@@ -103,7 +105,8 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		ISysSettingsManager sysSettingsManager,
 		IEntitySchemaCaptionCultureResolver captionCultureResolver,
 		IEntitySchemaPublisher entitySchemaPublisher,
-		FindEntitySchemaCommand findEntitySchemaCommand) {
+		FindEntitySchemaCommand findEntitySchemaCommand,
+		ICultureAvailabilityGuard cultureAvailabilityGuard) {
 		_applicationPackageListProvider = applicationPackageListProvider;
 		_defaultValueSourceResolver = defaultValueSourceResolver;
 		_entitySchemaDesignerClient = entitySchemaDesignerClient;
@@ -112,6 +115,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		_captionCultureResolver = captionCultureResolver;
 		_entitySchemaPublisher = entitySchemaPublisher;
 		_findEntitySchemaCommand = findEntitySchemaCommand;
+		_cultureAvailabilityGuard = cultureAvailabilityGuard;
 	}
 
 	/// <summary>
@@ -661,6 +665,13 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 
 		string effectiveCultureName = ResolveEffectiveCultureName(options);
 		ApplySchemaMetadata(schema, options, parsedColumns, package, effectiveCultureName);
+		// After the maps are normalized and before the save: the designer drops a caption in a culture the
+		// environment does not have and still answers success. The effective culture is always written (the
+		// scalar schema title and every column without a map are anchored to it).
+		_cultureAvailabilityGuard.EnsureAvailable(
+			(options.TitleLocalizations?.Keys ?? [])
+				.Concat(parsedColumns.SelectMany(column => column.TitleLocalizations?.Keys ?? []))
+				.Append(effectiveCultureName));
 		SaveDesignItemDesignerResponse saveResponse = _entitySchemaDesignerClient.SaveSchema(schema, options);
 		Guid schemaUId = saveResponse.SchemaUId != Guid.Empty ? saveResponse.SchemaUId : schema.UId;
 		if (schemaUId == Guid.Empty) {
