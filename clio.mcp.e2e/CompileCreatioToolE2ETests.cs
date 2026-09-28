@@ -161,6 +161,34 @@ public sealed class CompileCreatioToolE2ETests : McpContractFixtureBase
 			because: "the refusal comes before the operation is registered, so no compile was started or reserved");
 	}
 
+	[Test]
+	[AllureTag(ToolName)]
+	[AllureDescription("Starts the real clio MCP server and calls compile-creatio with processName instead of process-name. The key binds to no parameter, and dropping it would leave a request for a FULL compile - the runtime reload for every user that an older clio, which has no process-name at all, ran nine times over on a .NET 8 stand. The tool must refuse it and name the rename.")]
+	[AllureName("Compile Creatio refuses an argument it cannot bind")]
+	[Description("A misspelled process-name is refused through the real MCP server with a rename hint, and no compile operation is tracked for the environment, so nothing was started.")]
+	public async Task CompileCreatio_WithAnUnboundArgument_Should_RefuseWithoutStartingACompile()
+	{
+		// Arrange
+		await using var arrangeContext = Arrange();
+		string environmentName = $"unbound-arg-env-{Guid.NewGuid():N}";
+
+		// Act
+		CompileCreatioActResult actResult = await ActAsync(arrangeContext, environmentName,
+			extraArgs: new Dictionary<string, object?> { ["processName"] = "UsrClioBpNeverCompiled" });
+		CompileStatusResponse status = await ActStatusAsync(arrangeContext, environmentName);
+
+		// Assert
+		AssertToolCallFailed(actResult);
+		string combinedOutput = string.Join(Environment.NewLine,
+			(actResult.Execution.Output ?? []).Select(message => message.Value?.ToString()));
+		combinedOutput.Should().Contain("'processName' -> 'process-name'",
+			because: "the refusal names the key the caller has to rename");
+		combinedOutput.Should().Contain("Nothing was compiled",
+			because: "the caller must know the refusal started no compile");
+		status.Status.Should().Be("not-found",
+			because: "the refusal comes before the operation is registered, so no compile was started or reserved");
+	}
+
 	private static async Task<CompileStatusResponse> ActStatusAsync(
 		ArrangeContext arrangeContext,
 		string environmentName)
@@ -182,7 +210,8 @@ public sealed class CompileCreatioToolE2ETests : McpContractFixtureBase
 	private static async Task<CompileCreatioActResult> ActAsync(
 		ArrangeContext arrangeContext,
 		string environmentName,
-		string? packageName = null)
+		string? packageName = null,
+		IReadOnlyDictionary<string, object?>? extraArgs = null)
 	{
 		return await AllureApi.Step("Act by invoking compile-creatio through MCP", async () =>
 		{
@@ -196,6 +225,9 @@ public sealed class CompileCreatioToolE2ETests : McpContractFixtureBase
 			};
 			if (packageName is not null) {
 				args["package-name"] = packageName;
+			}
+			foreach (KeyValuePair<string, object?> extra in extraArgs ?? new Dictionary<string, object?>()) {
+				args[extra.Key] = extra.Value;
 			}
 			CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
 				ToolName,

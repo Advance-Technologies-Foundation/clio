@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command;
@@ -328,6 +330,67 @@ public sealed class CompileCreatioToolTests
 		result.Output.Should().Contain(message => message.Value.ToString()!.Contains("process-name"),
 			because: "the refusal names the argument to keep");
 		commandResolver.DidNotReceive().Resolve<CompileBusinessProcessCommand>(Arg.Any<CompileBusinessProcessOptions>());
+	}
+
+	[TestCase("processName", "'processName' -> 'process-name'")]
+	[TestCase("ProcessName", "'ProcessName' -> 'process-name'")]
+	[TestCase("package_name", "'package_name' -> 'package-name'")]
+	[TestCase("environment", "'environment' -> 'environment-name'")]
+	[TestCase("timeout", "Unknown args: 'timeout'")]
+	[Category("Unit")]
+	[Description("A key that binds to no parameter is refused, not dropped: every scope argument is optional, so dropping a misspelled process-name or package-name would leave a request for a FULL compile, and nothing may start or be tracked.")]
+	public async Task CompileCreatio_Should_Refuse_An_Unbound_Argument_Instead_Of_Compiling(string key, string expectedHint)
+	{
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.GetTenantKey(Arg.Any<EnvironmentOptions>()).Returns("sandbox-tenant");
+		commandResolver.GetTargetKey(Arg.Any<EnvironmentOptions>()).Returns("sandbox-target");
+		ICompileOperationRegistry registry = new CompileOperationRegistry();
+		CompileCreatioTool tool = new(ConsoleLogger.Instance, commandResolver, registry);
+		CompileCreatioArgs args = new("sandbox") {
+			ExtensionData = new Dictionary<string, JsonElement> { [key] = JsonSerializer.SerializeToElement("UsrProc") }
+		};
+
+		// Act
+		CommandExecutionResult result = await tool.CompileCreatio(args);
+
+		// Assert
+		result.ExitCode.Should().Be(1, because: "an argument the tool cannot bind makes the request ambiguous");
+		string message = string.Join(" ", result.Output.Select(output => output.Value?.ToString()));
+		message.Should().Contain(expectedHint, because: "the refusal names the key and, when it knows one, the rename");
+		message.Should().Contain("Nothing was compiled", because: "the caller must know no compile started");
+		commandResolver.DidNotReceive().Resolve<CompileConfigurationCommand>(Arg.Any<CompileConfigurationOptions>());
+		commandResolver.DidNotReceive().Resolve<CompilePackageCommand>(Arg.Any<CompilePackageOptions>());
+		commandResolver.DidNotReceive().Resolve<CompileBusinessProcessCommand>(Arg.Any<CompileBusinessProcessOptions>());
+		registry.GetLatest("sandbox-tenant").Should().BeNull(
+			because: "a refused call must not leave an operation for compile-status to report");
+		McpToolExecutionLock.TryReserveConfigurationBuild("sandbox-target",
+			out McpToolExecutionLock.BuildReservation reservation).Should().BeTrue(
+			because: "the refusal comes before the build reservation, so none may be left held");
+		McpToolExecutionLock.ReleaseConfigurationBuild("sandbox-target", reservation);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Binds compile-creatio arguments with the real MCP serializer options: kebab-case scope keys bind, and a camelCase process-name lands in the overflow bag instead of vanishing - the binding the MCP host performs, which a direct method call bypasses.")]
+	public void CompileCreatioArgs_Should_RouteAMisspelledScopeToExtensionData_WhenDeserializedFromRawJson()
+	{
+		// Arrange
+		JsonSerializerOptions options = BindingsModule.CreateMcpSerializerOptions();
+
+		// Act
+		CompileCreatioArgs kebab = JsonSerializer.Deserialize<CompileCreatioArgs>(
+			"""{"environment-name":"sandbox","process-name":"UsrProc"}""", options)!;
+		CompileCreatioArgs camel = JsonSerializer.Deserialize<CompileCreatioArgs>(
+			"""{"environment-name":"sandbox","processName":"UsrProc"}""", options)!;
+
+		// Assert
+		kebab.ProcessName.Should().Be("UsrProc", because: "the advertised process-name field must bind");
+		(kebab.ExtensionData is null || kebab.ExtensionData.Count == 0).Should().BeTrue(
+			because: "every advertised key binds to a parameter, so nothing overflows");
+		camel.ProcessName.Should().BeNull(because: "the camelCase spelling misses the hyphen and binds to nothing");
+		camel.ExtensionData.Should().ContainKey("processName",
+			because: "the unbound key must be kept where the tool can refuse it");
 	}
 
 	[Test]

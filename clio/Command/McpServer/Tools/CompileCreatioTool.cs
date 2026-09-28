@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
@@ -35,6 +36,18 @@ public sealed class CompileCreatioTool(
 	/// </summary>
 	internal TimeSpan? ResponseDeadlineOverride { get; set; }
 
+	// OrdinalIgnoreCase on purpose: the binder matches names case-insensitively, so 'ProcessName' also misses the
+	// hyphen and lands in the bag. Copying EnvironmentNameAliases under Ordinal would drop that spelling's hint.
+	private static readonly Dictionary<string, string> LegacyAliases =
+		new(McpToolArgumentSupport.EnvironmentNameAliases, StringComparer.OrdinalIgnoreCase) {
+			["packageName"] = "package-name",
+			["package_name"] = "package-name",
+			["package"] = "package-name",
+			["processName"] = "process-name",
+			["process_name"] = "process-name",
+			["process"] = "process-name"
+		};
+
 	/// <summary>
 	/// Compiles Creatio fully, one package, or the package a business process is in, for a registered environment.
 	/// </summary>
@@ -54,6 +67,24 @@ public sealed class CompileCreatioTool(
 		RequestContext<CallToolRequestParams> requestContext = null,
 		CancellationToken cancellationToken = default)
 	{
+		if (args is null)
+		{
+			return new CommandExecutionResult(1, [new ErrorMessage("compile-creatio needs its args object.")]);
+		}
+
+		// Refused, not dropped: the scope arguments are all optional, so a dropped 'process-name' or 'package-name'
+		// leaves a call that means "compile everything" - a full compile reloading the runtime for every user.
+		// Checked before the reservation and registry.Begin, so a refusal starts and tracks nothing.
+		string? unboundError = McpToolArgumentSupport.BuildLegacyAliasError(
+			args.ExtensionData, LegacyAliases, ".",
+			"Valid: environment-name, package-name, process-name; omit both scope arguments for a full compile.");
+		if (unboundError is not null)
+		{
+			return new CommandExecutionResult(1, [
+				new ErrorMessage($"{unboundError} Nothing was compiled.")
+			]);
+		}
+
 		if (!string.IsNullOrWhiteSpace(args.PackageName) && args.PackageName.Contains(',', StringComparison.Ordinal))
 		{
 			return new CommandExecutionResult(1, [
@@ -150,7 +181,7 @@ public sealed class CompileCreatioTool(
 					// worker, once this tool routes to one — so the parent cannot read it to decide when to reap.
 					// The private signal is the one thing that crosses the boundary. It is emitted by
 					// WorkerOperationCompletionSignal's choke point, which the call-tool filter runs around EVERY
-					// exit of this call — including the two refusals above, which used to return without it and
+					// exit of this call — including the refusals above, which used to return without it and
 					// strand the worker for its whole hard lifetime. The heartbeat helper below leases this work,
 					// so a compile still running past the response deadline is not mistaken for one that ended.
 					return result;
@@ -301,4 +332,9 @@ public sealed record CompileCreatioArgs(
 
 	[property: JsonPropertyName("process-name")]
 	[Description("Optional business process code. Compiles the package that process is in through the CrtProcessBuilder package - the compile a script task or process methods saved by create/modify-business-process need. Exclusive with package-name.")]
-	string? ProcessName = null);
+	string? ProcessName = null) {
+
+	/// <summary>Overflow bag for JSON fields that bind to no parameter; any entry refuses the call before it compiles.</summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
+}
