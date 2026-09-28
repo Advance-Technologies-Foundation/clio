@@ -201,8 +201,28 @@ public sealed class TestResultsPayloadDumpSinkTests {
 			because: "the first write of a run is where retention is applied");
 		File.Exists(result.Path!).Should().BeTrue(
 			because: "retention must never delete a dump written by the run that is still executing");
-		TestResultsPayloadDumpSink.RetentionCutoffUtc.Should().BeBefore(File.GetLastWriteTimeUtc(result.Path!),
-			because: "every dump this run writes is newer than the cutoff, so no later sweep in this run can reach it");
+	}
+
+	[Test]
+	[Description("Sweeps a directory only on the first write of the process, so later writes pay nothing and never re-sweep (GitHub issue #1593).")]
+	public void Write_ShouldNotSweepAgain_WhenWritingIntoTheSameDirectoryASecondTime() {
+		// Arrange
+		string directory = CreateScratchDirectory();
+		TestResultsPayloadDumpSink sink = new(directory);
+		McpPayloadDumpResult first = sink.Write("first", "{}");
+		string expiredAfterFirstWrite = CreateFile(directory, "expired-after-first-write.json",
+			DateTime.UtcNow - TestResultsPayloadDumpSink.RetentionWindow - TimeSpan.FromDays(1));
+
+		// Act
+		McpPayloadDumpResult second = sink.Write("second", "{}");
+
+		// Assert
+		first.Succeeded.Should().BeTrue(
+			because: $"the first write must succeed into an ordinary directory, and it reported: {first.FailureReason}");
+		second.Succeeded.Should().BeTrue(
+			because: $"the second write must succeed into the same directory, and it reported: {second.FailureReason}");
+		File.Exists(expiredAfterFirstWrite).Should().BeTrue(
+			because: "the sweep runs once per directory per process, so a second write must not sweep again");
 	}
 
 	[Test]
@@ -251,6 +271,8 @@ public sealed class TestResultsPayloadDumpSinkTests {
 		string expiredFallback = CreateDirectory(tempRoot, TestResultsPayloadDumpSink.FallbackDirectoryPrefix + "old",
 			expiredTime);
 		string unrelated = CreateDirectory(tempRoot, "some-other-tool-old", expiredTime);
+		string recentFallback = CreateDirectory(tempRoot,
+			TestResultsPayloadDumpSink.FallbackDirectoryPrefix + "recent", DateTime.UtcNow);
 		string fallback = TestResultsPayloadDumpSink.ResolveDumpDirectory(CreateScratchDirectory(), tempRoot);
 		TestResultsPayloadDumpSink sink = new(fallback);
 
@@ -266,6 +288,8 @@ public sealed class TestResultsPayloadDumpSinkTests {
 			because: "each run has its own fallback directory, so only a sweep over their parent ever removes an earlier one");
 		Directory.Exists(unrelated).Should().BeTrue(
 			because: "the sweep owns only directories carrying the fallback prefix");
+		Directory.Exists(recentFallback).Should().BeTrue(
+			because: "a sibling fallback inside the retention window may belong to a parallel net8.0/net10.0 process that is still running");
 		if (!OperatingSystem.IsWindows()) {
 			File.GetUnixFileMode(fallback).Should().Be(
 				UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute,

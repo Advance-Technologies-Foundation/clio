@@ -176,7 +176,6 @@ internal sealed class TestResultsPayloadDumpSink : IMcpPayloadDumpSink {
 			// Created on every write rather than once: a run that cleans its working directory midway
 			// would otherwise turn every later dump into a write failure for no reason.
 			CreateDumpDirectory(directory, isFallback);
-			SweepOnce(directory, isFallback);
 
 			// The unique part is a GUID fragment, not a counter. Two NUnit workers run in parallel
 			// (NumberOfTestWorkers=2 in clio.mcp.e2e.runsettings), so a shared counter would be mutable
@@ -188,6 +187,9 @@ internal sealed class TestResultsPayloadDumpSink : IMcpPayloadDumpSink {
 			// No BOM. Encoding.UTF8 emits one, and the dump is an artifact people open with jq,
 			// JSON.parse and ordinary editors - all of which choke on a leading byte-order mark.
 			File.WriteAllText(path, rawPayload, DumpEncoding);
+
+			// After the write, not before: the dump is the diagnostic, so nothing the sweep does may cost it.
+			SweepOnceBestEffort(directory, isFallback);
 			return new McpPayloadDumpResult(path, null);
 		}
 		catch (Exception exception) {
@@ -271,6 +273,17 @@ internal sealed class TestResultsPayloadDumpSink : IMcpPayloadDumpSink {
 	/// even when the run is killed before teardown, and a run that never dumps costs nothing. The cutoff is
 	/// <see cref="RetentionCutoffUtc"/>, so this run's own dumps are never candidates.
 	/// </remarks>
+	private static void SweepOnceBestEffort(string directory, bool isFallback) {
+		try {
+			SweepOnce(directory, isFallback);
+		}
+		catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+			or ArgumentException or NotSupportedException) {
+			// Intentionally ignored — the path normalization inside SweepOnce sits outside the per-entry
+			// best-effort guards, and a failed sweep only leaves old dumps behind for the next run.
+		}
+	}
+
 	private static void SweepOnce(string directory, bool isFallback) {
 		if (!SweptDirectories.TryAdd(Path.GetFullPath(directory), 0)) {
 			return;
