@@ -8,6 +8,7 @@ using Clio.Common;
 using Clio.Tests.Infrastructure;
 using FluentAssertions;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using NUnit.Framework;
 using YamlDotNet.Serialization;
 
@@ -149,7 +150,7 @@ public sealed class EnvironmentSettingsTests {
 		repository.ConfigureEnvironment("other", new EnvironmentSettings {
 			Uri = "https://other.creatio.com", Login = "u", Password = "p"
 		});
-		string persisted = fileSystem.File.ReadAllText(SettingsRepository.AppSettingsFile);
+		EnvironmentSettings reloaded = new SettingsRepository(fileSystem).FindEnvironment("bearer-only");
 
 		// Assert
 		filled.AccessToken.Should().Be(storedToken,
@@ -157,8 +158,35 @@ public sealed class EnvironmentSettingsTests {
 				+ "environment falls through to a forms login with no user name");
 		filled.AccessTokenType.Should().Be(Clio.Common.AuthenticationScheme.Bearer,
 			because: "the factory accepts only the Bearer type and a stored token carries no type of its own");
-		persisted.Should().Contain(storedToken,
-			because: "saving another environment must not delete the token the user wrote into this one");
+		reloaded.AccessToken.Should().Be(storedToken,
+			because: "saving another environment must not delete the token the user wrote into this one, "
+				+ "and it must be read back as this environment's AccessToken, not just appear somewhere in the file");
+	}
+
+	[Test]
+	[Description("show-web-app prints a token that came from the settings file, the same way it prints Password: the file already holds it in clear text (issue #1624 review, pinned choice).")]
+	public void ShowSettingsTo_ShouldPrintStoredAccessToken_WhenItCameFromTheSettingsFile() {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		const string storedToken = "stored-bearer-token-value";
+		fileSystem.AddFile(SettingsRepository.AppSettingsFile, new MockFileData($$"""
+			{
+			  "ActiveEnvironmentKey": "bearer-only",
+			  "Environments": {
+			    "bearer-only": { "Uri": "https://bearer.creatio.com", "AccessToken": "{{storedToken}}" }
+			  }
+			}
+			"""));
+		SettingsRepository repository = new(fileSystem);
+		StringWriter writer = new();
+
+		// Act
+		repository.ShowSettingsTo(writer, "bearer-only");
+		JObject shown = JObject.Parse(writer.ToString());
+
+		// Assert
+		shown.Value<string>("AccessToken").Should().Be(storedToken,
+			because: "a file-held token is part of the environment the user wrote, like Password; only a runtime passthrough token is hidden");
 	}
 
 	[Test]

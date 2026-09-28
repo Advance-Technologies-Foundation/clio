@@ -335,10 +335,9 @@ namespace Clio
 			result.ExternalAccessToken = options.ExternalAccessToken;
 			// A bearer-only environment has nothing else to authenticate with: dropping the token here
 			// sent every command down a forms login carrying no user name at all (issue #1624).
-			// The factory prefers any bearer over login/password or client credentials, so an inherited
-			// token would silently override credentials the caller supplied explicitly for this call:
-			// explicit credentials win and the stored token is not carried.
-			if (!HasExplicitCredentials(options)) {
+			// The factory prefers any bearer over login/password or client credentials, so the stored
+			// token is carried only when it is the one credential this call can use (see CanCarryStoredAccessToken).
+			if (CanCarryStoredAccessToken(options)) {
 				result.AccessToken = this.AccessToken;
 				result.AccessTokenType = this.AccessTokenType;
 			}
@@ -355,11 +354,35 @@ namespace Clio
 			return result;
 		}
 
+		// The stored token is carried only when all of these hold:
+		// - the caller passed no explicit credential for this call (login, password, client credentials or an
+		//   external-access token): explicit per-call credentials win, and an external-access token next to an
+		//   access token is rejected by ExternalAccessSettingsGuard;
+		// - the environment itself stores no login/password or client credentials: the factory tries the bearer
+		//   first with no re-login, so a stale token would otherwise lock out the credentials that still work;
+		// - the call targets the stored Uri: a bearer must never be presented to a host the caller named instead.
+		private bool CanCarryStoredAccessToken(EnvironmentOptions options) =>
+			!HasExplicitCredentials(options)
+			&& !HasStoredCredentials()
+			&& (string.IsNullOrEmpty(options.Uri) || IsSameUri(options.Uri, this.Uri));
+
 		private static bool HasExplicitCredentials(EnvironmentOptions options) =>
 			!string.IsNullOrEmpty(options.Login)
 			|| !string.IsNullOrEmpty(options.Password)
 			|| !string.IsNullOrEmpty(options.ClientId)
-			|| !string.IsNullOrEmpty(options.ClientSecret);
+			|| !string.IsNullOrEmpty(options.ClientSecret)
+			|| !string.IsNullOrEmpty(options.ExternalAccessToken);
+
+		private bool HasStoredCredentials() =>
+			!string.IsNullOrEmpty(this.Login)
+			|| !string.IsNullOrEmpty(this.Password)
+			|| !string.IsNullOrEmpty(this.ClientId)
+			|| !string.IsNullOrEmpty(this.ClientSecret);
+
+		private static bool IsSameUri(string first, string second) =>
+			System.Uri.TryCreate(first?.Trim().TrimEnd('/'), UriKind.Absolute, out Uri left)
+			&& System.Uri.TryCreate(second?.Trim().TrimEnd('/'), UriKind.Absolute, out Uri right)
+			&& left.Equals(right);
 
 		private static void ApplyDbServerOptions(EnvironmentSettings result, EnvironmentOptions options) {
 			if (System.Uri.TryCreate(options.DbServerUri, UriKind.Absolute, out Uri uri)) {

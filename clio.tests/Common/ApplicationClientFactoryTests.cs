@@ -67,15 +67,21 @@ internal sealed class ApplicationClientFactoryTests {
 
 	[Test]
 	[Description("Fill does not carry a settings-file AccessToken when the caller supplies explicit login/password or client credentials, because the factory would otherwise present the stored bearer instead of the explicit identity (issue #1624 review).")]
-	[TestCase("principal-b", "fake-password-b", null, null)]
-	[TestCase(null, null, "client-b", "fake-secret-b")]
+	[TestCase("principal-b", "fake-password-b", null, null, null)]
+	[TestCase(null, null, "client-b", "fake-secret-b", null)]
+	[TestCase("principal-b", null, null, null, null)]
+	[TestCase(null, "fake-password-b", null, null, null)]
+	[TestCase(null, null, "client-b", null, null)]
+	[TestCase(null, null, null, "fake-secret-b", null)]
+	[TestCase(null, null, null, null, "fake-external-access-token")]
 	public void Fill_ShouldNotCarryStoredBearer_WhenExplicitCredentialsAreSupplied(
-		string login, string password, string clientId, string clientSecret) {
+		string login, string password, string clientId, string clientSecret, string externalAccessToken) {
 		// Arrange
 		EnvironmentSettings stored = Newtonsoft.Json.JsonConvert.DeserializeObject<EnvironmentSettings>(
 			"""{ "Uri": "https://bearer.creatio.com", "AccessToken": "fake-principal-a" }""");
 		EnvironmentOptions options = new() {
-			Login = login, Password = password, ClientId = clientId, ClientSecret = clientSecret
+			Login = login, Password = password, ClientId = clientId, ClientSecret = clientSecret,
+			ExternalAccessToken = externalAccessToken
 		};
 
 		// Act
@@ -103,6 +109,107 @@ internal sealed class ApplicationClientFactoryTests {
 		// Assert
 		ReadReauthExecutor(client).Should().NotBeSameAs(noReauthExecutor,
 			because: "only token-based branches use the no-reauth executor; the forms-login branch re-logs in with the explicit credentials");
+	}
+
+	[Test]
+	[Description("A stored-bearer environment filled with explicit client credentials drops the stored token and keeps the explicit client id, so the factory takes the client-credentials branch (issue #1624 review).")]
+	public void CreateClient_ShouldUseExplicitClientCredentials_WhenStoredBearerEnvironmentIsFilledWithClientCredentials() {
+		// Arrange
+		ApplicationClientFactory sut = CreateFactory();
+		EnvironmentSettings stored = Newtonsoft.Json.JsonConvert.DeserializeObject<EnvironmentSettings>(
+			"""{ "Uri": "https://bearer.creatio.com", "AccessToken": "fake-principal-a" }""");
+		EnvironmentOptions options = new() { ClientId = "client-b", ClientSecret = "fake-secret-b" };
+
+		// Act
+		EnvironmentSettings filled = stored.Fill(options, NonInteractiveConsole.Shared);
+		IApplicationClient client = sut.CreateClient(filled);
+
+		// Assert
+		filled.AccessToken.Should().BeNullOrEmpty(
+			because: "the factory checks the bearer before client credentials, so a carried token would win");
+		filled.ClientId.Should().Be("client-b",
+			because: "with no bearer the factory builds the OAuth client-credentials client from these values");
+		client.Should().BeOfType<CreatioClientAdapter>(
+			because: "the client-credentials branch builds the same adapter type as every other branch");
+	}
+
+	[Test]
+	[Description("A stored-bearer environment filled with an external-access token builds the external-access client instead of failing the one-token-kind guard (issue #1624 review).")]
+	public void CreateClient_ShouldUseExternalAccess_WhenStoredBearerEnvironmentIsFilledWithExternalAccessToken() {
+		// Arrange
+		Clio.Common.ExternalAccess.IExternalAccessSessionProvider provider =
+			Substitute.For<Clio.Common.ExternalAccess.IExternalAccessSessionProvider>();
+		provider.GetSession(Arg.Any<EnvironmentSettings>(), Arg.Any<string>())
+			.Returns(new[] {
+				new Creatio.Client.CreatioSessionCookie(".ASPXAUTH", "v", "bearer.creatio.com", "/",
+					true, true, null, DateTime.MinValue)
+			});
+		ApplicationClientFactory sut = CreateFactory(provider);
+		EnvironmentSettings stored = Newtonsoft.Json.JsonConvert.DeserializeObject<EnvironmentSettings>(
+			"""{ "Uri": "https://bearer.creatio.com", "AccessToken": "fake-principal-a" }""");
+		EnvironmentOptions options = new() { ExternalAccessToken = "fake-external-access-token" };
+
+		// Act
+		EnvironmentSettings filled = stored.Fill(options, NonInteractiveConsole.Shared);
+		Func<IApplicationClient> act = () => sut.CreateClient(filled);
+
+		// Assert
+		act.Should().NotThrow(
+			because: "an external-access token passed for this call is an explicit credential, so the stored bearer is not carried next to it");
+		provider.Received(1).GetSession(filled, "fake-external-access-token");
+	}
+
+	[Test]
+	[Description("An environment that stores login/password next to an AccessToken keeps using login/password: the stored token is carried only for a bearer-only environment (issue #1624 review).")]
+	public void CreateClient_ShouldUseStoredLogin_WhenEnvironmentStoresLoginPasswordAndAccessToken() {
+		// Arrange
+		IReauthExecutor noReauthExecutor = Substitute.For<IReauthExecutor>();
+		ApplicationClientFactory sut = new(noReauthExecutor,
+			Substitute.For<Clio.Common.ExternalAccess.IExternalAccessSessionProvider>());
+		EnvironmentSettings stored = Newtonsoft.Json.JsonConvert.DeserializeObject<EnvironmentSettings>(
+			"""{ "Uri": "https://bearer.creatio.com", "Login": "principal-b", "Password": "fake-password-b", "AccessToken": "stale-token" }""");
+
+		// Act
+		EnvironmentSettings filled = stored.Fill(new EnvironmentOptions(), NonInteractiveConsole.Shared);
+		IApplicationClient client = sut.CreateClient(filled);
+
+		// Assert
+		filled.AccessToken.Should().BeNullOrEmpty(
+			because: "the bearer branch never re-logs in, so a stale stored token would lock out the stored credentials");
+		ReadReauthExecutor(client).Should().NotBeSameAs(noReauthExecutor,
+			because: "the forms-login branch re-logs in with the stored credentials");
+	}
+
+	[Test]
+	[Description("Fill does not carry the stored AccessToken when the caller points the call at a different host (issue #1624 review).")]
+	public void Fill_ShouldNotCarryStoredBearer_WhenUriOverrideNamesAnotherHost() {
+		// Arrange
+		EnvironmentSettings stored = Newtonsoft.Json.JsonConvert.DeserializeObject<EnvironmentSettings>(
+			"""{ "Uri": "https://bearer.creatio.com", "AccessToken": "fake-principal-a" }""");
+
+		// Act
+		EnvironmentSettings filled = stored.Fill(new EnvironmentOptions { Uri = "https://other-host.creatio.com" },
+			NonInteractiveConsole.Shared);
+
+		// Assert
+		filled.AccessToken.Should().BeNullOrEmpty(
+			because: "a bearer can be replayed, so it must never be sent to a host other than the one it was stored for");
+	}
+
+	[Test]
+	[Description("Fill still carries the stored AccessToken when the Uri override names the stored host with different case or a trailing slash (issue #1624 review).")]
+	public void Fill_ShouldCarryStoredBearer_WhenUriOverrideNamesTheStoredHost() {
+		// Arrange
+		EnvironmentSettings stored = Newtonsoft.Json.JsonConvert.DeserializeObject<EnvironmentSettings>(
+			"""{ "Uri": "https://bearer.creatio.com", "AccessToken": "fake-principal-a" }""");
+
+		// Act
+		EnvironmentSettings filled = stored.Fill(new EnvironmentOptions { Uri = "https://BEARER.creatio.com/" },
+			NonInteractiveConsole.Shared);
+
+		// Assert
+		filled.AccessToken.Should().Be("fake-principal-a",
+			because: "the same host written with different case or a trailing slash is still the stored environment");
 	}
 
 	[Test]
