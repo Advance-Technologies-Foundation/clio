@@ -481,6 +481,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="update-page"></a>
 <a id="page-update"></a>
 - [`update-page`](docs/commands/update-page.md) - Update Freedom UI page body and en-US resource values; validates parent references and warns to capture workspace resources before pushing, `page-update`
+<a id="localize-page"></a>
+- [`localize-page`](docs/commands/localize-page.md) - Add or update translations of a Freedom UI page's captions in one culture without changing other cultures; report-only when no values are supplied
 <a id="create-page"></a>
 <a id="page-create"></a>
 - [`create-page`](docs/commands/create-page.md) - Create a new Freedom UI page from a supported template, `page-create`
