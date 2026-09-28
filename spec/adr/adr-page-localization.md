@@ -293,6 +293,12 @@ Review amendments (2026-09-26):
 - Under a non-default profile culture that has no localization row of its own, when no caption went through step 2,
   the snapshot has no profile-culture cell, so the value F12 requires is the one `SelectQuery` returns — the fallback (English) text — and step 3 creates
   the profile-culture row with that text.
+- Review follow-up (2026-09-28): that write can not be avoided (F12), but it is no longer silent — the result
+  carries a warning naming the profile culture and the fallback text.
+- Review follow-up (2026-09-28), `localize-page`: empty/whitespace resource values and a whitespace-only caption
+  are refused before any read; the caption is trimmed. A `SaveSchema` that throws after it was sent returns
+  `saved:false` with an outcome-unknown error, keeping `schemaUId`/`packageName`/`written` and the workspace
+  warning. Server text and caught exception text in `error` are redacted.
 
 Rejected: a `caption-localizations` map — the rest of the page-localization feature writes one culture per call
 (D1), and a map would need its own merge/required-culture rules. Rejected: leaving F11 unfixed and only adding

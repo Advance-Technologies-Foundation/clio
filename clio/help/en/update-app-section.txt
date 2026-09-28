@@ -27,7 +27,10 @@ DESCRIPTION
     language on each section update. The command reads them first and writes
     them back afterwards, then re-saves the application package's
     SysModule_<SectionCode> data binding so the translations stay part of
-    the package. The output lists the kept languages.
+    the package. The output lists the kept languages. When titles in other
+    languages are written back and the connected user's profile language
+    (other than en-US) has no title of its own, Creatio requires one, so that
+    language gets the fallback (en-US) title and a warning says so.
     If writing them back fails, the command fails and its error lists every
     value it read, so they can be re-sent.
 

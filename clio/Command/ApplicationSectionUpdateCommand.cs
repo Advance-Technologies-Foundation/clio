@@ -96,6 +96,10 @@ public sealed class ApplicationSectionUpdateService(
 	ISectionLocalizationPlanner localizationPlanner,
 	ICreatioCultureCatalogFactory cultureCatalogFactory)
 	: IApplicationSectionUpdateService {
+	internal const string FallbackProfileCaptionWarningFormat =
+		"The section title had no '{0}' translation, and Creatio requires one when titles in other cultures are "
+		+ "written, so '{0}' now holds the fallback title '{1}'. Translate it with update-app-section --caption "
+		+ "--caption-culture {0} if that text is wrong for {0}.";
 	private const string ApplicationSectionSchemaName = "ApplicationSection";
 	private const string ApplicationIdField = "ApplicationId";
 	private static readonly JsonSerializerOptions JsonOptions = new() {
@@ -192,10 +196,11 @@ public sealed class ApplicationSectionUpdateService(
 
 		// A non-default profile culture has its own localization row; prefer it over the SelectQuery value, which
 		// falls back to the default culture when that row is missing.
+		string? snapshotProfileCaption = SectionLocalizationPlanner.ReadCell(
+			snapshot, SectionLocalizationPlanner.CaptionColumn, profileCulture);
 		string currentProfileCaption = captionThroughSection
 			? resolvedRequest.Caption
-			: SectionLocalizationPlanner.ReadCell(snapshot, SectionLocalizationPlanner.CaptionColumn, profileCulture)
-				?? previousSection.Caption ?? string.Empty;
+			: snapshotProfileCaption ?? previousSection.Caption ?? string.Empty;
 		SectionLocalizationPlan plan = localizationPlanner.BuildPlan(new SectionLocalizationPlanInput(
 			snapshot,
 			sectionUpdateNeeded,
@@ -205,6 +210,9 @@ public sealed class ApplicationSectionUpdateService(
 			captionThroughSection,
 			currentProfileCaption,
 			resolvedRequest.ShouldUpdateDescription));
+		if (WritesFallbackProfileCaption(plan, captionThroughSection, snapshotProfileCaption, profileCulture)) {
+			warnings.Add(string.Format(FallbackProfileCaptionWarningFormat, profileCulture, currentProfileCaption));
+		}
 		localizationPlanner.Apply(
 			client, environmentSettings, previousSection.Id, applicationInfo.PackageUId, previousSection.Code, plan, warnings);
 
@@ -315,6 +323,21 @@ public sealed class ApplicationSectionUpdateService(
 
 	private static bool SameCulture(string left, string right) =>
 		string.Equals(left, right, StringComparison.OrdinalIgnoreCase);
+
+	// ADR F12: a Caption localization write must carry the profile-culture value, so when that culture has no row of
+	// its own the write creates one holding the fallback (default-culture) text. It cannot be avoided, only reported.
+	private static bool WritesFallbackProfileCaption(
+		SectionLocalizationPlan plan,
+		bool captionThroughSection,
+		string? snapshotProfileCaption,
+		string profileCulture) =>
+		plan.HasWrites
+		&& !captionThroughSection
+		&& snapshotProfileCaption is null
+		&& !SameCulture(profileCulture, EntitySchemaDesignerSupport.DefaultCultureName)
+		&& plan.ColumnValues.TryGetValue(SectionLocalizationPlanner.CaptionColumn,
+			out IReadOnlyDictionary<string, string>? captionValues)
+		&& captionValues.Keys.Any(culture => SameCulture(culture, profileCulture));
 
 	private static void ValidateRequest(ApplicationSectionUpdateRequest request) {
 		if (string.IsNullOrWhiteSpace(request.ApplicationCode)) {
