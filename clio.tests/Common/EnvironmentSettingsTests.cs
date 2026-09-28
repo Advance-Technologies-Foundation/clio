@@ -4,9 +4,11 @@ using System.IO;
 using System.IO.Abstractions.TestingHelpers;
 using Clio;
 using Clio.Command.McpServer.Knowledge;
+using Clio.Common;
 using Clio.Tests.Infrastructure;
 using FluentAssertions;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using NUnit.Framework;
 using YamlDotNet.Serialization;
 
@@ -124,6 +126,87 @@ public sealed class EnvironmentSettingsTests {
 			because: "the real SaveSettings/appsettings.json write path must never persist the token value");
 		persisted.Should().NotContain("secret-cookie",
 			because: "the real SaveSettings/appsettings.json write path must never persist the cookie value");
+	}
+
+	[Test]
+	[Description("An AccessToken written into an environment's entry in appsettings.json is read, carried through Fill, and survives a save of an unrelated environment (issue #1624).")]
+	public void StoredAccessToken_ShouldBeReadFilledAndPreserved_WhenWrittenInSettingsFile() {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		const string storedToken = "stored-bearer-token-value";
+		fileSystem.AddFile(SettingsRepository.AppSettingsFile, new MockFileData($$"""
+			{
+			  "ActiveEnvironmentKey": "bearer-only",
+			  "Environments": {
+			    "bearer-only": { "Uri": "https://bearer.creatio.com", "AccessToken": "{{storedToken}}" }
+			  }
+			}
+			"""));
+		SettingsRepository repository = new(fileSystem);
+
+		// Act
+		EnvironmentSettings filled = repository.FindEnvironment("bearer-only")
+			.Fill(new EnvironmentOptions(), NonInteractiveConsole.Shared);
+		repository.ConfigureEnvironment("other", new EnvironmentSettings {
+			Uri = "https://other.creatio.com", Login = "u", Password = "p"
+		});
+		EnvironmentSettings reloaded = new SettingsRepository(fileSystem).FindEnvironment("bearer-only");
+
+		// Assert
+		filled.AccessToken.Should().Be(storedToken,
+			because: "Fill builds the settings every command runs on, and without the token a bearer-only "
+				+ "environment falls through to a forms login with no user name");
+		filled.AccessTokenType.Should().Be(Clio.Common.AuthenticationScheme.Bearer,
+			because: "the factory accepts only the Bearer type and a stored token carries no type of its own");
+		reloaded.AccessToken.Should().Be(storedToken,
+			because: "saving another environment must not delete the token the user wrote into this one, "
+				+ "and it must be read back as this environment's AccessToken, not just appear somewhere in the file");
+	}
+
+	[Test]
+	[Description("show-web-app prints a token that came from the settings file, the same way it prints Password: the file already holds it in clear text (issue #1624 review, pinned choice).")]
+	public void ShowSettingsTo_ShouldPrintStoredAccessToken_WhenItCameFromTheSettingsFile() {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		const string storedToken = "stored-bearer-token-value";
+		fileSystem.AddFile(SettingsRepository.AppSettingsFile, new MockFileData($$"""
+			{
+			  "ActiveEnvironmentKey": "bearer-only",
+			  "Environments": {
+			    "bearer-only": { "Uri": "https://bearer.creatio.com", "AccessToken": "{{storedToken}}" }
+			  }
+			}
+			"""));
+		SettingsRepository repository = new(fileSystem);
+		StringWriter writer = new();
+
+		// Act
+		repository.ShowSettingsTo(writer, "bearer-only");
+		JObject shown = JObject.Parse(writer.ToString());
+
+		// Assert
+		shown.Value<string>("AccessToken").Should().Be(storedToken,
+			because: "a file-held token is part of the environment the user wrote, like Password; only a runtime passthrough token is hidden");
+	}
+
+	[Test]
+	[Description("A transient AccessToken assigned over a stored one takes precedence at runtime and is still never serialized.")]
+	public void TransientAccessToken_ShouldOverrideStoredAndNeverBeSerialized_WhenAssigned() {
+		// Arrange
+		EnvironmentSettings settings = JsonConvert.DeserializeObject<EnvironmentSettings>(
+			"""{ "Uri": "https://bearer.creatio.com", "AccessToken": "stored-token-value" }""");
+
+		// Act
+		settings.AccessToken = "transient-token-value";
+		string json = JsonConvert.SerializeObject(settings);
+
+		// Assert
+		settings.AccessToken.Should().Be("transient-token-value",
+			because: "a per-request value is the credential the caller chose for this call");
+		json.Should().NotContain("transient-token-value",
+			because: "a token assigned at runtime must never reach appsettings.json");
+		json.Should().Contain("stored-token-value",
+			because: "the value that came from the file is written back unchanged");
 	}
 
 	[Test]
