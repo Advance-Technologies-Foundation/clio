@@ -101,6 +101,7 @@ add the Spanish section title; the English and other titles are kept
 - `--caption` must be in the language it is written in: `--caption-culture` when given, otherwise the connected user's profile language. `--description` is always written in the profile language. A value whose script does not match (for example Cyrillic under `en-US`) is rejected with an actionable error.
 - `--caption-culture` requires `--caption` and writes one language per call. Localization maps are not accepted.
 - `--caption-culture` is looked up in the environment's cultures (`SysCulture`) only, case-insensitively; the stored spelling is used (`de-de` → `de-DE`).
+- When titles in other languages are written back and the connected user's profile language (other than `en-US`) has no title of its own, Creatio requires one in the same write, so that language gets the fallback (`en-US`) title. The output carries a warning naming the language and the text; translate it with `--caption --caption-culture <profile language>`.
 - If writing the other languages back fails after the section update deleted them, the command fails and the error lists every value it read before the update (culture → title, description, module header), so they can be re-sent.
 
 ## Reporting Bugs

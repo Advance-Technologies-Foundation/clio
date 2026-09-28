@@ -41,7 +41,9 @@ template declares gets a page-level override holding just that culture; its
 en-US text keeps coming from the parent. Register a new key with update-page
 first. A value that Creatio cannot store in a schema resource (a control
 character other than tab, LF or CR, U+FFFE, U+FFFF or a lone surrogate half)
-or a null value fails the call before anything is saved, naming the key.
+or a null, empty or whitespace-only value fails the call before anything is
+saved, naming the key. A whitespace-only --caption is refused the same way;
+the caption is stored trimmed.
 A caption bound to an entity column through a data
 source ($Resources.Strings.<Attribute>) is not a page resource: translate it
 with update-entity-schema or modify-entity-schema-column title-localizations.
@@ -55,7 +57,13 @@ matches the page as it was right before the save, its checksum is refreshed
 so the next update-page is not refused as an external modification. A stale
 baseline (the page changed after that get-page) is left unchanged and a
 warning says that update-page will report the conflict. When the save
-succeeds but the read-back fails, saved is true and success is false.
+succeeds but the read-back fails, saved is true and success is false. When
+the save request itself fails before Creatio answers (a timeout, a non-JSON
+reply), saved is false, the error says the outcome is unknown, and
+schemaUId, packageName, written and the workspace warning are still
+returned; a report-only re-run shows what was stored. The baseline is not
+refreshed then, so run get-page before the next update-page. Server and
+exception text in error is redacted.
 
 The result is printed as JSON: success, schemaName, schemaUId, packageName,
 culture, cultureActive, saved, written, unchanged, captionOutcome

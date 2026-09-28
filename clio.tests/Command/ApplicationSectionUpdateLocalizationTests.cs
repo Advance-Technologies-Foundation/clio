@@ -132,6 +132,8 @@ public sealed class ApplicationSectionUpdateLocalizationTests {
 			because: "the Spanish description is restored too; the platform deletes whole rows");
 		result.PreservedCultures.Should().Equal(["es-ES"], because: "the result lists the kept cultures");
 		result.CaptionCulture.Should().BeNull(because: "no caption was sent");
+		result.Warnings.Should().NotContain(warning => warning.Contains("fallback title", StringComparison.Ordinal),
+			because: "under an en-US profile the required caption is the section's own default-culture title");
 		_cultureCatalog.DidNotReceiveWithAnyArgs().Find(default!);
 	}
 
@@ -354,6 +356,32 @@ public sealed class ApplicationSectionUpdateLocalizationTests {
 			new Dictionary<string, string> { ["de-DE"] = "Bestellungen" },
 			because: "the de-DE caption is restored from the snapshot, once");
 		result.PreservedCultures.Should().Equal(["de-DE"], because: "the restored caption is verified and reported as kept");
+		result.Warnings.Should().NotContain(warning => warning.Contains("fallback title", StringComparison.Ordinal),
+			because: "the de-DE caption came from its own row, not from the default culture");
+	}
+
+	[Test]
+	[Description("An icon-only update under a de-DE profile that has no de-DE title row still writes de-DE (the platform requires it, F12), with the fallback en-US title, and the result warns about it instead of doing it silently.")]
+	public void UpdateSection_Should_WarnAboutFallbackTitle_WhenProfileCultureHasNoRow() {
+		// Arrange
+		_captionCultureResolver.Resolve(_environmentSettings, null).Returns("de-DE");
+		SectionLocalizationRow spanish = new("es-ES", "Pedidos", null, null);
+		CaptureWrites();
+		GivenLocalizationReads([spanish], [spanish]);
+
+		// Act
+		ApplicationSectionUpdateResult result = _sut.UpdateSection(
+			_environmentSettings,
+			new ApplicationSectionUpdateRequest("UsrOrdersApp", "UsrOrders", IconBackground: "#247EE5"));
+
+		// Assert
+		_writes.Should().ContainSingle(because: "the deleted Spanish row is written back");
+		_writes[0]["Caption"].Should().BeEquivalentTo(
+			new Dictionary<string, string> { ["es-ES"] = "Pedidos", ["de-DE"] = "Orders" },
+			because: "a Caption write must carry the profile culture, and the only value available is the fallback title");
+		result.Warnings.Should().ContainSingle(warning => warning.Contains("fallback title 'Orders'", StringComparison.Ordinal)
+				&& warning.Contains("--caption-culture de-DE", StringComparison.Ordinal),
+			because: "the caller learns that de-DE now holds the default-culture text and how to translate it");
 	}
 
 	[Test]
