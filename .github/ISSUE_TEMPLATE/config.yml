@@ -1,0 +1,3 @@
+# Blank issues stay enabled: agents and `gh issue create` file issues without a form.
+# Such issues have no Component field and are labelled needs-triage by issue-routing.yml.
+blank_issues_enabled: true

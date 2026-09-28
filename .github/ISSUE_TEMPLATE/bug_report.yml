@@ -1,0 +1,79 @@
+# Component options must match "option" values in .github/component-owners.json exactly;
+# .github/scripts/issue-routing/issue-routing.test.js enforces it.
+name: Bug report
+description: Something in clio does not work as documented.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Please search existing issues first.
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: >-
+        Which part of clio is affected? This routes the issue to its owner
+        (see .github/component-owners.json). Pick "Other / not sure" if unsure.
+      options:
+        - "MCP server (tools, prompts, resources, clio-run)"
+        - "MCP guidance articles (get-guidance)"
+        - "Business processes / Process Builder"
+        - "Applications, sections and pages"
+        - "Packages (push-pkg, compress, lock/unlock, dependencies)"
+        - "Creatio installation and local environments"
+        - "Workspaces"
+        - "Data, queries and model generation"
+        - "cliogate package"
+        - "ClioRing desktop companion"
+        - "CLI core (settings, authentication, command parsing)"
+        - "Documentation and command help"
+        - "Other / not sure"
+    validations:
+      required: true
+  - type: input
+    id: clio-version
+    attributes:
+      label: clio version
+      description: Output of `clio ver` (or the MCP server version).
+      placeholder: "8.0.2.50"
+    validations:
+      required: true
+  - type: input
+    id: creatio-version
+    attributes:
+      label: Creatio version and runtime
+      description: For example 8.2.1, .NET 8 / .NET Framework. Leave empty if not environment-related.
+  - type: dropdown
+    id: surface
+    attributes:
+      label: How was clio used?
+      options:
+        - CLI
+        - MCP server (AI agent)
+        - Both
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: The exact command or MCP tool call, with arguments.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include the error output. Remove passwords, tokens and connection strings.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
