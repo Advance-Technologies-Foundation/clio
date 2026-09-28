@@ -375,7 +375,9 @@ public sealed class ODataFileContract(IFileSystem fileSystem, IConfinedFileAcces
 			// Nothing is written for an error body: a file named after a successful read that holds a
 			// server error is worse than no file at all.
 			return new ODataFileReadFailure(
-				CreatioResponseError.DescribeServerReportedReadError(kind), ODataReadTool.ErrorCodeFor(kind));
+				CreatioResponseError.DescribeServerReportedReadError(kind,
+					structuredDetail: CreatioResponseError.DescribeStructuredODataError(root)),
+				ODataReadTool.ErrorCodeFor(kind));
 		}
 		// Only a body that identifies ITSELF as the requested entity set may be published. An object or an
 		// array alone was not enough: a proxy or auth body ({"detail":"authentication required"}), and an
