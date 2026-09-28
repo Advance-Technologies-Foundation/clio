@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
 using System.Text.Json;
@@ -300,9 +301,11 @@ internal sealed class EnvironmentRuntimeDetectionService(
 	/// to choose a runtime for a site that is simply not up.
 	/// </summary>
 	/// <remarks>
-	/// Two distinct outcomes, and the difference matters to whoever reads the message: no HTTP response arrived
-	/// at all (DNS, refused, no route, timed out) points at connectivity, while an HTTP server error from every
-	/// route points at the application itself being stopped or recycling. Classification is by whether a status
+	/// The outcome decides the wording, and the difference matters to whoever reads the message: no HTTP response
+	/// arrived at all (DNS, refused, no route, timed out) points at connectivity, an HTTP server error from every
+	/// route points at the application itself being stopped or recycling, and a 404/410 from every route points at
+	/// a wrong or removed application path. Any other combination is described neutrally by the outcomes actually
+	/// observed, so the message never claims a single failure family that not every probe produced. Classification is by whether a status
 	/// code came back, never by matching words in the exception text - a real
 	/// <see cref="HttpClient"/> timeout surfaces as "A task was canceled." once
 	/// <see cref="Exception.GetBaseException"/> has unwrapped it, so text matching silently misses it.
@@ -330,9 +333,22 @@ internal sealed class EnvironmentRuntimeDetectionService(
 				$"Unable to auto-detect the Creatio runtime because the host '{authority}' could not be reached from this machine. Verify the URL, DNS/VPN connectivity, and that the site is accessible, then rerun reg-web-app. {BuildProbeSummary(netCoreProbe, netFrameworkProbe)}";
 			return true;
 		}
-		message = directAttempts.All(ProvesAbsence)
-			? $"Unable to auto-detect the Creatio runtime because nothing at '{baseUri}' serves a Creatio route: every probe answered 404. Verify the application path in the URL and that the application is still deployed, then rerun reg-web-app. {BuildProbeSummary(netCoreProbe, netFrameworkProbe)}"
-			: $"Unable to auto-detect the Creatio runtime because the site at '{authority}' is not serving requests: every probe answered an HTTP server error. Verify that the Creatio application is started and finished warming up, then rerun reg-web-app. {BuildProbeSummary(netCoreProbe, netFrameworkProbe)}";
+		string summary = BuildProbeSummary(netCoreProbe, netFrameworkProbe);
+		if (directAttempts.All(IsServerError)) {
+			message =
+				$"Unable to auto-detect the Creatio runtime because the site at '{authority}' is not serving requests: every probe answered an HTTP server error. Verify that the Creatio application is started and finished warming up, then rerun reg-web-app. {summary}";
+			return true;
+		}
+		if (directAttempts.All(ProvesAbsence)) {
+			string absence = directAttempts.All(attempt => attempt.StatusCode is HttpStatusCode.NotFound)
+				? "every probe answered 404"
+				: $"every probe reported the route as absent (answered {DescribeObservedOutcomes(directAttempts)})";
+			message =
+				$"Unable to auto-detect the Creatio runtime because nothing at '{baseUri}' serves a Creatio route: {absence}. Verify the application path in the URL and that the application is still deployed, then rerun reg-web-app. {summary}";
+			return true;
+		}
+		message =
+			$"Unable to auto-detect the Creatio runtime because the site at '{authority}' served none of the probed routes (observed: {DescribeObservedOutcomes(directAttempts)}). Verify the application path in the URL and that the Creatio application is started and finished warming up, then rerun reg-web-app. {summary}";
 		return true;
 	}
 
@@ -343,6 +359,27 @@ internal sealed class EnvironmentRuntimeDetectionService(
 	private static bool WasNotServed(ProbeAttempt attempt) =>
 		!attempt.Succeeded
 		&& (attempt.StatusCode is null || (int)attempt.StatusCode >= 500 || ProvesAbsence(attempt));
+
+	private static bool IsServerError(ProbeAttempt attempt) =>
+		attempt.StatusCode is { } statusCode && (int)statusCode >= 500;
+
+	/// <summary>Lists the distinct outcomes the probes actually produced - HTTP status codes in ascending order,
+	/// then "no response" when a probe got no HTTP answer at all - so a mixed failure is described by what was
+	/// observed rather than by a single failure family.</summary>
+	private static string DescribeObservedOutcomes(IEnumerable<ProbeAttempt> attempts) {
+		ProbeAttempt[] materialized = attempts.ToArray();
+		List<string> outcomes = materialized
+			.Where(attempt => attempt.StatusCode is not null)
+			.Select(attempt => (int)attempt.StatusCode!.Value)
+			.Distinct()
+			.Order()
+			.Select(code => $"HTTP {code}")
+			.ToList();
+		if (materialized.Any(attempt => attempt.StatusCode is null)) {
+			outcomes.Add("no response");
+		}
+		return string.Join(", ", outcomes);
+	}
 
 	private static string BuildProbeSummary(RuntimeProbeResult netCoreProbe, RuntimeProbeResult netFrameworkProbe) =>
 		$".NET Core / NET8: health {netCoreProbe.HealthUrl} => {Describe(netCoreProbe.HealthProbe)}, service {netCoreProbe.ServiceUrl} => {Describe(netCoreProbe.ServiceProbe)}, UI marker {netCoreProbe.UiMarkerUrl} => {Describe(netCoreProbe.UiMarkerProbe)}. .NET Framework: health {netFrameworkProbe.HealthUrl} => {Describe(netFrameworkProbe.HealthProbe)}, service {netFrameworkProbe.ServiceUrl} => {Describe(netFrameworkProbe.ServiceProbe)}, UI marker {netFrameworkProbe.UiMarkerUrl} => {Describe(netFrameworkProbe.UiMarkerProbe)}.";
