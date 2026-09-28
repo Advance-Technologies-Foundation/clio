@@ -35,8 +35,8 @@ public sealed class PageCreateCommandTests
 		_catalog = Substitute.For<ISchemaTemplateCatalog>();
 		_logger = Substitute.For<ILogger>();
 		_serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns(SelectQueryUrl);
-		_serviceUrlBuilder.Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema").Returns(SaveSchemaUrl);
-		_serviceUrlBuilder.Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema").Returns(GetSchemaUrl);
+		_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.SaveClientUnitDesignerSchema).Returns(SaveSchemaUrl);
+		_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetClientUnitDesignerSchema).Returns(GetSchemaUrl);
 		_applicationClient.ExecutePostRequest(GetSchemaUrl, Arg.Any<string>())
 			.Returns("""
 				{"success": true, "schema": {"localizableStrings": [
