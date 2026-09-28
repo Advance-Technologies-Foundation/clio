@@ -12,20 +12,36 @@ namespace Clio.Package;
 /// <param name="ErrorNumber">Compiler diagnostic code, for example <c>CS0246</c>.</param>
 /// <param name="ErrorText">Compiler diagnostic text as Creatio returned it.</param>
 /// <param name="FileName">Source file the compiler reported, when supplied.</param>
-/// <param name="Line">One-based source line, when supplied.</param>
-/// <param name="Column">One-based source column, when supplied.</param>
+/// <param name="Line">One-based source line, or <see langword="null"/> when Creatio did not supply one.</param>
+/// <param name="Column">One-based source column, or <see langword="null"/> when Creatio did not supply one.</param>
 /// <param name="IsWarning">Whether the diagnostic is a warning rather than an error.</param>
-public sealed record PackageBuildDiagnostic(string ErrorNumber, string ErrorText, string FileName, int Line,
-	int Column, bool IsWarning) {
+public sealed record PackageBuildDiagnostic(string ErrorNumber, string ErrorText, string FileName, int? Line,
+	int? Column, bool IsWarning) {
 
 	/// <summary>
 	/// Renders the diagnostic in the same shape <c>compile-configuration</c> prints its diagnostics in.
 	/// </summary>
 	/// <returns>A single-line, human-readable diagnostic.</returns>
-	public override string ToString() =>
-		string.IsNullOrWhiteSpace(FileName)
-			? $"({ErrorNumber}): {ErrorText}"
-			: $"({ErrorNumber}) in {FileName} at ({Line},{Column}): {ErrorText}";
+	public override string ToString() => Format(static text => text, static text => text);
+
+	/// <summary>
+	/// Renders the diagnostic, letting the caller decorate the code and the file name.
+	/// </summary>
+	/// <param name="decorateCode">Applied to <see cref="ErrorNumber"/>, for example to color it.</param>
+	/// <param name="decorateFile">Applied to <see cref="FileName"/>, for example to color it.</param>
+	/// <returns>A single-line, human-readable diagnostic.</returns>
+	/// <remarks>
+	/// The position is shown only when Creatio supplied both the line and the column: a missing one used to
+	/// be rendered as <c>(0,0)</c>, a location that does not exist.
+	/// </remarks>
+	public string Format(Func<string, string> decorateCode, Func<string, string> decorateFile) {
+		string code = $"({decorateCode(ErrorNumber)})";
+		if (string.IsNullOrWhiteSpace(FileName)) {
+			return $"{code}: {ErrorText}";
+		}
+		string position = Line is { } line && Column is { } column ? $" at ({line},{column})" : string.Empty;
+		return $"{code} in {decorateFile(FileName)}{position}: {ErrorText}";
+	}
 
 }
 
@@ -36,8 +52,9 @@ public sealed record PackageBuildDiagnostic(string ErrorNumber, string ErrorText
 /// <param name="BuildResult">Creatio's numeric build result, when supplied.</param>
 /// <param name="Diagnostics">Compiler diagnostics, warnings included.</param>
 /// <param name="ErrorMessage">The <c>errorInfo.message</c> text, when Creatio supplied one.</param>
+/// <param name="ErrorCode">The <c>errorInfo.errorCode</c> text, when Creatio supplied one.</param>
 public sealed record PackageBuildResult(bool Success, int? BuildResult, IReadOnlyList<PackageBuildDiagnostic> Diagnostics,
-	string ErrorMessage) {
+	string ErrorMessage, string ErrorCode) {
 
 	/// <summary>Gets the diagnostics that are errors, not warnings.</summary>
 	public IEnumerable<PackageBuildDiagnostic> Errors => Diagnostics.Where(diagnostic => !diagnostic.IsWarning);
@@ -45,8 +62,8 @@ public sealed record PackageBuildResult(bool Success, int? BuildResult, IReadOnl
 }
 
 /// <summary>
-/// Parses the two shapes a package-build verdict reaches clio in: the body of the package-build response,
-/// and the <c>ErrorsWarnings</c> payload of a <c>CompilationHistory</c> row.
+/// Parses the two shapes a build verdict reaches clio in: the body of a build response, and the
+/// <c>ErrorsWarnings</c> payload of a <c>CompilationHistory</c> row.
 /// </summary>
 /// <remarks>
 /// A static helper rather than an injected service for the same reason as
@@ -67,19 +84,69 @@ internal static class PackageBuildResultParser {
 	/// <c>success</c> field - that is, when the environment did not report a result. A caller must reject a
 	/// non-JSON body first (see <see cref="IsUnrecognizedBody"/>): it is not an absent result.
 	/// </returns>
+	/// <remarks>
+	/// Each field is read on its own, so a field of an unexpected shape costs only that field: a typed parse of
+	/// the whole body used to fail as a unit, and a malformed <c>errors</c> or <c>errorInfo</c> then discarded
+	/// the <c>success</c> next to it - a failed build read as no result at all.
+	/// </remarks>
 	internal static PackageBuildResult TryParseResponse(string responseBody) {
 		if (string.IsNullOrWhiteSpace(responseBody) || !responseBody.TrimStart().StartsWith('{')) {
 			return null;
 		}
 		try {
-			ResponsePayload payload = JsonSerializer.Deserialize<ResponsePayload>(responseBody, JsonOptions);
-			if (payload?.Success is not { } success) {
+			using JsonDocument document = JsonDocument.Parse(responseBody);
+			JsonElement root = document.RootElement;
+			if (!TryGetProperty(root, "success", out JsonElement successElement)
+				|| successElement.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) {
 				return null;
 			}
-			return new PackageBuildResult(success, payload.BuildResult, ToDiagnostics(payload.Errors),
-				payload.ErrorInfo?.Message);
+			int? buildResult = TryGetProperty(root, "buildResult", out JsonElement buildResultElement)
+				&& buildResultElement.ValueKind == JsonValueKind.Number
+				&& buildResultElement.TryGetInt32(out int number)
+					? number
+					: null;
+			IReadOnlyList<PackageBuildDiagnostic> diagnostics =
+				TryGetProperty(root, "errors", out JsonElement errorsElement)
+				&& errorsElement.ValueKind == JsonValueKind.Array
+					? ReadDiagnostics(errorsElement)
+					: [];
+			string errorMessage = null;
+			string errorCode = null;
+			if (TryGetProperty(root, "errorInfo", out JsonElement errorInfo)) {
+				errorMessage = ReadString(errorInfo, "message");
+				errorCode = ReadString(errorInfo, "errorCode");
+			}
+			return new PackageBuildResult(successElement.GetBoolean(), buildResult, diagnostics, errorMessage,
+				errorCode);
 		} catch (JsonException) {
 			return null;
+		}
+	}
+
+	// Case-insensitive, as the typed parse this replaced was.
+	private static bool TryGetProperty(JsonElement element, string name, out JsonElement value) {
+		if (element.ValueKind == JsonValueKind.Object) {
+			foreach (JsonProperty property in element.EnumerateObject()) {
+				if (string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase)) {
+					value = property.Value;
+					return true;
+				}
+			}
+		}
+		value = default;
+		return false;
+	}
+
+	private static string ReadString(JsonElement element, string name) =>
+		TryGetProperty(element, name, out JsonElement value) && value.ValueKind == JsonValueKind.String
+			? value.GetString()
+			: null;
+
+	private static IReadOnlyList<PackageBuildDiagnostic> ReadDiagnostics(JsonElement errors) {
+		try {
+			return ToDiagnostics(errors.Deserialize<List<DiagnosticPayload>>(JsonOptions));
+		} catch (JsonException) {
+			return [];
 		}
 	}
 
@@ -114,31 +181,8 @@ internal static class PackageBuildResultParser {
 	private static List<PackageBuildDiagnostic> ToDiagnostics(IEnumerable<DiagnosticPayload> payloads) =>
 		payloads?.Where(payload => payload is not null)
 			.Select(payload => new PackageBuildDiagnostic(payload.ErrorNumber, payload.ErrorText, payload.FileName,
-				payload.Line ?? 0, payload.Column ?? 0, payload.Warning || payload.IsWarning))
+				payload.Line, payload.Column, payload.Warning || payload.IsWarning))
 			.ToList() ?? [];
-
-	private sealed class ResponsePayload {
-
-		[JsonPropertyName("success")]
-		public bool? Success { get; set; }
-
-		[JsonPropertyName("buildResult")]
-		public int? BuildResult { get; set; }
-
-		[JsonPropertyName("errors")]
-		public List<DiagnosticPayload> Errors { get; set; }
-
-		[JsonPropertyName("errorInfo")]
-		public ErrorInfoPayload ErrorInfo { get; set; }
-
-	}
-
-	private sealed class ErrorInfoPayload {
-
-		[JsonPropertyName("message")]
-		public string Message { get; set; }
-
-	}
 
 	private sealed class DiagnosticPayload {
 

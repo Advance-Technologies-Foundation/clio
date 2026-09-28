@@ -489,6 +489,112 @@ public class CompileConfigurationCommandTestCase : BaseCommandTests<CompileConfi
 			message.Contains("The outcome is unknown", StringComparison.Ordinal)));
 	}
 
+	[Test]
+	[Description("A build response that reports failure is read through the parser compile-package uses (issue #1708): the command exits 1 and prints both the errorInfo line and every error diagnostic, including one Creatio sent without a line or column, which the old non-nullable model could not read.")]
+	public void Execute_ShouldFailAndPrintDiagnostics_WhenTheResponseReportsFailure() {
+		// Arrange
+		CompileConfigurationCommand command = CreateCommand();
+		CompileConfigurationOptions options = new() { Environment = "dev", All = true };
+		StubCompileResponse(
+			"{\"success\":false,\"buildResult\":1,"
+			+ "\"errorInfo\":{\"errorCode\":\"CompilationError\",\"message\":\"Build failed\"},"
+			+ "\"errors\":[{\"errorNumber\":\"CS0006\",\"errorText\":\"Metadata file not found\",\"warning\":false},"
+			+ "{\"errorNumber\":\"CS0114\",\"errorText\":\"Hides inherited member\",\"warning\":true}]}");
+
+		// Act
+		int exitCode = command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "the response reported the build as failed");
+		_logger.Received().WriteError("CompilationError: Build failed");
+		_logger.Received().WriteError(Arg.Is<string>(message => message.Contains("CS0006", StringComparison.Ordinal)));
+		_logger.DidNotReceive().WriteError(Arg.Is<string>(message =>
+			message.Contains("CS0114", StringComparison.Ordinal)));
+	}
+
+	[Test]
+	[Description("A failed build response without errorInfo and without error diagnostics still says the build failed, instead of exiting 1 with no error output. The body itself is not echoed: it can carry a stack trace or internal URLs.")]
+	public void Execute_ShouldReportFailure_WhenTheFailedResponseCarriesNoDetails() {
+		// Arrange
+		CompileConfigurationCommand command = CreateCommand();
+		CompileConfigurationOptions options = new() { Environment = "dev", All = true };
+		const string body = "{\"success\":false,\"buildResult\":1}";
+		StubCompileResponse(body);
+
+		// Act
+		int exitCode = command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "the response reported the build as failed");
+		_logger.Received().WriteError("Compilation failed on the environment. Build result: 1.");
+		_logger.DidNotReceive().WriteLine(body);
+	}
+
+	[Test]
+	[Description("A failed build response without buildResult and with an errorInfo message but no code prints only what Creatio sent: no blank 'Build result: .' and no leading ': ' before the message.")]
+	public void Execute_ShouldOmitAbsentFields_WhenTheFailedResponseIsPartial() {
+		// Arrange
+		CompileConfigurationCommand command = CreateCommand();
+		CompileConfigurationOptions options = new() { Environment = "dev", All = true };
+		StubCompileResponse("{\"success\":false,\"errorInfo\":{\"message\":\"Build failed\"}}");
+
+		// Act
+		int exitCode = command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "the response reported the build as failed");
+		_logger.Received().WriteError("Compilation failed on the environment.");
+		_logger.Received().WriteError("Build failed");
+	}
+
+	[Test]
+	[Description("A JSON response without a success field is not a verdict: the command exits 1 and says the response carried no build result, instead of reading the missing field as false and then failing on a null errorInfo with a NullReferenceException text (issue #1708).")]
+	public void Execute_ShouldReportNoBuildResult_WhenTheResponseHasNoSuccessField() {
+		// Arrange
+		CompileConfigurationCommand command = CreateCommand();
+		CompileConfigurationOptions options = new() { Environment = "dev", All = true };
+		StubCompileResponse("{\"buildResult\":0}");
+
+		// Act
+		int exitCode = command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "a response without a verdict does not prove the build succeeded");
+		_logger.Received().WriteError("The compilation response carried no build result.");
+		_logger.DidNotReceive().WriteError(Arg.Is<string>(message =>
+			message.Contains("Object reference", StringComparison.Ordinal)));
+		_logger.DidNotReceive().WriteLine("{\"buildResult\":0}");
+	}
+
+	[Test]
+	[Description("A history diagnostic without a line or column is rendered as a diagnostic. The old model had non-nullable Line/Column, so such a row failed to parse and the raw JSON was printed instead (issue #1708).")]
+	public void FormatHistoryDiagnostics_ShouldRenderDiagnostic_WhenPositionIsMissing() {
+		// Arrange
+		const string errorsWarnings =
+			"[{\"ErrorNumber\":\"CS0006\",\"ErrorText\":\"Metadata file not found\",\"Line\":null,\"Column\":null,\"IsWarning\":false}]";
+
+		// Act
+		string rendered = CompileConfigurationCommand.FormatHistoryDiagnostics(errorsWarnings);
+
+		// Assert
+		rendered.Should().Contain("1 of 1", because: "the single diagnostic must be numbered");
+		rendered.Should().Contain("Metadata file not found", because: "the diagnostic text must be shown");
+		rendered.Should().NotContain("\"ErrorNumber\"", because: "the payload was readable, so the raw JSON must not be printed");
+	}
+
+	[Test]
+	[Description("A history payload that cannot be parsed is printed as it arrived, so nothing Creatio reported is lost.")]
+	public void FormatHistoryDiagnostics_ShouldReturnRawPayload_WhenPayloadIsNotParsable() {
+		// Arrange
+		const string errorsWarnings = "not json";
+
+		// Act
+		string rendered = CompileConfigurationCommand.FormatHistoryDiagnostics(errorsWarnings);
+
+		// Assert
+		rendered.Should().Be(errorsWarnings, because: "an unreadable payload is still evidence and must reach the user unchanged");
+	}
+
 	private CompileConfigurationCommand CreateCommand() {
 		CompileConfigurationCommand command = Container.GetRequiredService<CompileConfigurationCommand>();
 		// The production grace is 90 seconds, sized for a cold stand's first compilation-history row. A
