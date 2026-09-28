@@ -794,6 +794,8 @@ public sealed class LocalizePageCommandTests : BaseCommandTests<LocalizePageOpti
 		response.Warnings.Should().Contain(LocalizePageCommand.WorkspaceCaptureWarning,
 			because: "the values may be on the server, so the workspace may be stale");
 		_baselineGuard.DidNotReceiveWithAnyArgs().RefreshAfterSave(default, default, default, default, default, default);
+		CountCalls("WorkplaceService/ResetScriptCache").Should().Be(1,
+			because: "the save may have landed, so the next hierarchy read must not serve the pre-save bundle");
 	}
 
 	[Test]

@@ -110,16 +110,23 @@ public sealed class LocalizePageToolE2ETests : McpContractFixtureBase {
 		// Act
 		LocalizePageResponse blankResources = await LocalizeAsync(context, SeededPage, "es-ES", environmentName,
 			resources: "{\"UsrE2eEmpty_caption\":\"\",\"UsrE2eSpaces_caption\":\"   \"}");
-		LocalizePageResponse blankCaption = await LocalizeAsync(context, SeededPage, "es-ES", environmentName,
-			caption: "   ");
 
 		// Assert
 		AllureApi.Step("Blank resource values are refused and named", () => {
 			blankResources.Success.Should().BeFalse(because: "a blank value is not a translation");
 			blankResources.Saved.Should().BeFalse(because: "nothing is saved for an invalid resources map");
-			blankResources.Error.Should().Contain("UsrE2eEmpty_caption", because: "the empty value is named")
-				.And.Contain("UsrE2eSpaces_caption", because: "the whitespace-only value is named");
+			blankResources.Error.Should().Contain("empty or whitespace-only value",
+					because: "the blank-value check rejects the map, not the unknown-key check")
+				.And.Contain("UsrE2eEmpty_caption", because: "the empty value is named")
+				.And.Contain("UsrE2eSpaces_caption", because: "the whitespace-only value is named")
+				.And.NotContain("Unknown resource key", because: "blank input is refused before the page is read");
 		});
+		// A regression of the caption check would write the seeded page, whose checksum other fixtures rely on.
+		if (!settings.AllowDestructiveMcpTests) {
+			return;
+		}
+		LocalizePageResponse blankCaption = await LocalizeAsync(context, SeededPage, "es-ES", environmentName,
+			caption: "   ");
 		AllureApi.Step("A whitespace-only caption is refused", () => {
 			blankCaption.Success.Should().BeFalse(because: "a blank title is not a translation");
 			blankCaption.Saved.Should().BeFalse(because: "nothing is saved for a blank title");

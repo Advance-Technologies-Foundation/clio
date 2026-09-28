@@ -234,7 +234,8 @@ public sealed class LocalizePageCommand : Command<LocalizePageOptions>, ILocaliz
 
 	internal const string SaveOutcomeUnknownMessageFormat =
 		"The save request failed before Creatio confirmed it, so it may or may not have been stored: {0}. "
-		+ "Run localize-page again without resources and caption to see the stored coverage.";
+		+ "Run localize-page again without resources and caption to see the stored coverage. The .clio-pages "
+		+ "baseline was not refreshed; run get-page before the next update-page.";
 
 	internal const string BaselineRefreshFailedWarningFormat =
 		"The page was saved, but refreshing the .clio-pages baseline failed: {0}. The next update-page may report "
@@ -399,7 +400,9 @@ public sealed class LocalizePageCommand : Command<LocalizePageOptions>, ILocaliz
 			saved = TrySaveSchema(schema, out saveError);
 		} catch (Exception ex) when (ex is not OperationCanceledException) {
 			// A timeout or a non-JSON reply after the request was sent: the server may have stored the values, so the
-			// caller gets the identity of the page and the workspace warning, not a bare failure.
+			// caller gets the identity of the page and the workspace warning, not a bare failure. The cache is reset
+			// anyway, so the recommended report-only re-run does not read the pre-save hierarchy.
+			ResetScriptCache();
 			warnings.Add(WorkspaceCaptureWarning);
 			return result with {
 				Success = false,

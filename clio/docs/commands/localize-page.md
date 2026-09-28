@@ -61,8 +61,9 @@ succeeds but the read-back fails, saved is true and success is false. When
 the save request itself fails before Creatio answers (a timeout, a non-JSON
 reply), saved is false, the error says the outcome is unknown, and
 schemaUId, packageName, written and the workspace warning are still
-returned; a report-only re-run shows what was stored. Server and exception
-text in error is redacted.
+returned; a report-only re-run shows what was stored. The baseline is not
+refreshed then, so run get-page before the next update-page. Server and
+exception text in error is redacted.
 
 The result is printed as JSON: success, schemaName, schemaUId, packageName,
 culture, cultureActive, saved, written, unchanged, captionOutcome
