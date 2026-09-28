@@ -923,7 +923,7 @@ public static class SchemaValidationService
 		}
 		if (providingGaps.Count > 0) {
 			message.Append(" An aggregation metric needs schemaName and aggregation.column.expression with "
-				+ "functionArgument.columnPath and aggregationType 1-5; a calculated metric uses an expressionSchema "
+				+ "expressionType 1, functionArgument.columnPath and aggregationType 1-5; a calculated metric uses an expressionSchema "
 				+ "object instead.");
 		}
 		result.IsValid = false;
@@ -968,6 +968,13 @@ public static class SchemaValidationService
 			|| !TryGetObjectProperty(column, "expression", out JsonElement expression)) {
 			missing.Add("config.data.providing.aggregation.column.expression");
 			return;
+		}
+		// An aggregate is a function expression (1); the runtime's typed parse throws when expressionType is absent.
+		if (!expression.TryGetProperty("expressionType", out JsonElement expressionType)
+			|| expressionType.ValueKind != JsonValueKind.Number
+			|| !expressionType.TryGetInt32(out int expressionTypeValue)
+			|| expressionTypeValue != 1) {
+			missing.Add("config.data.providing.aggregation.column.expression.expressionType");
 		}
 		if (!TryGetObjectProperty(expression, "functionArgument", out JsonElement functionArgument)
 			|| !TryGetStringProperty(functionArgument, "columnPath", out _)) {
