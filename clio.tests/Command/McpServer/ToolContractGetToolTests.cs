@@ -1609,6 +1609,59 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("TC-U-25: the localize-page contract advertises exactly the arguments LocalizePageArgs binds, requires only schema-name and culture, and describes exactly the fields LocalizePageResponse serializes.")]
+	public void GetToolContract_ShouldDescribeLocalizePage_WhenRequested() {
+		// Arrange
+		ToolContractGetTool tool = new();
+		string[] boundArguments = typeof(LocalizePageArgs)
+			.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+			.Where(property => property.GetCustomAttribute<JsonExtensionDataAttribute>() is null)
+			.Select(property => property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? property.Name)
+			.ToArray();
+		string[] responseFields = typeof(LocalizePageResponse)
+			.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+			.Select(property => property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? property.Name)
+			.ToArray();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([LocalizePageTool.ToolName]));
+
+		// Assert
+		result.Success.Should().BeTrue(because: "localize-page has a curated contract");
+		ToolContractDefinition contract = result.Tools!.Single();
+		boundArguments.Should().HaveCount(9, because: "an empty or partial reflected set would make the equivalence below vacuous");
+		contract.InputSchema.Properties.Select(property => property.Name).Should().BeEquivalentTo(boundArguments,
+			because: "the contract must advertise every argument the binder accepts and no other");
+		contract.InputSchema.Required.Should().BeEquivalentTo(["schema-name", "culture"],
+			because: "resources and caption are optional; omitting both is the report-only call");
+		contract.OutputContract.Fields.Select(field => field.Name).Should().BeEquivalentTo(responseFields,
+			because: "the contract must describe exactly the envelope the command returns, so CLI and MCP agree");
+		contract.Description.Should().Contain("get-guidance name=page-schema-resources",
+			because: "the contract carries the same guidance trigger as the tool description");
+		contract.Description.Should().Contain("Languages section",
+			because: "the absent-culture failure mode must be stated in the contract");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The sync-schemas contract states the SysCulture rule for localization maps: an absent culture fails before any save, an inactive one is written with a warning.")]
+	public void GetToolContract_ShouldStateCultureRule_WhenSyncSchemasRequested() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractDefinition contract = tool.GetToolContracts(new ToolContractGetArgs([SchemaSyncTool.ToolName])).Tools!.Single();
+		string operations = contract.InputSchema.Properties.Single(property => property.Name == "operations").Description;
+
+		// Assert
+		operations.Should().Contain("Languages section (SysCulture)",
+			because: "an agent must know that a culture has to exist before it is sent in title-localizations");
+		operations.Should().Contain("an inactive one is written with a warning",
+			because: "an inactive culture is accepted, which the agent must not read as a failure");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("A successful get-page envelope whose best-effort checksum probe returned nothing omits the `editable` key entirely, and the contract says so - an agent must read its absence as 'baseline unavailable', not as 'no editable schema exists' (PR #1351 review).")]
 	public void ToolContractGet_Should_Document_GetPage_Editable_As_Optional() {
 		// Arrange
@@ -1918,6 +1971,10 @@ public sealed class ToolContractGetToolTests {
 			because: "section-update should advertise icon-id as an optional mutable field");
 		contract.InputSchema.Properties.Should().Contain(field => field.Name == "icon-background",
 			because: "section-update should advertise icon-background as an optional mutable field");
+		contract.InputSchema.Properties.Should().Contain(field => field.Name == "caption-culture",
+			because: "TC-U-50: section-update should advertise caption-culture for writing the title in another language (ENG-90576 D11)");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "caption-culture-value",
+			because: "TC-U-50: section-update should return the stored caption in the requested culture");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "forbid-fields" &&
 				validator.Fields!.Contains("title-localizations"),

@@ -125,7 +125,11 @@ internal static class ApplicationToolResultMapper {
 				result.Section.SectionSchemaUId,
 				result.Section.IconId,
 				result.Section.IconBackground,
-				result.Section.ClientTypeId));
+				result.Section.ClientTypeId),
+			CaptionCulture: result.CaptionCulture,
+			CaptionCultureValue: result.CaptionCultureValue,
+			PreservedCultures: result.PreservedCultures,
+			Warnings: result.Warnings is { Count: > 0 } ? result.Warnings : null);
 	}
 
 	public static ApplicationSectionDeleteContextResponse Map(ApplicationSectionDeleteResult result) {

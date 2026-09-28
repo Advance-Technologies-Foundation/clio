@@ -9,6 +9,7 @@ using System.IO;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
+using Clio.Command.Localization;
 using Clio.Common;
 using Clio.Common.EntitySchema;
 using Clio.Package;
@@ -78,6 +79,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	private readonly IRuntimeEntitySchemaReader _runtimeEntitySchemaReader;
 	private readonly ILookupDefaultDisplayValueResolver _lookupDefaultDisplayValueResolver;
 	private readonly IEntitySchemaCaptionCultureResolver _captionCultureResolver;
+	private readonly ICultureAvailabilityGuard _cultureAvailabilityGuard;
 	private readonly IEntitySchemaDependencyResolver _dependencyResolver;
 	private readonly IEntitySchemaPublisher _entitySchemaPublisher;
 	private readonly ILogger _logger;
@@ -95,6 +97,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		_runtimeEntitySchemaReader = runtimeEntitySchemaReader;
 		_lookupDefaultDisplayValueResolver = columnResolvers.LookupDisplayValueResolver;
 		_captionCultureResolver = columnResolvers.CaptionCultureResolver;
+		_cultureAvailabilityGuard = columnResolvers.CultureAvailabilityGuard;
 		_dependencyResolver = dependencyResolver;
 		_entitySchemaPublisher = entitySchemaPublisher;
 		_logger = logger;
@@ -133,6 +136,9 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		foreach (ModifyEntitySchemaColumnOptions operation in operations) {
 			ApplyColumnMutation(schema, package, operation, effectiveCultureName, crossPackageNames);
 		}
+		// After the per-operation normalization (so its errors keep precedence) and before the save: the
+		// designer drops a caption in a culture the environment does not have and still answers success.
+		_cultureAvailabilityGuard.EnsureAvailable(GetWrittenCaptionCultures(operations, effectiveCultureName));
 
 		EntityDesignSchemaDto reloadedSchema = SaveAndReloadSchema(
 			schema, package, rootOperation, "columns were saved", ResolveODataContractImpact(operations));
@@ -206,6 +212,9 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		// primary-display-column-only invocation, which never made one.
 		IReadOnlyDictionary<string, string> requestedTitles = ApplySchemaCaption(schema, options,
 			() => _captionCultureResolver.ResolveEffectiveCulture(options, options.CaptionCulture));
+		// Every culture the caption is written in, scalar --title included; empty (no catalog read) when only
+		// non-caption properties change.
+		_cultureAvailabilityGuard.EnsureAvailable(requestedTitles.Keys);
 
 		// The primary-display column is a designer-level property; it appears nowhere in the OData contract,
 		// so setting it never needs the entities assembly rebuilt.
@@ -1799,6 +1808,32 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		return string.IsNullOrWhiteSpace(value) ? "<none>" : value;
 	}
 
+	/// <summary>
+	/// Lists the cultures a column batch stores caption/description values under: every key of the
+	/// localization maps, plus the effective culture wherever a scalar value is anchored to it (an added
+	/// column always gets a caption, defaulting to its name; a modify with a scalar title or description).
+	/// </summary>
+	private static IEnumerable<string> GetWrittenCaptionCultures(
+		IEnumerable<ModifyEntitySchemaColumnOptions> operations, string effectiveCultureName) {
+		HashSet<string> cultures = new(StringComparer.OrdinalIgnoreCase);
+		foreach (ModifyEntitySchemaColumnOptions operation in operations) {
+			EntitySchemaColumnAction action = NormalizeAction(operation.Action);
+			if (action == EntitySchemaColumnAction.Remove) {
+				continue;
+			}
+			cultures.UnionWith(operation.TitleLocalizations?.Keys ?? []);
+			cultures.UnionWith(operation.DescriptionLocalizations?.Keys ?? []);
+			bool anchorsScalarTitle = operation.TitleLocalizations is null
+				&& (action == EntitySchemaColumnAction.Add || !string.IsNullOrWhiteSpace(operation.Title));
+			bool anchorsScalarDescription = operation.DescriptionLocalizations is null
+				&& !string.IsNullOrWhiteSpace(operation.Description);
+			if (anchorsScalarTitle || anchorsScalarDescription) {
+				cultures.Add(effectiveCultureName);
+			}
+		}
+		return cultures;
+	}
+
 	private static string ResolveEffectiveTitle(string? title, string columnName) {
 		return string.IsNullOrWhiteSpace(title) ? columnName : title.Trim();
 	}
@@ -1814,7 +1849,8 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 internal sealed record EntitySchemaColumnResolvers(
 	IEntitySchemaDefaultValueSourceResolver DefaultValueSourceResolver,
 	ILookupDefaultDisplayValueResolver LookupDisplayValueResolver,
-	IEntitySchemaCaptionCultureResolver CaptionCultureResolver);
+	IEntitySchemaCaptionCultureResolver CaptionCultureResolver,
+	ICultureAvailabilityGuard CultureAvailabilityGuard);
 
 internal enum EntitySchemaColumnAction
 {
