@@ -99,22 +99,23 @@ Before creating a release tag, verify the following:
    - Заполните описание релиза
    - Нажмите "Publish release"
 
-### 3. Автоматическая публикация
+### 3. Automatic publishing
 
-После создания релиза автоматически запустится workflow `release-to-nuget`, который:
+Creating the release automatically starts the `release-to-nuget` workflow, which:
 
-1. ✅ **Извлечет версию** из тега (поддерживает форматы `8.0.1.43` и `v8.0.1.43`)
-2. ✅ **Проверит формат** версии (должен быть `X.Y.Z.W`)
+1. ✅ **Extracts the version** from the tag (accepts both `8.0.1.43` and `v8.0.1.43`)
+2. ✅ **Validates the version format** (must be `X.Y.Z.W`)
 3. ✅ **Checks that the `Build` workflow is green** for the tagged commit (it does not re-run the tests itself — see [Release test gate](#release-test-gate-and-integration-coverage))
-4. ✅ **Соберет пакет** clio с версией из тега
-5. ✅ **Опубликует в NuGet** автоматически
+4. ✅ **Packs** clio with the version from the tag
+5. ✅ **Publishes to NuGet** automatically
 
 #### Release test gate and integration coverage
 
 The release workflow (`.github/workflows/reliase-to-nuget.yml`) does not run `dotnet test`. It waits for the
 `Build` run (`build.yml`) of the tagged commit and publishes only when that run is green. Only a run started by a
-`push` to `master` counts: a `pull_request` run of the same SHA skips every build and test job, so it would look
-green with zero executed tests. The selection lives in `.github/scripts/Select-ReleaseBuildRun.ps1` and is covered
+`push` to `master` counts: such a run always executes every unit test shard, while a `pull_request` run of the same
+SHA runs only the jobs for the areas the PR changed (a docs-only PR runs no test job at all), so it can be green
+without having tested most of the code. The selection lives in `.github/scripts/Select-ReleaseBuildRun.ps1` and is covered
 by `clio.tests/ReleaseWorkflow/ReleaseBuildRunSelectorTests.cs`, which fails if the selector accepts a non-master
 or non-push run.
 

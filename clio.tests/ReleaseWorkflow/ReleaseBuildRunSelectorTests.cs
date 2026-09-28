@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Management.Automation;
 using System.Runtime.CompilerServices;
+using System.Text.RegularExpressions;
 using FluentAssertions;
 using NUnit.Framework;
 using YamlDotNet.Serialization;
@@ -15,9 +16,10 @@ namespace Clio.Tests.ReleaseWorkflow;
 /// <c>.github/workflows/reliase-to-nuget.yml</c>).
 /// </summary>
 /// <remarks>
-/// The release publishes when the chosen <c>Build</c> run is green. A <c>pull_request</c> run of the same SHA
-/// skips every build and test job, so if the selector ever accepts one again the release is gated on a run
-/// that executed no tests, and nothing else fails. The script runs in-process on hand-made runs.
+/// The release publishes when the chosen <c>Build</c> run is green. A master push run executes every unit test
+/// shard, while a <c>pull_request</c> run of the same SHA runs only the jobs for the areas the PR changed, so if
+/// the selector ever accepts one again the release can be gated on a run that skipped most tests, and nothing
+/// else fails. The script runs in-process on hand-made runs.
 /// </remarks>
 [TestFixture]
 [Category("Unit")]
@@ -41,6 +43,24 @@ internal sealed class ReleaseBuildRunSelectorTests {
 	private static readonly string ReleaseWorkflowPath =
 		Path.Combine(RepositoryRoot, ".github", "workflows", "reliase-to-nuget.yml");
 
+	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
+
+	private static readonly Regex SelectorScriptAssignment = new(
+		@"^\s*\$selectorScript\s*=.*[""']\.github\\scripts\\Select-ReleaseBuildRun\.ps1[""']\s*\)?\s*$",
+		RegexOptions.Multiline | RegexOptions.IgnoreCase, RegexTimeout);
+
+	private static readonly Regex SelectorCall = new(
+		@"^\s*\$latest\s*=\s*&\s*\$selectorScript\s+-WorkflowRuns\s+@\(\$response\.workflow_runs\)\s*$",
+		RegexOptions.Multiline | RegexOptions.IgnoreCase, RegexTimeout);
+
+	private static readonly Regex RunsReference = new(@"\$response\.workflow_runs", RegexOptions.IgnoreCase, RegexTimeout);
+
+	private static readonly Regex LatestAssignment = new(@"\$latest\s*[+\-*/]?=(?!=)", RegexOptions.IgnoreCase, RegexTimeout);
+
+	private static readonly Regex InlineFilter = new(
+		@"Where-Object|\.Where\s*\(|\|\s*(\?|where)\s*\{|ForEach-Object|\|\s*%\s*\{|\.ForEach\s*\(|\bforeach\s*\(|\.(event|head_branch|path)\b",
+		RegexOptions.IgnoreCase, RegexTimeout);
+
 	[Test]
 	[Description("A master push run of build.yml is selected.")]
 	public void Select_ShouldReturnRun_WhenItIsAMasterPushRunOfBuildWorkflow() {
@@ -56,7 +76,7 @@ internal sealed class ReleaseBuildRunSelectorTests {
 	}
 
 	[Test]
-	[Description("A build.yml run started by any event other than push is never selected, so a pull_request run that skipped every test job cannot satisfy the release gate.")]
+	[Description("A build.yml run started by any event other than push is never selected, so a pull_request run that ran only the jobs for the changed areas cannot satisfy the release gate.")]
 	[TestCase("pull_request")]
 	[TestCase("pull_request_target")]
 	[TestCase("workflow_dispatch")]
@@ -70,7 +90,7 @@ internal sealed class ReleaseBuildRunSelectorTests {
 
 		// Assert
 		selected.Should().BeNull(
-			because: $"a '{eventName}' run is not the master push run; accepting it would gate the release on a run that may have executed no tests");
+			because: $"a '{eventName}' run is not the master push run; accepting it would gate the release on a run that may have skipped most tests");
 	}
 
 	[Test]
@@ -137,19 +157,28 @@ internal sealed class ReleaseBuildRunSelectorTests {
 	}
 
 	[Test]
-	[Description("The release gate step delegates run selection to Select-ReleaseBuildRun.ps1 instead of filtering inline, so the selector tests cover what the release actually runs.")]
+	[Description("The release gate step delegates run selection to Select-ReleaseBuildRun.ps1 instead of filtering inline: the runs reach only the script call, $latest comes only from it, and no filtering construct touches the runs or the selected run, so the selector tests cover what the release actually runs.")]
 	public void ReleaseWorkflow_ShouldSelectBuildRunThroughTheTestedScript() {
 		// Arrange
 		string run = GetGateStepScript();
 
 		// Act
-		bool callsScript = run.Contains("Select-ReleaseBuildRun.ps1", StringComparison.Ordinal);
-		bool filtersInline = run.Contains("Where-Object", StringComparison.Ordinal);
+		bool resolvesScript = SelectorScriptAssignment.IsMatch(run);
+		int selectorCalls = SelectorCall.Count(run);
+		int runsReferences = RunsReference.Count(run);
+		int latestAssignments = LatestAssignment.Count(run);
+		string[] inlineFilters = InlineFilter.Matches(run).Select(match => match.Value).ToArray();
 
 		// Assert
-		callsScript.Should().BeTrue(because: "the gate must use the selector these tests cover");
-		filtersInline.Should().BeFalse(
-			because: "an inline filter next to the script call would bypass the tested selection and could widen it silently");
+		resolvesScript.Should().BeTrue(because: "$selectorScript must point at the selector these tests cover");
+		selectorCalls.Should().Be(1,
+			because: "$latest must be assigned from one call of the tested selector with $response.workflow_runs as its only input");
+		runsReferences.Should().Be(1,
+			because: "the runs must reach only the selector call; any other use of $response.workflow_runs could pick a run the selector did not choose");
+		latestAssignments.Should().Be(1,
+			because: "reassigning $latest after the selector call would replace the tested selection");
+		inlineFilters.Should().BeEmpty(
+			because: "a Where-Object/.Where()/?/where/ForEach-Object/foreach filter, or a check of path, event or head_branch next to the selector call, would bypass the tested selection and could widen it silently");
 	}
 
 	private static PSObject? Select(params PSObject[] runs) {

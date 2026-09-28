@@ -7,9 +7,10 @@
     GET /repos/{owner}/{repo}/actions/runs?head_sha=<sha>, returns the newest run of
     .github/workflows/build.yml that was started by a `push` to `master`, or nothing when there is none.
 
-    Only a master push run counts. A `pull_request` run for the same SHA skips every real build and
-    test job (they are gated on the event), so accepting one would let a green-looking run with zero
-    executed tests satisfy the release gate. A run from another branch did not test what master holds.
+    Only a master push run counts. A master push run of build.yml always executes every unit test
+    shard. A `pull_request` run for the same SHA runs only the jobs for the areas the PR changed (a
+    docs-only PR runs no test job at all), so accepting one could let a green run that skipped most
+    tests satisfy the release gate. A run from another branch did not test what master holds.
 
     The newest matching run is authoritative: a re-run supersedes an earlier failed attempt.
 
