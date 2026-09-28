@@ -34,12 +34,13 @@ internal static partial class CreatioResponseError {
 			|| error.ValueKind != JsonValueKind.Object) {
 			return null;
 		}
-		string code = ReadErrorCode(error);
+		string code = null;
 		string fact = null;
 		try {
+			code = ReadErrorCode(error);
 			fact = DescribeFirstStructuredFact(CollectErrorMessages(error));
 		} catch (RegexMatchTimeoutException) {
-			//A pattern that cannot finish in time has matched nothing; the code alone may still be reported.
+			//A pattern that cannot finish in time has matched nothing; whatever finished before it may still be reported.
 		}
 		if (code is null && fact is null) {
 			return null;
@@ -91,20 +92,37 @@ internal static partial class CreatioResponseError {
 			}
 			Match typeMismatch = OperandTypeMismatchPattern().Match(message);
 			if (typeMismatch.Success) {
-				return $"a filter compares a '{ShortTypeName(typeMismatch.Groups["left"].Value)}' column with a "
-					+ $"'{ShortTypeName(typeMismatch.Groups["right"].Value)}' value (operator "
-					+ $"'{typeMismatch.Groups["operator"].Value}'). odata-read sends a JSON number or boolean as is, "
-					+ "but every JSON string as a quoted string literal - except a GUID on a field whose name ends in "
-					+ "'Id' after a lowercase letter or digit - so a date column, or a GUID column such as UId, cannot "
-					+ "be compared with a string value here; read that filter with execute-esq instead.";
+				return DescribeOperandTypeMismatch(typeMismatch.Groups["left"].Value,
+					typeMismatch.Groups["right"].Value, typeMismatch.Groups["operator"].Value);
 			}
 			if (NullPropertyArgumentPattern().IsMatch(message)) {
 				return "Creatio could not resolve a property while building the response (a null 'property' "
-					+ "argument). This is how selecting a binary (Edm.Stream) column such as SysSchema.MetaData is "
-					+ "answered: remove such columns from select.";
+					+ "argument). One measured cause is a binary (Edm.Stream) column in select; if select names "
+					+ "one, remove it.";
 			}
 		}
 		return null;
+	}
+
+	/// <summary>
+	/// Column types odata-read cannot compare with any value it sends: a JSON string always goes out as a
+	/// quoted string literal, and these types need a typed literal instead.
+	/// </summary>
+	private static readonly HashSet<string> TypesThatNeedATypedLiteral = new(StringComparer.Ordinal) {
+		"Edm.Date", "Edm.DateTimeOffset", "Edm.Duration", "Edm.Guid", "Edm.TimeOfDay"
+	};
+
+	/// <summary>
+	/// Names both operand types and the operator. Only a date, time or GUID column compared with a string
+	/// is pointed at execute-esq: every other pair is fixed inside odata-read by sending the JSON value as
+	/// the type of the column.
+	/// </summary>
+	private static string DescribeOperandTypeMismatch(string left, string right, string operatorKind) {
+		string fact = $"a filter compares a '{left}' column with a '{right}' value (operator '{operatorKind}').";
+		return right == "Edm.String" && TypesThatNeedATypedLiteral.Contains(left)
+			? $"{fact} odata-read sends a JSON string as a quoted string literal, so this column cannot be "
+				+ "compared with a string value here; read that filter with execute-esq instead."
+			: $"{fact} Send the filter value as the JSON type of that column (a number, a boolean or a string).";
 	}
 
 	/// <summary>
@@ -121,7 +139,7 @@ internal static partial class CreatioResponseError {
 	}
 
 	/// <summary>An <c>error.code</c> that may be echoed: short, and enum-like by its alphabet.</summary>
-	[GeneratedRegex(@"^[A-Za-z0-9_.:-]{1,64}$", RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
+	[GeneratedRegex(@"^[A-Za-z0-9_.:-]{1,64}\z", RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex ErrorCodePattern();
 
 	/// <summary>
@@ -139,17 +157,17 @@ internal static partial class CreatioResponseError {
 	/// filter on a raw foreign-key column, two levels down under innererror/internalexception.
 	/// </summary>
 	[GeneratedRegex(
-		@"Column by path (?<path>[A-Za-z_][A-Za-z0-9_]{0,127}(?:[./][A-Za-z_][A-Za-z0-9_]{0,127}){0,7}) not found in schema (?<schema>[A-Za-z_][A-Za-z0-9_]{0,127})\.",
+		@"Column by path (?<path>[A-Za-z_][A-Za-z0-9_]{0,63}(?:[./][A-Za-z_][A-Za-z0-9_]{0,63}){0,3}) not found in schema (?<schema>[A-Za-z_][A-Za-z0-9_]{0,63})\.",
 		RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex ColumnPathNotFoundPattern();
 
 	/// <summary>
 	/// "A binary operator with incompatible types was detected. Found operand types 'Edm.DateTimeOffset' and
 	/// 'Edm.String' for operator kind 'GreaterThan'." - measured for a date and for a UId compared with a
-	/// string literal.
+	/// string literal. Both operands are one-segment Edm primitive names, the only shape measured.
 	/// </summary>
 	[GeneratedRegex(
-		@"Found operand types '(?<left>[A-Za-z_][A-Za-z0-9_]{0,63}(?:\.[A-Za-z_][A-Za-z0-9_]{0,63}){0,7})' and '(?<right>[A-Za-z_][A-Za-z0-9_]{0,63}(?:\.[A-Za-z_][A-Za-z0-9_]{0,63}){0,7})' for operator kind '(?<operator>[A-Za-z]{1,32})'",
+		@"Found operand types '(?<left>Edm\.[A-Za-z][A-Za-z0-9]{0,31})' and '(?<right>Edm\.[A-Za-z][A-Za-z0-9]{0,31})' for operator kind '(?<operator>[A-Za-z]{1,32})'",
 		RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex OperandTypeMismatchPattern();
 
@@ -158,7 +176,7 @@ internal static partial class CreatioResponseError {
 	/// 500, headline "An error has occurred.") for a $select naming the binary column SysSchema.MetaData.
 	/// Anchored at both ends so only that exact message counts.
 	/// </summary>
-	[GeneratedRegex(@"^Value cannot be null\.\s{1,4}Parameter name: property\s{0,4}$",
+	[GeneratedRegex(@"^Value cannot be null\.\s{1,4}Parameter name: property\s{0,4}\z",
 		RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex NullPropertyArgumentPattern();
 
