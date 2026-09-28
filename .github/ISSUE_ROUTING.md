@@ -24,8 +24,14 @@ New issues are labelled and assigned from the **Component** dropdown in the issu
 5. **An owner cannot be assigned** (not a collaborator, no access) → warning in the run log,
    the component label is still added, plus `needs-triage`. The run never fails because of routing;
    only an invalid `component-owners.json` fails it.
-6. **Edit** that changes the component → the old component's label is replaced by the new one and
-   `needs-triage` is removed once a component resolves. Title-only edits are ignored.
+6. **Edit** of the body:
+   - the component did **not** change (text edits, same choice) → nothing happens, so a label or
+     owner a human removed is not re-applied;
+   - the component changed → every other component label is removed and the new one is added;
+     `needs-triage` is removed once a component resolves, or added when the choice becomes
+     "Other / not sure". An owner is assigned only if the issue has no assignee.
+   Title-only edits are ignored. The run re-reads the live issue before planning, because the
+   event payload can be older than the previous run's changes.
 
 Rules that protect manual work:
 
@@ -33,8 +39,9 @@ Rules that protect manual work:
   claimed issue is a human decision.
 - Only one owner is assigned. The `claim-clio-issue` skill uses the assignee as the claim signal
   and stops on multiple assignees; the auto-assigned owner is exactly the person who then claims it.
-- A component label a human added by hand is never removed; only the label that came from the
-  previous form choice is.
+- Component labels are only touched on `opened` and when an edit changes the component. After such
+  a change the form choice is authoritative: the issue carries exactly the chosen component label.
+  Non-component labels are never removed.
 - Missing labels are created with the `color`/`description` from the map.
 
 ## Updating the map

@@ -11,8 +11,12 @@ const fs = require('fs');
 // What GitHub writes into the body for an optional field the author left empty.
 const NO_RESPONSE = '_No response_';
 
-const HEADING = /^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$/;
-const CHECKBOX = /^\s*[-*]\s+\[([ xX])\]\s+(.+?)\s*$/;
+// The body is attacker-controlled (up to 65,536 chars). Patterns are kept free of overlapping
+// quantifiers, trimming is done with string methods, and over-long lines are never treated as
+// headings or checkboxes, so matching stays linear.
+const MAX_STRUCTURAL_LINE = 1000;
+const HEADING = /^ {0,3}#{1,6}[ \t]+(.*)$/;
+const CHECKBOX = /^[-*][ \t]+\[([ xX])\][ \t]+(.*)$/;
 const LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
 
 function normalize(text) {
@@ -24,6 +28,17 @@ function normalize(text) {
  * case-insensitively; the FIRST occurrence wins, so a heading the author typed inside a later
  * textarea cannot override a form field that appears earlier in the form.
  */
+function headingText(line) {
+  if (line.length > MAX_STRUCTURAL_LINE) return null;
+  const match = HEADING.exec(line);
+  if (!match) return null;
+  let text = match[1].trimEnd();
+  // ATX closing sequence: "### Component ###".
+  const unclosed = text.replace(/#+$/, '');
+  if (unclosed !== text && (unclosed === '' || /\s$/.test(unclosed))) text = unclosed.trimEnd();
+  return text || null;
+}
+
 function parseIssueFormSections(body) {
   const sections = new Map();
   let current = null;
@@ -34,10 +49,10 @@ function parseIssueFormSections(body) {
     }
   };
   for (const line of String(body ?? '').split(/\r?\n/)) {
-    const match = HEADING.exec(line);
-    if (match) {
+    const heading = headingText(line);
+    if (heading !== null) {
       flush();
-      current = normalize(match[1]);
+      current = normalize(heading);
       buffer = [];
     } else if (current !== null) {
       buffer.push(line);
@@ -59,9 +74,9 @@ function extractFieldValues(body, fieldLabel) {
     return [];
   }
   const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
-  const checkboxes = lines.map(l => CHECKBOX.exec(l)).filter(Boolean);
+  const checkboxes = lines.map(l => (l.length > MAX_STRUCTURAL_LINE ? null : CHECKBOX.exec(l))).filter(Boolean);
   if (checkboxes.length > 0) {
-    return checkboxes.filter(m => m[1] !== ' ').map(m => m[2]);
+    return checkboxes.filter(m => m[1] !== ' ').map(m => m[2].trim()).filter(Boolean);
   }
   const value = lines.filter(l => l !== NO_RESPONSE).join(' ').trim();
   return value ? [value] : [];
@@ -146,62 +161,68 @@ function classify(body, config) {
   return { status: 'unknown', values, component: null };
 }
 
+function routingKey(result) {
+  return result.component ? `component:${result.component.id}` : 'unrouted';
+}
+
 /**
  * Computes the label and assignee changes for one event. Pure: no API calls.
  *
- * Only labels this workflow owns are touched, and only when the form choice itself changed:
- * - `previousBody` (from `changes.body.from` on an edit) tells which component label came from the
- *   old choice; a component label a human added by hand is never removed.
- * - The triage label is added only while the issue carries no component label at all.
+ * - `previousBody` is `changes.body.from` of an `edited` event, `undefined` for `opened`. An edit
+ *   that does not change the routing (same component, or still unrouted) is a no-op, so a text
+ *   edit never re-adds a label or an owner a human removed.
+ * - When the component changes, the form choice is authoritative for component labels: every
+ *   other component label is removed, whatever put it there. Using the CURRENT labels instead of
+ *   only the previous choice keeps this right when GitHub collapsed queued runs of several edits.
+ * - On `opened`, the triage label is added only while the issue has no component label.
  * - Owners are proposed only when the issue has NO assignee. An assignee is the claim signal of
- *   the clio-issue-workflow skill, so an existing one (human or earlier routing) is never changed.
+ *   the claim-clio-issue skill, so an existing one (human or earlier routing) is never changed.
  */
 function planRouting({ body, previousBody, currentLabels = [], currentAssignees = [], config }) {
   const current = classify(body, config);
-  const previous = previousBody === undefined ? null : classify(previousBody, config);
-  const has = new Set(currentLabels.map(normalize));
-  const componentLabels = new Set(config.components.filter(c => c.label).map(c => normalize(c.label)));
-  const triage = config.triageLabel.name;
-
-  const add = [];
-  const remove = [];
-  const result = new Set(has);
-
-  const previousComponent = previous?.component ?? null;
-  if (previousComponent && previousComponent.id !== current.component?.id && has.has(normalize(previousComponent.label))) {
-    remove.push(previousComponent.label);
-    result.delete(normalize(previousComponent.label));
-  }
-
-  if (current.status === 'resolved') {
-    if (!result.has(normalize(current.component.label))) {
-      add.push(current.component.label);
-      result.add(normalize(current.component.label));
-    }
-    if (result.has(normalize(triage))) {
-      remove.push(triage);
-      result.delete(normalize(triage));
-    }
-  } else {
-    const hasComponentLabel = [...result].some(l => componentLabels.has(l));
-    if (!hasComponentLabel && !result.has(normalize(triage))) {
-      add.push(triage);
-    }
-  }
-
-  const owners = current.status === 'resolved' && currentAssignees.length === 0
-    ? current.component.owners.map(o => String(o).replace(/^@/, ''))
-    : [];
-
-  return {
+  const base = {
     status: current.status,
     values: current.values,
     component: current.component,
-    labelsToAdd: add,
-    labelsToRemove: remove,
-    ownerCandidates: owners,
+    labelsToAdd: [],
+    labelsToRemove: [],
+    ownerCandidates: [],
     alreadyAssigned: currentAssignees.length > 0,
+    unchanged: false,
   };
+  const isEdit = previousBody !== undefined;
+  if (isEdit && routingKey(classify(previousBody, config)) === routingKey(current)) {
+    return { ...base, unchanged: true };
+  }
+
+  const present = new Map(currentLabels.map(l => [normalize(l), l]));
+  const triage = config.triageLabel.name;
+  const componentLabels = config.components.filter(c => c.label).map(c => c.label);
+  const chosen = current.status === 'resolved' ? current.component.label : null;
+
+  const add = [];
+  const remove = [];
+  if (isEdit || chosen) {
+    for (const label of componentLabels) {
+      if (normalize(label) !== normalize(chosen) && present.has(normalize(label))) {
+        remove.push(present.get(normalize(label)));
+      }
+    }
+  }
+  const keptComponentLabel = componentLabels.some(l => present.has(normalize(l)) && !remove.includes(present.get(normalize(l))));
+
+  if (chosen) {
+    if (!present.has(normalize(chosen))) add.push(chosen);
+    if (present.has(normalize(triage))) remove.push(present.get(normalize(triage)));
+  } else if (!keptComponentLabel && !present.has(normalize(triage))) {
+    add.push(triage);
+  }
+
+  const owners = chosen && currentAssignees.length === 0
+    ? current.component.owners.map(o => String(o).replace(/^@/, ''))
+    : [];
+
+  return { ...base, labelsToAdd: add, labelsToRemove: remove, ownerCandidates: owners };
 }
 
 function labelSpec(name, config) {
@@ -275,15 +296,28 @@ async function run({ github, context, core, configPath }) {
 
   const config = loadConfig(configPath);
   const repo = context.repo;
+  // The payload is a snapshot from when the event fired; an earlier run for the same issue may have
+  // changed labels/assignees since. Plan from the live issue, or a quick open-then-edit ends with
+  // two component labels and two assignees.
+  let live = issue;
+  try {
+    ({ data: live } = await github.rest.issues.get({ ...repo, issue_number: issue.number }));
+  } catch (error) {
+    core.warning(`Could not re-read issue #${issue.number}, using the event payload: ${error.message}`);
+  }
   const plan = planRouting({
-    body: issue.body,
-    previousBody: payload.action === 'edited' ? payload.changes.body.from : undefined,
-    currentLabels: (issue.labels || []).map(l => (typeof l === 'string' ? l : l.name)),
-    currentAssignees: (issue.assignees || []).map(a => a.login),
+    body: live.body,
+    previousBody: payload.action === 'edited' ? payload.changes.body.from ?? '' : undefined,
+    currentLabels: (live.labels || []).map(l => (typeof l === 'string' ? l : l.name)),
+    currentAssignees: (live.assignees || []).map(a => a.login),
     config,
   });
 
   core.info(`Issue #${issue.number}: component field = ${JSON.stringify(plan.values)} -> ${plan.status}${plan.component ? ` (${plan.component.id})` : ''}`);
+  if (plan.unchanged) {
+    core.info('The edit did not change the component; leaving labels and assignees as they are.');
+    return;
+  }
   if (plan.status === 'unknown') {
     core.warning(`Component value ${JSON.stringify(plan.values)} is not in .github/component-owners.json; the issue form and the map are out of sync.`);
   }
