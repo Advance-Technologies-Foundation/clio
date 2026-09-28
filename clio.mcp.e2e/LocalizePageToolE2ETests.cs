@@ -95,6 +95,47 @@ public sealed class LocalizePageToolE2ETests : McpContractFixtureBase {
 
 	[Category("McpE2E.Sandbox")]
 	[Test]
+	[Description("Blank input is refused by the real MCP tool before anything is read or saved: an empty or whitespace-only resource value, and a whitespace-only caption.")]
+	[AllureTag(ToolName)]
+	[AllureName("localize-page refuses blank values without saving")]
+	[AllureDescription("Calls localize-page on the seeded page ClioMcp_BlankPageToSave for es-ES with a resources map holding an empty and a whitespace-only value, then with a whitespace-only caption, and asserts success:false, saved:false and an error that names the blank input. The input is rejected before the page is read, so the page is never written.")]
+	public async Task LocalizePage_Should_Refuse_Blank_Values_Without_Saving() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ReachableSandboxEnvironment.ResolveOrIgnoreAsync(
+			settings, "localize-page MCP E2E requires a reachable sandbox environment.");
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
+
+		// Act
+		LocalizePageResponse blankResources = await LocalizeAsync(context, SeededPage, "es-ES", environmentName,
+			resources: "{\"UsrE2eEmpty_caption\":\"\",\"UsrE2eSpaces_caption\":\"   \"}");
+
+		// Assert
+		AllureApi.Step("Blank resource values are refused and named", () => {
+			blankResources.Success.Should().BeFalse(because: "a blank value is not a translation");
+			blankResources.Saved.Should().BeFalse(because: "nothing is saved for an invalid resources map");
+			blankResources.Error.Should().Contain("empty or whitespace-only value",
+					because: "the blank-value check rejects the map, not the unknown-key check")
+				.And.Contain("UsrE2eEmpty_caption", because: "the empty value is named")
+				.And.Contain("UsrE2eSpaces_caption", because: "the whitespace-only value is named")
+				.And.NotContain("Unknown resource key", because: "blank input is refused before the page is read");
+		});
+		// A regression of the caption check would write the seeded page, whose checksum other fixtures rely on.
+		if (!settings.AllowDestructiveMcpTests) {
+			return;
+		}
+		LocalizePageResponse blankCaption = await LocalizeAsync(context, SeededPage, "es-ES", environmentName,
+			caption: "   ");
+		AllureApi.Step("A whitespace-only caption is refused", () => {
+			blankCaption.Success.Should().BeFalse(because: "a blank title is not a translation");
+			blankCaption.Saved.Should().BeFalse(because: "nothing is saved for a blank title");
+			blankCaption.Error.Should().Contain("whitespace-only", because: "the caller is told what is wrong");
+		});
+	}
+
+	[Category("McpE2E.Sandbox")]
+	[Test]
 	[Description("TC-E2E-05, 01, 02, 03, 04 in order on a fresh page: report-only lists the untranslated key; es-ES is written with en-US unchanged; the identical re-run does not save; de-DE keeps es-ES; an absent culture fails with the Languages-section message.")]
 	[AllureTag(ToolName)]
 	[AllureName("localize-page writes one culture at a time and keeps the others")]

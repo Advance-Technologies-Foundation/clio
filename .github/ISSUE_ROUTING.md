@@ -78,11 +78,14 @@ Rules that protect manual work:
   the default; a component's own `ownerNotification` overrides it.
 - **Labels** must start with `componentLabelPrefix`. Renaming one leaves the old label on older
   issues; relabel them by hand.
-- `paths` is informational (which code the component covers); nothing reads it yet.
+- `paths` is informational (which code the component covers, `*` allowed); nothing reads it yet.
 - Run `make test-issue-routing` (or `node --test .github/scripts/issue-routing/issue-routing.test.js`).
 
-The initial owners were taken from recent commit history per area and should be confirmed by the
-maintainers.
+The baseline owners (2026-09) come from one year of `master` history: commits to each group's MCP
+tool files and to the commands and services behind them, excluding bulk refactors (commits touching
+more than 40 files). The first owner is the domain author where one stands out; otherwise the most
+active maintainer. Commit share shows who wrote the code, not who maintains it now, so teams are
+expected to correct the list. `paths` may use `*` wildcards; they document scope only.
 
 ## Why a separate map and not CODEOWNERS
 
