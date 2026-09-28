@@ -14,7 +14,7 @@ internal sealed record TitleLocalizationNormalizationResult(
 
 internal static class EntitySchemaDesignerSupport
 {
-	internal const string DefaultCultureName = "en-US";
+	internal const string DefaultCultureName = ResourceStringHelper.DefaultCultureName;
 	internal const string EntitySchemaManagerName = "EntitySchemaManager";
 	private const string BinaryTypeName = "binary";
 	private const string DateTimeTypeName = "datetime";

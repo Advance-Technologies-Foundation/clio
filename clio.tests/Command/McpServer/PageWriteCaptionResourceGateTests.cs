@@ -160,6 +160,8 @@ public sealed class PageWriteCaptionResourceGateTests {
 		applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(callInfo => "http://test" + callInfo.Arg<string>());
+		serviceUrlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>())
+			.Returns(ci => serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoutes[ci.Arg<ServiceUrlBuilder.KnownRoute>()]));
 		applicationClient.ExecutePostRequest(
 				Arg.Is<string>(url => url.Contains("SelectQuery")),
 				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())

@@ -1,0 +1,51 @@
+# Routes issues to a component label and owner.
+#
+# Source of the mapping: .github/component-owners.json (component -> label, owners). The issue forms
+# in .github/ISSUE_TEMPLATE/*.yml offer the same components in their "Component" dropdown. How to
+# add a component or change an owner: .github/ISSUE_ROUTING.md.
+#
+# CODEOWNERS is deliberately NOT the source: an issue has no changed files to match against path
+# patterns, and issue components are coarser than paths. `paths` in the map is informational.
+#
+# Safety:
+# - The issue body is attacker-controlled text. It is read only by the JavaScript below, from the
+#   event payload; it is never interpolated with `${{ }}` into a script or shell.
+# - `issues` events run the workflow file and the checked-out code from the DEFAULT branch, so an
+#   issue author cannot change what runs.
+# - Routing failures (owner not assignable, API error) are logged as warnings; they never fail the
+#   run. Only a malformed component-owners.json fails it, so the misconfiguration is visible.
+name: Issue routing
+
+on:
+  issues:
+    types: [opened, edited]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: issue-routing-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  route:
+    name: Route by component
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # SHA-pinned, not tag-pinned: this job carries an `issues: write` token.
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          sparse-checkout: |
+            .github/component-owners.json
+            .github/scripts/issue-routing
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Apply component label and owner
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const routing = require('./.github/scripts/issue-routing/issue-routing.js');
+            await routing.run({ github, context, core, configPath: '.github/component-owners.json' });
