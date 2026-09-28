@@ -1,0 +1,46 @@
+# Component options must match "option" values in .github/component-owners.json exactly;
+# .github/scripts/issue-routing/issue-routing.test.js enforces it.
+name: Feature request
+description: Propose new functionality or an improvement.
+labels: ["functionality"]
+body:
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: >-
+        Which part of clio is affected? This routes the issue to its owner
+        (see .github/component-owners.json). Pick "Other / not sure" if unsure.
+      options:
+        - "MCP server (tools, prompts, resources, clio-run)"
+        - "MCP guidance articles (get-guidance)"
+        - "Business processes / Process Builder"
+        - "Applications, sections and pages"
+        - "Packages (push-pkg, compress, lock/unlock, dependencies)"
+        - "Creatio installation and local environments"
+        - "Workspaces"
+        - "Data, queries and model generation"
+        - "cliogate package"
+        - "ClioRing desktop companion"
+        - "CLI core (settings, authentication, command parsing)"
+        - "Documentation and command help"
+        - "Other / not sure"
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, and what gets in the way today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered

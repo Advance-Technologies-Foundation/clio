@@ -1,0 +1,176 @@
+{
+  "$comment": "Issue routing map: component -> label + owners. Read by .github/workflows/issue-routing.yml. See .github/ISSUE_ROUTING.md before editing.",
+  "fieldLabel": "Component",
+  "componentLabelPrefix": "component:",
+  "ownerNotification": "assign",
+  "triageLabel": {
+    "name": "needs-triage",
+    "color": "d4c5f9",
+    "description": "No component was selected or it could not be routed to an owner"
+  },
+  "components": [
+    {
+      "id": "mcp-server",
+      "option": "MCP server (tools, prompts, resources, clio-run)",
+      "label": "component:mcp-server",
+      "color": "c5def5",
+      "description": "clio MCP server surface",
+      "owners": [
+        "Alexandr-Kravchuk",
+        "d-krestov"
+      ],
+      "paths": [
+        "clio/Command/McpServer/",
+        "clio.mcp.e2e/"
+      ]
+    },
+    {
+      "id": "guidance",
+      "option": "MCP guidance articles (get-guidance)",
+      "label": "component:guidance",
+      "color": "c5def5",
+      "description": "Agent guidance published from clio-knowledge",
+      "owners": [
+        "kirillkrylov"
+      ],
+      "paths": [
+        "clio/Command/McpServer/Knowledge/"
+      ]
+    },
+    {
+      "id": "process-builder",
+      "option": "Business processes / Process Builder",
+      "label": "component:process-builder",
+      "color": "c5def5",
+      "description": "Business process model, CrtProcessBuilder package",
+      "owners": [
+        "d-krestov"
+      ],
+      "paths": [
+        "clio/Command/ProcessModel/",
+        "clio/CrtProcessBuilder/"
+      ]
+    },
+    {
+      "id": "application",
+      "option": "Applications, sections and pages",
+      "label": "component:application",
+      "color": "c5def5",
+      "description": "Application, section and page commands",
+      "owners": [],
+      "paths": [
+        "clio/Command/ApplicationCommand/"
+      ]
+    },
+    {
+      "id": "package",
+      "option": "Packages (push-pkg, compress, lock/unlock, dependencies)",
+      "label": "component:package",
+      "color": "c5def5",
+      "description": "Package management commands",
+      "owners": [
+        "Alexandr-Kravchuk"
+      ],
+      "paths": [
+        "clio/Package/"
+      ]
+    },
+    {
+      "id": "install",
+      "option": "Creatio installation and local environments",
+      "label": "component:install",
+      "color": "c5def5",
+      "description": "deploy-creatio, local infrastructure, environment setup",
+      "owners": [
+        "kirillkrylov"
+      ],
+      "paths": [
+        "clio/Command/CreatioInstallCommand/"
+      ]
+    },
+    {
+      "id": "workspace",
+      "option": "Workspaces",
+      "label": "component:workspace",
+      "color": "c5def5",
+      "description": "Workspace commands and templates",
+      "owners": [],
+      "paths": [
+        "clio/Workspace/",
+        "clio/Workspaces/",
+        "clio/tpl/"
+      ]
+    },
+    {
+      "id": "data",
+      "option": "Data, queries and model generation",
+      "label": "component:data",
+      "color": "c5def5",
+      "description": "Data commands, queries, ModelBuilder",
+      "owners": [],
+      "paths": [
+        "clio/Query/",
+        "clio/ModelBuilder/"
+      ]
+    },
+    {
+      "id": "cliogate",
+      "option": "cliogate package",
+      "label": "component:cliogate",
+      "color": "c5def5",
+      "description": "ClioGate Creatio package",
+      "owners": [
+        "kirillkrylov"
+      ],
+      "paths": [
+        "cliogate/",
+        "clio/cliogate/"
+      ]
+    },
+    {
+      "id": "clio-ring",
+      "option": "ClioRing desktop companion",
+      "label": "component:clio-ring",
+      "color": "c5def5",
+      "description": "ClioRing internal preview",
+      "owners": [
+        "kirillkrylov"
+      ],
+      "paths": [
+        "clio-ring/"
+      ]
+    },
+    {
+      "id": "cli-core",
+      "option": "CLI core (settings, authentication, command parsing)",
+      "label": "component:cli-core",
+      "color": "c5def5",
+      "description": "Environment settings, auth, parser, DI",
+      "owners": [],
+      "paths": [
+        "clio/Common/",
+        "clio/Environment/",
+        "clio/Program.cs",
+        "clio/BindingsModule.cs"
+      ]
+    },
+    {
+      "id": "docs",
+      "option": "Documentation and command help",
+      "label": "component:docs",
+      "color": "c5def5",
+      "description": "Commands.md, help/en, docs/commands",
+      "owners": [],
+      "paths": [
+        "clio/Commands.md",
+        "clio/help/",
+        "clio/docs/"
+      ]
+    },
+    {
+      "id": "other",
+      "option": "Other / not sure",
+      "triage": true
+    }
+  ]
+}
