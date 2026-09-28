@@ -52,6 +52,8 @@ jobs:
               - '.github/workflows/build.yml'
               - '.github/scripts/*TestShard*.ps1'
               - '.github/scripts/Select-McpE2eTestFilter.ps1'
+              - '.github/scripts/Select-ReleaseBuildRun.ps1'
+              - '.github/workflows/reliase-to-nuget.yml'
               - 'clio.tests/**'
               - 'Creatio.ConflictResolver.Tests/**'
               - 'clio.mcp.e2e/**'
