@@ -50,6 +50,12 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 			_logger.WriteError("Error: --entity-schema-name is required.");
 			return 1;
 		}
+		if (!ObjectRightsSupport.TryNormalizeSchemaName(options.EntitySchemaName, out string schemaName)) {
+			_logger.WriteError($"Error: --entity-schema-name '{options.EntitySchemaName}' is not a schema name (letters, "
+				+ "digits and '_' only).");
+			return 1;
+		}
+		options.EntitySchemaName = schemaName;
 		if (!TryParseGranteeFilter(options.Grantee, out Guid? granteeFilter)) {
 			_logger.WriteError("Error: --grantee must be a SysAdminUnit id (GUID).");
 			return 1;
@@ -134,10 +140,15 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 
 	private void ReportObject(string schemaName, ObjectRightsInfo info, Guid? granteeFilter) {
 		if (granteeFilter is not null) {
-			RoleOperationRights row = info.Roles.FirstOrDefault(role => role.GranteeId == granteeFilter.Value);
-			_logger.WriteInfo(row is null
-				? $"  {schemaName}: grantee {granteeFilter} has NO object operations granted."
-				: $"  {schemaName}: {Describe(row)}.");
+			// A grantee can hold several rows; report what they add up to, as set-object-rights previews it.
+			RoleOperationRights[] rows = info.Roles.Where(role => role.GranteeId == granteeFilter.Value).ToArray();
+			if (rows.Length == 0) {
+				_logger.WriteInfo($"  {schemaName}: grantee {granteeFilter} has NO object operations granted.");
+				return;
+			}
+			IReadOnlyList<string> held = ObjectRightsSupport.HeldOperations(rows);
+			string granted = held.Count == 0 ? "no operations" : string.Join("/", held);
+			_logger.WriteInfo($"  {schemaName}: {rows[0].GranteeName} ({granteeFilter.Value}): {granted}.");
 			return;
 		}
 		if (!info.Roles.Any()) {

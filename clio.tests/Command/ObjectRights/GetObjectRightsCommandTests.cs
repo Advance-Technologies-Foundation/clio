@@ -318,4 +318,37 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 				+ "external users reach it only through an explicit grant."
 		}, because: "the output is the facts, one line per object, and nothing more");
 	}
+
+	// ---- Review round 6 ----
+
+	[Test]
+	[Description("With --grantee, a grantee holding several rows is reported with the union of their operations.")]
+	public void Execute_ShouldReportUnionOfRows_WhenGranteeHasDuplicateRows() {
+		// Arrange
+		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>())
+			.Returns(Administered("UsrOrder", RoleRow(false, false, false, false), RoleRow(true, false, true, false)));
+		GetObjectRightsOptions options = new() { EntitySchemaName = "UsrOrder", Grantee = Role.ToString() };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "the read succeeded");
+		_logger.Received().WriteInfo(Arg.Is<string>(m => m.Contains("UsrOrder: Sales managers") && m.Contains("read/edit")));
+	}
+
+	[TestCase("Usr Order")]
+	[TestCase("UsrOrder;")]
+	[Description("A name that is not a schema identifier is refused before anything is read.")]
+	public void Execute_ShouldRefuse_WhenNameIsNotAnIdentifier(string name) {
+		// Arrange
+		GetObjectRightsOptions options = new() { EntitySchemaName = name };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "only a plain schema identifier can name an object");
+		_rightsReader.DidNotReceiveWithAnyArgs().GetObjectRights(default, default);
+	}
 }

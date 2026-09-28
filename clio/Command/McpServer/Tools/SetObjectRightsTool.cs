@@ -39,7 +39,7 @@ public sealed class SetObjectRightsTool(
 		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
 	[Description("Grant or revoke OBJECT operation permissions (read/create/edit/delete) for one role on an object — the SysSchemaOperationRight / \"Object permissions\" layer (DESTRUCTIVE — changes access rights). " +
-		"Object-level analog of set-record-rights, and works for ANY role. Grants turn on the object's operation permissions when needed. " +
+		"Object-level analog of set-record-rights, and works for ANY role. Grants turn on the object's operation permissions when needed; the same save adds an All employees read/create/edit/delete row when the object has none, so internal users keep access. " +
 		"grantee is a SysAdminUnit id (roles/users; names are not unique). " +
 		"operations defaults to read/create/edit on the root object (delete not granted by default); revoke=true removes them (a role left with none is removed). " +
 		"include-connected also applies to the root object's own lookup objects (security/system objects such as SysAdminUnit are skipped), which get connected-operations (default read only); on revoke the lookups are touched only when connected-operations is given. Fails without writing if the lookups cannot be enumerated. Does NOT change column permissions. Read it back with get-object-rights. " +
@@ -138,7 +138,7 @@ public sealed record SetObjectRightsArgs(
 	string ConfirmationCode = null,
 
 	[property: JsonPropertyName("allow-security-object")]
-	[property: Description("Allow granting create/edit/delete, or a revoke with disable-operation-permissions, when the ROOT object is a security or system object (SysAdmin*, SysUser*, SysSchema*, SysPackage*, SysSettings*, SysLic*, SysProcess*, Vw*, *Right/*Rights). Default false: such a root may only be granted read.")]
+	[property: Description("Allow granting create/edit/delete, or a revoke with disable-operation-permissions, when the ROOT object is a security or system object (" + ConnectedObjectsResolver.ExcludedFamiliesText + "). Default false: such a root may only be granted read.")]
 	bool? AllowSecurityObject = null
 ) {
 	/// <summary>Overflow bag for unknown JSON fields; a non-empty bag refuses the call before any write.</summary>

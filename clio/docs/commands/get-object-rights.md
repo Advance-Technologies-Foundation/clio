@@ -67,5 +67,9 @@ clio get-object-rights --entity-schema-name UsrOrder --grantee <role-id> --inclu
   System Designer "Object permissions" section uses). Read-only.
 - The schema name is resolved to its UId via a DataService `SelectQuery` over `SysSchema`.
 - Pair with `set-object-rights` to change the operations this command reports.
-- Exit code 1 when the named (root) object is not found or its rights cannot be read. A connected object
-  that cannot be read only warns.
+- Exit code 1 when the named (root) object is not found or its rights cannot be read, or when the name is not
+  a plain schema identifier (it is trimmed first). A connected object that cannot be read only warns.
+- With `--grantee`, a grantee holding several rows is reported with the union of their operations.
+- On MCP the call is a read bounded by the read-response deadline (120 s by default,
+  `CLIO_MCP_READ_DEADLINE_SECONDS`); `--include-connected` on an object with many lookups can reach it — read
+  the lookups one by one then.

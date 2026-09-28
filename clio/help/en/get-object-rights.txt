@@ -39,8 +39,8 @@ OPTIONS
 EXIT CODES
     0   The read ran; per-object facts are printed. Connected objects that could not be read are reported
         with a warning.
-    1   The entity schema name was missing, --grantee was not a GUID, the named (root) object was not
-        found, or its rights could not be read.
+    1   The entity schema name was missing or not a plain schema identifier, --grantee was not a GUID,
+        the named (root) object was not found, or its rights could not be read.
 
 EXAMPLES
     List every role's object permissions:

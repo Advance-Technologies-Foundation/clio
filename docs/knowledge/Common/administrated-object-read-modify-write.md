@@ -31,10 +31,12 @@ handles, none visible from the service signatures:
    `administratedByOperations=true`, and the server then adds an `All employees` row with
    read/create/edit/delete on its own. Observed on Creatio 8.3.4.2845 (.NET Framework, stand
    `kravchuk_0922`, 2026-09-25) for the root AND for every connected lookup the fan-out enabled, section
-   objects and plain dictionaries alike; not verified on other versions, so the client reads the object
-   back after enabling and `set-object-rights` fails when only the grantee holds rights afterwards
-   (unless the grantee is `All employees` itself). That failure comes AFTER the save, so the fan-out
-   still continues to the lookups rather than leaving the root granted and its lookups not.
+   objects and plain dictionaries alike; not verified on other versions. So the client does not rely on
+   it: the enabling save itself carries an `All employees` row with full rights when the object has none
+   (a no-op where the server adds it anyway), the object is read back, and `set-object-rights` fails when
+   `All employees` holds no read afterwards (unless the grantee is `All employees` itself). That failure
+   comes AFTER the save, so the fan-out still continues to the lookups rather than leaving the root
+   granted and its lookups not.
 
 3. **The save sends the collections it did NOT change as `null`** — `entitySchemaRecordDefRights`,
    `entitySchemaColumnsRights`, `entityOperationGrantees`. This mirrors the Freedom "Object permissions"

@@ -18,9 +18,11 @@ works for **any** role.
 It is a read-modify-write over the native `RightManagementService`: the object's per-role grid is read,
 the grantee's row is added/updated (or removed when a revoke empties it), and the object is saved.
 Granting to an object that does not yet use operation permissions **turns them on** — an access
-**narrowing** for every other role, which the confirmation and the result line both name. Creatio may also
-add an `All employees` row with read/create/edit/delete at that point (observed on Creatio 8.3.4 for the
-root and for connected lookups alike, not a documented contract); read the result back. It does **not** change column permissions.
+**narrowing** for every other role, which the confirmation and the result line both name. So internal users keep
+access, the same save adds an `All employees` row with read/create/edit/delete when the object has none (Creatio
+8.3.4 adds that row on its own too); an existing `All employees` row is left as it is. For exclusive access,
+revoke or narrow that row afterwards. The preview names the existing rows of other roles that become effective
+when operation permissions are turned on. It does **not** change column permissions.
 
 A revoke only ever narrows access. Removing an object's **last** rights row is the one case that would
 not: it turns operation permissions off, which makes the object available to **all internal users**. That
@@ -30,6 +32,10 @@ is refused unless `--disable-operation-permissions` asks for it explicitly.
 interactive run it asks for a `y/n` confirmation. `--preview` / `--confirmation-code` split it into a
 preview that writes nothing and a confirmed call bound to that preview — the only mode on MCP, where
 nobody can be prompted: a call without `confirm` is a preview, and `confirm=true` requires the code.
+`--preview`, `--confirm` and `--confirmation-code` are mutually exclusive; a matching `--confirmation-code`
+replaces the interactive prompt.
+
+The object name is trimmed and must be a plain schema identifier (letters, digits, `_`).
 
 ## Synopsis
 
@@ -138,9 +144,9 @@ clio set-object-rights --entity-schema-name UsrOrder --grantee <role-id> --opera
 - The grantee must exist in `SysAdminUnit`: an unknown id fails before anything is written, and the
   confirmation names the grantee by name.
 - When a grant turns operation permissions ON for an object, the object is read back and the result names
-  the roles that hold rights afterwards. If only the grantee does — every other internal user lost access —
-  the command fails (exit 1) and says the change is already saved; if the read-back fails, it warns. Granting
-  `All employees` itself is not such a failure.
+  the roles that hold rights afterwards. If `All employees` holds no read afterwards — internal users outside
+  the listed roles lost access — the command fails (exit 1) and says the change is already saved; if the
+  read-back fails, it warns. Granting `All employees` itself is not such a failure.
 - With `--include-connected` a call makes several sequential round-trips per object and can take minutes
   (the MCP tool runs on the extended budget).
 - Exit code 1 also when the named (root) object is not found — nothing was written, so it is not reported
@@ -155,6 +161,5 @@ clio set-object-rights --entity-schema-name UsrOrder --grantee <role-id> --opera
 - Read-modify-write is last-writer-wins: a change another client saves between the read and the save is
   overwritten. Read the result back with `get-object-rights` when concurrent edits are possible.
 - On MCP, an unknown or misspelled argument name is refused before any write (the serializer would
-  otherwise drop it silently — e.g. `revok` would bind as a grant). On MCP the change is applied without
-  a prompt (the tool is flagged destructive), so check the targets first with
-  `get-object-rights --include-connected`.
+  otherwise drop it silently — e.g. `revok` would bind as a grant). On MCP every write is two calls: a call
+  without `confirm` returns the preview and a `confirmation-code`, and `confirm=true` with that code applies it.

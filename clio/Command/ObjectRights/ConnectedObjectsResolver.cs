@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Clio.Command.EntitySchemaDesigner;
+using Clio.Common.ObjectRights;
 
 namespace Clio.Command.ObjectRights;
 
@@ -45,6 +46,17 @@ public class ConnectedObjectsResolver : IConnectedObjectsResolver {
 
 	private static readonly string[] ExcludedSuffixes = { "Right", "Rights" };
 
+	/// <summary>
+	/// The security/system object families as help and tool descriptions name them. One constant, so the text cannot
+	/// drift from <c>ExcludedPrefixes</c> / <c>ExcludedSuffixes</c>; a test checks it names every entry.
+	/// </summary>
+	public const string ExcludedFamiliesText =
+		"SysAdmin*, SysUser*, SysSchema*, SysPackage*, SysSettings*, SysLic*, SysProcess*, Vw*, *Right/*Rights";
+
+	internal static IReadOnlyList<string> ExcludedPrefixList => ExcludedPrefixes;
+
+	internal static IReadOnlyList<string> ExcludedSuffixList => ExcludedSuffixes;
+
 	private readonly IRemoteEntitySchemaColumnManager _columnManager;
 
 	public ConnectedObjectsResolver(IRemoteEntitySchemaColumnManager columnManager) {
@@ -69,7 +81,7 @@ public class ConnectedObjectsResolver : IConnectedObjectsResolver {
 				.OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
 				.ToList();
 		}
-		catch (Exception ex) {
+		catch (Exception ex) when (ObjectRightsSupport.IsServiceFailure(ex)) {
 			return new ConnectedObjectsResolution(objects, Array.Empty<string>(), ex.Message);
 		}
 		List<string> excluded = connected.Where(IsSecurityOrSystemObject).ToList();

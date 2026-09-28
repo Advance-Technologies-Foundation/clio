@@ -876,4 +876,98 @@ public class RightManagementServiceClientTests {
 		read.Should().Throw<NullReferenceException>(because: "only service failures are attributed to the object");
 		write.Should().Throw<NullReferenceException>(because: "only service failures are attributed to the object");
 	}
+
+	// ---- Review round 6 ----
+
+	private static readonly Guid AllEmployees = Guid.Parse("a29a3ba5-4b0d-de11-9a51-005056c00008");
+
+	private static bool IsRowOf(JsonElement row, Guid grantee) =>
+		Guid.Parse(row.GetProperty("sysAdminUnit").GetProperty("id").GetString()!) == grantee;
+
+	[Test]
+	[Description("Turning operation permissions on for an object with no All employees row adds one with full rights in the same save, so internal users keep access whatever the server does.")]
+	public void SetObjectRights_ShouldAddAllEmployeesRow_WhenEnablingWithoutOne() {
+		// Arrange
+		GetReturns(NotAdministeredObject(""));
+
+		// Act
+		_client.SetObjectRights("UsrFoo", Grantee, new[] { ObjectOperation.Read }, revoke: false,
+			disableOperationPermissions: false, new CreatioRequestOptions());
+
+		// Assert
+		JsonElement employees = SavedRows().Single(row => IsRowOf(row, AllEmployees));
+		foreach (string field in new[] { "canRead", "canAppend", "canEdit", "canDelete" }) {
+			employees.GetProperty(field).GetBoolean().Should().BeTrue(
+				because: "before the enable every internal user held every operation");
+		}
+		SavedRows().Should().Contain(row => IsRowOf(row, Grantee), because: "the grantee's own row is still written");
+	}
+
+	[Test]
+	[Description("An existing All employees row is left as it is when operation permissions are turned on.")]
+	public void SetObjectRights_ShouldKeepExistingAllEmployeesRow_WhenEnabling() {
+		// Arrange
+		GetReturns(NotAdministeredObject(Row("e", 0, AllEmployees.ToString(), canRead: true)));
+
+		// Act
+		_client.SetObjectRights("UsrFoo", Grantee, new[] { ObjectOperation.Read }, revoke: false,
+			disableOperationPermissions: false, new CreatioRequestOptions());
+
+		// Assert
+		JsonElement[] employees = SavedRows().Where(row => IsRowOf(row, AllEmployees)).ToArray();
+		employees.Should().HaveCount(1, because: "no second All employees row is added");
+		employees[0].GetProperty("canAppend").GetBoolean().Should().BeFalse(
+			because: "an existing row is the administrator's choice and is not widened");
+	}
+
+	[TestCase(true, TestName = "SetObjectRights_ShouldNotAddAllEmployeesRow_WhenAlreadyAdministered")]
+	[TestCase(false, TestName = "SetObjectRights_ShouldNotAddAllEmployeesRow_WhenGranteeIsAllEmployees")]
+	[Description("No All employees row is added when the object already used operation permissions, or when All employees is the grantee itself.")]
+	public void SetObjectRights_ShouldNotAddAllEmployeesRow(bool administered) {
+		// Arrange
+		Guid grantee = administered ? Grantee : AllEmployees;
+		GetReturns(administered
+			? "{\"success\":true,\"administratedObject\":{\"name\":\"UsrFoo\",\"administratedByOperations\":true,"
+				+ "\"entitySchemaOperationsRights\":[]}}"
+			: NotAdministeredObject(""));
+
+		// Act
+		_client.SetObjectRights("UsrFoo", grantee, new[] { ObjectOperation.Read }, revoke: false,
+			disableOperationPermissions: false, new CreatioRequestOptions());
+
+		// Assert
+		SavedRows().Should().ContainSingle(because: "only the grantee's row is written");
+		SavedRows()[0].GetProperty("canAppend").GetBoolean().Should().BeFalse(because: "only read was granted");
+	}
+
+	[Test]
+	[Description("A timeout on the first candidate UId stops the probe: the next replacing-layer candidate would only hang as long again.")]
+	public void GetObjectRights_ShouldStopProbing_WhenFirstCandidateTimesOut() {
+		// Arrange
+		SelectReturnsUIds(BaseUId, LayerUId);
+		GetThrowsFor(BaseUId, new TaskCanceledException("timed out"));
+		GetReturnsFor(LayerUId, AdministeredObject("from-second"));
+
+		// Act
+		ObjectRightsInfo info = _client.GetObjectRights("UsrFoo", new CreatioRequestOptions());
+
+		// Assert
+		info.ReadError.Should().Contain("timed out", because: "the timeout is reported against the object");
+		GetBodiesInCallOrder().Should().HaveCount(1, because: "no further candidate is probed after a hang");
+	}
+
+	[Test]
+	[Description("The schema name is resolved to its candidate UIds once per client: the read-back after enabling reuses it.")]
+	public void SetObjectRights_ShouldResolveSchemaUIdsOnce_WhenReadingBackAfterEnable() {
+		// Arrange
+		Post(GetUrl).Returns(NotAdministeredObject(""), AdministeredObject("after"));
+
+		// Act
+		_client.SetObjectRights("UsrFoo", Grantee, new[] { ObjectOperation.Read }, revoke: false,
+			disableOperationPermissions: false, new CreatioRequestOptions());
+
+		// Assert
+		_applicationClient.Received(1).ExecutePostRequest(SelectUrl,
+			Arg.Is<string>(body => body.Contains("SysSchema")), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
 }

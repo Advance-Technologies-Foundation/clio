@@ -316,6 +316,9 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 		bool enabledNow = !Flag(node, AdministratedByOperationsField);
 		node[AdministratedByOperationsField] = true;
 		ObjectRightsOutcome changed = enabledNow ? ObjectRightsOutcome.ChangedAndEnabled : ObjectRightsOutcome.Changed;
+		if (enabledNow) {
+			KeepInternalAudience(rows, grantee);
+		}
 		if (granteeRows.Count == 0) {
 			JsonObject row = new() {
 				["sysAdminUnit"] = new JsonObject { ["id"] = grantee.ToString() },
@@ -338,6 +341,27 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 			}
 		}
 		return enabledNow || rowChanged ? changed : ObjectRightsOutcome.NoChange;
+	}
+
+	// Before the object was administered every internal user could reach it with every operation. Turning operation
+	// permissions on without an All employees row would cut them all off; Creatio 8.3.4 adds that row itself, but
+	// that is observed on one build, not a documented contract. So the same save carries it: an All employees row
+	// with read/create/edit/delete when the object has none (a no-op where the server adds it anyway). An existing
+	// All employees row is left as it is, and granting All employees itself needs no extra row. Exclusive access is
+	// a separate, explicit revoke of that row afterwards.
+	private static void KeepInternalAudience(JsonArray rows, Guid grantee) {
+		if (grantee == SysAdminUnitIds.AllEmployees
+			|| rows.OfType<JsonObject>().Any(row => GranteeId(row) == SysAdminUnitIds.AllEmployees)) {
+			return;
+		}
+		JsonObject row = new() {
+			["sysAdminUnit"] = new JsonObject { ["id"] = SysAdminUnitIds.AllEmployees.ToString() },
+			["position"] = NextPosition(rows)
+		};
+		foreach (string field in OperationFields) {
+			row[field] = true;
+		}
+		rows.Add(row);
 	}
 
 	// True when the revoke would leave the row with no operation at all. Asked BEFORE the revoke clears anything,
@@ -391,10 +415,14 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 		}
 		string firstError = null;
 		foreach (Guid candidate in candidates) {
-			if (TryFetchNode(candidate, requestOptions, out JsonObject node, out string error)) {
+			if (TryFetchNode(candidate, requestOptions, out JsonObject node, out string error, out bool timedOut)) {
 				return (node, null);
 			}
 			firstError ??= error;
+			if (timedOut) {
+				// A hang is not an answer from a wrong layer: the next candidate would only wait as long again.
+				break;
+			}
 		}
 		return (null, firstError);
 	}
@@ -406,9 +434,10 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 	// (the .svc reports logical failures — permission, unknown schema, licensing — as HTTP 200 + errorInfo),
 	// or an unexpected empty body. A failure is NEVER reported as "not administered / available".
 	private bool TryFetchNode(Guid schemaUId, CreatioRequestOptions requestOptions, out JsonObject node,
-		out string error) {
+		out string error, out bool timedOut) {
 		node = null;
 		error = null;
+		timedOut = false;
 		GetAdministratedObjectNodeResponse response;
 		try {
 			response = PostAndDeserialize<GetAdministratedObjectNodeResponse>(
@@ -418,6 +447,7 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 		}
 		catch (Exception ex) when (IsServiceFailure(ex)) {
 			error = ex.Message;
+			timedOut = ObjectRightsSupport.IsTimeout(ex);
 			return false;
 		}
 		if (response is { Success: true } && response.AdministratedObject is not null) {
@@ -430,14 +460,7 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 		return false;
 	}
 
-	// The failures a call to the Creatio service can produce and that must be attributed to one object rather
-	// than end the run: a transport fault, a timeout, a non-JSON or empty body (InvalidOperationException from
-	// PostAndDeserialize), an authentication rejection, an oversized response. Programming errors
-	// (NullReferenceException, ArgumentException, ...) are deliberately NOT caught here. An HTTP timeout surfaces
-	// as TaskCanceledException, hence OperationCanceledException.
-	internal static bool IsServiceFailure(Exception exception) =>
-		exception is InvalidOperationException or HttpRequestException or TimeoutException or IOException
-			or JsonException or UnauthorizedAccessException or ResponseTooLargeException or OperationCanceledException;
+	private static bool IsServiceFailure(Exception exception) => ObjectRightsSupport.IsServiceFailure(exception);
 
 	private static List<RoleOperationRights> ProjectRoles(JsonObject node) =>
 		ReadOperationRows(node)
@@ -483,7 +506,20 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 	// can fall outside the window depending on the data (the same trap ClassicEntitySchemaQuery.ColumnOrderedAsc
 	// documents). The server order is kept, so the base row is probed first and the replacing layers — which
 	// fault on GetAdministratedObject — are only tried if it does not answer. Deterministic run to run.
+	// The candidate UIds of a schema do not change within one command run, and the write path reads the same object
+	// again after enabling it. The client is transient (resolved per command), so the cache never outlives a call.
+	private readonly Dictionary<string, IReadOnlyList<Guid>> _schemaUIds = new(StringComparer.Ordinal);
+
 	private IReadOnlyList<Guid> ResolveEntitySchemaUIds(string schemaName, CreatioRequestOptions requestOptions) {
+		if (_schemaUIds.TryGetValue(schemaName, out IReadOnlyList<Guid> cached)) {
+			return cached;
+		}
+		IReadOnlyList<Guid> resolved = QueryEntitySchemaUIds(schemaName, requestOptions);
+		_schemaUIds[schemaName] = resolved;
+		return resolved;
+	}
+
+	private IReadOnlyList<Guid> QueryEntitySchemaUIds(string schemaName, CreatioRequestOptions requestOptions) {
 		object query = SelectQueryHelper.BuildSelectQuery(
 			"SysSchema",
 			new[] {

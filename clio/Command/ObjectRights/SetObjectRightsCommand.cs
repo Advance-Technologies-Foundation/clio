@@ -46,8 +46,8 @@ public class SetObjectRightsOptions : RemoteCommandOptions {
 
 	[Option("allow-security-object", Required = false, HelpText =
 		"Allow granting create/edit/delete, or a revoke with --disable-operation-permissions, when the ROOT object is a "
-		+ "security or system object (SysAdmin*, SysUser*, SysSchema*, SysPackage*, SysSettings*, SysLic*, SysProcess*, "
-		+ "Vw*, *Right/*Rights). Without it such a root may only be granted read.")]
+		+ "security or system object (" + ConnectedObjectsResolver.ExcludedFamiliesText + "). Without it such a root "
+		+ "may only be granted read.")]
 	public bool AllowSecurityObject { get; set; }
 
 	[Option("confirm", Required = false, HelpText =
@@ -135,6 +135,21 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 			_logger.WriteError("Error: --entity-schema-name is required.");
 			return false;
 		}
+		if (!ObjectRightsSupport.TryNormalizeSchemaName(options.EntitySchemaName, out string schemaName)) {
+			_logger.WriteError($"Error: --entity-schema-name '{options.EntitySchemaName}' is not a schema name (letters, "
+				+ "digits and '_' only).");
+			return false;
+		}
+		options.EntitySchemaName = schemaName;
+		if (options.Preview && (options.Confirm || !string.IsNullOrWhiteSpace(options.ConfirmationCode))) {
+			_logger.WriteError("Error: --preview writes nothing, so it cannot be combined with --confirm or "
+				+ "--confirmation-code.");
+			return false;
+		}
+		if (options.Confirm && !string.IsNullOrWhiteSpace(options.ConfirmationCode)) {
+			_logger.WriteError("Error: pass either --confirm or --confirmation-code, not both.");
+			return false;
+		}
 		if (!Guid.TryParse(options.Grantee, out grantee) || grantee == Guid.Empty) {
 			_logger.WriteError("Error: --grantee must be a SysAdminUnit id (GUID).");
 			return false;
@@ -192,7 +207,7 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 		try {
 			granteeName = _granteeLookup.ResolveGranteeName(grantee, requestOptions);
 		}
-		catch (Exception ex) when (RightManagementServiceClient.IsServiceFailure(ex)) {
+		catch (Exception ex) when (ObjectRightsSupport.IsServiceFailure(ex)) {
 			_logger.WriteError($"Error: could not check grantee {grantee}: {ex.Message}");
 			return false;
 		}
@@ -353,7 +368,7 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 		if (!administered) {
 			return request.Options.Revoke
 				? "not administered by operation permissions (a revoke cannot restrict it)"
-				: "not administered by operation permissions — they will be turned ON";
+				: DescribeEnabling(roles, request.Grantee);
 		}
 		// A grantee can hold several rows; the writer changes all of them, so show what they add up to.
 		RoleOperationRights[] granteeRows = roles.Where(r => r.GranteeId == request.Grantee).ToArray();
@@ -367,12 +382,27 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 		return $"administered; {granteeHolds}; {otherRoles}";
 	}
 
-	private static readonly string[] OperationOrder = { "read", "create", "edit", "delete" };
+	// Turning operation permissions on makes the object's existing rows effective, including stale rows of other
+	// roles (an old portal role, for example) that meant nothing while it was not administered. The user approves
+	// those too, so the preview names them, and says All employees keeps full access (the writer adds that row).
+	private static string DescribeEnabling(IReadOnlyList<RoleOperationRights> roles, Guid grantee) {
+		string[] revived = roles
+			.Where(r => r.GranteeId != grantee && r.GranteeId != SysAdminUnitIds.AllEmployees && r.HasAnyOperation)
+			.Select(Describe).ToArray();
+		string existing = revived.Length == 0
+			? "no other existing row becomes effective"
+			: $"existing rows that become effective: {string.Join(", ", revived)}";
+		string internalUsers = grantee == SysAdminUnitIds.AllEmployees
+			? "All employees is the grantee"
+			: roles.Any(r => r.GranteeId == SysAdminUnitIds.AllEmployees)
+				? "All employees keeps its existing row"
+				: "an All employees row with read/create/edit/delete is added so internal users keep access";
+		return $"not administered by operation permissions — they will be turned ON; {internalUsers}; {existing}";
+	}
 
 	private static string HeldOperations(IEnumerable<RoleOperationRights> rows) {
-		string[] held = rows.SelectMany(r => r.OperationNames()).Distinct()
-			.OrderBy(op => Array.IndexOf(OperationOrder, op)).ToArray();
-		return held.Length == 0 ? "no operations" : string.Join("/", held);
+		IReadOnlyList<string> held = ObjectRightsSupport.HeldOperations(rows);
+		return held.Count == 0 ? "no operations" : string.Join("/", held);
 	}
 
 	// A short, stable fingerprint of the arguments and the target state. It is not a secret and not a signature:
@@ -471,10 +501,14 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 			return true;
 		}
 		IReadOnlyList<RoleOperationRights> others = holders.Where(role => role.GranteeId != grantee).ToList();
-		// Granting All employees itself keeps every internal user in, even when its row is the only one.
-		if (others.Count == 0 && grantee != SysAdminUnitIds.AllEmployees) {
-			_logger.WriteError($"{head}, and only the grantee holds rights now — every other internal user LOST access to "
-				+ $"'{schemaName}'. The change is already saved. Grant the roles that should keep it (for example All employees).");
+		// Internal users keep access only through All employees: another role holding rights (a stale row the
+		// enable revived, for example) says nothing about everybody else. Granting All employees itself is fine.
+		bool internalUsersKeepAccess = grantee == SysAdminUnitIds.AllEmployees
+			|| holders.Any(role => role.GranteeId == SysAdminUnitIds.AllEmployees && role.CanRead);
+		if (!internalUsersKeepAccess) {
+			_logger.WriteError($"{head}, but All employees holds no read on it now — every internal user outside the "
+				+ $"listed roles LOST access to '{schemaName}'. The change is already saved. Grant the roles that "
+				+ "should keep it (for example All employees).");
 			return true;
 		}
 		IEnumerable<RoleOperationRights> shown = others.Count > 0 ? others : holders;

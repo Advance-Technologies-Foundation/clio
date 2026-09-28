@@ -16,16 +16,20 @@ DESCRIPTION
     It is a read-modify-write over the native RightManagementService: the object's per-role grid is
     read, the grantee's row is added/updated (or removed), and the object is saved. Granting to an
     object that does not yet use operation permissions turns them on — an access narrowing for every
-    other role, which the confirmation and the result line both name. Creatio may also add an
-    "All employees" row with read/create/edit/delete at that point (observed on Creatio 8.3.4 for the
-    root and for connected lookups alike, not a documented contract); read the result back. It does NOT change column permissions.
+    other role, which the confirmation and the result line both name. So internal users keep access,
+    the same save adds an "All employees" row with read/create/edit/delete when the object has none
+    (Creatio 8.3.4 adds it on its own too); an existing All employees row is left as it is. For
+    exclusive access, revoke or narrow that row afterwards. It does NOT change column permissions.
 
     A revoke only ever narrows access. Removing an object's LAST rights row is the one case that would
     not: it turns operation permissions off, which makes the object available to ALL internal users. That
     is refused unless --disable-operation-permissions asks for it explicitly.
 
     DESTRUCTIVE: this command changes access. In a non-interactive run it refuses to apply unless
-    --confirm is passed; in an interactive run it asks for a y/n confirmation.
+    --confirm is passed; in an interactive run it asks for a y/n confirmation. --preview, --confirm and
+    --confirmation-code are mutually exclusive; a matching --confirmation-code replaces the prompt.
+
+    The object name is trimmed and must be a plain schema identifier (letters, digits, '_').
 
 OPTIONS
     --entity-schema-name
@@ -85,15 +89,17 @@ OPTIONS
         Name of the registered environment to change.
 
 EXIT CODES
-    0   The change was applied (or was already in the requested state, or cancelled at the prompt).
-    1   An input was invalid (missing entity-schema-name, grantee not a GUID, unknown operation),
+    0   The change was applied (or was already in the requested state, or cancelled at the prompt), or a
+        --preview completed (nothing was written).
+    1   An input was invalid (missing or non-identifier entity-schema-name, grantee not a GUID, unknown
+        operation, --preview/--confirm/--confirmation-code combined),
         confirmation was missing in a non-interactive run, the named (root) object was not found, the
         connected objects could not be enumerated, a write failed, or a revoke was refused because it
         would have removed the object's last rights row, the grantee does not exist, a grant beyond read
         targeted a security/system root without --allow-security-object, a revoke with
         --disable-operation-permissions targeted a security/system root without it, a preview could not
-        read the root, the confirmation code did not match, or turning operation permissions on left only
-        the grantee with rights (the change is saved). When the root change did not happen the connected
+        read the root, the confirmation code did not match, or turning operation permissions on left All
+        employees without read (the change is saved). When the root change did not happen the connected
         objects are not attempted. A connected lookup that is not found only warns.
 
 EXAMPLES
@@ -116,9 +122,9 @@ NOTES
     The grantee must exist in SysAdminUnit; an unknown id fails before anything is written.
 
     When a grant turns operation permissions ON, the object is read back and the result names the roles
-    that hold rights afterwards. If only the grantee does, the command fails (exit 1): every other
-    internal user lost access, and the change is already saved. Granting All employees itself is not
-    such a failure. With --include-connected a call can take minutes.
+    that hold rights afterwards. If All employees holds no read afterwards, the command fails (exit 1):
+    internal users outside the listed roles lost access, and the change is already saved. Granting All
+    employees itself is not such a failure. With --include-connected a call can take minutes.
 
     Read-modify-write is last-writer-wins: a change another client saves between the read and the save
     is overwritten. Read the result back with get-object-rights when concurrent edits are possible.

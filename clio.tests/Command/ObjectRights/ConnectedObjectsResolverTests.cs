@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Collections.Generic;
 using Clio.Command;
 using Clio.Command.EntitySchemaDesigner;
@@ -155,4 +156,36 @@ public class ConnectedObjectsResolverTests {
 			Virtual: false, UseRecordDeactivation: null, ShowInAdvancedMode: false, AdministratedByOperations: false,
 			AdministratedByColumns: false, AdministratedByRecords: false, UseDenyRecordRights: null,
 			UseLiveEditing: null, Columns: columns);
+
+	// ---- Review round 6 ----
+
+	[Test]
+	[Description("The text that help and tool descriptions use for the security/system families names every excluded prefix and suffix, so it cannot drift from the lists.")]
+	public void ExcludedFamiliesText_ShouldNameEveryExcludedFamily() {
+		// Arrange
+		string text = ConnectedObjectsResolver.ExcludedFamiliesText;
+
+		// Act
+		string[] missing = ConnectedObjectsResolver.ExcludedPrefixList.Select(prefix => prefix + "*")
+			.Concat(ConnectedObjectsResolver.ExcludedSuffixList.Select(suffix => "*" + suffix))
+			.Where(family => !text.Contains(family, StringComparison.Ordinal))
+			.ToArray();
+
+		// Assert
+		missing.Should().BeEmpty(because: "every excluded family must be named where users read the rule");
+	}
+
+	[Test]
+	[Description("A programming error while reading the root schema is not reported as 'could not enumerate': it escapes.")]
+	public void Resolve_ShouldThrow_WhenSchemaReadHasProgrammingError() {
+		// Arrange
+		_columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>())
+			.Returns(_ => throw new NullReferenceException("bug"));
+
+		// Act
+		Action act = () => _resolver.Resolve("UsrOrder", includeConnected: true);
+
+		// Assert
+		act.Should().Throw<NullReferenceException>(because: "only service failures become an enumeration error");
+	}
 }

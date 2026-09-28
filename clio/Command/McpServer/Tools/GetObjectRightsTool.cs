@@ -27,13 +27,15 @@ public sealed class GetObjectRightsTool(
 		Location = McpToolExecutionLocation.Worker,
 		Lifetime = McpToolExecutionLifetime.PerCall,
 		OperationFamily = McpToolOperationFamily.None,
-		// With include-connected the read makes several sequential round-trips per object.
+		// With include-connected the read makes several sequential round-trips per object. The worker is not killed
+		// at the default budget, but as a ReadOnly tool the call is still bounded by the MCP read-response deadline
+		// (120 s by default, CLIO_MCP_READ_DEADLINE_SECONDS); an object with many lookups can reach it (ENG-100407).
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillExtended,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Read OBJECT operation permissions — who may read/create/edit/delete a whole entity (the SysSchemaOperationRight / \"Object permissions\" layer). " +
 		"Read-only companion of set-object-rights. Reports, per object, the operations every role holds; pass grantee to filter to one role. " +
-		"include-connected also reports the root object's own lookup objects (security/system objects are skipped). The output is facts only, with no coverage verdict. Fails (success=false) when the root object cannot be read; a connected object that cannot be read is reported with a warning. " +
+		"include-connected also reports the root object's own lookup objects (security/system objects are skipped); on an object with many lookups it can reach the read deadline — then read the lookups one by one. The output is facts only, with no coverage verdict. Fails (success=false) when the root object cannot be read; a connected object that cannot be read is reported with a warning. " +
 		"An object not administered by operation permissions is available to all INTERNAL users; external users reach it only through an explicit grant. " +
 		"Unknown or misspelled argument names are refused.")]
 	public ObjectRightsToolResponse GetObjectRights(

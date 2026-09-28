@@ -1175,4 +1175,166 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		exitCode.Should().Be(0, because: "nothing to change is not a failure");
 		_logger.Received().WriteInfo(Arg.Is<string>(m => m.Contains("UsrOrder: already in the requested state")));
 	}
+
+	// ---- Review round 6 ----
+
+	[TestCase("SysEntitySchemaOperationRight ", TestName = "Execute_ShouldGateSecurityRoot_WhenNameHasTrailingSpace")]
+	[TestCase(" SysAdminUnit", TestName = "Execute_ShouldGateSecurityRoot_WhenNameHasLeadingSpace")]
+	[Description("A padded name is trimmed before the security/system gate, so SQL Server's trailing-space comparison cannot smuggle a rights table past it.")]
+	public void Execute_ShouldGateSecurityRoot_WhenNamePadded(string name) {
+		// Arrange
+		SetObjectRightsOptions options = new() {
+			EntitySchemaName = name, Grantee = Grantee, Operations = "read,create", Confirm = true
+		};
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "the trimmed name is a security/system object");
+		_logger.Received().WriteError(Arg.Is<string>(m => m.Contains("security/system object")));
+		_rightsWriter.DidNotReceiveWithAnyArgs().SetObjectRights(default, default, default, default, default, default);
+	}
+
+	[TestCase("Usr Order")]
+	[TestCase("UsrOrder;")]
+	[TestCase("1UsrOrder")]
+	[Description("A name that is not a schema identifier is refused before anything is resolved, read or written.")]
+	public void Execute_ShouldRefuse_WhenNameIsNotAnIdentifier(string name) {
+		// Arrange
+		SetObjectRightsOptions options = new() { EntitySchemaName = name, Grantee = Grantee, Confirm = true };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "only a plain schema identifier can name an object");
+		_logger.Received().WriteError(Arg.Is<string>(m => m.Contains("is not a schema name")));
+		_connectedObjects.DidNotReceiveWithAnyArgs().Resolve(default, default);
+		_rightsWriter.DidNotReceiveWithAnyArgs().SetObjectRights(default, default, default, default, default, default);
+	}
+
+	[TestCase(true, null, TestName = "Execute_ShouldRefuse_WhenPreviewWithConfirm")]
+	[TestCase(true, "abc", TestName = "Execute_ShouldRefuse_WhenPreviewWithCode")]
+	[TestCase(false, "abc", TestName = "Execute_ShouldRefuse_WhenConfirmWithCode")]
+	[Description("--preview, --confirm and --confirmation-code are mutually exclusive: a combination is refused rather than silently picking one.")]
+	public void Execute_ShouldRefuse_WhenConfirmationFlagsCombined(bool preview, string code) {
+		// Arrange
+		SetObjectRightsOptions options = new() {
+			EntitySchemaName = "UsrOrder", Grantee = Grantee, Preview = preview, Confirm = !preview || code is null,
+			ConfirmationCode = code
+		};
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "the call does not say which of the modes it means");
+		_rightsReader.DidNotReceiveWithAnyArgs().GetObjectRights(default, default);
+		_rightsWriter.DidNotReceiveWithAnyArgs().SetObjectRights(default, default, default, default, default, default);
+	}
+
+	[Test]
+	[Description("An interactive run that carries a matching code applies without prompting, and the code is matched case- and whitespace-insensitively.")]
+	public void Execute_ShouldApplyWithoutPrompt_WhenInteractiveRunCarriesCode() {
+		// Arrange
+		string code = CapturePreviewCode(new SetObjectRightsOptions {
+			EntitySchemaName = "UsrOrder", Grantee = Grantee, Operations = "read", Preview = true
+		});
+		_console.IsInteractive.Returns(true);
+
+		// Act
+		int exitCode = _command.Execute(new SetObjectRightsOptions {
+			EntitySchemaName = "UsrOrder", Grantee = Grantee, Operations = "read",
+			ConfirmationCode = "  " + code.ToUpperInvariant() + " "
+		});
+
+		// Assert
+		exitCode.Should().Be(0, because: "the code is the confirmation");
+		_console.DidNotReceiveWithAnyArgs().Prompt(default);
+		_rightsWriter.Received(1).SetObjectRights("UsrOrder", Arg.Any<Guid>(),
+			Arg.Any<IReadOnlyCollection<ObjectOperation>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>());
+	}
+
+	[Test]
+	[Description("After enabling, another role holding rights does not count: internal users keep access only through All employees.")]
+	public void Execute_ShouldFail_WhenAllEmployeesHoldsNoReadAfterEnable() {
+		// Arrange
+		WriterReturnsEnabled(
+			new RoleOperationRights(Guid.Parse("11111111-2222-3333-4444-555555555555"), "Old portal role", true, false, false, false),
+			new RoleOperationRights(Guid.Parse(Grantee), "All external users", true, false, false, false));
+		SetObjectRightsOptions options = new() { EntitySchemaName = "UsrOrder", Grantee = Grantee, Operations = "read", Confirm = true };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "a stale role's row says nothing about every other internal user");
+		_logger.Received().WriteError(Arg.Is<string>(m => m.Contains("All employees holds no read") && m.Contains("already saved")));
+	}
+
+	[Test]
+	[Description("The preview of a grant on an object that is not administered names the existing rows that become effective and says All employees is added.")]
+	public void Execute_ShouldNameRevivedRowsAndAllEmployees_WhenPreviewEnables() {
+		// Arrange
+		RootRightsAre(false, new RoleOperationRights(Guid.Parse("11111111-2222-3333-4444-555555555555"),
+			"Old portal role", true, false, false, false));
+
+		// Act
+		int exitCode = _command.Execute(new SetObjectRightsOptions {
+			EntitySchemaName = "UsrOrder", Grantee = Grantee, Operations = "read", Preview = true
+		});
+
+		// Assert
+		exitCode.Should().Be(0, because: "a preview is not a failure");
+		_logger.Received().WriteInfo(Arg.Is<string>(m => m.Contains("they will be turned ON")
+			&& m.Contains("an All employees row with read/create/edit/delete is added")
+			&& m.Contains("existing rows that become effective: Old portal role (read)")));
+	}
+
+	[TestCase(true, TestName = "Execute_ShouldPreview_WhenConnectedTargetUnreadable")]
+	[TestCase(false, TestName = "Execute_ShouldPreview_WhenConnectedTargetNotFound")]
+	[Description("A connected target that cannot be read or does not exist is shown in the preview; only the root failing blocks the code.")]
+	public void Execute_ShouldPreview_WhenConnectedTargetCannotBeDescribed(bool readError) {
+		// Arrange
+		_connectedObjects.Resolve("UsrOrder", true).Returns(Resolution("UsrOrder", "UsrStatus"));
+		_rightsReader.GetObjectRights("UsrStatus", Arg.Any<CreatioRequestOptions>())
+			.Returns(new ObjectRightsInfo(readError, "UsrStatus", null, false, Array.Empty<RoleOperationRights>(),
+				readError ? "HTTP 500" : null));
+
+		// Act
+		int exitCode = _command.Execute(new SetObjectRightsOptions {
+			EntitySchemaName = "UsrOrder", Grantee = Grantee, Operations = "read", IncludeConnected = true, Preview = true
+		});
+
+		// Assert
+		exitCode.Should().Be(0, because: "the root was described, so the user can approve the call");
+		_logger.Received().WriteInfo(Arg.Is<string>(m => m.Contains("UsrStatus (connected)")
+			&& m.Contains(readError ? "could not read its rights" : "not found")));
+		_logger.Received().WriteInfo(Arg.Is<string>(m => m.StartsWith("confirmation-code: ")));
+	}
+
+	[Test]
+	[Description("A connected target that was unreadable at preview and readable at confirm changes the code: the user never saw its state.")]
+	public void Execute_ShouldRefuse_WhenConnectedTargetBecameReadableSincePreview() {
+		// Arrange
+		_connectedObjects.Resolve("UsrOrder", true).Returns(Resolution("UsrOrder", "UsrStatus"));
+		_rightsReader.GetObjectRights("UsrStatus", Arg.Any<CreatioRequestOptions>())
+			.Returns(new ObjectRightsInfo(true, "UsrStatus", null, false, Array.Empty<RoleOperationRights>(), "HTTP 500"));
+		string code = CapturePreviewCode(new SetObjectRightsOptions {
+			EntitySchemaName = "UsrOrder", Grantee = Grantee, Operations = "read", IncludeConnected = true, Preview = true
+		});
+		_rightsReader.GetObjectRights("UsrStatus", Arg.Any<CreatioRequestOptions>())
+			.Returns(new ObjectRightsInfo(true, "UsrStatus", null, false, Array.Empty<RoleOperationRights>()));
+
+		// Act
+		int exitCode = _command.Execute(new SetObjectRightsOptions {
+			EntitySchemaName = "UsrOrder", Grantee = Grantee, Operations = "read", IncludeConnected = true,
+			ConfirmationCode = code
+		});
+
+		// Assert
+		exitCode.Should().Be(1, because: "the target's state is not what the preview showed");
+		_rightsWriter.DidNotReceiveWithAnyArgs().SetObjectRights(default, default, default, default, default, default);
+	}
 }
