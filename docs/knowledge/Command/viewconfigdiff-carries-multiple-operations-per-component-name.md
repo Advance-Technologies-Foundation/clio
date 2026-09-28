@@ -43,7 +43,7 @@ are recorded in
 **Running its tests** — `clio/Command/PageBodyMerger.cs` maps to `Module=Command`, but ~30 of its
 `PageBodyMerger_*` tests live in the `Module=McpServer` fixture `clio.tests/Command/McpServer/PageToolsTests.cs`,
 so the smart-regression filter for a merger-only change runs none of them. Always run
-`--filter "Category=Unit&(Module=Command|Module=McpServer)"` when you touch this file, not the
+`--filter "TestCategory=Unit&(Module=Command|Module=McpServer)"` when you touch this file, not the
 `Module=Command` filter the policy table would suggest.
 
 **What breaks if you ignore it** — the pre-#1132 merger flattened `current.Concat(incoming)` into a

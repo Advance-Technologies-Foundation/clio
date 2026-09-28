@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Threading.Tasks;
 using Clio.Command;
 using Clio.Common;
@@ -193,5 +194,56 @@ public sealed class AutomaticUpdateStartupTests {
 			because: "the refusal must be REPORTED, not swallowed: it is what stops clio from updating its way out of the skew");
 		appUpdater.DidNotReceive().UpdateInBackgroundAsync();
 		settings.Received(3).TryScheduleAutoupdate(Arg.Any<AutoUpdateTarget>(), Arg.Any<DateTimeOffset>());
+	}
+}
+
+[TestFixture]
+[Category("Unit")]
+[Property("Module", "Command")]
+// Replaces the process-wide console writers, so it must not overlap any other fixture.
+[NonParallelizable]
+public sealed class AutomaticUpdateStartupNoticeTests {
+	[Test]
+	[Description("Writes the deferral notice to stderr, never stdout, because it precedes the output of every command and callers such as Clio Explorer parse stdout (issue #1665).")]
+	public void RunStartupUpdateCheck_ShouldWriteDeferralNoticeToStderr_WhenMcpHostIsResident() {
+		// Arrange
+		ISettingsRepository settings = Substitute.For<ISettingsRepository>();
+		settings.IsAutoupdateDue(AutoUpdateTarget.Clio, Arg.Any<DateTimeOffset>()).Returns(true);
+		IMcpHostPresenceRegistry presence = Substitute.For<IMcpHostPresenceRegistry>();
+		presence.FindLiveHost().Returns(new McpHostPresenceMarker(4242, "8.1.0.120",
+			DateTimeOffset.UtcNow, "mcp-server.4242.lock"));
+		ServiceProvider services = new ServiceCollection()
+			.AddSingleton(settings)
+			.AddSingleton(Substitute.For<IAppUpdater>())
+			.AddSingleton(Substitute.For<IKnowledgeSourceManagementService>())
+			.AddSingleton(Substitute.For<ISkillInstallService>())
+			.AddSingleton(presence)
+			.BuildServiceProvider();
+		ConsoleLogger logger = (ConsoleLogger)ConsoleLogger.Instance;
+		logger.Start();
+		logger.FlushAndSnapshotMessages();
+		TextWriter originalOut = Console.Out;
+		TextWriter originalError = Console.Error;
+		StringWriter stdout = new();
+		StringWriter stderr = new();
+		Console.SetOut(stdout);
+		Console.SetError(stderr);
+
+		// Act
+		try {
+			Program.RunStartupUpdateCheck(["info", "-s"], services);
+			logger.FlushAndSnapshotMessages();
+		}
+		finally {
+			Console.SetOut(originalOut);
+			Console.SetError(originalError);
+		}
+
+		// Assert
+		stderr.ToString().Should().Contain(
+			"[INF] - clio self-update deferred: MCP host pid 4242 (version 8.1.0.120) is running",
+			because: "the operator still needs to learn that the update was postponed");
+		stdout.ToString().Should().NotContain("self-update deferred",
+			because: "stdout carries the command's own output, which other programs read line by line");
 	}
 }

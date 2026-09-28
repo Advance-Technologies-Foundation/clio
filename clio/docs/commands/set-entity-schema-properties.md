@@ -40,6 +40,7 @@ Supported properties:
   applies **column** operations, and its `title-localizations` is a per-column property.
   The caption is merged per culture, so cultures you do not list keep the caption they
   already have.
+- **Culture must exist in the environment.** Every culture a caption or description is written in (each `title-localizations` / `description-localizations` key and the effective `--caption-culture`) must be a culture of the Languages section (System Designer → Languages). Creatio silently drops a value in a culture it does not have and still reports success, so clio checks the cultures before saving and fails with `Culture '<c>' is not available in this environment. Add it in the Languages section (System Designer → Languages) first. Available: …`. A culture that exists but is inactive is saved, and a warning is printed.
 
 Why the caption matters: a business-process lookup macro
 `[#Lookup.<Caption>.<Value>#]` resolves a schema **by its caption**. When two entity

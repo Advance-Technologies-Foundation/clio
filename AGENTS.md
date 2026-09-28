@@ -428,13 +428,18 @@ Before committing any change, run only the tests for affected modules — do not
 
 ```shell
 # Single module
-dotnet test clio.tests/clio.tests.csproj --filter "Category=Unit&Module=Command" --no-build
+dotnet test clio.tests/clio.tests.csproj --filter "TestCategory=Unit&Module=Command" --no-build
 
 # Multiple modules (pipe-separated)
-dotnet test clio.tests/clio.tests.csproj --filter "Category=Unit&(Module=Command|Module=Common)" --no-build
+dotnet test clio.tests/clio.tests.csproj --filter "TestCategory=Unit&(Module=Command|Module=Common)" --no-build
 ```
 
-4. **Full-suite triggers** — run `dotnet test clio.tests/clio.tests.csproj --filter "Category=Unit"` when any of the following changed:
+   Write `TestCategory`, never the `Category` alias, in any clio.tests filter. The NUnit adapter recognizes a
+   category filter only when it is spelled `TestCategory`; a filter it does not recognize is replaced with an empty
+   filter once it selects more than 2,000 tests, so the whole assembly runs while only the selected tests are
+   reported. See [docs/knowledge/Tests/nunit-adapter-drops-large-non-category-shard-filters.md](docs/knowledge/Tests/nunit-adapter-drops-large-non-category-shard-filters.md).
+
+4. **Full-suite triggers** — run `dotnet test clio.tests/clio.tests.csproj --filter "TestCategory=Unit"` when any of the following changed:
    - `clio/BindingsModule.cs` or `clio/Program.cs` — DI composition root, affects all modules
    - `clio/Common/` — shared dependency used by every module
    - Changes span more than 3 distinct modules
@@ -451,7 +456,7 @@ dotnet test Clio.Analyzers.Tests/Clio.Analyzers.Tests.csproj --no-build
 - **Before every commit**: run the targeted test filter for each changed module and confirm all pass.
 - **Do not commit if targeted tests fail.**
 - When targeted tests pass but the change touches shared infrastructure (rule 4), additionally run the full unit suite.
-- Include the filter command used in the commit message or PR description so reviewers know what was validated locally (e.g., `Validated: dotnet test --filter "Category=Unit&Module=Command"`).
+- Include the filter command used in the commit message or PR description so reviewers know what was validated locally (e.g., `Validated: dotnet test clio.tests/clio.tests.csproj --filter "TestCategory=Unit&Module=Command"`).
 
 # Instance creation and DI policy
 

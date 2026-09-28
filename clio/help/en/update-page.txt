@@ -119,8 +119,8 @@ DESCRIPTION
     - Rejected: an "insert"/"set"/"merge" authoring a crt.IndicatorWidget
       without config.layout and config.text, or whose config.data.providing
       lacks schemaName, aggregation.column.expression with
-      functionArgument.columnPath, or an aggregationType of 1-5 (a
-      calculated metric carries expressionSchema instead). Such a page
+      expressionType 1, functionArgument.columnPath, or an aggregationType
+      of 1-5 (a calculated metric carries expressionSchema instead). Such a page
       saves, but the metric shows no value or an error placeholder, or
       the designer canvas does not build. A widget with its own "data" binding is exempt from the
       providing checks.

@@ -3,7 +3,7 @@
 #
 # Cross-platform: works on macOS/Linux. On Windows use build.ps1 or build.cmd directly.
 
-.PHONY: build build-debug build-release test test-unit test-integration test-analyzers test-mcp-e2e test-module lint check-pr check-knowledge check-prose clean help
+.PHONY: build build-debug build-release test test-unit test-integration test-analyzers test-mcp-e2e test-module lint check-pr check-knowledge check-prose test-issue-routing clean help
 
 # ── Build ────────────────────────────────────────────────────────────────────
 
@@ -29,11 +29,11 @@ test: test-unit
 
 ## test-unit: run full unit test suite
 test-unit:
-	dotnet test clio.tests/clio.tests.csproj --filter "Category=Unit" --no-build
+	dotnet test clio.tests/clio.tests.csproj --filter "TestCategory=Unit" --no-build
 
 ## test-integration: run integration tests
 test-integration:
-	dotnet test clio.tests/clio.tests.csproj --filter "Category=Integration"
+	dotnet test clio.tests/clio.tests.csproj --filter "TestCategory=Integration"
 
 ## test-analyzers: run Roslyn analyzer tests only
 test-analyzers:
@@ -49,13 +49,13 @@ test-module:
 ifndef MODULE
 	$(error MODULE is not set. Usage: make test-module MODULE=Command)
 endif
-	dotnet test clio.tests/clio.tests.csproj --filter "Category=Unit&Module=$(MODULE)" --no-build
+	dotnet test clio.tests/clio.tests.csproj --filter "TestCategory=Unit&Module=$(MODULE)" --no-build
 
 ## test-filter: run tests with a custom --filter expression  (FILTER="...")
 ## Example: make test-filter FILTER="FullyQualifiedName~MyTest"
 test-filter:
 ifndef FILTER
-	$(error FILTER is not set. Usage: make test-filter FILTER="Category=Unit&Module=Command")
+	$(error FILTER is not set. Usage: make test-filter FILTER="TestCategory=Unit&Module=Command")
 endif
 	dotnet test clio.tests/clio.tests.csproj --filter "$(FILTER)" --no-build
 
@@ -74,6 +74,10 @@ verify-docs:
 ## check-knowledge: report which docs/knowledge records this branch touches, and any dead applies-to paths
 check-knowledge:
 	python3 ./scripts/check-knowledge-applies-to.py --base $(BASE)
+
+## test-issue-routing: run the GitHub issue-routing script tests (node, no dependencies)
+test-issue-routing:
+	node --test .github/scripts/issue-routing/issue-routing.test.js
 
 ## check-prose: report prose claims that disagree with the values they describe (advisory; --strict to fail)
 check-prose:

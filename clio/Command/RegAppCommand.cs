@@ -37,6 +37,15 @@ public class RegAppOptions : EnvironmentNameOptions {
 	[Option("add-from-iis", Required = false, HelpText = "Register all Creatios from IIS")]
 	public bool FromIis { get; set; }
 
+	[Option("auth-flow", Required = false, HelpText = "Authentication flow: client-credentials or authorization-code")]
+	public string AuthFlow { get; set; }
+
+	[Option("redirect-port", Required = false, HelpText = "Loopback OAuth callback port")]
+	public int? RedirectPort { get; set; }
+
+	[Option("redirect-uri", Required = false, HelpText = "Registered OAuth redirect URI")]
+	public string RedirectUri { get; set; }
+
 	[Option("host", Required = false, HelpText = "Computer name where IIS is hosted")]
 	public string Host { get; set; }
 
@@ -77,39 +86,27 @@ public class RegAppCommand : Command<RegAppOptions> {
 
 	public override int Execute(RegAppOptions options){
 		try {
-			if (options.FromIis) {
-				DiscoverIisEnvironments(options).ToList().ForEach(site => {
-					EnvironmentSettings settings = new() {
-						Login = "Supervisor",
-						Password = "Supervisor",
-						Uri = site.Uri,
-						Maintainer = "Customer",
-						Safe = false,
-						IsNetCore = site.IsNetCore,
-						DeveloperModeEnabled = true,
-						EnvironmentPath = site.PhysicalPath
-					};
-					_settingsRepository.ConfigureEnvironment(site.Name, settings);
-					_logger.WriteInfo($"Environment {site.Name} was added from {options.Host ?? "localhost"}");
-				});
-				return 0;
+			OAuthFlow? requestedAuthFlow = ParseAuthFlow(options);
+			if (options.RedirectPort is < 1 or > 65535) {
+				throw new ValidationException("--redirect-port must be between 1 and 65535.");
 			}
-
-			if (options.EnvironmentName?.ToLower(CultureInfo.InvariantCulture) == "open") {
-				_settingsRepository.OpenFile();
-				return 0;
+			int? shortCircuitResult = TryExecuteWithoutRegistration(options);
+			if (shortCircuitResult.HasValue) {
+				return shortCircuitResult.Value;
 			}
-			if (!string.IsNullOrWhiteSpace(options.ActiveEnvironment)) {
-				if (_settingsRepository.IsEnvironmentExists(options.ActiveEnvironment)) {
-					_settingsRepository.SetActiveEnvironment(options.ActiveEnvironment);
-					_logger.WriteInfo($"Active environment set to {options.ActiveEnvironment}");
-					return 0;
-				}
-				throw new Exception($"Not found environment {options.ActiveEnvironment} in settings");
-			}
+			// A blank name resolves to the ACTIVE environment, so a nameless registration must not inherit
+			// anything from an unrelated environment that happens to be active.
 			EnvironmentSettings? existingEnvironment = string.IsNullOrWhiteSpace(options.EnvironmentName)
 				? null
 				: _settingsRepository.FindEnvironment(options.EnvironmentName);
+			OAuthFlow authFlow = requestedAuthFlow ?? existingEnvironment?.AuthFlow ?? OAuthFlow.ClientCredentials;
+			// Re-registration keeps the settings that make the inherited flow usable; otherwise updating just
+			// the url would drop the client id and the redirect and break every later command.
+			string clientId = string.IsNullOrWhiteSpace(options.ClientId) ? existingEnvironment?.ClientId : options.ClientId;
+			int? redirectPort = options.RedirectPort ?? existingEnvironment?.RedirectPort;
+			string redirectUri = string.IsNullOrWhiteSpace(options.RedirectUri) ? existingEnvironment?.RedirectUri : options.RedirectUri;
+			// Validate the EFFECTIVE flow, not just the one passed on this invocation.
+			ValidateAuthorizationCodeOptions(authFlow, clientId, options);
 			
 			// Resolve the runtime BEFORE anything is persisted. Detection is allowed to refuse, and a refusal
 			// that leaves a registered environment behind is worse than a plain failure: the stored IsNetCore
@@ -123,9 +120,12 @@ public class RegAppCommand : Command<RegAppOptions> {
 				Safe = options.SafeValue ?? false,
 				IsNetCore = resolvedIsNetCore,
 				DeveloperModeEnabled = options.DeveloperModeEnabled,
-				ClientId = options.ClientId,
+				ClientId = clientId,
 				ClientSecret = options.ClientSecret,
 				AuthAppUri = options.AuthAppUri,
+				AuthFlow = authFlow,
+				RedirectPort = redirectPort,
+				RedirectUri = redirectUri,
 				WorkspacePathes = options.WorkspacePathes,
 				EnvironmentPath = options.EnvironmentPath
 			};
@@ -157,6 +157,68 @@ public class RegAppCommand : Command<RegAppOptions> {
 	#endregion
 
 	#region Methods: Private
+
+	// Branches that finish without registering an environment. Returns the exit code when one of them ran,
+	// null when the command must continue with a normal registration.
+	private int? TryExecuteWithoutRegistration(RegAppOptions options) {
+		if (options.FromIis) {
+			RegisterIisEnvironments(options);
+			return 0;
+		}
+
+		if (options.EnvironmentName?.ToLower(CultureInfo.InvariantCulture) == "open") {
+			_settingsRepository.OpenFile();
+			return 0;
+		}
+
+		if (string.IsNullOrWhiteSpace(options.ActiveEnvironment)) {
+			return null;
+		}
+
+		if (!_settingsRepository.IsEnvironmentExists(options.ActiveEnvironment)) {
+			throw new Exception($"Not found environment {options.ActiveEnvironment} in settings");
+		}
+		_settingsRepository.SetActiveEnvironment(options.ActiveEnvironment);
+		_logger.WriteInfo($"Active environment set to {options.ActiveEnvironment}");
+		return 0;
+	}
+
+	private void RegisterIisEnvironments(RegAppOptions options) {
+		DiscoverIisEnvironments(options).ToList().ForEach(site => {
+			EnvironmentSettings settings = new() {
+				Login = "Supervisor",
+				Password = "Supervisor",
+				Uri = site.Uri,
+				Maintainer = "Customer",
+				Safe = false,
+				IsNetCore = site.IsNetCore,
+				DeveloperModeEnabled = true,
+				EnvironmentPath = site.PhysicalPath
+			};
+			_settingsRepository.ConfigureEnvironment(site.Name, settings);
+			_logger.WriteInfo($"Environment {site.Name} was added from {options.Host ?? "localhost"}");
+		});
+	}
+
+	private static void ValidateAuthorizationCodeOptions(OAuthFlow authFlow, string clientId, RegAppOptions options) {
+		if (authFlow != OAuthFlow.AuthorizationCode) {
+			return;
+		}
+		if (string.IsNullOrWhiteSpace(clientId)) {
+			throw new ValidationException("Authorization-code sign-in requires --clientId. clio ships no default client; ask whoever administers "
+				+ (options.Uri ?? "the environment") + " which OAuth client to use.");
+		}
+		if (!string.IsNullOrWhiteSpace(options.ClientSecret)) {
+			throw new ValidationException("Authorization-code sign-in uses a public client and does not accept --clientSecret.");
+		}
+	}
+
+	private static OAuthFlow? ParseAuthFlow(RegAppOptions options) {
+		if (string.IsNullOrWhiteSpace(options.AuthFlow)) return null;
+		if (string.Equals(options.AuthFlow, "authorization-code", StringComparison.OrdinalIgnoreCase)) return OAuthFlow.AuthorizationCode;
+		if (string.Equals(options.AuthFlow, "client-credentials", StringComparison.OrdinalIgnoreCase)) return OAuthFlow.ClientCredentials;
+		throw new ValidationException("--auth-flow must be client-credentials or authorization-code.");
+	}
 
 	private IEnumerable<IisEnvironmentDescriptor> DiscoverIisEnvironments(RegAppOptions options) {
 		if (_iisEnvironmentDiscoveryService != null) {

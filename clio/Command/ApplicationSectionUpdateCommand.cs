@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Command.EntitySchemaDesigner;
+using Clio.Command.Localization;
 using Clio.Common;
 using Clio.Package;
 using Clio.UserEnvironment;
@@ -33,6 +35,9 @@ public sealed class UpdateAppSectionOptions : EnvironmentOptions {
 
 	[Option("icon-background", Required = false, HelpText = "Updated section icon background in #RRGGBB format")]
 	public string? IconBackground { get; set; }
+
+	[Option("caption-culture", Required = false, HelpText = "Culture the --caption is written in (e.g. es-ES, de-DE). Precedence: this value > the connected user's profile culture > en-US. Other cultures of the section title are kept. The culture must exist in the Languages section. Requires --caption.")]
+	public string? CaptionCulture { get; set; }
 }
 
 /// <summary>
@@ -45,7 +50,18 @@ public interface IApplicationSectionUpdateService {
 	/// <param name="environmentName">Registered clio environment name.</param>
 	/// <param name="request">Section update request payload.</param>
 	/// <returns>Structured application and section metadata before and after the update.</returns>
-	ApplicationSectionUpdateResult UpdateSection(string environmentName, ApplicationSectionUpdateRequest request);
+	/// <remarks>
+	/// The platform deletes every non-default culture of the section title and description on each
+	/// <c>ApplicationSection</c> update. The implementation snapshots those values before the update and writes
+	/// them back afterwards, writes a caption in a non-profile culture through the localization table only, and
+	/// re-saves the application package's <c>SysModule_&lt;SectionCode&gt;</c> binding after such a write.
+	/// A supplied <see cref="ApplicationSectionUpdateRequest.CaptionCulture"/> is looked up in the environment's
+	/// <c>SysCulture</c> rows before any write, because the platform drops a value in an unknown culture and still
+	/// reports success.
+	/// </remarks>
+	ApplicationSectionUpdateResult UpdateSection(
+		string environmentName,
+		ApplicationSectionUpdateRequest request);
 
 	/// <summary>
 	/// Updates metadata of an existing installed application section against an already-resolved
@@ -60,18 +76,25 @@ public interface IApplicationSectionUpdateService {
 	/// <param name="request">Section update request payload.</param>
 	/// <returns>Structured application and section metadata before and after the update.</returns>
 	/// <exception cref="ArgumentNullException"><paramref name="environmentSettings"/> is <c>null</c>.</exception>
-	ApplicationSectionUpdateResult UpdateSection(EnvironmentSettings environmentSettings, ApplicationSectionUpdateRequest request);
+	ApplicationSectionUpdateResult UpdateSection(
+		EnvironmentSettings environmentSettings,
+		ApplicationSectionUpdateRequest request);
 }
 
 /// <summary>
 /// Default ApplicationSection DataService-backed implementation for existing-app section updates.
 /// </summary>
+[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+	Justification = "Service composes its required collaborators (settings repository, client factory, URL builder, application-info service, caption-culture resolver, section-localization client, localization planner, culture-catalog factory) via constructor injection; grouping them into a parameter object would hide which dependency each step uses and gain nothing behaviorally.")]
 public sealed class ApplicationSectionUpdateService(
 	ISettingsRepository settingsRepository,
 	IApplicationClientFactory applicationClientFactory,
 	IServiceUrlBuilder serviceUrlBuilder,
 	IApplicationInfoService applicationInfoService,
-	ICaptionCultureResolver captionCultureResolver)
+	ICaptionCultureResolver captionCultureResolver,
+	IApplicationSectionLocalizationClient sectionLocalizationClient,
+	ISectionLocalizationPlanner localizationPlanner,
+	ICreatioCultureCatalogFactory cultureCatalogFactory)
 	: IApplicationSectionUpdateService {
 	private const string ApplicationSectionSchemaName = "ApplicationSection";
 	private const string ApplicationIdField = "ApplicationId";
@@ -81,7 +104,9 @@ public sealed class ApplicationSectionUpdateService(
 	};
 
 	/// <inheritdoc />
-	public ApplicationSectionUpdateResult UpdateSection(string environmentName, ApplicationSectionUpdateRequest request) {
+	public ApplicationSectionUpdateResult UpdateSection(
+		string environmentName,
+		ApplicationSectionUpdateRequest request) {
 		if (string.IsNullOrWhiteSpace(environmentName)) {
 			throw new ArgumentException("Environment name is required.", nameof(environmentName));
 		}
@@ -108,7 +133,9 @@ public sealed class ApplicationSectionUpdateService(
 	}
 
 	/// <inheritdoc />
-	public ApplicationSectionUpdateResult UpdateSection(EnvironmentSettings environmentSettings, ApplicationSectionUpdateRequest request) {
+	public ApplicationSectionUpdateResult UpdateSection(
+		EnvironmentSettings environmentSettings,
+		ApplicationSectionUpdateRequest request) {
 		ArgumentNullException.ThrowIfNull(environmentSettings);
 		ArgumentNullException.ThrowIfNull(request);
 		ValidateRequest(request);
@@ -126,16 +153,22 @@ public sealed class ApplicationSectionUpdateService(
 	private ApplicationSectionUpdateResult UpdateSectionCore(
 		EnvironmentSettings environmentSettings,
 		ApplicationSectionUpdateRequest request,
-		Func<string> resolveProfileCaptionCulture,
+		Func<string> resolveProfileCulture,
 		Func<ApplicationInfoResult> loadApplicationInfo) {
-		// ENG-91044: the section caption/description are localized server-side under the connected
-		// user's profile culture (update-app-section has no caption-culture knob), so reject text whose
-		// script does not match the profile culture (e.g. Cyrillic under an en-US profile).
-		string profileCultureForCaption = resolveProfileCaptionCulture();
-		CaptionCultureScriptGuard.EnsureCaptionMatchesCulture(profileCultureForCaption, request.Caption, "caption");
-		CaptionCultureScriptGuard.EnsureCaptionMatchesCulture(profileCultureForCaption, request.Description, "description");
+		List<string> warnings = [];
+		string profileCulture = resolveProfileCulture();
+		// ENG-91044: the description always goes through the ApplicationSection update, which stores it under the
+		// connected user's profile culture.
+		CaptionCultureScriptGuard.EnsureCaptionMatchesCulture(profileCulture, request.Description, "description");
 
 		using IOwnedApplicationClient client = applicationClientFactory.CreateOwnedEnvironmentClient(environmentSettings);
+		string targetCulture = ResolveTargetCulture(request, client, environmentSettings, profileCulture, warnings);
+		bool captionThroughSection = request.Caption is not null && SameCulture(targetCulture, profileCulture);
+		bool captionThroughLocalization = request.Caption is not null && !captionThroughSection;
+		// ENG-91044: the caption is stored under the target culture (profile culture unless caption-culture says
+		// otherwise), so its text must match that culture.
+		CaptionCultureScriptGuard.EnsureCaptionMatchesCulture(targetCulture, request.Caption, "caption");
+
 		ApplicationInfoResult applicationInfo = loadApplicationInfo();
 		string applicationId = applicationInfo.ApplicationId
 			?? throw new InvalidOperationException("Application id was not returned by get-app-info.");
@@ -144,7 +177,100 @@ public sealed class ApplicationSectionUpdateService(
 			environmentSettings,
 			applicationId,
 			request.SectionCode);
-		ResolvedApplicationSectionUpdateRequest resolvedRequest = ResolveRequest(request);
+		// ENG-90576 D11 (F11): the platform's ApplicationSection update deletes every non-default culture of
+		// the section title and description. Snapshot them BEFORE any write so they can be written back.
+		IReadOnlyList<SectionLocalizationRow> snapshot = sectionLocalizationClient.ReadLocalizations(
+			client, environmentSettings, previousSection.Id);
+		ResolvedApplicationSectionUpdateRequest resolvedRequest = ResolveRequest(request, captionThroughSection);
+		bool sectionUpdateNeeded = resolvedRequest.ShouldUpdateCaption
+			|| resolvedRequest.ShouldUpdateDescription
+			|| resolvedRequest.ShouldUpdateIconId
+			|| resolvedRequest.ShouldUpdateIconBackground;
+		if (sectionUpdateNeeded) {
+			ExecuteSectionUpdate(client, environmentSettings, previousSection, resolvedRequest);
+		}
+
+		// A non-default profile culture has its own localization row; prefer it over the SelectQuery value, which
+		// falls back to the default culture when that row is missing.
+		string currentProfileCaption = captionThroughSection
+			? resolvedRequest.Caption
+			: SectionLocalizationPlanner.ReadCell(snapshot, SectionLocalizationPlanner.CaptionColumn, profileCulture)
+				?? previousSection.Caption ?? string.Empty;
+		SectionLocalizationPlan plan = localizationPlanner.BuildPlan(new SectionLocalizationPlanInput(
+			snapshot,
+			sectionUpdateNeeded,
+			profileCulture,
+			targetCulture,
+			captionThroughLocalization ? request.Caption.Trim() : null,
+			captionThroughSection,
+			currentProfileCaption,
+			resolvedRequest.ShouldUpdateDescription));
+		localizationPlanner.Apply(
+			client, environmentSettings, previousSection.Id, applicationInfo.PackageUId, previousSection.Code, plan, warnings);
+
+		ApplicationSectionRecord updatedSection = GetSectionRecord(
+			client,
+			environmentSettings,
+			applicationId,
+			request.SectionCode);
+		IReadOnlyList<SectionLocalizationRow> storedLocalizations = plan.HasWrites || sectionUpdateNeeded
+			? sectionLocalizationClient.ReadLocalizations(client, environmentSettings, previousSection.Id)
+			: snapshot;
+		localizationPlanner.Verify(plan, storedLocalizations);
+		string? captionCultureValue = ResolveCaptionCultureValue(
+			request,
+			captionThroughSection,
+			targetCulture,
+			profileCulture,
+			updatedSection,
+			storedLocalizations,
+			warnings);
+		return new ApplicationSectionUpdateResult(
+			applicationInfo.PackageUId,
+			applicationInfo.PackageName,
+			applicationId,
+			applicationInfo.ApplicationName ?? string.Empty,
+			applicationInfo.ApplicationCode ?? request.ApplicationCode,
+			applicationInfo.ApplicationVersion,
+			MapSection(previousSection),
+			MapSection(updatedSection),
+			request.Caption is not null ? targetCulture : null,
+			captionCultureValue,
+			plan.PreservedCultures,
+			warnings);
+	}
+
+	private string ResolveTargetCulture(
+		ApplicationSectionUpdateRequest request,
+		IApplicationClient client,
+		EnvironmentSettings environmentSettings,
+		string profileCulture,
+		List<string> warnings) {
+		if (string.IsNullOrWhiteSpace(request.CaptionCulture)) {
+			return profileCulture;
+		}
+
+		// The environment's SysCulture rows are the only source of truth for an explicit culture, as in
+		// localize-page: a .NET culture check would reject a row .NET does not know and would hide the Languages
+		// message. The platform drops a value in a culture that is not a SysCulture row and still answers success.
+		string requestedCulture = request.CaptionCulture.Trim();
+		CultureLookupResult lookup = cultureCatalogFactory.Create(client, environmentSettings).Find(requestedCulture);
+		if (!lookup.Found) {
+			throw new InvalidOperationException(CultureMessages.FormatCultureAbsent(requestedCulture, lookup.Available));
+		}
+
+		if (!lookup.Culture.Active) {
+			warnings.Add(CultureMessages.FormatCultureInactive(lookup.Culture.Name));
+		}
+
+		return lookup.Culture.Name;
+	}
+
+	private void ExecuteSectionUpdate(
+		IApplicationClient client,
+		EnvironmentSettings environmentSettings,
+		ApplicationSectionRecord previousSection,
+		ResolvedApplicationSectionUpdateRequest resolvedRequest) {
 		string requestBody = JsonSerializer.Serialize(BuildUpdateBody(previousSection, resolvedRequest), JsonOptions);
 		string responseBody = client.ExecutePostRequest(
 			serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Update, environmentSettings),
@@ -154,22 +280,41 @@ public sealed class ApplicationSectionUpdateService(
 		if (!response.Success) {
 			throw new InvalidOperationException(response.ErrorInfo?.Message ?? "UpdateQuery failed.");
 		}
-
-		ApplicationSectionRecord updatedSection = GetSectionRecord(
-			client,
-			environmentSettings,
-			applicationId,
-			request.SectionCode);
-		return new ApplicationSectionUpdateResult(
-			applicationInfo.PackageUId,
-			applicationInfo.PackageName,
-			applicationId,
-			applicationInfo.ApplicationName ?? string.Empty,
-			applicationInfo.ApplicationCode ?? request.ApplicationCode,
-			applicationInfo.ApplicationVersion,
-			MapSection(previousSection),
-			MapSection(updatedSection));
 	}
+
+	private static string? ResolveCaptionCultureValue(
+		ApplicationSectionUpdateRequest request,
+		bool captionThroughSection,
+		string targetCulture,
+		string profileCulture,
+		ApplicationSectionRecord updatedSection,
+		IReadOnlyList<SectionLocalizationRow> storedLocalizations,
+		List<string> warnings) {
+		if (request.Caption is null) {
+			return null;
+		}
+
+		if (captionThroughSection) {
+			return updatedSection.Caption;
+		}
+
+		string? stored = SectionLocalizationPlanner.ReadCell(
+			storedLocalizations, SectionLocalizationPlanner.CaptionColumn, targetCulture);
+		if (stored is null && !SameCulture(targetCulture, profileCulture)
+			&& SameCulture(targetCulture, EntitySchemaDesignerSupport.DefaultCultureName)) {
+			// The default culture is stored in SysModule itself, not in the localization table, and the
+			// SelectQuery readback returns the connected user's culture — so it cannot be read back here.
+			warnings.Add(
+				$"The caption in '{targetCulture}' is stored in the section record itself and could not be read back " +
+				"under the current profile culture; verify it in Creatio.");
+			return request.Caption.Trim();
+		}
+
+		return stored;
+	}
+
+	private static bool SameCulture(string left, string right) =>
+		string.Equals(left, right, StringComparison.OrdinalIgnoreCase);
 
 	private static void ValidateRequest(ApplicationSectionUpdateRequest request) {
 		if (string.IsNullOrWhiteSpace(request.ApplicationCode)) {
@@ -192,6 +337,10 @@ public sealed class ApplicationSectionUpdateService(
 			throw new ArgumentException("caption cannot be empty.");
 		}
 
+		if (!hasCaption && !string.IsNullOrWhiteSpace(request.CaptionCulture)) {
+			throw new ArgumentException("caption-culture requires caption.");
+		}
+
 		if (hasDescription && string.IsNullOrWhiteSpace(request.Description)) {
 			throw new ArgumentException("description cannot be empty.");
 		}
@@ -205,13 +354,15 @@ public sealed class ApplicationSectionUpdateService(
 		}
 	}
 
-	private static ResolvedApplicationSectionUpdateRequest ResolveRequest(ApplicationSectionUpdateRequest request) {
+	private static ResolvedApplicationSectionUpdateRequest ResolveRequest(
+		ApplicationSectionUpdateRequest request,
+		bool captionThroughSection) {
 		return new ResolvedApplicationSectionUpdateRequest(
-			request.Caption?.Trim(),
+			captionThroughSection ? request.Caption?.Trim() : null,
 			request.Description?.Trim(),
 			request.IconId?.Trim(),
 			request.IconBackground?.Trim(),
-			request.Caption is not null,
+			captionThroughSection,
 			request.Description is not null,
 			request.IconId is not null,
 			request.IconBackground is not null);
@@ -264,20 +415,20 @@ public sealed class ApplicationSectionUpdateService(
 
 	private static object BuildUpdateBody(ApplicationSectionRecord previousSection, ResolvedApplicationSectionUpdateRequest request) {
 		Dictionary<string, object> items = new(StringComparer.Ordinal) {
-			["Id"] = CreateParameterExpression(SelectQueryHelper.GuidDataValueType, previousSection.Id),
-			[ApplicationIdField] = CreateParameterExpression(SelectQueryHelper.GuidDataValueType, previousSection.ApplicationId),
-			["LogoId"] = CreateParameterExpression(SelectQueryHelper.GuidDataValueType,
+			["Id"] = SelectQueryHelper.BuildParameterExpression(SelectQueryHelper.GuidDataValueType, previousSection.Id),
+			[ApplicationIdField] = SelectQueryHelper.BuildParameterExpression(SelectQueryHelper.GuidDataValueType, previousSection.ApplicationId),
+			["LogoId"] = SelectQueryHelper.BuildParameterExpression(SelectQueryHelper.GuidDataValueType,
 				request.ShouldUpdateIconId && request.IconId is not null ? request.IconId : previousSection.LogoId ?? string.Empty),
-			["PackageId"] = CreateParameterExpression(SelectQueryHelper.GuidDataValueType, previousSection.PackageId ?? string.Empty),
-			["IconBackground"] = CreateParameterExpression(SelectQueryHelper.TextDataValueType,
+			["PackageId"] = SelectQueryHelper.BuildParameterExpression(SelectQueryHelper.GuidDataValueType, previousSection.PackageId ?? string.Empty),
+			["IconBackground"] = SelectQueryHelper.BuildParameterExpression(SelectQueryHelper.TextDataValueType,
 				request.ShouldUpdateIconBackground && request.IconBackground is not null ? request.IconBackground : previousSection.IconBackground ?? string.Empty)
 		};
 		if (request.ShouldUpdateCaption && request.Caption is not null) {
-			items["Caption"] = CreateParameterExpression(SelectQueryHelper.TextDataValueType, request.Caption);
+			items["Caption"] = SelectQueryHelper.BuildParameterExpression(SelectQueryHelper.TextDataValueType, request.Caption);
 		}
 
 		if (request.ShouldUpdateDescription && request.Description is not null) {
-			items["Description"] = CreateParameterExpression(SelectQueryHelper.TextDataValueType, request.Description);
+			items["Description"] = SelectQueryHelper.BuildParameterExpression(SelectQueryHelper.TextDataValueType, request.Description);
 		}
 
 		return new Dictionary<string, object> {
@@ -288,45 +439,9 @@ public sealed class ApplicationSectionUpdateService(
 			["columnValues"] = new {
 				items
 			},
-			["filters"] = BuildPrimaryKeyFilter(previousSection.Id)
+			["filters"] = SelectQueryHelper.BuildIdFilter(previousSection.Id, SelectQueryHelper.TextDataValueType)
 		};
 	}
-
-	private static object CreateParameterExpression(int dataValueType, object value) =>
-		new {
-			expressionType = 2,
-			parameter = new {
-				dataValueType,
-				value
-			}
-		};
-
-	private static object BuildPrimaryKeyFilter(string keyValue) =>
-		new {
-			filterType = 6,
-			isEnabled = true,
-			trimDateTimeParameterToDate = false,
-			logicalOperation = 0,
-			items = new {
-				primaryFilter = new {
-					filterType = 1,
-					comparisonType = 3,
-					isEnabled = true,
-					trimDateTimeParameterToDate = false,
-					leftExpression = new {
-						expressionType = 0,
-						columnPath = "Id"
-					},
-					rightExpression = new {
-						expressionType = 2,
-						parameter = new {
-							dataValueType = SelectQueryHelper.TextDataValueType,
-							value = keyValue
-						}
-					}
-				}
-			}
-		};
 
 	private static ApplicationSectionInfoResult MapSection(ApplicationSectionRecord record) =>
 		new(
@@ -393,7 +508,12 @@ public sealed class UpdateAppSectionCommand(
 					options.Caption,
 					options.Description,
 					options.IconId,
-					options.IconBackground));
+					options.IconBackground,
+					options.CaptionCulture));
+			foreach (string warning in result.Warnings ?? []) {
+				logger.WriteWarning(warning);
+			}
+
 			logger.WriteInfo(JsonSerializer.Serialize(result));
 			return 0;
 		} catch (Exception exception) {
@@ -412,13 +532,16 @@ public sealed class UpdateAppSectionCommand(
 /// <param name="Description">Updated section description.</param>
 /// <param name="IconId">Updated icon identifier.</param>
 /// <param name="IconBackground">Updated icon background color.</param>
+/// <param name="CaptionCulture">Culture <paramref name="Caption"/> is written in; <see langword="null"/> means the
+/// connected user's profile culture. Other cultures of the section title are kept.</param>
 public sealed record ApplicationSectionUpdateRequest(
 	string ApplicationCode,
 	string SectionCode,
 	string? Caption = null,
 	string? Description = null,
 	string? IconId = null,
-	string? IconBackground = null);
+	string? IconBackground = null,
+	string? CaptionCulture = null);
 
 /// <summary>
 /// Structured result for existing-app section updates.
@@ -430,7 +553,12 @@ public sealed record ApplicationSectionUpdateRequest(
 /// <param name="ApplicationCode">Installed application code.</param>
 /// <param name="ApplicationVersion">Installed application version.</param>
 /// <param name="PreviousSection">Section metadata before the update.</param>
-/// <param name="Section">Section metadata after the update.</param>
+/// <param name="Section">Section metadata after the update (caption in the connected user's profile culture).</param>
+/// <param name="CaptionCulture">Culture the caption was written in; <see langword="null"/> when no caption was sent.</param>
+/// <param name="CaptionCultureValue">The stored caption in <paramref name="CaptionCulture"/>.</param>
+/// <param name="PreservedCultures">Non-default cultures whose other stored section values (title, description) were
+/// kept or written back; can include <paramref name="CaptionCulture"/> when its description was kept.</param>
+/// <param name="Warnings">Non-fatal findings: inactive culture, stale package data binding.</param>
 public sealed record ApplicationSectionUpdateResult(
 	string PackageUId,
 	string PackageName,
@@ -439,4 +567,8 @@ public sealed record ApplicationSectionUpdateResult(
 	string ApplicationCode,
 	string? ApplicationVersion,
 	ApplicationSectionInfoResult PreviousSection,
-	ApplicationSectionInfoResult Section);
+	ApplicationSectionInfoResult Section,
+	string? CaptionCulture = null,
+	string? CaptionCultureValue = null,
+	IReadOnlyList<string>? PreservedCultures = null,
+	IReadOnlyList<string>? Warnings = null);

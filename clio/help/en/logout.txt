@@ -1,0 +1,11 @@
+NAME
+    logout - revoke the cached SSO OAuth session
+
+ALIASES
+    signout
+
+SYNOPSIS
+    logout [options]
+
+OPTIONS
+    --Environment -e  Environment name

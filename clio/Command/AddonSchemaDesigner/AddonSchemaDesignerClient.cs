@@ -82,7 +82,7 @@ internal sealed class AddonSchemaDesignerClient(
 		// (so the caller can fold it into its result) and move on; the save stands and the cache reset can be retried.
 		try {
 			applicationClient.ExecutePostRequest(
-				serviceUrlBuilder.Build("/rest/WorkplaceService/ResetScriptCache"),
+				serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.ResetScriptCache),
 				string.Empty);
 			return null;
 		} catch (Exception exception) {
