@@ -5029,11 +5029,11 @@ public static partial class WebToMobileAnalysisService {
 			var items = new List<AdaptiveLayoutItem>();
 			for (int i = 0; i < children.Count; i++) {
 				ElementMapEntry child = children[i];
-				(int col, int row, int colSpan, int rowSpan) = WebPlacement(sourceLayouts, child.WebName, i, webCols);
+				(int col, int row) = WebPlacement(sourceLayouts, child.WebName, i, webCols);
 				var adaptive = new JsonObject {
-					["small"] = Cell(1, i + 1, 1, 1),               // phone: single-column stack
-					["medium"] = Cell(col, row, colSpan, rowSpan),  // tablet/desktop: keep the web placement
-					["large"] = Cell(col, row, colSpan, rowSpan)
+					["small"] = Cell(1, i + 1),   // phone: single-column stack
+					["medium"] = Cell(col, row),  // tablet/desktop: keep the web row and column
+					["large"] = Cell(col, row)
 				};
 				// Replace layoutConfig with the adaptive form (the web placement is folded into medium/large).
 				// A container twin reaches here with no values of its own: the layoutConfig IS its whole merge
@@ -5072,26 +5072,29 @@ public static partial class WebToMobileAnalysisService {
 		}
 		return groups;
 
-		static JsonObject Cell(int column, int row, int colSpan, int rowSpan) =>
-			new() { ["row"] = row, ["column"] = column, ["colSpan"] = colSpan, ["rowSpan"] = rowSpan };
+		static JsonObject Cell(int column, int row) =>
+			new() { ["row"] = row, ["column"] = column, ["colSpan"] = 1, ["rowSpan"] = 1 };
 		static IReadOnlyList<string> Cols(int n) => Enumerable.Repeat("1fr", n).ToList();
 	}
 
 	/// <summary>
-	/// The web grid placement of a child (<c>column</c>/<c>row</c>/<c>colSpan</c>/<c>rowSpan</c> from its web
-	/// <c>layoutConfig</c>). Falls back to a left-to-right flow (<paramref name="cols"/> per row, spans of 1)
-	/// using the child's <paramref name="index"/> when the source declared no placement.
+	/// The web grid POSITION of a child (<c>column</c>/<c>row</c> from its web <c>layoutConfig</c>). Falls back
+	/// to a left-to-right flow (<paramref name="cols"/> per row) using the child's <paramref name="index"/> when
+	/// the source declared no placement.
+	/// <para>
+	/// A position is the only part of a web placement that has a mobile counterpart. The web page's spans stay on
+	/// the web page: a mobile grid gives every item exactly one cell, so a child that spans two web columns is one
+	/// cell wide on mobile whatever the placement claims — see <see cref="SpanKeys"/>.
+	/// </para>
 	/// </summary>
-	private static (int Col, int Row, int ColSpan, int RowSpan) WebPlacement(
+	private static (int Col, int Row) WebPlacement(
 		IReadOnlyDictionary<string, JObject> sourceLayouts, string name, int index, int cols) {
 		if (name is not null && sourceLayouts.TryGetValue(name, out JObject lc)) {
 			return (
 				ReadInt(lc, "column") ?? (index % cols) + 1,
-				ReadInt(lc, "row") ?? (index / cols) + 1,
-				ReadInt(lc, "colSpan") ?? 1,
-				ReadInt(lc, "rowSpan") ?? 1);
+				ReadInt(lc, "row") ?? (index / cols) + 1);
 		}
-		return ((index % cols) + 1, (index / cols) + 1, 1, 1);
+		return ((index % cols) + 1, (index / cols) + 1);
 	}
 
 	/// <summary>A JSON array of <paramref name="n"/> "1fr" column sizes.</summary>
@@ -5432,9 +5435,11 @@ public static partial class WebToMobileAnalysisService {
 	/// group occupies, and its shape decides the shape written onto the siblings. A template that positions the
 	/// anchor per breakpoint (<c>layoutConfig.adaptive</c>) gets every breakpoint's row shifted and the siblings
 	/// placed per breakpoint too; a flat placement gets a flat one. Only <c>row</c> and <c>column</c> are computed;
-	/// the anchor keeps whatever its template declared, minus the shifted row. Every placement is completed to all
-	/// four keys by <see cref="NormalizePlacements"/> — the runtime renders without <c>colSpan</c> / <c>rowSpan</c>,
-	/// but the Freedom UI Mobile DESIGNER refuses to open a page whose <c>layoutConfig</c> omits them.
+	/// the anchor keeps whatever its template declared, minus the shifted row and its spans. Every placement
+	/// is completed to all four keys by <see cref="NormalizePlacements"/>, which also REWRITES both spans as 1
+	/// at every breakpoint whoever declared them, the template included — the runtime renders without
+	/// <c>colSpan</c> / <c>rowSpan</c>, but the Freedom UI Mobile DESIGNER refuses to open a page whose
+	/// <c>layoutConfig</c> omits them.
 	/// </para>
 	/// <para>
 	/// An anchor whose template declares no row at all is left alone together with its group: that parent
@@ -5587,7 +5592,8 @@ public static partial class WebToMobileAnalysisService {
 	}
 
 	/// <summary>
-	/// Completes every <c>layoutConfig</c> the element map carries so none reaches the page partial.
+	/// Completes and normalizes every <c>layoutConfig</c> the element map carries: none reaches the page
+	/// partial, and none reaches it claiming a span.
 	/// <para>
 	/// The Freedom UI Mobile DESIGNER fails to open a page whose <c>layoutConfig</c> omits <c>colSpan</c> /
 	/// <c>rowSpan</c>. The runtime renders fine without them, so the failure surfaces only when somebody opens the
@@ -5596,11 +5602,12 @@ public static partial class WebToMobileAnalysisService {
 	/// <para>
 	/// Normalizing here rather than at each writer is deliberate: the converter authors a placement from several
 	/// places — this pass's own <see cref="SiblingSlot"/>, the anchor clone in <see cref="ShiftRows"/>, the
-	/// per-breakpoint adaptive pass, the tab-area stacking, and the VERBATIM carry of the web page's own
+	/// per-breakpoint adaptive pass, the tab-area stacking, and the wholesale copy of the web page's own
 	/// <c>layoutConfig</c> in <see cref="BuildMobileValues"/>. That last one is the reason a per-writer fix is not
-	/// enough: a child of a single-column web grid is touched by none of the placement passes and keeps the web
-	/// object exactly as authored, spans and all — and a web page may legitimately declare only
-	/// <c>row</c>/<c>column</c>.
+	/// enough: a child of a single-column web grid is touched by none of the placement passes, so whatever the
+	/// web page authored would otherwise reach the page untouched — a placement missing <c>colSpan</c> because
+	/// the web page declared only <c>row</c>/<c>column</c>, or one claiming <c>colSpan: 2</c> because the web
+	/// page really did span two columns. Both are answered here, and every future writer with them.
 	/// </para>
 	/// <para>
 	/// Applied to the WHOLE <c>mobileValues</c> tree, not just its root, so a placement nested inside a pasted
@@ -5666,25 +5673,44 @@ public static partial class WebToMobileAnalysisService {
 		return cell;
 	}
 
-	/// <summary>The keys a placement must carry for the mobile designer to open the page.</summary>
-	private static readonly string[] PlacementKeys = [LayoutRowKey, "column", "colSpan", "rowSpan"];
+	/// <summary>The placement keys that carry a POSITION, filled only where the caller left one absent.</summary>
+	private static readonly string[] CellKeys = [LayoutRowKey, "column"];
 
-	/// <summary>Adds each missing placement key as 1, leaving every value the caller already set untouched.</summary>
+	/// <summary>
+	/// The placement keys that carry a SPAN. The mobile runtime places one item per cell and honours neither of
+	/// them, so 1 is the only value that describes what the page actually does; width at a breakpoint is the
+	/// CONTAINER's column count. They are written at all because the Freedom UI Mobile designer refuses to open
+	/// a page whose placement omits them.
+	/// </summary>
+	private static readonly string[] SpanKeys = ["colSpan", "rowSpan"];
+
+	/// <summary>Every key a placement must carry for the mobile designer to open the page.</summary>
+	private static readonly string[] PlacementKeys = [.. CellKeys, .. SpanKeys];
+
+	/// <summary>
+	/// Completes one placement: a missing position key becomes 1, and both spans are written as 1 whatever they
+	/// held. The asymmetry is the point — a position is the caller's own answer and is preserved, while a span
+	/// arriving from anywhere (most often carried verbatim off the web page, where it means a real width) states
+	/// a width the mobile runtime has no way to render.
+	/// </summary>
 	private static void FillPlacementKeys(JsonObject cell) {
-		foreach (string key in PlacementKeys) {
+		foreach (string key in CellKeys) {
 			if (cell[key] is null) {
 				cell[key] = 1;
 			}
 		}
+		foreach (string key in SpanKeys) {
+			cell[key] = 1;
+		}
 	}
 
 	/// <summary>
-	/// A single-column cell: the computed row of column 1, spanning one cell. The one placement literal in this
-	/// file — the positional pass and the tab-area stacking both stack into a single column, so they want the
-	/// same object. All four keys are always written —
-	/// the Freedom UI Mobile DESIGNER fails to open a page whose element carries a <c>layoutConfig</c> without
-	/// <c>colSpan</c> / <c>rowSpan</c>, even though the runtime itself renders fine without them. A partial
-	/// placement is therefore not a smaller placement, it is a broken page at design time.
+	/// A single-column cell: the computed row of column 1, spanning one cell. The positional pass and the
+	/// tab-area stacking both stack into a single column, so they want the same object. All four keys are
+	/// always written — the Freedom UI Mobile DESIGNER fails to open a page whose element carries a
+	/// <c>layoutConfig</c> without <c>colSpan</c> / <c>rowSpan</c>, even though the runtime itself renders fine
+	/// without them. A partial placement is therefore not a smaller placement, it is a broken page at design
+	/// time.
 	/// </summary>
 	private static JsonObject SiblingSlot(int row) => new() {
 		[LayoutRowKey] = row, ["column"] = 1, ["colSpan"] = 1, ["rowSpan"] = 1
