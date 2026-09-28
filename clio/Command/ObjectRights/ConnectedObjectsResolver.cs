@@ -37,7 +37,7 @@ public interface IConnectedObjectsResolver {
 public class ConnectedObjectsResolver : IConnectedObjectsResolver {
 
 	// A fan-out grant goes to a whole role at once, and on MCP nobody sees the target list before it is
-	// written. These objects expose the role/user directory, security configuration or platform metadata;
+	// written. These objects expose the role/user directory, security configuration or platform metadata, and
 	// granting them as a SIDE EFFECT of a fan-out would make that data readable through DataService wherever
 	// record permissions do not also protect it.
 	private static readonly string[] ExcludedPrefixes =

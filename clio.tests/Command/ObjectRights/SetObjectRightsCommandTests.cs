@@ -650,9 +650,10 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		SetObjectRightsOptions options = new() { EntitySchemaName = "UsrOrder", Grantee = Grantee, IncludeConnected = true };
 
 		// Act
-		_command.Execute(options);
+		int exitCode = _command.Execute(options);
 
 		// Assert
+		exitCode.Should().Be(1, because: "a non-interactive run without --confirm is refused");
 		_logger.Received().WriteError(Arg.Is<string>(m =>
 			m.Contains("Grant object operations [read/create/edit]") && m.Contains("'UsrOrder'")
 			&& m.Contains("[read] on 2 connected object(s) (UsrStatus, UsrPartner)")
@@ -669,9 +670,10 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		};
 
 		// Act
-		_command.Execute(options);
+		int exitCode = _command.Execute(options);
 
 		// Assert
+		exitCode.Should().Be(1, because: "a non-interactive run without --confirm is refused");
 		_logger.Received().WriteError(Arg.Is<string>(m => m.Contains("Revoke object operations")
 			&& m.Contains("available to ALL internal users") && m.Contains("connected objects are never turned off")));
 	}
@@ -685,9 +687,10 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		};
 
 		// Act
-		_command.Execute(options);
+		int exitCode = _command.Execute(options);
 
 		// Assert
+		exitCode.Should().Be(1, because: "an unknown connected operation is a usage error");
 		_logger.Received().WriteError("Error: --connected-operations: unknown operation 'readd'. Use read,create,edit,delete.");
 	}
 
@@ -774,9 +777,10 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		SetObjectRightsOptions options = new() { EntitySchemaName = "UsrOrder", Grantee = Grantee };
 
 		// Act
-		_command.Execute(options);
+		int exitCode = _command.Execute(options);
 
 		// Assert
+		exitCode.Should().Be(1, because: "a non-interactive run without --confirm is refused");
 		_logger.Received().WriteError(Arg.Is<string>(m => m.Contains($"'All external users' ({Grantee})")));
 	}
 

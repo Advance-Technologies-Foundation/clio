@@ -50,15 +50,10 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 			_logger.WriteError("Error: --entity-schema-name is required.");
 			return 1;
 		}
-		Guid? granteeFilter = null;
-		if (!string.IsNullOrWhiteSpace(options.Grantee)) {
-			if (!Guid.TryParse(options.Grantee, out Guid parsed) || parsed == Guid.Empty) {
-				_logger.WriteError("Error: --grantee must be a SysAdminUnit id (GUID).");
-				return 1;
-			}
-			granteeFilter = parsed;
+		if (!TryParseGranteeFilter(options.Grantee, out Guid? granteeFilter)) {
+			_logger.WriteError("Error: --grantee must be a SysAdminUnit id (GUID).");
+			return 1;
 		}
-
 		CreatioRequestOptions requestOptions = new() {
 			TimeOut = options.TimeOut, MaxAttempts = options.MaxAttempts, RetryDelay = options.RetryDelay
 		};
@@ -66,48 +61,12 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 		try {
 			ConnectedObjectsResolution resolution =
 				_connectedObjects.Resolve(options.EntitySchemaName, options.IncludeConnected);
+			ReportHeader(options, granteeFilter, resolution);
 			bool rootFailed = false;
-
-			_logger.WriteInfo(
-				$"Object operation permissions for '{options.EntitySchemaName}'"
-				+ (options.IncludeConnected ? " and its connected objects" : "")
-				+ (granteeFilter is null ? "" : $" (grantee {granteeFilter})") + ":");
-			if (resolution.EnumerationError is not null) {
-				_logger.WriteWarning(
-					$"  Could not enumerate the connected objects of '{options.EntitySchemaName}' "
-					+ $"({resolution.EnumerationError}); only the root object was read.");
-			}
-			foreach (string excluded in resolution.Excluded) {
-				_logger.WriteWarning(
-					$"  {excluded}: security/system object — not read as a connected object. Pass it as "
-					+ "--entity-schema-name to read it.");
-			}
-
 			for (int index = 0; index < resolution.Objects.Count; index++) {
-				string schemaName = resolution.Objects[index];
 				bool isRoot = index == 0;
-				ObjectRightsInfo info = _rightsReader.GetObjectRights(schemaName, requestOptions);
-				if (info.ReadError != null || !info.Found) {
-					string reason = info.ReadError != null
-						? $"could not read object rights ({info.ReadError})"
-						: "schema not found";
-					if (isRoot) {
-						// The object the caller NAMED could not be read, so the read did not happen: fail, as
-						// set-object-rights does for the same case.
-						rootFailed = true;
-						_logger.WriteError($"  {schemaName}: {reason}.");
-					} else {
-						_logger.WriteWarning($"  {schemaName}: {reason}.");
-					}
-					continue;
-				}
-				if (!info.AdministratedByOperations) {
-					_logger.WriteInfo(
-						$"  {schemaName}: not administered by operation permissions — available to all internal users; "
-						+ "external users reach it only through an explicit grant.");
-					continue;
-				}
-				ReportObject(schemaName, info, granteeFilter);
+				bool read = ReportTarget(resolution.Objects[index], isRoot, granteeFilter, requestOptions);
+				rootFailed |= isRoot && !read;
 			}
 			return rootFailed ? 1 : 0;
 		}
@@ -115,6 +74,62 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 			_logger.WriteError($"Error: {ex.Message}");
 			return 1;
 		}
+	}
+
+	// An omitted grantee means "every role"; a given one must be a non-empty GUID.
+	private static bool TryParseGranteeFilter(string raw, out Guid? granteeFilter) {
+		granteeFilter = null;
+		if (string.IsNullOrWhiteSpace(raw)) {
+			return true;
+		}
+		if (!Guid.TryParse(raw, out Guid parsed) || parsed == Guid.Empty) {
+			return false;
+		}
+		granteeFilter = parsed;
+		return true;
+	}
+
+	private void ReportHeader(GetObjectRightsOptions options, Guid? granteeFilter, ConnectedObjectsResolution resolution) {
+		_logger.WriteInfo(
+			$"Object operation permissions for '{options.EntitySchemaName}'"
+			+ (options.IncludeConnected ? " and its connected objects" : "")
+			+ (granteeFilter is null ? "" : $" (grantee {granteeFilter})") + ":");
+		if (resolution.EnumerationError is not null) {
+			_logger.WriteWarning(
+				$"  Could not enumerate the connected objects of '{options.EntitySchemaName}' "
+				+ $"({resolution.EnumerationError}); only the root object was read.");
+		}
+		foreach (string excluded in resolution.Excluded) {
+			_logger.WriteWarning(
+				$"  {excluded}: security/system object — not read as a connected object. Pass it as "
+				+ "--entity-schema-name to read it.");
+		}
+	}
+
+	// Reports one object and returns whether it could be read.
+	private bool ReportTarget(string schemaName, bool isRoot, Guid? granteeFilter, CreatioRequestOptions requestOptions) {
+		ObjectRightsInfo info = _rightsReader.GetObjectRights(schemaName, requestOptions);
+		if (info.ReadError != null || !info.Found) {
+			string reason = info.ReadError != null
+				? $"could not read object rights ({info.ReadError})"
+				: "schema not found";
+			if (isRoot) {
+				// The object the caller NAMED could not be read, so the read did not happen: fail, as
+				// set-object-rights does for the same case.
+				_logger.WriteError($"  {schemaName}: {reason}.");
+			} else {
+				_logger.WriteWarning($"  {schemaName}: {reason}.");
+			}
+			return false;
+		}
+		if (!info.AdministratedByOperations) {
+			_logger.WriteInfo(
+				$"  {schemaName}: not administered by operation permissions — available to all internal users; "
+				+ "external users reach it only through an explicit grant.");
+			return true;
+		}
+		ReportObject(schemaName, info, granteeFilter);
+		return true;
 	}
 
 	private void ReportObject(string schemaName, ObjectRightsInfo info, Guid? granteeFilter) {

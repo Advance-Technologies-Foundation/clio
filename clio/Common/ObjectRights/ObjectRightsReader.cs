@@ -178,7 +178,7 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 				: new ObjectRightsInfo(false, schemaName, null, false, Array.Empty<RoleOperationRights>());
 		}
 		return new ObjectRightsInfo(true, Str(node["name"]) ?? schemaName,
-			Str(node["caption"]), Flag(node, "administratedByOperations"), ProjectRoles(node));
+			Str(node["caption"]), Flag(node, AdministratedByOperationsField), ProjectRoles(node));
 	}
 
 	/// <inheritdoc />
@@ -269,7 +269,7 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 		// regardless of its rows (a stale row included). Report that instead of "no change" or "revoked", and
 		// never let the last-row refusal fire here with its "would open it to all internal users" message —
 		// the object already is open to them.
-		if (!Flag(node, "administratedByOperations")) {
+		if (!Flag(node, AdministratedByOperationsField)) {
 			return ObjectRightsOutcome.RevokeOnNotAdministered;
 		}
 		// Revoking operations the grantee does not hold changes nothing — decided before the last-grant check,
@@ -302,7 +302,7 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 		// to all internal users" rather than be left administered with no effective grant.
 		bool anyGrantLeft = rows.OfType<JsonObject>().Any(row => OperationFields.Any(field => Flag(row, field)));
 		if (!anyGrantLeft) {
-			node["administratedByOperations"] = false;
+			node[AdministratedByOperationsField] = false;
 			return ObjectRightsOutcome.ChangedAndDisabled;
 		}
 		return ObjectRightsOutcome.Changed;
@@ -313,8 +313,8 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 		// Enabling operation permissions is itself a change (and possibly an access NARROWING for every other
 		// internal role), so it is tracked separately: a re-grant that alters nothing stays a no-op, and a grant
 		// that flips the object from "available to all internal users" to "only listed roles" is reported as such.
-		bool enabledNow = !Flag(node, "administratedByOperations");
-		node["administratedByOperations"] = true;
+		bool enabledNow = !Flag(node, AdministratedByOperationsField);
+		node[AdministratedByOperationsField] = true;
 		ObjectRightsOutcome changed = enabledNow ? ObjectRightsOutcome.ChangedAndEnabled : ObjectRightsOutcome.Changed;
 		if (granteeRows.Count == 0) {
 			JsonObject row = new() {
@@ -391,8 +391,7 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 		}
 		string firstError = null;
 		foreach (Guid candidate in candidates) {
-			JsonObject node = TryFetchNode(candidate, requestOptions, out string error);
-			if (node is not null) {
+			if (TryFetchNode(candidate, requestOptions, out JsonObject node, out string error)) {
 				return (node, null);
 			}
 			firstError ??= error;
@@ -400,13 +399,15 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 		return (null, firstError);
 	}
 
-	// Fetches GetAdministratedObject for one UId. Returns the administratedObject node on a clean success
+	// Fetches GetAdministratedObject for one UId. Returns true with the administratedObject node on a clean success
 	// (whether or not the object is administered by operations yet — a not-yet-administered object comes back
-	// with administratedByOperations=false and a grant enables it). Otherwise returns null with `error` set:
+	// with administratedByOperations=false and a grant enables it). Otherwise returns false with `error` set:
 	// an HTTP fault (a wrong replacing-schema UId returns a non-JSON error page), an in-band success:false
 	// (the .svc reports logical failures — permission, unknown schema, licensing — as HTTP 200 + errorInfo),
 	// or an unexpected empty body. A failure is NEVER reported as "not administered / available".
-	private JsonObject TryFetchNode(Guid schemaUId, CreatioRequestOptions requestOptions, out string error) {
+	private bool TryFetchNode(Guid schemaUId, CreatioRequestOptions requestOptions, out JsonObject node,
+		out string error) {
+		node = null;
 		error = null;
 		GetAdministratedObjectNodeResponse response;
 		try {
@@ -417,15 +418,16 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 		}
 		catch (Exception ex) when (IsServiceFailure(ex)) {
 			error = ex.Message;
-			return null;
+			return false;
 		}
 		if (response is { Success: true } && response.AdministratedObject is not null) {
-			return response.AdministratedObject;
+			node = response.AdministratedObject;
+			return true;
 		}
 		error = response is { Success: false }
 			? response.ErrorInfo?.Message ?? "GetAdministratedObject reported failure."
 			: "GetAdministratedObject returned no administrated object.";
-		return null;
+		return false;
 	}
 
 	// The failures a call to the Creatio service can produce and that must be attributed to one object rather
@@ -460,6 +462,8 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 		node is JsonValue value && value.TryGetValue(out string text) ? text : null;
 
 	// The wire names of the four operation flags, derived from FieldOf so the mapping lives in one place.
+	private const string AdministratedByOperationsField = "administratedByOperations";
+
 	private static readonly string[] OperationFields =
 		Enum.GetValues<ObjectOperation>().Select(FieldOf).ToArray();
 

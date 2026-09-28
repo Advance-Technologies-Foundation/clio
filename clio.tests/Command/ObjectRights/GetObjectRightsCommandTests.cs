@@ -234,9 +234,10 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 		GetObjectRightsOptions options = new() { EntitySchemaName = "UsrOrder", IncludeConnected = true };
 
 		// Act
-		_command.Execute(options);
+		int exitCode = _command.Execute(options);
 
 		// Assert
+		exitCode.Should().Be(0, because: "an excluded lookup is a warning, not a failure");
 		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("SysAdminUnit") && m.Contains("security/system object")));
 	}
 

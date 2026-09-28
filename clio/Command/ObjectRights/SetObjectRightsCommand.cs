@@ -91,29 +91,70 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 	}
 
 	public override int Execute(SetObjectRightsOptions options) {
-		if (string.IsNullOrWhiteSpace(options.EntitySchemaName)) {
-			_logger.WriteError("Error: --entity-schema-name is required.");
+		if (!TryParseInputs(options, out Guid grantee, out IReadOnlyCollection<ObjectOperation> operations,
+				out IReadOnlyCollection<ObjectOperation> connectedOperations)) {
 			return 1;
 		}
-		if (!Guid.TryParse(options.Grantee, out Guid grantee) || grantee == Guid.Empty) {
-			_logger.WriteError("Error: --grantee must be a SysAdminUnit id (GUID).");
-			return 1;
-		}
-		if (!TryParseOperations("--operations", options.Operations, DefaultOperations,
-				out IReadOnlyCollection<ObjectOperation> operations, out string opError)) {
-			_logger.WriteError(opError);
-			return 1;
-		}
-		if (!TryParseOperations("--connected-operations", options.ConnectedOperations, DefaultConnectedOperations,
-				out IReadOnlyCollection<ObjectOperation> connectedOperations, out string connectedError)) {
-			_logger.WriteError(connectedError);
-			return 1;
-		}
-
 		CreatioRequestOptions requestOptions = new() {
 			TimeOut = options.TimeOut, MaxAttempts = options.MaxAttempts, RetryDelay = options.RetryDelay
 		};
+		if (!TryResolveTargets(options, out IReadOnlyList<string> objects)
+			|| !TryResolveGranteeLabel(grantee, requestOptions, out string granteeLabel)
+			|| IsRefusedBySecurityGate(objects[0], operations, options)) {
+			return 1;
+		}
+		RightsChangeRequest request = new(objects, grantee, granteeLabel, operations, connectedOperations, options,
+			requestOptions);
+		try {
+			return ConfirmChange(request) ?? ApplyChange(request);
+		}
+		catch (Exception ex) {
+			_logger.WriteError($"Error: {ex.Message}");
+			return 1;
+		}
+	}
 
+	// Everything one call changes, resolved and validated before the confirmation.
+	private sealed record RightsChangeRequest(
+		IReadOnlyList<string> Objects,
+		Guid Grantee,
+		string GranteeLabel,
+		IReadOnlyCollection<ObjectOperation> Operations,
+		IReadOnlyCollection<ObjectOperation> ConnectedOperations,
+		SetObjectRightsOptions Options,
+		CreatioRequestOptions RequestOptions) {
+
+		public IReadOnlyCollection<ObjectOperation> OperationsFor(bool isRoot) => isRoot ? Operations : ConnectedOperations;
+	}
+
+	private bool TryParseInputs(SetObjectRightsOptions options, out Guid grantee,
+		out IReadOnlyCollection<ObjectOperation> operations, out IReadOnlyCollection<ObjectOperation> connectedOperations) {
+		grantee = Guid.Empty;
+		operations = connectedOperations = Array.Empty<ObjectOperation>();
+		if (string.IsNullOrWhiteSpace(options.EntitySchemaName)) {
+			_logger.WriteError("Error: --entity-schema-name is required.");
+			return false;
+		}
+		if (!Guid.TryParse(options.Grantee, out grantee) || grantee == Guid.Empty) {
+			_logger.WriteError("Error: --grantee must be a SysAdminUnit id (GUID).");
+			return false;
+		}
+		if (!TryParseOperations("--operations", options.Operations, DefaultOperations, out operations,
+				out string opError)) {
+			_logger.WriteError(opError);
+			return false;
+		}
+		if (!TryParseOperations("--connected-operations", options.ConnectedOperations, DefaultConnectedOperations,
+				out connectedOperations, out string connectedError)) {
+			_logger.WriteError(connectedError);
+			return false;
+		}
+		return true;
+	}
+
+	// Resolves the full target set BEFORE confirming, so the destructive prompt names every object that will be
+	// written (with --include-connected the fan-out can span several permission objects).
+	private bool TryResolveTargets(SetObjectRightsOptions options, out IReadOnlyList<string> objects) {
 		// A revoke fans out to the connected lookups only when the caller names the operations to take away there.
 		// The read-only default is a least-privilege default for a GRANT; applied to a revoke it would strip READ
 		// from shared dictionaries (Contact, Account, Currency) that other sections of the same audience still need.
@@ -124,10 +165,8 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 				"--include-connected with --revoke leaves the connected objects untouched unless "
 				+ "--connected-operations names what to revoke there; only the root object is changed.");
 		}
-
-		// Resolve the full target set BEFORE confirming, so the destructive prompt names every object that will
-		// be written (with --include-connected the fan-out can span several permission objects).
 		ConnectedObjectsResolution resolution = _connectedObjects.Resolve(options.EntitySchemaName, fanOut);
+		objects = resolution.Objects;
 		if (resolution.EnumerationError is not null) {
 			// The caller asked for the root AND its lookups. Writing the root alone would report success while the
 			// lookups stay unreachable, so nothing is written.
@@ -135,61 +174,73 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 				$"Error: could not enumerate the connected objects of '{options.EntitySchemaName}' "
 				+ $"({resolution.EnumerationError}). Nothing was changed. Check that the object name exists; if it "
 				+ "does, re-run, or drop --include-connected to change the root object only.");
-			return 1;
+			return false;
 		}
 		foreach (string excluded in resolution.Excluded) {
 			_logger.WriteWarning(
 				$"  {excluded}: security/system object — not included in the fan-out. Pass it as "
 				+ "--entity-schema-name to change it explicitly.");
 		}
-		IReadOnlyList<string> objects = resolution.Objects;
+		return true;
+	}
 
-		// The grantee must exist: granting to an unknown id would turn operation permissions on for a principal
-		// nobody holds — cutting access for everyone else — and still report "granted".
+	// The grantee must exist: granting to an unknown id would turn operation permissions on for a principal nobody
+	// holds — cutting access for everyone else — and still report "granted".
+	private bool TryResolveGranteeLabel(Guid grantee, CreatioRequestOptions requestOptions, out string granteeLabel) {
+		granteeLabel = null;
 		string granteeName;
 		try {
 			granteeName = _granteeLookup.ResolveGranteeName(grantee, requestOptions);
 		}
 		catch (Exception ex) when (RightManagementServiceClient.IsServiceFailure(ex)) {
 			_logger.WriteError($"Error: could not check grantee {grantee}: {ex.Message}");
-			return 1;
+			return false;
 		}
 		if (granteeName is null) {
 			_logger.WriteError($"Error: grantee {grantee} was not found in SysAdminUnit. Nothing was changed — pass the "
 				+ "id of an existing role or user.");
-			return 1;
+			return false;
 		}
-		string granteeLabel = $"'{granteeName}' ({grantee})";
+		granteeLabel = $"'{granteeName}' ({grantee})";
+		return true;
+	}
 
-		// The fan-out never reaches security/system objects; naming one as the root is the explicit way to change
-		// it. Even then two changes widen access to it and need their own opt-in: a grant beyond read, and a revoke
-		// that may turn its operation permissions OFF (which opens it to every internal user).
-		if (ConnectedObjectsResolver.IsSecurityOrSystemObject(objects[0]) && !options.AllowSecurityObject) {
-			if (!options.Revoke && operations.Any(op => op != ObjectOperation.Read)) {
-				_logger.WriteError($"Error: '{objects[0]}' is a security/system object, so only read may be granted on "
-					+ "it without --allow-security-object. Nothing was changed.");
-				return 1;
-			}
-			if (options.Revoke && options.DisableOperationPermissions) {
-				_logger.WriteError($"Error: '{objects[0]}' is a security/system object. Turning its operation "
-					+ "permissions off would make it available to ALL internal users, so --disable-operation-permissions "
-					+ "on it needs --allow-security-object. Nothing was changed.");
-				return 1;
-			}
+	// The fan-out never reaches security/system objects; naming one as the root is the explicit way to change it.
+	// Even then two changes widen access to it and need their own opt-in: a grant beyond read, and a revoke that
+	// may turn its operation permissions OFF (which opens it to every internal user).
+	private bool IsRefusedBySecurityGate(string root, IReadOnlyCollection<ObjectOperation> operations,
+		SetObjectRightsOptions options) {
+		if (!ConnectedObjectsResolver.IsSecurityOrSystemObject(root) || options.AllowSecurityObject) {
+			return false;
 		}
+		if (!options.Revoke && operations.Any(op => op != ObjectOperation.Read)) {
+			_logger.WriteError($"Error: '{root}' is a security/system object, so only read may be granted on it "
+				+ "without --allow-security-object. Nothing was changed.");
+			return true;
+		}
+		if (options.Revoke && options.DisableOperationPermissions) {
+			_logger.WriteError($"Error: '{root}' is a security/system object. Turning its operation permissions off "
+				+ "would make it available to ALL internal users, so --disable-operation-permissions on it needs "
+				+ "--allow-security-object. Nothing was changed.");
+			return true;
+		}
+		return false;
+	}
 
-		string verb = options.Revoke ? "Revoke" : "Grant";
-		string opList = FormatOperations(operations);
-		string connectedOpList = FormatOperations(connectedOperations);
-		string change = $"{verb} object operations [{opList}] for grantee {granteeLabel} on '{objects[0]}'";
-		if (objects.Count > 1) {
-			change += $", and [{connectedOpList}] on {objects.Count - 1} connected object(s) "
-				+ $"({string.Join(", ", objects.Skip(1))})";
+	// The change as the confirmation prompt and the preview name it.
+	private static string DescribeChange(RightsChangeRequest request) {
+		SetObjectRightsOptions options = request.Options;
+		string root = request.Objects[0];
+		string change = $"{(options.Revoke ? "Revoke" : "Grant")} object operations [{FormatOperations(request.Operations)}] "
+			+ $"for grantee {request.GranteeLabel} on '{root}'";
+		if (request.Objects.Count > 1) {
+			change += $", and [{FormatOperations(request.ConnectedOperations)}] on {request.Objects.Count - 1} "
+				+ $"connected object(s) ({string.Join(", ", request.Objects.Skip(1))})";
 		}
 		change += ".";
 		if (options.Revoke && options.DisableOperationPermissions) {
 			// The operator approves the access WIDENING here, not just the revoke — so the prompt has to say it.
-			change += $" If '{objects[0]}' is left with no rights rows, its operation permissions are turned OFF"
+			change += $" If '{root}' is left with no rights rows, its operation permissions are turned OFF"
 				+ " and it becomes available to ALL internal users (connected objects are never turned off).";
 		}
 		if (!options.Revoke) {
@@ -197,75 +248,73 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 			change += " An object that does not use operation permissions yet has them turned ON, after which only"
 				+ " the roles listed on it can reach it (the result names them).";
 		}
+		return change;
+	}
 
-		try {
-			// Preview and code confirmation. On MCP the command cannot ask anyone, so the change is split in two
-			// calls: a preview that writes nothing and returns a code for the exact targets and every role's
-			// current rights on them, and a confirmed call that must carry that code. A code that no longer matches
-			// (a new lookup, rights changed by someone else) means the user approved something other than what
-			// would now be written. It is called a CODE, not a token, on purpose: the MCP output redactor masks the
-			// value after any "...-token:" key, which would hide it from the agent.
-			if (options.Preview || !string.IsNullOrWhiteSpace(options.ConfirmationCode)) {
-				List<TargetState> targets = DescribeTargets(objects, grantee, operations, connectedOperations, options,
-					requestOptions);
-				if (targets[0].Problem is not null) {
-					// A preview of an object that could not be read shows nothing the user can approve.
-					_logger.WriteError($"Error: '{objects[0]}' {targets[0].Problem}. Nothing was changed and no "
-						+ "confirmation code was issued.");
-					return 1;
-				}
-				string code = ComputeCode(targets, grantee, operations, connectedOperations, options);
-				if (options.Preview) {
-					_logger.WriteInfo($"PREVIEW — nothing was changed. {change}");
-					foreach (TargetState target in targets) {
-						_logger.WriteInfo($"  {target.Line}");
-					}
-					_logger.WriteInfo($"confirmation-code: {code}");
-					return 0;
-				}
-				if (!string.Equals(options.ConfirmationCode.Trim(), code, StringComparison.OrdinalIgnoreCase)) {
-					_logger.WriteError("Error: the confirmation code does not match — the target objects or their "
-						+ "rights changed since the preview, or the arguments differ. Nothing was changed; run a new preview.");
-					return 1;
-				}
-			} else {
-				ConfirmDecision decision = ConfirmApply(options, change);
-				if (decision == ConfirmDecision.Cancelled) {
-					return 0;
-				}
-				if (decision == ConfirmDecision.Refused) {
-					return 1;
-				}
-			}
-
-			bool anyFailure = false;
-			for (int index = 0; index < objects.Count; index++) {
-				string schemaName = objects[index];
-				bool isRoot = index == 0;
-				IReadOnlyCollection<ObjectOperation> objectOperations = isRoot ? operations : connectedOperations;
-				string objectOpList = isRoot ? opList : connectedOpList;
-				// Turning operation permissions OFF is only ever approved for the object the caller named: a shared
-				// lookup made available to all internal users as a side effect would be a silent widening.
-				ObjectRightsChange result = _rightsWriter.SetObjectRights(
-					schemaName, grantee, objectOperations, options.Revoke,
-					isRoot && options.DisableOperationPermissions, requestOptions);
-				bool failed = Report(result, schemaName, isRoot, grantee, granteeLabel, objectOpList, options);
-				anyFailure |= failed;
-				if (isRoot && failed && !result.Changed && objects.Count > 1) {
-					// The root change did not happen, so changing its lookups would leave a half-applied state. A root
-					// that WAS written but reported a problem (who lost access) still gets its lookups: stopping there
-					// would leave exactly that half-applied state.
-					_logger.WriteWarning(
-						$"  The root object was not changed, so the {objects.Count - 1} connected object(s) were not attempted.");
-					break;
-				}
-			}
-			return anyFailure ? 1 : 0;
+	// Returns the exit code when the call ends here (a preview, a cancelled or refused prompt, a code that does not
+	// match), or null when the change is approved and has to be applied.
+	// On MCP the command cannot ask anyone, so the change is split in two calls: a preview that writes nothing and
+	// returns a code for the exact targets and every role's current rights on them, and a confirmed call that must
+	// carry that code. A code that no longer matches (a new lookup, rights changed by someone else) means the user
+	// approved something other than what would now be written. It is called a CODE, not a token, on purpose: the
+	// MCP output redactor masks the value after any "...-token:" key, which would hide it from the agent.
+	private int? ConfirmChange(RightsChangeRequest request) {
+		SetObjectRightsOptions options = request.Options;
+		string change = DescribeChange(request);
+		if (!options.Preview && string.IsNullOrWhiteSpace(options.ConfirmationCode)) {
+			return ConfirmApply(options, change) switch {
+				ConfirmDecision.Cancelled => 0,
+				ConfirmDecision.Refused => 1,
+				_ => null
+			};
 		}
-		catch (Exception ex) {
-			_logger.WriteError($"Error: {ex.Message}");
+		List<TargetState> targets = DescribeTargets(request);
+		if (targets[0].Problem is not null) {
+			// A preview of an object that could not be read shows nothing the user can approve.
+			_logger.WriteError($"Error: '{request.Objects[0]}' {targets[0].Problem}. Nothing was changed and no "
+				+ "confirmation code was issued.");
 			return 1;
 		}
+		string code = ComputeCode(targets, request);
+		if (options.Preview) {
+			_logger.WriteInfo($"PREVIEW — nothing was changed. {change}");
+			foreach (TargetState target in targets) {
+				_logger.WriteInfo($"  {target.Line}");
+			}
+			_logger.WriteInfo($"confirmation-code: {code}");
+			return 0;
+		}
+		if (!string.Equals(options.ConfirmationCode.Trim(), code, StringComparison.OrdinalIgnoreCase)) {
+			_logger.WriteError("Error: the confirmation code does not match — the target objects or their rights "
+				+ "changed since the preview, or the arguments differ. Nothing was changed; run a new preview.");
+			return 1;
+		}
+		return null;
+	}
+
+	private int ApplyChange(RightsChangeRequest request) {
+		IReadOnlyList<string> objects = request.Objects;
+		bool anyFailure = false;
+		for (int index = 0; index < objects.Count; index++) {
+			string schemaName = objects[index];
+			bool isRoot = index == 0;
+			// Turning operation permissions OFF is only ever approved for the object the caller named: a shared lookup
+			// made available to all internal users as a side effect would be a silent widening.
+			ObjectRightsChange result = _rightsWriter.SetObjectRights(
+				schemaName, request.Grantee, request.OperationsFor(isRoot), request.Options.Revoke,
+				isRoot && request.Options.DisableOperationPermissions, request.RequestOptions);
+			bool failed = Report(result, schemaName, isRoot, request);
+			anyFailure |= failed;
+			if (isRoot && failed && !result.Changed && objects.Count > 1) {
+				// The root change did not happen, so changing its lookups would leave a half-applied state. A root that
+				// WAS written but reported a problem (who lost access) still gets its lookups: stopping there would
+				// leave exactly that half-applied state.
+				_logger.WriteWarning(
+					$"  The root object was not changed, so the {objects.Count - 1} connected object(s) were not attempted.");
+				break;
+			}
+		}
+		return anyFailure ? 1 : 0;
 	}
 
 	// One target of the preview: the line shown to the user, the state fingerprint the confirmation code is computed
@@ -275,50 +324,47 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 	// Describes every target for the preview and for the confirmation code: the object, its role in the call,
 	// whether operation permissions are on, and EVERY role's rights on it. The other roles decide whether a revoke
 	// is refused or turns the object off, and who keeps access after a grant turns operation permissions on.
-	private List<TargetState> DescribeTargets(IReadOnlyList<string> objects, Guid grantee,
-		IReadOnlyCollection<ObjectOperation> operations, IReadOnlyCollection<ObjectOperation> connectedOperations,
-		SetObjectRightsOptions options, CreatioRequestOptions requestOptions) {
-		List<TargetState> targets = new();
-		for (int index = 0; index < objects.Count; index++) {
-			string schemaName = objects[index];
-			string role = index == 0 ? "root" : "connected";
-			string ops = FormatOperations((index == 0 ? operations : connectedOperations).OrderBy(op => op));
-			string head = $"{schemaName} ({role}): {(options.Revoke ? "revoke" : "grant")} [{ops}]. Now: ";
-			ObjectRightsInfo info = _rightsReader.GetObjectRights(schemaName, requestOptions);
-			if (info.ReadError is not null) {
-				targets.Add(new TargetState(head + "could not read its rights.", $"{schemaName}|{role}|unreadable",
-					$"could not be read ({info.ReadError})"));
-				continue;
-			}
-			if (!info.Found) {
-				targets.Add(new TargetState(head + "not found.", $"{schemaName}|{role}|not-found", "was not found"));
-				continue;
-			}
-			IReadOnlyList<RoleOperationRights> roles = info.Roles ?? Array.Empty<RoleOperationRights>();
-			string rows = string.Join(";", roles
-				.Select(r => $"{r.GranteeId}:{string.Join("/", r.OperationNames())}")
-				.OrderBy(row => row, StringComparer.Ordinal));
-			string fingerprint = $"{schemaName}|{role}|{(info.AdministratedByOperations ? "on" : "off")}|{rows}";
-			string current;
-			if (!info.AdministratedByOperations) {
-				current = options.Revoke
-					? "not administered by operation permissions (a revoke cannot restrict it)"
-					: "not administered by operation permissions — they will be turned ON";
-			} else {
-				// A grantee can hold several rows; the writer changes all of them, so show what they add up to.
-				RoleOperationRights[] granteeRows = roles.Where(r => r.GranteeId == grantee).ToArray();
-				string granteeHolds = granteeRows.Length == 0
-					? "grantee has NO grant"
-					: $"grantee holds {HeldOperations(granteeRows)}";
-				string[] others = roles.Where(r => r.GranteeId != grantee && r.HasAnyOperation).Select(Describe).ToArray();
-				string otherRoles = others.Length == 0
-					? "no other role holds rights"
-					: $"other roles with rights: {string.Join(", ", others)}";
-				current = $"administered; {granteeHolds}; {otherRoles}";
-			}
-			targets.Add(new TargetState(head + current + ".", fingerprint, null));
+	private List<TargetState> DescribeTargets(RightsChangeRequest request) =>
+		request.Objects.Select((schemaName, index) => DescribeTarget(schemaName, index == 0, request)).ToList();
+
+	private TargetState DescribeTarget(string schemaName, bool isRoot, RightsChangeRequest request) {
+		string role = isRoot ? "root" : "connected";
+		string ops = FormatOperations(request.OperationsFor(isRoot).OrderBy(op => op));
+		string head = $"{schemaName} ({role}): {(request.Options.Revoke ? "revoke" : "grant")} [{ops}]. Now: ";
+		ObjectRightsInfo info = _rightsReader.GetObjectRights(schemaName, request.RequestOptions);
+		if (info.ReadError is not null) {
+			return new TargetState(head + "could not read its rights.", $"{schemaName}|{role}|unreadable",
+				$"could not be read ({info.ReadError})");
 		}
-		return targets;
+		if (!info.Found) {
+			return new TargetState(head + "not found.", $"{schemaName}|{role}|not-found", "was not found");
+		}
+		IReadOnlyList<RoleOperationRights> roles = info.Roles ?? Array.Empty<RoleOperationRights>();
+		string rows = string.Join(";", roles
+			.Select(r => $"{r.GranteeId}:{string.Join("/", r.OperationNames())}")
+			.OrderBy(row => row, StringComparer.Ordinal));
+		string fingerprint = $"{schemaName}|{role}|{(info.AdministratedByOperations ? "on" : "off")}|{rows}";
+		return new TargetState(head + DescribeCurrentState(info.AdministratedByOperations, roles, request) + ".",
+			fingerprint, null);
+	}
+
+	private static string DescribeCurrentState(bool administered, IReadOnlyList<RoleOperationRights> roles,
+		RightsChangeRequest request) {
+		if (!administered) {
+			return request.Options.Revoke
+				? "not administered by operation permissions (a revoke cannot restrict it)"
+				: "not administered by operation permissions — they will be turned ON";
+		}
+		// A grantee can hold several rows; the writer changes all of them, so show what they add up to.
+		RoleOperationRights[] granteeRows = roles.Where(r => r.GranteeId == request.Grantee).ToArray();
+		string granteeHolds = granteeRows.Length == 0
+			? "grantee has NO grant"
+			: $"grantee holds {HeldOperations(granteeRows)}";
+		string[] others = roles.Where(r => r.GranteeId != request.Grantee && r.HasAnyOperation).Select(Describe).ToArray();
+		string otherRoles = others.Length == 0
+			? "no other role holds rights"
+			: $"other roles with rights: {string.Join(", ", others)}";
+		return $"administered; {granteeHolds}; {otherRoles}";
 	}
 
 	private static readonly string[] OperationOrder = { "read", "create", "edit", "delete" };
@@ -331,12 +377,11 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 
 	// A short, stable fingerprint of the arguments and the target state. It is not a secret and not a signature:
 	// it only proves the confirmed call is about the same targets, in the same state, that the preview showed.
-	private static string ComputeCode(IEnumerable<TargetState> targets, Guid grantee,
-		IReadOnlyCollection<ObjectOperation> operations, IReadOnlyCollection<ObjectOperation> connectedOperations,
-		SetObjectRightsOptions options) {
+	private static string ComputeCode(IEnumerable<TargetState> targets, RightsChangeRequest request) {
+		SetObjectRightsOptions options = request.Options;
 		string material = string.Join("\n", new[] {
-			grantee.ToString(), FormatOperations(operations.OrderBy(op => op)),
-			FormatOperations(connectedOperations.OrderBy(op => op)), options.Revoke.ToString(),
+			request.Grantee.ToString(), FormatOperations(request.Operations.OrderBy(op => op)),
+			FormatOperations(request.ConnectedOperations.OrderBy(op => op)), options.Revoke.ToString(),
 			options.DisableOperationPermissions.ToString(), options.AllowSecurityObject.ToString()
 		}.Concat(targets.Select(target => target.Fingerprint)));
 		byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(material));
@@ -345,9 +390,10 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 
 	// Reports one object's result and returns whether it counts as a failure of the run. One outcome, one branch:
 	// the switch over ObjectRightsOutcome replaces an order-dependent chain of boolean checks.
-	private bool Report(ObjectRightsChange result, string schemaName, bool isRoot, Guid grantee, string granteeLabel,
-		string objectOpList, SetObjectRightsOptions options) {
-		bool revoke = options.Revoke;
+	private bool Report(ObjectRightsChange result, string schemaName, bool isRoot, RightsChangeRequest request) {
+		string granteeLabel = request.GranteeLabel;
+		string objectOpList = FormatOperations(request.OperationsFor(isRoot));
+		string done = request.Options.Revoke ? "revoked" : "granted";
 		switch (result.Outcome) {
 			case ObjectRightsOutcome.Failed:
 				_logger.WriteError($"  {schemaName}: {result.Error}");
@@ -376,27 +422,34 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 				_logger.WriteError(
 					$"  {schemaName}: grantee {granteeLabel} holds the object's LAST effective grant. Removing it would "
 					+ $"turn operation permissions OFF and make '{schemaName}' available to ALL internal users. "
-					+ (!isRoot
-						? "Nothing was changed — a connected object is never turned off by a fan-out; name it as "
-							+ "--entity-schema-name to do that explicitly."
-						// No hint towards turning a security/system table off: that opens it to every internal user.
-						: ConnectedObjectsResolver.IsSecurityOrSystemObject(schemaName) && !options.AllowSecurityObject
-							? "Nothing was changed."
-							: "Nothing was changed — re-run with --disable-operation-permissions if that is what you want."));
+					+ RefusalHint(schemaName, isRoot, request.Options));
 				return true;
 			case ObjectRightsOutcome.NoChange:
 				_logger.WriteInfo($"  {schemaName}: already in the requested state (no change).");
 				return false;
 			case ObjectRightsOutcome.ChangedAndDisabled:
-				_logger.WriteInfo($"  {schemaName}: {(revoke ? "revoked" : "granted")} [{objectOpList}] for grantee "
-					+ $"{granteeLabel}. Operation permissions are now OFF on this object — it is available to ALL internal users.");
+				_logger.WriteInfo($"  {schemaName}: {done} [{objectOpList}] for grantee {granteeLabel}. Operation "
+					+ "permissions are now OFF on this object — it is available to ALL internal users.");
 				return false;
 			case ObjectRightsOutcome.ChangedAndEnabled:
-				return ReportEnabled(result, schemaName, grantee, granteeLabel, objectOpList);
+				return ReportEnabled(result, schemaName, request.Grantee, granteeLabel, objectOpList);
 			default:
-				_logger.WriteInfo($"  {schemaName}: {(revoke ? "revoked" : "granted")} [{objectOpList}] for grantee {granteeLabel}.");
+				_logger.WriteInfo($"  {schemaName}: {done} [{objectOpList}] for grantee {granteeLabel}.");
 				return false;
 		}
+	}
+
+	// What to do after a refused last-grant revoke. No hint towards turning a security/system table off: that
+	// opens it to every internal user.
+	private static string RefusalHint(string schemaName, bool isRoot, SetObjectRightsOptions options) {
+		if (!isRoot) {
+			return "Nothing was changed — a connected object is never turned off by a fan-out; name it as "
+				+ "--entity-schema-name to do that explicitly.";
+		}
+		if (ConnectedObjectsResolver.IsSecurityOrSystemObject(schemaName) && !options.AllowSecurityObject) {
+			return "Nothing was changed.";
+		}
+		return "Nothing was changed — re-run with --disable-operation-permissions if that is what you want.";
 	}
 
 	// Turning operation permissions on can cut every other internal role off the object. The writer read the object
@@ -437,7 +490,7 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 	private static readonly ObjectOperation[] DefaultOperations =
 		{ ObjectOperation.Read, ObjectOperation.Create, ObjectOperation.Edit };
 
-	// Least-privilege default for CONNECTED lookup objects: read only. A role picks a lookup value with read;
+	// Least-privilege default for CONNECTED lookup objects: read only. A role picks a lookup value with read, and
 	// fanning create/edit out to every shared dictionary (status/type lookups, Currency, Contact, Account) would
 	// hand a broad audience write access it never needed.
 	private static readonly ObjectOperation[] DefaultConnectedOperations = { ObjectOperation.Read };
