@@ -660,6 +660,14 @@
 		/// An unobserved fault is strictly worse than no guard at all - the poll thread has exited, nothing
 		/// is watching the compilation history, and the loop runs to the full CompilationTimeoutMinutes
 		/// with an open HTTP request before reporting a timeout instead of the real fault.
+		/// <para>
+		/// The thread is a BACKGROUND thread. A history read goes through Creatio.Client, whose response read
+		/// has no timeout and does not observe the cancellation token, so a read the environment never
+		/// answers blocks the thread indefinitely. JoinPollThread gives up after a bounded wait and the
+		/// command reports its verdict, but a foreground thread would still keep the process alive: measured
+		/// on a 10.2.254 stand, <c>compile-package --wait --wait-timeout 5</c> printed its timeout after 5 s
+		/// and the process was still running 15 minutes later.
+		/// </para>
 		/// </remarks>
 		private Thread StartPollThread(DateTime baselineCreatedOn, CancellationTokenSource cts,
 			CompilationProgress progress, Exception[] pollFaultBox) {
@@ -669,7 +677,9 @@
 				} catch (Exception exception) {
 					Volatile.Write(ref pollFaultBox[0], exception);
 				}
-			});
+			}) {
+				IsBackground = true
+			};
 			pollThread.Start();
 			return pollThread;
 		}

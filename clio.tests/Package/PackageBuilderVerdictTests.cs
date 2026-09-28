@@ -244,6 +244,25 @@ public sealed class PackageBuilderVerdictTests {
 	}
 
 	[Test]
+	[Description("The compilation-history poll runs on a background thread, so a history read the environment never answers cannot keep the clio process alive after the build has been reported (measured: a --wait-timeout 5 run printed its timeout and was still running 15 minutes later).")]
+	public void Rebuild_ShouldPollHistoryOnABackgroundThread() {
+		// Arrange
+		bool? pollThreadIsBackground = null;
+		_poller.When(value => value.Poll(Arg.Any<DateTime>(), Arg.Any<CancellationToken>(),
+				Arg.Any<Action<CompilationHistory>>()))
+			.Do(_ => pollThreadIsBackground = Thread.CurrentThread.IsBackground);
+		_stand.AnswersAt(TimeSpan.Zero, SucceededResponse).WritesRow(TimeSpan.Zero, SucceededRow());
+		PackageBuilder sut = CreateSut();
+
+		// Act
+		sut.Rebuild(["UsrPackage"]);
+
+		// Assert
+		pollThreadIsBackground.Should().BeTrue(
+			because: "a foreground poll thread blocked in a history read with no timeout keeps the process from exiting");
+	}
+
+	[Test]
 	[Description("With --wait, a build that neither answers nor writes any compilation history fails with a timeout once --wait-timeout elapses, instead of reporting success (issue #1632).")]
 	public void Rebuild_ShouldTimeOut_WhenWaitedBuildNeverFinishes() {
 		// Arrange
