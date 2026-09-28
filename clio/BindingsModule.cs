@@ -957,6 +957,7 @@ public class BindingsModule {
 		services.AddTransient<GetTargetPackageCommand>();
 		services.AddTransient<IWorkspaceMerger, WorkspaceMerger>();
 		services.AddTransient<IWorkspacePackageFilter, WorkspacePackageFilter>();
+		services.AddTransient<IWorkspacePageTextInspector, WorkspacePageTextInspector>();
 		services.AddTransient<MergeWorkspacesCommand>();
 		services.AddTransient<LoadPackagesToFileSystemCommand>();
 		services.AddTransient<LoadPackagesToDbCommand>();
