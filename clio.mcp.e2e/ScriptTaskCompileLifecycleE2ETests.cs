@@ -27,7 +27,8 @@ namespace Clio.Mcp.E2E;
 /// do to a shared instance - the same reason the other compiling fixture,
 /// <see cref="UserTaskUnlimitedTextToolE2ETests"/>, is in this sub-tier. Run it by hand against an owned stand
 /// with CrtProcessBuilder 1.6.6.33 or later, with <c>McpE2E__Sandbox__EnvironmentName</c> and
-/// <c>McpE2E__AllowDestructiveMcpTests=true</c>.</para>
+/// <c>McpE2E__AllowDestructiveMcpTests=true</c>. On a .NET host it also restarts the application between the
+/// successful compile and the run, because there the new code does not run before a restart.</para>
 /// <para>A process that reached the successful compile is left on the stand under a unique
 /// <c>UsrClioBpCompileLifecycleE2e*</c> name, like the other process-designer fixtures leave theirs: deleting a
 /// process whose code was compiled into the shared assembly would owe yet another compile. Any other run deletes
@@ -55,7 +56,7 @@ public sealed class ScriptTaskCompileLifecycleE2ETests {
 	private const string MinimumCompilePackageVersion = "1.6.6.33";
 
 	[Test]
-	[Description("A script task that references SysSettings under a Terrasoft.Configuration import fails the process-name compile with CS0104 flagged as the process's own error; an aliased using added through modify-business-process makes the second compile succeed, and the run returns the values the code computes - the path an agent takes to repair a colleague's process, end to end.")]
+	[Description("A script task that references SysSettings under a Terrasoft.Configuration import fails the process-name compile with CS0104 flagged as the process's own error; an aliased using added through modify-business-process makes the second compile succeed, and the run returns the values the code computes (after a restart on a .NET host, which the new code needs there) - the path an agent takes to repair a colleague's process, end to end.")]
 	[AllureTag(CompileCreatioTool.CompileCreatioToolName)]
 	[AllureName("A script task compiles through process-name after an alias resolves CS0104, and its run returns the computed values")]
 	public async Task ScriptTask_Should_CompileAfterAnAliasResolvesCs0104_AndRunTheNewCode() {
@@ -97,6 +98,19 @@ public sealed class ScriptTaskCompileLifecycleE2ETests {
 			compileMayBeRunning = true;
 			secondCompile = await CompileAndWaitAsync(context, processName);
 			compileMayBeRunning = false;
+			string? restart = null;
+			if (secondCompile.Succeeded && await IsNetCoreHostAsync(context)) {
+				// The wait stays under the ~150 s MCP response deadline: past it the tool answers "in progress" with
+				// exit-code 0, which would let the run below start against an application still warming up.
+				restart = JsonSerializer.Serialize(await context.Session.CallToolAsync(
+					RestartTool.RestartByEnvironmentNameToolName,
+					new Dictionary<string, object?> {
+						["environmentName"] = context.EnvironmentName,
+						["waitReady"] = true,
+						["waitTimeoutSeconds"] = 120
+					},
+					context.CancellationTokenSource.Token));
+			}
 			CallToolResult ran = await ProcessDesignerE2EArrange.CallToolAsync(context, RunProcessTool.ToolName,
 				new Dictionary<string, object?> {
 					["environment-name"] = context.EnvironmentName,
@@ -115,6 +129,10 @@ public sealed class ScriptTaskCompileLifecycleE2ETests {
 			aliasLanded.Should().BeTrue(because: "an alias on a non-default type is a valid using: {0}", aliased);
 			secondCompile.Succeeded.Should().BeTrue(
 				because: "the alias names the one SysSettings the body means: {0}", secondCompile.Text);
+			if (restart is not null) {
+				restart.Should().Contain(ExitCodeZero,
+					because: "a .NET host runs the newly compiled code only after a restart: {0}", restart);
+			}
 			AssertRunReturnsTheComputedValues(ran);
 		} finally {
 			// A compile whose outcome is unknown may still be running, and deleting a schema under it is not safe;
@@ -128,6 +146,18 @@ public sealed class ScriptTaskCompileLifecycleE2ETests {
 				await DeleteProcessAsync(context.EnvironmentName, processName);
 			}
 		}
+	}
+
+	// Measured on a .NET 8 stand (2026-09-28): after a clean process-name compile the process kept answering
+	// "Publish ... before starting it" until the application restarted. On .NET Framework the compile's own reload
+	// is enough, and not restarting there is what keeps this fixture proving it.
+	private static async Task<bool> IsNetCoreHostAsync(ProcessDesignerArrangeContext context) {
+		CallToolResult listed = await context.Session.CallToolAsync(ShowWebAppListTool.ShowWebAppListToolName,
+			new Dictionary<string, object?>(), context.CancellationTokenSource.Token);
+		using JsonDocument payload = JsonDocument.Parse(listed.Content.OfType<TextContentBlock>().First().Text);
+		JsonElement environment = payload.RootElement.GetProperty("environments").EnumerateArray().First(item =>
+			string.Equals(item.GetProperty("name").GetString(), context.EnvironmentName, StringComparison.OrdinalIgnoreCase));
+		return environment.GetProperty("isNetCore").GetBoolean();
 	}
 
 	private static void AssertRunReturnsTheComputedValues(CallToolResult ran) {

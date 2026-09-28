@@ -38,6 +38,11 @@ and 10.x alike (`WorkspaceBuilderUtility.CreateWorkspaceBuilder`). On 8.3.x ever
 from `SysSchemaSource` first (`DBWorkspaceBuilder.InitializeContent`), so the gap does not exist there - that
 is a source reading, not measured on an 8.3 stand.
 
+On a .NET 8 stand (10.1.38, 2026-09-28) the same `CompileProcess` compiled `Custom` only (`force=False;
+packagesNamesToCompile=[Custom]`) in 1 min 27 s – 1 min 36 s. The compiled process then kept answering
+`Publish the "<name>" process before starting it` until the application was restarted: the reload that is
+enough on .NET Framework is not enough on a .NET host.
+
 A package is marked by other events too: deleting a schema from it (`PackageSchemaDeleted`) and a designer's
 entity save both did on this stand. That is why the first `Build` after a create DID pick a new process up
 (an E2E cleanup had deleted processes from `Custom` that morning) while the `Build` after an edit did not.

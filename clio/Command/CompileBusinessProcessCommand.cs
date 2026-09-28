@@ -252,9 +252,9 @@ public class CompileBusinessProcessCommand(
 				return 0;
 			}
 
-			// Measured on a .NET Framework stand only: the reload the package triggers after a clean compile made
-			// the process run the new code with no restart. A .NET host was not measured, so the line does not
-			// promise it there and points at the restart core-rules asks for after any compile.
+			// Measured on both host kinds: on .NET Framework the reload the package triggers after a clean compile
+			// made the process run the new code with no restart; on a .NET 8 host (2026-09-28) the process kept
+			// answering "Publish ... before starting it" until the application restarted, so the line says so there.
 			logger.WriteInfo(
 				$"Compiled package '{result.PackageName}' ({DescribePackageType(result.PackageType)}) in "
 				+ $"{TimeSpan.FromMilliseconds(result.DurationMs):m\\:ss}. Verify on a run that process "
