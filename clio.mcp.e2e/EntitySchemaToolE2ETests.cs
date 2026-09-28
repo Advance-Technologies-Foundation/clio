@@ -244,6 +244,50 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 
 	[Category("McpE2E.Sandbox")]
 	[Test]
+	[Description("A schema caption in a culture the environment does not have (fi-FI) is refused before saving with the Languages-section message; a caption in a culture the environment has (es-ES) is saved and leaves the en-US caption unchanged (ENG-90576 story 3). Creatio drops a caption in an unknown culture and still answers success, so without the check the first call would report a translation that was never stored.")]
+	[AllureTag(SetSchemaToolName)]
+	[AllureTag(ReadSchemaToolName)]
+	[AllureName("Set entity schema properties refuses a caption culture absent from the environment")]
+	[AllureDescription("On the shared sandbox schema: set-entity-schema-properties with title-localizations {fi-FI} fails with the Languages-section message; with {es-ES} it succeeds and get-entity-schema-properties still reports the original en-US title.")]
+	public async Task SetEntitySchemaProperties_Should_Refuse_Caption_Culture_Absent_From_Environment() {
+		// Arrange
+		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSharedSchemaAsync();
+		EntitySchemaPropertiesInfo before = await ActGetSchemaPropertiesAsync(arrangeContext);
+
+		// Act
+		CommandExecutionEnvelope absentResult = McpCommandExecutionParser.Extract(
+			await CallSetEntitySchemaPropertiesAsync(
+				arrangeContext.Session,
+				arrangeContext.EnvironmentName,
+				arrangeContext.PackageName,
+				arrangeContext.SchemaName,
+				arrangeContext.CancellationTokenSource.Token,
+				titleLocalizations: new Dictionary<string, string> { ["fi-FI"] = "Laboratorio-objekti" }));
+		CommandExecutionEnvelope presentResult = McpCommandExecutionParser.Extract(
+			await CallSetEntitySchemaPropertiesAsync(
+				arrangeContext.Session,
+				arrangeContext.EnvironmentName,
+				arrangeContext.PackageName,
+				arrangeContext.SchemaName,
+				arrangeContext.CancellationTokenSource.Token,
+				titleLocalizations: new Dictionary<string, string> { ["es-ES"] = "Objeto de laboratorio" }));
+		EntitySchemaPropertiesInfo after = await ActGetSchemaPropertiesAsync(arrangeContext);
+
+		// Assert
+		absentResult.ExitCode.Should().Be(1,
+			because: "a caption in a culture that is not a SysCulture row would be dropped by the designer while it reports success");
+		absentResult.Output.Should().Contain(message =>
+				message.Value != null
+				&& message.Value.Contains("Culture 'fi-FI' is not available in this environment", StringComparison.Ordinal)
+				&& message.Value.Contains("Languages section", StringComparison.Ordinal),
+			because: "the refusal must name the culture and tell the caller to add it in the Languages section");
+		AssertCommandSucceeded(presentResult, "a caption in a culture the environment has must be saved");
+		after.Title.Should().Be(before.Title,
+			because: "writing es-ES must not change the en-US caption: the server keeps cultures the request does not list");
+	}
+
+	[Category("McpE2E.Sandbox")]
+	[Test]
 	[Description("Adds a money column using the Creatio display name 'Money' — the alias of the command value Currency2 — and verifies it materializes, so a caller does not have to provoke a failed write to discover the vocabulary (issue #955).")]
 	[AllureTag(CreateToolName)]
 	[AllureTag(ModifyToolName)]
