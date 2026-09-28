@@ -58,7 +58,9 @@ public sealed class PageHierarchyRecoveryHintTests {
 		_logger = Substitute.For<ILogger>();
 		_serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns(SelectQueryUrl);
 		_serviceUrlBuilder.Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema").Returns(GetSchemaUrl);
+		_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetClientUnitDesignerSchema).Returns(GetSchemaUrl);
 		_serviceUrlBuilder.Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema").Returns(SaveSchemaUrl);
+		_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.SaveClientUnitDesignerSchema).Returns(SaveSchemaUrl);
 	}
 
 	// ---- update-page (PageUpdateCommand.TryGetHierarchy) ----

@@ -23,7 +23,7 @@ public sealed class AddonSchemaDesignerClientTests {
 		_serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		_serviceUrlBuilder.Build("ServiceModel/AddonSchemaDesignerService.svc")
 			.Returns("http://local/ServiceModel/AddonSchemaDesignerService.svc");
-		_serviceUrlBuilder.Build("/rest/WorkplaceService/ResetScriptCache")
+		_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.ResetScriptCache)
 			.Returns("http://local/rest/WorkplaceService/ResetScriptCache");
 		_serviceUrlBuilder.Build("ServiceModel/WorkspaceExplorerService.svc/BuildConfiguration")
 			.Returns("http://local/ServiceModel/WorkspaceExplorerService.svc/BuildConfiguration");

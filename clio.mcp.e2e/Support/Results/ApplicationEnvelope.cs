@@ -56,7 +56,11 @@ internal sealed record ApplicationSectionUpdateContextResponseEnvelope(
 	[property: JsonPropertyName("application-version")] string? ApplicationVersion,
 	[property: JsonPropertyName("previous-section")] ApplicationSectionEnvelope? PreviousSection,
 	[property: JsonPropertyName("section")] ApplicationSectionEnvelope? Section,
-	[property: JsonPropertyName("error")] string? Error);
+	[property: JsonPropertyName("error")] string? Error,
+	[property: JsonPropertyName("caption-culture")] string? CaptionCulture = null,
+	[property: JsonPropertyName("caption-culture-value")] string? CaptionCultureValue = null,
+	[property: JsonPropertyName("preserved-cultures")] IReadOnlyList<string>? PreservedCultures = null,
+	[property: JsonPropertyName("warnings")] IReadOnlyList<string>? Warnings = null);
 
 internal sealed record ApplicationSectionDeleteContextResponseEnvelope(
 	[property: JsonPropertyName("success")] bool Success,

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Clio.Command;
 using Clio.Command.EntitySchemaDesigner;
+using Clio.Command.Localization;
 using Clio.Common;
 using Clio.Package;
 using FluentAssertions;
@@ -34,6 +35,9 @@ internal sealed class RemoteEntitySchemaReplacementTests : BaseClioModuleTests {
 		services.AddTransient(_ => _packages);
 		services.AddTransient(_ => captions);
 		services.AddTransient(_ => Substitute.For<IEntitySchemaPublisher>());
+		ICreatioCultureCatalog cultures = Substitute.For<ICreatioCultureCatalog>();
+		cultures.GetCultures().Returns([new CreatioCulture("en-US", true)]);
+		services.AddTransient(_ => cultures);
 	}
 
 	public override void Setup() {

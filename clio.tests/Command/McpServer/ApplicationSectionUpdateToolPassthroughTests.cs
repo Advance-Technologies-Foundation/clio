@@ -1,8 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Reflection;
 using System.Threading.Tasks;
 using Clio.Command;
+using Clio.Command.Localization;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
@@ -62,12 +64,21 @@ public sealed class ApplicationSectionUpdateToolPassthroughTests {
 		// The tool drives the REAL section-update service so both nested calls (the profile-culture
 		// resolution and the application-info read) are exercised for real instead of being hidden
 		// behind a service substitute.
+		// The section localization snapshot (ENG-90576 D11) is not what these tests pin; an empty snapshot keeps
+		// the request sequence they assert unchanged.
+		IApplicationSectionLocalizationClient sectionLocalizationClient = Substitute.For<IApplicationSectionLocalizationClient>();
+		sectionLocalizationClient
+			.ReadLocalizations(Arg.Any<IApplicationClient>(), Arg.Any<EnvironmentSettings>(), Arg.Any<string>())
+			.Returns(new List<SectionLocalizationRow>());
 		IApplicationSectionUpdateService sectionUpdateService = new ApplicationSectionUpdateService(
 			_settingsRepository,
 			_applicationClientFactory,
 			_serviceUrlBuilder,
 			_applicationInfoService,
-			_captionCultureResolver);
+			_captionCultureResolver,
+			sectionLocalizationClient,
+			new SectionLocalizationPlanner(sectionLocalizationClient),
+			Substitute.For<ICreatioCultureCatalogFactory>());
 		_tool = new ApplicationSectionUpdateTool(Substitute.For<ILogger>(), _commandResolver, sectionUpdateService);
 	}
 
