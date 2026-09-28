@@ -169,10 +169,34 @@ namespace Clio
 		// appsettings.json and never appear in ShowSettingsTo output. Also [System.Text.Json...JsonIgnore]
 		// (review, belt-and-suspenders) so a future System.Text.Json serialization of these settings — the
 		// serializer the MCP tool DTOs use — can never emit the transient token/cookie either.
+		/// <summary>
+		/// The bearer token clio presents instead of logging in: either a per-request passthrough value, or
+		/// the <c>AccessToken</c> member of this environment's own entry in <c>appsettings.json</c>.
+		/// </summary>
+		/// <remarks>
+		/// A value assigned through this property is transient and is never serialized. A value read from
+		/// the settings file lives in <see cref="StoredAccessToken"/>, which writes it back unchanged so a
+		/// save does not delete it, and is returned here only while no transient value is set.
+		/// </remarks>
 		[YamlIgnore]
 		[Newtonsoft.Json.JsonIgnore]
 		[System.Text.Json.Serialization.JsonIgnore]
 		public string AccessToken {
+			get => _accessToken ?? StoredAccessToken;
+			set => _accessToken = value;
+		}
+
+		private string _accessToken;
+
+		// The settings-file half of AccessToken (issue #1624). It was not bound at all before, so a token
+		// written into an environment's entry was ignored on read and dropped on the next save, and the
+		// environment fell through to a forms login with no credentials. Private, so neither YAML nor
+		// System.Text.Json sees it, and only a value that came FROM the file can ever go back to it: a
+		// passthrough token assigned through AccessToken never reaches this member.
+		[YamlIgnore]
+		[System.Text.Json.Serialization.JsonIgnore]
+		[Newtonsoft.Json.JsonProperty(nameof(AccessToken), NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+		private string StoredAccessToken {
 			get; set;
 		}
 
@@ -309,6 +333,14 @@ namespace Clio
 			// Never inherited from the stored environment: an external-access token is per-invocation
 			// and is never persisted, so it can only come from the command line.
 			result.ExternalAccessToken = options.ExternalAccessToken;
+			// A bearer-only environment has nothing else to authenticate with: dropping the token here
+			// sent every command down a forms login carrying no user name at all (issue #1624).
+			// The factory prefers any bearer over login/password or client credentials, so the stored
+			// token is carried only when it is the one credential this call can use (see CanCarryStoredAccessToken).
+			if (CanCarryStoredAccessToken(options)) {
+				result.AccessToken = this.AccessToken;
+				result.AccessTokenType = this.AccessTokenType;
+			}
 			if (this.Safe.HasValue && this.Safe.Value
 				&& !interactiveConsole.Prompt($"You try to apply the action on the production site {this.Uri}")) {
 				// Non-interactive hosts (MCP stdio / CI) fail closed here instead of blocking on
@@ -321,6 +353,36 @@ namespace Clio
 			ApplyDbServerOptions(result, options);
 			return result;
 		}
+
+		// The stored token is carried only when all of these hold:
+		// - the caller passed no explicit credential for this call (login, password, client credentials or an
+		//   external-access token): explicit per-call credentials win, and an external-access token next to an
+		//   access token is rejected by ExternalAccessSettingsGuard;
+		// - the environment itself stores no login/password or client credentials: the factory tries the bearer
+		//   first with no re-login, so a stale token would otherwise lock out the credentials that still work;
+		// - the call targets the stored Uri: a bearer must never be presented to a host the caller named instead.
+		private bool CanCarryStoredAccessToken(EnvironmentOptions options) =>
+			!HasExplicitCredentials(options)
+			&& !HasStoredCredentials()
+			&& (string.IsNullOrEmpty(options.Uri) || IsSameUri(options.Uri, this.Uri));
+
+		private static bool HasExplicitCredentials(EnvironmentOptions options) =>
+			!string.IsNullOrEmpty(options.Login)
+			|| !string.IsNullOrEmpty(options.Password)
+			|| !string.IsNullOrEmpty(options.ClientId)
+			|| !string.IsNullOrEmpty(options.ClientSecret)
+			|| !string.IsNullOrEmpty(options.ExternalAccessToken);
+
+		private bool HasStoredCredentials() =>
+			!string.IsNullOrEmpty(this.Login)
+			|| !string.IsNullOrEmpty(this.Password)
+			|| !string.IsNullOrEmpty(this.ClientId)
+			|| !string.IsNullOrEmpty(this.ClientSecret);
+
+		private static bool IsSameUri(string first, string second) =>
+			System.Uri.TryCreate(first?.Trim().TrimEnd('/'), UriKind.Absolute, out Uri left)
+			&& System.Uri.TryCreate(second?.Trim().TrimEnd('/'), UriKind.Absolute, out Uri right)
+			&& left.Equals(right);
 
 		private static void ApplyDbServerOptions(EnvironmentSettings result, EnvironmentOptions options) {
 			if (System.Uri.TryCreate(options.DbServerUri, UriKind.Absolute, out Uri uri)) {
