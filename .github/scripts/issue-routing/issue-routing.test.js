@@ -240,6 +240,41 @@ test('parses an ATX heading with a closing sequence', () => {
   assert.deepEqual(values, ['Packages'], 'trailing #s are markdown syntax, not part of the heading');
 });
 
+test('recognises only real ATX headings', () => {
+  // Arrange
+  const cases = [
+    ['#Component\n\nPackages', []],
+    ['####### Component\n\nPackages', []],
+    ['    ### Component\n\nPackages', []],
+    ['   ### Component\n\nPackages', ['Packages']],
+    ['###\tComponent\n\nPackages', ['Packages']],
+  ];
+  for (const [body, expected] of cases) {
+    // Act
+    const values = routing.extractFieldValues(body, 'Component');
+    // Assert
+    assert.deepEqual(values, expected, `${JSON.stringify(body.split('\n')[0])}: CommonMark needs 1-6 #s, at most 3 leading spaces and a blank after the #s`);
+  }
+});
+
+test('keeps hashes glued to the heading text', () => {
+  // Arrange
+  const sections = routing.parseIssueFormSections('### Language C#\n\nx');
+  // Act
+  const keys = [...sections.keys()];
+  // Assert
+  assert.deepEqual(keys, ['language c#'], 'a closing sequence must be separated by a blank; "C#" is content');
+});
+
+test('ignores malformed checkbox lines', () => {
+  // Arrange
+  const body = '### Component\n\n-[x] Packages\n- [y] Workspaces\n- [x]Docs';
+  // Act
+  const values = routing.extractFieldValues(body, 'Component');
+  // Assert
+  assert.deepEqual(values, ['-[x] Packages - [y] Workspaces - [x]Docs'], 'none of the lines is a task item, so the section is read as one plain value');
+});
+
 test('rejects team owners, duplicate options and missing labels', () => {
   // Arrange
   const broken = {

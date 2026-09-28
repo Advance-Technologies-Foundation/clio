@@ -6,21 +6,63 @@
 // are exported separately so issue-routing.test.js can cover them with `node --test`.
 // See .github/ISSUE_ROUTING.md for the behaviour contract.
 
-const fs = require('fs');
+const fs = require('node:fs');
 
 // What GitHub writes into the body for an optional field the author left empty.
 const NO_RESPONSE = '_No response_';
 
-// The body is attacker-controlled (up to 65,536 chars). Patterns are kept free of overlapping
-// quantifiers, trimming is done with string methods, and over-long lines are never treated as
-// headings or checkboxes, so matching stays linear.
+// The body is attacker-controlled (up to 65,536 chars). Headings and checkboxes are recognised by
+// plain character scanning instead of regular expressions, and over-long lines are never treated
+// as structure, so parsing stays linear in the body length.
 const MAX_STRUCTURAL_LINE = 1000;
-const HEADING = /^ {0,3}#{1,6}[ \t]+(.*)$/;
-const CHECKBOX = /^[-*][ \t]+\[([ xX])\][ \t]+(.*)$/;
 const LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
 
 function normalize(text) {
   return String(text ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+function isBlank(ch) {
+  return ch === ' ' || ch === '\t';
+}
+
+function skipBlanks(text, from) {
+  let i = from;
+  while (i < text.length && isBlank(text[i])) i++;
+  return i;
+}
+
+// Drops an ATX closing sequence: "Component ###" -> "Component". Hashes glued to the text
+// ("C#") are content, not a closing sequence.
+function stripClosingHashes(text) {
+  let end = text.length;
+  while (end > 0 && text[end - 1] === '#') end--;
+  if (end === text.length) return text;
+  if (end === 0) return '';
+  return isBlank(text[end - 1]) ? text.slice(0, end).trimEnd() : text;
+}
+
+/** Returns the text of a markdown ATX heading line ("### Component"), or null. */
+function headingText(line) {
+  if (line.length > MAX_STRUCTURAL_LINE) return null;
+  let i = 0;
+  while (i < 3 && line[i] === ' ') i++;
+  const hashes = i;
+  while (line[i] === '#' && i - hashes < 7) i++;
+  const level = i - hashes;
+  if (level < 1 || level > 6 || !isBlank(line[i])) return null;
+  return stripClosingHashes(line.slice(i).trim()) || null;
+}
+
+/** Parses a trimmed task-list line ("- [x] Packages"), or returns null. */
+function checkboxItem(line) {
+  if (line.length > MAX_STRUCTURAL_LINE || (line[0] !== '-' && line[0] !== '*')) return null;
+  const open = skipBlanks(line, 1);
+  if (open === 1 || line[open] !== '[' || line[open + 2] !== ']') return null;
+  const mark = line[open + 1];
+  if (mark !== ' ' && mark !== 'x' && mark !== 'X') return null;
+  const textStart = skipBlanks(line, open + 3);
+  if (textStart === open + 3) return null;
+  return { checked: mark !== ' ', text: line.slice(textStart).trim() };
 }
 
 /**
@@ -28,17 +70,6 @@ function normalize(text) {
  * case-insensitively; the FIRST occurrence wins, so a heading the author typed inside a later
  * textarea cannot override a form field that appears earlier in the form.
  */
-function headingText(line) {
-  if (line.length > MAX_STRUCTURAL_LINE) return null;
-  const match = HEADING.exec(line);
-  if (!match) return null;
-  let text = match[1].trimEnd();
-  // ATX closing sequence: "### Component ###".
-  const unclosed = text.replace(/#+$/, '');
-  if (unclosed !== text && (unclosed === '' || /\s$/.test(unclosed))) text = unclosed.trimEnd();
-  return text || null;
-}
-
 function parseIssueFormSections(body) {
   const sections = new Map();
   let current = null;
@@ -74,9 +105,9 @@ function extractFieldValues(body, fieldLabel) {
     return [];
   }
   const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
-  const checkboxes = lines.map(l => (l.length > MAX_STRUCTURAL_LINE ? null : CHECKBOX.exec(l))).filter(Boolean);
+  const checkboxes = lines.map(checkboxItem).filter(Boolean);
   if (checkboxes.length > 0) {
-    return checkboxes.filter(m => m[1] !== ' ').map(m => m[2].trim()).filter(Boolean);
+    return checkboxes.filter(c => c.checked && c.text).map(c => c.text);
   }
   const value = lines.filter(l => l !== NO_RESPONSE).join(' ').trim();
   return value ? [value] : [];
@@ -91,45 +122,52 @@ function resolveComponent(value, config) {
   return config.components.find(c => normalize(c.option) === wanted || normalize(c.id) === wanted) ?? null;
 }
 
+function describeComponent(component, index) {
+  const suffix = component?.id ? ' (' + component.id + ')' : '';
+  return `components[${index}]${suffix}`;
+}
+
+function checkUnique(errors, seen, where, key, value, hint = '') {
+  if (!value) {
+    errors.push(`${where}: "${key}" is required${hint}`);
+  } else if (seen.has(normalize(value))) {
+    errors.push(`${where}: duplicate ${key} "${value}"`);
+  } else {
+    seen.add(normalize(value));
+  }
+}
+
+function checkOwners(errors, where, owners) {
+  if (!Array.isArray(owners)) {
+    errors.push(`${where}: "owners" must be an array (use [] for label-only routing)`);
+    return;
+  }
+  for (const owner of owners) {
+    if (!LOGIN.test(String(owner).replace(/^@/, ''))) {
+      errors.push(`${where}: owner "${owner}" is not a GitHub user login (teams cannot be assignees)`);
+    }
+  }
+}
+
+function checkComponent(errors, seen, component, index) {
+  const where = describeComponent(component, index);
+  checkUnique(errors, seen.id, where, 'id', component?.id);
+  checkUnique(errors, seen.option, where, 'option', component?.option);
+  if (component?.triage) return;
+  checkUnique(errors, seen.label, where, 'label', component?.label, ' unless "triage": true');
+  checkOwners(errors, where, component?.owners);
+}
+
 /** Throws with every problem found; a broken map must fail loudly, not route silently. */
 function validateConfig(config) {
-  const errors = [];
   if (!config || !Array.isArray(config.components)) {
     throw new Error('component-owners.json: "components" must be an array');
   }
+  const errors = [];
   if (!config.fieldLabel) errors.push('"fieldLabel" is required');
   if (!config.triageLabel?.name) errors.push('"triageLabel.name" is required');
   const seen = { id: new Set(), option: new Set(), label: new Set() };
-  config.components.forEach((c, i) => {
-    const where = `components[${i}]${c?.id ? ` (${c.id})` : ''}`;
-    for (const key of ['id', 'option']) {
-      if (!c?.[key]) {
-        errors.push(`${where}: "${key}" is required`);
-      } else if (seen[key].has(normalize(c[key]))) {
-        errors.push(`${where}: duplicate ${key} "${c[key]}"`);
-      } else {
-        seen[key].add(normalize(c[key]));
-      }
-    }
-    if (c?.triage) return;
-    if (!c?.label) {
-      errors.push(`${where}: "label" is required unless "triage": true`);
-    } else if (seen.label.has(normalize(c.label))) {
-      errors.push(`${where}: duplicate label "${c.label}"`);
-    } else {
-      seen.label.add(normalize(c.label));
-    }
-    if (!Array.isArray(c?.owners)) {
-      errors.push(`${where}: "owners" must be an array (use [] for label-only routing)`);
-    } else {
-      for (const owner of c.owners) {
-        const login = String(owner).replace(/^@/, '');
-        if (!LOGIN.test(login)) {
-          errors.push(`${where}: owner "${owner}" is not a GitHub user login (teams cannot be assignees)`);
-        }
-      }
-    }
-  });
+  config.components.forEach((component, index) => checkComponent(errors, seen, component, index));
   if (errors.length > 0) {
     throw new Error(`component-owners.json is invalid:\n- ${errors.join('\n- ')}`);
   }
@@ -165,6 +203,29 @@ function routingKey(result) {
   return result.component ? `component:${result.component.id}` : 'unrouted';
 }
 
+function componentLabelChanges({ chosen, isEdit, present, config }) {
+  const add = [];
+  const remove = [];
+  const componentLabels = config.components.filter(c => c.label).map(c => normalize(c.label));
+  if (isEdit || chosen) {
+    for (const label of componentLabels) {
+      if (label !== normalize(chosen) && present.has(label)) remove.push(present.get(label));
+    }
+  }
+  if (chosen && !present.has(normalize(chosen))) add.push(chosen);
+  const keepsComponentLabel = componentLabels.some(l => present.has(l) && !remove.includes(present.get(l)));
+  return { add, remove, keepsComponentLabel };
+}
+
+function triageLabelChanges({ chosen, keepsComponentLabel, present, config }) {
+  const triage = normalize(config.triageLabel.name);
+  if (chosen) {
+    return present.has(triage) ? { add: [], remove: [present.get(triage)] } : { add: [], remove: [] };
+  }
+  const needsTriage = !keepsComponentLabel && !present.has(triage);
+  return { add: needsTriage ? [config.triageLabel.name] : [], remove: [] };
+}
+
 /**
  * Computes the label and assignee changes for one event. Pure: no API calls.
  *
@@ -196,33 +257,19 @@ function planRouting({ body, previousBody, currentLabels = [], currentAssignees 
   }
 
   const present = new Map(currentLabels.map(l => [normalize(l), l]));
-  const triage = config.triageLabel.name;
-  const componentLabels = config.components.filter(c => c.label).map(c => c.label);
   const chosen = current.status === 'resolved' ? current.component.label : null;
-
-  const add = [];
-  const remove = [];
-  if (isEdit || chosen) {
-    for (const label of componentLabels) {
-      if (normalize(label) !== normalize(chosen) && present.has(normalize(label))) {
-        remove.push(present.get(normalize(label)));
-      }
-    }
-  }
-  const keptComponentLabel = componentLabels.some(l => present.has(normalize(l)) && !remove.includes(present.get(normalize(l))));
-
-  if (chosen) {
-    if (!present.has(normalize(chosen))) add.push(chosen);
-    if (present.has(normalize(triage))) remove.push(present.get(normalize(triage)));
-  } else if (!keptComponentLabel && !present.has(normalize(triage))) {
-    add.push(triage);
-  }
-
+  const components = componentLabelChanges({ chosen, isEdit, present, config });
+  const triage = triageLabelChanges({ chosen, keepsComponentLabel: components.keepsComponentLabel, present, config });
   const owners = chosen && currentAssignees.length === 0
     ? current.component.owners.map(o => String(o).replace(/^@/, ''))
     : [];
 
-  return { ...base, labelsToAdd: add, labelsToRemove: remove, ownerCandidates: owners };
+  return {
+    ...base,
+    labelsToAdd: [...components.add, ...triage.add],
+    labelsToRemove: [...components.remove, ...triage.remove],
+    ownerCandidates: owners,
+  };
 }
 
 function labelSpec(name, config) {
@@ -277,6 +324,103 @@ async function isAssignable(github, core, repo, login) {
   }
 }
 
+// The payload is a snapshot from when the event fired; an earlier run for the same issue may have
+// changed labels/assignees since. Plan from the live issue, or a quick open-then-edit ends with
+// two component labels and two assignees.
+async function readLiveIssue(github, core, repo, issue) {
+  try {
+    const { data } = await github.rest.issues.get({ ...repo, issue_number: issue.number });
+    return data;
+  } catch (error) {
+    core.warning(`Could not re-read issue #${issue.number}, using the event payload: ${error.message}`);
+    return issue;
+  }
+}
+
+async function firstAssignable(github, core, repo, candidates) {
+  for (const login of candidates) {
+    if (await isAssignable(github, core, repo, login)) return login;
+  }
+  return null;
+}
+
+/** Assigns the first assignable candidate; returns the login, or null when nobody was assigned. */
+async function assignOwner(github, core, repo, issueNumber, candidates) {
+  const login = await firstAssignable(github, core, repo, candidates);
+  if (!login) return null;
+  try {
+    const { data } = await github.rest.issues.addAssignees({ ...repo, issue_number: issueNumber, assignees: [login] });
+    // The API answers 201 and silently drops a login it cannot assign; verify.
+    if ((data.assignees || []).some(a => normalize(a.login) === normalize(login))) return login;
+    core.warning(`GitHub accepted the request but did not assign "${login}".`);
+  } catch (error) {
+    core.warning(`Could not assign "${login}": ${error.message}`);
+  }
+  return null;
+}
+
+// A routed issue nobody could be assigned to still needs a human: keep or add the triage label.
+function keepForTriage(labels, config) {
+  const triage = normalize(config.triageLabel.name);
+  const isTriage = l => normalize(l) === triage;
+  if (labels.remove.some(isTriage)) {
+    return { add: labels.add, remove: labels.remove.filter(l => !isTriage(l)) };
+  }
+  if (labels.add.some(isTriage)) return labels;
+  return { add: [...labels.add, config.triageLabel.name], remove: labels.remove };
+}
+
+async function applyLabels(github, core, repo, issueNumber, labels, config) {
+  for (const name of labels.remove) {
+    try {
+      await github.rest.issues.removeLabel({ ...repo, issue_number: issueNumber, name });
+    } catch (error) {
+      if (error.status !== 404) core.warning(`Could not remove label "${name}": ${error.message}`);
+    }
+  }
+  const ready = [];
+  for (const name of labels.add) {
+    if (await ensureLabel(github, core, repo, labelSpec(name, config))) ready.push(name);
+  }
+  if (ready.length === 0) return ready;
+  try {
+    await github.rest.issues.addLabels({ ...repo, issue_number: issueNumber, labels: ready });
+  } catch (error) {
+    core.warning(`Could not add labels ${JSON.stringify(ready)}: ${error.message}`);
+  }
+  return ready;
+}
+
+function describePlan(issueNumber, plan) {
+  const component = plan.component ? ' (' + plan.component.id + ')' : '';
+  return `Issue #${issueNumber}: component field = ${JSON.stringify(plan.values)} -> ${plan.status}${component}`;
+}
+
+function skipReason(payload) {
+  const issue = payload.issue;
+  if (!issue || issue.pull_request) return 'Not an issue event; nothing to route.';
+  if (payload.action === 'edited' && payload.changes?.body === undefined) {
+    return 'Only the title changed; routing depends on the body. Skipping.';
+  }
+  return null;
+}
+
+async function writeSummary(core, issueNumber, plan, outcome) {
+  let assignee = outcome.assigned || '-';
+  if (!outcome.assigned && plan.alreadyAssigned) assignee = '(unchanged, already assigned)';
+  await core.summary
+    .addHeading(`Issue #${issueNumber} routing`, 3)
+    .addTable([
+      [{ data: 'Field', header: true }, { data: 'Value', header: true }],
+      ['Component value', plan.values.join(', ') || '(none)'],
+      ['Status', plan.status],
+      ['Labels added', outcome.added.join(', ') || '-'],
+      ['Labels removed', outcome.removed.join(', ') || '-'],
+      ['Assignee', assignee],
+    ])
+    .write();
+}
+
 /**
  * Entry point for actions/github-script. Assigns at most ONE owner: the first assignable login in
  * the component's `owners` list. Several assignees would read as an ambiguous claim to the
@@ -284,27 +428,16 @@ async function isAssignable(github, core, repo, login) {
  */
 async function run({ github, context, core, configPath }) {
   const payload = context.payload;
-  const issue = payload.issue;
-  if (!issue || issue.pull_request) {
-    core.info('Not an issue event; nothing to route.');
-    return;
-  }
-  if (payload.action === 'edited' && payload.changes?.body === undefined) {
-    core.info('Only the title changed; routing depends on the body. Skipping.');
+  const skip = skipReason(payload);
+  if (skip) {
+    core.info(skip);
     return;
   }
 
   const config = loadConfig(configPath);
   const repo = context.repo;
-  // The payload is a snapshot from when the event fired; an earlier run for the same issue may have
-  // changed labels/assignees since. Plan from the live issue, or a quick open-then-edit ends with
-  // two component labels and two assignees.
-  let live = issue;
-  try {
-    ({ data: live } = await github.rest.issues.get({ ...repo, issue_number: issue.number }));
-  } catch (error) {
-    core.warning(`Could not re-read issue #${issue.number}, using the event payload: ${error.message}`);
-  }
+  const issueNumber = payload.issue.number;
+  const live = await readLiveIssue(github, core, repo, payload.issue);
   const plan = planRouting({
     body: live.body,
     previousBody: payload.action === 'edited' ? payload.changes.body.from ?? '' : undefined,
@@ -313,7 +446,7 @@ async function run({ github, context, core, configPath }) {
     config,
   });
 
-  core.info(`Issue #${issue.number}: component field = ${JSON.stringify(plan.values)} -> ${plan.status}${plan.component ? ` (${plan.component.id})` : ''}`);
+  core.info(describePlan(issueNumber, plan));
   if (plan.unchanged) {
     core.info('The edit did not change the component; leaving labels and assignees as they are.');
     return;
@@ -322,72 +455,20 @@ async function run({ github, context, core, configPath }) {
     core.warning(`Component value ${JSON.stringify(plan.values)} is not in .github/component-owners.json; the issue form and the map are out of sync.`);
   }
 
-  const labelsToAdd = [...plan.labelsToAdd];
-  let labelsToRemove = [...plan.labelsToRemove];
+  let labels = { add: plan.labelsToAdd, remove: plan.labelsToRemove };
   let assigned = null;
   if (plan.ownerCandidates.length > 0) {
-    for (const login of plan.ownerCandidates) {
-      if (await isAssignable(github, core, repo, login)) {
-        assigned = login;
-        break;
-      }
-    }
-    if (assigned) {
-      try {
-        const { data } = await github.rest.issues.addAssignees({ ...repo, issue_number: issue.number, assignees: [assigned] });
-        // The API answers 201 and silently drops a login it cannot assign; verify.
-        if (!(data.assignees || []).some(a => normalize(a.login) === normalize(assigned))) {
-          core.warning(`GitHub accepted the request but did not assign "${assigned}".`);
-          assigned = null;
-        }
-      } catch (error) {
-        core.warning(`Could not assign "${assigned}": ${error.message}`);
-        assigned = null;
-      }
-    }
+    assigned = await assignOwner(github, core, repo, issueNumber, plan.ownerCandidates);
     if (!assigned) {
       core.warning(`No owner of "${plan.component.id}" could be assigned; marking the issue for triage.`);
-      const triage = normalize(config.triageLabel.name);
-      if (labelsToRemove.some(l => normalize(l) === triage)) {
-        labelsToRemove = labelsToRemove.filter(l => normalize(l) !== triage);
-      } else if (!labelsToAdd.some(l => normalize(l) === triage)) {
-        labelsToAdd.push(config.triageLabel.name);
-      }
+      labels = keepForTriage(labels, config);
     }
   } else if (plan.status === 'resolved' && plan.alreadyAssigned) {
     core.info('Issue already has an assignee; leaving assignment unchanged.');
   }
 
-  for (const name of labelsToRemove) {
-    try {
-      await github.rest.issues.removeLabel({ ...repo, issue_number: issue.number, name });
-    } catch (error) {
-      if (error.status !== 404) core.warning(`Could not remove label "${name}": ${error.message}`);
-    }
-  }
-  const ready = [];
-  for (const name of labelsToAdd) {
-    if (await ensureLabel(github, core, repo, labelSpec(name, config))) ready.push(name);
-  }
-  if (ready.length > 0) {
-    try {
-      await github.rest.issues.addLabels({ ...repo, issue_number: issue.number, labels: ready });
-    } catch (error) {
-      core.warning(`Could not add labels ${JSON.stringify(ready)}: ${error.message}`);
-    }
-  }
-
-  await core.summary
-    .addHeading(`Issue #${issue.number} routing`, 3)
-    .addTable([
-      [{ data: 'Field', header: true }, { data: 'Value', header: true }],
-      ['Component value', plan.values.join(', ') || '(none)'],
-      ['Status', plan.status],
-      ['Labels added', ready.join(', ') || '-'],
-      ['Labels removed', labelsToRemove.join(', ') || '-'],
-      ['Assignee', assigned || (plan.alreadyAssigned ? '(unchanged, already assigned)' : '-')],
-    ])
-    .write();
+  const added = await applyLabels(github, core, repo, issueNumber, labels, config);
+  await writeSummary(core, issueNumber, plan, { assigned, added, removed: labels.remove });
 }
 
 module.exports = {
