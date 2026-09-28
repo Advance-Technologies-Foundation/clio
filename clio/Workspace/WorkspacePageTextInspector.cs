@@ -23,7 +23,8 @@ public interface IWorkspacePageTextInspector {
 	/// Scans the <c>Schemas/&lt;SchemaName&gt;/*.js</c> files of the given workspace packages and returns one
 	/// finding per Freedom UI page schema (web or mobile) that carries at least one offending text value. Web
 	/// bodies without a <c>SCHEMA_VIEW_CONFIG_DIFF</c> section (classic client modules, entity and source-code
-	/// schemas) and plain-JSON bodies without a <c>viewConfigDiff</c> array are skipped.
+	/// schemas) and plain-JSON bodies without a <c>viewConfigDiff</c> array are skipped. A file that cannot be read
+	/// is reported as a warning and skipped, so the other schemas are still checked.
 	/// </summary>
 	/// <param name="packageNames">Workspace package names, resolved against the workspace packages folder.</param>
 	/// <returns>The findings ordered by package, then schema name; empty when nothing breaks the rule.</returns>
@@ -45,12 +46,13 @@ public sealed record PageTextFinding(string PackageName, string SchemaName, IRea
 	IReadOnlyList<string> LiteralOnlyElements);
 
 /// <inheritdoc />
-public sealed class WorkspacePageTextInspector(IWorkspacePathBuilder workspacePathBuilder, IFileSystem fileSystem)
-	: IWorkspacePageTextInspector {
+public sealed class WorkspacePageTextInspector(
+	IWorkspacePathBuilder workspacePathBuilder, IFileSystem fileSystem, ILogger logger) : IWorkspacePageTextInspector {
 
 	private const string SchemasFolderName = "Schemas";
-	private const string ViewConfigDiffMarker = "SCHEMA_VIEW_CONFIG_DIFF";
-	private const string MobileViewConfigDiffKey = "\"viewConfigDiff\"";
+	// The same section markers the shared update-page scan locates, so the pre-filter cannot drift from it.
+	private const string ViewConfigDiffMarker = SchemaValidationService.SchemaViewConfigDiff;
+	private const string MobileViewConfigDiffKey = "\"" + SchemaValidationService.ViewConfigDiffPropertyName + "\"";
 
 	/// <inheritdoc />
 	public IReadOnlyList<PageTextFinding> Inspect(IEnumerable<string> packageNames) {
@@ -76,7 +78,13 @@ public sealed class WorkspacePageTextInspector(IWorkspacePathBuilder workspacePa
 	private List<LocalizableTextViolation> InspectSchema(string schemaPath) {
 		List<LocalizableTextViolation> violations = [];
 		foreach (string filePath in fileSystem.GetFiles(schemaPath, "*.js", SearchOption.TopDirectoryOnly)) {
-			violations.AddRange(FindViolations(fileSystem.ReadAllText(filePath)));
+			// One unreadable file skips only itself: findings for every other schema are still reported.
+			try {
+				violations.AddRange(FindViolations(fileSystem.ReadAllText(filePath)));
+			}
+			catch (Exception e) {
+				logger.WriteWarning($"Could not check '{filePath}' for non-localizable text: {e.Message}");
+			}
 		}
 		return violations;
 	}

@@ -122,6 +122,37 @@ public class WorkspacePageTextInspectorTests : BaseClioModuleTests {
 			because: "the literal-only binding must be reported on its own list so the warning can say to use a literal");
 	}
 
+	[Test]
+	[Description("Skips an unreadable schema file with a warning and still reports the findings of the other schemas.")]
+	public void Inspect_ShouldReportOtherSchemas_WhenOneSchemaFileCannotBeRead() {
+		// Arrange
+		string schemasPath = Path.Combine(PackagesFolderPath, PackageName, "Schemas");
+		string lockedSchemaPath = Path.Combine(schemasPath, "UsrPkg_LockedPage");
+		string formSchemaPath = Path.Combine(schemasPath, "UsrPkg_FormPage");
+		string lockedFilePath = Path.Combine(lockedSchemaPath, "UsrPkg_LockedPage.js");
+		string formFilePath = Path.Combine(formSchemaPath, "UsrPkg_FormPage.js");
+		Clio.Common.IFileSystem fileSystem = Substitute.For<Clio.Common.IFileSystem>();
+		fileSystem.ExistsDirectory(schemasPath).Returns(true);
+		fileSystem.GetDirectories(schemasPath).Returns([lockedSchemaPath, formSchemaPath]);
+		fileSystem.GetFiles(lockedSchemaPath, "*.js", SearchOption.TopDirectoryOnly).Returns([lockedFilePath]);
+		fileSystem.GetFiles(formSchemaPath, "*.js", SearchOption.TopDirectoryOnly).Returns([formFilePath]);
+		fileSystem.ReadAllText(lockedFilePath).Returns(_ => throw new IOException("file is locked"));
+		fileSystem.ReadAllText(formFilePath).Returns(PageBody("\"caption\": \"Hello\""));
+		Clio.Common.ILogger logger = Substitute.For<Clio.Common.ILogger>();
+		WorkspacePageTextInspector inspector = new(_workspacePathBuilder, fileSystem, logger);
+
+		// Act
+		IReadOnlyList<PageTextFinding> findings = inspector.Inspect([PackageName]);
+
+		// Assert
+		findings.Should().ContainSingle(
+			because: "one unreadable file must not discard the findings of the other schemas");
+		findings[0].SchemaName.Should().Be("UsrPkg_FormPage",
+			because: "the readable page with an inline literal is still reported");
+		logger.Received(1).WriteWarning(Arg.Is<string>(message =>
+			message.Contains(lockedFilePath) && message.Contains("file is locked")));
+	}
+
 	private void AddSchema(string schemaName, string body) =>
 		FileSystem.AddFile(
 			Path.Combine(PackagesFolderPath, PackageName, "Schemas", schemaName, $"{schemaName}.js"),

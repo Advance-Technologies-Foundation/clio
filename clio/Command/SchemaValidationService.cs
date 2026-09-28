@@ -12,7 +12,7 @@ using McpServer.Resources;
 
 public static class SchemaValidationService
 {
-	private const string SchemaViewConfigDiff = "SCHEMA_VIEW_CONFIG_DIFF";
+	internal const string SchemaViewConfigDiff = "SCHEMA_VIEW_CONFIG_DIFF";
 	private const string SchemaViewModelConfigDiff = "SCHEMA_VIEW_MODEL_CONFIG_DIFF";
 	private const string SchemaViewModelConfig = "SCHEMA_VIEW_MODEL_CONFIG";
 	private const string SchemaDiffMarker = "SCHEMA_DIFF";
@@ -26,7 +26,7 @@ public static class SchemaValidationService
 	private const string ParamsPropertyName = "params";
 	private const string TypePropertyName = "type";
 	private const string LabelPropertyName = "label";
-	private const string ViewConfigDiffPropertyName = "viewConfigDiff";
+	internal const string ViewConfigDiffPropertyName = "viewConfigDiff";
 	private const string ViewModelConfigDiffPropertyName = "viewModelConfigDiff";
 
 	// crt.RunBusinessProcessRequest.processRunType values. The platform matches the string EXACTLY, so
@@ -3167,15 +3167,23 @@ public static class SchemaValidationService
 			// resolves to empty at runtime. Reject the resource form and force the working literal —
 			// the mirror of the inline-literal rule applied to everything else (ENG-92940).
 			if (IsLocalizableResourceReference(textValue)) {
-				result.Errors.Add(BuildLiteralRequiredError(currentName, currentType, property.Name, textValue));
-				violations?.Add(new LocalizableTextViolation(currentName, property.Name,
-					LocalizableTextViolationKind.ResourceBindingOnLiteralOnlyProperty));
+				ReportTextViolation(result, violations,
+					BuildLiteralRequiredError(currentName, currentType, property.Name, textValue),
+					new LocalizableTextViolation(currentName, property.Name,
+						LocalizableTextViolationKind.ResourceBindingOnLiteralOnlyProperty));
 			}
 		} else if (IsInlineUserVisibleTextLiteral(textValue)) {
-			result.Errors.Add(BuildTextLiteralError(currentName, property.Name, textValue));
-			violations?.Add(new LocalizableTextViolation(currentName, property.Name,
-				LocalizableTextViolationKind.InlineLiteral));
+			ReportTextViolation(result, violations, BuildTextLiteralError(currentName, property.Name, textValue),
+				new LocalizableTextViolation(currentName, property.Name, LocalizableTextViolationKind.InlineLiteral));
 		}
+	}
+
+	// The single place a text rejection is recorded: the update-page error and the push-workspace violation are
+	// written together, so a new rejection branch cannot feed one gate without the other.
+	private static void ReportTextViolation(SchemaValidationResult result, List<LocalizableTextViolation>? violations,
+		string error, LocalizableTextViolation violation) {
+		result.Errors.Add(error);
+		violations?.Add(violation);
 	}
 
 	private static bool TryGetNodeName(JsonElement element, out string name) {
