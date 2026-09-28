@@ -15,7 +15,7 @@ public class CompilePackageOptions : EnvironmentNameOptions
 	internal const int DefaultWaitTimeoutSeconds = 600;
 
 	/// <summary>Upper bound for <see cref="WaitTimeout"/>, the same bound <c>restart --ready-timeout</c> has.</summary>
-	internal const int MaxWaitTimeoutSeconds = 3600;
+	internal const int MaxWaitTimeoutSeconds = PackageCompilationWaitOptions.MaxTimeoutSeconds;
 
 	#endregion
 

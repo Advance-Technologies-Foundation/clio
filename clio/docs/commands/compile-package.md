@@ -135,7 +135,9 @@ answer while projects are still building. The quiet is counted only once at leas
 one compilation-history row has been written: a success answer followed by no
 history is not taken as a finished build. If the request stays open without an
 answer, 5 minutes of quiet end the wait. When `--wait-timeout` elapses first, the
-command exits with code 1 and the build may still be running on the environment
+command exits with code 1. If the history showed only successful rows, the message
+says the build has most likely succeeded and names the `--wait-timeout` that would
+let clio confirm it; otherwise the build may still be running on the environment
 - Progress monitoring tolerates an environment that briefly stops answering: while
 the application tier is unreachable each failed poll round is reported as a warning
 and the next round is delayed 1 s, 2 s, then 5 s. Only after 90 seconds in which no

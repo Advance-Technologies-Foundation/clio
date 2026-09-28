@@ -95,6 +95,9 @@
 		/// </remarks>
 		internal static readonly TimeSpan WaitQuietFallback = TimeSpan.FromMinutes(5);
 
+		/// <summary>How often the wait loop re-reads the request and the observed history.</summary>
+		internal static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(500);
+
 		#endregion
 
 		#region Fields: Private
@@ -104,6 +107,8 @@
 		private readonly IServiceUrlBuilder _serviceUrlBuilder;
 		private readonly ILogger _logger;
 		private readonly ICompilationHistoryPoller _compilationHistoryPoller;
+		private readonly TimeProvider _timeProvider;
+		private readonly ICancellableDelay _delay;
 
 		#endregion
 
@@ -111,34 +116,32 @@
 
 		public PackageBuilder(EnvironmentSettings environmentSettings,
 			IApplicationClientFactory applicationClientFactory, IServiceUrlBuilder serviceUrlBuilder,
-			ILogger logger, ICompilationHistoryPoller compilationHistoryPoller = null) {
+			ILogger logger, TimeProvider timeProvider, ICancellableDelay delay,
+			ICompilationHistoryPoller compilationHistoryPoller = null) {
 			environmentSettings.CheckArgumentNull(nameof(environmentSettings));
 			applicationClientFactory.CheckArgumentNull(nameof(applicationClientFactory));
 			serviceUrlBuilder.CheckArgumentNull(nameof(serviceUrlBuilder));
 			logger.CheckArgumentNull(nameof(logger));
+			timeProvider.CheckArgumentNull(nameof(timeProvider));
+			delay.CheckArgumentNull(nameof(delay));
 			_environmentSettings = environmentSettings;
 			_applicationClientFactory = applicationClientFactory;
 			_serviceUrlBuilder = serviceUrlBuilder;
 			_logger = logger;
 			_compilationHistoryPoller = compilationHistoryPoller;
+			// The clock and the wait are seams, not Thread.Sleep and DateTime.UtcNow, so a test can run a
+			// ten-minute waited build in simulated time instead of spending real seconds racing a poll thread.
+			_timeProvider = timeProvider;
+			_delay = delay;
 		}
 
 		#endregion
 
-		#region Properties: Internal
-
-		/// <summary>Test seam overriding <see cref="CompilationSettleSeconds"/>; <see langword="null"/> in production.</summary>
-		internal TimeSpan? SettleWindowOverride { get; set; }
-
-		/// <summary>Test seam overriding <see cref="WaitSettleWindow"/>; <see langword="null"/> in production.</summary>
-		internal TimeSpan? WaitSettleWindowOverride { get; set; }
-
-		/// <summary>Test seam overriding <see cref="WaitQuietFallback"/>; <see langword="null"/> in production.</summary>
-		internal TimeSpan? WaitQuietFallbackOverride { get; set; }
-
-		#endregion
-
 		#region Methods: Private
+
+		private DateTime UtcNow() => _timeProvider.GetUtcNow().UtcDateTime;
+
+		private void Pause() => _delay.WaitOrCancelled(PollInterval, CancellationToken.None);
 
 		private static string CreateRequestData(string packageName) => "{ \"packageName\":\"" + packageName + "\" }";
 
@@ -192,20 +195,35 @@
 			if (!observed.LastActivityAt.HasValue) {
 				return false;
 			}
-			TimeSpan quiet = DateTime.UtcNow - observed.LastActivityAt.Value;
+			TimeSpan quiet = UtcNow() - observed.LastActivityAt.Value;
+			return quiet >= RequiredQuietWindow(observed, waited, requestEnded);
+		}
+
+		/// <summary>
+		/// How long compilation history has to stay quiet before the build counts as finished.
+		/// </summary>
+		/// <param name="observed">What the poll thread has observed so far.</param>
+		/// <param name="waited">Whether the caller asked to wait for the build to finish.</param>
+		/// <param name="requestEnded">Whether the build request has ended.</param>
+		/// <remarks>
+		/// The window is deliberately NOT shortened to fit the remaining <c>--wait-timeout</c>: concluding on a
+		/// shorter quiet spell than the slowest project suggests is the premature success of issue #1632. A
+		/// build that finishes too close to the deadline times out instead, and the timeout says so.
+		/// </remarks>
+		private static TimeSpan RequiredQuietWindow(CompilationProgressSnapshot observed, bool waited,
+			bool requestEnded) {
 			if (!waited) {
-				return quiet >= (SettleWindowOverride ?? TimeSpan.FromSeconds(CompilationSettleSeconds));
+				return TimeSpan.FromSeconds(CompilationSettleSeconds);
 			}
 			// An error row settles on the short window even while the request is open: a compile error stops
 			// the build (the same rule CompilationSettleTracker applies), and on a loaded stand the failure
 			// answer was measured arriving minutes after the row that already carried the diagnostics.
 			if (!requestEnded && !observed.HasErrors) {
-				return quiet >= (WaitQuietFallbackOverride ?? WaitQuietFallback);
+				return WaitQuietFallback;
 			}
-			TimeSpan window = WaitSettleWindowOverride ?? WaitSettleWindow;
 			TimeSpan scaled = TimeSpan.FromSeconds(
 				observed.SlowestDurationSeconds * CompilationSettleTracker.DurationScaleFactor);
-			return quiet >= (scaled > window ? scaled : window);
+			return scaled > WaitSettleWindow ? scaled : WaitSettleWindow;
 		}
 
 		/// <summary>
@@ -425,8 +443,9 @@
 			bool waited = waitOptions is not null;
 			DateTime? responseAt = null;
 			TimeSpan budget = waitOptions?.Timeout ?? TimeSpan.FromMinutes(CompilationTimeoutMinutes);
-			DateTime timeoutAt = DateTime.UtcNow.Add(budget);
-			CompilationProgress progress = new(ReportHistoryRow);
+			DateTime startedAt = UtcNow();
+			DateTime timeoutAt = startedAt.Add(budget);
+			CompilationProgress progress = new(ReportHistoryRow, UtcNow);
 
 			using CancellationTokenSource cts = new();
 			Task<string> httpTask = SendCompilationRequestAsync(cts.Token);
@@ -436,16 +455,16 @@
 			Exception[] pollFaultBox = new Exception[1];
 			Thread pollThread = StartPollThread(baselineCreatedOn, cts, progress, pollFaultBox);
 
-			while (DateTime.UtcNow < timeoutAt) {
+			while (UtcNow() < timeoutAt) {
 				ThrowIfPollFaulted(pollFaultBox, EndMonitoring);
 
 				if (httpTask.Status == TaskStatus.RanToCompletion) {
-					responseAt ??= DateTime.UtcNow;
+					responseAt ??= UtcNow();
 					if (TryConcludeOnAnswer(new AnsweredBuild(packageName, httpTask.Result, responseAt.Value, waited,
 							suggestWait), progress, EndMonitoring)) {
 						return;
 					}
-					Thread.Sleep(500);
+					Pause();
 					continue;
 				}
 
@@ -469,16 +488,19 @@
 					return;
 				}
 
-				Thread.Sleep(500);
+				Pause();
 			}
 
 			// Read BEFORE EndMonitoring: cancelling a still-open request can fault it too, and that fault is
 			// ours, not the environment's.
 			Exception requestFault = httpTask.IsFaulted ? httpTask.Exception?.GetBaseException() : null;
+			bool requestEnded = responseAt.HasValue || httpTask.IsCompleted;
 			EndMonitoring();
 			CompilationProgressSnapshot atDeadline = progress.Snapshot();
 			FailOnTimeout(packageName, atDeadline, new TimeoutContext(waited, budget,
-				AnsweredWithoutHistory: responseAt.HasValue && !atDeadline.LastActivityAt.HasValue, requestFault));
+				AnsweredWithoutHistory: responseAt.HasValue && !atDeadline.LastActivityAt.HasValue, requestFault,
+				DescribeQuietShortfall(atDeadline, new QuietShortfallContext(waited, startedAt, responseAt,
+					RequestEnded: requestEnded))));
 
 			void EndMonitoring() => EndCompileMonitoring(cts, pollThread, httpTask);
 
@@ -569,8 +591,44 @@
 				? $"The environment accepted the build of '{packageName}' but wrote no compilation history within "
 					+ $"{context.Budget.TotalSeconds:0} s, so there is no evidence it finished."
 				: $"Package compilation of '{packageName}' did not finish within {context.Budget.TotalSeconds:0} s.";
-			return new TimeoutException(reason + " The build may still be running on the environment; check "
-				+ "`clio last-compilation-log` before compiling again.", context.RequestFault);
+			string advice = context.QuietShortfall
+				?? " The build may still be running on the environment; check `clio last-compilation-log` before "
+				+ "compiling again.";
+			return new TimeoutException(reason + advice, context.RequestFault);
+		}
+
+		/// <summary>
+		/// Explains a waited timeout in which the history showed only clean rows but had not been quiet long
+		/// enough yet, so the user knows the build most likely succeeded and which budget would have let
+		/// clio say so.
+		/// </summary>
+		/// <param name="observed">What the poll thread had observed when the budget ran out.</param>
+		/// <param name="context">How the build was requested and how its request had ended.</param>
+		/// <returns>The explanation, or <see langword="null"/> when it does not apply.</returns>
+		/// <remarks>
+		/// The exit code stays a failure: the missing quiet spell is exactly the evidence that is not there.
+		/// Only the wording changes, so the user raises <c>--wait-timeout</c> instead of recompiling with the
+		/// same budget and timing out again.
+		/// </remarks>
+		private static string DescribeQuietShortfall(CompilationProgressSnapshot observed,
+			QuietShortfallContext context) {
+			if (!context.Waited || observed.HasErrors || observed.LastActivityAt is not { } lastRowAt) {
+				return null;
+			}
+			DateTime lastEvidence = context.ResponseAt is { } answeredAt && answeredAt > lastRowAt
+				? answeredAt
+				: lastRowAt;
+			TimeSpan window = RequiredQuietWindow(observed, waited: true, context.RequestEnded);
+			double neededSeconds = (lastEvidence - context.StartedAt + window).TotalSeconds;
+			int suggested = (int)Math.Ceiling(neededSeconds / 60) * 60;
+			string retry = suggested <= PackageCompilationWaitOptions.MaxTimeoutSeconds
+				? $"Re-run with `--wait-timeout {suggested}` or more"
+				: $"Even the largest `--wait-timeout` ({PackageCompilationWaitOptions.MaxTimeoutSeconds}) would not cover it; check "
+					+ "`clio last-compilation-log`";
+			return $" No compile error was reported: the last compilation-history row ({observed.LastProjectName}) "
+				+ $"arrived {(lastRowAt - context.StartedAt).TotalSeconds:0} s after the build started, and a build "
+				+ $"counts as finished only after {window.TotalSeconds:0} s without a new row, so it has most likely "
+				+ $"succeeded. {retry} to let clio confirm it.";
 		}
 
 		/// <summary>
@@ -641,13 +699,19 @@
 
 			private int _slowestDurationSeconds;
 
+			private string _lastProjectName;
+
 			private readonly List<PackageBuildDiagnostic> _diagnostics = [];
 
 			private readonly Action<CompilationHistory> _onRecord;
 
+			private readonly Func<DateTime> _utcNow;
+
 			/// <param name="onRecord">Invoked for every observed record, outside the lock.</param>
-			public CompilationProgress(Action<CompilationHistory> onRecord) {
+			/// <param name="utcNow">The clock a record's arrival is stamped with.</param>
+			public CompilationProgress(Action<CompilationHistory> onRecord, Func<DateTime> utcNow) {
 				_onRecord = onRecord;
+				_utcNow = utcNow;
 			}
 
 			/// <summary>
@@ -659,7 +723,8 @@
 
 			public void Observe(CompilationHistory record) {
 				lock (_gate) {
-					_lastActivityAt = DateTime.UtcNow;
+					_lastActivityAt = _utcNow();
+					_lastProjectName = record.ProjectName;
 					_slowestDurationSeconds = Math.Max(_slowestDurationSeconds, record.DurationInSeconds);
 					if (IsErrorRow(record)) {
 						_hasErrors = true;
@@ -674,7 +739,7 @@
 			public CompilationProgressSnapshot Snapshot() {
 				lock (_gate) {
 					return new CompilationProgressSnapshot(_lastActivityAt, _hasErrors, _errorDetails,
-						_slowestDurationSeconds, [.. _diagnostics]);
+						_slowestDurationSeconds, _lastProjectName, [.. _diagnostics]);
 				}
 			}
 
@@ -686,7 +751,7 @@
 		/// </summary>
 		private sealed record CompilationProgressSnapshot(
 			DateTime? LastActivityAt, bool HasErrors, string ErrorDetails, int SlowestDurationSeconds,
-			IReadOnlyList<PackageBuildDiagnostic> Diagnostics);
+			string LastProjectName, IReadOnlyList<PackageBuildDiagnostic> Diagnostics);
 
 		/// <summary>
 		/// A package build whose request has been answered.
@@ -709,8 +774,21 @@
 		/// timeout as a hung request.
 		/// </param>
 		/// <param name="RequestFault">The fault the request ended with, when it ended with one.</param>
+		/// <param name="QuietShortfall">
+		/// Why a waited build with only clean rows did not count as finished yet; <see langword="null"/> otherwise.
+		/// </param>
 		private sealed record TimeoutContext(bool Waited, TimeSpan Budget, bool AnsweredWithoutHistory,
-			Exception RequestFault);
+			Exception RequestFault, string QuietShortfall);
+
+		/// <summary>
+		/// The timing a waited timeout is explained from.
+		/// </summary>
+		/// <param name="Waited">Whether the caller asked to wait for the build to finish.</param>
+		/// <param name="StartedAt">When the build request was sent.</param>
+		/// <param name="ResponseAt">When the answer was first seen; <see langword="null"/> when none arrived.</param>
+		/// <param name="RequestEnded">Whether the build request had ended.</param>
+		private sealed record QuietShortfallContext(bool Waited, DateTime StartedAt, DateTime? ResponseAt,
+			bool RequestEnded);
 
 		/// <summary>
 		/// Everything a verdict on one finished package build is made from.

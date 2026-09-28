@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
 using System.Threading;
@@ -35,6 +36,7 @@ public sealed class PackageBuilderVerdictTests {
 	private IServiceUrlBuilder _urlBuilder;
 	private ICompilationHistoryPoller _poller;
 	private ILogger _logger;
+	private SimulatedStand _stand;
 
 	[SetUp]
 	public void SetUp() {
@@ -47,6 +49,12 @@ public sealed class PackageBuilderVerdictTests {
 		_poller = Substitute.For<ICompilationHistoryPoller>();
 		_poller.GetBaseline().Returns(new CompilationHistory { CreatedOn = DateTime.UtcNow.AddMinutes(-1) });
 		_logger = Substitute.For<ILogger>();
+		_stand = new SimulatedStand();
+		_client.ExecutePostRequestAsync(Arg.Any<string>(), Arg.Any<string>(), Timeout.Infinite, 1, 1,
+			Arg.Any<CancellationToken>()).Returns(call => _stand.SendRequest(call.ArgAt<CancellationToken>(5)));
+		_poller.When(value => value.Poll(Arg.Any<DateTime>(), Arg.Any<CancellationToken>(),
+				Arg.Any<Action<CompilationHistory>>()))
+			.Do(call => _stand.Poll(call.ArgAt<Action<CompilationHistory>>(2), call.ArgAt<CancellationToken>(1)));
 	}
 
 	[TearDown]
@@ -56,8 +64,7 @@ public sealed class PackageBuilderVerdictTests {
 	[Description("A build response that reports success ends the build without an error and without a warning that the result was missing (issue #1633: the success path stays unchanged).")]
 	public void Rebuild_ShouldSucceedSilently_WhenResponseReportsSuccess() {
 		// Arrange
-		RespondWith(_ => Task.FromResult(Response(SucceededResponse)));
-		StubPollWithRows();
+		_stand.AnswersAt(TimeSpan.Zero, SucceededResponse).WritesRow(TimeSpan.Zero, SucceededRow());
 		PackageBuilder sut = CreateSut();
 
 		// Act
@@ -73,8 +80,7 @@ public sealed class PackageBuilderVerdictTests {
 	[Description("A build response that reports a C# compile error fails the build with its CSxxxx diagnostic (file, line, message) and says the previous build keeps running, instead of the response being discarded and the build reported as done (issue #1633).")]
 	public void Rebuild_ShouldThrowWithDiagnostics_WhenResponseReportsCompileError() {
 		// Arrange
-		RespondWith(_ => Task.FromResult(Response(FailedResponse)));
-		StubPollWithRows();
+		_stand.AnswersAt(TimeSpan.Zero, FailedResponse).WritesRow(TimeSpan.Zero, SucceededRow());
 		PackageBuilder sut = CreateSut();
 
 		// Act
@@ -92,10 +98,10 @@ public sealed class PackageBuilderVerdictTests {
 	[Description("A failure answer whose diagnostic carries no position (line/column null) is still read as a failure, instead of the whole verdict being dropped and the build falling back to clean history (issue #1633).")]
 	public void Rebuild_ShouldThrow_WhenFailureAnswerHasDiagnosticWithoutPosition() {
 		// Arrange
-		RespondWith(_ => Task.FromResult(Response(
-			"{\"success\":false,\"buildResult\":1,\"errors\":[{\"errorNumber\":\"CS0006\",\"errorText\":\"Metadata file not found\","
-			+ "\"fileName\":null,\"line\":null,\"column\":null,\"warning\":false}]}")));
-		StubPollWithRows();
+		_stand.AnswersAt(TimeSpan.Zero,
+				"{\"success\":false,\"buildResult\":1,\"errors\":[{\"errorNumber\":\"CS0006\",\"errorText\":\"Metadata file not found\","
+				+ "\"fileName\":null,\"line\":null,\"column\":null,\"warning\":false}]}")
+			.WritesRow(TimeSpan.Zero, SucceededRow());
 		PackageBuilder sut = CreateSut();
 
 		// Act
@@ -111,8 +117,7 @@ public sealed class PackageBuilderVerdictTests {
 	[Description("An empty build response - an older host, or a proxy that answered without a body - keeps the old behaviour of succeeding on clean history, and warns that the environment did not report a result (issue #1633 guard for absent results).")]
 	public void Rebuild_ShouldWarnAndSucceed_WhenResponseCarriesNoResult() {
 		// Arrange
-		RespondWith(_ => Task.FromResult(Response(string.Empty)));
-		StubPollWithRows();
+		_stand.AnswersAt(TimeSpan.Zero, string.Empty).WritesRow(TimeSpan.Zero, SucceededRow());
 		PackageBuilder sut = CreateSut();
 
 		// Act
@@ -130,7 +135,7 @@ public sealed class PackageBuilderVerdictTests {
 		// Arrange
 		_client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(FailedResponse);
-		PackageBuilder sut = new(_settings, _factory, _urlBuilder, _logger);
+		PackageBuilder sut = new(_settings, _factory, _urlBuilder, _logger, _stand, _stand);
 
 		// Act
 		Action act = () => sut.Rebuild(["UsrPackage"]);
@@ -144,18 +149,17 @@ public sealed class PackageBuilderVerdictTests {
 	[Description("Without --wait the build returns when history first goes quiet, before a verdict that arrives later; with --wait the same build blocks until the answer arrives and reports its compile error (issue #1632: Done must mean built, not accepted).")]
 	public void Rebuild_ShouldReportLateVerdict_OnlyWhenWaiting() {
 		// Arrange
-		RespondWith(call => DelayedResponseAsync(FailedResponse, TimeSpan.FromSeconds(2), call.ArgAt<CancellationToken>(5)));
-		StubPollWithRows();
+		_stand.AnswersAt(TimeSpan.FromSeconds(20), FailedResponse).WritesRow(TimeSpan.Zero, SucceededRow());
 		PackageBuilder notWaiting = CreateSut();
 		PackageBuilder waiting = CreateSut();
 
 		// Act
 		Action returnsEarly = () => notWaiting.Rebuild(["UsrPackage"]);
-		Action waitsForVerdict = () => waiting.Rebuild(["UsrPackage"], new PackageCompilationWaitOptions(TimeSpan.FromSeconds(30)));
+		Action waitsForVerdict = () => waiting.Rebuild(["UsrPackage"], Wait(seconds: 600));
 
 		// Assert
 		returnsEarly.Should().NotThrow(
-			because: "the default path settles on history quiet and never sees the verdict that arrives two seconds later");
+			because: "the default path settles on 5 s of history quiet and never sees the verdict that arrives at 20 s");
 		_logger.Received().WriteWarning(Arg.Is<string>(message => message.Contains("--wait", StringComparison.Ordinal)));
 		waitsForVerdict.Should().Throw<PackageCompilationException>(
 			because: "a waited build keeps the request open until the environment answers with its verdict");
@@ -165,29 +169,16 @@ public sealed class PackageBuilderVerdictTests {
 	[Description("A host that answers success at once while it keeps building (the .NET 8 shape in issue #1632) is not taken at its word under --wait: the build keeps being observed until history goes quiet, so a compile error written after the answer still fails it. Without --wait the answer ends the build, as before.")]
 	public void Rebuild_ShouldKeepObservingAfterSuccessAnswer_OnlyWhenWaiting() {
 		// Arrange
-		RespondWith(_ => Task.FromResult(Response(SucceededResponse)));
-		_poller.When(value => value.Poll(Arg.Any<DateTime>(), Arg.Any<CancellationToken>(),
-			Arg.Any<Action<CompilationHistory>>())).Do(call => {
-			CancellationToken cancellation = call.ArgAt<CancellationToken>(1);
-			if (cancellation.WaitHandle.WaitOne(TimeSpan.FromMilliseconds(100))) {
-				return;
-			}
-			call.ArgAt<Action<CompilationHistory>>(2)(new CompilationHistory {
-				CreatedOn = DateTime.UtcNow,
-				ProjectName = "UsrSecondPackage.csproj",
-				Result = false,
-				ErrorsWarnings = "[{\"Line\":3,\"Column\":1,\"ErrorNumber\":\"CS1002\",\"ErrorText\":\"; expected\","
-					+ "\"IsWarning\":false,\"FileName\":\"UsrSecond.cs\"}]"
-			});
-			cancellation.WaitHandle.WaitOne();
-		});
+		_stand.AnswersAt(TimeSpan.Zero, SucceededResponse)
+			.WritesRow(TimeSpan.FromSeconds(30), ErrorRow("UsrSecondPackage.csproj",
+				"[{\"Line\":3,\"Column\":1,\"ErrorNumber\":\"CS1002\",\"ErrorText\":\"; expected\","
+				+ "\"IsWarning\":false,\"FileName\":\"UsrSecond.cs\"}]"));
 		PackageBuilder notWaiting = CreateSut();
 		PackageBuilder waiting = CreateSut();
-		waiting.WaitSettleWindowOverride = TimeSpan.FromSeconds(1);
 
 		// Act
 		Action returnsOnAnswer = () => notWaiting.Rebuild(["UsrPackage"]);
-		Action waitsForQuiet = () => waiting.Rebuild(["UsrPackage"], new PackageCompilationWaitOptions(TimeSpan.FromSeconds(30)));
+		Action waitsForQuiet = () => waiting.Rebuild(["UsrPackage"], Wait(seconds: 600));
 
 		// Assert
 		returnsOnAnswer.Should().NotThrow(
@@ -201,39 +192,30 @@ public sealed class PackageBuilderVerdictTests {
 	[Description("With --wait and the request still open, a compilation-history row carrying a compile error ends the build on the short settle window with its diagnostics, instead of waiting minutes for a failure answer a loaded stand may deliver late (issue #1633).")]
 	public void Rebuild_ShouldFailOnHistoryError_WhenWaitedRequestStaysOpen() {
 		// Arrange
-		RespondWith(call => DelayedResponseAsync(SucceededResponse, Timeout.InfiniteTimeSpan, call.ArgAt<CancellationToken>(5)));
-		_poller.When(value => value.Poll(Arg.Any<DateTime>(), Arg.Any<CancellationToken>(),
-			Arg.Any<Action<CompilationHistory>>())).Do(call => {
-			call.ArgAt<Action<CompilationHistory>>(2)(new CompilationHistory {
-				CreatedOn = DateTime.UtcNow,
-				ProjectName = "Terrasoft.Configuration.Dev.csproj",
-				Result = false,
-				ErrorsWarnings = "[{\"Line\":5,\"Column\":26,\"ErrorNumber\":\"CS0246\",\"ErrorText\":\"EntitySchema not found\","
-					+ "\"IsWarning\":false,\"FileName\":\"UsrProbe.Custom.cs\"}]"
-			});
-			call.ArgAt<CancellationToken>(1).WaitHandle.WaitOne();
-		});
+		_stand.WritesRow(TimeSpan.Zero, ErrorRow("Terrasoft.Configuration.Dev.csproj", DevProjectError));
 		PackageBuilder sut = CreateSut();
 
 		// Act
-		Action act = () => sut.Rebuild(["UsrPackage"], new PackageCompilationWaitOptions(TimeSpan.FromSeconds(30)));
+		Action act = () => sut.Rebuild(["UsrPackage"], Wait(seconds: 600));
 
 		// Assert
 		act.Should().Throw<PackageCompilationException>(
 			because: "a compile error in the history stops the build even though the request has not been answered");
 		_logger.Received(1).WriteError("(CS0246) in UsrProbe.Custom.cs at (5,26): EntitySchema not found");
+		_stand.Elapsed.Should().BeLessThan(PackageBuilder.WaitQuietFallback,
+			because: "an error row settles on the short window, not on the five-minute open-request fallback");
 	}
 
 	[Test]
 	[Description("With --wait, a request the environment drops without answering does not fail the build: history decides once it has stayed quiet for the wait window, and the user is told the result was inferred (issue #1632, 8.3.3+ hosts that never answer).")]
 	public void Rebuild_ShouldInferCompletionFromHistory_WhenWaitedRequestIsDropped() {
 		// Arrange
-		RespondWith(_ => Task.FromException<HttpResponseMessage>(new HttpRequestException("connection reset")));
-		StubPollWithRows();
+		_stand.FaultsAt(TimeSpan.Zero, new HttpRequestException("connection reset"))
+			.WritesRow(TimeSpan.Zero, SucceededRow());
 		PackageBuilder sut = CreateSut();
 
 		// Act
-		Action act = () => sut.Rebuild(["UsrPackage"], new PackageCompilationWaitOptions(TimeSpan.FromSeconds(30)));
+		Action act = () => sut.Rebuild(["UsrPackage"], Wait(seconds: 600));
 
 		// Assert
 		act.Should().NotThrow(because: "a dropped connection is how an 8.3.3+ host ends the request, not a failed build");
@@ -245,43 +227,26 @@ public sealed class PackageBuilderVerdictTests {
 	[Description("With --wait, a build that neither answers nor writes any compilation history fails with a timeout once --wait-timeout elapses, instead of reporting success (issue #1632).")]
 	public void Rebuild_ShouldTimeOut_WhenWaitedBuildNeverFinishes() {
 		// Arrange
-		RespondWith(call => DelayedResponseAsync(SucceededResponse, Timeout.InfiniteTimeSpan, call.ArgAt<CancellationToken>(5)));
-		_poller.When(value => value.Poll(Arg.Any<DateTime>(), Arg.Any<CancellationToken>(),
-			Arg.Any<Action<CompilationHistory>>())).Do(call => call.ArgAt<CancellationToken>(1).WaitHandle.WaitOne());
 		PackageBuilder sut = CreateSut();
 
 		// Act
-		Action act = () => sut.Rebuild(["UsrPackage"], new PackageCompilationWaitOptions(TimeSpan.FromSeconds(1)));
+		Action act = () => sut.Rebuild(["UsrPackage"], Wait(seconds: 60));
 
 		// Assert
 		act.Should().Throw<TimeoutException>(because: "an unfinished build must not be reported as built")
-			.WithMessage("*'UsrPackage'*did not finish within 1 s*");
+			.WithMessage("*'UsrPackage'*did not finish within 60 s*may still be running*");
 	}
 
 	[Test]
-	[Description("With --wait, a success answer followed by a quiet spell with NO compilation history is not completion evidence: a first history row that arrives after the settle window and carries a compile error still fails the build (issue #1632: a .NET 8 host answers at once and writes its first row 60-120 s later).")]
+	[Description("With --wait, a success answer followed by a quiet spell with NO compilation history is not completion evidence: a first history row that arrives two minutes later and carries a compile error still fails the build (issue #1632: a .NET 8 host answers at once and writes its first row 60-120 s later).")]
 	public void Rebuild_ShouldFailOnLateFirstHistoryError_WhenWaitedSuccessAnswerHasNoHistory() {
 		// Arrange
-		RespondWith(_ => Task.FromResult(Response(SucceededResponse)));
-		_poller.When(value => value.Poll(Arg.Any<DateTime>(), Arg.Any<CancellationToken>(),
-			Arg.Any<Action<CompilationHistory>>())).Do(call => {
-			CancellationToken cancellation = call.ArgAt<CancellationToken>(1);
-			if (cancellation.WaitHandle.WaitOne(TimeSpan.FromSeconds(2))) {
-				return;
-			}
-			call.ArgAt<Action<CompilationHistory>>(2)(new CompilationHistory {
-				CreatedOn = DateTime.UtcNow,
-				ProjectName = "Terrasoft.Configuration.Dev.csproj",
-				Result = false,
-				ErrorsWarnings = "[{\"Line\":5,\"Column\":26,\"ErrorNumber\":\"CS0246\",\"ErrorText\":\"EntitySchema not found\","
-					+ "\"IsWarning\":false,\"FileName\":\"UsrProbe.Custom.cs\"}]"
-			});
-			cancellation.WaitHandle.WaitOne();
-		});
+		_stand.AnswersAt(TimeSpan.Zero, SucceededResponse)
+			.WritesRow(TimeSpan.FromSeconds(120), ErrorRow("Terrasoft.Configuration.Dev.csproj", DevProjectError));
 		PackageBuilder sut = CreateSut();
 
 		// Act
-		Action act = () => sut.Rebuild(["UsrPackage"], new PackageCompilationWaitOptions(TimeSpan.FromSeconds(30)));
+		Action act = () => sut.Rebuild(["UsrPackage"], Wait(seconds: 600));
 
 		// Assert
 		act.Should().Throw<PackageCompilationException>(
@@ -293,42 +258,28 @@ public sealed class PackageBuilderVerdictTests {
 	[Description("With --wait, a success answer after which the environment writes no compilation history at all fails with a timeout that says no history was written, instead of the answer being taken as completion (issue #1632).")]
 	public void Rebuild_ShouldTimeOut_WhenWaitedSuccessAnswerIsNeverFollowedByHistory() {
 		// Arrange
-		RespondWith(_ => Task.FromResult(Response(SucceededResponse)));
-		_poller.When(value => value.Poll(Arg.Any<DateTime>(), Arg.Any<CancellationToken>(),
-			Arg.Any<Action<CompilationHistory>>())).Do(call => call.ArgAt<CancellationToken>(1).WaitHandle.WaitOne());
+		_stand.AnswersAt(TimeSpan.Zero, SucceededResponse);
 		PackageBuilder sut = CreateSut();
 
 		// Act
-		Action act = () => sut.Rebuild(["UsrPackage"], new PackageCompilationWaitOptions(TimeSpan.FromSeconds(2)));
+		Action act = () => sut.Rebuild(["UsrPackage"], Wait(seconds: 120));
 
 		// Assert
 		act.Should().Throw<TimeoutException>(because: "without any history row there is no evidence the build finished")
-			.WithMessage("*accepted*'UsrPackage'*no compilation history within 2 s*");
+			.WithMessage("*accepted*'UsrPackage'*no compilation history within 120 s*");
 	}
 
 	[Test]
 	[Description("With --wait, a build whose budget runs out after the history already showed a compile error fails with that error's CSxxxx diagnostics, instead of a generic 'may still be running' timeout that hides the observed failure (PR review, AC-1/AC-6).")]
 	public void Rebuild_ShouldFailWithObservedDiagnostics_WhenWaitedBuildTimesOutAfterErrorRow() {
 		// Arrange
-		RespondWith(call => DelayedResponseAsync(SucceededResponse, Timeout.InfiniteTimeSpan, call.ArgAt<CancellationToken>(5)));
-		_poller.When(value => value.Poll(Arg.Any<DateTime>(), Arg.Any<CancellationToken>(),
-			Arg.Any<Action<CompilationHistory>>())).Do(call => {
-			call.ArgAt<Action<CompilationHistory>>(2)(new CompilationHistory {
-				CreatedOn = DateTime.UtcNow,
-				ProjectName = "Terrasoft.Configuration.Dev.csproj",
-				Result = false,
-				ErrorsWarnings = "[{\"Line\":5,\"Column\":26,\"ErrorNumber\":\"CS0246\",\"ErrorText\":\"EntitySchema not found\","
-					+ "\"IsWarning\":false,\"FileName\":\"UsrProbe.Custom.cs\"}]"
-			});
-			call.ArgAt<CancellationToken>(1).WaitHandle.WaitOne();
-		});
+		// The error row arrives 20 s before the deadline, inside the 45 s quiet window, so the loop can only
+		// end through the deadline.
+		_stand.WritesRow(TimeSpan.FromSeconds(580), ErrorRow("Terrasoft.Configuration.Dev.csproj", DevProjectError));
 		PackageBuilder sut = CreateSut();
-		// The error row arrives at once, but the quiet window is longer than the budget, so the loop can only
-		// end through the deadline - deterministically, without racing the row against the clock.
-		sut.WaitSettleWindowOverride = TimeSpan.FromMinutes(5);
 
 		// Act
-		Action act = () => sut.Rebuild(["UsrPackage"], new PackageCompilationWaitOptions(TimeSpan.FromSeconds(1)));
+		Action act = () => sut.Rebuild(["UsrPackage"], Wait(seconds: 600));
 
 		// Assert
 		act.Should().Throw<PackageCompilationException>(
@@ -340,14 +291,11 @@ public sealed class PackageBuilderVerdictTests {
 	[Description("With --wait, a request that faulted and then never produced any history ends in a timeout that chains the request fault as its inner exception, so an authentication or connection failure is not lost behind the timeout (PR review, AC-6).")]
 	public void Rebuild_ShouldChainRequestFault_WhenWaitedBuildTimesOutAfterFaultedRequest() {
 		// Arrange
-		HttpRequestException fault = new("Connection refused");
-		RespondWith(_ => Task.FromException<HttpResponseMessage>(fault));
-		_poller.When(value => value.Poll(Arg.Any<DateTime>(), Arg.Any<CancellationToken>(),
-			Arg.Any<Action<CompilationHistory>>())).Do(call => call.ArgAt<CancellationToken>(1).WaitHandle.WaitOne());
+		_stand.FaultsAt(TimeSpan.Zero, new HttpRequestException("Connection refused"));
 		PackageBuilder sut = CreateSut();
 
 		// Act
-		Action act = () => sut.Rebuild(["UsrPackage"], new PackageCompilationWaitOptions(TimeSpan.FromSeconds(1)));
+		Action act = () => sut.Rebuild(["UsrPackage"], Wait(seconds: 60));
 
 		// Assert
 		act.Should().Throw<TimeoutException>(because: "no history row ever showed the build finishing")
@@ -356,11 +304,145 @@ public sealed class PackageBuilderVerdictTests {
 	}
 
 	[Test]
+	[Description("With --wait and a request that is never answered, one clean history row ends the build only after the five-minute open-request fallback: a budget that covers it succeeds with an inferred-result warning, a shorter one times out and says the build most likely succeeded and which --wait-timeout would confirm it (PR review, AC-5).")]
+	public void Rebuild_ShouldSettleOnOpenRequestFallback_OnlyWhenBudgetCoversIt() {
+		// Arrange
+		_stand.WritesRow(TimeSpan.FromSeconds(60), SucceededRow());
+		PackageBuilder sut = CreateSut();
+
+		// Act
+		Action coveredBudget = () => sut.Rebuild(["UsrPackage"], Wait(seconds: 600));
+		Action shortBudget = () => sut.Rebuild(["UsrPackage"], Wait(seconds: 300));
+
+		// Assert
+		coveredBudget.Should().NotThrow(
+			because: "five minutes without a new row after the only row is the fallback's completion evidence");
+		_logger.Received(1).WriteWarning(Arg.Is<string>(message =>
+			message.Contains("never answered the build request", StringComparison.Ordinal)));
+		shortBudget.Should().Throw<TimeoutException>(
+				because: "at 300 s the history has been quiet for only 240 s of the 300 s the fallback needs")
+			.WithMessage("*did not finish within 300 s. No compile error was reported*(UsrPackage.csproj) arrived 60 s after*"
+				+ "only after 300 s without a new row*most likely succeeded*`--wait-timeout 360`*");
+	}
+
+	[Test]
+	[Description("With --wait, the quiet window scales with the slowest project the history reported (1.5x its duration): a budget shorter than that window times out with the budget that would confirm the build, a longer one succeeds (PR review, AC-5).")]
+	public void Rebuild_ShouldScaleQuietWindowBySlowestProject_WhenWaited() {
+		// Arrange
+		_stand.AnswersAt(TimeSpan.Zero, SucceededResponse)
+			.WritesRow(TimeSpan.FromSeconds(60), SucceededRow("Terrasoft.Configuration.Dev.csproj", durationSeconds: 400));
+		PackageBuilder sut = CreateSut();
+
+		// Act
+		Action shortBudget = () => sut.Rebuild(["UsrPackage"], Wait(seconds: 600));
+		Action coveredBudget = () => sut.Rebuild(["UsrPackage"], Wait(seconds: 900));
+
+		// Assert
+		shortBudget.Should().Throw<TimeoutException>(
+				because: "a 400 s project needs 600 s of quiet, which ends at 660 s, past the 600 s budget")
+			.WithMessage("*(Terrasoft.Configuration.Dev.csproj) arrived 60 s after*only after 600 s without a new row*"
+				+ "`--wait-timeout 660`*");
+		coveredBudget.Should().NotThrow(because: "a 900 s budget covers the scaled 600 s quiet window");
+	}
+
+	[Test]
+	[Description("A waited timeout whose scaled quiet window no --wait-timeout can cover says so, instead of suggesting a value above the 3600 s maximum the command rejects (PR review, AC-5).")]
+	public void Rebuild_ShouldNotSuggestBudgetAboveMaximum_WhenScaledWindowExceedsIt() {
+		// Arrange
+		_stand.AnswersAt(TimeSpan.Zero, SucceededResponse)
+			.WritesRow(TimeSpan.FromSeconds(60), SucceededRow("Terrasoft.Configuration.Dev.csproj", durationSeconds: 3000));
+		PackageBuilder sut = CreateSut();
+
+		// Act
+		Action act = () => sut.Rebuild(["UsrPackage"], Wait(seconds: 3600));
+
+		// Assert
+		act.Should().Throw<TimeoutException>(because: "a 3000 s project needs 4500 s of quiet")
+			.WithMessage("*Even the largest `--wait-timeout` (3600) would not cover it*")
+			.Which.Message.Should().NotContain("Re-run with", because: "no accepted value would help");
+	}
+
+	[Test]
+	[Description("The incremental Build() path WorkspaceInstaller uses fails on a compile error the answer reports, with its CSxxxx diagnostic (PR review, AC-1).")]
+	public void Build_ShouldThrowWithDiagnostics_WhenResponseReportsCompileError() {
+		// Arrange
+		_stand.AnswersAt(TimeSpan.Zero, FailedResponse).WritesRow(TimeSpan.Zero, SucceededRow());
+		PackageBuilder sut = CreateSut();
+
+		// Act
+		Action act = () => sut.Build(["UsrPackage"]);
+
+		// Assert
+		act.Should().Throw<PackageCompilationException>(because: "Creatio answered success:false for the build")
+			.WithMessage("*'UsrPackage'*build result 1*");
+		_logger.Received(1).WriteError(
+			"(CS0246) in UsrProbe.Custom.cs at (5,26): The type or namespace name 'EntitySchema' could not be found");
+	}
+
+	[Test]
+	[Description("The incremental Build() path settles on quiet clean history without the --wait advice: only compile-package's rebuild can act on it (PR review, AC-1).")]
+	public void Build_ShouldNotSuggestWait_WhenHistorySettlesClean() {
+		// Arrange
+		_stand.WritesRow(TimeSpan.Zero, SucceededRow());
+		PackageBuilder sut = CreateSut();
+
+		// Act
+		Action act = () => sut.Build(["UsrPackage"]);
+
+		// Assert
+		act.Should().NotThrow(because: "clean history that stays quiet is a finished build on the default path");
+		_logger.DidNotReceive().WriteWarning(Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("Pins the default-path success output of compile-package: the start line, one line per compilation-history row, the --wait advice when completion was only inferred, and the end line (PR review, AC-2).")]
+	public void Rebuild_ShouldWriteStartHistoryAdviceAndEnd_WhenDefaultPathInfersSuccess() {
+		// Arrange
+		_stand.WritesRow(TimeSpan.Zero, SucceededRow("UsrPackage.csproj", durationSeconds: 12));
+		PackageBuilder sut = CreateSut();
+
+		// Act
+		sut.Rebuild(["UsrPackage"]);
+
+		// Assert
+		Received.InOrder(() => {
+			_logger.WriteLine("Start rebuild packages (UsrPackage).");
+			_logger.WriteInfo("Compilation history: UsrPackage.csproj built in 12 s, succeeded");
+			_logger.WriteWarning("The environment has not reported the build result for 'UsrPackage' yet. Completion "
+				+ "was inferred from 5 s without new compilation history, so a later project may still be building and "
+				+ "a compile error in it would not be seen here. Run `clio compile-package --wait` to block until the "
+				+ "build finishes.");
+			_logger.WriteLine("End rebuild packages (UsrPackage).");
+		});
+		_logger.DidNotReceive().WriteError(Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("Pins the waited success output of compile-package: the start line, the history row and the end line, with no warning (PR review, AC-2).")]
+	public void Rebuild_ShouldWriteStartHistoryAndEndOnly_WhenWaitedBuildSucceeds() {
+		// Arrange
+		_stand.AnswersAt(TimeSpan.Zero, SucceededResponse)
+			.WritesRow(TimeSpan.FromSeconds(90), SucceededRow("UsrPackage.csproj", durationSeconds: 12));
+		PackageBuilder sut = CreateSut();
+
+		// Act
+		sut.Rebuild(["UsrPackage"], Wait(seconds: 600));
+
+		// Assert
+		Received.InOrder(() => {
+			_logger.WriteLine("Start rebuild packages (UsrPackage).");
+			_logger.WriteInfo("Compilation history: UsrPackage.csproj built in 12 s, succeeded");
+			_logger.WriteLine("End rebuild packages (UsrPackage).");
+		});
+		_logger.DidNotReceive().WriteWarning(Arg.Any<string>());
+		_logger.DidNotReceive().WriteError(Arg.Any<string>());
+	}
+
+	[Test]
 	[Description("A build answer that is not JSON (an HTML login or proxy error page) fails the build with a clear message instead of being read as an absent result that warns and exits 0 (PR review, AC-3).")]
 	public void Rebuild_ShouldFail_WhenResponseIsNotJson() {
 		// Arrange
-		RespondWith(_ => Task.FromResult(Response("<html><body>Login</body></html>")));
-		StubPollWithRows();
+		_stand.AnswersAt(TimeSpan.Zero, "<html><body>Login</body></html>").WritesRow(TimeSpan.Zero, SucceededRow());
 		PackageBuilder sut = CreateSut();
 
 		// Act
@@ -380,7 +462,7 @@ public sealed class PackageBuilderVerdictTests {
 		// Arrange
 		_client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("<html><body>Login</body></html>");
-		PackageBuilder sut = new(_settings, _factory, _urlBuilder, _logger);
+		PackageBuilder sut = new(_settings, _factory, _urlBuilder, _logger, _stand, _stand);
 
 		// Act
 		Action act = () => sut.Build(["UsrPackage"]);
@@ -389,36 +471,152 @@ public sealed class PackageBuilderVerdictTests {
 		act.Should().Throw<InvalidOperationException>(because: "a login page is not a build verdict");
 	}
 
-	private PackageBuilder CreateSut() =>
-		new(_settings, _factory, _urlBuilder, _logger, _poller) {
-			SettleWindowOverride = TimeSpan.FromMilliseconds(200),
-			WaitSettleWindowOverride = TimeSpan.FromMilliseconds(200),
-			WaitQuietFallbackOverride = TimeSpan.FromMinutes(5)
+	private const string DevProjectError =
+		"[{\"Line\":5,\"Column\":26,\"ErrorNumber\":\"CS0246\",\"ErrorText\":\"EntitySchema not found\","
+		+ "\"IsWarning\":false,\"FileName\":\"UsrProbe.Custom.cs\"}]";
+
+	private PackageBuilder CreateSut() => new(_settings, _factory, _urlBuilder, _logger, _stand, _stand, _poller);
+
+	private static PackageCompilationWaitOptions Wait(int seconds) => new(TimeSpan.FromSeconds(seconds));
+
+	private static CompilationHistory SucceededRow(string projectName = "UsrPackage.csproj", int durationSeconds = 0) =>
+		new() {
+			ProjectName = projectName,
+			Result = true,
+			ErrorsWarnings = "[]",
+			DurationInSeconds = durationSeconds
 		};
 
-	private void RespondWith(Func<NSubstitute.Core.CallInfo, Task<HttpResponseMessage>> response) =>
-		_client.ExecutePostRequestAsync(Arg.Any<string>(), Arg.Any<string>(), Timeout.Infinite, 1, 1,
-			Arg.Any<CancellationToken>()).Returns(response);
-
-	private void StubPollWithRows() =>
-		_poller.When(value => value.Poll(Arg.Any<DateTime>(), Arg.Any<CancellationToken>(),
-			Arg.Any<Action<CompilationHistory>>())).Do(call => {
-			call.ArgAt<Action<CompilationHistory>>(2)(new CompilationHistory {
-				CreatedOn = DateTime.UtcNow,
-				ProjectName = "UsrPackage.csproj",
-				Result = true,
-				ErrorsWarnings = "[]"
-			});
-			call.ArgAt<CancellationToken>(1).WaitHandle.WaitOne();
-		});
+	private static CompilationHistory ErrorRow(string projectName, string errorsWarnings) =>
+		new() {
+			ProjectName = projectName,
+			Result = false,
+			ErrorsWarnings = errorsWarnings
+		};
 
 	private static HttpResponseMessage Response(string body) =>
 		new(HttpStatusCode.OK) { Content = new StringContent(body) };
 
-	private static async Task<HttpResponseMessage> DelayedResponseAsync(string body, TimeSpan delay,
-		CancellationToken cancellationToken) {
-		await Task.Delay(delay, cancellationToken);
-		return Response(body);
+	/// <summary>
+	/// A Creatio stand in simulated time. The build's wait loop is the only thing that moves the clock: each
+	/// pause advances it, and the scripted answer and history rows due by then are delivered from inside that
+	/// pause. A ten-minute waited build therefore runs in milliseconds, and no row races a real poll thread.
+	/// </summary>
+	/// <remarks>
+	/// Times are offsets from the moment the build request is sent; every request starts the script again,
+	/// so one stand can serve several builds in a test. The answer is completed synchronously, so the request
+	/// task has finished before the pause returns and the loop sees it on its next pass.
+	/// </remarks>
+	private sealed class SimulatedStand : TimeProvider, ICancellableDelay {
+
+		private static readonly TimeSpan AttachTimeout = TimeSpan.FromSeconds(10);
+
+		private readonly object _gate = new();
+		private readonly List<(TimeSpan At, CompilationHistory Row)> _rows = [];
+		private readonly ManualResetEventSlim _pollAttached = new();
+		private DateTimeOffset _now = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+		private DateTimeOffset _requestSentAt;
+		private (TimeSpan At, string Body, Exception Fault)? _answer;
+		private TaskCompletionSource<HttpResponseMessage> _pending;
+		private int _rowsDelivered;
+		private Action<CompilationHistory> _deliver;
+
+		/// <summary>Simulated time since the last build request was sent.</summary>
+		public TimeSpan Elapsed {
+			get {
+				lock (_gate) {
+					return _now - _requestSentAt;
+				}
+			}
+		}
+
+		public SimulatedStand AnswersAt(TimeSpan at, string body) {
+			_answer = (at, body, null);
+			return this;
+		}
+
+		public SimulatedStand FaultsAt(TimeSpan at, Exception fault) {
+			_answer = (at, null, fault);
+			return this;
+		}
+
+		public SimulatedStand WritesRow(TimeSpan at, CompilationHistory row) {
+			_rows.Add((at, row));
+			return this;
+		}
+
+		public override DateTimeOffset GetUtcNow() {
+			lock (_gate) {
+				return _now;
+			}
+		}
+
+		public Task<HttpResponseMessage> SendRequest(CancellationToken cancellationToken) {
+			TaskCompletionSource<HttpResponseMessage> pending = new();
+			lock (_gate) {
+				_requestSentAt = _now;
+				_pending = pending;
+				_rowsDelivered = 0;
+				_deliver = null;
+				_pollAttached.Reset();
+			}
+			cancellationToken.Register(() => pending.TrySetCanceled(cancellationToken));
+			CompleteAnswerIfDue();
+			return pending.Task;
+		}
+
+		public void Poll(Action<CompilationHistory> deliver, CancellationToken cancellationToken) {
+			lock (_gate) {
+				_deliver = deliver;
+			}
+			_pollAttached.Set();
+			cancellationToken.WaitHandle.WaitOne();
+		}
+
+		public bool WaitOrCancelled(TimeSpan duration, CancellationToken ct) {
+			if (!_pollAttached.Wait(AttachTimeout)) {
+				throw new InvalidOperationException("The build never started polling compilation history.");
+			}
+			lock (_gate) {
+				_now += duration;
+			}
+			CompleteAnswerIfDue();
+			DeliverDueRows();
+			return ct.IsCancellationRequested;
+		}
+
+		private void CompleteAnswerIfDue() {
+			TaskCompletionSource<HttpResponseMessage> pending;
+			lock (_gate) {
+				if (_answer is not { } answer || _now - _requestSentAt < answer.At) {
+					return;
+				}
+				pending = _pending;
+			}
+			if (_answer.Value.Fault is { } fault) {
+				pending.TrySetException(fault);
+			} else {
+				pending.TrySetResult(Response(_answer.Value.Body));
+			}
+		}
+
+		private void DeliverDueRows() {
+			while (true) {
+				CompilationHistory row;
+				Action<CompilationHistory> deliver;
+				lock (_gate) {
+					if (_rowsDelivered >= _rows.Count || _now - _requestSentAt < _rows[_rowsDelivered].At) {
+						return;
+					}
+					row = _rows[_rowsDelivered].Row;
+					deliver = _deliver;
+					_rowsDelivered++;
+				}
+				row.CreatedOn = GetUtcNow().UtcDateTime;
+				deliver(row);
+			}
+		}
+
 	}
 
 }

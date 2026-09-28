@@ -6008,7 +6008,7 @@ internal static class ToolContractCatalog {
 				[EnvironmentNameFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
-					Field(PackageNameFieldName, StringType, "Optional package name. When omitted, runs a full compilation (`clio cc -e ENV_NAME --all`). When provided, recompiles only that single package and waits for the finished build: a C# compile error fails the call (exit-code 1) with the CSxxxx compiler diagnostics, and the new code is not loaded. Comma-separated lists are not supported.")
+					Field(PackageNameFieldName, StringType, "Optional package name. When omitted, runs a full compilation (`clio cc -e ENV_NAME --all`). When provided, recompiles only that single package and waits for the finished build: a C# compile error fails the call (exit-code 1) with the CSxxxx compiler diagnostics, and the new code is not loaded. If the MCP response deadline is reached before the build finishes, the call returns exit-code 0 with an in-progress note and an operation-id instead; the compile keeps running and `compile-status` then reports its verdict, including a compile failure. Comma-separated lists are not supported.")
 				]),
 			CommandExecutionOutput(),
 			CommonErrorContract,

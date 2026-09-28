@@ -30,4 +30,9 @@ public sealed class PackageCompilationException : Exception {
 /// Asks a package build to block until the environment has finished building, not merely accepted the request.
 /// </summary>
 /// <param name="Timeout">How long to wait for the build to finish before giving up.</param>
-public sealed record PackageCompilationWaitOptions(TimeSpan Timeout);
+public sealed record PackageCompilationWaitOptions(TimeSpan Timeout) {
+
+	/// <summary>The largest <see cref="Timeout"/> a caller may ask for, in seconds.</summary>
+	public const int MaxTimeoutSeconds = 3600;
+
+}
