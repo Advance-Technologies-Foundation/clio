@@ -16,9 +16,10 @@ const templateDir = path.join(repoRoot, '.github', 'ISSUE_TEMPLATE');
 
 const config = routing.validateConfig({
   fieldLabel: 'Component',
+  componentLabelPrefix: 'component:',
   triageLabel: { name: 'needs-triage' },
   components: [
-    { id: 'mcp-server', option: 'MCP server (tools, prompts)', label: 'MCP', owners: ['alice', 'bob'] },
+    { id: 'mcp-server', option: 'MCP server (tools, prompts)', label: 'component:mcp', owners: ['alice', 'bob'] },
     { id: 'package', option: 'Packages', label: 'component:package', owners: ['@carol'] },
     { id: 'docs', option: 'Documentation', label: 'component:docs', owners: [] },
     { id: 'other', option: 'Other / not sure', triage: true },
@@ -108,7 +109,7 @@ test('routes a known component to its label and owners', () => {
   const plan = routing.planRouting({ body, currentLabels: ['bug'], currentAssignees: [], config });
   // Assert
   assert.equal(plan.status, 'resolved', 'the option is in the map');
-  assert.deepEqual(plan.labelsToAdd, ['MCP'], 'the component label is added');
+  assert.deepEqual(plan.labelsToAdd, ['component:mcp'], 'the component label is added');
   assert.deepEqual(plan.labelsToRemove, [], 'nothing is removed on a fresh issue');
   assert.deepEqual(plan.ownerCandidates, ['alice', 'bob'], 'owners are candidates in map order');
 });
@@ -129,7 +130,20 @@ test('never proposes an owner when the issue already has an assignee', () => {
   const plan = routing.planRouting({ body, currentAssignees: ['dave'], config });
   // Assert
   assert.deepEqual(plan.ownerCandidates, [], 'an assignee is a claim and must not be overridden');
+  assert.deepEqual(plan.labelsToAdd, ['component:package'], 'the label is still routed');
   assert.equal(plan.alreadyAssigned, true, 'the run reports why it did not assign');
+});
+
+test('keeps needs-triage on a component that has no owners', () => {
+  // Arrange
+  const body = formBody('Documentation');
+  // Act
+  const opened = routing.planRouting({ body, currentLabels: ['bug'], config });
+  const edited = routing.planRouting({ body, previousBody: formBody('Other / not sure'), currentLabels: ['needs-triage'], config });
+  // Assert
+  assert.deepEqual(opened.labelsToAdd, ['component:docs', 'needs-triage'], 'nobody owns docs, so a human still has to pick the issue up');
+  assert.deepEqual(edited.labelsToRemove, [], 'needs-triage is not removed when nobody can be assigned');
+  assert.deepEqual(edited.ownerCandidates, [], 'there is nobody to assign');
 });
 
 test('adds the triage label when no component was chosen or it is unknown or "not sure"', () => {
@@ -145,13 +159,16 @@ test('adds the triage label when no component was chosen or it is unknown or "no
   }
 });
 
-test('does not add triage when a human already set a component label', () => {
+test('keeps a component label a human triager set on an unrouted issue', () => {
   // Arrange
-  const body = 'free text issue';
+  const blank = 'free text issue';
+  const notSure = formBody('Other / not sure');
   // Act
-  const plan = routing.planRouting({ body, currentLabels: ['component:docs'], config });
+  const onBlank = routing.planRouting({ body: `${blank} more`, previousBody: blank, currentLabels: ['component:docs'], config });
+  const onNotSure = routing.planRouting({ body: `${notSure}\nmore`, previousBody: notSure, currentLabels: ['component:docs'], config });
   // Assert
-  assert.deepEqual(plan.labelsToAdd, [], 'a component label means someone already triaged it');
+  assert.equal(onBlank.unchanged, true, 'a blank issue has no form choice to enforce');
+  assert.equal(onNotSure.unchanged, true, 'the author did not change the "not sure" choice, so the triager label stays');
 });
 
 test('swaps the component label when an edit changes the component', () => {
@@ -161,62 +178,66 @@ test('swaps the component label when an edit changes the component', () => {
   // Act
   const plan = routing.planRouting({ body, previousBody, currentLabels: ['bug', 'component:package'], currentAssignees: ['carol'], config });
   // Assert
-  assert.deepEqual(plan.labelsToRemove, ['component:package'], 'the label that came from the old choice is removed');
-  assert.deepEqual(plan.labelsToAdd, ['component:docs'], 'the label for the new choice is added');
+  assert.deepEqual(plan.labelsToRemove, ['component:package'], 'the label of the old choice is removed');
+  assert.deepEqual(plan.labelsToAdd, ['component:docs', 'needs-triage'], 'the new choice is applied; docs has no owner');
   assert.deepEqual(plan.ownerCandidates, [], 'the existing assignee is kept; reassignment is a human decision');
 });
 
-test('keeps a hand-added component label when an edit does not change the component', () => {
-  // Arrange
-  const body = formBody('Documentation');
+test('never touches topic labels outside the component prefix', () => {
+  // Arrange: MCP, Guidance and ring are human topic labels, not routing labels.
+  const previousBody = formBody('Packages');
+  const body = formBody('MCP server (tools, prompts)');
   // Act
-  const plan = routing.planRouting({ body, previousBody: body, currentLabels: ['component:docs', 'MCP'], config });
+  const plan = routing.planRouting({ body, previousBody, currentLabels: ['MCP', 'Guidance', 'ring', 'component:package'], currentAssignees: ['carol'], config });
   // Assert
-  assert.deepEqual(plan.labelsToRemove, [], 'MCP was added by a human, not by the form choice');
-  assert.deepEqual(plan.labelsToAdd, [], 'the routed label is already present');
+  assert.deepEqual(plan.labelsToRemove, ['component:package'], 'only the routing-owned label is removed');
+  assert.deepEqual(plan.labelsToAdd, ['component:mcp'], 'the new component label is added');
 });
 
-test('removes the triage label once a component is chosen', () => {
+test('removes the triage label once an owned component is chosen', () => {
   // Arrange
   const previousBody = formBody('Other / not sure');
-  const body = formBody('Documentation');
+  const body = formBody('Packages');
   // Act
   const plan = routing.planRouting({ body, previousBody, currentLabels: ['needs-triage'], config });
   // Assert
-  assert.deepEqual(plan.labelsToRemove, ['needs-triage'], 'the issue is routed now');
-  assert.deepEqual(plan.labelsToAdd, ['component:docs'], 'the chosen component label is added');
+  assert.deepEqual(plan.labelsToRemove, ['needs-triage'], 'the issue is routed to an owner now');
+  assert.deepEqual(plan.labelsToAdd, ['component:package'], 'the chosen component label is added');
+  assert.deepEqual(plan.ownerCandidates, ['carol'], 'the owner is proposed');
 });
 
-test('a text-only edit is a no-op, so labels and owners a human removed stay removed', () => {
+test('a text-only edit is a no-op, so an owner a human unassigned is not re-assigned', () => {
   // Arrange
   const previousBody = formBody('Packages');
   const body = `${previousBody}\n\nMore details.`;
   // Act
-  const plan = routing.planRouting({ body, previousBody, currentLabels: ['bug'], currentAssignees: [], config });
+  const plan = routing.planRouting({ body, previousBody, currentLabels: ['bug', 'component:package'], currentAssignees: [], config });
   // Assert
-  assert.equal(plan.unchanged, true, 'the component did not change');
+  assert.equal(plan.unchanged, true, 'the live labels already match the component');
   assert.deepEqual([plan.labelsToAdd, plan.labelsToRemove, plan.ownerCandidates], [[], [], []], 'nothing is re-applied');
 });
 
-test('removes every other component label when the component changes, even after collapsed runs', () => {
-  // Arrange: A was applied, the A->B run was cancelled by GitHub, this is the B->C run.
+test('reconciles from live labels when GitHub cancelled the run of the edit that changed the component', () => {
+  // Arrange: A was applied, the A->B run was cancelled, this run is a later B->B text edit.
   const previousBody = formBody('Packages');
-  const body = formBody('Documentation');
+  const body = `${previousBody}\n\ntypo fix`;
   // Act
-  const plan = routing.planRouting({ body, previousBody, currentLabels: ['MCP', 'bug'], currentAssignees: ['alice'], config });
+  const plan = routing.planRouting({ body, previousBody, currentLabels: ['component:mcp', 'bug'], currentAssignees: ['alice'], config });
   // Assert
-  assert.deepEqual(plan.labelsToRemove, ['MCP'], 'the form choice is authoritative for component labels once it changes');
-  assert.deepEqual(plan.labelsToAdd, ['component:docs'], 'the new choice is applied');
+  assert.equal(plan.unchanged, false, 'the live label disagrees with the form, so this is not a no-op');
+  assert.deepEqual(plan.labelsToRemove, ['component:mcp'], 'the stale label from the cancelled run is removed');
+  assert.deepEqual(plan.labelsToAdd, ['component:package'], 'the current choice is applied');
+  assert.deepEqual(plan.ownerCandidates, [], 'the existing assignee is kept');
 });
 
-test('clearing the component removes its label and asks for triage', () => {
+test('switching to "not sure" removes the component label and asks for triage', () => {
   // Arrange
   const previousBody = formBody('Packages');
   const body = formBody('Other / not sure');
   // Act
   const plan = routing.planRouting({ body, previousBody, currentLabels: ['component:package'], config });
   // Assert
-  assert.deepEqual(plan.labelsToRemove, ['component:package'], 'the old component no longer applies');
+  assert.deepEqual(plan.labelsToRemove, ['component:package'], 'the author withdrew the component');
   assert.deepEqual(plan.labelsToAdd, ['needs-triage'], 'nothing routes the issue now');
 });
 
@@ -275,21 +296,23 @@ test('ignores malformed checkbox lines', () => {
   assert.deepEqual(values, ['-[x] Packages - [y] Workspaces - [x]Docs'], 'none of the lines is a task item, so the section is read as one plain value');
 });
 
-test('rejects team owners, duplicate options and missing labels', () => {
+test('rejects team owners, labels outside the prefix, duplicate options and missing labels', () => {
   // Arrange
   const broken = {
     fieldLabel: 'Component',
+    componentLabelPrefix: 'component:',
     triageLabel: { name: 'needs-triage' },
     components: [
-      { id: 'a', option: 'A', label: 'x', owners: ['@org/team'] },
-      { id: 'b', option: 'a', label: 'y', owners: [] },
+      { id: 'a', option: 'A', label: 'component:x', owners: ['@org/team'] },
+      { id: 'd', option: 'D', label: 'MCP', owners: [] },
+      { id: 'b', option: 'a', label: 'component:y', owners: [] },
       { id: 'c', option: 'C', owners: [] },
     ],
   };
   // Act
   const act = () => routing.validateConfig(broken);
   // Assert
-  assert.throws(act, /teams cannot be assignees[\s\S]*duplicate option[\s\S]*"label" is required/, 'every problem is reported at once');
+  assert.throws(act, /teams cannot be assignees[\s\S]*label "MCP" must start with "component:"[\s\S]*duplicate option[\s\S]*"label" is required/, 'every problem is reported at once, including a shared topic label that routing would strip');
 });
 
 test('the committed component-owners.json is valid', () => {
@@ -340,7 +363,7 @@ function fixtureConfigPath() {
   return file;
 }
 
-function fakeGitHub({ assignable = [], existingLabels = [], live = null, dropAssignee = false, createStatus = null } = {}) {
+function fakeGitHub({ assignable = [], existingLabels = [], live = null, dropAssignee = false, createStatus = null, addLabelsStatus = null, removeStatus = null } = {}) {
   const calls = [];
   const failure = status => Object.assign(new Error(`HTTP ${status}`), { status });
   const issues = {
@@ -352,16 +375,17 @@ function fakeGitHub({ assignable = [], existingLabels = [], live = null, dropAss
       calls.push(['addAssignees', ...assignees]);
       return { data: { assignees: dropAssignee ? [] : assignees.map(login => ({ login })) } };
     },
-    addLabels: async ({ labels }) => { calls.push(['addLabels', ...labels]); },
-    removeLabel: async ({ name }) => { calls.push(['removeLabel', name]); },
+    addLabels: async ({ labels }) => { calls.push(['addLabels', ...labels]); if (addLabelsStatus) throw failure(addLabelsStatus); },
+    removeLabel: async ({ name }) => { calls.push(['removeLabel', name]); if (removeStatus) throw failure(removeStatus); },
   };
   return { github: { rest: { issues } }, calls };
 }
 
 function fakeCore() {
   const warnings = [];
-  const summary = { addHeading() { return this; }, addTable() { return this; }, async write() {} };
-  return { core: { info() {}, warning: m => warnings.push(m), summary }, warnings };
+  const tables = [];
+  const summary = { addHeading() { return this; }, addTable(rows) { tables.push(rows); return this; }, async write() {} };
+  return { core: { info() {}, warning: m => warnings.push(m), summary }, warnings, tables };
 }
 
 function eventContext(body, { action = 'opened', changes, labels = ['bug'], assignees = [] } = {}) {
@@ -379,27 +403,27 @@ const only = (calls, name) => calls.filter(c => c[0] === name);
 
 test('run assigns the first assignable owner and adds the component label', async () => {
   // Arrange
-  const { github, calls } = fakeGitHub({ assignable: ['bob'], existingLabels: ['MCP'] });
+  const { github, calls } = fakeGitHub({ assignable: ['bob'], existingLabels: ['component:mcp'] });
   const { core, warnings } = fakeCore();
   // Act
   await routing.run({ github, context: eventContext(formBody('MCP server (tools, prompts)')), core, configPath: fixtureConfigPath() });
   // Assert
   assert.deepEqual(only(calls, 'addAssignees'), [['addAssignees', 'bob']], 'exactly one owner is assigned: the first one who can be');
-  assert.deepEqual(only(calls, 'addLabels'), [['addLabels', 'MCP']], 'the component label is applied');
+  assert.deepEqual(only(calls, 'addLabels'), [['addLabels', 'component:mcp']], 'the component label is applied');
   assert.equal(warnings.length, 2, 'the failed re-read and the non-assignable first owner are both reported as warnings');
 });
 
 test('run plans from the live issue, not the stale event payload', async () => {
   // Arrange: the "opened" run already labelled and assigned before this edit run started.
   const body = formBody('Packages');
-  const live = { number: 7, body, labels: [{ name: 'MCP' }], assignees: [{ login: 'alice' }] };
+  const live = { number: 7, body, labels: [{ name: 'component:mcp' }], assignees: [{ login: 'alice' }] };
   const { github, calls } = fakeGitHub({ assignable: ['carol'], existingLabels: ['component:package'], live });
   const { core } = fakeCore();
   const context = eventContext(body, { action: 'edited', changes: { body: { from: formBody('MCP server (tools, prompts)') } }, labels: [] });
   // Act
   await routing.run({ github, context, core, configPath: fixtureConfigPath() });
   // Assert
-  assert.deepEqual(only(calls, 'removeLabel'), [['removeLabel', 'MCP']], 'the label added after the event fired is still removed');
+  assert.deepEqual(only(calls, 'removeLabel'), [['removeLabel', 'component:mcp']], 'the label added after the event fired is still removed');
   assert.deepEqual(only(calls, 'addAssignees'), [], 'the live assignee blocks a second assignee');
 });
 
@@ -461,4 +485,19 @@ test('run ignores an edit that changed only the title', async () => {
   await routing.run({ github, context, core, configPath: fixtureConfigPath() });
   // Assert
   assert.deepEqual(calls, [], 'routing depends only on the body');
+});
+
+test('run reports only the label changes GitHub accepted', async () => {
+  // Arrange
+  const body = formBody('Packages');
+  const live = { number: 7, body, labels: [{ name: 'component:mcp' }], assignees: [{ login: 'alice' }] };
+  const { github } = fakeGitHub({ existingLabels: ['component:package'], live, addLabelsStatus: 500, removeStatus: 500 });
+  const { core, tables } = fakeCore();
+  const context = eventContext(body, { action: 'edited', changes: { body: { from: formBody('MCP server (tools, prompts)') } } });
+  // Act
+  await routing.run({ github, context, core, configPath: fixtureConfigPath() });
+  // Assert
+  const rows = Object.fromEntries(tables[0].slice(1));
+  assert.equal(rows['Labels added'], '-', 'a failed addLabels call must not be reported as added');
+  assert.equal(rows['Labels removed'], '-', 'a failed non-404 removal must not be reported as removed');
 });

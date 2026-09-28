@@ -17,21 +17,26 @@ New issues are labelled and assigned from the **Component** dropdown in the issu
    label depending on the selected dropdown value, so the component label needs the workflow.
 2. The workflow reads the `### Component` section of the issue body and looks the value up in
    `component-owners.json` (by `option` text, or by `id`).
-3. **Resolved component** → adds the component's `label`; if the issue has **no assignee**, assigns
-   the **first** login in `owners` that can be assigned in this repository.
+3. **Resolved component** → the issue ends with exactly that component's `component:*` label; if
+   the issue has **no assignee**, assigns the **first** login in `owners` that can be assigned in
+   this repository and removes `needs-triage`. A component with `owners: []` gets its label **and**
+   `needs-triage`, because nobody is routed to pick it up.
 4. **No value, unknown value, or "Other / not sure"** → adds `needs-triage` (unless a component
    label is already on the issue). A blank issue (no form) is treated the same way.
 5. **An owner cannot be assigned** (not a collaborator, no access) → warning in the run log,
    the component label is still added, plus `needs-triage`. The run never fails because of routing;
    only an invalid `component-owners.json` fails it.
-6. **Edit** of the body:
-   - the component did **not** change (text edits, same choice) → nothing happens, so a label or
-     owner a human removed is not re-applied;
-   - the component changed → every other component label is removed and the new one is added;
-     `needs-triage` is removed once a component resolves, or added when the choice becomes
-     "Other / not sure". An owner is assigned only if the issue has no assignee.
-   Title-only edits are ignored. The run re-reads the live issue before planning, because the
-   event payload can be older than the previous run's changes.
+6. **Edit** of the body. The run re-reads the live issue and compares its labels with the current
+   form choice (not with the previous body), so runs GitHub cancelled or collapsed in the
+   concurrency queue cannot leave a stale label:
+   - live labels already match the choice (text edits) → nothing happens, so an owner a human
+     unassigned is not re-assigned;
+   - they do not match → the other `component:*` labels are removed and the chosen one is added;
+     an owner is assigned only if the issue has no assignee;
+   - the author switched the dropdown to "Other / not sure" → `component:*` labels are removed and
+     `needs-triage` is added. A component label a triager put on a "not sure" or blank issue is
+     kept on later text edits.
+   Title-only edits are ignored.
 
 Rules that protect manual work:
 
@@ -39,22 +44,26 @@ Rules that protect manual work:
   claimed issue is a human decision.
 - Only one owner is assigned. The `claim-clio-issue` skill uses the assignee as the claim signal
   and stops on multiple assignees; the auto-assigned owner is exactly the person who then claims it.
-- Component labels are only touched on `opened` and when an edit changes the component. After such
-  a change the form choice is authoritative: the issue carries exactly the chosen component label.
-  Non-component labels are never removed.
+- Labels with the `componentLabelPrefix` (`component:`) belong to routing: on a routed issue,
+  change the Component dropdown rather than the label. Every other label — including the topic
+  labels `MCP`, `Guidance`, `process-builder`, `ring` — is never added or removed by routing. The
+  map validation rejects a component label outside the prefix for that reason.
 - Missing labels are created with the `color`/`description` from the map.
+- The run summary lists only the label changes GitHub accepted.
 
 ## Updating the map
 
 - **Change an owner**: edit `owners` of the component. Use GitHub user logins (`kirillkrylov` or
   `@kirillkrylov`). Teams (`@org/team`) are rejected: GitHub cannot assign issues to a team. The
   owner must be a repository collaborator, or assignment is skipped with a warning.
-  `owners: []` means label-only routing.
+  `owners: []` means the label is routed and the issue stays in `needs-triage`.
 - **Add / rename a component**: add an entry to `components` **and** the same `option` text to the
   `Component` dropdown in **every** form in `.github/ISSUE_TEMPLATE/`, in the same order. The test
   `every issue form offers exactly the components…` fails otherwise.
 - **Renaming an option** breaks re-routing of older issues only on edit (the old value becomes
   unknown → `needs-triage` unless the old label is still there). Prefer keeping `id` stable.
+- **Labels** must start with `componentLabelPrefix`. Renaming one leaves the old label on older
+  issues; relabel them by hand.
 - `paths` is informational (which code the component covers); nothing reads it yet.
 - Run `make test-issue-routing` (or `node --test .github/scripts/issue-routing/issue-routing.test.js`).
 

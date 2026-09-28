@@ -1,6 +1,7 @@
 {
   "$comment": "Issue routing map: component -> label + owners. Read by .github/workflows/issue-routing.yml. See .github/ISSUE_ROUTING.md before editing.",
   "fieldLabel": "Component",
+  "componentLabelPrefix": "component:",
   "triageLabel": {
     "name": "needs-triage",
     "color": "d4c5f9",
@@ -10,29 +11,44 @@
     {
       "id": "mcp-server",
       "option": "MCP server (tools, prompts, resources, clio-run)",
-      "label": "MCP",
-      "color": "1d76db",
+      "label": "component:mcp-server",
+      "color": "c5def5",
       "description": "clio MCP server surface",
-      "owners": ["Alexandr-Kravchuk", "d-krestov"],
-      "paths": ["clio/Command/McpServer/", "clio.mcp.e2e/"]
+      "owners": [
+        "Alexandr-Kravchuk",
+        "d-krestov"
+      ],
+      "paths": [
+        "clio/Command/McpServer/",
+        "clio.mcp.e2e/"
+      ]
     },
     {
       "id": "guidance",
       "option": "MCP guidance articles (get-guidance)",
-      "label": "Guidance",
-      "color": "0e8a16",
+      "label": "component:guidance",
+      "color": "c5def5",
       "description": "Agent guidance published from clio-knowledge",
-      "owners": ["kirillkrylov"],
-      "paths": ["clio/Command/McpServer/Knowledge/"]
+      "owners": [
+        "kirillkrylov"
+      ],
+      "paths": [
+        "clio/Command/McpServer/Knowledge/"
+      ]
     },
     {
       "id": "process-builder",
       "option": "Business processes / Process Builder",
-      "label": "process-builder",
-      "color": "5319e7",
+      "label": "component:process-builder",
+      "color": "c5def5",
       "description": "Business process model, CrtProcessBuilder package",
-      "owners": ["d-krestov"],
-      "paths": ["clio/Command/ProcessModel/", "clio/CrtProcessBuilder/"]
+      "owners": [
+        "d-krestov"
+      ],
+      "paths": [
+        "clio/Command/ProcessModel/",
+        "clio/CrtProcessBuilder/"
+      ]
     },
     {
       "id": "application",
@@ -41,7 +57,9 @@
       "color": "c5def5",
       "description": "Application, section and page commands",
       "owners": [],
-      "paths": ["clio/Command/ApplicationCommand/"]
+      "paths": [
+        "clio/Command/ApplicationCommand/"
+      ]
     },
     {
       "id": "package",
@@ -49,8 +67,12 @@
       "label": "component:package",
       "color": "c5def5",
       "description": "Package management commands",
-      "owners": ["Alexandr-Kravchuk"],
-      "paths": ["clio/Package/"]
+      "owners": [
+        "Alexandr-Kravchuk"
+      ],
+      "paths": [
+        "clio/Package/"
+      ]
     },
     {
       "id": "install",
@@ -58,8 +80,12 @@
       "label": "component:install",
       "color": "c5def5",
       "description": "deploy-creatio, local infrastructure, environment setup",
-      "owners": ["kirillkrylov"],
-      "paths": ["clio/Command/CreatioInstallCommand/"]
+      "owners": [
+        "kirillkrylov"
+      ],
+      "paths": [
+        "clio/Command/CreatioInstallCommand/"
+      ]
     },
     {
       "id": "workspace",
@@ -68,7 +94,11 @@
       "color": "c5def5",
       "description": "Workspace commands and templates",
       "owners": [],
-      "paths": ["clio/Workspace/", "clio/Workspaces/", "clio/tpl/"]
+      "paths": [
+        "clio/Workspace/",
+        "clio/Workspaces/",
+        "clio/tpl/"
+      ]
     },
     {
       "id": "data",
@@ -77,7 +107,10 @@
       "color": "c5def5",
       "description": "Data commands, queries, ModelBuilder",
       "owners": [],
-      "paths": ["clio/Query/", "clio/ModelBuilder/"]
+      "paths": [
+        "clio/Query/",
+        "clio/ModelBuilder/"
+      ]
     },
     {
       "id": "cliogate",
@@ -85,8 +118,13 @@
       "label": "component:cliogate",
       "color": "c5def5",
       "description": "ClioGate Creatio package",
-      "owners": ["kirillkrylov"],
-      "paths": ["cliogate/", "clio/cliogate/"]
+      "owners": [
+        "kirillkrylov"
+      ],
+      "paths": [
+        "cliogate/",
+        "clio/cliogate/"
+      ]
     },
     {
       "id": "clio-ring",
@@ -94,8 +132,12 @@
       "label": "component:clio-ring",
       "color": "c5def5",
       "description": "ClioRing internal preview",
-      "owners": ["kirillkrylov"],
-      "paths": ["clio-ring/"]
+      "owners": [
+        "kirillkrylov"
+      ],
+      "paths": [
+        "clio-ring/"
+      ]
     },
     {
       "id": "cli-core",
@@ -104,7 +146,12 @@
       "color": "c5def5",
       "description": "Environment settings, auth, parser, DI",
       "owners": [],
-      "paths": ["clio/Common/", "clio/Environment/", "clio/Program.cs", "clio/BindingsModule.cs"]
+      "paths": [
+        "clio/Common/",
+        "clio/Environment/",
+        "clio/Program.cs",
+        "clio/BindingsModule.cs"
+      ]
     },
     {
       "id": "docs",
@@ -113,7 +160,11 @@
       "color": "c5def5",
       "description": "Commands.md, help/en, docs/commands",
       "owners": [],
-      "paths": ["clio/Commands.md", "clio/help/", "clio/docs/"]
+      "paths": [
+        "clio/Commands.md",
+        "clio/help/",
+        "clio/docs/"
+      ]
     },
     {
       "id": "other",
