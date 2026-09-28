@@ -4,6 +4,7 @@ using Clio.Common;
 using Clio.Package;
 using FluentAssertions;
 using NSubstitute;
+using NSubstitute.ClearExtensions;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command;
@@ -40,6 +41,9 @@ public class CompilePackageCommandTestCase : BaseCommandTests<CompilePackageOpti
 		// instance (ClearReceivedCalls resets only call history, not stubs — review RC-13). Tests that
 		// need an interactive terminal re-stub IsInteractive=true explicitly.
 		_interactiveConsole.IsInteractive.Returns(false);
+		// The builder substitute is shared by the fixture too, and ClearReceivedCalls keeps a When..Do that a
+		// failure test installed, so a later test would see Rebuild throw and exit 1 depending on test order.
+		_packageBuilder.ClearSubstitute(ClearOptions.CallActions);
 	}
 
 	[TearDown]
@@ -183,6 +187,62 @@ public class CompilePackageCommandTestCase : BaseCommandTests<CompilePackageOpti
 		exitCode.Should().Be(1, because: "an out-of-range wait bound is a usage error");
 		_packageBuilder.DidNotReceive().Rebuild(Arg.Any<string[]>(), Arg.Any<PackageCompilationWaitOptions>());
 		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("--wait-timeout", StringComparison.Ordinal)));
+	}
+
+	[Test]
+	[Description("The --wait-timeout upper bound is inclusive: 3600 seconds is accepted and 3601 is rejected before anything is compiled (issue #1632).")]
+	[TestCase(3600, 0)]
+	[TestCase(3601, 1)]
+	public void Execute_ShouldApplyInclusiveUpperWaitTimeoutBound(int waitTimeout, int expectedExitCode) {
+		// Arrange
+		CompilePackageCommand command = Container.GetRequiredService<CompilePackageCommand>();
+		CompilePackageOptions options = new() {
+			PackageName = "UsrPackage", Environment = "dev", Wait = true, WaitTimeout = waitTimeout
+		};
+
+		// Act
+		int exitCode = command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(expectedExitCode, because: "the documented --wait-timeout range is 1..3600 seconds");
+		_packageBuilder.Received(expectedExitCode == 0 ? 1 : 0).Rebuild(Arg.Any<string[]>(),
+			Arg.Any<PackageCompilationWaitOptions>());
+	}
+
+	[Test]
+	[Description("--wait-timeout is not validated when --wait is not set, so the unused option cannot fail a default compile (issue #1632).")]
+	public void Execute_ShouldIgnoreWaitTimeout_WhenWaitIsNotSet() {
+		// Arrange
+		CompilePackageCommand command = Container.GetRequiredService<CompilePackageCommand>();
+		CompilePackageOptions options = new() {
+			PackageName = "UsrPackage", Environment = "dev", Wait = false, WaitTimeout = 0
+		};
+
+		// Act
+		int exitCode = command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "--wait-timeout only bounds a waited build");
+		_packageBuilder.Received(1).Rebuild(Arg.Any<string[]>());
+	}
+
+	[Test]
+	[Description("An out-of-range --wait-timeout is rejected before the heavy-operation prompt, so an interactive user is not asked to approve a compile that is then refused over an option.")]
+	public void Execute_ShouldRejectOutOfRangeWaitTimeout_BeforePrompting() {
+		// Arrange
+		CompilePackageCommand command = Container.GetRequiredService<CompilePackageCommand>();
+		CompilePackageOptions options = new() {
+			PackageName = "UsrPackage", Environment = "dev", Wait = true, WaitTimeout = 3601
+		};
+		_interactiveConsole.IsInteractive.Returns(true);
+		_interactiveConsole.Prompt(Arg.Any<string>()).Returns(true);
+
+		// Act
+		int exitCode = command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "an out-of-range wait bound is a usage error");
+		_interactiveConsole.DidNotReceive().Prompt(Arg.Any<string>());
 	}
 
 	[Test]

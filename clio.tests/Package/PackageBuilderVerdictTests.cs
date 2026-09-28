@@ -306,6 +306,89 @@ public sealed class PackageBuilderVerdictTests {
 			.WithMessage("*accepted*'UsrPackage'*no compilation history within 2 s*");
 	}
 
+	[Test]
+	[Description("With --wait, a build whose budget runs out after the history already showed a compile error fails with that error's CSxxxx diagnostics, instead of a generic 'may still be running' timeout that hides the observed failure (PR review, AC-1/AC-6).")]
+	public void Rebuild_ShouldFailWithObservedDiagnostics_WhenWaitedBuildTimesOutAfterErrorRow() {
+		// Arrange
+		RespondWith(call => DelayedResponseAsync(SucceededResponse, Timeout.InfiniteTimeSpan, call.ArgAt<CancellationToken>(5)));
+		_poller.When(value => value.Poll(Arg.Any<DateTime>(), Arg.Any<CancellationToken>(),
+			Arg.Any<Action<CompilationHistory>>())).Do(call => {
+			call.ArgAt<Action<CompilationHistory>>(2)(new CompilationHistory {
+				CreatedOn = DateTime.UtcNow,
+				ProjectName = "Terrasoft.Configuration.Dev.csproj",
+				Result = false,
+				ErrorsWarnings = "[{\"Line\":5,\"Column\":26,\"ErrorNumber\":\"CS0246\",\"ErrorText\":\"EntitySchema not found\","
+					+ "\"IsWarning\":false,\"FileName\":\"UsrProbe.Custom.cs\"}]"
+			});
+			call.ArgAt<CancellationToken>(1).WaitHandle.WaitOne();
+		});
+		PackageBuilder sut = CreateSut();
+		// The error row arrives at once, but the quiet window is longer than the budget, so the loop can only
+		// end through the deadline - deterministically, without racing the row against the clock.
+		sut.WaitSettleWindowOverride = TimeSpan.FromMinutes(5);
+
+		// Act
+		Action act = () => sut.Rebuild(["UsrPackage"], new PackageCompilationWaitOptions(TimeSpan.FromSeconds(1)));
+
+		// Assert
+		act.Should().Throw<PackageCompilationException>(
+			because: "an error row already observed is the build's verdict, even when the quiet window did not elapse");
+		_logger.Received(1).WriteError("(CS0246) in UsrProbe.Custom.cs at (5,26): EntitySchema not found");
+	}
+
+	[Test]
+	[Description("With --wait, a request that faulted and then never produced any history ends in a timeout that chains the request fault as its inner exception, so an authentication or connection failure is not lost behind the timeout (PR review, AC-6).")]
+	public void Rebuild_ShouldChainRequestFault_WhenWaitedBuildTimesOutAfterFaultedRequest() {
+		// Arrange
+		HttpRequestException fault = new("Connection refused");
+		RespondWith(_ => Task.FromException<HttpResponseMessage>(fault));
+		_poller.When(value => value.Poll(Arg.Any<DateTime>(), Arg.Any<CancellationToken>(),
+			Arg.Any<Action<CompilationHistory>>())).Do(call => call.ArgAt<CancellationToken>(1).WaitHandle.WaitOne());
+		PackageBuilder sut = CreateSut();
+
+		// Act
+		Action act = () => sut.Rebuild(["UsrPackage"], new PackageCompilationWaitOptions(TimeSpan.FromSeconds(1)));
+
+		// Assert
+		act.Should().Throw<TimeoutException>(because: "no history row ever showed the build finishing")
+			.WithInnerException<HttpRequestException>()
+			.WithMessage("Connection refused");
+	}
+
+	[Test]
+	[Description("A build answer that is not JSON (an HTML login or proxy error page) fails the build with a clear message instead of being read as an absent result that warns and exits 0 (PR review, AC-3).")]
+	public void Rebuild_ShouldFail_WhenResponseIsNotJson() {
+		// Arrange
+		RespondWith(_ => Task.FromResult(Response("<html><body>Login</body></html>")));
+		StubPollWithRows();
+		PackageBuilder sut = CreateSut();
+
+		// Act
+		Action act = () => sut.Rebuild(["UsrPackage"]);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(because: "a login page is not a build verdict")
+			.WithMessage("*'UsrPackage'*not a build result*")
+			.Which.Message.Should().NotContain("<html>", because: "the raw body is not echoed");
+		_logger.DidNotReceive().WriteWarning(Arg.Is<string>(message =>
+			message.Contains("did not report a build result", StringComparison.Ordinal)));
+	}
+
+	[Test]
+	[Description("Without a history poller, a synchronous build answer that is not JSON fails the build too (PR review, AC-3).")]
+	public void Rebuild_ShouldFail_WhenSynchronousResponseIsNotJson() {
+		// Arrange
+		_client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("<html><body>Login</body></html>");
+		PackageBuilder sut = new(_settings, _factory, _urlBuilder, _logger);
+
+		// Act
+		Action act = () => sut.Build(["UsrPackage"]);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(because: "a login page is not a build verdict");
+	}
+
 	private PackageBuilder CreateSut() =>
 		new(_settings, _factory, _urlBuilder, _logger, _poller) {
 			SettleWindowOverride = TimeSpan.FromMilliseconds(200),

@@ -63,8 +63,9 @@ internal static class PackageBuildResultParser {
 	/// </summary>
 	/// <param name="responseBody">The raw response body.</param>
 	/// <returns>
-	/// The verdict, or <see langword="null"/> when the body is empty, is not JSON (an HTML login or error page),
-	/// or carries no <c>success</c> field - that is, when the environment did not report a result.
+	/// The verdict, or <see langword="null"/> when the body is empty, is not JSON, or carries no
+	/// <c>success</c> field - that is, when the environment did not report a result. A caller must reject a
+	/// non-JSON body first (see <see cref="IsUnrecognizedBody"/>): it is not an absent result.
 	/// </returns>
 	internal static PackageBuildResult TryParseResponse(string responseBody) {
 		if (string.IsNullOrWhiteSpace(responseBody) || !responseBody.TrimStart().StartsWith('{')) {
@@ -81,6 +82,18 @@ internal static class PackageBuildResultParser {
 			return null;
 		}
 	}
+
+	/// <summary>
+	/// Determines whether a package-build response body is present but is not a JSON object.
+	/// </summary>
+	/// <param name="responseBody">The raw response body.</param>
+	/// <returns><see langword="true"/> for a non-empty body that does not start with <c>{</c>.</returns>
+	/// <remarks>
+	/// Such a body is an HTML login, session-expired or proxy error page, not a build verdict. Treating it
+	/// like an empty body let the default path warn and exit 0 for a build that never started.
+	/// </remarks>
+	internal static bool IsUnrecognizedBody(string responseBody) =>
+		!string.IsNullOrWhiteSpace(responseBody) && !responseBody.TrimStart().StartsWith('{');
 
 	/// <summary>
 	/// Parses the <c>ErrorsWarnings</c> payload of a compilation-history row.

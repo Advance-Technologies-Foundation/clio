@@ -167,6 +167,7 @@
 				} else {
 					using IOwnedApplicationClient applicationClient = CreateClient();
 					string responseBody = applicationClient.ExecutePostRequest(fullBuildPackageUrl, requestData);
+					ThrowIfUnrecognizedBody(safePackageName, responseBody);
 					ApplyVerdict(new BuildVerdictEvidence(safePackageName,
 						PackageBuildResultParser.TryParseResponse(responseBody), History: null,
 						CompletionInferred: false, Waited: waitOptions is not null, SuggestWait: force));
@@ -222,14 +223,19 @@
 		/// Creatio does not report a build as failed and then keep building it.
 		/// </remarks>
 		private bool TryConcludeOnAnswer(AnsweredBuild answered, CompilationProgress progress, Action endMonitoring) {
+			if (PackageBuildResultParser.IsUnrecognizedBody(answered.Body)) {
+				endMonitoring();
+				ThrowIfUnrecognizedBody(answered.PackageName, answered.Body);
+			}
+			PackageBuildResult response = PackageBuildResultParser.TryParseResponse(answered.Body);
 			CompilationProgressSnapshot observed = progress.Snapshot();
-			bool final = !answered.Waited || answered.Response is { Success: false }
+			bool final = !answered.Waited || response is { Success: false }
 				|| HasSettledSince(observed, answered.AnsweredAt);
 			if (!final) {
 				return false;
 			}
 			endMonitoring();
-			ApplyVerdict(new BuildVerdictEvidence(answered.PackageName, answered.Response, progress.Snapshot(),
+			ApplyVerdict(new BuildVerdictEvidence(answered.PackageName, response, progress.Snapshot(),
 				CompletionInferred: false, Waited: answered.Waited, SuggestWait: answered.SuggestWait));
 			return true;
 		}
@@ -245,7 +251,7 @@
 		/// </returns>
 		/// <remarks>
 		/// The answer alone is never completion evidence: a .NET 8 host answers "success" on acceptance and
-		/// writes its first history row 60-120 s later (PR #1688 review). Without a row the build keeps being
+		/// writes its first history row 60-120 s later (issue #1632). Without a row the build keeps being
 		/// observed and, if none ever arrives, ends in a timeout rather than an inferred success.
 		/// </remarks>
 		private bool HasSettledSince(CompilationProgressSnapshot observed, DateTime responseAt) {
@@ -435,8 +441,7 @@
 
 				if (httpTask.Status == TaskStatus.RanToCompletion) {
 					responseAt ??= DateTime.UtcNow;
-					if (TryConcludeOnAnswer(new AnsweredBuild(packageName,
-							PackageBuildResultParser.TryParseResponse(httpTask.Result), responseAt.Value, waited,
+					if (TryConcludeOnAnswer(new AnsweredBuild(packageName, httpTask.Result, responseAt.Value, waited,
 							suggestWait), progress, EndMonitoring)) {
 						return;
 					}
@@ -467,9 +472,13 @@
 				Thread.Sleep(500);
 			}
 
+			// Read BEFORE EndMonitoring: cancelling a still-open request can fault it too, and that fault is
+			// ours, not the environment's.
+			Exception requestFault = httpTask.IsFaulted ? httpTask.Exception?.GetBaseException() : null;
 			EndMonitoring();
-			throw CreateTimeout(packageName, waited, budget,
-				answeredWithoutHistory: responseAt.HasValue && !progress.Snapshot().LastActivityAt.HasValue);
+			CompilationProgressSnapshot atDeadline = progress.Snapshot();
+			FailOnTimeout(packageName, atDeadline, new TimeoutContext(waited, budget,
+				AnsweredWithoutHistory: responseAt.HasValue && !atDeadline.LastActivityAt.HasValue, requestFault));
 
 			void EndMonitoring() => EndCompileMonitoring(cts, pollThread, httpTask);
 
@@ -523,27 +532,61 @@
 		}
 
 		/// <summary>
+		/// Ends a compile that ran out of budget: as a failure when the history already showed a compile
+		/// error, otherwise as a timeout.
+		/// </summary>
+		/// <param name="packageName">The package being built.</param>
+		/// <param name="observed">What the poll thread had observed when the budget ran out.</param>
+		/// <param name="context">How the build was requested and how its request ended.</param>
+		/// <remarks>
+		/// A waited build settles on an error row only after the quiet window, so a row written shortly
+		/// before the deadline used to be dropped and the failed build reported as "may still be running".
+		/// An error row is final (Creatio does not keep building after one), so its diagnostics win.
+		/// </remarks>
+		private void FailOnTimeout(string packageName, CompilationProgressSnapshot observed, TimeoutContext context) {
+			if (observed.HasErrors) {
+				Fail(packageName, null, observed.Diagnostics, null, observed.ErrorDetails);
+			}
+			throw CreateTimeout(packageName, context);
+		}
+
+		/// <summary>
 		/// Builds the exception for a compile that did not finish within its budget.
 		/// </summary>
 		/// <param name="packageName">The package being built.</param>
-		/// <param name="waited">Whether the caller asked to wait for the build to finish.</param>
-		/// <param name="budget">The time the build was given.</param>
-		/// <param name="answeredWithoutHistory">
-		/// Whether the environment answered but wrote no compilation history, so the user does not read the
-		/// timeout as a hung request.
-		/// </param>
-		private static TimeoutException CreateTimeout(string packageName, bool waited, TimeSpan budget,
-			bool answeredWithoutHistory) {
-			if (!waited) {
+		/// <param name="context">How the build was requested and how its request ended.</param>
+		/// <remarks>
+		/// A request fault a waited build kept observing past is chained, not dropped: an authentication or
+		/// connection failure is then still visible under the timeout instead of being lost.
+		/// </remarks>
+		private static TimeoutException CreateTimeout(string packageName, TimeoutContext context) {
+			if (!context.Waited) {
 				return new TimeoutException(
-					$"Package compilation did not complete within {CompilationTimeoutMinutes} minutes.");
+					$"Package compilation did not complete within {CompilationTimeoutMinutes} minutes.",
+					context.RequestFault);
 			}
-			string reason = answeredWithoutHistory
+			string reason = context.AnsweredWithoutHistory
 				? $"The environment accepted the build of '{packageName}' but wrote no compilation history within "
-					+ $"{budget.TotalSeconds:0} s, so there is no evidence it finished."
-				: $"Package compilation of '{packageName}' did not finish within {budget.TotalSeconds:0} s.";
+					+ $"{context.Budget.TotalSeconds:0} s, so there is no evidence it finished."
+				: $"Package compilation of '{packageName}' did not finish within {context.Budget.TotalSeconds:0} s.";
 			return new TimeoutException(reason + " The build may still be running on the environment; check "
-				+ "`clio last-compilation-log` before compiling again.");
+				+ "`clio last-compilation-log` before compiling again.", context.RequestFault);
+		}
+
+		/// <summary>
+		/// Rejects a build answer that is not a JSON verdict, such as an HTML login or proxy error page.
+		/// </summary>
+		/// <param name="packageName">The package being built.</param>
+		/// <param name="responseBody">The raw response body.</param>
+		/// <exception cref="InvalidOperationException">The body is present but is not a JSON object.</exception>
+		/// <remarks>The body itself is not echoed: a login page can carry tokens or internal URLs.</remarks>
+		private static void ThrowIfUnrecognizedBody(string packageName, string responseBody) {
+			if (PackageBuildResultParser.IsUnrecognizedBody(responseBody)) {
+				throw new InvalidOperationException(
+					$"The environment answered the build request for '{packageName}' with a response that is not a "
+					+ "build result (not JSON; possibly a login or proxy error page), so the build was not "
+					+ "confirmed. Check the environment's URL and credentials.");
+			}
 		}
 
 		/// <summary>
@@ -649,12 +692,25 @@
 		/// A package build whose request has been answered.
 		/// </summary>
 		/// <param name="PackageName">The package being built.</param>
-		/// <param name="Response">The verdict parsed from the answer; <see langword="null"/> when it carried none.</param>
+		/// <param name="Body">The raw answer body.</param>
 		/// <param name="AnsweredAt">When the answer was first seen.</param>
 		/// <param name="Waited">Whether the caller asked to wait for the build to finish.</param>
 		/// <param name="SuggestWait">Whether an early success may point the user at <c>--wait</c>.</param>
-		private sealed record AnsweredBuild(string PackageName, PackageBuildResult Response, DateTime AnsweredAt,
+		private sealed record AnsweredBuild(string PackageName, string Body, DateTime AnsweredAt,
 			bool Waited, bool SuggestWait);
+
+		/// <summary>
+		/// How a compile that ran out of budget was requested and how its request ended.
+		/// </summary>
+		/// <param name="Waited">Whether the caller asked to wait for the build to finish.</param>
+		/// <param name="Budget">The time the build was given.</param>
+		/// <param name="AnsweredWithoutHistory">
+		/// Whether the environment answered but wrote no compilation history, so the user does not read the
+		/// timeout as a hung request.
+		/// </param>
+		/// <param name="RequestFault">The fault the request ended with, when it ended with one.</param>
+		private sealed record TimeoutContext(bool Waited, TimeSpan Budget, bool AnsweredWithoutHistory,
+			Exception RequestFault);
 
 		/// <summary>
 		/// Everything a verdict on one finished package build is made from.

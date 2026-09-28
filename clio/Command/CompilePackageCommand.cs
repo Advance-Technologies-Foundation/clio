@@ -105,16 +105,18 @@ public class CompilePackageCommand : Command<CompilePackageOptions>
 	#region Methods: Public
 
 	public override int Execute(CompilePackageOptions options) {
+		// Validated before the confirmation prompt, so the user is not asked to approve a heavy compile that
+		// is then refused over an option.
+		if (options.Wait && options.WaitTimeout is <= 0 or > CompilePackageOptions.MaxWaitTimeoutSeconds) {
+			_logger.WriteError(
+				$"--wait-timeout must be between 1 and {CompilePackageOptions.MaxWaitTimeoutSeconds} seconds; got {options.WaitTimeout}.");
+			return 1;
+		}
 		if (!_interactiveConsole.ConfirmHeavyOperation(options.IsSilent, PackageCompilationWarning, _logger, BuildPostponeHint(options))) {
 			// The user chose to postpone: nothing is compiled. Return the distinct DeclinedExitCode (not 0)
 			// so in-process callers and shell chains can tell it apart from a successful build. Only
 			// reachable on an interactive, non-silent terminal.
 			return InteractiveConsoleExtensions.DeclinedExitCode;
-		}
-		if (options.Wait && options.WaitTimeout is <= 0 or > CompilePackageOptions.MaxWaitTimeoutSeconds) {
-			_logger.WriteError(
-				$"--wait-timeout must be between 1 and {CompilePackageOptions.MaxWaitTimeoutSeconds} seconds; got {options.WaitTimeout}.");
-			return 1;
 		}
 		try {
 			if (options.Wait) {

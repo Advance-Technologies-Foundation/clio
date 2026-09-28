@@ -39,6 +39,7 @@ build. And a 5 s settle cannot mean "built": a probe or restart run right after 
 the previous assembly (issue #1632). That is why `--wait` ends at once only on a FAILURE answer, and
 after a success answer or a dropped request keeps observing until history has been quiet for the
 45 s window: the reporter's .NET 8 host appears to answer before its build is done, which this stand
-could not show. The window starts only after the first history row: a success answer followed by
-silence ended a waited build after 45 s while the reported build takes 60-120 s (PR #1688 review),
-so with no row at all the wait ends in a timeout, not an inferred success.
+could not show. The window starts only after the first history row: the .NET 8 host in issue #1632 answers
+success on acceptance and writes its first `CompilationHistory` row 60-120 s later, so a 45 s window
+counted from the answer would end the wait before the build has written anything. With no row at all
+the wait ends in a timeout, not an inferred success.
