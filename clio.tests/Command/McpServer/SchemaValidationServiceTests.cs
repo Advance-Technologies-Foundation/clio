@@ -8739,8 +8739,28 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
-	[Description("A column expression instead of a function expression names both missing paths.")]
-	public void ValidateMobileIndicatorWidgetProviding_WhenColumnCarriesAPlainColumnExpression_NamesBothMissingPaths() {
+	[Description("An aggregation expression without expressionType is blocked: the runtime cannot parse it.")]
+	public void ValidateMobileIndicatorWidgetProviding_WhenExpressionTypeIsMissing_AddsBlockingError() {
+		// Arrange
+		string body = MobileIndicatorBody(
+			"""
+			"providing":{"schemaName":"Contact","aggregation":{"column":{"expression":{
+			  "functionType":2,"aggregationType":1,"functionArgument":{"expressionType":0,"columnPath":"Id"}}}}}
+			""");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileIndicatorWidgetProviding(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "the typed parse throws on a missing expressionType and the device shows an error placeholder");
+		result.Errors.Should().ContainSingle(e => e.Contains("config.data.providing.aggregation.column.expression.expressionType"),
+			because: "the diagnostic names the missing field");
+	}
+
+	[Test]
+	[Description("A column expression instead of a function expression names every missing path.")]
+	public void ValidateMobileIndicatorWidgetProviding_WhenColumnCarriesAPlainColumnExpression_NamesEveryMissingPath() {
 		// Arrange
 		string body = MobileIndicatorBody(
 			"""
@@ -8755,8 +8775,9 @@ public sealed class SchemaValidationServiceTests
 		result.IsValid.Should().BeFalse(
 			because: "a column expression is not an aggregate");
 		result.Errors.Should().ContainSingle(e =>
-				e.Contains("functionArgument.columnPath") && e.Contains("aggregationType"),
-			because: "both gaps arrive in one diagnostic");
+				e.Contains("expression.expressionType") && e.Contains("functionArgument.columnPath")
+				&& e.Contains("aggregationType"),
+			because: "expressionType 0 is not a function expression, and every gap arrives in one diagnostic");
 	}
 
 	[TestCase(0)]
