@@ -16,6 +16,9 @@ const NO_RESPONSE = '_No response_';
 // as structure, so parsing stays linear in the body length.
 const MAX_STRUCTURAL_LINE = 1000;
 const LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
+const NOTIFICATION_MODES = ['assign', 'mention'];
+// Marks the one routing comment per issue, so a later run updates it instead of adding another.
+const COMMENT_MARKER = '<!-- issue-routing -->';
 
 function normalize(text) {
   return String(text ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
@@ -160,6 +163,19 @@ function checkComponent(errors, seen, component, index, prefix) {
     errors.push(`${where}: label "${component.label}" must start with "${prefix}"`);
   }
   checkOwners(errors, where, component?.owners);
+  checkNotificationMode(errors, where, component?.ownerNotification, true);
+}
+
+function checkNotificationMode(errors, where, mode, optional) {
+  if (optional && mode === undefined) return;
+  if (!NOTIFICATION_MODES.includes(mode)) {
+    errors.push(`${where}: "ownerNotification" must be one of ${NOTIFICATION_MODES.join(', ')}`);
+  }
+}
+
+/** How a component's owners hear about a routed issue: `assign` or `mention`. */
+function notificationMode(component, config) {
+  return component.ownerNotification ?? config.ownerNotification;
 }
 
 /** Throws with every problem found; a broken map must fail loudly, not route silently. */
@@ -171,6 +187,7 @@ function validateConfig(config) {
   if (!config.fieldLabel) errors.push('"fieldLabel" is required');
   if (!config.triageLabel?.name) errors.push('"triageLabel.name" is required');
   if (!config.componentLabelPrefix) errors.push('"componentLabelPrefix" is required');
+  checkNotificationMode(errors, 'config', config.ownerNotification, false);
   const seen = { id: new Set(), option: new Set(), label: new Set() };
   config.components.forEach((component, index) => checkComponent(errors, seen, component, index, config.componentLabelPrefix));
   if (errors.length > 0) {
@@ -222,16 +239,21 @@ function planResolved({ base, current, present, liveComponentLabels, currentAssi
   const add = alreadyRouted ? [] : [current.component.label];
   const owners = current.component.owners.map(o => String(o).replace(/^@/, ''));
   const triage = normalize(config.triageLabel.name);
+  const mode = notificationMode(current.component, config);
   let ownerCandidates = [];
+  let ownersToMention = [];
   if (!alreadyRouted && owners.length === 0 && !present.has(triage)) {
     // Nobody owns this component: route the label, but a human still has to pick the issue up.
     add.push(config.triageLabel.name);
   } else if (!alreadyRouted && owners.length > 0) {
     if (present.has(triage)) remove.push(present.get(triage));
-    if (currentAssignees.length === 0) ownerCandidates = owners;
+    if (mode === 'mention') ownersToMention = owners;
+    else if (currentAssignees.length === 0) ownerCandidates = owners;
   }
-  if (add.length === 0 && remove.length === 0 && ownerCandidates.length === 0) return unchangedPlan(base);
-  return { ...base, labelsToAdd: add, labelsToRemove: remove, ownerCandidates };
+  if (add.length === 0 && remove.length === 0 && ownerCandidates.length === 0 && ownersToMention.length === 0) {
+    return unchangedPlan(base);
+  }
+  return { ...base, labelsToAdd: add, labelsToRemove: remove, ownerCandidates, ownersToMention };
 }
 
 // No routable component. Component labels are cleared only when the author explicitly changed the
@@ -262,6 +284,8 @@ function planUnrouted({ base, current, previousBody, present, liveComponentLabel
  * - Owners are proposed only when routing changes and the issue has NO assignee. An assignee is
  *   the claim signal of the claim-clio-issue skill, so an existing one is never changed.
  * - A component without owners gets its label and `needs-triage`.
+ * - With `ownerNotification: "mention"` the owners are listed in `ownersToMention` instead: they
+ *   are notified through a comment and the assignee stays free for whoever claims the issue.
  */
 function planRouting({ body, previousBody, currentLabels = [], currentAssignees = [], config }) {
   const current = classify(body, config);
@@ -272,6 +296,7 @@ function planRouting({ body, previousBody, currentLabels = [], currentAssignees 
     labelsToAdd: [],
     labelsToRemove: [],
     ownerCandidates: [],
+    ownersToMention: [],
     alreadyAssigned: currentAssignees.length > 0,
     unchanged: false,
   };
@@ -406,6 +431,34 @@ async function applyLabels(github, core, repo, issueNumber, labels, config) {
   }
 }
 
+function routingComment(component, owners) {
+  const mentions = owners.map(o => '@' + o).join(', ');
+  return [
+    COMMENT_MARKER,
+    `Routed to **${component.option}** (\`${component.label}\`). Owner(s): ${mentions}.`,
+    '',
+    '<sub>Notification only: nobody was assigned. Assign yourself to claim the issue. Source: `.github/component-owners.json`.</sub>',
+  ].join('\n');
+}
+
+/** Creates or updates the single routing comment; returns true when it was written. */
+async function upsertRoutingComment(github, core, repo, issueNumber, component, owners) {
+  const body = routingComment(component, owners);
+  try {
+    const comments = await github.paginate(github.rest.issues.listComments, { ...repo, issue_number: issueNumber, per_page: 100 });
+    const existing = comments.find(c => c.body?.startsWith(COMMENT_MARKER));
+    if (existing) {
+      await github.rest.issues.updateComment({ ...repo, comment_id: existing.id, body });
+    } else {
+      await github.rest.issues.createComment({ ...repo, issue_number: issueNumber, body });
+    }
+    return true;
+  } catch (error) {
+    core.warning(`Could not post the routing comment: ${error.message}`);
+    return false;
+  }
+}
+
 function describePlan(issueNumber, plan) {
   const component = plan.component ? ' (' + plan.component.id + ')' : '';
   return `Issue #${issueNumber}: component field = ${JSON.stringify(plan.values)} -> ${plan.status}${component}`;
@@ -432,14 +485,16 @@ async function writeSummary(core, issueNumber, plan, outcome) {
       ['Labels added', outcome.added.join(', ') || '-'],
       ['Labels removed', outcome.removed.join(', ') || '-'],
       ['Assignee', assignee],
+      ['Owners mentioned', outcome.mentioned.join(', ') || '-'],
     ])
     .write();
 }
 
 /**
- * Entry point for actions/github-script. Assigns at most ONE owner: the first assignable login in
- * the component's `owners` list. Several assignees would read as an ambiguous claim to the
- * claim-clio-issue skill, which stops on multiple assignees.
+ * Entry point for actions/github-script. In `assign` mode it assigns at most ONE owner: the first
+ * assignable login in the component's `owners` list. Several assignees would read as an ambiguous
+ * claim to the claim-clio-issue skill, which stops on multiple assignees. In `mention` mode it
+ * assigns nobody and mentions every owner in one routing comment.
  */
 async function run({ github, context, core, configPath }) {
   const payload = context.payload;
@@ -472,18 +527,22 @@ async function run({ github, context, core, configPath }) {
 
   let labels = { add: plan.labelsToAdd, remove: plan.labelsToRemove };
   let assigned = null;
+  let mentioned = [];
   if (plan.ownerCandidates.length > 0) {
     assigned = await assignOwner(github, core, repo, issueNumber, plan.ownerCandidates);
     if (!assigned) {
       core.warning(`No owner of "${plan.component.id}" could be assigned; marking the issue for triage.`);
       labels = keepForTriage(labels, config);
     }
+  } else if (plan.ownersToMention.length > 0) {
+    const posted = await upsertRoutingComment(github, core, repo, issueNumber, plan.component, plan.ownersToMention);
+    mentioned = posted ? plan.ownersToMention : [];
   } else if (plan.status === 'resolved' && plan.alreadyAssigned) {
     core.info('Issue already has an assignee; leaving assignment unchanged.');
   }
 
   const applied = await applyLabels(github, core, repo, issueNumber, labels, config);
-  await writeSummary(core, issueNumber, plan, { assigned, ...applied });
+  await writeSummary(core, issueNumber, plan, { assigned, mentioned, ...applied });
 }
 
 module.exports = {

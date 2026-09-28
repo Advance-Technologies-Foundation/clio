@@ -17,8 +17,10 @@ const templateDir = path.join(repoRoot, '.github', 'ISSUE_TEMPLATE');
 const config = routing.validateConfig({
   fieldLabel: 'Component',
   componentLabelPrefix: 'component:',
+  ownerNotification: 'assign',
   triageLabel: { name: 'needs-triage' },
   components: [
+    { id: 'ring', option: 'ClioRing', label: 'component:ring', owners: ['erin', 'frank'], ownerNotification: 'mention' },
     { id: 'mcp-server', option: 'MCP server (tools, prompts)', label: 'component:mcp', owners: ['alice', 'bob'] },
     { id: 'package', option: 'Packages', label: 'component:package', owners: ['@carol'] },
     { id: 'docs', option: 'Documentation', label: 'component:docs', owners: [] },
@@ -241,6 +243,28 @@ test('switching to "not sure" removes the component label and asks for triage', 
   assert.deepEqual(plan.labelsToAdd, ['needs-triage'], 'nothing routes the issue now');
 });
 
+test('mention mode lists every owner and assigns nobody', () => {
+  // Arrange
+  const body = formBody('ClioRing');
+  // Act
+  const plan = routing.planRouting({ body, currentLabels: ['needs-triage'], currentAssignees: [], config });
+  // Assert
+  assert.deepEqual(plan.ownerCandidates, [], 'the assignee stays free for whoever claims the issue');
+  assert.deepEqual(plan.ownersToMention, ['erin', 'frank'], 'all owners are notified');
+  assert.deepEqual(plan.labelsToAdd, ['component:ring'], 'the label is routed');
+  assert.deepEqual(plan.labelsToRemove, ['needs-triage'], 'the owners were told, so it is not waiting for triage');
+});
+
+test('mention mode does not mention again on a text edit', () => {
+  // Arrange
+  const previousBody = formBody('ClioRing');
+  const body = `${previousBody}\nmore`;
+  // Act
+  const plan = routing.planRouting({ body, previousBody, currentLabels: ['component:ring'], config });
+  // Assert
+  assert.equal(plan.unchanged, true, 'routing did not change, so the owners are not pinged again');
+});
+
 test('parsing a hostile body stays fast', () => {
   // Arrange
   const hostile = [`# a${' '.repeat(60000)}!`, `- [x] a${' '.repeat(60000)}b`, `${'#'.repeat(6)} ${'#'.repeat(60000)}x`].join('\n');
@@ -301,9 +325,10 @@ test('rejects team owners, labels outside the prefix, duplicate options and miss
   const broken = {
     fieldLabel: 'Component',
     componentLabelPrefix: 'component:',
+    ownerNotification: 'assign',
     triageLabel: { name: 'needs-triage' },
     components: [
-      { id: 'a', option: 'A', label: 'component:x', owners: ['@org/team'] },
+      { id: 'a', option: 'A', label: 'component:x', owners: ['@org/team'], ownerNotification: 'ping' },
       { id: 'd', option: 'D', label: 'MCP', owners: [] },
       { id: 'b', option: 'a', label: 'component:y', owners: [] },
       { id: 'c', option: 'C', owners: [] },
@@ -312,7 +337,7 @@ test('rejects team owners, labels outside the prefix, duplicate options and miss
   // Act
   const act = () => routing.validateConfig(broken);
   // Assert
-  assert.throws(act, /teams cannot be assignees[\s\S]*label "MCP" must start with "component:"[\s\S]*duplicate option[\s\S]*"label" is required/, 'every problem is reported at once, including a shared topic label that routing would strip');
+  assert.throws(act, /teams cannot be assignees[\s\S]*"ownerNotification" must be one of assign, mention[\s\S]*label "MCP" must start with "component:"[\s\S]*duplicate option[\s\S]*"label" is required/, 'every problem is reported at once, including a shared topic label that routing would strip');
 });
 
 test('the committed component-owners.json is valid', () => {
@@ -363,7 +388,7 @@ function fixtureConfigPath() {
   return file;
 }
 
-function fakeGitHub({ assignable = [], existingLabels = [], live = null, dropAssignee = false, createStatus = null, addLabelsStatus = null, removeStatus = null } = {}) {
+function fakeGitHub({ assignable = [], existingLabels = [], live = null, dropAssignee = false, createStatus = null, addLabelsStatus = null, removeStatus = null, comments = [] } = {}) {
   const calls = [];
   const failure = status => Object.assign(new Error(`HTTP ${status}`), { status });
   const issues = {
@@ -378,7 +403,11 @@ function fakeGitHub({ assignable = [], existingLabels = [], live = null, dropAss
     addLabels: async ({ labels }) => { calls.push(['addLabels', ...labels]); if (addLabelsStatus) throw failure(addLabelsStatus); },
     removeLabel: async ({ name }) => { calls.push(['removeLabel', name]); if (removeStatus) throw failure(removeStatus); },
   };
-  return { github: { rest: { issues } }, calls };
+  issues.listComments = async () => { calls.push(['listComments']); return { data: comments }; };
+  issues.createComment = async ({ body }) => { calls.push(['createComment', body]); };
+  issues.updateComment = async ({ comment_id: id, body }) => { calls.push(['updateComment', id, body]); };
+  const paginate = async (method, params) => (await method(params)).data;
+  return { github: { rest: { issues }, paginate }, calls };
 }
 
 function fakeCore() {
@@ -500,4 +529,22 @@ test('run reports only the label changes GitHub accepted', async () => {
   const rows = Object.fromEntries(tables[0].slice(1));
   assert.equal(rows['Labels added'], '-', 'a failed addLabels call must not be reported as added');
   assert.equal(rows['Labels removed'], '-', 'a failed non-404 removal must not be reported as removed');
+});
+
+test('run mentions owners in one routing comment and updates it on a later change', async () => {
+  // Arrange
+  const first = fakeGitHub({ existingLabels: ['component:ring'] });
+  const existing = [{ id: 42, body: '<!-- issue-routing -->\nold' }];
+  const second = fakeGitHub({ existingLabels: ['component:ring'], comments: existing });
+  const { core } = fakeCore();
+  // Act
+  await routing.run({ github: first.github, context: eventContext(formBody('ClioRing')), core, configPath: fixtureConfigPath() });
+  await routing.run({ github: second.github, context: eventContext(formBody('ClioRing')), core, configPath: fixtureConfigPath() });
+  // Assert
+  const created = only(first.calls, 'createComment');
+  assert.equal(created.length, 1, 'the first routing posts one comment');
+  assert.match(created[0][1], /^<!-- issue-routing -->[\s\S]*@erin, @frank/, 'the comment carries the marker and mentions every owner');
+  assert.equal(only(first.calls, 'addAssignees').length, 0, 'nobody is assigned in mention mode');
+  assert.deepEqual(only(second.calls, 'updateComment').map(c => c[1]), [42], 'a later run updates the existing comment instead of adding one');
+  assert.equal(only(second.calls, 'createComment').length, 0, 'no second comment is posted');
 });

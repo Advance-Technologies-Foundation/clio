@@ -17,9 +17,12 @@ New issues are labelled and assigned from the **Component** dropdown in the issu
    label depending on the selected dropdown value, so the component label needs the workflow.
 2. The workflow reads the `### Component` section of the issue body and looks the value up in
    `component-owners.json` (by `option` text, or by `id`).
-3. **Resolved component** → the issue ends with exactly that component's `component:*` label; if
-   the issue has **no assignee**, assigns the **first** login in `owners` that can be assigned in
-   this repository and removes `needs-triage`. A component with `owners: []` gets its label **and**
+3. **Resolved component** → the issue ends with exactly that component's `component:*` label,
+   `needs-triage` is removed, and the owners are notified according to `ownerNotification`:
+   - `assign` → if the issue has **no assignee**, the **first** login in `owners` that can be
+     assigned in this repository becomes the assignee;
+   - `mention` → nobody is assigned; one routing comment mentions **every** owner (a later
+     re-route updates that comment instead of adding another). A component with `owners: []` gets its label **and**
    `needs-triage`, because nobody is routed to pick it up.
 4. **No value, unknown value, or "Other / not sure"** → adds `needs-triage` (unless a component
    label is already on the issue). A blank issue (no form) is treated the same way.
@@ -43,7 +46,9 @@ Rules that protect manual work:
 - An existing assignee is **never** changed or added to — not on open and not on edit. Re-routing a
   claimed issue is a human decision.
 - Only one owner is assigned. The `claim-clio-issue` skill uses the assignee as the claim signal
-  and stops on multiple assignees; the auto-assigned owner is exactly the person who then claims it.
+  and stops on multiple assignees; in `assign` mode the auto-assigned owner is exactly the person
+  who then claims it. Where the owner should only be told and anyone may take the issue (for
+  example an owner of many components), use `mention`: the assignee stays free for the claim.
 - Labels with the `componentLabelPrefix` (`component:`) belong to routing: on a routed issue,
   change the Component dropdown rather than the label. Every other label — including the topic
   labels `MCP`, `Guidance`, `process-builder`, `ring` — is never added or removed by routing. The
@@ -62,6 +67,8 @@ Rules that protect manual work:
   `every issue form offers exactly the components…` fails otherwise.
 - **Renaming an option** breaks re-routing of older issues only on edit (the old value becomes
   unknown → `needs-triage` unless the old label is still there). Prefer keeping `id` stable.
+- **Choose how owners are notified**: top-level `ownerNotification` (`assign` or `mention`) is
+  the default; a component's own `ownerNotification` overrides it.
 - **Labels** must start with `componentLabelPrefix`. Renaming one leaves the old label on older
   issues; relabel them by hand.
 - `paths` is informational (which code the component covers); nothing reads it yet.

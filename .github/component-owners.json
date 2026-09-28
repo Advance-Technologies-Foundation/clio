@@ -2,6 +2,7 @@
   "$comment": "Issue routing map: component -> label + owners. Read by .github/workflows/issue-routing.yml. See .github/ISSUE_ROUTING.md before editing.",
   "fieldLabel": "Component",
   "componentLabelPrefix": "component:",
+  "ownerNotification": "assign",
   "triageLabel": {
     "name": "needs-triage",
     "color": "d4c5f9",
