@@ -80,8 +80,9 @@ autoupdate --enable
 - The clio self-update is deferred while an MCP host (`mcp-server` or `mcp-http`) is resident for this
   user — replacing binaries under a running host breaks it for the rest of its session. The marker is
   per user, not per clio home, because the update replaces one per-user tool installation.
-  The deferral prints `clio self-update deferred: MCP host pid <N> (version <X>) is running` and
-  leaves `next-run` untouched, so the update happens at the next start with no host running.
+  The deferral prints `clio self-update deferred: MCP host pid <N> (version <X>) is running` to
+  stderr (stdout keeps only the command's own output) and leaves `next-run` untouched, so the update
+  happens at the next start with no host running.
   Knowledge and toolkit updates are never deferred, and `clio update-cli` always updates now
 - While `appsettings.json` holds a member this clio build cannot bind, clio refuses every settings
   write — including the automatic update schedule — and says so once per run
