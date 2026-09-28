@@ -22,13 +22,18 @@ New issues are labelled and assigned from the **Component** dropdown in the issu
    - `assign` → if the issue has **no assignee**, the **first** login in `owners` that can be
      assigned in this repository becomes the assignee;
    - `mention` → nobody is assigned; one routing comment mentions **every** owner (a later
-     re-route updates that comment instead of adding another). A component with `owners: []` gets its label **and**
+     re-route updates that comment instead of adding another; only a comment authored by
+     `github-actions[bot]` is updated, never a human one that copies the marker).
+   If the owners could not be told either way (nobody assignable, comment failed), the issue
+   keeps `needs-triage`. A component with `owners: []` gets its label **and**
    `needs-triage`, because nobody is routed to pick it up.
 4. **No value, unknown value, or "Other / not sure"** → adds `needs-triage` (unless a component
    label is already on the issue). A blank issue (no form) is treated the same way.
 5. **An owner cannot be assigned** (not a collaborator, no access) → warning in the run log,
    the component label is still added, plus `needs-triage`. The run never fails because of routing;
-   only an invalid `component-owners.json` fails it.
+   only an invalid `component-owners.json` fails it. If the live issue cannot be read, the run
+   changes nothing (the event payload may be stale and assigning from it could add a second
+   assignee); the next edit or a re-run routes the issue.
 6. **Edit** of the body. The run re-reads the live issue and compares its labels with the current
    form choice (not with the previous body), so runs GitHub cancelled or collapsed in the
    concurrency queue cannot leave a stale label:
@@ -36,9 +41,11 @@ New issues are labelled and assigned from the **Component** dropdown in the issu
      unassigned is not re-assigned;
    - they do not match → the other `component:*` labels are removed and the chosen one is added;
      an owner is assigned only if the issue has no assignee;
-   - the author switched the dropdown to "Other / not sure" → `component:*` labels are removed and
-     `needs-triage` is added. A component label a triager put on a "not sure" or blank issue is
-     kept on later text edits.
+   - the form says "Other / not sure" → `component:*` labels are removed and `needs-triage` is
+     added when the author changed the dropdown in this edit, or when routing itself applied the
+     label (its latest `labeled` event is by `github-actions[bot]`, which also covers a cancelled
+     run of the switching edit). A component label a human triager applied to a "not sure" or
+     blank issue is kept.
    Title-only edits are ignored.
 
 Rules that protect manual work:

@@ -19,6 +19,8 @@ const LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
 const NOTIFICATION_MODES = ['assign', 'mention'];
 // Marks the one routing comment per issue, so a later run updates it instead of adding another.
 const COMMENT_MARKER = '<!-- issue-routing -->';
+// The identity GITHUB_TOKEN writes as. Labels and comments by this login are routing's own.
+const DEFAULT_ROUTING_BOT = 'github-actions[bot]';
 
 function normalize(text) {
   return String(text ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
@@ -256,14 +258,18 @@ function planResolved({ base, current, present, liveComponentLabels, currentAssi
   return { ...base, labelsToAdd: add, labelsToRemove: remove, ownerCandidates, ownersToMention };
 }
 
-// No routable component. Component labels are cleared only when the author explicitly changed the
-// dropdown to "not sure"/an unknown value in THIS edit; otherwise a component label on the issue
-// was set by a human triager and is kept.
-function planUnrouted({ base, current, previousBody, present, liveComponentLabels, config }) {
-  const changedByAuthor = current.status !== 'missing'
+// No routable component. When the form explicitly says "not sure" (or an unknown value), component
+// labels are cleared if the author changed the dropdown in THIS edit, or if routing applied them
+// itself; a component label a human triager applied is kept. A blank issue is never cleared.
+function planUnrouted({ base, current, previousBody, present, liveComponentLabels, routingAppliedLabels, config }) {
+  const explicit = current.status !== 'missing';
+  const changedByAuthor = explicit
     && previousBody !== undefined
     && routingKey(classify(previousBody, config)) !== routingKey(current);
-  const remove = changedByAuthor ? liveComponentLabels.map(l => present.get(l)) : [];
+  // A label routing itself applied is stale once the form says "not sure", even when the run of
+  // the edit that said so was cancelled; a label a human applied is a triager's decision.
+  const stale = liveComponentLabels.filter(l => changedByAuthor || (explicit && routingAppliedLabels.has(l)));
+  const remove = stale.map(l => present.get(l));
   const keepsComponentLabel = liveComponentLabels.length > remove.length;
   const needsTriage = !keepsComponentLabel && !present.has(normalize(config.triageLabel.name));
   const add = needsTriage ? [config.triageLabel.name] : [];
@@ -279,15 +285,16 @@ function planUnrouted({ base, current, previousBody, present, liveComponentLabel
  *   the issue ends with exactly the chosen one, whatever the previous body said, so runs that
  *   GitHub collapsed or cancelled cannot leave a stale label. Topic labels outside the prefix are
  *   never touched.
- * - `previousBody` (`changes.body.from`, `undefined` on `opened`) is consulted only to tell an
- *   author's switch to "not sure" from a human triager's label on an unrouted issue.
+ * - `previousBody` (`changes.body.from`, `undefined` on `opened`) and `routingAppliedLabels` (the
+ *   component labels whose last `labeled` event was routing's own) are consulted only to tell a
+ *   stale routing label from a human triager's label on an unrouted issue.
  * - Owners are proposed only when routing changes and the issue has NO assignee. An assignee is
  *   the claim signal of the claim-clio-issue skill, so an existing one is never changed.
  * - A component without owners gets its label and `needs-triage`.
  * - With `ownerNotification: "mention"` the owners are listed in `ownersToMention` instead: they
  *   are notified through a comment and the assignee stays free for whoever claims the issue.
  */
-function planRouting({ body, previousBody, currentLabels = [], currentAssignees = [], config }) {
+function planRouting({ body, previousBody, currentLabels = [], currentAssignees = [], routingAppliedLabels = [], config }) {
   const current = classify(body, config);
   const base = {
     status: current.status,
@@ -303,7 +310,8 @@ function planRouting({ body, previousBody, currentLabels = [], currentAssignees 
   const present = new Map(currentLabels.map(l => [normalize(l), l]));
   const componentLabels = new Set(config.components.filter(c => c.label).map(c => normalize(c.label)));
   const liveComponentLabels = [...present.keys()].filter(l => componentLabels.has(l));
-  const context = { base, current, previousBody, present, liveComponentLabels, currentAssignees, config };
+  const applied = new Set(routingAppliedLabels.map(normalize));
+  const context = { base, current, previousBody, present, liveComponentLabels, currentAssignees, routingAppliedLabels: applied, config };
   return current.status === 'resolved' ? planResolved(context) : planUnrouted(context);
 }
 
@@ -362,13 +370,38 @@ async function isAssignable(github, core, repo, login) {
 // The payload is a snapshot from when the event fired; an earlier run for the same issue may have
 // changed labels/assignees since. Plan from the live issue, or a quick open-then-edit ends with
 // two component labels and two assignees.
+// Without the live state a run cannot plan safely: the payload may predate an earlier run's
+// assignment, and addAssignees is additive, so a stale plan would leave two assignees. A later edit
+// or a manual re-run routes the issue instead.
 async function readLiveIssue(github, core, repo, issue) {
   try {
     const { data } = await github.rest.issues.get({ ...repo, issue_number: issue.number });
     return data;
   } catch (error) {
-    core.warning(`Could not re-read issue #${issue.number}, using the event payload: ${error.message}`);
-    return issue;
+    core.warning(`Could not re-read issue #${issue.number}; skipping routing without changes: ${error.message}`);
+    return null;
+  }
+}
+
+function routingBot(config) {
+  return normalize(config.routingBotLogin || DEFAULT_ROUTING_BOT);
+}
+
+/** Component labels on the issue whose most recent `labeled` event was made by routing. */
+async function readRoutingAppliedLabels(github, core, repo, issueNumber, labels, config) {
+  const componentLabels = new Set(config.components.filter(c => c.label).map(c => normalize(c.label)));
+  if (!labels.some(l => componentLabels.has(normalize(l)))) return [];
+  try {
+    const events = await github.paginate(github.rest.issues.listEvents, { ...repo, issue_number: issueNumber, per_page: 100 });
+    const lastActor = new Map();
+    for (const event of events) {
+      if (event.event === 'labeled' && event.label?.name) lastActor.set(normalize(event.label.name), normalize(event.actor?.login));
+    }
+    return labels.filter(l => componentLabels.has(normalize(l)) && lastActor.get(normalize(l)) === routingBot(config));
+  } catch (error) {
+    // Unknown history: treat every label as human-applied, which only ever keeps a label.
+    core.warning(`Could not read label history of #${issueNumber}: ${error.message}`);
+    return [];
   }
 }
 
@@ -442,11 +475,12 @@ function routingComment(component, owners) {
 }
 
 /** Creates or updates the single routing comment; returns true when it was written. */
-async function upsertRoutingComment(github, core, repo, issueNumber, component, owners) {
+async function upsertRoutingComment(github, core, repo, issueNumber, component, owners, config) {
   const body = routingComment(component, owners);
   try {
     const comments = await github.paginate(github.rest.issues.listComments, { ...repo, issue_number: issueNumber, per_page: 100 });
-    const existing = comments.find(c => c.body?.startsWith(COMMENT_MARKER));
+    // Only routing's own comment is updated; a human comment that copies the marker stays intact.
+    const existing = comments.find(c => c.body?.startsWith(COMMENT_MARKER) && normalize(c.user?.login) === routingBot(config));
     if (existing) {
       await github.rest.issues.updateComment({ ...repo, comment_id: existing.id, body });
     } else {
@@ -457,6 +491,31 @@ async function upsertRoutingComment(github, core, repo, issueNumber, component, 
     core.warning(`Could not post the routing comment: ${error.message}`);
     return false;
   }
+}
+
+/**
+ * Assigns or mentions the owners per the plan. An issue whose owners could not be told, either way,
+ * keeps (or gets) the triage label so it stays visible.
+ */
+async function notifyOwners(github, core, repo, issueNumber, plan, config) {
+  const labels = { add: plan.labelsToAdd, remove: plan.labelsToRemove };
+  if (plan.ownerCandidates.length > 0) {
+    const assigned = await assignOwner(github, core, repo, issueNumber, plan.ownerCandidates);
+    if (assigned) return { labels, assigned, mentioned: [] };
+    core.warning(`No owner of "${plan.component.id}" could be assigned; marking the issue for triage.`);
+    return { labels: keepForTriage(labels, config), assigned: null, mentioned: [] };
+  }
+  if (plan.ownersToMention.length > 0) {
+    if (await upsertRoutingComment(github, core, repo, issueNumber, plan.component, plan.ownersToMention, config)) {
+      return { labels, assigned: null, mentioned: plan.ownersToMention };
+    }
+    core.warning(`The owners of "${plan.component.id}" could not be mentioned; marking the issue for triage.`);
+    return { labels: keepForTriage(labels, config), assigned: null, mentioned: [] };
+  }
+  if (plan.status === 'resolved' && plan.alreadyAssigned) {
+    core.info('Issue already has an assignee; leaving assignment unchanged.');
+  }
+  return { labels, assigned: null, mentioned: [] };
 }
 
 function describePlan(issueNumber, plan) {
@@ -508,11 +567,15 @@ async function run({ github, context, core, configPath }) {
   const repo = context.repo;
   const issueNumber = payload.issue.number;
   const live = await readLiveIssue(github, core, repo, payload.issue);
+  if (!live) return;
+  const currentLabels = (live.labels || []).map(l => (typeof l === 'string' ? l : l.name));
+  const needsHistory = classify(live.body, config).status !== 'resolved';
   const plan = planRouting({
     body: live.body,
     previousBody: payload.action === 'edited' ? payload.changes.body.from ?? '' : undefined,
-    currentLabels: (live.labels || []).map(l => (typeof l === 'string' ? l : l.name)),
+    currentLabels,
     currentAssignees: (live.assignees || []).map(a => a.login),
+    routingAppliedLabels: needsHistory ? await readRoutingAppliedLabels(github, core, repo, issueNumber, currentLabels, config) : [],
     config,
   });
 
@@ -525,24 +588,9 @@ async function run({ github, context, core, configPath }) {
     core.warning(`Component value ${JSON.stringify(plan.values)} is not in .github/component-owners.json; the issue form and the map are out of sync.`);
   }
 
-  let labels = { add: plan.labelsToAdd, remove: plan.labelsToRemove };
-  let assigned = null;
-  let mentioned = [];
-  if (plan.ownerCandidates.length > 0) {
-    assigned = await assignOwner(github, core, repo, issueNumber, plan.ownerCandidates);
-    if (!assigned) {
-      core.warning(`No owner of "${plan.component.id}" could be assigned; marking the issue for triage.`);
-      labels = keepForTriage(labels, config);
-    }
-  } else if (plan.ownersToMention.length > 0) {
-    const posted = await upsertRoutingComment(github, core, repo, issueNumber, plan.component, plan.ownersToMention);
-    mentioned = posted ? plan.ownersToMention : [];
-  } else if (plan.status === 'resolved' && plan.alreadyAssigned) {
-    core.info('Issue already has an assignee; leaving assignment unchanged.');
-  }
-
-  const applied = await applyLabels(github, core, repo, issueNumber, labels, config);
-  await writeSummary(core, issueNumber, plan, { assigned, mentioned, ...applied });
+  const notified = await notifyOwners(github, core, repo, issueNumber, plan, config);
+  const applied = await applyLabels(github, core, repo, issueNumber, notified.labels, config);
+  await writeSummary(core, issueNumber, plan, { assigned: notified.assigned, mentioned: notified.mentioned, ...applied });
 }
 
 module.exports = {

@@ -388,11 +388,13 @@ function fixtureConfigPath() {
   return file;
 }
 
-function fakeGitHub({ assignable = [], existingLabels = [], live = null, dropAssignee = false, createStatus = null, addLabelsStatus = null, removeStatus = null, comments = [] } = {}) {
+function fakeGitHub({ assignable = [], existingLabels = [], live = null, dropAssignee = false, createStatus = null, addLabelsStatus = null, removeStatus = null, comments = [], getStatus = null, events = [], commentStatus = null } = {}) {
   const calls = [];
   const failure = status => Object.assign(new Error(`HTTP ${status}`), { status });
   const issues = {
-    get: async () => { calls.push(['get']); if (!live) throw failure(500); return { data: live }; },
+    // Returns the issue of the last eventContext() unless a live state or a failure is given.
+    get: async () => { calls.push(['get']); if (getStatus) throw failure(getStatus); return { data: live ?? lastContextIssue }; },
+    listEvents: async () => { calls.push(['listEvents']); return { data: events }; },
     getLabel: async ({ name }) => { calls.push(['getLabel', name]); if (!existingLabels.includes(name)) throw failure(404); },
     createLabel: async ({ name }) => { calls.push(['createLabel', name]); if (createStatus) throw failure(createStatus); },
     checkUserCanBeAssigned: async ({ assignee }) => { calls.push(['check', assignee]); if (!assignable.includes(assignee)) throw failure(404); },
@@ -404,7 +406,7 @@ function fakeGitHub({ assignable = [], existingLabels = [], live = null, dropAss
     removeLabel: async ({ name }) => { calls.push(['removeLabel', name]); if (removeStatus) throw failure(removeStatus); },
   };
   issues.listComments = async () => { calls.push(['listComments']); return { data: comments }; };
-  issues.createComment = async ({ body }) => { calls.push(['createComment', body]); };
+  issues.createComment = async ({ body }) => { calls.push(['createComment', body]); if (commentStatus) throw failure(commentStatus); };
   issues.updateComment = async ({ comment_id: id, body }) => { calls.push(['updateComment', id, body]); };
   const paginate = async (method, params) => (await method(params)).data;
   return { github: { rest: { issues }, paginate }, calls };
@@ -417,7 +419,10 @@ function fakeCore() {
   return { core: { info() {}, warning: m => warnings.push(m), summary }, warnings, tables };
 }
 
+let lastContextIssue = null;
+
 function eventContext(body, { action = 'opened', changes, labels = ['bug'], assignees = [] } = {}) {
+  lastContextIssue = { number: 7, body, labels: labels.map(name => ({ name })), assignees: assignees.map(login => ({ login })) };
   return {
     repo: { owner: 'o', repo: 'r' },
     payload: {
@@ -439,7 +444,7 @@ test('run assigns the first assignable owner and adds the component label', asyn
   // Assert
   assert.deepEqual(only(calls, 'addAssignees'), [['addAssignees', 'bob']], 'exactly one owner is assigned: the first one who can be');
   assert.deepEqual(only(calls, 'addLabels'), [['addLabels', 'component:mcp']], 'the component label is applied');
-  assert.equal(warnings.length, 2, 'the failed re-read and the non-assignable first owner are both reported as warnings');
+  assert.equal(warnings.length, 1, 'the non-assignable first owner is reported as a warning');
 });
 
 test('run plans from the live issue, not the stale event payload', async () => {
@@ -534,7 +539,7 @@ test('run reports only the label changes GitHub accepted', async () => {
 test('run mentions owners in one routing comment and updates it on a later change', async () => {
   // Arrange
   const first = fakeGitHub({ existingLabels: ['component:ring'] });
-  const existing = [{ id: 42, body: '<!-- issue-routing -->\nold' }];
+  const existing = [{ id: 42, body: '<!-- issue-routing -->\nold', user: { login: 'github-actions[bot]' } }];
   const second = fakeGitHub({ existingLabels: ['component:ring'], comments: existing });
   const { core } = fakeCore();
   // Act
@@ -547,4 +552,80 @@ test('run mentions owners in one routing comment and updates it on a later chang
   assert.equal(only(first.calls, 'addAssignees').length, 0, 'nobody is assigned in mention mode');
   assert.deepEqual(only(second.calls, 'updateComment').map(c => c[1]), [42], 'a later run updates the existing comment instead of adding one');
   assert.equal(only(second.calls, 'createComment').length, 0, 'no second comment is posted');
+});
+
+const ROUTING_BOT = { login: 'github-actions[bot]' };
+
+test('run makes no changes when the live issue cannot be read', async () => {
+  // Arrange: the payload predates an earlier run that already assigned alice.
+  const { github, calls } = fakeGitHub({ assignable: ['carol'], getStatus: 503 });
+  const { core, warnings } = fakeCore();
+  // Act
+  await routing.run({ github, context: eventContext(formBody('Packages')), core, configPath: fixtureConfigPath() });
+  // Assert
+  const writes = calls.filter(c => ['addAssignees', 'addLabels', 'removeLabel', 'createLabel', 'createComment', 'updateComment'].includes(c[0]));
+  assert.deepEqual(writes, [], 'a stale payload plan could add a second assignee, so nothing is written');
+  assert.ok(warnings.some(w => w.includes('skipping routing')), 'the skipped run is visible in the log');
+});
+
+test('run clears a routing-applied label after a collapsed switch to "not sure"', async () => {
+  // Arrange: MCP was routed, the MCP -> Other run was cancelled, this is the Other -> Other text edit.
+  const previous = formBody('Other / not sure');
+  const body = `${previous}\nmore`;
+  const live = { number: 7, body, labels: [{ name: 'component:mcp' }], assignees: [] };
+  const events = [{ event: 'labeled', label: { name: 'component:mcp' }, actor: ROUTING_BOT }];
+  const { github, calls } = fakeGitHub({ live, events, existingLabels: ['needs-triage'] });
+  const { core } = fakeCore();
+  const context = eventContext(body, { action: 'edited', changes: { body: { from: previous } } });
+  // Act
+  await routing.run({ github, context, core, configPath: fixtureConfigPath() });
+  // Assert
+  assert.deepEqual(only(calls, 'removeLabel'), [['removeLabel', 'component:mcp']], 'the stale routing label is removed');
+  assert.deepEqual(only(calls, 'addLabels'), [['addLabels', 'needs-triage']], 'the reporter\'s "not sure" is honoured');
+});
+
+test('run keeps a component label a human applied to a "not sure" issue', async () => {
+  // Arrange
+  const previous = formBody('Other / not sure');
+  const body = `${previous}\nmore`;
+  const live = { number: 7, body, labels: [{ name: 'component:docs' }], assignees: [] };
+  const events = [
+    { event: 'labeled', label: { name: 'component:docs' }, actor: ROUTING_BOT },
+    { event: 'unlabeled', label: { name: 'component:docs' }, actor: { login: 'dave' } },
+    { event: 'labeled', label: { name: 'component:docs' }, actor: { login: 'dave' } },
+  ];
+  const { github, calls } = fakeGitHub({ live, events });
+  const { core } = fakeCore();
+  const context = eventContext(body, { action: 'edited', changes: { body: { from: previous } } });
+  // Act
+  await routing.run({ github, context, core, configPath: fixtureConfigPath() });
+  // Assert
+  assert.equal(only(calls, 'removeLabel').length, 0, 'the latest labeled event is a human triager, so the label stays');
+  assert.equal(only(calls, 'addLabels').length, 0, 'a triaged issue does not need needs-triage');
+});
+
+test('run never overwrites a human comment that carries the routing marker', async () => {
+  // Arrange
+  const comments = [{ id: 9, body: '<!-- issue-routing --> copied by a person', user: { login: 'dave' } }];
+  const { github, calls } = fakeGitHub({ existingLabels: ['component:ring'], comments });
+  const { core } = fakeCore();
+  // Act
+  await routing.run({ github, context: eventContext(formBody('ClioRing')), core, configPath: fixtureConfigPath() });
+  // Assert
+  assert.equal(only(calls, 'updateComment').length, 0, 'the human comment is left untouched');
+  assert.equal(only(calls, 'createComment').length, 1, 'routing posts its own comment instead');
+});
+
+test('run keeps needs-triage when the mention comment cannot be published', async () => {
+  // Arrange
+  const body = formBody('ClioRing');
+  const live = { number: 7, body, labels: [{ name: 'needs-triage' }], assignees: [] };
+  const { github, calls } = fakeGitHub({ live, existingLabels: ['component:ring'], commentStatus: 503 });
+  const { core, warnings } = fakeCore();
+  // Act
+  await routing.run({ github, context: eventContext(body), core, configPath: fixtureConfigPath() });
+  // Assert
+  assert.deepEqual(only(calls, 'removeLabel'), [], 'nobody was told, so the issue stays visible in triage');
+  assert.deepEqual(only(calls, 'addLabels'), [['addLabels', 'component:ring']], 'the component is still routed');
+  assert.ok(warnings.some(w => w.includes('could not be mentioned')), 'the failure is logged');
 });
