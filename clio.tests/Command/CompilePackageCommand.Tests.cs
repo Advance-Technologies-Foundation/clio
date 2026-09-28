@@ -262,4 +262,43 @@ public class CompilePackageCommandTestCase : BaseCommandTests<CompilePackageOpti
 		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("Package compilation failed", StringComparison.Ordinal)));
 		_logger.DidNotReceive().WriteInfo("Done");
 	}
+
+	[Test]
+	[Description("A build failure that carries its reason in an inner exception (the 'could not be monitored' chain) exits 1 and prints that reason, not only the outer operation name (PR review, AC-6).")]
+	public void Execute_ShouldPrintInnerReason_WhenBuildFailsWithChainedException() {
+		// Arrange
+		CompilePackageCommand command = Container.GetRequiredService<CompilePackageCommand>();
+		CompilePackageOptions options = new() { PackageName = "UsrPackage", Environment = "dev" };
+		_packageBuilder.When(builder => builder.Rebuild(Arg.Any<string[]>()))
+			.Do(_ => throw new InvalidOperationException("Package compilation could not be monitored",
+				new TimeoutException("the compilation history could not be read for 90 s")));
+
+		// Act
+		int exitCode = command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "a monitoring failure is not a finished build");
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("could not be read for 90 s", StringComparison.Ordinal)));
+		_logger.DidNotReceive().WriteInfo("Done");
+	}
+
+	[Test]
+	[Description("A waited build that runs out of --wait-timeout exits 1 with the timeout message and without Done (PR review, AC-6).")]
+	public void Execute_ShouldExitNonZeroWithoutDone_WhenWaitedBuildTimesOut() {
+		// Arrange
+		CompilePackageCommand command = Container.GetRequiredService<CompilePackageCommand>();
+		CompilePackageOptions options = new() { PackageName = "UsrPackage", Environment = "dev", Wait = true };
+		_packageBuilder.When(builder => builder.Rebuild(Arg.Any<string[]>(), Arg.Any<PackageCompilationWaitOptions>()))
+			.Do(_ => throw new TimeoutException("Package compilation of 'UsrPackage' did not finish within 600 s."));
+
+		// Act
+		int exitCode = command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "a build not confirmed within the budget must not read as a success");
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("did not finish within 600 s", StringComparison.Ordinal)));
+		_logger.DidNotReceive().WriteInfo("Done");
+	}
 }

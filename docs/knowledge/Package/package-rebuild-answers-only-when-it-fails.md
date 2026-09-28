@@ -42,4 +42,6 @@ after a success answer or a dropped request keeps observing until history has be
 could not show. The window starts only after the first history row: the .NET 8 host in issue #1632 answers
 success on acceptance and writes its first `CompilationHistory` row 60-120 s later, so a 45 s window
 counted from the answer would end the wait before the build has written anything. With no row at all
-the wait ends in a timeout, not an inferred success.
+the wait ends in a timeout, not an inferred success. The window is not shortened to fit the remaining `--wait-timeout`:
+a finished build whose quiet window runs past the deadline also times out, and the timeout then says
+that only successful rows were seen and which `--wait-timeout` would cover the window.

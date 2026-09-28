@@ -146,44 +146,64 @@ public sealed class PackageBuilderVerdictTests {
 	}
 
 	[Test]
-	[Description("Without --wait the build returns when history first goes quiet, before a verdict that arrives later; with --wait the same build blocks until the answer arrives and reports its compile error (issue #1632: Done must mean built, not accepted).")]
-	public void Rebuild_ShouldReportLateVerdict_OnlyWhenWaiting() {
+	[Description("Without --wait the build returns when history first goes quiet, before a verdict that arrives later (issue #1632: the default path settles on 5 s of quiet, which is why --wait exists).")]
+	public void Rebuild_ShouldReturnBeforeLateVerdict_WhenNotWaiting() {
 		// Arrange
 		_stand.AnswersAt(TimeSpan.FromSeconds(20), FailedResponse).WritesRow(TimeSpan.Zero, SucceededRow());
-		PackageBuilder notWaiting = CreateSut();
-		PackageBuilder waiting = CreateSut();
+		PackageBuilder sut = CreateSut();
 
 		// Act
-		Action returnsEarly = () => notWaiting.Rebuild(["UsrPackage"]);
-		Action waitsForVerdict = () => waiting.Rebuild(["UsrPackage"], Wait(seconds: 600));
+		Action act = () => sut.Rebuild(["UsrPackage"]);
 
 		// Assert
-		returnsEarly.Should().NotThrow(
+		act.Should().NotThrow(
 			because: "the default path settles on 5 s of history quiet and never sees the verdict that arrives at 20 s");
 		_logger.Received().WriteWarning(Arg.Is<string>(message => message.Contains("--wait", StringComparison.Ordinal)));
-		waitsForVerdict.Should().Throw<PackageCompilationException>(
+	}
+
+	[Test]
+	[Description("With --wait the build blocks until a late answer arrives and reports its compile error (issue #1632: Done must mean built, not accepted).")]
+	public void Rebuild_ShouldReportLateVerdict_WhenWaiting() {
+		// Arrange
+		_stand.AnswersAt(TimeSpan.FromSeconds(20), FailedResponse).WritesRow(TimeSpan.Zero, SucceededRow());
+		PackageBuilder sut = CreateSut();
+
+		// Act
+		Action act = () => sut.Rebuild(["UsrPackage"], Wait(seconds: 600));
+
+		// Assert
+		act.Should().Throw<PackageCompilationException>(
 			because: "a waited build keeps the request open until the environment answers with its verdict");
 	}
 
 	[Test]
-	[Description("A host that answers success at once while it keeps building (the .NET 8 shape in issue #1632) is not taken at its word under --wait: the build keeps being observed until history goes quiet, so a compile error written after the answer still fails it. Without --wait the answer ends the build, as before.")]
-	public void Rebuild_ShouldKeepObservingAfterSuccessAnswer_OnlyWhenWaiting() {
+	[Description("Without --wait a success answer ends the build at once, as before, even if a compile error is written to the history later (issue #1632).")]
+	public void Rebuild_ShouldEndOnSuccessAnswer_WhenNotWaiting() {
 		// Arrange
 		_stand.AnswersAt(TimeSpan.Zero, SucceededResponse)
-			.WritesRow(TimeSpan.FromSeconds(30), ErrorRow("UsrSecondPackage.csproj",
-				"[{\"Line\":3,\"Column\":1,\"ErrorNumber\":\"CS1002\",\"ErrorText\":\"; expected\","
-				+ "\"IsWarning\":false,\"FileName\":\"UsrSecond.cs\"}]"));
-		PackageBuilder notWaiting = CreateSut();
-		PackageBuilder waiting = CreateSut();
+			.WritesRow(TimeSpan.FromSeconds(30), ErrorRow("UsrSecondPackage.csproj", SecondProjectError));
+		PackageBuilder sut = CreateSut();
 
 		// Act
-		Action returnsOnAnswer = () => notWaiting.Rebuild(["UsrPackage"]);
-		Action waitsForQuiet = () => waiting.Rebuild(["UsrPackage"], Wait(seconds: 600));
+		Action act = () => sut.Rebuild(["UsrPackage"]);
 
 		// Assert
-		returnsOnAnswer.Should().NotThrow(
-			because: "without --wait the success answer ends the build immediately, as it always did");
-		waitsForQuiet.Should().Throw<PackageCompilationException>(
+		act.Should().NotThrow(because: "without --wait the success answer ends the build immediately, as it always did");
+	}
+
+	[Test]
+	[Description("A host that answers success at once while it keeps building (the .NET 8 shape in issue #1632) is not taken at its word under --wait: the build keeps being observed until history goes quiet, so a compile error written after the answer still fails it.")]
+	public void Rebuild_ShouldKeepObservingAfterSuccessAnswer_WhenWaiting() {
+		// Arrange
+		_stand.AnswersAt(TimeSpan.Zero, SucceededResponse)
+			.WritesRow(TimeSpan.FromSeconds(30), ErrorRow("UsrSecondPackage.csproj", SecondProjectError));
+		PackageBuilder sut = CreateSut();
+
+		// Act
+		Action act = () => sut.Rebuild(["UsrPackage"], Wait(seconds: 600));
+
+		// Assert
+		act.Should().Throw<PackageCompilationException>(
 			because: "a success answer is not proof the build finished; the error row written after it must still fail a waited build");
 		_logger.Received(1).WriteError("(CS1002) in UsrSecond.cs at (3,1): ; expected");
 	}
@@ -304,45 +324,74 @@ public sealed class PackageBuilderVerdictTests {
 	}
 
 	[Test]
-	[Description("With --wait and a request that is never answered, one clean history row ends the build only after the five-minute open-request fallback: a budget that covers it succeeds with an inferred-result warning, a shorter one times out and says the build most likely succeeded and which --wait-timeout would confirm it (PR review, AC-5).")]
-	public void Rebuild_ShouldSettleOnOpenRequestFallback_OnlyWhenBudgetCoversIt() {
+	[Description("With --wait and a request that is never answered, one clean history row ends the build after the five-minute open-request fallback when the budget covers it, with an inferred-result warning (PR review, AC-5).")]
+	public void Rebuild_ShouldSettleOnOpenRequestFallback_WhenBudgetCoversIt() {
 		// Arrange
 		_stand.WritesRow(TimeSpan.FromSeconds(60), SucceededRow());
 		PackageBuilder sut = CreateSut();
 
 		// Act
-		Action coveredBudget = () => sut.Rebuild(["UsrPackage"], Wait(seconds: 600));
-		Action shortBudget = () => sut.Rebuild(["UsrPackage"], Wait(seconds: 300));
+		Action act = () => sut.Rebuild(["UsrPackage"], Wait(seconds: 600));
 
 		// Assert
-		coveredBudget.Should().NotThrow(
+		act.Should().NotThrow(
 			because: "five minutes without a new row after the only row is the fallback's completion evidence");
 		_logger.Received(1).WriteWarning(Arg.Is<string>(message =>
 			message.Contains("never answered the build request", StringComparison.Ordinal)));
-		shortBudget.Should().Throw<TimeoutException>(
+		_stand.Elapsed.Should().BeGreaterThanOrEqualTo(TimeSpan.FromSeconds(360),
+			because: "the fallback counts five minutes from the row at 60 s");
+	}
+
+	[Test]
+	[Description("With --wait and a request that is never answered, a budget shorter than the five-minute open-request fallback times out and says the build most likely succeeded and which --wait-timeout would confirm it (PR review, AC-5).")]
+	public void Rebuild_ShouldExplainTimeout_WhenBudgetEndsInsideOpenRequestFallback() {
+		// Arrange
+		_stand.WritesRow(TimeSpan.FromSeconds(60), SucceededRow());
+		PackageBuilder sut = CreateSut();
+
+		// Act
+		Action act = () => sut.Rebuild(["UsrPackage"], Wait(seconds: 300));
+
+		// Assert
+		act.Should().Throw<TimeoutException>(
 				because: "at 300 s the history has been quiet for only 240 s of the 300 s the fallback needs")
 			.WithMessage("*did not finish within 300 s. No compile error was reported*(UsrPackage.csproj) arrived 60 s after*"
 				+ "only after 300 s without a new row*most likely succeeded*`--wait-timeout 360`*");
 	}
 
 	[Test]
-	[Description("With --wait, the quiet window scales with the slowest project the history reported (1.5x its duration): a budget shorter than that window times out with the budget that would confirm the build, a longer one succeeds (PR review, AC-5).")]
-	public void Rebuild_ShouldScaleQuietWindowBySlowestProject_WhenWaited() {
+	[Description("With --wait, the quiet window scales with the slowest project the history reported (1.5x its duration): a budget shorter than that window times out with the budget that would confirm the build (PR review, AC-5).")]
+	public void Rebuild_ShouldExplainTimeout_WhenBudgetEndsInsideScaledQuietWindow() {
 		// Arrange
 		_stand.AnswersAt(TimeSpan.Zero, SucceededResponse)
 			.WritesRow(TimeSpan.FromSeconds(60), SucceededRow("Terrasoft.Configuration.Dev.csproj", durationSeconds: 400));
 		PackageBuilder sut = CreateSut();
 
 		// Act
-		Action shortBudget = () => sut.Rebuild(["UsrPackage"], Wait(seconds: 600));
-		Action coveredBudget = () => sut.Rebuild(["UsrPackage"], Wait(seconds: 900));
+		Action act = () => sut.Rebuild(["UsrPackage"], Wait(seconds: 600));
 
 		// Assert
-		shortBudget.Should().Throw<TimeoutException>(
+		act.Should().Throw<TimeoutException>(
 				because: "a 400 s project needs 600 s of quiet, which ends at 660 s, past the 600 s budget")
 			.WithMessage("*(Terrasoft.Configuration.Dev.csproj) arrived 60 s after*only after 600 s without a new row*"
 				+ "`--wait-timeout 660`*");
-		coveredBudget.Should().NotThrow(because: "a 900 s budget covers the scaled 600 s quiet window");
+	}
+
+	[Test]
+	[Description("With --wait, a budget that covers the quiet window scaled by the slowest project succeeds (PR review, AC-5).")]
+	public void Rebuild_ShouldSucceed_WhenBudgetCoversScaledQuietWindow() {
+		// Arrange
+		_stand.AnswersAt(TimeSpan.Zero, SucceededResponse)
+			.WritesRow(TimeSpan.FromSeconds(60), SucceededRow("Terrasoft.Configuration.Dev.csproj", durationSeconds: 400));
+		PackageBuilder sut = CreateSut();
+
+		// Act
+		Action act = () => sut.Rebuild(["UsrPackage"], Wait(seconds: 900));
+
+		// Assert
+		act.Should().NotThrow(because: "a 900 s budget covers the scaled 600 s quiet window");
+		_stand.Elapsed.Should().BeGreaterThanOrEqualTo(TimeSpan.FromSeconds(660),
+			because: "the build counts as finished only 600 s after the row at 60 s");
 	}
 
 	[Test]
@@ -471,6 +520,10 @@ public sealed class PackageBuilderVerdictTests {
 		act.Should().Throw<InvalidOperationException>(because: "a login page is not a build verdict");
 	}
 
+	private const string SecondProjectError =
+		"[{\"Line\":3,\"Column\":1,\"ErrorNumber\":\"CS1002\",\"ErrorText\":\"; expected\","
+		+ "\"IsWarning\":false,\"FileName\":\"UsrSecond.cs\"}]";
+
 	private const string DevProjectError =
 		"[{\"Line\":5,\"Column\":26,\"ErrorNumber\":\"CS0246\",\"ErrorText\":\"EntitySchema not found\","
 		+ "\"IsWarning\":false,\"FileName\":\"UsrProbe.Custom.cs\"}]";
@@ -503,9 +556,9 @@ public sealed class PackageBuilderVerdictTests {
 	/// pause. A ten-minute waited build therefore runs in milliseconds, and no row races a real poll thread.
 	/// </summary>
 	/// <remarks>
-	/// Times are offsets from the moment the build request is sent; every request starts the script again,
-	/// so one stand can serve several builds in a test. The answer is completed synchronously, so the request
-	/// task has finished before the pause returns and the loop sees it on its next pass.
+	/// Times are offsets from the moment the build request is sent. The answer is completed synchronously (see
+	/// <see cref="CompleteInline"/>), so the request task has finished before the pause returns and the
+	/// loop sees it on its next pass.
 	/// </remarks>
 	private sealed class SimulatedStand : TimeProvider, ICancellableDelay {
 
@@ -594,9 +647,32 @@ public sealed class PackageBuilderVerdictTests {
 				pending = _pending;
 			}
 			if (_answer.Value.Fault is { } fault) {
-				pending.TrySetException(fault);
-			} else {
-				pending.TrySetResult(Response(_answer.Value.Body));
+				CompleteInline(() => pending.TrySetException(fault));
+				return;
+			}
+			HttpResponseMessage response = Response(_answer.Value.Body);
+			// Buffered first, so the build's ReadAsStringAsync completes synchronously as well.
+			response.Content.LoadIntoBufferAsync().GetAwaiter().GetResult();
+			CompleteInline(() => pending.TrySetResult(response));
+		}
+
+		/// <summary>
+		/// Completes the request with its continuation run on THIS thread, so the whole request task has
+		/// finished before the pause returns.
+		/// </summary>
+		/// <remarks>
+		/// The test thread carries a SynchronizationContext, and a task continuation is never inlined under a
+		/// non-default one: it is queued to the thread pool instead. The loop sleeps no real time, so while
+		/// that queued continuation waits for a thread the simulated clock can run past the open-request
+		/// fallback and the build settles without the answer (reproduced within a few hundred repeats).
+		/// </remarks>
+		private static void CompleteInline(Action complete) {
+			SynchronizationContext previous = SynchronizationContext.Current;
+			SynchronizationContext.SetSynchronizationContext(null);
+			try {
+				complete();
+			} finally {
+				SynchronizationContext.SetSynchronizationContext(previous);
 			}
 		}
 
