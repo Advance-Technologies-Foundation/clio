@@ -205,6 +205,11 @@ internal class ServiceUrlBuilderCommandTests
 			yield return new(true, "https://localhost", ServiceUrlBuilder.KnownRoute.UpdateLocalizationQuery, "https://localhost/DataService/json/SyncReply/UpdateLocalizationQuery");
 			yield return new(false, "https://localhost", ServiceUrlBuilder.KnownRoute.GetSchemaDataDesignItem, "https://localhost/0/ServiceModel/SchemaDataDesignerService.svc/GetSchema");
 			yield return new(true, "https://localhost", ServiceUrlBuilder.KnownRoute.GetSchemaDataDesignItem, "https://localhost/ServiceModel/SchemaDataDesignerService.svc/GetSchema");
+			// Page designer schema creation and parent-schema hierarchy, formerly hardcoded in SchemaDesignerHelper and PageDesignerHierarchyClient.
+			yield return new(false, "https://localhost", ServiceUrlBuilder.KnownRoute.CreateNewClientUnitDesignerSchema, "https://localhost/0/ServiceModel/ClientUnitSchemaDesignerService.svc/CreateNewSchema");
+			yield return new(true, "https://localhost", ServiceUrlBuilder.KnownRoute.CreateNewClientUnitDesignerSchema, "https://localhost/ServiceModel/ClientUnitSchemaDesignerService.svc/CreateNewSchema");
+			yield return new(false, "https://localhost", ServiceUrlBuilder.KnownRoute.GetClientUnitDesignerParentSchemas, "https://localhost/0/ServiceModel/ClientUnitSchemaDesignerService.svc/GetParentSchemas");
+			yield return new(true, "https://localhost", ServiceUrlBuilder.KnownRoute.GetClientUnitDesignerParentSchemas, "https://localhost/ServiceModel/ClientUnitSchemaDesignerService.svc/GetParentSchemas");
 			// Registered WITHOUT a leading slash, unlike the /rest/... entries, so both prefix shapes are
 			// pinned here rather than left to CreateUrl's normalisation happening to be right.
 			yield return new TestCaseDataWithKnownRoutes(false, "http://localhost",

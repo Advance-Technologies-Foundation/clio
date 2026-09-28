@@ -353,7 +353,11 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		/// <summary>Write per-culture values of an entity's localizable columns (DataService UpdateLocalizationQuery).</summary>
 		UpdateLocalizationQuery = 105,
 		/// <summary>Read a package data binding design item (SchemaDataDesignerService GetSchema).</summary>
-		GetSchemaDataDesignItem = 106
+		GetSchemaDataDesignItem = 106,
+		/// <summary>Create a new client unit schema DTO in a package through the page designer service.</summary>
+		CreateNewClientUnitDesignerSchema = 107,
+		/// <summary>Read the parent (full hierarchy) schemas of a Freedom UI page from the page designer service.</summary>
+		GetClientUnitDesignerParentSchemas = 108
 
 	}
 
@@ -473,6 +477,8 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.SelectLocalizationQuery, "DataService/json/SyncReply/SelectLocalizationQuery"},
 		{KnownRoute.UpdateLocalizationQuery, "DataService/json/SyncReply/UpdateLocalizationQuery"},
 		{KnownRoute.GetSchemaDataDesignItem, "ServiceModel/SchemaDataDesignerService.svc/GetSchema"},
+		{KnownRoute.CreateNewClientUnitDesignerSchema, "/ServiceModel/ClientUnitSchemaDesignerService.svc/CreateNewSchema"},
+		{KnownRoute.GetClientUnitDesignerParentSchemas, "/ServiceModel/ClientUnitSchemaDesignerService.svc/GetParentSchemas"},
 	};
 
 	private EnvironmentSettings _environmentSettings;

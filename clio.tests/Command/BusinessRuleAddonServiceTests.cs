@@ -318,7 +318,7 @@ public sealed class BusinessRuleAddonServiceBuildConfigurationTests {
 		_serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		_logger = Substitute.For<ILogger>();
 		_serviceUrlBuilder.Build("ServiceModel/AddonSchemaDesignerService.svc").Returns(DesignerBase);
-		_serviceUrlBuilder.Build("/rest/WorkplaceService/ResetScriptCache").Returns(ResetCacheUrl);
+		_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.ResetScriptCache).Returns(ResetCacheUrl);
 		_serviceUrlBuilder.Build("ServiceModel/WorkspaceExplorerService.svc/BuildConfiguration").Returns(BuildConfigUrl);
 		// A REAL AddonSchemaDesignerClient so the actual BuildConfiguration success:false handling runs, exercised
 		// through the business-rule batch path (AppendRules), not a mock that no-ops the rebuild.
