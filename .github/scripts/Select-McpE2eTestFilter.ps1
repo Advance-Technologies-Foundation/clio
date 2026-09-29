@@ -504,10 +504,14 @@ function Add-DeclarationsForFile([string] $Relative, [string] $Text, $TypeDeclar
     $scan = Remove-NonCode $Text
     $declarationMatches = @($TypeDeclaration.Matches($scan))
     if ($declarationMatches.Count -eq 0) { return ,@() }
+    $code = Remove-CommentsOnly $Text
+    # The views are cut by the same offsets; a lexer change that shifts one would mis-slice every
+    # type body silently, so it fails here instead.
+    if ($scan.Length -ne $Text.Length -or $code.Length -ne $Text.Length) { throw "Lexing changed the length of $Relative; the type-body views cannot share offsets." }
     $views = @(
         @{ Text = $Text; Map = $Bodies.Raw }
         @{ Text = $scan; Map = $Bodies.Scan }
-        @{ Text = (Remove-CommentsOnly $Text); Map = $Bodies.Code }
+        @{ Text = $code; Map = $Bodies.Code }
     )
     $topIndent = ($declarationMatches | ForEach-Object { $_.Groups[1].Value.Length } | Measure-Object -Minimum).Minimum
     if ($declarationMatches[0].Groups[1].Value.Length -ne $topIndent) {
@@ -642,7 +646,7 @@ function Add-RegistrationPairEdges([string] $RegistrationText, $TypeBody, $Consu
         $service = $m.Groups[1].Value
         $implementation = $m.Groups[2].Value
         if (-not $TypeBody.ContainsKey($implementation)) { continue }
-        if (-not $TypeBody.ContainsKey($service)) { $script:externalServiceImplementations[$implementation] = $service; continue }
+        if (-not $TypeBody.ContainsKey($service)) { Add-ExternalServiceImplementation $implementation $service; continue }
         Copy-ConsumerEdgesEnsuringTargetExists $Consumers $service $implementation
     }
 }
@@ -687,7 +691,7 @@ function Add-RegistrationFactoryEdges([string] $RegistrationText, [string] $Regi
         foreach ($t in [regex]::Matches($scan.Argument, $namePattern)) {
             $implementation = $t.Groups[1].Value
             if ($implementation -eq $service -or -not $TypeBody.ContainsKey($implementation)) { continue }
-            if ($external) { $script:externalServiceImplementations[$implementation] = $service; continue }
+            if ($external) { Add-ExternalServiceImplementation $implementation $service; continue }
             Copy-ConsumerEdgesEnsuringTargetExists $Consumers $service $implementation
         }
     }
@@ -703,6 +707,14 @@ function Add-RegistrationConsumerEdges($Registration, $Texts, $TypeBody, $Consum
     }
 }
 
+# One implementation can be registered for several external services; each one's consumers count.
+function Add-ExternalServiceImplementation([string] $Implementation, [string] $Service) {
+    if (-not $script:externalServiceImplementations.ContainsKey($Implementation)) {
+        $script:externalServiceImplementations[$Implementation] = New-Object System.Collections.Generic.HashSet[string]
+    }
+    [void]$script:externalServiceImplementations[$Implementation].Add($Service)
+}
+
 # An implementation registered for a service this repository does not declare gets, as its
 # consumers, every type whose code names that service - the edge Add-InterfaceConsumerEdges draws for
 # an interface declared here, which the token scan cannot draw because an external name is not a
@@ -711,18 +723,20 @@ function Add-ExternalServiceConsumerEdges($ExternalServiceImplementations, $Type
     $unresolved = New-OrdinalMap
     foreach ($entry in @($ExternalServiceImplementations.GetEnumerator())) {
         $implementation = $entry.Key
-        $service = $entry.Value
-        $mention = [regex] "(?<![\w.])$([regex]::Escape($service))\b"
         if (-not $Consumers.ContainsKey($implementation)) { $Consumers[$implementation] = New-Object System.Collections.Generic.HashSet[string] }
-        $found = $false
-        foreach ($name in $TypeBodyCode.Keys) {
-            # The composition root names every service it registers; it is not a consumer.
-            if ($name -ceq $implementation -or $RegistrationTypes.Contains($name)) { continue }
-            if (-not $mention.IsMatch($TypeBodyCode[$name].ToString())) { continue }
-            [void]$Consumers[$implementation].Add($name)
-            $found = $true
+        foreach ($service in $entry.Value) {
+            $mention = [regex] "(?<![\w.])$([regex]::Escape($service))\b"
+            $found = $false
+            foreach ($name in $TypeBodyCode.Keys) {
+                # The composition root names every service it registers; it is not a consumer.
+                if ($name -ceq $implementation -or $RegistrationTypes.Contains($name)) { continue }
+                if (-not $mention.IsMatch($TypeBodyCode[$name].ToString())) { continue }
+                [void]$Consumers[$implementation].Add($name)
+                $found = $true
+            }
+            # Any one service nobody names leaves part of the implementation's reach unknown.
+            if (-not $found) { $unresolved[$implementation] = $service }
         }
-        if (-not $found) { $unresolved[$implementation] = $service }
     }
     return $unresolved
 }
