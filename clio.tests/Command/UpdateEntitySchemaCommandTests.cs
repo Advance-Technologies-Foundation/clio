@@ -421,6 +421,76 @@ internal sealed class UpdateEntitySchemaCommandTests : BaseClioModuleTests
 			because: "the pair fits entirely inside the first 64 characters, so it is kept whole");
 	}
 
+	[Test]
+	[Description("Strips non-BMP format characters such as the tag character U+E0041, which occupy a surrogate pair, from an echoed name (ENG-101526).")]
+	public void SanitizeForMessage_RemovesNonBmpFormatCharacters() {
+		// Arrange
+		string value = "ab\U000E0041cd\U000E007Fef";
+
+		// Act
+		string result = UpdateEntitySchemaCommand.SanitizeForMessage(value);
+
+		// Assert
+		result.Should().Be("abcdef",
+			because: "tag characters are invisible format characters even though each one takes two UTF-16 units");
+	}
+
+	[Test]
+	[Description("Drops lone high and low surrogates from an echoed name while keeping a valid surrogate pair (ENG-101526).")]
+	public void SanitizeForMessage_DropsLoneSurrogates() {
+		// Arrange
+		string value = "a\uD800b\uDC00c\U0001F600d\uD83D";
+
+		// Act
+		string result = UpdateEntitySchemaCommand.SanitizeForMessage(value);
+
+		// Assert
+		result.Should().Be("abc\U0001F600d",
+			because: "a lone surrogate is invalid UTF-16 and must not be echoed, but a well-formed pair is a real character");
+	}
+
+	[Test]
+	[Description("Reports an operation whose field name is an escaped lone surrogate as invalid JSON instead of leaking a serializer error (ENG-101526).")]
+	public void Execute_ReportsInvalidJson_WhenFieldNameIsLoneSurrogate() {
+		// Arrange
+		UpdateEntitySchemaOptions options = new() {
+			Environment = "dev",
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Operations = ["""{"action":"modify","column-name":"UsrStatus","\uD800":1}"""]
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "a field name that is not valid UTF-16 cannot be read as text");
+		_columnManager.DidNotReceiveWithAnyArgs().ModifyColumns(default!);
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message == "Operation payload at index 0 is not valid JSON."));
+	}
+
+	[Test]
+	[Description("Reports an operation whose string value is an escaped lone surrogate as an invalid value at its JSON path instead of leaking a serializer error (ENG-101526).")]
+	public void Execute_ReportsInvalidValue_WhenFieldValueIsLoneSurrogate() {
+		// Arrange
+		UpdateEntitySchemaOptions options = new() {
+			Environment = "dev",
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Operations = ["""{"action":"modify","column-name":"Usr\uDC00Status"}"""]
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "a string value that is not valid UTF-16 cannot be read as text");
+		_columnManager.DidNotReceiveWithAnyArgs().ModifyColumns(default!);
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message == "Operation payload at index 0 has an invalid value at JSON path '$.column-name'."));
+	}
+
 	[TestCase("[]")]
 	[TestCase("42")]
 	[TestCase("\"modify\"")]

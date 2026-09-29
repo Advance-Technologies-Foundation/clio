@@ -230,6 +230,49 @@ internal class CommonProgramTest : BaseClioModuleTests{
 	}
 
 	[Test]
+	[Description("For an unknown verb the parser's own error text, buffered during the parse, is flushed to the error writer (ENG-101526).")]
+	public void ExecuteCommands_WithUnknownVerb_ShouldFlushLibraryErrorToErrorWriter() {
+		// Arrange
+		ThreadSafeStringWriter standardOutput = new();
+		ThreadSafeStringWriter errorOutput = new();
+		Console.SetOut(standardOutput);
+		Console.SetError(errorOutput);
+		string[] args = ["get-list"];
+
+		// Act
+		int exitCode = Program.ExecuteCommands(args);
+		string error = errorOutput.ToString();
+
+		// Assert
+		exitCode.Should().Be(1, because: "an unknown command must still fail the invocation");
+		error.Should().Contain("Verb 'get-list' is not recognized.",
+			because: "the buffered library output is the only place that names the unrecognized verb, so it must reach stderr");
+		standardOutput.ToString().Should().NotContain("Verb 'get-list' is not recognized.",
+			because: "the library error text belongs to the error writer, not to standard output");
+	}
+
+	[Test]
+	[Description("For '<verb> --version' the parser's version text, buffered during the parse, is flushed to the error writer (ENG-101526).")]
+	public void ExecuteCommands_WithVerbVersion_ShouldFlushLibraryVersionToErrorWriter() {
+		// Arrange
+		ThreadSafeStringWriter standardOutput = new();
+		ThreadSafeStringWriter errorOutput = new();
+		Console.SetOut(standardOutput);
+		Console.SetError(errorOutput);
+		string[] args = ["healthcheck", "--version"];
+
+		// Act
+		Program.ExecuteCommands(args);
+		string error = errorOutput.ToString();
+
+		// Assert
+		error.Should().MatchRegex(@"\d+\.\d+",
+			because: "the version the library writes into the buffer must be flushed to stderr, as in released clio");
+		error.Should().NotContain("See command help:",
+			because: "a version request is not an option error, so the short parse-error form must not replace it");
+	}
+
+	[Test]
 	[Description("Prints up to ten alphabetically sorted suggestions and help hints for an unknown top-level command.")]
 	public void ExecuteCommands_WithUnknownVerb_ShouldPrintSuggestionsAndKeepExitCodeOne() {
 		ThreadSafeStringWriter consoleOutput = new();
@@ -487,9 +530,14 @@ internal class CommonProgramTest : BaseClioModuleTests{
 	[Test]
 	[Description("With the parser's case sensitivity, an upper-case -H is unclaimed on a verb that claims only -h, while a lower-case -h stays claimed (ENG-101526 regression).")]
 	public void IsUnclaimedHelpFlagToken_WithParserCase_ShouldDistinguishUpperAndLowerCaseH() {
+		// Arrange
+		const string upperCaseToken = "-H";
+		const string lowerCaseToken = "-h";
+		Type optionsType = typeof(HealthCheckOptions);
+
 		// Act
-		bool upperCase = Program.IsUnclaimedHelpFlagToken("-H", typeof(HealthCheckOptions), matchParserCase: true);
-		bool lowerCase = Program.IsUnclaimedHelpFlagToken("-h", typeof(HealthCheckOptions), matchParserCase: true);
+		bool upperCase = Program.IsUnclaimedHelpFlagToken(upperCaseToken, optionsType, matchParserCase: true);
+		bool lowerCase = Program.IsUnclaimedHelpFlagToken(lowerCaseToken, optionsType, matchParserCase: true);
 
 		// Assert
 		upperCase.Should().BeTrue(because: "healthcheck claims -h, not -H, and the parser binds option names case-sensitively");
@@ -499,8 +547,12 @@ internal class CommonProgramTest : BaseClioModuleTests{
 	[Test]
 	[Description("Without the parser's case sensitivity the pre-parse help short-circuit keeps its released behaviour: -H counts as claimed on a verb that claims -h, so it is left to the parser (ENG-101526 regression).")]
 	public void IsUnclaimedHelpFlagToken_WithoutParserCase_ShouldTreatUpperCaseHAsClaimed() {
+		// Arrange
+		const string token = "-H";
+		Type optionsType = typeof(PublishWorkspaceCommandOptions);
+
 		// Act
-		bool result = Program.IsUnclaimedHelpFlagToken("-H", typeof(PublishWorkspaceCommandOptions));
+		bool result = Program.IsUnclaimedHelpFlagToken(token, optionsType);
 
 		// Assert
 		result.Should().BeFalse(because: "the pre-parse short-circuit must not change: released clio sends publish-app -H to the parser, which shows the help and exits 1");

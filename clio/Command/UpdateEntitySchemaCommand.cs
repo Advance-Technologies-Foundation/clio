@@ -1,8 +1,10 @@
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Reflection;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Command.EntitySchemaDesigner;
@@ -268,32 +270,52 @@ public class UpdateEntitySchemaCommand : Command<UpdateEntitySchemaOptions>
 
 	private void RejectUnknownFields(JsonElement root, int index) {
 		foreach (JsonProperty property in root.EnumerateObject()) {
-			if (KnownOperationFields.Contains(property.Name, StringComparer.OrdinalIgnoreCase)) {
+			string name = ReadPropertyName(property, index);
+			if (KnownOperationFields.Contains(name, StringComparer.OrdinalIgnoreCase)) {
 				continue;
 			}
-			string suggestion = _suggestionService.SuggestName(property.Name, KnownOperationFields);
+			string suggestion = _suggestionService.SuggestName(name, KnownOperationFields);
 			string hint = suggestion is null ? string.Empty : $" Did you mean '{suggestion}'?";
 			throw new InvalidOperationException(
-				$"Operation payload at index {index} has unknown field '{SanitizeForMessage(property.Name)}'.{hint}");
+				$"Operation payload at index {index} has unknown field '{SanitizeForMessage(name)}'.{hint}");
+		}
+	}
+
+	// JsonDocument.Parse accepts an escaped lone surrogate such as "\uD800" in a field name; decoding it then throws
+	// a serializer InvalidOperationException whose text would otherwise reach the user as the command error.
+	private static string ReadPropertyName(JsonProperty property, int index) {
+		try {
+			return property.Name;
+		} catch (InvalidOperationException exception) {
+			throw new InvalidOperationException($"Operation payload at index {index} is not valid JSON.", exception);
 		}
 	}
 
 	/// <summary>
-	/// Makes a user-supplied name safe to echo in an error message: control characters (terminal escape
-	/// sequences, line breaks) and invisible format characters (bidirectional overrides such as U+202E, zero-width
-	/// characters such as U+200B) are removed, and the result is cut to <see cref="MaxEchoedNameLength"/>
-	/// characters without splitting a surrogate pair.
+	/// Makes a user-supplied name safe to echo in an error message: the value is read as Unicode scalar values, so
+	/// control characters (terminal escape sequences, line breaks) and invisible format characters (bidirectional
+	/// overrides such as U+202E, zero-width characters such as U+200B, non-BMP tag characters such as U+E0041) are
+	/// removed whether they occupy one UTF-16 unit or a surrogate pair, and a lone surrogate, which is not a character
+	/// at all, is dropped. The result is cut to <see cref="MaxEchoedNameLength"/> UTF-16 units without splitting a
+	/// surrogate pair.
 	/// </summary>
 	internal static string SanitizeForMessage(string value) {
-		string printable = new(value
-			.Where(character => !char.IsControl(character)
-				&& char.GetUnicodeCategory(character) != UnicodeCategory.Format)
-			.ToArray());
+		StringBuilder printable = new(value.Length);
+		ReadOnlySpan<char> remaining = value;
+		while (!remaining.IsEmpty) {
+			OperationStatus status = Rune.DecodeFromUtf16(remaining, out Rune rune, out int consumed);
+			remaining = remaining[consumed..];
+			if (status != OperationStatus.Done || Rune.IsControl(rune)
+				|| Rune.GetUnicodeCategory(rune) == UnicodeCategory.Format) {
+				continue;
+			}
+			printable.Append(rune.ToString());
+		}
 		if (printable.Length <= MaxEchoedNameLength) {
-			return printable;
+			return printable.ToString();
 		}
 		int cut = char.IsHighSurrogate(printable[MaxEchoedNameLength - 1]) ? MaxEchoedNameLength - 1 : MaxEchoedNameLength;
-		return printable[..cut] + "...";
+		return printable.ToString(0, cut) + "...";
 	}
 
 	private static string ResolveColumnName(UpdateEntitySchemaOperationDefinition operation, int index) {
