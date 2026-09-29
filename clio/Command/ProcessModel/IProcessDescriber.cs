@@ -381,8 +381,9 @@ public class DescribeProcessResult {
 	public List<DescribedParameter> Parameters { get; set; }
 
 	/// <summary>
-	/// The process's own using directives (Process properties -> Methods -> Usings), in the shape a build's
-	/// <c>usings[]</c> takes. The namespaces the platform's code generator always imports are not listed.
+	/// The process's own using directives as it stores them (Process properties -> Methods -> Usings), in the shape
+	/// a build's <c>usings[]</c> takes - including an entry that repeats a namespace the platform's code generator
+	/// always imports. The namespaces the generator adds on its own are not listed.
 	/// <c>null</c> on a server that predates CrtProcessBuilder 1.6.6.30.
 	/// </summary>
 	[JsonPropertyName("usings")]
