@@ -28,7 +28,7 @@ namespace Clio.Command;
 // thing standing between the caller and a silently wrong version. The lockout argument that kept it at 1.6.1.0
 // for one review round (refusing the whole versioning route on a 1.6.1.x environment for a field most
 // operations arrays never carry) no longer buys anything: BundledPackageConvergence already refuses every
-// environment below the archive clio ships (1.6.6.40 today, 1.6.2.1 when this was written) on this same
+// environment below the archive clio ships (1.6.2.1 when this was written) on this same
 // command, so the raise adds no refusal in
 // normal mode and is the one fail-closed refusal left in convergence's degraded warn-and-allow modes.
 // Raised to 1.6.6.14 by ENG-99856: `subProcess.multiInstanceOptions`, the dotted per-item path on
@@ -48,7 +48,7 @@ namespace Clio.Command;
 // silently widens to the WHOLE record - a mapping is then refused for incompatible types naming a parameter
 // rather than the package, and a filter compares its column against the record reference with no refusal at
 // all - while the three-segment name is passed through verbatim and fails the platform's gate as "Expression
-// expected". 1.6.6.40 is the archive cut from crt-process-builder a03d124.
+// expected". 1.6.6.40 is the first archive with sourceColumn.
 [RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.40",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class ModifyProcessAsNewVersionOptions : EnvironmentOptions {

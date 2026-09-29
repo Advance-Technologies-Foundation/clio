@@ -229,7 +229,7 @@ namespace Clio.Command;
 // silently widens to the WHOLE record - a mapping is then refused for incompatible types naming a parameter
 // rather than the package, and a filter compares its column against the record reference with no refusal at
 // all - while the three-segment name is passed through verbatim and fails the platform's gate as "Expression
-// expected". 1.6.6.40 is the archive cut from crt-process-builder a03d124.
+// expected". 1.6.6.40 is the first archive with sourceColumn.
 [RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.40",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class CreateBusinessProcessOptions : EnvironmentOptions {
