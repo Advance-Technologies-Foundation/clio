@@ -772,7 +772,7 @@ public abstract record EntitySchemaCreateArgsBase(
 	string SchemaName,
 
 	[property: JsonPropertyName("title-localizations")]
-	[property: Description("Entity schema title/caption localizations. Must include en-US.")]
+	[property: Description("Entity schema title/caption localizations. Must include en-US. Each culture must exist in the environment's Languages section; an absent culture fails before saving.")]
 	[property: Required]
 	Dictionary<string, string> TitleLocalizations,
 
@@ -928,7 +928,7 @@ public sealed record CreateEntitySchemaColumnArgs(
 	string? Type = null,
 
 	[property: JsonPropertyName("title-localizations")]
-	[property: Description("Column title/caption localizations. OPTIONAL — when omitted, en-US is auto-derived from a scalar title/caption or the column name. Must include en-US when provided, and the en-US value must be English.")]
+	[property: Description("Column title/caption localizations. OPTIONAL — when omitted, en-US is auto-derived from a scalar title/caption or the column name. Must include en-US when provided, and the en-US value must be English. Each culture must exist in the environment's Languages section; an absent culture fails before saving.")]
 	Dictionary<string, string>? TitleLocalizations = null,
 
 	[property: JsonPropertyName("reference-schema-name")]
@@ -1088,11 +1088,11 @@ public abstract record ColumnModificationArgsBase(
 	string? Type = null,
 
 	[property: JsonPropertyName("title-localizations")]
-	[property: Description("Column title/caption localizations. OPTIONAL for add — when omitted, en-US is auto-derived from a scalar title/caption or the column name. Must include en-US when provided, and the en-US value must be English.")]
+	[property: Description("Column title/caption localizations. OPTIONAL for add — when omitted, en-US is auto-derived from a scalar title/caption or the column name. Must include en-US when provided, and the en-US value must be English. Each culture must exist in the environment's Languages section; an absent culture fails before saving.")]
 	Dictionary<string, string>? TitleLocalizations = null,
 
 	[property: JsonPropertyName("description-localizations")]
-	[property: Description("Column description localizations. Must include en-US when provided.")]
+	[property: Description("Column description localizations. Must include en-US when provided. Each culture must exist in the environment's Languages section; an absent culture fails before saving.")]
 	Dictionary<string, string>? DescriptionLocalizations = null,
 
 	[property: JsonPropertyName("reference-schema-name")]
@@ -1342,7 +1342,7 @@ public sealed record SetEntitySchemaPropertiesArgs(
 	string? PrimaryDisplayColumn = null,
 
 	[property: JsonPropertyName("title-localizations")]
-	[property: Description("New SCHEMA caption per culture, e.g. {\"en-US\":\"Mention language\"}. Unlisted cultures keep their caption. At least one settable property is required.")]
+	[property: Description("New SCHEMA caption per culture, e.g. {\"en-US\":\"Mention language\"}. Unlisted cultures keep their caption. Each culture must exist in the environment's Languages section; an absent culture fails before saving. At least one settable property is required.")]
 	IReadOnlyDictionary<string, string>? TitleLocalizations = null,
 
 	[property: JsonPropertyName("is-db-view")]

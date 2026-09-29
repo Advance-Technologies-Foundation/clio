@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -177,6 +177,38 @@ public sealed class CompileCreatioToolTests
 			tracked!.ProcessName.Should().Be("UsrProc",
 				because: "a null package-name alone would read as a full compilation in compile-status");
 			tracked.PackageName.Should().BeNull(because: "the package is only known once the server answers");
+		}
+		finally
+		{
+			ConsoleLogger.Instance.ClearMessages();
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A package compile through MCP runs with --wait, so the agent gets the finished build's verdict (and its CSxxxx diagnostics) instead of a success taken when compilation activity first paused (issues #1632, #1633).")]
+	public async Task CompileCreatio_Should_Wait_For_Finished_Build_When_Package_Name_Is_Provided()
+	{
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.GetTenantKey(Arg.Any<EnvironmentOptions>()).Returns("sandbox-tenant");
+		commandResolver.GetTargetKey(Arg.Any<EnvironmentOptions>()).Returns("sandbox-target-wait");
+		FakeCompilePackageCommand resolvedCommand = new();
+		commandResolver.Resolve<CompilePackageCommand>(Arg.Any<CompilePackageOptions>())
+			.Returns(resolvedCommand);
+		CompileCreatioTool tool = new(ConsoleLogger.Instance, commandResolver, new CompileOperationRegistry());
+
+		try
+		{
+			// Act
+			await tool.CompileCreatio(new CompileCreatioArgs("sandbox", "MyPackage"));
+
+			// Assert
+			resolvedCommand.CapturedOptions!.Wait.Should().BeTrue(
+				because: "an agent treats the package compile result as proof the C# compiled, so it must be the finished build's verdict");
+			resolvedCommand.CapturedOptions.WaitTimeout.Should().Be(CompilePackageOptions.DefaultWaitTimeoutSeconds,
+				because: "options built directly, not by the parser, must still carry the default wait bound");
 		}
 		finally
 		{

@@ -99,16 +99,43 @@ Before creating a release tag, verify the following:
    - Заполните описание релиза
    - Нажмите "Publish release"
 
-### 3. Автоматическая публикация
+### 3. Automatic publishing
 
-После создания релиза автоматически запустится workflow `release-to-nuget`, который:
+Creating the release automatically starts the `release-to-nuget` workflow, which:
 
-1. ✅ **Извлечет версию** из тега (поддерживает форматы `8.0.1.43` и `v8.0.1.43`)
-2. ✅ **Проверит формат** версии (должен быть `X.Y.Z.W`)
-3. ✅ **Запустит тесты** clio
-4. ✅ **Выполнит анализ кода** через SonarQube
-5. ✅ **Соберет пакет** clio с версией из тега
-6. ✅ **Опубликует в NuGet** автоматически
+1. ✅ **Extracts the version** from the tag (accepts both `8.0.1.43` and `v8.0.1.43`)
+2. ✅ **Validates the version format** (must be `X.Y.Z.W`)
+3. ✅ **Checks that the `Build` workflow is green** for the tagged commit (it does not re-run the tests itself — see [Release test gate](#release-test-gate-and-integration-coverage))
+4. ✅ **Packs** clio with the version from the tag
+5. ✅ **Publishes to NuGet** automatically
+
+#### Release test gate and integration coverage
+
+The release workflow (`.github/workflows/reliase-to-nuget.yml`) does not run `dotnet test`. It waits for the
+`Build` run (`build.yml`) of the tagged commit and publishes only when that run is green. Only a run started by a
+`push` to `master` counts: such a run always executes every unit test shard, while a `pull_request` run of the same
+SHA runs only the jobs for the areas the PR changed (a docs-only PR runs no test job at all), so it can be green
+without having tested most of the code. The selection lives in `.github/scripts/Select-ReleaseBuildRun.ps1` and is covered
+by `clio.tests/ReleaseWorkflow/ReleaseBuildRunSelectorTests.cs`, which fails if the selector accepts a non-master
+or non-push run.
+
+**Decision (issue #1573): integration coverage relies on pre-merge evidence (option A).** `build.yml` runs the
+`Integration` category only on `pull_request` (its unit shards exclude it), so a green master `Build` does not
+re-prove integration tests on the tagged commit. The evidence is the pull-request run before merge: the
+`Integration Tests` check is required by the master ruleset, and that run tests the PR merged into master, which
+is normally the tree that lands. Re-running it at release time would test an identical tree again and add
+minutes to every release (each of the three hosted integration shards takes about 3.5 minutes including its
+build; one self-hosted runner would run them in sequence).
+
+**Option B (not taken):** add a step before "Pack clio with release version" that runs
+
+```powershell
+dotnet test .\clio.tests\clio.tests.csproj -c Release --filter "TestCategory=Integration"
+```
+
+and fails on a non-zero exit code. Spell the filter `TestCategory`, never the `Category` alias
+([why](docs/knowledge/Tests/nunit-adapter-drops-large-non-category-shard-filters.md)). If option B is adopted,
+update this section and the comment above the gate step in the workflow.
 
 ### 4. Требования к версии
 

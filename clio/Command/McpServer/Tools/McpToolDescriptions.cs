@@ -67,5 +67,5 @@ internal static class McpToolDescriptions {
 		"and omitted keys. A key already stored on the schema stays registered without being re-sent. " +
 		"Server save only: preserve local edits, capture the affected workspace package with restore-workspace " +
 		"and review metadata/resource XML before push-workspace, which can revert uncaptured changes. " +
-		"Follow workspace instructions for linked FSM packages.";
+		"Follow workspace instructions for linked FSM packages. For other cultures use localize-page.";
 }

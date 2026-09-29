@@ -144,7 +144,7 @@ name instead of trying to edit a non-existent local `insert`.
     alone here — the merge-slot rules above own what may go inside it.
   - **Rejected — a `crt.IndicatorWidget` that would show no value.** An `insert`, `set` or `merge` authoring a
     metric must carry `config.layout` and `config.text`, and a `config.data.providing` the mobile runtime can
-    execute: `schemaName` plus `aggregation.column.expression` with a `functionArgument.columnPath` and an
+    execute: `schemaName` plus `aggregation.column.expression` with `expressionType` 1, a `functionArgument.columnPath` and an
     `aggregationType` of 1–5, or `expressionSchema` for a calculated metric. Otherwise the page saves, but the
     metric shows no value or an error placeholder, or the designer canvas does not build. A widget with its own `data` binding is exempt
     from the providing checks.

@@ -18,7 +18,7 @@ Claiming means assigning the authenticated `gh` user. The linked branch provides
    - Current user assigned and the expected branch exists: resume idempotently.
    - Current user assigned but the branch is missing: create and link it.
    - Current user assigned and a different Development branch exists: resume that branch only after verifying it belongs to the same work; otherwise stop. Do not add a second branch.
-   - Another user assigned: check for that user's linked `<assignee>/issue-<number>` branch, then stop. Report an existing branch as active work or a missing branch as incomplete visibility; neither state makes the issue free.
+   - Another user assigned: check for that user's linked `<assignee>/issue-<number>` branch, then stop. Report an existing branch as active work or a missing branch as incomplete visibility; neither state makes the issue free. An assignee added by the `Issue routing` workflow (a component owner in `ownerNotification: assign` mode, see `.github/component-owners.json` and `.github/ISSUE_ROUTING.md`) counts the same way: the issue is routed to that owner, and only a human reassigns it. A routing comment that only mentions owners (`mention` mode) is not a claim.
    - Multiple assignees, or a branch without an assignee: stop and report the ambiguity.
 5. After adding `@me`, re-read assignees once. Stop and report ambiguity if another assignee appeared; do not add coordination machinery beyond this check.
 6. Set the original issue's `Mitigation stage` to `Investigating` using the canonical field procedure in the `clio-issue-workflow` skill, and verify the stored value.

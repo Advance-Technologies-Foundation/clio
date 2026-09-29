@@ -40,3 +40,14 @@ sample repository an e2e fixture creates is never an ancestor of it. What the ex
 was to downgrade EVERY dump to an unpublished temp file whenever the agent's working directory had been
 cleaned, a Swabra sweep had run, or the export carried no committed `.gitkeep` — the silent CI-only
 failure this record exists to warn about, introduced by the guard against it.
+
+**Retention and the fallback directory (#1593)** — dumps are not kept forever. The first write a
+process makes into a directory sweeps that directory's `*.json` dumps last written more than 7 days
+before the process started; later writes into the same directory do not sweep again. The window is
+keyed on the process start, not on "before this run", so a parallel net8.0/net10.0 process never
+deletes the other's fresh dumps. Outside a checkout the dump goes to a per-process
+`clio-mcp-e2e-payloads-not-published-<guid>` directory in temp: it is only named at resolution and created, owner-only on
+Unix, by the first write, so a run that never dumps leaves nothing behind. Because each run has its
+own fallback directory, that first write sweeps the shared temp parent for prefixed siblings older than
+the window. The sweep runs after the dump is written and is best-effort throughout: a sweep failure
+leaves old files behind and never costs the diagnostic.
