@@ -28,6 +28,37 @@
       ]
     },
     {
+      "id": "custom-logic",
+      "option": "Freedom UI page custom logic (handlers, converters, validators, helper modules, code kept by a Designer save)",
+      "label": "component:custom-logic",
+      "color": "c5def5",
+      "description": "Custom client logic in Freedom UI pages and its page lint",
+      "owners": [
+        "Alexandr-Kravchuk",
+        "kamil-mikosz-creatio"
+      ],
+      "paths": [
+        "clio/Command/McpServer/Tools/PageBodyAstLinter.cs",
+        "clio/Command/SchemaHandlerValidationService.cs"
+      ]
+    },
+    {
+      "id": "mobile-page-conversion",
+      "option": "Mobile page conversion (web to mobile Freedom UI pages, get-mobile-page-conversion-guide)",
+      "label": "component:mobile-page-conversion",
+      "color": "c5def5",
+      "description": "Web to mobile Freedom UI page conversion",
+      "owners": [
+        "OleksandrTyshchyk",
+        "dkorotin1"
+      ],
+      "paths": [
+        "clio/Command/McpServer/Tools/MobilePageConverter/",
+        "clio/Command/McpServer/Tools/MobilePageValidation.cs",
+        "clio/Command/McpServer/Data/WebToMobilePageConversionRules.json"
+      ]
+    },
+    {
       "id": "business-rules",
       "option": "Business rules (page and entity business rules)",
       "label": "component:business-rules",
@@ -77,7 +108,7 @@
     },
     {
       "id": "data",
-      "option": "Data access and system settings (OData, ESQ, run SQL scripts, data bindings, DataForge)",
+      "option": "Data access and system settings (ESQ, run SQL scripts, data bindings, DataForge)",
       "label": "component:data",
       "color": "c5def5",
       "description": "Data queries, bindings and system settings",
@@ -86,12 +117,25 @@
         "kirillkrylov"
       ],
       "paths": [
-        "clio/Command/McpServer/Tools/OData*",
         "clio/Command/McpServer/Tools/ExecuteEsqTool.cs",
         "clio/Command/McpServer/Tools/DataBinding*",
         "clio/Command/McpServer/Tools/SysSettingsTool.cs",
         "clio/Command/McpServer/Tools/DataForgeTool.cs",
         "clio/Query/"
+      ]
+    },
+    {
+      "id": "odata",
+      "option": "OData tools (odata-read, odata-create, odata-update, odata-delete)",
+      "label": "component:odata",
+      "color": "c5def5",
+      "description": "OData read and write tools",
+      "owners": [
+        "Alexandr-Kravchuk",
+        "kirillkrylov"
+      ],
+      "paths": [
+        "clio/Command/McpServer/Tools/OData*"
       ]
     },
     {
