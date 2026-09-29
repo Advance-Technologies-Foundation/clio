@@ -107,8 +107,11 @@ Edges, all of them widening rather than narrowing:
   `Schema`.
 - **qualified reference** - `Clio.Common.Foo` and `global::Clio.Common.Foo`. The dot in front of
   `Foo` hides it from the rule above, and 1247 references in this tree are written that way. Only
-  chains rooted in a namespace this repository declares are followed, plus the aliases of such a
-  namespace (`using Contracts = Clio.Common;`); an alias of `System.*` adds nothing.
+  chains starting at a segment of a namespace this repository declares are followed - any segment,
+  because `Common.McpWorker.IWorker...` inside `namespace Clio.Command.McpServer` resolves against the
+  enclosing `Clio` - plus the aliases of such a namespace (`using Contracts = Clio.Common;`); an alias
+  of `System.*` adds nothing. A segment that is also a type or member name (`Command.X`) can add a
+  reference the compiler would not see, which only widens.
 - **implementation to interface** - a consumer injects `IFoo` and never spells `Foo` out. Restricted
   to base types declared as `interface`: a base *class* here (`Command`, `BaseTool`) is a
   template-method host whose hundreds of subclasses are not interchangeable, and following it merges
@@ -137,19 +140,24 @@ meant as the safe direction, but in this tree it joined unrelated types into one
 tool) and made most product changes a full run. Every map keyed by a type name is ordinal: a
 PowerShell `@{}` folds case, which turned each local named `command` into a reference to `Command`.
 
-The closure does not walk through a concrete MCP tool type except into another tool type. The
-non-tool types that name a tool are registries and prompts (`ToolContractCatalog`,
-`McpCoreToolProfile`, `*Prompt`) naming dozens of tools each; a tool that calls another tool
+The closure does not walk through a concrete MCP tool type except into another tool type or into
+a type that calls a member of it (`ComponentInfoCommand` -> `ComponentInfoTool.CreateDetailResponse(...)`).
+The other types that name a tool are registries and prompts (`ToolContractCatalog`,
+`McpCoreToolProfile`, `*Prompt`) naming dozens of tools each; a tool that uses another tool
 (`PageUpdateTool` -> `PageSyncTool`) is a real execution path and is kept. A tool type is a
 non-abstract type carrying `[McpServerToolType]` or an `[McpServerTool]` method - most tools inherit
-the class attribute from the abstract `BaseTool<T>`, which is itself walked through.
+the class attribute from the abstract `BaseTool<T>`, which is walked through like any base class.
+This is the one rule that can narrow a selection: code that reaches a tool only through a registry,
+by name - `clio-run` dispatch - is not followed, and is covered by the fixtures that name that tool.
 
 A base list is read after a primary constructor as well (`class Foo(IBar bar) : IFoo`, possibly over
 several lines), a qualified name may start at any segment of a declared namespace
 (`Common.McpWorker.IWorker...` inside `namespace Clio.Command.McpServer`), and a type registered in the
 composition root for a service type the repository does not declare
-(`AddTransient<IDataProvider>(sp => new ClassifyingDataProvider(...))`) forces a full run, because its
-consumers name only the external interface.
+(`AddTransient<IDataProvider>(sp => new ClassifyingDataProvider(...))`) is consumed by every type
+whose code names that service, as an implementation of an interface declared here is. Only the
+types the factory constructs (`new X`) count as the implementation. When no type names the service,
+the implementation - and every change that reaches it - forces a full run.
 
 The guard asserts the invariant that makes this checkable: after blanking, no quote and no comment
 marker is left anywhere under `clio/`. A literal form the lexer does not know leaves one behind, so

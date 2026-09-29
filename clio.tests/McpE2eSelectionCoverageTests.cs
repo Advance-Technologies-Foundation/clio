@@ -501,7 +501,7 @@ internal sealed class McpE2eSelectionCoverageTests {
 	}
 
 	[Test]
-	[Description("The consumer closure stops at a concrete MCP tool: a registry that names every tool does not carry one tool's dependency to the others, a tool that calls another tool still does, and an abstract [McpServerToolType] base is walked through rather than stopped at.")]
+	[Description("The consumer closure stops at a concrete MCP tool: a registry that names every tool does not carry one tool's dependency to the others, while a tool that uses another tool, a non-tool type that calls a tool's member, and the non-tool consumers of an abstract [McpServerToolType] base still do.")]
 	public void Script_ShouldStopTheClosureAtConcreteToolTypes() {
 		// Arrange
 		using SyntheticRepository repo = SyntheticRepository.Create();
@@ -511,10 +511,10 @@ internal sealed class McpE2eSelectionCoverageTests {
 		JsonElement behindAbstractBase = RunSelection(["clio/Common/UpsilonHelper.cs"], includeNoEnvironment: false, repo.Root);
 
 		// Assert
-		behindOneTool.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["PiToolE2ETests", "TauToolE2ETests"],
-			because: "PiService is used by PiTool only; ToolCatalog names PiTool and RhoTool by typeof, and walking through it made every change behind one tool reach every tool, while TauTool calls PiTool and so really executes the changed code");
-		behindAbstractBase.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["UpsilonToolE2ETests"],
-			because: "UpsilonToolBase carries [McpServerToolType] but is abstract - it is the base the tool inherits, and stopping there would hide the tool behind it");
+		behindOneTool.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["PiToolE2ETests", "TauToolE2ETests", "QoppaToolE2ETests"],
+			because: "PiService is used by PiTool only; ToolCatalog names PiTool and RhoTool by typeof, and walking through it made every change behind one tool reach every tool, while TauTool uses PiTool and QoppaCommand calls PiTool.Format, so both really execute the changed code");
+		behindAbstractBase.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["UpsilonToolE2ETests", "KoppaToolE2ETests"],
+			because: "UpsilonToolBase carries [McpServerToolType] but is abstract, so it is walked through like any base class: KoppaRunner names it without calling a member, and treating the base as a tool would have stopped the walk before KoppaTool");
 	}
 
 	[Test]
@@ -541,7 +541,7 @@ internal sealed class McpE2eSelectionCoverageTests {
 	}
 
 	[Test]
-	[Description("The graph links an implementation whose base list follows a multi-line primary constructor and a type named through a namespace-relative qualified name, and runs the whole suite for an implementation registered under a service type the repository does not declare.")]
+	[Description("The graph links an implementation whose base list follows a multi-line primary constructor or continues on the next line, a type named through a namespace-relative qualified name, an AddHttpClient registration pair, and an implementation registered under an external service type to the types naming that service; it runs the whole suite when no type names the external service.")]
 	public void Script_ShouldLinkPrimaryConstructorBaseListsRelativeNamesAndExternalServices() {
 		// Arrange
 		using SyntheticRepository repo = SyntheticRepository.Create();
@@ -549,17 +549,29 @@ internal sealed class McpE2eSelectionCoverageTests {
 		// Act
 		JsonElement primaryConstructor = RunSelection(["clio/Common/SampiStore.cs"], includeNoEnvironment: false, repo.Root);
 		JsonElement relativeName = RunSelection(["clio/Common/Worker/HetaService.cs"], includeNoEnvironment: false, repo.Root);
+		JsonElement continuedBaseList = RunSelection(["clio/Common/StigmaStore.cs"], includeNoEnvironment: false, repo.Root);
+		JsonElement httpClientPair = RunSelection(["clio/Common/DigammaClient.cs"], includeNoEnvironment: false, repo.Root);
+		JsonElement namedExternalService = RunSelection(["clio/Common/KsiProvider.cs"], includeNoEnvironment: false, repo.Root);
 		JsonElement externalService = RunSelection(["clio/Common/SanProvider.cs"], includeNoEnvironment: false, repo.Root);
+		JsonElement behindExternalService = RunSelection(["clio/Common/SanHelper.cs"], includeNoEnvironment: false, repo.Root);
 
 		// Assert
 		primaryConstructor.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["SampiToolE2ETests"],
 			because: "SampiStore implements ISampiStore after a primary constructor spread over two lines, and SampiTool reaches it only through that interface");
 		relativeName.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["HetaToolE2ETests"],
 			because: "inside namespace Clio.Command.McpServer.Tools the name Common.Worker.HetaService resolves against the enclosing Clio, so the chain starts at a namespace segment that is not a root");
+		continuedBaseList.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["StigmaToolE2ETests"],
+			because: "StigmaStore names IStigmaStore on the line after the colon, and a base list read only to the end of the declaration line loses that implementation edge");
+		httpClientPair.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["DigammaToolE2ETests"],
+			because: "DigammaClient declares no base list, so AddHttpClient<IDigammaClient, DigammaClient>() is the only thing tying it to DigammaTool");
+		namedExternalService.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["KsiToolE2ETests"],
+			because: "KsiProvider is registered as IKsiExternal, which the repository does not declare, and KsiTool injects IKsiExternal - the implementation is consumed by whoever names the service, exactly as for an interface declared here");
 		externalService.GetProperty("mode").GetString().Should().Be("full",
-			because: "SanProvider is registered as IExternalProvider, which this repository does not declare, so its consumers inject that interface and never name SanProvider - no edge can bound it");
+			because: "SanProvider is registered as IExternalProvider, which this repository does not declare and no type names, so nothing bounds the code that reaches it");
 		externalService.GetProperty("decisions").EnumerateArray().Select(d => d.GetString()).Should().Contain(d => d!.Contains("a service this repository does not declare"),
 			because: "the decision log must say why the run became full");
+		behindExternalService.GetProperty("mode").GetString().Should().Be("full",
+			because: "SanHelper is used only by SanProvider, so a change to it flows into every consumer of IExternalProvider; checking only the changed file's own types would call it unobservable");
 	}
 
 	[Test]
@@ -1139,9 +1151,37 @@ internal sealed class McpE2eSelectionCoverageTests {
 				"namespace Clio.Command.McpServer.Tools;\npublic sealed class HetaTool : BaseTool {\n" +
 				"\tinternal const string ToolName = \"heta-run\";\n\t[McpServerTool(Name = ToolName)]\n" +
 				"\tpublic void Run() { var x = new Common.Worker.HetaService(); }\n}");
-			// Registered under a service type declared outside the repository, like IDataProvider.
-			Write("clio/Common/SanProvider.cs", "public sealed class SanProvider : IExternalProvider { }");
-			foreach (string fixture in new[] { "Pi", "Rho", "Tau", "Upsilon", "Chi", "Psi", "Sampi", "Heta" }) {
+			// Registered under a service type declared outside the repository, like IDataProvider:
+			// SanProvider's service is named by nobody, KsiProvider's by KsiTool.
+			Write("clio/Common/SanProvider.cs", "public sealed class SanProvider : IExternalProvider {\n\tpublic void Use(SanHelper helper) { }\n}");
+			Write("clio/Common/SanHelper.cs", "public sealed class SanHelper { }");
+			Write("clio/Common/KsiProvider.cs", "public sealed class KsiProvider : IKsiExternal { }");
+			Write("clio/Command/McpServer/Tools/KsiTool.cs",
+				"public sealed class KsiTool : BaseTool {\n\tinternal const string ToolName = \"ksi-run\";\n" +
+				"\t[McpServerTool(Name = ToolName)]\n\tpublic void Run(IKsiExternal provider) { }\n}");
+			// A base list continued on the line after the colon.
+			Write("clio/Common/IStigmaStore.cs", "public interface IStigmaStore { }");
+			Write("clio/Common/StigmaStore.cs", "public sealed class StigmaStore : IDisposable,\n\tIStigmaStore {\n}");
+			Write("clio/Command/McpServer/Tools/StigmaTool.cs",
+				"public sealed class StigmaTool : BaseTool {\n\tinternal const string ToolName = \"stigma-run\";\n" +
+				"\t[McpServerTool(Name = ToolName)]\n\tpublic void Run(IStigmaStore store) { }\n}");
+			// Linked only by an AddHttpClient<TService, TImplementation>() pair.
+			Write("clio/Common/IDigammaClient.cs", "public interface IDigammaClient { }");
+			Write("clio/Common/DigammaClient.cs", "public sealed class DigammaClient { }");
+			Write("clio/Command/McpServer/Tools/DigammaTool.cs",
+				"public sealed class DigammaTool : BaseTool {\n\tinternal const string ToolName = \"digamma-run\";\n" +
+				"\t[McpServerTool(Name = ToolName)]\n\tpublic void Run(IDigammaClient client) { }\n}");
+			// A non-tool type that calls a member of a tool, the shape of ComponentInfoCommand.
+			Write("clio/Command/QoppaCommand.cs", "public sealed class QoppaCommand {\n\tpublic string Run() => PiTool.Format(1);\n}");
+			Write("clio/Command/McpServer/Tools/QoppaTool.cs",
+				"public sealed class QoppaTool : BaseTool {\n\tinternal const string ToolName = \"qoppa-run\";\n" +
+				"\t[McpServerTool(Name = ToolName)]\n\tpublic void Run(QoppaCommand command) { }\n}");
+			// A non-tool type that names the abstract tool base without calling a member.
+			Write("clio/Command/KoppaRunner.cs", "public sealed class KoppaRunner {\n\tpublic void Accept(UpsilonToolBase tool) { }\n}");
+			Write("clio/Command/McpServer/Tools/KoppaTool.cs",
+				"public sealed class KoppaTool : BaseTool {\n\tinternal const string ToolName = \"koppa-run\";\n" +
+				"\t[McpServerTool(Name = ToolName)]\n\tpublic void Run(KoppaRunner runner) { }\n}");
+			foreach (string fixture in new[] { "Pi", "Rho", "Tau", "Upsilon", "Chi", "Psi", "Sampi", "Heta", "Ksi", "Stigma", "Digamma", "Qoppa", "Koppa" }) {
 				Write($"clio.mcp.e2e/{fixture}ToolE2ETests.cs",
 					$"[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class {fixture}ToolE2ETests {{\n\t[Test] public void Works() => Call({fixture}Tool.ToolName);\n}}");
 			}
@@ -1151,7 +1191,9 @@ internal sealed class McpE2eSelectionCoverageTests {
 				"\tservices.AddSingleton<IDeltaService>(sp => new DeltaAdapter(new DeltaBackend()));\n" +
 				"\tservices.AddSingleton<IIotaService>(\n\t\tsp => new IotaAdapter(new IotaBackend()));\n" +
 				"\tservices.AddSingleton<IXiService>(sp => {\n\t\tvar marker = \"a;b)\";\n\t\t// this comment contains )\n\t\treturn new XiBackend();\n\t});\n" +
-				"\tservices.AddTransient<IExternalProvider>(sp => new SanProvider());\n} }");
+				"\tservices.AddTransient<IExternalProvider>(sp => new SanProvider());\n" +
+				"\tservices.AddTransient<IKsiExternal>(sp => new KsiProvider());\n" +
+				"\tservices.AddHttpClient<IDigammaClient, DigammaClient>();\n} }");
 			Write("clio.mcp.e2e/AlphaToolE2ETests.cs",
 				"public abstract class AlphaFixtureBase { }\n[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class AlphaToolE2ETests : AlphaFixtureBase {\n\t[Test] public void Works() => Call(AlphaTool.ToolName);\n}");
 			Write("clio.mcp.e2e/AlphaLiteralE2ETests.cs",

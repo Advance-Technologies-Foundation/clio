@@ -2,7 +2,7 @@
 description: a PowerShell @{} hashtable is case-insensitive, so the e2e detector's type-name maps must be ordinal or a local `command` becomes a reference to `Command`
 applies-to:
   - .github/scripts/Select-McpE2eTestFilter.ps1
-ticket: GH-1570
+ticket: ENG-101587
 date: 2026-09-29
 ---
 
@@ -18,6 +18,7 @@ extensions of it and handed them those consumers. `LocalizePageCommand` reached 
 files through that path, and PR #1713 ran the whole suite.
 
 **What breaks if you ignore it** - nothing fails. A new `@{}` keyed by type name silently adds
-edges, the selection only widens, and pull requests go back to full runs; the synthetic test
+edges, the selection only widens, and pull requests go back to full runs. The synthetic test
 `Script_ShouldMatchTypeNamesCaseSensitivelyAndOutsideComments` in
-`clio.tests/McpE2eSelectionCoverageTests.cs` is the only thing that notices.
+`clio.tests/McpE2eSelectionCoverageTests.cs` catches it for the `TypeBody` lookup only; the other maps
+have no test, so review a new map for its comparer.

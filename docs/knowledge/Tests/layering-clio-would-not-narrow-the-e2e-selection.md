@@ -4,7 +4,7 @@ applies-to:
   - .github/scripts/Select-McpE2eTestFilter.ps1
   - clio.mcp.e2e/TestSelection/mcp-e2e-selection.json
   - spec/mcp-e2e-plan-split/
-ticket: GH-1570
+ticket: ENG-101587
 date: 2026-09-29
 ---
 
@@ -13,9 +13,11 @@ date: 2026-09-29
 files reaching at most 20 MCP tool files and read that as redundant coupling in clio. It was mostly
 the detector: its type-name maps folded case, it read references from comments, and its closure
 walked through tool registries (`ToolContractCatalog`, `McpCoreToolProfile`) that name every tool.
-With those fixed, and base lists after primary constructors read, 1013 of 1343 files stay precise
+With those fixed, and base lists after primary constructors read, 1011 of 1343 files stay precise
 at `37c833c31` (the old detector: 434 on the same tree), and full runs over the last 40 merged pull
-requests fell from 29 to 16 - with no change to clio's source.
+requests fell from 29 to 20 - with no change to clio's source. Of the 20, 14 come from rules the
+graph does not decide (`fullRunPaths`, a composition-root change, an MCP resource with no fixture),
+four select 65 fixtures against `maxSubsetFixtures=60`, and two are genuinely wide (218).
 
 **Why it is this way** - the detector matches names in text, so its graph is only as good as its
 lexing. Each defect added edges that no code path follows, and a handful of wide false edges is

@@ -28,9 +28,11 @@ so a subset filter is worth composing.
 > **Update 2026-09-29.** The numbers below were measured on a graph with three defects: type-name
 > maps that folded case (every local `command` referenced `Command`), references read from comments,
 > and a closure that walked through tool registries (`ToolContractCatalog`, `McpCoreToolProfile`)
-> that name every tool. With those fixed, and base lists after primary constructors read, 1013 of
+> that name every tool. With those fixed, and base lists after primary constructors read, 1011 of
 > 1343 product files stay precise at `37c833c31`, against 434 for the old detector on the same tree.
-> Over the last 40 merged pull requests the full runs fell from 29 to 16. Much of the "redundant"
+> Over the last 40 merged pull requests the full runs fell from 29 to 20; 14 of the 20 come from
+> `fullRunPaths`, a composition-root change or an MCP resource with no fixture, and four select 65
+> fixtures against the cap of 60. Much of the "redundant"
 > coupling in section 1 was therefore the detector's, not clio's; the conclusion that layering is not
 > needed for test selection holds, for a different reason.
 
