@@ -16,8 +16,9 @@ the server without a build - `ScriptTaskElementToolE2ETests`); `deploy-creatio` 
 corrupt archive so nothing is created. The only fixtures that DO compile are developer-local, in the
 destructive sub-tier `clio.mcp.e2e/AGENTS.md` documents (`LocalOnly` + `[Explicit]` + `McpE2E.Manual`, a
 TeamCity/GitHub guard and the `McpE2E__AllowDestructiveMcpTests` opt-in): `UserTaskUnlimitedTextToolE2ETests`
-and `ScriptTaskCompileLifecycleE2ETests`, a process-name compile that builds. A mere **restart** is the
-case that sub-tier does not name.
+and `ScriptTaskCompileLifecycleE2ETests`, a process-name compile that builds - and on a .NET host a restart
+after it, because there the compiled code does not run before one (measured on a .NET 8 stand,
+2026-09-28). A **restart** on its own, with no compile, is the case that sub-tier does not name.
 
 **Why it is this way** — one Creatio instance backs the whole run and
 `clio.mcp.e2e.runsettings` sets `NumberOfTestWorkers=2`, so a restart lands in the middle of other

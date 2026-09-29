@@ -72,50 +72,12 @@ public sealed class CompileCreatioTool(
 			return new CommandExecutionResult(1, [new ErrorMessage("compile-creatio needs its args object.")]);
 		}
 
-		// Refused, not dropped: the scope arguments are all optional, so a dropped 'process-name' or 'package-name'
-		// leaves a call that means "compile everything" - a full compile reloading the runtime for every user.
-		// Checked before the reservation and registry.Begin, so a refusal starts and tracks nothing.
-		string? unboundError = McpToolArgumentSupport.BuildLegacyAliasError(
-			args.ExtensionData, LegacyAliases, ".",
-			"Valid: environment-name, package-name, process-name; omit both scope arguments for a full compile.");
-		if (unboundError is not null)
+		CommandExecutionResult? refusal = RefuseScope(args, out string? packageName, out string? processName);
+		if (refusal is not null)
 		{
-			return new CommandExecutionResult(1, [
-				new ErrorMessage($"{unboundError} Nothing was compiled.")
-			]);
+			return refusal;
 		}
 
-		if (!string.IsNullOrWhiteSpace(args.PackageName) && args.PackageName.Contains(',', StringComparison.Ordinal))
-		{
-			return new CommandExecutionResult(1, [
-				new ErrorMessage("`package-name` must contain exactly one package name. Comma-separated package lists are not supported by `compile-creatio`.")
-			]);
-		}
-
-		if (args.PackageName is not null && string.IsNullOrWhiteSpace(args.PackageName))
-		{
-			// The same rule as a blank process-name: an empty scoped request must not become a FULL compile.
-			return new CommandExecutionResult(1, [
-				new ErrorMessage("`package-name` is empty. Pass the package name, or omit the argument for a full compilation.")
-			]);
-		}
-
-		string packageName = string.IsNullOrWhiteSpace(args.PackageName) ? null : args.PackageName.Trim();
-		if (args.ProcessName is not null && string.IsNullOrWhiteSpace(args.ProcessName))
-		{
-			// A blank process-name must not fall back to a FULL compile: the user consented to a scoped one.
-			return new CommandExecutionResult(1, [
-				new ErrorMessage("`process-name` is empty. Pass the business process code, or omit the argument for a full compilation.")
-			]);
-		}
-
-		string processName = string.IsNullOrWhiteSpace(args.ProcessName) ? null : args.ProcessName.Trim();
-		if (packageName is not null && processName is not null)
-		{
-			return new CommandExecutionResult(1, [
-				new ErrorMessage("Provide only one of `package-name` or `process-name`: `process-name` already compiles the package the process is in.")
-			]);
-		}
 		string tenantKey = commandResolver.GetTenantKey(new EnvironmentOptions { Environment = args.EnvironmentName });
 
 		// Compile<->compile mutual exclusion via a NARROW reservation, not the broad per-tenant execution
@@ -154,11 +116,7 @@ public sealed class CompileCreatioTool(
 					// stuck Running forever for the single most common failure (a bad environment name).
 					CommandExecutionResult result;
 					try {
-						result = processName is not null
-							? ExecuteProcessCompile(args.EnvironmentName, processName)
-							: packageName is null
-								? ExecuteFullCompile(args.EnvironmentName)
-								: ExecutePackageCompile(args.EnvironmentName, packageName);
+						result = ExecuteScopedCompile(args.EnvironmentName, packageName, processName);
 					} catch (EnvironmentResolutionException exception) {
 						result = CommandExecutionResult.FromResolverError(exception);
 					} catch (Exception exception) {
@@ -193,6 +151,79 @@ public sealed class CompileCreatioTool(
 		{
 			return CommandExecutionResult.FromInfo(BuildInProgressMessage(args.EnvironmentName, operation.OperationId));
 		}
+	}
+
+	/// <summary>
+	/// Refuses a scope the tool must not guess at - an unbound or legacy key, a package list, a blank
+	/// <c>package-name</c> or <c>process-name</c>, or both at once - and normalizes the two scope arguments.
+	/// Each of those, read as "omitted", would turn a scoped request into a FULL compile.
+	/// </summary>
+	/// <param name="args">The call's arguments.</param>
+	/// <param name="packageName">The trimmed package name, or <c>null</c> when omitted.</param>
+	/// <param name="processName">The trimmed process code, or <c>null</c> when omitted.</param>
+	/// <returns>The refusal, or <c>null</c> when the call may proceed.</returns>
+	private static CommandExecutionResult? RefuseScope(CompileCreatioArgs args, out string? packageName,
+		out string? processName)
+	{
+		// Refused, not dropped: the scope arguments are all optional, so a dropped 'process-name' or 'package-name'
+		// leaves a call that means "compile everything" - a full compile reloading the runtime for every user.
+		// Checked before the reservation and registry.Begin, so a refusal starts and tracks nothing.
+		packageName = null;
+		processName = null;
+		string? unboundError = McpToolArgumentSupport.BuildLegacyAliasError(
+			args.ExtensionData, LegacyAliases, ".",
+			"Valid: environment-name, package-name, process-name; omit both scope arguments for a full compile.");
+		if (unboundError is not null)
+		{
+			return new CommandExecutionResult(1, [
+				new ErrorMessage($"{unboundError} Nothing was compiled.")
+			]);
+		}
+
+		if (!string.IsNullOrWhiteSpace(args.PackageName) && args.PackageName.Contains(',', StringComparison.Ordinal))
+		{
+			return new CommandExecutionResult(1, [
+				new ErrorMessage("`package-name` must contain exactly one package name. Comma-separated package lists are not supported by `compile-creatio`.")
+			]);
+		}
+
+		if (args.PackageName is not null && string.IsNullOrWhiteSpace(args.PackageName))
+		{
+			// The same rule as a blank process-name: an empty scoped request must not become a FULL compile.
+			return new CommandExecutionResult(1, [
+				new ErrorMessage("`package-name` is empty. Pass the package name, or omit the argument for a full compilation.")
+			]);
+		}
+
+		packageName = string.IsNullOrWhiteSpace(args.PackageName) ? null : args.PackageName.Trim();
+		if (args.ProcessName is not null && string.IsNullOrWhiteSpace(args.ProcessName))
+		{
+			// A blank process-name must not fall back to a FULL compile: the user consented to a scoped one.
+			return new CommandExecutionResult(1, [
+				new ErrorMessage("`process-name` is empty. Pass the business process code, or omit the argument for a full compilation.")
+			]);
+		}
+
+		processName = string.IsNullOrWhiteSpace(args.ProcessName) ? null : args.ProcessName.Trim();
+		if (packageName is not null && processName is not null)
+		{
+			return new CommandExecutionResult(1, [
+				new ErrorMessage("Provide only one of `package-name` or `process-name`: `process-name` already compiles the package the process is in.")
+			]);
+		}
+
+		return null;
+	}
+
+	private CommandExecutionResult ExecuteScopedCompile(string environmentName, string? packageName, string? processName)
+	{
+		if (processName is not null)
+		{
+			return ExecuteProcessCompile(environmentName, processName);
+		}
+		return packageName is null
+			? ExecuteFullCompile(environmentName)
+			: ExecutePackageCompile(environmentName, packageName);
 	}
 
 	/// <summary>
