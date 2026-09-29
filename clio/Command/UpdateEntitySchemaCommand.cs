@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Command.EntitySchemaDesigner;
@@ -43,6 +44,12 @@ internal sealed record UpdateEntitySchemaOperationDefinition
 
 	[JsonPropertyName("column-name")]
 	public string ColumnName { get; init; }
+
+	/// <summary>
+	/// Alias of <see cref="ColumnName"/>, the field name the MCP tool and create-entity-schema use.
+	/// </summary>
+	[JsonPropertyName("name")]
+	public string Name { get; init; }
 
 	[JsonPropertyName("new-name")]
 	public string NewName { get; init; }
@@ -123,12 +130,24 @@ public class UpdateEntitySchemaCommand : Command<UpdateEntitySchemaOptions>
 		PropertyNameCaseInsensitive = true
 	};
 
+	/// <summary>
+	/// Every top-level field an operation object may carry; anything else is rejected rather than ignored.
+	/// </summary>
+	private static readonly string[] KnownOperationFields = typeof(UpdateEntitySchemaOperationDefinition)
+		.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+		.Select(property => property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name)
+		.Where(name => !string.IsNullOrEmpty(name))
+		.ToArray();
+
 	private readonly IRemoteEntitySchemaColumnManager _columnManager;
 	private readonly ILogger _logger;
+	private readonly IOptionSuggestionService _suggestionService;
 
-	public UpdateEntitySchemaCommand(IRemoteEntitySchemaColumnManager columnManager, ILogger logger) {
+	public UpdateEntitySchemaCommand(IRemoteEntitySchemaColumnManager columnManager, ILogger logger,
+		IOptionSuggestionService suggestionService) {
 		_columnManager = columnManager;
 		_logger = logger;
+		_suggestionService = suggestionService;
 	}
 
 	public override int Execute(UpdateEntitySchemaOptions options) {
@@ -158,7 +177,7 @@ public class UpdateEntitySchemaCommand : Command<UpdateEntitySchemaOptions>
 		return ops;
 	}
 
-	private static IEnumerable<ModifyEntitySchemaColumnOptions> BuildColumnMutations(UpdateEntitySchemaOptions options) {
+	private IEnumerable<ModifyEntitySchemaColumnOptions> BuildColumnMutations(UpdateEntitySchemaOptions options) {
 		int index = 0;
 		foreach (string rawOperation in options.Operations) {
 			if (string.IsNullOrWhiteSpace(rawOperation)) {
@@ -172,6 +191,8 @@ public class UpdateEntitySchemaCommand : Command<UpdateEntitySchemaOptions>
 			} catch (JsonException exception) {
 				throw new InvalidOperationException($"Operation payload at index {index} is not valid JSON.", exception);
 			}
+			RejectUnknownFields(rawOperation, index);
+			string columnName = ResolveColumnName(operation, index);
 			string? normalizedScalarTitle = NormalizeTitle(operation.Title);
 			TitleLocalizationNormalizationResult titleNormalization =
 				EntitySchemaDesignerSupport.NormalizeTitleLocalizations(
@@ -185,7 +206,7 @@ public class UpdateEntitySchemaCommand : Command<UpdateEntitySchemaOptions>
 				SchemaName = options.SchemaName,
 				CaptionCulture = options.CaptionCulture,
 				Action = operation.Action,
-				ColumnName = operation.ColumnName,
+				ColumnName = columnName,
 				NewName = operation.NewName,
 				Type = operation.Type,
 				Title = titleNormalization.EffectiveTitle,
@@ -213,6 +234,32 @@ public class UpdateEntitySchemaCommand : Command<UpdateEntitySchemaOptions>
 			};
 			index++;
 		}
+	}
+
+	private void RejectUnknownFields(string rawOperation, int index) {
+		using JsonDocument document = JsonDocument.Parse(rawOperation);
+		if (document.RootElement.ValueKind != JsonValueKind.Object) {
+			return;
+		}
+		foreach (JsonProperty property in document.RootElement.EnumerateObject()) {
+			if (KnownOperationFields.Contains(property.Name, StringComparer.OrdinalIgnoreCase)) {
+				continue;
+			}
+			string suggestion = _suggestionService.SuggestName(property.Name, KnownOperationFields);
+			string hint = suggestion is null ? string.Empty : $" Did you mean '{suggestion}'?";
+			throw new InvalidOperationException(
+				$"Operation payload at index {index} has unknown field '{property.Name}'.{hint}");
+		}
+	}
+
+	private static string ResolveColumnName(UpdateEntitySchemaOperationDefinition operation, int index) {
+		bool hasColumnName = !string.IsNullOrWhiteSpace(operation.ColumnName);
+		bool hasName = !string.IsNullOrWhiteSpace(operation.Name);
+		if (hasColumnName && hasName && !string.Equals(operation.ColumnName, operation.Name, StringComparison.Ordinal)) {
+			throw new InvalidOperationException(
+				$"Operation payload at index {index} sets both 'column-name' ('{operation.ColumnName}') and its alias 'name' ('{operation.Name}'). Supply only one.");
+		}
+		return hasName && !hasColumnName ? operation.Name : operation.ColumnName;
 	}
 
 	private static string? NormalizeTitle(string? title) {

@@ -1294,7 +1294,7 @@ public sealed class EntitySchemaToolTests {
 		public UpdateEntitySchemaOptions CapturedOptions { get; private set; }
 
 		public FakeUpdateEntitySchemaCommand()
-			: base(Substitute.For<IRemoteEntitySchemaColumnManager>(), Substitute.For<ILogger>()) {
+			: base(Substitute.For<IRemoteEntitySchemaColumnManager>(), Substitute.For<ILogger>(), Substitute.For<Clio.Common.IOptionSuggestionService>()) {
 		}
 
 		public override int Execute(UpdateEntitySchemaOptions options) {

@@ -226,6 +226,71 @@ internal sealed class UpdateEntitySchemaCommandTests : BaseClioModuleTests
 	}
 
 	[Test]
+	[Description("Rejects an operation field the command does not know, naming the field and the nearest known field, before any remote mutation (ENG-101526).")]
+	public void Execute_ReturnsFailure_WhenOperationHasUnknownField() {
+		// Arrange
+		UpdateEntitySchemaOptions options = new() {
+			Environment = "dev",
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Operations = ["""{"action":"modify","colum-name":"UsrStatus","title":"Status"}"""]
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "a misspelled field would otherwise be silently dropped and the operation would target no column");
+		_columnManager.DidNotReceiveWithAnyArgs().ModifyColumns(default!);
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("Operation payload at index 0 has unknown field 'colum-name'.")
+			&& message.Contains("Did you mean 'column-name'?")));
+	}
+
+	[Test]
+	[Description("Accepts 'name' as an alias of 'column-name' in operation JSON, matching the MCP tool and create-entity-schema (ENG-101526).")]
+	public void Execute_MapsNameAlias_ToColumnName() {
+		// Arrange
+		UpdateEntitySchemaOptions options = new() {
+			Environment = "dev",
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Operations = ["""{"action":"modify","name":"UsrStatus","title":"Status"}"""]
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "'name' is an accepted alias of 'column-name'");
+		_columnManager.Received(1).ModifyColumns(Arg.Is<IEnumerable<ModifyEntitySchemaColumnOptions>>(mutations =>
+			mutations.Count() == 1
+			&& mutations.ElementAt(0).ColumnName == "UsrStatus"
+			&& mutations.ElementAt(0).Title == "Status"));
+	}
+
+	[Test]
+	[Description("Rejects an operation that sets both 'column-name' and its alias 'name' to different values, before any remote mutation (ENG-101526).")]
+	public void Execute_ReturnsFailure_WhenNameAliasConflictsWithColumnName() {
+		// Arrange
+		UpdateEntitySchemaOptions options = new() {
+			Environment = "dev",
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Operations = ["""{"action":"modify","column-name":"UsrStatus","name":"UsrOwner","title":"Status"}"""]
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "two different column names in one operation are ambiguous");
+		_columnManager.DidNotReceiveWithAnyArgs().ModifyColumns(default!);
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("'column-name' ('UsrStatus')") && message.Contains("'name' ('UsrOwner')")));
+	}
+
+	[Test]
 	[Description("Preserves semicolons inside structured JSON --operation payloads so valid titles and defaults are not split by the command-line parser.")]
 	public void Parse_Should_Preserve_Semicolons_In_Json_Operation_Payload() {
 		// Arrange

@@ -27,6 +27,7 @@ using Clio.Package;
 using Clio.Query;
 using Clio.UserEnvironment;
 using CommandLine;
+using CommandLine.Text;
 using Creatio.Client;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
@@ -1668,11 +1669,99 @@ internal class Program {
 		// (indistinguishable from a typo). Types without [FeatureToggle] are always kept.
 		IFeatureToggleService featureToggleService = bm.GetRequiredService<IFeatureToggleService>();
 		Type[] enabledCommandOption = FeatureToggleFilter.GetEnabled(CommandOption, featureToggleService);
-		ParserResult<object> parserResult = Parser.Default.ParseArguments(normalizedArgs, enabledCommandOption);
+		// The library appends its full auto-generated help to EVERY parse error it writes, so its output is
+		// buffered and flushed only when clio does not render the error itself (help, version, unknown verb).
+		// A fresh parser is required: Parser.Default froze its HelpWriter when it was built.
+		using StringWriter libraryHelpOutput = new();
+		ParserResult<object> parserResult;
+		using (Parser parser = CreateCommandLineParser(libraryHelpOutput)) {
+			parserResult = parser.ParseArguments(normalizedArgs, enabledCommandOption);
+		}
 		if (parserResult is Parsed<object> parsed) {
 			return ExecuteCommandWithOption(parsed.Value);
 		}
-		return HandleParseError(((NotParsed<object>)parserResult).Errors);
+		NotParsed<object> notParsed = (NotParsed<object>)parserResult;
+		if (IsVerbOptionError(notParsed, normalizedArgs)) {
+			WriteVerbOptionError(notParsed, bm.GetRequiredService<IOptionSuggestionService>());
+		}
+		else {
+			Console.Error.Write(libraryHelpOutput.ToString());
+		}
+		return HandleParseError(notParsed.Errors);
+	}
+
+	/// <summary>
+	/// The tokens CommandLineSDK treats as a help request anywhere in argv; with one present it renders help instead
+	/// of the parse errors, so clio leaves that output alone.
+	/// </summary>
+	private static readonly string[] LibraryHelpAliases = ["--help", "-help", "-h", "--h"];
+
+	/// <summary>
+	/// Error kinds that are not a mistake in the options of a known verb: help and version requests, and an
+	/// unknown or missing verb. Their output stays the library's own.
+	/// </summary>
+	private static readonly ErrorType[] NonOptionErrorTypes = [
+		ErrorType.HelpRequestedError,
+		ErrorType.HelpVerbRequestedError,
+		ErrorType.VersionRequestedError,
+		ErrorType.BadVerbSelectedError,
+		ErrorType.NoVerbSelectedError
+	];
+
+	private static Parser CreateCommandLineParser(TextWriter helpWriter) {
+		ParserSettings defaults = Parser.Default.Settings;
+		return new Parser(settings => {
+			settings.HelpWriter = helpWriter;
+			settings.ShowHeader = defaults.ShowHeader;
+			settings.HelpDirectory = defaults.HelpDirectory;
+			settings.CustomHelpViewer = defaults.CustomHelpViewer;
+		});
+	}
+
+	/// <summary>
+	/// Decides whether a failed parse is a mistake in the options of a known verb, which clio reports in a short
+	/// form instead of the library's full help dump.
+	/// </summary>
+	/// <param name="notParsed">The failed parse result.</param>
+	/// <param name="normalizedArgs">The arguments the parser received.</param>
+	/// <returns><see langword="true"/> when clio should render the error itself.</returns>
+	internal static bool IsVerbOptionError(NotParsed<object> notParsed, string[] normalizedArgs) {
+		if (notParsed.TypeInfo.Current == typeof(NullInstance)
+			|| notParsed.TypeInfo.Current.GetCustomAttribute<VerbAttribute>() == null) {
+			return false;
+		}
+		if (normalizedArgs.Any(arg => LibraryHelpAliases.Contains(arg.ToLowerInvariant()))) {
+			return false;
+		}
+		Error[] errors = notParsed.Errors.ToArray();
+		// Mirrors the library's internal "meaningful error" filter, which decides whether it would print anything.
+		return !errors.Any(error => NonOptionErrorTypes.Contains(error.Tag))
+			&& errors.Any(error => !error.StopsProcessing
+				&& !(error is UnknownOptionError unknown
+					&& string.Equals(unknown.Token, "help", StringComparison.OrdinalIgnoreCase)));
+	}
+
+	private static void WriteVerbOptionError(NotParsed<object> notParsed, IOptionSuggestionService suggestionService) {
+		Type optionsType = notParsed.TypeInfo.Current;
+		string verbName = optionsType.GetCustomAttribute<VerbAttribute>()?.Name;
+		SentenceBuilder sentenceBuilder = SentenceBuilder.Create();
+		TextWriter output = Console.Error;
+		output.WriteLine(sentenceBuilder.ErrorsHeadingText());
+		foreach (string line in HelpText.RenderParsingErrorsTextAsLines(notParsed, sentenceBuilder.FormatError,
+					sentenceBuilder.FormatMutuallyExclusiveSetErrors, 2)) {
+			output.WriteLine(line);
+		}
+		string[] suggestions = notParsed.Errors.OfType<UnknownOptionError>()
+			.Select(error => suggestionService.SuggestOption(optionsType, error.Token))
+			.Where(suggestion => suggestion != null)
+			.Distinct(StringComparer.Ordinal)
+			.ToArray();
+		foreach (string suggestion in suggestions) {
+			output.WriteLine();
+			output.WriteLine($"Did you mean --{suggestion}?");
+		}
+		output.WriteLine();
+		output.WriteLine($"See command help: clio {verbName} --help");
 	}
 
 	/// <summary>

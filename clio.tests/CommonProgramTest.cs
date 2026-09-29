@@ -337,6 +337,105 @@ internal class CommonProgramTest : BaseClioModuleTests{
 	}
 
 	[Test]
+	[Description("An unknown option on a known verb prints the parse error, the nearest option and the command-help hint instead of the full option list (ENG-101526).")]
+	public void ExecuteCommands_WithUnknownOptionOnKnownVerb_ShouldPrintShortErrorWithNearestOption() {
+		// Arrange
+		ThreadSafeStringWriter consoleOutput = new();
+		Console.SetOut(consoleOutput);
+		Console.SetError(consoleOutput);
+		string[] args = ["update-entity-schema", "--name", "Foo"];
+
+		// Act
+		int exitCode = Program.ExecuteCommands(args);
+		string output = consoleOutput.ToString();
+
+		// Assert
+		exitCode.Should().Be(1, because: "a mistyped option must still fail the invocation");
+		output.Should().Contain("Option 'name' is unknown.",
+			because: "the error must name the option the parser rejected");
+		output.Should().Contain("Did you mean --schema-name?",
+			because: "the nearest option declared by the verb itself is the useful suggestion, not an inherited connection option");
+		output.Should().Contain("See command help: clio update-entity-schema --help",
+			because: "the short form must point to the full command help instead of printing it");
+		output.Should().NotContain("Target package name",
+			because: "the option list of the verb must not be dumped after a parse error");
+		output.Should().NotContain("--caption-culture",
+			because: "no option help lines may be printed in the short error form");
+	}
+
+	[Test]
+	[Description("A value-taking option supplied without a value prints the short error and the command-help hint only (ENG-101526).")]
+	public void ExecuteCommands_WithOptionMissingValue_ShouldPrintShortErrorWithoutHelp() {
+		// Arrange
+		ThreadSafeStringWriter consoleOutput = new();
+		Console.SetOut(consoleOutput);
+		Console.SetError(consoleOutput);
+		string[] args = ["modify-entity-schema-column", "--schema-name", "UsrVehicle", "--action", "modify",
+			"--column-name", "UsrStatus", "--required"];
+
+		// Act
+		int exitCode = Program.ExecuteCommands(args);
+		string output = consoleOutput.ToString();
+
+		// Assert
+		exitCode.Should().Be(1, because: "an option without its value is a parse error");
+		output.Should().Contain("'required'",
+			because: "the error must name the option that is missing its value");
+		output.Should().Contain("See command help: clio modify-entity-schema-column --help",
+			because: "the short form must point to the full command help");
+		output.Should().NotContain("Set indexed flag",
+			because: "the option list of the verb must not be dumped after a parse error");
+		output.Should().NotContain("Did you mean",
+			because: "a known option that only lacks its value needs no option suggestion");
+	}
+
+	[Test]
+	[Description("A missing required option prints the short error and the command-help hint only (ENG-101526).")]
+	public void ExecuteCommands_WithMissingRequiredOption_ShouldPrintShortErrorWithoutHelp() {
+		// Arrange
+		ThreadSafeStringWriter consoleOutput = new();
+		Console.SetOut(consoleOutput);
+		Console.SetError(consoleOutput);
+		string[] args = ["modify-entity-schema-column", "--schema-name", "UsrVehicle", "--action", "modify"];
+
+		// Act
+		int exitCode = Program.ExecuteCommands(args);
+		string output = consoleOutput.ToString();
+
+		// Assert
+		exitCode.Should().Be(1, because: "a missing required option is a parse error");
+		output.Should().Contain("Required option 'column-name' is missing.",
+			because: "the error must name the required option that was not supplied");
+		output.Should().Contain("See command help: clio modify-entity-schema-column --help",
+			because: "the short form must point to the full command help");
+		output.Should().NotContain("Set indexed flag",
+			because: "the option list of the verb must not be dumped after a parse error");
+	}
+
+	[Test]
+	[Description("An explicit verb --help still prints the full verb help and succeeds after the short parse-error change (ENG-101526).")]
+	public void ExecuteCommands_WithVerbHelp_ShouldStillPrintFullHelp() {
+		// Arrange
+		ThreadSafeStringWriter consoleOutput = new();
+		Console.SetOut(consoleOutput);
+		Console.SetError(consoleOutput);
+		string[] args = ["update-entity-schema", "--help"];
+
+		// Act
+		int exitCode = Program.ExecuteCommands(args);
+		string output = consoleOutput.ToString();
+
+		// Assert
+		exitCode.Should().Be(0, because: "a help request is not an error");
+		output.Should().Contain("--schema-name",
+			because: "the full verb help lists every option");
+		output.Should().Contain("--caption-culture",
+			because: "the full verb help lists every option, including the ones a parse error no longer prints");
+		output.Should().NotContain("See command help:",
+			because: "the short parse-error hint belongs to errors, not to help requests");
+	}
+
+	[Test]
 	[Description("Renders flat top-level help with canonical commands sorted alphabetically.")]
 	public void ExecuteCommands_WithHelpArgument_ShouldRenderAlphabeticalCanonicalRootHelp() {
 		ThreadSafeStringWriter consoleOutput = new();
