@@ -1246,6 +1246,33 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 
 	[Test]
 	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("get-tool-contract advertises that a package compile fails on a C# compile error")]
+	[AllureDescription("Issues #1632/#1633: the real MCP server must serve the compile-creatio contract saying that a package compile waits for the finished build and fails with the CSxxxx compiler diagnostics, so an agent does not treat a package compile's success as unverified any more - and does not treat a failure as a transport glitch to retry.")]
+	[Description("The served compile-creatio contract says a package compile waits for the finished build and fails with CSxxxx diagnostics on a compile error.")]
+	public async Task ToolContractGet_Should_Advertise_PackageCompile_Fails_On_Compile_Error() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		ToolContractGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["tool-names"] = new[] { CompileCreatioTool.CompileCreatioToolName }
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "the compile-creatio contract must be discoverable through the executable clio MCP catalog");
+		response.Tools!.Single().InputSchema.Properties.Should().Contain(field =>
+				field.Name == "package-name"
+				&& field.Description.Contains("waits for the finished build", StringComparison.Ordinal)
+				&& field.Description.Contains("CSxxxx", StringComparison.Ordinal),
+			because: "the live contract must tell the agent that a package compile's result is the finished build's verdict, with compiler diagnostics on failure");
+	}
+
+	[Test]
+	[AllureTag(ToolContractGetTool.ToolName)]
 	[AllureName("get-tool-contract advertises that a business process's NeedInstall is not a compile trigger")]
 	[Description("ENG-95706: the real MCP server must serve the compile-creatio contract with a create-business-process anti-pattern (a process is interpreted; NeedInstall=true is not a compile trigger; compile only for a Script Task) and a matching Script-Task carve-out precondition, so the steering that stops an agent forcing a full compile off a process's NeedInstall flag is verified end to end, not only in unit tests.")]
 	public async Task ToolContractGet_Should_Advertise_ProcessNeedInstall_Is_Not_A_Compile_Trigger() {

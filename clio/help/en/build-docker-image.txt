@@ -73,7 +73,17 @@ OPTIONS
         Optional. For template `base`, this is the base image reference to build.
         For bundled `dev` and `prod`, this is the local base image reference that
         clio uses as the parent image.
-        Default: `creatio-base:8.0-v1`.
+        For a custom template directory, clio passes IMAGE as the `BASE_IMAGE`
+        build argument, but only when the template's Dockerfile declares
+        `ARG BASE_IMAGE` before its first FROM and uses it in a FROM instruction
+        (any stage counts). If it does not, the command fails before building
+        instead of silently ignoring the option. Without `--base-image`, a custom
+        template keeps its own `ARG BASE_IMAGE` default.
+        IMAGE must be a Docker image reference
+        (`[registry[:port]/]name[:tag][@digest]`, lower-case name). Whitespace,
+        quotes, control characters and a leading `-` are rejected before any
+        container CLI runs.
+        Default: `creatio-base:8.0-v1` (template `base` and bundled `dev`/`prod`).
 
     --registry PREFIX
         Optional. Registry or repository prefix used for image push.
@@ -158,6 +168,17 @@ TEMPLATES
         - clio does not auto-build the base image when you build `dev` or `prod`
         - successful bundled `base` builds are also cached as local image archives under the clio settings folder
         - bundled `dev` and `prod` can restore that cached archive automatically when the local base image is missing
+        - bundled `prod` can be layered over an already-hardened image, such as the
+          Creatio .NET 10 product image or an image a previous `prod` build produced:
+          existing `/conf -> /app/conf` and `/Terrasoft.Configuration ->
+          /app/Terrasoft.Configuration` symlinks are kept, while any other existing
+          `/conf` or `/Terrasoft.Configuration` fails the build
+        - bundled `prod` replaces `/app` wholesale: the parent image's `/app` content
+          (assemblies, packages, `/app/db`) is discarded before the source is copied,
+          so the image holds exactly the source payload; the parent's layers still
+          count toward the image size
+        - custom templates built with `--base-image` get the same local-image check,
+          cached-archive restore and nerdctl `buildkit` sync as bundled `dev`/`prod`
 
     Bundled templates are copied to the clio settings folder:
         Windows:        %LOCALAPPDATA%\creatio\clio\docker-templates
@@ -187,9 +208,16 @@ TEMPLATES
     Custom templates:
         Pass an absolute or relative directory path to --template.
         The directory must contain a Dockerfile.
+        To let `--base-image` choose the parent image, declare it before the first
+        FROM and reference it in a FROM, for example:
+            ARG BASE_IMAGE=creatio-base:8.0-v1
+            FROM ${BASE_IMAGE}
 
 BEHAVIOR
-    1. Resolve and validate the ordered template list
+    1. Validate the `--base-image` syntax, then resolve and validate the ordered template list
+       - when `--base-image` is set, every custom template must declare
+         `ARG BASE_IMAGE` before its first FROM and use it in a FROM; otherwise
+         the command stops before any build
     2. For batches that include any template other than `base`, resolve and validate source path once
     3. Extract ZIP input at most once and reuse the prepared payload across the batch
     4. Resolve the effective container image CLI from CLI flags or runtime probing once per invocation
@@ -204,7 +232,8 @@ BEHAVIOR
        - Normalize staged `*.sh` files to Unix LF line endings for Linux container compatibility
        - for bundled `dev`, ensure the requested code-server archive is cached locally
          and copy it into the Docker build context as `code-server.tar.gz`
-    7. For bundled `dev` and `prod`, verify that the selected base image is available locally
+    7. For bundled `dev` and `prod`, and for custom templates built with `--base-image`,
+       verify that the selected base image is available locally
        - if it is missing and a cached base image archive exists, restore it first
        - when `nerdctl` is used, clio accepts the image from namespace `k8s.io`
          or `buildkit`
@@ -298,6 +327,12 @@ EXAMPLES
           --from "/opt/builds/creatio-net8" \
           --template "/workspace/docker-templates/custom-prod"
 
+    Build a custom template over a specific parent image (its Dockerfile declares `ARG BASE_IMAGE`):
+        clio build-docker-image \
+          --from "/opt/builds/creatio-net10" \
+          --template "/workspace/docker-templates/custom-prod" \
+          --base-image "registry.example/creatio/product:8.3.4"
+
 OUTPUT
     On success, the command logs:
     - Resolved source path
@@ -323,6 +358,16 @@ TROUBLESHOOTING
     "Docker template directory 'X' must contain a Dockerfile"
         Add a Dockerfile to the custom template directory.
 
+    "Custom template 'X' does not declare 'ARG BASE_IMAGE'"
+        `--base-image` was set for a custom template whose Dockerfile cannot use it.
+        Add `ARG BASE_IMAGE` before the first FROM and use it there
+        (`FROM ${BASE_IMAGE}`), or omit `--base-image`.
+
+    "'--base-image X' is not a valid Docker image reference"
+        Pass a reference such as `registry.example:5000/team/image:tag` or
+        `image@sha256:<digest>`, with a lower-case name and without spaces,
+        quotes or a leading `-`.
+
     "does not contain a 'db' directory required by the bundled 'db' template"
         Use a source ZIP or directory that contains a `db` folder, or pass the
         `db` folder itself as `--from`.
@@ -330,6 +375,17 @@ TROUBLESHOOTING
     "looks like a .NET Framework Creatio distribution"
         Use a Creatio .NET 8+ distribution. .NET Framework builds are not supported
         for Docker image creation.
+
+    "ERROR: /conf already exists and is not a symlink to /app/conf"
+        The `prod` base image already has `/conf` (or `/Terrasoft.Configuration`)
+        as a real file or directory, or as a symlink to another target. The `prod`
+        template never replaces it. Use a base image where that path is absent or
+        already links to `/app/conf` (`/app/Terrasoft.Configuration`).
+
+    "ERROR: /app/conf must be a real directory inside /app"
+        The source payload ships `conf` or `Terrasoft.Configuration` as a symlink
+        or a file. The `prod` template refuses to grant group write through it;
+        fix the source payload so both are plain directories.
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio

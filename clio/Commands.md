@@ -168,7 +168,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`compile-configuration`](docs/commands/compile-configuration.md) - Compile the full configuration in Creatio, `cc`, `compile-remote`
 <a id="compile-package"></a>
 <a id="comp-pkg"></a>
-- [`compile-package`](docs/commands/compile-package.md) - Compile one or more packages in Creatio, `comp-pkg`
+- [`compile-package`](docs/commands/compile-package.md) - Compile one or more packages in Creatio; fails with the CSxxxx diagnostics on a compile error, `--wait` blocks until the build has finished, `comp-pkg`
 <a id="compressApp"></a>
 <a id="comp-app"></a>
 - [`compressApp`](docs/commands/compressApp.md) - Archive an application directory into ZIP, `comp-app`
@@ -481,6 +481,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="update-page"></a>
 <a id="page-update"></a>
 - [`update-page`](docs/commands/update-page.md) - Update Freedom UI page body and en-US resource values; validates parent references and warns to capture workspace resources before pushing, `page-update`
+<a id="localize-page"></a>
+- [`localize-page`](docs/commands/localize-page.md) - Add or update translations of a Freedom UI page's captions in one culture without changing other cultures; report-only when no values are supplied
 <a id="create-page"></a>
 <a id="page-create"></a>
 - [`create-page`](docs/commands/create-page.md) - Create a new Freedom UI page from a supported template, `page-create`
