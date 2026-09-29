@@ -24,6 +24,7 @@ body:
         - "OData tools (odata-read, odata-create, odata-update, odata-delete)"
         - "Business processes and user tasks (process model, user tasks, CrtProcessBuilder)"
         - "Themes and branding (themes, palette, logo, background image)"
+        - "Dashboards (dashboards and the dashboards migrator)"
         - "Packages and compilation (push-pkg, compress, lock/unlock, dependencies, compile)"
         - "Workspaces (create/push/restore-workspace, workspace templates)"
         - "Creatio installation and local environments (deploy-creatio, start/stop, restart, restore-db)"

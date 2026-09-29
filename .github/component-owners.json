@@ -204,6 +204,21 @@
       ]
     },
     {
+      "id": "dashboards",
+      "option": "Dashboards (dashboards and the dashboards migrator)",
+      "label": "component:dashboards",
+      "color": "c5def5",
+      "description": "Dashboards and the dashboards migrator",
+      "owners": [
+        "bfedoronchuk"
+      ],
+      "paths": [
+        "clio/Command/InstallDashboardsMigratorCommand.cs",
+        "clio/Command/McpServer/Tools/InstallDashboardsMigratorTool.cs",
+        "clio/CrtDashboardsMigratorApp/"
+      ]
+    },
+    {
       "id": "package",
       "option": "Packages and compilation (push-pkg, compress, lock/unlock, dependencies, compile)",
       "label": "component:package",
