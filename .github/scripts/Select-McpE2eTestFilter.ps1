@@ -445,25 +445,33 @@ function Add-WholeFileAttribution([string] $Relative, $Views, $DeclarationMatche
 function Get-BaseListText([string] $Scan, $Match) {
     # The declaration pattern captures a base list only to the end of its line; the list itself runs
     # to the body's opening brace, so read it from the blanked text up to there either way.
-    if ($Match.Groups[4].Success) {
-        $start = $Match.Groups[4].Index
-        $end = $Scan.IndexOfAny([char[]]'{;', $start)
-        if ($end -lt 0) { $end = $Scan.Length }
-        return $Scan.Substring($start, $end - $start)
-    }
-    $i = $Match.Index + $Match.Length
-    while ($i -lt $Scan.Length -and [char]::IsWhiteSpace($Scan[$i])) { $i++ }
+    if ($Match.Groups[4].Success) { return Get-TextUntilBodyStart $Scan $Match.Groups[4].Index }
+    $i = Skip-WhiteSpace $Scan ($Match.Index + $Match.Length)
     if ($i -ge $Scan.Length -or $Scan[$i] -ne '(') { return $null }
+    $i = Skip-WhiteSpace $Scan (Skip-ParenthesizedList $Scan $i)
+    if ($i -ge $Scan.Length -or $Scan[$i] -ne ':') { return $null }
+    return Get-TextUntilBodyStart $Scan ($i + 1)
+}
+
+function Skip-WhiteSpace([string] $Scan, [int] $Index) {
+    while ($Index -lt $Scan.Length -and [char]::IsWhiteSpace($Scan[$Index])) { $Index++ }
+    return $Index
+}
+
+# The index just past the `)` that closes the list opened at $Index.
+function Skip-ParenthesizedList([string] $Scan, [int] $Index) {
     $depth = 0
     do {
-        if ($Scan[$i] -eq '(') { $depth++ } elseif ($Scan[$i] -eq ')') { $depth-- }
-        $i++
-    } while ($i -lt $Scan.Length -and $depth -gt 0)
-    while ($i -lt $Scan.Length -and [char]::IsWhiteSpace($Scan[$i])) { $i++ }
-    if ($i -ge $Scan.Length -or $Scan[$i] -ne ':') { return $null }
-    $end = $Scan.IndexOfAny([char[]]'{;', $i)
+        if ($Scan[$Index] -eq '(') { $depth++ } elseif ($Scan[$Index] -eq ')') { $depth-- }
+        $Index++
+    } while ($Index -lt $Scan.Length -and $depth -gt 0)
+    return $Index
+}
+
+function Get-TextUntilBodyStart([string] $Scan, [int] $Start) {
+    $end = $Scan.IndexOfAny([char[]]'{;', $Start)
     if ($end -lt 0) { $end = $Scan.Length }
-    return $Scan.Substring($i + 1, $end - $i - 1)
+    return $Scan.Substring($Start, $end - $Start)
 }
 
 function Add-BaseListEntries([string] $Scan, $Tops, $InterfaceTypes, $BaseList) {
@@ -716,13 +724,17 @@ function Add-RegistrationFactoryEdges([string] $RegistrationText, [string] $Regi
         # For a service this repository does not declare, only the types the factory constructs are
         # its implementation; `sp.GetRequiredService<IApplicationClientFactory>()` in the same lambda
         # is a dependency of the factory, and marking it would make every change to it a full run.
-        $namePattern = if ($external) { '\bnew\s+(?:[\w.]*\.)?([A-Za-z_]\w*)' } else { '(?<![\w.])([A-Za-z_]\w*)' }
-        foreach ($t in [regex]::Matches($scan.Argument, $namePattern)) {
-            $implementation = $t.Groups[1].Value
-            if ($implementation -eq $service -or -not $TypeBody.ContainsKey($implementation)) { continue }
-            if ($external) { Add-ExternalServiceImplementation $implementation $service; continue }
-            Copy-ConsumerEdgesEnsuringTargetExists $Consumers $service $implementation
-        }
+        Add-FactoryImplementationEdges $scan.Argument $service $external $TypeBody $Consumers
+    }
+}
+
+function Add-FactoryImplementationEdges([string] $Argument, [string] $Service, [bool] $External, $TypeBody, $Consumers) {
+    $namePattern = if ($External) { '\bnew\s+(?:[\w.]*\.)?([A-Za-z_]\w*)' } else { '(?<![\w.])([A-Za-z_]\w*)' }
+    foreach ($t in [regex]::Matches($Argument, $namePattern)) {
+        $implementation = $t.Groups[1].Value
+        if ($implementation -eq $Service -or -not $TypeBody.ContainsKey($implementation)) { continue }
+        if ($External) { Add-ExternalServiceImplementation $implementation $Service; continue }
+        Copy-ConsumerEdgesEnsuringTargetExists $Consumers $Service $implementation
     }
 }
 
@@ -754,20 +766,26 @@ function Add-ExternalServiceConsumerEdges($ExternalServiceImplementations, $Type
         $implementation = $entry.Key
         if (-not $Consumers.ContainsKey($implementation)) { $Consumers[$implementation] = New-Object System.Collections.Generic.HashSet[string] }
         foreach ($service in $entry.Value) {
-            $mention = [regex] "(?<![\w.])$([regex]::Escape($service))\b"
-            $found = $false
-            foreach ($name in $TypeBodyCode.Keys) {
-                # The composition root names every service it registers; it is not a consumer.
-                if ($name -ceq $implementation -or $RegistrationTypes.Contains($name)) { continue }
-                if (-not $mention.IsMatch($TypeBodyCode[$name].ToString())) { continue }
-                [void]$Consumers[$implementation].Add($name)
-                $found = $true
-            }
+            $found = Add-ServiceMentionConsumers $implementation $service $TypeBodyCode $Consumers $RegistrationTypes
             # Any one service nobody names leaves part of the implementation's reach unknown.
             if (-not $found) { $unresolved[$implementation] = $service }
         }
     }
     return $unresolved
+}
+
+# Adds every type whose code names $Service as a consumer of $Implementation; returns whether any did.
+function Add-ServiceMentionConsumers([string] $Implementation, [string] $Service, $TypeBodyCode, $Consumers, $RegistrationTypes) {
+    $mention = [regex] "(?<![\w.])$([regex]::Escape($Service))\b"
+    $found = $false
+    foreach ($name in $TypeBodyCode.Keys) {
+        # The composition root names every service it registers; it is not a consumer.
+        if ($name -ceq $Implementation -or $RegistrationTypes.Contains($name)) { continue }
+        if (-not $mention.IsMatch($TypeBodyCode[$name].ToString())) { continue }
+        [void]$Consumers[$Implementation].Add($name)
+        $found = $true
+    }
+    return $found
 }
 
 # A type declared only in a registration file is never traversed through: every type is named
@@ -916,14 +934,18 @@ function Get-ConsumerClosure([string] $FileRelative) {
         if (-not $g.Consumers.ContainsKey($current)) { continue }
         $fromTool = $g.ToolTypes.Contains($current)
         foreach ($consumer in $g.Consumers[$current]) {
-            if ($g.RegistrationTypes.Contains($consumer)) { continue }
-            if ($fromTool -and -not $g.ToolTypes.Contains($consumer) -and -not $g.ToolMemberCallers.Contains("$consumer|$current")) { continue }
-            if ($seen.Add($consumer)) { $queue.Enqueue($consumer) }
+            if ((Test-ClosureEdgeFollowed $g $current $consumer $fromTool) -and $seen.Add($consumer)) { $queue.Enqueue($consumer) }
         }
     }
     $result = @($seen)
     $script:closureCache[$FileRelative] = $result
     return $result
+}
+
+function Test-ClosureEdgeFollowed($Graph, [string] $Current, [string] $Consumer, [bool] $FromTool) {
+    if ($Graph.RegistrationTypes.Contains($Consumer)) { return $false }
+    if (-not $FromTool -or $Graph.ToolTypes.Contains($Consumer)) { return $true }
+    return $Graph.ToolMemberCallers.Contains("$Consumer|$Current")
 }
 
 $toolFilesByName = $null
