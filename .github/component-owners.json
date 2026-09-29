@@ -91,19 +91,35 @@
       ]
     },
     {
+      "id": "entity",
+      "option": "Entities and lookups (create and edit objects, columns and their properties, lookups, sync-schemas)",
+      "label": "component:entity",
+      "color": "c5def5",
+      "description": "Creating and editing objects, columns and lookups",
+      "owners": [
+        "kbondarenko-tech",
+        "Alexandr-Kravchuk"
+      ],
+      "paths": [
+        "clio/Command/EntitySchemaDesigner/",
+        "clio/Command/*EntitySchema*Command.cs",
+        "clio/Common/EntitySchema/",
+        "clio/Command/McpServer/Tools/EntitySchemaTool.cs",
+        "clio/Command/McpServer/Tools/ListEntityClientSchemasTool.cs"
+      ]
+    },
+    {
       "id": "schemas",
-      "option": "Entity, lookup, source code and SQL schema definitions (entity schema, create-lookup, sync-schemas)",
+      "option": "Source code and SQL schemas (C# source code schemas, SQL schemas)",
       "label": "component:schemas",
       "color": "c5def5",
-      "description": "Entity, source code and SQL schema tools",
+      "description": "Source code and SQL schema tools",
       "owners": [
         "kbondarenko-tech",
         "Alexandr-Kravchuk",
         "kirillkrylov"
       ],
       "paths": [
-        "clio/Command/EntitySchemaDesigner/",
-        "clio/Command/McpServer/Tools/EntitySchemaTool.cs",
         "clio/Command/McpServer/Tools/Schema*",
         "clio/Command/McpServer/Tools/SqlSchema*",
         "clio/ModelBuilder/"
