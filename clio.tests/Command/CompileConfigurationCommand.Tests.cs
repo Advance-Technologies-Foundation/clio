@@ -498,7 +498,7 @@ public class CompileConfigurationCommandTestCase : BaseCommandTests<CompileConfi
 		StubCompileResponse(
 			"{\"success\":false,\"buildResult\":1,"
 			+ "\"errorInfo\":{\"errorCode\":\"CompilationError\",\"message\":\"Build failed\"},"
-			+ "\"errors\":[{\"errorNumber\":\"CS0006\",\"errorText\":\"Metadata file not found\",\"warning\":false},"
+			+ "\"errors\":[{\"errorNumber\":\"CS0006\",\"errorText\":\"Metadata file not found\",\"fileName\":\"Foo.cs\",\"warning\":false},"
 			+ "{\"errorNumber\":\"CS0114\",\"errorText\":\"Hides inherited member\",\"warning\":true}]}");
 
 		// Act
@@ -507,7 +507,9 @@ public class CompileConfigurationCommandTestCase : BaseCommandTests<CompileConfi
 		// Assert
 		exitCode.Should().Be(1, because: "the response reported the build as failed");
 		_logger.Received().WriteError("CompilationError: Build failed");
-		_logger.Received().WriteError(Arg.Is<string>(message => message.Contains("CS0006", StringComparison.Ordinal)));
+		_logger.Received().WriteError("(CS0006) in Foo.cs: Metadata file not found");
+		_logger.DidNotReceive().WriteError(Arg.Is<string>(message =>
+			message.Contains("(0,0)", StringComparison.Ordinal)));
 		_logger.DidNotReceive().WriteError(Arg.Is<string>(message =>
 			message.Contains("CS0114", StringComparison.Ordinal)));
 	}
@@ -571,7 +573,7 @@ public class CompileConfigurationCommandTestCase : BaseCommandTests<CompileConfi
 	public void FormatHistoryDiagnostics_ShouldRenderDiagnostic_WhenPositionIsMissing() {
 		// Arrange
 		const string errorsWarnings =
-			"[{\"ErrorNumber\":\"CS0006\",\"ErrorText\":\"Metadata file not found\",\"Line\":null,\"Column\":null,\"IsWarning\":false}]";
+			"[{\"ErrorNumber\":\"CS0006\",\"ErrorText\":\"Metadata file not found\",\"FileName\":\"Foo.cs\",\"Line\":null,\"Column\":null,\"IsWarning\":false}]";
 
 		// Act
 		string rendered = CompileConfigurationCommand.FormatHistoryDiagnostics(errorsWarnings);
@@ -580,6 +582,8 @@ public class CompileConfigurationCommandTestCase : BaseCommandTests<CompileConfi
 		rendered.Should().Contain("1 of 1", because: "the single diagnostic must be numbered");
 		rendered.Should().Contain("Metadata file not found", because: "the diagnostic text must be shown");
 		rendered.Should().NotContain("\"ErrorNumber\"", because: "the payload was readable, so the raw JSON must not be printed");
+		rendered.Should().Contain("Foo.cs", because: "the file Creatio reported must be shown");
+		rendered.Should().NotContain(" at (", because: "Creatio supplied no position, so none may be invented");
 	}
 
 	[Test]
@@ -593,6 +597,48 @@ public class CompileConfigurationCommandTestCase : BaseCommandTests<CompileConfi
 
 		// Assert
 		rendered.Should().Be(errorsWarnings, because: "an unreadable payload is still evidence and must reach the user unchanged");
+	}
+
+	[TestCase("<html><body>login</body></html>")]
+	[TestCase("Service unavailable")]
+	[TestCase("[]")]
+	[Description("A body that is not a JSON object - an HTML login page, a plain-text proxy error or a JSON array - fails the command with the non-JSON error, the endpoint and the credentials hint. The body itself is not echoed, as in compile-package: a login or SSO page can carry tokens or internal URLs.")]
+	public void Execute_ShouldFailWithoutEchoingBody_WhenTheResponseIsNotAJsonObject(string body) {
+		// Arrange
+		CompileConfigurationCommand command = CreateCommand();
+		CompileConfigurationOptions options = new() { Environment = "dev", All = true };
+		StubCompileResponse(body);
+
+		// Act
+		int exitCode = command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "a body that is not a build verdict does not prove the build succeeded");
+		_logger.Received().WriteError("Server returned non-JSON response during compilation.");
+		_logger.Received().WriteError(Arg.Is<string>(message => message.StartsWith("Endpoint: ", StringComparison.Ordinal)));
+		_logger.Received().WriteError(Arg.Is<string>(message =>
+			message.Contains("credentials", StringComparison.Ordinal)));
+		_logger.DidNotReceive().WriteLine(Arg.Is<string>(message => message.Contains(body, StringComparison.Ordinal)));
+		_logger.DidNotReceive().WriteError(Arg.Is<string>(message => message.Contains(body, StringComparison.Ordinal)));
+	}
+
+	[Test]
+	[Description("A truncated JSON body is reported as not valid JSON, not as a well-formed answer without a build result, so the likely cause - a connection cut off mid-response - is visible. The body is not echoed.")]
+	public void Execute_ShouldReportInvalidJson_WhenTheResponseIsTruncated() {
+		// Arrange
+		CompileConfigurationCommand command = CreateCommand();
+		CompileConfigurationOptions options = new() { Environment = "dev", All = true };
+		const string body = "{\"success\":";
+		StubCompileResponse(body);
+
+		// Act
+		int exitCode = command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "a truncated body carries no verdict");
+		_logger.Received().WriteError("The compilation response is not valid JSON; it may have been cut off.");
+		_logger.DidNotReceive().WriteError("The compilation response carried no build result.");
+		_logger.DidNotReceive().WriteLine(body);
 	}
 
 	private CompileConfigurationCommand CreateCommand() {

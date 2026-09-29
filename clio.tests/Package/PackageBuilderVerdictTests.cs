@@ -113,6 +113,44 @@ public sealed class PackageBuilderVerdictTests {
 		_logger.Received(1).WriteError("(CS0006): Metadata file not found");
 	}
 
+	[TestCase("{\"success\":false,\"buildResult\":1,\"errors\":[{\"line\":\"twelve\"}]}")]
+	[TestCase("{\"success\":false,\"buildResult\":1,\"errorInfo\":[],\"errors\":{}}")]
+	[Description("A failure answer whose errors or errorInfo has an unexpected shape is still a final failure: the shared parser reads each field on its own, so the success:false next to them is not lost and the build does not fall back to clean history (issue #1708).")]
+	public void Rebuild_ShouldThrow_WhenFailureAnswerHasMalformedDetails(string body) {
+		// Arrange
+		_stand.AnswersAt(TimeSpan.Zero, body).WritesRow(TimeSpan.Zero, SucceededRow());
+		PackageBuilder sut = CreateSut();
+
+		// Act
+		Action act = () => sut.Rebuild(["UsrPackage"]);
+
+		// Assert
+		act.Should().Throw<PackageCompilationException>(
+				because: "Creatio answered success:false; details it could not read do not turn that into a success")
+			.WithMessage("*'UsrPackage'*build result 1*");
+		_logger.DidNotReceive().WriteWarning(Arg.Is<string>(message =>
+			message.Contains("did not report a build result", StringComparison.Ordinal)));
+	}
+
+	[Test]
+	[Description("A failure diagnostic with a file but no line or column is printed without a position, instead of at a (0,0) location that does not exist (issue #1708).")]
+	public void Rebuild_ShouldOmitPosition_WhenFailureDiagnosticHasFileButNoPosition() {
+		// Arrange
+		_stand.AnswersAt(TimeSpan.Zero,
+				"{\"success\":false,\"buildResult\":1,\"errors\":[{\"errorNumber\":\"CS0006\",\"errorText\":\"Metadata file not found\","
+				+ "\"fileName\":\"Foo.cs\",\"warning\":false}]}")
+			.WritesRow(TimeSpan.Zero, SucceededRow());
+		PackageBuilder sut = CreateSut();
+
+		// Act
+		Action act = () => sut.Rebuild(["UsrPackage"]);
+
+		// Assert
+		act.Should().Throw<PackageCompilationException>(because: "Creatio answered success:false");
+		_logger.Received(1).WriteError("(CS0006) in Foo.cs: Metadata file not found");
+		_logger.DidNotReceive().WriteError(Arg.Is<string>(message => message.Contains("(0,0)", StringComparison.Ordinal)));
+	}
+
 	[Test]
 	[Description("An empty build response - an older host, or a proxy that answered without a body - keeps the old behaviour of succeeding on clean history, and warns that the environment did not report a result (issue #1633 guard for absent results).")]
 	public void Rebuild_ShouldWarnAndSucceed_WhenResponseCarriesNoResult() {

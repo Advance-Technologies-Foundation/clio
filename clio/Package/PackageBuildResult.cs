@@ -126,11 +126,10 @@ internal static class PackageBuildResultParser {
 	// Case-insensitive, as the typed parse this replaced was.
 	private static bool TryGetProperty(JsonElement element, string name, out JsonElement value) {
 		if (element.ValueKind == JsonValueKind.Object) {
-			foreach (JsonProperty property in element.EnumerateObject()) {
-				if (string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase)) {
-					value = property.Value;
-					return true;
-				}
+			foreach (JsonProperty property in element.EnumerateObject()
+					.Where(candidate => string.Equals(candidate.Name, name, StringComparison.OrdinalIgnoreCase))) {
+				value = property.Value;
+				return true;
 			}
 		}
 		value = default;
@@ -161,6 +160,28 @@ internal static class PackageBuildResultParser {
 	/// </remarks>
 	internal static bool IsUnrecognizedBody(string responseBody) =>
 		!string.IsNullOrWhiteSpace(responseBody) && !responseBody.TrimStart().StartsWith('{');
+
+	/// <summary>
+	/// Determines whether a package-build response body is present but is not well-formed JSON.
+	/// </summary>
+	/// <param name="responseBody">The raw response body.</param>
+	/// <returns><see langword="true"/> for a non-empty body that cannot be parsed as JSON.</returns>
+	/// <remarks>
+	/// <see cref="TryParseResponse"/> returns <see langword="null"/> both for such a body and for valid JSON
+	/// without a <c>success</c> field; this tells the two apart, so a truncated answer is not reported as a
+	/// response that simply carried no build result.
+	/// </remarks>
+	internal static bool IsMalformedJson(string responseBody) {
+		if (string.IsNullOrWhiteSpace(responseBody)) {
+			return false;
+		}
+		try {
+			using JsonDocument document = JsonDocument.Parse(responseBody);
+			return false;
+		} catch (JsonException) {
+			return true;
+		}
+	}
 
 	/// <summary>
 	/// Parses the <c>ErrorsWarnings</c> payload of a compilation-history row.

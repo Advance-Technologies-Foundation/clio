@@ -546,9 +546,17 @@ public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOpt
 			CommandSuccess = _isSuccess = false;
 			Logger.WriteError("Server returned non-JSON response during compilation.");
 			Logger.WriteError($"Endpoint: {ServiceUri}");
-			Logger.WriteError("Full response:");
-			Logger.WriteLine(response.TrimStart());
+			// The body is not echoed, as in compile-package: a login or SSO page can carry tokens or internal URLs.
+			Logger.WriteError($"Response length: {response.Length} characters.");
 			Logger.WriteError("Check environment URI, IsNetCore flag, and credentials (a login/404 page is often returned as HTML).");
+			return;
+		}
+		if (PackageBuildResultParser.IsMalformedJson(response)) {
+			// A truncated or broken body is not a well-formed answer without a verdict: the connection on this
+			// endpoint is often reset mid-response, and saying so points at the cause. The body is not echoed.
+			CommandSuccess = _isSuccess = false;
+			Logger.WriteError("The compilation response is not valid JSON; it may have been cut off.");
+			Logger.WriteError($"Endpoint: {ServiceUri}");
 			return;
 		}
 		PackageBuildResult result = PackageBuildResultParser.TryParseResponse(response);
