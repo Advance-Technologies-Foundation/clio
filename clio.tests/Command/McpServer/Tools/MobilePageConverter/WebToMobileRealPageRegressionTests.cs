@@ -492,12 +492,17 @@ public sealed class WebToMobileRealPageRegressionTests {
 
 		// Act
 		MobilePageConversionGuide guide = Convert(fixture, mobileTypes, BundledRules());
-		// The guide merges attributes at path [], a shape the binding validator does not collect from.
+		// Without a mobile template the guide keeps one root merge at path []; the tool splits it into the
+		// ["attributes"] merge restated here, which is what the validator reads.
 		JsonNode attributes = JsonSerializer.SerializeToNode(guide.ViewModelConfigDiff)!
 			.AsArray().Single()!["values"]!["attributes"]!.DeepClone();
 		string body = new JsonObject {
 			["viewConfigDiff"] = JsonSerializer.SerializeToNode(guide.ViewConfigDiff),
-			["viewModelConfig"] = new JsonObject { ["attributes"] = attributes },
+			["viewModelConfigDiff"] = new JsonArray(new JsonObject {
+				["operation"] = "merge",
+				["path"] = new JsonArray("attributes"),
+				["values"] = attributes,
+			}),
 		}.ToJsonString();
 		SchemaValidationResult bindings = SchemaValidationService.ValidateMobileFieldBindings(body);
 
