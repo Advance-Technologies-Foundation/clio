@@ -29,7 +29,7 @@ namespace Clio.Tests.Common;
 /// </para>
 /// <para>
 /// Kept in the <c>Unit</c> lane despite reading from disk (which <c>project-context.md</c> assigns to
-/// <c>Integration</c>). Deliberate: the pre-commit gate is <c>Category=Unit&amp;Module=X</c>, and a guard
+/// <c>Integration</c>). Deliberate: the pre-commit gate is <c>TestCategory=Unit&amp;Module=X</c>, and a guard
 /// that only runs in the integration lane would not guard the commit that breaks it. The I/O is a file
 /// this test project's own build output always carries, not an external dependency.
 /// </para>
@@ -287,7 +287,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"1679DE24923F9FFEFD1842B27A8D9738FD31D67163B17F356355C75D69ACB429";
+		"82B26CA557D8519C5F0DF6F2B77EF33B2DAD20FA540B579B3C0052EE2B20ED99";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -315,7 +315,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.6.27";
+	private const string ExpectedArchiveVersion = "1.6.6.24";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, written by
@@ -327,7 +327,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "b9173fb2f6242607fc9fed45ed1f36158d84032a";
+	private const string ExpectedProducingCommit = "3d9978c1b380f77b14e9e2613feba7fe00e0c8a6";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -353,7 +353,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1790301963000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1790324654000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.

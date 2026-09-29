@@ -2706,9 +2706,9 @@ public static partial class WebToMobileAnalysisService {
 			//    never manufactures a mobile element from a web element under a different name.
 			if (ctx.Map.TryGetValue(name, out string twinMobileName)) {
 				// The twin's type is the MOBILE element's type when the mobile template is readable: a containers
-				// entry may pair elements of different types (GeneralInfoTab, a crt.TabContainer, merges onto
-				// GeneralTabContainer, a crt.GridContainer), and reporting the web type there would name a type
-				// the mobile element does not have — both to the model reading the guide and to
+				// entry may pair elements of different types (GeneralInfoTabContainer, a crt.GridContainer, merges
+				// onto the declared AdditionalInfoTab, a crt.TabContainer), and reporting the web type there would
+				// name a type the mobile element does not have — both to the model reading the guide and to
 				// ExcludedComponentsPass, which matches a filter's parentType against this field. A DECLARED mobile
 				// side has its type in the declaration whether or not the template was probed; only then does it fall
 				// back to the web type (the pair is same-type for every other shipped entry).
@@ -2731,13 +2731,14 @@ public static partial class WebToMobileAnalysisService {
 				// rules entry at all.
 				// Children go into the twin ITSELF, and a containers entry deliberately says nothing more than
 				// that. A web element the page did not remove is walked into its own entry, so a page that KEPT
-				// the template's content grid resolves its children through that grid's own pair
-				// (GeneralInfoTabContainer -> GeneralTabContainer); a page that REMOVED it has no such node, that
-				// pair never matches, and the children belong where the page put them — in the tab itself, which
-				// is a crt.TabContainer and hosts items. The two shapes DIFFER on web (the removed grid was a
-				// two-column layout with its own gap), so carrying the difference is the faithful conversion;
-				// redirecting the tab's children into a grid the page deleted would override a layout decision
-				// the developer made deliberately.
+				// the template's content grid resolves its children through that grid's own pair; a page that
+				// REMOVED it has no such node, that pair never matches, and the children belong where the page put
+				// them — in the tab's own twin, which is a crt.TabContainer and hosts items. Whether the two shapes
+				// convert apart is therefore the rules' decision, not this walk's: the shipped tabbed rule pairs
+				// BOTH the tab and its content grid onto the declared AdditionalInfoTab (GeneralInfoTab ->
+				// AdditionalInfoTab, GeneralInfoTabContainer -> AdditionalInfoTab), so both shapes land in that tab
+				// and BuildTabAreaLayers stacks them into its Area card; the web grid's two-column layout is not
+				// carried onto the tab (BuildAdaptiveLayout admits only a mobile grid).
 				if (items is not null) {
 					WalkElements(ctx, items, twinMobileName, sourceAncestors: Append(sourceAncestors, name),
 						hostableParentName: NearestHostable(ctx, twinMobileName, hostableParentName));
@@ -4910,6 +4911,12 @@ public static partial class WebToMobileAnalysisService {
 	}
 
 	/// <summary>
+	/// Mobile component type that supports adaptive per-breakpoint columns. The mobile registry gives this
+	/// ONE type a <c>columns</c> input; no other component type declares one.
+	/// </summary>
+	private const string MobileGridContainerComponentType = "crt.GridContainer";
+
+	/// <summary>
 	/// Builds the per-breakpoint layout for every MULTI-column <c>crt.GridContainer</c>: on the phone
 	/// (<c>small</c>) it collapses to ONE column and stacks the children in tree order; on tablet/desktop
 	/// (<c>medium</c> / <c>large</c>) it keeps the web column count and each child's web placement. A grid
@@ -4928,12 +4935,30 @@ public static partial class WebToMobileAnalysisService {
 		// (e.g. CardContentWrapper -> GeneralTabContainer, SideAreaProfileContainer -> AreaProfileContainer).
 		// Translate each count to the container's mobile name via its element-map entry so the lookup below
 		// matches renamed pairs; keep the web name as a fallback for containers that are not renamed.
-		// LAST WINS on a duplicate mobile name, which `containers` allows by design. Harmless as shipped: only
-		// a GRID container has a captured count, so a tab twin (GeneralInfoTab, a crt.TabContainer) never
-		// competes here — but a future many-to-one pair of two GRIDS would need an explicit tie-break.
+		// LAST WINS on a duplicate mobile name, which `containers` allows by design. Harmless as shipped: the one
+		// many-to-one pair that involves a grid (GeneralInfoTab and GeneralInfoTabContainer -> AdditionalInfoTab)
+		// never competes here — the tab has no captured count and the grid is rejected by the guard below — but a
+		// future many-to-one pair of two GRIDS would need an explicit tie-break.
+		// A RENAMED pair's mobile side is admitted only when its own type is MobileGridContainerComponentType:
+		// adaptive per-breakpoint columns is a property of that one component type, not of whatever element a
+		// `containers` pair happens to rename a grid onto (the shipped case: the two-column web
+		// GeneralInfoTabContainer -> the declared AdditionalInfoTab, a crt.TabContainer). Without this guard, a
+		// pair that renames a grid onto a mobile element of a DIFFERENT type would attach the web grid's column
+		// count to that element's name, and any of its children still parented to that name at this point would
+		// be placed as if they sat in a multi-column grid — a placement that can then outlive a later pass which
+		// would otherwise have re-homed them into their real, differently-shaped container (a later pass only
+		// overwrites layoutConfig that is not already adaptive). The web side needs no matching check:
+		// gridContainerColumns is only ever populated from a node that actually declared a `columns` array (see
+		// CaptureSource).
+		// The guard does NOT cover the web-name fallback below: it still adds every web grid's count under its
+		// web name, unchecked, as it did before the guard existed. So a same-name pair (X -> X) whose mobile X is
+		// not a crt.GridContainer would still get adaptive columns. No shipped pair has that shape — the
+		// same-name pairs are grid-to-grid, or tabs, which carry no count.
 		var colsByMobileParent = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 		foreach (ElementMapEntry e in elementMap) {
-			if (e.WebName is { Length: > 0 } && gridContainerColumns.TryGetValue(e.WebName, out int cols)) {
+			if (e.WebName is { Length: > 0 }
+				&& gridContainerColumns.TryGetValue(e.WebName, out int cols)
+				&& string.Equals(e.MobileType, MobileGridContainerComponentType, StringComparison.OrdinalIgnoreCase)) {
 				colsByMobileParent[string.IsNullOrEmpty(e.Name) ? e.WebName : e.Name] = cols;
 			}
 		}
@@ -5026,11 +5051,11 @@ public static partial class WebToMobileAnalysisService {
 			var items = new List<AdaptiveLayoutItem>();
 			for (int i = 0; i < children.Count; i++) {
 				ElementMapEntry child = children[i];
-				(int col, int row, int colSpan, int rowSpan) = WebPlacement(sourceLayouts, child.WebName, i, webCols);
+				(int col, int row) = WebPlacement(sourceLayouts, child.WebName, i, webCols);
 				var adaptive = new JsonObject {
-					["small"] = Cell(1, i + 1, 1, 1),               // phone: single-column stack
-					["medium"] = Cell(col, row, colSpan, rowSpan),  // tablet/desktop: keep the web placement
-					["large"] = Cell(col, row, colSpan, rowSpan)
+					["small"] = Cell(1, i + 1),   // phone: single-column stack
+					["medium"] = Cell(col, row),  // tablet/desktop: keep the web row and column
+					["large"] = Cell(col, row)
 				};
 				// Replace layoutConfig with the adaptive form (the web placement is folded into medium/large).
 				// A container twin reaches here with no values of its own: the layoutConfig IS its whole merge
@@ -5069,26 +5094,29 @@ public static partial class WebToMobileAnalysisService {
 		}
 		return groups;
 
-		static JsonObject Cell(int column, int row, int colSpan, int rowSpan) =>
-			new() { ["row"] = row, ["column"] = column, ["colSpan"] = colSpan, ["rowSpan"] = rowSpan };
+		static JsonObject Cell(int column, int row) =>
+			new() { ["row"] = row, ["column"] = column, ["colSpan"] = 1, ["rowSpan"] = 1 };
 		static IReadOnlyList<string> Cols(int n) => Enumerable.Repeat("1fr", n).ToList();
 	}
 
 	/// <summary>
-	/// The web grid placement of a child (<c>column</c>/<c>row</c>/<c>colSpan</c>/<c>rowSpan</c> from its web
-	/// <c>layoutConfig</c>). Falls back to a left-to-right flow (<paramref name="cols"/> per row, spans of 1)
-	/// using the child's <paramref name="index"/> when the source declared no placement.
+	/// The web grid POSITION of a child (<c>column</c>/<c>row</c> from its web <c>layoutConfig</c>). Falls back
+	/// to a left-to-right flow (<paramref name="cols"/> per row) using the child's <paramref name="index"/> when
+	/// the source declared no placement.
+	/// <para>
+	/// A position is the only part of a web placement that has a mobile counterpart. The web page's spans stay on
+	/// the web page: a mobile grid gives every item exactly one cell, so a child that spans two web columns is one
+	/// cell wide on mobile whatever the placement claims — see <see cref="SpanKeys"/>.
+	/// </para>
 	/// </summary>
-	private static (int Col, int Row, int ColSpan, int RowSpan) WebPlacement(
+	private static (int Col, int Row) WebPlacement(
 		IReadOnlyDictionary<string, JObject> sourceLayouts, string name, int index, int cols) {
 		if (name is not null && sourceLayouts.TryGetValue(name, out JObject lc)) {
 			return (
 				ReadInt(lc, "column") ?? (index % cols) + 1,
-				ReadInt(lc, "row") ?? (index / cols) + 1,
-				ReadInt(lc, "colSpan") ?? 1,
-				ReadInt(lc, "rowSpan") ?? 1);
+				ReadInt(lc, "row") ?? (index / cols) + 1);
 		}
-		return ((index % cols) + 1, (index / cols) + 1, 1, 1);
+		return ((index % cols) + 1, (index / cols) + 1);
 	}
 
 	/// <summary>A JSON array of <paramref name="n"/> "1fr" column sizes.</summary>
@@ -5429,9 +5457,11 @@ public static partial class WebToMobileAnalysisService {
 	/// group occupies, and its shape decides the shape written onto the siblings. A template that positions the
 	/// anchor per breakpoint (<c>layoutConfig.adaptive</c>) gets every breakpoint's row shifted and the siblings
 	/// placed per breakpoint too; a flat placement gets a flat one. Only <c>row</c> and <c>column</c> are computed;
-	/// the anchor keeps whatever its template declared, minus the shifted row. Every placement is completed to all
-	/// four keys by <see cref="NormalizePlacements"/> — the runtime renders without <c>colSpan</c> / <c>rowSpan</c>,
-	/// but the Freedom UI Mobile DESIGNER refuses to open a page whose <c>layoutConfig</c> omits them.
+	/// the anchor keeps whatever its template declared, minus the shifted row and its spans. Every placement
+	/// is completed to all four keys by <see cref="NormalizePlacements"/>, which also REWRITES both spans as 1
+	/// at every breakpoint whoever declared them, the template included — the runtime renders without
+	/// <c>colSpan</c> / <c>rowSpan</c>, but the Freedom UI Mobile DESIGNER refuses to open a page whose
+	/// <c>layoutConfig</c> omits them.
 	/// </para>
 	/// <para>
 	/// An anchor whose template declares no row at all is left alone together with its group: that parent
@@ -5584,7 +5614,8 @@ public static partial class WebToMobileAnalysisService {
 	}
 
 	/// <summary>
-	/// Completes every <c>layoutConfig</c> the element map carries so none reaches the page partial.
+	/// Completes and normalizes every <c>layoutConfig</c> the element map carries: none reaches the page
+	/// partial, and none reaches it claiming a span.
 	/// <para>
 	/// The Freedom UI Mobile DESIGNER fails to open a page whose <c>layoutConfig</c> omits <c>colSpan</c> /
 	/// <c>rowSpan</c>. The runtime renders fine without them, so the failure surfaces only when somebody opens the
@@ -5593,11 +5624,12 @@ public static partial class WebToMobileAnalysisService {
 	/// <para>
 	/// Normalizing here rather than at each writer is deliberate: the converter authors a placement from several
 	/// places — this pass's own <see cref="SiblingSlot"/>, the anchor clone in <see cref="ShiftRows"/>, the
-	/// per-breakpoint adaptive pass, the tab-area stacking, and the VERBATIM carry of the web page's own
+	/// per-breakpoint adaptive pass, the tab-area stacking, and the wholesale copy of the web page's own
 	/// <c>layoutConfig</c> in <see cref="BuildMobileValues"/>. That last one is the reason a per-writer fix is not
-	/// enough: a child of a single-column web grid is touched by none of the placement passes and keeps the web
-	/// object exactly as authored, spans and all — and a web page may legitimately declare only
-	/// <c>row</c>/<c>column</c>.
+	/// enough: a child of a single-column web grid is touched by none of the placement passes, so whatever the
+	/// web page authored would otherwise reach the page untouched — a placement missing <c>colSpan</c> because
+	/// the web page declared only <c>row</c>/<c>column</c>, or one claiming <c>colSpan: 2</c> because the web
+	/// page really did span two columns. Both are answered here, and every future writer with them.
 	/// </para>
 	/// <para>
 	/// Applied to the WHOLE <c>mobileValues</c> tree, not just its root, so a placement nested inside a pasted
@@ -5663,25 +5695,44 @@ public static partial class WebToMobileAnalysisService {
 		return cell;
 	}
 
-	/// <summary>The keys a placement must carry for the mobile designer to open the page.</summary>
-	private static readonly string[] PlacementKeys = [LayoutRowKey, "column", "colSpan", "rowSpan"];
+	/// <summary>The placement keys that carry a POSITION, filled only where the caller left one absent.</summary>
+	private static readonly string[] CellKeys = [LayoutRowKey, "column"];
 
-	/// <summary>Adds each missing placement key as 1, leaving every value the caller already set untouched.</summary>
+	/// <summary>
+	/// The placement keys that carry a SPAN. The mobile runtime places one item per cell and honours neither of
+	/// them, so 1 is the only value that describes what the page actually does; width at a breakpoint is the
+	/// CONTAINER's column count. They are written at all because the Freedom UI Mobile designer refuses to open
+	/// a page whose placement omits them.
+	/// </summary>
+	private static readonly string[] SpanKeys = ["colSpan", "rowSpan"];
+
+	/// <summary>Every key a placement must carry for the mobile designer to open the page.</summary>
+	private static readonly string[] PlacementKeys = [.. CellKeys, .. SpanKeys];
+
+	/// <summary>
+	/// Completes one placement: a missing position key becomes 1, and both spans are written as 1 whatever they
+	/// held. The asymmetry is the point — a position is the caller's own answer and is preserved, while a span
+	/// arriving from anywhere (most often carried verbatim off the web page, where it means a real width) states
+	/// a width the mobile runtime has no way to render.
+	/// </summary>
 	private static void FillPlacementKeys(JsonObject cell) {
-		foreach (string key in PlacementKeys) {
+		foreach (string key in CellKeys) {
 			if (cell[key] is null) {
 				cell[key] = 1;
 			}
 		}
+		foreach (string key in SpanKeys) {
+			cell[key] = 1;
+		}
 	}
 
 	/// <summary>
-	/// A single-column cell: the computed row of column 1, spanning one cell. The one placement literal in this
-	/// file — the positional pass and the tab-area stacking both stack into a single column, so they want the
-	/// same object. All four keys are always written —
-	/// the Freedom UI Mobile DESIGNER fails to open a page whose element carries a <c>layoutConfig</c> without
-	/// <c>colSpan</c> / <c>rowSpan</c>, even though the runtime itself renders fine without them. A partial
-	/// placement is therefore not a smaller placement, it is a broken page at design time.
+	/// A single-column cell: the computed row of column 1, spanning one cell. The positional pass and the
+	/// tab-area stacking both stack into a single column, so they want the same object. All four keys are
+	/// always written — the Freedom UI Mobile DESIGNER fails to open a page whose element carries a
+	/// <c>layoutConfig</c> without <c>colSpan</c> / <c>rowSpan</c>, even though the runtime itself renders fine
+	/// without them. A partial placement is therefore not a smaller placement, it is a broken page at design
+	/// time.
 	/// </summary>
 	private static JsonObject SiblingSlot(int row) => new() {
 		[LayoutRowKey] = row, ["column"] = 1, ["colSpan"] = 1, ["rowSpan"] = 1
@@ -6214,8 +6265,8 @@ public static partial class WebToMobileAnalysisService {
 	private static void InitializeContainerChildSlots(List<ElementMapEntry> elementMap,
 		IReadOnlyDictionary<string, ComponentRegistryEntry> mobileByType) {
 		// occupiedSlots keys purely on Name, not on entry identity. Name is NOT unique across the
-		// element map: `containers` is a MANY-TO-ONE map by design (CardContentWrapper and GeneralInfoTab both
-		// merge onto GeneralTabContainer), so two entries can share one mobile name. This stays safe because the
+		// element map: `containers` is a MANY-TO-ONE map by design (Tabs and CardToggleTabPanel both
+		// merge onto Tabs), so two entries can share one mobile name. This stays safe because the
 		// loop below is gated on Operation == "insert" and every duplicate produced by that map is a MERGE — the
 		// insert side keeps its own uniqueness: Freedom UI requires unique component names on a page (the web
 		// source this walk consumes), and the only NAME-GENERATING path, StableSuffix in BuildTabAreaLayers,

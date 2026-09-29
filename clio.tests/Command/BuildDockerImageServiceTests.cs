@@ -547,8 +547,9 @@ public class BuildDockerImageServiceTests {
 
 	[Test]
 	[Description("Execute should surface base-image inspect errors instead of reporting every inspect failure as a missing local image.")]
-	public void Execute_ShouldReportInspectFailureDetailsForInvalidBaseImageReference() {
+	public void Execute_ShouldReportInspectFailureDetails_WhenBaseImageInspectErrors() {
 		// Arrange
+		const string baseImage = "ghcr.io/acme/unreadable-base:1";
 		string sourceDirectory = CreateDotNetSourceDirectory("Prod Source Invalid Base");
 		string templateDirectory = CreateTemplateDirectory("prod-template", "ARG BASE_IMAGE=creatio-base:8.0-v1\nFROM ${BASE_IMAGE}\nCOPY source/ ./\n");
 		_templatePathProvider.ResolveTemplate("prod")
@@ -556,11 +557,11 @@ public class BuildDockerImageServiceTests {
 		_processExecutor.ExecuteWithRealtimeOutputAsync(Arg.Any<ProcessExecutionOptions>())
 			.Returns(callInfo => {
 				ProcessExecutionOptions executionOptions = callInfo.Arg<ProcessExecutionOptions>();
-				if (executionOptions.Arguments == "image inspect \"INVALID@@REF\"") {
+				if (executionOptions.Arguments == $"image inspect \"{baseImage}\"") {
 					return Task.FromResult(new ProcessExecutionResult {
 						Started = true,
 						ExitCode = 1,
-						StandardError = "Error: invalid reference format"
+						StandardError = "Error response from daemon: permission denied"
 					});
 				}
 
@@ -573,17 +574,18 @@ public class BuildDockerImageServiceTests {
 		BuildDockerImageOptions options = new() {
 			SourcePath = sourceDirectory,
 			Template = "prod",
-			BaseImage = "INVALID@@REF"
+			BaseImage = baseImage
 		};
 
 		// Act
 		int result = _service.Execute(options);
 
 		// Assert
-		result.Should().Be(1, "because invalid base image references should fail before the final Docker build starts");
-		_logger.Received().WriteError(Arg.Is<string>(s =>
-			s.Contains("Failed to inspect base image 'INVALID@@REF'", StringComparison.Ordinal)
-			&& s.Contains("invalid reference format", StringComparison.Ordinal)));
+		result.Should().Be(1, "because a base image that cannot be inspected should fail before the final Docker build starts");
+		GetLoggedErrors().Should().Contain(s =>
+				s.Contains($"Failed to inspect base image '{baseImage}'", StringComparison.Ordinal)
+				&& s.Contains("permission denied", StringComparison.Ordinal),
+			"because the container CLI's own inspect error is more useful than a generic 'not available locally'");
 	}
 
 	[Test]
@@ -865,11 +867,12 @@ public class BuildDockerImageServiceTests {
 	}
 
 	[Test]
-	[Description("Execute should build a custom template without trying to inspect or inject a base image reference.")]
-	public void Execute_ShouldNotUseBaseImagePreflightForCustomTemplate() {
+	[Description("Execute should build a custom template that declares ARG BASE_IMAGE without inspecting or injecting a base image when --base-image is omitted, so the template's own default applies.")]
+	public void Execute_ShouldNotUseBaseImagePreflightForCustomTemplate_WhenBaseImageIsOmitted() {
 		// Arrange
 		string sourceDirectory = CreateDotNetSourceDirectory("Custom Source");
-		string templateDirectory = CreateTemplateDirectory("custom-template", "FROM scratch\nCOPY source/ ./\n");
+		string templateDirectory = CreateTemplateDirectory("custom-template",
+			"ARG BASE_IMAGE=ghcr.io/acme/template-default:1\nFROM ${BASE_IMAGE}\nCOPY source/ ./\n");
 		_templatePathProvider.ResolveTemplate(templateDirectory)
 			.Returns(new DockerTemplateResolution("custom-template", templateDirectory, false));
 		_processExecutor.ExecuteWithRealtimeOutputAsync(Arg.Any<ProcessExecutionOptions>())
@@ -880,20 +883,330 @@ public class BuildDockerImageServiceTests {
 
 		BuildDockerImageOptions options = new() {
 			SourcePath = sourceDirectory,
-			Template = templateDirectory,
-			BaseImage = "ghcr.io/acme/unused-base:tag"
+			Template = templateDirectory
 		};
 
 		// Act
 		int result = _service.Execute(options);
 
 		// Assert
-		result.Should().Be(0, "because custom templates should keep their own Dockerfile contract without bundled base-image injection");
-		_processExecutor.DidNotReceive().ExecuteWithRealtimeOutputAsync(Arg.Is<ProcessExecutionOptions>(o =>
-			o.Arguments.StartsWith("image inspect", StringComparison.Ordinal)));
+		result.Should().Be(0, "because custom templates should keep their own Dockerfile contract when no base image is requested");
+		GetReceivedExecutionOptions().Should().NotContain(o =>
+				o.Arguments.StartsWith("image inspect", StringComparison.Ordinal),
+			"because no base image was requested, so there is nothing for clio to check");
+		GetReceivedExecutionOptions().Should().ContainSingle(o =>
+				o.Arguments.StartsWith("build --pull=false", StringComparison.Ordinal),
+			"because the custom template should still be built once");
+		GetReceivedExecutionOptions().Single(o => o.Arguments.StartsWith("build --pull=false", StringComparison.Ordinal))
+			.Arguments.Should().NotContain("--build-arg BASE_IMAGE=",
+				"because without --base-image the custom template's own ARG BASE_IMAGE default must win");
+	}
+
+	[Test]
+	[Description("Execute should pass --base-image as the BASE_IMAGE build argument, after checking the image is available locally, when a custom template directory declares ARG BASE_IMAGE.")]
+	public void Execute_ShouldPassBaseImageBuildArgAfterValidation_WhenCustomTemplateDeclaresBaseImageArg() {
+		// Arrange
+		const string baseImage = "registry.example/creatio/product:8.3.4.1234";
+		string sourceDirectory = CreateDotNetSourceDirectory("Custom Prod Source");
+		string templateDirectory = CreateTemplateDirectory("custom-prod",
+			"ARG BASE_IMAGE=creatio-base:8.0-v1\nFROM ${BASE_IMAGE}\nCOPY source/ ./\n");
+		_templatePathProvider.ResolveTemplate(templateDirectory)
+			.Returns(new DockerTemplateResolution("custom-prod", templateDirectory, false));
+		_processExecutor.ExecuteWithRealtimeOutputAsync(Arg.Any<ProcessExecutionOptions>())
+			.Returns(Task.FromResult(new ProcessExecutionResult {
+				Started = true,
+				ExitCode = 0
+			}));
+
+		BuildDockerImageOptions options = new() {
+			SourcePath = sourceDirectory,
+			Template = templateDirectory,
+			BaseImage = baseImage
+		};
+
+		// Act
+		int result = _service.Execute(options);
+
+		// Assert
+		result.Should().Be(0, "because a custom template that declares ARG BASE_IMAGE can honour an explicit --base-image");
+		ProcessExecutionOptions[] executions = GetReceivedExecutionOptions();
+		int inspectIndex = Array.FindIndex(executions, o => o.Arguments == $"image inspect \"{baseImage}\"");
+		int buildIndex = Array.FindIndex(executions, o => o.Arguments.StartsWith("build --pull=false", StringComparison.Ordinal));
+		inspectIndex.Should().BeGreaterThanOrEqualTo(0,
+			"because the explicitly requested base image must be checked for local availability like it is for bundled templates");
+		buildIndex.Should().BeGreaterThan(inspectIndex,
+			"because the base image must be validated before the expensive image build starts");
+		executions[buildIndex].Arguments.Should().Contain($"--build-arg BASE_IMAGE=\"{baseImage}\"",
+			"because the Dockerfile's ARG BASE_IMAGE default must not silently win over an explicit --base-image");
+	}
+
+	[Test]
+	[Description("Execute should fail a custom template build before the image build when the explicitly requested base image is not available locally.")]
+	public void Execute_ShouldFailBeforeBuild_WhenCustomTemplateBaseImageIsMissingLocally() {
+		// Arrange
+		const string baseImage = "registry.example/creatio/product:8.3.4.1234";
+		string sourceDirectory = CreateDotNetSourceDirectory("Custom Prod Missing Base");
+		string templateDirectory = CreateTemplateDirectory("custom-prod",
+			"ARG BASE_IMAGE=creatio-base:8.0-v1\nFROM ${BASE_IMAGE}\nCOPY source/ ./\n");
+		_templatePathProvider.ResolveTemplate(templateDirectory)
+			.Returns(new DockerTemplateResolution("custom-prod", templateDirectory, false));
+		_processExecutor.ExecuteWithRealtimeOutputAsync(Arg.Any<ProcessExecutionOptions>())
+			.Returns(callInfo => {
+				ProcessExecutionOptions executionOptions = callInfo.Arg<ProcessExecutionOptions>();
+				return Task.FromResult(new ProcessExecutionResult {
+					Started = true,
+					ExitCode = executionOptions.Arguments == $"image inspect \"{baseImage}\"" ? 1 : 0
+				});
+			});
+
+		BuildDockerImageOptions options = new() {
+			SourcePath = sourceDirectory,
+			Template = templateDirectory,
+			BaseImage = baseImage
+		};
+
+		// Act
+		int result = _service.Execute(options);
+
+		// Assert
+		result.Should().Be(1, "because a custom template must not be built over a base image that is not available locally");
+		string missingImageError = GetLoggedErrors().Should().ContainSingle(s =>
+				s.Contains($"Base image '{baseImage}' is not available locally", StringComparison.Ordinal),
+			"because the user must be told which requested base image is missing").Subject;
+		missingImageError.Should().NotContain("--template base",
+			"because building the bundled base template cannot produce an arbitrary custom parent image");
+		missingImageError.Should().Contain("Pull or tag",
+			"because the fix for a custom template is to make the requested image available locally");
+		GetReceivedExecutionOptions().Should().NotContain(o =>
+				o.Arguments.StartsWith("build --pull=false", StringComparison.Ordinal),
+			"because the image build should not start when the requested base image is missing");
+	}
+
+	[Test]
+	[Description("Execute should fail fast with a clear message, before any container CLI call, when --base-image is given for a custom template whose Dockerfile does not declare ARG BASE_IMAGE.")]
+	public void Execute_ShouldFailFast_WhenCustomTemplateDoesNotDeclareBaseImageArg() {
+		// Arrange
+		const string baseImage = "registry.example/creatio/product:8.3.4.1234";
+		string sourceDirectory = CreateDotNetSourceDirectory("Custom Source Without Arg");
+		string templateDirectory = CreateTemplateDirectory("custom-fixed-parent",
+			"FROM mcr.microsoft.com/dotnet/aspnet:10.0\nCOPY source/ ./\n");
+		_templatePathProvider.ResolveTemplate(templateDirectory)
+			.Returns(new DockerTemplateResolution("custom-fixed-parent", templateDirectory, false));
+
+		BuildDockerImageOptions options = new() {
+			SourcePath = sourceDirectory,
+			Template = templateDirectory,
+			BaseImage = baseImage
+		};
+
+		// Act
+		int result = _service.Execute(options);
+
+		// Assert
+		result.Should().Be(1, "because an explicit --base-image that the template cannot consume must not be silently ignored");
+		GetLoggedErrors().Should().ContainSingle(s =>
+				s.Contains("does not declare 'ARG BASE_IMAGE'", StringComparison.Ordinal)
+				&& s.Contains($"--base-image {baseImage}", StringComparison.Ordinal)
+				&& s.Contains(templateDirectory, StringComparison.Ordinal),
+			"because the error must name the missing declaration, the rejected option value, and the template to fix");
+		GetReceivedExecutionOptions().Should().BeEmpty(
+			"because the usage error must be reported before the source is prepared or any container CLI is started");
+	}
+
+	[TestCase("ARG BASE_IMAGE\nFROM ${BASE_IMAGE}\n", true, TestName = "ARG without default")]
+	[TestCase("arg BASE_IMAGE=creatio-base:8.0-v1\nfrom ${BASE_IMAGE}\n", true, TestName = "lower-case ARG and FROM keywords")]
+	[TestCase("ARG BASE_IMAGE\nFROM $BASE_IMAGE\n", true, TestName = "unbraced reference")]
+	[TestCase("ARG BASE_IMAGE\nFROM ${BASE_IMAGE:-creatio-base:8.0-v1}\n", true, TestName = "reference with a default")]
+	[TestCase("# syntax=docker/dockerfile:1\n# FROM scratch\nARG BASE_IMAGE=creatio-base:8.0-v1\nFROM ${BASE_IMAGE}\n", true, TestName = "commented FROM before the global ARG")]
+	[TestCase("ARG BASE_IMAGE=creatio-base:8.0-v1\nFROM ${BASE_IMAGE} AS build\nRUN true\nFROM ${BASE_IMAGE}\n", true, TestName = "build and final stage both use the ARG")]
+	[TestCase("ARG BASE_IMAGE=creatio-base:8.0-v1\nFROM ${BASE_IMAGE} AS base\nFROM base AS final\n", true, TestName = "final stage inherits from a stage that uses the ARG")]
+	[TestCase("FROM mcr.microsoft.com/dotnet/aspnet:10.0\nARG BASE_IMAGE=creatio-base:8.0-v1\n", false, TestName = "ARG declared only after FROM")]
+	[TestCase("ARG BASE_IMAGE=creatio-base:8.0-v1\nFROM mcr.microsoft.com/dotnet/aspnet:10.0\n", false, TestName = "global ARG but fixed FROM")]
+	[TestCase("ARG BASE_IMAGE=x\nARG BASE_IMAGE_TAG=10.0\nFROM mcr.microsoft.com/dotnet/aspnet:${BASE_IMAGE_TAG}\n", false, TestName = "FROM uses a similarly named ARG")]
+	[TestCase("arg BASE_IMAGE=creatio-base:8.0-v1\nFROM ${BASE_IMAGE}\n", true, TestName = "lower-case ARG keyword")]
+	[TestCase("  ARG BASE_IMAGE=creatio-base:8.0-v1\r\nFROM ${BASE_IMAGE}\r\n", true, TestName = "indented ARG with CRLF")]
+	[TestCase("ARG REGISTRY=ghcr.io BASE_IMAGE=creatio-base:8.0-v1\nFROM ${BASE_IMAGE}\n", true, TestName = "ARG declaring several names")]
+	[TestCase("# ARG BASE_IMAGE=creatio-base:8.0-v1\nFROM mcr.microsoft.com/dotnet/aspnet:10.0\n", false, TestName = "commented-out ARG")]
+	[TestCase("ARG BASE_IMAGE_TAG=10.0\nFROM mcr.microsoft.com/dotnet/aspnet:${BASE_IMAGE_TAG}\n", false, TestName = "different ARG with the same prefix")]
+	[TestCase("ARG base_image=creatio-base:8.0-v1\nFROM ${base_image}\n", false, TestName = "ARG name in a different case")]
+	[Description("Execute should honour --base-image for a custom template only when ARG BASE_IMAGE is declared in the global scope (before the first FROM) and at least one FROM references it; instructions are case-insensitive, the argument name is exact, and comments are ignored.")]
+	public void Execute_ShouldDetectBaseImageArgDeclarationInCustomTemplate(string dockerfileContent, bool expectedAccepted) {
+		// Arrange
+		string sourceDirectory = CreateDotNetSourceDirectory("Custom Source Arg Detection");
+		string templateDirectory = CreateTemplateDirectory("custom-arg-detection", dockerfileContent);
+		_templatePathProvider.ResolveTemplate(templateDirectory)
+			.Returns(new DockerTemplateResolution("custom-arg-detection", templateDirectory, false));
+		_processExecutor.ExecuteWithRealtimeOutputAsync(Arg.Any<ProcessExecutionOptions>())
+			.Returns(Task.FromResult(new ProcessExecutionResult {
+				Started = true,
+				ExitCode = 0
+			}));
+
+		BuildDockerImageOptions options = new() {
+			SourcePath = sourceDirectory,
+			Template = templateDirectory,
+			BaseImage = "registry.example/creatio/product:8.3.4.1234"
+		};
+
+		// Act
+		int result = _service.Execute(options);
+
+		// Assert
+		result.Should().Be(expectedAccepted ? 0 : 1,
+			"because --base-image is honoured only when the Dockerfile really declares ARG BASE_IMAGE");
+		GetReceivedExecutionOptions().Any(o => o.Arguments.Contains("--build-arg BASE_IMAGE=", StringComparison.Ordinal))
+			.Should().Be(expectedAccepted,
+				"because the BASE_IMAGE build argument is passed exactly when the template can consume it");
+	}
+
+	[TestCase("   ", TestName = "whitespace only")]
+	[TestCase("registry.example/creatio/product:8.3.4 --network host", TestName = "embedded space")]
+	[TestCase("registry.example/creatio/product:8.3.4\t--network=host", TestName = "embedded tab")]
+	[TestCase("registry.example/creatio/product:8.3.4\" --build-arg X=\"y", TestName = "double quote")]
+	[TestCase("registry.example/creatio/product:8.3.4'", TestName = "single quote")]
+	[TestCase("--network=host", TestName = "leading double dash")]
+	[TestCase("-registry.example/creatio/product:8.3.4", TestName = "leading dash")]
+	[TestCase("registry.example/creatio/product:8.3.4\u0007", TestName = "control character")]
+	[TestCase("registry.example/creatio/\nproduct:8.3.4", TestName = "newline")]
+	[TestCase("registry.example/Creatio/Product:8.3.4", TestName = "upper-case repository path")]
+	[TestCase("registry.example/creatio/product:", TestName = "empty tag")]
+	[Description("Execute should reject a --base-image value that is not a Docker image reference before any container CLI call, so the value can never inject options into the docker command line.")]
+	public void Execute_ShouldRejectBaseImageThatIsNotAnImageReference(string baseImage) {
+		// Arrange
+		string sourceDirectory = CreateDotNetSourceDirectory("Prod Source Invalid Base Reference");
+		string templateDirectory = CreateTemplateDirectory("prod-template", "ARG BASE_IMAGE=creatio-base:8.0-v1\nFROM ${BASE_IMAGE}\nCOPY source/ ./\n");
+		_templatePathProvider.ResolveTemplate("prod")
+			.Returns(new DockerTemplateResolution("prod", templateDirectory, true));
+		_processExecutor.ExecuteWithRealtimeOutputAsync(Arg.Any<ProcessExecutionOptions>())
+			.Returns(Task.FromResult(new ProcessExecutionResult {
+				Started = true,
+				ExitCode = 0
+			}));
+
+		BuildDockerImageOptions options = new() {
+			SourcePath = sourceDirectory,
+			Template = "prod",
+			BaseImage = baseImage
+		};
+
+		// Act
+		int result = _service.Execute(options);
+
+		// Assert
+		result.Should().Be(1, "because a value that is not an image reference must be refused");
+		GetLoggedErrors().Should().ContainSingle(s =>
+				s.Contains("--base-image", StringComparison.Ordinal)
+				&& s.Contains("is not a valid Docker image reference", StringComparison.Ordinal),
+			"because the user must be told that the --base-image value itself is malformed");
+		GetReceivedExecutionOptions().Should().BeEmpty(
+			"because a malformed value must be refused before it can reach any container CLI command line");
+	}
+
+	[TestCase("creatio-base:8.0-v1", TestName = "short name with tag")]
+	[TestCase("registry.internal:5000/acme/base:1", TestName = "registry with port")]
+	[TestCase("localhost:5000/creatio/product:8.3.4.1234", TestName = "localhost registry")]
+	[TestCase("Registry.Example.COM/creatio/product_net10__x:8.3.4-rc_1", TestName = "upper-case registry host and separators")]
+	[TestCase("registry.example/creatio/product@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", TestName = "digest")]
+	[TestCase("registry.example/creatio/product:8.3.4@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", TestName = "tag and digest")]
+	[TestCase("[::1]:5000/creatio/product:8.3.4", TestName = "IPv6 registry")]
+	[TestCase("  ghcr.io/acme/creatio-base:dotnet10  ", TestName = "surrounding whitespace is trimmed")]
+	[Description("Execute should accept every valid Docker image reference shape for --base-image and pass it through as the BASE_IMAGE build argument.")]
+	public void Execute_ShouldAcceptValidBaseImageReference(string baseImage) {
+		// Arrange
+		string sourceDirectory = CreateDotNetSourceDirectory("Prod Source Valid Base Reference");
+		string templateDirectory = CreateTemplateDirectory("prod-template", "ARG BASE_IMAGE=creatio-base:8.0-v1\nFROM ${BASE_IMAGE}\nCOPY source/ ./\n");
+		_templatePathProvider.ResolveTemplate("prod")
+			.Returns(new DockerTemplateResolution("prod", templateDirectory, true));
+		_processExecutor.ExecuteWithRealtimeOutputAsync(Arg.Any<ProcessExecutionOptions>())
+			.Returns(Task.FromResult(new ProcessExecutionResult {
+				Started = true,
+				ExitCode = 0
+			}));
+
+		BuildDockerImageOptions options = new() {
+			SourcePath = sourceDirectory,
+			Template = "prod",
+			BaseImage = baseImage
+		};
+
+		// Act
+		int result = _service.Execute(options);
+
+		// Assert
+		result.Should().Be(0, "because a well-formed image reference must not be refused by the validation");
 		GetReceivedExecutionOptions().Should().Contain(o =>
-				!o.Arguments.Contains($"--build-arg BASE_IMAGE=", StringComparison.Ordinal),
-			"because custom templates should not receive the bundled base-image build argument");
+				o.Arguments.StartsWith("build --pull=false", StringComparison.Ordinal)
+				&& o.Arguments.Contains($"--build-arg BASE_IMAGE=\"{baseImage.Trim()}\"", StringComparison.Ordinal),
+			"because the validated reference must still reach the build unchanged apart from trimming");
+	}
+
+	[Test]
+	[Description("Execute should keep passing the default base image as the BASE_IMAGE build argument for bundled prod when --base-image is omitted.")]
+	public void Execute_ShouldPassDefaultBaseImageBuildArgForBundledProd_WhenBaseImageIsOmitted() {
+		// Arrange
+		string sourceDirectory = CreateDotNetSourceDirectory("Prod Source Default Base");
+		string templateDirectory = CreateTemplateDirectory("prod-template", "ARG BASE_IMAGE=creatio-base:8.0-v1\nFROM ${BASE_IMAGE}\nCOPY source/ ./\n");
+		_templatePathProvider.ResolveTemplate("prod")
+			.Returns(new DockerTemplateResolution("prod", templateDirectory, true));
+		_processExecutor.ExecuteWithRealtimeOutputAsync(Arg.Any<ProcessExecutionOptions>())
+			.Returns(Task.FromResult(new ProcessExecutionResult {
+				Started = true,
+				ExitCode = 0
+			}));
+
+		BuildDockerImageOptions options = new() {
+			SourcePath = sourceDirectory,
+			Template = "prod"
+		};
+
+		// Act
+		int result = _service.Execute(options);
+
+		// Assert
+		result.Should().Be(0, "because bundled prod builds should still work with the default local base image");
+		GetReceivedExecutionOptions().Should().Contain(o => o.Arguments == "image inspect \"creatio-base:8.0-v1\"",
+			"because bundled prod should still validate the default base image before building");
+		GetReceivedExecutionOptions().Should().Contain(o =>
+				o.Arguments.StartsWith("build --pull=false", StringComparison.Ordinal)
+				&& o.Arguments.Contains("--build-arg BASE_IMAGE=\"creatio-base:8.0-v1\"", StringComparison.Ordinal),
+			"because bundled prod should keep receiving the default base image as a build argument");
+	}
+
+	[Test]
+	[Description("Execute should apply --base-image to bundled prod and leave the bundled db template of the same batch untouched instead of rejecting it for lacking ARG BASE_IMAGE.")]
+	public void Execute_ShouldNotRejectBundledDbTemplate_WhenBatchPassesBaseImage() {
+		// Arrange
+		const string baseImage = "registry.example/creatio/product:8.3.4.1234";
+		string sourceDirectory = CreateDotNetSourceDirectoryWithDatabase("Batch Base Image");
+		string dbTemplateDirectory = CreateTemplateDirectory("db-template", "FROM busybox:1.36.1\nCOPY db/ /db/\n");
+		string prodTemplateDirectory = CreateTemplateDirectory("prod-template", "ARG BASE_IMAGE=creatio-base:8.0-v1\nFROM ${BASE_IMAGE}\nCOPY source/ ./\n");
+		_templatePathProvider.ResolveTemplate("db")
+			.Returns(new DockerTemplateResolution("db", dbTemplateDirectory, true));
+		_templatePathProvider.ResolveTemplate("prod")
+			.Returns(new DockerTemplateResolution("prod", prodTemplateDirectory, true));
+		_processExecutor.ExecuteWithRealtimeOutputAsync(Arg.Any<ProcessExecutionOptions>())
+			.Returns(Task.FromResult(new ProcessExecutionResult {
+				Started = true,
+				ExitCode = 0
+			}));
+
+		BuildDockerImageOptions options = new() {
+			SourcePath = sourceDirectory,
+			Template = "db,prod",
+			BaseImage = baseImage
+		};
+
+		// Act
+		int result = _service.Execute(options);
+
+		// Assert
+		result.Should().Be(0, "because the ARG BASE_IMAGE requirement applies to custom templates only, not to the bundled db template");
+		ProcessExecutionOptions[] builds = GetReceivedExecutionOptions()
+			.Where(o => o.Arguments.StartsWith("build --pull=false", StringComparison.Ordinal))
+			.ToArray();
+		builds.Should().HaveCount(2, "because both templates of the batch should be built");
+		builds.Count(o => o.Arguments.Contains($"--build-arg BASE_IMAGE=\"{baseImage}\"", StringComparison.Ordinal))
+			.Should().Be(1, "because only bundled prod consumes the requested base image");
 	}
 
 	[Test]
@@ -1427,6 +1740,15 @@ public class BuildDockerImageServiceTests {
 		_msFileSystem.Directory.CreateDirectory(templateDirectory);
 		_msFileSystem.File.WriteAllText(_msFileSystem.Path.Combine(templateDirectory, "Dockerfile"), dockerfileContent);
 		return templateDirectory;
+	}
+
+	private string[] GetLoggedErrors() {
+		return _logger.ReceivedCalls()
+			.Where(call => call.GetMethodInfo().Name == nameof(ILogger.WriteError))
+			.Select(call => call.GetArguments())
+			.Where(arguments => arguments.Length == 1 && arguments[0] is string)
+			.Select(arguments => (string)arguments[0])
+			.ToArray();
 	}
 
 	private ProcessExecutionOptions[] GetReceivedExecutionOptions() {

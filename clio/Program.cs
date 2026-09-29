@@ -43,6 +43,9 @@ internal class Program {
 
 	private static readonly Type[] CommandOption = [
 		typeof(RegAppOptions),
+		typeof(LoginOptions),
+		typeof(LogoutOptions),
+		typeof(AuthStatusOptions),
 		typeof(UnregAppOptions),
 		typeof(AppListOptions),
 		typeof(ExecuteAssemblyOptions),
@@ -148,6 +151,7 @@ internal class Program {
 		typeof(ProcessPageFactsOptions),
 		typeof(GetPageHierarchyOptions),
 		typeof(PageUpdateOptions),
+		typeof(LocalizePageOptions),
 		typeof(PageCreateOptions),
 		typeof(CreateRelatedPageAddonOptions),
 		typeof(GetRelatedPageAddonOptions),
@@ -542,6 +546,9 @@ internal class Program {
 			SetLogoOptions opts => Resolve<SetLogoCommand>(opts).Execute(opts),
 			UploadLicenseCommandOptions opts => Resolve<UploadLicenseCommand>(opts).Execute(opts),
 			RegAppOptions opts => Resolve<RegAppCommand>(opts).Execute(opts),
+			LoginOptions opts => Resolve<LoginCommand>(opts).Execute(opts),
+			LogoutOptions opts => Resolve<LogoutCommand>(opts).Execute(opts),
+			AuthStatusOptions opts => Resolve<AuthStatusCommand>(opts).Execute(opts),
 			AppListOptions opts => Resolve<ShowAppListCommand>().Execute(opts),
 			UnregAppOptions opts => Resolve<UnregAppCommand>().Execute(opts),
 			GeneratePkgZipOptions opts => Resolve<CompressPackageCommand>().Execute(opts),
@@ -760,6 +767,7 @@ internal class Program {
 			ProcessPageFactsOptions opts => Resolve<ProcessPageFactsCommand>(opts).Execute(opts),
 			GetPageHierarchyOptions opts => Resolve<GetPageHierarchyCommand>(opts).Execute(opts),
 			PageUpdateOptions opts => Resolve<PageUpdateCommand>(opts).Execute(opts),
+			LocalizePageOptions opts => Resolve<LocalizePageCommand>(opts).Execute(opts),
 			PageListOptions opts => Resolve<PageListCommand>(opts).Execute(opts),
 			QuizCommandOptions opts => Resolve<QuizCommand>().Execute(opts),
 			GenerateSourceCodeOptions opts => Resolve<GenerateSourceCodeCommand>(opts).Execute(opts),
@@ -1035,7 +1043,7 @@ internal class Program {
 	/// <returns>A client the caller owns and must dispose.</returns>
 	private static IOwnedApplicationClient CreateRemoteCommandClient(EnvironmentSettings settings){
 		Clio.Common.ExternalAccess.ExternalAccessSettingsGuard.Validate(settings);
-		if (!string.IsNullOrEmpty(settings.ExternalAccessToken)) {
+		if (!string.IsNullOrEmpty(settings.ExternalAccessToken) || settings.AuthFlow == OAuthFlow.AuthorizationCode) {
 			return Resolve<IApplicationClientFactory>().CreateOwnedEnvironmentClient(settings);
 		}
 		return string.IsNullOrEmpty(settings.ClientId)
@@ -1046,6 +1054,11 @@ internal class Program {
 	}
 
 	private static CreatioClient CreateCreatioClient(){
+		if (CreatioEnvironment.Settings.AuthFlow == OAuthFlow.AuthorizationCode) {
+			throw new InvalidOperationException(
+				"This command does not support environments that sign in with the OAuth authorization-code flow (clio login). "
+				+ "Register the environment with login/password or client credentials to use it.");
+		}
 		if (string.IsNullOrEmpty(ClientId)) {
 			return new CreatioClient(Url, UserName, UserPassword, true, CreatioEnvironment.IsNetCore);
 		}
@@ -1735,7 +1748,10 @@ internal class Program {
 			// Only when the update would actually have run. A line saying an update was deferred,
 			// printed on every command of a session whose schedule is disabled or not yet due,
 			// describes something that was never going to happen.
-			ConsoleLogger.Instance.WriteInfo(
+			// Stderr, not WriteInfo's stdout: the line precedes the output of EVERY command, so callers
+			// that read stdout (Clio Explorer parsing `clio info -s`, issue #1665) received it as the
+			// first line of data.
+			((ConsoleLogger)ConsoleLogger.Instance).WriteInfoToStderr(
 				$"clio self-update deferred: MCP host pid {residentHost.ProcessId} "
 				+ $"(version {residentHost.ClioVersion}) is running");
 		}

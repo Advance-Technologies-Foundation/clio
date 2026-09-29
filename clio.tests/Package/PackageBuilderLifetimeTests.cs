@@ -42,7 +42,7 @@ public sealed class PackageBuilderLifetimeTests {
 			});
 			pollCancellation.WaitHandle.WaitOne();
 		});
-		PackageBuilder sut = new(settings, factory, urlBuilder, Substitute.For<ILogger>(), poller);
+		PackageBuilder sut = new(settings, factory, urlBuilder, Substitute.For<ILogger>(), TimeProvider.System, new CancellableDelay(), poller);
 
 		// Act
 		sut.Build(["UsrPackage"]);
@@ -74,7 +74,7 @@ public sealed class PackageBuilderLifetimeTests {
 		InvalidOperationException pollFault = new("Compilation polling gave up after 93 s of rounds that all failed (give-up window 90 s, 21 failed rounds)");
 		poller.When(value => value.Poll(Arg.Any<DateTime>(), Arg.Any<CancellationToken>(),
 			Arg.Any<Action<CompilationHistory>>())).Do(_ => throw pollFault);
-		PackageBuilder sut = new(settings, factory, urlBuilder, Substitute.For<ILogger>(), poller);
+		PackageBuilder sut = new(settings, factory, urlBuilder, Substitute.For<ILogger>(), TimeProvider.System, new CancellableDelay(), poller);
 
 		// Act
 		Action act = () => sut.Build(["UsrPackage"]);
@@ -109,7 +109,7 @@ public sealed class PackageBuilderLifetimeTests {
 		poller.When(value => value.Poll(Arg.Any<DateTime>(), Arg.Any<CancellationToken>(),
 			Arg.Any<Action<CompilationHistory>>())).Do(call => call.ArgAt<CancellationToken>(1).WaitHandle.WaitOne());
 		ILogger logger = Substitute.For<ILogger>();
-		PackageBuilder sut = new(settings, factory, urlBuilder, logger, poller);
+		PackageBuilder sut = new(settings, factory, urlBuilder, logger, TimeProvider.System, new CancellableDelay(), poller);
 
 		// Act
 		Action act = () => sut.Build(["UsrPackage"]);

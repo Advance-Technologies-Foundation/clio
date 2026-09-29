@@ -7653,6 +7653,63 @@ public sealed class WebToMobileConversionServiceTests {
 		co["medium"]!["row"]!.GetValue<int>().Should().Be(1);
 	}
 
+	/// <summary>
+	/// A two-column web grid <c>GeneralInfoTabContainer</c> paired onto <paramref name="mobileName"/>, whose type the
+	/// probed mobile template reports as <paramref name="mobileType"/> — the only input that differs between the
+	/// guarded and the admitted case of the adaptive pass.
+	/// </summary>
+	private static MobilePageConversionGuide AnalyzeGridRenamedOnto(string mobileName, string mobileType) {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "GeneralInfoTabContainer", "type": "crt.GridContainer",
+			    "columns": [ "minmax(32px, 1fr)", "minmax(32px, 1fr)" ], "items": [
+				{ "name": "Name", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 1, "colSpan": 1, "rowSpan": 1 } },
+				{ "name": "CreatedOn", "type": "crt.Input", "layoutConfig": { "column": 2, "row": 1, "colSpan": 1, "rowSpan": 1 } } ] } ]
+			""");
+		var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+			["GeneralInfoTabContainer"] = mobileName
+		};
+		var mobileTemplateTypes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+			[mobileName] = mobileType
+		};
+		return Analyze(bundle,
+			webByType: Reg(("crt.GridContainer", true), ("crt.Input", false)),
+			containerNameMap: map,
+			mobileTemplateTypesByName: mobileTemplateTypes);
+	}
+
+	[Test]
+	[Description("A multi-column web grid renamed by a containers pair onto a mobile element that is NOT a crt.GridContainer (the shipped case: GeneralInfoTabContainer -> the declared AdditionalInfoTab, a crt.TabContainer) does not carry its column count there: adaptive per-breakpoint columns is a property of the mobile grid type only, so no adaptive group is built and the children are not placed as if they sat in a multi-column grid.")]
+	public void Analyze_MultiColumnGrid_RenamedOntoNonGrid_GetsNoAdaptive() {
+		// Arrange & Act
+		MobilePageConversionGuide guide = AnalyzeGridRenamedOnto("AdditionalInfoTab", "crt.TabContainer");
+
+		// Assert
+		Element(guide, "GeneralInfoTabContainer").Name.Should().Be("AdditionalInfoTab",
+			because: "the pair must actually rename the grid onto the tab, or the guard is not exercised");
+		(guide.AdaptiveLayout ?? []).Should().NotContain(g => g.ContainerName == "AdditionalInfoTab",
+			because: "a crt.TabContainer has no columns input, so the web grid's columns must not be attached to it");
+		foreach (string field in new[] { "Name", "CreatedOn" }) {
+			JsonNode layoutConfig = Element(guide, field).Values?["layoutConfig"];
+			(layoutConfig?["adaptive"]).Should().BeNull(
+				because: $"'{field}' does not sit in a multi-column mobile grid, so it must not get an adaptive "
+					+ "placement — an adaptive layoutConfig is never overwritten by a later placement pass");
+		}
+	}
+
+	[Test]
+	[Description("Control for the non-grid guard: the same web grid renamed onto a mobile element the template reports as crt.GridContainer still gets the adaptive group — the guard reads the MOBILE type, it does not reject renamed pairs.")]
+	public void Analyze_MultiColumnGrid_RenamedOntoMobileGrid_KeepsAdaptive() {
+		// Arrange & Act
+		MobilePageConversionGuide guide = AnalyzeGridRenamedOnto("GeneralTabContainer", "crt.GridContainer");
+
+		// Assert
+		guide.AdaptiveLayout.Should().ContainSingle(g => g.ContainerName == "GeneralTabContainer",
+			because: "a grid-to-grid pair keeps the web column count under the mobile name");
+		JsonObject co = AdaptiveOf(guide, "CreatedOn");
+		co["small"]!["column"]!.GetValue<int>().Should().Be(1, because: "the phone breakpoint stacks into one column");
+		co["medium"]!["column"]!.GetValue<int>().Should().Be(2, because: "tablet keeps the web two-column cell");
+	}
+
 	[Test]
 	[Description("A single-column crt.GridContainer gets NO adaptive (the mobile client renders the plain config); its children keep the carried base layoutConfig, not an adaptive one.")]
 	public void Analyze_SingleColumnGrid_NoAdaptive() {
@@ -10228,7 +10285,7 @@ public sealed class WebToMobileConversionServiceTests {
 		values["items"]?.GetValue<string>().Should().Be("$OverlaidBinding",
 			because: "a key the template NAMES wins — the shipped skeleton relies on that to declare the mobile "
 				+ "structure over what was carried");
-		values["layoutConfig"]?["colSpan"]?.GetValue<int>().Should().Be(2,
+		values["layoutConfig"]?["row"]?.GetValue<int>().Should().Be(3,
 			because: "a key the template does not name survives untouched, which is how the element keeps its "
 				+ "placement and the grid's own properties without any rule naming them");
 		values["type"]?.GetValue<string>().Should().Be("crt.List",
@@ -12316,9 +12373,9 @@ public sealed class WebToMobileConversionServiceTests {
 		var adaptiveAnchor = new Dictionary<string, JsonObject>(StringComparer.OrdinalIgnoreCase) {
 			["Tabs"] = JsonNode.Parse("""
 				{ "adaptive": {
-				    "small":  { "row": 1, "column": 1, "colSpan": 1, "rowSpan": 1 },
-				    "medium": { "row": 1, "column": 1, "colSpan": 1, "rowSpan": 1 },
-				    "large":  { "row": 2, "column": 1, "colSpan": 1, "rowSpan": 1 } } }
+				    "small":  { "row": 1, "column": 1, "colSpan": 2, "rowSpan": 3 },
+				    "medium": { "row": 1, "column": 1, "colSpan": 4, "rowSpan": 1 },
+				    "large":  { "row": 2, "column": 1, "colSpan": 1, "rowSpan": 6 } } }
 				""")!.AsObject()
 		};
 
@@ -12331,8 +12388,14 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "each breakpoint's own row moves down by the number of siblings above the anchor");
 		anchor["adaptive"]!["large"]!["row"]!.GetValue<int>().Should().Be(3,
 			because: "the shift is relative to whatever row that breakpoint declared");
-		anchor["adaptive"]!["small"]!["colSpan"].Should().NotBeNull(
-			because: "the anchor's breakpoints are the template's own, carried verbatim apart from the row");
+		foreach (string breakpoint in new[] { "small", "medium", "large" }) {
+			anchor["adaptive"]![breakpoint]!["colSpan"]!.GetValue<int>().Should().Be(1,
+				because: $"the template declared a wider span at '{breakpoint}', and a span is the converter's to "
+					+ "own on every placement it emits — the anchor's breakpoints are otherwise the template's own, "
+					+ "carried apart from the row they are shifted by");
+			anchor["adaptive"]![breakpoint]!["rowSpan"]!.GetValue<int>().Should().Be(1,
+				because: $"a template-authored rowSpan at '{breakpoint}' is rewritten exactly like a web-carried one");
+		}
 
 		JsonNode sibling = LayoutConfigOf(Element(guide, "Top1"));
 		ShouldBeCell(sibling!["adaptive"]!["small"], row: 1, column: 1,
@@ -12717,6 +12780,104 @@ public sealed class WebToMobileConversionServiceTests {
 			}
 			placement.Select(pair => pair.Key).Should().Contain(["row", "column", "colSpan", "rowSpan"],
 				because: "the designer refuses to open a page whose layoutConfig omits any of the four keys");
+		}
+	}
+
+	[Test]
+	[Description("The second invariant across the whole guide: every emitted span is 1. A mobile grid gives each item exactly one cell, so a web colSpan/rowSpan describes a width the page cannot have — carrying one writes a placement that disagrees with what the runtime renders, silently and on every breakpoint that carried it.")]
+	public void Analyze_ShouldEmitEverySpanAsOne_AnywhereInTheGuide() {
+		// Arrange — both leaks at once: a single-column grid whose child keeps its web placement verbatim, and a
+		// multi-column grid the adaptive pass rewrites per breakpoint. Both source children span more than a cell.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "OneCol", "type": "crt.GridContainer", "columns": [ "1fr" ], "items": [
+			    { "name": "FieldA", "type": "crt.Input",
+			      "layoutConfig": { "column": 1, "row": 1, "colSpan": 3, "rowSpan": 4 } } ] },
+			  { "name": "TwoCol", "type": "crt.GridContainer", "columns": [ "1fr", "1fr" ], "items": [
+			    { "name": "FieldB", "type": "crt.Input",
+			      "layoutConfig": { "column": 1, "row": 1, "colSpan": 2, "rowSpan": 6 } },
+			    { "name": "FieldC", "type": "crt.Input",
+			      "layoutConfig": { "column": 2, "row": 1, "colSpan": 1, "rowSpan": 1 } } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+
+		// Assert
+		List<JsonObject> placements = AllPlacements(guide);
+		placements.Should().NotBeEmpty(because: "the fixture carries placements on every field");
+		foreach (JsonObject placement in placements) {
+			List<JsonObject> cells = placement["adaptive"] is JsonObject adaptive
+				? [.. adaptive.Select(pair => pair.Value).OfType<JsonObject>()]
+				: [placement];
+			foreach (JsonObject cell in cells) {
+				cell["colSpan"]!.GetValue<int>().Should().Be(1,
+					because: "a mobile item occupies one cell; width is the container's column count");
+				cell["rowSpan"]!.GetValue<int>().Should().Be(1,
+					because: "a mobile item occupies one cell; height is the runtime's to decide");
+			}
+		}
+	}
+
+	[Test]
+	[Description("A span nested inside a CARRIED value is rewritten like any other. The normalizer walks the whole mobileValues tree, so a layoutConfig that reaches the page inside a carried itemLayout — which no placement pass ever visits, and which the property prune cannot reach either because the key is nested — states one cell like the placements around it.")]
+	public void Analyze_ShouldEmitSpansOfOne_InsideACarriedValue() {
+		// Arrange — the degraded-catalog path (no mobileByType) keeps itemLayout as a carried VALUE instead of
+		// walking it out into its own entry, which is what puts a placement somewhere no placement pass reaches.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "SimilarLeadList", "type": "crt.List", "items": "$SimilarLeadList",
+				  "itemLayout": [ { "type": "crt.ListItem", "title": "$DS_LeadName",
+				    "layoutConfig": { "column": 1, "row": 1, "colSpan": 5, "rowSpan": 7 } } ] } ] } ]
+			""");
+		var mobileTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"crt.FlexContainer", "crt.List"
+		};
+
+		// Act — mobileByType is null, so itemLayout survives as a value carrying its own placement.
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: mobileTypes);
+
+		// Assert
+		JsonNode itemLayout = Element(guide, "SimilarLeadList").Values!["itemLayout"];
+		itemLayout.Should().NotBeNull(because: "the carried row is what holds the nested placement");
+		var row = (JsonObject)(itemLayout is JsonArray array ? array[0]! : itemLayout!);
+		var nested = (JsonObject)row["layoutConfig"]!;
+		nested.Select(pair => pair.Key).Should().Contain(["row", "column", "colSpan", "rowSpan"],
+			because: "the designer reads a nested placement the same way it reads a top-level one");
+		nested["colSpan"]!.GetValue<int>().Should().Be(1,
+			because: "the web row declared colSpan 5, and a span the converter emits states one cell wherever it sits");
+		nested["rowSpan"]!.GetValue<int>().Should().Be(1,
+			because: "the web row declared rowSpan 7, and nesting is not an exemption from the same rule");
+		nested["column"]!.GetValue<int>().Should().Be(1,
+			because: "a POSITION the caller authored is the caller's own answer and is preserved, unlike a span");
+	}
+
+	[Test]
+	[Description("The guide's adaptiveLayout index reports the same spans the operations carry. It is built from its own object rather than the one pasted into values, so a span read off the web page would survive here after the placement was corrected — and the response would name a layout its own diff does not contain.")]
+	public void Analyze_ShouldReportSpansOfOne_InTheAdaptiveLayoutIndex() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "TwoCol", "type": "crt.GridContainer", "columns": [ "1fr", "1fr" ], "items": [
+			    { "name": "FieldA", "type": "crt.Input",
+			      "layoutConfig": { "column": 1, "row": 1, "colSpan": 2, "rowSpan": 9 } },
+			    { "name": "FieldB", "type": "crt.Input",
+			      "layoutConfig": { "column": 2, "row": 1, "colSpan": 1, "rowSpan": 1 } } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+
+		// Assert
+		List<JsonObject> reported = guide.AdaptiveLayout!
+			.SelectMany(group => group.Items)
+			.SelectMany(item => ((JsonObject)item.LayoutConfigAdaptive!).Select(pair => pair.Value))
+			.OfType<JsonObject>()
+			.ToList();
+		reported.Should().NotBeEmpty(because: "a multi-column grid is what produces an adaptiveLayout group");
+		foreach (JsonObject cell in reported) {
+			cell["colSpan"]!.GetValue<int>().Should().Be(1,
+				because: "the index must state the same placement the pasted values carry");
+			cell["rowSpan"]!.GetValue<int>().Should().Be(1,
+				because: "the index must state the same placement the pasted values carry");
 		}
 	}
 

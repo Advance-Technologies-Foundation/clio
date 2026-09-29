@@ -398,9 +398,8 @@ public static class FlowLabelExpectation {
 	// DIFFERENT" quoting two strings that look identical, because the character at fault is invisible. The first version of both halves tested char.IsControl alone, which a
 	// Copilot review caught: those code points are not control characters and are not valid XML either,
 	// so a label carrying one passed the filter and still broke resource serialization on the server.
-	private static bool IsUnstorable(char character) =>
-		(char.IsControl(character) && character != '\t' && character != '\n' && character != '\r')
-			|| character == '\uFFFE' || character == '\uFFFF';
+	// The predicate itself lives in XmlAttributeText, shared with localize-page, which refuses such values.
+	private static bool IsUnstorable(char character) => XmlAttributeText.IsUnstorable(character);
 
 	private static string Subject(int count) => count == 1 ? "flow" : "flows";
 

@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text.Json;
 using Clio.Command;
 using Clio.Command.EntitySchemaDesigner;
+using Clio.Command.Localization;
 using Clio.Common;
 using Clio.Package;
 using FluentAssertions;
@@ -23,6 +24,7 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 	private IApplicationPackageListProvider _packageListProvider;
 	private ILogger _logger;
 	private ISysSettingsManager _sysSettingsManager;
+	private ICreatioCultureCatalog _cultureCatalog;
 	private IRemoteEntitySchemaCreator _creator;
 	private Guid _packageUId;
 
@@ -51,6 +53,13 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 		containerBuilder.AddTransient(_ => _packageListProvider);
 		containerBuilder.AddTransient(_ => _logger);
 		containerBuilder.AddTransient(_ => _sysSettingsManager);
+		_cultureCatalog = Substitute.For<ICreatioCultureCatalog>();
+		// Default: the cultures the existing cases write are active SysCulture rows, so the pre-save culture
+		// check is transparent to them.
+		_cultureCatalog.GetCultures().Returns([
+			new CreatioCulture("en-US", true), new CreatioCulture("uk-UA", true), new CreatioCulture("de-DE", true)
+		]);
+		containerBuilder.AddTransient(_ => _cultureCatalog);
 	}
 
 	[TestCase(false)]
@@ -784,6 +793,50 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 			because: "column caption should include the provided en-US localization");
 		savedColumn["caption"]!.Should().HaveCount(1,
 			because: "Clio must not synthesize additional culture localizations beyond what was explicitly provided");
+	}
+
+	[Test]
+	[Description("TC-U-34: create-entity-schema with a column title map carrying a culture absent from SysCulture fails before the designer save, with the localize-page Languages message (ENG-90576 story 3).")]
+	public void CreateSchema_ShouldFailBeforeSave_WhenColumnMapCultureIsAbsent() {
+		// Arrange
+		bool saveCalled = false;
+		SetupApplicationClient((url, _) => {
+			if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
+			}
+			if (url.Contains("CheckUniqueSchemaName", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":true}";
+			}
+			if (url.Contains("SaveSchema", StringComparison.Ordinal)) {
+				saveCalled = true;
+				return "{\"success\":true,\"schemaUid\":\"22222222-2222-2222-2222-222222222222\"}";
+			}
+			throw new InvalidOperationException($"Unexpected url {url}");
+		});
+		string structuredColumn = JsonSerializer.Serialize(new {
+			name = "UsrStatus",
+			type = "Text",
+			title_localizations = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+				["en-US"] = "Status",
+				["fi-FI"] = "Tila"
+			}
+		}).Replace("title_localizations", "title-localizations");
+
+		// Act
+		Action act = () => _creator.Create(new CreateEntitySchemaOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Vehicle",
+			CaptionCulture = "en-US",
+			Columns = [structuredColumn]
+		});
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>()
+			.WithMessage("Culture 'fi-FI' is not available in this environment. Add it in the Languages section "
+				+ "(System Designer → Languages) first. Available: en-US, uk-UA, de-DE.",
+				because: "the designer would drop the fi-FI column caption and still answer success");
+		saveCalled.Should().BeFalse(because: "no schema may be saved when one of its captions would be dropped");
 	}
 
 	[Test]

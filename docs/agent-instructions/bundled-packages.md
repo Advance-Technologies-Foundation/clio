@@ -584,7 +584,7 @@ artifact has, since a `.gz` change renders in a diff as nothing but a byte count
 dotnet build clio/clio.csproj -f net8.0
 
 # 7. Tests.
-dotnet test clio.tests/clio.tests.csproj -f net8.0 --filter "Category=Unit&(Module=Command|Module=McpServer|Module=Common)"
+dotnet test clio.tests/clio.tests.csproj --filter "TestCategory=Unit&(Module=Command|Module=McpServer|Module=Common)"
 
 # 8. Live, on a stand.
 dotnet clio/bin/Debug/net8.0/clio.dll install-process-builder -e <env>

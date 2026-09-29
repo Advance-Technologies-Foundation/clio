@@ -242,3 +242,14 @@ Starting from September 2025, the `createw` command generates a solution file in
 - Command: `clio createw`
 
 This change improves consistency for CI/CD and version control.
+
+# SSO sign-in
+
+For an SSO-only Creatio site, register a public OAuth client with `authorization_code` and `refresh_token`, require PKCE S256, and register a loopback redirect such as `http://127.0.0.1:<port>/callback` (or provide an HTTPS redirect for paste-back mode). Then run:
+
+```bash
+clio reg-web-app work -u https://work.creatio.com --clientId <client-id> --auth-flow authorization-code --redirect-port 37319
+clio login -e work
+```
+
+The authorization-code flow carries the signed-in user's own permissions, unlike `client_credentials`, and is intended for interactive use against corporate SSO sites. Use `clio auth-status -e work` in automation; when it returns non-zero, ask a human to run `clio login` once. Tokens are stored outside `appsettings.json` under the owner-only clio token cache.
