@@ -18,9 +18,13 @@ namespace Clio.Mcp.E2E;
 /// ADR D8 baseline refresh under <c>output-directory</c>).
 /// </summary>
 /// <remarks>
-/// The write cases run on a page created by the test itself: a culture value written on the shared seeded
-/// page could not be removed afterwards, and a save there would move the checksum the conflict-detection
-/// fixtures rely on. The report-only case reads the seeded page, because it saves nothing.
+/// The write cases and the report-only case run on a page created by the test itself. A culture value
+/// written on the shared seeded page could not be removed afterwards, and a save there would move the
+/// checksum the conflict-detection fixtures rely on. Report-only needs a page that already has an editable
+/// schema in the design package, and the seeded page has one only after another fixture's first
+/// update-page into it - so reading the seeded page passed in the full suite and failed whenever this
+/// fixture ran alone, as a pull-request subset does. Only the blank-value case uses the seeded page: it
+/// is refused before anything is read.
 /// </remarks>
 [TestFixture]
 [AllureNUnit]
@@ -64,33 +68,43 @@ public sealed class LocalizePageToolE2ETests : McpContractFixtureBase {
 
 	[Category("McpE2E.Sandbox")]
 	[Test]
-	[Description("A report-only call on the seeded page saves nothing and reports coverage over the same key set get-page shows.")]
+	[Description("A report-only call on a page with its own key saves nothing and reports coverage over the same key set get-page shows, without depending on any other fixture having written a page first.")]
 	[AllureTag(ToolName)]
 	[AllureName("localize-page report-only covers the get-page key set")]
-	[AllureDescription("Reads the seeded page ClioMcp_BlankPageToSave with get-page, calls localize-page for es-ES without resources or caption, and asserts success, saved:false and coverage.keys equal to the number of resource keys in the get-page bundle.")]
+	[AllureDescription("Creates a page from BlankPageTemplate in Custom and registers one own resource key through update-page, reads it with get-page, calls localize-page for es-ES without resources or caption, and asserts success, saved:false and coverage.keys equal to the number of resource keys in the get-page bundle. The page is deleted afterwards.")]
 	public async Task LocalizePage_ReportOnly_Should_Cover_GetPage_Keys() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		string environmentName = await ReachableSandboxEnvironment.ResolveOrIgnoreAsync(
-			settings, "localize-page MCP E2E requires a reachable sandbox environment.");
-		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("AllowDestructiveMcpTests is false — skipping localize-page report-only, which creates its own page.");
+		}
+		string environmentName = await ReachableSandboxEnvironment.ResolveConfiguredOrIgnoreAsync(
+			settings,
+			$"localize-page MCP E2E requires the configured sandbox environment '{settings.Sandbox.EnvironmentName}' to be set and reachable.");
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(8));
+		string schemaName = "UsrE2eLocalizeReport" + Guid.NewGuid().ToString("N")[..12];
 		string directory = CreateFixtureDirectory("localize-page-report");
-		JsonObject strings = await ReadResourceStringsAsync(context, SeededPage, environmentName, directory);
+		try {
+			await ArrangePageWithOwnKeyAsync(context, schemaName, environmentName, directory);
+			JsonObject strings = await ReadResourceStringsAsync(context, schemaName, environmentName, directory);
 
-		// Act
-		LocalizePageResponse response = await LocalizeAsync(context, SeededPage, "es-ES", environmentName);
+			// Act
+			LocalizePageResponse response = await LocalizeAsync(context, schemaName, "es-ES", environmentName);
 
-		// Assert
-		AllureApi.Step("Report-only call succeeds without saving", () => {
-			response.Success.Should().BeTrue(because: $"report-only must succeed on a readable page. Error: {response.Error}");
-			response.Saved.Should().BeFalse(because: "a call without resources and caption never saves");
-		});
-		AllureApi.Step("Coverage counts the get-page key set", () => {
-			response.Coverage.Should().NotBeNull(because: "report-only exists to return coverage");
-			response.Coverage.Keys.Should().Be(strings.Count,
-				because: "coverage is computed over the hierarchy key set get-page merges (ADR OQ-2)");
-		});
+			// Assert
+			AllureApi.Step("Report-only call succeeds without saving", () => {
+				response.Success.Should().BeTrue(because: $"report-only must succeed on a readable page. Error: {response.Error}");
+				response.Saved.Should().BeFalse(because: "a call without resources and caption never saves");
+			});
+			AllureApi.Step("Coverage counts the get-page key set", () => {
+				response.Coverage.Should().NotBeNull(because: "report-only exists to return coverage");
+				response.Coverage.Keys.Should().Be(strings.Count,
+					because: "coverage is computed over the hierarchy key set get-page merges (ADR OQ-2)");
+			});
+		} finally {
+			await DeletePageAsync(settings, schemaName, environmentName);
+		}
 	}
 
 	[Category("McpE2E.Sandbox")]
@@ -243,13 +257,17 @@ public sealed class LocalizePageToolE2ETests : McpContractFixtureBase {
 					because: "the only change since get-page is the caller's own localize-page save");
 			});
 		} finally {
-			// Every run creates a new UsrE2eLocalize* page; remove it so the stand does not accumulate them.
-			using CancellationTokenSource cleanupCts = new(TimeSpan.FromMinutes(2));
-			await ClioCliCommandRunner.RunAsync(
-				settings,
-				["delete-schema", schemaName, "--remote", "-e", environmentName],
-				cancellationToken: cleanupCts.Token);
+			await DeletePageAsync(settings, schemaName, environmentName);
 		}
+	}
+
+	// Every run creates a new UsrE2eLocalize* page; remove it so the stand does not accumulate them.
+	private static async Task DeletePageAsync(McpE2ESettings settings, string schemaName, string environmentName) {
+		using CancellationTokenSource cleanupCts = new(TimeSpan.FromMinutes(2));
+		await ClioCliCommandRunner.RunAsync(
+			settings,
+			["delete-schema", schemaName, "--remote", "-e", environmentName],
+			cancellationToken: cleanupCts.Token);
 	}
 
 	private async Task ArrangePageWithOwnKeyAsync(

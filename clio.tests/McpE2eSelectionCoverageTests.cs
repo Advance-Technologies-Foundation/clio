@@ -333,6 +333,33 @@ internal sealed class McpE2eSelectionCoverageTests {
 			because: "a fixture classified NoEnvironment-only skips TeamCity, so every one of its tests has to carry McpE2E.NoEnvironment or a category the base filter excludes");
 	}
 
+	[Test]
+	[Description("Every fixture the script says has no test surviving the pull-request TeamCity filter has, by reflection over the compiled e2e assembly, no such test, so a subset of them can become mode none without skipping a test TeamCity would have run.")]
+	public void TeamCitySurvivalVerdicts_ShouldAgreeWithCompiledCategories() {
+		// Arrange
+		JsonElement manifest = ReadManifest();
+		string noEnvironment = manifest.GetProperty("noEnvironmentCategory").GetString()!;
+		string[] excluded = manifest.GetProperty("baseFilter").GetString()!.Split('&')
+			.Select(clause => clause.Replace("TestCategory!=", string.Empty, StringComparison.Ordinal))
+			.ToArray();
+		Dictionary<string, Type> compiled = GetFixtureTypes().ToDictionary(fixture => fixture.Name, StringComparer.Ordinal);
+		string[] claimed = Inventory.Value.GetProperty("survivesTeamCity").EnumerateObject()
+			.Where(verdict => !verdict.Value.GetBoolean())
+			.Select(verdict => verdict.Name)
+			.ToArray();
+
+		// Act
+		string[] wrong = claimed
+			.Where(name => !compiled.TryGetValue(name, out Type? fixture) || GetTeamCityRunnableTests(fixture, noEnvironment, excluded).Any())
+			.OrderBy(name => name, StringComparer.Ordinal)
+			.ToArray();
+
+		// Assert
+		claimed.Should().NotBeEmpty(because: "the guard is meaningless if the script finds no fixture that TeamCity would run nothing of");
+		wrong.Should().BeEmpty(
+			because: "a subset made only of these fixtures queues no TeamCity build, so none of them may hold a test the pull-request filter keeps");
+	}
+
 	/// <summary>
 	/// Test methods of the fixture whose effective categories (class and method, inherited included) pass
 	/// <c>TestCategory!=McpE2E.NoEnvironment&amp;&lt;baseFilter&gt;</c>, i.e. the tests a TeamCity subset run executes.
@@ -572,6 +599,25 @@ internal sealed class McpE2eSelectionCoverageTests {
 			because: "the decision log must say why the run became full");
 		behindExternalService.GetProperty("mode").GetString().Should().Be("full",
 			because: "SanHelper is used only by SanProvider, so a change to it flows into every consumer of IExternalProvider; checking only the changed file's own types would call it unobservable");
+	}
+
+	[Test]
+	[Description("A subset whose fixtures hold no test the TeamCity filter keeps - every test is McpE2E.ProcessDesigner, McpE2E.Manual or NoEnvironment - becomes mode none, while one surviving test anywhere in the subset keeps the build.")]
+	public void Script_ShouldQueueNothing_WhenNoSelectedTestSurvivesTheTeamCityFilter() {
+		// Arrange
+		using SyntheticRepository repo = SyntheticRepository.Create();
+
+		// Act
+		JsonElement excludedOnly = RunSelection(["clio/Command/McpServer/Tools/OmegaTool.cs"], includeNoEnvironment: false, repo.Root);
+		JsonElement oneSurvivor = RunSelection(["clio/Command/McpServer/Tools/OmegaTool.cs", "clio/Command/McpServer/Tools/BetaTool.cs"], includeNoEnvironment: false, repo.Root);
+
+		// Assert
+		excludedOnly.GetProperty("mode").GetString().Should().Be("none",
+			because: "OmegaDesignerE2ETests is McpE2E.ProcessDesigner at class level and OmegaManualE2ETests marks its only test McpE2E.Manual, so TeamCity would deploy a Creatio and execute nothing");
+		excludedOnly.GetProperty("decisions").EnumerateArray().Select(d => d.GetString()).Should().Contain(d => d!.Contains("survives the TeamCity filter"),
+			because: "the decision log must say why no build is queued");
+		oneSurvivor.GetProperty("mode").GetString().Should().Be("subset",
+			because: "BetaToolE2ETests is a Sandbox fixture, so the build has something to run");
 	}
 
 	[Test]
@@ -1181,6 +1227,16 @@ internal sealed class McpE2eSelectionCoverageTests {
 			Write("clio/Command/McpServer/Tools/KoppaTool.cs",
 				"public sealed class KoppaTool : BaseTool {\n\tinternal const string ToolName = \"koppa-run\";\n" +
 				"\t[McpServerTool(Name = ToolName)]\n\tpublic void Run(KoppaRunner runner) { }\n}");
+			// A tool whose fixtures hold only tests the pull-request TeamCity filter excludes.
+			Write("clio/Command/McpServer/Tools/OmegaTool.cs",
+				"public sealed class OmegaTool : BaseTool {\n\tinternal const string ToolName = \"omega-run\";\n" +
+				"\t[McpServerTool(Name = ToolName)]\n\tpublic void Run() { }\n}");
+			Write("clio.mcp.e2e/OmegaDesignerE2ETests.cs",
+				"[TestFixture]\n[Category(McpE2ECategories.ProcessDesigner)]\npublic sealed class OmegaDesignerE2ETests {\n\t[Test] public void Works() => Call(OmegaTool.ToolName);\n}");
+			Write("clio.mcp.e2e/OmegaManualE2ETests.cs",
+				"[TestFixture]\npublic sealed class OmegaManualE2ETests {\n\t[Test]\n\t[Category(\"McpE2E.Sandbox\")]\n\t[Category(\"McpE2E.Manual\")]\n\tpublic void Works() => Call(\"omega-run\");\n}");
+			Write("clio.mcp.e2e/Support/Configuration/McpE2ECategories.cs",
+				"public static class McpE2ECategories {\n\tpublic const string ProcessDesigner = \"McpE2E.ProcessDesigner\";\n}");
 			foreach (string fixture in new[] { "Pi", "Rho", "Tau", "Upsilon", "Chi", "Psi", "Sampi", "Heta", "Ksi", "Stigma", "Digamma", "Qoppa", "Koppa" }) {
 				Write($"clio.mcp.e2e/{fixture}ToolE2ETests.cs",
 					$"[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class {fixture}ToolE2ETests {{\n\t[Test] public void Works() => Call({fixture}Tool.ToolName);\n}}");

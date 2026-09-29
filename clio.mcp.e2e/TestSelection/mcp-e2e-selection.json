@@ -38,7 +38,9 @@
     "A subset whose fixtures are ALL positively McpE2E.NoEnvironment (and none Sandbox) becomes mode 'none':",
     "nothing is queued, because that tier runs on GitHub-hosted runners (.github/workflows/build.yml, job",
     "mcp-e2e-noenvironment) and pull-request runs on TeamCity exclude it; a fixture with no McpE2E.* tier",
-    "still needs TeamCity. The TeamCity step's default",
+    "still needs TeamCity. A subset in which no test survives the pull-request TeamCity filter - every test",
+    "is NoEnvironment or a category baseFilter excludes (McpE2E.ProcessDesigner, McpE2E.Manual) - is mode",
+    "'none' too: the build would deploy a Creatio and execute nothing. The TeamCity step's default",
     "filter is baseFilter; a full pull-request run sends baseFilter plus TestCategory!=McpE2E.NoEnvironment."
   ],
   "baseFilter": "TestCategory!=McpE2E.ProcessDesigner&TestCategory!=McpE2E.Manual",

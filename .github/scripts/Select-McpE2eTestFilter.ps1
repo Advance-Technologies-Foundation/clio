@@ -19,7 +19,8 @@
 #   uncoveredTools: [tool files no fixture names],
 #   uncoveredEntryPoints: [MCP resource/prompt files no fixture names],
 #   unreachableProductFiles: [files no fixture can observe], lexerResidue: [files that survived blanking],
-#   noEnvironmentOnly: { <fixture>: true when none of its tests survives the TeamCity subset filter } }.
+#   noEnvironmentOnly: { <fixture>: true when none of its tests survives the TeamCity subset filter },
+#   survivesTeamCity: { <fixture>: true when at least one visible test survives that filter } }.
 # clio.tests/McpE2eSelectionCoverageTests.cs compares that inventory with reflection over the compiled
 # e2e assembly, so this script is the single owner of the textual rules and the guard only checks that
 # the text-based view and the compiled view agree.
@@ -163,6 +164,27 @@ function Test-NoEnvironmentOnly([string] $ClassAttributes, [string] $Body) {
     return $anyNoEnvironment
 }
 
+# True when at least one visible test of the fixture survives a TeamCity filter that excludes the
+# given categories - its class and method categories together intersect none of them. A fixture with
+# no visible test (all inherited from a base in another file) is assumed to run. Unlike
+# Test-NoEnvironmentOnly this says nothing about GitHub: a fixture whose tests are all
+# McpE2E.ProcessDesigner or McpE2E.Manual runs on no pull-request lane, and a TeamCity build queued
+# for it deploys a Creatio to execute zero tests.
+function Test-SurvivesTeamCityFilter([string] $ClassAttributes, [string] $Body, [string[]] $Excluded) {
+    $classCategories = @(Get-Categories $ClassAttributes)
+    if (@($classCategories | Where-Object { $Excluded -contains $_ }).Count -gt 0) { return $false }
+    $methods = Get-TestMethodCategories $Body
+    if ($methods.Count -eq 0) { return $true }
+    foreach ($categories in $methods) {
+        if (@(@($categories) | Where-Object { $Excluded -contains $_ }).Count -eq 0) { return $true }
+    }
+    return $false
+}
+
+$fixtureSurvivesTeamCity = @{}  # fixture class name -> $true when a test survives the pull-request TeamCity filter
+$teamCityExcluded = @($baseFilterExcluded)
+if (-not $IncludeNoEnvironment) { $teamCityExcluded += [string]$manifest.noEnvironmentCategory }
+
 foreach ($file in Get-ChildItem -LiteralPath $fixtureRoot -Filter '*.cs' -File) {
     $text = Read-Text $file.FullName
     if ($text -cnotmatch '\[\s*(Test|TestFixture|TestCase|TestCaseSource|Theory)\b') { continue }
@@ -181,6 +203,7 @@ foreach ($file in Get-ChildItem -LiteralPath $fixtureRoot -Filter '*.cs' -File) 
         if ($closingBraces.Count -eq 0) { 0 } else { $closingBraces[-1].Index + 1 }
     })
     $verdicts = @{}
+    $survives = @{}
     for ($i = 0; $i -lt $declarations.Count; $i++) {
         $segmentEnd = if ($i + 1 -lt $declarations.Count) { $segmentStarts[$i + 1] } else { $code.Length }
         $classAttributes = $code.Substring($segmentStarts[$i], $declarations[$i].Index - $segmentStarts[$i])
@@ -188,8 +211,14 @@ foreach ($file in Get-ChildItem -LiteralPath $fixtureRoot -Filter '*.cs' -File) 
         $name = $declarations[$i].Groups[1].Value
         # A partial class declared twice in one file is NoEnvironment-only only if every part is.
         $verdicts[$name] = (Test-NoEnvironmentOnly $classAttributes $body) -and ($verdicts[$name] -ne $false)
+        # ...and it runs on TeamCity if any part does.
+        $survives[$name] = (Test-SurvivesTeamCityFilter $classAttributes $body $teamCityExcluded) -or ($survives[$name] -eq $true)
     }
-    foreach ($class in $classes) { $fixtureSources[$class] = $text; $fixtureNoEnvironmentOnly[$class] = [bool]$verdicts[$class] }
+    foreach ($class in $classes) {
+        $fixtureSources[$class] = $text
+        $fixtureNoEnvironmentOnly[$class] = [bool]$verdicts[$class]
+        $fixtureSurvivesTeamCity[$class] = [bool]$survives[$class]
+    }
 }
 
 # --- tool inventory: what each Tools/**/*.cs declares ----------------------------------------------
@@ -1142,6 +1171,8 @@ if ($Inventory) {
     foreach ($key in ($reachability.Keys | Sort-Object)) { $reachOut[$key] = @($reachability[$key] | Sort-Object) }
     $noEnvironmentOut = [ordered]@{}
     foreach ($key in ($fixtureNoEnvironmentOnly.Keys | Sort-Object)) { $noEnvironmentOut[$key] = $fixtureNoEnvironmentOnly[$key] }
+    $survivesOut = [ordered]@{}
+    foreach ($key in ($fixtureSurvivesTeamCity.Keys | Sort-Object)) { $survivesOut[$key] = $fixtureSurvivesTeamCity[$key] }
     # Every product file the graph says no fixture can observe. Pinned in the repository, because
     # skipping the build for such a file is only safe while a human agrees the file is really
     # outside the MCP surface - a silent addition here is a test that stopped running.
@@ -1182,7 +1213,7 @@ if ($Inventory) {
         if (@(Select-FixturesForEntryPoint $relative).Count -eq 0) { $uncoveredEntryPoints.Add($relative) }
     }
     [pscustomobject]@{
-        fixtures = $fixturesOut; reachability = $reachOut; noEnvironmentOnly = $noEnvironmentOut
+        fixtures = $fixturesOut; reachability = $reachOut; noEnvironmentOnly = $noEnvironmentOut; survivesTeamCity = $survivesOut
         uncoveredTools = @($uncovered | Sort-Object)
         uncoveredEntryPoints = @($uncoveredEntryPoints)
         unreachableProductFiles = @($unreachable)
@@ -1305,6 +1336,13 @@ if ($mode -eq 'subset' -and -not $IncludeNoEnvironment) {
     $needsTeamCity = @($fixtures | Where-Object { -not $fixtureNoEnvironmentOnly[$_] })
     if ($needsTeamCity.Count -eq 0) {
         $decisions.Add('every selected fixture is positively NoEnvironment-only and that tier runs on GitHub -> nothing to run on TeamCity')
+        $mode = 'none'
+    }
+}
+if ($mode -eq 'subset') {
+    $runnable = @($fixtures | Where-Object { $fixtureSurvivesTeamCity[$_] })
+    if ($runnable.Count -eq 0) {
+        $decisions.Add("no test of the selected fixtures survives the TeamCity filter (it excludes $($teamCityExcluded -join ', ')) -> a build would deploy Creatio and run nothing")
         $mode = 'none'
     }
 }

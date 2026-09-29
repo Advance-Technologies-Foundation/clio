@@ -194,6 +194,15 @@ least one carries it); `McpE2E.Sandbox` anywhere keeps it on TeamCity. `-Invento
 verdicts as `noEnvironmentOnly`, and `McpE2eSelectionCoverageTests` checks every `true` against the
 compiled categories.
 
+A subset in which no test survives the pull-request TeamCity filter is mode **none** as well, also
+checked before the size cap. That is wider than NoEnvironment-only: a fixture whose tests are all
+`McpE2E.ProcessDesigner` or `McpE2E.Manual` runs on no pull-request lane, and before this rule a
+change reaching only such fixtures (`ProcessPageFactsChecker.cs` selects 14 of them) queued a build
+that deployed a Creatio for ~45 minutes and executed zero tests. The verdict is `survivesTeamCity` in
+`-Inventory`: false only when the class, or every visible test method, carries an excluded category;
+a fixture with no visible test counts as surviving. `McpE2eSelectionCoverageTests` checks every
+`false` against the compiled categories.
+
 The subset filter is composed as
 `(FullyQualifiedName~Clio.Mcp.E2E.A|FullyQualifiedName~Clio.Mcp.E2E.B)&TestCategory!=McpE2E.NoEnvironment&<baseFilter>`.
 `TestCategory` (not `Category`) is mandatory in the category part - see
