@@ -76,6 +76,8 @@ NOTES
       the nearest known field
     - name is accepted as an alias of column-name; an operation that sets both to
       different values is rejected
+    - each operation payload must be a JSON object; a field value of the wrong type
+      is reported with its JSON path (for example $.required)
     - a modify on an INHERITED column may override only its caption/description
       (title-localizations/description-localizations); changing its name, type, or
       flags is rejected, and stops the batch on that operation

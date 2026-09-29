@@ -378,6 +378,96 @@ internal sealed class UpdateEntitySchemaCommandTests : BaseClioModuleTests
 	}
 
 	[Test]
+	[Description("Strips invisible Unicode format characters (bidirectional override U+202E, zero-width space U+200B, isolates U+2066-U+2069) from an echoed name, so the message cannot hide or reorder what it shows (ENG-101526).")]
+	public void SanitizeForMessage_RemovesUnicodeFormatCharacters() {
+		// Arrange
+		string value = "ab\u202Ecd\u200Bef\u2066gh\u2067ij\u2068kl\u2069mn";
+
+		// Act
+		string result = UpdateEntitySchemaCommand.SanitizeForMessage(value);
+
+		// Assert
+		result.Should().Be("abcdefghijklmn",
+			because: "format characters are invisible in a terminal and would let a field name disguise itself");
+	}
+
+	[Test]
+	[Description("Cuts a long echoed name before a surrogate pair that straddles the 64-character limit instead of splitting it into a lone high surrogate (ENG-101526).")]
+	public void SanitizeForMessage_DoesNotSplitSurrogatePairAtCut() {
+		// Arrange
+		string value = new string('k', 63) + "\U0001F600" + new string('z', 10);
+
+		// Act
+		string result = UpdateEntitySchemaCommand.SanitizeForMessage(value);
+
+		// Assert
+		result.Should().Be(new string('k', 63) + "...",
+			because: "the emoji occupies characters 64 and 65, so keeping only its high surrogate would emit invalid UTF-16");
+		result.Any(char.IsSurrogate).Should().BeFalse(
+			because: "no half of a surrogate pair may survive the cut");
+	}
+
+	[Test]
+	[Description("Keeps a surrogate pair that ends exactly at the 64-character limit (ENG-101526).")]
+	public void SanitizeForMessage_KeepsSurrogatePairEndingAtCut() {
+		// Arrange
+		string value = new string('k', 62) + "\U0001F600" + new string('z', 10);
+
+		// Act
+		string result = UpdateEntitySchemaCommand.SanitizeForMessage(value);
+
+		// Assert
+		result.Should().Be(new string('k', 62) + "\U0001F600...",
+			because: "the pair fits entirely inside the first 64 characters, so it is kept whole");
+	}
+
+	[TestCase("[]")]
+	[TestCase("42")]
+	[TestCase("\"modify\"")]
+	[Description("Rejects a well-formed operation payload that is not a JSON object with a message saying it must be an object, not that it is invalid JSON (ENG-101526).")]
+	public void Execute_ReturnsFailure_WhenOperationIsNotJsonObject(string payload) {
+		// Arrange
+		UpdateEntitySchemaOptions options = new() {
+			Environment = "dev",
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Operations = [payload]
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "only a JSON object describes an operation");
+		_columnManager.DidNotReceiveWithAnyArgs().ModifyColumns(default!);
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("Operation payload at index 0 must be a JSON object.")));
+		_logger.DidNotReceive().WriteError(Arg.Is<string>(message => message.Contains("is not valid JSON")));
+	}
+
+	[Test]
+	[Description("Reports a well-formed operation whose field has a value of the wrong type as an invalid value at its JSON path, not as invalid JSON (ENG-101526).")]
+	public void Execute_ReportsInvalidValueWithPath_WhenFieldHasWrongType() {
+		// Arrange
+		UpdateEntitySchemaOptions options = new() {
+			Environment = "dev",
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Operations = ["""{"action":"modify","column-name":"UsrStatus","required":"yes"}"""]
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "'required' takes a boolean, so the operation cannot be applied");
+		_columnManager.DidNotReceiveWithAnyArgs().ModifyColumns(default!);
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("Operation payload at index 0 has an invalid value at JSON path '$.required'.")));
+		_logger.DidNotReceive().WriteError(Arg.Is<string>(message => message.Contains("is not valid JSON")));
+	}
+
+	[Test]
 	[Description("Accepts an operation that sets 'column-name' and its alias 'name' to the same value (ENG-101526).")]
 	public void Execute_Succeeds_WhenNameAliasEqualsColumnName() {
 		// Arrange

@@ -1727,16 +1727,19 @@ internal class Program {
 	/// caller can drop it when clio renders the parse error itself, or <see cref="Replay"/> it otherwise.
 	/// </summary>
 	private sealed class DeferredHelpViewer(CustomHelpViewer inner) : CustomHelpViewer {
+		// Both CheckHelp and Replay delegate to the wrapped viewer, so it is required up front rather than
+		// null-checked in one of them only.
+		private readonly CustomHelpViewer _inner = inner ?? throw new ArgumentNullException(nameof(inner));
 		private readonly List<string> _requestedCommands = [];
 
-		public bool CheckHelp(string commandName) => inner?.CheckHelp(commandName) ?? false;
+		public bool CheckHelp(string commandName) => _inner.CheckHelp(commandName);
 
 		public void ViewHelp(string commandName) => _requestedCommands.Add(commandName);
 
 		/// <summary>Shows, through the wrapped viewer, every help screen the parse requested.</summary>
 		public void Replay() {
 			foreach (string commandName in _requestedCommands) {
-				inner.ViewHelp(commandName);
+				_inner.ViewHelp(commandName);
 			}
 		}
 	}
@@ -1755,7 +1758,10 @@ internal class Program {
 		}
 		// Position- and claim-aware: a -h/--help that is the value of an option, or that the verb binds to its own
 		// option (healthcheck/publish-app -h), is not a help request and must not hide a real option error.
-		if (ArgvRequestsUnclaimedHelp(normalizedArgs, notParsed.TypeInfo.Current, includeLibraryOnlyAliases: true)) {
+		// The claim is matched with the parser's own case sensitivity: healthcheck/publish-app claim -h, not -H,
+		// so for them -H is an unknown option and stays the library's help output, exactly as before ENG-101526.
+		if (ArgvRequestsUnclaimedHelp(normalizedArgs, notParsed.TypeInfo.Current, includeLibraryOnlyAliases: true,
+				matchParserCase: true)) {
 			return false;
 		}
 		Error[] errors = notParsed.Errors.ToArray();
@@ -1996,8 +2002,11 @@ internal class Program {
 	// without driving a full command execution that may require a registered environment.
 	// includeLibraryOnlyAliases also counts -help/--h, which CommandLineSDK renders as help but clio's own
 	// pre-parse help short-circuit deliberately does not intercept.
+	// matchParserCase decides a claim the way the parser does (ordinal, against the token's own spelling), so -H is
+	// unclaimed on a verb that claims only -h. The pre-parse short-circuit keeps the case-insensitive claim it has
+	// always had (it treats -H as claimed there and leaves it to the parser), so its behaviour does not change.
 	internal static bool ArgvRequestsUnclaimedHelp(string[] normalizedArgs, Type optionsType,
-		bool includeLibraryOnlyAliases = false) {
+		bool includeLibraryOnlyAliases = false, bool matchParserCase = false) {
 		(PropertyInfo Property, OptionAttribute Option)[] ownOptions = GetOwnOptionAttributes(optionsType).ToArray();
 		bool previousTokenConsumesValue = false;
 		// Index 0 is the verb name itself; only its arguments can be help tokens.
@@ -2008,7 +2017,7 @@ internal class Program {
 				previousTokenConsumesValue = false;
 				continue;
 			}
-			if (IsUnclaimedHelpFlagToken(token, optionsType)
+			if (IsUnclaimedHelpFlagToken(token, optionsType, matchParserCase)
 				|| includeLibraryOnlyAliases
 				&& LibraryOnlyHelpAliases.Contains(token, StringComparer.OrdinalIgnoreCase)) {
 				return true;
@@ -2023,12 +2032,17 @@ internal class Program {
 	// for that verb (e.g. healthcheck/publish-app bind their own -h to a different option).
 	// Internal (not private) so tests can verify the decision hermetically, without needing to
 	// drive a full command execution that may require a registered environment.
-	internal static bool IsUnclaimedHelpFlagToken(string token, Type optionsType) {
+	// matchParserCase: see ArgvRequestsUnclaimedHelp. With it, a claim counts only when the option name equals the
+	// token's own spelling ordinally, which is how CommandLineSDK binds it (healthcheck claims -h, so -H is unknown).
+	internal static bool IsUnclaimedHelpFlagToken(string token, Type optionsType, bool matchParserCase = false) {
+		StringComparison claimComparison = matchParserCase ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
 		if (string.Equals(token, "-h", StringComparison.OrdinalIgnoreCase)) {
-			return !GetOwnOptionAttributes(optionsType).Any(pair => string.Equals(pair.Option.ShortName, "h", StringComparison.OrdinalIgnoreCase));
+			string claimedName = matchParserCase ? token[1..] : "h";
+			return !GetOwnOptionAttributes(optionsType).Any(pair => string.Equals(pair.Option.ShortName, claimedName, claimComparison));
 		}
 		if (string.Equals(token, LongHelpFlag, StringComparison.OrdinalIgnoreCase)) {
-			return !GetOwnOptionAttributes(optionsType).Any(pair => string.Equals(pair.Option.LongName, "help", StringComparison.OrdinalIgnoreCase));
+			string claimedName = matchParserCase ? token[2..] : "help";
+			return !GetOwnOptionAttributes(optionsType).Any(pair => string.Equals(pair.Option.LongName, claimedName, claimComparison));
 		}
 		return false;
 	}

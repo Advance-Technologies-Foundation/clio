@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Reflection;
 using System.Text.Json;
@@ -245,20 +246,27 @@ public class UpdateEntitySchemaCommand : Command<UpdateEntitySchemaOptions>
 			throw new InvalidOperationException($"Operation payload at index {index} is not valid JSON.", exception);
 		}
 		using (document) {
-			RejectUnknownFields(document.RootElement, index);
+			JsonElement root = document.RootElement;
+			if (root.ValueKind == JsonValueKind.Null) {
+				throw new InvalidOperationException($"Operation payload at index {index} is empty.");
+			}
+			if (root.ValueKind != JsonValueKind.Object) {
+				throw new InvalidOperationException($"Operation payload at index {index} must be a JSON object.");
+			}
+			RejectUnknownFields(root, index);
 			try {
-				return document.RootElement.Deserialize<UpdateEntitySchemaOperationDefinition>(JsonOptions)
+				return root.Deserialize<UpdateEntitySchemaOperationDefinition>(JsonOptions)
 					?? throw new InvalidOperationException($"Operation payload at index {index} is empty.");
 			} catch (JsonException exception) {
-				throw new InvalidOperationException($"Operation payload at index {index} is not valid JSON.", exception);
+				// The text already parsed, so this is a well-formed value of the wrong type, not malformed JSON.
+				string path = SanitizeForMessage(string.IsNullOrEmpty(exception.Path) ? "$" : exception.Path);
+				throw new InvalidOperationException(
+					$"Operation payload at index {index} has an invalid value at JSON path '{path}'.", exception);
 			}
 		}
 	}
 
 	private void RejectUnknownFields(JsonElement root, int index) {
-		if (root.ValueKind != JsonValueKind.Object) {
-			return;
-		}
 		foreach (JsonProperty property in root.EnumerateObject()) {
 			if (KnownOperationFields.Contains(property.Name, StringComparer.OrdinalIgnoreCase)) {
 				continue;
@@ -272,11 +280,20 @@ public class UpdateEntitySchemaCommand : Command<UpdateEntitySchemaOptions>
 
 	/// <summary>
 	/// Makes a user-supplied name safe to echo in an error message: control characters (terminal escape
-	/// sequences, line breaks) are removed and the result is cut to <see cref="MaxEchoedNameLength"/> characters.
+	/// sequences, line breaks) and invisible format characters (bidirectional overrides such as U+202E, zero-width
+	/// characters such as U+200B) are removed, and the result is cut to <see cref="MaxEchoedNameLength"/>
+	/// characters without splitting a surrogate pair.
 	/// </summary>
 	internal static string SanitizeForMessage(string value) {
-		string printable = new(value.Where(character => !char.IsControl(character)).ToArray());
-		return printable.Length <= MaxEchoedNameLength ? printable : printable[..MaxEchoedNameLength] + "...";
+		string printable = new(value
+			.Where(character => !char.IsControl(character)
+				&& char.GetUnicodeCategory(character) != UnicodeCategory.Format)
+			.ToArray());
+		if (printable.Length <= MaxEchoedNameLength) {
+			return printable;
+		}
+		int cut = char.IsHighSurrogate(printable[MaxEchoedNameLength - 1]) ? MaxEchoedNameLength - 1 : MaxEchoedNameLength;
+		return printable[..cut] + "...";
 	}
 
 	private static string ResolveColumnName(UpdateEntitySchemaOperationDefinition operation, int index) {

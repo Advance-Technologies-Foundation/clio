@@ -460,6 +460,52 @@ internal class CommonProgramTest : BaseClioModuleTests{
 			because: "healthcheck binds -h to --web-host, so the help screen must not be shown for it");
 	}
 
+	[TestCase("healthcheck", "Healthcheck monitoring")]
+	[TestCase("publish-app", "Publish a workspace to a ZIP archive or hub folder")]
+	[Description("An upper-case -H on a verb that claims only the lower-case -h for its own option is an unknown option to the case-sensitive parser, so it keeps showing the command help exactly as the released clio does instead of the short parse error (ENG-101526 regression).")]
+	public void ExecuteCommands_WithUpperCaseHOnVerbClaimingLowerCaseH_ShouldShowCommandHelp(string verb, string helpMarker) {
+		// Arrange
+		ThreadSafeStringWriter consoleOutput = new();
+		Console.SetOut(consoleOutput);
+		Console.SetError(consoleOutput);
+		string[] args = [verb, "-H"];
+
+		// Act
+		int exitCode = Program.ExecuteCommands(args);
+		string output = consoleOutput.ToString();
+
+		// Assert
+		exitCode.Should().Be(1, because: "the released clio also exits 1 here: the parser still rejects -H as an unknown option");
+		output.Should().Contain(helpMarker,
+			because: "-H must keep showing the command help, as it did before the short parse-error change");
+		output.Should().NotContain("See command help:",
+			because: "the short parse-error form must not replace the help screen -H asks for");
+		output.Should().NotContain("Option 'H' is unknown.",
+			because: "the released clio shows only the help for -H, not the parse error");
+	}
+
+	[Test]
+	[Description("With the parser's case sensitivity, an upper-case -H is unclaimed on a verb that claims only -h, while a lower-case -h stays claimed (ENG-101526 regression).")]
+	public void IsUnclaimedHelpFlagToken_WithParserCase_ShouldDistinguishUpperAndLowerCaseH() {
+		// Act
+		bool upperCase = Program.IsUnclaimedHelpFlagToken("-H", typeof(HealthCheckOptions), matchParserCase: true);
+		bool lowerCase = Program.IsUnclaimedHelpFlagToken("-h", typeof(HealthCheckOptions), matchParserCase: true);
+
+		// Assert
+		upperCase.Should().BeTrue(because: "healthcheck claims -h, not -H, and the parser binds option names case-sensitively");
+		lowerCase.Should().BeFalse(because: "healthcheck binds -h to --web-host, so it is a real argument, not a help request");
+	}
+
+	[Test]
+	[Description("Without the parser's case sensitivity the pre-parse help short-circuit keeps its released behaviour: -H counts as claimed on a verb that claims -h, so it is left to the parser (ENG-101526 regression).")]
+	public void IsUnclaimedHelpFlagToken_WithoutParserCase_ShouldTreatUpperCaseHAsClaimed() {
+		// Act
+		bool result = Program.IsUnclaimedHelpFlagToken("-H", typeof(PublishWorkspaceCommandOptions));
+
+		// Assert
+		result.Should().BeFalse(because: "the pre-parse short-circuit must not change: released clio sends publish-app -H to the parser, which shows the help and exits 1");
+	}
+
 	[Test]
 	[Description("A -help library help alias after an option error keeps the library's help output instead of the short error (ENG-101526).")]
 	public void ExecuteCommands_WithUnknownOptionAndLibraryHelpAlias_ShouldKeepLibraryHelp() {
