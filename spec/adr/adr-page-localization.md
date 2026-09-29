@@ -213,6 +213,13 @@ before saving, naming the key; it is refused, never stripped.
   an error: F8 shows that a schema caption holds the English text in every culture right after `create-page`, so
   "present" does not mean "translated"; but a word like "Email" can be the same in two languages, so clio cannot
   decide it.
+- `captionInherited` / `captionValue` (QA follow-up, 2026-09-29, measured on 10.2.312 .NET Framework): F8 does not
+  hold for every page. `GetSchema` returns, in each culture the page stores no title for, the PARENT template's title,
+  and returns that parent's `caption` array inline under `schema.parent`. A page created from `BlankPageTemplate`
+  showed "Página en blanco" / "Page blanche" in 27 of 28 cultures; a `create-app` list page showed the
+  `ListPageV3Template` title in 10 of 29. `captionInherited` is true when the culture value equals the parent's value
+  in that culture while the page's `en-US` title differs from the parent's (a page that kept the template's title
+  also keeps its translations). `captionValue` is the title in the culture, so no `SysSchema` read is needed.
 - The workspace-capture warning carries the meaning of the one `update-page` returns
   (`McpToolDescriptions.PageResourcesAdditive` family), worded for `localize-page`: a server save does not update workspace metadata or
   culture XML, and a later `push-workspace` can revert it.

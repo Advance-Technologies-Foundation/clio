@@ -47,7 +47,7 @@ public sealed class LocalizePageTool(
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.ClioPages)]
 	[Description("Translate the captions of ONE Freedom UI page into ONE additional culture without changing en-US or any other culture. " +
-		"Read get-guidance name=page-schema-resources before translating a page. " +
+		"Read get-guidance name=page-schema-translation before translating a page. " +
 		"Writes the supplied `resources` (existing key -> value in `culture`) and the page title `caption` in that culture only; " +
 		"the same call twice leaves the same state and the second one reports saved:false. " +
 		"Report-only when both `resources` and `caption` are omitted: nothing is saved and `coverage` lists the keys still missing in the culture. " +

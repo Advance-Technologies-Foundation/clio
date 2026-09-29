@@ -96,6 +96,7 @@ Naming follows `MethodName_ShouldExpectedBehavior_WhenCondition`. Command tests 
 | TC-U-38 | `Execute_ShouldReportServerMessage_WhenSaveIsRejected` | saved:false, no cache reset, no baseline refresh |
 | TC-U-39 | `Execute_ShouldReportUnknownOutcome_WhenSaveThrows` / `Execute_ShouldWarn_WhenBaselineRefreshThrows` | identity + warning kept / success with warning |
 | TC-U-48 | `Execute_ShouldRedactServerMessage_WhenSaveErrorCarriesCredential` / `Execute_ShouldRedactExceptionText_WhenRemoteCallThrows` | no credential in error |
+| TC-U-50 | `Execute_ShouldReportCaptionInherited_WhenTitleComesFromTemplate` / `Execute_ShouldNotReportCaptionInherited_WhenPageKeepsTemplateTitle` / `Execute_ShouldClearCaptionInherited_WhenCaptionIsWritten` | `captionInherited`, `captionValue` |
 | TC-U-49 | `UpdateSection_Should_WarnAboutFallbackTitle_WhenProfileCultureHasNoRow` | fallback title written with a warning |
 
 ## E2E cases (`clio.mcp.e2e/LocalizePageToolE2ETests.cs`, `McpE2E.Sandbox`)

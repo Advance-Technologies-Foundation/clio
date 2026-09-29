@@ -86,6 +86,23 @@ public sealed record LocalizePageCoverage {
 	[JsonProperty("captionSameAsDefault")]
 	[JsonPropertyName("captionSameAsDefault")]
 	public bool CaptionSameAsDefault { get; init; }
+
+	/// <summary>
+	/// Gets a value indicating whether the page title in the culture is the parent template's title in that culture,
+	/// i.e. the page has no title of its own there. <c>GetSchema</c> fills the cultures a page does not store from the
+	/// parent schema, so a page created from a template shows the template's translated title ("Página en blanco")
+	/// that is not a translation of the page's own title. Not set when the page keeps the template's <c>en-US</c> title.
+	/// </summary>
+	[DataMember(Name = "captionInherited")]
+	[JsonProperty("captionInherited")]
+	[JsonPropertyName("captionInherited")]
+	public bool CaptionInherited { get; init; }
+
+	/// <summary>Gets the page title in the culture as <c>GetSchema</c> returns it; <see langword="null"/> when there is none.</summary>
+	[DataMember(Name = "captionValue")]
+	[JsonProperty("captionValue")]
+	[JsonPropertyName("captionValue")]
+	public string CaptionValue { get; init; }
 }
 
 /// <summary>
@@ -628,13 +645,23 @@ public sealed class LocalizePageCommand : Command<LocalizePageOptions>, ILocaliz
 		}
 		var captionValues = schema[CaptionKey] as JArray;
 		string captionValue = ResourceStringHelper.GetCultureValue(captionValues, culture);
+		string defaultCaption = ResourceStringHelper.GetCultureValue(captionValues, ResourceStringHelper.DefaultCultureName);
+		var parentCaptionValues = schema["parent"]?[CaptionKey] as JArray;
+		string parentCaption = ResourceStringHelper.GetCultureValue(parentCaptionValues, culture);
+		string parentDefaultCaption =
+			ResourceStringHelper.GetCultureValue(parentCaptionValues, ResourceStringHelper.DefaultCultureName);
 		return new LocalizePageCoverage {
 			Keys = keys,
 			Translated = keys - missing.Count,
 			Missing = missing,
 			SameAsDefault = sameAsDefault,
 			CaptionSameAsDefault = !string.IsNullOrEmpty(captionValue) && string.Equals(captionValue,
-				ResourceStringHelper.GetCultureValue(captionValues, ResourceStringHelper.DefaultCultureName), StringComparison.Ordinal)
+				defaultCaption, StringComparison.Ordinal),
+			// Only when the page renamed itself in en-US: a page that kept the template's title also keeps its translations.
+			CaptionInherited = !string.IsNullOrEmpty(captionValue)
+				&& string.Equals(captionValue, parentCaption, StringComparison.Ordinal)
+				&& !string.Equals(defaultCaption, parentDefaultCaption, StringComparison.Ordinal),
+			CaptionValue = string.IsNullOrEmpty(captionValue) ? null : captionValue
 		};
 	}
 

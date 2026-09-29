@@ -5512,9 +5512,9 @@ internal static class ToolContractCatalog {
 			"Keys are the page's resource keys as get-page shows them, inherited ones included; an unknown key fails the whole call before saving - register new keys with update-page first. " +
 			"The culture must exist in the environment's Languages section (SysCulture): an absent culture fails before any write, an inactive one is written with a warning. " +
 			"The default culture en-US is refused - change en-US values with update-page `resources`. " +
-			"A value carrying a character Creatio cannot store in a schema resource (a control character other than tab/LF/CR, U+FFFE, U+FFFF, a lone surrogate) fails the call before saving. " +
+			"A value carrying a character Creatio cannot store in a schema resource (a control character other than tab/LF/CR, U+FFFE, U+FFFF, a lone surrogate), an empty or whitespace-only value, or a whitespace-only caption fails the call before saving. " +
 			"Data-source-bound field labels are entity column captions - translate them with title-localizations on the entity tools. " +
-			"Read get-guidance name=page-schema-resources before translating a page.",
+			"Read get-guidance name=page-schema-translation before translating a page.",
 			new ToolInputSchemaContract(
 				[SchemaNameFieldName, CultureFieldName],
 				EnvironmentOrExplicitConnectionFields(
@@ -5539,7 +5539,7 @@ internal static class ToolContractCatalog {
 				Field("written", ArrayType, "Keys whose value in `culture` was written."),
 				Field("unchanged", ArrayType, "Supplied keys whose value in `culture` already equalled the supplied one."),
 				Field("captionOutcome", StringType, "`written` or `unchanged` when `caption` was supplied; absent otherwise."),
-				Field("coverage", ObjectType, "Coverage in `culture` after the call: `keys` (all resource keys of the page hierarchy, the get-page count), `translated`, `missing` (keys with no value in `culture`), `sameAsDefault` (keys whose value equals en-US - review, may be untranslated) and `captionSameAsDefault`."),
+				Field("coverage", ObjectType, "Coverage in `culture` after the call: `keys` (all resource keys of the page hierarchy, the get-page count), `translated`, `missing` (keys with no value in `culture`), `sameAsDefault` (keys whose value equals en-US - review, may be untranslated), `captionSameAsDefault`, `captionInherited` (the title in `culture` is the parent template's title, not the page's own - untranslated) and `captionValue` (the current title in `culture`)."),
 				Field(WarningsFieldName, ArrayType, "Non-fatal findings: an inactive culture, the workspace-capture reminder after a server save, a stale or unrefreshable .clio-pages baseline."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
 			),

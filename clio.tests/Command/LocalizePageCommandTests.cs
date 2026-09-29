@@ -174,6 +174,16 @@ public sealed class LocalizePageCommandTests : BaseCommandTests<LocalizePageOpti
 	private static JObject Schema(params JObject[] entries) =>
 		Schema(" ", new JArray(Culture("en-US", "Lab form page")), entries);
 
+	// GetSchema returns the parent template inline, with its caption in every culture it has.
+	private static JObject WithParentCaption(JObject schema, params (string Culture, string Value)[] values) {
+		schema["parent"] = new JObject {
+			["name"] = "BlankPageTemplate",
+			["uId"] = AncestorUId,
+			["caption"] = new JArray(values.Select(v => Culture(v.Culture, v.Value)))
+		};
+		return schema;
+	}
+
 	private static LocalizePageOptions Options(string culture = "es-ES", string resources = null, string caption = null) =>
 		new() { SchemaName = SchemaName, Culture = culture, Resources = resources, Caption = caption, Environment = "dev" };
 
@@ -814,5 +824,76 @@ public sealed class LocalizePageCommandTests : BaseCommandTests<LocalizePageOpti
 		response.Saved.Should().BeTrue(because: "Creatio confirmed the save");
 		response.Warnings.Should().Contain(warning => warning.Contains("meta.json is locked", StringComparison.Ordinal),
 			because: "the baseline failure is reported, not hidden");
+	}
+
+	[Test]
+	[Description("QA follow-up: on a page created from a template, a culture the page stores no title for shows the template's translated title; coverage reports it as captionInherited (untranslated) with its value, although it differs from en-US.")]
+	public void Execute_ShouldReportCaptionInherited_WhenTitleComesFromTemplate() {
+		// Arrange
+		_schema = WithParentCaption(
+			Schema(" ", new JArray(Culture("en-US", "Lab form page"), Culture("es-ES", "Página en blanco")),
+				Entry(OwnKey, SchemaUId, ("en-US", "Lab label"))),
+			("en-US", "Blank page"), ("es-ES", "Página en blanco"));
+
+		// Act
+		LocalizePageResponse response = _command.Localize(Options());
+
+		// Assert
+		response.Success.Should().BeTrue(because: "a report-only call on a readable page succeeds");
+		response.Coverage.CaptionSameAsDefault.Should().BeFalse(because: "the template's Spanish title differs from the page's en-US title");
+		response.Coverage.CaptionInherited.Should().BeTrue(
+			because: "the es-ES title is the template's, not a translation of the page's own title");
+		response.Coverage.CaptionValue.Should().Be("Página en blanco", because: "the current title in the culture is returned");
+		SaveCount.Should().Be(0, because: "report-only never saves");
+	}
+
+	[Test]
+	[Description("QA follow-up: a page that kept the template's en-US title also keeps its translations, so a culture value equal to the template's is not reported as inherited.")]
+	public void Execute_ShouldNotReportCaptionInherited_WhenPageKeepsTemplateTitle() {
+		// Arrange
+		_schema = WithParentCaption(
+			Schema(" ", new JArray(Culture("en-US", "Blank page"), Culture("es-ES", "Página en blanco")),
+				Entry(OwnKey, SchemaUId, ("en-US", "Lab label"))),
+			("en-US", "Blank page"), ("es-ES", "Página en blanco"));
+
+		// Act
+		LocalizePageResponse response = _command.Localize(Options());
+
+		// Assert
+		response.Coverage.CaptionInherited.Should().BeFalse(
+			because: "the template's es-ES title is a correct translation of a title the page did not change");
+		response.Coverage.CaptionValue.Should().Be("Página en blanco", because: "the current title in the culture is returned");
+	}
+
+	[Test]
+	[Description("QA follow-up: after the page title is written in the culture, the readback coverage no longer reports it as inherited and returns the written value.")]
+	public void Execute_ShouldClearCaptionInherited_WhenCaptionIsWritten() {
+		// Arrange
+		_schema = WithParentCaption(
+			Schema(" ", new JArray(Culture("en-US", "Lab form page"), Culture("es-ES", "Página en blanco")),
+				Entry(OwnKey, SchemaUId, ("en-US", "Lab label"))),
+			("en-US", "Blank page"), ("es-ES", "Página en blanco"));
+
+		// Act
+		LocalizePageResponse response = _command.Localize(Options(caption: "Página de laboratorio"));
+
+		// Assert
+		response.Success.Should().BeTrue(because: "the title was saved and read back");
+		response.Coverage.CaptionInherited.Should().BeFalse(because: "the page now has its own es-ES title");
+		response.Coverage.CaptionValue.Should().Be("Página de laboratorio", because: "coverage is computed from the stored schema");
+	}
+
+	[Test]
+	[Description("QA follow-up: a page without a parent in GetSchema, or without a title in the culture, reports captionInherited false and no captionValue.")]
+	public void Execute_ShouldReportNoCaptionValue_WhenCultureHasNoTitle() {
+		// Arrange
+		_schema = Schema(Entry(OwnKey, SchemaUId, ("en-US", "Lab label")));
+
+		// Act
+		LocalizePageResponse response = _command.Localize(Options());
+
+		// Assert
+		response.Coverage.CaptionInherited.Should().BeFalse(because: "there is no parent title to compare with");
+		response.Coverage.CaptionValue.Should().BeNull(because: "the page has no es-ES title");
 	}
 }
