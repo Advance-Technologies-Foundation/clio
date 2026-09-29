@@ -111,21 +111,46 @@
     },
     {
       "id": "data",
-      "option": "Data access and system settings (ESQ, run SQL scripts, data bindings, DataForge)",
+      "option": "ESQ and SQL (ESQ queries, run SQL scripts, DataForge)",
       "label": "component:data",
       "color": "c5def5",
-      "description": "Data queries, bindings and system settings",
+      "description": "ESQ queries, SQL scripts and DataForge",
       "owners": [
-        "kbondarenko-tech",
-        "Alexandr-Kravchuk",
         "kirillkrylov"
       ],
       "paths": [
         "clio/Command/McpServer/Tools/ExecuteEsqTool.cs",
-        "clio/Command/McpServer/Tools/DataBinding*",
-        "clio/Command/McpServer/Tools/SysSettingsTool.cs",
-        "clio/Command/McpServer/Tools/DataForgeTool.cs",
+        "clio/Command/McpServer/Tools/ExecuteSqlScriptTool.cs",
+        "clio/Command/McpServer/Tools/DataForge*",
         "clio/Query/"
+      ]
+    },
+    {
+      "id": "data-bindings",
+      "option": "Data bindings (package data bindings, seed data)",
+      "label": "component:data-bindings",
+      "color": "c5def5",
+      "description": "Package data bindings",
+      "owners": [
+        "kbondarenko-tech",
+        "Alexandr-Kravchuk"
+      ],
+      "paths": [
+        "clio/Command/McpServer/Tools/DataBinding*"
+      ]
+    },
+    {
+      "id": "sys-settings",
+      "option": "System settings (create, read and set system settings)",
+      "label": "component:sys-settings",
+      "color": "c5def5",
+      "description": "System settings tools",
+      "owners": [
+        "ylypnytskyi-eng",
+        "a-trofimchuk"
+      ],
+      "paths": [
+        "clio/Command/McpServer/Tools/*SysSetting*"
       ]
     },
     {
