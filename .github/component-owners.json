@@ -16,6 +16,7 @@
       "color": "c5def5",
       "description": "Freedom UI page tools and commands",
       "owners": [
+        "kbondarenko-tech",
         "Alexandr-Kravchuk",
         "d-krestov"
       ],
@@ -80,6 +81,7 @@
       "color": "c5def5",
       "description": "Application and section commands",
       "owners": [
+        "kbondarenko-tech",
         "Alexandr-Kravchuk",
         "b-horodyskyi"
       ],
@@ -95,6 +97,7 @@
       "color": "c5def5",
       "description": "Entity, source code and SQL schema tools",
       "owners": [
+        "kbondarenko-tech",
         "Alexandr-Kravchuk",
         "kirillkrylov"
       ],
@@ -113,6 +116,7 @@
       "color": "c5def5",
       "description": "Data queries, bindings and system settings",
       "owners": [
+        "kbondarenko-tech",
         "Alexandr-Kravchuk",
         "kirillkrylov"
       ],
@@ -181,8 +185,8 @@
       "color": "c5def5",
       "description": "Package management and compilation",
       "owners": [
-        "Alexandr-Kravchuk",
-        "kirillkrylov"
+        "kirillkrylov",
+        "Alexandr-Kravchuk"
       ],
       "paths": [
         "clio/Package/",
