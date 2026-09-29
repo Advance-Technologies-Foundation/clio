@@ -55,6 +55,28 @@ public sealed class ExecuteEsqToolTests {
 			because: "the recovery example must not retrieve binary or unrelated fields");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("The default execute-esq success response serializes to the pinned wire JSON; the file-mode twin must not change it.")]
+	public void Execute_SuccessResponse_ShouldMatchPinnedWireJson() {
+		// Arrange
+		(ExecuteEsqTool tool, _, _) = BuildTool(
+			"{\"success\":true,\"rows\":[{\"Id\":\"a1\",\"Name\":\"Alpha\"},{\"Id\":\"b2\",\"Name\":\"Beta\"}]}");
+		ExecuteEsqArgs args = new() {
+			EnvironmentName = "dev",
+			Query = Json("{\"rootSchemaName\":\"Contact\",\"columns\":{\"items\":{\"Id\":{},\"Name\":{}}}}")
+		};
+
+		// Act
+		ExecuteEsqResponse response = tool.Execute(args);
+
+		// Assert
+		McpResponseBaseline.Serialize(response).Should().Be(PinnedSuccessWireJson,
+			because: "the inline response is the default and stays byte-for-byte unchanged");
+	}
+
+	private const string PinnedSuccessWireJson = """{"success":true,"count":2,"rows":[{"Id":"a1","Name":"Alpha"},{"Id":"b2","Name":"Beta"}]}""";
+
 	private static JsonElement Json(string raw) => JsonDocument.Parse(raw).RootElement.Clone();
 
 	private static (ExecuteEsqTool tool, IApplicationClient client, IServiceUrlBuilder urlBuilder) BuildTool(string responseJson) {
@@ -758,6 +780,8 @@ public sealed class ExecuteEsqToolTests {
 			because: "the failure must state the enforced byte budget");
 		response.Error.Should().Contain("explicit columns",
 			because: "the caller needs an actionable recovery that avoids blob-bearing allColumns results");
+		response.Error.Should().Contain(ExecuteEsqToFileTool.ToolName,
+			because: "a caller that needs every row is pointed at the tool that writes them to a file");
 		response.Rows.Should().BeNull(
 			because: "none of the oversized DataService body may cross the MCP boundary");
 		response.Hint.Should().BeNull(

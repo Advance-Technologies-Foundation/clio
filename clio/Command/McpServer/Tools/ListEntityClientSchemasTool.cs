@@ -75,7 +75,7 @@ internal sealed class ListEntityClientSchemasTool(
 	}
 }
 
-public sealed record ListEntityClientSchemasArgs(
+public record ListEntityClientSchemasArgs(
 	[property: JsonPropertyName("entity-name")]
 	[property: Description("Entity schema name, e.g. 'Contract' or 'SupportUnit'")]
 	[property: Required]

@@ -340,7 +340,8 @@ public static class SchemaValidationService
 
 	/// <summary>
 	/// Canonical clause describing the widget-caption rule, authored here and embedded verbatim in the
-	/// per-occurrence diagnostic (<see cref="BuildUnresolvedCaptionError"/>)
+	/// per-occurrence diagnostic (<see cref="BuildUnresolvedCaptionError"/>) and, once, in the grouped one
+	/// (<see cref="BuildGroupedUnresolvedCaptionError"/>)
 	/// </summary>
 	internal const string InsertedWidgetCaptionClause =
 		"a user-visible caption on a freshly inserted widget/container (title, caption, tooltip, placeholder) " +
@@ -2868,9 +2869,41 @@ public static class SchemaValidationService
 		if (string.IsNullOrEmpty(jsBody)) {
 			return new SchemaValidationResult { IsValid = true };
 		}
+		return ScanInsertedWidgetCaptions(jsBody, BodyOnlyCaptionResolver(jsBody, explicitResources));
+	}
+
+	/// <summary>
+	/// Same check as <see cref="ValidateInsertedWidgetCaptionResources"/>, reported as ONE error that states the
+	/// rule once and then lists every unresolved binding as node, property and key.
+	/// </summary>
+	/// <remarks>
+	/// For the read-only <c>validate-page</c> report, where a page with many unregistered captions otherwise
+	/// repeats the same rule text once per caption. The save paths keep the per-occurrence form.
+	/// </remarks>
+	/// <param name="jsBody">Raw JavaScript body of a Freedom UI page schema (marker-delimited).</param>
+	/// <param name="explicitResources">Explicit resources passed to the save, or <c>null</c>.</param>
+	/// <returns>A <see cref="SchemaValidationResult"/> with at most one error, invalid when any caption does not resolve.</returns>
+	public static SchemaValidationResult ValidateInsertedWidgetCaptionResourcesGrouped(
+		string jsBody,
+		IReadOnlyDictionary<string, string>? explicitResources = null) {
+		if (string.IsNullOrEmpty(jsBody)) {
+			return new SchemaValidationResult { IsValid = true };
+		}
+		IReadOnlyList<UnresolvedCaptionBinding> bindings = FindUnresolvedInsertedWidgetCaptions(
+			jsBody, BodyOnlyCaptionResolver(jsBody, explicitResources));
+		var result = new SchemaValidationResult { IsValid = bindings.Count == 0 };
+		if (bindings.Count > 0) {
+			result.Errors.Add(BuildGroupedUnresolvedCaptionError(bindings));
+		}
+		return result;
+	}
+
+	// The pre-flight resolver both body-only caption checks share: a key resolves when the explicit resources
+	// register it, clio derives it, or a data-source-bound view-model attribute provides it.
+	private static Func<string, bool> BodyOnlyCaptionResolver(
+		string jsBody, IReadOnlyDictionary<string, string>? explicitResources) {
 		var dsBoundKeys = CollectViewModelPaths(jsBody).Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
-		return ScanInsertedWidgetCaptions(
-			jsBody, key => ResourceStringHelper.WillResolve(key, explicitResources, dsBoundKeys));
+		return key => ResourceStringHelper.WillResolve(key, explicitResources, dsBoundKeys);
 	}
 
 	/// <summary>
@@ -2896,18 +2929,30 @@ public static class SchemaValidationService
 	// unparseable body, matching the sibling content validators.
 	private static SchemaValidationResult ScanInsertedWidgetCaptions(string jsBody, Func<string, bool> resolves) {
 		var result = new SchemaValidationResult { IsValid = true };
+		foreach (UnresolvedCaptionBinding binding in FindUnresolvedInsertedWidgetCaptions(jsBody, resolves)) {
+			result.Errors.Add(BuildUnresolvedCaptionError(binding.Node, binding.Property, binding.Key));
+		}
+		if (result.Errors.Count > 0) {
+			result.IsValid = false;
+		}
+		return result;
+	}
+
+	private static IReadOnlyList<UnresolvedCaptionBinding> FindUnresolvedInsertedWidgetCaptions(
+		string jsBody, Func<string, bool> resolves) {
+		var bindings = new List<UnresolvedCaptionBinding>();
 		if (string.IsNullOrEmpty(jsBody)) {
-			return result;
+			return bindings;
 		}
 		if (!PageSchemaSectionReader.TryRead(jsBody, out string vcdContent, SchemaViewConfigDiff, SchemaDiffMarker)) {
-			return result;
+			return bindings;
 		}
 		if (!TryParseJsonDocument(vcdContent, out JsonDocument vcdDoc, out _)) {
-			return result;
+			return bindings;
 		}
 		using (vcdDoc) {
 			if (vcdDoc.RootElement.ValueKind != JsonValueKind.Array) {
-				return result;
+				return bindings;
 			}
 			foreach (JsonElement entry in vcdDoc.RootElement.EnumerateArray()) {
 				if (entry.ValueKind != JsonValueKind.Object || !IsInsertOperation(entry)) {
@@ -2918,20 +2963,17 @@ public static class SchemaValidationService
 					continue;
 				}
 				string ownerName = TryGetNodeName(entry, out string entryName) ? entryName : string.Empty;
-				ScanNodeForUnresolvedCaptionBindings(values, ownerName, resolves, result);
+				ScanNodeForUnresolvedCaptionBindings(values, ownerName, resolves, bindings);
 			}
 		}
-		if (result.Errors.Count > 0) {
-			result.IsValid = false;
-		}
-		return result;
+		return bindings;
 	}
 
 	private static void ScanNodeForUnresolvedCaptionBindings(
 		JsonElement node,
 		string ownerName,
 		Func<string, bool> resolves,
-		SchemaValidationResult result) {
+		List<UnresolvedCaptionBinding> bindings) {
 		switch (node.ValueKind) {
 			case JsonValueKind.Object:
 				string currentName = TryGetNodeName(node, out string nodeName) ? nodeName : ownerName;
@@ -2948,14 +2990,14 @@ public static class SchemaValidationService
 					}
 					if (property.Value.ValueKind == JsonValueKind.String &&
 					    InsertedWidgetCaptionProperties.Contains(property.Name)) {
-						CheckCaptionBinding(currentName, property.Name, property.Value.GetString()!, resolves, result);
+						CheckCaptionBinding(currentName, property.Name, property.Value.GetString()!, resolves, bindings);
 					}
-					ScanNodeForUnresolvedCaptionBindings(property.Value, currentName, resolves, result);
+					ScanNodeForUnresolvedCaptionBindings(property.Value, currentName, resolves, bindings);
 				}
 				break;
 			case JsonValueKind.Array:
 				foreach (JsonElement item in node.EnumerateArray()) {
-					ScanNodeForUnresolvedCaptionBindings(item, ownerName, resolves, result);
+					ScanNodeForUnresolvedCaptionBindings(item, ownerName, resolves, bindings);
 				}
 				break;
 		}
@@ -2966,7 +3008,7 @@ public static class SchemaValidationService
 		string property,
 		string value,
 		Func<string, bool> resolves,
-		SchemaValidationResult result) {
+		List<UnresolvedCaptionBinding> bindings) {
 		// ExtractKeys returns the keys referenced by both binding forms ($Resources.Strings.K and
 		// #ResourceString(K)#). A literal (no resource reference) yields no keys and is left to
 		// ValidateLocalizableTextLiterals; a non-resource binding ($SomeAttr) also yields no keys.
@@ -2980,7 +3022,7 @@ public static class SchemaValidationService
 		}
 		foreach (string key in keys) {
 			if (!resolves(key)) {
-				result.Errors.Add(BuildUnresolvedCaptionError(ownerName, property, key));
+				bindings.Add(new UnresolvedCaptionBinding(ownerName, property, key));
 			}
 		}
 	}
@@ -2999,8 +3041,34 @@ public static class SchemaValidationService
 			"See the page-schema-resources guide.";
 	}
 
+	private static string BuildGroupedUnresolvedCaptionError(IReadOnlyList<UnresolvedCaptionBinding> bindings) {
+		// Same facts as the per-occurrence form, with the rule text stated once: every binding keeps its node,
+		// property and key. The body-sourced values are sanitized, not only capped, because each binding is one
+		// line here and a newline inside a node name or key would otherwise add a binding the body does not have.
+		var text = new StringBuilder();
+		text.Append(bindings.Count == 1
+			? "1 view-node binding of a user-visible text property uses a localizable key"
+			: $"{bindings.Count} view-node bindings of user-visible text properties use localizable keys");
+		text.Append(" that will not be registered, so each binding will render raw ")
+			.Append($"(e.g. \"{ResourceBindingPrefix}<key>\") instead of the localized text. Rule: ")
+			.Append(InsertedWidgetCaptionClause)
+			.Append(". See the page-schema-resources guide. Unresolved bindings (node, property, key):");
+		foreach (UnresolvedCaptionBinding binding in bindings) {
+			string shownOwner = Sanitize(binding.Node);
+			string node = string.IsNullOrWhiteSpace(shownOwner) ? "a view node" : $"'{shownOwner}'";
+			text.Append($"\n- {node}, '{binding.Property}', '{Sanitize(binding.Key)}'");
+		}
+		return text.ToString();
+	}
+
 	private static string Truncate(string value) =>
 		string.IsNullOrEmpty(value) || value.Length <= 60 ? value : value[..60] + "…";
+
+	/// <summary>One widget-caption binding whose localizable key will not resolve.</summary>
+	/// <param name="Node">Name of the view node that owns the caption; empty when the node is unnamed.</param>
+	/// <param name="Property">The caption property, e.g. <c>caption</c> or <c>title</c>.</param>
+	/// <param name="Key">The localizable key the property binds to.</param>
+	private sealed record UnresolvedCaptionBinding(string Node, string Property, string Key);
 
 	/// <summary>
 	/// Mobile counterpart of <see cref="ValidateLocalizableTextLiterals"/>. Reads <c>viewConfigDiff</c>
