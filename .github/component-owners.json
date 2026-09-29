@@ -115,9 +115,8 @@
       "color": "c5def5",
       "description": "Source code and SQL schema tools",
       "owners": [
-        "kbondarenko-tech",
-        "Alexandr-Kravchuk",
-        "kirillkrylov"
+        "kirillkrylov",
+        "Alexandr-Kravchuk"
       ],
       "paths": [
         "clio/Command/McpServer/Tools/Schema*",
