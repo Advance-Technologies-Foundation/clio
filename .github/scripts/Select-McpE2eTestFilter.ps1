@@ -1340,7 +1340,9 @@ if ($mode -eq 'subset' -and -not $IncludeNoEnvironment) {
     }
 }
 if ($mode -eq 'subset') {
-    $runnable = @($fixtures | Where-Object { $fixtureSurvivesTeamCity[$_] })
+    # Only an explicit "no" skips the build: a selected name the inventory never saw (a fixture whose
+    # file carries no test attribute of its own) is assumed to run.
+    $runnable = @($fixtures | Where-Object { $fixtureSurvivesTeamCity[$_] -ne $false })
     if ($runnable.Count -eq 0) {
         $decisions.Add("no test of the selected fixtures survives the TeamCity filter (it excludes $($teamCityExcluded -join ', ')) -> a build would deploy Creatio and run nothing")
         $mode = 'none'

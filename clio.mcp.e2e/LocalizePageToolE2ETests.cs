@@ -88,6 +88,8 @@ public sealed class LocalizePageToolE2ETests : McpContractFixtureBase {
 		try {
 			await ArrangePageWithOwnKeyAsync(context, schemaName, environmentName, directory);
 			JsonObject strings = await ReadResourceStringsAsync(context, schemaName, environmentName, directory);
+			strings.Should().ContainKey(LabelKey,
+				because: "the page's own key must be in the get-page bundle, or the coverage count compares inherited keys only");
 
 			// Act
 			LocalizePageResponse response = await LocalizeAsync(context, schemaName, "es-ES", environmentName);
@@ -261,13 +263,23 @@ public sealed class LocalizePageToolE2ETests : McpContractFixtureBase {
 		}
 	}
 
-	// Every run creates a new UsrE2eLocalize* page; remove it so the stand does not accumulate them.
+	// Every run creates a new UsrE2eLocalize* page; remove it so the stand does not accumulate them. Called
+	// from finally, so it reports a failed or timed-out delete instead of throwing: an exception here would
+	// replace the assertion failure the test was already reporting.
 	private static async Task DeletePageAsync(McpE2ESettings settings, string schemaName, string environmentName) {
 		using CancellationTokenSource cleanupCts = new(TimeSpan.FromMinutes(2));
-		await ClioCliCommandRunner.RunAsync(
-			settings,
-			["delete-schema", schemaName, "--remote", "-e", environmentName],
-			cancellationToken: cleanupCts.Token);
+		try {
+			ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(
+				settings,
+				["delete-schema", schemaName, "--remote", "-e", environmentName],
+				cancellationToken: cleanupCts.Token);
+			if (result.ExitCode != 0) {
+				TestContext.Out.WriteLine(
+					$"Cleanup: delete-schema {schemaName} exited with {result.ExitCode}; the page stays on the stand. {result.StandardError}");
+			}
+		} catch (OperationCanceledException) {
+			TestContext.Out.WriteLine($"Cleanup: delete-schema {schemaName} timed out; the page stays on the stand.");
+		}
 	}
 
 	private async Task ArrangePageWithOwnKeyAsync(
