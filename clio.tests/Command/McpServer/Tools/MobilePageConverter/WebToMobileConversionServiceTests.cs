@@ -7678,15 +7678,15 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("A multi-column web grid renamed by a containers pair onto a mobile element that is NOT a crt.GridContainer (the shipped case: GeneralInfoTabContainer -> the declared AdditionalInfoTab, a crt.TabContainer) does not carry its column count there: adaptive per-breakpoint columns is a property of the mobile grid type only, so no adaptive group is built and the children are not placed as if they sat in a multi-column grid.")]
+	[Description("A multi-column web grid renamed by a containers pair onto a mobile element that is NOT a crt.GridContainer (the shipped case: GeneralInfoTabContainer -> the declared MobileAdditionalInfoTab, a crt.TabContainer) does not carry its column count there: adaptive per-breakpoint columns is a property of the mobile grid type only, so no adaptive group is built and the children are not placed as if they sat in a multi-column grid.")]
 	public void Analyze_MultiColumnGrid_RenamedOntoNonGrid_GetsNoAdaptive() {
 		// Arrange & Act
-		MobilePageConversionGuide guide = AnalyzeGridRenamedOnto("AdditionalInfoTab", "crt.TabContainer");
+		MobilePageConversionGuide guide = AnalyzeGridRenamedOnto("MobileAdditionalInfoTab", "crt.TabContainer");
 
 		// Assert
-		Element(guide, "GeneralInfoTabContainer").Name.Should().Be("AdditionalInfoTab",
+		Element(guide, "GeneralInfoTabContainer").Name.Should().Be("MobileAdditionalInfoTab",
 			because: "the pair must actually rename the grid onto the tab, or the guard is not exercised");
-		(guide.AdaptiveLayout ?? []).Should().NotContain(g => g.ContainerName == "AdditionalInfoTab",
+		(guide.AdaptiveLayout ?? []).Should().NotContain(g => g.ContainerName == "MobileAdditionalInfoTab",
 			because: "a crt.TabContainer has no columns input, so the web grid's columns must not be attached to it");
 		foreach (string field in new[] { "Name", "CreatedOn" }) {
 			JsonNode layoutConfig = Element(guide, field).Values?["layoutConfig"];

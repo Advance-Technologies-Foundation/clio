@@ -48,18 +48,18 @@
       "note": "Tabbed record page (Tabs + Feed + Attachments). Preferred target for web tabbed record pages.",
       "declaredElements": [
         {
-          "name": "AdditionalInfoTab",
+          "name": "MobileAdditionalInfoTab",
           "type": "crt.TabContainer",
           "parentName": "Tabs",
           "propertyName": "items",
           "index": 1,
-          "captionResource": { "key": "AdditionalInfoTab_caption", "value": "General information" }
+          "captionResource": { "key": "MobileAdditionalInfoTab_caption", "value": "General information" }
         }
       ],
       "containers": [
         { "web": "Tabs", "mobile": "Tabs" },
-        { "web": "GeneralInfoTab", "mobile": "AdditionalInfoTab" },
-        { "web": "GeneralInfoTabContainer", "mobile": "AdditionalInfoTab" },
+        { "web": "GeneralInfoTab", "mobile": "MobileAdditionalInfoTab" },
+        { "web": "GeneralInfoTabContainer", "mobile": "MobileAdditionalInfoTab" },
         { "web": "FeedTabContainer", "mobile": "FeedContainer" },
         { "web": "AttachmentsTabContainer", "mobile": "AttachmentsContainer" },
         { "web": "CardToggleTabPanel", "mobile": "Tabs" },
