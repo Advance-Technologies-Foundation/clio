@@ -60,11 +60,16 @@ DESCRIPTION
     The result is printed as JSON: success, schemaName, schemaUId, packageName,
     culture, cultureActive, saved, written, unchanged, captionOutcome
     (written | unchanged | null), coverage { keys, translated, missing,
-    sameAsDefault, captionSameAsDefault }, warnings, error.
+    sameAsDefault, captionSameAsDefault, captionInherited, captionValue },
+    warnings, error.
     coverage covers the same key set as get-page. sameAsDefault lists keys whose
-    value equals the resolved en-US value: right after
-    create-page the page title holds the English text in every culture, so such
-    values usually still need a translation.
+    value equals the resolved en-US value; a word can legitimately be the same
+    in two languages, so review them. captionValue is the page title in the
+    culture. In a culture the page stores no title for, Creatio returns the
+    parent template's title (for a page created from BlankPageTemplate, es-ES
+    shows "Página en blanco"); captionInherited is true then, so the title
+    still needs a translation although captionSameAsDefault is false.
+    captionInherited stays false when the page keeps the template's en-US title.
 
     cliogate is not required.
 

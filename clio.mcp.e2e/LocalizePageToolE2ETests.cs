@@ -189,6 +189,10 @@ public sealed class LocalizePageToolE2ETests : McpContractFixtureBase {
 				spanish.Saved.Should().BeTrue(because: "a new value was supplied");
 				spanish.Written.Should().Contain(LabelKey, because: "the key value in es-ES changed");
 				spanish.CaptionOutcome.Should().Be(LocalizePageResponse.CaptionWritten, because: "the page title in es-ES changed");
+				spanish.Coverage.CaptionValue.Should().Be("Pagina E2E",
+					because: "coverage returns the stored title in the culture, so no SysSchema read is needed");
+				spanish.Coverage.CaptionInherited.Should().BeFalse(
+					because: "after the write the es-ES title is the page's own, not the template's");
 			});
 			JsonObject afterSpanish = await ReadResourceStringsAsync(context, schemaName, environmentName, directory);
 			AllureApi.Step("TC-E2E-01: get-page shows es-ES and the unchanged en-US value", () => {
