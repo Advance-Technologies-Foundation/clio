@@ -19,6 +19,7 @@ extra request.
 own rows are only the cultures it overrides.
 
 **What breaks if you ignore it** — comparing a culture's title with `en-US` reports such a page as translated, and an
-agent skips its title. `localize-page` therefore reports `coverage.captionInherited` (the value equals the parent's
-in that culture while the page's `en-US` title differs from the parent's). A later write of one culture also sends
+agent skips its title. `localize-page` therefore reports `coverage.captionInherited` (the value equals an ancestor's
+in that culture — the inline parent or any `GetParentSchemas` level — while the page's `en-US` title differs from
+that ancestor's). A later write of one culture also sends
 these inherited values back in the full caption list.
