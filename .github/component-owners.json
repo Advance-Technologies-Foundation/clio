@@ -34,8 +34,8 @@
       "color": "c5def5",
       "description": "Custom client logic in Freedom UI pages and its page lint",
       "owners": [
-        "Alexandr-Kravchuk",
-        "kamil-mikosz-creatio"
+        "ylypnytskyi-eng",
+        "a-trofimchuk"
       ],
       "paths": [
         "clio/Command/McpServer/Tools/PageBodyAstLinter.cs",
@@ -131,6 +131,7 @@
       "color": "c5def5",
       "description": "OData read and write tools",
       "owners": [
+        "kbondarenko-tech",
         "Alexandr-Kravchuk",
         "kirillkrylov"
       ],
