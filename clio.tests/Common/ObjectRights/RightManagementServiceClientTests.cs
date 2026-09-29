@@ -169,7 +169,7 @@ public class RightManagementServiceClientTests {
 
 	[Test]
 	[Description("A clean read carries a snapshot for the save; a failed read carries none.")]
-	public void GetObjectRights_ShouldCarrySnapshot_OnlyWhenTheReadSucceeded() {
+	public void GetObjectRights_ShouldCarrySnapshotOnlyOnSuccess_WhenReadsSucceedAndFail() {
 		// Arrange
 		Post(GetUrl).Returns(AdministeredObject("ok"), InBandJsonFault);
 
@@ -564,11 +564,97 @@ public class RightManagementServiceClientTests {
 		read.Snapshot.Node.ToJsonString().Should().Be(before, because: "the payload is built from a copy of the snapshot");
 	}
 
+	[Test]
+	[Description("Another role's two rows are left exactly as read when the plan changes only the grantee's row: rows are matched by grantee AND position, so the last planned row of that role never overwrites the first read one.")]
+	public void Save_ShouldLeaveAnotherRolesDuplicateRowsAsRead_WhenOnlyTheGranteeRowChanges() {
+		// Arrange
+		Guid sales = Guid.NewGuid();
+		GetReturns(ObjectWithRows(true,
+			FlagRow(sales, 0, read: true, append: false, edit: false, delete: false),
+			FlagRow(Employees, 1, true, true, true, true),
+			FlagRow(sales, 2, true, true, true, true),
+			FlagRow(Grantee, 3, true, true, true, false)));
+		ObjectRightsInfo read = Read();
+		ObjectRightsState after = new(true, read.Roles
+			.Select(row => row.GranteeId == Grantee ? row with { CanCreate = false } : row)
+			.ToArray());
+
+		// Act
+		string error = _client.Save(read.Snapshot, after, new CreatioRequestOptions());
+
+		// Assert
+		error.Should().BeNull(because: "the service acknowledged the save");
+		JsonElement[] salesRows = SavedRows().Where(row => IsRowOf(row, sales)).ToArray();
+		salesRows.Should().HaveCount(2, because: "both of Sales' rows are sent");
+		salesRows.Single(row => row.GetProperty("position").GetInt32() == 0).GetProperty("canAppend").GetBoolean()
+			.Should().BeFalse(because: "Sales' row at position 0 keeps its read-only flags; nothing named it");
+		salesRows.Single(row => row.GetProperty("position").GetInt32() == 2).GetProperty("canDelete").GetBoolean()
+			.Should().BeTrue(because: "Sales' row at position 2 keeps its own flags");
+		SavedRows().Single(row => IsRowOf(row, Grantee)).GetProperty("canAppend").GetBoolean().Should().BeFalse(
+			because: "the grantee's row gets the planned change");
+	}
+
+	[Test]
+	[Description("A row the plan does not change is sent exactly as read — including a value the projection cannot represent and a field it does not know — so the save never rewrites it from the projection.")]
+	public void Save_ShouldSendAnUnchangedRowExactlyAsRead_WhenItHasFieldsTheProjectionDoesNotModel() {
+		// Arrange
+		const string oddRow = """
+			{"id":"odd","position":0,"canRead":"true","canAppend":false,"canEdit":false,"canDelete":false,"custom":"kept","sysAdminUnit":{"id":"a29a3ba5-4b0d-de11-9a51-005056c00008"}}
+			""";
+		GetReturns(ObjectWithRows(true, oddRow, FlagRow(Grantee, 1, true, false, false, false)));
+		ObjectRightsInfo read = Read();
+		ObjectRightsState after = new(true, new[] { read.Roles[0], read.Roles[1] with { CanEdit = true } });
+
+		// Act
+		_client.Save(read.Snapshot, after, new CreatioRequestOptions());
+
+		// Assert
+		JsonElement unchanged = SavedRows().Single(row => IsRowOf(row, Employees));
+		unchanged.GetProperty("canRead").ValueKind.Should().Be(JsonValueKind.String,
+			because: "a row the plan leaves alone is not rewritten from its projection");
+		unchanged.GetProperty("custom").GetString().Should().Be("kept", because: "every field of an unchanged row round-trips");
+	}
+
+	[Test]
+	[Description("When two rows of one role sit at the same position and the plan changes them, the row to change is ambiguous: nothing is sent and the reason is returned.")]
+	public void Save_ShouldSendNothing_WhenTheRowToChangeIsAmbiguous() {
+		// Arrange
+		GetReturns(ObjectWithRows(true,
+			FlagRow(Grantee, 0, true, false, false, false),
+			FlagRow(Grantee, 0, true, false, false, false)));
+		ObjectRightsInfo read = Read();
+		ObjectRightsState after = new(true, new[] {
+			read.Roles[0] with { CanEdit = true },
+			read.Roles[1] with { CanCreate = true }
+		});
+
+		// Act
+		string error = _client.Save(read.Snapshot, after, new CreatioRequestOptions());
+
+		// Assert
+		error.Should().Contain("ambiguous", because: "the writer does not guess which row a change belongs to");
+		_savedPayload.Should().BeNull(because: "nothing is sent when the row to change is ambiguous");
+	}
+
+	[Test]
+	[Description("A read whose every candidate answers with an HTML page reports the failure without the page body: it can carry cookies, tokens and stack traces.")]
+	public void GetObjectRights_ShouldNotPreviewTheHtmlPage_WhenTheServiceAnswersWithOne() {
+		// Arrange
+		Post(GetUrl).Returns(HtmlRequestErrorPage);
+
+		// Act
+		ObjectRightsInfo read = Read();
+
+		// Assert
+		read.ReadError.Should().Contain("HTML page", because: "the read error says what came back");
+		read.ReadError.Should().NotContain("<html>", because: "no markup reaches the error");
+	}
+
 	// ---- Grantee lookup ----
 
 	[Test]
 	[Description("ResolveGranteeName returns the SysAdminUnit name, or null when the id does not exist.")]
-	public void ResolveGranteeName_ShouldReturnNameOrNull() {
+	public void ResolveGranteeName_ShouldReturnNameOrNull_WhenTheIdExistsOrNot() {
 		// Arrange
 		Post(SelectUrl).Returns("{\"success\":true,\"rows\":[{\"Name\":\"All external users\"}]}", "{\"success\":true,\"rows\":[]}");
 

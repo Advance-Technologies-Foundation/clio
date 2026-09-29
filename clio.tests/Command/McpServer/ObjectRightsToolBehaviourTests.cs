@@ -97,7 +97,7 @@ public sealed class ObjectRightsToolBehaviourTests {
 	[TestCase("confirmation-code")]
 	[TestCase("confirm")]
 	[Description("A misspelled or retired set-object-rights argument is refused before any read or write — a typo is never dropped by the serializer and turned into the opposite change, and a caller still on the old contract (include-connected, confirmation-code, confirm) is told so instead of being half-understood.")]
-	public void SetObjectRights_ShouldRefuseUnknownArgument_BeforeAnyReadOrWrite(string unknown) {
+	public void SetObjectRights_ShouldRefuseBeforeAnyReadOrWrite_WhenAnArgumentIsUnknown(string unknown) {
 		// Arrange
 		SetObjectRightsArgs args = Bind<SetObjectRightsArgs>(
 			$$"""{"environment-name":"dev","entity-schema-name":"UsrFoo","grantee":"{{Grantee}}","{{unknown}}":true}""");
@@ -115,7 +115,7 @@ public sealed class ObjectRightsToolBehaviourTests {
 
 	[Test]
 	[Description("A misspelled get-object-rights argument is refused instead of silently reporting every role.")]
-	public void GetObjectRights_ShouldRefuseUnknownArgument() {
+	public void GetObjectRights_ShouldRefuse_WhenAnArgumentIsUnknown() {
 		// Arrange
 		GetObjectRightsArgs args = Bind<GetObjectRightsArgs>(
 			$$"""{"environment-name":"dev","entity-schema-name":"UsrFoo","grantee-id":"{{Grantee}}"}""");
@@ -131,7 +131,7 @@ public sealed class ObjectRightsToolBehaviourTests {
 
 	[Test]
 	[Description("With only the required args, the tool maps to a confirmed, non-revoking grant with every transition flag off: the host's approval of the call is the confirmation.")]
-	public void SetObjectRights_ShouldMapRequiredArgsToConfirmedGrant() {
+	public void SetObjectRights_ShouldMapToAConfirmedGrant_WhenOnlyTheRequiredArgsArePassed() {
 		// Arrange
 		SetObjectRightsArgs args = new("dev", "UsrFoo", Grantee);
 
@@ -156,7 +156,7 @@ public sealed class ObjectRightsToolBehaviourTests {
 
 	[Test]
 	[Description("preview=true maps to an unconfirmed dry run: nothing is saved.")]
-	public void SetObjectRights_ShouldMapPreviewToDryRun() {
+	public void SetObjectRights_ShouldRunADryRun_WhenPreviewIsTrue() {
 		// Arrange
 		SetObjectRightsArgs args = new("dev", "UsrFoo", Grantee, Preview: true);
 
@@ -192,6 +192,23 @@ public sealed class ObjectRightsToolBehaviourTests {
 		_capturedSet.AllowSecurityObject.Should().BeTrue(because: "allow-security-object maps through");
 	}
 
+	[TestCase(null, TestName = "SetObjectRights_ShouldRefuseARevoke_WhenOperationsAreOmitted")]
+	[TestCase("", TestName = "SetObjectRights_ShouldRefuseARevoke_WhenOperationsAreEmpty")]
+	[Description("A revoke must name its operations: the approved arguments show what is taken away, and an empty value is never read as the grant default.")]
+	public void SetObjectRights_ShouldRefuseARevoke_WhenItNamesNoOperation(string operations) {
+		// Arrange
+		SetObjectRightsArgs args = new("dev", "UsrFoo", Grantee, Operations: operations, Revoke: true);
+
+		// Act
+		ObjectRightsToolResponse response = SetTool().SetObjectRights(args);
+
+		// Assert
+		response.Success.Should().BeFalse(because: "a revoke with no named operation is refused");
+		response.Error.Should().Contain("operation", because: "the refusal says the operations are missing");
+		_reader.DidNotReceiveWithAnyArgs().GetObjectRights(default, default);
+		NothingSaved();
+	}
+
 	[Test]
 	[Description("A refused change (a grant that would turn operation permissions on without the flag) fails the call and saves nothing.")]
 	public void SetObjectRights_ShouldFailAndNotSave_WhenPlanIsRefused() {
@@ -211,7 +228,7 @@ public sealed class ObjectRightsToolBehaviourTests {
 
 	[Test]
 	[Description("get-object-rights maps its args onto the command options.")]
-	public void GetObjectRights_ShouldMapArgs() {
+	public void GetObjectRights_ShouldMapEveryArgument_WhenAllArePassed() {
 		// Arrange
 		GetObjectRightsArgs args = new("dev", "UsrFoo", Grantee, IncludeConnected: true);
 
@@ -280,7 +297,7 @@ public sealed class ObjectRightsToolBehaviourTests {
 
 	[Test]
 	[Description("An exception maps to a redacted failure.")]
-	public void FromError_ShouldRedactExceptionMessage() {
+	public void FromError_ShouldRedactTheMessage_WhenTheExceptionCarriesAHost() {
 		// Arrange
 		Exception exception = new InvalidOperationException("boom at " + SecretUri);
 

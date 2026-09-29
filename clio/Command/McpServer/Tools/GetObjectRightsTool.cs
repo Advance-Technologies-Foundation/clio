@@ -33,7 +33,7 @@ public sealed class GetObjectRightsTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillExtended,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Read OBJECT operation permissions — who may read/create/edit/delete a whole entity (the SysSchemaOperationRight / \"Object permissions\" layer). " +
+	[Description("Read OBJECT operation permissions — who may read/create/edit/delete a whole entity (the SysEntitySchemaOperationRight / \"Object permissions\" layer). " +
 		"Read-only companion of set-object-rights. Reports, per object, every role's row in PRIORITY order with its [position] (0 is the highest; a user in several roles gets the highest matching row, and a row with no operations denies them); pass grantee to show that role's row and the rows above it. " +
 		"include-connected also reports the root object's own lookup objects (security/system objects are skipped) — the discovery step before deciding, per object, what to change with set-object-rights; on an object with many lookups it can reach the read deadline — then read the lookups one by one. The output is facts only, with no coverage verdict. Fails (success=false) when the root object cannot be read; a connected object that cannot be read is reported with a warning. " +
 		"An object not administered by operation permissions is available to all INTERNAL users; external users reach it only through an explicit grant; the rows listed for it are the ones that apply once operation permissions are turned on. " +
@@ -76,7 +76,7 @@ public sealed record GetObjectRightsArgs(
 	string EntitySchemaName,
 
 	[property: JsonPropertyName("grantee")]
-	[property: Description("Optional SysAdminUnit id (role or user) to filter to one role. Omit to report every role.")]
+	[property: Description("Optional SysAdminUnit id (role or user): show its row and the rows above it, which decide first. Omit to list every row.")]
 	string Grantee = null,
 
 	[property: JsonPropertyName("include-connected")]

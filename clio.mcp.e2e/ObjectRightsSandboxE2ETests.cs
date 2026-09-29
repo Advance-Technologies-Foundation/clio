@@ -117,12 +117,10 @@ public sealed class ObjectRightsSandboxE2ETests : DataBindingDbFixtureBase {
 		ObjectRightsToolResponse grantLookup = await CallRightsAsync(arrangeContext, SetObjectRightsTool.ToolName,
 			Args(lookupName, ExternalUsers, "read", enable: true));
 
-		// Assert — each object was turned on and read back; internal users kept access through All employees
+		// Assert — each object was turned on and read back
 		grantRoot.Success.Should().BeTrue(because: $"the grant must apply on a real stand. Error: {grantRoot.Error}");
 		grantRoot.Output.Should().Contain($"'{rootName}': granted [read]", because: "the result line names the object");
 		grantRoot.Output.Should().Contain("turned ON", because: "the root was not administered before the grant");
-		grantRoot.Output.Should().Contain("All employees",
-			because: "the synthesized All employees row is kept by the save, so internal users keep their access");
 		grantLookup.Success.Should().BeTrue(because: $"the lookup is granted in its own call. Error: {grantLookup.Error}");
 
 		// Act — read both objects back
@@ -132,8 +130,11 @@ public sealed class ObjectRightsSandboxE2ETests : DataBindingDbFixtureBase {
 		// Assert — the read-back lists the rows in priority order on both objects
 		read.Success.Should().BeTrue(because: $"the read-back must succeed. Error: {read.Error}");
 		read.Output.Should().Contain("priority order", because: "every listing states the priority rule");
-		read.Output.Should().Contain("All external users", because: "the grantee's row was saved on the stand");
-		read.Output.Should().NotContain($"{lookupName}: not administered",
+		read.Output.Should().Contain($"[0] All employees ({AllEmployees}): read/create/edit/delete",
+			because: "the enabling save stored the All employees row the read synthesized, at position 0");
+		read.Output.Should().Contain($"[1] All external users ({ExternalUsers}): read",
+			because: "the grantee's row was saved below it, at the lowest priority");
+		read.Output.Should().Contain($"{lookupName}: administered by operation permissions",
 			because: "the lookup's own call turned operation permissions on for it");
 
 		// Assert — the save left record and column administration untouched (they were sent as null)
@@ -153,7 +154,8 @@ public sealed class ObjectRightsSandboxE2ETests : DataBindingDbFixtureBase {
 		revoke.Success.Should().BeTrue(because: $"All employees still grants something. Error: {revoke.Error}");
 		revokedRow.Output.Should().Contain("All external users",
 			because: "a revoke keeps the row; removing it would let a lower row decide");
-		revokedRow.Output.Should().Contain("no operations", because: "the row now denies read to its members");
+		revokedRow.Output.Should().Contain($"[1] All external users ({ExternalUsers}): no operations",
+			because: "the row is kept at its position with read cleared");
 
 		// Act — take away the last granting row, first without and then with the explicit disable
 		ObjectRightsToolResponse lastRow = await CallRightsAsync(arrangeContext, SetObjectRightsTool.ToolName,

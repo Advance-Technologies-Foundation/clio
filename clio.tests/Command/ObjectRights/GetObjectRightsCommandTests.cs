@@ -84,7 +84,7 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 
 	[Test]
 	[Description("With a grantee filter, reports exactly the operations that role holds on each object — facts only, no coverage verdict.")]
-	public void Execute_ShouldReportGranteeOperationsPerObject_WithoutVerdict() {
+	public void Execute_ShouldReportGranteeOperationsPerObjectWithoutVerdict_WhenIncludeConnectedIsSet() {
 		// Arrange
 		_connectedObjects.Resolve("UsrOrder", true).Returns(Resolution("UsrOrder", "UsrStatus"));
 		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>())
@@ -123,7 +123,7 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 	[TestCase(null)]
 	[TestCase("11111111-2222-3333-4444-555555555555")]
 	[Description("A non-administered object is reported with the general platform fact: open to internal users, reachable by external users only through an explicit grant — with or without a grantee.")]
-	public void Execute_ShouldReportNotAdministeredFact(string grantee) {
+	public void Execute_ShouldReportNotAdministeredFact_WhenObjectIsNotAdministered(string grantee) {
 		// Arrange
 		_rightsReader.GetObjectRights("UsrOpen", Arg.Any<CreatioRequestOptions>()).Returns(NotAdministered("UsrOpen"));
 		GetObjectRightsOptions options = new() { EntitySchemaName = "UsrOpen", Grantee = grantee };
@@ -245,8 +245,6 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("SysAdminUnit") && m.Contains("security/system object")));
 	}
 
-	// ---- Review round 5 ----
-
 	[TestCase("not-a-guid")]
 	[TestCase("00000000-0000-0000-0000-000000000000")]
 	[Description("An invalid or empty-GUID --grantee is an input error and reads nothing.")]
@@ -296,7 +294,7 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 
 	[Test]
 	[Description("With a grantee, the command prints exactly the header and one fact line per object — nothing else, so no verdict can creep back in.")]
-	public void Execute_ShouldPrintExactlyTheFactLines_WithGrantee() {
+	public void Execute_ShouldPrintExactlyTheFactLines_WhenGranteeIsGiven() {
 		// Arrange
 		_connectedObjects.Resolve("UsrOrder", true).Returns(Resolution("UsrOrder", "UsrStatus", "UsrOpen"));
 		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>())
@@ -325,8 +323,6 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 				+ "external users reach it only through an explicit grant."
 		}, because: "the output is the facts per object, and nothing more — no verdict");
 	}
-
-	// ---- Review round 6 ----
 
 	[Test]
 	[Description("With --grantee, each of a grantee's rows is reported with its own position — never merged, because which row decides depends on the positions.")]

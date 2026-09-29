@@ -96,4 +96,25 @@ public class CreatioLicenseClientTests {
 		act.Should().Throw<InvalidOperationException>(because: "a non-JSON body signals the request never reached LicenseService")
 			.WithMessage("*LicenseService*");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An HTML body (a login redirect or a server error page) is named, never previewed: it can carry session cookies, request tokens and stack traces, and the message reaches the log and an agent transcript.")]
+	public void GetLicenseOperationStatuses_ShouldNotPreviewTheBody_WhenResponseIsAnHtmlPage() {
+		// Arrange
+		(CreatioLicenseClient client, IApplicationClient applicationClient) = CreateClient();
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("  <html><body>Request Error. __RequestVerificationToken=abc123</body></html>");
+
+		// Act
+		Action act = () => client.GetLicenseOperationStatuses(new[] { "CanCustomizeBranding" }, new CreatioRequestOptions());
+
+		// Assert
+		string message = act.Should().Throw<InvalidOperationException>(because: "an HTML page is not a service answer")
+			.Which.Message;
+		message.Should().Contain("an HTML page instead of JSON", because: "the caller is told what came back");
+		message.Should().NotContain("RequestVerificationToken", because: "the page body is never shown");
+		message.Should().NotContain("<html>", because: "no markup reaches the message");
+	}
 }

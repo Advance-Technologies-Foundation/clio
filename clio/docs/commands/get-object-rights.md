@@ -11,7 +11,7 @@ get-object-rights - read object operation permissions (read/create/edit/delete p
 ## Description
 
 Read-only companion of `set-object-rights`. Reports the object's **per-role operation permissions** —
-the `SysSchemaOperationRight` / "Object permissions" layer (who may read/create/edit/delete ANY record
+the `SysEntitySchemaOperationRight` / "Object permissions" layer (who may read/create/edit/delete ANY record
 of the entity). By default every role's row is listed; pass `--grantee` to focus on one role.
 
 The rows are listed in **priority order**, each with its `[position]` (0 is the highest). A user who is in

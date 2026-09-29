@@ -162,11 +162,12 @@ public class ObjectRightsPlannerTests {
 		plan.After.Roles.Should().Equal(new[] { Row(AllEmployees, 0, "R") }, because: "only the grantee's row is written");
 	}
 
-	[TestCase(new[] { ObjectOperation.Read }, false, false, TestName = "Plan_ShouldAllowReadOnSecurityObject_WithoutOptIn")]
-	[TestCase(new[] { ObjectOperation.Read, ObjectOperation.Edit }, false, true, TestName = "Plan_ShouldRefuseBeyondReadOnSecurityObject_WithoutOptIn")]
-	[TestCase(new[] { ObjectOperation.Read, ObjectOperation.Edit }, true, false, TestName = "Plan_ShouldAllowBeyondReadOnSecurityObject_WithOptIn")]
+	[TestCase(new[] { ObjectOperation.Read }, false, false, TestName = "Plan_ShouldAllowReadOnSecurityObject_WhenNoOptInIsGiven")]
+	[TestCase(new[] { ObjectOperation.Read, ObjectOperation.Edit }, false, true, TestName = "Plan_ShouldRefuseBeyondReadOnSecurityObject_WhenNoOptInIsGiven")]
+	[TestCase(new[] { ObjectOperation.Read, ObjectOperation.Edit }, true, false, TestName = "Plan_ShouldAllowBeyondReadOnSecurityObject_WhenOptInIsGiven")]
 	[Description("On a security/system object a read grant needs no opt-in, while a grant beyond read needs --allow-security-object.")]
-	public void Plan_ShouldGateSecurityObjectGrants(ObjectOperation[] ops, bool allow, bool refused) {
+	public void Plan_ShouldGateSecurityObjectGrants_WhenGrantingOnASecurityObject(ObjectOperation[] ops, bool allow,
+		bool refused) {
 		// Arrange
 		ObjectRightsState before = State(true, Row(AllEmployees, 0, "R"));
 		ObjectRightsChangeRequest request = Grant(ops) with { IsSecurityObject = true, AllowSecurityObject = allow };
@@ -179,10 +180,10 @@ public class ObjectRightsPlannerTests {
 			because: "the guard-rail covers only a grant beyond read (and a disable)");
 	}
 
-	[TestCase(false, TestName = "Plan_ShouldRefuseDuplicateGranteeRows_OnGrant")]
-	[TestCase(true, TestName = "Plan_ShouldRefuseDuplicateGranteeRows_OnRevoke")]
+	[TestCase(false, TestName = "Plan_ShouldRefuseDuplicateGranteeRows_WhenGranting")]
+	[TestCase(true, TestName = "Plan_ShouldRefuseDuplicateGranteeRows_WhenRevoking")]
 	[Description("A grantee with more than one row is refused and the positions are named: which row decides depends on the others, so none is edited.")]
-	public void Plan_ShouldRefuseDuplicateGranteeRows(bool revoke) {
+	public void Plan_ShouldRefuseDuplicateGranteeRows_WhenGranteeHasSeveralRows(bool revoke) {
 		// Arrange
 		ObjectRightsState before = State(true, Row(Grantee, 0, "R"), Row(AllEmployees, 1, "RCED"), Row(Grantee, 2, "RCED"));
 
@@ -299,10 +300,10 @@ public class ObjectRightsPlannerTests {
 		plan.Changes.Should().BeFalse(because: "the grantee holds nothing to revoke");
 	}
 
-	[TestCase(false, true, TestName = "Plan_ShouldRefuseDisableOnSecurityObject_WithoutOptIn")]
-	[TestCase(true, false, TestName = "Plan_ShouldAllowDisableOnSecurityObject_WithOptIn")]
+	[TestCase(false, true, TestName = "Plan_ShouldRefuseDisableOnSecurityObject_WhenNoOptInIsGiven")]
+	[TestCase(true, false, TestName = "Plan_ShouldAllowDisableOnSecurityObject_WhenOptInIsGiven")]
 	[Description("Turning operation permissions off on a security/system object needs --allow-security-object.")]
-	public void Plan_ShouldGateDisableOnSecurityObject(bool allow, bool refused) {
+	public void Plan_ShouldGateDisableOnSecurityObject_WhenDisablingASecurityObject(bool allow, bool refused) {
 		// Arrange
 		ObjectRightsState before = State(true, Row(Grantee, 0, "R"));
 		ObjectRightsChangeRequest request = Revoke(ObjectOperation.Read) with {
@@ -319,7 +320,7 @@ public class ObjectRightsPlannerTests {
 
 	[Test]
 	[Description("A plain revoke (no disable) on a security/system object needs no opt-in: it only narrows access.")]
-	public void Plan_ShouldAllowNarrowingRevokeOnSecurityObject_WithoutOptIn() {
+	public void Plan_ShouldAllowNarrowingRevokeOnSecurityObject_WhenNoOptInIsGiven() {
 		// Arrange
 		ObjectRightsState before = State(true, Row(Grantee, 0, "RC"), Row(AllEmployees, 1, "R"));
 
@@ -328,5 +329,73 @@ public class ObjectRightsPlannerTests {
 
 		// Assert
 		plan.Refused.Should().BeFalse(because: "a narrowing revoke is not a widening");
+	}
+
+	[TestCase(false, true, TestName = "Plan_ShouldRefuseTheAddedAllEmployeesRowOnSecurityObject_WhenNoOptInIsGiven")]
+	[TestCase(true, false, TestName = "Plan_ShouldAllowTheAddedAllEmployeesRowOnSecurityObject_WhenOptInIsGiven")]
+	[Description("On a security object, an enabling READ grant that meets stale rows without an All employees row would add that row with every operation — a grant beyond read (invariant 8) — so it needs --allow-security-object.")]
+	public void Plan_ShouldGateTheAddedAllEmployeesRow_WhenEnablingASecurityObject(bool allow, bool refused) {
+		// Arrange
+		ObjectRightsState before = State(false, Row(Other, 0, "R"));
+		ObjectRightsChangeRequest request = Grant(ObjectOperation.Read) with {
+			EnableOperationPermissions = true, IsSecurityObject = true, AllowSecurityObject = allow
+		};
+
+		// Act
+		ObjectRightsPlan plan = _planner.Plan(before, request);
+
+		// Assert
+		plan.Refusal.Should().Be(refused ? ObjectRightsRefusal.SecurityObjectNotAllowed : ObjectRightsRefusal.None,
+			because: "the added All employees row grants every operation on a security object");
+		plan.AddsAllEmployeesRow.Should().BeTrue(
+			because: "the plan says the All employees row is (or would have been) added, so the refusal can name it");
+	}
+
+	[Test]
+	[Description("An enabling read grant on a security object whose read shows the synthesized All employees row adds no row beyond the grantee's, so it needs no opt-in.")]
+	public void Plan_ShouldAllowAnEnablingReadGrantOnSecurityObject_WhenTheAllEmployeesRowIsAlreadyThere() {
+		// Arrange
+		ObjectRightsState before = State(false, Row(AllEmployees, 0, "RCED"));
+		ObjectRightsChangeRequest request = Grant(ObjectOperation.Read) with {
+			EnableOperationPermissions = true, IsSecurityObject = true
+		};
+
+		// Act
+		ObjectRightsPlan plan = _planner.Plan(before, request);
+
+		// Assert
+		plan.Refused.Should().BeFalse(because: "the only row written beyond the kept one grants read");
+		plan.AddsAllEmployeesRow.Should().BeFalse(because: "the synthesized row is kept, not added");
+	}
+
+	[TestCase(false, TestName = "Plan_ShouldKeepOperationPermissionsOn_WhenAGrantChangesRowsOnly")]
+	[TestCase(true, TestName = "Plan_ShouldKeepOperationPermissionsOn_WhenARevokeChangesRowsOnly")]
+	[Description("A grant or revoke on an administered object changes rows only: the switch changes only with its explicit flag (invariant 2).")]
+	public void Plan_ShouldKeepOperationPermissionsOn_WhenOnlyRowsChange(bool revoke) {
+		// Arrange
+		ObjectRightsState before = State(true, Row(AllEmployees, 0, "RCED"), Row(Grantee, 1, "RC"));
+
+		// Act
+		ObjectRightsPlan plan = _planner.Plan(before, revoke ? Revoke(ObjectOperation.Create) : Grant(ObjectOperation.Edit));
+
+		// Assert
+		plan.Changes.Should().BeTrue(because: "the grantee's row changes");
+		plan.After.AdministratedByOperations.Should().BeTrue(because: "no flag asked for the switch to change");
+		plan.EnablesOperationPermissions.Should().BeFalse(because: "it was already on");
+		plan.DisablesOperationPermissions.Should().BeFalse(because: "no disable was asked for");
+	}
+
+	[Test]
+	[Description("A revoke names the rows above the grantee's row: for a user who is also in those roles, they decide first.")]
+	public void Plan_ShouldNameTheRowsAbove_WhenRevoking() {
+		// Arrange
+		ObjectRightsState before = State(true, Row(Other, 0, "R"), Row(Grantee, 1, "RC"), Row(AllEmployees, 2, "RCED"));
+
+		// Act
+		ObjectRightsPlan plan = _planner.Plan(before, Revoke(ObjectOperation.Create));
+
+		// Assert
+		plan.RowsAboveGrantee.Should().Equal(new[] { Row(Other, 0, "R") },
+			because: "only the row at a higher priority than the grantee's decides before it");
 	}
 }

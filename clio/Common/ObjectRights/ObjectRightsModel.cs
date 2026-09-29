@@ -38,17 +38,6 @@ public sealed record RoleOperationRights(
 	/// <summary>The row grants at least one operation.</summary>
 	public bool HasAnyOperation => CanRead || CanCreate || CanEdit || CanDelete;
 
-	/// <summary>Whether the row grants <paramref name="operation"/>.</summary>
-	/// <param name="operation">The operation to check.</param>
-	/// <returns><see langword="true"/> when the row grants it.</returns>
-	public bool Holds(ObjectOperation operation) => operation switch {
-		ObjectOperation.Read => CanRead,
-		ObjectOperation.Create => CanCreate,
-		ObjectOperation.Edit => CanEdit,
-		ObjectOperation.Delete => CanDelete,
-		_ => throw new ArgumentOutOfRangeException(nameof(operation), operation, null)
-	};
-
 	/// <summary>The same row with every operation in <paramref name="operations"/> set to <paramref name="value"/>.</summary>
 	/// <param name="operations">The operations to set.</param>
 	/// <param name="value">The value to set them to.</param>
@@ -74,6 +63,12 @@ public sealed record RoleOperationRights(
 		other is not null && GranteeId == other.GranteeId && CanRead == other.CanRead && CanCreate == other.CanCreate
 		&& CanEdit == other.CanEdit && CanDelete == other.CanDelete;
 
+	/// <summary>Whether <paramref name="other"/> is the same row: the same grantee and operations at the same position.</summary>
+	/// <param name="other">The row to compare with.</param>
+	/// <returns><see langword="true"/> when grantee, position and operations match; names are not compared.</returns>
+	public bool SameRowAs(RoleOperationRights other) =>
+		other is not null && Position == other.Position && GrantsSameAs(other);
+
 	/// <summary>The operations the row grants, in grid order: read, create, edit, delete.</summary>
 	/// <returns>The operation names.</returns>
 	public IReadOnlyList<string> OperationNames() =>
@@ -94,10 +89,40 @@ public sealed record ObjectRightsState(bool AdministratedByOperations, IReadOnly
 	/// <param name="other">The state to compare with.</param>
 	/// <returns><see langword="true"/> when nothing differs.</returns>
 	public bool SameAs(ObjectRightsState other) =>
-		other is not null && AdministratedByOperations == other.AdministratedByOperations
-		&& Roles.Count == other.Roles.Count
-		&& Roles.OrderBy(r => r.Position).Zip(other.Roles.OrderBy(r => r.Position))
-			.All(pair => pair.First.Position == pair.Second.Position && pair.First.GrantsSameAs(pair.Second));
+		other is not null && AdministratedByOperations == other.AdministratedByOperations && DiffRows(other).None;
+
+	/// <summary>
+	/// The rows that differ between this state and <paramref name="other"/>. Rows are matched as a multiset by grantee,
+	/// position and operations, so two rows of one role are never mistaken for each other and a row that moved counts
+	/// as missing here and extra there.
+	/// </summary>
+	/// <param name="other">The state to compare with, for example the object read back after a save.</param>
+	/// <returns>The rows only this state has, and the rows only <paramref name="other"/> has.</returns>
+	public ObjectRightsRowDifference DiffRows(ObjectRightsState other) {
+		ArgumentNullException.ThrowIfNull(other);
+		List<RoleOperationRights> extra = other.Roles.ToList();
+		List<RoleOperationRights> missing = new();
+		foreach (RoleOperationRights row in Roles) {
+			int match = extra.FindIndex(candidate => candidate.SameRowAs(row));
+			if (match >= 0) {
+				extra.RemoveAt(match);
+			} else {
+				missing.Add(row);
+			}
+		}
+		return new ObjectRightsRowDifference(missing, extra);
+	}
+}
+
+/// <summary>The rows two object states do not share (see <see cref="ObjectRightsState.DiffRows"/>).</summary>
+/// <param name="Missing">Rows of the first state that the second does not have.</param>
+/// <param name="Extra">Rows of the second state that the first does not have.</param>
+public sealed record ObjectRightsRowDifference(
+	IReadOnlyList<RoleOperationRights> Missing,
+	IReadOnlyList<RoleOperationRights> Extra) {
+
+	/// <summary>The two states have the same rows.</summary>
+	public bool None => Missing.Count == 0 && Extra.Count == 0;
 }
 
 /// <summary>

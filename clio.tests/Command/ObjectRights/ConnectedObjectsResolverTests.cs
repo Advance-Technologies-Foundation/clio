@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using Clio.Command;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Command.ObjectRights;
+using Clio.Common.ObjectRights;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
@@ -31,7 +32,7 @@ public class ConnectedObjectsResolverTests {
 		ConnectedObjectsResolution result = _resolver.Resolve("UsrPortalSpike2", includeConnected: false);
 
 		// Assert
-		result.Objects.Should().Equal(new[] { "UsrPortalSpike2" }, because: "without fan-out only the root is targeted");
+		result.Objects.Should().Equal(new[] { "UsrPortalSpike2" }, because: "without include-connected only the root is read");
 		result.EnumerationError.Should().BeNull(because: "nothing was enumerated, so nothing could fail");
 		_columnManager.DidNotReceive().GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>());
 	}
@@ -59,8 +60,8 @@ public class ConnectedObjectsResolverTests {
 	}
 
 	[Test]
-	[Description("Security and system lookups (role/user directory, schema metadata, rights tables) are excluded from the fan-out and reported instead.")]
-	public void Resolve_ShouldExcludeSecurityAndSystemObjects_FromTheFanOut() {
+	[Description("Security and system lookups (role/user directory, schema metadata, rights tables) are not read as connected objects; they are reported instead.")]
+	public void Resolve_ShouldExcludeSecurityAndSystemObjects_WhenTheyAreConnectedLookups() {
 		// Arrange
 		_columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>())
 			.Returns(Schema("UsrPortalSpike2",
@@ -82,7 +83,7 @@ public class ConnectedObjectsResolverTests {
 	}
 
 	[Test]
-	[Description("A security or system object named as the ROOT is still targeted: the exclusion applies to the fan-out only.")]
+	[Description("A security or system object named as the ROOT is still read: the exclusion applies to connected objects only.")]
 	public void Resolve_ShouldKeepSystemRoot_WhenNamedExplicitly() {
 		// Act
 		ConnectedObjectsResolution result = _resolver.Resolve("SysAdminUnit", includeConnected: false);
@@ -117,7 +118,7 @@ public class ConnectedObjectsResolverTests {
 	[TestCase("sysadminunit")]
 	[TestCase("SYSUSERINROLE")]
 	[Description("Every excluded family is matched — SysPackage*, SysSettings*, SysLic*, SysProcess*, Vw*, the Rights suffix — and matching ignores case.")]
-	public void Resolve_ShouldExcludeEveryFamily_CaseInsensitive(string referenced) {
+	public void Resolve_ShouldExcludeEveryFamily_WhenTheNameMatchesInAnyCase(string referenced) {
 		// Arrange
 		_columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>())
 			.Returns(Schema("UsrOrder", Column("UsrRef", "own", referenced)));
@@ -132,7 +133,7 @@ public class ConnectedObjectsResolverTests {
 
 	[Test]
 	[Description("The own-column source is matched without regard to case.")]
-	public void Resolve_ShouldTreatSourceCaseInsensitively() {
+	public void Resolve_ShouldTreatSourceCaseInsensitively_WhenTheSourceIsUpperCase() {
 		// Arrange
 		_columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>())
 			.Returns(Schema("UsrOrder", Column("UsrStatus", "OWN", "UsrStatus")));
@@ -157,17 +158,15 @@ public class ConnectedObjectsResolverTests {
 			AdministratedByColumns: false, AdministratedByRecords: false, UseDenyRecordRights: null,
 			UseLiveEditing: null, Columns: columns);
 
-	// ---- Review round 6 ----
-
 	[Test]
-	[Description("The text that help and tool descriptions use for the security/system families names every excluded prefix and suffix, so it cannot drift from the lists.")]
-	public void ExcludedFamiliesText_ShouldNameEveryExcludedFamily() {
+	[Description("The text that help and tool descriptions use for the security/system families names every prefix and suffix the guard matches, so it cannot drift from the lists.")]
+	public void SecurityObjectFamiliesText_ShouldNameEveryFamily_WhenRenderedForHelp() {
 		// Arrange
-		string text = ConnectedObjectsResolver.ExcludedFamiliesText;
+		string text = ObjectRightsSupport.SecurityObjectFamiliesText;
 
 		// Act
-		string[] missing = ConnectedObjectsResolver.ExcludedPrefixList.Select(prefix => prefix + "*")
-			.Concat(ConnectedObjectsResolver.ExcludedSuffixList.Select(suffix => "*" + suffix))
+		string[] missing = ObjectRightsSupport.SecurityObjectPrefixList.Select(prefix => prefix + "*")
+			.Concat(ObjectRightsSupport.SecurityObjectSuffixList.Select(suffix => "*" + suffix))
 			.Where(family => !text.Contains(family, StringComparison.Ordinal))
 			.ToArray();
 

@@ -12,14 +12,18 @@ namespace Clio.Command.ObjectRights;
 	"Read object operation permissions (read/create/edit/delete per role) for an object and, optionally, its connected objects")]
 public class GetObjectRightsOptions : RemoteCommandOptions {
 
+	/// <summary>The object (entity schema) to read.</summary>
 	[Option("entity-schema-name", Required = true, HelpText =
 		"Object (entity schema) name to read")]
 	public string EntitySchemaName { get; set; }
 
+	/// <summary>An optional SysAdminUnit id: show its row and the rows above it instead of every row.</summary>
 	[Option("grantee", Required = false, HelpText =
-		"Optional SysAdminUnit id (role or user) to filter to one role. When omitted, every role's rights are reported.")]
+		"Optional SysAdminUnit id (role or user): show its row and the rows above it, which decide first. When omitted, "
+		+ "every row is listed.")]
 	public string Grantee { get; set; }
 
+	/// <summary>Also read the objects the root object's own lookup columns reference.</summary>
 	[Option("include-connected", Required = false, HelpText =
 		"Also read every object referenced by the root object's own lookup columns")]
 	public bool IncludeConnected { get; set; }
@@ -45,14 +49,15 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 		_logger = logger;
 	}
 
+	/// <inheritdoc />
 	public override int Execute(GetObjectRightsOptions options) {
 		if (string.IsNullOrWhiteSpace(options.EntitySchemaName)) {
 			_logger.WriteError("Error: --entity-schema-name is required.");
 			return 1;
 		}
 		if (!ObjectRightsSupport.TryNormalizeSchemaName(options.EntitySchemaName, out string schemaName)) {
-			_logger.WriteError($"Error: --entity-schema-name '{options.EntitySchemaName}' is not a schema name (letters, "
-				+ "digits and '_' only).");
+			_logger.WriteError($"Error: --entity-schema-name '{ObjectRightsSupport.Display(options.EntitySchemaName)}' is "
+				+ "not a schema name (letters, digits and '_' only).");
 			return 1;
 		}
 		options.EntitySchemaName = schemaName;
@@ -180,7 +185,7 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 	private static string Describe(RoleOperationRights role) {
 		IReadOnlyList<string> ops = role.OperationNames();
 		string granted = ops.Count == 0 ? "no operations" : string.Join("/", ops);
-		return $"[{role.Position}] {role.GranteeName} ({role.GranteeId}): {granted}";
+		return $"[{role.Position}] {ObjectRightsSupport.Display(role.GranteeName)} ({role.GranteeId}): {granted}";
 	}
 
 	// The platform rule every row listing is read with. Stated once per call, so a reader never takes the rows for a

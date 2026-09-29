@@ -12,7 +12,7 @@
 ## Context
 
 `get-object-rights` and `set-object-rights` read and change object operation permissions: the
-`SysSchemaOperationRight` layer, shown as the "Object permissions" grid. They do this with a read-modify-write of
+`SysEntitySchemaOperationRight` layer, shown as the "Object permissions" grid. They do this with a read-modify-write of
 the whole administrated object through `RightManagementService.svc` (`GetAdministratedObject` +
 `SaveAdministratedObject`). They are a general capability: read and change the operation permissions of any role on
 any object. What a result means for a particular scenario belongs to the guidance for that scenario, not to the tools.
@@ -174,6 +174,8 @@ or the call is refused. The host approval then shows the operator everything the
 **D5 — One guard for security and system objects.**
 - A grant beyond `read`, or a disable, on a security/system object requires `allow-security-object`. A `read` grant
   does not, because the boundary is the caller's Creatio rights (Threat model).
+- The `All employees` row that an enable adds (D2) grants every operation, so on a security/system object it is a
+  grant beyond `read` too, and the enable needs the flag (invariant 8).
 - The guard checks the named object. It uses the normalised name, as now, or better the canonical name returned by
   `SysSchema`.
 - It is a guard-rail, not a boundary.
@@ -184,8 +186,10 @@ or the call is refused. The host approval then shows the operator everything the
 - Policy is one table from transition to required flag. It is evaluated before the write, and a refusal writes
   nothing.
 - `RightManagementServiceClient` only reads and saves; it holds no policy.
-- Each call does one read before the write and one read-back after it. The save sends exactly `after`, and the
-  read-back is compared with `after`. A difference, such as a row the server added, is reported as a fact.
+- Each call does one read before the write and one read-back after it. The save sends exactly `after`: the rows the
+  plan changes or adds are written, found by grantee and position, and every other row is sent as it was read. The
+  read-back is compared with `after`, row by row. A difference, such as a row the server added, is reported as a
+  fact.
 - Output, exit code and the dry run are all rendered from the plan, so they cannot diverge from the write.
 
 **D7 — Duplicate rows for one grantee are refused** as needing explicit repair, as `manage-access` does. The tool
@@ -206,6 +210,7 @@ report facts. The guidance explains what the facts mean and decides what to do.
   - a grant beyond `read`, or a disable, on a security/system object without `allow-security-object`;
   - duplicate rows for the grantee;
   - a change that would leave an administered object with no granting row;
+  - a revoke on an object that is not administered, which every internal user reaches whatever its rows say;
 - never removes a row and never reorders rows;
 - reports facts:
   - rows in priority order, with their positions (`get`; with `--include-connected`, also for the object's own

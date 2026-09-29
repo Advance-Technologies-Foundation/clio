@@ -8,7 +8,7 @@ using Clio.Package;
 namespace Clio.Common.ObjectRights;
 
 /// <summary>
-/// Reads object operation permissions (the SysSchemaOperationRight layer) for an entity, using the native
+/// Reads object operation permissions (the SysEntitySchemaOperationRight layer) for an entity, using the native
 /// Creatio <c>RightManagementService.svc/GetAdministratedObject</c> service — the same service the System
 /// Designer "Object permissions" section uses. Reports EVERY role's row, in priority order.
 /// </summary>
@@ -30,15 +30,16 @@ public interface IObjectRightsReader {
 /// </summary>
 public interface IObjectRightsWriter {
 	/// <summary>
-	/// Writes <paramref name="after"/> onto the object read as <paramref name="snapshot"/>: each planned row's
-	/// operations (a row not in the snapshot is added at its planned position) and the switch. Every other field
-	/// round-trips unchanged, and the record, column and entity-operation collections are sent as null so the save
-	/// leaves them alone. No row is ever removed.
+	/// Writes <paramref name="after"/> onto the object read as <paramref name="snapshot"/>: the switch, and only the rows
+	/// the plan changes or adds. A row the plan leaves as it was read is sent exactly as read, including any field the
+	/// projection cannot represent. A changed row is found by its grantee AND position, so two rows of one role are never
+	/// merged; a planned row with no read row at its grantee and position is added there. No row is ever removed. The
+	/// record, column and entity-operation collections are sent as null so the save leaves them alone.
 	/// </summary>
 	/// <param name="snapshot">The object as it was read.</param>
 	/// <param name="after">The planned state.</param>
 	/// <param name="requestOptions">Timeout and retry settings.</param>
-	/// <returns><see langword="null"/> on success, otherwise why the save failed.</returns>
+	/// <returns><see langword="null"/> on success, otherwise why the save failed or was not sent.</returns>
 	string Save(ObjectRightsSnapshot snapshot, ObjectRightsState after, CreatioRequestOptions requestOptions);
 }
 
@@ -103,25 +104,13 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 		ArgumentNullException.ThrowIfNull(snapshot);
 		ArgumentNullException.ThrowIfNull(after);
 		JsonObject payload = snapshot.Node.DeepClone().AsObject();
-		JsonArray rows = payload[OperationRowsField] as JsonArray;
-		if (rows is null) {
+		if (payload[OperationRowsField] is not JsonArray rows) {
 			rows = new JsonArray();
 			payload[OperationRowsField] = rows;
 		}
-		foreach (RoleOperationRights planned in after.Roles) {
-			// The planner refuses a grantee with duplicate rows, so a grantee matches at most one row here.
-			JsonObject row = rows.OfType<JsonObject>().FirstOrDefault(r => GranteeId(r) == planned.GranteeId);
-			if (row is null) {
-				row = new JsonObject {
-					["sysAdminUnit"] = new JsonObject { ["id"] = planned.GranteeId.ToString() },
-					["position"] = planned.Position
-				};
-				rows.Add(row);
-			}
-			row[FieldOf(ObjectOperation.Read)] = planned.CanRead;
-			row[FieldOf(ObjectOperation.Create)] = planned.CanCreate;
-			row[FieldOf(ObjectOperation.Edit)] = planned.CanEdit;
-			row[FieldOf(ObjectOperation.Delete)] = planned.CanDelete;
+		string conflict = ApplyPlannedRows(rows, after.Roles);
+		if (conflict is not null) {
+			return conflict;
 		}
 		payload[AdministratedByOperationsField] = after.AdministratedByOperations;
 		// Mirror the platform client: only the collection that changed (operation rights) is sent; the record,
@@ -217,21 +206,70 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 		return false;
 	}
 
+	// Writes only what the plan changes. The rows read are first matched to the planned rows as a multiset by grantee,
+	// position and operations: those are unchanged and stay exactly as read. Each planned row left over is either a
+	// change to the one remaining read row of the same grantee at the same position, or a new row. Matching by grantee
+	// alone would merge two rows of one role (the last planned one overwriting the first read one), which can widen
+	// that role's access on a row nobody named. Returns why nothing may be sent, or null.
+	private static string ApplyPlannedRows(JsonArray rows, IReadOnlyList<RoleOperationRights> planned) {
+		List<(JsonObject Node, RoleOperationRights Read)> unmatched = rows.OfType<JsonObject>()
+			.Select((node, index) => (node, ProjectRow(node, index)))
+			.ToList();
+		List<RoleOperationRights> changed = new();
+		foreach (RoleOperationRights row in planned) {
+			int same = unmatched.FindIndex(entry => entry.Read.SameRowAs(row));
+			if (same >= 0) {
+				unmatched.RemoveAt(same);
+			} else {
+				changed.Add(row);
+			}
+		}
+		foreach (RoleOperationRights row in changed) {
+			List<(JsonObject Node, RoleOperationRights Read)> candidates = unmatched
+				.Where(entry => entry.Read.GranteeId == row.GranteeId && entry.Read.Position == row.Position)
+				.ToList();
+			if (candidates.Count > 1) {
+				return $"{candidates.Count} rows of {ObjectRightsSupport.Display(row.GranteeName)} sit at position "
+					+ $"{row.Position}, so the row to change is ambiguous; nothing was sent";
+			}
+			JsonObject node;
+			if (candidates.Count == 1) {
+				node = candidates[0].Node;
+				unmatched.Remove(candidates[0]);
+			} else {
+				node = new JsonObject {
+					["sysAdminUnit"] = new JsonObject { ["id"] = row.GranteeId.ToString() },
+					["position"] = row.Position
+				};
+				rows.Add(node);
+			}
+			node[FieldOf(ObjectOperation.Read)] = row.CanRead;
+			node[FieldOf(ObjectOperation.Create)] = row.CanCreate;
+			node[FieldOf(ObjectOperation.Edit)] = row.CanEdit;
+			node[FieldOf(ObjectOperation.Delete)] = row.CanDelete;
+		}
+		return null;
+	}
+
 	// A failure is never reported with an empty message: an empty string would read as "no error" to a caller that
 	// checks for null, and as nothing at all to the operator.
 	private static string ServiceMessage(string message, string fallback) =>
 		string.IsNullOrWhiteSpace(message) ? fallback : message;
 
-	// Every row, in priority order. A row without a readable position keeps its place in the array (the service
-	// returns the rows in priority order), so the order the caller sees never depends on a missing field.
+	// Every row, in priority order.
 	private static List<RoleOperationRights> ProjectRoles(JsonObject node) =>
 		ReadOperationRows(node)
-			.Select((row, index) => new RoleOperationRights(
-				GranteeId(row), Str(row["sysAdminUnit"]?["name"]) ?? "(unknown)", Position(row) ?? index,
-				Flag(row, FieldOf(ObjectOperation.Read)), Flag(row, FieldOf(ObjectOperation.Create)),
-				Flag(row, FieldOf(ObjectOperation.Edit)), Flag(row, FieldOf(ObjectOperation.Delete))))
+			.Select(ProjectRow)
 			.OrderBy(role => role.Position)
 			.ToList();
+
+	// One row, as the planner and the save see it. The service returns every row with its position; a row without a
+	// readable one is placed at its index in the array, only so that it stays visible. The save matches rows with the
+	// same projection, so it finds such a row again.
+	private static RoleOperationRights ProjectRow(JsonObject row, int index) =>
+		new(GranteeId(row), Str(row["sysAdminUnit"]?["name"]) ?? "(unknown)", Position(row) ?? index,
+			Flag(row, FieldOf(ObjectOperation.Read)), Flag(row, FieldOf(ObjectOperation.Create)),
+			Flag(row, FieldOf(ObjectOperation.Edit)), Flag(row, FieldOf(ObjectOperation.Delete)));
 
 	private static IEnumerable<JsonObject> ReadOperationRows(JsonObject node) =>
 		(node[OperationRowsField] as JsonArray)?.OfType<JsonObject>() ?? Enumerable.Empty<JsonObject>();

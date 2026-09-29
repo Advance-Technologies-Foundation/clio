@@ -21,8 +21,8 @@ public sealed record ConnectedObjectsResolution(
 /// <summary>
 /// Resolves the objects get-object-rights reads: the root object plus, when requested, every distinct object
 /// referenced by the root's OWN lookup columns (inherited BaseEntity audit lookups such as CreatedBy/ModifiedBy
-/// are excluded). set-object-rights changes one named object per call and uses only
-/// <see cref="ConnectedObjectsResolver.IsSecurityOrSystemObject"/>.
+/// are excluded). Security and system objects (<see cref="ObjectRightsSupport.IsSecurityOrSystemObject"/>) are
+/// never read as connected objects.
 /// </summary>
 public interface IConnectedObjectsResolver {
 	/// <summary>
@@ -37,26 +37,6 @@ public interface IConnectedObjectsResolver {
 
 /// <inheritdoc />
 public class ConnectedObjectsResolver : IConnectedObjectsResolver {
-
-	// These objects expose the role/user directory, security configuration or platform metadata: widening access to
-	// one of them makes that data readable through DataService wherever record permissions do not also protect it.
-	// So the connected listing — the step before granting — never offers them, and set-object-rights asks for
-	// --allow-security-object before a grant beyond read, or a disable, on one of them.
-	private static readonly string[] ExcludedPrefixes =
-		{ "SysAdmin", "SysUser", "SysSchema", "SysPackage", "SysSettings", "SysLic", "SysProcess", "Vw" };
-
-	private static readonly string[] ExcludedSuffixes = { "Right", "Rights" };
-
-	/// <summary>
-	/// The security/system object families as help and tool descriptions name them. One constant, so the text cannot
-	/// drift from <c>ExcludedPrefixes</c> / <c>ExcludedSuffixes</c>; a test checks it names every entry.
-	/// </summary>
-	public const string ExcludedFamiliesText =
-		"SysAdmin*, SysUser*, SysSchema*, SysPackage*, SysSettings*, SysLic*, SysProcess*, Vw*, *Right/*Rights";
-
-	internal static IReadOnlyList<string> ExcludedPrefixList => ExcludedPrefixes;
-
-	internal static IReadOnlyList<string> ExcludedSuffixList => ExcludedSuffixes;
 
 	private readonly IRemoteEntitySchemaColumnManager _columnManager;
 
@@ -85,16 +65,8 @@ public class ConnectedObjectsResolver : IConnectedObjectsResolver {
 		catch (Exception ex) when (ObjectRightsSupport.IsServiceFailure(ex)) {
 			return new ConnectedObjectsResolution(objects, Array.Empty<string>(), ex.Message);
 		}
-		List<string> excluded = connected.Where(IsSecurityOrSystemObject).ToList();
-		objects.AddRange(connected.Where(name => !IsSecurityOrSystemObject(name)));
+		List<string> excluded = connected.Where(ObjectRightsSupport.IsSecurityOrSystemObject).ToList();
+		objects.AddRange(connected.Where(name => !ObjectRightsSupport.IsSecurityOrSystemObject(name)));
 		return new ConnectedObjectsResolution(objects, excluded);
 	}
-
-	/// <summary>
-	/// Whether <paramref name="schemaName"/> is a security or system object: never read as a connected object, and
-	/// granted beyond read or disabled by set-object-rights only with --allow-security-object.
-	/// </summary>
-	public static bool IsSecurityOrSystemObject(string schemaName) =>
-		ExcludedPrefixes.Any(prefix => schemaName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-		|| ExcludedSuffixes.Any(suffix => schemaName.EndsWith(suffix, StringComparison.OrdinalIgnoreCase));
 }

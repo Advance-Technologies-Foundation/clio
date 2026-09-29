@@ -59,10 +59,12 @@ public enum ObjectRightsRefusal {
 /// <param name="EnablesOperationPermissions">The plan turns operation permissions ON.</param>
 /// <param name="DisablesOperationPermissions">The plan turns operation permissions OFF.</param>
 /// <param name="AddsGranteeRow">The plan adds a row for the grantee, at the lowest priority.</param>
-/// <param name="AddsAllEmployeesRow">The plan adds an "All employees" row so internal users keep access.</param>
-/// <param name="RowsBecomingEffective">On enable: the rows of other roles that start to decide access.</param>
-/// <param name="RowsAboveGrantee">On a grant: the rows above the grantee's row. For a user who is also in one of those
-/// roles, that row decides first and can shadow the grant.</param>
+/// <param name="AddsAllEmployeesRow">The plan adds an "All employees" row with every operation, below the existing
+/// rows, because an enable meets stored rows without one. On a refusal: the refused change would have added it.</param>
+/// <param name="RowsBecomingEffective">On enable: the rows of other roles that start to decide access. On a refusal
+/// of an enable: the rows that would have started to decide.</param>
+/// <param name="RowsAboveGrantee">The rows above the grantee's row. For a user who is also in one of those roles, that
+/// row decides first.</param>
 /// <param name="DuplicatePositions">On <see cref="ObjectRightsRefusal.DuplicateGranteeRows"/>: the grantee's positions.</param>
 public sealed record ObjectRightsPlan(
 	ObjectRightsState Before,
@@ -110,8 +112,10 @@ public sealed class ObjectRightsPlanner : IObjectRightsPlanner {
 		WriteSecurityObject = 4
 	}
 
-	// THE POLICY: one row per transition, in the order the refusals are reported. A transition not in the request is
-	// refused, never applied as a side effect.
+	// THE POLICY for transitions: one row per transition, in the order the refusals are reported. A transition not in
+	// the request is refused, never applied as a side effect. Two requests cannot be planned at all and are refused
+	// before any transition is computed: a grantee with several rows (D7), and a revoke on an object that is not
+	// administered (every internal user reaches it whatever its rows say).
 	private static readonly (Transition Transition, Func<ObjectRightsChangeRequest, bool> Allowed, ObjectRightsRefusal Refusal)[] Policy = {
 		(Transition.WriteSecurityObject, request => request.AllowSecurityObject, ObjectRightsRefusal.SecurityObjectNotAllowed),
 		(Transition.EnableOperationPermissions, request => request.EnableOperationPermissions, ObjectRightsRefusal.EnableNotRequested),
@@ -143,9 +147,6 @@ public sealed class ObjectRightsPlanner : IObjectRightsPlanner {
 		if (enabling) {
 			transitions |= Transition.EnableOperationPermissions;
 		}
-		if (request.IsSecurityObject && request.Operations.Any(op => op != ObjectOperation.Read)) {
-			transitions |= Transition.WriteSecurityObject;
-		}
 		List<RoleOperationRights> after = new(rows);
 		int next = NextPosition(rows);
 		// Internal users reached the object with every operation while it was not administered. Turning operation
@@ -153,6 +154,10 @@ public sealed class ObjectRightsPlanner : IObjectRightsPlanner {
 		// the tool does, below the existing rows so none of them is renumbered.
 		bool addsAllEmployees = enabling && request.Grantee != SysAdminUnitIds.AllEmployees
 			&& rows.All(row => row.GranteeId != SysAdminUnitIds.AllEmployees);
+		// The All employees row grants every operation, so on a security object it is a grant beyond read too.
+		if (request.IsSecurityObject && (addsAllEmployees || request.Operations.Any(op => op != ObjectOperation.Read))) {
+			transitions |= Transition.WriteSecurityObject;
+		}
 		if (addsAllEmployees) {
 			after.Add(new RoleOperationRights(SysAdminUnitIds.AllEmployees, AllEmployeesName, next++,
 				true, true, true, true));
@@ -168,7 +173,8 @@ public sealed class ObjectRightsPlanner : IObjectRightsPlanner {
 		ObjectRightsState afterState = new(true, after);
 		ObjectRightsRefusal refusal = Check(transitions, request);
 		if (refusal != ObjectRightsRefusal.None) {
-			return Refuse(before, refusal, Array.Empty<int>(), enabling ? OtherRows(rows, request.Grantee) : null);
+			return Refuse(before, refusal, Array.Empty<int>(), enabling ? OtherRows(rows, request.Grantee) : null,
+				addsAllEmployees);
 		}
 		return new ObjectRightsPlan(before, afterState, ObjectRightsRefusal.None,
 			EnablesOperationPermissions: enabling,
@@ -176,8 +182,7 @@ public sealed class ObjectRightsPlanner : IObjectRightsPlanner {
 			AddsGranteeRow: granteeRow is null,
 			AddsAllEmployeesRow: addsAllEmployees,
 			RowsBecomingEffective: enabling ? OtherRows(rows, request.Grantee) : Array.Empty<RoleOperationRights>(),
-			RowsAboveGrantee: after.Where(row => row.Position < granted.Position && row.GranteeId != request.Grantee)
-				.ToArray(),
+			RowsAboveGrantee: RowsAbove(after, granted),
 			DuplicatePositions: Array.Empty<int>());
 	}
 
@@ -211,9 +216,14 @@ public sealed class ObjectRightsPlanner : IObjectRightsPlanner {
 			AddsGranteeRow: false,
 			AddsAllEmployeesRow: false,
 			RowsBecomingEffective: Array.Empty<RoleOperationRights>(),
-			RowsAboveGrantee: Array.Empty<RoleOperationRights>(),
+			RowsAboveGrantee: granteeRow is null ? Array.Empty<RoleOperationRights>() : RowsAbove(after, granteeRow),
 			DuplicatePositions: Array.Empty<int>());
 	}
+
+	// The rows that decide before the grantee's row for a user who is also in their roles.
+	private static IReadOnlyList<RoleOperationRights> RowsAbove(IEnumerable<RoleOperationRights> rows,
+		RoleOperationRights granteeRow) =>
+		rows.Where(row => row.Position < granteeRow.Position && row.GranteeId != granteeRow.GranteeId).ToArray();
 
 	private static ObjectRightsRefusal Check(Transition transitions, ObjectRightsChangeRequest request) {
 		foreach ((Transition transition, Func<ObjectRightsChangeRequest, bool> allowed, ObjectRightsRefusal refusal) in Policy) {
@@ -225,12 +235,13 @@ public sealed class ObjectRightsPlanner : IObjectRightsPlanner {
 	}
 
 	private static ObjectRightsPlan Refuse(ObjectRightsState before, ObjectRightsRefusal refusal,
-		IReadOnlyList<int> duplicatePositions, IReadOnlyList<RoleOperationRights> rowsBecomingEffective = null) =>
+		IReadOnlyList<int> duplicatePositions, IReadOnlyList<RoleOperationRights> rowsBecomingEffective = null,
+		bool wouldAddAllEmployeesRow = false) =>
 		new(before, before, refusal,
 			EnablesOperationPermissions: false,
 			DisablesOperationPermissions: false,
 			AddsGranteeRow: false,
-			AddsAllEmployeesRow: false,
+			AddsAllEmployeesRow: wouldAddAllEmployeesRow,
 			RowsBecomingEffective: rowsBecomingEffective ?? Array.Empty<RoleOperationRights>(),
 			RowsAboveGrantee: Array.Empty<RoleOperationRights>(),
 			DuplicatePositions: duplicatePositions);

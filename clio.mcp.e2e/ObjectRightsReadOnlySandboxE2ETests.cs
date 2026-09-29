@@ -83,8 +83,8 @@ public sealed class ObjectRightsReadOnlySandboxE2ETests : McpContractFixtureBase
 		// Assert
 		preview.Success.Should().BeTrue(because: $"a preview of an allowed change is not a failure. Error: {preview.Error}");
 		(preview.Output ?? string.Empty).Should().Match(output => output.Contains("PREVIEW — nothing was changed")
-				|| output.Contains("already in the requested state"),
-			because: "a preview either shows the planned change or says there is none — and writes nothing");
+				|| output.Contains("(no change)"),
+			because: "a preview either shows the planned change or says which row already holds it — and writes nothing");
 		after.Output.Should().Be(before.Output, because: "the preview must leave Contact's rights exactly as they were");
 		before.Output.Should().Contain("priority order", because: "every listing states the priority rule its rows follow");
 	}
