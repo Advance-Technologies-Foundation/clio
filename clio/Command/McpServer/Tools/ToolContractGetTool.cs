@@ -741,6 +741,16 @@ internal static class ToolContractCatalog {
 		+ "log lines. Unlike odata-read, this tool's 'error' MAY carry Creatio's own message (with URIs, "
 		+ "paths and tokens removed) and there is no separate debug line to look the id up in.";
 
+	/// <summary>
+	/// What <c>CreatioResponseError.AppendStructuredODataWriteError</c> adds to a write tool's error
+	/// (GH-1699). Shared by odata-create, odata-update and odata-delete, which all append it.
+	/// </summary>
+	private const string ODataWriteForeignKeyHintDescription =
+		"When the database rejected the write for a foreign key, the error also carries a clio-authored hint "
+		+ "(validated identifiers only) naming the constraint and table: for a missing lookup Id, verify that Id "
+		+ "against the table the foreign key references rather than retrying with other rows; for a delete, the "
+		+ "record is still referenced by the named table. The hint does not change record-created or side-effect.";
+
 	private const string DataWriteDiagnosticFieldName = "diagnostic";
 	private const string DataWriteDiagnosticDescription = "Optional bounded context: operation, entity, item-index, write-attempted, transport-outcome, side-effect, retry-advice and sanitized message. No inferred HTTP status or offending field.";
 
@@ -2748,7 +2758,7 @@ internal static class ToolContractCatalog {
 				SuccessFieldName,
 				[SuccessFalseSignal],
 				Field(SuccessFieldName, BooleanType, "Whether the OData update succeeded."),
-				Field(ErrorFieldName, StringType, FailureMessageDescription),
+				Field(ErrorFieldName, StringType, FailureMessageDescription + " " + ODataWriteForeignKeyHintDescription),
 				Field("id", StringType, "GUID of the updated record."),
 				Field(CorrelationIdFieldName, StringType, ODataWriteCorrelationIdDescription),
 				Field(DataWriteDiagnosticFieldName, ObjectType, DataWriteDiagnosticDescription)
@@ -2797,7 +2807,7 @@ internal static class ToolContractCatalog {
 				SuccessFieldName,
 				[SuccessFalseSignal],
 				Field(SuccessFieldName, BooleanType, "Whether the OData delete succeeded."),
-				Field(ErrorFieldName, StringType, FailureMessageDescription),
+				Field(ErrorFieldName, StringType, FailureMessageDescription + " " + ODataWriteForeignKeyHintDescription),
 				Field("id", StringType, "GUID of the deleted record."),
 				Field(CorrelationIdFieldName, StringType, ODataWriteCorrelationIdDescription),
 				Field(DataWriteDiagnosticFieldName, ObjectType, DataWriteDiagnosticDescription)
@@ -6628,7 +6638,7 @@ internal static class ToolContractCatalog {
 					+ "record-created (true inserted / false definitely not inserted / null UNKNOWN) and, when "
 					+ "record-created is null, retry-guidance. A null record-created means Creatio failed the call "
 					+ "but may already have written the row - verify with odata-read before re-sending, a retry "
-					+ "duplicates it."),
+					+ "duplicates it. " + ODataWriteForeignKeyHintDescription),
 				Field("error", StringType, "Request-level error that prevented any row from being attempted."),
 				Field(CorrelationIdFieldName, StringType, ODataWriteCorrelationIdDescription),
 				Field(DataWriteDiagnosticFieldName, ObjectType, DataWriteDiagnosticDescription)

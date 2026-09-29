@@ -10,7 +10,7 @@ internal static partial class CreatioResponseError {
 	/// <summary>
 	/// Longest message, in characters, the structured patterns are run against. Every measured Creatio
 	/// OData message is under 300 characters; the bound keeps a crafted multi-megabyte message from being
-	/// scanned by four patterns.
+	/// scanned by every pattern.
 	/// </summary>
 	private const int MaxStructuredMessageLength = 2_048;
 
@@ -47,8 +47,126 @@ internal static partial class CreatioResponseError {
 		}
 		string codePart = code is null ? string.Empty : $"code '{code}'";
 		string separator = code is not null && fact is not null ? "; " : string.Empty;
-		return $"From the error payload (validated identifiers only): {codePart}{separator}{fact ?? string.Empty}";
+		return $"{StructuredDetailPrefix}{codePart}{separator}{fact ?? string.Empty}";
 	}
+
+	/// <summary>The framing both the read and the write hint open with.</summary>
+	private const string StructuredDetailPrefix = "From the error payload (validated identifiers only): ";
+
+	/// <summary>
+	/// The write-path counterpart of <see cref="DescribeStructuredODataError"/>: a locally authored, one-line
+	/// hint naming the identifiers of a measured foreign-key violation (PostgreSQL 23503, SQL Server 547) in
+	/// an OData v4 error body (GH-1699).
+	/// </summary>
+	/// <param name="root">The parsed root of a write response body.</param>
+	/// <returns>The hint, or <see langword="null"/> when no message carries a measured FK wording.</returns>
+	/// <remarks>
+	/// The same safety rules as the read hint apply: the same message walk, the same length cap and match
+	/// timeout, and only identifiers captured by bounded ASCII patterns leave this method. Only the FK facts
+	/// are reported, and no <c>error.code</c>: the read facts advise on select, filters and order-by, which
+	/// a write never sends, and a body without an FK wording must leave the write result exactly as it was.
+	/// The hint names a cause; it says nothing about whether the row was written, because an FK violation
+	/// can come from a post-insert handler writing another row.
+	/// </remarks>
+	internal static string DescribeStructuredODataWriteError(JsonElement root) {
+		if (root.ValueKind != JsonValueKind.Object
+			|| !root.TryGetProperty("error", out JsonElement error)
+			|| error.ValueKind != JsonValueKind.Object) {
+			return null;
+		}
+		string fact = null;
+		try {
+			fact = DescribeFirstForeignKeyFact(CollectErrorMessages(error));
+		} catch (RegexMatchTimeoutException) {
+			//A pattern that cannot finish in time has matched nothing.
+		}
+		return fact is null ? null : $"{StructuredDetailPrefix}{fact}";
+	}
+
+	/// <summary>
+	/// Appends <see cref="DescribeStructuredODataWriteError"/> to a write tool's already redacted error text.
+	/// </summary>
+	/// <param name="redactedServerError">The redacted message the write tool reported before GH-1699.</param>
+	/// <param name="root">The parsed root of the same response body.</param>
+	/// <returns><paramref name="redactedServerError"/> unchanged when there is no FK hint, otherwise both.</returns>
+	/// <remarks>
+	/// The hint is appended AFTER redaction on purpose: it is clio's own sentence around validated
+	/// identifiers, and the redactor has nothing to remove from it.
+	/// </remarks>
+	internal static string AppendStructuredODataWriteError(string redactedServerError, JsonElement root) {
+		string hint = DescribeStructuredODataWriteError(root);
+		if (hint is null) {
+			return redactedServerError;
+		}
+		return string.IsNullOrWhiteSpace(redactedServerError) ? hint : $"{redactedServerError} {hint}";
+	}
+
+	/// <summary>
+	/// What every "lookup Id is missing" hint tells the caller to do. GH-1699 is the case it is written for:
+	/// the entity set an odata-read of a lookup returned was not the table the foreign key references, and
+	/// retrying with other rows of that entity set failed the same way.
+	/// </summary>
+	private const string MissingLookupAdvice =
+		" Verify each lookup Id in the row against the table its foreign key references - the entity set an "
+		+ "odata-read of the lookup returns is not always that table - instead of retrying with other rows of "
+		+ "the same lookup.";
+
+	/// <summary>
+	/// Matches each message against the measured FK wordings and describes the first match.
+	/// </summary>
+	private static string DescribeFirstForeignKeyFact(IReadOnlyCollection<string> messages) {
+		foreach (string message in messages) {
+			if (string.IsNullOrEmpty(message) || message.Length > MaxStructuredMessageLength) {
+				continue;
+			}
+			string fact = DescribePostgresForeignKey(message) ?? DescribeSqlServerForeignKey(message);
+			if (fact is not null) {
+				return fact;
+			}
+		}
+		return null;
+	}
+
+	private static string DescribePostgresForeignKey(string message) {
+		Match insert = PostgresInsertForeignKeyPattern().Match(message);
+		if (insert.Success) {
+			Match detail = PostgresMissingKeyDetailPattern().Match(message);
+			string cause = detail.Success
+				? $"a lookup Id sent in '{detail.Groups["column"].Value}' does not exist in its referenced table "
+					+ $"'{detail.Groups["referenced"].Value}'."
+				: "a lookup Id sent does not exist in its referenced table.";
+			return $"foreign key constraint '{insert.Groups["constraint"].Value}' on table "
+				+ $"'{insert.Groups["table"].Value}' rejected the write: {cause}{MissingLookupAdvice}";
+		}
+		Match delete = PostgresDeleteForeignKeyPattern().Match(message);
+		if (!delete.Success) {
+			return null;
+		}
+		string referencing = delete.Groups["referencing"].Value;
+		return $"the record is still referenced: foreign key constraint '{delete.Groups["constraint"].Value}' "
+			+ $"on table '{referencing}' points at this row of table '{delete.Groups["table"].Value}'. "
+			+ StillReferencedAdvice(referencing);
+	}
+
+	private static string DescribeSqlServerForeignKey(string message) {
+		Match insert = SqlServerInsertForeignKeyPattern().Match(message);
+		if (insert.Success) {
+			return $"foreign key constraint '{insert.Groups["constraint"].Value}' rejected the write: a lookup Id "
+				+ $"sent does not exist in its referenced table '{insert.Groups["table"].Value}'.{MissingLookupAdvice}";
+		}
+		Match delete = SqlServerDeleteForeignKeyPattern().Match(message);
+		if (!delete.Success) {
+			return null;
+		}
+		string referencing = delete.Groups["table"].Value;
+		return $"the record is still referenced: constraint '{delete.Groups["constraint"].Value}' on table "
+			+ $"'{referencing}' (column '{delete.Groups["column"].Value}') points at this row. "
+			+ StillReferencedAdvice(referencing);
+	}
+
+	private static string StillReferencedAdvice(string referencingTable) =>
+		$"Delete or re-point the '{referencingTable}' rows that reference it first; the same delete cannot "
+		+ "succeed while they exist.";
 
 	private static string ReadErrorCode(JsonElement error) {
 		if (!error.TryGetProperty("code", out JsonElement codeElement)
@@ -179,5 +297,56 @@ internal static partial class CreatioResponseError {
 	[GeneratedRegex(@"^Value cannot be null\.\s{1,4}Parameter name: property\s{0,4}\z",
 		RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex NullPropertyArgumentPattern();
+
+	/// <summary>
+	/// PostgreSQL 23503 for an INSERT or UPDATE: <c>insert or update on table "DocListInFinApp" violates
+	/// foreign key constraint "FK6R22cV5NWM2CfAp2GAV4B2R2GfY"</c> - the wording GH-1699 captured with a raw
+	/// POST. The double quotes close right after each bounded identifier, so a quoted name holding a space,
+	/// markup or a non-ASCII character does not match at all.
+	/// </summary>
+	[GeneratedRegex(
+		@"insert or update on table ""(?<table>[A-Za-z_][A-Za-z0-9_]{0,127})"" violates foreign key constraint ""(?<constraint>[A-Za-z_][A-Za-z0-9_]{0,127})""",
+		RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
+	private static partial Regex PostgresInsertForeignKeyPattern();
+
+	/// <summary>
+	/// The DETAIL line PostgreSQL adds to 23503 when the driver includes error detail:
+	/// <c>Key ("AccountId")=(&lt;guid&gt;) is not present in table "Account".</c> The key value is matched by
+	/// a bounded class and never copied.
+	/// </summary>
+	[GeneratedRegex(
+		@"Key \(""(?<column>[A-Za-z_][A-Za-z0-9_]{0,127})""\)=\([^()\r\n]{1,64}\) is not present in table ""(?<referenced>[A-Za-z_][A-Za-z0-9_]{0,127})""",
+		RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
+	private static partial Regex PostgresMissingKeyDetailPattern();
+
+	/// <summary>
+	/// PostgreSQL 23503 for a DELETE (or a key UPDATE) of a row other rows still reference:
+	/// <c>update or delete on table "Account" violates foreign key constraint "FK..." on table "Contact"</c>.
+	/// </summary>
+	[GeneratedRegex(
+		@"update or delete on table ""(?<table>[A-Za-z_][A-Za-z0-9_]{0,127})"" violates foreign key constraint ""(?<constraint>[A-Za-z_][A-Za-z0-9_]{0,127})"" on table ""(?<referencing>[A-Za-z_][A-Za-z0-9_]{0,127})""",
+		RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
+	private static partial Regex PostgresDeleteForeignKeyPattern();
+
+	/// <summary>
+	/// SQL Server 547 for an INSERT or UPDATE: <c>The INSERT statement conflicted with the FOREIGN KEY
+	/// constraint "FK...". The conflict occurred in database "db", table "dbo.Account", column 'Id'.</c> The
+	/// table named is the REFERENCED one. The database name is matched by a bounded class (128 characters is
+	/// the SQL Server maximum) and never copied, and the schema prefix is cut.
+	/// </summary>
+	[GeneratedRegex(
+		@"The (?:INSERT|UPDATE) statement conflicted with the FOREIGN KEY constraint ""(?<constraint>[A-Za-z_][A-Za-z0-9_]{0,127})""\. The conflict occurred in database ""[^""\r\n]{1,128}"", table ""(?:[A-Za-z_][A-Za-z0-9_]{0,127}\.)?(?<table>[A-Za-z_][A-Za-z0-9_]{0,127})"", column '[A-Za-z_][A-Za-z0-9_]{0,127}'",
+		RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
+	private static partial Regex SqlServerInsertForeignKeyPattern();
+
+	/// <summary>
+	/// SQL Server 547 for a DELETE (or a key UPDATE) of a row other rows still reference: <c>The DELETE
+	/// statement conflicted with the REFERENCE constraint "FK...". The conflict occurred in database "db",
+	/// table "dbo.Contact", column 'AccountId'.</c> Here the table and column are the REFERENCING ones.
+	/// </summary>
+	[GeneratedRegex(
+		@"The (?:DELETE|UPDATE) statement conflicted with the REFERENCE constraint ""(?<constraint>[A-Za-z_][A-Za-z0-9_]{0,127})""\. The conflict occurred in database ""[^""\r\n]{1,128}"", table ""(?:[A-Za-z_][A-Za-z0-9_]{0,127}\.)?(?<table>[A-Za-z_][A-Za-z0-9_]{0,127})"", column '(?<column>[A-Za-z_][A-Za-z0-9_]{0,127})'",
+		RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
+	private static partial Regex SqlServerDeleteForeignKeyPattern();
 
 }
