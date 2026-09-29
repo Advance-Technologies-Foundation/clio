@@ -1,31 +1,31 @@
 ---
-description: splitting clio into layers was measured against the e2e change detector and rejected - the type coupling is redundant, not hub-shaped
+description: splitting clio into layers is not needed for e2e test selection - the over-coupling the detector saw was mostly its own parsing defects, fixed in the detector
 applies-to:
   - .github/scripts/Select-McpE2eTestFilter.ps1
   - clio.mcp.e2e/TestSelection/mcp-e2e-selection.json
   - spec/mcp-e2e-plan-split/
 ticket: GH-1570
-date: 2026-09-17
+date: 2026-09-29
 ---
 
-**What is true** - decomposing clio into layers would not let the pull-request detector run a
-smaller part of `clio.mcp.e2e`. Measured on `master` at `7b39de32d` over a type reference graph of
-the 1299 `.cs` files under `clio/`: 450 files reach at most 20 of the 226 MCP tool files. Cutting the
-single most-used type raises that to 457; cutting all 22 types named by 60 or more files
-(`ILogger`, `Command`, `EnvironmentSettings`, `IApplicationClient`, `IFileSystem`, `Package` and the
-rest, together) raises it to 464. Fourteen files of 1299.
+**What is true** - decomposing clio into layers is not the lever for running a smaller part of
+`clio.mcp.e2e` on pull requests. A first measurement (GH-1570, 2026-09-17) found only 450 of 1299
+files reaching at most 20 MCP tool files and read that as redundant coupling in clio. It was mostly
+the detector: its type-name maps folded case, it read references from comments, and its closure
+walked through tool registries (`ToolContractCatalog`, `McpCoreToolProfile`) that name every tool.
+With those fixed, and base lists after primary constructors read, 1013 of 1343 files stay precise
+at `37c833c31` (the old detector: 434 on the same tree), and full runs over the last 40 merged pull
+requests fell from 29 to 16 - with no change to clio's source.
 
-**Why it is this way** - the paths are redundant rather than hub-shaped: cutting one leaves several
-others, so no extractable set of types unlocks the detector. The granularity win that a file split
-would deliver was taken in the detector instead, by making the graph node a type rather than a file
-(809 of 1299 files declare more than one top-level type); that alone moved 450 to 532 with no source
-change. And for the files that stay imprecise the wide selection is correct, not waste:
-`ConsoleLogger` reaches 225 of 226 tools because every MCP session logs, and a layered clio would
-make that dependency explicit and directed without making it disappear.
+**Why it is this way** - the detector matches names in text, so its graph is only as good as its
+lexing. Each defect added edges that no code path follows, and a handful of wide false edges is
+enough to join everything into one component. The files that still reach many tools do so for a
+real reason: `ConsoleLogger` is used by every MCP session, and layering would make that dependency
+directed, not absent.
 
-**What breaks if you ignore it** - a large refactoring justified by the wrong number. Someone
-returning to this idea will point at the 48-of-60 full runs and conclude the architecture is the
-cause. It is not; the measurement and its method are in
-[spec/mcp-e2e-plan-split/mcp-e2e-plan-split-analysis.md](../../../spec/mcp-e2e-plan-split/mcp-e2e-plan-split-analysis.md).
-Layering may still be worth doing for build time, ownership or isolating the CLI - this record says
-nothing about those, only that test selection is not the argument for it.
+**What breaks if you ignore it** - a large refactoring justified by a number that measured the tool,
+not the code. When selection looks too coarse again, trace the path from the changed file to an
+unrelated tool (BFS over `Consumers` with parent links) before blaming the architecture: in
+September 2026 every such path ran through a comment, a lower-case local or a registry. Layering may
+still be worth doing for build time, ownership or isolating the CLI - this record says nothing about
+those.

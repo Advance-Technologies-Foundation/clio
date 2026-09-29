@@ -129,9 +129,27 @@ contain quotes, verbatim and interpolated-verbatim strings in either `$@` or `@$
 strings, char literals, line comments and block comments - replacing each character with a space and
 keeping the line breaks. Declarations, base lists and the
 parentheses of a registration call are parsed on that text, so a bracket, a quote, a semicolon or a
-whole class written inside a comment or a literal cannot be read as syntax. *References* are still
-read from the raw text: a type named only in a comment adds an edge, which widens the selection and
-is the safe direction.
+whole class written inside a comment or a literal cannot be read as syntax. *References* are read
+from the text with comments removed and literals kept: a type named in a string can be a runtime
+lookup, a type named in a comment is not a dependency any code path follows. Reading comments too was
+meant as the safe direction, but in this tree it joined unrelated types into one component
+(`McpToolExecutionLock`'s summary names `PageBaselineGuard`, so every page-update change reached every
+tool) and made most product changes a full run. Every map keyed by a type name is ordinal: a
+PowerShell `@{}` folds case, which turned each local named `command` into a reference to `Command`.
+
+The closure does not walk through a concrete MCP tool type except into another tool type. The
+non-tool types that name a tool are registries and prompts (`ToolContractCatalog`,
+`McpCoreToolProfile`, `*Prompt`) naming dozens of tools each; a tool that calls another tool
+(`PageUpdateTool` -> `PageSyncTool`) is a real execution path and is kept. A tool type is a
+non-abstract type carrying `[McpServerToolType]` or an `[McpServerTool]` method - most tools inherit
+the class attribute from the abstract `BaseTool<T>`, which is itself walked through.
+
+A base list is read after a primary constructor as well (`class Foo(IBar bar) : IFoo`, possibly over
+several lines), a qualified name may start at any segment of a declared namespace
+(`Common.McpWorker.IWorker...` inside `namespace Clio.Command.McpServer`), and a type registered in the
+composition root for a service type the repository does not declare
+(`AddTransient<IDataProvider>(sp => new ClassifyingDataProvider(...))`) forces a full run, because its
+consumers name only the external interface.
 
 The guard asserts the invariant that makes this checkable: after blanking, no quote and no comment
 marker is left anywhere under `clio/`. A literal form the lexer does not know leaves one behind, so

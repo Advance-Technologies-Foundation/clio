@@ -336,6 +336,20 @@ function Remove-NonCode([string] $Text) {
     })
 }
 
+# References are read with comments removed but string literals kept. A comment that names a type -
+# `/// <c>PageBaselineGuard</c>`, `// deliberately broader than McpHttpServerCommand's` - is not a
+# dependency any code path follows, and in this tree such comments were what chained unrelated
+# types into one component: McpToolExecutionLock's summary named PageBaselineGuard, so every change
+# under page update reached every tool. A literal is kept because a type name in a string can be a
+# real runtime reference (reflection, a type-name lookup), and dropping one would narrow a selection.
+function Remove-CommentsOnly([string] $Text) {
+    return $script:nonCode.Replace($Text, {
+        param($match)
+        if ($match.Value.StartsWith('/')) { return ' ' }
+        return $match.Value
+    })
+}
+
 $graph = $null
 function Get-ProductFileTexts() {
     $texts = @{}
@@ -368,7 +382,12 @@ function Get-EntryPointFileSet($Texts) {
 function Get-NamespaceRoots($Texts, $NamespaceDeclaration, $NamespaceAlias) {
     $namespaceRoots = New-Object System.Collections.Generic.HashSet[string]
     foreach ($relative in $Texts.Keys) {
-        foreach ($m in [regex]::Matches($Texts[$relative], $NamespaceDeclaration)) { [void]$namespaceRoots.Add($m.Groups[1].Value) }
+        # Every segment, not only the first: inside `namespace Clio.Command.McpServer` the name
+        # `Common.McpWorker.IWorkerTempResidueSweeper` resolves against the enclosing Clio, so a chain
+        # may start at any segment of a namespace this repository declares.
+        foreach ($m in [regex]::Matches($Texts[$relative], $NamespaceDeclaration)) {
+            foreach ($segment in $m.Groups[1].Value.Split('.')) { [void]$namespaceRoots.Add($segment) }
+        }
     }
     foreach ($relative in $Texts.Keys) {
         foreach ($m in [regex]::Matches($Texts[$relative], $NamespaceAlias)) {
@@ -392,11 +411,35 @@ function Add-WholeFileAttribution([string] $Relative, [string] $Text, $Declarati
     return ,$declaredAll
 }
 
-function Add-BaseListEntries($Tops, $InterfaceTypes, $BaseList) {
+# The base list of a declaration. The declaration pattern reads it only when the colon follows the
+# name; a primary constructor puts a parameter list in between - `class Foo(IBar bar) : IFoo`, or
+# the same list spread over several lines - and 690 declarations under clio/ are written that way.
+# Without this every one of them lost its implementation -> interface edge, and a service reached
+# only through its interface looked unreachable. The parameter list is skipped by matching
+# parentheses on the blanked text, so a parenthesis inside a literal or a comment cannot end it.
+function Get-BaseListText([string] $Scan, $Match) {
+    if ($Match.Groups[4].Success) { return $Match.Groups[4].Value }
+    $i = $Match.Index + $Match.Length
+    while ($i -lt $Scan.Length -and [char]::IsWhiteSpace($Scan[$i])) { $i++ }
+    if ($i -ge $Scan.Length -or $Scan[$i] -ne '(') { return $null }
+    $depth = 0
+    do {
+        if ($Scan[$i] -eq '(') { $depth++ } elseif ($Scan[$i] -eq ')') { $depth-- }
+        $i++
+    } while ($i -lt $Scan.Length -and $depth -gt 0)
+    while ($i -lt $Scan.Length -and [char]::IsWhiteSpace($Scan[$i])) { $i++ }
+    if ($i -ge $Scan.Length -or $Scan[$i] -ne ':') { return $null }
+    $end = $Scan.IndexOfAny([char[]]'{;', $i)
+    if ($end -lt 0) { $end = $Scan.Length }
+    return $Scan.Substring($i + 1, $end - $i - 1)
+}
+
+function Add-BaseListEntries([string] $Scan, $Tops, $InterfaceTypes, $BaseList) {
     foreach ($top in $Tops) {
         if ($top.Groups[2].Value -eq 'interface') { [void]$InterfaceTypes.Add($top.Groups[3].Value) }
-        if (-not $top.Groups[4].Success) { continue }
-        $baseNames = @([regex]::Matches($top.Groups[4].Value, '(?<![\w.])([A-Za-z_]\w*)') | ForEach-Object { $_.Groups[1].Value })
+        $baseListText = Get-BaseListText $Scan $top
+        if ($null -eq $baseListText) { continue }
+        $baseNames = @([regex]::Matches($baseListText, '(?<![\w.])([A-Za-z_]\w*)') | ForEach-Object { $_.Groups[1].Value })
         if (-not $BaseList.ContainsKey($top.Groups[3].Value)) { $BaseList[$top.Groups[3].Value] = New-Object System.Collections.Generic.HashSet[string] }
         foreach ($baseName in $baseNames) { [void]$BaseList[$top.Groups[3].Value].Add($baseName) }
     }
@@ -420,14 +463,36 @@ function Add-TypeBodySpans([string] $Relative, [string] $Text, $Tops, $TypeBody,
     return ,$declared
 }
 
-function Add-TopLevelDeclarations([string] $Relative, [string] $Text, $DeclarationMatches, [int] $TopIndent, $InterfaceTypes, $BaseList, $TypeBody, $TypeFiles) {
+function Add-TopLevelDeclarations([string] $Relative, [string] $Text, [string] $Scan, $DeclarationMatches, [int] $TopIndent, $InterfaceTypes, $BaseList, $TypeBody, $TypeFiles) {
     $tops = @($DeclarationMatches | Where-Object { $_.Groups[1].Value.Length -eq $TopIndent })
-    Add-BaseListEntries $tops $InterfaceTypes $BaseList
+    Add-BaseListEntries $Scan $tops $InterfaceTypes $BaseList
     $declared = Add-TypeBodySpans $Relative $Text $tops $TypeBody $TypeFiles
     return ,$declared
 }
 
-function Add-DeclarationsForFile([string] $Relative, [string] $Text, $TypeDeclaration, $InterfaceTypes, $BaseList, $TypeBody, $TypeFiles) {
+# Abstract declarations, recorded so Get-ToolTypes can leave them out. The match is taken on blanked
+# text, so `abstract` in a comment or a literal does not count.
+function Add-AbstractTypes($DeclarationMatches, $Declared, $AbstractTypes) {
+    foreach ($m in $DeclarationMatches) {
+        if ($Declared.Contains($m.Groups[3].Value) -and $m.Value -cmatch '\babstract\b') { [void]$AbstractTypes.Add($m.Groups[3].Value) }
+    }
+}
+
+# The concrete MCP tool types: every non-abstract type whose own code carries [McpServerToolType] or
+# an [McpServerTool] method. Most tools declare neither attribute on the class - they inherit
+# [McpServerToolType] from BaseTool<T> - so the method attribute is the one that finds them. BaseTool
+# itself is abstract and left out: it is the base every tool inherits, and stopping the closure there
+# would hide every tool behind it. Get-ConsumerClosure stops at these types.
+function Get-ToolTypes($TypeBody, $AbstractTypes) {
+    $toolTypes = New-Object System.Collections.Generic.HashSet[string]
+    foreach ($name in $TypeBody.Keys) {
+        if ($AbstractTypes.Contains($name)) { continue }
+        if ((Remove-NonCode $TypeBody[$name].ToString()) -cmatch '\[\s*McpServerTool(?:Type)?\s*[\](,]') { [void]$toolTypes.Add($name) }
+    }
+    return ,$toolTypes
+}
+
+function Add-DeclarationsForFile([string] $Relative, [string] $Text, $TypeDeclaration, $InterfaceTypes, $BaseList, $TypeBody, $TypeFiles, $AbstractTypes) {
     # Scan for declarations on a copy with raw-string contents blanked out, so a code sample inside
     # a literal cannot be read as the file's next top-level type. Offsets are preserved.
     $scan = Remove-NonCode $Text
@@ -436,9 +501,11 @@ function Add-DeclarationsForFile([string] $Relative, [string] $Text, $TypeDeclar
     $topIndent = ($declarationMatches | ForEach-Object { $_.Groups[1].Value.Length } | Measure-Object -Minimum).Minimum
     if ($declarationMatches[0].Groups[1].Value.Length -ne $topIndent) {
         $declared = Add-WholeFileAttribution $Relative $Text $declarationMatches $TypeBody $TypeFiles
-        return ,$declared
     }
-    $declared = Add-TopLevelDeclarations $Relative $Text $declarationMatches $topIndent $InterfaceTypes $BaseList $TypeBody $TypeFiles
+    else {
+        $declared = Add-TopLevelDeclarations $Relative $Text $scan $declarationMatches $topIndent $InterfaceTypes $BaseList $TypeBody $TypeFiles
+    }
+    Add-AbstractTypes $declarationMatches $declared $AbstractTypes
     return ,$declared
 }
 
@@ -447,18 +514,25 @@ function Add-DeclarationsForFile([string] $Relative, [string] $Text, $TypeDeclar
 # wide one - measured as the single largest source of over-approximation in this tree.
 # A type owns the text from its declaration to the next top-level declaration, so nested types are
 # part of their outer type and no character of the file is left unattributed.
+# Every map keyed by a type name is ORDINAL. A PowerShell `@{}` folds case, and C# does not: with
+# `@{}` the local `command` in 2651 type bodies was an edge to the type `Command`, and a comment
+# reading `(this command is MCP-callable` made three commands look like extensions of it. Those
+# edges joined nearly every command to nearly every tool, so most product changes ran the full suite.
+function New-OrdinalMap() { return [System.Collections.Hashtable]::new([System.StringComparer]::Ordinal) }
+
 function Build-TypeNodes($Texts, $TypeDeclaration) {
     $interfaceTypes = New-Object System.Collections.Generic.HashSet[string]
-    $baseList = @{}    # type name -> the names in its base list
-    $typeBody = @{}    # type name -> the text that belongs to it (a partial type accumulates)
-    $typeFiles = @{}   # type name -> files declaring it
-    $typesByFile = @{} # file -> type names declared at its top level
+    $abstractTypes = New-Object System.Collections.Generic.HashSet[string]
+    $baseList = New-OrdinalMap    # type name -> the names in its base list
+    $typeBody = New-OrdinalMap    # type name -> the text that belongs to it (a partial type accumulates)
+    $typeFiles = New-OrdinalMap   # type name -> files declaring it
+    $typesByFile = New-OrdinalMap # file -> type names declared at its top level
     foreach ($relative in $Texts.Keys) {
-        $declared = Add-DeclarationsForFile $relative $Texts[$relative] $TypeDeclaration $interfaceTypes $baseList $typeBody $typeFiles
+        $declared = Add-DeclarationsForFile $relative $Texts[$relative] $TypeDeclaration $interfaceTypes $baseList $typeBody $typeFiles $abstractTypes
         $typesByFile[$relative] = $declared
     }
     return @{
-        InterfaceTypes = $interfaceTypes; BaseList = $baseList
+        InterfaceTypes = $interfaceTypes; BaseList = $baseList; ToolTypes = (Get-ToolTypes $typeBody $abstractTypes)
         TypeBody = $typeBody; TypeFiles = $typeFiles; TypesByFile = $typesByFile
     }
 }
@@ -477,13 +551,13 @@ function Get-BodyTokens([string] $Body, $NamespaceRoots, $Identifier, $Qualified
 }
 
 function Build-ConsumerGraph($TypeBody, $NamespaceRoots, $Identifier, $Qualified, $VerbDeclaration) {
-    $verbsByType = @{}
-    $consumers = @{}   # type name -> type names whose text names it
+    $verbsByType = New-OrdinalMap
+    $consumers = New-OrdinalMap   # type name -> type names whose text names it
     foreach ($name in $TypeBody.Keys) {
         $body = $TypeBody[$name].ToString()
         $verbs = @([regex]::Matches($body, $VerbDeclaration) | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique)
         if ($verbs.Count -gt 0) { $verbsByType[$name] = $verbs }
-        $tokens = Get-BodyTokens $body $NamespaceRoots $Identifier $Qualified
+        $tokens = Get-BodyTokens (Remove-CommentsOnly $body) $NamespaceRoots $Identifier $Qualified
         foreach ($token in $tokens) {
             if ($token -eq $name -or -not $TypeBody.ContainsKey($token)) { continue }
             if (-not $consumers.ContainsKey($token)) { $consumers[$token] = New-Object System.Collections.Generic.HashSet[string] }
@@ -517,7 +591,7 @@ function Copy-ConsumerEdgesEnsuringTargetExists($Consumers, [string] $From, [str
 function Add-ExtensionConsumerEdges($TypeBody, $Consumers, $ExtensionParameter) {
     $unboundedTypes = New-Object System.Collections.Generic.HashSet[string]
     foreach ($name in @($TypeBody.Keys)) {
-        foreach ($m in $ExtensionParameter.Matches($TypeBody[$name].ToString())) {
+        foreach ($m in $ExtensionParameter.Matches((Remove-NonCode $TypeBody[$name].ToString()))) {
             $extended = $m.Groups[1].Value
             if ($extended -eq $name) { continue }
             if (-not $TypeBody.ContainsKey($extended)) {
@@ -552,7 +626,8 @@ function Add-RegistrationPairEdges([string] $RegistrationText, $TypeBody, $Consu
     foreach ($m in $RegistrationPair.Matches($RegistrationText)) {
         $service = $m.Groups[1].Value
         $implementation = $m.Groups[2].Value
-        if (-not $TypeBody.ContainsKey($service) -or -not $TypeBody.ContainsKey($implementation)) { continue }
+        if (-not $TypeBody.ContainsKey($implementation)) { continue }
+        if (-not $TypeBody.ContainsKey($service)) { [void]$script:externalServiceImplementations.Add("$implementation|$service"); continue }
         Copy-ConsumerEdgesEnsuringTargetExists $Consumers $service $implementation
     }
 }
@@ -580,7 +655,8 @@ function Resolve-FactoryImplementationArgument([string] $RegistrationText, $Matc
 function Add-RegistrationFactoryEdges([string] $RegistrationText, [string] $RegistrationFile, $TypeBody, $Consumers, $RegistrationFactory) {
     foreach ($m in $RegistrationFactory.Matches($RegistrationText)) {
         $service = $m.Groups[1].Value
-        if (-not $TypeBody.ContainsKey($service) -or -not $Consumers.ContainsKey($service)) { continue }
+        $external = -not $TypeBody.ContainsKey($service)
+        if (-not $external -and -not $Consumers.ContainsKey($service)) { continue }
         $scan = Resolve-FactoryImplementationArgument $RegistrationText $m
         if ($null -eq $scan.Argument) { continue }
         # The cap is reached only by a factory argument longer than 4000 characters. Stopping
@@ -592,6 +668,7 @@ function Add-RegistrationFactoryEdges([string] $RegistrationText, [string] $Regi
         foreach ($t in [regex]::Matches($scan.Argument, '(?<![\w.])([A-Za-z_]\w*)')) {
             $implementation = $t.Groups[1].Value
             if ($implementation -eq $service -or -not $TypeBody.ContainsKey($implementation)) { continue }
+            if ($external) { [void]$script:externalServiceImplementations.Add("$implementation|$service"); continue }
             Copy-ConsumerEdgesEnsuringTargetExists $Consumers $service $implementation
         }
     }
@@ -634,7 +711,7 @@ function Get-Graph() {
     # a single blob when every token counted.
     $identifier = [regex] '(?<![\w.])([A-Za-z_]\w*)'
     $qualified = [regex] '(?<![\w.])(?:global::)?([A-Za-z_]\w*)((?:\.[A-Za-z_]\w*)+)'
-    $namespaceDeclaration = '(?m)^\s*namespace\s+([A-Za-z_]\w*)'
+    $namespaceDeclaration = '(?m)^\s*namespace\s+([A-Za-z_][\w.]*)'
     # `using Contracts = Clio.Common;` makes Contracts.Foo a reference to Clio.Common.Foo.
     $namespaceAlias = '(?m)^\s*using\s+([A-Za-z_]\w*)\s*=\s*(?:global::)?([A-Za-z_]\w*)[\w.]*\s*;'
     # `public static int Normalize(this Service value)`: the extension type is never named by the
@@ -645,8 +722,7 @@ function Get-Graph() {
     # lists, the parentheses of a registration call - is parsed on text where each of these has been
     # replaced by spaces, so a bracket, a quote or a declaration written inside one cannot be read as
     # syntax. Offsets and line breaks are preserved, so indentation and anchors still work.
-    # References are NOT read from the blanked text: a type named only in a comment adds an edge,
-    # which widens the selection and is the safe direction.
+    # References are read from the text with comments removed and literals kept (Remove-CommentsOnly).
     # Order matters: the longest and most specific form first. A raw string is matched with any
     # number of leading dollars, because `$"""` and `$$"""` are interpolated raw strings and 44
     # files here use them. An interpolated string is listed
@@ -658,12 +734,12 @@ function Get-Graph() {
 '@
     # services.AddSingleton<IFoo, Foo>() - the one edge name matching cannot see, because a consumer
     # of IFoo never spells Foo out. Taken from the registration files only, and only as an exact pair.
-    $registrationPair = [regex] 'Add(?:Singleton|Scoped|Transient|KeyedSingleton)<\s*(?:[\w.]*\.)?(\w+)\s*,\s*(?:[\w.]*\.)?(\w+)\s*>'
+    $registrationPair = [regex] 'Add(?:Singleton|Scoped|Transient|KeyedSingleton|KeyedScoped|KeyedTransient|HttpClient)<\s*(?:[\w.]*\.)?(\w+)\s*,\s*(?:[\w.]*\.)?(\w+)\s*>'
     # services.AddSingleton<ILogger>(ConsoleLogger.Instance) and the lambda form: one generic argument
     # and an instance or factory that names the implementation somewhere on the same line.
     # Only the opening of the call: the argument is then read by matching parentheses, because a
     # lambda body holds semicolons of its own and a literal can hold anything.
-    $registrationFactory = [regex] 'Add(?:Singleton|Scoped|Transient|KeyedSingleton)<\s*(?:[\w.]*\.)?(\w+)\s*>\s*\('
+    $registrationFactory = [regex] 'Add(?:Singleton|Scoped|Transient|KeyedSingleton|KeyedScoped|KeyedTransient|HttpClient)<\s*(?:[\w.]*\.)?(\w+)\s*>\s*\('
 
     $texts = Get-ProductFileTexts
     $entryPointFileSet = Get-EntryPointFileSet $texts
@@ -676,6 +752,11 @@ function Get-Graph() {
     $consumerGraph = Build-ConsumerGraph $nodes.TypeBody $namespaceRoots $identifier $qualified $verbDeclaration
 
     $script:factoryScanTruncated = New-Object System.Collections.Generic.List[string]
+    # implementation|service pairs registered for a service type this repository does not declare
+    # (services.AddTransient<IDataProvider>(sp => new ClassifyingDataProvider(...))). Its consumers
+    # inject the external interface and never name the implementation, so no edge can be drawn and
+    # the implementation's blast radius is unknown: Test-ProductFileFullRunReason runs the suite.
+    $script:externalServiceImplementations = New-Object System.Collections.Generic.HashSet[string]
     $unboundedTypes = Add-ExtensionConsumerEdges $nodes.TypeBody $consumerGraph.Consumers $extensionParameter
     Add-InterfaceConsumerEdges $nodes.BaseList $nodes.InterfaceTypes $consumerGraph.Consumers | Out-Null
 
@@ -702,7 +783,8 @@ function Get-Graph() {
         FactoryScanTruncated = $script:factoryScanTruncated
         Texts = $texts; TypeFiles = $nodes.TypeFiles; TypesByFile = $nodes.TypesByFile
         VerbsByType = $consumerGraph.VerbsByType; Consumers = $consumerGraph.Consumers; RegistrationTypes = $registrationTypes
-        UnboundedTypes = $unboundedTypes; EntryPointFiles = $entryPointFileSet
+        UnboundedTypes = $unboundedTypes; EntryPointFiles = $entryPointFileSet; ToolTypes = $nodes.ToolTypes
+        ExternalServiceImplementations = $script:externalServiceImplementations
         Registration = $registration
     }
     return $script:graph
@@ -712,6 +794,12 @@ $closureCache = @{}
 function Get-ConsumerClosure([string] $FileRelative) {
     if ($script:closureCache.ContainsKey($FileRelative)) { return $script:closureCache[$FileRelative] }
     # Every type that transitively names a type declared in this file, plus those types themselves.
+    # From a concrete MCP tool type the walk continues only to other tool types. What reaches a tool
+    # is observed through that tool's fixtures; the non-tool types naming a tool are registries and
+    # prompts (ToolContractCatalog, McpCoreToolProfile, *Prompt) that name dozens of tools each, and
+    # walking through them made one tool's dependency reach nearly all of them. A tool that calls
+    # another tool (PageUpdateTool -> PageSyncTool, SchemaSyncTool -> CreateEntitySchemaTool) is a
+    # real execution path, so that edge is still followed.
     $g = Get-Graph
     $seen = New-Object System.Collections.Generic.HashSet[string]
     $queue = New-Object System.Collections.Generic.Queue[string]
@@ -719,8 +807,10 @@ function Get-ConsumerClosure([string] $FileRelative) {
     while ($queue.Count -gt 0) {
         $current = $queue.Dequeue()
         if (-not $g.Consumers.ContainsKey($current)) { continue }
+        $fromTool = $g.ToolTypes.Contains($current)
         foreach ($consumer in $g.Consumers[$current]) {
             if ($g.RegistrationTypes.Contains($consumer)) { continue }
+            if ($fromTool -and -not $g.ToolTypes.Contains($consumer)) { continue }
             if ($seen.Add($consumer)) { $queue.Enqueue($consumer) }
         }
     }
@@ -784,6 +874,10 @@ function Test-ProductFileFullRunReason([string] $FileRelative, $Graph, [ref] $Re
     if ($Graph.Texts[$FileRelative].Contains('[ResolvedDynamically]')) { $Reason.Value = 'full run (declares a [ResolvedDynamically] type, resolved by reflection)'; return $true }
     foreach ($name in $Graph.TypesByFile[$FileRelative]) {
         if ($Graph.UnboundedTypes.Contains($name)) { $Reason.Value = "full run ($name extends a type this repository does not declare, so its callers cannot be enumerated)"; return $true }
+        foreach ($pair in $Graph.ExternalServiceImplementations) {
+            $parts = $pair.Split('|')
+            if ($parts[0] -ceq $name) { $Reason.Value = "full run ($name is registered as the implementation of $($parts[1]), a service this repository does not declare, so its consumers cannot be enumerated)"; return $true }
+        }
     }
     if (@($Graph.TypesByFile[$FileRelative]).Count -eq 0) { $Reason.Value = 'full run (declares no type)'; return $true }
     return $false

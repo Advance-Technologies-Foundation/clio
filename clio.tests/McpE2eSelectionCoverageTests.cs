@@ -501,6 +501,68 @@ internal sealed class McpE2eSelectionCoverageTests {
 	}
 
 	[Test]
+	[Description("The consumer closure stops at a concrete MCP tool: a registry that names every tool does not carry one tool's dependency to the others, a tool that calls another tool still does, and an abstract [McpServerToolType] base is walked through rather than stopped at.")]
+	public void Script_ShouldStopTheClosureAtConcreteToolTypes() {
+		// Arrange
+		using SyntheticRepository repo = SyntheticRepository.Create();
+
+		// Act
+		JsonElement behindOneTool = RunSelection(["clio/Common/PiService.cs"], includeNoEnvironment: false, repo.Root);
+		JsonElement behindAbstractBase = RunSelection(["clio/Common/UpsilonHelper.cs"], includeNoEnvironment: false, repo.Root);
+
+		// Assert
+		behindOneTool.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["PiToolE2ETests", "TauToolE2ETests"],
+			because: "PiService is used by PiTool only; ToolCatalog names PiTool and RhoTool by typeof, and walking through it made every change behind one tool reach every tool, while TauTool calls PiTool and so really executes the changed code");
+		behindAbstractBase.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["UpsilonToolE2ETests"],
+			because: "UpsilonToolBase carries [McpServerToolType] but is abstract - it is the base the tool inherits, and stopping there would hide the tool behind it");
+	}
+
+	[Test]
+	[Description("A type name is matched case-sensitively and only in code: a local variable spelled like a type, an extension-method signature written in a comment, and a type named only in a comment add no edge, while a type named in a string literal still does.")]
+	public void Script_ShouldMatchTypeNamesCaseSensitivelyAndOutsideComments() {
+		// Arrange
+		using SyntheticRepository repo = SyntheticRepository.Create();
+
+		// Act
+		JsonElement lowerCaseLocal = RunSelection(["clio/Common/Phi.cs"], includeNoEnvironment: false, repo.Root);
+		JsonElement extensionInComment = RunSelection(["clio/Common/PsiHelpers.cs"], includeNoEnvironment: false, repo.Root);
+		JsonElement namedInComment = RunSelection(["clio/Common/PsiDocumented.cs"], includeNoEnvironment: false, repo.Root);
+		JsonElement namedInLiteral = RunSelection(["clio/Common/PsiByName.cs"], includeNoEnvironment: false, repo.Root);
+
+		// Assert
+		lowerCaseLocal.GetProperty("mode").GetString().Should().Be("none",
+			because: "ChiTool declares a local named phi, and C# does not fold case, so it does not reference the type Phi; a case-insensitive map made 2651 locals named command look like consumers of Command");
+		extensionInComment.GetProperty("mode").GetString().Should().Be("none",
+			because: "a comment that reads (this PsiValue ...) is not an extension method, so PsiHelpers must not inherit PsiValue's consumers");
+		namedInComment.GetProperty("mode").GetString().Should().Be("none",
+			because: "PsiTool names PsiDocumented only in its XML summary, which no code path follows");
+		namedInLiteral.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["PsiToolE2ETests"],
+			because: "a type name in a string literal can be a runtime lookup, so literals stay part of the reference scan and the selection is not narrowed by removing comments");
+	}
+
+	[Test]
+	[Description("The graph links an implementation whose base list follows a multi-line primary constructor and a type named through a namespace-relative qualified name, and runs the whole suite for an implementation registered under a service type the repository does not declare.")]
+	public void Script_ShouldLinkPrimaryConstructorBaseListsRelativeNamesAndExternalServices() {
+		// Arrange
+		using SyntheticRepository repo = SyntheticRepository.Create();
+
+		// Act
+		JsonElement primaryConstructor = RunSelection(["clio/Common/SampiStore.cs"], includeNoEnvironment: false, repo.Root);
+		JsonElement relativeName = RunSelection(["clio/Common/Worker/HetaService.cs"], includeNoEnvironment: false, repo.Root);
+		JsonElement externalService = RunSelection(["clio/Common/SanProvider.cs"], includeNoEnvironment: false, repo.Root);
+
+		// Assert
+		primaryConstructor.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["SampiToolE2ETests"],
+			because: "SampiStore implements ISampiStore after a primary constructor spread over two lines, and SampiTool reaches it only through that interface");
+		relativeName.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["HetaToolE2ETests"],
+			because: "inside namespace Clio.Command.McpServer.Tools the name Common.Worker.HetaService resolves against the enclosing Clio, so the chain starts at a namespace segment that is not a root");
+		externalService.GetProperty("mode").GetString().Should().Be("full",
+			because: "SanProvider is registered as IExternalProvider, which this repository does not declare, so its consumers inject that interface and never name SanProvider - no edge can bound it");
+		externalService.GetProperty("decisions").EnumerateArray().Select(d => d.GetString()).Should().Contain(d => d!.Contains("a service this repository does not declare"),
+			because: "the decision log must say why the run became full");
+	}
+
+	[Test]
 	[Description("A data asset runs the whole suite when any file naming it has an unknown blast radius, even when another file naming it resolved to fixtures first.")]
 	public void Script_ShouldSelectFullRun_WhenOneHolderOfADataAssetIsUnclassifiable() {
 		// Arrange
@@ -1030,12 +1092,66 @@ internal sealed class McpE2eSelectionCoverageTests {
 				"\t[McpServerTool(Name = ToolName)]\n\tpublic void Run(IXiService service) { }\n}");
 			Write("clio/Common/IXiService.cs", "public interface IXiService { }");
 			Write("clio/Common/XiBackend.cs", "public sealed class XiBackend { }");
+			// A registry that names tools by typeof, the shape of ToolContractCatalog and McpCoreToolProfile.
+			// RhoTool consumes it, so walking through it would carry PiTool's dependency to RhoTool.
+			Write("clio/Common/PiService.cs", "public sealed class PiService { }");
+			Write("clio/Command/McpServer/Tools/PiTool.cs",
+				"public sealed class PiTool : BaseTool {\n\tinternal const string ToolName = \"pi-run\";\n" +
+				"\t[McpServerTool(Name = ToolName)]\n\tpublic void Run(PiService service) { }\n}");
+			Write("clio/Command/McpServer/ToolCatalog.cs",
+				"public static class ToolCatalog {\n\tpublic static readonly object[] All = { typeof(PiTool), typeof(RhoTool) };\n}");
+			Write("clio/Command/McpServer/Tools/RhoTool.cs",
+				"public sealed class RhoTool : BaseTool {\n\tinternal const string ToolName = \"rho-run\";\n" +
+				"\t[McpServerTool(Name = ToolName)]\n\tpublic object Run() => ToolCatalog.All;\n}");
+			Write("clio/Command/McpServer/Tools/TauTool.cs",
+				"public sealed class TauTool : BaseTool {\n\tinternal const string ToolName = \"tau-run\";\n" +
+				"\t[McpServerTool(Name = ToolName)]\n\tpublic void Run(PiTool inner) { }\n}");
+			// An abstract base carrying [McpServerToolType], the shape of BaseTool<T>.
+			Write("clio/Common/UpsilonHelper.cs", "public sealed class UpsilonHelper { }");
+			Write("clio/Command/McpServer/Tools/UpsilonToolBase.cs",
+				"[McpServerToolType]\npublic abstract class UpsilonToolBase {\n\tprotected void Use(UpsilonHelper helper) { }\n}");
+			Write("clio/Command/McpServer/Tools/UpsilonTool.cs",
+				"public sealed class UpsilonTool : UpsilonToolBase {\n\tinternal const string ToolName = \"upsilon-run\";\n" +
+				"\t[McpServerTool(Name = ToolName)]\n\tpublic void Run() { }\n}");
+			// Names that only look like references: a lower-case local, and types spelled in comments.
+			Write("clio/Common/Phi.cs", "public sealed class Phi { }");
+			Write("clio/Command/McpServer/Tools/ChiTool.cs",
+				"public sealed class ChiTool : BaseTool {\n\tinternal const string ToolName = \"chi-run\";\n" +
+				"\t[McpServerTool(Name = ToolName)]\n\tpublic void Run() { var phi = 1; }\n}");
+			Write("clio/Common/PsiValue.cs", "public sealed class PsiValue { }");
+			Write("clio/Common/PsiHelpers.cs",
+				"public static class PsiHelpers {\n\t// Not an extension: (this PsiValue value) is only prose.\n\tpublic static int Count() => 1;\n}");
+			Write("clio/Common/PsiDocumented.cs", "public sealed class PsiDocumented { }");
+			Write("clio/Common/PsiByName.cs", "public sealed class PsiByName { }");
+			Write("clio/Command/McpServer/Tools/PsiTool.cs",
+				"/// <summary>Formats like <c>PsiDocumented</c> does.</summary>\npublic sealed class PsiTool : BaseTool {\n" +
+				"\tinternal const string ToolName = \"psi-run\";\n\t[McpServerTool(Name = ToolName)]\n" +
+				"\tpublic void Run(PsiValue value) { Resolve(\"PsiByName\"); }\n}");
+			// A primary constructor spread over two lines before the base list.
+			Write("clio/Common/ISampiStore.cs", "public interface ISampiStore { }");
+			Write("clio/Common/SampiStore.cs", "public sealed class SampiStore(\n\tPsiValue value)\n\t: ISampiStore {\n}");
+			Write("clio/Command/McpServer/Tools/SampiTool.cs",
+				"public sealed class SampiTool : BaseTool {\n\tinternal const string ToolName = \"sampi-run\";\n" +
+				"\t[McpServerTool(Name = ToolName)]\n\tpublic void Run(ISampiStore store) { }\n}");
+			// A qualified name that starts at a non-root segment of the enclosing namespace.
+			Write("clio/Common/Worker/HetaService.cs", "namespace Clio.Common.Worker;\npublic sealed class HetaService { }");
+			Write("clio/Command/McpServer/Tools/HetaTool.cs",
+				"namespace Clio.Command.McpServer.Tools;\npublic sealed class HetaTool : BaseTool {\n" +
+				"\tinternal const string ToolName = \"heta-run\";\n\t[McpServerTool(Name = ToolName)]\n" +
+				"\tpublic void Run() { var x = new Common.Worker.HetaService(); }\n}");
+			// Registered under a service type declared outside the repository, like IDataProvider.
+			Write("clio/Common/SanProvider.cs", "public sealed class SanProvider : IExternalProvider { }");
+			foreach (string fixture in new[] { "Pi", "Rho", "Tau", "Upsilon", "Chi", "Psi", "Sampi", "Heta" }) {
+				Write($"clio.mcp.e2e/{fixture}ToolE2ETests.cs",
+					$"[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class {fixture}ToolE2ETests {{\n\t[Test] public void Works() => Call({fixture}Tool.ToolName);\n}}");
+			}
 			Write("clio/BindingsModule.cs",
 				"public static class BindingsModule { static void Register() {\n" +
 				"\t_ = typeof(RegisteredOnlyService);\n\tservices.AddSingleton<IBetaService, BetaService>();\n" +
 				"\tservices.AddSingleton<IDeltaService>(sp => new DeltaAdapter(new DeltaBackend()));\n" +
 				"\tservices.AddSingleton<IIotaService>(\n\t\tsp => new IotaAdapter(new IotaBackend()));\n" +
-				"\tservices.AddSingleton<IXiService>(sp => {\n\t\tvar marker = \"a;b)\";\n\t\t// this comment contains )\n\t\treturn new XiBackend();\n\t});\n} }");
+				"\tservices.AddSingleton<IXiService>(sp => {\n\t\tvar marker = \"a;b)\";\n\t\t// this comment contains )\n\t\treturn new XiBackend();\n\t});\n" +
+				"\tservices.AddTransient<IExternalProvider>(sp => new SanProvider());\n} }");
 			Write("clio.mcp.e2e/AlphaToolE2ETests.cs",
 				"public abstract class AlphaFixtureBase { }\n[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class AlphaToolE2ETests : AlphaFixtureBase {\n\t[Test] public void Works() => Call(AlphaTool.ToolName);\n}");
 			Write("clio.mcp.e2e/AlphaLiteralE2ETests.cs",
