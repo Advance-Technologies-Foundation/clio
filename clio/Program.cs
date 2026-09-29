@@ -1672,9 +1672,12 @@ internal class Program {
 		// The library appends its full auto-generated help to EVERY parse error it writes, so its output is
 		// buffered and flushed only when clio does not render the error itself (help, version, unknown verb).
 		// A fresh parser is required: Parser.Default froze its HelpWriter when it was built.
+		// The library also shows help through the custom viewer when argv holds a -h the verb claims for itself
+		// (healthcheck/publish-app), so that output is held back too.
 		using StringWriter libraryHelpOutput = new();
+		DeferredHelpViewer libraryHelpViewer = new(Parser.Default.Settings.CustomHelpViewer);
 		ParserResult<object> parserResult;
-		using (Parser parser = CreateCommandLineParser(libraryHelpOutput)) {
+		using (Parser parser = CreateCommandLineParser(libraryHelpOutput, libraryHelpViewer)) {
 			parserResult = parser.ParseArguments(normalizedArgs, enabledCommandOption);
 		}
 		if (parserResult is Parsed<object> parsed) {
@@ -1685,16 +1688,17 @@ internal class Program {
 			WriteVerbOptionError(notParsed, bm.GetRequiredService<IOptionSuggestionService>());
 		}
 		else {
+			libraryHelpViewer.Replay();
 			Console.Error.Write(libraryHelpOutput.ToString());
 		}
 		return HandleParseError(notParsed.Errors);
 	}
 
 	/// <summary>
-	/// The tokens CommandLineSDK treats as a help request anywhere in argv; with one present it renders help instead
-	/// of the parse errors, so clio leaves that output alone.
+	/// Help aliases CommandLineSDK honours besides <c>-h</c>/<c>--help</c>: with one present it renders help instead
+	/// of the parse errors, so clio leaves that output alone. No verb can claim them as its own option names.
 	/// </summary>
-	private static readonly string[] LibraryHelpAliases = ["--help", "-help", "-h", "--h"];
+	private static readonly string[] LibraryOnlyHelpAliases = ["-help", "--h"];
 
 	/// <summary>
 	/// Error kinds that are not a mistake in the options of a known verb: help and version requests, and an
@@ -1708,14 +1712,33 @@ internal class Program {
 		ErrorType.NoVerbSelectedError
 	];
 
-	private static Parser CreateCommandLineParser(TextWriter helpWriter) {
+	private static Parser CreateCommandLineParser(TextWriter helpWriter, CustomHelpViewer helpViewer) {
 		ParserSettings defaults = Parser.Default.Settings;
 		return new Parser(settings => {
 			settings.HelpWriter = helpWriter;
 			settings.ShowHeader = defaults.ShowHeader;
 			settings.HelpDirectory = defaults.HelpDirectory;
-			settings.CustomHelpViewer = defaults.CustomHelpViewer;
+			settings.CustomHelpViewer = helpViewer;
 		});
+	}
+
+	/// <summary>
+	/// Records the help CommandLineSDK asks its custom viewer to show during a parse instead of showing it, so the
+	/// caller can drop it when clio renders the parse error itself, or <see cref="Replay"/> it otherwise.
+	/// </summary>
+	private sealed class DeferredHelpViewer(CustomHelpViewer inner) : CustomHelpViewer {
+		private readonly List<string> _requestedCommands = [];
+
+		public bool CheckHelp(string commandName) => inner?.CheckHelp(commandName) ?? false;
+
+		public void ViewHelp(string commandName) => _requestedCommands.Add(commandName);
+
+		/// <summary>Shows, through the wrapped viewer, every help screen the parse requested.</summary>
+		public void Replay() {
+			foreach (string commandName in _requestedCommands) {
+				inner.ViewHelp(commandName);
+			}
+		}
 	}
 
 	/// <summary>
@@ -1730,7 +1753,9 @@ internal class Program {
 			|| notParsed.TypeInfo.Current.GetCustomAttribute<VerbAttribute>() == null) {
 			return false;
 		}
-		if (normalizedArgs.Any(arg => LibraryHelpAliases.Contains(arg.ToLowerInvariant()))) {
+		// Position- and claim-aware: a -h/--help that is the value of an option, or that the verb binds to its own
+		// option (healthcheck/publish-app -h), is not a help request and must not hide a real option error.
+		if (ArgvRequestsUnclaimedHelp(normalizedArgs, notParsed.TypeInfo.Current, includeLibraryOnlyAliases: true)) {
 			return false;
 		}
 		Error[] errors = notParsed.Errors.ToArray();
@@ -1969,7 +1994,10 @@ internal class Program {
 	// remaining `-h`/`--help` as a help request (and only when the verb has not claimed that name for its
 	// own option - see IsUnclaimedHelpFlagToken). Internal so tests can verify the decision hermetically,
 	// without driving a full command execution that may require a registered environment.
-	internal static bool ArgvRequestsUnclaimedHelp(string[] normalizedArgs, Type optionsType) {
+	// includeLibraryOnlyAliases also counts -help/--h, which CommandLineSDK renders as help but clio's own
+	// pre-parse help short-circuit deliberately does not intercept.
+	internal static bool ArgvRequestsUnclaimedHelp(string[] normalizedArgs, Type optionsType,
+		bool includeLibraryOnlyAliases = false) {
 		(PropertyInfo Property, OptionAttribute Option)[] ownOptions = GetOwnOptionAttributes(optionsType).ToArray();
 		bool previousTokenConsumesValue = false;
 		// Index 0 is the verb name itself; only its arguments can be help tokens.
@@ -1980,7 +2008,9 @@ internal class Program {
 				previousTokenConsumesValue = false;
 				continue;
 			}
-			if (IsUnclaimedHelpFlagToken(token, optionsType)) {
+			if (IsUnclaimedHelpFlagToken(token, optionsType)
+				|| includeLibraryOnlyAliases
+				&& LibraryOnlyHelpAliases.Contains(token, StringComparer.OrdinalIgnoreCase)) {
 				return true;
 			}
 			previousTokenConsumesValue = IsValueTakingOptionToken(token, ownOptions);

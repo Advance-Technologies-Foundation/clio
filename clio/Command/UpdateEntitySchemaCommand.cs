@@ -131,9 +131,15 @@ public class UpdateEntitySchemaCommand : Command<UpdateEntitySchemaOptions>
 	};
 
 	/// <summary>
-	/// Every top-level field an operation object may carry; anything else is rejected rather than ignored.
+	/// Longest user-supplied name an error message echoes before it is cut off.
 	/// </summary>
-	private static readonly string[] KnownOperationFields = typeof(UpdateEntitySchemaOperationDefinition)
+	private const int MaxEchoedNameLength = 64;
+
+	/// <summary>
+	/// Every top-level field an operation object may carry; anything else is rejected rather than ignored.
+	/// Internal so tests can prove every field the MCP tool emits is accepted here.
+	/// </summary>
+	internal static readonly string[] KnownOperationFields = typeof(UpdateEntitySchemaOperationDefinition)
 		.GetProperties(BindingFlags.Public | BindingFlags.Instance)
 		.Select(property => property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name)
 		.Where(name => !string.IsNullOrEmpty(name))
@@ -184,14 +190,7 @@ public class UpdateEntitySchemaCommand : Command<UpdateEntitySchemaOptions>
 				throw new InvalidOperationException($"Operation payload at index {index} is empty.");
 			}
 
-			UpdateEntitySchemaOperationDefinition operation;
-			try {
-				operation = JsonSerializer.Deserialize<UpdateEntitySchemaOperationDefinition>(rawOperation, JsonOptions)
-					?? throw new InvalidOperationException($"Operation payload at index {index} is empty.");
-			} catch (JsonException exception) {
-				throw new InvalidOperationException($"Operation payload at index {index} is not valid JSON.", exception);
-			}
-			RejectUnknownFields(rawOperation, index);
+			UpdateEntitySchemaOperationDefinition operation = ParseOperation(rawOperation, index);
 			string columnName = ResolveColumnName(operation, index);
 			string? normalizedScalarTitle = NormalizeTitle(operation.Title);
 			TitleLocalizationNormalizationResult titleNormalization =
@@ -236,20 +235,48 @@ public class UpdateEntitySchemaCommand : Command<UpdateEntitySchemaOptions>
 		}
 	}
 
-	private void RejectUnknownFields(string rawOperation, int index) {
-		using JsonDocument document = JsonDocument.Parse(rawOperation);
-		if (document.RootElement.ValueKind != JsonValueKind.Object) {
+	// Parses the payload once: unknown fields are rejected BEFORE typed deserialization, so a misspelled field is
+	// reported even when another field of the same payload has a value of the wrong type.
+	private UpdateEntitySchemaOperationDefinition ParseOperation(string rawOperation, int index) {
+		JsonDocument document;
+		try {
+			document = JsonDocument.Parse(rawOperation);
+		} catch (JsonException exception) {
+			throw new InvalidOperationException($"Operation payload at index {index} is not valid JSON.", exception);
+		}
+		using (document) {
+			RejectUnknownFields(document.RootElement, index);
+			try {
+				return document.RootElement.Deserialize<UpdateEntitySchemaOperationDefinition>(JsonOptions)
+					?? throw new InvalidOperationException($"Operation payload at index {index} is empty.");
+			} catch (JsonException exception) {
+				throw new InvalidOperationException($"Operation payload at index {index} is not valid JSON.", exception);
+			}
+		}
+	}
+
+	private void RejectUnknownFields(JsonElement root, int index) {
+		if (root.ValueKind != JsonValueKind.Object) {
 			return;
 		}
-		foreach (JsonProperty property in document.RootElement.EnumerateObject()) {
+		foreach (JsonProperty property in root.EnumerateObject()) {
 			if (KnownOperationFields.Contains(property.Name, StringComparer.OrdinalIgnoreCase)) {
 				continue;
 			}
 			string suggestion = _suggestionService.SuggestName(property.Name, KnownOperationFields);
 			string hint = suggestion is null ? string.Empty : $" Did you mean '{suggestion}'?";
 			throw new InvalidOperationException(
-				$"Operation payload at index {index} has unknown field '{property.Name}'.{hint}");
+				$"Operation payload at index {index} has unknown field '{SanitizeForMessage(property.Name)}'.{hint}");
 		}
+	}
+
+	/// <summary>
+	/// Makes a user-supplied name safe to echo in an error message: control characters (terminal escape
+	/// sequences, line breaks) are removed and the result is cut to <see cref="MaxEchoedNameLength"/> characters.
+	/// </summary>
+	internal static string SanitizeForMessage(string value) {
+		string printable = new(value.Where(character => !char.IsControl(character)).ToArray());
+		return printable.Length <= MaxEchoedNameLength ? printable : printable[..MaxEchoedNameLength] + "...";
 	}
 
 	private static string ResolveColumnName(UpdateEntitySchemaOperationDefinition operation, int index) {
@@ -257,7 +284,7 @@ public class UpdateEntitySchemaCommand : Command<UpdateEntitySchemaOptions>
 		bool hasName = !string.IsNullOrWhiteSpace(operation.Name);
 		if (hasColumnName && hasName && !string.Equals(operation.ColumnName, operation.Name, StringComparison.Ordinal)) {
 			throw new InvalidOperationException(
-				$"Operation payload at index {index} sets both 'column-name' ('{operation.ColumnName}') and its alias 'name' ('{operation.Name}'). Supply only one.");
+				$"Operation payload at index {index} sets both 'column-name' ('{SanitizeForMessage(operation.ColumnName)}') and its alias 'name' ('{SanitizeForMessage(operation.Name)}'). Supply only one.");
 		}
 		return hasName && !hasColumnName ? operation.Name : operation.ColumnName;
 	}

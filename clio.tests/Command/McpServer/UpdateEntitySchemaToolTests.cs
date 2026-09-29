@@ -287,6 +287,23 @@ public class UpdateEntitySchemaToolTests {
 			because: "the message must name the argument that has to be supplied");
 	}
 
+	[Test]
+	[Description("Every field the MCP tool writes into an operation payload is a field the update-entity-schema command accepts, so the command's unknown-field rejection can never refuse a payload the tool itself built (ENG-101526).")]
+	[Category("Unit")]
+	public void BuildOperationPayload_Should_Emit_Only_Fields_The_Command_Accepts() {
+		// Arrange
+		UpdateEntitySchemaOperationArgs operation = new("add", "UsrOwner", Type: "Lookup",
+			ReferenceSchemaName: "Contact", TitleLocalizations: Title("Owner"));
+
+		// Act
+		Dictionary<string, object> payload = UpdateEntitySchemaTool.BuildOperationPayload(operation, "test operation");
+
+		// Assert
+		payload.Keys.Should().NotBeEmpty(because: "the payload builder must emit the operation fields");
+		payload.Keys.Should().BeSubsetOf(UpdateEntitySchemaCommand.KnownOperationFields,
+			because: "a field emitted by the MCP tool but unknown to the command would make every MCP update fail with an unknown-field error");
+	}
+
 	private static UpdateEntitySchemaArgs BuildArgs(string schemaName, IEnumerable<UpdateEntitySchemaOperationArgs> operations) {
 		return new UpdateEntitySchemaArgs(
 			EnvironmentName: "test-env",
