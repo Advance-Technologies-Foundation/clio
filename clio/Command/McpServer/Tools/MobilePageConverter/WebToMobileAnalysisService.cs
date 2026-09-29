@@ -247,8 +247,6 @@ public static partial class WebToMobileAnalysisService {
 		HashSet<string> excludedRemovedNames = ExcludedComponentsPass.RemoveExcludedComponents(
 			elementMap, rules, out HashSet<string> excludedRemovedMobileNames);
 
-		FoldTimelineTiles(elementMap);
-
 		// Deterministic empty-container removal: a converter-created layout container whose items
 		// receive NO surviving child is converted to a drop, bottom-up so emptiness cascades. Deliberately
 		// BEFORE the adaptive and tab-area passes: adaptive then stacks only surviving children, and a tab this
