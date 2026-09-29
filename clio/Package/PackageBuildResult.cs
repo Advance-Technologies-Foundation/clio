@@ -125,15 +125,13 @@ internal static class PackageBuildResultParser {
 
 	// Case-insensitive, as the typed parse this replaced was.
 	private static bool TryGetProperty(JsonElement element, string name, out JsonElement value) {
-		if (element.ValueKind == JsonValueKind.Object) {
-			foreach (JsonProperty property in element.EnumerateObject()
-					.Where(candidate => string.Equals(candidate.Name, name, StringComparison.OrdinalIgnoreCase))) {
-				value = property.Value;
-				return true;
-			}
-		}
-		value = default;
-		return false;
+		// A missing property yields default(JsonProperty), whose value kind is Undefined; a parsed one never is.
+		value = element.ValueKind == JsonValueKind.Object
+			? element.EnumerateObject()
+				.FirstOrDefault(candidate => string.Equals(candidate.Name, name, StringComparison.OrdinalIgnoreCase))
+				.Value
+			: default;
+		return value.ValueKind != JsonValueKind.Undefined;
 	}
 
 	private static string ReadString(JsonElement element, string name) =>
