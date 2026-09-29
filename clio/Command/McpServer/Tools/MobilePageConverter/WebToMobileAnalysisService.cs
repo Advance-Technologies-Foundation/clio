@@ -3639,9 +3639,8 @@ public static partial class WebToMobileAnalysisService {
 	/// caption may be a resource token in any form — <c>$Resources.Strings.KEY</c>, <c>#ResourceString(KEY)#</c>,
 	/// or <c>#MacrosTemplateString(#ResourceString(KEY)#)#</c>; its KEY is extracted (reusing
 	/// <see cref="ResourceStringHelper.ExtractKeys"/>) and looked up in the page's localized strings for its
-	/// en-US text. A plain literal gets a key of its own with the literal as its text, because the mobile
-	/// validator refuses an inline literal (ENG-96589). Returns null — leaving the source token to be carried
-	/// verbatim — when the caption is a data binding such as <c>$HeaderCaption</c>, or when the key it
+	/// en-US text. Returns null — leaving the source token to be carried verbatim — in three cases: the
+	/// caption is a plain literal, it is a data binding such as <c>$HeaderCaption</c>, or the key it
 	/// references is one the source page does not DECLARE (the platform owns that caption; see below).
 	/// </summary>
 	private static CaptionResource ResolveCaptionResource(ElementMapContext ctx, JObject node, string mobileName) {
@@ -3651,9 +3650,7 @@ public static partial class WebToMobileAnalysisService {
 		}
 		string sourceKey = ResourceStringHelper.ExtractKeys(caption).FirstOrDefault();
 		if (string.IsNullOrEmpty(sourceKey)) {
-			return SchemaValidationService.IsInlineUserVisibleTextLiteral(caption)
-				? new CaptionResource { Key = mobileName + "_caption", SourceValue = caption }
-				: null;
+			return null; // literal (carried verbatim) or data binding — no resource to register
 		}
 		// A key the source page does not DECLARE cannot be re-keyed, and the two halves of that are one
 		// decision. Re-keying rewrites the element's carried token to <mobileName>_caption — a name the

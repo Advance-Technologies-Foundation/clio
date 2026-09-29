@@ -1998,33 +1998,9 @@ public static class SchemaValidationService
 			if (values.ValueKind != JsonValueKind.Object) {
 				continue;
 			}
-			var entryBindings = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-			ExtractDollarBindings(values, entryBindings);
-			if (PlatformTimelineTileItemsAttribute(entry, values) is string tileItemsAttribute) {
-				entryBindings.Remove(tileItemsAttribute);
-			}
-			bindings.UnionWith(entryBindings);
+			ExtractDollarBindings(values, bindings);
 		}
 		return bindings;
-	}
-
-	// The platform timeline generates a "<TileName>_Items" attribute for every tile, and the Mobile Designer
-	// saves a crt.TimelineTile with filters bound to it without declaring it (ENG-96589).
-	private static string? PlatformTimelineTileItemsAttribute(JsonElement entry, JsonElement values) {
-		if (!values.TryGetProperty(TypePropertyName, out JsonElement type) ||
-			type.ValueKind != JsonValueKind.String ||
-			!string.Equals(type.GetString(), "crt.TimelineTile", StringComparison.OrdinalIgnoreCase) ||
-			!entry.TryGetProperty(NamePropertyName, out JsonElement name) ||
-			name.ValueKind != JsonValueKind.String ||
-			!values.TryGetProperty("filters", out JsonElement filters) ||
-			filters.ValueKind != JsonValueKind.String) {
-			return null;
-		}
-		string expected = name.GetString() + "_Items";
-		return TryNormalizeDollarBinding(filters.GetString(), out string? bound)
-			&& string.Equals(bound, expected, StringComparison.OrdinalIgnoreCase)
-				? expected
-				: null;
 	}
 
 	private static void ExtractDollarBindings(JsonElement obj, HashSet<string> bindings) {
@@ -3287,7 +3263,7 @@ public static class SchemaValidationService
 		(value.StartsWith(ResourceBindingPrefix, StringComparison.OrdinalIgnoreCase) ||
 		 ResourceStringReferencePattern.IsMatch(value));
 
-	internal static bool IsInlineUserVisibleTextLiteral(string? value) {
+	private static bool IsInlineUserVisibleTextLiteral(string? value) {
 		if (string.IsNullOrWhiteSpace(value)) {
 			return false;
 		}

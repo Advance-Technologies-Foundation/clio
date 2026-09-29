@@ -9732,61 +9732,6 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
-	[Description("ENG-96589: a crt.TimelineTile's filters binding to its own <name>_Items attribute is the Mobile Designer's own shape — the platform timeline generates that attribute — so it is not reported as undeclared.")]
-	public void ValidateMobileFieldBindings_WhenTimelineTileBindsItsOwnItems_ReturnsValid() {
-		// Arrange
-		string body = """
-		              {
-		                "viewConfigDiff": [
-		                  {"operation":"insert","name":"Timeline","parentName":"Grid","propertyName":"items",
-		                   "values":{"type":"crt.Timeline","filterValues":"$Timeline_AllTileFilters","items":[]}},
-		                  {"operation":"insert","name":"TimelineTile_Call","parentName":"Timeline","propertyName":"items",
-		                   "values":{"type":"crt.TimelineTile","linkedColumn":"Lead","data":{"schemaName":"Call"},
-		                             "filters":"$TimelineTile_Call_Items"}}
-		                ],
-		                "viewModelConfigDiff": [
-		                  {"operation":"merge","path":["attributes"],"values":{"Timeline_AllTileFilters":{}}}
-		                ]
-		              }
-		              """;
-
-		// Act
-		SchemaValidationResult result = SchemaValidationService.ValidateMobileFieldBindings(body);
-
-		// Assert
-		result.IsValid.Should().BeTrue(
-			"because the Mobile Designer saves every tile bound to its own platform-generated <name>_Items attribute");
-	}
-
-	[Test]
-	[Description("ENG-96589: the tile exemption covers only a tile's OWN <name>_Items — a tile bound to another element's attribute, or any other element bound to a tile's attribute, is still reported.")]
-	public void ValidateMobileFieldBindings_WhenItemsBindingIsNotTheTilesOwn_ReturnsError() {
-		// Arrange
-		string body = """
-		              {
-		                "viewConfigDiff": [
-		                  {"operation":"insert","name":"TimelineTile_Call","parentName":"Timeline","propertyName":"items",
-		                   "values":{"type":"crt.TimelineTile","filters":"$TimelineTile_Email_Items"}},
-		                  {"operation":"insert","name":"Field1","parentName":"Grid","propertyName":"items",
-		                   "values":{"type":"crt.Input","control":"$TimelineTile_Call_Items"}}
-		                ],
-		                "viewModelConfigDiff": [
-		                  {"operation":"merge","path":["attributes"],"values":{"UsrName":{}}}
-		                ]
-		              }
-		              """;
-
-		// Act
-		SchemaValidationResult result = SchemaValidationService.ValidateMobileFieldBindings(body);
-
-		// Assert
-		result.Errors.Should().HaveCount(2,
-			because: "neither binding is a tile referencing its own generated attribute");
-		result.Errors.Should().Contain(e => e.Contains("TimelineTile_Email_Items"));
-		result.Errors.Should().Contain(e => e.Contains("TimelineTile_Call_Items"));
-	}
-
-	[Test]
 	[Description("Strips converter pipe from binding before cross-referencing.")]
 	public void ValidateMobileFieldBindings_WhenBindingHasConverterPipe_StripsConverter() {
 		// Arrange
