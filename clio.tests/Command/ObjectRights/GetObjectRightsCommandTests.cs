@@ -53,8 +53,11 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 
 	private static readonly Guid Role = Guid.Parse("11111111-2222-3333-4444-555555555555");
 
-	private static RoleOperationRights RoleRow(bool read, bool create, bool edit, bool del) =>
-		new(Role, "Sales managers", read, create, edit, del);
+	private static RoleOperationRights RoleRow(bool read, bool create, bool edit, bool del, int position = 0) =>
+		new(Role, "Sales managers", position, read, create, edit, del);
+
+	private static RoleOperationRights EmployeesRow(int position) =>
+		new(Employees, "All employees", position, true, true, true, true);
 
 	private static ObjectRightsInfo NotAdministered(string name) =>
 		new(true, name, name, false, Array.Empty<RoleOperationRights>());
@@ -66,7 +69,7 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>())
 			.Returns(Administered("UsrOrder",
 				RoleRow(true, true, true, false),
-				new RoleOperationRights(Employees, "All employees", true, true, true, true)));
+				EmployeesRow(1)));
 		GetObjectRightsOptions options = new() { EntitySchemaName = "UsrOrder" };
 
 		// Act
@@ -74,8 +77,9 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 
 		// Assert
 		exitCode.Should().Be(0, because: "the read completed");
-		_logger.Received().WriteInfo(Arg.Is<string>(m => m.Contains("Sales managers") && m.Contains("read/create/edit")));
-		_logger.Received().WriteInfo(Arg.Is<string>(m => m.Contains("All employees") && m.Contains("read/create/edit/delete")));
+		_logger.Received().WriteInfo($"    [0] Sales managers ({Role}): read/create/edit");
+		_logger.Received().WriteInfo($"    [1] All employees ({Employees}): read/create/edit/delete");
+		_logger.Received().WriteInfo($"  {GetObjectRightsCommand.PriorityRule}");
 	}
 
 	[Test]
@@ -94,8 +98,8 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 
 		// Assert
 		exitCode.Should().Be(0, because: "the read completed");
-		_logger.Received().WriteInfo(Arg.Is<string>(m => m.Contains("UsrOrder") && m.Contains("read/create/edit")));
-		_logger.Received().WriteInfo(Arg.Is<string>(m => m.Contains("UsrStatus") && m.EndsWith(": read.")));
+		_logger.Received().WriteInfo($"    [0] Sales managers ({Role}): read/create/edit");
+		_logger.Received().WriteInfo($"    [0] Sales managers ({Role}): read");
 		_logger.DidNotReceive().WriteInfo(Arg.Is<string>(m => m.Contains("can read") || m.Contains("cannot read")));
 		_logger.DidNotReceive().WriteWarning(Arg.Is<string>(m => m.Contains("can read") || m.Contains("cannot read")));
 	}
@@ -105,7 +109,7 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 	public void Execute_ShouldReportNoGrant_WhenGranteeHasNoRow() {
 		// Arrange
 		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>())
-			.Returns(Administered("UsrOrder", new RoleOperationRights(Employees, "All employees", true, true, true, true)));
+			.Returns(Administered("UsrOrder", EmployeesRow(0)));
 		GetObjectRightsOptions options = new() { EntitySchemaName = "UsrOrder", Grantee = Role.ToString() };
 
 		// Act
@@ -113,7 +117,7 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 
 		// Assert
 		exitCode.Should().Be(0, because: "a missing row is a fact, not a failure");
-		_logger.Received().WriteInfo(Arg.Is<string>(m => m.Contains("UsrOrder") && m.Contains("NO object operations granted")));
+		_logger.Received().WriteInfo($"    grantee {Role} has NO row (no operations granted).");
 	}
 
 	[TestCase(null)]
@@ -271,7 +275,7 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 
 		// Assert
 		exitCode.Should().Be(0, because: "the read completed");
-		_logger.Received().WriteInfo("  UsrOrder: administered by operations, no role grants.");
+		_logger.Received().WriteInfo(Arg.Is<string>(m => m.StartsWith("  UsrOrder: administered by operation permissions, with NO rows")));
 	}
 
 	[Test]
@@ -298,7 +302,7 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>())
 			.Returns(Administered("UsrOrder", RoleRow(true, true, true, false)));
 		_rightsReader.GetObjectRights("UsrStatus", Arg.Any<CreatioRequestOptions>())
-			.Returns(Administered("UsrStatus", new RoleOperationRights(Employees, "All employees", true, true, true, true)));
+			.Returns(Administered("UsrStatus", EmployeesRow(0)));
 		_rightsReader.GetObjectRights("UsrOpen", Arg.Any<CreatioRequestOptions>()).Returns(NotAdministered("UsrOpen"));
 		System.Collections.Generic.List<string> lines = new();
 		_logger.When(l => l.WriteInfo(Arg.Any<string>())).Do(call => lines.Add((string)call[0]));
@@ -312,21 +316,24 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 		exitCode.Should().Be(0, because: "the read completed");
 		lines.Should().Equal(new[] {
 			$"Object operation permissions for 'UsrOrder' and its connected objects (grantee {Role}):",
-			$"  UsrOrder: Sales managers ({Role}): read/create/edit.",
-			$"  UsrStatus: grantee {Role} has NO object operations granted.",
+			$"  {GetObjectRightsCommand.PriorityRule}",
+			"  UsrOrder: administered by operation permissions. Rows in priority order:",
+			$"    [0] Sales managers ({Role}): read/create/edit",
+			"  UsrStatus: administered by operation permissions. Rows in priority order:",
+			$"    grantee {Role} has NO row (no operations granted).",
 			"  UsrOpen: not administered by operation permissions — available to all internal users; "
 				+ "external users reach it only through an explicit grant."
-		}, because: "the output is the facts, one line per object, and nothing more");
+		}, because: "the output is the facts per object, and nothing more — no verdict");
 	}
 
 	// ---- Review round 6 ----
 
 	[Test]
-	[Description("With --grantee, a grantee holding several rows is reported with the union of their operations.")]
-	public void Execute_ShouldReportUnionOfRows_WhenGranteeHasDuplicateRows() {
+	[Description("With --grantee, each of a grantee's rows is reported with its own position — never merged, because which row decides depends on the positions.")]
+	public void Execute_ShouldReportEachRow_WhenGranteeHasDuplicateRows() {
 		// Arrange
 		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>())
-			.Returns(Administered("UsrOrder", RoleRow(false, false, false, false), RoleRow(true, false, true, false)));
+			.Returns(Administered("UsrOrder", RoleRow(false, false, false, false, 0), RoleRow(true, false, true, false, 2)));
 		GetObjectRightsOptions options = new() { EntitySchemaName = "UsrOrder", Grantee = Role.ToString() };
 
 		// Act
@@ -334,7 +341,42 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 
 		// Assert
 		exitCode.Should().Be(0, because: "the read succeeded");
-		_logger.Received().WriteInfo(Arg.Is<string>(m => m.Contains("UsrOrder: Sales managers") && m.Contains("read/edit")));
+		_logger.Received().WriteInfo($"    [0] Sales managers ({Role}): no operations");
+		_logger.Received().WriteInfo($"    [2] Sales managers ({Role}): read/edit");
+	}
+
+	[Test]
+	[Description("With --grantee, the rows above the grantee's row are listed: for a user who is also in one of those roles, that row decides first.")]
+	public void Execute_ShouldListRowsAboveGrantee_WhenGranteeRowIsNotFirst() {
+		// Arrange
+		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>())
+			.Returns(Administered("UsrOrder", EmployeesRow(0), RoleRow(true, true, true, false, 1)));
+		GetObjectRightsOptions options = new() { EntitySchemaName = "UsrOrder", Grantee = Role.ToString() };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "the read succeeded");
+		_logger.Received().WriteInfo("    Rows above it, which decide first for a user who is also in those roles:");
+		_logger.Received().WriteInfo($"      [0] All employees ({Employees}): read/create/edit/delete");
+	}
+
+	[Test]
+	[Description("A non-administered object lists the rows the service returns for it as the rows that apply once operation permissions are turned on.")]
+	public void Execute_ShouldListRowsThatWouldApply_WhenObjectNotAdministered() {
+		// Arrange
+		_rightsReader.GetObjectRights("UsrOpen", Arg.Any<CreatioRequestOptions>())
+			.Returns(new ObjectRightsInfo(true, "UsrOpen", "UsrOpen", false, new[] { EmployeesRow(0) }));
+		GetObjectRightsOptions options = new() { EntitySchemaName = "UsrOpen" };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "the read succeeded");
+		_logger.Received().WriteInfo("    Rows that apply if operation permissions are turned on:");
+		_logger.Received().WriteInfo($"    [0] All employees ({Employees}): read/create/edit/delete");
 	}
 
 	[TestCase("Usr Order")]

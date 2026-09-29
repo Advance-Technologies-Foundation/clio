@@ -29,84 +29,68 @@ public sealed class SetObjectRightsToolE2ETests : ObjectRightsToolE2ETestsBase {
 		["operations"] = "read"
 	};
 
-	[Test]
-	[AllureTag(SetObjectRightsTool.ToolName)]
-	[AllureName("set-object-rights binds the disable-operation-permissions opt-in")]
-	[AllureDescription("The disable-operation-permissions argument binds through the real MCP server and still fails on the missing environment, not as an unknown argument.")]
-	[Description("Binds the disable-operation-permissions opt-in through the real MCP server, so an agent can request the last-row revoke that a revoke never performs implicitly.")]
-	public async Task Tool_Should_Bind_DisableOperationPermissions_OptIn() {
-		// Arrange
+	private async Task<(CallToolResult Result, ObjectRightsToolResponse Response)> CallAsync(
+		Dictionary<string, object?> args) {
 		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
-		string invalidEnvironmentName = $"missing-{ToolName}-optin-env-{Guid.NewGuid():N}";
-		Dictionary<string, object?> args = InvalidEnvironmentArgs(invalidEnvironmentName);
-		args["revoke"] = true;
-		args["disable-operation-permissions"] = true;
-
-		// Act
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
 			ToolName,
 			new Dictionary<string, object?> { ["args"] = args },
 			arrangeContext.CancellationTokenSource.Token);
-		ObjectRightsToolResponse response = EntitySchemaStructuredResultParser.Extract<ObjectRightsToolResponse>(callResult);
-
-		// Assert
-		callResult.IsError.Should().NotBeTrue(
-			because: "disable-operation-permissions is part of the tool contract and must bind like any other argument");
-		response.Error.Should().Contain(invalidEnvironmentName,
-			because: "the opt-in must still fail on the missing environment rather than being rejected as an unknown argument");
+		return (callResult, EntitySchemaStructuredResultParser.Extract<ObjectRightsToolResponse>(callResult));
 	}
 
 	[Test]
 	[AllureTag(SetObjectRightsTool.ToolName)]
-	[AllureName("set-object-rights refuses confirm without a confirmation-code")]
-	[AllureDescription("confirm=true without the confirmation-code from a preview is refused through the real MCP server before the environment is resolved, so no write can skip the preview.")]
-	[Description("Refuses confirm=true without a confirmation-code before the environment is resolved: the only way to write is through a preview.")]
-	public async Task Tool_Should_Refuse_Confirm_Without_ConfirmationCode() {
+	[AllureName("set-object-rights binds the explicit transition flags")]
+	[AllureDescription("enable-operation-permissions, disable-operation-permissions with revoke, allow-security-object and preview bind through the real MCP server and the call still fails on the missing environment, not as an unknown argument.")]
+	[Description("Binds every explicit transition flag and the dry-run flag through the real MCP server: each is part of the one-call contract.")]
+	public async Task Tool_Should_Bind_Transition_And_Preview_Flags() {
 		// Arrange
-		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
-		string invalidEnvironmentName = $"missing-{ToolName}-confirm-env-{Guid.NewGuid():N}";
-		Dictionary<string, object?> args = InvalidEnvironmentArgs(invalidEnvironmentName);
-		args["confirm"] = true;
+		string grantEnvironment = $"missing-{ToolName}-enable-env-{Guid.NewGuid():N}";
+		Dictionary<string, object?> grant = InvalidEnvironmentArgs(grantEnvironment);
+		grant["enable-operation-permissions"] = true;
+		grant["allow-security-object"] = true;
+		grant["preview"] = true;
+		string revokeEnvironment = $"missing-{ToolName}-disable-env-{Guid.NewGuid():N}";
+		Dictionary<string, object?> revoke = InvalidEnvironmentArgs(revokeEnvironment);
+		revoke["revoke"] = true;
+		revoke["disable-operation-permissions"] = true;
 
 		// Act
-		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> { ["args"] = args },
-			arrangeContext.CancellationTokenSource.Token);
-		ObjectRightsToolResponse response = EntitySchemaStructuredResultParser.Extract<ObjectRightsToolResponse>(callResult);
+		(CallToolResult grantResult, ObjectRightsToolResponse grantResponse) = await CallAsync(grant);
+		(CallToolResult revokeResult, ObjectRightsToolResponse revokeResponse) = await CallAsync(revoke);
+
+		// Assert
+		grantResult.IsError.Should().NotBeTrue(because: "the flags are part of the tool contract and bind like any argument");
+		grantResponse.Error.Should().Contain(grantEnvironment,
+			because: "the call must fail on the missing environment rather than on an unknown argument");
+		revokeResult.IsError.Should().NotBeTrue(because: "revoke with disable-operation-permissions is part of the contract");
+		revokeResponse.Error.Should().Contain(revokeEnvironment,
+			because: "the call must fail on the missing environment rather than on an unknown argument");
+	}
+
+	[TestCase("confirm", true)]
+	[TestCase("confirmation-code", "0123456789abcdef")]
+	[TestCase("include-connected", true)]
+	[TestCase("connected-operations", "read")]
+	[AllureTag(SetObjectRightsTool.ToolName)]
+	[AllureName("set-object-rights refuses the retired arguments")]
+	[AllureDescription("An argument of the retired two-step / fan-out contract is refused through the real MCP server before the environment is resolved, so a caller on the old contract is told so instead of being half-understood.")]
+	[Description("Refuses an argument of the retired contract (confirm, confirmation-code, include-connected, connected-operations) before the environment is resolved.")]
+	public async Task Tool_Should_Refuse_Retired_Argument(string argument, object value) {
+		// Arrange
+		string invalidEnvironmentName = $"missing-{ToolName}-retired-env-{Guid.NewGuid():N}";
+		Dictionary<string, object?> args = InvalidEnvironmentArgs(invalidEnvironmentName);
+		args[argument] = value;
+
+		// Act
+		(CallToolResult callResult, ObjectRightsToolResponse response) = await CallAsync(args);
 
 		// Assert
 		callResult.IsError.Should().NotBeTrue(because: "the refusal is a structured tool result, not a protocol error");
-		response.Success.Should().BeFalse(because: "a confirmed write must carry the code from a preview");
-		response.Error.Should().Contain("confirmation-code", because: "the refusal names what is missing");
+		response.Success.Should().BeFalse(because: "a retired argument must be refused, not silently dropped");
+		response.Error.Should().Contain(argument, because: "the refusal names the offending key");
 		response.Error.Should().NotContain(invalidEnvironmentName,
 			because: "the refusal happens before the environment is resolved");
-	}
-
-	[Test]
-	[AllureTag(SetObjectRightsTool.ToolName)]
-	[AllureName("set-object-rights binds confirm, confirmation-code and allow-security-object")]
-	[AllureDescription("The two-step and security opt-in arguments bind through the real MCP server and the call still fails on the missing environment, not as an unknown argument.")]
-	[Description("Binds confirm, confirmation-code and allow-security-object through the real MCP server.")]
-	public async Task Tool_Should_Bind_Confirmation_And_SecurityOptIn() {
-		// Arrange
-		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
-		string invalidEnvironmentName = $"missing-{ToolName}-code-env-{Guid.NewGuid():N}";
-		Dictionary<string, object?> args = InvalidEnvironmentArgs(invalidEnvironmentName);
-		args["confirm"] = true;
-		args["confirmation-code"] = "0123456789abcdef";
-		args["allow-security-object"] = true;
-
-		// Act
-		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> { ["args"] = args },
-			arrangeContext.CancellationTokenSource.Token);
-		ObjectRightsToolResponse response = EntitySchemaStructuredResultParser.Extract<ObjectRightsToolResponse>(callResult);
-
-		// Assert
-		callResult.IsError.Should().NotBeTrue(because: "these arguments are part of the tool contract");
-		response.Error.Should().Contain(invalidEnvironmentName,
-			because: "the call must fail on the missing environment rather than on an unknown argument");
 	}
 }

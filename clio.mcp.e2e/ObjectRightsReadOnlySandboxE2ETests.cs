@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Allure.NUnit;
@@ -16,9 +15,8 @@ namespace Clio.Mcp.E2E;
 
 /// <summary>
 /// Sandbox-tier proof that the object-rights tools talk to the REAL RightManagementService.svc — the routes, the
-/// request field, the administratedObject envelope, the ExtendParent-ordered SysSchema lookup, the grantee lookup
-/// and the confirmation code surviving the MCP output redactor — without writing anything. It reads the OOTB
-/// Contact object and runs set-object-rights only as a preview, so unlike <see cref="ObjectRightsSandboxE2ETests"/>
+/// request field, the administratedObject envelope, the ExtendParent-ordered SysSchema lookup and the grantee
+/// lookup — without writing anything. It reads the OOTB Contact object and runs set-object-rights only as a preview, so unlike <see cref="ObjectRightsSandboxE2ETests"/>
 /// (which publishes schemas and stays developer-local) it is safe on the shared stand and runs automatically.
 /// </summary>
 [TestFixture]
@@ -58,11 +56,11 @@ public sealed class ObjectRightsReadOnlySandboxE2ETests : McpContractFixtureBase
 	}
 
 	[Test]
-	[Description("On a real stand, set-object-rights without confirm returns a preview and a readable confirmation code and writes nothing, and a wrong code is refused.")]
+	[Description("On a real stand, a set-object-rights preview reads the object, plans the change and writes nothing.")]
 	[AllureTag(SetObjectRightsTool.ToolName)]
-	[AllureName("set-object-rights preview and code check against the real RightManagementService")]
-	[AllureDescription("Previews a read grant for All employees on Contact, checks the confirmation code comes through the MCP output redactor, checks Contact's rights are unchanged, then confirms with a wrong code and expects the refusal. Nothing is written.")]
-	public async Task SetObjectRights_Should_Preview_And_Refuse_Wrong_Code_On_A_Real_Stand() {
+	[AllureName("set-object-rights preview against the real RightManagementService")]
+	[AllureDescription("Previews a read grant for All employees on Contact (with enable-operation-permissions, so the preview is allowed whether or not Contact uses operation permissions), then checks Contact's rights are unchanged. Nothing is written.")]
+	public async Task SetObjectRights_Should_Preview_Without_Writing_On_A_Real_Stand() {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync();
 		Dictionary<string, object?> readContact = new() {
@@ -73,23 +71,22 @@ public sealed class ObjectRightsReadOnlySandboxE2ETests : McpContractFixtureBase
 			["environment-name"] = context.EnvironmentName,
 			["entity-schema-name"] = "Contact",
 			["grantee"] = AllEmployees,
-			["operations"] = "read"
+			["operations"] = "read",
+			["enable-operation-permissions"] = true,
+			["preview"] = true
 		};
 
 		// Act
 		ObjectRightsToolResponse preview = await CallAsync(context, SetObjectRightsTool.ToolName, grant);
 		ObjectRightsToolResponse after = await CallAsync(context, GetObjectRightsTool.ToolName, readContact);
-		ObjectRightsToolResponse wrongCode = await CallAsync(context, SetObjectRightsTool.ToolName,
-			new Dictionary<string, object?>(grant) { ["confirm"] = true, ["confirmation-code"] = "0000000000000000" });
 
 		// Assert
-		preview.Success.Should().BeTrue(because: $"a preview is not a failure. Error: {preview.Error}");
-		preview.Output.Should().Contain("PREVIEW — nothing was changed", because: "a call without confirm writes nothing");
-		Regex.IsMatch(preview.Output ?? string.Empty, "confirmation-code: [0-9a-f]{16}").Should().BeTrue(
-			because: $"the agent must read the code back from the redacted MCP output. Output: {preview.Output}");
+		preview.Success.Should().BeTrue(because: $"a preview of an allowed change is not a failure. Error: {preview.Error}");
+		(preview.Output ?? string.Empty).Should().Match(output => output.Contains("PREVIEW — nothing was changed")
+				|| output.Contains("already in the requested state"),
+			because: "a preview either shows the planned change or says there is none — and writes nothing");
 		after.Output.Should().Be(before.Output, because: "the preview must leave Contact's rights exactly as they were");
-		wrongCode.Success.Should().BeFalse(because: "a code that does not match the current state is refused");
-		wrongCode.Error.Should().Contain("confirmation code does not match", because: "the refusal says why");
+		before.Output.Should().Contain("priority order", because: "every listing states the priority rule its rows follow");
 	}
 
 	private static async Task<ObjectRightsToolResponse> CallAsync(ArrangeContext context, string toolName,

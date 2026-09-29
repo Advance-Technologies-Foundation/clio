@@ -7,7 +7,7 @@ using Clio.Common.ObjectRights;
 namespace Clio.Command.ObjectRights;
 
 /// <summary>
-/// The set of objects an object-rights operation targets. <see cref="Objects"/> always starts with the root
+/// The objects get-object-rights reads. <see cref="Objects"/> always starts with the root
 /// object. <see cref="Excluded"/> lists connected objects that were deliberately left out because they are
 /// security or system objects (see <see cref="IConnectedObjectsResolver"/>). <see cref="EnumerationError"/> is
 /// set when the connected objects were requested but could not be enumerated. <see cref="Objects"/> then holds
@@ -19,16 +19,17 @@ public sealed record ConnectedObjectsResolution(
 	string EnumerationError = null);
 
 /// <summary>
-/// Resolves the set of objects an object-rights operation targets: the root object plus, when requested,
-/// every distinct object referenced by the root's OWN lookup columns (inherited BaseEntity audit lookups
-/// such as CreatedBy/ModifiedBy are excluded). Shared by get-object-rights and set-object-rights.
+/// Resolves the objects get-object-rights reads: the root object plus, when requested, every distinct object
+/// referenced by the root's OWN lookup columns (inherited BaseEntity audit lookups such as CreatedBy/ModifiedBy
+/// are excluded). set-object-rights changes one named object per call and uses only
+/// <see cref="ConnectedObjectsResolver.IsSecurityOrSystemObject"/>.
 /// </summary>
 public interface IConnectedObjectsResolver {
 	/// <summary>
 	/// Returns the root object and, when <paramref name="includeConnected"/> is true, its own connected lookup
 	/// objects. Security and system objects (the role/user directory, schema and package metadata, rights
-	/// tables) are never fanned out to: they are returned in <see cref="ConnectedObjectsResolution.Excluded"/>
-	/// and can only be targeted by naming them as the root. A failed schema read is reported in
+	/// tables) are never read as connected objects: they are returned in <see cref="ConnectedObjectsResolution.Excluded"/>
+	/// and are read only when named as the root. A failed schema read is reported in
 	/// <see cref="ConnectedObjectsResolution.EnumerationError"/> and never throws.
 	/// </summary>
 	ConnectedObjectsResolution Resolve(string rootSchemaName, bool includeConnected);
@@ -37,10 +38,10 @@ public interface IConnectedObjectsResolver {
 /// <inheritdoc />
 public class ConnectedObjectsResolver : IConnectedObjectsResolver {
 
-	// A fan-out grant goes to a whole role at once, and on MCP nobody sees the target list before it is
-	// written. These objects expose the role/user directory, security configuration or platform metadata, and
-	// granting them as a SIDE EFFECT of a fan-out would make that data readable through DataService wherever
-	// record permissions do not also protect it.
+	// These objects expose the role/user directory, security configuration or platform metadata: widening access to
+	// one of them makes that data readable through DataService wherever record permissions do not also protect it.
+	// So the connected listing — the step before granting — never offers them, and set-object-rights asks for
+	// --allow-security-object before a grant beyond read, or a disable, on one of them.
 	private static readonly string[] ExcludedPrefixes =
 		{ "SysAdmin", "SysUser", "SysSchema", "SysPackage", "SysSettings", "SysLic", "SysProcess", "Vw" };
 
@@ -89,7 +90,10 @@ public class ConnectedObjectsResolver : IConnectedObjectsResolver {
 		return new ConnectedObjectsResolution(objects, excluded);
 	}
 
-	/// <summary>Whether <paramref name="schemaName"/> is a security or system object that the fan-out never reaches.</summary>
+	/// <summary>
+	/// Whether <paramref name="schemaName"/> is a security or system object: never read as a connected object, and
+	/// granted beyond read or disabled by set-object-rights only with --allow-security-object.
+	/// </summary>
 	public static bool IsSecurityOrSystemObject(string schemaName) =>
 		ExcludedPrefixes.Any(prefix => schemaName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
 		|| ExcludedSuffixes.Any(suffix => schemaName.EndsWith(suffix, StringComparison.OrdinalIgnoreCase));

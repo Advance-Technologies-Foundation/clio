@@ -14,10 +14,10 @@ using NUnit.Framework;
 namespace Clio.Tests.Common.ObjectRights;
 
 /// <summary>
-/// Direct unit tests for <see cref="RightManagementServiceClient"/> — the JSON read-modify-write over
-/// GetAdministratedObject / SaveAdministratedObject that the command tests do not exercise (they mock the
-/// interfaces). Feeds canned service responses through a substitute <see cref="IApplicationClient"/> and
-/// asserts the exact save payload and the change/error semantics.
+/// Direct unit tests for <see cref="RightManagementServiceClient"/> — reading an object's rows in priority order
+/// through GetAdministratedObject (candidate UIds, faults) and saving a planned state through
+/// SaveAdministratedObject. The client holds no policy: what to write is the planner's job, so these tests assert
+/// the read projection and the exact save payload.
 /// </summary>
 [TestFixture]
 [Category("Unit")]
@@ -26,10 +26,17 @@ public class RightManagementServiceClientTests {
 
 	private const string SchemaUId = "35a9057f-800d-414b-acfb-c919c215857a";
 	private static readonly Guid Grantee = Guid.Parse("720b771c-e7a7-4f31-9cfb-52cd21c3739f");
+	private static readonly Guid Employees = Guid.Parse("a29a3ba5-4b0d-de11-9a51-005056c00008");
 
 	private const string SelectUrl = "http://host/0/DataService/json/SyncReply/SelectQuery";
 	private const string GetUrl = "http://host/0/ServiceModel/RightManagementService.svc/GetAdministratedObject";
 	private const string SaveUrl = "http://host/0/ServiceModel/RightManagementService.svc/SaveAdministratedObject";
+
+	private const string BaseUId = "11111111-1111-1111-1111-111111111111";
+	private const string LayerUId = "22222222-2222-2222-2222-222222222222";
+	private const string InBandJsonFault = "{\"success\":false,\"errorInfo\":{\"message\":\"Request Error\"}}";
+	private const string HtmlRequestErrorPage =
+		"<?xml version=\"1.0\" encoding=\"utf-8\"?><!DOCTYPE html><html><body>Request Error</body></html>";
 
 	private IApplicationClient _applicationClient;
 	private IServiceUrlBuilder _urlBuilder;
@@ -54,135 +61,7 @@ public class RightManagementServiceClientTests {
 	private string Post(string url) =>
 		_applicationClient.ExecutePostRequest(url, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 
-	private void GetReturns(string administratedObjectJson) =>
-		Post(GetUrl).Returns(administratedObjectJson);
-
-	[Test]
-	[Description("A grant to a not-yet-present role writes the role's row with the requested operations, enables operation permissions, and sends the untouched rights collections as null.")]
-	public void SetObjectRights_ShouldWriteRowEnableAndNullOtherCollections_WhenGrantingNewRole() {
-		// Arrange
-		GetReturns($"{{\"success\":true,\"administratedObject\":{{\"name\":\"UsrFoo\",\"administratedByOperations\":true,"
-			+ "\"entitySchemaOperationsRights\":[],\"entitySchemaRecordDefRights\":[{\"id\":\"r\"}],"
-			+ "\"entitySchemaColumnsRights\":[{\"id\":\"c\"}],\"entityOperationGrantees\":[{\"id\":\"g\"}]}}");
-
-		// Act
-		ObjectRightsChange result = _client.SetObjectRights("UsrFoo", Grantee,
-			new[] { ObjectOperation.Read, ObjectOperation.Create, ObjectOperation.Edit }, revoke: false,
-			disableOperationPermissions: false, new CreatioRequestOptions());
-
-		// Assert
-		result.Changed.Should().BeTrue(because: "granting a role that had no row is a change");
-		_savedPayload.Should().Contain(Grantee.ToString(), because: "the new row carries the grantee id");
-		_savedPayload.Should().Contain("\"canRead\":true", because: "read was granted");
-		_savedPayload.Should().Contain("\"canDelete\":false", because: "delete was not requested");
-		JsonElement saved = JsonDocument.Parse(_savedPayload).RootElement.GetProperty("administratedObject");
-		foreach (string collection in new[] { "entitySchemaRecordDefRights", "entitySchemaColumnsRights", "entityOperationGrantees" }) {
-			saved.GetProperty(collection).ValueKind.Should().Be(JsonValueKind.Null,
-				because: $"the untouched collection '{collection}' is sent as null so the save leaves it alone");
-		}
-	}
-
-	private void GetReturnsSingleRowObject() =>
-		GetReturns($"{{\"success\":true,\"administratedObject\":{{\"name\":\"UsrFoo\",\"administratedByOperations\":true,"
-			+ $"\"entitySchemaOperationsRights\":[{{\"id\":\"x\",\"position\":0,\"canRead\":true,\"canAppend\":false,"
-			+ $"\"canEdit\":false,\"canDelete\":false,\"sysAdminUnit\":{{\"id\":\"{Grantee}\",\"name\":\"R\"}}}}]}}}}");
-
-	[Test]
-	[Description("Revoking the last grant with disableOperationPermissions removes the row and turns operation permissions off, reporting the resulting access widening.")]
-	public void SetObjectRights_ShouldDisableOperationPermissions_WhenRevokingLastRowAndAsked() {
-		// Arrange
-		GetReturnsSingleRowObject();
-
-		// Act
-		ObjectRightsChange result = _client.SetObjectRights("UsrFoo", Grantee,
-			new[] { ObjectOperation.Read, ObjectOperation.Create, ObjectOperation.Edit, ObjectOperation.Delete },
-			revoke: true, disableOperationPermissions: true, new CreatioRequestOptions());
-
-		// Assert
-		result.Changed.Should().BeTrue(because: "the row was removed");
-		result.Outcome.Should().Be(ObjectRightsOutcome.ChangedAndDisabled,
-			because: "the caller must be told the object is now available to every internal user");
-		_savedPayload.Should().Contain("\"administratedByOperations\":false",
-			because: "the caller explicitly asked to return the object to available-to-all");
-	}
-
-	[Test]
-	[Description("A revoke that would remove the object's last rights row writes nothing without disableOperationPermissions, so a revoke never widens access as a side effect.")]
-	public void SetObjectRights_ShouldRefuseAndNotSave_WhenRevokingLastRowWithoutOptIn() {
-		// Arrange
-		GetReturnsSingleRowObject();
-
-		// Act
-		ObjectRightsChange result = _client.SetObjectRights("UsrFoo", Grantee,
-			new[] { ObjectOperation.Read, ObjectOperation.Create, ObjectOperation.Edit, ObjectOperation.Delete },
-			revoke: true, disableOperationPermissions: false, new CreatioRequestOptions());
-
-		// Assert
-		result.Outcome.Should().Be(ObjectRightsOutcome.RefusedLastRowRemoval,because: "the caller did not ask to turn operation permissions off");
-		result.Changed.Should().BeFalse(because: "nothing was written");
-		_applicationClient.DidNotReceive().ExecutePostRequest(SaveUrl, Arg.Any<string>(), Arg.Any<int>(),
-			Arg.Any<int>(), Arg.Any<int>());
-	}
-
-	[Test]
-	[Description("A partial revoke that leaves the role some rights is applied even on the object's only row, because no row is removed.")]
-	public void SetObjectRights_ShouldApplyPartialRevoke_WhenLastRowKeepsRights() {
-		// Arrange
-		GetReturns($"{{\"success\":true,\"administratedObject\":{{\"name\":\"UsrFoo\",\"administratedByOperations\":true,"
-			+ $"\"entitySchemaOperationsRights\":[{{\"id\":\"x\",\"position\":0,\"canRead\":true,\"canAppend\":true,"
-			+ $"\"canEdit\":false,\"canDelete\":false,\"sysAdminUnit\":{{\"id\":\"{Grantee}\",\"name\":\"R\"}}}}]}}}}");
-
-		// Act
-		ObjectRightsChange result = _client.SetObjectRights("UsrFoo", Grantee,
-			new[] { ObjectOperation.Create }, revoke: true, disableOperationPermissions: false,
-			new CreatioRequestOptions());
-
-		// Assert
-		result.Outcome.Should().NotBe(ObjectRightsOutcome.RefusedLastRowRemoval,because: "the row keeps canRead, so it is not removed");
-		result.Changed.Should().BeTrue(because: "canAppend was cleared");
-		_savedPayload.Should().Contain("\"administratedByOperations\":true",
-			because: "a narrowing revoke never touches the object's administration flag");
-	}
-
-	[Test]
-	[Description("Re-granting operations a role already holds writes nothing and reports no change.")]
-	public void SetObjectRights_ShouldNotSave_WhenGrantIsNoOp() {
-		// Arrange
-		GetReturns($"{{\"success\":true,\"administratedObject\":{{\"name\":\"UsrFoo\",\"administratedByOperations\":true,"
-			+ $"\"entitySchemaOperationsRights\":[{{\"id\":\"x\",\"position\":0,\"canRead\":true,\"canAppend\":true,"
-			+ $"\"canEdit\":true,\"canDelete\":false,\"sysAdminUnit\":{{\"id\":\"{Grantee}\",\"name\":\"R\"}}}}]}}}}");
-
-		// Act
-		ObjectRightsChange result = _client.SetObjectRights("UsrFoo", Grantee,
-			new[] { ObjectOperation.Read, ObjectOperation.Create, ObjectOperation.Edit }, revoke: false,
-			disableOperationPermissions: false, new CreatioRequestOptions());
-
-		// Assert
-		result.Changed.Should().BeFalse(because: "the role already holds exactly these operations");
-		_applicationClient.DidNotReceive().ExecutePostRequest(SaveUrl, Arg.Any<string>(), Arg.Any<int>(),
-			Arg.Any<int>(), Arg.Any<int>());
-	}
-
-	[Test]
-	[Description("An in-band GetAdministratedObject success:false is surfaced as a read error, never as \"available to all\".")]
-	public void GetObjectRights_ShouldReportReadError_WhenServiceReturnsInBandFailure() {
-		// Arrange
-		GetReturns("{\"success\":false,\"errorInfo\":{\"message\":\"permission denied\"}}");
-
-		// Act
-		ObjectRightsInfo info = _client.GetObjectRights("UsrFoo", new CreatioRequestOptions());
-
-		// Assert
-		info.ReadError.Should().Contain("permission denied", because: "a logical service failure must be surfaced");
-		info.AdministratedByOperations.Should().BeFalse(because: "a failed read is not an authoritative 'available' answer");
-	}
-
-	// ---- Candidate resolution (RC-4): order, probe loop, dedup ----
-
-	private const string BaseUId = "11111111-1111-1111-1111-111111111111";
-	private const string LayerUId = "22222222-2222-2222-2222-222222222222";
-
-	private const string InBandJsonFault = "{\"success\":false,\"errorInfo\":{\"message\":\"Request Error\"}}";
+	private void GetReturns(string administratedObjectJson) => Post(GetUrl).Returns(administratedObjectJson);
 
 	private void SelectReturnsUIds(params string[] uIds) =>
 		Post(SelectUrl).Returns("{\"success\":true,\"rows\":["
@@ -192,17 +71,27 @@ public class RightManagementServiceClientTests {
 		_applicationClient.ExecutePostRequest(GetUrl, Arg.Is<string>(body => body.Contains(uId)), Arg.Any<int>(),
 			Arg.Any<int>(), Arg.Any<int>()).Returns(json);
 
+	private void GetThrowsFor(string uId, Exception exception) =>
+		_applicationClient.ExecutePostRequest(GetUrl, Arg.Is<string>(body => body.Contains(uId)), Arg.Any<int>(),
+			Arg.Any<int>(), Arg.Any<int>()).Returns(_ => throw exception);
+
 	private static string AdministeredObject(string caption) =>
 		"{\"success\":true,\"administratedObject\":{\"name\":\"UsrFoo\",\"caption\":\"" + caption
 		+ "\",\"administratedByOperations\":true,\"entitySchemaOperationsRights\":[]}}";
 
-	private static string NotAdministeredObject(string rowsJson) =>
-		"{\"success\":true,\"administratedObject\":{\"name\":\"UsrFoo\",\"administratedByOperations\":false,"
-		+ "\"entitySchemaOperationsRights\":[" + rowsJson + "]}}";
+	private static string ObjectWithRows(bool administered, params string[] rows) =>
+		"{\"success\":true,\"administratedObject\":{\"name\":\"UsrFoo\",\"administratedByOperations\":"
+		+ Lower(administered) + ",\"entitySchemaOperationsRights\":[" + string.Join(",", rows) + "],"
+		+ "\"entitySchemaRecordDefRights\":[{\"id\":\"r\"}],\"entitySchemaColumnsRights\":[{\"id\":\"c\"}],"
+		+ "\"entityOperationGrantees\":[{\"id\":\"g\"}]}}";
 
-	private static string Row(string id, int position, string granteeId, bool canRead) =>
-		"{\"id\":\"" + id + "\",\"position\":" + position + ",\"canRead\":" + (canRead ? "true" : "false")
-		+ ",\"canAppend\":false,\"canEdit\":false,\"canDelete\":false,\"sysAdminUnit\":{\"id\":\"" + granteeId + "\"}}";
+	private static string FlagRow(Guid grantee, int position, bool read, bool append, bool edit, bool delete,
+		string name = null) =>
+		"{\"id\":\"r" + position + "\",\"position\":" + position + ",\"canRead\":" + Lower(read) + ",\"canAppend\":"
+		+ Lower(append) + ",\"canEdit\":" + Lower(edit) + ",\"canDelete\":" + Lower(delete)
+		+ ",\"sysAdminUnit\":{\"id\":\"" + grantee + "\"" + (name is null ? "" : ",\"name\":\"" + name + "\"") + "}}";
+
+	private static string Lower(bool value) => value ? "true" : "false";
 
 	private string[] GetBodiesInCallOrder() =>
 		_applicationClient.ReceivedCalls()
@@ -211,6 +100,104 @@ public class RightManagementServiceClientTests {
 			.Select(call => (string)call.GetArguments()[1])
 			.ToArray();
 
+	private JsonElement SavedObject() =>
+		JsonDocument.Parse(_savedPayload).RootElement.GetProperty("administratedObject");
+
+	private JsonElement[] SavedRows() =>
+		SavedObject().GetProperty("entitySchemaOperationsRights").EnumerateArray().ToArray();
+
+	private static bool IsRowOf(JsonElement row, Guid grantee) =>
+		Guid.Parse(row.GetProperty("sysAdminUnit").GetProperty("id").GetString()!) == grantee;
+
+	private ObjectRightsInfo Read() => _client.GetObjectRights("UsrFoo", new CreatioRequestOptions());
+
+	// ---- Read: projection and priority order ----
+
+	[Test]
+	[Description("GetObjectRights projects every wire field onto RoleOperationRights — canAppend->CanCreate, the grantee id and name, the position — and the switch.")]
+	public void GetObjectRights_ShouldProjectEveryField_WhenRowsHaveDistinctFlags() {
+		// Arrange
+		GetReturns(ObjectWithRows(true,
+			FlagRow(Grantee, 0, read: true, append: false, edit: true, delete: false, name: "All external users"),
+			FlagRow(Employees, 1, read: false, append: true, edit: false, delete: true, name: "All employees")));
+
+		// Act
+		ObjectRightsInfo info = Read();
+
+		// Assert
+		info.AdministratedByOperations.Should().BeTrue(because: "the switch is read from the node");
+		info.Roles.Should().BeEquivalentTo(new[] {
+			new RoleOperationRights(Grantee, "All external users", 0, true, false, true, false),
+			new RoleOperationRights(Employees, "All employees", 1, false, true, false, true)
+		}, options => options.WithStrictOrdering(), because: "a swapped field would misreport who can do what");
+	}
+
+	[Test]
+	[Description("Rows are returned in priority order (lowest position first) whatever order the service lists them in, because the highest matching row decides.")]
+	public void GetObjectRights_ShouldReturnRowsInPriorityOrder_WhenServiceListsThemOutOfOrder() {
+		// Arrange
+		GetReturns(ObjectWithRows(true,
+			FlagRow(Employees, 3, true, true, true, true),
+			FlagRow(Grantee, 1, true, false, false, false)));
+
+		// Act
+		ObjectRightsInfo info = Read();
+
+		// Assert
+		info.Roles.Select(role => role.Position).Should().Equal(new[] { 1, 3 },
+			because: "the priority order is what decides access, so it is the order a caller sees");
+	}
+
+	[TestCase("{\"id\":\"not-a-guid\"}")]
+	[TestCase("{}")]
+	[Description("A missing or non-GUID grantee id reads as Guid.Empty, a missing name as (unknown), non-bool flags as false, and a missing position as the row's place in the list.")]
+	public void GetObjectRights_ShouldFallBack_WhenRowFieldsAreMissingOrMalformed(string sysAdminUnit) {
+		// Arrange
+		GetReturns("{\"success\":true,\"administratedObject\":{\"name\":\"UsrFoo\",\"administratedByOperations\":true,"
+			+ "\"entitySchemaOperationsRights\":[{\"canRead\":\"true\",\"canAppend\":1,\"canEdit\":null,"
+			+ "\"sysAdminUnit\":" + sysAdminUnit + "}]}}");
+
+		// Act
+		RoleOperationRights role = Read().Roles.Single();
+
+		// Assert
+		role.GranteeId.Should().Be(Guid.Empty, because: "an unparseable id never matches a real grantee");
+		role.GranteeName.Should().Be("(unknown)", because: "a missing name falls back to a placeholder");
+		role.Position.Should().Be(0, because: "a row without a position keeps its place in the list");
+		role.HasAnyOperation.Should().BeFalse(because: "a non-bool flag is not a grant");
+	}
+
+	[Test]
+	[Description("A clean read carries a snapshot for the save; a failed read carries none.")]
+	public void GetObjectRights_ShouldCarrySnapshot_OnlyWhenTheReadSucceeded() {
+		// Arrange
+		Post(GetUrl).Returns(AdministeredObject("ok"), InBandJsonFault);
+
+		// Act
+		ObjectRightsInfo ok = Read();
+		ObjectRightsInfo failed = Read();
+
+		// Assert
+		ok.Snapshot.Should().NotBeNull(because: "a save writes back the object as it was read");
+		failed.Snapshot.Should().BeNull(because: "there is nothing to write back after a failed read");
+	}
+
+	[Test]
+	[Description("An in-band GetAdministratedObject success:false is surfaced as a read error, never as \"available to all\".")]
+	public void GetObjectRights_ShouldReportReadError_WhenServiceReturnsInBandFailure() {
+		// Arrange
+		GetReturns("{\"success\":false,\"errorInfo\":{\"message\":\"permission denied\"}}");
+
+		// Act
+		ObjectRightsInfo info = Read();
+
+		// Assert
+		info.ReadError.Should().Contain("permission denied", because: "a logical service failure must be surfaced");
+		info.AdministratedByOperations.Should().BeFalse(because: "a failed read is not an authoritative 'available' answer");
+	}
+
+	// ---- Read: candidate UIds ----
+
 	[Test]
 	[Description("The SysSchema candidate query orders ExtendParent ascending server-side (base row first) so a row cap can never cut off the administrable base row.")]
 	public void GetObjectRights_ShouldOrderCandidatesByExtendParentServerSide_WhenResolvingUIds() {
@@ -218,7 +205,7 @@ public class RightManagementServiceClientTests {
 		GetReturns(AdministeredObject("base"));
 
 		// Act
-		_client.GetObjectRights("UsrFoo", new CreatioRequestOptions());
+		Read();
 
 		// Assert
 		string selectBody = (string)_applicationClient.ReceivedCalls()
@@ -241,7 +228,7 @@ public class RightManagementServiceClientTests {
 		GetReturnsFor(LayerUId, AdministeredObject("layer"));
 
 		// Act
-		ObjectRightsInfo info = _client.GetObjectRights("UsrFoo", new CreatioRequestOptions());
+		ObjectRightsInfo info = Read();
 
 		// Assert
 		info.Caption.Should().Be("base", because: "the base row answers, so it is the one used");
@@ -250,42 +237,72 @@ public class RightManagementServiceClientTests {
 		bodies[0].Should().Contain(BaseUId, because: "the base row is probed first");
 	}
 
-	[Test]
-	[Description("When the first candidate faults and the second answers, the save uses the SECOND candidate's node.")]
-	public void SetObjectRights_ShouldSaveSecondCandidateNode_WhenFirstCandidateFaults() {
+	[TestCase(InBandJsonFault, TestName = "GetObjectRights_ShouldUseSecondCandidate_WhenFirstReturnsJsonFault")]
+	[TestCase(HtmlRequestErrorPage, TestName = "GetObjectRights_ShouldUseSecondCandidate_WhenFirstReturnsHtmlErrorPage")]
+	[Description("A first candidate answering with a fault — the in-band success:false or the real non-JSON 'Request Error' page — is skipped, and the second candidate's node is the one read (and later saved).")]
+	public void GetObjectRights_ShouldUseSecondCandidate_WhenFirstFaults(string firstAnswer) {
 		// Arrange
 		SelectReturnsUIds(BaseUId, LayerUId);
-		GetReturnsFor(BaseUId, InBandJsonFault);
+		GetReturnsFor(BaseUId, firstAnswer);
 		GetReturnsFor(LayerUId, AdministeredObject("from-second"));
 
 		// Act
-		ObjectRightsChange result = _client.SetObjectRights("UsrFoo", Grantee, new[] { ObjectOperation.Read },
-			revoke: false, disableOperationPermissions: false, new CreatioRequestOptions());
+		ObjectRightsInfo info = Read();
+		string error = _client.Save(info.Snapshot, info.State, new CreatioRequestOptions());
 
 		// Assert
-		result.Error.Should().BeNull(because: "the second candidate answered");
-		result.Changed.Should().BeTrue(because: "the grant added a row");
-		_savedPayload.Should().Contain("from-second", because: "the save must round-trip the node that actually answered");
+		info.ReadError.Should().BeNull(because: "the second candidate answered");
+		info.Caption.Should().Be("from-second", because: "a faulting candidate must not end the probe loop");
+		error.Should().BeNull(because: "the save succeeded");
+		_savedPayload.Should().Contain("from-second", because: "the save round-trips the node that actually answered");
 	}
 
 	[Test]
-	[Description("When every candidate faults, the read reports a ReadError (never 'available') and the write reports an Error without saving.")]
-	public void RightManagementServiceClient_ShouldReportError_WhenAllCandidatesFault() {
+	[Description("A first candidate whose request throws (HTTP 500) is skipped, and the read uses the second candidate.")]
+	public void GetObjectRights_ShouldUseSecondCandidate_WhenFirstRequestThrows() {
 		// Arrange
 		SelectReturnsUIds(BaseUId, LayerUId);
-		GetReturnsFor(BaseUId, InBandJsonFault);
-		GetReturnsFor(LayerUId, InBandJsonFault);
+		GetThrowsFor(BaseUId, new InvalidOperationException("HTTP 500"));
+		GetReturnsFor(LayerUId, AdministeredObject("from-second"));
 
 		// Act
-		ObjectRightsInfo info = _client.GetObjectRights("UsrFoo", new CreatioRequestOptions());
-		ObjectRightsChange change = _client.SetObjectRights("UsrFoo", Grantee, new[] { ObjectOperation.Read },
-			revoke: false, disableOperationPermissions: false, new CreatioRequestOptions());
+		ObjectRightsInfo info = Read();
+
+		// Assert
+		info.ReadError.Should().BeNull(because: "the second candidate answered");
+		info.Caption.Should().Be("from-second", because: "a throwing candidate must not end the probe loop");
+	}
+
+	[Test]
+	[Description("When every candidate faults, the read reports a ReadError — never 'available' — and keeps the FIRST candidate's error.")]
+	public void GetObjectRights_ShouldReportFirstCandidateError_WhenEveryCandidateFails() {
+		// Arrange
+		SelectReturnsUIds(BaseUId, LayerUId);
+		GetThrowsFor(BaseUId, new InvalidOperationException("base failed"));
+		GetReturnsFor(LayerUId, HtmlRequestErrorPage);
+
+		// Act
+		ObjectRightsInfo info = Read();
 
 		// Assert
 		info.Found.Should().BeTrue(because: "the schema exists; only its rights could not be read");
-		info.ReadError.Should().Contain("Request Error", because: "a failed read must be surfaced, not reported as available");
-		change.Error.Should().Contain("Request Error", because: "the write must report the read failure");
-		_savedPayload.Should().BeNull(because: "nothing may be saved when no candidate could be read");
+		info.ReadError.Should().Contain("base failed", because: "the base row's real cause is what the caller needs");
+	}
+
+	[Test]
+	[Description("A timeout on the first candidate UId stops the probe: the next replacing-layer candidate would only hang as long again.")]
+	public void GetObjectRights_ShouldStopProbing_WhenFirstCandidateTimesOut() {
+		// Arrange
+		SelectReturnsUIds(BaseUId, LayerUId);
+		GetThrowsFor(BaseUId, new TaskCanceledException("timed out"));
+		GetReturnsFor(LayerUId, AdministeredObject("from-second"));
+
+		// Act
+		ObjectRightsInfo info = Read();
+
+		// Assert
+		info.ReadError.Should().Contain("timed out", because: "the timeout is reported against the object");
+		GetBodiesInCallOrder().Should().HaveCount(1, because: "no further candidate is probed after a hang");
 	}
 
 	[Test]
@@ -311,7 +328,7 @@ public class RightManagementServiceClientTests {
 		GetReturnsFor(BaseUId, InBandJsonFault);
 
 		// Act
-		_client.GetObjectRights("UsrFoo", new CreatioRequestOptions());
+		Read();
 
 		// Assert
 		string[] bodies = GetBodiesInCallOrder();
@@ -319,503 +336,235 @@ public class RightManagementServiceClientTests {
 		bodies[0].Should().Contain(BaseUId, because: "only the real candidate is probed");
 	}
 
-	// ---- Grant on a not-yet-administered object, positions, save failure (RC-9) ----
-
 	[Test]
-	[Description("A grant on an object that does not use operation permissions yet turns them ON, adds the row, and reports the enablement.")]
-	public void SetObjectRights_ShouldEnableAndReportIt_WhenObjectNotAdministered() {
-		// Arrange
-		GetReturns(NotAdministeredObject(""));
-
-		// Act
-		ObjectRightsChange result = _client.SetObjectRights("UsrFoo", Grantee, new[] { ObjectOperation.Read },
-			revoke: false, disableOperationPermissions: false, new CreatioRequestOptions());
-
-		// Assert
-		result.Changed.Should().BeTrue(because: "enabling operation permissions and adding a row is a change");
-		result.Outcome.Should().Be(ObjectRightsOutcome.ChangedAndEnabled,
-			because: "the flip narrows access for every other internal role, so it must be reported");
-		_savedPayload.Should().Contain("\"administratedByOperations\":true", because: "the grant turns operation permissions on");
-		_savedPayload.Should().Contain(Grantee.ToString(), because: "the grantee row is added");
-	}
-
-	[Test]
-	[Description("On a not-administered object whose row already holds the requested flags, enabling still counts as a change and is saved.")]
-	public void SetObjectRights_ShouldSaveEnablement_WhenRowAlreadyHoldsFlags() {
-		// Arrange
-		GetReturns(NotAdministeredObject(Row("x", 0, Grantee.ToString(), canRead: true)));
-
-		// Act
-		ObjectRightsChange result = _client.SetObjectRights("UsrFoo", Grantee, new[] { ObjectOperation.Read },
-			revoke: false, disableOperationPermissions: false, new CreatioRequestOptions());
-
-		// Assert
-		result.Changed.Should().BeTrue(because: "turning operation permissions on is itself a change");
-		result.Outcome.Should().Be(ObjectRightsOutcome.ChangedAndEnabled,because: "the object was not administered before");
-		_savedPayload.Should().NotBeNull(because: "the enablement must be saved even though the row flags did not change");
-	}
-
-	[Test]
-	[Description("A new row gets one past the highest existing position (positions may have gaps) and carries no id.")]
-	public void SetObjectRights_ShouldPlaceNewRowAfterHighestPosition_WhenPositionsHaveGaps() {
-		// Arrange
-		GetReturns("{\"success\":true,\"administratedObject\":{\"name\":\"UsrFoo\",\"administratedByOperations\":true,"
-			+ "\"entitySchemaOperationsRights\":[" + Row("a", 0, Guid.NewGuid().ToString(), true) + ","
-			+ Row("b", 5, Guid.NewGuid().ToString(), true) + "]}}");
-
-		// Act
-		_client.SetObjectRights("UsrFoo", Grantee, new[] { ObjectOperation.Read },
-			revoke: false, disableOperationPermissions: false, new CreatioRequestOptions());
-
-		// Assert
-		JsonElement newRow = JsonDocument.Parse(_savedPayload).RootElement
-			.GetProperty("administratedObject").GetProperty("entitySchemaOperationsRights").EnumerateArray()
-			.Single(row => row.GetProperty("sysAdminUnit").GetProperty("id").GetString() == Grantee.ToString());
-		newRow.GetProperty("position").GetInt32().Should().Be(6, because: "a new row goes one past the highest position, not into a gap");
-		newRow.TryGetProperty("id", out _).Should().BeFalse(because: "the server assigns the id of a new row");
-	}
-
-	[Test]
-	[Description("A SaveAdministratedObject in-band failure is mapped to Error with Changed=false and no enablement flag.")]
-	public void SetObjectRights_ShouldReportError_WhenSaveReportsFailure() {
-		// Arrange
-		GetReturns(NotAdministeredObject(""));
-		Post(SaveUrl).Returns("{\"success\":false,\"errorInfo\":{\"message\":\"denied\"}}");
-
-		// Act
-		ObjectRightsChange result = _client.SetObjectRights("UsrFoo", Grantee, new[] { ObjectOperation.Read },
-			revoke: false, disableOperationPermissions: false, new CreatioRequestOptions());
-
-		// Assert
-		result.Error.Should().Be("denied", because: "the service's failure message is surfaced");
-		result.Changed.Should().BeFalse(because: "nothing was saved");
-		result.Outcome.Should().NotBe(ObjectRightsOutcome.ChangedAndEnabled,because: "a failed save enabled nothing");
-	}
-
-	// ---- Save exception, multi-row revoke, projection (review round 4) ----
-
-	private static readonly Guid Employees = Guid.Parse("a29a3ba5-4b0d-de11-9a51-005056c00008");
-
-	private void GetReturnsTwoRowObject() =>
-		GetReturns("{\"success\":true,\"administratedObject\":{\"name\":\"UsrFoo\",\"administratedByOperations\":true,"
-			+ "\"entitySchemaOperationsRights\":["
-			+ "{\"id\":\"x\",\"position\":0,\"canRead\":true,\"canAppend\":true,\"canEdit\":true,\"canDelete\":true,"
-			+ "\"sysAdminUnit\":{\"id\":\"" + Grantee + "\",\"name\":\"All external users\"}},"
-			+ "{\"id\":\"y\",\"position\":1,\"canRead\":true,\"canAppend\":true,\"canEdit\":true,\"canDelete\":false,"
-			+ "\"sysAdminUnit\":{\"id\":\"" + Employees + "\",\"name\":\"All employees\"}}]}}");
-
-	private JsonElement[] SavedRows() =>
-		JsonDocument.Parse(_savedPayload).RootElement.GetProperty("administratedObject")
-			.GetProperty("entitySchemaOperationsRights").EnumerateArray().ToArray();
-
-	private static readonly ObjectOperation[] AllOperations =
-		{ ObjectOperation.Read, ObjectOperation.Create, ObjectOperation.Edit, ObjectOperation.Delete };
-
-	[Test]
-	[Description("An exception thrown by the SaveAdministratedObject POST is reported as this object's Error instead of escaping, so a fan-out can name where it stopped and continue.")]
-	public void SetObjectRights_ShouldReportError_WhenSaveThrows() {
-		// Arrange
-		GetReturns(NotAdministeredObject(""));
-		Post(SaveUrl).Returns(_ => throw new InvalidOperationException("HTTP 500"));
-
-		// Act
-		ObjectRightsChange result = _client.SetObjectRights("UsrFoo", Grantee, new[] { ObjectOperation.Read },
-			revoke: false, disableOperationPermissions: false, new CreatioRequestOptions());
-
-		// Assert
-		result.Error.Should().Contain("HTTP 500", because: "the transport failure is attributed to this object");
-		result.Changed.Should().BeFalse(because: "nothing was saved");
-	}
-
-	[TestCase(false)]
-	[TestCase(true)]
-	[Description("A full revoke of one role while another row remains removes only that role's row and keeps operation permissions ON, whatever the disable opt-in says.")]
-	public void SetObjectRights_ShouldKeepAdministered_WhenFullRevokeLeavesOtherRows(bool disable) {
-		// Arrange
-		GetReturnsTwoRowObject();
-
-		// Act
-		ObjectRightsChange result = _client.SetObjectRights("UsrFoo", Grantee, AllOperations,
-			revoke: true, disableOperationPermissions: disable, new CreatioRequestOptions());
-
-		// Assert
-		result.Changed.Should().BeTrue(because: "the grantee's row was removed");
-		result.Outcome.Should().NotBe(ObjectRightsOutcome.RefusedLastRowRemoval,because: "another row remains, so this is not the last row");
-		result.Outcome.Should().NotBe(ObjectRightsOutcome.ChangedAndDisabled,because: "operation permissions stay on while any row remains");
-		_savedPayload.Should().Contain("\"administratedByOperations\":true",
-			because: "removing one role must never make the object available to every internal user");
-		JsonElement[] rows = SavedRows();
-		rows.Should().HaveCount(1, because: "only the grantee's row is removed");
-		rows[0].GetProperty("sysAdminUnit").GetProperty("id").GetString().Should().Be(Employees.ToString(),
-			because: "the other role's row is kept untouched");
-	}
-
-	[Test]
-	[Description("A revoke for a grantee that holds no row is a no-op and does not call SaveAdministratedObject.")]
-	public void SetObjectRights_ShouldNotSave_WhenRevokingGranteeWithoutRow() {
-		// Arrange
-		GetReturns(AdministeredObject("base"));
-
-		// Act
-		ObjectRightsChange result = _client.SetObjectRights("UsrFoo", Grantee, AllOperations,
-			revoke: true, disableOperationPermissions: false, new CreatioRequestOptions());
-
-		// Assert
-		result.Changed.Should().BeFalse(because: "there was nothing to revoke");
-		_applicationClient.DidNotReceive().ExecutePostRequest(SaveUrl, Arg.Any<string>(), Arg.Any<int>(),
-			Arg.Any<int>(), Arg.Any<int>());
-	}
-
-	[Test]
-	[Description("The opt-in last-row revoke saves an empty rights array together with administratedByOperations=false.")]
-	public void SetObjectRights_ShouldSaveEmptyRows_WhenLastRowRemovedWithOptIn() {
-		// Arrange
-		GetReturnsSingleRowObject();
-
-		// Act
-		_client.SetObjectRights("UsrFoo", Grantee, AllOperations,
-			revoke: true, disableOperationPermissions: true, new CreatioRequestOptions());
-
-		// Assert
-		SavedRows().Should().BeEmpty(because: "the only row was removed");
-	}
-
-	[Test]
-	[Description("A grant to a new role writes exactly the requested flags: canRead/canAppend/canEdit true, canDelete false.")]
-	public void SetObjectRights_ShouldWriteExactFlags_WhenGrantingNewRole() {
-		// Arrange
-		GetReturns(AdministeredObject("base"));
-
-		// Act
-		_client.SetObjectRights("UsrFoo", Grantee,
-			new[] { ObjectOperation.Read, ObjectOperation.Create, ObjectOperation.Edit }, revoke: false,
-			disableOperationPermissions: false, new CreatioRequestOptions());
-
-		// Assert
-		JsonElement row = SavedRows().Single();
-		row.GetProperty("canRead").GetBoolean().Should().BeTrue(because: "read was requested");
-		row.GetProperty("canAppend").GetBoolean().Should().BeTrue(because: "create maps to canAppend");
-		row.GetProperty("canEdit").GetBoolean().Should().BeTrue(because: "edit was requested");
-		row.GetProperty("canDelete").GetBoolean().Should().BeFalse(because: "delete was not requested");
-	}
-
-	[Test]
-	[Description("GetObjectRights projects every wire field onto RoleOperationRights: canAppend->CanCreate, the grantee id and name, and the administration flag.")]
-	public void GetObjectRights_ShouldProjectEveryField_WhenRowsHaveDistinctFlags() {
-		// Arrange
-		GetReturns("{\"success\":true,\"administratedObject\":{\"name\":\"UsrFoo\",\"caption\":\"Foo\",\"administratedByOperations\":true,"
-			+ "\"entitySchemaOperationsRights\":["
-			+ "{\"canRead\":true,\"canAppend\":false,\"canEdit\":true,\"canDelete\":false,"
-			+ "\"sysAdminUnit\":{\"id\":\"" + Grantee + "\",\"name\":\"All external users\"}},"
-			+ "{\"canRead\":false,\"canAppend\":true,\"canEdit\":false,\"canDelete\":true,"
-			+ "\"sysAdminUnit\":{\"id\":\"" + Employees + "\",\"name\":\"All employees\"}}]}}");
-
-		// Act
-		ObjectRightsInfo info = _client.GetObjectRights("UsrFoo", new CreatioRequestOptions());
-
-		// Assert
-		info.AdministratedByOperations.Should().BeTrue(because: "the flag is read from the node");
-		info.Caption.Should().Be("Foo", because: "the caption is read from the node");
-		info.Roles.Should().BeEquivalentTo(new[] {
-			new RoleOperationRights(Grantee, "All external users", true, false, true, false),
-			new RoleOperationRights(Employees, "All employees", false, true, false, true)
-		}, options => options.WithStrictOrdering(),
-			because: "a swapped field would give a false coverage verdict");
-	}
-
-	[TestCase("{\"id\":\"not-a-guid\"}")]
-	[TestCase("{}")]
-	[Description("A missing or non-GUID grantee id reads as Guid.Empty, a missing name as (unknown), and non-bool flags as false.")]
-	public void GetObjectRights_ShouldFallBack_WhenRowFieldsAreMissingOrMalformed(string sysAdminUnit) {
-		// Arrange
-		GetReturns("{\"success\":true,\"administratedObject\":{\"name\":\"UsrFoo\",\"administratedByOperations\":true,"
-			+ "\"entitySchemaOperationsRights\":[{\"canRead\":\"true\",\"canAppend\":1,\"canEdit\":null,"
-			+ "\"sysAdminUnit\":" + sysAdminUnit + "}]}}");
-
-		// Act
-		ObjectRightsInfo info = _client.GetObjectRights("UsrFoo", new CreatioRequestOptions());
-
-		// Assert
-		RoleOperationRights role = info.Roles.Single();
-		role.GranteeId.Should().Be(Guid.Empty, because: "an unparseable id never matches a real grantee");
-		role.GranteeName.Should().Be("(unknown)", because: "a missing name falls back to a placeholder");
-		(role.CanRead || role.CanCreate || role.CanEdit || role.CanDelete).Should().BeFalse(
-			because: "a non-bool flag is not a grant");
-	}
-
-	// ---- Review round 5: real fault shapes in the probe loop, existing-row grants/revokes, non-administered revoke ----
-
-	private const string HtmlRequestErrorPage =
-		"<?xml version=\"1.0\" encoding=\"utf-8\"?><!DOCTYPE html><html><body>Request Error</body></html>";
-
-	private void GetThrowsFor(string uId, Exception exception) =>
-		_applicationClient.ExecutePostRequest(GetUrl, Arg.Is<string>(body => body.Contains(uId)), Arg.Any<int>(),
-			Arg.Any<int>(), Arg.Any<int>()).Returns(_ => throw exception);
-
-	private void GetReturnsRows(bool administered, params string[] rows) =>
-		GetReturns("{\"success\":true,\"administratedObject\":{\"name\":\"UsrFoo\",\"administratedByOperations\":"
-			+ (administered ? "true" : "false") + ",\"entitySchemaOperationsRights\":[" + string.Join(",", rows) + "]}}");
-
-	private static string FlagRow(Guid grantee, int position, bool read, bool append, bool edit, bool delete) =>
-		"{\"id\":\"r" + position + "\",\"position\":" + position + ",\"canRead\":" + Lower(read) + ",\"canAppend\":"
-		+ Lower(append) + ",\"canEdit\":" + Lower(edit) + ",\"canDelete\":" + Lower(delete)
-		+ ",\"sysAdminUnit\":{\"id\":\"" + grantee + "\"}}";
-
-	private static string Lower(bool value) => value ? "true" : "false";
-
-	private void AssertNoSave(string because) =>
-		_applicationClient.DidNotReceive().ExecutePostRequest(SaveUrl, Arg.Any<string>(), Arg.Any<int>(),
-			Arg.Any<int>(), Arg.Any<int>());
-
-	[Test]
-	[Description("A first candidate answering with the real non-JSON 'Request Error' page is skipped, and the save uses the second candidate's node.")]
-	public void SetObjectRights_ShouldUseSecondCandidate_WhenFirstReturnsHtmlErrorPage() {
-		// Arrange
-		SelectReturnsUIds(BaseUId, LayerUId);
-		GetReturnsFor(BaseUId, HtmlRequestErrorPage);
-		GetReturnsFor(LayerUId, AdministeredObject("from-second"));
-
-		// Act
-		ObjectRightsChange result = _client.SetObjectRights("UsrFoo", Grantee, new[] { ObjectOperation.Read },
-			revoke: false, disableOperationPermissions: false, new CreatioRequestOptions());
-
-		// Assert
-		result.Error.Should().BeNull(because: "the second candidate answered");
-		_savedPayload.Should().Contain("from-second", because: "the node that actually answered is the one saved");
-	}
-
-	[Test]
-	[Description("A first candidate whose request throws (HTTP 500) is skipped, and the read uses the second candidate.")]
-	public void GetObjectRights_ShouldUseSecondCandidate_WhenFirstRequestThrows() {
-		// Arrange
-		SelectReturnsUIds(BaseUId, LayerUId);
-		GetThrowsFor(BaseUId, new InvalidOperationException("HTTP 500"));
-		GetReturnsFor(LayerUId, AdministeredObject("from-second"));
-
-		// Act
-		ObjectRightsInfo info = _client.GetObjectRights("UsrFoo", new CreatioRequestOptions());
-
-		// Assert
-		info.ReadError.Should().BeNull(because: "the second candidate answered");
-		info.Caption.Should().Be("from-second", because: "a throwing candidate must not end the probe loop");
-	}
-
-	[Test]
-	[Description("When every candidate throws or returns an HTML page, the read reports a ReadError and the write reports an Error without saving.")]
-	public void RightManagementServiceClient_ShouldReportError_WhenEveryCandidateFailsWithRealFaults() {
-		// Arrange
-		SelectReturnsUIds(BaseUId, LayerUId);
-		GetReturnsFor(BaseUId, HtmlRequestErrorPage);
-		GetThrowsFor(LayerUId, new InvalidOperationException("HTTP 500"));
-
-		// Act
-		ObjectRightsInfo info = _client.GetObjectRights("UsrFoo", new CreatioRequestOptions());
-		ObjectRightsChange change = _client.SetObjectRights("UsrFoo", Grantee, new[] { ObjectOperation.Read },
-			revoke: false, disableOperationPermissions: false, new CreatioRequestOptions());
-
-		// Assert
-		info.ReadError.Should().NotBeNullOrEmpty(because: "a failed read is surfaced, never reported as available");
-		change.Error.Should().NotBeNullOrEmpty(because: "the write reports the read failure");
-		AssertNoSave("nothing may be saved when no candidate could be read");
-	}
-
-	[Test]
-	[Description("A SysSchema SelectQuery that throws is reported as a read error / write error, not as an escaping exception.")]
-	public void RightManagementServiceClient_ShouldReportError_WhenSelectQueryThrows() {
+	[Description("A SysSchema SelectQuery that throws is reported as a read error, not as an escaping exception.")]
+	public void GetObjectRights_ShouldReportError_WhenSelectQueryThrows() {
 		// Arrange
 		Post(SelectUrl).Returns(_ => throw new InvalidOperationException("select failed"));
 
 		// Act
-		ObjectRightsInfo info = _client.GetObjectRights("UsrFoo", new CreatioRequestOptions());
-		ObjectRightsChange change = _client.SetObjectRights("UsrFoo", Grantee, new[] { ObjectOperation.Read },
-			revoke: false, disableOperationPermissions: false, new CreatioRequestOptions());
+		ObjectRightsInfo info = Read();
 
 		// Assert
 		info.ReadError.Should().Contain("select failed", because: "the resolution failure is surfaced");
-		change.Error.Should().Contain("select failed", because: "the write reports the resolution failure");
-		AssertNoSave("nothing may be saved when the object could not be resolved");
 	}
 
 	[Test]
-	[Description("Granting an extra operation to an existing row keeps every flag the row already held and adds only the requested one.")]
-	public void SetObjectRights_ShouldKeepExistingFlags_WhenGrantingToExistingRow() {
+	[Description("The schema name is resolved to its candidate UIds once per client: the read-back after a save reuses it.")]
+	public void GetObjectRights_ShouldResolveSchemaUIdsOnce_WhenReadTwice() {
 		// Arrange
-		GetReturnsRows(true, FlagRow(Grantee, 0, read: true, append: false, edit: false, delete: true));
+		GetReturns(AdministeredObject("x"));
 
 		// Act
-		ObjectRightsChange result = _client.SetObjectRights("UsrFoo", Grantee, new[] { ObjectOperation.Edit },
-			revoke: false, disableOperationPermissions: false, new CreatioRequestOptions());
+		Read();
+		Read();
 
 		// Assert
-		result.Changed.Should().BeTrue(because: "edit was added");
-		JsonElement row = SavedRows().Single();
-		row.GetProperty("canRead").GetBoolean().Should().BeTrue(because: "read was already held and must survive");
-		row.GetProperty("canDelete").GetBoolean().Should().BeTrue(because: "delete was not requested but was held");
-		row.GetProperty("canEdit").GetBoolean().Should().BeTrue(because: "edit was requested");
-		row.GetProperty("canAppend").GetBoolean().Should().BeFalse(because: "create was neither held nor requested");
+		_applicationClient.Received(1).ExecutePostRequest(SelectUrl,
+			Arg.Is<string>(body => body.Contains("SysSchema")), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	private static IEnumerable<TestCaseData> ServiceFailures() {
+		yield return new TestCaseData(new HttpRequestException("503")).SetName("ServiceFailure_HttpRequest");
+		yield return new TestCaseData(new IOException("reset")).SetName("ServiceFailure_IO");
+		yield return new TestCaseData(new JsonException("not json")).SetName("ServiceFailure_Json");
+		yield return new TestCaseData(new UnauthorizedAccessException("401")).SetName("ServiceFailure_Unauthorized");
+		yield return new TestCaseData(new TimeoutException("timeout")).SetName("ServiceFailure_Timeout");
+		yield return new TestCaseData(new TaskCanceledException("HTTP timeout")).SetName("ServiceFailure_TaskCanceled");
+	}
+
+	[TestCaseSource(nameof(ServiceFailures))]
+	[Description("A failure of the Creatio service (transport, timeout, non-JSON body, authentication) is attributed to the object: the read reports a ReadError and the save returns the failure, instead of ending the run.")]
+	public void ObjectRights_ShouldReportFailure_WhenServiceFails(Exception failure) {
+		// Arrange
+		GetReturns(AdministeredObject("x"));
+		ObjectRightsInfo read = Read();
+		Post(GetUrl).Returns(_ => throw failure);
+		Post(SaveUrl).Returns(_ => throw failure);
+
+		// Act
+		ObjectRightsInfo info = Read();
+		string saveError = _client.Save(read.Snapshot, read.State, new CreatioRequestOptions());
+
+		// Assert
+		info.ReadError.Should().NotBeNull(because: "a service failure is reported on the object it happened to");
+		saveError.Should().NotBeNullOrEmpty(because: "a failed save is reported, never taken for success");
 	}
 
 	[Test]
-	[Description("Revoking an operation the grantee does not hold changes nothing and does not save, on a multi-row object.")]
-	public void SetObjectRights_ShouldNotSave_WhenRevokingOperationNotHeld() {
+	[Description("A programming error (not a service failure) is not swallowed as an object's read error: it escapes, so a bug is not reported as 'could not read'.")]
+	public void GetObjectRights_ShouldThrow_WhenProgrammingErrorOccurs() {
 		// Arrange
-		GetReturnsRows(true,
-			FlagRow(Grantee, 0, read: true, append: false, edit: false, delete: false),
-			FlagRow(Employees, 1, read: true, append: true, edit: true, delete: true));
+		Post(GetUrl).Returns(_ => throw new NullReferenceException("bug"));
 
 		// Act
-		ObjectRightsChange result = _client.SetObjectRights("UsrFoo", Grantee, new[] { ObjectOperation.Delete },
-			revoke: true, disableOperationPermissions: false, new CreatioRequestOptions());
+		Action read = () => Read();
 
 		// Assert
-		result.Changed.Should().BeFalse(because: "the grantee never held delete");
-		AssertNoSave("a no-op revoke must not save");
+		read.Should().Throw<NullReferenceException>(because: "only service failures are attributed to the object");
 	}
+
+	// ---- Save: the planned state, written faithfully ----
 
 	[Test]
-	[Description("Re-running a partial revoke on the object's only row is a no-op, not a last-row refusal.")]
-	public void SetObjectRights_ShouldReportNoChange_WhenPartialRevokeIsRerunOnOnlyRow() {
-		// Arrange — the first run already cleared create, so the row keeps read only.
-		GetReturnsRows(true, FlagRow(Grantee, 0, read: true, append: false, edit: false, delete: false));
+	[Description("Save writes each planned row's flags onto the matching row, keeps its position and every other field, sets the switch, and sends the untouched rights collections as null.")]
+	public void Save_ShouldWritePlannedFlagsAndNullOtherCollections_WhenRowsExist() {
+		// Arrange
+		GetReturns(ObjectWithRows(true,
+			FlagRow(Grantee, 0, read: true, append: false, edit: false, delete: true),
+			FlagRow(Employees, 1, read: true, append: true, edit: true, delete: true)));
+		ObjectRightsInfo read = Read();
+		ObjectRightsState after = new(true, new[] {
+			read.Roles[0] with { CanEdit = true, CanDelete = false },
+			read.Roles[1]
+		});
 
 		// Act
-		ObjectRightsChange result = _client.SetObjectRights("UsrFoo", Grantee, new[] { ObjectOperation.Create },
-			revoke: true, disableOperationPermissions: false, new CreatioRequestOptions());
+		string error = _client.Save(read.Snapshot, after, new CreatioRequestOptions());
 
 		// Assert
-		result.Changed.Should().BeFalse(because: "create is already gone");
-		result.Outcome.Should().NotBe(ObjectRightsOutcome.RefusedLastRowRemoval,because: "nothing would be removed, so there is nothing to refuse");
-		AssertNoSave("a re-run that changes nothing must not save");
-	}
-
-	[Test]
-	[Description("Revoking on an object's only row whose flags are already all false is a no-op, not a last-row refusal.")]
-	public void SetObjectRights_ShouldReportNoChange_WhenOnlyRowAlreadyHoldsNothing() {
-		// Arrange
-		GetReturnsRows(true, FlagRow(Grantee, 0, read: false, append: false, edit: false, delete: false));
-
-		// Act
-		ObjectRightsChange result = _client.SetObjectRights("UsrFoo", Grantee, AllOperations,
-			revoke: true, disableOperationPermissions: false, new CreatioRequestOptions());
-
-		// Assert
-		result.Changed.Should().BeFalse(because: "the grantee holds nothing to revoke");
-		result.Outcome.Should().NotBe(ObjectRightsOutcome.RefusedLastRowRemoval,because: "a revoke that changes nothing is never refused");
-		AssertNoSave("nothing changed");
-	}
-
-	[TestCase(false, false)]
-	[TestCase(true, false)]
-	[TestCase(true, true)]
-	[Description("A revoke on an object that is not administered by operation permissions restricts nothing: it reports RevokeOnNotAdministered, never a refusal or a change, and does not save — with or without a stale row, and whatever the disable opt-in says.")]
-	public void SetObjectRights_ShouldReportRevokeOnNotAdministered_WhenObjectNotAdministered(bool staleRow, bool disable) {
-		// Arrange
-		if (staleRow) {
-			GetReturnsRows(false, FlagRow(Grantee, 0, read: true, append: false, edit: false, delete: false));
-		} else {
-			GetReturnsRows(false);
+		error.Should().BeNull(because: "the service acknowledged the save");
+		JsonElement granteeRow = SavedRows().Single(row => IsRowOf(row, Grantee));
+		granteeRow.GetProperty("canRead").GetBoolean().Should().BeTrue(because: "read was planned and kept");
+		granteeRow.GetProperty("canEdit").GetBoolean().Should().BeTrue(because: "edit was planned");
+		granteeRow.GetProperty("canDelete").GetBoolean().Should().BeFalse(because: "delete was planned off");
+		granteeRow.GetProperty("id").GetString().Should().Be("r0", because: "the existing row is updated in place, not replaced");
+		granteeRow.GetProperty("position").GetInt32().Should().Be(0, because: "a row is never moved");
+		SavedObject().GetProperty("administratedByOperations").GetBoolean().Should().BeTrue(
+			because: "the planned switch is written");
+		foreach (string collection in new[] { "entitySchemaRecordDefRights", "entitySchemaColumnsRights", "entityOperationGrantees" }) {
+			SavedObject().GetProperty(collection).ValueKind.Should().Be(JsonValueKind.Null,
+				because: $"the untouched collection '{collection}' is sent as null so the save leaves it alone");
 		}
-
-		// Act
-		ObjectRightsChange result = _client.SetObjectRights("UsrFoo", Grantee, new[] { ObjectOperation.Read },
-			revoke: true, disableOperationPermissions: disable, new CreatioRequestOptions());
-
-		// Assert
-		result.Outcome.Should().Be(ObjectRightsOutcome.RevokeOnNotAdministered,because: "every internal user reaches a non-administered object");
-		result.Changed.Should().BeFalse(because: "nothing was written");
-		result.Outcome.Should().NotBe(ObjectRightsOutcome.RefusedLastRowRemoval,because: "the object is already open to internal users");
-		AssertNoSave("no restriction can be written to a non-administered object");
-	}
-
-	// ---- Final review ----
-
-	[Test]
-	[Description("A revoke removes the grantee's operations from EVERY row it holds, so a duplicate row cannot keep access the revoke took away.")]
-	public void SetObjectRights_ShouldRevokeAllDuplicateRows_WhenGranteeHasSeveral() {
-		// Arrange
-		GetReturnsRows(true,
-			FlagRow(Grantee, 0, read: true, append: false, edit: false, delete: false),
-			FlagRow(Grantee, 1, read: true, append: false, edit: false, delete: false),
-			FlagRow(Employees, 2, read: true, append: true, edit: true, delete: true));
-
-		// Act
-		ObjectRightsChange result = _client.SetObjectRights("UsrFoo", Grantee, new[] { ObjectOperation.Read },
-			revoke: true, disableOperationPermissions: false, new CreatioRequestOptions());
-
-		// Assert
-		result.Outcome.Should().Be(ObjectRightsOutcome.Changed, because: "the grantee's rows were removed");
-		SavedRows().Should().OnlyContain(row => row.GetProperty("sysAdminUnit").GetProperty("id").GetString() == Employees.ToString(),
-			because: "no row of the grantee may survive the revoke");
 	}
 
 	[Test]
-	[Description("The last-grant guard counts effective grants: a sibling row whose flags are all false does not stop the refusal.")]
-	public void SetObjectRights_ShouldRefuse_WhenOnlySiblingRowGrantsNothing() {
+	[Description("A planned row the object does not have is added with the grantee id, its planned position and exactly the planned flags.")]
+	public void Save_ShouldAddNewRowAtPlannedPosition_WhenGranteeHasNoRow() {
 		// Arrange
-		GetReturnsRows(true,
-			FlagRow(Grantee, 0, read: true, append: false, edit: false, delete: false),
-			FlagRow(Employees, 1, read: false, append: false, edit: false, delete: false));
+		GetReturns(ObjectWithRows(true, FlagRow(Employees, 0, true, true, true, true)));
+		ObjectRightsInfo read = Read();
+		ObjectRightsState after = new(true, new[] {
+			read.Roles[0],
+			new RoleOperationRights(Grantee, "All external users", 1, true, true, false, false)
+		});
 
 		// Act
-		ObjectRightsChange result = _client.SetObjectRights("UsrFoo", Grantee, AllOperations,
-			revoke: true, disableOperationPermissions: false, new CreatioRequestOptions());
+		_client.Save(read.Snapshot, after, new CreatioRequestOptions());
 
 		// Assert
-		result.Outcome.Should().Be(ObjectRightsOutcome.RefusedLastRowRemoval,
-			because: "after the revoke nobody would hold any operation on the object");
-		AssertNoSave("a refused revoke writes nothing");
+		JsonElement added = SavedRows().Single(row => IsRowOf(row, Grantee));
+		added.GetProperty("position").GetInt32().Should().Be(1, because: "the planner put the new row at the lowest priority");
+		added.GetProperty("canRead").GetBoolean().Should().BeTrue(because: "read was planned");
+		added.GetProperty("canAppend").GetBoolean().Should().BeTrue(because: "create maps to the platform's canAppend");
+		added.GetProperty("canEdit").GetBoolean().Should().BeFalse(because: "edit was not planned");
+		added.GetProperty("canDelete").GetBoolean().Should().BeFalse(because: "delete was not planned");
+		SavedRows().Should().HaveCount(2, because: "the existing row is kept next to the new one");
 	}
 
 	[Test]
-	[Description("When every candidate fails, the FIRST candidate's error is reported, not a later layer's opaque page.")]
-	public void GetObjectRights_ShouldReportFirstCandidateError_WhenEveryCandidateFails() {
+	[Description("Save never removes a row: a row of the object that the plan does not list is written back unchanged.")]
+	public void Save_ShouldKeepRowNotInPlan_WhenPlanListsFewerRows() {
 		// Arrange
-		SelectReturnsUIds(BaseUId, LayerUId);
-		GetThrowsFor(BaseUId, new TimeoutException("base timed out"));
-		GetReturnsFor(LayerUId, HtmlRequestErrorPage);
+		GetReturns(ObjectWithRows(true,
+			FlagRow(Grantee, 0, true, false, false, false),
+			FlagRow(Employees, 1, true, true, true, true)));
+		ObjectRightsInfo read = Read();
+		ObjectRightsState after = new(true, new[] { read.Roles[0] with { CanEdit = true } });
 
 		// Act
-		ObjectRightsInfo info = _client.GetObjectRights("UsrFoo", new CreatioRequestOptions());
+		_client.Save(read.Snapshot, after, new CreatioRequestOptions());
 
 		// Assert
-		info.ReadError.Should().Contain("base timed out", because: "the base row's real cause is what the caller needs");
+		SavedRows().Should().Contain(row => IsRowOf(row, Employees), because: "the writer never removes a row");
 	}
 
 	[Test]
-	[Description("After a grant turns operation permissions on, the object is read back and the roles that hold rights are returned.")]
-	public void SetObjectRights_ShouldReadBackRoles_WhenGrantEnablesOperationPermissions() {
+	[Description("Saving an object with no stored rows persists the synthesized All employees row the read returned, so turning operation permissions on keeps internal users' access.")]
+	public void Save_ShouldPersistSynthesizedRow_WhenEnablingObjectWithoutStoredRows() {
 		// Arrange
-		string before = NotAdministeredObject("");
-		string after = "{\"success\":true,\"administratedObject\":{\"name\":\"UsrFoo\",\"administratedByOperations\":true,"
-			+ "\"entitySchemaOperationsRights\":[" + FlagRow(Employees, 0, true, true, true, true) + ","
-			+ FlagRow(Grantee, 1, true, false, false, false) + "]}}";
-		Post(GetUrl).Returns(before, after);
+		GetReturns(ObjectWithRows(false, FlagRow(Employees, 0, true, true, true, true, name: "All employees")));
+		ObjectRightsInfo read = Read();
+		ObjectRightsState after = new(true, read.Roles);
 
 		// Act
-		ObjectRightsChange result = _client.SetObjectRights("UsrFoo", Grantee, new[] { ObjectOperation.Read },
-			revoke: false, disableOperationPermissions: false, new CreatioRequestOptions());
+		_client.Save(read.Snapshot, after, new CreatioRequestOptions());
 
 		// Assert
-		result.Outcome.Should().Be(ObjectRightsOutcome.ChangedAndEnabled, because: "the grant enabled operation permissions");
-		result.RolesAfterEnable.Should().Contain(role => role.GranteeId == Employees && role.CanDelete,
-			because: "the read-back reports the server-added All employees row");
+		SavedObject().GetProperty("administratedByOperations").GetBoolean().Should().BeTrue(
+			because: "the plan turned operation permissions on");
+		SavedRows().Should().ContainSingle(row => IsRowOf(row, Employees),
+			because: "the server adds nothing on save, so the row must be in the payload");
 	}
 
 	[Test]
-	[Description("A failed read-back after enabling keeps the enabled outcome and carries the read-back error.")]
-	public void SetObjectRights_ShouldCarryReadBackError_WhenReadBackFails() {
+	[Description("Save writes the switch OFF when the plan turns operation permissions off, keeping the rows.")]
+	public void Save_ShouldTurnSwitchOffAndKeepRows_WhenPlanDisables() {
 		// Arrange
-		Post(GetUrl).Returns(NotAdministeredObject(""), InBandJsonFault);
+		GetReturns(ObjectWithRows(true, FlagRow(Grantee, 0, true, false, false, false)));
+		ObjectRightsInfo read = Read();
+		ObjectRightsState after = new(false, new[] { read.Roles[0] with { CanRead = false } });
 
 		// Act
-		ObjectRightsChange result = _client.SetObjectRights("UsrFoo", Grantee, new[] { ObjectOperation.Read },
-			revoke: false, disableOperationPermissions: false, new CreatioRequestOptions());
+		_client.Save(read.Snapshot, after, new CreatioRequestOptions());
 
 		// Assert
-		result.Outcome.Should().Be(ObjectRightsOutcome.ChangedAndEnabled, because: "the save itself succeeded");
-		result.RolesAfterEnable.Should().BeNull(because: "the roles could not be read back");
-		result.ReadBackError.Should().Contain("Request Error", because: "the read-back failure is reported");
+		SavedObject().GetProperty("administratedByOperations").GetBoolean().Should().BeFalse(
+			because: "the plan turned operation permissions off");
+		SavedRows().Should().ContainSingle(because: "the rows are kept and apply again if the switch is turned back on");
 	}
+
+	[Test]
+	[Description("An in-band success:false on SaveAdministratedObject is returned as the save error.")]
+	public void Save_ShouldReturnServiceMessage_WhenSaveReportsFailure() {
+		// Arrange
+		GetReturns(AdministeredObject("x"));
+		ObjectRightsInfo read = Read();
+		Post(SaveUrl).Returns("{\"success\":false,\"errorInfo\":{\"message\":\"no rights to save\"}}");
+
+		// Act
+		string error = _client.Save(read.Snapshot, read.State, new CreatioRequestOptions());
+
+		// Assert
+		error.Should().Contain("no rights to save", because: "a failed save is reported with the service's reason");
+	}
+
+	[TestCase("{\"success\":false,\"errorInfo\":{\"message\":\"\"}}", TestName = "ObjectRights_ShouldReportFallback_WhenFailureMessageIsEmpty")]
+	[TestCase("{\"success\":false}", TestName = "ObjectRights_ShouldReportFallback_WhenFailureHasNoErrorInfo")]
+	[Description("A service failure without a message is still reported with a non-empty reason, on the save and on the read: an empty string would read as 'no error'.")]
+	public void ObjectRights_ShouldReportFallbackMessage_WhenServiceFailsWithoutOne(string failure) {
+		// Arrange
+		GetReturns(AdministeredObject("x"));
+		ObjectRightsInfo read = Read();
+		Post(SaveUrl).Returns(failure);
+		Post(GetUrl).Returns(failure);
+
+		// Act
+		string saveError = _client.Save(read.Snapshot, read.State, new CreatioRequestOptions());
+		ObjectRightsInfo reread = Read();
+
+		// Assert
+		saveError.Should().NotBeNullOrWhiteSpace(because: "a failed save must never look like a successful one");
+		reread.ReadError.Should().NotBeNullOrWhiteSpace(because: "a failed read must never look like a clean one");
+	}
+
+	[Test]
+	[Description("Save does not change the snapshot it was given: a second save from the same read starts from the object as read.")]
+	public void Save_ShouldNotMutateSnapshot_WhenCalled() {
+		// Arrange
+		GetReturns(ObjectWithRows(true, FlagRow(Grantee, 0, true, false, false, false)));
+		ObjectRightsInfo read = Read();
+		string before = read.Snapshot.Node.ToJsonString();
+
+		// Act
+		_client.Save(read.Snapshot, new ObjectRightsState(false, new[] { read.Roles[0] with { CanRead = false } }),
+			new CreatioRequestOptions());
+
+		// Assert
+		read.Snapshot.Node.ToJsonString().Should().Be(before, because: "the payload is built from a copy of the snapshot");
+	}
+
+	// ---- Grantee lookup ----
 
 	[Test]
 	[Description("ResolveGranteeName returns the SysAdminUnit name, or null when the id does not exist.")]
@@ -833,141 +582,5 @@ public class RightManagementServiceClientTests {
 		_applicationClient.Received().ExecutePostRequest(SelectUrl,
 			Arg.Is<string>(body => body.Contains("SysAdminUnit") && body.Contains(Grantee.ToString())),
 			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
-	}
-
-	private static IEnumerable<TestCaseData> ServiceFailures() {
-		yield return new TestCaseData(new HttpRequestException("503")).SetName("ServiceFailure_HttpRequest");
-		yield return new TestCaseData(new IOException("reset")).SetName("ServiceFailure_IO");
-		yield return new TestCaseData(new JsonException("not json")).SetName("ServiceFailure_Json");
-		yield return new TestCaseData(new UnauthorizedAccessException("401")).SetName("ServiceFailure_Unauthorized");
-		yield return new TestCaseData(new TimeoutException("timeout")).SetName("ServiceFailure_Timeout");
-		yield return new TestCaseData(new TaskCanceledException("HTTP timeout")).SetName("ServiceFailure_TaskCanceled");
-	}
-
-	[TestCaseSource(nameof(ServiceFailures))]
-	[Description("A failure of the Creatio service (transport, timeout, non-JSON body, authentication) is attributed to the object: the read reports a ReadError and the write a Failed outcome, instead of ending the run.")]
-	public void ObjectRights_ShouldReportFailure_WhenServiceFails(Exception failure) {
-		// Arrange
-		Post(GetUrl).Returns(_ => throw failure);
-
-		// Act
-		ObjectRightsInfo info = _client.GetObjectRights("UsrFoo", new CreatioRequestOptions());
-		ObjectRightsChange change = _client.SetObjectRights("UsrFoo", Grantee, new[] { ObjectOperation.Read },
-			revoke: false, disableOperationPermissions: false, new CreatioRequestOptions());
-
-		// Assert
-		info.ReadError.Should().NotBeNull(because: "a service failure is reported on the object it happened to");
-		change.Outcome.Should().Be(ObjectRightsOutcome.Failed, because: "nothing could be read, so nothing was saved");
-		_savedPayload.Should().BeNull(because: "no save may follow a failed read");
-	}
-
-	[Test]
-	[Description("A programming error (not a service failure) is not swallowed as an object's read error: it escapes, so a bug is not reported as 'could not read'.")]
-	public void ObjectRights_ShouldThrow_WhenProgrammingErrorOccurs() {
-		// Arrange
-		Post(GetUrl).Returns(_ => throw new NullReferenceException("bug"));
-
-		// Act
-		Action read = () => _client.GetObjectRights("UsrFoo", new CreatioRequestOptions());
-		Action write = () => _client.SetObjectRights("UsrFoo", Grantee, new[] { ObjectOperation.Read },
-			revoke: false, disableOperationPermissions: false, new CreatioRequestOptions());
-
-		// Assert
-		read.Should().Throw<NullReferenceException>(because: "only service failures are attributed to the object");
-		write.Should().Throw<NullReferenceException>(because: "only service failures are attributed to the object");
-	}
-
-	// ---- Review round 6 ----
-
-	private static readonly Guid AllEmployees = Guid.Parse("a29a3ba5-4b0d-de11-9a51-005056c00008");
-
-	private static bool IsRowOf(JsonElement row, Guid grantee) =>
-		Guid.Parse(row.GetProperty("sysAdminUnit").GetProperty("id").GetString()!) == grantee;
-
-	[Test]
-	[Description("Turning operation permissions on for an object with no All employees row adds one with full rights in the same save, so internal users keep access whatever the server does.")]
-	public void SetObjectRights_ShouldAddAllEmployeesRow_WhenEnablingWithoutOne() {
-		// Arrange
-		GetReturns(NotAdministeredObject(""));
-
-		// Act
-		_client.SetObjectRights("UsrFoo", Grantee, new[] { ObjectOperation.Read }, revoke: false,
-			disableOperationPermissions: false, new CreatioRequestOptions());
-
-		// Assert
-		JsonElement employees = SavedRows().Single(row => IsRowOf(row, AllEmployees));
-		foreach (string field in new[] { "canRead", "canAppend", "canEdit", "canDelete" }) {
-			employees.GetProperty(field).GetBoolean().Should().BeTrue(
-				because: "before the enable every internal user held every operation");
-		}
-		SavedRows().Should().Contain(row => IsRowOf(row, Grantee), because: "the grantee's own row is still written");
-	}
-
-	[Test]
-	[Description("An existing All employees row is left as it is when operation permissions are turned on.")]
-	public void SetObjectRights_ShouldKeepExistingAllEmployeesRow_WhenEnabling() {
-		// Arrange
-		GetReturns(NotAdministeredObject(Row("e", 0, AllEmployees.ToString(), canRead: true)));
-
-		// Act
-		_client.SetObjectRights("UsrFoo", Grantee, new[] { ObjectOperation.Read }, revoke: false,
-			disableOperationPermissions: false, new CreatioRequestOptions());
-
-		// Assert
-		JsonElement[] employees = SavedRows().Where(row => IsRowOf(row, AllEmployees)).ToArray();
-		employees.Should().HaveCount(1, because: "no second All employees row is added");
-		employees[0].GetProperty("canAppend").GetBoolean().Should().BeFalse(
-			because: "an existing row is the administrator's choice and is not widened");
-	}
-
-	[TestCase(true, TestName = "SetObjectRights_ShouldNotAddAllEmployeesRow_WhenAlreadyAdministered")]
-	[TestCase(false, TestName = "SetObjectRights_ShouldNotAddAllEmployeesRow_WhenGranteeIsAllEmployees")]
-	[Description("No All employees row is added when the object already used operation permissions, or when All employees is the grantee itself.")]
-	public void SetObjectRights_ShouldNotAddAllEmployeesRow(bool administered) {
-		// Arrange
-		Guid grantee = administered ? Grantee : AllEmployees;
-		GetReturns(administered
-			? "{\"success\":true,\"administratedObject\":{\"name\":\"UsrFoo\",\"administratedByOperations\":true,"
-				+ "\"entitySchemaOperationsRights\":[]}}"
-			: NotAdministeredObject(""));
-
-		// Act
-		_client.SetObjectRights("UsrFoo", grantee, new[] { ObjectOperation.Read }, revoke: false,
-			disableOperationPermissions: false, new CreatioRequestOptions());
-
-		// Assert
-		SavedRows().Should().ContainSingle(because: "only the grantee's row is written");
-		SavedRows()[0].GetProperty("canAppend").GetBoolean().Should().BeFalse(because: "only read was granted");
-	}
-
-	[Test]
-	[Description("A timeout on the first candidate UId stops the probe: the next replacing-layer candidate would only hang as long again.")]
-	public void GetObjectRights_ShouldStopProbing_WhenFirstCandidateTimesOut() {
-		// Arrange
-		SelectReturnsUIds(BaseUId, LayerUId);
-		GetThrowsFor(BaseUId, new TaskCanceledException("timed out"));
-		GetReturnsFor(LayerUId, AdministeredObject("from-second"));
-
-		// Act
-		ObjectRightsInfo info = _client.GetObjectRights("UsrFoo", new CreatioRequestOptions());
-
-		// Assert
-		info.ReadError.Should().Contain("timed out", because: "the timeout is reported against the object");
-		GetBodiesInCallOrder().Should().HaveCount(1, because: "no further candidate is probed after a hang");
-	}
-
-	[Test]
-	[Description("The schema name is resolved to its candidate UIds once per client: the read-back after enabling reuses it.")]
-	public void SetObjectRights_ShouldResolveSchemaUIdsOnce_WhenReadingBackAfterEnable() {
-		// Arrange
-		Post(GetUrl).Returns(NotAdministeredObject(""), AdministeredObject("after"));
-
-		// Act
-		_client.SetObjectRights("UsrFoo", Grantee, new[] { ObjectOperation.Read }, revoke: false,
-			disableOperationPermissions: false, new CreatioRequestOptions());
-
-		// Assert
-		_applicationClient.Received(1).ExecutePostRequest(SelectUrl,
-			Arg.Is<string>(body => body.Contains("SysSchema")), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 }

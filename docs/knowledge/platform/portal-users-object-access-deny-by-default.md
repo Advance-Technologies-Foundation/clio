@@ -2,7 +2,6 @@
 description: external (portal) users are deny-by-default for object access - a non-administered object is available to INTERNAL users only, and external users reach an object only through an explicit SysSchemaOperationRight grant to All external users (the Freedom mechanism, not PortalSchemaAccessList); get-object-rights states that fact on every non-administered object and draws no coverage verdict
 applies-to:
   - clio/Command/ObjectRights/GetObjectRightsCommand.cs
-  - clio/Common/ObjectRights/ObjectRightsReader.cs
 ticket: ENG-99741
 date: 2026-09-25
 ---

@@ -76,7 +76,7 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 			}
 			return rootFailed ? 1 : 0;
 		}
-		catch (Exception ex) {
+		catch (Exception ex) when (ObjectRightsSupport.IsServiceFailure(ex)) {
 			_logger.WriteError($"Error: {ex.Message}");
 			return 1;
 		}
@@ -100,6 +100,7 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 			$"Object operation permissions for '{options.EntitySchemaName}'"
 			+ (options.IncludeConnected ? " and its connected objects" : "")
 			+ (granteeFilter is null ? "" : $" (grantee {granteeFilter})") + ":");
+		_logger.WriteInfo($"  {PriorityRule}");
 		if (resolution.EnumerationError is not null) {
 			_logger.WriteWarning(
 				$"  Could not enumerate the connected objects of '{options.EntitySchemaName}' "
@@ -132,38 +133,59 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 			_logger.WriteInfo(
 				$"  {schemaName}: not administered by operation permissions — available to all internal users; "
 				+ "external users reach it only through an explicit grant.");
+			if (info.Roles.Count > 0) {
+				// The rows the service returns for such an object (a synthesized All employees row when none is
+				// stored) are exactly the rows that start to decide once operation permissions are turned on.
+				_logger.WriteInfo("    Rows that apply if operation permissions are turned on:");
+				ReportRows(info.Roles, granteeFilter);
+			}
 			return true;
 		}
-		ReportObject(schemaName, info, granteeFilter);
+		if (!info.Roles.Any()) {
+			_logger.WriteInfo($"  {schemaName}: administered by operation permissions, with NO rows — only holders of the "
+				+ "'…any data' system operations can reach it.");
+			return true;
+		}
+		_logger.WriteInfo($"  {schemaName}: administered by operation permissions. Rows in priority order:");
+		ReportRows(info.Roles, granteeFilter);
 		return true;
 	}
 
-	private void ReportObject(string schemaName, ObjectRightsInfo info, Guid? granteeFilter) {
-		if (granteeFilter is not null) {
-			// A grantee can hold several rows; report what they add up to, as set-object-rights previews it.
-			RoleOperationRights[] rows = info.Roles.Where(role => role.GranteeId == granteeFilter.Value).ToArray();
-			if (rows.Length == 0) {
-				_logger.WriteInfo($"  {schemaName}: grantee {granteeFilter} has NO object operations granted.");
-				return;
+	// Every row with its position — or, with a grantee, the grantee's row and the rows above it, which decide first
+	// for a user who is also in one of those roles. Facts only: which roles a user is in is not read here.
+	private void ReportRows(IReadOnlyList<RoleOperationRights> rows, Guid? granteeFilter) {
+		if (granteeFilter is null) {
+			foreach (RoleOperationRights row in rows) {
+				_logger.WriteInfo($"    {Describe(row)}");
 			}
-			IReadOnlyList<string> held = ObjectRightsSupport.HeldOperations(rows);
-			string granted = held.Count == 0 ? "no operations" : string.Join("/", held);
-			_logger.WriteInfo($"  {schemaName}: {rows[0].GranteeName} ({granteeFilter.Value}): {granted}.");
 			return;
 		}
-		if (!info.Roles.Any()) {
-			_logger.WriteInfo($"  {schemaName}: administered by operations, no role grants.");
+		RoleOperationRights[] granteeRows = rows.Where(row => row.GranteeId == granteeFilter.Value).ToArray();
+		if (granteeRows.Length == 0) {
+			_logger.WriteInfo($"    grantee {granteeFilter} has NO row (no operations granted).");
 			return;
 		}
-		_logger.WriteInfo($"  {schemaName}:");
-		foreach (RoleOperationRights role in info.Roles) {
-			_logger.WriteInfo($"    {Describe(role)}");
+		foreach (RoleOperationRights row in granteeRows) {
+			_logger.WriteInfo($"    {Describe(row)}");
+		}
+		RoleOperationRights[] above = rows.Where(row => row.Position < granteeRows[0].Position).ToArray();
+		if (above.Length > 0) {
+			_logger.WriteInfo("    Rows above it, which decide first for a user who is also in those roles:");
+			foreach (RoleOperationRights row in above) {
+				_logger.WriteInfo($"      {Describe(row)}");
+			}
 		}
 	}
 
 	private static string Describe(RoleOperationRights role) {
 		IReadOnlyList<string> ops = role.OperationNames();
 		string granted = ops.Count == 0 ? "no operations" : string.Join("/", ops);
-		return $"{role.GranteeName} ({role.GranteeId}): {granted}";
+		return $"[{role.Position}] {role.GranteeName} ({role.GranteeId}): {granted}";
 	}
+
+	// The platform rule every row listing is read with. Stated once per call, so a reader never takes the rows for a
+	// sum of flags.
+	internal const string PriorityRule =
+		"Rows are listed in priority order ([position], 0 is the highest). A user in several roles gets the operations "
+		+ "of the highest matching row; a row with no operations denies them.";
 }

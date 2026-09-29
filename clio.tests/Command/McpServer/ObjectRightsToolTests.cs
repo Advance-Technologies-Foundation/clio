@@ -52,7 +52,7 @@ public class ObjectRightsToolTests {
 
 		// Act
 		SetObjectRightsArgs args = JsonSerializer.Deserialize<SetObjectRightsArgs>(
-			"""{"environment-name":"sandbox","entity-schema-name":"UsrPortalSpike","grantee":"720b771c-e7a7-4f31-9cfb-52cd21c3739f","operations":"read,edit","revoke":true,"include-connected":true}""",
+			"""{"environment-name":"sandbox","entity-schema-name":"UsrPortalSpike","grantee":"720b771c-e7a7-4f31-9cfb-52cd21c3739f","operations":"read,edit","revoke":true,"disable-operation-permissions":true,"enable-operation-permissions":false,"allow-security-object":true,"preview":true}""",
 			options)!;
 
 		// Assert
@@ -61,7 +61,11 @@ public class ObjectRightsToolTests {
 		args.Grantee.Should().Be("720b771c-e7a7-4f31-9cfb-52cd21c3739f", because: "the grantee id binds");
 		args.Operations.Should().Be("read,edit", because: "the operations list binds");
 		args.Revoke.Should().BeTrue(because: "the revoke flag binds");
-		args.IncludeConnected.Should().BeTrue(because: "the include-connected flag binds");
+		args.DisableOperationPermissions.Should().BeTrue(because: "the disable flag binds");
+		args.EnableOperationPermissions.Should().BeFalse(because: "the enable flag binds");
+		args.AllowSecurityObject.Should().BeTrue(because: "the security-object opt-in binds");
+		args.Preview.Should().BeTrue(because: "the dry-run flag binds");
+		args.ExtensionData.Should().BeNullOrEmpty(because: "every key is a known argument");
 	}
 
 	[Test]

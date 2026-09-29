@@ -675,10 +675,10 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 ## Object rights
 
 <a id="set-object-rights"></a>
-- [`set-object-rights`](docs/commands/set-object-rights.md) - Grant or revoke object operation permissions (read/create/edit/delete) for a role on an object (destructive)
+- [`set-object-rights`](docs/commands/set-object-rights.md) - Grant or revoke object operation permissions (read/create/edit/delete) for one role on one object (destructive)
 
 <a id="get-object-rights"></a>
-- [`get-object-rights`](docs/commands/get-object-rights.md) - Read object operation permissions (read/create/edit/delete per role) for an object and, optionally, its connected objects
+- [`get-object-rights`](docs/commands/get-object-rights.md) - Read object operation permissions (read/create/edit/delete per role, in priority order) for an object and, optionally, its connected objects
 
 ## Integrations & Tools
 

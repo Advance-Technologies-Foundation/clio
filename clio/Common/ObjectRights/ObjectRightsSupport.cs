@@ -1,7 +1,5 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Net.Http;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -13,8 +11,6 @@ public static class ObjectRightsSupport {
 
 	private static readonly Regex SchemaNamePattern = new("^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.CultureInvariant,
 		TimeSpan.FromSeconds(1));
-
-	private static readonly string[] OperationOrder = { "read", "create", "edit", "delete" };
 
 	/// <summary>
 	/// Trims <paramref name="raw"/> and accepts it only when it is a plain schema identifier. A padded or
@@ -50,14 +46,4 @@ public static class ObjectRightsSupport {
 	/// <returns><see langword="true"/> for a timeout.</returns>
 	public static bool IsTimeout(Exception exception) =>
 		exception is TimeoutException or OperationCanceledException;
-
-	/// <summary>
-	/// The operations a set of rows adds up to, in grid order (read, create, edit, delete). A grantee can hold
-	/// several rows; the writer changes all of them, so every reader reports their union.
-	/// </summary>
-	/// <param name="rows">The rows of one grantee.</param>
-	/// <returns>The distinct operation names held by any of the rows.</returns>
-	public static IReadOnlyList<string> HeldOperations(IEnumerable<RoleOperationRights> rows) =>
-		rows.SelectMany(row => row.OperationNames()).Distinct()
-			.OrderBy(op => Array.IndexOf(OperationOrder, op)).ToArray();
 }

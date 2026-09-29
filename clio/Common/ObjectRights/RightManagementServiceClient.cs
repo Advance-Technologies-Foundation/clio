@@ -1,0 +1,347 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
+using Clio.Package;
+
+namespace Clio.Common.ObjectRights;
+
+/// <summary>
+/// Reads object operation permissions (the SysSchemaOperationRight layer) for an entity, using the native
+/// Creatio <c>RightManagementService.svc/GetAdministratedObject</c> service — the same service the System
+/// Designer "Object permissions" section uses. Reports EVERY role's row, in priority order.
+/// </summary>
+public interface IObjectRightsReader {
+	/// <summary>
+	/// Reads the operation permissions of the entity schema <paramref name="schemaName"/>: the switch, every role's
+	/// row in priority order, and a snapshot a save can write back. A failed read is reported in
+	/// <see cref="ObjectRightsInfo.ReadError"/> and never as "not administered".
+	/// </summary>
+	/// <param name="schemaName">The entity schema name.</param>
+	/// <param name="requestOptions">Timeout and retry settings.</param>
+	/// <returns>The object's operation permissions, or why they could not be read.</returns>
+	ObjectRightsInfo GetObjectRights(string schemaName, CreatioRequestOptions requestOptions);
+}
+
+/// <summary>
+/// Saves a planned operation-permissions state through <c>RightManagementService.svc/SaveAdministratedObject</c>.
+/// The writer holds no policy: it writes exactly the state it is given (see <see cref="IObjectRightsPlanner"/>).
+/// </summary>
+public interface IObjectRightsWriter {
+	/// <summary>
+	/// Writes <paramref name="after"/> onto the object read as <paramref name="snapshot"/>: each planned row's
+	/// operations (a row not in the snapshot is added at its planned position) and the switch. Every other field
+	/// round-trips unchanged, and the record, column and entity-operation collections are sent as null so the save
+	/// leaves them alone. No row is ever removed.
+	/// </summary>
+	/// <param name="snapshot">The object as it was read.</param>
+	/// <param name="after">The planned state.</param>
+	/// <param name="requestOptions">Timeout and retry settings.</param>
+	/// <returns><see langword="null"/> on success, otherwise why the save failed.</returns>
+	string Save(ObjectRightsSnapshot snapshot, ObjectRightsState after, CreatioRequestOptions requestOptions);
+}
+
+/// <summary>Resolves a SysAdminUnit (role or user) id to its name, to confirm a grantee exists before a write.</summary>
+public interface IGranteeLookup {
+	/// <summary>
+	/// Returns the name of the SysAdminUnit <paramref name="grantee"/>, or <see langword="null"/> when no such
+	/// role or user exists.
+	/// </summary>
+	/// <param name="grantee">The SysAdminUnit id.</param>
+	/// <param name="requestOptions">Timeout and retry settings.</param>
+	/// <returns>The name, or <see langword="null"/>.</returns>
+	string ResolveGranteeName(Guid grantee, CreatioRequestOptions requestOptions);
+}
+
+/// <summary>
+/// Client for the native Creatio <c>RightManagementService</c>. Resolves an entity schema name to its UId via
+/// DataService (the clio name→UId convention), reads the object's operation rows, and saves a planned state.
+/// </summary>
+public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsReader, IObjectRightsWriter,
+	IGranteeLookup {
+
+	private const string AdministratedByOperationsField = "administratedByOperations";
+	private const string OperationRowsField = "entitySchemaOperationsRights";
+
+	private readonly IApplicationClient _applicationClient;
+	private readonly IServiceUrlBuilder _urlBuilder;
+
+	/// <summary>Creates the client over the given application client and URL builder.</summary>
+	/// <param name="applicationClient">The authenticated application client.</param>
+	/// <param name="urlBuilder">Builds the service routes.</param>
+	public RightManagementServiceClient(IApplicationClient applicationClient, IServiceUrlBuilder urlBuilder)
+		: base(applicationClient, urlBuilder) {
+		_applicationClient = applicationClient;
+		_urlBuilder = urlBuilder;
+	}
+
+	/// <inheritdoc />
+	public ObjectRightsInfo GetObjectRights(string schemaName, CreatioRequestOptions requestOptions) {
+		JsonObject node;
+		string error;
+		try {
+			(node, error) = TryGetAdministratedObject(schemaName, requestOptions);
+		}
+		catch (Exception ex) when (ObjectRightsSupport.IsServiceFailure(ex)) {
+			return new ObjectRightsInfo(true, schemaName, null, false, Array.Empty<RoleOperationRights>(),
+				ReadError: ex.Message);
+		}
+		if (node is null) {
+			// error set = the object exists but could not be read (a service fault); error null = the schema
+			// name resolved to no candidate at all (not found). Never report a failed read as "available".
+			return error is not null
+				? new ObjectRightsInfo(true, schemaName, null, false, Array.Empty<RoleOperationRights>(), ReadError: error)
+				: new ObjectRightsInfo(false, schemaName, null, false, Array.Empty<RoleOperationRights>());
+		}
+		return new ObjectRightsInfo(true, Str(node["name"]) ?? schemaName, Str(node["caption"]),
+			Flag(node, AdministratedByOperationsField), ProjectRoles(node), Snapshot: new ObjectRightsSnapshot(node));
+	}
+
+	/// <inheritdoc />
+	public string Save(ObjectRightsSnapshot snapshot, ObjectRightsState after, CreatioRequestOptions requestOptions) {
+		ArgumentNullException.ThrowIfNull(snapshot);
+		ArgumentNullException.ThrowIfNull(after);
+		JsonObject payload = snapshot.Node.DeepClone().AsObject();
+		JsonArray rows = payload[OperationRowsField] as JsonArray;
+		if (rows is null) {
+			rows = new JsonArray();
+			payload[OperationRowsField] = rows;
+		}
+		foreach (RoleOperationRights planned in after.Roles) {
+			// The planner refuses a grantee with duplicate rows, so a grantee matches at most one row here.
+			JsonObject row = rows.OfType<JsonObject>().FirstOrDefault(r => GranteeId(r) == planned.GranteeId);
+			if (row is null) {
+				row = new JsonObject {
+					["sysAdminUnit"] = new JsonObject { ["id"] = planned.GranteeId.ToString() },
+					["position"] = planned.Position
+				};
+				rows.Add(row);
+			}
+			row[FieldOf(ObjectOperation.Read)] = planned.CanRead;
+			row[FieldOf(ObjectOperation.Create)] = planned.CanCreate;
+			row[FieldOf(ObjectOperation.Edit)] = planned.CanEdit;
+			row[FieldOf(ObjectOperation.Delete)] = planned.CanDelete;
+		}
+		payload[AdministratedByOperationsField] = after.AdministratedByOperations;
+		// Mirror the platform client: only the collection that changed (operation rights) is sent; the record,
+		// column and entity-operation collections are sent as null ("leave untouched") so the save neither
+		// re-processes nor risks clobbering them.
+		payload["entitySchemaRecordDefRights"] = null;
+		payload["entitySchemaColumnsRights"] = null;
+		payload["entityOperationGrantees"] = null;
+		// Read-modify-write is last-writer-wins: SaveAdministratedObject carries no version, so a change another
+		// client saves between our read and our save is overwritten. The caller reads the object back and reports
+		// any difference from the plan.
+		try {
+			GetAdministratedObjectNodeResponse response = PostAndDeserialize<GetAdministratedObjectNodeResponse>(
+				ServiceUrlBuilder.KnownRoute.SaveAdministratedObject,
+				new JsonObject { ["administratedObject"] = payload },
+				requestOptions);
+			return response is { Success: true }
+				? null
+				: ServiceMessage(response?.ErrorInfo?.Message, "SaveAdministratedObject reported failure.");
+		}
+		catch (Exception ex) when (ObjectRightsSupport.IsServiceFailure(ex)) {
+			return ex.Message;
+		}
+	}
+
+	/// <inheritdoc />
+	public string ResolveGranteeName(Guid grantee, CreatioRequestOptions requestOptions) {
+		object query = SelectQueryHelper.BuildSelectQuery(
+			"SysAdminUnit",
+			new[] { new SelectQueryHelper.SelectQueryColumnDefinition("Name", "Name") },
+			new[] { new SelectQueryHelper.SelectQueryFilterDefinition("Id", grantee, SelectQueryHelper.GuidDataValueType) },
+			1);
+		GranteeSelectResponse response = SelectQueryHelper.ExecuteSelectQuery<GranteeSelectResponse>(
+			_applicationClient, _urlBuilder, query, requestOptions.TimeOut, requestOptions.MaxAttempts,
+			requestOptions.RetryDelay);
+		return response.Rows?.FirstOrDefault()?.Name;
+	}
+
+	// Returns the first candidate UId that describes the object as a mutable JSON node, or (null, error):
+	// error null means the schema name resolved to no candidate (not found); error set means every candidate
+	// answered but with a fault. The FIRST candidate's error is kept: it is the base row, whose real cause (a
+	// timeout, a permission error) is what the caller needs, not the opaque "Request Error" page a later
+	// replacing layer answers with.
+	private (JsonObject node, string error) TryGetAdministratedObject(
+		string schemaName, CreatioRequestOptions requestOptions) {
+		IReadOnlyList<Guid> candidates = ResolveEntitySchemaUIds(schemaName, requestOptions);
+		if (candidates.Count == 0) {
+			return (null, null);
+		}
+		string firstError = null;
+		foreach (Guid candidate in candidates) {
+			if (TryFetchNode(candidate, requestOptions, out JsonObject node, out string error, out bool timedOut)) {
+				return (node, null);
+			}
+			firstError ??= error;
+			if (timedOut) {
+				// A hang is not an answer from a wrong layer: the next candidate would only wait as long again.
+				break;
+			}
+		}
+		return (null, firstError);
+	}
+
+	// Fetches GetAdministratedObject for one UId. Returns true with the administratedObject node on a clean success
+	// (whether or not the object is administered by operations yet). Otherwise returns false with `error` set:
+	// an HTTP fault (a wrong replacing-schema UId returns a non-JSON error page), an in-band success:false
+	// (the .svc reports logical failures — permission, unknown schema, licensing — as HTTP 200 + errorInfo),
+	// or an unexpected empty body. A failure is NEVER reported as "not administered / available".
+	private bool TryFetchNode(Guid schemaUId, CreatioRequestOptions requestOptions, out JsonObject node,
+		out string error, out bool timedOut) {
+		node = null;
+		error = null;
+		timedOut = false;
+		GetAdministratedObjectNodeResponse response;
+		try {
+			response = PostAndDeserialize<GetAdministratedObjectNodeResponse>(
+				ServiceUrlBuilder.KnownRoute.GetAdministratedObject,
+				new GetAdministratedObjectRequest { SchemaUId = schemaUId },
+				requestOptions);
+		}
+		catch (Exception ex) when (ObjectRightsSupport.IsServiceFailure(ex)) {
+			error = ex.Message;
+			timedOut = ObjectRightsSupport.IsTimeout(ex);
+			return false;
+		}
+		if (response is { Success: true } && response.AdministratedObject is not null) {
+			node = response.AdministratedObject;
+			return true;
+		}
+		error = response is { Success: false }
+			? ServiceMessage(response.ErrorInfo?.Message, "GetAdministratedObject reported failure.")
+			: "GetAdministratedObject returned no administrated object.";
+		return false;
+	}
+
+	// A failure is never reported with an empty message: an empty string would read as "no error" to a caller that
+	// checks for null, and as nothing at all to the operator.
+	private static string ServiceMessage(string message, string fallback) =>
+		string.IsNullOrWhiteSpace(message) ? fallback : message;
+
+	// Every row, in priority order. A row without a readable position keeps its place in the array (the service
+	// returns the rows in priority order), so the order the caller sees never depends on a missing field.
+	private static List<RoleOperationRights> ProjectRoles(JsonObject node) =>
+		ReadOperationRows(node)
+			.Select((row, index) => new RoleOperationRights(
+				GranteeId(row), Str(row["sysAdminUnit"]?["name"]) ?? "(unknown)", Position(row) ?? index,
+				Flag(row, FieldOf(ObjectOperation.Read)), Flag(row, FieldOf(ObjectOperation.Create)),
+				Flag(row, FieldOf(ObjectOperation.Edit)), Flag(row, FieldOf(ObjectOperation.Delete))))
+			.OrderBy(role => role.Position)
+			.ToList();
+
+	private static IEnumerable<JsonObject> ReadOperationRows(JsonObject node) =>
+		(node[OperationRowsField] as JsonArray)?.OfType<JsonObject>() ?? Enumerable.Empty<JsonObject>();
+
+	private static int? Position(JsonObject row) =>
+		row["position"] is JsonValue value && value.TryGetValue(out int position) ? position : null;
+
+	private static Guid GranteeId(JsonObject row) =>
+		Guid.TryParse(Str(row["sysAdminUnit"]?["id"]), out Guid id) ? id : Guid.Empty;
+
+	private static bool Flag(JsonObject node, string name) =>
+		node[name] is JsonValue value && value.TryGetValue(out bool flag) && flag;
+
+	// Reads a JSON node as a string, or null if it is absent or not a string value (never throws on a
+	// non-string value the platform might return).
+	private static string Str(JsonNode node) =>
+		node is JsonValue value && value.TryGetValue(out string text) ? text : null;
+
+	// The wire names of the four operation flags.
+	private static string FieldOf(ObjectOperation operation) => operation switch {
+		ObjectOperation.Read => "canRead",
+		ObjectOperation.Create => "canAppend",
+		ObjectOperation.Edit => "canEdit",
+		ObjectOperation.Delete => "canDelete",
+		_ => throw new ArgumentOutOfRangeException(nameof(operation), operation, null)
+	};
+
+	// Resolves an entity schema name to its candidate UId(s) via a DataService SelectQuery over SysSchema,
+	// filtered to the EntitySchemaManager layer. A granted/extended schema has more than one row (base +
+	// replacing layers); heavily layered OOTB objects (Contact, Account) can have many. The query is ORDERED
+	// server-side by ExtendParent ascending — false first, i.e. the BASE row — BEFORE the row cap applies:
+	// rowCount is applied to an otherwise unordered result, so without the order the base (administrable) row
+	// can fall outside the window depending on the data (the same trap ClassicEntitySchemaQuery.ColumnOrderedAsc
+	// documents). The server order is kept, so the base row is probed first and the replacing layers — which
+	// fault on GetAdministratedObject — are only tried if it does not answer. Deterministic run to run.
+	// The candidate UIds of a schema do not change within one command run, and the write path reads the same object
+	// again after the save. The client is transient (resolved per command), so the cache never outlives a call.
+	private readonly Dictionary<string, IReadOnlyList<Guid>> _schemaUIds = new(StringComparer.Ordinal);
+
+	private IReadOnlyList<Guid> ResolveEntitySchemaUIds(string schemaName, CreatioRequestOptions requestOptions) {
+		if (_schemaUIds.TryGetValue(schemaName, out IReadOnlyList<Guid> cached)) {
+			return cached;
+		}
+		IReadOnlyList<Guid> resolved = QueryEntitySchemaUIds(schemaName, requestOptions);
+		_schemaUIds[schemaName] = resolved;
+		return resolved;
+	}
+
+	private IReadOnlyList<Guid> QueryEntitySchemaUIds(string schemaName, CreatioRequestOptions requestOptions) {
+		object query = SelectQueryHelper.BuildSelectQuery(
+			"SysSchema",
+			new[] {
+				new SelectQueryHelper.SelectQueryColumnDefinition("ExtendParent", "ExtendParent",
+					OrderDirection: 1, OrderPosition: 0),
+				new SelectQueryHelper.SelectQueryColumnDefinition("UId", "UId")
+			},
+			new[] {
+				new SelectQueryHelper.SelectQueryFilterDefinition("Name", schemaName, SelectQueryHelper.TextDataValueType),
+				new SelectQueryHelper.SelectQueryFilterDefinition("ManagerName", "EntitySchemaManager", SelectQueryHelper.TextDataValueType)
+			},
+			20);
+
+		SchemaUIdSelectResponse response = SelectQueryHelper.ExecuteSelectQuery<SchemaUIdSelectResponse>(
+			_applicationClient, _urlBuilder, query, requestOptions.TimeOut, requestOptions.MaxAttempts,
+			requestOptions.RetryDelay);
+
+		return response.Rows is null
+			? Array.Empty<Guid>()
+			: response.Rows.Select(row => row.UId).Where(uId => uId != Guid.Empty).Distinct().ToList();
+	}
+
+	private sealed class GetAdministratedObjectNodeResponse
+	{
+		[JsonPropertyName("success")]
+		public bool Success { get; set; }
+
+		[JsonPropertyName("errorInfo")]
+		public ObjectRightsErrorInfo ErrorInfo { get; set; }
+
+		[JsonPropertyName("administratedObject")]
+		public JsonObject AdministratedObject { get; set; }
+	}
+
+	private sealed class ObjectRightsErrorInfo
+	{
+		[JsonPropertyName("message")]
+		public string Message { get; set; }
+	}
+
+	private sealed class SchemaUIdSelectResponse : SelectQueryHelper.SelectQueryResponseBaseDto
+	{
+		[JsonPropertyName("rows")]
+		public List<SchemaUIdRow> Rows { get; set; }
+	}
+
+	private sealed class SchemaUIdRow
+	{
+		[JsonPropertyName("UId")]
+		public Guid UId { get; set; }
+	}
+
+	private sealed class GranteeSelectResponse : SelectQueryHelper.SelectQueryResponseBaseDto
+	{
+		[JsonPropertyName("rows")]
+		public List<GranteeRow> Rows { get; set; }
+	}
+
+	private sealed class GranteeRow
+	{
+		[JsonPropertyName("Name")]
+		public string Name { get; set; }
+	}
+}

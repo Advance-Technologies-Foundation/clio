@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Command.ObjectRights;
@@ -15,9 +14,10 @@ using NUnit.Framework;
 namespace Clio.Tests.Command.McpServer;
 
 /// <summary>
-/// Behaviour of the object-rights MCP tools beyond their attributes: how the args map onto the command options
-/// and the two-step preview/confirm protocol of the destructive tool, the refusal of unknown/misspelled argument
-/// names before any write, and redaction of both the success and the failure payloads.
+/// Behaviour of the object-rights MCP tools beyond their attributes: how the args map onto the command options,
+/// the one-call apply (the host approval is the confirmation) with <c>preview</c> as a dry run, the refusal of
+/// unknown or misspelled argument names before any read or write, and redaction of both the success and the
+/// failure payloads.
 /// </summary>
 [TestFixture]
 [Category("Unit")]
@@ -25,6 +25,8 @@ namespace Clio.Tests.Command.McpServer;
 public sealed class ObjectRightsToolBehaviourTests {
 
 	private const string Grantee = "720b771c-e7a7-4f31-9cfb-52cd21c3739f";
+	private static readonly Guid GranteeId = Guid.Parse(Grantee);
+	private static readonly Guid AllEmployees = Guid.Parse("a29a3ba5-4b0d-de11-9a51-005056c00008");
 	private const string SecretUri = "https://tenant.example/0/ServiceModel/RightManagementService.svc/GetAdministratedObject";
 
 	private ILogger _logger;
@@ -38,31 +40,44 @@ public sealed class ObjectRightsToolBehaviourTests {
 	[SetUp]
 	public void SetUp() {
 		_logger = Substitute.For<ILogger>();
-		// BaseTool snapshots the tool logger's captured messages after the run; a bare substitute returns null.
-		_logger.LogMessages.Returns(new List<LogMessage>());
+		// BaseTool snapshots the tool logger's captured messages after the run and clears them; the substitute
+		// captures what the command writes so the response carries it, as the real logger does.
+		List<LogMessage> messages = new();
+		_logger.LogMessages.Returns(_ => messages.ToList());
+		_logger.When(l => l.WriteInfo(Arg.Any<string>())).Do(call => messages.Add(new InfoMessage((string)call[0])));
+		_logger.When(l => l.WriteWarning(Arg.Any<string>())).Do(call => messages.Add(new WarningMessage((string)call[0])));
+		_logger.When(l => l.WriteError(Arg.Any<string>())).Do(call => messages.Add(new ErrorMessage((string)call[0])));
+		_logger.When(l => l.ClearMessages()).Do(_ => messages.Clear());
 		_writer = Substitute.For<IObjectRightsWriter>();
+		// null is a successful save (a substitute would otherwise return an empty string, which is an error).
+		_writer.Save(Arg.Any<ObjectRightsSnapshot>(), Arg.Any<ObjectRightsState>(), Arg.Any<CreatioRequestOptions>())
+			.Returns((string)null);
 		_reader = Substitute.For<IObjectRightsReader>();
 		_connected = Substitute.For<IConnectedObjectsResolver>();
 		_connected.Resolve(Arg.Any<string>(), Arg.Any<bool>())
 			.Returns(callInfo => new ConnectedObjectsResolution(new[] { (string)callInfo[0] }, Array.Empty<string>()));
-		_writer.SetObjectRights(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<ObjectOperation>>(),
-			Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>()).Returns(new ObjectRightsChange(ObjectRightsOutcome.Changed));
-		_reader.GetObjectRights(Arg.Any<string>(), Arg.Any<CreatioRequestOptions>())
-			.Returns(new ObjectRightsInfo(true, "UsrFoo", "UsrFoo", true, Array.Empty<RoleOperationRights>()));
+		// The object before the change, then the object as the save left it (the read-back).
+		ObjectRightsInfo before = new(true, "UsrFoo", "UsrFoo", true,
+			new[] { new RoleOperationRights(AllEmployees, "All employees", 0, true, true, true, true) });
+		ObjectRightsInfo after = before with {
+			Roles = before.Roles.Append(new RoleOperationRights(GranteeId, "Grantee", 1, true, true, true, false)).ToArray()
+		};
+		_reader.GetObjectRights(Arg.Any<string>(), Arg.Any<CreatioRequestOptions>()).Returns(before, after);
 		_resolver = Substitute.For<IToolCommandResolver>();
 		_capturedSet = null;
 		_capturedGet = null;
 		_resolver.Resolve<SetObjectRightsCommand>(Arg.Do<EnvironmentOptions>(o => _capturedSet = (SetObjectRightsOptions)o))
-			.Returns(_ => new SetObjectRightsCommand(_writer, _reader, _connected, Granted(), Substitute.For<IInteractiveConsole>(), _logger));
+			.Returns(_ => SetCommand());
 		_resolver.Resolve<GetObjectRightsCommand>(Arg.Do<EnvironmentOptions>(o => _capturedGet = (GetObjectRightsOptions)o))
 			.Returns(_ => new GetObjectRightsCommand(_reader, _connected, _logger));
 	}
 
-	private SetObjectRightsTool SetTool() =>
-		new(new SetObjectRightsCommand(_writer, _reader, _connected, Granted(), Substitute.For<IInteractiveConsole>(), _logger), _logger, _resolver);
+	private SetObjectRightsCommand SetCommand() =>
+		new(_reader, _writer, new ObjectRightsPlanner(), Granted(), Substitute.For<IInteractiveConsole>(), _logger);
 
-	private GetObjectRightsTool GetTool() =>
-		new(new GetObjectRightsCommand(_reader, _connected, _logger), _logger, _resolver);
+	private SetObjectRightsTool SetTool() => new(SetCommand(), _logger, _resolver);
+
+	private GetObjectRightsTool GetTool() => new(new GetObjectRightsCommand(_reader, _connected, _logger), _logger, _resolver);
 
 	private static IGranteeLookup Granted() {
 		IGranteeLookup lookup = Substitute.For<IGranteeLookup>();
@@ -73,23 +88,29 @@ public sealed class ObjectRightsToolBehaviourTests {
 	private static T Bind<T>(string json) =>
 		JsonSerializer.Deserialize<T>(json, Clio.BindingsModule.CreateMcpSerializerOptions())!;
 
+	private void NothingSaved() => _writer.DidNotReceiveWithAnyArgs().Save(default, default, default);
+
 	[TestCase("revok")]
 	[TestCase("operation")]
 	[TestCase("disable-operation-permission")]
-	[Description("A misspelled set-object-rights argument is refused before any write, so a typo can never be dropped by the serializer and turned into the opposite change.")]
-	public void SetObjectRights_ShouldRefuseUnknownArgument_BeforeAnyWrite(string misspelled) {
+	[TestCase("include-connected")]
+	[TestCase("confirmation-code")]
+	[TestCase("confirm")]
+	[Description("A misspelled or retired set-object-rights argument is refused before any read or write — a typo is never dropped by the serializer and turned into the opposite change, and a caller still on the old contract (include-connected, confirmation-code, confirm) is told so instead of being half-understood.")]
+	public void SetObjectRights_ShouldRefuseUnknownArgument_BeforeAnyReadOrWrite(string unknown) {
 		// Arrange
 		SetObjectRightsArgs args = Bind<SetObjectRightsArgs>(
-			$$"""{"environment-name":"dev","entity-schema-name":"UsrFoo","grantee":"{{Grantee}}","{{misspelled}}":true}""");
+			$$"""{"environment-name":"dev","entity-schema-name":"UsrFoo","grantee":"{{Grantee}}","{{unknown}}":true}""");
 
 		// Act
 		ObjectRightsToolResponse response = SetTool().SetObjectRights(args);
 
 		// Assert
 		response.Success.Should().BeFalse(because: "an unknown argument name must be refused, not silently dropped");
-		response.Error.Should().Contain(misspelled, because: "the refusal names the offending key");
+		response.Error.Should().Contain(unknown, because: "the refusal names the offending key");
 		_resolver.DidNotReceive().Resolve<SetObjectRightsCommand>(Arg.Any<EnvironmentOptions>());
-		_writer.DidNotReceiveWithAnyArgs().SetObjectRights(default, default, default, default, default, default);
+		_reader.DidNotReceiveWithAnyArgs().GetObjectRights(default, default);
+		NothingSaved();
 	}
 
 	[Test]
@@ -109,8 +130,8 @@ public sealed class ObjectRightsToolBehaviourTests {
 	}
 
 	[Test]
-	[Description("With only the required args, the tool maps to a PREVIEW of a non-revoking, non-disabling grant with the default operation sets.")]
-	public void SetObjectRights_ShouldMapRequiredArgsToSafeDefaults() {
+	[Description("With only the required args, the tool maps to a confirmed, non-revoking grant with every transition flag off: the host's approval of the call is the confirmation.")]
+	public void SetObjectRights_ShouldMapRequiredArgsToConfirmedGrant() {
 		// Arrange
 		SetObjectRightsArgs args = new("dev", "UsrFoo", Grantee);
 
@@ -118,101 +139,74 @@ public sealed class ObjectRightsToolBehaviourTests {
 		ObjectRightsToolResponse response = SetTool().SetObjectRights(args);
 
 		// Assert
-		response.Success.Should().BeTrue(because: "the preview succeeded");
+		response.Success.Should().BeTrue(because: $"the grant was saved and read back. Error: {response.Error}");
 		_capturedSet.Should().NotBeNull(because: "the command must have been resolved for the call");
 		_capturedSet.Environment.Should().Be("dev", because: "environment-name maps onto Environment");
 		_capturedSet.EntitySchemaName.Should().Be("UsrFoo", because: "entity-schema-name maps through");
 		_capturedSet.Grantee.Should().Be(Grantee, because: "grantee maps through");
-		_capturedSet.Revoke.Should().BeFalse(because: "an omitted revoke is a grant");
-		_capturedSet.DisableOperationPermissions.Should().BeFalse(because: "disabling is an explicit opt-in only");
 		_capturedSet.Operations.Should().BeNull(because: "omitted operations fall to the command's least-privilege default");
-		_capturedSet.ConnectedOperations.Should().BeNull(because: "omitted connected-operations fall to read-only");
-		_capturedSet.IncludeConnected.Should().BeFalse(because: "fan-out is opt-in");
-		_capturedSet.Preview.Should().BeTrue(because: "a call without confirm is a preview that writes nothing");
-		_capturedSet.ConfirmationCode.Should().BeNull(because: "no code is passed on a preview");
+		_capturedSet.Revoke.Should().BeFalse(because: "an omitted revoke is a grant");
+		_capturedSet.EnableOperationPermissions.Should().BeFalse(because: "enabling is an explicit opt-in only");
+		_capturedSet.DisableOperationPermissions.Should().BeFalse(because: "disabling is an explicit opt-in only");
 		_capturedSet.AllowSecurityObject.Should().BeFalse(because: "the security-object opt-in is explicit only");
-		_writer.DidNotReceiveWithAnyArgs().SetObjectRights(default, default, default, default, default, default);
-		_capturedSet.Confirm.Should().BeFalse(because: "the tool no longer confirms the apply on its own");
+		_capturedSet.Preview.Should().BeFalse(because: "a call without preview applies the change");
+		_capturedSet.Confirm.Should().BeTrue(because: "MCP cannot prompt; the host approval of the call is the confirmation");
+		_writer.ReceivedWithAnyArgs(1).Save(default, default, default);
 	}
 
-	[TestCase(null)]
-	[TestCase("   ")]
-	[Description("confirm=true without a confirmation-code (missing or blank) is refused before the command is resolved.")]
-	public void SetObjectRights_ShouldRefuseConfirm_WhenCodeMissing(string code) {
+	[Test]
+	[Description("preview=true maps to an unconfirmed dry run: nothing is saved.")]
+	public void SetObjectRights_ShouldMapPreviewToDryRun() {
 		// Arrange
-		SetObjectRightsArgs args = new("dev", "UsrFoo", Grantee, Confirm: true, ConfirmationCode: code);
+		SetObjectRightsArgs args = new("dev", "UsrFoo", Grantee, Preview: true);
 
 		// Act
 		ObjectRightsToolResponse response = SetTool().SetObjectRights(args);
 
 		// Assert
-		response.Success.Should().BeFalse(because: "a confirmed write must carry the code from the preview the user approved");
-		response.Error.Should().Contain("confirmation-code", because: "the refusal names what is missing");
-		_resolver.DidNotReceive().Resolve<SetObjectRightsCommand>(Arg.Any<EnvironmentOptions>());
+		response.Success.Should().BeTrue(because: "a preview of an allowed change is not a failure");
+		_capturedSet.Preview.Should().BeTrue(because: "preview maps through");
+		_capturedSet.Confirm.Should().BeFalse(because: "a dry run is never confirmed");
+		response.Output.Should().Contain("PREVIEW", because: "the dry run says that nothing was changed");
+		NothingSaved();
 	}
 
 	[Test]
-	[Description("confirm=true with a code maps to a confirmed call carrying that code, not a preview.")]
-	public void SetObjectRights_ShouldMapConfirmAndCode() {
+	[Description("Every explicit transition flag maps through: enable on a grant; revoke with disable and the security opt-in.")]
+	public void SetObjectRights_ShouldMapTransitionFlags_WhenProvided() {
 		// Arrange
-		SetObjectRightsArgs args = new("dev", "UsrFoo", Grantee, Confirm: true, ConfirmationCode: "abc123");
+		SetObjectRightsArgs grant = new("dev", "UsrFoo", Grantee, Operations: "read", EnableOperationPermissions: true);
+		SetObjectRightsArgs revoke = new("dev", "UsrFoo", Grantee, Operations: "read", Revoke: true,
+			DisableOperationPermissions: true, AllowSecurityObject: true);
 
 		// Act
-		SetTool().SetObjectRights(args);
+		SetTool().SetObjectRights(grant);
+		SetObjectRightsOptions grantOptions = _capturedSet;
+		SetTool().SetObjectRights(revoke);
 
 		// Assert
-		_capturedSet.Preview.Should().BeFalse(because: "a confirmed call writes");
-		_capturedSet.ConfirmationCode.Should().Be("abc123", because: "the code is passed to the command, which checks it");
-	}
-
-	[Test]
-	[Description("A confirmation-code passed without confirm=true is ignored: the call stays a preview and writes nothing.")]
-	public void SetObjectRights_ShouldStayPreview_WhenCodeGivenWithoutConfirm() {
-		// Arrange
-		SetObjectRightsArgs args = new("dev", "UsrFoo", Grantee, ConfirmationCode: "abc123");
-
-		// Act
-		SetTool().SetObjectRights(args);
-
-		// Assert
-		_capturedSet.Preview.Should().BeTrue(because: "only confirm=true turns the call into a write");
-		_capturedSet.ConfirmationCode.Should().BeNull(because: "a code alone is not an approval");
-		_writer.DidNotReceiveWithAnyArgs().SetObjectRights(default, default, default, default, default, default);
-	}
-
-	[Test]
-	[Description("revoke without the opt-in never maps to disabling operation permissions.")]
-	public void SetObjectRights_ShouldNotDisable_WhenRevokeWithoutOptIn() {
-		// Arrange
-		SetObjectRightsArgs args = new("dev", "UsrFoo", Grantee, Revoke: true);
-
-		// Act
-		SetTool().SetObjectRights(args);
-
-		// Assert
+		grantOptions.EnableOperationPermissions.Should().BeTrue(because: "enable-operation-permissions maps through");
+		grantOptions.Operations.Should().Be("read", because: "operations maps through");
 		_capturedSet.Revoke.Should().BeTrue(because: "revoke maps through");
-		_capturedSet.DisableOperationPermissions.Should().BeFalse(
-			because: "a revoke must never widen access to every internal user as a side effect");
-	}
-
-	[Test]
-	[Description("revoke with the opt-in maps both flags, and connected-operations maps through.")]
-	public void SetObjectRights_ShouldMapOptInAndConnectedOperations_WhenProvided() {
-		// Arrange
-		SetObjectRightsArgs args = new("dev", "UsrFoo", Grantee, Operations: "read", Revoke: true,
-			IncludeConnected: true, ConnectedOperations: "read,edit", DisableOperationPermissions: true,
-			AllowSecurityObject: true);
-
-		// Act
-		SetTool().SetObjectRights(args);
-
-		// Assert
-		_capturedSet.Revoke.Should().BeTrue(because: "revoke maps through");
-		_capturedSet.DisableOperationPermissions.Should().BeTrue(because: "the explicit opt-in maps through");
-		_capturedSet.IncludeConnected.Should().BeTrue(because: "include-connected maps through");
-		_capturedSet.ConnectedOperations.Should().Be("read,edit", because: "connected-operations maps through");
-		_capturedSet.Operations.Should().Be("read", because: "operations maps through");
+		_capturedSet.DisableOperationPermissions.Should().BeTrue(because: "disable-operation-permissions maps through");
 		_capturedSet.AllowSecurityObject.Should().BeTrue(because: "allow-security-object maps through");
+	}
+
+	[Test]
+	[Description("A refused change (a grant that would turn operation permissions on without the flag) fails the call and saves nothing.")]
+	public void SetObjectRights_ShouldFailAndNotSave_WhenPlanIsRefused() {
+		// Arrange
+		_reader.GetObjectRights(Arg.Any<string>(), Arg.Any<CreatioRequestOptions>())
+			.Returns(new ObjectRightsInfo(true, "UsrFoo", "UsrFoo", false,
+				new[] { new RoleOperationRights(AllEmployees, "All employees", 0, true, true, true, true) }));
+
+		// Act
+		ObjectRightsToolResponse response = SetTool().SetObjectRights(new SetObjectRightsArgs("dev", "UsrFoo", Grantee));
+
+		// Assert
+		response.Success.Should().BeFalse(because: "turning operation permissions on must be named in the arguments");
+		response.Error.Should().Contain("enable-operation-permissions", because: "the refusal names the flag to pass");
+		NothingSaved();
 	}
 
 	[Test]
@@ -236,8 +230,8 @@ public sealed class ObjectRightsToolBehaviourTests {
 	[Description("When the command throws, the tool fails and the service URI in the exception text is redacted.")]
 	public void SetObjectRights_ShouldFailRedacted_WhenCommandThrows() {
 		// Arrange
-		_connected.Resolve(Arg.Any<string>(), Arg.Any<bool>())
-			.Returns(_ => throw new InvalidOperationException("failed at " + SecretUri));
+		_reader.GetObjectRights(Arg.Any<string>(), Arg.Any<CreatioRequestOptions>())
+			.Returns(_ => throw new ArgumentException("failed at " + SecretUri));
 
 		// Act
 		ObjectRightsToolResponse response = SetTool().SetObjectRights(new SetObjectRightsArgs("dev", "UsrFoo", Grantee));
@@ -256,7 +250,7 @@ public sealed class ObjectRightsToolBehaviourTests {
 		// Arrange
 		CommandExecutionResult result = new(0, [
 			new InfoMessage("  UsrFoo: granted [read] for grantee " + Grantee + "."),
-			new WarningMessage("  UsrBar: could not read object rights (" + SecretUri + " <html>Request Error</html>) — skipped.")
+			new WarningMessage("  UsrBar: could not read object rights (" + SecretUri + " <html>Request Error</html>).")
 		]);
 
 		// Act
@@ -297,31 +291,5 @@ public sealed class ObjectRightsToolBehaviourTests {
 		response.Success.Should().BeFalse(because: "an exception is a failure");
 		response.Error.Should().Contain("[redacted-uri]", because: "exception text is redacted");
 		response.Error.Should().NotContain("tenant.example", because: "the host must not leak");
-	}
-
-	[Test]
-	[Description("Through the tool: a call without confirm writes nothing and returns a confirmation-code the agent can read back from the redacted output (a value after a '...-token:' key would be masked); the confirmed call with that code writes once.")]
-	public void SetObjectRights_ShouldPreviewThenApply_WithCodeFromPreviewOutput() {
-		// Arrange
-		List<LogMessage> messages = new();
-		_logger.LogMessages.Returns(messages);
-		_logger.When(l => l.WriteInfo(Arg.Any<string>())).Do(call => messages.Add(new InfoMessage((string)call[0])));
-		SetObjectRightsArgs previewArgs = new("dev", "UsrFoo", Grantee, Operations: "read");
-
-		// Act
-		ObjectRightsToolResponse preview = SetTool().SetObjectRights(previewArgs);
-		int writesDuringPreview = _writer.ReceivedCalls().Count();
-		Match code = Regex.Match(preview.Output ?? string.Empty, "confirmation-code: (?<code>[0-9a-f]{16})");
-		messages.Clear();
-		ObjectRightsToolResponse confirmed = SetTool().SetObjectRights(
-			previewArgs with { Confirm = true, ConfirmationCode = code.Groups["code"].Value });
-
-		// Assert
-		preview.Success.Should().BeTrue(because: "a preview is not a failure");
-		writesDuringPreview.Should().Be(0, because: "a preview writes nothing");
-		code.Success.Should().BeTrue(because: $"the agent must read the code from the redacted output. Output: {preview.Output}");
-		confirmed.Success.Should().BeTrue(because: $"the code matches the unchanged targets. Error: {confirmed.Error}");
-		_writer.Received(1).SetObjectRights("UsrFoo", Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<ObjectOperation>>(),
-			Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>());
 	}
 }

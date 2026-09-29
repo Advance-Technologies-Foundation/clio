@@ -11,9 +11,10 @@ using ModelContextProtocol.Server;
 namespace Clio.Command.McpServer.Tools;
 
 /// <summary>
-/// MCP surface of <c>set-object-rights</c>: grants or revokes a role's object operation permissions. Destructive and
-/// two-step: a call without <c>confirm</c> is a preview that writes nothing and returns a confirmation code; the
-/// confirmed call must carry that code, and the command refuses it when the state it was computed from changed.
+/// MCP surface of <c>set-object-rights</c>: grants or revokes one role's operation permissions on ONE object.
+/// Destructive: the call applies the change, and the host's approval of the call is the confirmation — the arguments
+/// name every access-changing transition, so the approval shows everything the call can do. <c>preview</c> is a dry
+/// run that writes nothing.
 /// </summary>
 [McpServerToolType]
 public sealed class SetObjectRightsTool(
@@ -25,65 +26,52 @@ public sealed class SetObjectRightsTool(
 	internal const string ToolName = "set-object-rights";
 
 	internal const string ValidArguments =
-		"Valid: environment-name, entity-schema-name, grantee, operations, revoke, include-connected, "
-		+ "connected-operations, disable-operation-permissions, allow-security-object, confirm, confirmation-code.";
+		"Valid: environment-name, entity-schema-name, grantee, operations, revoke, enable-operation-permissions, "
+		+ "disable-operation-permissions, allow-security-object, preview.";
 
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
 		Lifetime = McpToolExecutionLifetime.PerCall,
 		OperationFamily = McpToolOperationFamily.None,
-		// A fan-out makes several sequential round-trips per object; the default window can kill the worker
-		// part-way through a destructive change.
-		BudgetPolicy = McpToolBudgetPolicy.ParentKillExtended,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
-	[Description("Grant or revoke OBJECT operation permissions (read/create/edit/delete) for one role on an object — the SysSchemaOperationRight / \"Object permissions\" layer (DESTRUCTIVE — changes access rights). " +
-		"Object-level analog of set-record-rights, and works for ANY role. Grants turn on the object's operation permissions when needed; the same save adds an All employees read/create/edit/delete row when the object has none, so internal users keep access. " +
-		"grantee is a SysAdminUnit id (roles/users; names are not unique). " +
-		"operations defaults to read/create/edit on the root object (delete not granted by default); revoke=true removes them (a role left with none is removed). " +
-		"include-connected also applies to the root object's own lookup objects (security/system objects such as SysAdminUnit are skipped), which get connected-operations (default read only); on revoke the lookups are touched only when connected-operations is given. Fails without writing if the lookups cannot be enumerated. Does NOT change column permissions. Read it back with get-object-rights. " +
-		"A revoke that would remove the root's LAST rights row is REFUSED unless disable-operation-permissions is set (it makes the object available to ALL internal users; never applied to lookups). " +
-		"The grantee must exist in SysAdminUnit. A security/system ROOT object may only be granted read, and never have its operation permissions turned off, unless allow-security-object is set. " +
-		"With include-connected the call can take minutes. " +
-		"TWO-STEP: a call WITHOUT confirm writes nothing and returns a PREVIEW (every target object, its current state, and whether operation permissions will be turned ON) plus a confirmation-code. " +
-		"Show the preview to the user; only after they approve, call again with confirm=true and that confirmation-code. The write is refused when the targets or any role's rights on them changed since the preview, or the arguments differ. " +
-		"The code is a state fingerprint, not a secret: it proves the confirmed call matches the preview, not that the user approved it. " +
-		"Unknown or misspelled argument names are REFUSED before any write.")]
+	[Description("Grant or revoke OBJECT operation permissions (read/create/edit/delete) for one role on ONE object — the SysSchemaOperationRight / \"Object permissions\" layer (DESTRUCTIVE — changes access rights). " +
+		"Works like the Object permissions designer, one object per call, for ANY role. To cover an object's lookups, read them with get-object-rights include-connected, decide per object, and make one call per object. " +
+		"grantee is a SysAdminUnit id (roles/users; names are not unique); it must exist. " +
+		"operations defaults to read/create/edit (delete not granted by default). revoke=true clears them on the role's row and KEEPS the row: rows are never removed, so the cleared operations are denied to the role's members. " +
+		"The rows are a priority list: a user in several roles gets the highest matching row; a new row goes at the lowest priority, and the result names the rows above it. " +
+		"Every access-changing transition must be named, or the call is refused: enable-operation-permissions to let a grant turn the object's operation permissions ON (then only its rows decide who can reach it; an All employees row is added when missing); disable-operation-permissions with revoke to turn them OFF (the object becomes available to ALL internal users; needed when the revoke would leave no granting row); allow-security-object for a grant beyond read, or a disable, on a security/system object. " +
+		"preview=true is a dry run: it writes nothing and shows what the call would change. Read the result back with get-object-rights. Does NOT change column or record permissions. " +
+		"Unknown or misspelled argument names are REFUSED before any read or write.")]
 	public ObjectRightsToolResponse SetObjectRights(
-		[Description("Parameters: environment-name, entity-schema-name, grantee (required); operations, revoke, include-connected, connected-operations, disable-operation-permissions, allow-security-object, confirm, confirmation-code (optional).")]
+		[Description("Parameters: environment-name, entity-schema-name, grantee (required); operations, revoke, enable-operation-permissions, disable-operation-permissions, allow-security-object, preview (optional).")]
 		[Required]
 		SetObjectRightsArgs args) {
 		// A long-tail tool reached through clio-run: the flat-argument classifier never sees this wrapped payload,
 		// and the serializer silently DROPS unknown keys. On a destructive tool that turns a typo into the opposite
-		// change ({"revok":true} binds Revoke=false and GRANTS), so refuse before any preview or write.
+		// change ({"revok":true} binds Revoke=false and GRANTS), so refuse before any read or write.
 		string? aliasError = McpToolArgumentSupport.BuildLegacyAliasError(
 			args.ExtensionData, McpToolArgumentSupport.EnvironmentNameAliases, ".", ValidArguments);
 		if (!string.IsNullOrWhiteSpace(aliasError)) {
 			return ObjectRightsToolResponse.FromValidationError(aliasError);
 		}
-		bool confirmed = args.Confirm ?? false;
-		if (confirmed && string.IsNullOrWhiteSpace(args.ConfirmationCode)) {
-			return ObjectRightsToolResponse.FromValidationError(
-				"confirm=true requires the confirmation-code returned by a preview call: call set-object-rights without "
-				+ "confirm first, show the preview to the user, then repeat the call with confirm=true and that code.");
-		}
 		try {
+			bool preview = args.Preview ?? false;
 			SetObjectRightsOptions options = new() {
 				Environment = args.EnvironmentName,
 				EntitySchemaName = args.EntitySchemaName,
 				Grantee = args.Grantee,
 				Operations = args.Operations,
 				Revoke = args.Revoke ?? false,
-				IncludeConnected = args.IncludeConnected ?? false,
-				ConnectedOperations = args.ConnectedOperations,
+				EnableOperationPermissions = args.EnableOperationPermissions ?? false,
 				DisableOperationPermissions = args.DisableOperationPermissions ?? false,
 				AllowSecurityObject = args.AllowSecurityObject ?? false,
-				// MCP cannot prompt anyone, so the command's own confirmation is replaced by a two-step protocol: a
-				// call without confirm is a PREVIEW that writes nothing and returns a code; the confirmed call must
-				// carry that code, and the command refuses it when the targets changed since the preview.
-				Preview = !confirmed,
-				ConfirmationCode = confirmed ? args.ConfirmationCode : null
+				Preview = preview,
+				// MCP cannot prompt anyone: the host's approval of this call is the confirmation (as for
+				// set-record-rights and manage-access). A preview writes nothing, so it is never confirmed.
+				Confirm = !preview
 			};
 			return ObjectRightsToolResponse.From(InternalExecute<SetObjectRightsCommand>(options));
 		} catch (Exception ex) {
@@ -93,6 +81,15 @@ public sealed class SetObjectRightsTool(
 }
 
 /// <summary>Arguments of the <c>set-object-rights</c> MCP tool.</summary>
+/// <param name="EnvironmentName">The registered environment.</param>
+/// <param name="EntitySchemaName">The one object whose operation permissions change.</param>
+/// <param name="Grantee">The SysAdminUnit id of the role or user.</param>
+/// <param name="Operations">Comma-separated operations.</param>
+/// <param name="Revoke">Revoke instead of grant.</param>
+/// <param name="EnableOperationPermissions">Allow a grant to turn operation permissions on.</param>
+/// <param name="DisableOperationPermissions">With revoke: turn operation permissions off.</param>
+/// <param name="AllowSecurityObject">Allow a grant beyond read, or a disable, on a security/system object.</param>
+/// <param name="Preview">Write nothing; show what the call would change.</param>
 public sealed record SetObjectRightsArgs(
 	[property: JsonPropertyName("environment-name")]
 	[property: Description(McpToolDescriptions.EnvironmentName)]
@@ -100,7 +97,7 @@ public sealed record SetObjectRightsArgs(
 	string EnvironmentName,
 
 	[property: JsonPropertyName("entity-schema-name")]
-	[property: Description("Object (entity schema) name whose operation permissions are changed.")]
+	[property: Description("The one object (entity schema) whose operation permissions are changed.")]
 	[property: Required]
 	string EntitySchemaName,
 
@@ -114,34 +111,26 @@ public sealed record SetObjectRightsArgs(
 	string Operations = null,
 
 	[property: JsonPropertyName("revoke")]
-	[property: Description("Revoke the operations instead of granting (default false). A role left with no operations is removed.")]
+	[property: Description("Revoke the operations instead of granting (default false). The role's row is kept, so the cleared operations are denied to its members.")]
 	bool? Revoke = null,
 
-	[property: JsonPropertyName("include-connected")]
-	[property: Description("Also apply to the root object's own lookup objects, skipping security/system objects (default false).")]
-	bool? IncludeConnected = null,
-
-	[property: JsonPropertyName("connected-operations")]
-	[property: Description("Operations applied to the connected lookup objects when include-connected is set. Default on grant: read (picking a lookup value only needs read). On revoke the lookups are left untouched unless this is given. Widen explicitly only when the grantee must author lookup records.")]
-	string ConnectedOperations = null,
+	[property: JsonPropertyName("enable-operation-permissions")]
+	[property: Description("Allow a grant to turn the object's operation permissions ON (default false, which refuses a grant on an object that does not use them yet). After that only the object's rows decide who can reach it.")]
+	bool? EnableOperationPermissions = null,
 
 	[property: JsonPropertyName("disable-operation-permissions")]
-	[property: Description("Allow a revoke to remove the object's LAST rights row, turning the object's operation permissions OFF and making it available to ALL internal users (default false, which refuses such a revoke). Only set this when widening access to every internal user is the intent.")]
+	[property: Description("With revoke: turn the object's operation permissions OFF, making it available to ALL internal users (default false). Needed when the revoke would leave no row that grants any operation.")]
 	bool? DisableOperationPermissions = null,
 
-	[property: JsonPropertyName("confirm")]
-	[property: Description("Apply the change. Default false: the call only returns a PREVIEW and a confirmation-code. Pass true only after the user approved that preview, together with confirmation-code.")]
-	bool? Confirm = null,
-
-	[property: JsonPropertyName("confirmation-code")]
-	[property: Description("The confirmation-code from the preview the user approved. Required with confirm=true; the write is refused when the targets or any role's rights on them changed since that preview. Ignored without confirm=true.")]
-	string ConfirmationCode = null,
-
 	[property: JsonPropertyName("allow-security-object")]
-	[property: Description("Allow granting create/edit/delete, or a revoke with disable-operation-permissions, when the ROOT object is a security or system object (" + ConnectedObjectsResolver.ExcludedFamiliesText + "). Default false: such a root may only be granted read.")]
-	bool? AllowSecurityObject = null
+	[property: Description("Allow a grant beyond read, or disable-operation-permissions, on a security or system object (" + ConnectedObjectsResolver.ExcludedFamiliesText + "). Default false: such an object may only be granted read.")]
+	bool? AllowSecurityObject = null,
+
+	[property: JsonPropertyName("preview")]
+	[property: Description("Dry run (default false): write nothing and show what the call would change, the rows it affects, and whether it would be refused.")]
+	bool? Preview = null
 ) {
-	/// <summary>Overflow bag for unknown JSON fields; a non-empty bag refuses the call before any write.</summary>
+	/// <summary>Overflow bag for unknown JSON fields; a non-empty bag refuses the call before any read or write.</summary>
 	[JsonExtensionData]
 	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
 }

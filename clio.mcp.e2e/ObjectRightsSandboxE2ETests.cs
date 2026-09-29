@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
@@ -16,8 +15,8 @@ namespace Clio.Mcp.E2E;
 /// <summary>
 /// Developer-local end-to-end proof of the object-rights read-modify-write against a REAL Creatio: the platform
 /// facts the tools' safety rests on — the save envelope, that the untouched record/column collections stay
-/// untouched, the All employees row the server adds when operation permissions are turned on, the last-grant
-/// refusal and the disable path — are otherwise tested only against mocks.
+/// untouched, that the save keeps the All employees row an unadministered object is read with, that a revoke keeps
+/// its row, the refusals of unnamed transitions and the disable path — are otherwise tested only against mocks.
 /// </summary>
 /// <remarks>
 /// It publishes two schemas into a fixture-owned package, so it belongs to the destructive LocalOnly sub-tier
@@ -41,11 +40,11 @@ public sealed class ObjectRightsSandboxE2ETests : DataBindingDbFixtureBase {
 	private const string AllEmployees = "a29a3ba5-4b0d-de11-9a51-005056c00008";
 
 	[Test]
-	[Description("On a real stand: a preview writes nothing, a read grant with include-connected confirmed by its code turns operation permissions on for a disposable object and its lookup, the server-added All employees row is reported, a replayed stale code is refused, record and column administration stay untouched, a last-grant revoke is refused, and the disable opt-in turns permissions off again.")]
+	[Description("On a real stand, one object per call: an unnamed enable is refused and writes nothing; a named enable grants read on a disposable object and, in its own call, on its lookup, keeping All employees; record and column administration stay untouched; a revoke keeps the row; the last granting row is refused without the disable and turned off with it.")]
 	[AllureTag(SetObjectRightsTool.ToolName)]
 	[AllureTag(GetObjectRightsTool.ToolName)]
 	[AllureName("object-rights read-modify-write round-trips on a real Creatio stand")]
-	[AllureDescription("Creates a disposable lookup and an object referencing it, previews and then grants All external users read with include-connected, checks the preview wrote nothing and a stale code is refused, reads it back, checks record/column administration is untouched, then proves the last-grant refusal and the disable-operation-permissions path. The fixture package is deleted in teardown.")]
+	[AllureDescription("Creates a disposable lookup and an object referencing it, shows an unnamed enable is refused, grants All external users read on each object in its own call with enable-operation-permissions, reads them back, checks record/column administration is untouched, revokes the grantee (its row stays), then proves the no-granting-row refusal and the disable-operation-permissions path. The fixture package is deleted in teardown.")]
 	public async Task ObjectRights_Should_RoundTrip_On_A_Real_Stand() {
 		TeamCityRunGuard.IgnoreIfRunningUnderTeamCityOrGitHubActions(
 			"create-entity-schema publishes configuration and starts the global OData rebuild, which makes every "
@@ -79,54 +78,63 @@ public sealed class ObjectRightsSandboxE2ETests : DataBindingDbFixtureBase {
 			});
 		AssertCommandExitCode(rootResult, 0, "the disposable root object must exist before its rights are changed");
 
-		// Act — preview, then grant read to the external audience on the root and its own lookup with the code
-		Dictionary<string, object?> grantArgs = new() {
+		Dictionary<string, object?> Args(string schema, string grantee, string operations, bool revoke = false,
+			bool enable = false, bool disable = false) => new() {
 			["environment-name"] = arrangeContext.EnvironmentName,
-			["entity-schema-name"] = rootName,
-			["grantee"] = ExternalUsers,
-			["operations"] = "read",
-			["include-connected"] = true
+			["entity-schema-name"] = schema,
+			["grantee"] = grantee,
+			["operations"] = operations,
+			["revoke"] = revoke,
+			["enable-operation-permissions"] = enable,
+			["disable-operation-permissions"] = disable
 		};
-		(ObjectRightsToolResponse grant, string grantCode) = await PreviewThenConfirmAsync(arrangeContext, grantArgs,
-			async () => {
-				// Assert — the preview wrote nothing: the root is still not administered
-				ObjectRightsToolResponse beforeConfirm = await CallRightsAsync(arrangeContext,
-					GetObjectRightsTool.ToolName, new Dictionary<string, object?> {
-						["environment-name"] = arrangeContext.EnvironmentName,
-						["entity-schema-name"] = rootName
-					});
-				beforeConfirm.Output.Should().Contain("not administered", because: "a preview must not write anything");
-			});
-
-		// Assert — both objects were turned on, and the result names the roles that hold rights afterwards
-		grant.Success.Should().BeTrue(because: $"the grant must apply on a real stand. Error: {grant.Error}");
-		grant.Output.Should().Contain($"{rootName}: granted [read]", because: "the root result line is reported");
-		grant.Output.Should().Contain($"{lookupName}: granted [read]", because: "the connected lookup is granted read");
-		grant.Output.Should().Contain("turned ON", because: "both objects were not administered before the grant");
-		grant.Output.Should().Contain("roles with rights now: All employees",
-			because: "the server adds an All employees row when operation permissions are turned on, and it is reported");
-
-		// Act — replay the now-stale code of the applied grant
-		ObjectRightsToolResponse replay = await CallRightsAsync(arrangeContext, SetObjectRightsTool.ToolName,
-			new Dictionary<string, object?>(grantArgs) { ["confirm"] = true, ["confirmation-code"] = grantCode });
-
-		// Assert — the rights changed since that preview, so the code no longer matches
-		replay.Success.Should().BeFalse(because: "a code is bound to the state its preview showed");
-		replay.Error.Should().Contain("confirmation code does not match", because: "the refusal says why");
-
-		// Act — read the rights back
-		ObjectRightsToolResponse read = await CallRightsAsync(arrangeContext, GetObjectRightsTool.ToolName,
-			new Dictionary<string, object?> {
+		Dictionary<string, object?> Read(string schema, string? grantee = null, bool includeConnected = false) {
+			Dictionary<string, object?> args = new() {
 				["environment-name"] = arrangeContext.EnvironmentName,
-				["entity-schema-name"] = rootName,
-				["include-connected"] = true
-			});
+				["entity-schema-name"] = schema,
+				["include-connected"] = includeConnected
+			};
+			if (grantee is not null) {
+				args["grantee"] = grantee;
+			}
+			return args;
+		}
 
-		// Assert — the read-back shows the grant on both objects
+		// Act — a grant that would turn operation permissions on, without naming that transition
+		ObjectRightsToolResponse unnamed = await CallRightsAsync(arrangeContext, SetObjectRightsTool.ToolName,
+			Args(rootName, ExternalUsers, "read"));
+		ObjectRightsToolResponse untouched = await CallRightsAsync(arrangeContext, GetObjectRightsTool.ToolName,
+			Read(rootName));
+
+		// Assert — refused, and nothing was written
+		unnamed.Success.Should().BeFalse(because: "turning operation permissions on must be named in the arguments");
+		unnamed.Error.Should().Contain("enable-operation-permissions", because: "the refusal names the flag to pass");
+		untouched.Output.Should().Contain("not administered", because: "a refused call writes nothing");
+
+		// Act — the same grant with the transition named, then the lookup in its own call
+		ObjectRightsToolResponse grantRoot = await CallRightsAsync(arrangeContext, SetObjectRightsTool.ToolName,
+			Args(rootName, ExternalUsers, "read", enable: true));
+		ObjectRightsToolResponse grantLookup = await CallRightsAsync(arrangeContext, SetObjectRightsTool.ToolName,
+			Args(lookupName, ExternalUsers, "read", enable: true));
+
+		// Assert — each object was turned on and read back; internal users kept access through All employees
+		grantRoot.Success.Should().BeTrue(because: $"the grant must apply on a real stand. Error: {grantRoot.Error}");
+		grantRoot.Output.Should().Contain($"'{rootName}': granted [read]", because: "the result line names the object");
+		grantRoot.Output.Should().Contain("turned ON", because: "the root was not administered before the grant");
+		grantRoot.Output.Should().Contain("All employees",
+			because: "the synthesized All employees row is kept by the save, so internal users keep their access");
+		grantLookup.Success.Should().BeTrue(because: $"the lookup is granted in its own call. Error: {grantLookup.Error}");
+
+		// Act — read both objects back
+		ObjectRightsToolResponse read = await CallRightsAsync(arrangeContext, GetObjectRightsTool.ToolName,
+			Read(rootName, includeConnected: true));
+
+		// Assert — the read-back lists the rows in priority order on both objects
 		read.Success.Should().BeTrue(because: $"the read-back must succeed. Error: {read.Error}");
+		read.Output.Should().Contain("priority order", because: "every listing states the priority rule");
 		read.Output.Should().Contain("All external users", because: "the grantee's row was saved on the stand");
 		read.Output.Should().NotContain($"{lookupName}: not administered",
-			because: "the fan-out turned operation permissions on for the lookup too");
+			because: "the lookup's own call turned operation permissions on for it");
 
 		// Assert — the save left record and column administration untouched (they were sent as null)
 		JsonElement rootProperties = await ReadSchemaPropertiesAsync(arrangeContext, rootName);
@@ -135,52 +143,30 @@ public sealed class ObjectRightsSandboxE2ETests : DataBindingDbFixtureBase {
 		rootProperties.GetProperty("administrated-by-columns").GetBoolean().Should().BeFalse(
 			because: "the object-rights save must not touch column administration");
 
-		// Act — remove the grantee, then try to remove the last remaining grant without the opt-in
-		(ObjectRightsToolResponse revokeExternal, _) = await RevokeAllAsync(arrangeContext, rootName, ExternalUsers, disable: false);
-		(ObjectRightsToolResponse refused, _) = await RevokeAllAsync(arrangeContext, rootName, AllEmployees, disable: false);
-
-		// Assert — the grantee revoke applies; the last-grant revoke is refused
-		revokeExternal.Success.Should().BeTrue(because: $"another role still holds rights. Error: {revokeExternal.Error}");
-		refused.Success.Should().BeFalse(because: "removing the last effective grant is refused without the opt-in");
-		refused.Error.Should().Contain("LAST effective grant", because: "the refusal names the access widening it avoided");
-
-		// Act — the explicit opt-in turns operation permissions off again
-		(ObjectRightsToolResponse disabled, _) = await RevokeAllAsync(arrangeContext, rootName, AllEmployees, disable: true);
+		// Act — revoke the grantee: its row must stay, as an explicit deny
+		ObjectRightsToolResponse revoke = await CallRightsAsync(arrangeContext, SetObjectRightsTool.ToolName,
+			Args(rootName, ExternalUsers, "read", revoke: true));
+		ObjectRightsToolResponse revokedRow = await CallRightsAsync(arrangeContext, GetObjectRightsTool.ToolName,
+			Read(rootName, grantee: ExternalUsers));
 
 		// Assert
-		disabled.Success.Should().BeTrue(because: $"the caller asked for the widening. Error: {disabled.Error}");
-		disabled.Output.Should().Contain("now OFF", because: "the object is available to all internal users again");
-	}
+		revoke.Success.Should().BeTrue(because: $"All employees still grants something. Error: {revoke.Error}");
+		revokedRow.Output.Should().Contain("All external users",
+			because: "a revoke keeps the row; removing it would let a lower row decide");
+		revokedRow.Output.Should().Contain("no operations", because: "the row now denies read to its members");
 
-	// The MCP write is two-step: a call without confirm returns a preview and a confirmation-code and writes
-	// nothing; the confirmed call must carry that code. Returns the confirmed result and the code it used.
-	private static async Task<(ObjectRightsToolResponse Response, string Code)> PreviewThenConfirmAsync(
-		DataBindingDbArrangeContext arrangeContext, Dictionary<string, object?> args, Func<Task>? betweenPreviewAndConfirm = null) {
-		ObjectRightsToolResponse preview = await CallRightsAsync(arrangeContext, SetObjectRightsTool.ToolName, args);
-		preview.Success.Should().BeTrue(because: $"the preview must succeed. Error: {preview.Error}");
-		Match code = Regex.Match(preview.Output ?? string.Empty, @"confirmation-code: (?<code>[0-9a-f]+)");
-		code.Success.Should().BeTrue(because: $"the preview must print a confirmation code. Output: {preview.Output}");
-		preview.Output.Should().Contain("PREVIEW — nothing was changed", because: "a preview writes nothing");
-		if (betweenPreviewAndConfirm is not null) {
-			await betweenPreviewAndConfirm();
-		}
-		Dictionary<string, object?> confirmed = new(args) {
-			["confirm"] = true,
-			["confirmation-code"] = code.Groups["code"].Value
-		};
-		return (await CallRightsAsync(arrangeContext, SetObjectRightsTool.ToolName, confirmed), code.Groups["code"].Value);
-	}
+		// Act — take away the last granting row, first without and then with the explicit disable
+		ObjectRightsToolResponse lastRow = await CallRightsAsync(arrangeContext, SetObjectRightsTool.ToolName,
+			Args(rootName, AllEmployees, "read,create,edit,delete", revoke: true));
+		ObjectRightsToolResponse disabled = await CallRightsAsync(arrangeContext, SetObjectRightsTool.ToolName,
+			Args(rootName, AllEmployees, "read,create,edit,delete", revoke: true, disable: true));
 
-	private static Task<(ObjectRightsToolResponse Response, string Code)> RevokeAllAsync(DataBindingDbArrangeContext arrangeContext,
-		string schemaName, string grantee, bool disable) =>
-		PreviewThenConfirmAsync(arrangeContext, new Dictionary<string, object?> {
-			["environment-name"] = arrangeContext.EnvironmentName,
-			["entity-schema-name"] = schemaName,
-			["grantee"] = grantee,
-			["operations"] = "read,create,edit,delete",
-			["revoke"] = true,
-			["disable-operation-permissions"] = disable
-		});
+		// Assert
+		lastRow.Success.Should().BeFalse(because: "an administered object is never left with no granting row");
+		lastRow.Error.Should().Contain("disable-operation-permissions", because: "the refusal names the explicit way out");
+		disabled.Success.Should().BeTrue(because: $"the caller named the transition. Error: {disabled.Error}");
+		disabled.Output.Should().Contain("turned OFF", because: "the object is available to all internal users again");
+	}
 
 	private static async Task<ObjectRightsToolResponse> CallRightsAsync(DataBindingDbArrangeContext arrangeContext,
 		string toolName, Dictionary<string, object?> args) {
