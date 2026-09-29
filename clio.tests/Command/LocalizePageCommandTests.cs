@@ -896,4 +896,34 @@ public sealed class LocalizePageCommandTests : BaseCommandTests<LocalizePageOpti
 		response.Coverage.CaptionInherited.Should().BeFalse(because: "there is no parent title to compare with");
 		response.Coverage.CaptionValue.Should().BeNull(because: "the page has no es-ES title");
 	}
+
+	[Test]
+	[Description("QA follow-up: when the direct parent is an intermediate page with the same en-US title (a replacing page), the title is still reported as inherited when it equals the template's title from a higher level of the hierarchy.")]
+	public void Execute_ShouldReportCaptionInherited_WhenTitleComesFromTemplateAboveDirectParent() {
+		// Arrange
+		_schema = WithParentCaption(
+			Schema(" ", new JArray(Culture("en-US", "Lab form page"), Culture("es-ES", "Página en blanco")),
+				Entry(OwnKey, SchemaUId, ("en-US", "Lab label"))),
+			("en-US", "Lab form page"), ("es-ES", "Página en blanco"));
+		_hierarchyClient.GetParentSchemas(SchemaUId, DesignPackageUId).Returns([
+			new PageDesignerHierarchySchema {
+				UId = SchemaUId, Name = SchemaName, PackageUId = DesignPackageUId, PackageName = PackageName
+			},
+			new PageDesignerHierarchySchema {
+				UId = AncestorUId, Name = SchemaName, PackageUId = "base-package", PackageName = "UsrBase",
+				Caption = new JArray(Culture("en-US", "Lab form page"), Culture("es-ES", "Página en blanco"))
+			},
+			new PageDesignerHierarchySchema {
+				UId = "template-uid", Name = "BlankPageTemplate", PackageUId = "crt-package", PackageName = "CrtUIPlatform",
+				Caption = new JArray(Culture("en-US", "Blank page"), Culture("es-ES", "Página en blanco"))
+			}
+		]);
+
+		// Act
+		LocalizePageResponse response = _command.Localize(Options());
+
+		// Assert
+		response.Coverage.CaptionInherited.Should().BeTrue(
+			because: "the es-ES title is the template's, although the direct parent carries the same en-US title as the page");
+	}
 }

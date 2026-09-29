@@ -5569,7 +5569,7 @@ internal static class ToolContractCatalog {
 					LocalizePageTool.ToolName,
 					PageGetTool.ToolName
 				],
-				"Call report-only first, translate the `missing` keys and review `sameAsDefault`, write them, then read the page back with get-page."),
+				"Call report-only first, translate the `missing` keys and review `sameAsDefault`, translate the page title when `captionInherited` is true, write them, then read the page back with get-page."),
 			[],
 			[]);
 	}

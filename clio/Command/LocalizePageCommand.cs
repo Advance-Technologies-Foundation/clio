@@ -395,7 +395,7 @@ public sealed class LocalizePageCommand : Command<LocalizePageOptions>, ILocaliz
 			CaptionOutcome = captionOutcome,
 			// Resolved again on purpose: ApplyResources has just added the target-culture values (and new override
 			// entries) to localizableStrings, so the key map built before the write would report them as missing.
-			Coverage = BuildCoverage(ResolveHierarchyKeys(editable.Hierarchy, localizableStrings), schema, culture.Name),
+			Coverage = BuildCoverage(ResolveHierarchyKeys(editable.Hierarchy, localizableStrings), schema, editable.Hierarchy, culture.Name),
 			Warnings = warnings
 		};
 		return mustSave ? SaveAndVerify(options, caption, schema, editable.Hierarchy, result, warnings) : result;
@@ -451,7 +451,8 @@ public sealed class LocalizePageCommand : Command<LocalizePageOptions>, ILocaliz
 		LocalizePageResponse verified = result with {
 			Saved = true,
 			Coverage = BuildCoverage(
-				ResolveHierarchyKeys(hierarchy, stored[LocalizableStringsKey] as JArray ?? new JArray()), stored, result.Culture)
+				ResolveHierarchyKeys(hierarchy, stored[LocalizableStringsKey] as JArray ?? new JArray()), stored, hierarchy,
+					result.Culture)
 		};
 		return mismatches.Count == 0
 			? verified
@@ -629,6 +630,7 @@ public sealed class LocalizePageCommand : Command<LocalizePageOptions>, ILocaliz
 	private static LocalizePageCoverage BuildCoverage(
 		IReadOnlyDictionary<string, JArray> resolvedKeys,
 		JObject schema,
+		IReadOnlyList<PageDesignerHierarchySchema> hierarchy,
 		string culture) {
 		var missing = new List<string>();
 		var sameAsDefault = new List<string>();
@@ -646,10 +648,6 @@ public sealed class LocalizePageCommand : Command<LocalizePageOptions>, ILocaliz
 		var captionValues = schema[CaptionKey] as JArray;
 		string captionValue = ResourceStringHelper.GetCultureValue(captionValues, culture);
 		string defaultCaption = ResourceStringHelper.GetCultureValue(captionValues, ResourceStringHelper.DefaultCultureName);
-		var parentCaptionValues = schema["parent"]?[CaptionKey] as JArray;
-		string parentCaption = ResourceStringHelper.GetCultureValue(parentCaptionValues, culture);
-		string parentDefaultCaption =
-			ResourceStringHelper.GetCultureValue(parentCaptionValues, ResourceStringHelper.DefaultCultureName);
 		return new LocalizePageCoverage {
 			Keys = keys,
 			Translated = keys - missing.Count,
@@ -659,10 +657,22 @@ public sealed class LocalizePageCommand : Command<LocalizePageOptions>, ILocaliz
 				defaultCaption, StringComparison.Ordinal),
 			// Only when the page renamed itself in en-US: a page that kept the template's title also keeps its translations.
 			CaptionInherited = !string.IsNullOrEmpty(captionValue)
-				&& string.Equals(captionValue, parentCaption, StringComparison.Ordinal)
-				&& !string.Equals(defaultCaption, parentDefaultCaption, StringComparison.Ordinal),
+				&& AncestorCaptions(schema, hierarchy).Any(ancestor =>
+					string.Equals(captionValue, ResourceStringHelper.GetCultureValue(ancestor, culture), StringComparison.Ordinal)
+					&& !string.Equals(defaultCaption,
+						ResourceStringHelper.GetCultureValue(ancestor, ResourceStringHelper.DefaultCultureName), StringComparison.Ordinal)),
 			CaptionValue = string.IsNullOrEmpty(captionValue) ? null : captionValue
 		};
+	}
+
+	// The direct parent comes inline with GetSchema; the hierarchy adds every level above it, so a replacing page or a
+	// page derived from an intermediate page still finds the template the title came from.
+	private static IEnumerable<JArray> AncestorCaptions(JObject schema, IReadOnlyList<PageDesignerHierarchySchema> hierarchy) {
+		string schemaUId = schema["uId"]?.ToString();
+		IEnumerable<JArray> ancestors = (hierarchy ?? [])
+			.Where(part => !string.Equals(part.UId, schemaUId, StringComparison.OrdinalIgnoreCase))
+			.Select(part => part.Caption);
+		return ancestors.Prepend(schema["parent"]?[CaptionKey] as JArray).Where(caption => caption is { Count: > 0 });
 	}
 
 	private static List<string> FindReadbackMismatches(
