@@ -587,6 +587,20 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 	}
 
 	[Test]
+	[Description("Every bundled allow-list filter names its slot, and exceptTypes appears only on allow-list filters — the pass skips an unscoped wildcard and ignores exceptTypes on a concrete type, so either would ship a rule that silently does nothing.")]
+	public void LoadBundled_ExcludedComponents_AllowListFiltersAreScoped() {
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+		List<ExcludedComponentFilterRule> filters = rules.ExcludedComponents.SelectMany(g => g.Filters).ToList();
+
+		filters.Should().NotContain(
+			f => f.Type == ExcludedComponentFilterRule.AnyType && string.IsNullOrWhiteSpace(f.PropertiesContainerName),
+			because: "an unscoped wildcard is skipped by the pass");
+		filters.Should().NotContain(
+			f => f.Type != ExcludedComponentFilterRule.AnyType && f.ExceptTypes != null && f.ExceptTypes.Count > 0,
+			because: "exceptTypes is ignored on a concrete type");
+	}
+
+	[Test]
 	[Description("The bundled rules carry the designer's 2-layer tab body (tab-body grid nesting the Area card) for converter-created tabs.")]
 	public void LoadBundled_TabAreaLayers_CarryDesignerTabBodyProps() {
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();

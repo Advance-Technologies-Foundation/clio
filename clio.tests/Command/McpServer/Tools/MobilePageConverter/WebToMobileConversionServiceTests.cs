@@ -11564,6 +11564,54 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("An allow-list filter walks only child-component slots: a typed object inside a kept button's configuration is not a component and stays.")]
+	public void Analyze_ShouldKeepTypedConfiguration_WhenAllowListStripsVerbatimCarriedTools() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "ProductsExpansionPanel", "type": "crt.ExpansionPanel",
+			    "tools": [ { "type": "crt.FlexContainer", "items": [
+			        { "name": "ProductsRefreshButton", "type": "crt.Button",
+			          "clicked": { "request": "usr.Refresh", "params": { "series": [ { "type": "bar" } ] } } } ] } ],
+			    "items": [] } ]
+			""");
+		ExcludedComponentFilterRule allowButtons = new() {
+			Type = ExcludedComponentFilterRule.AnyType,
+			ExceptTypes = ["crt.Button", "crt.FlexContainer"],
+			ParentType = "crt.ExpansionPanel", PropertiesContainerName = "tools"
+		};
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithExcludedComponents(bundle, RulesWithExcludedComponents(allowButtons));
+
+		// Assert
+		JsonNode button = Element(guide, "ProductsExpansionPanel").Values!["tools"]![0]!["items"]![0]!;
+		button["clicked"]!["params"]!["series"]![0]!["type"]!.GetValue<string>().Should().Be("bar",
+			because: "a request parameter is not a component the header strip has to make room for");
+		(guide.DroppedElements ?? []).Should().NotContain(e => e.Reason!.Any(r => r.Code == ReasonCodes.DropExcludedByRule),
+			because: "nothing in the strip is a disallowed component");
+	}
+
+	[Test]
+	[Description("A wildcard filter that names no slot is skipped: without one it would strip the host's whole content, not one strip of it.")]
+	public void Analyze_ShouldSkipAllowListFilter_WhenItNamesNoSlot() {
+		// Arrange
+		PageBundleInfo bundle = Bundle(LeadsLikeProductsPanelJson);
+		ExcludedComponentFilterRule unscopedAllowList = new() {
+			Type = ExcludedComponentFilterRule.AnyType,
+			ExceptTypes = ["crt.Button"],
+			ParentType = "crt.ExpansionPanel"
+		};
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithExcludedComponentsEntryGraph(bundle, RulesWithExcludedComponents(unscopedAllowList));
+
+		// Assert
+		(guide.DroppedElements ?? []).Should().NotContain(e => e.Reason!.Any(r => r.Code == ReasonCodes.DropExcludedByRule),
+			because: "an unscoped allow-list is a rules-file mistake, not an instruction to empty the panel");
+		Element(guide, "ProductsList").Operation.Should().Be("insert");
+	}
+
+	[Test]
 	[Description("propertiesContainerName is checked on the EDGE ENTERING the host: a banned type whose ancestor path enters the host through 'items' does not match a 'tools'-scoped rule, even though the same rule drops the instance entering through 'tools'.")]
 	public void Analyze_ShouldKeepEntry_WhenItsPathEntersTheHostThroughADifferentSlot() {
 		// Arrange — the banned type under BOTH edges of one host; only the tools-side instance is in scope.

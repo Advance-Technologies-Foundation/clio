@@ -146,7 +146,8 @@ internal static class ExcludedComponentsPass {
 
 	/// <summary>
 	/// The usable filters of every group, in rules-file order. A filter missing <c>Type</c>/<c>ParentType</c>
-	/// is skipped — nothing to match, nowhere to look.
+	/// is skipped — nothing to match, nowhere to look — and so is a wildcard filter that names no slot, which
+	/// would otherwise strip the host's whole content rather than one strip of it.
 	/// </summary>
 	/// <remarks>
 	/// A skip is silent here on purpose, and the silence is covered elsewhere: a typo in a published rule
@@ -159,6 +160,7 @@ internal static class ExcludedComponentsPass {
 		groups
 			.SelectMany(g => g?.Filters ?? [])
 			.Where(f => !string.IsNullOrWhiteSpace(f?.Type) && !string.IsNullOrWhiteSpace(f.ParentType))
+			.Where(f => f.Type != ExcludedComponentFilterRule.AnyType || !string.IsNullOrWhiteSpace(f.PropertiesContainerName))
 			.ToList();
 
 	// ── PHASE A: entry-graph removal ─────────────────────────────────────────────────────────────
@@ -510,7 +512,7 @@ internal static class ExcludedComponentsPass {
 				}
 				break;
 			case JsonObject obj:
-				foreach (string key in obj.Select(p => p.Key).ToList()) {
+				foreach (string key in obj.Select(p => p.Key).Where(key => ShouldDescendInto(key, filter)).ToList()) {
 					// Only a collection this call EMPTIED is removed: an array that was already empty before the
 					// strip is the page's own shape, and rewriting it is not this pass's business.
 					bool wasOccupied = obj[key] is JsonArray { Count: > 0 };
@@ -522,6 +524,16 @@ internal static class ExcludedComponentsPass {
 				break;
 		}
 	}
+
+	/// <summary>
+	/// A wildcard filter walks only the properties that hold child components: under any other property a
+	/// "type" key is configuration (a chart series, a request parameter), not a component to remove.
+	/// </summary>
+	private static bool ShouldDescendInto(string propertyName, ExcludedComponentFilterRule filter) =>
+		filter.Type != ExcludedComponentFilterRule.AnyType || ComponentChildSlots.Contains(propertyName);
+
+	private static readonly HashSet<string> ComponentChildSlots =
+		new(StringComparer.OrdinalIgnoreCase) { DefaultSlotName, "tools", "menuItems" };
 
 	/// <summary>
 	/// A synthetic "drop" <see cref="ElementMapEntry"/> for a removed component — the same

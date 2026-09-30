@@ -570,7 +570,8 @@ public sealed class ExcludedComponentFilterRule {
 	/// </para>
 	/// <para>
 	/// <see cref="AnyType"/> (<c>"*"</c>) matches every type except those in <see cref="ExceptTypes"/>, turning
-	/// the filter into an allow-list for its scope.
+	/// the filter into an allow-list for its scope. Such a filter must name <see cref="PropertiesContainerName"/>;
+	/// without one it is skipped.
 	/// </para>
 	/// </summary>
 	[JsonPropertyName("type")]
