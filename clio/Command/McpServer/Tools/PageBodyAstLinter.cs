@@ -530,6 +530,10 @@ internal static class PageBodyAstLinter {
 			_nestedFunctionAssignments = names;
 		}
 
+		/// <summary>Whether a bare var declaration reuses a preserved AMD parameter.</summary>
+		public bool IsPreservedParameter(string name) => DesignerRemovesDeclarations
+			&& IsFunctionBoundary && _parent is not null && _parent._names.ContainsKey(name);
+
 		public void Declare(string name, bool definitelyInitialized){
 			if (string.IsNullOrEmpty(name)) {
 				return;
@@ -931,6 +935,11 @@ internal static class PageBodyAstLinter {
 		switch (child) {
 			case VariableDeclaration {Kind: VariableDeclarationKind.Var} varDeclaration:
 				foreach (VariableDeclarator declarator in varDeclaration.Declarations) {
+					// A bare var redeclaration does not overwrite an AMD dependency argument.
+					if (declarator.Init is null && declarator.Id is Identifier parameter
+						&& scope.IsPreservedParameter(parameter.Name)) {
+						continue;
+					}
 					//`var helper;` and a `var helper = fn;` the branch never reaches both leave the
 					//binding `undefined`, so only an initializer on a path that always runs counts.
 					DeclareBindings(declarator.Id, scope, depth + 1,

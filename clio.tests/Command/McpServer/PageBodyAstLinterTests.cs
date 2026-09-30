@@ -144,6 +144,27 @@ internal class PageBodyAstLinterTests {
 		findings.Should().BeEmpty(because: "dependency arguments and code inside a preserved callback survive Designer saves");
 	}
 
+	[TestCase("", "Logic()", false)]
+	[TestCase("var Logic;", "Logic()", false)]
+	[TestCase("var Logic = () => 1;", "Logic()", true)]
+	[TestCase("function Logic() { return 1; }", "Logic()", true)]
+	[TestCase("var Logic = () => 1;", "(() => { const Logic = () => 2; return Logic(); })()", false)]
+	[Description("Direct dependency calls preserve AMD parameter semantics while rejecting discarded replacements")]
+	public void Lint_ShouldResolveDirectAmdArgumentCalls(string declaration, string call, bool unsafeCall) {
+		// Arrange
+		string body = "define('X', ['UsrLogic'], function(Logic) { " + declaration
+			+ " return { handlers: [{ handler: () => " + call + " }] }; });";
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+		// Assert
+		findings.Should().NotContain(f => f.Rule == PageBodyAstLinter.RuleUndefinedSectionCall,
+			because: "a bare var redeclaration retains the initialized dependency argument");
+		findings.Count(f => f.Rule == PageBodyAstLinter.RuleDesignerUnsafeSectionCall).Should()
+			.Be(unsafeCall ? 1 : 0, because: "only a factory replacement is removed while parameters and callback locals survive");
+		findings.Count(f => f.Rule == PageBodyAstLinter.RuleDesignerUnsafeFactoryStatement).Should()
+			.Be(string.IsNullOrEmpty(declaration) ? 0 : 1, because: "every extra factory statement is still warned about");
+	}
+
 	[Test]
 	[Description("Missing helpers are directed to client modules rather than back into the discarded factory body")]
 	public void Lint_ShouldRecommendClientModule_WhenHelperIsMissing() {
