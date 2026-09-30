@@ -920,6 +920,31 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Every argument compile-creatio binds is in its contract: the tool is long-tail, so an agent learns its arguments from get-tool-contract, and a field missing there is a mode nobody can find - process-name was missed that way once.")]
+	public void ToolContractGet_CompileCreatio_Should_ListEveryArgumentTheToolBinds() {
+		// Arrange
+		ToolContractGetTool tool = new();
+		string[] boundNames = typeof(CompileCreatioArgs).GetConstructors().Single().GetParameters()
+			.Select(parameter => typeof(CompileCreatioArgs).GetProperty(parameter.Name!)!
+				.GetCustomAttributes(typeof(System.Text.Json.Serialization.JsonPropertyNameAttribute), false)
+				.Cast<System.Text.Json.Serialization.JsonPropertyNameAttribute>().Single().Name)
+			.ToArray();
+
+		// Act
+		ToolContractDefinition contract = tool.GetToolContracts(
+			new ToolContractGetArgs([CompileCreatioTool.CompileCreatioToolName])).Tools!.Single();
+
+		// Assert
+		contract.InputSchema.Properties.Select(field => field.Name).Should().BeEquivalentTo(boundNames,
+			because: "the contract and the arguments the tool binds must list the same fields");
+		contract.Examples.Should().Contain(example => example.Arguments.ContainsKey("process-name"),
+			because: "the process mode needs an example, or an agent keeps reaching for package-name");
+		contract.Preconditions!.Should().Contain(precondition => precondition.Contains("pass `process-name`", StringComparison.Ordinal),
+			because: "the business-process precondition says which argument a process compile takes");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("The create-app contract requires the navigation placement and audience decision BEFORE the call, because the tool itself places the section in the administrators-only My applications workplace.")]
 	public void ToolContractGet_Should_Require_NavigationPlacement_Before_ApplicationCreate() {
 		// Arrange
