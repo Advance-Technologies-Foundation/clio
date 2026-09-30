@@ -567,38 +567,23 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 	}
 
 	[Test]
-	[Description("The bundled rules carry the excludedComponents entry for crt.SearchFilter inside crt.ExpansionPanel.tools: the search field does not fit the panel's compact icon-only header strip, so it is stripped from tools specifically (not banned everywhere on the page).")]
-	public void LoadBundled_ExcludedComponents_CarriesSearchFilterInsideExpansionPanelToolsRule() {
-		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
-
-		rules.ExcludedComponents.Should().NotBeEmpty(
-			because: "the bundled rules ship the crt.SearchFilter / crt.ExpansionPanel.tools exclusion");
-		ExcludedComponentFilterRule filter = rules.ExcludedComponents
-			.SelectMany(g => g.Filters)
-			.Single(f => f.Type == "crt.SearchFilter");
-		filter.ParentType.Should().Be("crt.ExpansionPanel",
-			because: "the defect is positional — crt.SearchFilter does not fit THIS host's tools strip, not unsupported everywhere");
-		filter.PropertiesContainerName.Should().Be("tools",
-			because: "the search is scoped to the panel's tools property, not its whole mobileValues subtree");
-		filter.Note.Should().NotBeNullOrWhiteSpace(
-			because: "the rules file is where the next rule author looks for WHY an exclusion exists — the drop "
-				+ "reason deliberately carries only the mechanical fact, so the motivation has to live here");
-	}
-
-	[Test]
-	[Description("ENG-96411: the bundled rules also strip crt.QuickFilter from crt.ExpansionPanel.tools — a captioned chip overflows the compact icon-only header strip and hides the panel title on a phone.")]
-	public void LoadBundled_ExcludedComponents_CarriesQuickFilterInsideExpansionPanelToolsRule() {
+	[Description("ENG-95081, ENG-96411: the bundled rules keep only buttons, their menu items and the containers holding them in crt.ExpansionPanel.tools — the panel's compact icon-only header strip fits nothing else on a phone, and the ban is positional, not page-wide.")]
+	public void LoadBundled_ExcludedComponents_AllowsOnlyButtonsInExpansionPanelTools() {
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
 
 		ExcludedComponentFilterRule filter = rules.ExcludedComponents
 			.SelectMany(g => g.Filters)
-			.Single(f => f.Type == "crt.QuickFilter");
-		filter.ParentType.Should().Be("crt.ExpansionPanel",
-			because: "a quick filter elsewhere on the page, e.g. in the panel body above its list, still converts");
+			.Single(f => f.ParentType == "crt.ExpansionPanel");
+		filter.Type.Should().Be(ExcludedComponentFilterRule.AnyType,
+			because: "an allow-list keeps a new non-button type out of the strip without another rule");
+		filter.ExceptTypes.Should().BeEquivalentTo(
+			["crt.Button", "crt.MenuItem", "crt.FlexContainer", "crt.GridContainer"],
+			because: "buttons sit inside a grid → flex pair and carry their menu items; dropping any of them empties the strip");
 		filter.PropertiesContainerName.Should().Be("tools",
 			because: "only the header strip lacks the room, not the panel's items");
 		filter.Note.Should().NotBeNullOrWhiteSpace(
-			because: "the rules file is where the next rule author looks for WHY an exclusion exists");
+			because: "the rules file is where the next rule author looks for WHY an exclusion exists — the drop "
+				+ "reason deliberately carries only the mechanical fact, so the motivation has to live here");
 	}
 
 	[Test]

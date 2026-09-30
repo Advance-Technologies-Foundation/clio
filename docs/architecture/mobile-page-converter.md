@@ -334,7 +334,7 @@ a no-op.
 | `components[]` | `filters`, `path?`, `viewConfigTemplates` | Type conversion by filter + value skeleton (`ResolveTemplateTargetType` reads `viewConfigTemplates[].value.type`); `path` scopes to an ancestor |
 | `requests[]` | `web`, `mobile`, `category` | Action-binding map (§7); only supported requests are listed |
 | `componentPropertyOverrides[]` | `filters`, `values`, `mergeNestedObjects` | Standards stamped on inserted elements (`normalizations`) |
-| `excludedComponents[]` | `filters{type, parentType, propertiesContainerName?}` | Positional bans (`drop-excluded-by-rule`); a filter missing `type` or `parentType` is unusable and skipped |
+| `excludedComponents[]` | `filters{type, parentType, propertiesContainerName?, exceptTypes?}` | Positional bans (`drop-excluded-by-rule`); `type: "*"` bans every type except `exceptTypes` (an allow-list for the slot); a filter missing `type` or `parentType` is unusable and skipped |
 | `emptyContainerRemoval.removableTypes` | string[] | Closed set of container types removable when empty |
 | `contentContainerTypes` | string[] | Container types treated as content |
 | `nonConvertingScopeContainers` | string[] | Kept in the tree as `path` ancestors, emit no element (`drop-non-converting-scope`) |

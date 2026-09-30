@@ -1,6 +1,8 @@
 ﻿namespace Clio.Command.McpServer.Tools.MobilePageConverter;
 
+using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -566,9 +568,35 @@ public sealed class ExcludedComponentFilterRule {
 	/// cover a case no rule has would buy a hypothetical at the cost of the coupling the whole pass avoids.
 	/// A future rule that needs both sides should ship as two filter entries, one per name.
 	/// </para>
+	/// <para>
+	/// <see cref="AnyType"/> (<c>"*"</c>) matches every type except those in <see cref="ExceptTypes"/>, turning
+	/// the filter into an allow-list for its scope.
+	/// </para>
 	/// </summary>
 	[JsonPropertyName("type")]
 	public string Type { get; init; }
+
+	/// <summary>The <see cref="Type"/> value that matches any component type not listed in <see cref="ExceptTypes"/>.</summary>
+	public const string AnyType = "*";
+
+	/// <summary>
+	/// Only with <see cref="Type"/> = <see cref="AnyType"/>: the component types the filter keeps. Containers the
+	/// kept components sit in must be listed too — they are types like any other here — and the empty-container
+	/// pass then removes the ones the exclusion emptied. Ignored for a filter that names a concrete type.
+	/// </summary>
+	[JsonPropertyName("exceptTypes")]
+	public IReadOnlyList<string> ExceptTypes { get; init; } = [];
+
+	/// <summary>Whether a component of <paramref name="componentType"/> is one this filter removes.</summary>
+	public bool MatchesType(string componentType) {
+		if (string.IsNullOrEmpty(componentType)) {
+			return false;
+		}
+		if (Type == AnyType) {
+			return !(ExceptTypes ?? []).Contains(componentType, StringComparer.OrdinalIgnoreCase);
+		}
+		return string.Equals(componentType, Type, StringComparison.OrdinalIgnoreCase);
+	}
 
 	/// <summary>
 	/// Mobile type of the HOST element the search is confined to (e.g. <c>"crt.ExpansionPanel"</c>). The

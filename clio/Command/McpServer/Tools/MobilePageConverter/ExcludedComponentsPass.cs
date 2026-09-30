@@ -190,7 +190,7 @@ internal static class ExcludedComponentsPass {
 				continue;
 			}
 			foreach (ExcludedComponentFilterRule filter in filters) {
-				if (!string.Equals(entry.MobileType, filter.Type, StringComparison.OrdinalIgnoreCase)) {
+				if (!filter.MatchesType(entry.MobileType)) {
 					continue;
 				}
 				string hostMobileName = FindHostOnAncestorPath(entry, filter, byMobileName);
@@ -475,8 +475,8 @@ internal static class ExcludedComponentsPass {
 	}
 
 	/// <summary>
-	/// Recursively removes every object node whose <c>type</c> equals <paramref name="filter"/>'s
-	/// <c>Type</c> from any array found anywhere under <paramref name="scope"/> — the target may be a
+	/// Recursively removes every object node whose <c>type</c> <paramref name="filter"/> matches
+	/// from any array found anywhere under <paramref name="scope"/> — the target may be a
 	/// direct child of <paramref name="scope"/> or several levels deeper; this walks either way. Does not
 	/// recurse into a removed node (it is gone). Bounded by <see cref="MaxSearchDepth"/> like the host walk.
 	/// <para>
@@ -501,8 +501,7 @@ internal static class ExcludedComponentsPass {
 		switch (scope) {
 			case JsonArray array:
 				for (int i = array.Count - 1; i >= 0; i--) {
-					if (array[i] is JsonObject child
-						&& string.Equals(child["type"]?.ToString(), filter.Type, StringComparison.OrdinalIgnoreCase)) {
+					if (array[i] is JsonObject child && filter.MatchesType(child["type"]?.ToString())) {
 						dropped.Add(BuildDropEntry(child, filter, hostMobileName));
 						array.RemoveAt(i);
 						continue; // do not recurse into a node that no longer exists
@@ -533,9 +532,10 @@ internal static class ExcludedComponentsPass {
 	private static ElementMapEntry BuildDropEntry(
 		JsonObject removedNode, ExcludedComponentFilterRule filter, string hostMobileName) {
 		string name = removedNode["name"]?.ToString();
+		string type = removedNode["type"]?.ToString();
 		return new ElementMapEntry {
 			WebName = string.IsNullOrEmpty(name) ? null : name,
-			WebType = string.IsNullOrEmpty(filter.Type) ? null : filter.Type,
+			WebType = string.IsNullOrEmpty(type) ? null : type,
 			Operation = ElementMapOperations.Drop,
 			Reason = BuildDropReason(filter, hostMobileName)
 		};

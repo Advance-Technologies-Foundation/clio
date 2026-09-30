@@ -289,16 +289,11 @@
     {
       "filters": [
         {
-          "type": "crt.SearchFilter",
+          "type": "*",
+          "exceptTypes": ["crt.Button", "crt.MenuItem", "crt.FlexContainer", "crt.GridContainer"],
           "parentType": "crt.ExpansionPanel",
           "propertiesContainerName": "tools",
-          "note": "ENG-95081: the panel's tools strip is a compact icon-only header row on mobile, which a search field does not fit. Positional only - crt.SearchFilter elsewhere on the page converts normally."
-        },
-        {
-          "type": "crt.QuickFilter",
-          "parentType": "crt.ExpansionPanel",
-          "propertiesContainerName": "tools",
-          "note": "ENG-96411: a captioned quick-filter chip does not fit the same icon-only header row either - on a phone it pushes the panel title out and overflows the strip. Positional only - crt.QuickFilter elsewhere on the page converts normally."
+          "note": "ENG-95081, ENG-96411: the panel's tools strip is a compact icon-only header row on mobile - a search field (ENG-95081) or a captioned quick-filter chip (ENG-96411) pushes the panel title out and overflows it. Only buttons, their menu items and the containers holding them stay. Positional only - the same types elsewhere on the page convert normally."
         }
       ]
     }
