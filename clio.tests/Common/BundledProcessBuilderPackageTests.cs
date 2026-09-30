@@ -287,7 +287,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"70466927D2303C7D8C1E42B325CB108C6188B29764C23AEC5B64344ABE8D4DDD";
+		"00D27234CD6D73AD4B27A530A813C8C798C0CEDD19F4166C51076D8119F5BB54";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -315,7 +315,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.6.42";
+	private const string ExpectedArchiveVersion = "1.6.6.49";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, written by
@@ -327,7 +327,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "2f9a4ad1ebaeeafb42e2cf58ac1aac8f8133e761";
+	private const string ExpectedProducingCommit = "c60f6c9c68f5cf61598945b0d3ba9e75c7447a87";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -353,7 +353,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1790698974000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1790749971000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
@@ -1143,6 +1143,25 @@ public class BundledProcessBuilderPackageTests {
 				+ "second schema is not inert: a ProcessSchema can carry a script task, and a client schema "
 				+ "reaches the UI — both would install and run under the package's own name, below the "
 				+ "CanManageProcessDesign gate that protects everything the service itself does");
+	}
+
+	[Test]
+	[Description("The shipped archive declares the record-column source members on the exact contract types clio sends and reads. The [RequiresPackage] floor 1.6.6.40 promises them, but the floor is a NUMBER: a later re-cut from a tree without the feature would satisfy it while an older serializer drops sourceColumn and answers success - the whole-record widening the floor exists to prevent. Asked per type, because one wire name on the wrong contract proves nothing.")]
+	public void BundledArchive_ShouldDeclareTheRecordColumnSourceMembers() {
+		// Arrange
+		string archive = ReadBundledArchiveAsText();
+
+		// Act & Assert
+		DeclaresMemberOn(archive, "ProcessMappingDescriptor", "sourceColumn").Should().BeTrue(
+			because: "mappings[] at create and addMapping on modify send it");
+		DeclaresMemberOn(archive, "ChangeDataValueDescriptor", "sourceColumn").Should().BeTrue(
+			because: "Modify data, Add data and Open edit page values send it");
+		DeclaresMemberOn(archive, "OpenEditPageRecordDescriptor", "sourceColumn").Should().BeTrue(
+			because: "an Open edit page recordId sends it");
+		DeclaresMemberOn(archive, "FilterElementParameterRef", "column").Should().BeTrue(
+			because: "a filter's elementParameter sends it");
+		DeclaresMemberOn(archive, "DescribeProcessParameter", "sourceColumn").Should().BeTrue(
+			because: "describe reports it back, and clio's DescribedParameter types it");
 	}
 
 	[Test]
