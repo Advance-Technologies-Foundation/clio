@@ -181,7 +181,7 @@ test('swaps the component label when an edit changes the component', () => {
   const plan = routing.planRouting({ body, previousBody, currentLabels: ['bug', 'component:package'], currentAssignees: ['carol'], config });
   // Assert
   assert.deepEqual(plan.labelsToRemove, ['component:package'], 'the label of the old choice is removed');
-  assert.deepEqual(plan.labelsToAdd, ['component:docs', 'needs-triage'], 'the new choice is applied; docs has no owner');
+  assert.deepEqual(plan.labelsToAdd, ['component:docs'], 'the new choice is applied; docs has no owner, but carol is already on it, so no triage');
   assert.deepEqual(plan.ownerCandidates, [], 'the existing assignee is kept; reassignment is a human decision');
 });
 
@@ -628,4 +628,114 @@ test('run keeps needs-triage when the mention comment cannot be published', asyn
   assert.deepEqual(only(calls, 'removeLabel'), [], 'nobody was told, so the issue stays visible in triage');
   assert.deepEqual(only(calls, 'addLabels'), [['addLabels', 'component:ring']], 'the component is still routed');
   assert.ok(warnings.some(w => w.includes('could not be mentioned')), 'the failure is logged');
+});
+
+// ---- Issues created through the API: no Component field, the component comes as a label.
+
+const apiBody = 'Created by an agent through the API.\n\n## Problem\n\nSomething broke.';
+
+test('an API issue with one component label is routed to that component\'s owners', () => {
+  // Arrange / Act
+  const plan = routing.planRouting({ body: apiBody, currentLabels: ['bug', 'component:package'], currentAssignees: [], trigger: 'opened', config });
+  // Assert
+  assert.equal(plan.source, 'label', 'the label stands in for the missing form field');
+  assert.equal(plan.component.id, 'package', 'the component is the one the label names');
+  assert.deepEqual(plan.ownerCandidates, ['carol'], 'the owner is proposed as with a form issue');
+  assert.deepEqual([plan.labelsToAdd, plan.labelsToRemove], [[], []], 'the label is the choice, so labels stay as they are');
+});
+
+test('an API issue in mention mode mentions the owners from its label', () => {
+  // Arrange / Act
+  const plan = routing.planRouting({ body: apiBody, currentLabels: ['component:ring'], currentAssignees: ['dave'], trigger: 'labeled', labeledName: 'component:ring', config });
+  // Assert
+  assert.deepEqual(plan.ownersToMention, ['erin', 'frank'], 'mention does not depend on the assignee');
+  assert.deepEqual(plan.ownerCandidates, [], 'nobody is assigned in mention mode');
+});
+
+test('a text edit of an API issue does not notify the owners again', () => {
+  // Arrange / Act
+  const plan = routing.planRouting({ body: `${apiBody}\nmore`, previousBody: apiBody, currentLabels: ['component:package'], trigger: 'edited', config });
+  // Assert
+  assert.equal(plan.unchanged, true, 'owners were told when the issue was opened or labelled');
+});
+
+test('an API issue with two component labels is left to a human', () => {
+  // Arrange / Act
+  const plan = routing.planRouting({ body: apiBody, currentLabels: ['component:package', 'component:docs'], trigger: 'opened', config });
+  // Assert
+  assert.equal(plan.unchanged, true, 'two labels are not a choice');
+  assert.equal(plan.source, 'ambiguous-labels', 'the reason is visible in the log');
+});
+
+test('an API issue labelled with an ownerless component asks for triage only when unassigned', () => {
+  // Arrange / Act
+  const unassigned = routing.planRouting({ body: apiBody, currentLabels: ['component:docs'], currentAssignees: [], trigger: 'opened', config });
+  const assigned = routing.planRouting({ body: apiBody, currentLabels: ['component:docs'], currentAssignees: ['dave'], trigger: 'opened', config });
+  // Assert
+  assert.deepEqual(unassigned.labelsToAdd, ['needs-triage'], 'nobody owns it and nobody took it');
+  assert.equal(assigned.unchanged, true, 'dave already took it');
+});
+
+test('an assigned issue without any component is not marked for triage', () => {
+  // Arrange: issue #1719 — created through the API, author assigned himself, no component label.
+  // Act
+  const plan = routing.planRouting({ body: apiBody, currentLabels: [], currentAssignees: ['dave'], trigger: 'opened', config });
+  // Assert
+  assert.equal(plan.unchanged, true, 'someone is already working on it, so needs-triage would only be noise');
+});
+
+function labeledContext(body, label, { labels = [label], assignees = [] } = {}) {
+  const context = eventContext(body, { action: 'labeled', labels, assignees });
+  context.payload.label = { name: label };
+  return context;
+}
+
+test('run routes an API issue when its component label is added after creation', async () => {
+  // Arrange: issue #1715 — opened without labels, the label arrives a second later.
+  const { github, calls } = fakeGitHub({ assignable: ['carol'] });
+  const { core } = fakeCore();
+  // Act
+  await routing.run({ github, context: labeledContext(apiBody, 'component:package'), core, configPath: fixtureConfigPath() });
+  // Assert
+  assert.deepEqual(only(calls, 'addAssignees'), [['addAssignees', 'carol']], 'the component owner is assigned');
+  assert.equal(only(calls, 'addLabels').length + only(calls, 'removeLabel').length, 0, 'labels are left as the author set them');
+});
+
+test('run ignores a non-component label and a label added to a form issue', async () => {
+  // Arrange
+  const first = fakeGitHub({ assignable: ['carol'] });
+  const second = fakeGitHub({ assignable: ['carol'] });
+  const { core } = fakeCore();
+  // Act
+  await routing.run({ github: first.github, context: labeledContext(apiBody, 'bug'), core, configPath: fixtureConfigPath() });
+  await routing.run({ github: second.github, context: labeledContext(formBody('Packages'), 'component:docs', { labels: ['component:package', 'component:docs'] }), core, configPath: fixtureConfigPath() });
+  // Assert
+  assert.deepEqual(first.calls, [], 'a topic label is not a routing signal, and nothing is even read');
+  assert.equal(second.calls.filter(c => c[0] !== 'get').length, 0, 'on a form issue the form decides; a hand-added label is a human decision');
+});
+
+test('adding another component label to a routed API issue does not re-notify the owners', () => {
+  // Arrange: component:package was routed; someone now adds component:typo (prefix, not in the map).
+  // Act
+  const plan = routing.planRouting({ body: apiBody, currentLabels: ['component:package', 'component:typo', 'needs-triage'], currentAssignees: [], trigger: 'labeled', labeledName: 'component:typo', config });
+  // Assert
+  assert.equal(plan.unchanged, true, 'only the event that added the single component label routes');
+});
+
+test('an assigned API issue keeps a needs-triage label a human set', () => {
+  // Arrange / Act
+  const plan = routing.planRouting({ body: apiBody, currentLabels: ['component:package', 'needs-triage'], currentAssignees: ['dave'], trigger: 'labeled', labeledName: 'component:package', config });
+  // Assert
+  assert.equal(plan.unchanged, true, 'nobody is told in assign mode when the issue is taken, so triage stays');
+});
+
+test('run does not add needs-triage to an assigned issue when the mention comment fails', async () => {
+  // Arrange
+  const live = { number: 7, body: apiBody, labels: [{ name: 'component:ring' }], assignees: [{ login: 'dave' }] };
+  const { github, calls } = fakeGitHub({ live, commentStatus: 503 });
+  const { core } = fakeCore();
+  // Act
+  await routing.run({ github, context: labeledContext(apiBody, 'component:ring'), core, configPath: fixtureConfigPath() });
+  // Assert
+  assert.equal(only(calls, 'addLabels').length, 0, 'dave is on it; a failed notification does not make it a triage case');
 });

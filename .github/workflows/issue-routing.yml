@@ -4,6 +4,10 @@
 # in .github/ISSUE_TEMPLATE/*.yml offer the same components in their "Component" dropdown. How to
 # add a component or change an owner: .github/ISSUE_ROUTING.md.
 #
+# Issues created through the API have no Component field; one `component:*` label stands in for it.
+# `labeled` is a trigger so a label added right after creation is routed too. Labels applied by this
+# workflow's own GITHUB_TOKEN do not trigger workflows, so the run cannot re-trigger itself.
+#
 # CODEOWNERS is deliberately NOT the source: an issue has no changed files to match against path
 # patterns, and issue components are coarser than paths. `paths` in the map is informational.
 #
@@ -18,7 +22,7 @@ name: Issue routing
 
 on:
   issues:
-    types: [opened, edited]
+    types: [opened, edited, labeled]
 
 permissions:
   contents: read

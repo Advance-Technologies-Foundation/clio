@@ -7,7 +7,7 @@ New issues are labelled and assigned from the **Component** dropdown in the issu
 | Issue forms (Component dropdown, native type label) | `.github/ISSUE_TEMPLATE/bug_report.yml`, `feature_request.yml` |
 | Component → label, owners map (**source of truth**) | `.github/component-owners.json` |
 | Routing logic (pure functions + GitHub calls) | `.github/scripts/issue-routing/issue-routing.js` |
-| Workflow (`issues: opened, edited`) | `.github/workflows/issue-routing.yml` |
+| Workflow (`issues: opened, edited, labeled`) | `.github/workflows/issue-routing.yml` |
 | Tests (`make test-issue-routing`) | `.github/scripts/issue-routing/issue-routing.test.js`, run on PRs by `issue-routing-tests.yml` |
 
 ## What happens
@@ -27,8 +27,9 @@ New issues are labelled and assigned from the **Component** dropdown in the issu
    If the owners could not be told either way (nobody assignable, comment failed), the issue
    keeps `needs-triage`. A component with `owners: []` gets its label **and**
    `needs-triage`, because nobody is routed to pick it up.
-4. **No value, unknown value, or "Other / not sure"** → adds `needs-triage` (unless a component
-   label is already on the issue). A blank issue (no form) is treated the same way.
+4. **No value, unknown value, or "Other / not sure"** → adds `needs-triage`, unless a component
+   label is already on the issue or someone is already assigned. An issue without the form is
+   covered by **Issues created through the API** below.
 5. **An owner cannot be assigned** (not a collaborator, no access) → warning in the run log,
    the component label is still added, plus `needs-triage`. The run never fails because of routing;
    only an invalid `component-owners.json` fails it. If the live issue cannot be read, the run
@@ -47,6 +48,26 @@ New issues are labelled and assigned from the **Component** dropdown in the issu
      run of the switching edit). A component label a human triager applied to a "not sure" or
      blank issue is kept.
    Title-only edits are ignored.
+
+### Issues created through the API
+
+An issue created with `gh issue create` or the REST API has no Component field. Give the component
+as a label instead — exactly one `component:*` label, at creation or right after:
+
+```bash
+gh issue create --title "..." --body "..." --label component:package
+```
+
+- The workflow also runs on `labeled`, so a component label added a moment after creation (as
+  `gh` and agents often do) is picked up too.
+- With **one** component label and no Component field, that label is the choice: the owners are
+  assigned or mentioned exactly as for a form issue, and labels are left as they are.
+- Owners are notified when the issue is opened or when that label is added, not on later text
+  edits and not when some other label is added. Removing and re-adding the label re-routes.
+- **Two or more** component labels are not a choice; the issue is left to a human.
+- Adding a component label to a **form** issue does not re-route it; the form stays the source.
+- Alternatively, put the form section into the body — `### Component` followed by the exact
+  option text — and the issue is routed like a form issue.
 
 Rules that protect manual work:
 
