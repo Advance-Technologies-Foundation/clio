@@ -1,15 +1,23 @@
 ---
-description: PageBodyAstLinter rejects a call in handlers, converters or validators unless the callee is definitely initialized in the factory scope chain or is a known JavaScript/Creatio global
+description: PageBodyAstLinter distinguishes missing callees from factory helpers that Designer deletes while preserving their section calls
 applies-to:
   - clio/Command/McpServer/Tools/PageBodyAstLinter.cs
 ticket: 1312
-date: 2026-09-12
+date: 2026-09-30
 ---
 
 **What is true** — the undefined-call lint is limited to direct identifier callees inside the
 `handlers`, `converters` and `validators` properties **of the object the AMD factory returns**; a
 property of one of those names anywhere else in the tree is ordinary metadata and is not scanned.
 Member calls such as `request.$context.set(...)` are not treated as helper references. A name
+sourced from a page-factory declaration now produces `designer-unsafe-section-call`, even when
+initialized. AMD dependency parameters and callback-local declarations remain usable. Extra factory
+statements produce `designer-unsafe-factory-statement` warnings, including unused constants and caches.
+A separate client-unit module is the durable location for helpers; keep its dependency and argument
+inside `SCHEMA_DEPS` and `SCHEMA_ARGS`. On disposable Creatio 10.0.0.858, an actual Interface Designer
+save removed both a factory helper and constant while preserving the handler call (clio #1697).
+
+For the separate `undefined-section-call` check, a name
 satisfies a call only when it is DEFINITELY INITIALIZED, and that is demanded only once resolution
 crosses a function boundary: `if (false) { function helper(){} }`, `let helper;` with no assignment,
 and an assignment placed after the factory's `return` all leave the binding `undefined` and are

@@ -76,7 +76,7 @@ public sealed class McpPayloadDumpCleanupPolicyTests {
 	/// </remarks>
 	private static readonly IReadOnlyDictionary<string, string> EvidenceKeepingSites =
 		new Dictionary<string, string>(StringComparer.Ordinal) {
-			["clio.mcp.e2e/PageSyncToolE2ETests.cs::PageSyncTool_Should_Block_Real_Save_And_Leave_Page_Unchanged_When_HelperIsConditionallyDeclared"] =
+			["clio.mcp.e2e/PageSyncToolE2ETests.cs::PageSyncTool_Should_Block_Real_Save_And_Leave_Page_Unchanged_When_HelperIsUnsafe"] =
 				"the restore runs only when restoreNeeded, i.e. when the probe body reached the stand, and the bodyAfter assertion has then already failed the test",
 			["clio.mcp.e2e/PageUpdateToolE2ETests.cs::TryRestorePageBodyAsync"] =
 				"called only from a finally block under restoreNeeded, which is set exactly when the test's own assertion on the unchanged body fails"
