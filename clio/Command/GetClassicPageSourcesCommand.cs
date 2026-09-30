@@ -295,8 +295,9 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 				? options.Entity
 				: InferEntity(ctx, schemas, seed);
 
-			// 5. Merged localizable strings -> resources (best-effort; the merge folds localization, not the view).
-			JObject resources = BuildResources(ctx, topLayerUId, options.SchemaName);
+			// 5. Merged localizable strings -> resources (en-US text) and resourceStrings (every culture), best-effort;
+			//    the merge folds localization, not the view.
+			(JObject resources, JObject resourceStrings) = BuildResources(ctx, topLayerUId, options.SchemaName);
 
 			// 6. Entity columns + titles from the merged entity schema (best-effort).
 			(JObject entityColumns, JObject columnTitles) = BuildEntityColumns(ctx, entity);
@@ -344,6 +345,7 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 			AddBlock(manifest, "entityColumns", entityColumns);
 			AddBlock(manifest, "columnTitles", columnTitles);
 			AddBlock(manifest, "resources", resources);
+			AddBlock(manifest, "resourceStrings", resourceStrings);
 			AddBlock(manifest, "detailSchemas", detailSchemas);
 			AddBlock(manifest, "section", section);
 			AddBlock(manifest, "childPageSchemas", childPageSchemas);
@@ -842,8 +844,10 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 		}
 	}
 
-	private JObject BuildResources(PageSourcesRunContext ctx, string topLayerUId, string schemaName) {
+	private (JObject resources, JObject resourceStrings) BuildResources(
+		PageSourcesRunContext ctx, string topLayerUId, string schemaName) {
 		var resources = new JObject();
+		var resourceStrings = new JObject();
 		try {
 			(JObject schema, string error) = LoadSchemaCached(ctx, topLayerUId, schemaName, useFullHierarchy: true);
 			if (error != null || schema == null) {
@@ -853,9 +857,11 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 					"The manifest carries no resources, so localized captions will be missing from the folded page.";
 				_logger.WriteWarning(warning);
 				AddWarning(ctx, warning);
-				return resources;
+				return (resources, resourceStrings);
 			}
-			foreach (MergedLocalizableString localizableString in SchemaDesignerHelper.ExtractMergedLocalizableStrings(schema)) {
+			IReadOnlyList<MergedLocalizableString> strings = SchemaDesignerHelper.ExtractMergedLocalizableStrings(schema);
+			resourceStrings = BuildResourceStrings(strings);
+			foreach (MergedLocalizableString localizableString in strings) {
 				if (string.IsNullOrWhiteSpace(localizableString.Name) || localizableString.Values.Count == 0) {
 					continue;
 				}
@@ -872,7 +878,30 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 			_logger.WriteWarning(warning);
 			AddWarning(ctx, warning);
 		}
-		return resources;
+		return (resources, resourceStrings);
+	}
+
+	// Merged localizable strings in get-page's bundle.resources.strings shape: { "Key": { "en-US": "…", "fr-FR": "…" } }.
+	// The first non-empty value per key and culture wins, matching the flat resources rule.
+	private static JObject BuildResourceStrings(IReadOnlyList<MergedLocalizableString> strings) {
+		var resourceStrings = new JObject();
+		foreach (MergedLocalizableString localizableString in strings) {
+			if (string.IsNullOrWhiteSpace(localizableString.Name)) {
+				continue;
+			}
+			var cultures = resourceStrings[localizableString.Name] as JObject ?? new JObject();
+			foreach (MergedLocalizableStringValue value in localizableString.Values) {
+				if (string.IsNullOrWhiteSpace(value.CultureName) || string.IsNullOrEmpty(value.Value)
+					|| cultures[value.CultureName] != null) {
+					continue;
+				}
+				cultures[value.CultureName] = value.Value;
+			}
+			if (cultures.HasValues) {
+				resourceStrings[localizableString.Name] = cultures;
+			}
+		}
+		return resourceStrings;
 	}
 
 	private (JObject entityColumns, JObject columnTitles) BuildEntityColumns(PageSourcesRunContext ctx, string entity) {
@@ -983,7 +1012,8 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 					continue; // omit: an unresolved detail is left for the engine to flag, never fabricated
 				}
 				string topUId = layers[layers.Count - 1].UId;
-				(JObject detailSchema, string loadError) = LoadSchemaCached(ctx, topUId, detailName);
+				// Full hierarchy merges the detail's localizable strings across its layers; the body stays the top layer's.
+				(JObject detailSchema, string loadError) = LoadSchemaCached(ctx, topUId, detailName, useFullHierarchy: true);
 				if (loadError != null || detailSchema == null) {
 					string warning = $"Could not gather detail schema '{detailName}': {loadError ?? NoSchemaReturned}";
 					_logger.WriteWarning(warning);
@@ -994,6 +1024,10 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 				string title = SchemaDesignerHelper.ExtractCaption(detailSchema);
 				if (!string.IsNullOrWhiteSpace(title)) {
 					detailEntry["title"] = title;
+				}
+				JObject detailStrings = BuildResourceStrings(SchemaDesignerHelper.ExtractMergedLocalizableStrings(detailSchema));
+				if (detailStrings.HasValues) {
+					detailEntry["resourceStrings"] = detailStrings;
 				}
 				detailSchemas[detailName] = detailEntry;
 			}
@@ -1397,7 +1431,7 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 		// per-template-level BuildSeed fan-out this ran per child page (the dominant round-trip cost when a page
 		// carries many child edit pages, each itself deeply layered). LoadChainAndSeed degrades to that exact
 		// legacy fan-out on any hierarchy failure, so a child manifest is never worse than before.
-		(JArray schemas, JArray seed, _, string chainError) = LoadChainAndSeed(ctx, editPageName);
+		(JArray schemas, JArray seed, string topLayerUId, string chainError) = LoadChainAndSeed(ctx, editPageName);
 		if (chainError != null) {
 			return (null, chainError);
 		}
@@ -1409,6 +1443,9 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 		if (seed.Count > 0) {
 			manifest["seed"] = seed;
 		}
+		(JObject resources, JObject resourceStrings) = BuildResources(ctx, topLayerUId, editPageName);
+		AddBlock(manifest, "resources", resources);
+		AddBlock(manifest, "resourceStrings", resourceStrings);
 		return (manifest, null);
 	}
 

@@ -143,6 +143,131 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 	}
 
 	[Test]
+	[Description("TryAssemblePageSources writes page resourceStrings with every culture of each merged string, keyed like get-page's bundle.resources.strings, and leaves the flat en-US resources unchanged.")]
+	public void TryAssemblePageSources_ShouldWritePageResourceStrings_WithEveryCulture() {
+		// Arrange
+		AddLayer("UsrOrderPage", "uid-page", "UsrApp", 200);
+		AddSchema("uid-page", "define(\"UsrOrderPage\", [], function() { return {}; });", EmptyGuid, "UsrApp");
+		AddLocalizable("uid-page", "TabVisaCaption",
+			("en-US", "Approvals"), ("fr-FR", "Validations"), ("es-ES", "Aprobaciones"));
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrOrderPage" };
+
+		// Act
+		bool ok = _command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: "a resolvable page assembles successfully");
+		JObject manifest = JObject.Parse(ReadManifest(response));
+		manifest["resources"]!["TabVisaCaption"]!.Type.Should().Be(JTokenType.String,
+			because: "the flat resources block keeps its string shape for engines that read resources[key] as text");
+		manifest["resources"]!["TabVisaCaption"]!.ToString().Should().Be("Approvals",
+			because: "the flat resources block still carries the en-US value");
+		var cultures = (JObject)manifest["resourceStrings"]!["TabVisaCaption"];
+		cultures.Properties().Select(p => p.Name).Should().BeEquivalentTo(
+			new[] { "en-US", "fr-FR", "es-ES" },
+			because: "resourceStrings carries every culture the stand holds for the string");
+		cultures["es-ES"]!.ToString().Should().Be("Aprobaciones",
+			because: "each culture keeps its own Classic value");
+		cultures["fr-FR"]!.ToString().Should().Be("Validations",
+			because: "each culture keeps its own Classic value");
+	}
+
+	[Test]
+	[Description("TryAssemblePageSources loads each detail with its full hierarchy and writes the detail's merged strings as resourceStrings in every culture, keeping title and the top-layer body.")]
+	public void TryAssemblePageSources_ShouldWriteDetailResourceStrings_FromFullHierarchyLoad() {
+		// Arrange
+		AddLayer("UsrOrderPage", "uid-page", "UsrApp", 200);
+		AddSchema("uid-page",
+			"define(\"UsrOrderPage\", [], function() { return { details: { V: { schemaName: \"UsrOrderLineDetail\" } } }; });",
+			EmptyGuid, "UsrApp");
+		AddLayer("UsrOrderLineDetail", "uid-detail", "UsrApp", 200);
+		AddSchema("uid-detail",
+			"define(\"UsrOrderLineDetail\", [], function() { return { entitySchemaName: \"UsrOrderLine\" }; });",
+			EmptyGuid, "UsrApp", caption: "Lignes de commande (schéma)");
+		AddLocalizable("uid-detail", "Caption", ("en-US", "Order lines"), ("fr-FR", "Lignes de commande"));
+		AddLocalizable("uid-detail", "SelectLineMessage",
+			("en-US", "Select a line to attach it to the order"),
+			("fr-FR", "Sélectionnez une ligne à attacher à la commande"));
+		AddLocalizable("uid-detail", "AttachLineCaption",
+			("en-US", "Attach line to the order"), ("fr-FR", "Attacher la ligne à la commande"));
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrOrderPage" };
+
+		// Act
+		_command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
+
+		// Assert
+		JObject manifest = JObject.Parse(ReadManifest(response));
+		JToken detail = manifest["detailSchemas"]!["UsrOrderLineDetail"];
+		detail!["resourceStrings"]!["Caption"]!["en-US"]!.ToString().Should().Be("Order lines",
+			because: "the detail's own Caption string is collected in en-US");
+		detail["resourceStrings"]!["Caption"]!["fr-FR"]!.ToString().Should().Be("Lignes de commande",
+			because: "the detail's own Caption string is collected in every culture");
+		((JObject)detail["resourceStrings"]).Properties().Select(p => p.Name).Should().Contain(
+			new[] { "SelectLineMessage", "AttachLineCaption" },
+			because: "every merged detail string travels, not only the caption");
+		detail["title"]!.ToString().Should().Be("Lignes de commande (schéma)",
+			because: "title stays the schema's internal caption, unchanged");
+		detail["body"]!.ToString().Should().Contain("UsrOrderLine",
+			because: "the detail body is still gathered");
+		_applicationClient.Received(1).ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"uid-detail\"")));
+	}
+
+	[Test]
+	[Description("TryAssemblePageSources gives each nested child-page manifest its own merged strings as resources (en-US) and resourceStrings (every culture), like the main page.")]
+	public void TryAssemblePageSources_ShouldWriteChildPageResources_LikeMainPage() {
+		// Arrange
+		AddLayer("UsrCasePage", "uid-page", "UsrApp", 200);
+		AddSchema("uid-page",
+			"define(\"UsrCasePage\", [], function() { return { entitySchemaName: \"UsrCase\", details: { D: { schemaName: \"UsrNoteDetail\" } } }; });",
+			EmptyGuid, "UsrApp");
+		AddLayer("UsrNoteDetail", "uid-detail", "UsrApp", 200);
+		AddSchema("uid-detail",
+			"define(\"UsrNoteDetail\", [], function() { return { entitySchemaName: \"UsrNote\", getEditPageName: function() { return \"UsrNotePage\"; } }; });",
+			EmptyGuid, "UsrApp");
+		AddLayer("UsrNotePage", "uid-child", "UsrApp", 200);
+		AddSchema("uid-child", "define(\"UsrNotePage\", [], function() { return { entitySchemaName: \"UsrNote\" }; });", EmptyGuid, "UsrApp");
+		AddLocalizable("uid-child", "NotesTabCaption", ("en-US", "Notes"), ("fr-FR", "Remarques"));
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrCasePage" };
+
+		// Act
+		_command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
+
+		// Assert
+		JObject manifest = JObject.Parse(ReadManifest(response));
+		JToken child = manifest["childPageSchemas"]!["UsrNotePage"];
+		child!["resources"]!["NotesTabCaption"]!.ToString().Should().Be("Notes",
+			because: "the child manifest carries its flat en-US strings like the main page");
+		child["resourceStrings"]!["NotesTabCaption"]!["fr-FR"]!.ToString().Should().Be("Remarques",
+			because: "the child manifest carries its strings in every culture like the main page");
+		child["columnTitles"].Should().BeNull(because: "child-page column titles are not collected");
+	}
+
+	[Test]
+	[Description("TryAssemblePageSources omits a detail's resourceStrings when the detail declares no localizable strings, instead of writing an empty block.")]
+	public void TryAssemblePageSources_ShouldOmitDetailResourceStrings_WhenDetailHasNoStrings() {
+		// Arrange
+		AddLayer("UsrCasePage", "uid-page", "UsrApp", 200);
+		AddSchema("uid-page",
+			"define(\"UsrCasePage\", [], function() { return { details: { D: { schemaName: \"UsrNoteDetail\" } } }; });",
+			EmptyGuid, "UsrApp");
+		AddLayer("UsrNoteDetail", "uid-detail", "UsrApp", 200);
+		AddSchema("uid-detail", "define(\"UsrNoteDetail\", [], function() { return {}; });", EmptyGuid, "UsrApp");
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrCasePage" };
+
+		// Act
+		_command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
+
+		// Assert
+		JObject manifest = JObject.Parse(ReadManifest(response));
+		manifest["detailSchemas"]!["UsrNoteDetail"]!["resourceStrings"].Should().BeNull(
+			because: "an absent field reads as nothing collected; an empty object would read as resolved-but-empty");
+		manifest["resourceStrings"].Should().BeNull(
+			because: "a page without localizable strings writes no page resourceStrings block");
+	}
+
+	[Test]
 	[Description("TryAssemblePageSources anchors the default manifest path (absolute) and reports it in the response, instead of a cwd-relative string an MCP caller cannot resolve.")]
 	public void TryAssemblePageSources_ShouldUseAnchoredAbsoluteDefaultPath_WhenOutputFileOmitted() {
 		// Arrange
@@ -2041,16 +2166,23 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		_schemaByUid[uid] = schema;
 	}
 
-	private void AddLocalizable(string uid, string name, string value) {
+	private void AddLocalizable(string uid, string name, string value) =>
+		AddLocalizable(uid, name, ("en-US", value));
+
+	private void AddLocalizable(string uid, string name, params (string Culture, string Value)[] values) {
 		if (!_localizableByUid.TryGetValue(uid, out JArray strings)) {
 			strings = new JArray();
 			_localizableByUid[uid] = strings;
+		}
+		var valueArray = new JArray();
+		foreach ((string culture, string value) in values) {
+			valueArray.Add(new JObject { ["cultureName"] = culture, ["value"] = value });
 		}
 		strings.Add(new JObject {
 			["name"] = name,
 			["parentSchemaUId"] = "p",
 			["uId"] = "ls-" + name,
-			["values"] = new JArray { new JObject { ["cultureName"] = "en-US", ["value"] = value } }
+			["values"] = valueArray
 		});
 	}
 

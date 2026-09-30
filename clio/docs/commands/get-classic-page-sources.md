@@ -27,8 +27,11 @@ It:
   manifest shape;
 - resolves the entity (from `--entity` or inferred from the page body) and gathers `entityColumns` and
   `columnTitles` from the merged entity schema;
-- gathers the localizable strings merged across the hierarchy into `resources`;
-- best-effort, gathers the related schemas the page references: custom `detailSchemas` (body + title), the
+- gathers the localizable strings merged across the hierarchy into `resources` (one en-US text per key) and
+  `resourceStrings` (every culture, in `get-page`'s `bundle.resources.strings` shape:
+  `{ "Key": { "en-US": "…", "fr-FR": "…" } }`);
+- best-effort, gathers the related schemas the page references: custom `detailSchemas` (body, title, and the
+  detail's merged strings as `resourceStrings` in the same shape), the
   `*Section` chain, and the child pages each detail's entity registers — its edit card **and** its add mini
   page — each as a nested `childPageSchemas` manifest. These use conservative heuristics; anything that cannot
   be resolved is **omitted, never fabricated**;
@@ -88,8 +91,16 @@ clio get-classic-page-sources --schema-name UsrCasePage --entity UsrCase --outpu
 The response JSON reports `success`, `schemaName`, `entity`, `manifestPath`, `layerCount`, `seedCount`,
 `resourceCount`, `columnCount`, `detailCount`, `sectionLayerCount`, `childPageCount`, `enumVocabularyCount`,
 `warnings`, and `error`. The manifest file written to disk contains `schemas` (`[{ pkg, body }]`, base->top),
-and, when resolvable, `seed`, `entity`, `entityColumns`, `columnTitles`, `resources`, `detailSchemas`,
-`section`, `childPageSchemas`, and `enumVocabulary`.
+and, when resolvable, `seed`, `entity`, `entityColumns`, `columnTitles`, `resources`, `resourceStrings`,
+`detailSchemas`, `section`, `childPageSchemas`, and `enumVocabulary`.
+
+- `resources` maps each page string to its en-US text (else its first culture). `resourceStrings` maps each page
+  string to all its cultures. Both are omitted when the page's merged strings cannot be loaded. Each nested
+  `childPageSchemas` manifest carries its own `resources` and `resourceStrings` the same way.
+- Each `detailSchemas` entry carries `body` (the top layer's), `title`, and `resourceStrings`: the detail's strings
+  merged across its layers, in every culture. `title` is the detail schema's internal caption, not the title the
+  page shows; Classic takes that title from the page's `captionName` resource, then the page's
+  `<Detail>DetailCaptionOnPage` resource, then the detail's own `Caption` string.
 
 `warnings` is present only when the collected sources are incomplete in a way the caller must weigh, and is
 omitted from a complete collection. **Read it before planning from the manifest** — every block that was
