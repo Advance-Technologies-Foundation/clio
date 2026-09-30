@@ -1246,6 +1246,32 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 
 	[Test]
 	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("get-tool-contract serves compile-creatio's process-name argument")]
+	[Description("compile-creatio is long-tail, so an agent learns its arguments from the served contract: the process-name mode - the compile a script task saved by create/modify-business-process needs - must be in it, with an example.")]
+	public async Task ToolContractGet_Should_Serve_CompileCreatio_ProcessName() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		ToolContractGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["tool-names"] = new[] { CompileCreatioTool.CompileCreatioToolName }
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "the compile-creatio contract must be discoverable through the executable clio MCP catalog");
+		ToolContractDefinition contract = response.Tools!.Single();
+		contract.InputSchema.Properties.Should().Contain(field => field.Name == "process-name",
+			because: "the served contract is where an agent finds the process compile");
+		contract.Examples.Should().Contain(example => example.Arguments.ContainsKey("process-name"),
+			because: "an example keeps an agent from reaching for package-name instead");
+	}
+
+	[Test]
+	[AllureTag(ToolContractGetTool.ToolName)]
 	[AllureName("get-tool-contract advertises that a package compile fails on a C# compile error")]
 	[AllureDescription("Issues #1632/#1633: the real MCP server must serve the compile-creatio contract saying that a package compile waits for the finished build and fails with the CSxxxx compiler diagnostics, so an agent does not treat a package compile's success as unverified any more - and does not treat a failure as a transport glitch to retry.")]
 	[Description("The served compile-creatio contract says a package compile waits for the finished build and fails with CSxxxx diagnostics on a compile error.")]
