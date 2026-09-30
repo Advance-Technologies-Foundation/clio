@@ -1264,6 +1264,44 @@ public sealed class ODataCreateToolTests {
 	}
 
 	[Test]
+	[Category("Unit")]
+	[Description("GH-1699: an FK-violation body adds clio's validated-identifier hint to the row error while record-created stays unknown and the retry guidance is unchanged.")]
+	public void Create_Should_Add_The_Foreign_Key_Hint_Without_Changing_The_Side_Effect_Fields() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(Clio.Tests.Common.CreatioResponseErrorStructuredDetailTests.PostgresInsertForeignKeyBody);
+		ODataCreateTool tool = BuildTool(client);
+		ODataCreateBatchResponse baseline = BuildTool(ServerErrorClient()).Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "DocListInFinApp", Rows = Arr("[{\"DocListGroupId\":\"11111111-1111-1111-1111-111111111111\"}]")
+		});
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "DocListInFinApp", Rows = Arr("[{\"DocListGroupId\":\"11111111-1111-1111-1111-111111111111\"}]")
+		});
+
+		// Assert
+		ODataRowResult row = response.Results.Single();
+		row.Error.Should().StartWith("An error has occurred. From the error payload (validated identifiers only): ",
+			because: "the hint is appended to today's message rather than replacing it");
+		row.Error.Should().Contain("foreign key constraint 'FK6R22cV5NWM2CfAp2GAV4B2R2GfY' on table 'DocListInFinApp'",
+			because: "the constraint and the table are what the caller needs to find the lookup at fault");
+		row.RecordCreated.Should().BeNull(
+			because: "an FK violation can come from a post-insert handler writing another row, so not-inserted is still not known");
+		row.RetryGuidance.Should().Be(baseline.Results.Single().RetryGuidance,
+			because: "the hint adds the cause only; the side-effect advice is the same as for any server-reported failure");
+		response.Unverified.Should().Be(1, because: "the row stays in the unknown bucket");
+	}
+
+	private static IApplicationClient ServerErrorClient() {
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"error\":{\"code\":\"\",\"message\":\"An error has occurred.\"}}");
+		return client;
+	}
+
+	[Test]
 	[Description("A row rejected locally for its shape reports record-created false, because no request ever left clio - the caller can fix and re-send safely.")]
 	[Category("Unit")]
 	public void Create_Should_Report_RecordCreated_False_When_Row_Rejected_Locally() {
