@@ -58,6 +58,47 @@ public sealed class ModifyProcessAsNewVersionToolE2ETests {
 	}
 
 	[Test]
+	[Description("Over the real MCP path, with no Creatio needed, operations sent as a JSON ARRAY bind AND pass the tool's operations reader, while an object in the same place reaches that reader and is refused by it (ENG-100153). The environment is well-formed but unregistered, so the target guard passes and the call stops only after the reader.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process-as-new-version reads an operations array over the real server")]
+	public async Task ModifyProcessAsNewVersion_Should_ReadAnOperationsArray_AndRefuseAnObject() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: false);
+		string unregisteredEnvironment = $"clio-e2e-unregistered-{Guid.NewGuid():N}";
+		using JsonDocument operations = JsonDocument.Parse(
+			"[{\"op\":\"removeElement\",\"elementName\":\"NotifyAccountOwner\"}]");
+		using JsonDocument notAnArray = JsonDocument.Parse("{\"op\":\"removeElement\"}");
+
+		// Act
+		string arrayResultJson = JsonSerializer.Serialize(await CallToolAsync(context, ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = unregisteredEnvironment,
+				["process-name"] = "UsrAccount_Onboard",
+				["operations"] = operations.RootElement.Clone()
+			}));
+		string objectResultJson = JsonSerializer.Serialize(await CallToolAsync(context, ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = unregisteredEnvironment,
+				["process-name"] = "UsrAccount_Onboard",
+				["operations"] = notAnArray.RootElement.Clone()
+			}));
+
+		// Assert
+		arrayResultJson.Should().NotContain("invalid-parameter-type",
+			because: "an operations array must bind rather than be refused as a non-string before the tool runs");
+		arrayResultJson.Should().NotContain("operations must be a JSON array",
+			because: "the array passed the tool's reader - the call stops later, on the unregistered environment");
+		arrayResultJson.Should().Contain(unregisteredEnvironment,
+			because: "the array call must get as far as resolving the environment, the step AFTER the reader - a "
+				+ "reader that refused the array as missing would answer before naming it");
+		arrayResultJson.Should().Contain("not found",
+			because: "the unregistered environment is what stops the array call, which proves the reader let it through");
+		objectResultJson.Should().Contain("operations must be a JSON array, or a string holding one",
+			because: "the same call with an object reaches the reader and is refused by it, which proves the array "
+				+ "above was read, not merely bound");
+	}
+
+	[Test]
 	[Description("Over the real MCP path, builds a process and then saves an EDITED copy of it as a new version, then reads the family back through describe-business-process to confirm the new member exists, is inactive, and carries the edit.")]
 	[AllureTag(ToolName)]
 	[AllureName("modify-business-process-as-new-version creates an inactive version carrying the edit")]

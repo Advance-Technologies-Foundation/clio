@@ -104,12 +104,21 @@ public class ModifyProcessAsNewVersionTool(
 			return targetError;
 		}
 
+		// Absent, null and an empty string all mean "no operations" here - the snapshot form - so only a
+		// value that is actually present goes through the object-or-string reader (ENG-100153).
+		string operationsJson = string.Empty;
+		if (args.Operations is { } operations && !McpToolArgumentSupport.IsAbsentJsonDocument(operations)
+			&& !McpToolArgumentSupport.TryReadJsonDocumentArgument(operations, JsonValueKind.Array,
+				"operations", out operationsJson, out string operationsError)) {
+			return CommandExecutionResult.FromError(operationsError);
+		}
+
 		ModifyProcessAsNewVersionOptions options = new() {
 			Environment = args.EnvironmentName,
 			ProcessName = args.ProcessName ?? string.Empty,
 			ProcessUid = args.ProcessUid ?? string.Empty,
 			PackageName = args.PackageName ?? string.Empty,
-			OperationsJson = args.Operations ?? string.Empty
+			OperationsJson = operationsJson
 		};
 		// Same post-op note as the in-place edit: a saved version is interpreted and runs as-is once activated,
 		// so "saved" must not be read as "must be compiled" (ENG-95706).
@@ -147,17 +156,28 @@ public sealed record ModifyProcessAsNewVersionArgs(
 	[property: Description("Schema UId of the SOURCE process; provide exactly one of process-name or process-uid.")]
 	string? ProcessUid = null,
 
-	[property: JsonPropertyName("operations")]
-	[property: Description(
-		"Inline JSON operations array, identical in shape to modify-business-process. Omit or pass [] to snapshot "
-		+ "the source unchanged as a new version.")]
-	string? Operations = null,
-
 	[property: JsonPropertyName("package-name")]
 	[property: Description(
 		"Package the new version is saved into. Omit to let the platform choose; a version does not inherit the "
 		+ "root's package.")]
 	string? PackageName = null) {
+
+	/// <summary>
+	/// The operations array, or a string holding its JSON; absent, null or empty snapshots the source unchanged.
+	/// </summary>
+	/// <remarks>
+	/// <see cref="JsonElement"/>, not <see cref="string"/>: the array itself is the natural call, and a string
+	/// holding the same JSON keeps working - <c>McpToolArgumentSupport.TryReadJsonDocumentArgument</c> says why
+	/// (ENG-100153). An init property rather than a positional parameter ON PURPOSE: the SDK emits an optional
+	/// positional <c>JsonElement? = null</c> as <c>{"default":null}</c> and drops its description, and for this
+	/// non-resident tool that description is the only one an agent reads. An init property keeps the description
+	/// and stays out of <c>required</c>.
+	/// </remarks>
+	[JsonPropertyName("operations")]
+	[Description(
+		"Inline JSON operations array, identical in shape to modify-business-process (a string holding the same "
+		+ "JSON is also accepted). Omit or pass [] to snapshot the source unchanged as a new version.")]
+	public JsonElement? Operations { get; init; }
 
 	/// <summary>
 	/// Overflow bag for top-level keys the SDK could not bind to a declared argument (ENG-98566).

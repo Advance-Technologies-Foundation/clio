@@ -38,7 +38,7 @@ public class ModifyProcessAsNewVersionToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.ModifyProcessAsNewVersion(new ModifyProcessAsNewVersionArgs(
-			"docker_fix2", "UsrSampleProcess", null, SampleOperations, "UsrAntonTest"));
+			"docker_fix2", "UsrSampleProcess", null, "UsrAntonTest") { Operations = JsonArgument.Text(SampleOperations) });
 
 		// Assert
 		result.ExitCode.Should().Be(0,
@@ -94,7 +94,7 @@ public class ModifyProcessAsNewVersionToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.ModifyProcessAsNewVersion(new ModifyProcessAsNewVersionArgs(
-			"docker_fix2", "UsrSampleProcess", null, SampleOperations));
+			"docker_fix2", "UsrSampleProcess", null) { Operations = JsonArgument.Text(SampleOperations) });
 
 		// Assert
 		result.ExitCode.Should().Be(0,
@@ -118,7 +118,7 @@ public class ModifyProcessAsNewVersionToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.ModifyProcessAsNewVersion(new ModifyProcessAsNewVersionArgs(
-			"docker_fix2", "UsrSampleProcess", null, SampleOperations));
+			"docker_fix2", "UsrSampleProcess", null) { Operations = JsonArgument.Text(SampleOperations) });
 
 		// Assert
 		result.Note.Should().Be(CommandExecutionResult.CompileNotRequiredNote,
@@ -141,7 +141,7 @@ public class ModifyProcessAsNewVersionToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.ModifyProcessAsNewVersion(new ModifyProcessAsNewVersionArgs(
-			"docker_fix2", "UsrSampleProcess", null, SampleOperations));
+			"docker_fix2", "UsrSampleProcess", null) { Operations = JsonArgument.Text(SampleOperations) });
 
 		// Assert
 		result.ExitCode.Should().NotBe(0,
@@ -162,7 +162,7 @@ public class ModifyProcessAsNewVersionToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.ModifyProcessAsNewVersion(new ModifyProcessAsNewVersionArgs(
-			"   ", "UsrSampleProcess", null, SampleOperations));
+			"   ", "UsrSampleProcess", null) { Operations = JsonArgument.Text(SampleOperations) });
 
 		// Assert
 		result.ExitCode.Should().Be(-1,
@@ -182,7 +182,7 @@ public class ModifyProcessAsNewVersionToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.ModifyProcessAsNewVersion(
-			new ModifyProcessAsNewVersionArgs("docker_fix2", null, null, SampleOperations));
+			new ModifyProcessAsNewVersionArgs("docker_fix2", null, null) { Operations = JsonArgument.Text(SampleOperations) });
 
 		// Assert
 		result.ExitCode.Should().Be(-1,
@@ -205,7 +205,7 @@ public class ModifyProcessAsNewVersionToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.ModifyProcessAsNewVersion(new ModifyProcessAsNewVersionArgs(
-			"docker_fix2", "UsrSampleProcess", "5c58c4c4-134b-4744-9c67-96d9c69c9d55", SampleOperations));
+			"docker_fix2", "UsrSampleProcess", "5c58c4c4-134b-4744-9c67-96d9c69c9d55") { Operations = JsonArgument.Text(SampleOperations) });
 
 		// Assert
 		result.ExitCode.Should().Be(-1,
