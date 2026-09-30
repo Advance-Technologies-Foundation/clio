@@ -3,10 +3,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
-using Clio.Command;
-using Clio.Command.McpServer.Tools;
 using Clio.Command.McpServer.Tools.MobilePageConverter;
-using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
@@ -29,24 +26,8 @@ public sealed class MobilePageConversionGuideToolE2ETests : McpContractFixtureBa
 
 	private const string ToolName = MobilePageConversionGuideTool.ToolName;
 
-	// get-mobile-page-conversion-guide is gated behind [FeatureToggle("mobile-page-converter")], so the
-	// shared child server is started with an isolated CLIO_HOME whose appsettings enables the flag —
-	// otherwise the tool would not be registered and discovery/invocation would fail.
-	private protected override void ConfigureMcpServerSettings(McpE2ESettings settings) {
-		string clioHome = CreateIsolatedClioHome(
-			"""
-			{
-			  "ActiveEnvironmentKey": "dev",
-			  "Autoupdate": false,
-			  "Features": { "mobile-page-converter": true },
-			  "Environments": {
-			    "dev": { "Uri": "http://localhost", "Login": "Supervisor", "Password": "Supervisor", "IsNetCore": true }
-			  }
-			}
-			""",
-			GetType().Name);
-		settings.ProcessEnvironmentVariables["CLIO_HOME"] = clioHome;
-	}
+	// No ConfigureMcpServerSettings override: since ENG-94638 the converter is ungated, so it must be
+	// reachable on the DEFAULT shared server. An isolated CLIO_HOME here would hide a re-gate.
 
 	[Test]
 	[Description("Advertises get-mobile-page-conversion-guide so MCP callers can discover the web->mobile conversion guide tool.")]
@@ -139,89 +120,5 @@ public sealed class MobilePageConversionGuideToolE2ETests : McpContractFixtureBa
 			because: "every refusal states its cause and what to do about it; that is the whole reason failing beats returning a degraded guide");
 		response.Guide.Should().BeNull(
 			because: "a refused conversion must carry no guide at all — a partial one is exactly the degraded guide this branch replaced, and a caller might apply it");
-	}
-}
-
-/// <summary>
-/// Feature-gate coverage for get-mobile-page-conversion-guide. The tool is registered ONLY when the
-/// `mobile-page-converter` feature flag is enabled; this fixture starts the real server with the flag
-/// explicitly OFF and proves the tool is absent from the MCP surface — the negative of the discovery test
-/// in <see cref="MobilePageConversionGuideToolE2ETests"/>. A separate fixture is required because the child
-/// server (and its CLIO_HOME) is started once per fixture in one-time setup.
-/// </summary>
-[TestFixture]
-[Category("McpE2E.NoEnvironment")]
-[AllureNUnit]
-[AllureFeature(MobilePageConversionGuideTool.ToolName)]
-[NonParallelizable]
-public sealed class MobilePageConversionGuideToolFeatureGateE2ETests : McpContractFixtureBase {
-
-	private const string ToolName = MobilePageConversionGuideTool.ToolName;
-
-	// Same isolated CLIO_HOME shape as the enabled fixture, but with the gating flag explicitly DISABLED, so
-	// the tool must NOT be registered on the server.
-	private protected override void ConfigureMcpServerSettings(McpE2ESettings settings) {
-		string clioHome = CreateIsolatedClioHome(
-			"""
-			{
-			  "ActiveEnvironmentKey": "dev",
-			  "Autoupdate": false,
-			  "Features": { "mobile-page-converter": false },
-			  "Environments": {
-			    "dev": { "Uri": "http://localhost", "Login": "Supervisor", "Password": "Supervisor", "IsNetCore": true }
-			  }
-			}
-			""",
-			GetType().Name);
-		settings.ProcessEnvironmentVariables["CLIO_HOME"] = clioHome;
-	}
-
-	[Test]
-	[Description("Does NOT advertise get-mobile-page-conversion-guide when the mobile-page-converter feature flag is disabled, proving the tool is feature-gated.")]
-	[AllureTag(ToolName)]
-	[AllureName("get-mobile-page-conversion-guide is hidden when its feature flag is off")]
-	[AllureDescription("Starts the real clio MCP server with mobile-page-converter disabled and verifies get-mobile-page-conversion-guide is NOT on the MCP tool surface.")]
-	public async Task MobilePageConversionGuideTool_IsNotDiscoverable_WhenFeatureFlagDisabled() {
-		// Arrange
-		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
-
-		// Act
-		IReadOnlyCollection<string> toolNames =
-			await context.Session.ListReachableToolNamesAsync(context.CancellationTokenSource.Token);
-
-		// Assert
-		toolNames.Should().NotContain(ToolName,
-			because: "get-mobile-page-conversion-guide is gated behind the mobile-page-converter feature flag and must be absent when the flag is off");
-	}
-
-	[Test]
-	[Description("Hides the freedom-page-web-to-mobile-conversion guidance article when the mobile-page-converter feature flag is disabled, proving the article shares the tool's feature gate.")]
-	[AllureTag(GuidanceGetTool.ToolName)]
-	[AllureName("get-guidance hides the conversion article when its feature flag is off")]
-	[AllureDescription("Starts the real clio MCP server with mobile-page-converter disabled and verifies get-guidance treats freedom-page-web-to-mobile-conversion as unknown and omits it from availableGuides.")]
-	public async Task GuidanceGet_TreatsConversionGuideAsUnknown_WhenFeatureFlagDisabled() {
-		// Arrange
-		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
-
-		// Act
-		CallToolResult callResult = await context.Session.CallToolAsync(
-			GuidanceGetTool.ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["name"] = "freedom-page-web-to-mobile-conversion"
-				}
-			},
-			context.CancellationTokenSource.Token);
-
-		// Assert
-		callResult.IsError.Should().NotBeTrue(
-			because: "get-guidance reports an unknown guidance name as a structured failure, not a protocol-level error");
-		GuidanceGetResponse response = EntitySchemaStructuredResultParser.Extract<GuidanceGetResponse>(callResult);
-		response.Success.Should().BeFalse(
-			because: "the conversion article is gated behind the disabled mobile-page-converter feature and must resolve as unknown");
-		response.Article.Should().BeNull(
-			because: "a disabled gated guide must not return its article over the real MCP transport");
-		response.AvailableGuides.Should().NotContain("freedom-page-web-to-mobile-conversion",
-			because: "a disabled gated guide must not be advertised in availableGuides");
 	}
 }

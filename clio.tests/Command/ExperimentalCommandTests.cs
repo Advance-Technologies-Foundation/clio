@@ -135,24 +135,8 @@ public sealed class ExperimentalCommandTests : BaseCommandTests<ExperimentalOpti
 	}
 
 	[Test]
-	[Description("Enabling the mobile-page-converter feature emits the Beta-mode enablement warning (ENG-94250).")]
-	public void Execute_ShouldWarnBetaMode_WhenEnablingMobilePageConverter() {
-		// Arrange
-		ExperimentalOptions options = new() { Name = "mobile-page-converter", Enable = true };
-
-		// Act
-		int result = _sut.Execute(options);
-
-		// Assert
-		result.Should().Be(0, because: "enabling a known feature succeeds");
-		_settingsRepository.Received(1).SetFeature("mobile-page-converter", true);
-		// enabling the mobile-page-converter feature must warn the user it activates Beta mode
-		_logger.Received().WriteWarning(Arg.Is<string>(message => message.Contains("BETA MODE")));
-	}
-
-	[Test]
-	[Description("Disabling the mobile-page-converter feature does NOT emit the Beta-mode enablement warning.")]
-	public void Execute_ShouldNotWarnBetaMode_WhenDisablingMobilePageConverter() {
+	[Description("After GA (ENG-94638) the mobile-page-converter key gates nothing, so clearing a value a Beta tester left behind succeeds, reports the key as unreferenced, and never prints the retired BETA MODE notice.")]
+	public void Execute_ShouldTreatMobilePageConverterAsOrphan_AfterGa() {
 		// Arrange
 		ExperimentalOptions options = new() { Name = "mobile-page-converter", Disable = true };
 
@@ -160,9 +144,12 @@ public sealed class ExperimentalCommandTests : BaseCommandTests<ExperimentalOpti
 		int result = _sut.Execute(options);
 
 		// Assert
-		result.Should().Be(0, because: "disabling a known feature succeeds");
+		result.Should().Be(0,
+			because: "clearing a leftover key must succeed - a Beta tester tidying up appsettings.json must not hit an error");
 		_settingsRepository.Received(1).SetFeature("mobile-page-converter", false);
-		// the Beta-mode heads-up is shown only when the feature is turned on, never on disable
+		// a key that no command or MCP tool references is reported so a leftover stays visible and manageable
+		_logger.Received().WriteWarning(Arg.Is<string>(message => message.Contains("mobile-page-converter")));
+		// the Beta heads-up was retired at GA and must not reappear for any key
 		_logger.DidNotReceive().WriteWarning(Arg.Is<string>(message => message.Contains("BETA MODE")));
 	}
 

@@ -32,8 +32,8 @@ namespace Clio.Mcp.E2E;
 /// <c>LoadMobileTemplateProbe</c> template read through the real <c>clio mcp-server</c> process, so a
 /// regression in that MCP surface (a crash in the template probe, or a diff that regresses to a single
 /// root merge the mobile diff engine would array-replace) is caught here. Every test degrades to
-/// <see cref="Assert.Ignore(string)"/> with an explicit reason when the feature flag, a reachable
-/// environment, or a seeded page is missing — but a conversion failure on a seeded page always fails
+/// <see cref="Assert.Ignore(string)"/> with an explicit reason when a reachable environment or a
+/// seeded page is missing — but a conversion failure on a seeded page always fails
 /// the test: only missing preconditions may Ignore, never a runtime error.
 /// </summary>
 [TestFixture]

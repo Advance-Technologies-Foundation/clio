@@ -505,10 +505,11 @@ public sealed class McpToolExecutionMetadataCoverageTests {
 
 		// Assert
 		gatedToolNames.Should().NotBeEmpty(
-			because: "clio ships feature-gated MCP tools (deploy-identity, process-designer, mobile-page-converter, " +
-				"watch-compilation), so an empty difference would mean the gate stopped being applied");
-		gatedToolNames.Should().Contain("get-mobile-page-conversion-guide",
-			because: "the mobile-page-converter tool is feature-gated and is the concrete example this test is built on");
+			because: "clio ships feature-gated MCP tools (deploy-identity, watch-compilation), so an empty " +
+				"difference would mean the gate stopped being applied");
+		// get-mobile-page-conversion-guide was this test's example until the converter went GA (ENG-94638).
+		gatedToolNames.Should().Contain("deploy-identity",
+			because: "deploy-identity is feature-gated and is the concrete example this test is built on");
 		enabledFailures.Should().BeEmpty(
 			because: "a feature-disabled tool is not part of the coverage requirement — it cannot be called, so it has " +
 				"no routing decision to make");
@@ -516,12 +517,12 @@ public sealed class McpToolExecutionMetadataCoverageTests {
 			because: "every feature-gated tool must be visible to the routine in the toggle-blind view — one verdict per " +
 				"name, and none of them reported as stale, otherwise the exclusion would be a blind spot");
 		blindProbeFailures.Should().Contain(failure =>
-				failure.Contains("get-mobile-page-conversion-guide", StringComparison.Ordinal)
+				failure.Contains("deploy-identity", StringComparison.Ordinal)
 				&& failure.Contains("still listed", StringComparison.Ordinal),
 			because: "the feature-gated tool must remain discoverable AND classified — the routine sees it in the catalog " +
 				"and objects to it being gated, which is the opposite of not seeing it at all");
 		enabledProbeFailures.Should().Contain(failure =>
-				failure.Contains("get-mobile-page-conversion-guide", StringComparison.Ordinal)
+				failure.Contains("deploy-identity", StringComparison.Ordinal)
 				&& failure.Contains("stale", StringComparison.Ordinal),
 			because: "the same name over the enabled catalog resolves to no tool at all, which is what 'excluded from the " +
 				"requirement' means in the routine's own terms");

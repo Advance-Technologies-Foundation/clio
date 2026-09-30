@@ -6,6 +6,7 @@ using Clio.Command;
 using Clio.Command.McpServer.Knowledge;
 using Clio.Command.McpServer.Tools.MobilePageConverter;
 using Clio.Command.McpServer.Tools;
+using Clio.UserEnvironment;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Server;
@@ -296,18 +297,35 @@ public sealed class GuidanceGetToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Attribute lock-in: the converter tool carries [FeatureToggle(\"mobile-page-converter\")] so a refactor cannot silently un-gate the incomplete feature.")]
-	public void MobilePageConverter_McpTool_CarriesFeatureToggle() {
+	[Description("GA lock-in (ENG-94638): the converter tool carries NO [FeatureToggle], so get-mobile-page-conversion-guide reaches every caller and a re-gate cannot land unnoticed.")]
+	public void MobilePageConverter_McpTool_CarriesNoFeatureToggle() {
 		// Arrange & Act
 		FeatureToggleAttribute toolToggle = typeof(MobilePageConversionGuideTool)
 			.GetCustomAttribute<FeatureToggleAttribute>(inherit: false);
 
 		// Assert
-		toolToggle.Should().NotBeNull(because: "get-mobile-page-conversion-guide must stay gated");
-		toolToggle!.FeatureName.Should().Be("mobile-page-converter",
-			because: "the tool and the published guidance article must name the same feature");
-		// The guidance half of the gate moved out of Clio: the article declares
-		// requiredFeatures: ["mobile-page-converter"] in the knowledge catalog, and
-		// KnowledgeGuidanceSource enforces it (see KnowledgeGuidanceSourceTests).
+		toolToggle.Should().BeNull(
+			because: "the converter went GA in ENG-94638 - a [FeatureToggle] here would hide the tool from everyone who has not opted in");
+		// The guidance half of the gate lives in clio-knowledge: freedom-page-web-to-mobile-conversion and
+		// freedom-page-mobile-reason-codes dropped their requiredFeatures in the same release.
+		// KnowledgeGuidanceSource enforces requiredFeatures generically, so nothing is left to assert here.
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("GA lock-in (ENG-94638): a stale \"mobile-page-converter\": false left in appsettings.json by a Beta tester does not hide the tool, because no type is gated on that key any more.")]
+	public void MobilePageConverter_McpTool_StaysEnabled_WhenStaleFeatureKeyIsFalse() {
+		// Arrange
+		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
+		settingsRepository.IsFeatureEnabled(Arg.Any<string>()).Returns(false);
+		FeatureToggleService featureToggleService = new(settingsRepository);
+
+		// Act
+		bool enabled = featureToggleService.IsEnabled(typeof(MobilePageConversionGuideTool));
+
+		// Assert
+		enabled.Should().BeTrue(
+			because: "an ungated type is enabled whatever a leftover feature key says on disk - the Beta testers who turned the flag off are exactly the people most likely to try GA first");
+		settingsRepository.DidNotReceive().IsFeatureEnabled("mobile-page-converter");
 	}
 }

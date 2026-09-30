@@ -1,5 +1,4 @@
-﻿using Clio.Command.McpServer.Tools.MobilePageConverter;
-using Clio.Mcp.E2E.Support.Configuration;
+﻿using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Diagnostics;
 using Clio.Mcp.E2E.Support.Mcp;
 using System.Text.Json;
@@ -59,7 +58,8 @@ public sealed class McpSharedHomeSetUpFixture {
 			["sources"] = new JsonObject()
 		};
 		SeedPlaceholderEnvironmentWhenNoneRegistered(root);
-		SuiteFeatureFlags.Enable(root, typeof(MobilePageConversionGuideTool));
+		// No feature flags are written here. The suite's only gated tool was the mobile page converter,
+		// which went GA in ENG-94638; writing a key nothing reads would be the orphan this release removes.
 		File.WriteAllText(
 			_isolatedSettingsPath,
 			root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
