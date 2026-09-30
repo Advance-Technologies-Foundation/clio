@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using Clio.Command.McpServer.Tools;
+using System.Linq;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools.MobilePageConverter;
@@ -30,21 +32,25 @@ public sealed class MobilePageConversionGuideToolE2ETests : McpContractFixtureBa
 	// reachable on the DEFAULT shared server. An isolated CLIO_HOME here would hide a re-gate.
 
 	[Test]
-	[Description("Advertises get-mobile-page-conversion-guide so MCP callers can discover the web->mobile conversion guide tool.")]
+	[Description("Registers get-mobile-page-conversion-guide on the DEFAULT server, proving the ENG-94638 un-gate: the index entry carries a destructive hint, which only the feature-filtered invoker registry can supply.")]
 	[AllureTag(ToolName)]
-	[AllureName("get-mobile-page-conversion-guide tool is discoverable")]
-	[AllureDescription("Starts the real clio MCP server and verifies get-mobile-page-conversion-guide is reachable on the MCP tool surface.")]
-	public async Task MobilePageConversionGuideTool_Should_Be_Discoverable() {
+	[AllureName("get-mobile-page-conversion-guide is registered on the default server")]
+	[AllureDescription("Starts the real clio MCP server with no feature configuration and verifies get-mobile-page-conversion-guide is not merely NAMED in the discovery index but actually registered, by asserting the registry-derived destructive hint is present.")]
+	public async Task MobilePageConversionGuideTool_Should_Be_Registered_On_The_Default_Server() {
 		// Arrange
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
-		IReadOnlyCollection<string> toolNames =
-			await context.Session.ListReachableToolNamesAsync(context.CancellationTokenSource.Token);
+		IReadOnlyList<ToolContractIndexEntry> index =
+			await context.Session.GetToolContractIndexAsync(context.CancellationTokenSource.Token);
 
 		// Assert
-		toolNames.Should().Contain(ToolName,
-			because: "get-mobile-page-conversion-guide must be advertised so MCP callers can discover the conversion-guide tool");
+		ToolContractIndexEntry entry = index.SingleOrDefault(item =>
+			string.Equals(item.Name, ToolName, StringComparison.OrdinalIgnoreCase));
+		entry.Should().NotBeNull(
+			because: "the converter must appear in the discovery index on a server with no feature configuration");
+		entry!.Destructive.Should().BeFalse(
+			because: "THIS is the GA guard, and it is the only assertion here that is one. The NAME proves nothing: it comes from the static, unfiltered CanonicalToolNames and survives a re-gate. The destructive hint is resolved from the FEATURE-FILTERED invoker registry and fails CLOSED, so a re-gated tool keeps its name in the index but flips to destructive=true. Verified by restoring the [FeatureToggle] and watching this line - and only this line - fail");
 	}
 
 	// The freedom-page-web-to-mobile-conversion article itself is no longer Clio-owned: since

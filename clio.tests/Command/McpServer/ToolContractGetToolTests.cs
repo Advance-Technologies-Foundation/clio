@@ -4278,7 +4278,7 @@ public sealed class ToolContractGetToolTests {
 		entry.ContractAvailable.Should().BeTrue(
 			because: "a curated contract exists, so the index must tell a caller the full shape can be fetched");
 		entry.Destructive.Should().BeFalse(
-			because: "the tool is advisory: it reads a page and returns a guide, writing nothing to Creatio or disk");
+			because: "THIS is the GA guard, and the only assertion here that is one. Name, Resident and ContractAvailable all resolve from static tables and survive a re-gate; the destructive hint is resolved from the FEATURE-FILTERED invoker registry and fails CLOSED, so a re-gated tool keeps its index entry but reports destructive=true. Do not relax this to NotBeTrue()");
 	}
 
 	[Test]
@@ -4300,9 +4300,20 @@ public sealed class ToolContractGetToolTests {
 		ToolContractDefinition contract = response.Tools![0];
 		contract.Description.Should().Contain("writes nothing",
 			because: "the advisory semantics are the whole point of this tool - a caller that misses them will wait for a page the tool never builds");
-		contract.InputSchema.Required.Should().ContainSingle()
-			.Which.Should().Be("schema-name",
-				because: "schema-name is the only [Required] argument on MobilePageConversionGuideArgs");
+		// Against the EMITTED schema, not a hand-copied literal. The repo's curated-vs-emitted guard
+		// (EmittedSchemaRequiredContractTests) is scoped to RESIDENT tools on purpose, and this tool is
+		// deliberately non-resident - so it is the first curated contract that guard does not cover, and
+		// without this the curated Required set could drift from the tool silently.
+		using JsonDocument emitted = EmittedSchemaProbe.EmittedInputSchema(toolName);
+		string[] emittedRequired = [.. EmittedSchemaProbe
+			.RequiredNames(EmittedSchemaProbe.EffectiveArgumentSchema(emitted.RootElement))
+			.OrderBy(name => name, StringComparer.Ordinal)];
+		string[] curatedRequired = [.. (contract.InputSchema.Required ?? [])
+			.OrderBy(name => name, StringComparer.Ordinal)];
+		curatedRequired.Should().Equal(emittedRequired,
+			because: "a curated contract that demands a different argument set from the one clio-run actually dispatches against sends the agent to build a payload the tool rejects");
+		contract.InputSchema.AnyOf.Should().NotBeNullOrEmpty(
+			because: "this tool takes environment-name OR an explicit uri+login+password, and McpToolRegistrySchemaContract names it as a genuine connection fallback - the registry-derived contract published that alternative, so the curated one must not drop it");
 		contract.Preconditions.Should().NotBeNullOrEmpty(
 			because: "the Freedom-UI-web-only precondition must travel with the contract - a Classic page has to be migrated first and an already-mobile page is rejected");
 	}

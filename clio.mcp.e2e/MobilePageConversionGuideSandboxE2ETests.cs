@@ -2468,18 +2468,17 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	};
 
 	/// <summary>
-	/// Gates on the converter tool being advertised. The suite-owned clio home built by
-	/// <see cref="McpSharedHomeSetUpFixture"/> forces <c>mobile-page-converter</c> on, so an absent tool is
-	/// a REGRESSION (the feature gate or the tool registration broke) and never "this machine has the flag
+	/// Gates on the converter tool being advertised. Since ENG-94638 the tool is ungated, so an absent tool
+	/// is a REGRESSION (a re-gate, or the tool registration broke) and never "this machine has the flag
 	/// off" — that ambient dependency is what made the suite's effective test set a property of which build
-	/// agent picked up the build.
+	/// agent picked up the build, and GA removed it outright rather than papering over it.
 	/// </summary>
 	private static async Task RequireConverterToolAsync(ArrangeContext context) {
 		IReadOnlyCollection<string> toolNames =
 			await context.Session.ListReachableToolNamesAsync(context.CancellationTokenSource.Token);
 		toolNames.Should().Contain(ToolName,
-			because: "the suite-owned clio home enables 'mobile-page-converter', so the tool must be advertised "
-				+ "regardless of the settings on the machine running the suite");
+			because: "the converter is ungated since ENG-94638, so it must be advertised regardless of the "
+				+ "settings on the machine running the suite");
 	}
 
 

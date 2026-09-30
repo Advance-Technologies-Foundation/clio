@@ -149,8 +149,24 @@ public sealed class ExperimentalCommandTests : BaseCommandTests<ExperimentalOpti
 		_settingsRepository.Received(1).SetFeature("mobile-page-converter", false);
 		// a key that no command or MCP tool references is reported so a leftover stays visible and manageable
 		_logger.Received().WriteWarning(Arg.Is<string>(message => message.Contains("mobile-page-converter")));
-		// the Beta heads-up was retired at GA and must not reappear for any key
+	}
+
+	[Test]
+	[Description("After GA (ENG-94638) ENABLING mobile-page-converter prints no BETA MODE notice. Asserted on the ENABLE path deliberately: ExperimentalCommand only looks the notice up when enable is true, so the same assertion on a --disable run can never fail and would pin nothing.")]
+	public void Execute_ShouldNotWarnBetaMode_WhenEnablingMobilePageConverter_AfterGa() {
+		// Arrange
+		ExperimentalOptions options = new() { Name = "mobile-page-converter", Enable = true };
+
+		// Act
+		int result = _sut.Execute(options);
+
+		// Assert
+		result.Should().Be(0,
+			because: "toggling an unreferenced key is allowed");
+		// the Beta heads-up was retired at GA; re-adding the entry would make this fail
 		_logger.DidNotReceive().WriteWarning(Arg.Is<string>(message => message.Contains("BETA MODE")));
+		ExperimentalCommand.FeatureEnableNotices.Should().NotContainKey("mobile-page-converter",
+			because: "the notice table is the thing GA removed, so pin its absence directly rather than only through a logger call that a future refactor could route elsewhere");
 	}
 
 	[Test]

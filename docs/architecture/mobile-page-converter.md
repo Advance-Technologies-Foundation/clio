@@ -1,7 +1,7 @@
 ﻿# Mobile page converter
 
-Tool `get-mobile-page-conversion-guide` · `[FeatureToggle("mobile-page-converter")]` (off by default) ·
-`clio/Command/McpServer/Tools/MobilePageConverter/`
+Tool `get-mobile-page-conversion-guide` · generally available, no feature flag · long-tail (reached via
+`clio-run`, discovered via `get-tool-contract`) · `clio/Command/McpServer/Tools/MobilePageConverter/`
 
 Turns a Freedom UI **web** page into the data an LLM caller needs to build the Freedom UI **mobile** page. Read-only:
 writes no page, no Creatio object, no file. Where this file and the code disagree, the code wins.

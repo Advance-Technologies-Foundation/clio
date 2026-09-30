@@ -172,8 +172,6 @@ public class ExperimentalCommand : Command<ExperimentalOptions> {
 	// case-insensitively. Notice text is written verbatim to the console, the log file and every
 	// additional sink, so it carries no markup - Markdown asterisks would show up literally.
 	// Emphasize with UPPER CASE instead.
-	// The mobile-page-converter Beta heads-up lived here until the converter went GA (ENG-94638). That key
-	// now gates nothing and lists as an orphan for anyone who tried the Beta.
 	internal static readonly IReadOnlyDictionary<string, string> FeatureEnableNotices =
 		new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
 			[KnowledgeUnsequencedGitOptions.FeatureName] =

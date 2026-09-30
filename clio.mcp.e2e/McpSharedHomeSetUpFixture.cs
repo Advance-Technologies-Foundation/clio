@@ -58,8 +58,15 @@ public sealed class McpSharedHomeSetUpFixture {
 			["sources"] = new JsonObject()
 		};
 		SeedPlaceholderEnvironmentWhenNoneRegistered(root);
-		// No feature flags are written here. The suite's only gated tool was the mobile page converter,
-		// which went GA in ENG-94638; writing a key nothing reads would be the orphan this release removes.
+		// The suite's feature surface is CLEARED, not inherited. This settings file is seeded from the
+		// developer's own clio appsettings.json, so leaving the map alone makes the suite's effective test
+		// set a property of which machine ran it: a developer with mobile-page-converter still enabled
+		// could not have detected the converter being re-gated, because their own flag kept it registered.
+		// That was measured, not theorised, while verifying ENG-94638. clio still ships gated tools
+		// (deploy-identity, watch-compilation); their fixtures gate THEMSELVES and skip - see
+		// WatchCompilationE2EGate and McpWorkerModeE2ETests - so an empty map is the deterministic input
+		// they are written against.
+		root["features"] = new JsonObject();
 		File.WriteAllText(
 			_isolatedSettingsPath,
 			root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));

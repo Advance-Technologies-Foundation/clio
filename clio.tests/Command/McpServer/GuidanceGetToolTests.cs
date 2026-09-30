@@ -292,9 +292,6 @@ public sealed class GuidanceGetToolTests {
 			because: "the compatibility alias must map to one canonical source lookup");
 	}
 
-
-
-
 	[Test]
 	[Category("Unit")]
 	[Description("GA lock-in (ENG-94638): the converter tool carries NO [FeatureToggle], so get-mobile-page-conversion-guide reaches every caller and a re-gate cannot land unnoticed.")]

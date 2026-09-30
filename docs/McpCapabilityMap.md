@@ -340,16 +340,12 @@ This is one of the strongest and most AI-friendly parts of the MCP surface.
   Save many pages in one call with optional validation and optional read-back verification.
 - `component-info`
   Inspect a shipped local catalog of Freedom UI component contracts, grouped by category or returned in detail mode.
-- `get-mobile-page-conversion-guide`
-  Detect a source page's type and return an **advisory** guide for converting a Freedom UI **web** page
-  into a Freedom UI **mobile** page: recommended mobile template, container correspondence, source
-  component structure, per-type component suggestions and inline mobile component contracts. It writes
-  nothing — the caller builds the mobile body with `create-page` / `update-page` / `validate-page`.
-  Long-tail (not in `tools/list`): reached through `clio-run`, discovered through `get-tool-contract`.
-  Scope: Freedom UI **web** form pages and list pages/sections only — a Classic UI page must be migrated
-  to Freedom UI web first, and an already-mobile page is rejected. Mobile manifest and wizard wiring stay
-  manual. Read `get-guidance name=freedom-page-web-to-mobile-conversion` before acting on the guide, and
-  `name=freedom-page-mobile-reason-codes` to resolve a reason code it reports. Ungated since ENG-94638.
+- `get-mobile-page-conversion-guide` (read-only, long-tail via `clio-run`; discovered through `get-tool-contract`)
+  Detect a source page's type and return an **advisory** guide for converting a Freedom UI **web** page into
+  a Freedom UI **mobile** page — recommended template, container correspondence, component suggestions and
+  inline mobile contracts. It writes nothing; the caller builds the body with `create-page` / `update-page` /
+  `validate-page`. Freedom UI **web** form and list pages only: a Classic UI page must be migrated to Freedom
+  UI web first, an already-mobile page is rejected, and mobile manifest and wizard wiring stay manual.
 
 What an external AI can practically do here:
 

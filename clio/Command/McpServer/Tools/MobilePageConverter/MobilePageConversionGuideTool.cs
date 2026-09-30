@@ -915,12 +915,17 @@ public class MobilePageConversionGuideTool {
 			+ "action manually before shipping the converted page.";
 	}
 
+	// Redacted HERE, at the tool boundary, because this type does not derive from BaseTool and so gets none
+	// of its uniform redaction, and because a success:false RESULT never reaches McpToolErrorFilter's
+	// redacted catch. Callers upstream rely on this: PageSchemaMetadataHelper deliberately leaves the
+	// "(URL: <uri>)" prefix in the clear on the documented assumption that the MCP edge redacts the whole
+	// string (see SensitiveErrorTextRedactor's UriRegex remark). This tool IS that edge.
 	private static MobilePageConversionGuideResponse Fail(MobilePageConversionGuideArgs args, string sourceType, string error) =>
 		new() {
 			Success = false,
 			SourceSchemaName = args?.SchemaName,
 			SourceType = sourceType,
-			Error = error
+			Error = SensitiveErrorTextRedactor.Redact(error)
 		};
 
 	/// <summary>

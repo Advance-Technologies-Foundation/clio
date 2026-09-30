@@ -507,7 +507,6 @@ public sealed class McpToolExecutionMetadataCoverageTests {
 		gatedToolNames.Should().NotBeEmpty(
 			because: "clio ships feature-gated MCP tools (deploy-identity, watch-compilation), so an empty " +
 				"difference would mean the gate stopped being applied");
-		// get-mobile-page-conversion-guide was this test's example until the converter went GA (ENG-94638).
 		gatedToolNames.Should().Contain("deploy-identity",
 			because: "deploy-identity is feature-gated and is the concrete example this test is built on");
 		enabledFailures.Should().BeEmpty(
