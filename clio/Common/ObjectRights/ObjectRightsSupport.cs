@@ -57,13 +57,14 @@ public static class ObjectRightsSupport {
 		TextUtilities.SanitizeForDisplay(value ?? string.Empty, MaxDisplayLength);
 
 	/// <summary>
-	/// Renders a service or exception message for output on one line, like <see cref="Display"/>: a database fault or a
-	/// platform message can carry line breaks that would otherwise start a line of their own inside a successful result.
+	/// Renders a service or exception message for output: credentials, hosts and paths are redacted first (the CLI and the
+	/// log have no redaction pass of their own), then the text is kept on one line and capped, like <see cref="Display"/>.
+	/// A database fault or a platform message can carry line breaks that would otherwise start a line of their own.
 	/// </summary>
 	/// <param name="message">The message to render.</param>
 	/// <returns>The display-safe message.</returns>
 	public static string DisplayError(string message) =>
-		TextUtilities.SanitizeForDisplay(message ?? string.Empty, MaxErrorLength);
+		TextUtilities.SanitizeForDisplay(SensitiveErrorTextRedactor.Redact(message ?? string.Empty), MaxErrorLength);
 
 	private const int MaxDisplayLength = 200;
 

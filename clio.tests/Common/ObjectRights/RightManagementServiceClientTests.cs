@@ -614,8 +614,8 @@ public class RightManagementServiceClientTests {
 		// Assert
 		error.Should().BeNull(because: "the only changed row has one candidate");
 		JsonElement[] salesRows = SavedRows().Where(row => IsRowOf(row, sales)).ToArray();
-		salesRows.Select(row => row.GetProperty("canAppend").GetBoolean()).Should().BeEquivalentTo(new[] { false, true },
-			because: "each of Sales' rows keeps its own flags");
+		salesRows.Select(row => row.GetProperty("canAppend").GetBoolean()).Should().Equal(new[] { false, true },
+			because: "each of Sales' rows keeps its own flags, in the order it was read");
 		SavedRows().Single(row => IsRowOf(row, Grantee)).GetProperty("canEdit").GetBoolean().Should().BeTrue(
 			because: "the grantee's row gets the planned change");
 	}
@@ -638,6 +638,9 @@ public class RightManagementServiceClientTests {
 
 		// Assert
 		SavedRows().Should().HaveCount(3, because: "both planned rows are added next to the stale one");
+		JsonElement staleRow = SavedRows().Single(row => IsRowOf(row, stale));
+		staleRow.GetProperty("canRead").GetBoolean().Should().BeTrue(because: "the stale row is sent as read");
+		staleRow.GetProperty("canAppend").GetBoolean().Should().BeFalse(because: "the stale row gets no new operation");
 		SavedRows().Single(row => IsRowOf(row, Employees)).GetProperty("position").GetInt32().Should().Be(1,
 			because: "the All employees row goes right below the stale row");
 		SavedRows().Single(row => IsRowOf(row, Employees)).GetProperty("canDelete").GetBoolean().Should().BeTrue(

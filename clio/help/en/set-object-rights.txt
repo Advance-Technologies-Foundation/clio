@@ -90,9 +90,8 @@ OPTIONS
 
 EXIT CODES
     0   The change was applied (or was already in the requested state, or cancelled at the prompt), or a
-        --preview completed (nothing was written). A save whose read-back failed is reported as saved but
-        NOT verified; a save that reported an error but whose read-back shows the plan succeeds with a
-        warning.
+        --preview completed (nothing was written). A save that reported an error but whose read-back shows
+        the plan succeeds with a warning.
     1   An input was invalid (missing or non-identifier entity-schema-name, grantee not a GUID, unknown
         operation, an --operations value that names no operation, --revoke without --operations,
         --preview with --confirm, --enable-operation-permissions with --revoke,
@@ -102,8 +101,9 @@ EXIT CODES
         a revoke that would leave no granting row without --disable-operation-permissions, a revoke on an
         object that does not use operation permissions, a security/system object without
         --allow-security-object, a grantee with more than one row), the save failed and the read-back does
-        not show the plan, or the object read back does not show a row this call writes (the grantee's
-        row, or the All employees row an enable stores) where it was planned, or the planned switch state.
+        not show the plan, a successful save could not be read back (reported as saved but NOT verified),
+        or the object read back does not show a row this call writes (the grantee's row, or the All
+        employees row an enable stores) where it was planned, or the planned switch state.
 
 EXAMPLES
     Show what a grant would change, without writing anything:
@@ -128,9 +128,10 @@ NOTES
     The grantee must exist in SysAdminUnit; an unknown id fails before anything is written.
 
     After the save the object is read back and compared with the plan, row by row (grantee, position,
-    operations). A missing or different row that this call writes fails it; a row that differs from the
-    plan for another role, or a row the plan did not write, is reported as a warning. If the read-back itself fails, the change is reported as saved but NOT
-    verified, with a request to check the object with get-object-rights.
+    operations). A missing or different row that this call writes fails it; a row of another role that
+    differs from the plan, or that the plan did not write, is reported as a warning. If the read-back
+    itself fails, the call fails too: the change is reported as saved but NOT verified, with a request
+    to check the object with get-object-rights before retrying.
 
     A grantee with more than one row on the object is refused: which of them decides depends on the
     other rows, so the command changes none of them. Remove the duplicates in the Object permissions

@@ -138,7 +138,7 @@ or the call is refused. The host approval then shows the operator everything the
   stored rows.
 - When the object has stale rows and no `All employees` row, the same save adds one, as the current implementation
   does. That is deliberately safer than the designer, which adds none (Platform model 2).
-- The added row goes at the bottom, below the stale rows, so no row is renumbered (invariant 3). The stale rows above
+- The added row goes below the stale rows (a new grantee row goes below it), so no row is renumbered (invariant 3). The stale rows above
   it then restrict their members (Platform model 1), so the refusal and the preview name each of them as a
   restriction that becomes effective.
 - Each call names its one object, so enabling operation permissions on a shared lookup is its own call, with the flag

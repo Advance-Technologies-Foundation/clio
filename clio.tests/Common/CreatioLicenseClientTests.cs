@@ -117,4 +117,23 @@ public class CreatioLicenseClientTests {
 		message.Should().NotContain("RequestVerificationToken", because: "the page body is never shown");
 		message.Should().NotContain("<html>", because: "no markup reaches the message");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A body that is neither JSON nor HTML is previewed only after it is redacted, then capped: a credential in it never reaches the message.")]
+	public void GetLicenseOperationStatuses_ShouldRedactThePreview_WhenResponseIsNotJson() {
+		// Arrange
+		(CreatioLicenseClient client, IApplicationClient applicationClient) = CreateClient();
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("Service unavailable; password=hunter2secret; retry later");
+
+		// Act
+		Action act = () => client.GetLicenseOperationStatuses(new[] { "CanCustomizeBranding" }, new CreatioRequestOptions());
+
+		// Assert
+		string message = act.Should().Throw<InvalidOperationException>(because: "the body is not JSON").Which.Message;
+		message.Should().Contain("Service unavailable", because: "the readable part of the body is previewed");
+		message.Should().NotContain("hunter2secret", because: "a credential in the body is redacted before the preview");
+	}
 }

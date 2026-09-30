@@ -53,10 +53,15 @@ public class ConnectedObjectsResolver : IConnectedObjectsResolver {
 		try {
 			EntitySchemaPropertiesInfo schema =
 				_columnManager.GetSchemaProperties(new GetEntitySchemaPropertiesOptions { SchemaName = rootSchemaName });
+			// A referenced name is normalized like a caller's name before the security gate sees it: the gate matches the
+			// name as a string, while SQL Server ignores trailing spaces and would still find the table. A name that is not
+			// a schema identifier is not an object that can be read.
 			connected = (schema.Columns ?? Array.Empty<EntitySchemaPropertyColumnInfo>())
 				.Where(column => string.Equals(column.Source, "own", StringComparison.OrdinalIgnoreCase))
-				.Select(column => column.ReferenceSchemaName)
-				.Where(name => !string.IsNullOrWhiteSpace(name)
+				.Select(column => ObjectRightsSupport.TryNormalizeSchemaName(column.ReferenceSchemaName, out string name)
+					? name
+					: null)
+				.Where(name => name is not null
 					&& !string.Equals(name, rootSchemaName, StringComparison.OrdinalIgnoreCase))
 				.Distinct(StringComparer.OrdinalIgnoreCase)
 				.OrderBy(name => name, StringComparer.OrdinalIgnoreCase)

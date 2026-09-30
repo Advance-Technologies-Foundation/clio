@@ -250,7 +250,9 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 			ObjectRightsRefusal.RevokeOnNotAdministered =>
 				$"'{schema}' is not administered by operation permissions — company employees reach it whatever its rows "
 				+ "say (only technical users follow the rows while it is off), so the tool does not revoke on it. To limit "
-				+ "access, grant the roles that should keep it with --enable-operation-permissions.",
+				+ "access, first turn operation permissions on with a grant and --enable-operation-permissions; that keeps "
+				+ "or adds an 'All employees' row with every operation, so then revoke from that row what employees must "
+				+ "not have.",
 			ObjectRightsRefusal.LeavesNoGrantingRow =>
 				$"after this revoke no row on '{schema}' would grant any operation, so nobody could reach it except "
 				+ "holders of the '…any data' system operations. To make it available to ALL internal users instead, "
@@ -348,14 +350,15 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 	}
 
 	// The save succeeded; the read-back is compared with the plan, so a change that did not land is never reported as
-	// done. When the read-back itself fails, the change is reported as saved but not verified.
+	// done. When the read-back itself fails, nothing shows that the rows this call writes landed — a retry would even
+	// plan "no change" once the switch and the grantee's row are in place — so the call fails and says so.
 	private int ReportSaved(Change change, IReadOnlyList<string> facts, ObjectRightsInfo actual) {
 		string schema = change.SchemaName;
 		if (!IsReadBack(actual)) {
-			_logger.WriteWarning($"'{schema}': saved, but NOT verified — reading it back failed ({ReadBackFailure(actual)}). "
-				+ "Check it with get-object-rights.");
+			_logger.WriteError($"Error: '{schema}': saved, but NOT verified — reading it back failed "
+				+ $"({ReadBackFailure(actual)}). Check it with get-object-rights before retrying: the plan was:");
 			WriteFacts(facts);
-			return 0;
+			return 1;
 		}
 		ReadBackComparison comparison = Compare(change, actual.State);
 		if (comparison.Critical.Count > 0) {

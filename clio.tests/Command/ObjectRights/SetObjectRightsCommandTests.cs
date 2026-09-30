@@ -254,7 +254,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 	}
 
 	[Test]
-	[Description("A revoke on an object that does not use operation permissions is refused: every internal user reaches it whatever its rows say.")]
+	[Description("A revoke on an object that does not use operation permissions is refused: company employees reach it whatever its rows say (only technical users follow the rows while it is off), and the refusal says how to limit access instead.")]
 	public void Execute_ShouldRefuse_WhenRevokingOnAnObjectThatIsNotAdministered() {
 		// Arrange
 		ObjectIs(Info(false, Row(AllEmployees, 0, "RCED")));
@@ -265,6 +265,8 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		// Assert
 		exitCode.Should().Be(1, because: "a revoke cannot restrict an object that is not administered");
 		ErrorContains("is not administered by operation permissions", because: "the refusal says why");
+		ErrorContains("then revoke from that row what employees must not have",
+			because: "an enable alone keeps every operation for All employees");
 		NothingSaved();
 	}
 
@@ -630,6 +632,21 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 	}
 
 	[Test]
+	[Description("An enable on an object with no stored rows keeps the All employees row the read synthesized; when the read-back does not show it, the call fails, because the save was the only thing storing that row.")]
+	public void Execute_ShouldFail_WhenTheReadBackMissesTheSynthesizedRowTheEnableKeeps() {
+		// Arrange
+		ObjectIs(Info(false, Row(AllEmployees, 0, "RCED")), readBack: Info(true, Row(Grantee, 1, "R")));
+
+		// Act
+		int exitCode = _command.Execute(Options("read", o => { o.EnableOperationPermissions = true; }));
+
+		// Assert
+		exitCode.Should().Be(1, because: "the All employees row the call stores did not land");
+		ErrorContains("[0] All employees: read/create/edit/delete is missing",
+			because: "the error names the row that is missing");
+	}
+
+	[Test]
 	[Description("The preview of an enable on stale rows without All employees names the rows that start to decide, the All employees row added below them and the grantee's row at the lowest priority.")]
 	public void Execute_ShouldDescribeTheEnable_WhenPreviewingOnStaleRowsWithoutAllEmployees() {
 		// Arrange
@@ -707,8 +724,8 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 	}
 
 	[Test]
-	[Description("When the read-back itself fails after a successful save, the call succeeds with a warning to check the object.")]
-	public void Execute_ShouldWarn_WhenReadBackFails() {
+	[Description("When the read-back itself fails after a successful save, the call fails: nothing shows that the rows it writes landed, so the change is reported as saved but NOT verified.")]
+	public void Execute_ShouldFail_WhenTheReadBackFailsAfterASuccessfulSave() {
 		// Arrange
 		ObjectIs(Info(true, Row(AllEmployees, 0, "RCED")),
 			new ObjectRightsInfo(true, "UsrFoo", null, false, Array.Empty<RoleOperationRights>(), ReadError: "timeout"));
@@ -717,9 +734,9 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		int exitCode = _command.Execute(Options());
 
 		// Assert
-		exitCode.Should().Be(0, because: "the service acknowledged the save");
-		_warnings.Should().Contain(m => m.Contains("saved, but NOT verified — reading it back failed (timeout)"),
-			because: "the change is not reported as verified, and the operator is told to check the object");
+		exitCode.Should().Be(1, because: "an unverified change is never reported as a success");
+		ErrorContains("saved, but NOT verified — reading it back failed (timeout)",
+			because: "the operator is told the change was saved but could not be checked");
 		_infos.Should().NotContain(m => m.Contains("granted [read"), because: "an unverified save is not reported as done");
 	}
 

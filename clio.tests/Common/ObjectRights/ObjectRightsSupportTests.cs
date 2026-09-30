@@ -55,4 +55,16 @@ public class ObjectRightsSupportTests {
 		rendered.Should().NotContain("\n", because: "a line break would start a new output line");
 		rendered.Should().Contain("The statement has been terminated.", because: "the message itself is kept");
 	}
+
+	[Test]
+	[Description("A service message is redacted before it is printed: the CLI and the log have no redaction pass of their own.")]
+	public void DisplayError_ShouldRedactTheHost_WhenTheMessageCarriesARequestUri() {
+		// Act
+		string rendered = ObjectRightsSupport.DisplayError(
+			"Unexpected response from https://tenant.example/0/ServiceModel/RightManagementService.svc/Save");
+
+		// Assert
+		rendered.Should().NotContain("tenant.example", because: "a request URI names the customer's host");
+		rendered.Should().StartWith("Unexpected response from", because: "the readable part of the message is kept");
+	}
 }

@@ -147,9 +147,9 @@ clio set-object-rights --entity-schema-name UsrOrder --grantee <role-id> --opera
 - The output and the exit code come from the planned change and the read-back, compared row by row (grantee,
   position, operations). If the object read back does not show a row this call writes — the grantee's row, or the
   `All employees` row an enable stores — where it was planned, or the switch is not as planned, the call fails
-  (exit 1). A row that differs from the plan for another role, or a row the plan did not write, is reported as a
-  warning. If the read-back itself fails, the change is reported as saved
-  but NOT verified, with a request to check the object with `get-object-rights`.
+  (exit 1). A row of another role that differs from the plan, or that the plan did not write, is reported as a
+  warning. If the read-back itself fails, the call fails too (exit 1): the change is reported as saved but NOT
+  verified, with a request to check the object with `get-object-rights` before retrying.
 - A save that reports an error — a timeout, for example — may still have been committed, so the object is read back:
   when it shows the planned change, the call succeeds with a warning; otherwise it fails and shows the object as read.
 - Exit code 1: invalid input (an object name that is not a schema identifier, a grantee that is not a GUID, an
@@ -157,12 +157,15 @@ clio set-object-rights --entity-schema-name UsrOrder --grantee <role-id> --opera
   with `--confirm`, `--enable-operation-permissions` with `--revoke`, `--disable-operation-permissions` without
   `--revoke`); a missing `--confirm` in a non-interactive run; an object that is not found or cannot be read; a
   grantee that does not exist in `SysAdminUnit`; a refused plan; a failed save whose read-back does not show the
-  plan; a read-back that does not show a row this call writes, or the planned switch. A re-run that changes nothing
+  plan; a successful save whose read-back fails; a read-back that does not show a row this call writes, or the
+  planned switch. A re-run that changes nothing
   says which row already is in the requested state, or that the grantee has no row to revoke from (exit 0).
 - A grantee with more than one row on the object is refused: which of them decides depends on the other rows, so
   the command changes none of them. Remove the duplicates in the Object permissions designer, then re-run.
 - A revoke on an object that does not use operation permissions is refused: company employees reach it whatever
-  its rows say (only technical users follow the rows while it is off).
+  its rows say (only technical users follow the rows while it is off). To limit access, turn operation permissions on
+  first (a grant with `--enable-operation-permissions`), then revoke from the `All employees` row what employees must
+  not have.
 - Read-modify-write is last-writer-wins: a change another client saves between the read and the save is
   overwritten. The read-back reports any difference from the plan.
 - On MCP, an unknown or misspelled argument name is refused before any read or write (the serializer would
