@@ -480,7 +480,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`update-client-unit-schema`](docs/commands/update-client-unit-schema.md) - Update the raw body of a client unit schema, `client-unit-schema-update`
 <a id="update-page"></a>
 <a id="page-update"></a>
-- [`update-page`](docs/commands/update-page.md) - Update Freedom UI page body and en-US resource values; validates parent references and warns to capture workspace resources before pushing, `page-update`
+- [`update-page`](docs/commands/update-page.md) - Update Freedom UI page body and en-US resource values; validates parent references and warns to capture workspace resources before pushing. MCP page lint also warns about code removed by Designer saves and rejects direct calls to factory helpers; use client modules in SCHEMA_DEPS, `page-update`
 <a id="localize-page"></a>
 - [`localize-page`](docs/commands/localize-page.md) - Add or update translations of a Freedom UI page's captions in one culture without changing other cultures; report-only when no values are supplied
 <a id="create-page"></a>
