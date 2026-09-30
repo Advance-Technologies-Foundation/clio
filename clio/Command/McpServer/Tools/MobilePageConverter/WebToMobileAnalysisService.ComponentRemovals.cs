@@ -86,33 +86,95 @@ public static partial class WebToMobileAnalysisService {
 		Dictionary<string, List<JsonObject>> ValuesByName);
 
 	/// <summary>
+	/// Everything the VERBATIM-CARRY recursion reads and writes, gathered ONCE by
+	/// <see cref="ApplyComponentRemovals"/>: the four read-only facts every frame consults, and the two
+	/// collectors <see cref="ProcessCarriedEventBindings"/> appends to.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// A record rather than six parameters because the recursion is MUTUAL —
+	/// <see cref="PruneCarriedComponentsIn"/> and <see cref="PruneCarriedComponentsFrom"/> call each other, and
+	/// <see cref="CarriedRemovalReason"/> is asked from both — so an input added as a parameter lands in every
+	/// signature and every call site between them at once. <c>ExcludedComponentsPass</c> keeps its own carried
+	/// walk short the same way, by folding its rules into one lookup before descending.
+	/// </para>
+	/// <para>
+	/// The pass-local twin of the walk's <c>ElementMapContext</c>, and a separate type for the reason
+	/// <see cref="ApplyComponentRemovals"/> states: that one no longer exists by the time this pass runs. It
+	/// carries no <c>ConvertedRequests</c> because this pass mints none — a carried node's SUPPORTED request is
+	/// left untouched, see <see cref="ProcessCarriedEventBindings"/>.
+	/// </para>
+	/// <para>
+	/// <see cref="RemovalScope"/> is deliberately NOT folded in. This record is built once and lives for the
+	/// whole pass, while a scope is rebuilt per fixed-point round and is only valid for the round that built
+	/// it; merging the two is how a stale scope gets read.
+	/// </para>
+	/// </remarks>
+	/// <param name="RequestMap">
+	/// The versioned request rules — the first tier of <see cref="IsRequestSupported"/>.
+	/// </param>
+	/// <param name="MobileRequestTypes">
+	/// The mobile request registry — its second tier. Both are held here rather than read from the walk
+	/// context, which no longer exists by the time this pass runs.
+	/// </param>
+	/// <param name="ActionComponents">
+	/// The declared action components, by type — a type listed here has its whole component removed when its
+	/// request does not convert. See <see cref="ActionComponentPropertiesOf"/>.
+	/// </param>
+	/// <param name="RemovalRules">The rules' <c>componentRemovals</c> section.</param>
+	/// <param name="DroppedRequests">
+	/// Where <see cref="ProcessCarriedEventBindings"/> records a binding it stripped from a carried node that
+	/// SURVIVED. Never null: <see cref="ApplyComponentRemovals"/> substitutes an empty list for a caller that
+	/// passes none, so no frame of the recursion has to ask.
+	/// </param>
+	/// <param name="FlaggedRequests">Its twin for a request no rules entry maps.</param>
+	private sealed record CarriedRemovalContext(
+		IReadOnlyDictionary<string, RequestMappingRule> RequestMap,
+		IReadOnlySet<string> MobileRequestTypes,
+		IReadOnlyDictionary<string, IReadOnlyList<string>> ActionComponents,
+		IReadOnlyList<ComponentRemovalRule> RemovalRules,
+		List<DroppedRequest> DroppedRequests,
+		List<FlaggedRequest> FlaggedRequests);
+
+	/// <summary>
 	/// Removes every action the Mobile app cannot fire and every component a <c>componentRemovals</c> rule
 	/// matches, in both traversal shapes. Mutates <paramref name="elementMap"/> in place; entries are replaced
 	/// by a <c>drop</c>, never deleted.
 	/// </summary>
 	/// <param name="elementMap">The finished element map.</param>
 	/// <param name="requestMap">
-	/// The versioned request rules — the first tier of <see cref="IsRequestSupported"/>.
+	/// See <see cref="CarriedRemovalContext.RequestMap"/> — this and the four parameters after it are the
+	/// context's members, taken one by one here because this is the pass's OUTERMOST signature: the caller
+	/// holds them separately, and a record it had to build first would move that assembly to every call site.
 	/// </param>
-	/// <param name="mobileRequestTypes">
-	/// The mobile request registry — its second tier. Both are passed rather than read from the walk context,
-	/// which no longer exists by the time this pass runs.
+	/// <param name="mobileRequestTypes">See <see cref="CarriedRemovalContext.MobileRequestTypes"/>.</param>
+	/// <param name="actionComponents">See <see cref="CarriedRemovalContext.ActionComponents"/>.</param>
+	/// <param name="removalRules">See <see cref="CarriedRemovalContext.RemovalRules"/>.</param>
+	/// <param name="droppedRequests">
+	/// See <see cref="CarriedRemovalContext.DroppedRequests"/>. Optional so a rule-level unit test can call
+	/// this pass with the inputs its subject needs and nothing else; every production caller passes the
+	/// collectors <c>Analyze</c> already owns, because the record is the whole point of the strip.
 	/// </param>
-	/// <param name="actionComponents">
-	/// The declared action components, by type — a type listed here has its whole component removed when its
-	/// request does not convert. See <see cref="ActionComponentPropertiesOf"/>.
-	/// </param>
-	/// <param name="removalRules">The rules' <c>componentRemovals</c> section.</param>
+	/// <param name="flaggedRequests">Its twin for a request no rules entry maps.</param>
 	/// <remarks>
 	/// <para>
-	/// Mints NO <c>droppedRequests</c> record, which is a choice rather than an omission. A dead action is
-	/// reported where the walk already reports one it drops on the leaf path: a <c>droppedElements</c> entry
-	/// whose reason NAMES the offending request (<see cref="UnsupportedRequestDropReason"/>), which the wire
-	/// contract calls the only place such a leaf's loss is reported. Adding a record here would make the SAME
-	/// page report differently depending on whether the mobile registry happens to declare <c>crt.MenuItem</c>
-	/// — the entry-graph shape drops the menu item through the walk, which records no binding, while the
-	/// carried shape would drop it here and record one. That difference is invisible on the caller's page and
-	/// must not show up in the caller's report.
+	/// Which branch a node takes decides whether it mints a request record, and both answers come from ONE
+	/// rule: report a carried node exactly as the entry-graph twin of that node is reported, because which
+	/// shape a menu takes is a registry fact the caller cannot see.
+	/// </para>
+	/// <para>
+	/// The REMOVAL branch mints none. A dead action that costs its component the page is reported where the
+	/// walk already reports one it drops on the leaf path: a <c>droppedElements</c> entry whose reason NAMES
+	/// the offending request (<see cref="UnsupportedRequestDropReason"/>), which the wire contract calls the
+	/// only place such a leaf's loss is reported. A record there would make the SAME page report differently
+	/// depending on whether the mobile registry happens to declare <c>crt.MenuItem</c> — the entry-graph shape
+	/// drops the menu item through the walk, which records no binding, while the carried shape would drop it
+	/// here and record one.
+	/// </para>
+	/// <para>
+	/// The KEEP branch mints one, which is that same rule read the other way round: a node a veto exempts
+	/// stays on the page, and its entry-graph twin reaches <see cref="ProcessEventBindings"/>, which strips a
+	/// dead binding and records it. See <see cref="ProcessCarriedEventBindings"/>.
 	/// </para>
 	/// <para>
 	/// It purges nothing either, and that is the difference from its two sibling passes. They remove elements
@@ -136,8 +198,16 @@ public static partial class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, RequestMappingRule> requestMap,
 		IReadOnlySet<string> mobileRequestTypes,
 		IReadOnlyDictionary<string, IReadOnlyList<string>> actionComponents,
-		IReadOnlyList<ComponentRemovalRule> removalRules) {
-		PruneCarriedComponents(elementMap, requestMap, mobileRequestTypes, actionComponents, removalRules);
+		IReadOnlyList<ComponentRemovalRule> removalRules,
+		List<DroppedRequest> droppedRequests = null,
+		List<FlaggedRequest> flaggedRequests = null) {
+		// The ONE place the context is assembled, and the one place the optional collectors are defaulted —
+		// so every frame below reads a non-null list and the recursion carries one argument instead of six.
+		PruneCarriedComponents(
+			elementMap,
+			new CarriedRemovalContext(
+				requestMap, mobileRequestTypes, actionComponents, removalRules,
+				droppedRequests ?? [], flaggedRequests ?? []));
 		RemoveMatchingEntries(elementMap, removalRules);
 	}
 
@@ -162,12 +232,7 @@ public static partial class WebToMobileAnalysisService {
 	/// in a delta would overwrite the template's own menu.
 	/// </para>
 	/// </remarks>
-	private static void PruneCarriedComponents(
-		List<ElementMapEntry> elementMap,
-		IReadOnlyDictionary<string, RequestMappingRule> requestMap,
-		IReadOnlySet<string> mobileRequestTypes,
-		IReadOnlyDictionary<string, IReadOnlyList<string>> actionComponents,
-		IReadOnlyList<ComponentRemovalRule> removalRules) {
+	private static void PruneCarriedComponents(List<ElementMapEntry> elementMap, CarriedRemovalContext ctx) {
 		// A WHILE loop rather than a for: this walk INSERTS into the list it is walking, so the step is not a
 		// constant — writing that as `i += removed.Count` in a for body hides it from the reader and trips
 		// Sonar S127. What it steps over are the drop entries the prune just produced, already judged.
@@ -179,8 +244,7 @@ public static partial class WebToMobileAnalysisService {
 				continue;
 			}
 			List<ElementMapEntry> removed = [];
-			PruneCarriedComponentsIn(
-				host.Values, requestMap, mobileRequestTypes, actionComponents, removalRules, removed, depth: 0);
+			PruneCarriedComponentsIn(host.Values, ctx, removed, depth: 0);
 			if (removed.Count == 0) {
 				index++;
 				continue;
@@ -202,10 +266,7 @@ public static partial class WebToMobileAnalysisService {
 	/// </remarks>
 	private static void PruneCarriedComponentsIn(
 		JsonNode node,
-		IReadOnlyDictionary<string, RequestMappingRule> requestMap,
-		IReadOnlySet<string> mobileRequestTypes,
-		IReadOnlyDictionary<string, IReadOnlyList<string>> actionComponents,
-		IReadOnlyList<ComponentRemovalRule> removalRules,
+		CarriedRemovalContext ctx,
 		List<ElementMapEntry> removed,
 		int depth) {
 		if (depth > MaxCarriedActionDepth) {
@@ -220,8 +281,7 @@ public static partial class WebToMobileAnalysisService {
 					}
 					if (value is JsonArray array) {
 						bool emptied =
-							PruneCarriedComponentsFrom(
-								array, requestMap, mobileRequestTypes, actionComponents, removalRules, removed, depth)
+							PruneCarriedComponentsFrom(array, ctx, removed, depth)
 							&& array.Count == 0;
 						if (emptied) {
 							// REMOVE the key rather than leave []: on a merge an empty array is a delta that
@@ -231,24 +291,24 @@ public static partial class WebToMobileAnalysisService {
 						}
 						continue;
 					}
-					PruneCarriedComponentsIn(
-						value, requestMap, mobileRequestTypes, actionComponents, removalRules, removed, depth);
+					PruneCarriedComponentsIn(value, ctx, removed, depth);
 					// A single-object component slot, judged after its own subtree exactly as an array member is.
-					if (value is JsonObject member
-						&& IsComponentObject(member)
-						&& CarriedRemovalReason(member, requestMap, mobileRequestTypes, actionComponents, removalRules)
-						is { } reason
+					if (value is not JsonObject member || !IsComponentObject(member)) {
+						continue;
+					}
+					if (CarriedRemovalReason(member, ctx) is { } reason
 						&& StringProp(member, "name") is { Length: > 0 } name) {
 						removed.Add(Drop(name, StringProp(member, "type"), reason));
 						obj.Remove(key);
+						continue;
 					}
+					ProcessCarriedEventBindings(member, ctx);
 				}
 				break;
 			case JsonArray items:
 				// An array reached from an array — no object in between, so the branch above never saw it.
 				// PruneCarriedComponentsFrom routes its non-object members back here, which closes that gap.
-				PruneCarriedComponentsFrom(
-					items, requestMap, mobileRequestTypes, actionComponents, removalRules, removed, depth);
+				PruneCarriedComponentsFrom(items, ctx, removed, depth);
 				break;
 			default:
 				break;
@@ -275,10 +335,7 @@ public static partial class WebToMobileAnalysisService {
 	/// </remarks>
 	private static bool PruneCarriedComponentsFrom(
 			JsonArray array,
-			IReadOnlyDictionary<string, RequestMappingRule> requestMap,
-			IReadOnlySet<string> mobileRequestTypes,
-			IReadOnlyDictionary<string, IReadOnlyList<string>> actionComponents,
-			IReadOnlyList<ComponentRemovalRule> removalRules,
+			CarriedRemovalContext ctx,
 			List<ElementMapEntry> removed,
 			int depth) {
 		List<int> doomed = [];
@@ -287,16 +344,17 @@ public static partial class WebToMobileAnalysisService {
 				// Not a component — but it can still CONTAIN one. An array nested directly inside this array
 				// is the case with no object in between, which the object branch above never sees.
 				if (array[i] is not null) {
-					PruneCarriedComponentsIn(
-						array[i], requestMap, mobileRequestTypes, actionComponents, removalRules, removed, depth + 1);
+					PruneCarriedComponentsIn(array[i], ctx, removed, depth + 1);
 				}
 				continue;
 			}
-			PruneCarriedComponentsIn(
-				member, requestMap, mobileRequestTypes, actionComponents, removalRules, removed, depth + 1);
-			if (CarriedRemovalReason(member, requestMap, mobileRequestTypes, actionComponents, removalRules)
-					is not { } reason
+			PruneCarriedComponentsIn(member, ctx, removed, depth + 1);
+			if (CarriedRemovalReason(member, ctx) is not { } reason
 				|| StringProp(member, "name") is not { Length: > 0 } name) {
+				// It stays: its own actions are settled now, and only now — the removal question answers
+				// FIRST so a node this pass DOES take off the page is reported the way the walk reports the
+				// entry-graph twin of it, as one droppedElements entry and no binding record.
+				ProcessCarriedEventBindings(member, ctx);
 				continue;
 			}
 			// The same drop the walk mints for the entry-graph shape of this element, so the two shapes report
@@ -311,6 +369,76 @@ public static partial class WebToMobileAnalysisService {
 	}
 
 	/// <summary>
+	/// Settles the event bindings of a carried node that STAYS on the page: an unsupported request has its
+	/// whole binding removed and recorded, an unmapped one is kept and flagged. Unnamed, or not a component at
+	/// all, and it does nothing. The verbatim-carry twin of <see cref="ProcessOneEventBinding"/>, reached by
+	/// the nodes that one never sees.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// Without this, a node the nested-component veto exempts shipped its dead action inside its owner's
+	/// values, mentioned by no field of the response, while the entry-graph shape of the same page stripped
+	/// and reported it. That is the ENG-96178 defect itself, surviving in the submenu case, and the asymmetry
+	/// is invisible to the caller because what decides it is whether the mobile registry declares
+	/// <c>crt.MenuItem</c>.
+	/// </para>
+	/// <para>
+	/// The UNNAMED guard is the one <see cref="PruneCarriedComponentsFrom"/> states for its own removals: a
+	/// record naming nothing is worse than silence. The component guard is the single-object slot's
+	/// <see cref="IsComponentObject"/> test, asked here as well because the array path does not ask it — an
+	/// arbitrary object inside a carried array is not an element the report can name.
+	/// </para>
+	/// <para>
+	/// A SUPPORTED request is carried untouched, which is a stated limit rather than finished parity.
+	/// <see cref="ProcessOneEventBinding"/> also renames the request to its mobile name, applies the rule's
+	/// <c>paramMap</c>, blanks a navigation target the probe could not resolve, and records a
+	/// <c>convertedRequests</c> entry — none of which happens here. The shipped rules declare no rename and no
+	/// <c>paramMap</c> today, so what is actually lost is the target probe and that record; both need inputs
+	/// this pass does not take, and the record would need a reconciliation
+	/// <see cref="BuildRequestConversionInfo"/> deliberately does not run for this pass. It is the older gap
+	/// <see cref="CarriedRemovalReason"/> names, narrowed by this method rather than closed.
+	/// </para>
+	/// <para>
+	/// The unknown branch does NOT consult the mobile request registry, and that asymmetry with
+	/// <see cref="IsRequestSupported"/> is the twin's rather than an oversight: a request no rules entry maps
+	/// is flagged whether or not the registry publishes it, because nothing tells the converter what params
+	/// such an entry expects. Reading the registry here would flag on one shape and stay silent on the other.
+	/// </para>
+	/// </remarks>
+	private static void ProcessCarriedEventBindings(JsonObject member, CarriedRemovalContext ctx) {
+		if (StringProp(member, "name") is not { Length: > 0 } elementName || !IsComponentObject(member)) {
+			return;
+		}
+		// Snapshot the keys: stripping a binding removes one while this walks.
+		foreach (string binding in member.Select(property => property.Key).ToArray()) {
+			if (member[binding] is not JsonObject source
+				|| !IsEventBinding(source)
+				|| StringProp(source, "request") is not { Length: > 0 } request) {
+				continue;
+			}
+			if (!ctx.RequestMap.TryGetValue(request, out RequestMappingRule rule)) {
+				// Not in the map: unknown OOTB request or a custom usr.* — keep it but flag for review.
+				ctx.FlaggedRequests.Add(new FlaggedRequest {
+					ElementName = elementName, Binding = binding, Request = request,
+					Reason = [Reason(ReasonCodes.FlagRequestUnmapped)]
+				});
+				continue;
+			}
+			if (!string.IsNullOrWhiteSpace(rule.Mobile)) {
+				continue;
+			}
+			member.Remove(binding);
+			// rule.Note is AUTHORED in the rules file and rides as a param beside the code exactly as it does
+			// on the twin — one cause must not acquire two shapes on the wire.
+			ctx.DroppedRequests.Add(new DroppedRequest {
+				ElementName = elementName, Binding = binding, WebRequest = request,
+				Reason = [Reason(ReasonCodes.DropRequestUnsupported,
+					("note", string.IsNullOrWhiteSpace(rule.Note) ? null : rule.Note))]
+			});
+		}
+	}
+
+	/// <summary>
 	/// Why a carried node does not reach the mobile page, or <see langword="null"/> when it does.
 	/// </summary>
 	/// <remarks>
@@ -318,19 +446,15 @@ public static partial class WebToMobileAnalysisService {
 	/// <see cref="RemoveMatchingEntries"/> — asked in the same order and answered with the same codes, because
 	/// which shape a menu takes is a registry fact the caller cannot see.
 	/// <para>
-	/// The parity is NOT complete, and the gap is older than this pass: a carried node never passes through
-	/// <see cref="ProcessEventBindings"/>, so nothing asks whether its request's navigation TARGET exists on
-	/// mobile. The entry-graph shape strips such a binding and reports it; the carried shape ships it. Closing
-	/// that needs the target probe's verdicts down here, which is a change to what this pass reads, not to
-	/// what it decides.
+	/// The parity is NOT complete, and what is left of the gap is older than this pass: a carried node never
+	/// passes through <see cref="ProcessEventBindings"/>, so nothing asks whether its request's navigation
+	/// TARGET exists on mobile. The entry-graph shape blanks such a target and reports it; the carried shape
+	/// ships it. <see cref="ProcessCarriedEventBindings"/> answers the DEAD half of that question for a node
+	/// this one keeps; the target half still needs the probe's verdicts down here, which is a change to what
+	/// this pass reads, not to what it decides.
 	/// </para>
 	/// </remarks>
-	private static ReasonCode CarriedRemovalReason(
-		JsonObject member,
-		IReadOnlyDictionary<string, RequestMappingRule> requestMap,
-		IReadOnlySet<string> mobileRequestTypes,
-		IReadOnlyDictionary<string, IReadOnlyList<string>> actionComponents,
-		IReadOnlyList<ComponentRemovalRule> removalRules) {
+	private static ReasonCode CarriedRemovalReason(JsonObject member, CarriedRemovalContext ctx) {
 		string type = StringProp(member, "type");
 		// Rule 1 answers before MatchingRemovalReason, so the veto that rule carries does not cover it - and
 		// ONE of the three applies here too. A dead binding is the reason for this removal, so the binding veto
@@ -339,14 +463,14 @@ public static partial class WebToMobileAnalysisService {
 		// loss: a submenu is a crt.MenuItem holding crt.MenuItems, and removing the owner over its own dead
 		// click would take live children off the page reported as one entry naming only the owner. The prune
 		// runs post-order, so by the time this is asked the children left are the ones that survived.
-		if (IsActionOnlyType(actionComponents, type)
+		if (IsActionOnlyType(ctx.ActionComponents, type)
 			&& !CarriesComponents(member, depth: 0)
-			&& UnsupportedCarriedRequest(member, requestMap, mobileRequestTypes) is { Length: > 0 } dead) {
-			return UnsupportedRequestDropReason(requestMap, dead, scope: null);
+			&& UnsupportedCarriedRequest(member, ctx.RequestMap, ctx.MobileRequestTypes) is { Length: > 0 } dead) {
+			return UnsupportedRequestDropReason(ctx.RequestMap, dead, scope: null);
 		}
 		// Rule 2, on the node itself: no operation addresses a carried node, so every expression resolves
 		// through IsEmptyExpression's own-value fallback.
-		return MatchingRemovalReason(removalRules, type, scope: null, mobileName: null, values: member);
+		return MatchingRemovalReason(ctx.RemovalRules, type, scope: null, mobileName: null, values: member);
 	}
 
 	/// <summary>
