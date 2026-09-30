@@ -742,6 +742,20 @@ internal static class ToolContractCatalog {
 		+ "log lines. Unlike odata-read, this tool's 'error' MAY carry Creatio's own message (with URIs, "
 		+ "paths and tokens removed) and there is no separate debug line to look the id up in.";
 
+	/// <summary>
+	/// What <c>CreatioResponseError.AppendStructuredODataWriteError</c> adds to a write tool's error
+	/// (GH-1699). Shared by odata-create, odata-update and odata-delete, which all append it.
+	/// </summary>
+	private const string ODataWriteForeignKeyHintDescription =
+		"When the database rejected the write for a foreign key, the error also carries a clio-authored hint "
+		+ "(validated identifiers only) naming the constraint and any table or column present in the response. "
+		+ "For a missing referenced record, the hint explicitly says when the foreign-key column or referenced "
+		+ "table is unknown. Inspect lookup metadata with get-entity-schema-properties and verify supplied IDs; "
+		+ "if unresolved, ask an administrator to map the constraint instead of guessing replacement IDs. "
+		+ "This error alone does not prove an OData mapping defect or identify which submitted field is wrong; "
+		+ "it can originate in an entity event handler. For a delete, the record is still referenced by the "
+		+ "named table. The hint does not change record-created, side-effect or retry-guidance.";
+
 	private const string DataWriteDiagnosticFieldName = "diagnostic";
 	private const string DataWriteDiagnosticDescription = "Optional bounded context: operation, entity, item-index, write-attempted, transport-outcome, side-effect, retry-advice and sanitized message. No inferred HTTP status or offending field.";
 
@@ -2749,7 +2763,7 @@ internal static class ToolContractCatalog {
 				SuccessFieldName,
 				[SuccessFalseSignal],
 				Field(SuccessFieldName, BooleanType, "Whether the OData update succeeded."),
-				Field(ErrorFieldName, StringType, FailureMessageDescription),
+				Field(ErrorFieldName, StringType, FailureMessageDescription + " " + ODataWriteForeignKeyHintDescription),
 				Field("id", StringType, "GUID of the updated record."),
 				Field(CorrelationIdFieldName, StringType, ODataWriteCorrelationIdDescription),
 				Field(DataWriteDiagnosticFieldName, ObjectType, DataWriteDiagnosticDescription)
@@ -2798,7 +2812,7 @@ internal static class ToolContractCatalog {
 				SuccessFieldName,
 				[SuccessFalseSignal],
 				Field(SuccessFieldName, BooleanType, "Whether the OData delete succeeded."),
-				Field(ErrorFieldName, StringType, FailureMessageDescription),
+				Field(ErrorFieldName, StringType, FailureMessageDescription + " " + ODataWriteForeignKeyHintDescription),
 				Field("id", StringType, "GUID of the deleted record."),
 				Field(CorrelationIdFieldName, StringType, ODataWriteCorrelationIdDescription),
 				Field(DataWriteDiagnosticFieldName, ObjectType, DataWriteDiagnosticDescription)
@@ -5513,9 +5527,9 @@ internal static class ToolContractCatalog {
 			"Keys are the page's resource keys as get-page shows them, inherited ones included; an unknown key fails the whole call before saving - register new keys with update-page first. " +
 			"The culture must exist in the environment's Languages section (SysCulture): an absent culture fails before any write, an inactive one is written with a warning. " +
 			"The default culture en-US is refused - change en-US values with update-page `resources`. " +
-			"A value carrying a character Creatio cannot store in a schema resource (a control character other than tab/LF/CR, U+FFFE, U+FFFF, a lone surrogate) fails the call before saving. " +
+			"A value carrying a character Creatio cannot store in a schema resource (a control character other than tab/LF/CR, U+FFFE, U+FFFF, a lone surrogate), an empty or whitespace-only value, or a whitespace-only caption fails the call before saving. " +
 			"Data-source-bound field labels are entity column captions - translate them with title-localizations on the entity tools. " +
-			"Read get-guidance name=page-schema-resources before translating a page.",
+			"Read get-guidance name=page-schema-translation before translating a page.",
 			new ToolInputSchemaContract(
 				[SchemaNameFieldName, CultureFieldName],
 				EnvironmentOrExplicitConnectionFields(
@@ -5540,7 +5554,7 @@ internal static class ToolContractCatalog {
 				Field("written", ArrayType, "Keys whose value in `culture` was written."),
 				Field("unchanged", ArrayType, "Supplied keys whose value in `culture` already equalled the supplied one."),
 				Field("captionOutcome", StringType, "`written` or `unchanged` when `caption` was supplied; absent otherwise."),
-				Field("coverage", ObjectType, "Coverage in `culture` after the call: `keys` (all resource keys of the page hierarchy, the get-page count), `translated`, `missing` (keys with no value in `culture`), `sameAsDefault` (keys whose value equals en-US - review, may be untranslated) and `captionSameAsDefault`."),
+				Field("coverage", ObjectType, "Coverage in `culture` after the call: `keys` (all resource keys of the page hierarchy, the get-page count), `translated`, `missing` (keys with no value in `culture`), `sameAsDefault` (keys whose value equals en-US - review, may be untranslated), `captionSameAsDefault`, `captionInherited` (the title in `culture` is the parent template's title, not the page's own - untranslated) and `captionValue` (the current title in `culture`)."),
 				Field(WarningsFieldName, ArrayType, "Non-fatal findings: an inactive culture, the workspace-capture reminder after a server save, a stale or unrefreshable .clio-pages baseline."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
 			),
@@ -5570,7 +5584,7 @@ internal static class ToolContractCatalog {
 					LocalizePageTool.ToolName,
 					PageGetTool.ToolName
 				],
-				"Call report-only first, translate the `missing` keys and review `sameAsDefault`, write them, then read the page back with get-page."),
+				"Call report-only first, translate the `missing` keys and review `sameAsDefault`, translate the page title when `captionInherited` is true, write them, then read the page back with get-page."),
 			[],
 			[]);
 	}
@@ -6634,7 +6648,7 @@ internal static class ToolContractCatalog {
 					+ "record-created (true inserted / false definitely not inserted / null UNKNOWN) and, when "
 					+ "record-created is null, retry-guidance. A null record-created means Creatio failed the call "
 					+ "but may already have written the row - verify with odata-read before re-sending, a retry "
-					+ "duplicates it."),
+					+ "duplicates it. " + ODataWriteForeignKeyHintDescription),
 				Field("error", StringType, "Request-level error that prevented any row from being attempted."),
 				Field(CorrelationIdFieldName, StringType, ODataWriteCorrelationIdDescription),
 				Field(DataWriteDiagnosticFieldName, ObjectType, DataWriteDiagnosticDescription)

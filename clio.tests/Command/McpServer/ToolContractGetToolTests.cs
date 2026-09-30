@@ -1661,7 +1661,7 @@ public sealed class ToolContractGetToolTests {
 			because: "resources and caption are optional; omitting both is the report-only call");
 		contract.OutputContract.Fields.Select(field => field.Name).Should().BeEquivalentTo(responseFields,
 			because: "the contract must describe exactly the envelope the command returns, so CLI and MCP agree");
-		contract.Description.Should().Contain("get-guidance name=page-schema-resources",
+		contract.Description.Should().Contain("get-guidance name=page-schema-translation",
 			because: "the contract carries the same guidance trigger as the tool description");
 		contract.Description.Should().Contain("Languages section",
 			because: "the absent-culture failure mode must be stated in the contract");
