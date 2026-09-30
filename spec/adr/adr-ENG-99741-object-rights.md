@@ -216,7 +216,10 @@ report facts. The guidance explains what the facts mean and decides what to do.
   - enabling or disabling operation permissions without its flag;
   - duplicate rows for the grantee;
   - a change that would leave an administered object with no granting row;
-  - a revoke on an object that is not administered, which company employees reach whatever its rows say;
+  - a revoke on an object that is not administered, which company employees reach whatever its rows say. A
+    repeated revoke with `disable-operation-permissions` is the exception: when the switch is already off and the
+    grantee's row already lacks the named operations, the state it asks for is in place, so it changes nothing
+    (a safe retry) instead of being refused;
 - never removes a row and never reorders rows;
 - reports facts:
   - rows in priority order, with their positions (`get`; with `--include-connected`, also for the object's own

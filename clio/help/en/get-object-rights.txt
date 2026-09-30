@@ -17,18 +17,23 @@ DESCRIPTION
     operations denies them. Per object the output is one of: "administered by operation permissions"
     with its rows; "administered by operation permissions, with NO rows" (only holders of the "...any
     data" system operations reach it); or "not administered by operation permissions" — available to
-    all INTERNAL users, external users reach it only through an explicit grant — followed by the rows
-    that would start to decide once operation permissions are turned on.
+    all INTERNAL users, external users reach it only through an explicit grant — followed by every row
+    that would start to decide once operation permissions are turned on (also with --grantee). When those
+    rows have none for All employees, the output says that set-object-rights
+    --enable-operation-permissions adds one with read/create/edit/delete below them, unless the grant is
+    for All employees itself.
 
-    With --grantee the grantee's row is shown (each row with its own position when it has several), or
-    "has NO row (no operations granted)", followed by the rows above it: for a user who is also in one of
-    those roles, they decide first. The command draws no coverage verdict.
+    With --grantee the grantee's row is shown (each row with its own position when it has several),
+    followed by the rows above it: for a user who is also in one of those roles, they decide first. When
+    the grantee has NO row, every row is listed after that line: a grant adds the row at the lowest
+    priority, below all of them. The command draws no coverage verdict.
 
     With --include-connected the root object's own lookup objects are read too — the discovery step
     before granting: decide per object, then run one set-object-rights per object. Security and system
     lookups (SysAdmin*, SysUser*, SysSchema*, SysPackage*, SysSettings*, SysLic*, SysProcess*, Vw*,
     *Right/*Rights) are not read as connected objects and are named in a warning. A connected object that
-    cannot be read, or a connected set that cannot be enumerated, is reported with a warning.
+    cannot be read, or a connected set that cannot be enumerated, is reported with a warning. A read that
+    times out stops the listing: the objects not read yet are named, to be read one by one.
 
 OPTIONS
     --entity-schema-name

@@ -73,7 +73,8 @@ public sealed class ObjectRightsToolBehaviourTests {
 	}
 
 	private SetObjectRightsCommand SetCommand() =>
-		new(_reader, _writer, new ObjectRightsPlanner(), Granted(), Substitute.For<IInteractiveConsole>(), _logger);
+		new(_reader, _writer, new ObjectRightsPlanner(), Granted(), new ObjectRightsReadBackVerifier(),
+			Substitute.For<IInteractiveConsole>(), _logger);
 
 	private SetObjectRightsTool SetTool() => new(SetCommand(), _logger, _resolver);
 
@@ -255,8 +256,10 @@ public sealed class ObjectRightsToolBehaviourTests {
 
 		// Assert
 		response.Success.Should().BeFalse(because: "a thrown command is a failure");
-		(response.Error ?? string.Empty).Should().NotContain("tenant.example",
+		response.Error.Should().NotBeNullOrWhiteSpace(because: "the failure carries the exception text, redacted");
+		response.Error.Should().NotContain("tenant.example",
 			because: "service URIs must not cross the MCP boundary unredacted");
+		response.Error.Should().Contain("[redacted-uri]", because: "the URI is replaced, not dropped with the message");
 	}
 
 	// ---- ObjectRightsToolResponse redaction ----

@@ -68,16 +68,19 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 	private readonly IObjectRightsWriter _writer;
 	private readonly IObjectRightsPlanner _planner;
 	private readonly IGranteeLookup _granteeLookup;
+	private readonly IObjectRightsReadBackVerifier _readBack;
 	private readonly IInteractiveConsole _console;
 	private readonly ILogger _logger;
 
 	/// <summary>Creates the command.</summary>
 	public SetObjectRightsCommand(IObjectRightsReader reader, IObjectRightsWriter writer, IObjectRightsPlanner planner,
-		IGranteeLookup granteeLookup, IInteractiveConsole console, ILogger logger) {
+		IGranteeLookup granteeLookup, IObjectRightsReadBackVerifier readBack, IInteractiveConsole console,
+		ILogger logger) {
 		_reader = reader;
 		_writer = writer;
 		_planner = planner;
 		_granteeLookup = granteeLookup;
+		_readBack = readBack;
 		_console = console;
 		_logger = logger;
 	}
@@ -88,9 +91,7 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 				out IReadOnlyCollection<ObjectOperation> operations)) {
 			return 1;
 		}
-		CreatioRequestOptions requestOptions = new() {
-			TimeOut = options.TimeOut, MaxAttempts = options.MaxAttempts, RetryDelay = options.RetryDelay
-		};
+		CreatioRequestOptions requestOptions = ObjectRightsCommandInput.RequestOptions(options);
 		if (!TryResolveGranteeName(grantee, requestOptions, out string granteeName)) {
 			return 1;
 		}
@@ -151,23 +152,11 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 		public bool GranteeRowChanges => GranteeRowAfter is not null && !GranteeRowAfter.SameRowAs(GranteeRowBefore);
 	}
 
-	// What the read-back shows against the plan: differences the call's claim depends on, and the others.
-	private sealed record ReadBackComparison(IReadOnlyList<string> Critical, IReadOnlyList<string> Differences);
-
 	private bool TryParseInputs(SetObjectRightsOptions options, out string schemaName, out Guid grantee,
 		out IReadOnlyCollection<ObjectOperation> operations) {
 		grantee = Guid.Empty;
 		operations = Array.Empty<ObjectOperation>();
-		schemaName = null;
-		if (string.IsNullOrWhiteSpace(options.EntitySchemaName)) {
-			_logger.WriteError("Error: --entity-schema-name is required.");
-			return false;
-		}
-		// Only a plain identifier is read and written: SQL Server ignores trailing spaces in the SysSchema.Name
-		// comparison, so a padded name would reach the table under a spelling the approval does not show exactly.
-		if (!ObjectRightsSupport.TryNormalizeSchemaName(options.EntitySchemaName, out schemaName)) {
-			_logger.WriteError($"Error: --entity-schema-name '{ObjectRightsSupport.Display(options.EntitySchemaName)}' is "
-				+ "not a schema name (letters, digits and '_' only).");
+		if (!ObjectRightsCommandInput.TryReadSchemaName(options.EntitySchemaName, _logger, out schemaName)) {
 			return false;
 		}
 		if (!Guid.TryParse(options.Grantee, out grantee) || grantee == Guid.Empty) {
@@ -239,7 +228,7 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 			ObjectRightsRefusal.EnableNotRequested =>
 				$"'{schema}' does not use operation permissions yet. Granting would turn them ON, and from then on its rows "
 				+ "decide who can reach it"
-				+ (plan.RowsBecomingEffective.Count > 0 ? $" ({FormatRows(plan.RowsBecomingEffective)})" : "")
+				+ (plan.RowsBecomingEffective.Count > 0 ? $" ({ObjectRightsSupport.FormatRows(plan.RowsBecomingEffective)})" : "")
 				+ (plan.AddsAllEmployeesRow
 					? "; an 'All employees' row with read/create/edit/delete would be added below them"
 					: "")
@@ -266,12 +255,15 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 	// the grantee's members.
 	private static string NoChangeReason(Change change) {
 		RoleOperationRights row = change.GranteeRowBefore;
-		if (row is null) {
-			return $"grantee {change.GranteeLabel} has no row, so there is nothing to revoke";
-		}
-		return change.Request.Revoke
-			? $"the row of grantee {change.GranteeLabel} at position {row.Position} already has none of [{change.Operations}]"
-			: $"the row of grantee {change.GranteeLabel} at position {row.Position} already has [{change.Operations}]";
+		string rowReason = row is null
+			? $"grantee {change.GranteeLabel} has no row, so there is nothing to revoke"
+			: change.Request.Revoke
+				? $"the row of grantee {change.GranteeLabel} at position {row.Position} already has none of [{change.Operations}]"
+				: $"the row of grantee {change.GranteeLabel} at position {row.Position} already has [{change.Operations}]";
+		// A repeated revoke-and-disable: the switch it asks to turn off is already off.
+		return change.Request.DisableOperationPermissions && !change.Plan.Before.AdministratedByOperations
+			? $"operation permissions are already OFF, and {rowReason}"
+			: rowReason;
 	}
 
 	// The facts the operator approves: what turns on or off, which rows start to decide, where the grantee's row sits
@@ -284,7 +276,7 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 			facts.Add($"Operation permissions on '{schema}' are turned ON: from then on its rows decide, in priority order, "
 				+ "for every user without the '…any data' system operations.");
 			if (plan.RowsBecomingEffective.Count > 0) {
-				facts.Add($"Rows that start to decide: {FormatRows(plan.RowsBecomingEffective)}.");
+				facts.Add($"Rows that start to decide: {ObjectRightsSupport.FormatRows(plan.RowsBecomingEffective)}.");
 			}
 			if (plan.AddsAllEmployeesRow) {
 				RoleOperationRights allEmployees = plan.After.Roles.First(row => row.GranteeId == SysAdminUnitIds.AllEmployees);
@@ -296,7 +288,7 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 		facts.Add(DescribeGranteeRow(change));
 		if (plan.RowsAboveGrantee.Count > 0) {
 			facts.Add("Rows above the grantee's row, which decide first for a user who is also in those roles: "
-				+ $"{FormatRows(plan.RowsAboveGrantee)}.");
+				+ $"{ObjectRightsSupport.FormatRows(plan.RowsAboveGrantee)}.");
 		}
 		if (plan.DisablesOperationPermissions) {
 			facts.Add($"Operation permissions on '{schema}' are turned OFF: it becomes available to ALL internal users. "
@@ -309,17 +301,17 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 		RoleOperationRights before = change.GranteeRowBefore;
 		RoleOperationRights after = change.GranteeRowAfter;
 		if (change.Plan.AddsGranteeRow && after is not null) {
-			return $"A row for the grantee is added at position {after.Position}, the lowest priority, with {Ops(after)}.";
+			return $"A row for the grantee is added at position {after.Position}, the lowest priority, with {ObjectRightsSupport.FormatOperations(after)}.";
 		}
 		if (change.GranteeRowChanges && after is not null) {
 			return change.Request.Revoke
 				? $"The grantee's row stays at position {after.Position} with [{change.Operations}] cleared; it now has "
-					+ $"{Ops(after)}."
-				: $"The grantee's row at position {after.Position} now has {Ops(after)}.";
+					+ $"{ObjectRightsSupport.FormatOperations(after)}."
+				: $"The grantee's row at position {after.Position} now has {ObjectRightsSupport.FormatOperations(after)}.";
 		}
 		return before is null
 			? "The grantee has no row; no row changes."
-			: $"The grantee's row at position {before.Position} is unchanged ({Ops(before)}).";
+			: $"The grantee's row at position {before.Position} is unchanged ({ObjectRightsSupport.FormatOperations(before)}).";
 	}
 
 	// The call's own result line, from the plan: a row that changed, or — when only the switch changes — that.
@@ -346,7 +338,7 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 			WriteFacts(facts);
 			return 1;
 		}
-		ReadBackComparison comparison = Compare(change, actual.State);
+		ObjectRightsReadBack comparison = _readBack.Compare(change.Plan, change.Request.Grantee, actual.State);
 		if (comparison.Critical.Count > 0) {
 			_logger.WriteError($"Error: '{schema}': the save reported success, but the object read back does not match "
 				+ $"the plan: {string.Join("; ", comparison.Critical)}. Check it with get-object-rights.");
@@ -365,10 +357,10 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 				+ $"({ReadBackFailure(actual)}). Read the object with get-object-rights before retrying.");
 			return 1;
 		}
-		ReadBackComparison comparison = Compare(change, actual.State);
+		ObjectRightsReadBack comparison = _readBack.Compare(change.Plan, change.Request.Grantee, actual.State);
 		if (comparison.Critical.Count > 0) {
 			_logger.WriteError($"Error: '{schema}': the save failed ({saveError}). The object now: operation permissions "
-				+ $"{OnOff(actual.State)}; rows {FormatRows(actual.State.Roles)}.");
+				+ $"{OnOff(actual.State)}; rows {ObjectRightsSupport.FormatRows(actual.State.Roles)}.");
 			return 1;
 		}
 		_logger.WriteWarning($"'{schema}': the save reported an error ({saveError}), but the object read back "
@@ -380,10 +372,10 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 	}
 
 	private void ReportDone(Change change, IReadOnlyList<string> facts, ObjectRightsState state,
-		ReadBackComparison comparison) {
+		ObjectRightsReadBack comparison) {
 		_logger.WriteInfo(DoneLine(change));
 		WriteFacts(facts);
-		_logger.WriteInfo($"  Rows now: {FormatRows(state.Roles)}.");
+		_logger.WriteInfo($"  Rows now: {ObjectRightsSupport.FormatRows(state.Roles)}.");
 		foreach (string difference in comparison.Differences) {
 			_logger.WriteWarning($"  Differs from the plan: {difference} — another client may have changed the object "
 				+ "meanwhile.");
@@ -400,71 +392,7 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 
 	private static string ReadBackFailure(ObjectRightsInfo actual) => actual.ReadError ?? "the object was not found";
 
-	// The object read back against the plan, row by row: grantee, position and operations. The switch, the grantee's
-	// rows and every row this call writes are what the call claims, so a difference there fails it; any other difference
-	// is reported as a fact.
-	private static ReadBackComparison Compare(Change change, ObjectRightsState actual) {
-		ObjectRightsState planned = change.Plan.After;
-		Guid grantee = change.Request.Grantee;
-		IReadOnlyList<RoleOperationRights> written = RowsWritten(change.Plan);
-		List<string> critical = new();
-		List<string> differences = new();
-		if (actual.AdministratedByOperations != planned.AdministratedByOperations) {
-			critical.Add($"operation permissions are {OnOff(actual)}, the plan turned them {OnOff(planned)}");
-		}
-		ObjectRightsRowDifference diff = planned.DiffRows(actual);
-		List<RoleOperationRights> extra = diff.Extra.Where(row => !IsSynthesizedRow(planned, actual, row)).ToList();
-		foreach (RoleOperationRights missing in diff.Missing) {
-			RoleOperationRights read = extra.FirstOrDefault(row =>
-				row.GranteeId == missing.GranteeId && row.Position == missing.Position);
-			if (read is not null) {
-				extra.Remove(read);
-			}
-			string text = read is null
-				? $"{FormatRow(missing)} is missing"
-				: $"{FormatRow(read)}, the plan wrote {Ops(missing)}";
-			bool claimed = missing.GranteeId == grantee || written.Any(row => row.SameRowAs(missing));
-			(claimed ? critical : differences).Add(text);
-		}
-		foreach (RoleOperationRights row in extra) {
-			(row.GranteeId == grantee ? critical : differences).Add($"{FormatRow(row)} is not in the plan");
-		}
-		return new ReadBackComparison(critical, differences);
-	}
-
-	// The rows this call writes: every planned row the object did not have as read, plus — when the call turns operation
-	// permissions on — the All employees row it stores (the read may only have synthesized it). If one of them is missing
-	// from the read-back, the call's own change did not land; an internal user can be cut off by exactly that row.
-	private static IReadOnlyList<RoleOperationRights> RowsWritten(ObjectRightsPlan plan) {
-		List<RoleOperationRights> written = plan.Before.DiffRows(plan.After).Extra.ToList();
-		if (plan.EnablesOperationPermissions) {
-			written.AddRange(plan.After.Roles.Where(row =>
-				row.GranteeId == SysAdminUnitIds.AllEmployees && !written.Contains(row)));
-		}
-		return written;
-	}
-
-	// A disable that leaves no stored rows is read back with the All employees row the service synthesizes for an
-	// object with no stored rows; nobody saved it.
-	private static bool IsSynthesizedRow(ObjectRightsState planned, ObjectRightsState actual, RoleOperationRights row) =>
-		!planned.AdministratedByOperations && planned.Roles.Count == 0 && !actual.AdministratedByOperations
-		&& actual.Roles.Count == 1 && row.GranteeId == SysAdminUnitIds.AllEmployees && row.Position == 0
-		&& row.CanRead && row.CanCreate && row.CanEdit && row.CanDelete;
-
 	private static string OnOff(ObjectRightsState state) => state.AdministratedByOperations ? "ON" : "OFF";
-
-	private static string FormatRows(IEnumerable<RoleOperationRights> rows) {
-		string[] formatted = rows.OrderBy(row => row.Position).Select(FormatRow).ToArray();
-		return formatted.Length == 0 ? "none" : string.Join("; ", formatted);
-	}
-
-	private static string FormatRow(RoleOperationRights row) =>
-		$"[{row.Position}] {ObjectRightsSupport.Display(row.GranteeName)}: {Ops(row)}";
-
-	private static string Ops(RoleOperationRights row) {
-		IReadOnlyList<string> ops = row.OperationNames();
-		return ops.Count == 0 ? "no operations" : string.Join("/", ops);
-	}
 
 	private static bool TryParseOperations(string raw, out IReadOnlyCollection<ObjectOperation> operations,
 		out string error) {

@@ -122,6 +122,13 @@ EXAMPLES
 NOTES
     The grantee must exist in SysAdminUnit; an unknown id fails before anything is written.
 
+    When the grantee is All employees and the object has no row for it, the new row gets exactly the
+    operations the call names: an enable then adds no second All employees row with every operation.
+
+    A re-run of a call that already landed changes nothing and exits 0. That includes a revoke with
+    --disable-operation-permissions run again on an object that is already off, whose grantee row
+    already has none of the operations, so a retry after a timeout is safe.
+
     After the save the object is read back and compared with the plan, row by row (grantee, position,
     operations). A missing or different row that this call writes fails it; a row of another role that
     differs from the plan, or that the plan did not write, is reported as a warning. If the read-back

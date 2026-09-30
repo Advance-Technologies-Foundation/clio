@@ -154,7 +154,11 @@ clio set-object-rights --entity-schema-name UsrOrder --grantee <role-id> --opera
   `--confirm` in a non-interactive run; an object that is not found or cannot be read; a grantee that does not exist
   in `SysAdminUnit`; a refused plan; a failed save whose read-back does not show the plan; a successful save whose
   read-back fails; a read-back that does not show a row this call writes, or the planned switch. A re-run that changes
-  nothing says which row already is in the requested state, or that the grantee has no row to revoke from (exit 0).
+  nothing says which row already is in the requested state, or that the grantee has no row to revoke from (exit 0). That
+  includes a revoke with `--disable-operation-permissions` run again on an object that is already off, whose grantee
+  row already has none of the operations: a retry after a timeout is safe.
+- When the grantee is `All employees` and the object has no row for it, the new row gets exactly the operations the
+  call names: an enable then adds no second `All employees` row with every operation.
 - A grantee with more than one row on the object is refused: which of them decides depends on the other rows, so
   the command changes none of them. Remove the duplicates in the Object permissions designer, then re-run.
 - A revoke on an object that does not use operation permissions is refused: company employees reach it whatever

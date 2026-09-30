@@ -3,7 +3,7 @@ description: an object that is NOT administered by operation permissions and has
 applies-to:
   - clio/Common/ObjectRights/RightManagementServiceClient.cs
   - clio/Common/ObjectRights/ObjectRightsPlanner.cs
-  - clio/Command/ObjectRights/SetObjectRightsCommand.cs
+  - clio/Common/ObjectRights/ObjectRightsReadBackVerifier.cs
 ticket: ENG-99741
 date: 2026-09-30
 ---

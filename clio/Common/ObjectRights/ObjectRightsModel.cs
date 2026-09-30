@@ -151,6 +151,8 @@ public sealed class ObjectRightsSnapshot {
 /// synthesized "All employees" row with every operation.</param>
 /// <param name="ReadError">Why the object could not be read; <see langword="null"/> on a clean read.</param>
 /// <param name="Snapshot">The object as read, for a save; <see langword="null"/> when the read failed.</param>
+/// <param name="TimedOut">The read failed because the service did not answer in time (a hang, not a fault it
+/// answered): another read against the same stand would most likely wait as long.</param>
 public sealed record ObjectRightsInfo(
 	bool Found,
 	string Name,
@@ -158,7 +160,8 @@ public sealed record ObjectRightsInfo(
 	bool AdministratedByOperations,
 	IReadOnlyList<RoleOperationRights> Roles,
 	string ReadError = null,
-	ObjectRightsSnapshot Snapshot = null) {
+	ObjectRightsSnapshot Snapshot = null,
+	bool TimedOut = false) {
 
 	/// <summary>The state the planner works on.</summary>
 	public ObjectRightsState State => new(AdministratedByOperations, Roles);

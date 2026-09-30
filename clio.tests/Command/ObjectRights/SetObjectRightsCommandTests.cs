@@ -235,6 +235,22 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 	}
 
 	[Test]
+	[Description("Running the same revoke-and-disable call a second time finds operation permissions already OFF and the grantee's row already without the operation, so it reports no change and exits 0 (a re-run is safe) instead of refusing a revoke on an object that is not administered.")]
+	public void Execute_ShouldReportNoChange_WhenARevokeAndDisableIsRepeated() {
+		// Arrange
+		ObjectIs(Info(false, Row(Grantee, 0, ""), Row(AllEmployees, 1, "RCED")));
+
+		// Act
+		int exitCode = _command.Execute(Options("read", o => { o.Revoke = true; o.DisableOperationPermissions = true; }));
+
+		// Assert
+		exitCode.Should().Be(0, because: "the state the first call asked for is in place, so a retry is not a failure");
+		_infos.Should().Contain(m => m.Contains("operation permissions are already OFF") && m.Contains("(no change)"),
+			because: "the result says why nothing changes");
+		NothingSaved();
+	}
+
+	[Test]
 	[Description("A revoke with --disable-operation-permissions for a grantee with no row changes only the switch, and the result says so instead of 'revoked'.")]
 	public void Execute_ShouldReportOnlyTheSwitch_WhenTheRevokeChangesNoRow() {
 		// Arrange

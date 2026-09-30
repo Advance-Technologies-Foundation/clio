@@ -302,7 +302,23 @@ public class RightManagementServiceClientTests {
 
 		// Assert
 		info.ReadError.Should().Contain("timed out", because: "the timeout is reported against the object");
+		info.TimedOut.Should().BeTrue(because: "a caller reading several objects stops after a hang");
 		GetBodiesInCallOrder().Should().HaveCount(1, because: "no further candidate is probed after a hang");
+	}
+
+	[Test]
+	[Description("A read that fails with a fault the service answered is not marked as timed out: a caller reading several objects goes on with the next one.")]
+	public void GetObjectRights_ShouldNotMarkATimeout_WhenTheServiceAnswersWithAFault() {
+		// Arrange
+		SelectReturnsUIds(BaseUId);
+		GetThrowsFor(BaseUId, new HttpRequestException("503"));
+
+		// Act
+		ObjectRightsInfo info = Read();
+
+		// Assert
+		info.ReadError.Should().Contain("503", because: "the fault is reported against the object");
+		info.TimedOut.Should().BeFalse(because: "the server answered; the next object may well be readable");
 	}
 
 	[Test]

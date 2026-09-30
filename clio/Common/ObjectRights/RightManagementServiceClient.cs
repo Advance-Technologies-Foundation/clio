@@ -81,18 +81,20 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 	public ObjectRightsInfo GetObjectRights(string schemaName, CreatioRequestOptions requestOptions) {
 		JsonObject node;
 		string error;
+		bool timedOut;
 		try {
-			(node, error) = TryGetAdministratedObject(schemaName, requestOptions);
+			(node, error, timedOut) = TryGetAdministratedObject(schemaName, requestOptions);
 		}
 		catch (Exception ex) when (ObjectRightsSupport.IsServiceFailure(ex)) {
 			return new ObjectRightsInfo(true, schemaName, null, false, Array.Empty<RoleOperationRights>(),
-				ReadError: ObjectRightsSupport.DisplayError(ex.Message));
+				ReadError: ObjectRightsSupport.DisplayError(ex.Message), TimedOut: ObjectRightsSupport.IsTimeout(ex));
 		}
 		if (node is null) {
 			// error set = the object exists but could not be read (a service fault); error null = the schema
 			// name resolved to no candidate at all (not found). Never report a failed read as "available".
 			return error is not null
-				? new ObjectRightsInfo(true, schemaName, null, false, Array.Empty<RoleOperationRights>(), ReadError: error)
+				? new ObjectRightsInfo(true, schemaName, null, false, Array.Empty<RoleOperationRights>(), ReadError: error,
+					TimedOut: timedOut)
 				: new ObjectRightsInfo(false, schemaName, null, false, Array.Empty<RoleOperationRights>());
 		}
 		return new ObjectRightsInfo(true, Str(node["name"]) ?? schemaName, Str(node["caption"]),
@@ -154,24 +156,24 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 	// answered but with a fault. The FIRST candidate's error is kept: it is the base row, whose real cause (a
 	// timeout, a permission error) is what the caller needs, not the opaque "Request Error" page a later
 	// replacing layer answers with.
-	private (JsonObject node, string error) TryGetAdministratedObject(
+	private (JsonObject node, string error, bool timedOut) TryGetAdministratedObject(
 		string schemaName, CreatioRequestOptions requestOptions) {
 		IReadOnlyList<Guid> candidates = ResolveEntitySchemaUIds(schemaName, requestOptions);
 		if (candidates.Count == 0) {
-			return (null, null);
+			return (null, null, false);
 		}
 		string firstError = null;
 		foreach (Guid candidate in candidates) {
 			if (TryFetchNode(candidate, requestOptions, out JsonObject node, out string error, out bool timedOut)) {
-				return (node, null);
+				return (node, null, false);
 			}
 			firstError ??= error;
 			if (timedOut) {
 				// A hang is not an answer from a wrong layer: the next candidate would only wait as long again.
-				break;
+				return (null, firstError, true);
 			}
 		}
-		return (null, firstError);
+		return (null, firstError, false);
 	}
 
 	// Fetches GetAdministratedObject for one UId. Returns true with the administratedObject node on a clean success

@@ -22,19 +22,25 @@ denies them. Every listing states that rule once. Per object the output is one o
 - `administered by operation permissions, with NO rows` — only holders of the "…any data" system operations
   reach it;
 - `not administered by operation permissions` — available to all **internal** users; external users reach it
-  only through an explicit grant. The rows that would start to decide once operation permissions are turned on
-  are listed below it (for an object with no stored rows, that is the `All employees` row the service shows).
+  only through an explicit grant. Every row that would start to decide once operation permissions are turned on
+  is listed below it, also with `--grantee` (for an object with no stored rows, that is the `All employees` row
+  the service shows, which is not stored). When those rows have none for `All employees`, the output says that
+  `set-object-rights --enable-operation-permissions` adds one with read/create/edit/delete below them, unless the
+  grant is for `All employees` itself.
 
-With `--grantee` the grantee's row is shown (every row, each with its own position, when it has several), or
-`has NO row (no operations granted)`, followed by the rows above it: for a user who is also in one of those
-roles, they decide first. The command draws no coverage verdict — which roles a user is in, and what the facts
+With `--grantee` the grantee's row is shown (every row, each with its own position, when it has several),
+followed by the rows above it: for a user who is also in one of those roles, they decide first. When the grantee
+has NO row, `has NO row (no operations granted)` is followed by every row: a grant adds the row at the lowest
+priority, below all of them. The command draws no coverage verdict — which roles a user is in, and what the facts
 mean for a given audience, is up to the caller.
 
 With `--include-connected` the root object's own lookup objects are read too. This is the discovery step before
 granting: decide per object, then run one `set-object-rights` per object. Security and system lookups
 (SysAdmin*, SysUser*, SysSchema*, SysPackage*, SysSettings*, SysLic*, SysProcess*, Vw*, *Right/*Rights) are not
 read as connected objects and are named in a warning. A connected object that cannot be read, or a connected set
-that cannot be enumerated, is reported with a warning.
+that cannot be enumerated, is reported with a warning. A read that times out stops the listing — every further read
+against the same stand would most likely wait as long — and the objects not read yet are named, to be read one by
+one.
 
 ## Synopsis
 

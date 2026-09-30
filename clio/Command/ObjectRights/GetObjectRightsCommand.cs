@@ -51,13 +51,7 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 
 	/// <inheritdoc />
 	public override int Execute(GetObjectRightsOptions options) {
-		if (string.IsNullOrWhiteSpace(options.EntitySchemaName)) {
-			_logger.WriteError("Error: --entity-schema-name is required.");
-			return 1;
-		}
-		if (!ObjectRightsSupport.TryNormalizeSchemaName(options.EntitySchemaName, out string schemaName)) {
-			_logger.WriteError($"Error: --entity-schema-name '{ObjectRightsSupport.Display(options.EntitySchemaName)}' is "
-				+ "not a schema name (letters, digits and '_' only).");
+		if (!ObjectRightsCommandInput.TryReadSchemaName(options.EntitySchemaName, _logger, out string schemaName)) {
 			return 1;
 		}
 		options.EntitySchemaName = schemaName;
@@ -65,26 +59,34 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 			_logger.WriteError("Error: --grantee must be a SysAdminUnit id (GUID).");
 			return 1;
 		}
-		CreatioRequestOptions requestOptions = new() {
-			TimeOut = options.TimeOut, MaxAttempts = options.MaxAttempts, RetryDelay = options.RetryDelay
-		};
-
+		CreatioRequestOptions requestOptions = ObjectRightsCommandInput.RequestOptions(options);
+		ConnectedObjectsResolution resolution;
+		// Only the service call is guarded: a failure in the code that reports the result is a bug, not a service
+		// failure. The reader never throws for one — it reports it as the object's read error.
 		try {
-			ConnectedObjectsResolution resolution =
-				_connectedObjects.Resolve(options.EntitySchemaName, options.IncludeConnected);
-			ReportHeader(options, granteeFilter, resolution);
-			bool rootFailed = false;
-			for (int index = 0; index < resolution.Objects.Count; index++) {
-				bool isRoot = index == 0;
-				bool read = ReportTarget(resolution.Objects[index], isRoot, granteeFilter, requestOptions);
-				rootFailed |= isRoot && !read;
-			}
-			return rootFailed ? 1 : 0;
+			resolution = _connectedObjects.Resolve(options.EntitySchemaName, options.IncludeConnected);
 		}
 		catch (Exception ex) when (ObjectRightsSupport.IsServiceFailure(ex)) {
 			_logger.WriteError($"Error: {ObjectRightsSupport.DisplayError(ex.Message)}");
 			return 1;
 		}
+		ReportHeader(options, granteeFilter, resolution);
+		bool rootFailed = false;
+		for (int index = 0; index < resolution.Objects.Count; index++) {
+			bool isRoot = index == 0;
+			string target = resolution.Objects[index];
+			ObjectRightsInfo info = ReadRights(target, requestOptions);
+			bool read = ReportTarget(target, info, isRoot, granteeFilter);
+			rootFailed |= isRoot && !read;
+			if (info.TimedOut && index < resolution.Objects.Count - 1) {
+				// A hang, not a fault: every further read against the same stand would most likely wait as long, and on
+				// MCP the read deadline would then take the whole output with it.
+				_logger.WriteWarning($"  Stopped after the read of {target} timed out. Not read: "
+					+ $"{string.Join(", ", resolution.Objects.Skip(index + 1))} — read them one by one.");
+				break;
+			}
+		}
+		return rootFailed ? 1 : 0;
 	}
 
 	// An omitted grantee means "every role"; a given one must be a non-empty GUID.
@@ -118,9 +120,20 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 		}
 	}
 
+	// The reader reports a service failure as the object's read error; a reader that throws one is treated the same
+	// way. Only the call itself is guarded, never the code that reports its result.
+	private ObjectRightsInfo ReadRights(string schemaName, CreatioRequestOptions requestOptions) {
+		try {
+			return _rightsReader.GetObjectRights(schemaName, requestOptions);
+		}
+		catch (Exception ex) when (ObjectRightsSupport.IsServiceFailure(ex)) {
+			return new ObjectRightsInfo(true, schemaName, null, false, Array.Empty<RoleOperationRights>(),
+				ReadError: ObjectRightsSupport.DisplayError(ex.Message), TimedOut: ObjectRightsSupport.IsTimeout(ex));
+		}
+	}
+
 	// Reports one object and returns whether it could be read.
-	private bool ReportTarget(string schemaName, bool isRoot, Guid? granteeFilter, CreatioRequestOptions requestOptions) {
-		ObjectRightsInfo info = _rightsReader.GetObjectRights(schemaName, requestOptions);
+	private bool ReportTarget(string schemaName, ObjectRightsInfo info, bool isRoot, Guid? granteeFilter) {
 		if (info.ReadError != null || !info.Found) {
 			string reason = info.ReadError != null
 				? $"could not read object rights ({info.ReadError})"
@@ -140,9 +153,16 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 				+ "external users reach it only through an explicit grant.");
 			if (info.Roles.Count > 0) {
 				// The rows the service returns for such an object (a synthesized All employees row when none is
-				// stored) are exactly the rows that start to decide once operation permissions are turned on.
+				// stored) are the rows that start to decide once operation permissions are turned on — all of them,
+				// whichever grantee was asked about, so the listing is not narrowed by --grantee.
 				_logger.WriteInfo("    Rows that apply if operation permissions are turned on:");
-				ReportRows(info.Roles, granteeFilter);
+				ReportRows(info.Roles, null);
+			}
+			if (info.Roles.All(row => row.GranteeId != SysAdminUnitIds.AllEmployees)) {
+				// set-object-rights keeps internal users' access when it turns operation permissions on, so the listing
+				// says so rather than let a reader take the rows above for the whole effect of an enable.
+				_logger.WriteInfo("    It has no 'All employees' row: set-object-rights --enable-operation-permissions adds "
+					+ "one with read/create/edit/delete below any stored rows, unless the grant is for All employees itself.");
 			}
 			return true;
 		}
@@ -168,6 +188,14 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 		RoleOperationRights[] granteeRows = rows.Where(row => row.GranteeId == granteeFilter.Value).ToArray();
 		if (granteeRows.Length == 0) {
 			_logger.WriteInfo($"    grantee {granteeFilter} has NO row (no operations granted).");
+			// A grant adds the row at the lowest priority, so every existing row would sit above it.
+			if (rows.Count > 0) {
+				_logger.WriteInfo("    A new row would go below every row; these decide first for a user who is also in "
+					+ "those roles:");
+				foreach (RoleOperationRights row in rows) {
+					_logger.WriteInfo($"      {Describe(row)}");
+				}
+			}
 			return;
 		}
 		foreach (RoleOperationRights row in granteeRows) {
@@ -182,11 +210,7 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 		}
 	}
 
-	private static string Describe(RoleOperationRights role) {
-		IReadOnlyList<string> ops = role.OperationNames();
-		string granted = ops.Count == 0 ? "no operations" : string.Join("/", ops);
-		return $"[{role.Position}] {ObjectRightsSupport.Display(role.GranteeName)} ({role.GranteeId}): {granted}";
-	}
+	private static string Describe(RoleOperationRights role) => ObjectRightsSupport.FormatRow(role, withGranteeId: true);
 
 	// The platform rule every row listing is read with. Stated once per call, so a reader never takes the rows for a
 	// sum of flags.

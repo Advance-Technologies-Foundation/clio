@@ -253,18 +253,37 @@ public class ObjectRightsPlannerTests {
 		plan.After.Roles.Should().Equal(new[] { Row(Grantee, 0, "") }, because: "the rows are kept for a later re-enable");
 	}
 
-	[Test]
-	[Description("A revoke on an object that is not administered is refused: every internal user reaches it whatever its rows say.")]
-	public void Plan_ShouldRefuseRevoke_WhenObjectNotAdministered() {
+	[TestCase(false, TestName = "Plan_ShouldRefuseRevoke_WhenObjectNotAdministered")]
+	[TestCase(true, TestName = "Plan_ShouldRefuseRevokeAndDisable_WhenObjectNotAdministeredAndTheRowStillHoldsTheOperation")]
+	[Description("A revoke on an object that is not administered is refused: every internal user reaches it whatever its rows say. With --disable-operation-permissions too, while the grantee's row still holds a named operation, because the call would change a row of an object that is off.")]
+	public void Plan_ShouldRefuseRevoke_WhenObjectNotAdministered(bool disable) {
 		// Arrange
 		ObjectRightsState before = State(false, Row(Grantee, 0, "R"));
+
+		// Act
+		ObjectRightsPlan plan = _planner.Plan(before, Revoke(ObjectOperation.Read) with { DisableOperationPermissions = disable });
+
+		// Assert
+		plan.Refusal.Should().Be(ObjectRightsRefusal.RevokeOnNotAdministered,
+			because: "a revoke cannot restrict an object every internal user already reaches");
+	}
+
+	[TestCase(true, TestName = "Plan_ShouldChangeNothing_WhenARevokeAndDisableIsRepeated")]
+	[TestCase(false, TestName = "Plan_ShouldChangeNothing_WhenARevokeAndDisableMeetsNoGranteeRowWhileOff")]
+	[Description("A revoke with --disable-operation-permissions that finds the switch already OFF and the grantee's row without the named operations asks for the state already in place, so it changes nothing instead of being refused: a re-run of the same call is safe.")]
+	public void Plan_ShouldChangeNothing_WhenTheRevokeAndDisableStateIsInPlace(bool granteeHasRow) {
+		// Arrange
+		ObjectRightsState before = granteeHasRow
+			? State(false, Row(Grantee, 0, ""), Row(AllEmployees, 1, "RCED"))
+			: State(false, Row(AllEmployees, 0, "RCED"));
 
 		// Act
 		ObjectRightsPlan plan = _planner.Plan(before, Revoke(ObjectOperation.Read) with { DisableOperationPermissions = true });
 
 		// Assert
-		plan.Refusal.Should().Be(ObjectRightsRefusal.RevokeOnNotAdministered,
-			because: "a revoke cannot restrict an object every internal user already reaches");
+		plan.Refused.Should().BeFalse(because: "the state the call asks for is already in place");
+		plan.Changes.Should().BeFalse(because: "the switch is already off and no row loses an operation");
+		plan.DisablesOperationPermissions.Should().BeFalse(because: "the switch is not turned off again");
 	}
 
 	[Test]
@@ -296,6 +315,24 @@ public class ObjectRightsPlannerTests {
 		plan.After.AdministratedByOperations.Should().BeTrue(because: "no flag asked for the switch to change");
 		plan.EnablesOperationPermissions.Should().BeFalse(because: "it was already on");
 		plan.DisablesOperationPermissions.Should().BeFalse(because: "no disable was asked for");
+	}
+
+	[Test]
+	[Description("Enabling with All employees as the grantee, on an object whose stored rows have none for it, gives All employees exactly the named operations in one new row at the lowest priority: the call names its operations, so no second All employees row with every operation is added.")]
+	public void Plan_ShouldGiveAllEmployeesOnlyTheNamedOperations_WhenItIsTheGranteeOfAnEnable() {
+		// Arrange
+		ObjectRightsState before = State(false, Row(Other, 0, "R"));
+		ObjectRightsChangeRequest request = new(AllEmployees, "All employees", new[] { ObjectOperation.Read },
+			Revoke: false, EnableOperationPermissions: true, DisableOperationPermissions: false);
+
+		// Act
+		ObjectRightsPlan plan = _planner.Plan(before, request);
+
+		// Assert
+		plan.Refused.Should().BeFalse(because: "the enable is named");
+		plan.AddsAllEmployeesRow.Should().BeFalse(because: "the grant itself writes the All employees row");
+		plan.After.Roles.Should().Equal(new[] { Row(Other, 0, "R"), Row(AllEmployees, 1, "R") },
+			because: "All employees gets the operations the call names, below the stored row, and nothing more");
 	}
 
 	[TestCase(false, TestName = "Plan_ShouldThrow_WhenTheOperationListIsEmpty")]

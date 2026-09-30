@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
@@ -57,6 +58,34 @@ public static class ObjectRightsSupport {
 	private const int MaxErrorLength = 500;
 
 	/// <summary>
+	/// Renders one row for output: its position, the grantee's name — with its id when asked for — and its operations,
+	/// e.g. <c>[1] Sales managers: read/create</c>. Both commands and the read-back use it, so a row never reads
+	/// differently in two places.
+	/// </summary>
+	/// <param name="row">The row to render.</param>
+	/// <param name="withGranteeId">Also show the grantee's SysAdminUnit id.</param>
+	/// <returns>The display-safe row.</returns>
+	public static string FormatRow(RoleOperationRights row, bool withGranteeId = false) =>
+		$"[{row.Position}] {Display(row.GranteeName)}{(withGranteeId ? $" ({row.GranteeId})" : "")}: "
+		+ FormatOperations(row);
+
+	/// <summary>Renders rows in priority order, separated by <c>"; "</c>, or <c>"none"</c> when there are none.</summary>
+	/// <param name="rows">The rows to render.</param>
+	/// <returns>The display-safe rows.</returns>
+	public static string FormatRows(IEnumerable<RoleOperationRights> rows) {
+		string[] formatted = rows.OrderBy(row => row.Position).Select(row => FormatRow(row)).ToArray();
+		return formatted.Length == 0 ? "none" : string.Join("; ", formatted);
+	}
+
+	/// <summary>The operations a row grants, in grid order (<c>read/create</c>), or <c>no operations</c>.</summary>
+	/// <param name="row">The row.</param>
+	/// <returns>The operations text.</returns>
+	public static string FormatOperations(RoleOperationRights row) {
+		IReadOnlyList<string> operations = row.OperationNames();
+		return operations.Count == 0 ? "no operations" : string.Join("/", operations);
+	}
+
+	/// <summary>
 	/// Trims <paramref name="raw"/> and accepts it only when it is a plain schema identifier. A padded or
 	/// decorated name must never reach the security/system gate: the gate matches the name as a string, while
 	/// SQL Server ignores trailing spaces in the <c>SysSchema.Name</c> comparison and would still find the table.
@@ -72,9 +101,12 @@ public static class ObjectRightsSupport {
 	/// <summary>
 	/// Whether <paramref name="exception"/> is a failure of the Creatio service call itself — a transport fault, a
 	/// timeout, a non-JSON or empty body, an authentication rejection, an oversized response — that must be
-	/// attributed to the object being read rather than end the run. Programming errors (NullReferenceException,
-	/// ArgumentException, ...) are deliberately NOT service failures. An HTTP timeout surfaces as
-	/// TaskCanceledException, hence OperationCanceledException.
+	/// attributed to the object being read rather than end the run. An HTTP timeout surfaces as
+	/// TaskCanceledException, hence OperationCanceledException. InvalidOperationException is included because the
+	/// shared service clients report an empty or non-JSON body and a DataService error with it; so that a programming
+	/// error that throws it (a LINQ <c>First</c> on an empty sequence, say) is not reported as a service failure, every
+	/// caller guards ONLY the service call with this filter, never the code that works on the result. Other
+	/// programming errors (NullReferenceException, ArgumentException, ...) are never service failures.
 	/// </summary>
 	/// <param name="exception">The exception a service call threw.</param>
 	/// <returns><see langword="true"/> for a service failure.</returns>

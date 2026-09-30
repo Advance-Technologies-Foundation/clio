@@ -319,8 +319,12 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 			$"    [0] Sales managers ({Role}): read/create/edit",
 			"  UsrStatus: administered by operation permissions. Rows in priority order:",
 			$"    grantee {Role} has NO row (no operations granted).",
+			"    A new row would go below every row; these decide first for a user who is also in those roles:",
+			$"      [0] All employees ({Employees}): read/create/edit/delete",
 			"  UsrOpen: not administered by operation permissions — available to all internal users; "
-				+ "external users reach it only through an explicit grant."
+				+ "external users reach it only through an explicit grant.",
+			"    It has no 'All employees' row: set-object-rights --enable-operation-permissions adds one with "
+				+ "read/create/edit/delete below any stored rows, unless the grant is for All employees itself."
 		}, because: "the output is the facts per object, and nothing more — no verdict");
 	}
 
@@ -373,6 +377,47 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 		exitCode.Should().Be(0, because: "the read succeeded");
 		_logger.Received().WriteInfo("    Rows that apply if operation permissions are turned on:");
 		_logger.Received().WriteInfo($"    [0] All employees ({Employees}): read/create/edit/delete");
+		_logger.DidNotReceive().WriteInfo(Arg.Is<string>(m => m.Contains("It has no 'All employees' row")));
+	}
+
+	[Test]
+	[Description("A non-administered object whose stored rows have no All employees row says that turning operation permissions on with set-object-rights also adds one, so a reader does not take the listed rows for the whole effect of an enable.")]
+	public void Execute_ShouldSayAnEnableAddsAllEmployees_WhenANotAdministeredObjectHasNoAllEmployeesRow() {
+		// Arrange
+		_rightsReader.GetObjectRights("UsrOpen", Arg.Any<CreatioRequestOptions>())
+			.Returns(new ObjectRightsInfo(true, "UsrOpen", "UsrOpen", false, new[] { RoleRow(true, false, false, false) }));
+		GetObjectRightsOptions options = new() { EntitySchemaName = "UsrOpen" };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "the read succeeded");
+		_logger.Received().WriteInfo($"    [0] Sales managers ({Role}): read");
+		_logger.Received().WriteInfo(Arg.Is<string>(m => m.Contains("It has no 'All employees' row")
+			&& m.Contains("adds one with read/create/edit/delete")));
+	}
+
+	[Test]
+	[Description("A connected read that times out stops the listing: every further read against the same stand would most likely wait as long, so the remaining objects are named as not read instead of spending the whole read deadline.")]
+	public void Execute_ShouldStopReadingConnectedObjects_WhenAReadTimesOut() {
+		// Arrange
+		_connectedObjects.Resolve("UsrOrder", true).Returns(Resolution("UsrOrder", "UsrStatus", "UsrType"));
+		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>())
+			.Returns(Administered("UsrOrder", EmployeesRow(0)));
+		_rightsReader.GetObjectRights("UsrStatus", Arg.Any<CreatioRequestOptions>())
+			.Returns(new ObjectRightsInfo(true, "UsrStatus", null, false, Array.Empty<RoleOperationRights>(),
+				ReadError: "The request timed out.", TimedOut: true));
+		GetObjectRightsOptions options = new() { EntitySchemaName = "UsrOrder", IncludeConnected = true };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "the named object was read; a connected object that could not be read only warns");
+		_rightsReader.DidNotReceive().GetObjectRights("UsrType", Arg.Any<CreatioRequestOptions>());
+		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("Stopped after the read of UsrStatus timed out")
+			&& m.Contains("UsrType")));
 	}
 
 	[TestCase("Usr Order")]

@@ -16,7 +16,7 @@ public sealed class RightManagementServiceRouteTests : BaseClioModuleTests {
 	[TestCase(ServiceUrlBuilder.KnownRoute.SaveAdministratedObject,
 		"ServiceModel/RightManagementService.svc/SaveAdministratedObject")]
 	[Description("The RightManagementService .svc endpoints retain their native ServiceModel route and the deployment-specific workspace prefix.")]
-	public void Build_PreservesNativeRoute(ServiceUrlBuilder.KnownRoute route, string endpoint) {
+	public void Build_ShouldPreserveTheNativeRoute_WhenBuildingARightManagementServiceRoute(ServiceUrlBuilder.KnownRoute route, string endpoint) {
 		// Arrange
 		IServiceUrlBuilder builder = Container.GetRequiredService<IServiceUrlBuilder>();
 		EnvironmentSettings netCore = new() { Uri = "https://localhost/site", IsNetCore = true };
@@ -35,7 +35,7 @@ public sealed class RightManagementServiceRouteTests : BaseClioModuleTests {
 
 	[Test]
 	[Description("Every KnownRoute member has its own numeric value, so a merge that keeps both sides of a numbering collision fails here instead of crashing the KnownRoutes initializer at runtime.")]
-	public void KnownRoute_ValuesAreDistinct() {
+	public void KnownRoute_ShouldHaveDistinctValues_WhenEnumerated() {
 		// Arrange
 		string[] names = System.Enum.GetNames<ServiceUrlBuilder.KnownRoute>();
 

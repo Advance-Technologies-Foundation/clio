@@ -185,8 +185,12 @@ public sealed class ObjectRightsPlanner : IObjectRightsPlanner {
 	private static ObjectRightsPlan PlanRevoke(ObjectRightsState before, List<RoleOperationRights> rows,
 		RoleOperationRights granteeRow, ObjectRightsChangeRequest request) {
 		// Not administered: company employees reach the object whatever its rows say, so the tool does not revoke on it.
+		// A repeated revoke-and-disable is the one call that finds the state it asks for already in place — the switch
+		// OFF and the grantee's row without the named operations — so it changes nothing instead of being refused.
 		if (!before.AdministratedByOperations) {
-			return Refuse(before, ObjectRightsRefusal.RevokeOnNotAdministered, Array.Empty<int>());
+			return request.DisableOperationPermissions && HoldsNoneOf(granteeRow, request.Operations)
+				? Unchanged(before)
+				: Refuse(before, ObjectRightsRefusal.RevokeOnNotAdministered, Array.Empty<int>());
 		}
 		Transitions transitions = Transitions.None;
 		List<RoleOperationRights> after = new(rows);
@@ -212,6 +216,19 @@ public sealed class ObjectRightsPlanner : IObjectRightsPlanner {
 			RowsAboveGrantee: granteeRow is null ? Array.Empty<RoleOperationRights>() : RowsAbove(after, granteeRow),
 			DuplicatePositions: Array.Empty<int>());
 	}
+
+	private static bool HoldsNoneOf(RoleOperationRights row, IEnumerable<ObjectOperation> operations) =>
+		row is null || row.With(operations, false).SameRowAs(row);
+
+	private static ObjectRightsPlan Unchanged(ObjectRightsState before) =>
+		new(before, before, ObjectRightsRefusal.None,
+			EnablesOperationPermissions: false,
+			DisablesOperationPermissions: false,
+			AddsGranteeRow: false,
+			AddsAllEmployeesRow: false,
+			RowsBecomingEffective: Array.Empty<RoleOperationRights>(),
+			RowsAboveGrantee: Array.Empty<RoleOperationRights>(),
+			DuplicatePositions: Array.Empty<int>());
 
 	// The rows that decide before the grantee's row for a user who is also in their roles.
 	private static IReadOnlyList<RoleOperationRights> RowsAbove(IEnumerable<RoleOperationRights> rows,

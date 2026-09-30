@@ -49,27 +49,27 @@ public class ConnectedObjectsResolver : IConnectedObjectsResolver {
 		if (!includeConnected) {
 			return new ConnectedObjectsResolution(objects, Array.Empty<string>());
 		}
-		List<string> connected;
+		EntitySchemaPropertiesInfo schema;
+		// Only the service call is guarded: a failure in the code that works on its result is a bug, not a service failure.
 		try {
-			EntitySchemaPropertiesInfo schema =
-				_columnManager.GetSchemaProperties(new GetEntitySchemaPropertiesOptions { SchemaName = rootSchemaName });
-			// A referenced name is normalized like a caller's name before the security gate sees it: the gate matches the
-			// name as a string, while SQL Server ignores trailing spaces and would still find the table. A name that is not
-			// a schema identifier is not an object that can be read.
-			connected = (schema.Columns ?? Array.Empty<EntitySchemaPropertyColumnInfo>())
-				.Where(column => string.Equals(column.Source, "own", StringComparison.OrdinalIgnoreCase))
-				.Select(column => ObjectRightsSupport.TryNormalizeSchemaName(column.ReferenceSchemaName, out string name)
-					? name
-					: null)
-				.Where(name => name is not null
-					&& !string.Equals(name, rootSchemaName, StringComparison.OrdinalIgnoreCase))
-				.Distinct(StringComparer.OrdinalIgnoreCase)
-				.OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
-				.ToList();
+			schema = _columnManager.GetSchemaProperties(new GetEntitySchemaPropertiesOptions { SchemaName = rootSchemaName });
 		}
 		catch (Exception ex) when (ObjectRightsSupport.IsServiceFailure(ex)) {
 			return new ConnectedObjectsResolution(objects, Array.Empty<string>(), ObjectRightsSupport.DisplayError(ex.Message));
 		}
+		// A referenced name is normalized like a caller's name before the security gate sees it: the gate matches the
+		// name as a string, while SQL Server ignores trailing spaces and would still find the table. A name that is not
+		// a schema identifier is not an object that can be read.
+		List<string> connected = (schema.Columns ?? Array.Empty<EntitySchemaPropertyColumnInfo>())
+			.Where(column => string.Equals(column.Source, "own", StringComparison.OrdinalIgnoreCase))
+			.Select(column => ObjectRightsSupport.TryNormalizeSchemaName(column.ReferenceSchemaName, out string name)
+				? name
+				: null)
+			.Where(name => name is not null
+				&& !string.Equals(name, rootSchemaName, StringComparison.OrdinalIgnoreCase))
+			.Distinct(StringComparer.OrdinalIgnoreCase)
+			.OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+			.ToList();
 		List<string> excluded = connected.Where(ObjectRightsSupport.IsSecurityOrSystemObject).ToList();
 		objects.AddRange(connected.Where(name => !ObjectRightsSupport.IsSecurityOrSystemObject(name)));
 		return new ConnectedObjectsResolution(objects, excluded);

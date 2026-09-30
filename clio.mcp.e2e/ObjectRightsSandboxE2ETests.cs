@@ -168,6 +168,23 @@ public sealed class ObjectRightsSandboxE2ETests : DataBindingDbFixtureBase {
 		lastRow.Error.Should().Contain("disable-operation-permissions", because: "the refusal names the explicit way out");
 		disabled.Success.Should().BeTrue(because: $"the caller named the transition. Error: {disabled.Error}");
 		disabled.Output.Should().Contain("turned OFF", because: "the object is available to all internal users again");
+		disabled.Output.Should().NotContain("Differs from the plan",
+			because: "the read-back matches the plan: the disable wrote the cleared row and the switch, nothing else");
+
+		// Act — read the object back after the disable, then run the same disable again
+		ObjectRightsToolResponse afterDisable = await CallRightsAsync(arrangeContext, GetObjectRightsTool.ToolName,
+			Read(rootName));
+		ObjectRightsToolResponse disabledAgain = await CallRightsAsync(arrangeContext, SetObjectRightsTool.ToolName,
+			Args(rootName, AllEmployees, "read,create,edit,delete", revoke: true, disable: true));
+
+		// Assert — the stored rows are kept for a later re-enable, and the re-run changes nothing
+		afterDisable.Output.Should().Contain($"{rootName}: not administered", because: "the switch is off");
+		afterDisable.Output.Should().Contain($"[0] All employees ({AllEmployees}): no operations",
+			because: "a disable keeps the stored rows: All employees stays, with its operations cleared");
+		afterDisable.Output.Should().Contain($"[1] All external users ({ExternalUsers}): no operations",
+			because: "the revoked grantee's row is kept at its position too");
+		disabledAgain.Success.Should().BeTrue(because: $"a re-run of a call that landed is safe. Error: {disabledAgain.Error}");
+		disabledAgain.Output.Should().Contain("(no change)", because: "the switch is already off and the row already cleared");
 	}
 
 	private static async Task<ObjectRightsToolResponse> CallRightsAsync(DataBindingDbArrangeContext arrangeContext,

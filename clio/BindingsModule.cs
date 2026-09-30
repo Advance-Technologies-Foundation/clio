@@ -1028,6 +1028,7 @@ public class BindingsModule {
 		services.AddTransient<Clio.Common.ObjectRights.IObjectRightsWriter, Clio.Common.ObjectRights.RightManagementServiceClient>();
 		services.AddTransient<Clio.Common.ObjectRights.IGranteeLookup, Clio.Common.ObjectRights.RightManagementServiceClient>();
 		services.AddTransient<Clio.Common.ObjectRights.IObjectRightsPlanner, Clio.Common.ObjectRights.ObjectRightsPlanner>();
+		services.AddTransient<Clio.Common.ObjectRights.IObjectRightsReadBackVerifier, Clio.Common.ObjectRights.ObjectRightsReadBackVerifier>();
 		services.AddTransient<ICreatioLicenseClient, CreatioLicenseClient>();
 		services.AddTransient<IFsmModeStatusService, FsmModeStatusService>();
 		services.AddTransient<SetFsmConfigCommand>();

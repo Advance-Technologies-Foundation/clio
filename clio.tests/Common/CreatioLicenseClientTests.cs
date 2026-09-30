@@ -136,4 +136,26 @@ public class CreatioLicenseClientTests {
 		message.Should().Contain("Service unavailable", because: "the readable part of the body is previewed");
 		message.Should().NotContain("hunter2secret", because: "a credential in the body is redacted before the preview");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The preview is redacted BEFORE it is capped: a JSON credential whose value the 200-character cap would slice — which the redactor cannot match once its closing quote is cut off — never reaches the message.")]
+	public void GetLicenseOperationStatuses_ShouldRedactBeforeCapping_WhenACredentialCrossesThePreviewLimit() {
+		// Arrange
+		(CreatioLicenseClient client, IApplicationClient applicationClient) = CreateClient();
+		// Not JSON as a whole, so the body is previewed; the credential's value starts ten characters before the cap.
+		string body = "Unavailable " + new string('x', 165) + "{\"password\":\"zq9Kx7secretvalue\"} retry later";
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(body);
+
+		// Act
+		Action act = () => client.GetLicenseOperationStatuses(new[] { "CanCustomizeBranding" }, new CreatioRequestOptions());
+
+		// Assert
+		string message = act.Should().Throw<InvalidOperationException>(because: "the body is not JSON").Which.Message;
+		message.Should().Contain("Unavailable", because: "the readable part of the body is previewed");
+		message.Should().NotContain("zq9K",
+			because: "capping first would cut the value's closing quote off, and the redactor leaves such a value as it is");
+	}
 }
