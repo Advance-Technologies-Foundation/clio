@@ -113,13 +113,15 @@ public class SetActiveProcessVersionTool(
 			VersionName = args.VersionName ?? string.Empty,
 			VersionUid = args.VersionUid ?? string.Empty
 		};
-		// Same post-op note as both edit paths: activating a version does not put the environment into a state
-		// that needs compiling, and an agent that assumes otherwise runs compile-creatio for nothing (ENG-95706).
+		// Same post-op note as both edit paths: activating a version of a process WITHOUT C# puts the environment
+		// into no state that needs compiling, and an agent that assumes otherwise runs compile-creatio for nothing
+		// (ENG-95706).
 		//
-		// Gated for the same reason the create path gates it: the version being activated may be one saved from
-		// a non-interpretable source, and the note must never be the sentence that contradicts a warning in its
-		// own response. Activation is the more dangerous of the two to get wrong - it is the call that puts the
-		// version in front of the runtime.
+		// Gated for the same reason the create path gates it: the note must never be the sentence that contradicts
+		// a warning in its own response. The server warns in the compile-required phrase when the activated version
+		// carries C# (CrtProcessBuilder 1.6.6.49+) - a version is a schema of its own, so until it is compiled every
+		// new instance refuses to start - and when it was saved from a non-interpretable source. Activation is the
+		// more dangerous of the two to get wrong: it is the call that puts the version in front of the runtime.
 		CommandExecutionResult result = InternalExecute<SetActiveProcessVersionCommand>(options);
 		if (result.ExitCode != 0) {
 			return result;
