@@ -105,7 +105,7 @@ public sealed class ObjectRightsPlanner : IObjectRightsPlanner {
 
 	// The transitions that change who can reach the object. Each is allowed only when the request names it.
 	[Flags]
-	private enum Transition {
+	private enum Transitions {
 		None = 0,
 		EnableOperationPermissions = 1,
 		LeaveNoGrantingRow = 2,
@@ -116,12 +116,12 @@ public sealed class ObjectRightsPlanner : IObjectRightsPlanner {
 	// the request is refused, never applied as a side effect. Two requests cannot be planned at all and are refused
 	// before any transition is computed: a grantee with several rows (D7), and a revoke on an object that is not
 	// administered (company employees reach it whatever its rows say).
-	private static readonly (Transition Transition, Func<ObjectRightsChangeRequest, bool> Allowed, ObjectRightsRefusal Refusal)[] Policy = {
-		(Transition.WriteSecurityObject, request => request.AllowSecurityObject, ObjectRightsRefusal.SecurityObjectNotAllowed),
-		(Transition.EnableOperationPermissions, request => request.EnableOperationPermissions, ObjectRightsRefusal.EnableNotRequested),
+	private static readonly (Transitions Transition, Func<ObjectRightsChangeRequest, bool> Allowed, ObjectRightsRefusal Refusal)[] Policy = {
+		(Transitions.WriteSecurityObject, request => request.AllowSecurityObject, ObjectRightsRefusal.SecurityObjectNotAllowed),
+		(Transitions.EnableOperationPermissions, request => request.EnableOperationPermissions, ObjectRightsRefusal.EnableNotRequested),
 		// With --disable-operation-permissions the revoke turns the switch off instead, so a row-less administered
 		// object is never an allowed end state.
-		(Transition.LeaveNoGrantingRow, _ => false, ObjectRightsRefusal.LeavesNoGrantingRow)
+		(Transitions.LeaveNoGrantingRow, _ => false, ObjectRightsRefusal.LeavesNoGrantingRow)
 	};
 
 	/// <inheritdoc />
@@ -142,10 +142,10 @@ public sealed class ObjectRightsPlanner : IObjectRightsPlanner {
 
 	private static ObjectRightsPlan PlanGrant(ObjectRightsState before, List<RoleOperationRights> rows,
 		RoleOperationRights granteeRow, ObjectRightsChangeRequest request) {
-		Transition transitions = Transition.None;
+		Transitions transitions = Transitions.None;
 		bool enabling = !before.AdministratedByOperations;
 		if (enabling) {
-			transitions |= Transition.EnableOperationPermissions;
+			transitions |= Transitions.EnableOperationPermissions;
 		}
 		List<RoleOperationRights> after = new(rows);
 		int next = NextPosition(rows);
@@ -156,7 +156,7 @@ public sealed class ObjectRightsPlanner : IObjectRightsPlanner {
 			&& rows.All(row => row.GranteeId != SysAdminUnitIds.AllEmployees);
 		// The All employees row grants every operation, so on a security object it is a grant beyond read too.
 		if (request.IsSecurityObject && (addsAllEmployees || request.Operations.Any(op => op != ObjectOperation.Read))) {
-			transitions |= Transition.WriteSecurityObject;
+			transitions |= Transitions.WriteSecurityObject;
 		}
 		if (addsAllEmployees) {
 			after.Add(new RoleOperationRights(SysAdminUnitIds.AllEmployees, AllEmployeesName, next++,
@@ -192,7 +192,7 @@ public sealed class ObjectRightsPlanner : IObjectRightsPlanner {
 		if (!before.AdministratedByOperations) {
 			return Refuse(before, ObjectRightsRefusal.RevokeOnNotAdministered, Array.Empty<int>());
 		}
-		Transition transitions = Transition.None;
+		Transitions transitions = Transitions.None;
 		List<RoleOperationRights> after = new(rows);
 		if (granteeRow is not null) {
 			// The row stays at its position: with its operations cleared it is an explicit deny for its members.
@@ -200,11 +200,11 @@ public sealed class ObjectRightsPlanner : IObjectRightsPlanner {
 		}
 		bool disabling = request.DisableOperationPermissions;
 		if (disabling && request.IsSecurityObject) {
-			transitions |= Transition.WriteSecurityObject;
+			transitions |= Transitions.WriteSecurityObject;
 		}
 		bool rowsChanged = granteeRow is not null && !after.SequenceEqual(rows);
 		if (!disabling && rowsChanged && !after.Any(row => row.HasAnyOperation)) {
-			transitions |= Transition.LeaveNoGrantingRow;
+			transitions |= Transitions.LeaveNoGrantingRow;
 		}
 		ObjectRightsRefusal refusal = Check(transitions, request);
 		if (refusal != ObjectRightsRefusal.None) {
@@ -225,8 +225,8 @@ public sealed class ObjectRightsPlanner : IObjectRightsPlanner {
 		RoleOperationRights granteeRow) =>
 		rows.Where(row => row.Position < granteeRow.Position && row.GranteeId != granteeRow.GranteeId).ToArray();
 
-	private static ObjectRightsRefusal Check(Transition transitions, ObjectRightsChangeRequest request) {
-		foreach ((Transition transition, Func<ObjectRightsChangeRequest, bool> allowed, ObjectRightsRefusal refusal) in Policy) {
+	private static ObjectRightsRefusal Check(Transitions transitions, ObjectRightsChangeRequest request) {
+		foreach ((Transitions transition, Func<ObjectRightsChangeRequest, bool> allowed, ObjectRightsRefusal refusal) in Policy) {
 			if (transitions.HasFlag(transition) && !allowed(request)) {
 				return refusal;
 			}

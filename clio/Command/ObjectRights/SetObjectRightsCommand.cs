@@ -145,6 +145,9 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 
 		public string Operations => FormatOperations(Request.Operations);
 
+		private static string FormatOperations(IEnumerable<ObjectOperation> operations) =>
+			string.Join("/", operations.Select(op => op.ToString().ToLowerInvariant()));
+
 		public RoleOperationRights GranteeRowBefore =>
 			Plan.Before.Roles.FirstOrDefault(row => row.GranteeId == Request.Grantee);
 
@@ -325,7 +328,7 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 		if (change.Plan.AddsGranteeRow && after is not null) {
 			return $"A row for the grantee is added at position {after.Position}, the lowest priority, with {Ops(after)}.";
 		}
-		if (change.GranteeRowChanges) {
+		if (change.GranteeRowChanges && after is not null) {
 			return change.Request.Revoke
 				? $"The grantee's row stays at position {after.Position} with [{change.Operations}] cleared; it now has "
 					+ $"{Ops(after)}."
@@ -484,9 +487,6 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 	// NOT granted by default — pass it in --operations explicitly. A revoke has no default (see TryParseInputs).
 	private static readonly ObjectOperation[] DefaultGrantOperations =
 		{ ObjectOperation.Read, ObjectOperation.Create, ObjectOperation.Edit };
-
-	private static string FormatOperations(IEnumerable<ObjectOperation> operations) =>
-		string.Join("/", operations.Select(op => op.ToString().ToLowerInvariant()));
 
 	private static bool TryParseOperations(string raw, out IReadOnlyCollection<ObjectOperation> operations,
 		out string error) {
