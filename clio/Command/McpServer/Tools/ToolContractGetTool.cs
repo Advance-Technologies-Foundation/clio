@@ -633,6 +633,7 @@ internal static class ToolContractCatalog {
 	private const string NumberType = "number";
 	private const string ObjectType = "object";
 	private const string ComponentTypeFieldName = "component-type";
+	private const string CompositeFieldName = "composite";
 	private const string OperationsFieldName = "operations";
 	private const string OffsetFieldName = "offset";
 	private const string PackageNameFieldName = "package-name";
@@ -686,6 +687,7 @@ internal static class ToolContractCatalog {
 	private const string RuleFieldName = "rule";
 	private const string RulesFieldName = "rules";
 	private const string SectionCodeFieldName = "section-code";
+	private const string SectionsFieldName = "sections";
 	private const string DeleteEntitySchemaFieldName = "delete-entity-schema";
 	private const string SearchPatternFieldName = "search-pattern";
 	private const string EventNameFieldName = "event_name";
@@ -2165,7 +2167,7 @@ internal static class ToolContractCatalog {
 				Field(ApplicationNameFieldName, StringType, InstalledApplicationDisplayNameDescription),
 				Field(ApplicationCodeFieldName, StringType, InstalledApplicationCodeDescription),
 				Field(ApplicationVersionFieldName, StringType, InstalledApplicationVersionDescription),
-				Field("sections", ArrayType, "List of section metadata objects in the application."),
+				Field(SectionsFieldName, ArrayType, "List of section metadata objects in the application."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
 			),
 			CommonErrorContract,
@@ -5281,7 +5283,7 @@ internal static class ToolContractCatalog {
 				[],
 				[
 					Field(ComponentTypeFieldName, StringType, "Freedom UI component type, e.g. 'crt.TabContainer'. Omit or use 'list' to return the catalog (list mode); a known type returns that one component's full contract (detail mode); an unknown type returns a bounded suggestion shortlist. Mutually exclusive with 'composite'."),
-					Field("composite", StringType, "Composite Designer element caption, for example 'Expanded list' or 'Next steps'. Returns the composite's assembly docs — a composite is a pre-built combination of several components with NO componentType of its own. Discover available captions via list mode (composites section). Mutually exclusive with 'component-type'."),
+					Field(CompositeFieldName, StringType, "Composite Designer element caption, for example 'Expanded list' or 'Next steps'. Returns the composite's assembly docs — a composite is a pre-built combination of several components with NO componentType of its own. Discover available captions via list mode (composites section). Mutually exclusive with 'component-type'."),
 					Field("search", StringType, "Optional keyword filter applied in list mode and to not-found suggestions, e.g. 'tab'."),
 					Field("schema-type", StringType, "Component registry to query: 'web' (default) or 'mobile'. The mobile registry is separate (crt.Toggle, crt.BarcodeScanner, crt.Sort, ...) and excludes web-only types."),
 					Field(EnvironmentNameFieldName, StringType, "PREFERRED. Registered environment name; scopes the catalog to its real platform version. Mutually exclusive with 'version'."),
@@ -5294,7 +5296,7 @@ internal static class ToolContractCatalog {
 					new ToolContractValidator(
 						"mutually-exclusive",
 						InvalidWorkflowShapeCode,
-						Fields: [ComponentTypeFieldName, "composite"],
+						Fields: [ComponentTypeFieldName, CompositeFieldName],
 						Context: "'component-type' and 'composite' are mutually exclusive — pass one or the other, not both.")
 				]),
 			EnvelopeOutput(
@@ -5338,7 +5340,7 @@ internal static class ToolContractCatalog {
 					["schema-type"] = "mobile"
 				}),
 				Example("Get the assembly recipe for a composite Designer element", new Dictionary<string, object?> {
-					["composite"] = "Expanded list"
+					[CompositeFieldName] = "Expanded list"
 				})
 			],
 			Flow([ComponentInfoTool.ToolName],
@@ -5530,7 +5532,7 @@ internal static class ToolContractCatalog {
 			DocumentationTwinOutput(inline.OutputContract),
 			[
 				Example("Keep a composite assembly recipe on disk", new Dictionary<string, object?> {
-					["composite"] = "Expanded list",
+					[CompositeFieldName] = "Expanded list",
 					[OutputFileFieldName] = "expanded-list.md"
 				})
 			],
@@ -5586,7 +5588,7 @@ internal static class ToolContractCatalog {
 				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
 				Field("entity", StringType, "The resolved entity schema name."),
 				Field("entityUId", StringType, "UId of the entity's base schema."),
-				Field("sections", ArrayType, "Classic sections bound to the entity, each with caption, code, sectionSchema, cardSchema, cardSchemaUId, template, kind (classic, freedom or unknown) and isTyped."),
+				Field(SectionsFieldName, ArrayType, "Classic sections bound to the entity, each with caption, code, sectionSchema, cardSchema, cardSchemaUId, template, kind (classic, freedom or unknown) and isTyped."),
 				Field("editPages", ArrayType, "Edit pages bound to the entity, each with typeColumnValue and typeColumnDisplayValue (per-type pages), cardSchema, cardSchemaUId, template, kind, and the add mini page fields miniPageSchema, miniPageSchemaUId, miniPageTemplate, miniPageKind and miniPageModes."),
 				Field(WarningsFieldName, ArrayType, "Non-fatal warnings, e.g. a lookup that hit its row cap; the result may then be partial."),
 				Field("note", StringType, "Advisory note on the scope of the result and how to read an empty one."),
@@ -5630,7 +5632,7 @@ internal static class ToolContractCatalog {
 				Field("entity", StringType, "The resolved entity schema name."),
 				Field("entityUId", StringType, "UId of the entity's base schema."),
 				Field(OutputFileFieldName, StringType, "Absolute path of the file holding the full list-entity-client-schemas response."),
-				Field("sections", ObjectType, "Number of Classic sections in the file: total, classic, freedom and unknown."),
+				Field(SectionsFieldName, ObjectType, "Number of Classic sections in the file: total, classic, freedom and unknown."),
 				Field("editPages", ObjectType, "Number of edit pages in the file: total, classic, freedom and unknown."),
 				Field(WarningsFieldName, ArrayType, "Non-fatal warnings of the lookup, the same as in the file; the result may then be partial."),
 				Field("note", StringType, "Advisory note on the scope of the result and how to read an empty one, the same as in the file."),
@@ -6537,7 +6539,7 @@ internal static class ToolContractCatalog {
 				Field(StatusFieldName, StringType, "Overall infrastructure assertion status: pass, partial, or fail."),
 				Field("exit-code", NumberType, "Overall infrastructure assertion exit code."),
 				Field("summary", StringType, "Human-readable summary of the assertion sweep."),
-				Field("sections", ObjectType, "Per-scope assertion results (k8, local, filesystem)."),
+				Field(SectionsFieldName, ObjectType, "Per-scope assertion results (k8, local, filesystem)."),
 				Field("database-candidates", ArrayType, "Normalized database candidates discovered across passing sections.")),
 			CommonErrorContract,
 			[],

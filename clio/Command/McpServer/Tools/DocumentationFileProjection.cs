@@ -37,7 +37,7 @@ internal static class DocumentationFileProjection {
 		string? documentation,
 		string outputPath,
 		IMcpOutputFileWriter outputFileWriter) {
-		JsonObject json = JsonSerializer.SerializeToNode(response, WireOptions)!.AsObject();
+		JsonObject json = JsonSerializer.SerializeToNode(response, WireOptions).AsObject();
 		if (string.IsNullOrEmpty(documentation)) {
 			return json;
 		}
@@ -74,27 +74,39 @@ internal static class DocumentationFileProjection {
 		foreach (string rawLine in markdown.Split('\n')) {
 			string line = rawLine.TrimEnd('\r');
 			string trimmed = line.TrimStart();
-			if (trimmed.StartsWith("```", StringComparison.Ordinal) || trimmed.StartsWith("~~~", StringComparison.Ordinal)) {
-				string fence = trimmed[..3];
-				if (openFence is null) {
-					openFence = fence;
-				} else if (openFence == fence) {
-					openFence = null;
-				}
+			if (TryGetFence(trimmed, out string fence)) {
+				openFence = NextOpenFence(openFence, fence);
 				continue;
 			}
-			if (openFence is not null || line.Length - trimmed.Length > 3) {
-				continue;
-			}
-			int level = 0;
-			while (level < trimmed.Length && trimmed[level] == '#') {
-				level++;
-			}
-			if (level is >= 1 and <= 6 && level < trimmed.Length && trimmed[level] == ' ') {
-				headings.Add(WithoutClosingSequence(trimmed.TrimEnd(), level));
+			if (openFence is null && line.Length - trimmed.Length <= 3 && TryParseHeading(trimmed, out string heading)) {
+				headings.Add(heading);
 			}
 		}
 		return headings;
+	}
+
+	private static bool TryGetFence(string trimmed, out string fence) {
+		bool isFence = trimmed.StartsWith("```", StringComparison.Ordinal) || trimmed.StartsWith("~~~", StringComparison.Ordinal);
+		fence = isFence ? trimmed[..3] : string.Empty;
+		return isFence;
+	}
+
+	// A fence opens a block; only the same fence closes it, so "~~~" inside a "```" block is content.
+	private static string? NextOpenFence(string? openFence, string fence) {
+		if (openFence is null) {
+			return fence;
+		}
+		return openFence == fence ? null : openFence;
+	}
+
+	private static bool TryParseHeading(string trimmed, out string heading) {
+		int level = 0;
+		while (level < trimmed.Length && trimmed[level] == '#') {
+			level++;
+		}
+		bool isHeading = level is >= 1 and <= 6 && level < trimmed.Length && trimmed[level] == ' ';
+		heading = isHeading ? WithoutClosingSequence(trimmed.TrimEnd(), level) : string.Empty;
+		return isHeading;
 	}
 
 	// An optional closing run of '#' counts only after a space, so "## Usage ##" loses it and "## C#" keeps it.

@@ -2991,7 +2991,7 @@ public static class SchemaValidationService
 					}
 					if (property.Value.ValueKind == JsonValueKind.String &&
 					    InsertedWidgetCaptionProperties.Contains(property.Name)) {
-						CheckCaptionBinding(currentName, property.Name, property.Value.GetString()!, resolves, bindings);
+						CheckCaptionBinding(currentName, property.Name, property.Value.GetString(), resolves, bindings);
 					}
 					ScanNodeForUnresolvedCaptionBindings(property.Value, currentName, resolves, bindings);
 				}

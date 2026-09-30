@@ -90,6 +90,6 @@ public sealed record PageGetArgs(
 	string? OutputDirectory = null,
 
 	[property: JsonPropertyName("include-operations")]
-	[property: Description("Optional, default true. false replaces page.ownBodySummary.viewConfigDiffOps with viewConfigDiffOpCounts (count per operation type); meta.json keeps the full list.")]
+	[property: Description("false replaces page.ownBodySummary.viewConfigDiffOps with viewConfigDiffOpCounts (count per operation type); meta.json keeps the full list.")]
 	bool? IncludeOperations = null
 ) : ConnectionArgsBase;
