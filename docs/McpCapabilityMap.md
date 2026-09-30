@@ -333,13 +333,25 @@ This is one of the strongest and most AI-friendly parts of the MCP surface.
   result is cross-checked once with a broader bounded read before absence is reported; failed
   verification returns a failure rather than a definitive empty result.
 - `get-page`
-  Read a page as a merged bundle plus raw editable JavaScript body.
+  Read a page as a merged bundle plus raw editable JavaScript body. `include-operations=false` replaces
+  `page.ownBodySummary.viewConfigDiffOps` in the response with `viewConfigDiffOpCounts` (operations per type);
+  `meta.json` keeps the full list.
 - `update-page`
-  Write a full page body back to Creatio, optionally in `dry-run` mode; its MCP surface also has an explicit `validate=false` escape hatch for pre-existing content defects while retaining syntax/loadability checks.
+  Write a full page body back to Creatio, optionally in `dry-run` mode; its MCP surface also has an explicit `validate=false` escape hatch for pre-existing content defects while retaining syntax/loadability checks. `include-operations=false` trims the `verify=true` read-back the same way as on `get-page`.
+- `validate-page`
+  Validate a page body without saving. Unregistered captions of inserted widgets come back as one warning
+  that states the rule once and lists every node, property and key.
 - `sync-pages`
   Save many pages in one call with optional validation and optional read-back verification.
 - `component-info`
   Inspect a shipped local catalog of Freedom UI component contracts, grouped by category or returned in detail mode.
+- `get-component-info-to-file`, `get-request-info-to-file`
+  The same lookups as `get-component-info` / `get-request-info`, with the documentation markdown written
+  to a local file; the response carries the path and the section headings instead of the markdown.
+- `execute-esq-to-file`, `list-entity-client-schemas-to-file`
+  The same reads as `execute-esq` / `list-entity-client-schemas`, with the rows or the page list written
+  to a local file; the response carries the path and the counts. Like `odata-read-to-file`, each is a
+  separate long-tail tool, so the inline read tools stay read-only.
 
 What an external AI can practically do here:
 

@@ -1746,6 +1746,245 @@ public sealed class ComponentInfoToolTests {
 	}
 
 	[Test]
+	[Description("The default detail response of get-component-info, documentation included, serializes to the pinned wire JSON; the file-mode twin must not change it.")]
+	public async Task ComponentInfoTool_DetailResponse_Should_Match_Pinned_Wire_Json() {
+		// Arrange
+		const string registryJson = """
+		{
+		  "components": [
+		    {
+		      "componentType": "crt.WithDocs",
+		      "category": "interactive",
+		      "description": "Sample with attached documentation.",
+		      "container": false,
+		      "properties": {},
+		      "references": { "docs": [ "docs/with-docs.intro.md" ] }
+		    }
+		  ]
+		}
+		""";
+		FakeDocsClient docs = new FakeDocsClient()
+			.Seed("latest", "docs/with-docs.intro.md", "# Intro\n\nBody.\n\n## Usage\n\nMore.");
+		ComponentInfoTool tool = BuildTool(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(registryJson)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson),
+			docs);
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("crt.WithDocs"));
+
+		// Assert
+		McpResponseBaseline.Serialize(response).Should().Be(PinnedDetailWireJson,
+			because: "the inline response is the default and stays byte-for-byte unchanged");
+	}
+
+	private const string PinnedDetailWireJson = """{"success":true,"mode":"detail","count":1,"componentType":"crt.WithDocs","description":"Sample with attached documentation.","container":false,"resolvedTargetVersion":"latest","resolvedFrom":"latest-fallback","versionWarning":"Catalog was loaded from \u0027latest\u0027 (a superset of all GA versions). A component listed here may not exist in the target environment\u0027s actual platform version, so a page built against it can fail to render at runtime. The target platform version could not be determined: do NOT silently assume this component set. Before generating an implementation plan, tell the user the version is unknown and request explicit confirmation before proceeding against \u0027latest\u0027. To scope results to a real version, pass an explicit version or target a registered environment so clio can resolve its platform version (no cliogate required \u2014 resolved via ApplicationInfoService, with the cliogate GetSysInfo probe as fallback).","requiresVersionConfirmation":true,"resolvedFromReason":"no-active-environment","documentation":"# Intro\n\nBody.\n\n## Usage\n\nMore.","documentationSource":"cdn"}""";
+
+	private static (ComponentInfoToFileTool tool, System.IO.Abstractions.TestingHelpers.MockFileSystem fileSystem, string outputFile)
+		BuildToFileTool(ComponentInfoTool infoTool, System.IO.Abstractions.TestingHelpers.MockFileSystem? fileSystem = null) {
+		System.IO.Abstractions.TestingHelpers.MockFileSystem fs = fileSystem ?? new();
+		string outputFile = fs.Path.Combine(fs.Path.GetTempPath(), $"component-docs-{Guid.NewGuid():N}.md");
+		return (new ComponentInfoToFileTool(infoTool, new McpOutputFileWriter(fs, new MockConfinedFileAccess(fs))), fs, outputFile);
+	}
+
+	private static ComponentInfoTool BuildWithDocsTool(FakeDocsClient docs) {
+		const string registryJson = """
+		{
+		  "components": [
+		    {
+		      "componentType": "crt.WithDocs",
+		      "category": "interactive",
+		      "description": "Sample with attached documentation.",
+		      "container": false,
+		      "properties": {},
+		      "references": { "docs": [ "docs/with-docs.intro.md" ] }
+		    }
+		  ]
+		}
+		""";
+		return BuildTool(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(registryJson)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson),
+			docs);
+	}
+
+	[Test]
+	[Description("When the documentation file cannot be created after the path was accepted (for example another writer created it first), get-component-info-to-file fails with the writer's error and returns neither documentationFile nor documentationSections.")]
+	public async Task ComponentInfoToFileTool_Should_Fail_With_The_Write_Error_When_The_File_Cannot_Be_Created() {
+		// Arrange
+		FakeDocsClient docs = new FakeDocsClient()
+			.Seed("latest", "docs/with-docs.intro.md", "# Intro\n\nBody.");
+		const string resolvedPath = "/tmp/component-docs.md";
+		const string writeError = "output-file '/tmp/component-docs.md' already exists.";
+		IMcpOutputFileWriter writer = Substitute.For<IMcpOutputFileWriter>();
+		writer.TryResolve(Arg.Any<string>(), out Arg.Any<string>(), out Arg.Any<string>())
+			.Returns(call => {
+				call[1] = resolvedPath;
+				call[2] = string.Empty;
+				return true;
+			});
+		writer.TryWriteNew(resolvedPath, Arg.Any<byte[]>(), out Arg.Any<string>())
+			.Returns(call => {
+				call[2] = writeError;
+				return false;
+			});
+		ComponentInfoToFileTool tool = new(BuildWithDocsTool(docs), writer);
+
+		// Act
+		System.Text.Json.Nodes.JsonObject response = await tool.GetComponentInfoToFile(
+			new ComponentInfoToFileArgs { ComponentType = "crt.WithDocs", OutputFile = resolvedPath });
+
+		// Assert
+		response.ToJsonString().Should().Be(
+			DocumentationFileProjection.Failure(writeError).ToJsonString(),
+			because: "a failed write is a failed call: the caller gets the writer's error and no path to a file that was not written");
+		writer.Received(1).TryWriteNew(resolvedPath, Arg.Any<byte[]>(), out Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("get-component-info-to-file writes the documentation markdown to output-file and returns every other get-component-info field unchanged, plus the path and the section headings.")]
+	public async Task ComponentInfoToFileTool_Should_Write_Documentation_And_Keep_Every_Other_Field() {
+		// Arrange
+		FakeDocsClient docs = new FakeDocsClient()
+			.Seed("latest", "docs/with-docs.intro.md", "# Intro\n\nBody.\n\n## Usage\n\nMore.");
+		(ComponentInfoToFileTool tool, var fileSystem, string outputFile) = BuildToFileTool(BuildWithDocsTool(docs));
+
+		// Act
+		System.Text.Json.Nodes.JsonObject response = await tool.GetComponentInfoToFile(
+			new ComponentInfoToFileArgs { ComponentType = "crt.WithDocs", OutputFile = outputFile });
+
+		// Assert
+		fileSystem.File.ReadAllText(outputFile).Should().Be("# Intro\n\nBody.\n\n## Usage\n\nMore.",
+			because: "the file holds the documentation markdown unchanged");
+		string resolved = fileSystem.Path.GetFullPath(outputFile);
+		System.Text.Json.Nodes.JsonObject expected = System.Text.Json.Nodes.JsonNode.Parse(PinnedDetailWireJson)!.AsObject();
+		expected.Remove("documentation");
+		expected["documentationFile"] = resolved;
+		expected["documentationSections"] = new System.Text.Json.Nodes.JsonArray("# Intro", "## Usage");
+		response.ToJsonString().Should().Be(expected.ToJsonString(),
+			because: "only documentation is replaced; every other field is what get-component-info returns");
+	}
+
+	[Test]
+	[Description("get-component-info-to-file writes the assembly recipe of a composite and keeps composite mode and caption inline.")]
+	public async Task ComponentInfoToFileTool_Should_Write_Composite_Recipe() {
+		// Arrange
+		FakeDocsClient docs = new FakeDocsClient()
+			.Seed("latest", "docs/expansion-panel-next-steps.component.md", "# Next steps\n\n## Assembly\n\nAssemble the panel.");
+		ComponentInfoTool infoTool = BuildTool(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(CompositeRegistryJson)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson),
+			docs);
+		(ComponentInfoToFileTool tool, var fileSystem, string outputFile) = BuildToFileTool(infoTool);
+
+		// Act
+		System.Text.Json.Nodes.JsonObject response = await tool.GetComponentInfoToFile(
+			new ComponentInfoToFileArgs { Composite = "Next steps", OutputFile = outputFile });
+
+		// Assert
+		fileSystem.File.ReadAllText(outputFile).Should().Be("# Next steps\n\n## Assembly\n\nAssemble the panel.",
+			because: "the composite recipe is the documentation written to the file");
+		response["mode"]!.GetValue<string>().Should().Be("composite", because: "the inline composite fields are kept");
+		response["caption"]!.GetValue<string>().Should().Be("Next steps", because: "the matched caption is kept inline");
+		response.ContainsKey("documentation").Should().BeFalse(because: "the recipe lives in the file");
+		response["documentationSections"]!.AsArray().Select(node => node!.GetValue<string>()).Should()
+			.Equal(["# Next steps", "## Assembly"], because: "the headings tell the caller which sections the recipe has");
+	}
+
+	[Test]
+	[Description("get-component-info-to-file writes nothing and returns the inline response as is when the component has no documentation.")]
+	public async Task ComponentInfoToFileTool_Should_Not_Write_When_There_Is_No_Documentation() {
+		// Arrange
+		ComponentInfoTool infoTool = CreateTool();
+		(ComponentInfoToFileTool tool, var fileSystem, string outputFile) = BuildToFileTool(infoTool);
+		ComponentInfoResponse inline = await infoTool.GetComponentInfo(new ComponentInfoArgs("crt.Label"));
+
+		// Act
+		System.Text.Json.Nodes.JsonObject response = await tool.GetComponentInfoToFile(
+			new ComponentInfoToFileArgs { ComponentType = "crt.Label", OutputFile = outputFile });
+
+		// Assert
+		fileSystem.File.Exists(outputFile).Should().BeFalse(because: "there is no documentation to write");
+		response.ToJsonString().Should().Be(McpResponseBaseline.Serialize(inline),
+			because: "without documentation the twin returns exactly what get-component-info returns");
+	}
+
+	[Test]
+	[Description("get-component-info-to-file refuses an existing output-file before any catalog or documentation fetch.")]
+	public async Task ComponentInfoToFileTool_Should_Reject_Existing_Output_File_Before_Fetching() {
+		// Arrange
+		FakeDocsClient docs = new FakeDocsClient().Seed("latest", "docs/with-docs.intro.md", "# Intro");
+		System.IO.Abstractions.TestingHelpers.MockFileSystem fileSystem = new();
+		(ComponentInfoToFileTool tool, _, string outputFile) = BuildToFileTool(BuildWithDocsTool(docs), fileSystem);
+		fileSystem.AddFile(outputFile, new System.IO.Abstractions.TestingHelpers.MockFileData("keep"));
+
+		// Act
+		System.Text.Json.Nodes.JsonObject response = await tool.GetComponentInfoToFile(
+			new ComponentInfoToFileArgs { ComponentType = "crt.WithDocs", OutputFile = outputFile });
+
+		// Assert
+		response["success"]!.GetValue<bool>().Should().BeFalse(because: "an existing file is never overwritten");
+		response["error"]!.GetValue<string>().Should().Contain("already exists", because: "the caller has to choose another path");
+		docs.Requests.Should().BeEmpty(because: "a refused path must not cost a documentation fetch");
+		fileSystem.File.ReadAllText(outputFile).Should().Be("keep", because: "the existing file is left untouched");
+	}
+
+	[Test]
+	[Description("get-component-info-to-file refuses an output-file outside the workspace and the OS temp directory.")]
+	public async Task ComponentInfoToFileTool_Should_Reject_Output_File_Outside_Allowed_Locations() {
+		// Arrange
+		(ComponentInfoToFileTool tool, var fileSystem, _) = BuildToFileTool(CreateTool());
+		string outsidePath = Path.Combine(
+			Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+			$"clio-component-docs-probe-{Guid.NewGuid():N}.md");
+
+		// Act
+		System.Text.Json.Nodes.JsonObject response = await tool.GetComponentInfoToFile(
+			new ComponentInfoToFileArgs { ComponentType = "crt.Label", OutputFile = outsidePath });
+
+		// Assert
+		response["success"]!.GetValue<bool>().Should().BeFalse(because: "a path outside the allowed locations is never written");
+		response["error"]!.GetValue<string>().Should().Contain("allowed locations", because: "confinement refused the path");
+		response["error"]!.GetValue<string>().Should().Contain("get-component-info", because: "the caller is sent to the inline tool");
+		fileSystem.File.Exists(outsidePath).Should().BeFalse(because: "nothing is created on the file system the tool writes to");
+	}
+
+	[Test]
+	[Description("get-component-info-to-file advertises a stable name and the write-capable annotations a local file write needs.")]
+	public void ComponentInfoToFileTool_Should_Advertise_Stable_Name_And_Write_Capable_Annotations() {
+		// Arrange
+
+		// Act
+		ModelContextProtocol.Server.McpServerToolAttribute attribute = (ModelContextProtocol.Server.McpServerToolAttribute)
+			typeof(ComponentInfoToFileTool).GetMethod(nameof(ComponentInfoToFileTool.GetComponentInfoToFile))!
+				.GetCustomAttributes(typeof(ModelContextProtocol.Server.McpServerToolAttribute), false)[0];
+
+		// Assert
+		attribute.Name.Should().Be("get-component-info-to-file", because: "the name is part of the MCP contract");
+		attribute.ReadOnly.Should().BeFalse(because: "the tool creates a local file");
+		attribute.Idempotent.Should().BeFalse(because: "a second call to the same path is refused");
+		attribute.Destructive.Should().BeFalse(because: "the tool only adds a local file");
+	}
+
+	[TestCase("# Title\n\ntext\n## Part", new[] { "# Title", "## Part" }, TestName = "ExtractHeadings_ReturnsAtxHeadingsWithTheirLevel")]
+	[TestCase("# Title\n```js\n# not a heading\n```\n## After", new[] { "# Title", "## After" }, TestName = "ExtractHeadings_SkipsFencedCodeBlocks")]
+	[TestCase("#NoSpace\n####### Seven\n    # Indented code", new string[0], TestName = "ExtractHeadings_IgnoresLinesThatAreNotHeadings")]
+	[TestCase("# Title\n````md\n```js\n# inner\n```\n# still code\n````\n## After", new[] { "# Title", "## After" }, TestName = "ExtractHeadings_KeepsALongerFenceOpenAcrossAShorterOne")]
+	[TestCase("```\n```js\n# still code\n```\n## After", new[] { "## After" }, TestName = "ExtractHeadings_DoesNotCloseAFenceOnALineWithAnInfoString")]
+	[TestCase("    ```\n# Title", new[] { "# Title" }, TestName = "ExtractHeadings_IgnoresAFenceIndentedIntoACodeBlock")]
+	[TestCase("## Usage ##\r\n## C#", new[] { "## Usage", "## C#" }, TestName = "ExtractHeadings_DropsOnlyAClosingSequenceAfterASpace")]
+	[Description("Documentation section headings are the ATX headings outside code fences, with their level kept.")]
+	public void ExtractHeadings_ShouldReturnMarkdownHeadings(string markdown, string[] expected) {
+		// Arrange
+
+		// Act
+		IReadOnlyList<string> headings = DocumentationFileProjection.ExtractHeadings(markdown);
+
+		// Assert
+		headings.Should().Equal(expected, because: "the headings tell the caller which sections the file holds");
+	}
+
+	[Test]
 	[Description("A detail response threads the documentation provenance onto documentationSource, and names every locally missing file plus the override variable in documentationWarning.")]
 	public async Task ComponentInfoTool_Detail_Should_Surface_Documentation_Provenance() {
 		// Arrange

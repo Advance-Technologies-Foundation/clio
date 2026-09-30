@@ -103,6 +103,13 @@ and other scripting tools. Pass `--pretty` for a human-readable text
 rendering on stdout — the docs block surfaces under a `documentation:`
 section.
 
+Over MCP, `get-component-info-to-file` takes the same arguments plus `output-file` and writes the
+`documentation` markdown to that file instead of returning it. The response is the
+`get-component-info` response with `documentation` replaced by `documentationFile` (the path) and
+`documentationSections` (the markdown headings). `get-request-info-to-file` does the same for
+`get-request-info`. The file is confined to the workspace or the OS temp directory and must not
+exist yet.
+
 Detail responses additionally carry the producer's **selection-metadata**
 when it is published for the component:
 

@@ -5,7 +5,7 @@ applies-to:
   - clio/Command/McpServer/Tools/PageSyncTool.cs
   - clio/Command/McpServer/Tools/PageValidateTool.cs
   - clio/Command/SchemaValidationService.cs
-date: 2026-08-19
+date: 2026-09-29
 ---
 
 **What is true** — `update-page`, `sync-pages` and `validate-page` each assemble their own web
@@ -46,3 +46,11 @@ The GH-1640 parent guard is authoritative in `PageUpdateCommand`, shared by upda
 and sync-pages. The standalone validate-page check instead accepts inherited names
 or warns when that context is absent; it must not pretend to resolve a server
 hierarchy from a body alone.
+
+The widget-caption check is wired differently on purpose. `validate-page` calls
+`ValidateInsertedWidgetCaptionResourcesGrouped` and reports every unresolved caption binding as ONE
+warning that states the rule once and lists each node, property and key. The save paths
+(`PageUpdateCommand`, `sync-pages`) keep the per-occurrence `ValidateInsertedWidgetCaptionResources` /
+`ValidateInsertedWidgetCaptionsRegistered` errors, so their responses do not change when the report
+format of `validate-page` does. Both forms come out of the same `FindUnresolvedInsertedWidgetCaptions`
+scan.

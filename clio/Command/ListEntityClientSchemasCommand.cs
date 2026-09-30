@@ -106,8 +106,8 @@ internal class ListEntityClientSchemasCommand : Command<ListEntityClientSchemasO
 	private const string EmptyGuid = ClassicEntitySchemaQuery.EmptyGuid;
 	// Migration classification values emitted in MigrationSectionInfo.Kind / MigrationEditPageInfo.Kind /
 	// MigrationEditPageInfo.MiniPageKind. `unknown` covers a missing template or one in neither known set.
-	private const string KindClassic = "classic";
-	private const string KindFreedom = "freedom";
+	internal const string KindClassic = "classic";
+	internal const string KindFreedom = "freedom";
 	private const string KindUnknown = "unknown";
 	private const int SectionRowCount = ClassicEntitySchemaQuery.SectionRowCount;
 	private const int EditPageRowCount = 100;
