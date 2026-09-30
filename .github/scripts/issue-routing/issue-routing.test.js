@@ -181,7 +181,7 @@ test('swaps the component label when an edit changes the component', () => {
   const plan = routing.planRouting({ body, previousBody, currentLabels: ['bug', 'component:package'], currentAssignees: ['carol'], config });
   // Assert
   assert.deepEqual(plan.labelsToRemove, ['component:package'], 'the label of the old choice is removed');
-  assert.deepEqual(plan.labelsToAdd, ['component:docs', 'needs-triage'], 'the new choice is applied; docs has no owner');
+  assert.deepEqual(plan.labelsToAdd, ['component:docs'], 'the new choice is applied; docs has no owner, but carol is already on it, so no triage');
   assert.deepEqual(plan.ownerCandidates, [], 'the existing assignee is kept; reassignment is a human decision');
 });
 
@@ -628,4 +628,279 @@ test('run keeps needs-triage when the mention comment cannot be published', asyn
   assert.deepEqual(only(calls, 'removeLabel'), [], 'nobody was told, so the issue stays visible in triage');
   assert.deepEqual(only(calls, 'addLabels'), [['addLabels', 'component:ring']], 'the component is still routed');
   assert.ok(warnings.some(w => w.includes('could not be mentioned')), 'the failure is logged');
+});
+
+// ---- Issues created through the API: no Component field, the component comes as a label.
+
+const apiBody = 'Created by an agent through the API.\n\n## Problem\n\nSomething broke.';
+
+test('an API issue with one component label is routed to that component\'s owners', () => {
+  // Arrange / Act
+  const plan = routing.planRouting({ body: apiBody, currentLabels: ['bug', 'component:package'], currentAssignees: [], trigger: 'opened', config });
+  // Assert
+  assert.equal(plan.source, 'label', 'the label stands in for the missing form field');
+  assert.equal(plan.component.id, 'package', 'the component is the one the label names');
+  assert.deepEqual(plan.ownerCandidates, ['carol'], 'the owner is proposed as with a form issue');
+  assert.deepEqual([plan.labelsToAdd, plan.labelsToRemove], [[], []], 'the label is the choice, so labels stay as they are');
+});
+
+test('an API issue in mention mode mentions the owners from its label', () => {
+  // Arrange / Act
+  const plan = routing.planRouting({ body: apiBody, currentLabels: ['component:ring'], currentAssignees: ['dave'], trigger: 'labeled', labeledName: 'component:ring', config });
+  // Assert
+  assert.deepEqual(plan.ownersToMention, ['erin', 'frank'], 'mention does not depend on the assignee');
+  assert.deepEqual(plan.ownerCandidates, [], 'nobody is assigned in mention mode');
+});
+
+test('a text edit of an API issue does not notify the owners again', () => {
+  // Arrange / Act
+  const plan = routing.planRouting({ body: `${apiBody}\nmore`, previousBody: apiBody, currentLabels: ['component:package'], trigger: 'edited', config });
+  // Assert
+  assert.equal(plan.unchanged, true, 'owners were told when the issue was opened or labelled');
+});
+
+test('an API issue with two component labels goes to triage when nobody took it', () => {
+  // Arrange / Act
+  const unassigned = routing.planRouting({ body: apiBody, currentLabels: ['component:package', 'component:docs'], trigger: 'opened', config });
+  const assigned = routing.planRouting({ body: apiBody, currentLabels: ['component:package', 'component:docs'], currentAssignees: ['dave'], trigger: 'opened', config });
+  // Assert
+  assert.equal(unassigned.source, 'ambiguous-labels', 'two labels are not a choice');
+  assert.deepEqual(unassigned.labelsToAdd, ['needs-triage'], 'nobody can be routed, so a human has to pick one');
+  assert.deepEqual(unassigned.ownerCandidates, [], 'no owner is guessed');
+  assert.equal(assigned.unchanged, true, 'dave already took it');
+});
+
+test('an edit routes an API issue whose labeled run GitHub replaced', () => {
+  // Arrange: opened (no label) added needs-triage; the queued labeled run was replaced by this edit.
+  // Act
+  const plan = routing.planRouting({ body: `${apiBody}\nmore`, previousBody: apiBody, currentLabels: ['component:package', 'needs-triage'], currentAssignees: [], trigger: 'edited', config });
+  // Assert
+  assert.deepEqual(plan.ownerCandidates, ['carol'], 'label plus needs-triage means routing never ran for the label');
+  assert.deepEqual(plan.labelsToRemove, ['needs-triage'], 'the issue is routed now');
+});
+
+test('an API issue labelled with an ownerless component asks for triage only when unassigned', () => {
+  // Arrange / Act
+  const unassigned = routing.planRouting({ body: apiBody, currentLabels: ['component:docs'], currentAssignees: [], trigger: 'opened', config });
+  const assigned = routing.planRouting({ body: apiBody, currentLabels: ['component:docs'], currentAssignees: ['dave'], trigger: 'opened', config });
+  // Assert
+  assert.deepEqual(unassigned.labelsToAdd, ['needs-triage'], 'nobody owns it and nobody took it');
+  assert.equal(assigned.unchanged, true, 'dave already took it');
+});
+
+test('an assigned issue without any component is not marked for triage', () => {
+  // Arrange: issue #1719 — created through the API, author assigned himself, no component label.
+  // Act
+  const plan = routing.planRouting({ body: apiBody, currentLabels: [], currentAssignees: ['dave'], trigger: 'opened', config });
+  // Assert
+  assert.equal(plan.unchanged, true, 'someone is already working on it, so needs-triage would only be noise');
+});
+
+function labeledContext(body, label, { labels = [label], assignees = [] } = {}) {
+  const context = eventContext(body, { action: 'labeled', labels, assignees });
+  context.payload.label = { name: label };
+  return context;
+}
+
+test('run routes an API issue when its component label is added after creation', async () => {
+  // Arrange: issue #1715 — opened without labels, the label arrives a second later.
+  const { github, calls } = fakeGitHub({ assignable: ['carol'] });
+  const { core } = fakeCore();
+  // Act
+  await routing.run({ github, context: labeledContext(apiBody, 'component:package'), core, configPath: fixtureConfigPath() });
+  // Assert
+  assert.deepEqual(only(calls, 'addAssignees'), [['addAssignees', 'carol']], 'the component owner is assigned');
+  assert.equal(only(calls, 'addLabels').length + only(calls, 'removeLabel').length, 0, 'labels are left as the author set them');
+});
+
+test('run ignores a non-component label and a label added to a form issue', async () => {
+  // Arrange
+  const first = fakeGitHub({ assignable: ['carol'] });
+  const second = fakeGitHub({ assignable: ['carol'] });
+  const { core } = fakeCore();
+  // Act
+  await routing.run({ github: first.github, context: labeledContext(apiBody, 'bug'), core, configPath: fixtureConfigPath() });
+  await routing.run({ github: second.github, context: labeledContext(formBody('Packages'), 'component:docs', { labels: ['component:package', 'component:docs'] }), core, configPath: fixtureConfigPath() });
+  // Assert
+  assert.deepEqual(first.calls, [], 'a topic label is not a routing signal, and nothing is even read');
+  assert.equal(second.calls.filter(c => c[0] !== 'get').length, 0, 'on a form issue the form decides; a hand-added label is a human decision');
+});
+
+test('adding another component label to a routed API issue does not re-notify the owners', () => {
+  // Arrange: component:package was routed; someone now adds component:typo (prefix, not in the map).
+  // Act
+  const plan = routing.planRouting({ body: apiBody, currentLabels: ['component:package', 'component:typo', 'needs-triage'], currentAssignees: [], trigger: 'labeled', labeledName: 'component:typo', config });
+  // Assert
+  assert.equal(plan.unchanged, true, 'only the event that added the single component label routes');
+});
+
+test('an assigned API issue keeps a needs-triage label a human set', () => {
+  // Arrange / Act
+  const plan = routing.planRouting({ body: apiBody, currentLabels: ['component:package', 'needs-triage'], currentAssignees: ['dave'], trigger: 'labeled', labeledName: 'component:package', config });
+  // Assert
+  assert.equal(plan.unchanged, true, 'nobody is told in assign mode when the issue is taken, so triage stays');
+});
+
+test('run does not add needs-triage to an assigned issue when the mention comment fails', async () => {
+  // Arrange
+  const live = { number: 7, body: apiBody, labels: [{ name: 'component:ring' }], assignees: [{ login: 'dave' }] };
+  const { github, calls } = fakeGitHub({ live, commentStatus: 503 });
+  const { core } = fakeCore();
+  // Act
+  await routing.run({ github, context: labeledContext(apiBody, 'component:ring'), core, configPath: fixtureConfigPath() });
+  // Assert
+  assert.equal(only(calls, 'addLabels').length, 0, 'dave is on it; a failed notification does not make it a triage case');
+});
+
+// ---- Choosing a component from code paths (component-for.js, used by agents).
+
+test('path patterns: directory prefix, exact file and single-segment wildcard', () => {
+  // Arrange / Act / Assert
+  assert.ok(routing.pathMatchScore('clio/Command/McpServer/', 'clio/Command/McpServer/Tools/PageGetTool.cs') > 0, 'a directory covers everything under it');
+  assert.ok(routing.pathMatchScore('clio/Command/McpServer/Tools/PageGetTool.cs', 'clio/Command/McpServer/Tools/PageGetTool.cs')
+    > routing.pathMatchScore('clio/Command/McpServer/Tools/Page*', 'clio/Command/McpServer/Tools/PageGetTool.cs'), 'an exact file is more specific than a wildcard');
+  assert.equal(routing.pathMatchScore('clio/Command/Page*', 'clio/Command/McpServer/PageX.cs'), -1, '* does not cross a path separator');
+  assert.ok(routing.pathMatchScore('clio/Command/McpServer/Tools/*Theme*', 'clio/Command/McpServer/Tools/CreateThemeTool.cs') > 0, '* matches inside a file name');
+});
+
+test('matchComponents prefers the most specific component for each file', () => {
+  // Arrange
+  const map = routing.validateConfig({
+    fieldLabel: 'Component', componentLabelPrefix: 'component:', ownerNotification: 'assign', triageLabel: { name: 'needs-triage' },
+    components: [
+      { id: 'core', option: 'Core', label: 'component:core', owners: [], paths: ['src/'] },
+      { id: 'pages', option: 'Pages', label: 'component:pages', owners: [], paths: ['src/tools/Page*'] },
+    ],
+  });
+  // Act
+  const ranked = routing.matchComponents(['src/tools/PageGet.cs', 'src/tools/PageSet.cs', 'src/Program.cs'], map);
+  // Assert
+  assert.deepEqual(ranked.map(r => [r.component.id, r.files.length]), [['pages', 2], ['core', 1]], 'each file goes to its most specific component, ranked by file count');
+});
+
+test('every MCP tool file in the committed map belongs to exactly one specific component', () => {
+  // Arrange
+  const committed = routing.loadConfig(configPath);
+  const toolsDir = path.join(repoRoot, 'clio', 'Command', 'McpServer', 'Tools');
+  if (!fs.existsSync(toolsDir)) return;
+  const tools = fs.readdirSync(toolsDir, { recursive: true }).map(String)
+    .filter(f => f.endsWith('.cs') && fs.readFileSync(path.join(toolsDir, f), 'utf8').includes('McpServerTool('))
+    .map(f => `clio/Command/McpServer/Tools/${f.split(path.sep).join('/')}`);
+  const broad = 'clio/Command/McpServer/'.length;
+  // Act
+  const problems = tools.flatMap(file => {
+    const winners = routing.matchComponents([file], committed);
+    if (winners.length !== 1) return [`${file}: ${winners.length} components`];
+    const score = Math.max(...winners[0].component.paths.map(p => routing.pathMatchScore(p, file)));
+    return score <= broad ? [`${file}: only the broad McpServer directory`] : [];
+  });
+  // Assert
+  assert.deepEqual(problems, [], 'an agent resolving a tool must get its own component, not a tie and not the MCP server fallback (list the file under a component)');
+});
+
+test('component-for resolves an MCP tool name and a path to one component', () => {
+  // Arrange
+  const cli = require('./component-for.js');
+  const out = [];
+  const log = console.log;
+  console.log = line => out.push(String(line));
+  try {
+    // Act
+    const byTool = cli.main(['update-page', '--json']);
+    const byUnknown = cli.main(['no-such-tool', '--json']);
+    // Assert
+    assert.equal(byTool, 0, 'a known tool resolves to exactly one component');
+    assert.equal(JSON.parse(out[0]).components[0].label, 'component:pages', 'update-page belongs to the pages component');
+    assert.equal(byUnknown, 2, 'an unknown name is not silently mapped');
+    assert.deepEqual(JSON.parse(out[1]).unknown, ['no-such-tool'], 'the unknown argument is reported');
+  } finally {
+    console.log = log;
+  }
+});
+
+test('syncLabels creates only the labels the repository is missing', async () => {
+  // Arrange
+  const { github, calls } = fakeGitHub({ existingLabels: ['needs-triage', 'component:mcp', 'component:package', 'component:docs'] });
+  const { core } = fakeCore();
+  // Act
+  const created = await routing.syncLabels({ github, context: { repo: { owner: 'o', repo: 'r' } }, core, configPath: fixtureConfigPath() });
+  // Assert
+  assert.deepEqual(created, ['component:ring'], 'only the missing label is created');
+  assert.equal(calls.filter(c => c[0] === 'createLabel').length, 1, 'existing labels are not touched');
+});
+
+test('component-for resolves a tool to the file that declares it, not one that mentions it', () => {
+  // Arrange
+  const cli = require('./component-for.js');
+  // Act
+  const file = cli.toolFile('deploy-identity');
+  // Assert
+  assert.equal(file, 'clio/Command/McpServer/Tools/DeployIdentityTool.cs', 'CreateOAuthTechnicalUserTool quotes "deploy-identity" but does not declare it');
+});
+
+test('component-for resolves every registered MCP tool name to the file that registers it', () => {
+  // Arrange
+  const cli = require('./component-for.js');
+  const toolsDir = path.join(repoRoot, 'clio', 'Command', 'McpServer', 'Tools');
+  if (!fs.existsSync(toolsDir)) return;
+  const expected = new Map();
+  for (const file of fs.readdirSync(toolsDir).filter(f => f.endsWith('.cs'))) {
+    for (const name of cli.declaredToolNames(fs.readFileSync(path.join(toolsDir, file), 'utf8'))) {
+      expected.set(name, `clio/Command/McpServer/Tools/${file}`);
+    }
+  }
+  // Act
+  const wrong = [...expected].filter(([name, file]) => cli.toolFile(name) !== file).map(([name]) => name);
+  // Assert
+  assert.ok(expected.size > 100, 'the tool catalog was found');
+  assert.deepEqual(wrong, [], 'a tool name must never resolve to a file that only mentions it (create-lookup, deploy-identity)');
+});
+
+test('component-for resolves tools whose file declares the same constant name in several classes', () => {
+  // Arrange
+  const cli = require('./component-for.js');
+  const expected = {
+    'clio-run': 'ClioRunTool.cs',
+    'create-entity-business-rules': 'BusinessRuleTool.cs',
+    'read-page-business-rules': 'BusinessRuleTool.cs',
+    'get-identity-assertion': 'IdentityAssertionTool.cs',
+  };
+  if (!fs.existsSync(path.join(repoRoot, 'clio', 'Command', 'McpServer', 'Tools'))) return;
+  for (const [name, file] of Object.entries(expected)) {
+    // Act
+    const resolved = cli.toolFile(name);
+    // Assert
+    assert.equal(resolved, `clio/Command/McpServer/Tools/${file}`, `${name}: a constant shadowed by a later class in the same file must not hide the tool`);
+  }
+});
+
+test('every [McpServerTool] attribute yields a tool name', () => {
+  // Arrange
+  const cli = require('./component-for.js');
+  const toolsDir = path.join(repoRoot, 'clio', 'Command', 'McpServer', 'Tools');
+  if (!fs.existsSync(toolsDir)) return;
+  const files = fs.readdirSync(toolsDir, { recursive: true }).map(String).filter(f => f.endsWith('.cs'));
+  // Act
+  const missing = files.filter(f => {
+    const text = fs.readFileSync(path.join(toolsDir, f), 'utf8');
+    const attributes = (text.match(/\[McpServerTool\(\s*Name\s*=/g) || []).length;
+    return cli.declaredToolNames(text).length !== attributes;
+  });
+  // Assert
+  assert.deepEqual(missing, [], 'counted independently of name resolution: every attribute must resolve to a name');
+});
+
+test('component-for exits 2 when an argument is not recognised', () => {
+  // Arrange
+  const cli = require('./component-for.js');
+  const log = console.log;
+  console.log = () => {};
+  try {
+    // Act
+    const code = cli.main(['update-page', 'no-such-tool', '--json']);
+    // Assert
+    assert.equal(code, 2, 'a partially resolved input is not a clean answer');
+  } finally {
+    console.log = log;
+  }
 });
