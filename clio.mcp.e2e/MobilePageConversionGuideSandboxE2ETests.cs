@@ -349,10 +349,10 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	}
 
 	[Test]
-	[Description("Non-vacuous excludedComponents TRANSPORT guard (ENG-95081): converts real seeded pages until one carries a component of a bundled-rule-banned type, then asserts NO surviving insert of a banned type reaches the banned host through the banned slot on the entry graph — the regression where crt.SearchFilter survived inside crt.ExpansionPanel's tools because the pass searched only verbatim-carried values. Any candidate that fails to convert fails the test immediately (a runtime regression, never a seed gap); when no seeded page carries any banned type it IGNORES with an explicit reason instead of passing silently. The rule's own acceptance criterion does not depend on this test — WebToMobileRealPageRegressionTests enforces it hermetically on the pinned OOTB Leads_FormPage — so what this one adds is the verdict travelling through the real clio mcp-server process.")]
+	[Description("Non-vacuous excludedComponents TRANSPORT guard (ENG-95081): converts real seeded pages until one carries a component a bundled filter removes (by name or outside an allow-list), then asserts NO surviving insert such a filter matches reaches the banned host through the banned slot on the entry graph — the regression where crt.SearchFilter survived inside crt.ExpansionPanel's tools because the pass searched only verbatim-carried values. Any candidate that fails to convert fails the test immediately (a runtime regression, never a seed gap); when no seeded page carries any banned type it IGNORES with an explicit reason instead of passing silently. The rule's own acceptance criterion does not depend on this test — WebToMobileRealPageRegressionTests enforces it hermetically on the pinned OOTB Leads_FormPage — so what this one adds is the verdict travelling through the real clio mcp-server process.")]
 	[AllureTag(ToolName)]
 	[AllureName("get-mobile-page-conversion-guide honors bundled excludedComponents rules on the entry graph")]
-	[AllureDescription("Loads the bundled conversion rules' excludedComponents filters, iterates the seeded application's pages through the real clio MCP server, and on the first page whose element map mentions a banned type at all asserts that every surviving insert of a banned type has NO ancestor-entry chain reaching the banned host through the banned slot; a conversion failure fails the test, and a seed set with no banned type degrades to Ignore (never a vacuous pass).")]
+	[AllureDescription("Loads the bundled conversion rules' excludedComponents filters, iterates the seeded application's pages through the real clio MCP server, and on the first page where the exclusion pass dropped a component or a matched component survived asserts that every surviving insert a filter matches has NO ancestor-entry chain reaching the banned host through the banned slot; a conversion failure fails the test, and a seed set with no banned type degrades to Ignore (never a vacuous pass).")]
 	public async Task MobilePageConversionGuideTool_Should_Honor_Bundled_ExcludedComponents_Rules() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -365,12 +365,13 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		List<ExcludedComponentFilterRule> filters = WebToMobilePageConversionRulesCatalog.LoadBundled()
 			.ExcludedComponents
 			.SelectMany(g => g?.Filters ?? [])
-			.Where(f => !string.IsNullOrWhiteSpace(f?.Type) && !string.IsNullOrWhiteSpace(f.ParentType))
+			.Where(f => f is not null && !string.IsNullOrWhiteSpace(f.ParentType)
+				&& (f.IsAllowList ? !string.IsNullOrWhiteSpace(f.PropertiesContainerName) : !string.IsNullOrWhiteSpace(f.Type)))
 			.ToList();
 		filters.Should().NotBeEmpty(
 			because: "the bundled conversion rules ship excludedComponents filters — with none, this guard no longer tests anything and must be revisited");
 
-		// Act — convert candidates until one MENTIONS a banned type at all (as an insert OR a drop).
+		// Act — convert candidates until one gives the exclusion pass something to decide.
 		// A conversion FAILURE fails the test right here — it is a runtime regression, never a seed gap,
 		// and deferring it would let a later banned-type candidate mask it behind a green run.
 		bool bannedTypeExercised = false;
@@ -394,15 +395,14 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 				because: $"get-mobile-page-conversion-guide must succeed on every seeded page, and '{schemaName}' "
 					+ $"failed with: {response.Error} — a runtime regression, not missing seed data");
 			MobilePageConversionGuide guide = response.Guide!;
-			// A page only EXERCISES the rule when a banned type survived conversion as an insert. Accepting a
-			// mere mention (including e.WebType, which a plain unsupported-type drop also satisfies) would let
-			// the loop break on a page where the exclusion pass had nothing to decide, and
-			// AssertExcludedComponentsHonored would then pass by construction — reporting a vacuous run as a
-			// real one, which is the exact failure the Ignore branch below exists to prevent.
-			bool exercisesBannedType = guide.ViewConfigDiff.Any(e =>
-				string.Equals(e.Operation, "insert", StringComparison.OrdinalIgnoreCase)
-				&& filters.Any(f => string.Equals(TypeOf(e), f.Type, StringComparison.OrdinalIgnoreCase)));
-			if (exercisesBannedType) {
+			// A page only EXERCISES the rule when the exclusion pass had something to decide: it dropped a
+			// component by rule, or a banned component survived in scope (which the assertion below then fails).
+			// An allow-list filter matches nearly every insert on any page, so a type match alone no longer tells
+			// a real run from a vacuous one — and a vacuous run is what the Ignore branch below exists to prevent.
+			bool exercisesRule = (guide.DroppedElements ?? []).Any(dropped =>
+					(dropped.Reason ?? []).Any(reason => reason.Code == ReasonCodes.DropExcludedByRule))
+				|| FindBannedSurvivors(guide, filters).Any();
+			if (exercisesRule) {
 				AssertExcludedComponentsHonored(guide, filters);
 				bannedTypeExercised = true;
 				convertedSchemaName = schemaName;
@@ -414,7 +414,7 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		if (!bannedTypeExercised) {
 			Assert.Ignore(
 				$"None of the {candidates.Count} seeded page(s) of '{ApplicationCode}' on environment '{environmentName}' "
-				+ "converts a component of any excludedComponents-banned type into a surviving insert, so the TRANSPORT path could not be exercised "
+				+ "carries a component any excludedComponents filter removes, so the TRANSPORT path could not be exercised "
 				+ "end to end. This skip is not a coverage gap for the rule itself: the acceptance criterion is enforced "
 				+ "hermetically on production-shaped metadata by WebToMobileRealPageRegressionTests (the pinned OOTB "
 				+ "Leads_FormPage), which runs on every build. What is NOT covered while this skips is the rule reaching "
@@ -435,6 +435,21 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	/// </summary>
 	private static void AssertExcludedComponentsHonored(
 		MobilePageConversionGuide guide, List<ExcludedComponentFilterRule> filters) {
+		foreach ((ViewConfigDiffOperation entry, ExcludedComponentFilterRule filter, string bannedHost)
+			in FindBannedSurvivors(guide, filters)) {
+			bannedHost.Should().BeNull(
+				because: $"surviving insert '{entry.Name}' of type '{TypeOf(entry)}' reaches host "
+					+ $"'{bannedHost}' of type '{filter.ParentType}'"
+					+ (string.IsNullOrWhiteSpace(filter.PropertiesContainerName)
+						? ""
+						: $" through its '{filter.PropertiesContainerName}' slot")
+					+ " — the excludedComponents pass must have dropped it (ENG-95081, ENG-96411)");
+		}
+	}
+
+	/// <summary>Every surviving insert a filter matches whose ancestor chain still reaches that filter's host in scope.</summary>
+	private static IEnumerable<(ViewConfigDiffOperation Entry, ExcludedComponentFilterRule Filter, string Host)>
+		FindBannedSurvivors(MobilePageConversionGuide guide, List<ExcludedComponentFilterRule> filters) {
 		Dictionary<string, ViewConfigDiffOperation> byMobileName = guide.ViewConfigDiff
 			.Where(e => (e.Operation == "insert" || e.Operation == "merge") && !string.IsNullOrEmpty(e.Name))
 			.GroupBy(e => e.Name!, StringComparer.OrdinalIgnoreCase)
@@ -443,18 +458,10 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			if (entry.Operation != "insert" || string.IsNullOrEmpty(TypeOf(entry))) {
 				continue;
 			}
-			foreach (ExcludedComponentFilterRule filter in filters) {
-				if (!string.Equals(TypeOf(entry), filter.Type, StringComparison.OrdinalIgnoreCase)) {
-					continue;
+			foreach (ExcludedComponentFilterRule filter in filters.Where(f => f.MatchesType(TypeOf(entry)))) {
+				if (FindBannedHostOnAncestorPath(entry, filter, byMobileName) is { } bannedHost) {
+					yield return (entry, filter, bannedHost);
 				}
-				string? bannedHost = FindBannedHostOnAncestorPath(entry, filter, byMobileName);
-				bannedHost.Should().BeNull(
-					because: $"surviving insert '{entry.Name}' of banned type '{filter.Type}' reaches host "
-						+ $"'{bannedHost}' of type '{filter.ParentType}'"
-						+ (string.IsNullOrWhiteSpace(filter.PropertiesContainerName)
-							? ""
-							: $" through its '{filter.PropertiesContainerName}' slot")
-						+ " — the excludedComponents pass must have dropped it (ENG-95081)");
 			}
 		}
 	}
