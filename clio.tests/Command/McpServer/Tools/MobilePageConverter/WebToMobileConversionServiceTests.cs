@@ -11490,6 +11490,43 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("ENG-96411: with the bundled rules, a crt.QuickFilter in crt.ExpansionPanel.tools is dropped and the flex container that only held it is removed as empty, so the header strip keeps just its icon buttons.")]
+	public void Analyze_ShouldDropQuickFilterAndItsEmptiedWrapper_FromExpansionPanelTools_WithBundledRules() {
+		// Arrange — the Opportunities_FormPage Leads panel: the chip sits in its own column flex beside the buttons.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "LeadsExpansionPanel", "type": "crt.ExpansionPanel",
+			    "tools": [ { "name": "LeadsToolsContainer", "type": "crt.GridContainer", "items": [
+			        { "name": "LeadsToolsFlexContainer", "type": "crt.FlexContainer", "items": [
+			            { "name": "LeadsAddButton", "type": "crt.Button" },
+			            { "name": "LeadsRefreshButton", "type": "crt.Button" },
+			            { "name": "LeadsQuickFilterFlexContainer", "type": "crt.FlexContainer", "items": [
+			                { "name": "QuickFilterShowAllLeads", "type": "crt.QuickFilter" } ] } ] } ] } ],
+			    "items": [
+			        { "name": "LeadsListContainer", "type": "crt.GridContainer", "items": [
+			            { "name": "LeadsList", "type": "crt.List" } ] } ] } ]
+			""");
+		WebToMobilePageConversionRules rules = new() {
+			ExcludedComponents = WebToMobilePageConversionRulesCatalog.LoadBundled().ExcludedComponents,
+			EmptyContainerRemoval = EmptyRemoval
+		};
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithExcludedComponentsEntryGraph(bundle, rules);
+
+		// Assert
+		DroppedElement quickFilter = Dropped(guide, "QuickFilterShowAllLeads");
+		Codes(quickFilter).Should().Contain(ReasonCodes.DropExcludedByRule,
+			because: "the chip does not fit the compact icon-only header strip, and the bundled rules say so");
+		ReasonParam(quickFilter, ReasonCodes.DropExcludedByRule, "slot").Should().Be("tools");
+		Codes(Dropped(guide, "LeadsQuickFilterFlexContainer")).Should().Contain(ReasonCodes.DropEmptyContainer,
+			because: "a wrapper left with nothing would still claim header width on the device");
+		Element(guide, "LeadsAddButton").Operation.Should().Be("insert");
+		Element(guide, "LeadsRefreshButton").Operation.Should().Be("insert",
+			because: "only the chip and its emptied wrapper leave the header strip");
+		Element(guide, "LeadsList").Operation.Should().Be("insert");
+	}
+
+	[Test]
 	[Description("propertiesContainerName is checked on the EDGE ENTERING the host: a banned type whose ancestor path enters the host through 'items' does not match a 'tools'-scoped rule, even though the same rule drops the instance entering through 'tools'.")]
 	public void Analyze_ShouldKeepEntry_WhenItsPathEntersTheHostThroughADifferentSlot() {
 		// Arrange — the banned type under BOTH edges of one host; only the tools-side instance is in scope.

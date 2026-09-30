@@ -586,6 +586,22 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 	}
 
 	[Test]
+	[Description("ENG-96411: the bundled rules also strip crt.QuickFilter from crt.ExpansionPanel.tools — a captioned chip overflows the compact icon-only header strip and hides the panel title on a phone.")]
+	public void LoadBundled_ExcludedComponents_CarriesQuickFilterInsideExpansionPanelToolsRule() {
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+
+		ExcludedComponentFilterRule filter = rules.ExcludedComponents
+			.SelectMany(g => g.Filters)
+			.Single(f => f.Type == "crt.QuickFilter");
+		filter.ParentType.Should().Be("crt.ExpansionPanel",
+			because: "a quick filter elsewhere on the page, e.g. in the panel body above its list, still converts");
+		filter.PropertiesContainerName.Should().Be("tools",
+			because: "only the header strip lacks the room, not the panel's items");
+		filter.Note.Should().NotBeNullOrWhiteSpace(
+			because: "the rules file is where the next rule author looks for WHY an exclusion exists");
+	}
+
+	[Test]
 	[Description("The bundled rules carry the designer's 2-layer tab body (tab-body grid nesting the Area card) for converter-created tabs.")]
 	public void LoadBundled_TabAreaLayers_CarryDesignerTabBodyProps() {
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
