@@ -2945,8 +2945,12 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "the loss moved from the element level to the binding level, so the report has to move "
 				+ "with it: droppedElements cannot name it, the component is still on the page")
 			.Subject;
-		binding.Binding.Should().Be("clicked");
-		binding.WebRequest.Should().Be("crt.PrintablesRequest");
+		binding.Binding.Should().Be("clicked",
+			because: "the record has to name WHICH action was lost - a droppedRequests entry on a surviving "
+				+ "element that does not say which binding went is one the caller cannot act on");
+		binding.WebRequest.Should().Be("crt.PrintablesRequest",
+			because: "and it has to name the request that was lost - that is the half a developer either "
+				+ "reimplements on mobile or decides to live without");
 		Codes(binding.Reason).Should().Equal([ReasonCodes.DropRequestUnsupported],
 			because: "the rules entry CLEARS this request's mobile target, which is clio asserting that mobile "
 				+ "cannot do it - a claim it may not make about a request the rules never mention");
@@ -2981,9 +2985,15 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "silence would assert the opposite - that the action is fine - so the third answer is "
 				+ "the only honest one: kept, and pointed at")
 			.Subject;
-		flagged.Binding.Should().Be("clicked");
-		flagged.Request.Should().Be("usr.SendToErpRequest");
-		Codes(flagged.Reason).Should().Equal([ReasonCodes.FlagRequestUnmapped]);
+		flagged.Binding.Should().Be("clicked",
+			because: "a flag that points at an element but not at a binding sends the developer looking through "
+				+ "every action that element has");
+		flagged.Request.Should().Be("usr.SendToErpRequest",
+			because: "the request is the whole content of this record - clio kept it precisely because it cannot "
+				+ "judge it, so naming it is the only help it can give");
+		Codes(flagged.Reason).Should().Equal([ReasonCodes.FlagRequestUnmapped],
+			because: "the code must say UNMAPPED and not unsupported - the rules never cleared this request, and "
+				+ "a caller branching on the code would otherwise read a verdict clio never reached");
 		(guide.RequestConversions?.DroppedRequests ?? []).Should().NotContain(
 			r => r.ElementName == "DeadParentItem",
 			because: "a flag and a drop tell a developer opposite things, and the vocabulary has no "
@@ -3072,6 +3082,52 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("Settling one binding does not end the walk over the node's OTHER bindings. The pass strips a dead binding while iterating the very node that holds it, so a kept node carrying a dead action followed by a supported and a custom one is the only shape that exercises the strip-and-continue path - every other carried node in this fixture has exactly one binding, and a regression that returned after the removal instead of continuing would pass all of them while silently shipping every remaining dead or unreviewed action of a multi-action entry. Asserting the SUPPORTED binding alone would not catch it either: an untouched binding looks the same whether it was examined and exempted or never reached, so the custom one - which must produce a flag - is what makes the continuation observable. The node is dense on purpose: the loop is structural over properties and knows no binding names, so three on one item stand for any component holding more than one.")]
+	public void Analyze_CarriedNodeWithSeveralBindings_SettlesEachOfThem_AfterStrippingTheFirst() {
+		// Arrange - a kept submenu owner whose FIRST binding is dead, followed by a supported and a custom one.
+		PageBundleInfo bundle = MenuButtonBundle("""
+			{ "name": "DeadParentItem", "type": "crt.MenuItem", "caption": "More",
+			  "clicked": { "request": "crt.PrintablesRequest", "params": {} },
+			  "updated": { "request": "crt.SaveRecordRequest", "params": {} },
+			  "valueChange": { "request": "usr.SendToErpRequest", "params": {} },
+			  "menuItems": [ { "name": "LiveChildItem", "type": "crt.MenuItem", "caption": "Save",
+			                   "clicked": { "request": "crt.SaveRecordRequest", "params": {} } } ] }
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: MenuCarriedTypes, rules: MenuRules());
+
+		// Assert
+		JsonNode owner = Element(guide, "SettingsButton").Values!["menuItems"]!.AsArray()
+			.Single(item => item!["name"]!.GetValue<string>() == "DeadParentItem")!;
+		owner["clicked"].Should().BeNull(
+			because: "the dead action is the one thing that may not ship - removing it is what this pass is for");
+		owner["updated"]!["request"]!.GetValue<string>().Should().Be("crt.SaveRecordRequest",
+			because: "a binding AFTER the stripped one must still be reached and then left alone - the walk "
+				+ "mutates the node it is walking, and the exemption is the only thing standing between this pass "
+				+ "and stripping the working half of a multi-action entry");
+		owner["valueChange"]!["request"]!.GetValue<string>().Should().Be("usr.SendToErpRequest",
+			because: "clio cannot claim the rules refuse a request they never mention, whatever it decided about "
+				+ "an earlier binding on the same node");
+		DroppedRequest dropped = guide.RequestConversions!.DroppedRequests.Should().ContainSingle(
+			r => r.ElementName == "DeadParentItem",
+			because: "exactly one of the three bindings was lost - a second record here would mean the key "
+				+ "snapshot the loop walks had gone out of step with the node it removes from")
+			.Subject;
+		dropped.Binding.Should().Be("clicked",
+			because: "the record names the binding that actually went, not the node's first or last one");
+		FlaggedRequest flagged = guide.RequestConversions.FlaggedRequests.Should().ContainSingle(
+			r => r.ElementName == "DeadParentItem",
+			because: "reaching the custom binding at all is precisely what a walk that stopped at the removal "
+				+ "would not do, and silence about it would read to a developer as approval")
+			.Subject;
+		flagged.Binding.Should().Be("valueChange",
+			because: "and the flag names the binding a developer has to go and check");
+		DroppedNames(guide).Should().NotContain("LiveChildItem",
+			because: "settling the owner's bindings never touches the child the veto kept the owner for");
+	}
+
+	[Test]
 	[Description("An UNNAMED carried node is left entirely alone, dead action and all. ProjectDroppedElements omits a drop carrying no webName because it would serialize as a bare reason naming nothing, and a droppedRequests record keyed on an empty elementName is the same silence wearing a different shape - so the honest answer is to touch neither the node nor the report. Every component the Freedom UI designer authors carries a name, so this costs nothing on a real page; it is the guard that keeps a malformed bundle from producing records a caller cannot act on.")]
 	public void Analyze_UnnamedCarriedNodeWithADeadRequest_IsLeftAloneAndUnreported() {
 		// Arrange - a menu item with no name at all, holding a request the rules clear.
@@ -3114,8 +3170,11 @@ public sealed class WebToMobileConversionServiceTests {
 			.Single(r => r.ElementName == "DeadParentItem");
 		DroppedRequest onCarried = asCarried.RequestConversions!.DroppedRequests
 			.Single(r => r.ElementName == "DeadParentItem");
-		onCarried.Binding.Should().Be(onEntries.Binding);
-		onCarried.WebRequest.Should().Be(onEntries.WebRequest);
+		onCarried.Binding.Should().Be(onEntries.Binding,
+			because: "both shapes must name the same binding - which traversal ran is a registry fact the "
+				+ "caller's page does not contain, so it may not change what the report says was lost");
+		onCarried.WebRequest.Should().Be(onEntries.WebRequest,
+			because: "and the same request, which is the value a developer actually acts on");
 		Codes(onCarried.Reason).Should().Equal(Codes(onEntries.Reason),
 			because: "down to the code - a caller branching on it must not need to know which traversal ran");
 		ReasonParam(onCarried.Reason, ReasonCodes.DropRequestUnsupported, "note")
