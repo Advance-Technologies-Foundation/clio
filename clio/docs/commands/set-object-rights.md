@@ -164,8 +164,8 @@ clio set-object-rights --entity-schema-name UsrOrder --grantee <role-id> --opera
   the command changes none of them. Remove the duplicates in the Object permissions designer, then re-run.
 - A revoke on an object that does not use operation permissions is refused: company employees reach it whatever
   its rows say (only technical users follow the rows while it is off). To limit access, turn operation permissions on
-  first (a grant with `--enable-operation-permissions`), then revoke from the `All employees` row what employees must
-  not have.
+  first (a grant with `--enable-operation-permissions`, which keeps the object's `All employees` row as it is or adds
+  one with every operation), then revoke from that row what employees must not have.
 - Read-modify-write is last-writer-wins: a change another client saves between the read and the save is
   overwritten. The read-back reports any difference from the plan.
 - On MCP, an unknown or misspelled argument name is refused before any read or write (the serializer would

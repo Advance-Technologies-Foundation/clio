@@ -251,8 +251,8 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 				$"'{schema}' is not administered by operation permissions — company employees reach it whatever its rows "
 				+ "say (only technical users follow the rows while it is off), so the tool does not revoke on it. To limit "
 				+ "access, first turn operation permissions on with a grant and --enable-operation-permissions; that keeps "
-				+ "or adds an 'All employees' row with every operation, so then revoke from that row what employees must "
-				+ "not have.",
+				+ "the object's 'All employees' row as it is, or adds one with every operation when it has none, so then "
+				+ "revoke from that row what employees must not have.",
 			ObjectRightsRefusal.LeavesNoGrantingRow =>
 				$"after this revoke no row on '{schema}' would grant any operation, so nobody could reach it except "
 				+ "holders of the '…any data' system operations. To make it available to ALL internal users instead, "

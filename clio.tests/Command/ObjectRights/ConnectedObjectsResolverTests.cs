@@ -131,6 +131,26 @@ public class ConnectedObjectsResolverTests {
 		result.Excluded.Should().Equal(new[] { referenced }, because: "the exclusion is reported");
 	}
 
+	[TestCase("SysAdminUnit ", new string[0], new[] { "SysAdminUnit" },
+		TestName = "Resolve_ShouldExcludeAPaddedSecurityName_WhenItIsNormalized")]
+	[TestCase("UsrStatus ", new[] { "UsrStatus" }, new string[0],
+		TestName = "Resolve_ShouldReadAPaddedLookupName_WhenItIsNormalized")]
+	[Description("A referenced name is normalized like a caller's name before the security gate sees it: a trailing space never lets a security object past the gate, and an ordinary lookup is read under its plain name.")]
+	public void Resolve_ShouldNormalizeReferencedNames_WhenTheyArePadded(string referenced, string[] connected,
+		string[] excluded) {
+		// Arrange
+		_columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>())
+			.Returns(Schema("UsrOrder", Column("UsrRef", "own", referenced)));
+
+		// Act
+		ConnectedObjectsResolution result = _resolver.Resolve("UsrOrder", includeConnected: true);
+
+		// Assert
+		result.Objects.Should().Equal(new[] { "UsrOrder" }.Concat(connected),
+			because: "only a non-security lookup is read, under its normalized name");
+		result.Excluded.Should().Equal(excluded, because: "a security object is excluded whatever padding it carries");
+	}
+
 	[Test]
 	[Description("The own-column source is matched without regard to case.")]
 	public void Resolve_ShouldTreatSourceCaseInsensitively_WhenTheSourceIsUpperCase() {
