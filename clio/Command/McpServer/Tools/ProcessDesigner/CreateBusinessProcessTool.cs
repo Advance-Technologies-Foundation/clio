@@ -40,10 +40,13 @@ public class CreateBusinessProcessTool(
 		 OpenWorld = false),
 	 // The FIRST sentence is what the get-tool-contract compact index shows as this tool's one-line
 	 // purpose, and that index is the only discovery surface a non-resident tool has. It must therefore
-	 // say what the tool DOES; the accessRights warning below is no less binding for standing second,
+	 // say what the tool DOES; the accessRights warning below is no less binding for standing third,
 	 // because an agent reads the full contract before calling. See
 	 // docs/knowledge/McpServer/first-sentence-of-a-description-becomes-the-compact-index-purpose.md
+	 // The packageName sentence stands second, in the opening a shortened contract keeps; placed inside the
+	 // long descriptor sentence it was cut from a default get-tool-contract read.
 	 Description("Build a business process on a Creatio environment from a declarative JSON descriptor. "
+		 + "Take packageName from get-target-package. "
 		 + "BEFORE CALLING with an accessRights block: that block changes who can read, edit or delete LIVE records. Show the user the target object, the element record filter that decides WHICH records are affected, and every grantee with its operations and level - calling out level:delegate as onward re-sharing, level:restrict as the platform Deny level, which is DESTRUCTIVE rather than inert: it DOWNGRADES an existing Allow row for that grantee to Deny, and on a fresh insert denies the two operations you did not name, so it deserves the same confirmation as a remove, a remove entry as a revoke, and a supplied add/remove as a REPLACEMENT that drops every entry it does not restate - and get an explicit yes. An ABSENT filter is the WIDE state, not a safe one: the element then applies the change to EVERY record of its object, with record permissions disabled, and nothing warns you. The element has no output parameters, so nothing at run time will report what it did. "
 		 + "The descriptor is an object with: name (schema code), caption, packageName, elements[] "
 		 + "({name (the element handle/local code), type:startEvent|signalStart|endEvent|userTask|sendEmail|approval|exclusiveGateway|parallelGateway|formulaTask|"

@@ -120,6 +120,12 @@ public sealed class ToolContractPayloadBudgetTests {
 	// so an author who edited a different one is not sent to the wrong file. If it starts firing on
 	// edits that are NOT budget decisions, re-pin it deliberately and say so here — never widen it in
 	// passing.
+	//
+	// Re-measured for ENG-99970 (the get-target-package routing sentence), by the method above: the figures
+	// earlier in this comment had gone stale on master, where modify-business-process is now the LARGEST at
+	// 34808 - 8 bytes under the ceiling - with create-business-process at 34566 and
+	// describe-business-process third at 32492. The routing sentence ("Take packageName from
+	// get-target-package.", placed second so a shortened contract keeps it) took create to 34608 (+42).
 	private const int MaxToolContractSerializedBytes = 136 * 256;
 
 	[Test]

@@ -147,9 +147,11 @@ internal sealed class PackageTargetResolver(
 					"not point at one, so there is nowhere to deliver the package data. Name the package " +
 					"explicitly (see list-packages for the available names).");
 			}
+			// The setting holds a package UId, not a row Id:
+			// docs/knowledge/Command/current-package-id-holds-a-package-uid-not-an-id.md
 			rows = SelectPackages([
 				new SelectQueryHelper.SelectQueryFilterDefinition(
-					"Id", packageId.ToString(), SelectQueryHelper.GuidDataValueType)
+					"UId", packageId.ToString(), SelectQueryHelper.GuidDataValueType)
 			]);
 		} catch (Exception exception) {
 			return PackageTargetResolution.Unavailable(DescribeUnavailable(exception));
