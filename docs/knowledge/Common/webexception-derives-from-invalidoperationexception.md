@@ -4,7 +4,7 @@ applies-to:
   - clio/Command/EntitySchemaDesigner/RemoteEntitySchemaColumnManager.cs
   - clio/Command/EntitySchemaDesigner/EntitySchemaPublisher.cs
   - clio/Common/ObjectRights/ObjectRightsSupport.cs
-date: 2026-09-03
+date: 2026-09-30
 ---
 
 **What is true** — `System.Net.WebException` inherits from `InvalidOperationException`. Any catch
@@ -22,12 +22,11 @@ as a not-found discriminator.
 **Why it is this way** — the .NET type hierarchy, nothing clio chose. Compounding it, Creatio's
 client is driven through `Task.Result`, so faults arrive wrapped in `AggregateException`; both
 predicates above unwrap it recursively before classifying, and so do the object-rights
-`ObjectRightsSupport.IsServiceFailure` / `IsTimeout` (a wrapper is a service failure only when every
-fault in it is one, and a timeout when any is).
+`ObjectRightsSupport.IsServiceFailure` / `IsTimeout`.
 
 **What breaks if you ignore it** — an unreachable or misconfigured environment is classified as
 "this schema is simply not compiled yet", the guard silently takes its tolerant branch, and clio
 proceeds to write against a state it never actually read. Conversely, narrowing the catch without the
-`AggregateException` unwrap turns a skippable post-publish check into an aborted command — for
-`set-object-rights` it skipped the read-back of a save that timed out but may have committed, and for
-`get-object-rights --include-connected` the first hanging lookup ended the whole listing.
+`AggregateException` unwrap turns a skippable post-publish check into an aborted command — and in
+`set-object-rights` it skips the read-back of a save that timed out but may have committed, while in
+`get-object-rights --include-connected` the first hanging lookup ends the whole listing.

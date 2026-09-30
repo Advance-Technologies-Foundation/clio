@@ -51,10 +51,10 @@ public sealed class ObjectRightsToolBehaviourTests {
 		_writer = Substitute.For<IObjectRightsWriter>();
 		// null is a successful save (a substitute would otherwise return an empty string, which is an error).
 		_writer.Save(Arg.Any<ObjectRightsSnapshot>(), Arg.Any<ObjectRightsState>(), Arg.Any<CreatioRequestOptions>())
-			.Returns((string)null);
+			.Returns(ObjectRightsSaveResult.Saved);
 		_reader = Substitute.For<IObjectRightsReader>();
 		_connected = Substitute.For<IConnectedObjectsResolver>();
-		_connected.Resolve(Arg.Any<string>(), Arg.Any<bool>())
+		_connected.Resolve(Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<int?>())
 			.Returns(callInfo => new ConnectedObjectsResolution(new[] { (string)callInfo[0] }, Array.Empty<string>()));
 		// The object before the change, then the object as the save left it (the read-back).
 		ObjectRightsInfo before = new(true, "UsrFoo", "UsrFoo", true,

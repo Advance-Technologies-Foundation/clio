@@ -17,10 +17,13 @@ public class GetObjectRightsOptions : RemoteCommandOptions {
 		"Object (entity schema) name to read")]
 	public string EntitySchemaName { get; set; }
 
-	/// <summary>An optional SysAdminUnit id: show its row and the rows above it instead of every row.</summary>
+	/// <summary>
+	/// An optional SysAdminUnit id: show its row and the rows above it — every row when it has none or when the object is
+	/// not administered.
+	/// </summary>
 	[Option("grantee", Required = false, HelpText =
-		"Optional SysAdminUnit id (role or user): show its row and the rows above it, which decide first; every row when "
-		+ "it has none, and on an object that is not administered. When omitted, every row is listed.")]
+		"Optional SysAdminUnit id (role or user): show its row and the rows above it, which decide first (every row when "
+		+ "it has none or when the object is not administered). When omitted, every row is listed.")]
 	public string Grantee { get; set; }
 
 	/// <summary>Also read the objects the root object's own lookup columns reference.</summary>
@@ -65,10 +68,10 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 		// service failure that still escapes it. Only the call is guarded: a failure in the code that reports the
 		// result is a bug, not a service failure.
 		try {
-			resolution = _connectedObjects.Resolve(options.EntitySchemaName, options.IncludeConnected);
+			resolution = _connectedObjects.Resolve(options.EntitySchemaName, options.IncludeConnected, requestOptions.TimeOut);
 		}
 		catch (Exception ex) when (ObjectRightsSupport.IsServiceFailure(ex)) {
-			_logger.WriteError($"Error: {ObjectRightsSupport.DisplayError(ex)}");
+			_logger.WriteError($"Error: {ObjectRightsSupport.DisplayFailure(ex)}");
 			return 1;
 		}
 		ReportHeader(options, granteeFilter, resolution);
@@ -128,7 +131,8 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 			return _rightsReader.GetObjectRights(schemaName, requestOptions);
 		}
 		catch (Exception ex) when (ObjectRightsSupport.IsServiceFailure(ex)) {
-			return ObjectRightsInfo.ReadFailed(schemaName, ObjectRightsSupport.DisplayError(ex), ObjectRightsSupport.IsTimeout(ex));
+			return ObjectRightsInfo.ReadFailed(schemaName, ObjectRightsSupport.DisplayFailure(ex),
+				ObjectRightsSupport.IsTimeout(ex));
 		}
 	}
 

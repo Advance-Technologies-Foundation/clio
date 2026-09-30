@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Allure.NUnit;
@@ -29,7 +31,7 @@ public sealed class ObjectRightsReadOnlySandboxE2ETests : McpContractFixtureBase
 	private const string AllEmployees = "a29a3ba5-4b0d-de11-9a51-005056c00008";
 
 	[Test]
-	[Description("On a real stand, get-object-rights reads Contact's operation permissions, a grantee filter is honoured, and a name that does not exist fails.")]
+	[Description("On a real stand, get-object-rights reads Contact's operation permissions, a grantee filter is honoured (on an administered object the rows below the grantee's are left out; on one that is not administered every row is listed), and a name that does not exist fails.")]
 	[AllureTag(GetObjectRightsTool.ToolName)]
 	[AllureName("get-object-rights reads an OOTB object through the real RightManagementService")]
 	[AllureDescription("Calls get-object-rights on Contact (all roles, then filtered to All employees) and on a name that does not exist, through the real MCP server against the configured sandbox. Nothing is written.")]
@@ -56,9 +58,31 @@ public sealed class ObjectRightsReadOnlySandboxE2ETests : McpContractFixtureBase
 				|| output.Contains($"grantee {AllEmployees} has NO row"),
 			because: "the filtered read reports the All employees row, or that it has none");
 		filtered.Output.Should().Contain($"(grantee {AllEmployees})",
-			because: "the filtered read names the grantee it reports on (on an object that is not administered every row "
-				+ "is listed with or without it, so the rows alone need not differ)");
+			because: "the filtered read names the grantee it reports on");
+		string[] rowsBelowAllEmployees = RowsBelow(all.Output, AllEmployees);
+		if (all.Output.Contains("Contact: administered by operation permissions. Rows in priority order:")) {
+			foreach (string row in rowsBelowAllEmployees) {
+				filtered.Output.Should().NotContain(row,
+					because: "on an administered object the filter lists the grantee's row and the rows above it only");
+			}
+		}
 		missing.Success.Should().BeFalse(because: "a name that resolves to no schema fails instead of reporting access");
+	}
+
+	// The listed rows ("[position] Name (id): operations") that sit below the grantee's row in an unfiltered listing.
+	private static string[] RowsBelow(string output, string grantee) {
+		Match[] rows = Regex.Matches(output ?? string.Empty,
+				@"^\s*(\[(\d+)\] .+ \(([0-9a-fA-F-]{36})\): .+)$", RegexOptions.Multiline)
+			.ToArray();
+		Match granteeRow = rows.FirstOrDefault(row => string.Equals(row.Groups[3].Value, grantee,
+			StringComparison.OrdinalIgnoreCase));
+		if (granteeRow is null) {
+			return Array.Empty<string>();
+		}
+		int position = int.Parse(granteeRow.Groups[2].Value);
+		return rows.Where(row => int.Parse(row.Groups[2].Value) > position)
+			.Select(row => row.Groups[1].Value.Trim())
+			.ToArray();
 	}
 
 	[Test]

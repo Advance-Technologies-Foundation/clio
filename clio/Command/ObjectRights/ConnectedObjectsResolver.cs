@@ -32,7 +32,12 @@ public interface IConnectedObjectsResolver {
 	/// and are read only when named as the root. A failed schema read is reported in
 	/// <see cref="ConnectedObjectsResolution.EnumerationError"/> and never throws.
 	/// </summary>
-	ConnectedObjectsResolution Resolve(string rootSchemaName, bool includeConnected);
+	/// <param name="rootSchemaName">The normalized name of the object the caller named.</param>
+	/// <param name="includeConnected">Also enumerate the object's own lookup objects.</param>
+	/// <param name="readTimeoutMilliseconds">The timeout of the schema read; <see langword="null"/> leaves it unbounded.
+	/// The caller passes its own request timeout, so the enumeration honours it like every other read.</param>
+	/// <returns>The objects to read, the security and system objects left out, and any enumeration failure.</returns>
+	ConnectedObjectsResolution Resolve(string rootSchemaName, bool includeConnected, int? readTimeoutMilliseconds = null);
 }
 
 /// <inheritdoc />
@@ -44,20 +49,24 @@ public class ConnectedObjectsResolver : IConnectedObjectsResolver {
 		_columnManager = columnManager;
 	}
 
-	public ConnectedObjectsResolution Resolve(string rootSchemaName, bool includeConnected) {
+	public ConnectedObjectsResolution Resolve(string rootSchemaName, bool includeConnected,
+		int? readTimeoutMilliseconds = null) {
 		List<string> objects = new() { rootSchemaName };
 		if (!includeConnected) {
 			return new ConnectedObjectsResolution(objects, Array.Empty<string>());
 		}
 		EntitySchemaPropertiesInfo schema;
 		// Only the service call is guarded: a failure in the code that works on its result is a bug, not a service failure.
-		// The column manager rethrows its transport and parse faults — and a schema it cannot find — as
-		// EntitySchemaDesignerException, so that is an enumeration failure too: the root is still read on its own.
+		// The column manager rethrows some faults — a bare transport or parse fault, a schema it cannot find — as
+		// EntitySchemaDesignerException, and lets the rest through as they are (the client's AggregateException, a login
+		// rejection). Either way the connected set is unknown: an enumeration failure, and the root is still read on its own.
 		try {
-			schema = _columnManager.GetSchemaProperties(new GetEntitySchemaPropertiesOptions { SchemaName = rootSchemaName });
+			schema = _columnManager.GetSchemaProperties(new GetEntitySchemaPropertiesOptions {
+				SchemaName = rootSchemaName, RuntimeReadTimeoutMilliseconds = readTimeoutMilliseconds
+			});
 		}
 		catch (Exception ex) when (ex is EntitySchemaDesignerException || ObjectRightsSupport.IsServiceFailure(ex)) {
-			return new ConnectedObjectsResolution(objects, Array.Empty<string>(), ObjectRightsSupport.DisplayError(ex));
+			return new ConnectedObjectsResolution(objects, Array.Empty<string>(), ObjectRightsSupport.DisplayFailure(ex));
 		}
 		// A referenced name is normalized like a caller's name before the security gate sees it: the gate matches the
 		// name as a string, while SQL Server ignores trailing spaces and would still find the table. A name that is not

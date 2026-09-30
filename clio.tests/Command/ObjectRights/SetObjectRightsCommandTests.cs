@@ -56,7 +56,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		_writer = Substitute.For<IObjectRightsWriter>();
 		_saved = null;
 		_writer.Save(Arg.Any<ObjectRightsSnapshot>(), Arg.Any<ObjectRightsState>(), Arg.Any<CreatioRequestOptions>())
-			.Returns(call => { _saved = (ObjectRightsState)call[1]; return null; });
+			.Returns(call => { _saved = (ObjectRightsState)call[1]; return ObjectRightsSaveResult.Saved; });
 		_granteeLookup = Substitute.For<IGranteeLookup>();
 		_granteeLookup.ResolveGranteeName(Arg.Any<Guid>(), Arg.Any<CreatioRequestOptions>()).Returns("Grantee");
 		_console = Substitute.For<IInteractiveConsole>();
@@ -231,6 +231,27 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		ErrorContains("is not administered by operation permissions", because: "the refusal says why");
 		ErrorContains("then revoke from that row what employees must not have",
 			because: "an enable alone keeps every operation for All employees");
+		NothingSaved();
+	}
+
+	[Test]
+	[Description("A revoke-and-disable on an object that is off, whose grantee row still holds the operation, is refused with the switch named first — the switch is already OFF, on a retry the earlier call turned it off — and without the advice to turn operation permissions on, which would undo that call.")]
+	public void Execute_ShouldSayTheSwitchIsAlreadyOff_WhenARevokeAndDisableIsRefusedOnAnObjectThatIsOff() {
+		// Arrange
+		ObjectIs(Info(false, Row(AllEmployees, 0, "RCED")));
+
+		// Act
+		int exitCode = _command.Execute(Options("read", o => {
+			o.Grantee = AllEmployees.ToString();
+			o.Revoke = true;
+			o.DisableOperationPermissions = true;
+		}));
+
+		// Assert
+		exitCode.Should().Be(1, because: "a row of an object that is off is not changed");
+		ErrorContains("are already OFF", because: "the state the call asks for is named first");
+		_errors.Should().NotContain(m => m.Contains("first turn operation permissions on"),
+			because: "turning them back on would undo the disable the caller asked for");
 		NothingSaved();
 	}
 
@@ -434,7 +455,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		// Arrange
 		ObjectIs(Info(true, Row(AllEmployees, 0, "RCED")));
 		_writer.Save(Arg.Any<ObjectRightsSnapshot>(), Arg.Any<ObjectRightsState>(), Arg.Any<CreatioRequestOptions>())
-			.Returns("no rights to save");
+			.Returns(new ObjectRightsSaveResult("no rights to save"));
 
 		// Act
 		int exitCode = _command.Execute(Options("read,create,edit"));
@@ -451,7 +472,10 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		// Arrange
 		ObjectIs(Info(true, Row(AllEmployees, 0, "RCED")));
 		_writer.Save(Arg.Any<ObjectRightsSnapshot>(), Arg.Any<ObjectRightsState>(), Arg.Any<CreatioRequestOptions>())
-			.Returns(call => { _saved = (ObjectRightsState)call[1]; return "the request timed out"; });
+			.Returns(call => {
+				_saved = (ObjectRightsState)call[1];
+				return new ObjectRightsSaveResult("the request timed out", TimedOut: true);
+			});
 
 		// Act
 		int exitCode = _command.Execute(Options("read"));
@@ -470,7 +494,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		ObjectIs(Info(true, Row(AllEmployees, 0, "RCED")),
 			new ObjectRightsInfo(true, "UsrFoo", null, false, Array.Empty<RoleOperationRights>(), ReadError: "timeout"));
 		_writer.Save(Arg.Any<ObjectRightsSnapshot>(), Arg.Any<ObjectRightsState>(), Arg.Any<CreatioRequestOptions>())
-			.Returns("the request timed out");
+			.Returns(new ObjectRightsSaveResult("the request timed out", TimedOut: true));
 
 		// Act
 		int exitCode = _command.Execute(Options("read"));
@@ -478,6 +502,45 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		// Assert
 		exitCode.Should().Be(1, because: "nothing shows that the change landed");
 		ErrorContains("reading it back failed too (timeout)", because: "both failures are named");
+		ErrorContains("may still be applied", because: "a save that did not answer in time can still land");
+	}
+
+	[Test]
+	[Description("A save that did not answer in time and whose read-back does not show the plan fails, but says the change may still be applied and asks to re-read before retrying or reporting a failure: the save can land after the read-back.")]
+	public void Execute_ShouldSayTheChangeMayStillLand_WhenTheSaveTimedOutAndTheReadBackShowsTheOldState() {
+		// Arrange
+		ObjectRightsInfo before = Info(true, Row(AllEmployees, 0, "RCED"));
+		ObjectIs(before, readBack: before);
+		_writer.Save(Arg.Any<ObjectRightsSnapshot>(), Arg.Any<ObjectRightsState>(), Arg.Any<CreatioRequestOptions>())
+			.Returns(new ObjectRightsSaveResult("A task was canceled.", TimedOut: true));
+
+		// Act
+		int exitCode = _command.Execute(Options("read"));
+
+		// Assert
+		exitCode.Should().Be(1, because: "nothing shows that the change landed yet");
+		ErrorContains("the save did not answer in time (A task was canceled.) and may still be applied",
+			because: "a hang is not reported as a change that did not happen");
+		ErrorContains("Re-read the object with get-object-rights before retrying or reporting a failure",
+			because: "the operator must look again before telling anyone the grant failed");
+	}
+
+	[Test]
+	[Description("A save the service refused, rather than one that hung, fails without the may-still-land wording.")]
+	public void Execute_ShouldNotSayTheChangeMayStillLand_WhenTheSaveWasRefused() {
+		// Arrange
+		ObjectRightsInfo before = Info(true, Row(AllEmployees, 0, "RCED"));
+		ObjectIs(before, readBack: before);
+		_writer.Save(Arg.Any<ObjectRightsSnapshot>(), Arg.Any<ObjectRightsState>(), Arg.Any<CreatioRequestOptions>())
+			.Returns(new ObjectRightsSaveResult("no rights to save"));
+
+		// Act
+		int exitCode = _command.Execute(Options("read"));
+
+		// Assert
+		exitCode.Should().Be(1, because: "a refused save is never reported as done");
+		_errors.Should().NotContain(m => m.Contains("may still be applied"),
+			because: "a save the service answered will not land later");
 	}
 
 	[Test]
@@ -656,7 +719,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		ObjectIs(Info(true, Row(AllEmployees, 0, "RCED")),
 			readBack: Info(true, Row(AllEmployees, 0, "RCED"), Row(Grantee, 1, "R"), someone));
 		_writer.Save(Arg.Any<ObjectRightsSnapshot>(), Arg.Any<ObjectRightsState>(), Arg.Any<CreatioRequestOptions>())
-			.Returns("the request timed out");
+			.Returns(new ObjectRightsSaveResult("the request timed out", TimedOut: true));
 
 		// Act
 		int exitCode = _command.Execute(Options("read"));

@@ -39,8 +39,9 @@ public interface IObjectRightsWriter {
 	/// <param name="snapshot">The object as it was read.</param>
 	/// <param name="after">The planned state.</param>
 	/// <param name="requestOptions">Timeout and retry settings.</param>
-	/// <returns><see langword="null"/> on success, otherwise why the save failed or was not sent.</returns>
-	string Save(ObjectRightsSnapshot snapshot, ObjectRightsState after, CreatioRequestOptions requestOptions);
+	/// <returns><see cref="ObjectRightsSaveResult.Saved"/> on success, otherwise why the save failed or was not sent, and
+	/// whether it failed on a hang (the save may then still land).</returns>
+	ObjectRightsSaveResult Save(ObjectRightsSnapshot snapshot, ObjectRightsState after, CreatioRequestOptions requestOptions);
 }
 
 /// <summary>Resolves a SysAdminUnit (role or user) id to its name, to confirm a grantee exists before a write.</summary>
@@ -92,7 +93,8 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 	}
 
 	/// <inheritdoc />
-	public string Save(ObjectRightsSnapshot snapshot, ObjectRightsState after, CreatioRequestOptions requestOptions) {
+	public ObjectRightsSaveResult Save(ObjectRightsSnapshot snapshot, ObjectRightsState after,
+		CreatioRequestOptions requestOptions) {
 		ArgumentNullException.ThrowIfNull(snapshot);
 		ArgumentNullException.ThrowIfNull(after);
 		JsonObject payload = snapshot.Node.DeepClone().AsObject();
@@ -102,7 +104,7 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 		}
 		string conflict = ApplyPlannedRows(rows, after.Roles);
 		if (conflict is not null) {
-			return conflict;
+			return new ObjectRightsSaveResult(conflict);
 		}
 		payload[AdministratedByOperationsField] = after.AdministratedByOperations;
 		// Mirror the platform client: only the collection that changed (operation rights) is sent; the record,
@@ -120,11 +122,12 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 				new JsonObject { ["administratedObject"] = payload },
 				requestOptions);
 			return response is { Success: true }
-				? null
-				: ServiceMessage(response?.ErrorInfo?.Message, "SaveAdministratedObject reported failure.");
+				? ObjectRightsSaveResult.Saved
+				: new ObjectRightsSaveResult(ServiceMessage(response?.ErrorInfo?.Message,
+					"SaveAdministratedObject reported failure."));
 		}
 		catch (Exception ex) when (ObjectRightsSupport.IsServiceFailure(ex)) {
-			return ObjectRightsSupport.DisplayError(ex);
+			return new ObjectRightsSaveResult(ObjectRightsSupport.DisplayFailure(ex), ObjectRightsSupport.IsTimeout(ex));
 		}
 	}
 
@@ -154,7 +157,7 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 			candidates = ResolveEntitySchemaUIds(schemaName, requestOptions);
 		}
 		catch (Exception ex) when (ObjectRightsSupport.IsServiceFailure(ex)) {
-			return (null, ObjectRightsSupport.DisplayError(ex), ObjectRightsSupport.IsTimeout(ex));
+			return (null, ObjectRightsSupport.DisplayFailure(ex), ObjectRightsSupport.IsTimeout(ex));
 		}
 		if (candidates.Count == 0) {
 			return (null, null, false);
@@ -167,7 +170,8 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 			if (timedOut) {
 				// A hang is not an answer from a wrong layer: the next candidate would only wait as long again. The error
 				// names the hang, so a listing that stops on it does not read as stopping on the earlier fault.
-				return (null, firstError is null ? error : $"{firstError}; then {error}", true);
+				return (null, firstError is null ? error : ObjectRightsSupport.DisplayError($"{firstError}; then {error}"),
+					true);
 			}
 			firstError ??= error;
 		}
@@ -192,7 +196,7 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 				requestOptions);
 		}
 		catch (Exception ex) when (ObjectRightsSupport.IsServiceFailure(ex)) {
-			error = ObjectRightsSupport.DisplayError(ex);
+			error = ObjectRightsSupport.DisplayFailure(ex);
 			timedOut = ObjectRightsSupport.IsTimeout(ex);
 			return false;
 		}

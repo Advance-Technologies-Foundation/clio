@@ -100,18 +100,18 @@ public class ObjectRightsReadBackVerifierTests {
 		ObjectRightsPlan plan = PlanOf(before, planned);
 
 		// Act
-		ObjectRightsReadBackComparison readBack = _verifier.Compare(plan, Grantee, actual);
+		ObjectRightsReadBackComparison comparison = _verifier.Compare(plan, Grantee, actual);
 
 		// Assert
 		if (expectedCritical is null) {
-			readBack.Critical.Should().BeEmpty(because: "the read-back shows everything the call claims");
+			comparison.Critical.Should().BeEmpty(because: "the read-back shows everything the call claims");
 		} else {
-			readBack.Critical.Should().Equal(new[] { expectedCritical }, because: "the call's own change did not land");
+			comparison.Critical.Should().Equal(new[] { expectedCritical }, because: "the call's own change did not land");
 		}
 		if (expectedDifference is null) {
-			readBack.Differences.Should().BeEmpty(because: "no other row differs from the plan");
+			comparison.Differences.Should().BeEmpty(because: "no other row differs from the plan");
 		} else {
-			readBack.Differences.Should().Equal(new[] { expectedDifference },
+			comparison.Differences.Should().Equal(new[] { expectedDifference },
 				because: "a row the call does not write is reported, not failed");
 		}
 	}

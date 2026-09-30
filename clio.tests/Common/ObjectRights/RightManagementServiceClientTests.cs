@@ -248,7 +248,7 @@ public class RightManagementServiceClientTests {
 
 		// Act
 		ObjectRightsInfo info = Read();
-		string error = _client.Save(info.Snapshot, info.State, new CreatioRequestOptions());
+		string error = _client.Save(info.Snapshot, info.State, new CreatioRequestOptions()).Error;
 
 		// Assert
 		info.ReadError.Should().BeNull(because: "the second candidate answered");
@@ -352,17 +352,25 @@ public class RightManagementServiceClientTests {
 		bodies[0].Should().Contain(BaseUId, because: "only the real candidate is probed");
 	}
 
-	[Test]
-	[Description("A SysSchema SelectQuery that throws is reported as a read error, not as an escaping exception.")]
-	public void GetObjectRights_ShouldReportError_WhenSelectQueryThrows() {
+	private static IEnumerable<TestCaseData> SelectFailures() {
+		yield return new TestCaseData(new InvalidOperationException("select failed"), false)
+			.SetName("GetObjectRights_ShouldReportError_WhenSelectQueryThrows");
+		yield return new TestCaseData(new AggregateException(new TaskCanceledException("select failed")), true)
+			.SetName("GetObjectRights_ShouldReportATimeout_WhenTheSelectQueryHangs");
+	}
+
+	[TestCaseSource(nameof(SelectFailures))]
+	[Description("A SysSchema SelectQuery that throws is reported as a read error, not as an escaping exception — marked as timed out when the lookup hung, so a caller reading several objects stops.")]
+	public void GetObjectRights_ShouldReportError_WhenTheSelectQueryFails(Exception failure, bool timedOut) {
 		// Arrange
-		Post(SelectUrl).Returns(_ => throw new InvalidOperationException("select failed"));
+		Post(SelectUrl).Returns(_ => throw failure);
 
 		// Act
 		ObjectRightsInfo info = Read();
 
 		// Assert
-		info.ReadError.Should().Contain("select failed", because: "the resolution failure is surfaced");
+		info.ReadError.Should().Be("select failed", because: "the resolution failure is surfaced by its own text");
+		info.TimedOut.Should().Be(timedOut, because: "only a hang stops a caller that reads several objects");
 	}
 
 	[Test]
@@ -405,14 +413,19 @@ public class RightManagementServiceClientTests {
 
 		// Act
 		ObjectRightsInfo info = Read();
-		string saveError = _client.Save(read.Snapshot, read.State, new CreatioRequestOptions());
+		ObjectRightsSaveResult save = _client.Save(read.Snapshot, read.State, new CreatioRequestOptions());
 
 		// Assert
 		info.ReadError.Should().NotBeNull(because: "a service failure is reported on the object it happened to");
 		info.ReadError.Should().NotContain("One or more errors occurred",
 			because: "a wrapper around one fault is reported by that fault");
 		info.TimedOut.Should().Be(timedOut, because: "only a hang stops a caller that reads several objects");
-		saveError.Should().NotBeNullOrEmpty(because: "a failed save is reported, never taken for success");
+		save.Error.Should().NotBeNullOrEmpty(because: "a failed save is reported, never taken for success");
+		save.Error.Should().NotContain("One or more errors occurred",
+			because: "a wrapper around one fault is reported by that fault");
+		save.Error.Should().Contain(failure is AggregateException aggregate ? aggregate.InnerException!.Message : failure.Message,
+			because: "the fault's own text is what the operator needs");
+		save.TimedOut.Should().Be(timedOut, because: "a save that hung may still land, and the caller says so");
 	}
 
 	[Test]
@@ -461,7 +474,7 @@ public class RightManagementServiceClientTests {
 		});
 
 		// Act
-		string error = _client.Save(read.Snapshot, after, new CreatioRequestOptions());
+		string error = _client.Save(read.Snapshot, after, new CreatioRequestOptions()).Error;
 
 		// Assert
 		error.Should().BeNull(because: "the service acknowledged the save");
@@ -564,7 +577,7 @@ public class RightManagementServiceClientTests {
 		Post(SaveUrl).Returns("{\"success\":false,\"errorInfo\":{\"message\":\"no rights to save\"}}");
 
 		// Act
-		string error = _client.Save(read.Snapshot, read.State, new CreatioRequestOptions());
+		string error = _client.Save(read.Snapshot, read.State, new CreatioRequestOptions()).Error;
 
 		// Assert
 		error.Should().Contain("no rights to save", because: "a failed save is reported with the service's reason");
@@ -581,7 +594,7 @@ public class RightManagementServiceClientTests {
 		Post(GetUrl).Returns(failure);
 
 		// Act
-		string saveError = _client.Save(read.Snapshot, read.State, new CreatioRequestOptions());
+		string saveError = _client.Save(read.Snapshot, read.State, new CreatioRequestOptions()).Error;
 		ObjectRightsInfo reread = Read();
 
 		// Assert
@@ -621,7 +634,7 @@ public class RightManagementServiceClientTests {
 			.ToArray());
 
 		// Act
-		string error = _client.Save(read.Snapshot, after, new CreatioRequestOptions());
+		string error = _client.Save(read.Snapshot, after, new CreatioRequestOptions()).Error;
 
 		// Assert
 		error.Should().BeNull(because: "the service acknowledged the save");
@@ -650,7 +663,7 @@ public class RightManagementServiceClientTests {
 			.ToArray());
 
 		// Act
-		string error = _client.Save(read.Snapshot, after, new CreatioRequestOptions());
+		string error = _client.Save(read.Snapshot, after, new CreatioRequestOptions()).Error;
 
 		// Assert
 		error.Should().BeNull(because: "the only changed row has one candidate");
@@ -706,7 +719,7 @@ public class RightManagementServiceClientTests {
 			.ToArray());
 
 		// Act
-		string error = _client.Save(read.Snapshot, after, new CreatioRequestOptions());
+		string error = _client.Save(read.Snapshot, after, new CreatioRequestOptions()).Error;
 
 		// Assert
 		error.Should().BeNull(because: "the row is found again by its projected position");
@@ -752,7 +765,7 @@ public class RightManagementServiceClientTests {
 		});
 
 		// Act
-		string error = _client.Save(read.Snapshot, after, new CreatioRequestOptions());
+		string error = _client.Save(read.Snapshot, after, new CreatioRequestOptions()).Error;
 
 		// Assert
 		error.Should().Contain("ambiguous", because: "the writer does not guess which row a change belongs to");

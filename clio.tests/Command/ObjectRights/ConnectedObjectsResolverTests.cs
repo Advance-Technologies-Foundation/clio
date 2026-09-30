@@ -120,6 +120,21 @@ public class ConnectedObjectsResolverTests {
 			because: "the caller must know the connected set is unknown, not empty");
 	}
 
+	[Test]
+	[Description("The schema read honours the caller's request timeout instead of waiting without a bound.")]
+	public void Resolve_ShouldPassTheReadTimeout_WhenEnumeratingTheConnectedObjects() {
+		// Arrange
+		_columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>())
+			.Returns(Schema("UsrPortalSpike2", Column("UsrCategory", "own", "UsrPSCategory")));
+
+		// Act
+		_resolver.Resolve("UsrPortalSpike2", includeConnected: true, readTimeoutMilliseconds: 5_000);
+
+		// Assert
+		_columnManager.Received(1).GetSchemaProperties(Arg.Is<GetEntitySchemaPropertiesOptions>(options =>
+			options.RuntimeReadTimeoutMilliseconds == 5_000));
+	}
+
 	[TestCase("SysPackageSchemaData")]
 	[TestCase("SysLicPackage")]
 	[TestCase("SysProcessData")]

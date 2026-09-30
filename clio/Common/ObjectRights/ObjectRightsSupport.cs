@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Net.Sockets;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -55,13 +56,15 @@ public static class ObjectRightsSupport {
 		TextUtilities.SanitizeForDisplay(SensitiveErrorTextRedactor.Redact(message ?? string.Empty), MaxErrorLength);
 
 	/// <summary>
-	/// Renders an exception a service call threw, like <see cref="DisplayError(string)"/>. Creatio's client runs the
-	/// request through <c>Task.Result</c>, so a fault arrives wrapped in an <see cref="AggregateException"/> whose own
-	/// message ("One or more errors occurred.") names nothing; a wrapper around ONE fault is rendered by that fault.
+	/// Renders an exception a service call threw, like <see cref="DisplayError"/>. Creatio's client runs the request
+	/// through <c>Task.Result</c>, so a fault arrives wrapped in an <see cref="AggregateException"/>, whose message puts
+	/// a generic "One or more errors occurred." before the fault's own; a wrapper around ONE fault is rendered by that
+	/// fault alone. It is not <c>GetReadableMessageException</c>: that renders the command's top-level error line, while
+	/// this renders a fault inside a result line, so it stays on one line and capped.
 	/// </summary>
 	/// <param name="exception">The exception a service call threw.</param>
 	/// <returns>The display-safe message.</returns>
-	public static string DisplayError(Exception exception) =>
+	public static string DisplayFailure(Exception exception) =>
 		DisplayError(exception is AggregateException aggregate
 			&& aggregate.Flatten().InnerExceptions is { Count: 1 } inner
 				? inner[0].Message
@@ -103,7 +106,7 @@ public static class ObjectRightsSupport {
 	/// <param name="operations">The operations.</param>
 	/// <returns>The operations text, in the same spelling as a row's.</returns>
 	public static string FormatOperations(IEnumerable<ObjectOperation> operations) =>
-		string.Join("/", operations.Select(operation => operation.ToString().ToLowerInvariant()));
+		string.Join("/", operations.Select(ObjectOperationNames.Of));
 
 	/// <summary>The state of the "Use operation permissions" switch: <c>ON</c> or <c>OFF</c>.</summary>
 	/// <param name="state">The object's state.</param>
@@ -147,7 +150,8 @@ public static class ObjectRightsSupport {
 	/// TimeoutException or a cancellation (an HTTP timeout surfaces as TaskCanceledException), a WebException with the
 	/// Timeout status (how the login step reports its timeout), or an <see cref="AggregateException"/> that carries one
 	/// of them. Probing the next candidate, or reading the next object, after a timeout only multiplies the wait, so
-	/// the probe loop and the connected listing stop on it.
+	/// the probe loop and the connected listing stop on it. Meaningful only for an exception
+	/// <see cref="IsServiceFailure"/> accepts.
 	/// </summary>
 	/// <param name="exception">The exception a service call threw.</param>
 	/// <returns><see langword="true"/> for a timeout.</returns>
@@ -156,11 +160,24 @@ public static class ObjectRightsSupport {
 			? aggregate.Flatten().InnerExceptions.Any(IsSingleTimeout)
 			: IsSingleTimeout(exception);
 
+	// WebException is named although it derives from InvalidOperationException: the transport faults are meant here, not
+	// inherited by accident.
 	private static bool IsSingleServiceFailure(Exception exception) =>
-		exception is InvalidOperationException or HttpRequestException or TimeoutException or IOException
+		exception is WebException or InvalidOperationException or HttpRequestException or TimeoutException or IOException
 			or JsonException or UnauthorizedAccessException or ResponseTooLargeException or OperationCanceledException;
 
 	private static bool IsSingleTimeout(Exception exception) =>
-		exception is TimeoutException or OperationCanceledException
-			or WebException { Status: WebExceptionStatus.Timeout };
+		exception is TimeoutException or OperationCanceledException or WebException { Status: WebExceptionStatus.Timeout }
+		|| IsSocketTimeout(exception);
+
+	// A TCP connect or read that times out (an unreachable stand, about 21 s on Windows) surfaces as a SocketException
+	// inside the transport fault.
+	private static bool IsSocketTimeout(Exception exception) {
+		for (Exception current = exception.InnerException; current is not null; current = current.InnerException) {
+			if (current is SocketException { SocketErrorCode: SocketError.TimedOut }) {
+				return true;
+			}
+		}
+		return false;
+	}
 }

@@ -185,8 +185,8 @@ public sealed class ObjectRightsPlanner : IObjectRightsPlanner {
 	private static ObjectRightsPlan PlanRevoke(ObjectRightsState before, List<RoleOperationRights> rows,
 		RoleOperationRights granteeRow, ObjectRightsChangeRequest request) {
 		// Not administered: company employees reach the object whatever its rows say, so the tool does not revoke on it.
-		// A repeated revoke-and-disable is the one call that finds the state it asks for already in place — the switch
-		// OFF and the grantee's row without the named operations — so it changes nothing instead of being refused.
+		// A revoke-and-disable that finds the state it asks for already in place — the switch OFF and the grantee's row
+		// without the named operations, typically on a retry — changes nothing instead of being refused.
 		if (!before.AdministratedByOperations) {
 			return request.DisableOperationPermissions && HoldsNoneOf(granteeRow, request.Operations)
 				? Unchanged(before)

@@ -220,9 +220,9 @@ report facts. The guidance explains what the facts mean and decides what to do.
     with `disable-operation-permissions` that finds the switch already off and the grantee's row without the named
     operations (typically a retry) is the exception: the state it asks for is in place, so it changes nothing, and
     the result says the object is available to all internal users. The rule is on state, so a first such call on an
-    object that was never administered is no change too. A lone `All employees` row with every operation on an
-    object that is off cannot be told from the synthesized one, so a retry of a revoke-and-disable from All employees
-    that left no stored rows is refused;
+    object that was never administered is no change too. The tool does not tell a lone stored `All employees` row
+    with every operation on an object that is off from the synthesized one, so a retry of a revoke-and-disable from
+    All employees that left no stored rows is refused — the refusal says the switch is already off;
 - never removes a row and never reorders rows;
 - reports facts:
   - rows in priority order, with their positions (`get`; with `--include-connected`, also for the object's own

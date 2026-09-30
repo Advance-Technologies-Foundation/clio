@@ -13,6 +13,21 @@ public enum ObjectOperation {
 	Delete
 }
 
+/// <summary>The one spelling of each operation in the output, so a row and a request never read differently.</summary>
+public static class ObjectOperationNames {
+
+	/// <summary>The name of <paramref name="operation"/>: read, create, edit or delete.</summary>
+	/// <param name="operation">The operation.</param>
+	/// <returns>The operation's name.</returns>
+	public static string Of(ObjectOperation operation) => operation switch {
+		ObjectOperation.Read => "read",
+		ObjectOperation.Create => "create",
+		ObjectOperation.Edit => "edit",
+		ObjectOperation.Delete => "delete",
+		_ => throw new ArgumentOutOfRangeException(nameof(operation), operation, null)
+	};
+}
+
 /// <summary>
 /// One row of an object's operation-permissions grid: a role's (user or organizational/functional role) operations at
 /// a priority <paramref name="Position"/>. Position 0 is the highest priority. A user who is in several roles gets the
@@ -72,8 +87,14 @@ public sealed record RoleOperationRights(
 	/// <summary>The operations the row grants, in grid order: read, create, edit, delete.</summary>
 	/// <returns>The operation names.</returns>
 	public IReadOnlyList<string> OperationNames() =>
-		new[] { CanRead ? "read" : null, CanCreate ? "create" : null, CanEdit ? "edit" : null, CanDelete ? "delete" : null }
-			.Where(op => op is not null)
+		new[] {
+				CanRead ? ObjectOperation.Read : (ObjectOperation?)null,
+				CanCreate ? ObjectOperation.Create : null,
+				CanEdit ? ObjectOperation.Edit : null,
+				CanDelete ? ObjectOperation.Delete : null
+			}
+			.Where(operation => operation is not null)
+			.Select(operation => ObjectOperationNames.Of(operation.Value))
 			.ToArray();
 }
 
@@ -85,10 +106,7 @@ public sealed record RoleOperationRights(
 /// <param name="Roles">The rows, in priority order.</param>
 public sealed record ObjectRightsState(bool AdministratedByOperations, IReadOnlyList<RoleOperationRights> Roles) {
 
-	/// <summary>
-	/// Whether one of the rows is for "All employees". Turning operation permissions on for an object whose rows have
-	/// none adds one with every operation, so internal users keep their access.
-	/// </summary>
+	/// <summary>Whether one of the rows is for "All employees", the role every internal user is in.</summary>
 	public bool HasAllEmployeesRow => Roles.Any(row => row.GranteeId == SysAdminUnitIds.AllEmployees);
 
 	/// <summary>Whether <paramref name="other"/> is the same state: the same switch and the same rows at the same positions.</summary>
@@ -174,9 +192,30 @@ public sealed record ObjectRightsInfo(
 
 	/// <summary>The result of a read that failed: the object is taken to exist, and nothing about its rows is known.</summary>
 	/// <param name="name">The object (entity schema) name that was read.</param>
-	/// <param name="readError">Why the read failed, already safe to print.</param>
+	/// <param name="readError">Why the read failed, already safe to print. Required: without it the result would read as
+	/// an object that is not administered, which a failed read must never be reported as.</param>
 	/// <param name="timedOut">The read failed because the service did not answer in time.</param>
 	/// <returns>The failed read.</returns>
-	public static ObjectRightsInfo ReadFailed(string name, string readError, bool timedOut = false) =>
-		new(true, name, null, false, Array.Empty<RoleOperationRights>(), ReadError: readError, TimedOut: timedOut);
+	/// <exception cref="ArgumentException"><paramref name="readError"/> is null or blank.</exception>
+	public static ObjectRightsInfo ReadFailed(string name, string readError, bool timedOut = false) {
+		ArgumentException.ThrowIfNullOrWhiteSpace(readError);
+		return new ObjectRightsInfo(true, name, null, false, Array.Empty<RoleOperationRights>(), ReadError: readError,
+			TimedOut: timedOut);
+	}
+}
+
+/// <summary>
+/// The outcome of a save: why it failed — <see langword="null"/> when the service reported it done — and whether it
+/// failed on a hang, after which the save may still land.
+/// </summary>
+/// <param name="Error">Why the save failed or was not sent, already safe to print; <see langword="null"/> on success.</param>
+/// <param name="TimedOut">The service did not answer in time: the save may still be applied after the caller reads
+/// the object back.</param>
+public sealed record ObjectRightsSaveResult(string Error, bool TimedOut = false) {
+
+	/// <summary>A save the service reported as done.</summary>
+	public static ObjectRightsSaveResult Saved { get; } = new((string)null);
+
+	/// <summary>Whether the service reported the save as done.</summary>
+	public bool Succeeded => Error is null;
 }

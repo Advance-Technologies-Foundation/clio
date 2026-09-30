@@ -123,11 +123,11 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 			case ConfirmDecision.Refused:
 				return 1;
 		}
-		string saveError = _writer.Save(before.Snapshot, plan.After, requestOptions);
+		ObjectRightsSaveResult save = _writer.Save(before.Snapshot, plan.After, requestOptions);
 		ObjectRightsInfo actual = _reader.GetObjectRights(schemaName, requestOptions);
-		return saveError is null
+		return save.Succeeded
 			? ReportSaved(change, facts, actual)
-			: ReportFailedSave(change, facts, saveError, actual);
+			: ReportFailedSave(change, facts, save, actual);
 	}
 
 	// Everything the output of one call is rendered from.
@@ -194,7 +194,7 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 		}
 		catch (Exception ex) when (ObjectRightsSupport.IsServiceFailure(ex)) {
 			granteeName = null;
-			_logger.WriteError($"Error: could not check grantee {grantee}: {ObjectRightsSupport.DisplayError(ex)}");
+			_logger.WriteError($"Error: could not check grantee {grantee}: {ObjectRightsSupport.DisplayFailure(ex)}");
 			return false;
 		}
 		if (granteeName is null) {
@@ -232,6 +232,11 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 					? "; an 'All employees' row with read/create/edit/delete would be added below them"
 					: "")
 				+ ". Re-run with --enable-operation-permissions if that is intended.",
+			ObjectRightsRefusal.RevokeOnNotAdministered when change.Request.DisableOperationPermissions =>
+				$"operation permissions on '{schema}' are already OFF — the switch this call would turn off is off; on a "
+				+ "retry, the earlier call turned it off. While it is off company employees reach the object whatever its "
+				+ "rows say (only technical users follow the rows), so the tool does not change a row of it: the revoke "
+				+ "itself is refused. Read the object with get-object-rights.",
 			ObjectRightsRefusal.RevokeOnNotAdministered =>
 				$"'{schema}' is not administered by operation permissions — company employees reach it whatever its rows "
 				+ "say (only technical users follow the rows while it is off), so the tool does not revoke on it. To limit "
@@ -255,7 +260,8 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 	private static string NoChangeReason(Change change) {
 		string rowReason = RowNoChangeReason(change);
 		return change.Request.DisableOperationPermissions && !change.Plan.Before.AdministratedByOperations
-			? $"operation permissions are already OFF — the object is available to all internal users — and {rowReason}"
+			? $"operation permissions are already OFF — the object is available to all internal users (only technical "
+				+ $"users follow the rows) — and {rowReason}"
 			: rowReason;
 	}
 
@@ -358,22 +364,31 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 	}
 
 	// A save that reported an error — a timeout, for example — may still have been committed, so the object is read
-	// back before the call is reported as failed.
-	private int ReportFailedSave(Change change, IReadOnlyList<string> facts, string saveError, ObjectRightsInfo actual) {
+	// back before the call is reported as failed. A save that did not answer in time can even land AFTER the read-back,
+	// so that failure says the change may still be applied instead of that it did not happen.
+	private int ReportFailedSave(Change change, IReadOnlyList<string> facts, ObjectRightsSaveResult save,
+		ObjectRightsInfo actual) {
 		string schema = change.SchemaName;
+		string failure = save.TimedOut
+			? $"the save did not answer in time ({save.Error}) and may still be applied"
+			: $"the save failed ({save.Error})";
+		string recheck = save.TimedOut
+			? " Re-read the object with get-object-rights before retrying or reporting a failure."
+			: " Read the object with get-object-rights before retrying.";
 		if (!IsReadBack(actual)) {
-			_logger.WriteError($"Error: '{schema}': the save failed ({saveError}), and reading it back failed too "
-				+ $"({ReadBackFailure(actual)}). Read the object with get-object-rights before retrying.");
+			_logger.WriteError($"Error: '{schema}': {failure}, and reading it back failed too "
+				+ $"({ReadBackFailure(actual)}).{recheck}");
 			return 1;
 		}
 		ObjectRightsReadBackComparison comparison =
 			_readBackVerifier.Compare(change.Plan, change.Request.Grantee, actual.State);
 		if (comparison.Critical.Count > 0) {
-			_logger.WriteError($"Error: '{schema}': the save failed ({saveError}). The object now: operation permissions "
-				+ $"{ObjectRightsSupport.FormatSwitch(actual.State)}; rows {ObjectRightsSupport.FormatRows(actual.State.Roles)}.");
+			_logger.WriteError($"Error: '{schema}': {failure}. The object now: operation permissions "
+				+ $"{ObjectRightsSupport.FormatSwitch(actual.State)}; rows "
+				+ $"{ObjectRightsSupport.FormatRows(actual.State.Roles)}.{(save.TimedOut ? recheck : "")}");
 			return 1;
 		}
-		_logger.WriteWarning($"'{schema}': the save reported an error ({saveError}), but the object read back "
+		_logger.WriteWarning($"'{schema}': the save reported an error ({save.Error}), but the object read back "
 			+ (comparison.Differences.Count == 0
 				? "matches the plan."
 				: "shows the switch and the rows this call writes as planned."));

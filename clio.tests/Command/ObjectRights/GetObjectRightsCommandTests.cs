@@ -38,7 +38,7 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 		_connectedObjects = Substitute.For<IConnectedObjectsResolver>();
 		_logger = Substitute.For<ILogger>();
 		// Default: no fan-out — the resolver returns just the root object.
-		_connectedObjects.Resolve(Arg.Any<string>(), Arg.Any<bool>())
+		_connectedObjects.Resolve(Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<int?>())
 			.Returns(callInfo => Resolution((string)callInfo[0]));
 		containerBuilder.AddTransient(_ => _rightsReader);
 		containerBuilder.AddTransient(_ => _connectedObjects);
@@ -86,7 +86,7 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 	[Description("With a grantee filter, reports exactly the operations that role holds on each object — facts only, no coverage verdict.")]
 	public void Execute_ShouldReportGranteeOperationsPerObjectWithoutVerdict_WhenIncludeConnectedIsSet() {
 		// Arrange
-		_connectedObjects.Resolve("UsrOrder", true).Returns(Resolution("UsrOrder", "UsrStatus"));
+		_connectedObjects.Resolve("UsrOrder", true, Arg.Any<int?>()).Returns(Resolution("UsrOrder", "UsrStatus"));
 		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>())
 			.Returns(Administered("UsrOrder", RoleRow(true, true, true, false)));
 		_rightsReader.GetObjectRights("UsrStatus", Arg.Any<CreatioRequestOptions>())
@@ -191,7 +191,7 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 	[Description("A connected object that cannot be read or is not found is reported with a warning; the run still succeeds because the root was read.")]
 	public void Execute_ShouldWarn_WhenConnectedObjectUnreadable(bool found) {
 		// Arrange
-		_connectedObjects.Resolve("UsrOrder", true).Returns(Resolution("UsrOrder", "UsrStatus"));
+		_connectedObjects.Resolve("UsrOrder", true, Arg.Any<int?>()).Returns(Resolution("UsrOrder", "UsrStatus"));
 		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>())
 			.Returns(Administered("UsrOrder", RoleRow(true, true, true, false)));
 		_rightsReader.GetObjectRights("UsrStatus", Arg.Any<CreatioRequestOptions>())
@@ -213,7 +213,7 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 	[Description("A failed connected-object enumeration is reported with a warning; the root is still read.")]
 	public void Execute_ShouldWarn_WhenConnectedEnumerationFails() {
 		// Arrange
-		_connectedObjects.Resolve("UsrOrder", true)
+		_connectedObjects.Resolve("UsrOrder", true, Arg.Any<int?>())
 			.Returns(new ConnectedObjectsResolution(new[] { "UsrOrder" }, Array.Empty<string>(), "schema read failed"));
 		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>())
 			.Returns(Administered("UsrOrder", RoleRow(true, true, true, false)));
@@ -231,7 +231,7 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 	[Description("A security/system lookup excluded from the connected set is named in a warning.")]
 	public void Execute_ShouldWarn_WhenConnectedObjectExcluded() {
 		// Arrange
-		_connectedObjects.Resolve("UsrOrder", true)
+		_connectedObjects.Resolve("UsrOrder", true, Arg.Any<int?>())
 			.Returns(new ConnectedObjectsResolution(new[] { "UsrOrder" }, new[] { "SysAdminUnit" }));
 		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>())
 			.Returns(Administered("UsrOrder", RoleRow(true, true, true, false)));
@@ -296,7 +296,7 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 	[Description("With a grantee, the command prints exactly the header and one fact line per object — nothing else, so no verdict can creep back in.")]
 	public void Execute_ShouldPrintExactlyTheFactLines_WhenGranteeIsGiven() {
 		// Arrange
-		_connectedObjects.Resolve("UsrOrder", true).Returns(Resolution("UsrOrder", "UsrStatus", "UsrOpen"));
+		_connectedObjects.Resolve("UsrOrder", true, Arg.Any<int?>()).Returns(Resolution("UsrOrder", "UsrStatus", "UsrOpen"));
 		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>())
 			.Returns(Administered("UsrOrder", RoleRow(true, true, true, false)));
 		_rightsReader.GetObjectRights("UsrStatus", Arg.Any<CreatioRequestOptions>())
@@ -402,7 +402,7 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 	[Description("A connected read that times out stops the listing: every further read against the same stand would most likely wait as long, so the remaining objects are named as not read instead of spending the whole read deadline.")]
 	public void Execute_ShouldStopReadingConnectedObjects_WhenAReadTimesOut() {
 		// Arrange
-		_connectedObjects.Resolve("UsrOrder", true).Returns(Resolution("UsrOrder", "UsrStatus", "UsrType"));
+		_connectedObjects.Resolve("UsrOrder", true, Arg.Any<int?>()).Returns(Resolution("UsrOrder", "UsrStatus", "UsrType"));
 		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>())
 			.Returns(Administered("UsrOrder", EmployeesRow(0)));
 		_rightsReader.GetObjectRights("UsrStatus", Arg.Any<CreatioRequestOptions>())
@@ -442,7 +442,7 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 	[Description("A read of the named object that times out fails the call and stops the listing: the connected objects are named as not read instead of waiting as long again.")]
 	public void Execute_ShouldFailAndStop_WhenTheRootReadTimesOut() {
 		// Arrange
-		_connectedObjects.Resolve("UsrOrder", true).Returns(Resolution("UsrOrder", "UsrStatus"));
+		_connectedObjects.Resolve("UsrOrder", true, Arg.Any<int?>()).Returns(Resolution("UsrOrder", "UsrStatus"));
 		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>())
 			.Returns(ObjectRightsInfo.ReadFailed("UsrOrder", "The request timed out.", timedOut: true));
 		GetObjectRightsOptions options = new() { EntitySchemaName = "UsrOrder", IncludeConnected = true };
@@ -462,7 +462,7 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 	[Description("A reader that throws a timeout the way Creatio's client does — wrapped in an AggregateException — stops the listing like one it reports in-band.")]
 	public void Execute_ShouldStopReadingConnectedObjects_WhenAWrappedTimeoutIsThrown() {
 		// Arrange
-		_connectedObjects.Resolve("UsrOrder", true).Returns(Resolution("UsrOrder", "UsrStatus", "UsrType"));
+		_connectedObjects.Resolve("UsrOrder", true, Arg.Any<int?>()).Returns(Resolution("UsrOrder", "UsrStatus", "UsrType"));
 		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>())
 			.Returns(Administered("UsrOrder", EmployeesRow(0)));
 		_rightsReader.GetObjectRights("UsrStatus", Arg.Any<CreatioRequestOptions>())
@@ -483,7 +483,7 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 	[Description("A connected read that fails with a fault the server answered does not stop the listing: the next object may well be readable.")]
 	public void Execute_ShouldReadTheNextObject_WhenAConnectedReadFailsWithoutATimeout() {
 		// Arrange
-		_connectedObjects.Resolve("UsrOrder", true).Returns(Resolution("UsrOrder", "UsrStatus", "UsrType"));
+		_connectedObjects.Resolve("UsrOrder", true, Arg.Any<int?>()).Returns(Resolution("UsrOrder", "UsrStatus", "UsrType"));
 		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>())
 			.Returns(Administered("UsrOrder", EmployeesRow(0)));
 		_rightsReader.GetObjectRights("UsrStatus", Arg.Any<CreatioRequestOptions>())
