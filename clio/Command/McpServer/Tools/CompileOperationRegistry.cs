@@ -32,7 +32,8 @@ public sealed record CompileOperationRecord(
 	DateTime StartedUtc,
 	DateTime? FinishedUtc,
 	int? ExitCode,
-	IReadOnlyList<string> MessageTail);
+	IReadOnlyList<string> MessageTail,
+	string ProcessName = null);
 
 /// <summary>
 /// Tracks in-flight and recently finished <c>compile-creatio</c> operations so the <c>compile-status</c>
@@ -49,8 +50,14 @@ public interface ICompileOperationRegistry {
 	/// <param name="tenantKey">The resolved per-tenant execution-lock key the operation runs under.</param>
 	/// <param name="environmentName">The target environment name, surfaced on status lookups.</param>
 	/// <param name="packageName">The single package compiled, or <see langword="null"/> for a full compilation.</param>
+	/// <param name="processName">
+	/// The business process whose package is compiled, for a <c>process-name</c> compile; its package is only
+	/// known once the server answers, so <paramref name="packageName"/> is <see langword="null"/> then too and
+	/// this is what tells the record apart from a full compilation.
+	/// </param>
 	/// <returns>The newly created running record.</returns>
-	CompileOperationRecord Begin(string tenantKey, string environmentName, string packageName);
+	CompileOperationRecord Begin(string tenantKey, string environmentName, string packageName,
+		string processName = null);
 
 	/// <summary>
 	/// Finalizes a tracked operation with its exit code and a capped, already-redacted message tail.
@@ -108,7 +115,8 @@ public sealed class CompileOperationRegistry : ICompileOperationRegistry {
 	}
 
 	/// <inheritdoc/>
-	public CompileOperationRecord Begin(string tenantKey, string environmentName, string packageName) {
+	public CompileOperationRecord Begin(string tenantKey, string environmentName, string packageName,
+		string processName = null) {
 		CompileOperationRecord record = new(
 			Guid.NewGuid().ToString("N"),
 			tenantKey,
@@ -118,7 +126,8 @@ public sealed class CompileOperationRegistry : ICompileOperationRegistry {
 			_utcNow(),
 			null,
 			null,
-			[]);
+			[],
+			processName);
 		_store.Add(tenantKey, record);
 		return record;
 	}
