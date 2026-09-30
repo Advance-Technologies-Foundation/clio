@@ -678,6 +678,20 @@ async function run({ github, context, core, configPath }) {
   await writeSummary(core, issueNumber, plan, { assigned: notified.assigned, mentioned: notified.mentioned, ...applied });
 }
 
+// Returns true when the label was missing and has been created.
+async function createIfMissing(github, core, repo, spec) {
+  try {
+    await github.rest.issues.getLabel({ ...repo, name: spec.name });
+    return false;
+  } catch (error) {
+    if (error.status !== 404) {
+      core.warning(`Could not read label "${spec.name}": ${error.message}`);
+      return false;
+    }
+    return ensureLabel(github, core, repo, spec);
+  }
+}
+
 /**
  * Creates every label the map declares (component labels and the triage label) that the repository
  * does not have yet, so an agent can pass `--label component:<id>` for a new component before
@@ -686,18 +700,10 @@ async function run({ github, context, core, configPath }) {
 async function syncLabels({ github, context, core, configPath }) {
   const config = loadConfig(configPath);
   const specs = [config.triageLabel, ...config.components.filter(c => c.label).map(c => labelSpec(c.label, config))];
-  const created = [];
-  for (const spec of specs) {
-    try {
-      await github.rest.issues.getLabel({ ...context.repo, name: spec.name });
-    } catch (error) {
-      if (error.status !== 404) {
-        core.warning(`Could not read label "${spec.name}": ${error.message}`);
-        continue;
-      }
-      if (await ensureLabel(github, core, context.repo, spec)) created.push(spec.name);
-    }
-  }
+  // A few dozen independent reads, and creations only for the (usually zero) missing labels, so
+  // running them concurrently stays far below GitHub's rate limits.
+  const outcomes = await Promise.all(specs.map(spec => createIfMissing(github, core, context.repo, spec)));
+  const created = specs.filter((spec, index) => outcomes[index]).map(spec => spec.name);
   core.info(created.length > 0 ? `Created labels: ${created.join(', ')}` : 'All labels from the map already exist.');
   return created;
 }
@@ -707,12 +713,12 @@ async function syncLabels({ github, context, core, configPath }) {
 // `paths` entries: a directory prefix ending with "/", an exact file, or a pattern with "*"
 // (matches within one path segment). Returns how specific the match is (literal characters), or -1.
 function pathMatchScore(pattern, file) {
-  const pat = String(pattern).replace(/\\/g, '/');
-  const target = String(file).replace(/\\/g, '/').replace(/^\.\//, '');
+  const pat = String(pattern).replaceAll('\\', '/');
+  const target = String(file).replaceAll('\\', '/').replace(/^\.\//, '');
   if (pat.endsWith('/')) return target.startsWith(pat) ? pat.length : -1;
   if (!pat.includes('*')) return target === pat ? pat.length + 1 : -1;
-  const parts = pat.split('*').map(part => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&'));
-  return new RegExp('^' + parts.join('[^/]*') + '$').test(target) ? pat.replace(/\*/g, '').length : -1;
+  const parts = pat.split('*').map(part => part.replaceAll(/[.+?^${}()|[\]\\]/g, String.raw`\$&`));
+  return new RegExp('^' + parts.join('[^/]*') + '$').test(target) ? pat.replaceAll('*', '').length : -1;
 }
 
 /**

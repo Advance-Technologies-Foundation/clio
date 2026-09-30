@@ -24,7 +24,7 @@ function declaredToolNames(text) {
   const names = [];
   for (const match of text.matchAll(/\[McpServerTool\(\s*Name\s*=\s*([^,)\]]+)/g)) {
     const value = match[1].trim();
-    const name = value.startsWith('"') ? value.replace(/"/g, '') : constants.get(value.split('.').pop());
+    const name = value.startsWith('"') ? value.replaceAll('"', '') : constants.get(value.split('.').pop());
     if (name) names.push(name);
   }
   return names;
