@@ -26,7 +26,7 @@ Before/after bodies and a screenshot are retained in the local issue evidence di
 
 ```text
 dotnet test clio.tests/clio.tests.csproj --filter "TestCategory=Unit&Module=McpServer"
-5778 passed; 2 platform-specific tests skipped; 0 failed.
+5787 passed; 2 platform-specific tests skipped; 0 failed.
 
 dotnet test clio.mcp.e2e/clio.mcp.e2e.csproj -f net10.0 --no-build --filter "FullyQualifiedName~PageValidateToolE2ETests|FullyQualifiedName~When_HelperIsUnsafe"
 50 passed; 0 skipped; 0 failed. Explicit sandbox and destructive-test opt-in used.
@@ -38,3 +38,14 @@ now identify an MCP tool rather than a nonexistent standalone CLI verb.
 ClioRing compatibility reviewed, no Ring-consumed contract changed: searched
 `clio-ring/ClioRing.Ipc`, `clio-ring/ClioRing`, and
 `clio-ring/ClioRing.Desktop/actions.json` for the three affected page tool names.
+
+## Cleanup
+
+The supported Phase 3 uninstall completed for `clio-issue-1697`. Independent checks
+confirmed its registration, IIS site/application pool, deployment directory, and database
+(OID 5109024) are absent. All 40 other databases retained their original OIDs and names.
+The issue workspace, scenario, screenshot, before/after page bodies, and logs remain at
+`F:\Projects\Issue-Workspaces\issue-1697\evidence`. Shared template resources were preserved.
+
+Seven-perspective agentic review completed with no remaining findings. A bare `var`
+redeclaration of an AMD argument was corrected and covered with direct-call regression tests.
