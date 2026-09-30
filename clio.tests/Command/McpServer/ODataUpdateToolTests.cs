@@ -657,7 +657,7 @@ public sealed class ODataUpdateToolTests {
 			because: "the hint is appended to today's message rather than replacing it");
 		response.Error.Should().Contain(expectedIdentifiers,
 			because: "the validated identifiers are what the caller needs to find the lookup at fault");
-		response.Error.Should().Contain("a lookup Id sent does not exist in its referenced table",
+		response.Error.Should().Contain("a referenced record is missing",
 			because: "odata-update shares the keyed write path, so it states the same cause as odata-create");
 		response.Diagnostic!.SideEffect.Should().Be("unknown",
 			because: "the side-effect reporting of a server-reported failure is unchanged");

@@ -71,10 +71,19 @@ public sealed class ODataWriteForeignKeyHintE2ETests : McpContractFixtureBase {
 			TestContext.Out.WriteLine($"Measured odata-create row error: {row.Error}");
 			row.Error.Should().Contain(HintPrefix,
 				because: "the live FK wording must be one the extractor recognizes, otherwise the caller is back to the bare headline GH-1699 reported");
-			row.Error.Should().Contain("a lookup Id sent",
-				because: "the hint states that a lookup Id sent does not exist in its referenced table");
+			row.Error.Should().MatchRegex("a referenced record is missing|has no matching record",
+				because: "the hint describes the FK failure without assuming whether the caller or an event handler wrote the rejected row");
 			row.Error.Should().Contain("referenced table",
-				because: "the hint points the caller at the table the foreign key references");
+				because: "the hint names the referenced table when known and explicitly reports when it is unknown");
+			row.Error.Should().Contain("get-entity-schema-properties",
+				because: "the agent needs an actionable metadata inspection step when diagnosing the relationship");
+			row.Error.Should().Contain("follow retry-guidance",
+				because: "a more descriptive FK error must not override unknown write side effects");
+			if (string.Equals(settings.Sandbox.DatabaseProvider, "postgresql", StringComparison.OrdinalIgnoreCase)
+				&& !row.Error.Contains("a value in column", StringComparison.Ordinal)) {
+				row.Error.Should().Contain("does not identify the foreign-key column or referenced table",
+					because: "a PostgreSQL response without DETAIL must disclose the diagnostic limit rather than invent a field");
+			}
 			row.RecordCreated.Should().BeNull(
 				because: "the hint adds the cause only; a server-reported failure keeps its side effect unknown");
 			row.RetryGuidance.Should().NotBeNullOrWhiteSpace(

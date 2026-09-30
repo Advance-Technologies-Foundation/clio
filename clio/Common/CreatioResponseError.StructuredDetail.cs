@@ -102,14 +102,13 @@ internal static partial class CreatioResponseError {
 	}
 
 	/// <summary>
-	/// What every "lookup Id is missing" hint tells the caller to do. GH-1699 is the case it is written for:
-	/// the entity set an odata-read of a lookup returned was not the table the foreign key references, and
-	/// retrying with other rows of that entity set failed the same way.
+	/// Gives a diagnostic next step without assuming a mapping defect or that the rejected write was
+	/// the caller's row rather than a write performed by an entity event handler.
 	/// </summary>
 	private const string MissingLookupAdvice =
-		" Verify each lookup Id in the row against the table its foreign key references - the entity set an "
-		+ "odata-read of the lookup returns is not always that table - instead of retrying with other rows of "
-		+ "the same lookup.";
+		" Inspect lookup metadata with get-entity-schema-properties and verify the supplied IDs. "
+		+ "If the relationship remains unclear, ask an administrator to resolve the named constraint. "
+		+ "Do not guess replacement IDs; follow retry-guidance before resubmitting.";
 
 	/// <summary>
 	/// Matches each message against the measured FK wordings and describes the first match.
@@ -132,9 +131,9 @@ internal static partial class CreatioResponseError {
 		if (insert.Success) {
 			Match detail = PostgresMissingKeyDetailPattern().Match(message);
 			string cause = detail.Success
-				? $"a lookup Id sent in '{detail.Groups["column"].Value}' does not exist in its referenced table "
+				? $"a value in column '{detail.Groups["column"].Value}' has no matching record in referenced table "
 					+ $"'{detail.Groups["referenced"].Value}'."
-				: "a lookup Id sent does not exist in its referenced table.";
+				: "a referenced record is missing. The response does not identify the foreign-key column or referenced table.";
 			return $"foreign key constraint '{insert.Groups["constraint"].Value}' on table "
 				+ $"'{insert.Groups["table"].Value}' rejected the write: {cause}{MissingLookupAdvice}";
 		}
@@ -151,8 +150,9 @@ internal static partial class CreatioResponseError {
 	private static string DescribeSqlServerForeignKey(string message) {
 		Match insert = SqlServerInsertForeignKeyPattern().Match(message);
 		if (insert.Success) {
-			return $"foreign key constraint '{insert.Groups["constraint"].Value}' rejected the write: a lookup Id "
-				+ $"sent does not exist in its referenced table '{insert.Groups["table"].Value}'.{MissingLookupAdvice}";
+			return $"foreign key constraint '{insert.Groups["constraint"].Value}' rejected the write: a referenced "
+				+ $"record is missing from referenced table '{insert.Groups["table"].Value}'. "
+				+ $"The response does not identify the foreign-key column.{MissingLookupAdvice}";
 		}
 		Match delete = SqlServerDeleteForeignKeyPattern().Match(message);
 		if (!delete.Success) {
@@ -165,8 +165,9 @@ internal static partial class CreatioResponseError {
 	}
 
 	private static string StillReferencedAdvice(string referencingTable) =>
-		$"Delete or re-point the '{referencingTable}' rows that reference it first; the same delete cannot "
-		+ "succeed while they exist.";
+		$"Inspect the referencing rows in '{referencingTable}' and confirm the intended relationship. "
+		+ "The rejected operation may be a key update or an entity event handler's write. "
+		+ "Do not delete or re-point records without authorization; follow retry-guidance before resubmitting.";
 
 	private static string ReadErrorCode(JsonElement error) {
 		if (!error.TryGetProperty("code", out JsonElement codeElement)
@@ -311,11 +312,11 @@ internal static partial class CreatioResponseError {
 
 	/// <summary>
 	/// The DETAIL line PostgreSQL adds to 23503 when the driver includes error detail:
-	/// <c>Key ("AccountId")=(&lt;guid&gt;) is not present in table "Account".</c> The key value is matched by
+	/// <c>Key (AccountId)=(&lt;guid&gt;) is not present in table "Account".</c> The key value is matched by
 	/// a bounded class and never copied.
 	/// </summary>
 	[GeneratedRegex(
-		@"Key \(""(?<column>[A-Za-z_][A-Za-z0-9_]{0,127})""\)=\([^()\r\n]{1,64}\) is not present in table ""(?<referenced>[A-Za-z_][A-Za-z0-9_]{0,127})""",
+		@"Key \((?<column>[A-Za-z_][A-Za-z0-9_]{0,127})\)=\([^()\r\n]{1,64}\) is not present in table ""(?<referenced>[A-Za-z_][A-Za-z0-9_]{0,127})""",
 		RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex PostgresMissingKeyDetailPattern();
 

@@ -312,7 +312,7 @@ public sealed class CreatioResponseErrorStructuredDetailTests {
 
 	/// <summary>The same PG 23503 insert with the DETAIL line a Npgsql build that includes error detail appends.</summary>
 	private const string PostgresInsertForeignKeyWithDetailBody = """
-		{"error":{"code":"","message":"An error has occurred.","innererror":{"message":"23503: insert or update on table \"Contact\" violates foreign key constraint \"FKContactAccount\"\n\nDETAIL: Key (\"AccountId\")=(4a1b8e3c-0000-4d7e-9f2a-1c2d3e4f5a6b) is not present in table \"Account\".","type":"Npgsql.PostgresException","stacktrace":""}}}
+		{"error":{"code":"","message":"An error has occurred.","innererror":{"message":"23503: insert or update on table \"Contact\" violates foreign key constraint \"FKContactAccount\"\n\nDETAIL: Key (AccountId)=(4a1b8e3c-0000-4d7e-9f2a-1c2d3e4f5a6b) is not present in table \"Account\".","type":"Npgsql.PostgresException","stacktrace":""}}}
 		""";
 
 	/// <summary>PG 23503 for a delete of a row other rows still reference.</summary>
@@ -335,7 +335,7 @@ public sealed class CreatioResponseErrorStructuredDetailTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("A PG 23503 insert violation names the table and the constraint and says a lookup Id does not exist in its referenced table.")]
+	[Description("A PG 23503 insert violation reports the known constraint, missing target information and a concrete diagnostic next step.")]
 	public void DescribeStructuredODataWriteError_Should_Name_Table_And_Constraint_Of_A_Postgres_Insert_Violation() {
 		// Act
 		string detail = DescribeWrite(PostgresInsertForeignKeyBody);
@@ -345,8 +345,14 @@ public sealed class CreatioResponseErrorStructuredDetailTests {
 			because: "the hint shares the read path's framing, which tells the reader the identifiers were validated");
 		detail.Should().Contain("foreign key constraint 'FK6R22cV5NWM2CfAp2GAV4B2R2GfY' on table 'DocListInFinApp'",
 			because: "the constraint and the table are the identifiers a caller needs to find the lookup at fault");
-		detail.Should().Contain("a lookup Id sent does not exist in its referenced table",
-			because: "that is the cause GH-1699 had to find with raw SQL");
+		detail.Should().Contain("The response does not identify the foreign-key column or referenced table",
+			because: "the measured PostgreSQL response names neither the offending column nor its referenced table");
+		detail.Should().Contain("get-entity-schema-properties",
+			because: "the caller needs a concrete metadata inspection step instead of an instruction to guess IDs");
+		detail.Should().Contain("ask an administrator to resolve the named constraint",
+			because: "schema metadata cannot prove the physical target of an opaque constraint");
+		detail.Should().NotContain("an odata-read",
+			because: "a foreign-key violation alone is not evidence that OData returned the wrong lookup rows");
 		detail.Should().NotContain("violates",
 			because: "the server's own sentence is withheld; only the validated identifiers are copied");
 	}
@@ -361,7 +367,7 @@ public sealed class CreatioResponseErrorStructuredDetailTests {
 		// Assert
 		detail.Should().Contain("foreign key constraint 'FKContactAccount' on table 'Contact'",
 			because: "the headline identifiers are reported whether or not a DETAIL line is present");
-		detail.Should().Contain("a lookup Id sent in 'AccountId' does not exist in its referenced table 'Account'",
+		detail.Should().Contain("a value in column 'AccountId' has no matching record in referenced table 'Account'",
 			because: "the DETAIL line names the lookup column and the table the foreign key really targets");
 		detail.Should().NotContain("4a1b8e3c",
 			because: "the key value is tenant data and is never copied");
@@ -377,7 +383,7 @@ public sealed class CreatioResponseErrorStructuredDetailTests {
 		// Assert
 		detail.Should().Contain("foreign key constraint 'FKContactAccount'",
 			because: "the constraint is the identifier a caller can look up");
-		detail.Should().Contain("a lookup Id sent does not exist in its referenced table 'Account'",
+		detail.Should().Contain("a referenced record is missing from referenced table 'Account'",
 			because: "MSSQL names the referenced table, which is exactly the fact odata-read cannot give");
 		detail.Should().NotContain("Creatio_8_3_prod_db",
 			because: "the database name is deployment detail the caller cannot act on");
@@ -405,6 +411,10 @@ public sealed class CreatioResponseErrorStructuredDetailTests {
 		}
 		detail.Should().Contain("constraint 'FKContactAccount'",
 			because: "the constraint is named in both wordings");
+		detail.Should().Contain("Inspect the referencing rows",
+			because: "a key update or an event handler can produce the same error as a delete");
+		detail.Should().Contain("Do not delete or re-point records without authorization",
+			because: "diagnosing a relationship must not authorize destructive changes to dependent records");
 	}
 
 	[Test]
