@@ -253,14 +253,8 @@ public sealed class SetActiveProcessVersionToolE2ETests {
 	/// predicts it asserts a rule the contract refuses to make, and would pass or fail for reasons unrelated
 	/// to what it covers.
 	/// </remarks>
-	private static string VersionNameFrom(CallToolResult created) {
-		string reported = JsonSerializer.Serialize(created);
-		Match name = Regex.Match(reported, @"[Vv]ersion(?: \d+)? \u0027(?<name>[A-Za-z0-9_]+)\u0027 created");
-		name.Success.Should().BeTrue(
-			because: "the created version's code is only knowable from the response that created it, and the "
-				+ $"envelope did not carry the sentence that names it: {reported}");
-		return name.Groups["name"].Value;
-	}
+	private static string VersionNameFrom(CallToolResult created) =>
+		ProcessDesignerE2EArrange.CreatedVersionName(created);
 
 	private static string BuildDescriptor(string processName) =>
 		$$"""

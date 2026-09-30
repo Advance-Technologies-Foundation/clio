@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Clio.Mcp.E2E.Support.Configuration;
@@ -161,6 +162,28 @@ internal static class ProcessDesignerE2EArrange {
 	}
 
 	/// <summary>Reads a process back by code through <c>describe-business-process</c>.</summary>
+	/// <summary>
+	/// The schema name of the version a modify-business-process-as-new-version call created, read from the
+	/// decoded log messages of its envelope.
+	/// </summary>
+	/// <remarks>
+	/// Read from the DECODED messages, not from the serialized call result: there the apostrophes around the name
+	/// are the text <c>\u0027</c>, escaped once more, and a pattern written for the character matched nothing.
+	/// </remarks>
+	/// <param name="created">The result of the call that created the version.</param>
+	/// <returns>The version's schema name.</returns>
+	internal static string CreatedVersionName(CallToolResult created) {
+		string text = string.Concat(created.Content.OfType<TextContentBlock>().Select(block => block.Text));
+		JsonNode? envelope = JsonNode.Parse(text);
+		string messages = string.Join(" ", (envelope?["execution-log-messages"]?.AsArray() ?? new JsonArray())
+			.Select(message => message?["value"]?.GetValue<string>() ?? string.Empty));
+		Match name = Regex.Match(messages, @"[Vv]ersion(?: \d+)? '(?<name>[A-Za-z0-9_]+)' created");
+		name.Success.Should().BeTrue(
+			because: "the created version's code is only knowable from the response that created it, and the "
+				+ $"envelope did not carry the sentence that names it: {text}");
+		return name.Groups["name"].Value;
+	}
+
 	internal static async Task<CallToolResult> DescribeAsync(ProcessDesignerArrangeContext context,
 			string processCode) =>
 		await context.Session.CallToolAsync(

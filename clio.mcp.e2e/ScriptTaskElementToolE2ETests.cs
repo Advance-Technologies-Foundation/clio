@@ -325,22 +325,19 @@ public sealed class ScriptTaskElementToolE2ETests {
 					["descriptor"] = BuildDescriptor(processName)
 				}))
 			.Should().Contain("created (UId:", because: "the arrange step must have built the process");
-		string versioned = JsonSerializer.Serialize(await ProcessDesignerE2EArrange.CallToolAsync(context,
-			VersionToolName, new Dictionary<string, object?> {
+		string versionName = ProcessDesignerE2EArrange.CreatedVersionName(await ProcessDesignerE2EArrange.CallToolAsync(
+			context, VersionToolName, new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
 				["process-name"] = processName,
 				["package-name"] = "Custom",
 				["operations"] = "[]"
 			}));
-		Match version = Regex.Match(versioned, @"[Vv]ersion(?: \d+)? \u0027(?<name>[A-Za-z0-9_]+)\u0027 created");
-		version.Success.Should().BeTrue(because: "the version's name is only known from the answer that created it: {0}",
-			versioned);
 
 		// Act
 		string activated = JsonSerializer.Serialize(await ProcessDesignerE2EArrange.CallToolAsync(context,
 			SetActiveToolName, new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
-				["version-name"] = version.Groups["name"].Value
+				["version-name"] = versionName
 			}));
 
 		// Assert
