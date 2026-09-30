@@ -33,8 +33,8 @@ public enum ObjectRightsRefusal {
 	/// </summary>
 	EnableNotRequested,
 	/// <summary>
-	/// A revoke on an object that is not administered by operation permissions: every internal user reaches it
-	/// whatever its rows say, so a revoke restricts nothing.
+	/// A revoke on an object that is not administered by operation permissions: company employees reach it whatever its
+	/// rows say (only technical users follow the rows while it is off), so the tool does not revoke on it.
 	/// </summary>
 	RevokeOnNotAdministered,
 	/// <summary>The revoke would leave the administered object with no row that grants any operation.</summary>
@@ -115,7 +115,7 @@ public sealed class ObjectRightsPlanner : IObjectRightsPlanner {
 	// THE POLICY for transitions: one row per transition, in the order the refusals are reported. A transition not in
 	// the request is refused, never applied as a side effect. Two requests cannot be planned at all and are refused
 	// before any transition is computed: a grantee with several rows (D7), and a revoke on an object that is not
-	// administered (every internal user reaches it whatever its rows say).
+	// administered (company employees reach it whatever its rows say).
 	private static readonly (Transition Transition, Func<ObjectRightsChangeRequest, bool> Allowed, ObjectRightsRefusal Refusal)[] Policy = {
 		(Transition.WriteSecurityObject, request => request.AllowSecurityObject, ObjectRightsRefusal.SecurityObjectNotAllowed),
 		(Transition.EnableOperationPermissions, request => request.EnableOperationPermissions, ObjectRightsRefusal.EnableNotRequested),
@@ -188,7 +188,7 @@ public sealed class ObjectRightsPlanner : IObjectRightsPlanner {
 
 	private static ObjectRightsPlan PlanRevoke(ObjectRightsState before, List<RoleOperationRights> rows,
 		RoleOperationRights granteeRow, ObjectRightsChangeRequest request) {
-		// Not administered: every internal user reaches the object whatever its rows say, so no revoke restricts it.
+		// Not administered: company employees reach the object whatever its rows say, so the tool does not revoke on it.
 		if (!before.AdministratedByOperations) {
 			return Refuse(before, ObjectRightsRefusal.RevokeOnNotAdministered, Array.Empty<int>());
 		}

@@ -63,7 +63,7 @@ public class ConnectedObjectsResolver : IConnectedObjectsResolver {
 				.ToList();
 		}
 		catch (Exception ex) when (ObjectRightsSupport.IsServiceFailure(ex)) {
-			return new ConnectedObjectsResolution(objects, Array.Empty<string>(), ex.Message);
+			return new ConnectedObjectsResolution(objects, Array.Empty<string>(), ObjectRightsSupport.DisplayError(ex.Message));
 		}
 		List<string> excluded = connected.Where(ObjectRightsSupport.IsSecurityOrSystemObject).ToList();
 		objects.AddRange(connected.Where(name => !ObjectRightsSupport.IsSecurityOrSystemObject(name)));

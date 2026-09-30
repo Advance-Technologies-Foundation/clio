@@ -210,7 +210,7 @@ report facts. The guidance explains what the facts mean and decides what to do.
   - a grant beyond `read`, or a disable, on a security/system object without `allow-security-object`;
   - duplicate rows for the grantee;
   - a change that would leave an administered object with no granting row;
-  - a revoke on an object that is not administered, which every internal user reaches whatever its rows say;
+  - a revoke on an object that is not administered, which company employees reach whatever its rows say;
 - never removes a row and never reorders rows;
 - reports facts:
   - rows in priority order, with their positions (`get`; with `--include-connected`, also for the object's own

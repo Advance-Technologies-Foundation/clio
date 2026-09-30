@@ -82,7 +82,7 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 			return rootFailed ? 1 : 0;
 		}
 		catch (Exception ex) when (ObjectRightsSupport.IsServiceFailure(ex)) {
-			_logger.WriteError($"Error: {ex.Message}");
+			_logger.WriteError($"Error: {ObjectRightsSupport.DisplayError(ex.Message)}");
 			return 1;
 		}
 	}

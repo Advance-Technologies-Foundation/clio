@@ -56,7 +56,18 @@ public static class ObjectRightsSupport {
 	public static string Display(string value) =>
 		TextUtilities.SanitizeForDisplay(value ?? string.Empty, MaxDisplayLength);
 
+	/// <summary>
+	/// Renders a service or exception message for output on one line, like <see cref="Display"/>: a database fault or a
+	/// platform message can carry line breaks that would otherwise start a line of their own inside a successful result.
+	/// </summary>
+	/// <param name="message">The message to render.</param>
+	/// <returns>The display-safe message.</returns>
+	public static string DisplayError(string message) =>
+		TextUtilities.SanitizeForDisplay(message ?? string.Empty, MaxErrorLength);
+
 	private const int MaxDisplayLength = 200;
+
+	private const int MaxErrorLength = 500;
 
 	/// <summary>
 	/// Trims <paramref name="raw"/> and accepts it only when it is a plain schema identifier. A padded or

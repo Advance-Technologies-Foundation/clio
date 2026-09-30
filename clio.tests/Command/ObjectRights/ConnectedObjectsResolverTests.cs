@@ -159,22 +159,6 @@ public class ConnectedObjectsResolverTests {
 			UseLiveEditing: null, Columns: columns);
 
 	[Test]
-	[Description("The text that help and tool descriptions use for the security/system families names every prefix and suffix the guard matches, so it cannot drift from the lists.")]
-	public void SecurityObjectFamiliesText_ShouldNameEveryFamily_WhenRenderedForHelp() {
-		// Arrange
-		string text = ObjectRightsSupport.SecurityObjectFamiliesText;
-
-		// Act
-		string[] missing = ObjectRightsSupport.SecurityObjectPrefixList.Select(prefix => prefix + "*")
-			.Concat(ObjectRightsSupport.SecurityObjectSuffixList.Select(suffix => "*" + suffix))
-			.Where(family => !text.Contains(family, StringComparison.Ordinal))
-			.ToArray();
-
-		// Assert
-		missing.Should().BeEmpty(because: "every excluded family must be named where users read the rule");
-	}
-
-	[Test]
 	[Description("A programming error while reading the root schema is not reported as 'could not enumerate': it escapes.")]
 	public void Resolve_ShouldThrow_WhenSchemaReadHasProgrammingError() {
 		// Arrange

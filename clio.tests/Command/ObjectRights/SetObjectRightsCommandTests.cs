@@ -603,10 +603,90 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		ObjectIs(Info(true, Row(AllEmployees, 0, "RCED")));
 
 		// Act
-		_command.Execute(Options("read", o => { o.Confirm = false; o.Preview = true; }));
+		int exitCode = _command.Execute(Options("read", o => { o.Confirm = false; o.Preview = true; }));
 
 		// Assert
-		_infos.Should().NotContain(m => m.Contains('\n'), because: "every name is rendered on one line");
+		exitCode.Should().Be(0, because: "a preview of an allowed change is not a failure");
+		_infos.Should().Contain(m => m.StartsWith("PREVIEW") && m.Contains("Evil 'UsrBar'"),
+			because: "the name is printed, with its line break replaced");
+		_infos.Concat(_warnings).Concat(_errors).Should().NotContain(m => m.Contains('\n'),
+			because: "every name is rendered on one line");
+	}
+
+	[Test]
+	[Description("An enable that adds the All employees row is not reported as done when the read-back does not show that row: without it every internal user outside the other rows is cut off.")]
+	public void Execute_ShouldFail_WhenTheReadBackMissesTheAllEmployeesRowTheEnableAdds() {
+		// Arrange
+		RoleOperationRights stale = new(Guid.NewGuid(), "Stale role", 0, true, false, false, false);
+		ObjectIs(Info(false, stale), readBack: Info(true, stale, Row(Grantee, 2, "R")));
+
+		// Act
+		int exitCode = _command.Execute(Options("read", o => { o.EnableOperationPermissions = true; }));
+
+		// Assert
+		exitCode.Should().Be(1, because: "a row this call writes did not land");
+		ErrorContains("[1] All employees: read/create/edit/delete is missing",
+			because: "the error names the row that is missing");
+	}
+
+	[Test]
+	[Description("The preview of an enable on stale rows without All employees names the rows that start to decide, the All employees row added below them and the grantee's row at the lowest priority.")]
+	public void Execute_ShouldDescribeTheEnable_WhenPreviewingOnStaleRowsWithoutAllEmployees() {
+		// Arrange
+		RoleOperationRights stale = new(Guid.NewGuid(), "Stale role", 0, true, false, false, false);
+		ObjectIs(Info(false, stale));
+
+		// Act
+		int exitCode = _command.Execute(Options("read", o => {
+			o.EnableOperationPermissions = true; o.Confirm = false; o.Preview = true;
+		}));
+
+		// Assert
+		exitCode.Should().Be(0, because: "a preview of an allowed change is not a failure");
+		_infos.Should().Contain(m => m.Contains("Rows that start to decide: [0] Stale role: read."),
+			because: "the stale row starts to decide once operation permissions are on");
+		_infos.Should().Contain(m => m.Contains("added at position 1, below the existing rows"),
+			because: "the All employees row goes below the stale row");
+		_infos.Should().Contain(m => m.Contains("A row for the grantee is added at position 2, the lowest priority"),
+			because: "only the grantee's row is at the lowest priority");
+		NothingSaved();
+	}
+
+	[Test]
+	[Description("The refusal of an unnamed enable names the rows that would start to decide and the All employees row that would be added below them.")]
+	public void Execute_ShouldNameTheAllEmployeesRowInTheRefusal_WhenAnEnableIsNotNamed() {
+		// Arrange
+		ObjectIs(Info(false, new RoleOperationRights(Guid.NewGuid(), "Stale role", 0, true, false, false, false)));
+
+		// Act
+		int exitCode = _command.Execute(Options("read"));
+
+		// Assert
+		exitCode.Should().Be(1, because: "turning operation permissions on must be named");
+		ErrorContains("([0] Stale role: read); an 'All employees' row with read/create/edit/delete would be added below them",
+			because: "the refusal shows everything the enable would change");
+		NothingSaved();
+	}
+
+	[Test]
+	[Description("A save that reports an error but lands, while another client changed another row, says the switch and the rows this call writes are as planned — not that the object matches the plan — and reports the other row.")]
+	public void Execute_ShouldNotClaimAFullMatch_WhenAFailedSaveReadsBackWithOtherDifferences() {
+		// Arrange
+		RoleOperationRights someone = new(Guid.NewGuid(), "Someone", 2, true, false, false, false);
+		ObjectIs(Info(true, Row(AllEmployees, 0, "RCED")),
+			readBack: Info(true, Row(AllEmployees, 0, "RCED"), Row(Grantee, 1, "R"), someone));
+		_writer.Save(Arg.Any<ObjectRightsSnapshot>(), Arg.Any<ObjectRightsState>(), Arg.Any<CreatioRequestOptions>())
+			.Returns("the request timed out");
+
+		// Act
+		int exitCode = _command.Execute(Options("read"));
+
+		// Assert
+		exitCode.Should().Be(0, because: "the planned change landed");
+		_warnings.Should().Contain(m => m.Contains("shows the switch and the rows this call writes as planned"),
+			because: "the object as a whole differs from the plan");
+		_warnings.Should().Contain(m => m.Contains("[2] Someone: read is not in the plan"),
+			because: "the other client's row is reported");
 	}
 
 	[Test]

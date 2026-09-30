@@ -86,7 +86,7 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 		}
 		catch (Exception ex) when (ObjectRightsSupport.IsServiceFailure(ex)) {
 			return new ObjectRightsInfo(true, schemaName, null, false, Array.Empty<RoleOperationRights>(),
-				ReadError: ex.Message);
+				ReadError: ObjectRightsSupport.DisplayError(ex.Message));
 		}
 		if (node is null) {
 			// error set = the object exists but could not be read (a service fault); error null = the schema
@@ -132,7 +132,7 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 				: ServiceMessage(response?.ErrorInfo?.Message, "SaveAdministratedObject reported failure.");
 		}
 		catch (Exception ex) when (ObjectRightsSupport.IsServiceFailure(ex)) {
-			return ex.Message;
+			return ObjectRightsSupport.DisplayError(ex.Message);
 		}
 	}
 
@@ -192,7 +192,7 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 				requestOptions);
 		}
 		catch (Exception ex) when (ObjectRightsSupport.IsServiceFailure(ex)) {
-			error = ex.Message;
+			error = ObjectRightsSupport.DisplayError(ex.Message);
 			timedOut = ObjectRightsSupport.IsTimeout(ex);
 			return false;
 		}
@@ -252,9 +252,9 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 	}
 
 	// A failure is never reported with an empty message: an empty string would read as "no error" to a caller that
-	// checks for null, and as nothing at all to the operator.
+	// checks for null, and as nothing at all to the operator. The platform's text is rendered on one line.
 	private static string ServiceMessage(string message, string fallback) =>
-		string.IsNullOrWhiteSpace(message) ? fallback : message;
+		string.IsNullOrWhiteSpace(message) ? fallback : ObjectRightsSupport.DisplayError(message);
 
 	// Every row, in priority order.
 	private static List<RoleOperationRights> ProjectRoles(JsonObject node) =>

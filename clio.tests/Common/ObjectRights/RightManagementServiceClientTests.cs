@@ -365,12 +365,12 @@ public class RightManagementServiceClientTests {
 	}
 
 	private static IEnumerable<TestCaseData> ServiceFailures() {
-		yield return new TestCaseData(new HttpRequestException("503")).SetName("ServiceFailure_HttpRequest");
-		yield return new TestCaseData(new IOException("reset")).SetName("ServiceFailure_IO");
-		yield return new TestCaseData(new JsonException("not json")).SetName("ServiceFailure_Json");
-		yield return new TestCaseData(new UnauthorizedAccessException("401")).SetName("ServiceFailure_Unauthorized");
-		yield return new TestCaseData(new TimeoutException("timeout")).SetName("ServiceFailure_Timeout");
-		yield return new TestCaseData(new TaskCanceledException("HTTP timeout")).SetName("ServiceFailure_TaskCanceled");
+		yield return new TestCaseData(new HttpRequestException("503")).SetName("ObjectRights_ShouldReportFailure_WhenTheServiceFailsWithHttpRequest");
+		yield return new TestCaseData(new IOException("reset")).SetName("ObjectRights_ShouldReportFailure_WhenTheServiceFailsWithIO");
+		yield return new TestCaseData(new JsonException("not json")).SetName("ObjectRights_ShouldReportFailure_WhenTheServiceFailsWithJson");
+		yield return new TestCaseData(new UnauthorizedAccessException("401")).SetName("ObjectRights_ShouldReportFailure_WhenTheServiceFailsWithUnauthorized");
+		yield return new TestCaseData(new TimeoutException("timeout")).SetName("ObjectRights_ShouldReportFailure_WhenTheServiceFailsWithTimeout");
+		yield return new TestCaseData(new TaskCanceledException("HTTP timeout")).SetName("ObjectRights_ShouldReportFailure_WhenTheServiceFailsWithTaskCanceled");
 	}
 
 	[TestCaseSource(nameof(ServiceFailures))]
@@ -592,6 +592,85 @@ public class RightManagementServiceClientTests {
 			.Should().BeTrue(because: "Sales' row at position 2 keeps its own flags");
 		SavedRows().Single(row => IsRowOf(row, Grantee)).GetProperty("canAppend").GetBoolean().Should().BeFalse(
 			because: "the grantee's row gets the planned change");
+	}
+
+	[Test]
+	[Description("Another role's two rows at the SAME position with different operations are both left as read when only the grantee's row changes: each is matched as it was read, never merged.")]
+	public void Save_ShouldLeaveAnotherRolesRowsAtOnePositionAsRead_WhenOnlyTheGranteeRowChanges() {
+		// Arrange
+		Guid sales = Guid.NewGuid();
+		GetReturns(ObjectWithRows(true,
+			FlagRow(sales, 0, read: true, append: false, edit: false, delete: false),
+			FlagRow(sales, 0, read: true, append: true, edit: true, delete: true),
+			FlagRow(Grantee, 1, true, false, false, false)));
+		ObjectRightsInfo read = Read();
+		ObjectRightsState after = new(true, read.Roles
+			.Select(row => row.GranteeId == Grantee ? row with { CanEdit = true } : row)
+			.ToArray());
+
+		// Act
+		string error = _client.Save(read.Snapshot, after, new CreatioRequestOptions());
+
+		// Assert
+		error.Should().BeNull(because: "the only changed row has one candidate");
+		JsonElement[] salesRows = SavedRows().Where(row => IsRowOf(row, sales)).ToArray();
+		salesRows.Select(row => row.GetProperty("canAppend").GetBoolean()).Should().BeEquivalentTo(new[] { false, true },
+			because: "each of Sales' rows keeps its own flags");
+		SavedRows().Single(row => IsRowOf(row, Grantee)).GetProperty("canEdit").GetBoolean().Should().BeTrue(
+			because: "the grantee's row gets the planned change");
+	}
+
+	[Test]
+	[Description("An enable that meets stale rows without All employees appends the All employees row and then the grantee's row at the positions the plan gave them, leaving the stale row as read.")]
+	public void Save_ShouldAppendTheAllEmployeesAndGranteeRows_WhenAnEnableAddsBoth() {
+		// Arrange
+		Guid stale = Guid.NewGuid();
+		GetReturns(ObjectWithRows(false, FlagRow(stale, 0, true, false, false, false)));
+		ObjectRightsInfo read = Read();
+		ObjectRightsState after = new(true, new[] {
+			read.Roles[0],
+			new RoleOperationRights(Employees, "All employees", 1, true, true, true, true),
+			new RoleOperationRights(Grantee, "Grantee", 2, true, false, false, false)
+		});
+
+		// Act
+		_client.Save(read.Snapshot, after, new CreatioRequestOptions());
+
+		// Assert
+		SavedRows().Should().HaveCount(3, because: "both planned rows are added next to the stale one");
+		SavedRows().Single(row => IsRowOf(row, Employees)).GetProperty("position").GetInt32().Should().Be(1,
+			because: "the All employees row goes right below the stale row");
+		SavedRows().Single(row => IsRowOf(row, Employees)).GetProperty("canDelete").GetBoolean().Should().BeTrue(
+			because: "the All employees row carries every operation");
+		SavedRows().Single(row => IsRowOf(row, Grantee)).GetProperty("position").GetInt32().Should().Be(2,
+			because: "the grantee's row goes at the lowest priority");
+		SavedObject().GetProperty("administratedByOperations").GetBoolean().Should().BeTrue(
+			because: "the plan turned operation permissions on");
+	}
+
+	[Test]
+	[Description("A row with no position is projected at its index in the array, and the save finds it again by that projection: it is changed in place, not duplicated.")]
+	public void Save_ShouldChangeARowWithoutPositionInPlace_WhenThePlanChangesIt() {
+		// Arrange
+		string noPosition = "{\"id\":\"np\",\"canRead\":true,\"canAppend\":false,\"canEdit\":false,\"canDelete\":false,"
+			+ "\"sysAdminUnit\":{\"id\":\"" + Grantee + "\"}}";
+		GetReturns(ObjectWithRows(true, FlagRow(Employees, 0, true, true, true, true), noPosition));
+		ObjectRightsInfo read = Read();
+		RoleOperationRights granteeRow = read.Roles.Single(row => row.GranteeId == Grantee);
+		ObjectRightsState after = new(true, read.Roles
+			.Select(row => row == granteeRow ? row with { CanEdit = true } : row)
+			.ToArray());
+
+		// Act
+		string error = _client.Save(read.Snapshot, after, new CreatioRequestOptions());
+
+		// Assert
+		error.Should().BeNull(because: "the row is found again by its projected position");
+		granteeRow.Position.Should().Be(1, because: "a row without a position is placed at its index in the array");
+		SavedRows().Should().HaveCount(2, because: "the row is changed in place, not added again");
+		JsonElement saved = SavedRows().Single(row => IsRowOf(row, Grantee));
+		saved.GetProperty("id").GetString().Should().Be("np", because: "the read row is the one changed");
+		saved.GetProperty("canEdit").GetBoolean().Should().BeTrue(because: "the planned change is written");
 	}
 
 	[Test]

@@ -211,7 +211,7 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 		}
 		catch (Exception ex) when (ObjectRightsSupport.IsServiceFailure(ex)) {
 			granteeName = null;
-			_logger.WriteError($"Error: could not check grantee {grantee}: {ex.Message}");
+			_logger.WriteError($"Error: could not check grantee {grantee}: {ObjectRightsSupport.DisplayError(ex.Message)}");
 			return false;
 		}
 		if (granteeName is null) {
@@ -248,9 +248,9 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 					: "")
 				+ ". Re-run with --enable-operation-permissions if that is intended.",
 			ObjectRightsRefusal.RevokeOnNotAdministered =>
-				$"'{schema}' is not administered by operation permissions — every internal user can reach it, so a revoke "
-				+ "cannot restrict it. To limit access, grant the roles that should keep it with "
-				+ "--enable-operation-permissions.",
+				$"'{schema}' is not administered by operation permissions — company employees reach it whatever its rows "
+				+ "say (only technical users follow the rows while it is off), so the tool does not revoke on it. To limit "
+				+ "access, grant the roles that should keep it with --enable-operation-permissions.",
 			ObjectRightsRefusal.LeavesNoGrantingRow =>
 				$"after this revoke no row on '{schema}' would grant any operation, so nobody could reach it except "
 				+ "holders of the '…any data' system operations. To make it available to ALL internal users instead, "
@@ -301,8 +301,8 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 			if (plan.AddsAllEmployeesRow) {
 				RoleOperationRights allEmployees = plan.After.Roles.First(row => row.GranteeId == SysAdminUnitIds.AllEmployees);
 				facts.Add($"An '{ObjectRightsSupport.Display(allEmployees.GranteeName)}' row with read/create/edit/delete is "
-					+ $"added at position {allEmployees.Position}, the lowest priority: while operation permissions were off, "
-					+ "every internal user had every operation.");
+					+ $"added at position {allEmployees.Position}, below the existing rows: while operation permissions were "
+					+ "off, every company employee had every operation.");
 			}
 		}
 		facts.Add(DescribeGranteeRow(change));
@@ -382,8 +382,10 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 				+ $"{OnOff(actual.State)}; rows {FormatRows(actual.State.Roles)}.");
 			return 1;
 		}
-		_logger.WriteWarning($"'{schema}': the save reported an error ({saveError}), but the object read back matches the "
-			+ "plan.");
+		_logger.WriteWarning($"'{schema}': the save reported an error ({saveError}), but the object read back "
+			+ (comparison.Differences.Count == 0
+				? "matches the plan."
+				: "shows the switch and the rows this call writes as planned."));
 		ReportDone(change, facts, actual.State, comparison);
 		return 0;
 	}
@@ -409,11 +411,13 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 
 	private static string ReadBackFailure(ObjectRightsInfo actual) => actual.ReadError ?? "the object was not found";
 
-	// The object read back against the plan, row by row: grantee, position and operations. The switch and the grantee's
-	// rows are what the call claims, so a difference there fails it; any other difference is reported as a fact.
+	// The object read back against the plan, row by row: grantee, position and operations. The switch, the grantee's
+	// rows and every row this call writes are what the call claims, so a difference there fails it; any other difference
+	// is reported as a fact.
 	private static ReadBackComparison Compare(Change change, ObjectRightsState actual) {
 		ObjectRightsState planned = change.Plan.After;
 		Guid grantee = change.Request.Grantee;
+		IReadOnlyList<RoleOperationRights> written = RowsWritten(change.Plan);
 		List<string> critical = new();
 		List<string> differences = new();
 		if (actual.AdministratedByOperations != planned.AdministratedByOperations) {
@@ -430,12 +434,25 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 			string text = read is null
 				? $"{FormatRow(missing)} is missing"
 				: $"{FormatRow(read)}, the plan wrote {Ops(missing)}";
-			(missing.GranteeId == grantee ? critical : differences).Add(text);
+			bool claimed = missing.GranteeId == grantee || written.Any(row => row.SameRowAs(missing));
+			(claimed ? critical : differences).Add(text);
 		}
 		foreach (RoleOperationRights row in extra) {
 			(row.GranteeId == grantee ? critical : differences).Add($"{FormatRow(row)} is not in the plan");
 		}
 		return new ReadBackComparison(critical, differences);
+	}
+
+	// The rows this call writes: every planned row the object did not have as read, plus — when the call turns operation
+	// permissions on — the All employees row it stores (the read may only have synthesized it). If one of them is missing
+	// from the read-back, the call's own change did not land; an internal user can be cut off by exactly that row.
+	private static IReadOnlyList<RoleOperationRights> RowsWritten(ObjectRightsPlan plan) {
+		List<RoleOperationRights> written = plan.Before.DiffRows(plan.After).Extra.ToList();
+		if (plan.EnablesOperationPermissions) {
+			written.AddRange(plan.After.Roles.Where(row =>
+				row.GranteeId == SysAdminUnitIds.AllEmployees && !written.Contains(row)));
+		}
+		return written;
 	}
 
 	// A disable that leaves no stored rows is read back with the All employees row the service synthesizes for an

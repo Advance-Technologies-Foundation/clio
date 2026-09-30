@@ -15,6 +15,9 @@ public abstract class CreatioServiceClient
 		PropertyNameCaseInsensitive = true
 	};
 
+	// Redacted first, then capped: a token cut by the cap would no longer be recognised by the redactor.
+	private const int MaxBodyPreviewLength = 200;
+
 	private readonly IApplicationClient _applicationClient;
 	private readonly IServiceUrlBuilder _urlBuilder;
 
@@ -53,7 +56,8 @@ public abstract class CreatioServiceClient
 			// request tokens and stack traces, and this text reaches the log and an agent transcript.
 			throw new InvalidOperationException(TextUtilities.LooksLikeMarkup(response)
 				? $"Unexpected response from {url}: an HTML page instead of JSON (a login redirect or a server error page)."
-				: $"Unexpected response from {url}: {TextUtilities.SanitizeForDisplay(response)}");
+				: $"Unexpected response from {url}: "
+					+ TextUtilities.SanitizeForDisplay(SensitiveErrorTextRedactor.Redact(response), MaxBodyPreviewLength));
 		}
 	}
 }

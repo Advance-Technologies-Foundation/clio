@@ -102,8 +102,8 @@ EXIT CODES
         a revoke that would leave no granting row without --disable-operation-permissions, a revoke on an
         object that does not use operation permissions, a security/system object without
         --allow-security-object, a grantee with more than one row), the save failed and the read-back does
-        not show the plan, or the object read back does not show the grantee's planned row where it was
-        planned, or the planned switch state.
+        not show the plan, or the object read back does not show a row this call writes (the grantee's
+        row, or the All employees row an enable stores) where it was planned, or the planned switch state.
 
 EXAMPLES
     Show what a grant would change, without writing anything:
@@ -128,8 +128,8 @@ NOTES
     The grantee must exist in SysAdminUnit; an unknown id fails before anything is written.
 
     After the save the object is read back and compared with the plan, row by row (grantee, position,
-    operations). A row that differs from the plan for another role, or a row the plan did not write, is
-    reported as a warning. If the read-back itself fails, the change is reported as saved but NOT
+    operations). A missing or different row that this call writes fails it; a row that differs from the
+    plan for another role, or a row the plan did not write, is reported as a warning. If the read-back itself fails, the change is reported as saved but NOT
     verified, with a request to check the object with get-object-rights.
 
     A grantee with more than one row on the object is refused: which of them decides depends on the

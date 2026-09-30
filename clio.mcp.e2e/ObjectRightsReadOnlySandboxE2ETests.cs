@@ -52,6 +52,8 @@ public sealed class ObjectRightsReadOnlySandboxE2ETests : McpContractFixtureBase
 		all.Success.Should().BeTrue(because: $"Contact's rights must be readable on a real stand. Error: {all.Error}");
 		all.Output.Should().Contain("Contact", because: "the result names the object it read");
 		filtered.Success.Should().BeTrue(because: $"a grantee filter is a read too. Error: {filtered.Error}");
+		filtered.Output.Should().Contain(AllEmployees,
+			because: "the filtered read reports the All employees row, or that it has none");
 		missing.Success.Should().BeFalse(because: "a name that resolves to no schema fails instead of reporting access");
 	}
 
