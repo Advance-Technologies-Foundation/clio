@@ -1,4 +1,4 @@
-{
+﻿{
   "version": "latest",
   "defaultMobileTemplate": "BaseMobilePageTemplate",
   "mobileFormPageTemplates": ["BaseMobilePageTemplate", "MobilePageWithTabsFreedomTemplate"],
@@ -48,18 +48,18 @@
       "note": "Tabbed record page (Tabs + Feed + Attachments). Preferred target for web tabbed record pages.",
       "declaredElements": [
         {
-          "name": "AdditionalInfoTab",
+          "name": "MobileAdditionalInfoTab",
           "type": "crt.TabContainer",
           "parentName": "Tabs",
           "propertyName": "items",
           "index": 1,
-          "captionResource": { "key": "AdditionalInfoTab_caption", "value": "General information" }
+          "captionResource": { "key": "MobileAdditionalInfoTab_caption", "value": "General information" }
         }
       ],
       "containers": [
         { "web": "Tabs", "mobile": "Tabs" },
-        { "web": "GeneralInfoTab", "mobile": "AdditionalInfoTab" },
-        { "web": "GeneralInfoTabContainer", "mobile": "AdditionalInfoTab" },
+        { "web": "GeneralInfoTab", "mobile": "MobileAdditionalInfoTab" },
+        { "web": "GeneralInfoTabContainer", "mobile": "MobileAdditionalInfoTab" },
         { "web": "FeedTabContainer", "mobile": "FeedContainer" },
         { "web": "AttachmentsTabContainer", "mobile": "AttachmentsContainer" },
         { "web": "CardToggleTabPanel", "mobile": "Tabs" },
@@ -296,6 +296,35 @@
           "note": "ENG-95081, ENG-96411: the panel's tools strip is a compact icon-only header row on mobile - a search field (ENG-95081) or a captioned quick-filter chip (ENG-96411) pushes the panel title out and overflows it. Only buttons, their menu items and the containers holding them stay. Positional only - the same types elsewhere on the page convert normally."
         }
       ]
+    }
+  ],
+  "componentRemovals": [
+    {
+      "type": "crt.Button",
+      "reason": "drop-unsupported-request",
+      "filters": {
+        "filterType": "Group",
+        "logicalOperation": "and",
+        "items": [
+          { "filterType": "IsEmpty", "leftExpression": "clicked" },
+          { "filterType": "IsEmpty", "leftExpression": "menuItems" }
+        ]
+      }
+    },
+    {
+      "type": "crt.MenuItem",
+      "reason": "drop-unsupported-request",
+      "filters": { "filterType": "IsEmpty", "leftExpression": "clicked" }
+    }
+  ],
+  "actionComponents": [
+    {
+      "type": "crt.Button",
+      "actionPropertyNames": ["clicked"]
+    },
+    {
+      "type": "crt.MenuItem",
+      "actionPropertyNames": ["clicked"]
     }
   ],
   "nonConvertingScopeContainers": ["MainHeader"],

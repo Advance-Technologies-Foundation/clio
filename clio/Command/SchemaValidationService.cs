@@ -926,6 +926,7 @@ public static class SchemaValidationService
 				+ "expressionType 1, functionArgument.columnPath and aggregationType 1-5; a calculated metric uses an expressionSchema "
 				+ "object instead.");
 		}
+		message.Append(" Copy the working example from get-component-info crt.IndicatorWidget with schema-type mobile.");
 		result.IsValid = false;
 		result.Errors.Add(message.ToString());
 	}
