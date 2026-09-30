@@ -2474,11 +2474,17 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	/// agent picked up the build, and GA removed it outright rather than papering over it.
 	/// </summary>
 	private static async Task RequireConverterToolAsync(ArrangeContext context) {
-		IReadOnlyCollection<string> toolNames =
-			await context.Session.ListReachableToolNamesAsync(context.CancellationTokenSource.Token);
-		toolNames.Should().Contain(ToolName,
-			because: "the converter is ungated since ENG-94638, so it must be advertised regardless of the "
-				+ "settings on the machine running the suite");
+		IReadOnlyList<ToolContractIndexEntry> index =
+			await context.Session.GetToolContractIndexAsync(context.CancellationTokenSource.Token);
+		ToolContractIndexEntry entry = index.SingleOrDefault(item =>
+			string.Equals(item.Name, ToolName, StringComparison.OrdinalIgnoreCase));
+		entry.Should().NotBeNull(
+			because: "the converter must appear in the discovery index on a server with no feature configuration");
+		entry!.Destructive.Should().BeFalse(
+			because: "asserting the NAME would prove nothing - it comes from the static, unfiltered "
+				+ "CanonicalToolNames and survives a re-gate. The destructive hint is resolved from the "
+				+ "FEATURE-FILTERED invoker registry and fails CLOSED, so a re-gated tool keeps its index "
+				+ "entry and flips to destructive=true. This line is what makes the precondition real");
 	}
 
 

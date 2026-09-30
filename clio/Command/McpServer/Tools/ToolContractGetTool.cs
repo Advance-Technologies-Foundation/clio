@@ -6600,10 +6600,14 @@ internal static class ToolContractCatalog {
 				Field("requestRegistryWarning", StringType, "The mobile request registry could not be resolved exactly, so request conversions are advisory-only."),
 				Field(ErrorFieldName, StringType, "Actionable diagnostic when success is false.")),
 			CommonErrorContract,
-			[
-				SchemaNameParameterAlias(),
-				EnvironmentNameParameterAlias()
-			],
+			// No rejected-parameter aliases. The sibling page contracts publish them because they are
+			// RESIDENT and something above them classifies the payload; per Command/McpServer/AGENTS.md the
+			// flat-args normalization and argument-shape refusal are resident-only. This tool is
+			// deliberately non-resident and its args record carries no [JsonExtensionData] bag, so a caller
+			// sending 'schemaName' has the key dropped by System.Text.Json and gets "Could not read source
+			// page ''" - not the rename hint an alias entry would promise. Publishing one would advertise a
+			// refusal the tool cannot give.
+			[],
 			[],
 			[
 				Example("Get the conversion guide for a Freedom UI web form page", new Dictionary<string, object?> {

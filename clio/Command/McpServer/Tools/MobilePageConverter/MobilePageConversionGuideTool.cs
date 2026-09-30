@@ -100,7 +100,8 @@ public class MobilePageConversionGuideTool {
 		+ "value: a real resolved page schema name, or (when no candidate was found) the raw object/entity "
 		+ "name — never call get-page on the latter expecting a page. resolvedCandidateSchemaName (present "
 		+ "only on that shape when a candidate WAS resolved) tells them apart. "
-		+ "MANDATORY before acting on the guide: get-guidance name `freedom-page-web-to-mobile-conversion`.")]
+		+ "MANDATORY before acting on the guide: get-guidance name=freedom-page-web-to-mobile-conversion. "
+		+ "Resolve any reason code it reports with get-guidance name=freedom-page-mobile-reason-codes.")]
 	public async Task<MobilePageConversionGuideResponse> GetMobilePageConversionGuide(
 		[Description("Parameters: schema-name (required, the source page); target-schema-name (optional suggested mobile page name); version (optional registry/Creatio version); environment-name preferred; uri/login/password emergency fallback only.")]
 		[Required] MobilePageConversionGuideArgs args,
