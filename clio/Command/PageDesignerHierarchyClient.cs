@@ -79,6 +79,7 @@ internal sealed class PageDesignerHierarchyClient : IPageDesignerHierarchyClient
 				SchemaType = value["schemaType"]?.Value<int>(),
 				Parameters = value["parameters"] as JArray ?? new JArray(),
 				LocalizableStrings = value["localizableStrings"] as JArray ?? new JArray(),
+				Caption = value["caption"] as JArray ?? new JArray(),
 				OptionalProperties = value["optionalProperties"] as JArray ?? new JArray()
 			});
 		}
