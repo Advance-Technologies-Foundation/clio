@@ -1050,38 +1050,43 @@ internal static class PageBodyAstLinter {
 		}
 	}
 
+	/// <summary>Creates function bindings, separating preserved AMD parameters from discarded locals.</summary>
+	private static LexicalScope OpenFunctionScope(IFunction function, LexicalScope scope,
+		int depth, bool strict, SectionScanState state) {
+		//The AMD factory chains to the runtime globals, NOT to the script scope: a helper
+		//declared outside `define(...)` is not something the factory's handlers can rely on.
+		bool isFactory = state.FactoryFunctions.Contains((Node)function);
+		LexicalScope parent = isFactory ? state.GlobalScope : scope;
+		// AMD arguments survive in SCHEMA_ARGS; factory declarations do not. Keep those
+		// bindings in separate scopes so a discarded local also shadows a safe parameter.
+		LexicalScope parameterScope = isFactory ? new(parent) : null;
+		LexicalScope functionScope = new(parameterScope ?? parent, isFunctionBoundary: true,
+			designerRemovesDeclarations: isFactory);
+		//A named function expression can call itself by that name from inside its body.
+		if (function.Id is not null) {
+			functionScope.Declare(function.Id.Name, definitelyInitialized: true);
+		}
+		foreach (Node parameter in function.Params) {
+			DeclareBindings(parameter, parameterScope ?? functionScope, depth + 1,
+				definitelyInitialized: true);
+		}
+		DeclareHoistedNames(function.Body, functionScope, depth + 1, strict,
+			atStatementLevel: true, unconditional: true);
+		HashSet<string> nestedAssignments = new(StringComparer.Ordinal);
+		CollectNestedFunctionAssignments(function.Body, nestedAssignments, depth + 1,
+			insideNestedFunction: false);
+		functionScope.RecordNestedFunctionAssignments(nestedAssignments);
+		return functionScope;
+	}
+
 	/// <summary>
 	/// Opens the scope a node introduces, if any, and returns the scope its children see.
 	/// </summary>
 	private static LexicalScope OpenScope(Node node, LexicalScope scope, int depth, bool strict,
 		bool unconditional, SectionScanState state) {
 		switch (node) {
-			case IFunction function: {
-				//The AMD factory chains to the runtime globals, NOT to the script scope: a helper
-				//declared outside `define(...)` is not something the factory's handlers can rely on.
-				bool isFactory = state.FactoryFunctions.Contains(node);
-				LexicalScope parent = isFactory ? state.GlobalScope : scope;
-				// AMD arguments survive in SCHEMA_ARGS; factory declarations do not. Keep those
-				// bindings in separate scopes so a discarded local also shadows a safe parameter.
-				LexicalScope parameterScope = isFactory ? new(parent) : null;
-				LexicalScope functionScope = new(parameterScope ?? parent, isFunctionBoundary: true,
-					designerRemovesDeclarations: isFactory);
-				//A named function expression can call itself by that name from inside its body.
-				if (function.Id is not null) {
-					functionScope.Declare(function.Id.Name, definitelyInitialized: true);
-				}
-				foreach (Node parameter in function.Params) {
-					DeclareBindings(parameter, parameterScope ?? functionScope, depth + 1,
-						definitelyInitialized: true);
-				}
-				DeclareHoistedNames(function.Body, functionScope, depth + 1, strict,
-					atStatementLevel: true, unconditional: true);
-				HashSet<string> nestedAssignments = new(StringComparer.Ordinal);
-				CollectNestedFunctionAssignments(function.Body, nestedAssignments, depth + 1,
-					insideNestedFunction: false);
-				functionScope.RecordNestedFunctionAssignments(nestedAssignments);
-				return functionScope;
-			}
+			case IFunction function:
+				return OpenFunctionScope(function, scope, depth, strict, state);
 			case BlockStatement block: {
 				LexicalScope blockScope = new(scope,
 					designerRemovesDeclarations: scope.DesignerRemovesDeclarations);
