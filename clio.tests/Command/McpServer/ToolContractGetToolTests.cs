@@ -8,6 +8,7 @@ using System.Text.Json.Serialization;
 using Clio.Command;
 using Clio.Command.McpServer;
 using Clio.Command.McpServer.Tools;
+using Clio.Command.McpServer.Tools.MobilePageConverter;
 using Clio.Command.McpServer.Tools.ProcessDesigner;
 using Clio.Common;
 using FluentAssertions;
@@ -4243,5 +4244,66 @@ public sealed class ToolContractGetToolTests {
 			because: "the compact index enumerates every tool this guard has to cover");
 		entries.Select(entry => entry.Purpose).Should().OnlyHaveUniqueItems(
 			because: "two tools sharing a byte-identical one-liner are indistinguishable in the index - which is what happened when create-business-process and modify-business-process both opened with the same accessRights warning, so a description must lead with what its tool DOES");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("get-mobile-page-conversion-guide appears in the compact discovery index as a non-resident, non-destructive tool - after GA (ENG-94638) it is ungated but deliberately still long-tail, so the index is the only place a caller learns it exists.")]
+	public void GetContracts_ShouldIndexMobilePageConversionGuide_AsNonResidentNonDestructiveTool() {
+		// Arrange
+		// Over the DEFAULT surface, not a bare tool: the index's destructive hint is derived from the
+		// invoker registry, so a registry-less tool reports null for every tool and would prove nothing.
+		string toolName = MobilePageConversionGuideTool.ToolName;
+		IServiceProvider provider = Substitute.For<IServiceProvider>();
+		IFeatureToggleService featureToggle = Substitute.For<IFeatureToggleService>();
+		featureToggle.IsEnabled(Arg.Any<Type>())
+			.Returns(call => McpProfileGatingTests.DefaultSurfaceEnabled(call.Arg<Type>()));
+		McpToolInvokerRegistry registry = new(
+			provider,
+			typeof(MobilePageConversionGuideTool).Assembly,
+			featureToggle,
+			JsonSerializerOptions.Default);
+		ToolContractGetTool tool = new(registry);
+
+		// Act
+		ToolContractGetResponse response = tool.GetToolContracts(new ToolContractGetArgs());
+
+		// Assert
+		ToolContractIndexEntry entry = response.Index.SingleOrDefault(item =>
+			string.Equals(item.Name, toolName, StringComparison.OrdinalIgnoreCase));
+		entry.Should().NotBeNull(
+			because: "an ungated converter that never sits in tools/list is discoverable only through the get-tool-contract index");
+		entry!.Resident.Should().BeFalse(
+			because: "MobilePageConversionGuideTool is deliberately absent from McpCoreToolProfile.CoreToolTypes - a single-skill niche path must not cost every session context");
+		entry.ContractAvailable.Should().BeTrue(
+			because: "a curated contract exists, so the index must tell a caller the full shape can be fetched");
+		entry.Destructive.Should().BeFalse(
+			because: "the tool is advisory: it reads a page and returns a guide, writing nothing to Creatio or disk");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("get-mobile-page-conversion-guide resolves to a CURATED contract that states the advisory-only semantics and the Freedom-UI-web-only precondition, so a caller does not mistake the guide tool for a page builder and skip create-page/validate-page.")]
+	public void GetContracts_ShouldReturnCuratedContract_ForMobilePageConversionGuide() {
+		// Arrange
+		string toolName = MobilePageConversionGuideTool.ToolName;
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse response = tool.GetToolContracts(new ToolContractGetArgs([toolName]));
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "a curated tool name must resolve on the first step of the curated -> registry -> reflection cascade");
+		response.Tools.Should().ContainSingle(
+			because: "exactly one contract was requested");
+		ToolContractDefinition contract = response.Tools![0];
+		contract.Description.Should().Contain("writes nothing",
+			because: "the advisory semantics are the whole point of this tool - a caller that misses them will wait for a page the tool never builds");
+		contract.InputSchema.Required.Should().ContainSingle()
+			.Which.Should().Be("schema-name",
+				because: "schema-name is the only [Required] argument on MobilePageConversionGuideArgs");
+		contract.Preconditions.Should().NotBeNullOrEmpty(
+			because: "the Freedom-UI-web-only precondition must travel with the contract - a Classic page has to be migrated first and an already-mobile page is rejected");
 	}
 }

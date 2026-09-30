@@ -68,9 +68,11 @@ public sealed class ToolContractPayloadBudgetTests {
 	// Re-pinned for ENG-90576: localize-page is one more long-tail tool. Measured 45442 bytes on the
 	// default surface with it registered (130 bytes for its index entry); next 256-byte step is 45568 (178).
 	// Re-pinned for ENG-94638: get-mobile-page-conversion-guide went GA, so the converter is no longer
-	// gated off the default surface and its index entry is now paid by every discovery call. Measured
-	// 45642 bytes (200 bytes for that entry); next 256-byte step is 45824 (179). The tool stays
-	// long-tail on purpose - it is NOT in McpCoreToolProfile.CoreToolTypes - so this is the whole
+	// gated off the default surface and its index entry is now paid by every discovery call. Two steps
+	// in one release: un-gating alone measured 45642 bytes (200 for the entry), and giving the tool a
+	// curated contract took it to 45692 - the extra 50 are contract-available flipping to true and the
+	// curated purpose replacing the reflected one. Next 256-byte step is 45824 (179). The tool stays
+	// long-tail on purpose - it is NOT in McpCoreToolProfile.CoreToolTypes - so 45692 is the whole
 	// per-session cost of the un-gate.
 	// Serialization uses the default JSON encoder,
 	// which escapes non-ASCII (a purpose ellipsis is written as a 6-byte escape), so it over-counts the real

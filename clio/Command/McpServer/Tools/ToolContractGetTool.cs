@@ -9,6 +9,7 @@ using System.Text.Json.Serialization;
 using Clio.Common;
 using Clio.Command.BusinessRules;
 using Clio.Command.McpServer;
+using Clio.Command.McpServer.Tools.MobilePageConverter;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -874,7 +875,8 @@ internal static class ToolContractCatalog {
 			[UninstallIdentityTool.ToolName] = BuildUninstallIdentity(),
 			[RestoreWorkspaceTool.RestoreWorkspaceToolName] = BuildRestoreWorkspace(),
 			[PushWorkspaceTool.PushWorkspaceToolName] = BuildPushWorkspace(),
-			[ListCreatioBuildsTool.ListCreatioBuildsToolName] = BuildListCreatioBuilds()
+			[ListCreatioBuildsTool.ListCreatioBuildsToolName] = BuildListCreatioBuilds(),
+			[MobilePageConversionGuideTool.ToolName] = BuildMobilePageConversionGuide()
 		};
 
 	private static readonly string[] CanonicalToolNames = [
@@ -933,6 +935,7 @@ internal static class ToolContractCatalog {
 		PageUpdateTool.ToolName,
 		LocalizePageTool.ToolName,
 		PageValidateTool.ToolName,
+		MobilePageConversionGuideTool.ToolName,
 		ApplicationDeleteTool.ToolName,
 		SchemaNamePrefixTool.GetSchemaNamePrefixToolName,
 		CompileCreatioTool.CompileCreatioToolName,
@@ -6560,6 +6563,61 @@ internal static class ToolContractCatalog {
 			Preconditions: [
 				"The environment is registered (see list-environments / reg-web-app).",
 				"workspace-path is a local absolute path to an existing workspace directory (network-share paths are not supported)."
+			]);
+	}
+
+	private static ToolContractDefinition BuildMobilePageConversionGuide() {
+		return new ToolContractDefinition(
+			MobilePageConversionGuideTool.ToolName,
+			"Detects a source page's type and returns an ADVISORY guide for converting a Freedom UI WEB page into a Freedom UI MOBILE page: recommended mobile template, container correspondence, the source component structure, per-type component suggestions and inline mobile component contracts. It writes nothing - not to Creatio, not to disk - so YOU build the mobile body from the guide with create-page (mobile template) + update-page and prove it with validate-page. The guide reports candidate names without classifying them: classify each one yourself before presenting a plan. Read get-guidance name=freedom-page-web-to-mobile-conversion before acting on it, and name=freedom-page-mobile-reason-codes to resolve a reason code it reports.",
+			new ToolInputSchemaContract(
+				["schema-name"],
+				[
+					Field("schema-name", StringType, "Source page schema name, e.g. 'UsrMyApp_FormPage'. Only Freedom UI WEB pages are supported; a Classic UI page is detected and reported as not yet supported."),
+					Field("target-schema-name", StringType, "Optional suggested target mobile page schema name. Defaults to the source name with a mobile suffix (UsrMyApp_FormPage -> UsrMyApp_MobileFormPage)."),
+					Field("version", StringType, "Optional Creatio/registry version used to resolve the mobile and web component registries. Defaults to the latest published registry."),
+					Field(EnvironmentNameFieldName, StringType, "PREFERRED. Registered clio environment name, e.g. 'local'."),
+					Field("uri", StringType, "Emergency fallback only: direct Creatio URL. Prefer 'environment-name'."),
+					Field(LoginFieldName, StringType, "Emergency fallback only: login paired with 'uri'."),
+					Field(PasswordFieldName, StringType, "Emergency fallback only: password paired with 'uri'.")
+				]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[
+					SuccessFalseSignal
+				],
+				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
+				Field("sourceSchemaName", StringType, "The source page that was read."),
+				Field("sourceType", StringType, "Detected source page type, reported even on failure - an unsupported Classic UI page is how you learn it must be migrated to Freedom UI web first."),
+				Field("guide", ObjectType, "The advisory guide: recommended template, container map, component suggestions, inline mobile contracts, and the requiresManualDecision / droppedRequests / flaggedActions the caller has to resolve."),
+				Field("resolvedTargetVersion", StringType, "The component-registry / rules version the guide was built against: a concrete version or 'latest'."),
+				Field("resolvedFrom", StringType, "How the version was resolved: environment, environment-superset or latest-fallback."),
+				Field("versionWarning", StringType, "Caveat when the catalog is approximate or the target version is unknown; absent when the version is exact."),
+				Field("requiresVersionConfirmation", BooleanType, "True only on latest-fallback: the target version is unknown, so confirm with the user before acting on the guide."),
+				Field("resolvedFromReason", StringType, "Stable kebab-case reason on latest-fallback, e.g. no-active-environment or probe-error."),
+				Field("error", StringType, "Actionable diagnostic when success is false.")),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Get the conversion guide for a Freedom UI web form page", new Dictionary<string, object?> {
+					["schema-name"] = "UsrMyApp_FormPage",
+					[EnvironmentNameFieldName] = "local"
+				})
+			],
+			Flow(
+				[
+					MobilePageConversionGuideTool.ToolName,
+					PageCreateTool.ToolName,
+					PageUpdateTool.ToolName,
+					PageValidateTool.ToolName
+				],
+				"Read the guide, then build the mobile page body yourself with create-page + update-page and prove it with validate-page. The guide writes nothing, so a caller that waits for a built page waits forever."),
+			[],
+			[],
+			Preconditions: [
+				"The source page must be a Freedom UI WEB page. A Classic UI page must be migrated to Freedom UI web first, and an already-mobile page is rejected.",
+				"Mobile manifest and wizard wiring are NOT performed by this tool and remain manual after the page is built."
 			]);
 	}
 
