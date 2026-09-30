@@ -6571,9 +6571,9 @@ internal static class ToolContractCatalog {
 			MobilePageConversionGuideTool.ToolName,
 			"Advisory: returns a guide for converting a Freedom UI WEB page into a mobile page; it writes nothing. The guide carries the recommended mobile template, container correspondence, the source component structure, per-type component suggestions and inline mobile component contracts - YOU build the body from it with create-page (mobile template) + update-page and prove it with validate-page. Candidate names are reported without classification: classify each one yourself before presenting a plan.",
 			new ToolInputSchemaContract(
-				["schema-name"],
+				[SchemaNameFieldName],
 				[
-					Field("schema-name", StringType, "Source page schema name, e.g. 'UsrMyApp_FormPage'. Only Freedom UI WEB pages are supported; a Classic UI page is detected and reported as not yet supported."),
+					Field(SchemaNameFieldName, StringType, "Source page schema name, e.g. 'UsrMyApp_FormPage'. Only Freedom UI WEB pages are supported; a Classic UI page is detected and reported as not yet supported."),
 					Field("target-schema-name", StringType, "Optional suggested target mobile page schema name. Defaults to the source name with a mobile suffix (UsrMyApp_FormPage -> UsrMyApp_MobileFormPage)."),
 					Field("version", StringType, "Optional Creatio/registry version used to resolve the mobile and web component registries. A 3-part semver, e.g. '8.3.3', or 'latest'; anything else is rejected. Defaults to PROBING the target environment - an explicit value OVERRIDES that probe, so naming a version other than the target's own measures the conversion against a different mobile runtime."),
 					Field(EnvironmentNameFieldName, StringType, "PREFERRED. Registered clio environment name, e.g. 'local'."),
@@ -6598,7 +6598,7 @@ internal static class ToolContractCatalog {
 				Field("resolvedFromReason", StringType, "Stable kebab-case reason on latest-fallback, e.g. no-active-environment or probe-error."),
 				Field("rulesWarning", StringType, "READ THIS WHEN PRESENT: the rules file maps a web request onto a mobile request type the registry does not publish, so the action cannot dispatch - it does nothing and fails SILENTLY on the page. Review every affected action before shipping."),
 				Field("requestRegistryWarning", StringType, "The mobile request registry could not be resolved exactly, so request conversions are advisory-only."),
-				Field("error", StringType, "Actionable diagnostic when success is false.")),
+				Field(ErrorFieldName, StringType, "Actionable diagnostic when success is false.")),
 			CommonErrorContract,
 			[
 				SchemaNameParameterAlias(),
@@ -6607,7 +6607,7 @@ internal static class ToolContractCatalog {
 			[],
 			[
 				Example("Get the conversion guide for a Freedom UI web form page", new Dictionary<string, object?> {
-					["schema-name"] = "UsrMyApp_FormPage",
+					[SchemaNameFieldName] = "UsrMyApp_FormPage",
 					[EnvironmentNameFieldName] = "local"
 				})
 			],
@@ -6683,7 +6683,7 @@ internal static class ToolContractCatalog {
 				Field("succeeded", NumberType, "Number of items that succeeded."),
 				Field("failed", NumberType, "Number of items that failed."),
 				Field("results", ArrayType, resultsDescription),
-				Field("error", StringType, "Request-level error that prevented the whole batch from running. Note: when the requested environment cannot be resolved (unknown/unreachable), the tool instead returns the standard command-execution envelope (exit-code 1 with execution-log-messages referencing the environment) rather than this batch shape.")
+				Field(ErrorFieldName, StringType, "Request-level error that prevented the whole batch from running. Note: when the requested environment cannot be resolved (unknown/unreachable), the tool instead returns the standard command-execution envelope (exit-code 1 with execution-log-messages referencing the environment) rather than this batch shape.")
 			]);
 	}
 
@@ -6707,7 +6707,7 @@ internal static class ToolContractCatalog {
 					+ "record-created is null, retry-guidance. A null record-created means Creatio failed the call "
 					+ "but may already have written the row - verify with odata-read before re-sending, a retry "
 					+ "duplicates it. " + ODataWriteForeignKeyHintDescription),
-				Field("error", StringType, "Request-level error that prevented any row from being attempted."),
+				Field(ErrorFieldName, StringType, "Request-level error that prevented any row from being attempted."),
 				Field(CorrelationIdFieldName, StringType, ODataWriteCorrelationIdDescription),
 				Field(DataWriteDiagnosticFieldName, ObjectType, DataWriteDiagnosticDescription)
 			]);
