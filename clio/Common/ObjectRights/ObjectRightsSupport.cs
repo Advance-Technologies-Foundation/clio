@@ -16,29 +16,16 @@ public static class ObjectRightsSupport {
 
 	// These objects expose the role/user directory, security configuration or platform metadata: widening access to
 	// one of them makes that data readable through DataService wherever record permissions do not also protect it.
-	// So set-object-rights asks for --allow-security-object before a grant beyond read, or a disable, on one of them,
-	// and the connected listing of get-object-rights — the step before granting — never offers them.
+	// So the connected listing of get-object-rights — the step before granting — never offers them. set-object-rights
+	// changes one object the caller names, so a change to one of these is named in the arguments the host shows.
 	private static readonly string[] SecurityObjectPrefixes =
 		{ "SysAdmin", "SysUser", "SysSchema", "SysPackage", "SysSettings", "SysLic", "SysProcess", "Vw" };
 
 	private static readonly string[] SecurityObjectSuffixes = { "Right", "Rights" };
 
 	/// <summary>
-	/// The security/system object families as help and tool descriptions name them. One constant, so the text cannot
-	/// drift from the prefixes and suffixes <see cref="IsSecurityOrSystemObject"/> matches; a test checks it names
-	/// every entry.
-	/// </summary>
-	public const string SecurityObjectFamiliesText =
-		"SysAdmin*, SysUser*, SysSchema*, SysPackage*, SysSettings*, SysLic*, SysProcess*, Vw*, *Right/*Rights";
-
-	internal static IReadOnlyList<string> SecurityObjectPrefixList => SecurityObjectPrefixes;
-
-	internal static IReadOnlyList<string> SecurityObjectSuffixList => SecurityObjectSuffixes;
-
-	/// <summary>
-	/// Whether <paramref name="schemaName"/> is a security or system object: set-object-rights grants it beyond read,
-	/// or disables it, only with <c>--allow-security-object</c>, and get-object-rights never reads it as a connected
-	/// object. A guard-rail against accidental writes, not a security boundary.
+	/// Whether <paramref name="schemaName"/> is a security or system object, which get-object-rights never reads as a
+	/// connected object. A filter on the discovery listing, not a security boundary.
 	/// </summary>
 	/// <param name="schemaName">The normalized entity schema name.</param>
 	/// <returns><see langword="true"/> for a security or system object.</returns>

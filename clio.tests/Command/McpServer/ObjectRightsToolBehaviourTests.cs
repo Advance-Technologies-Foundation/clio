@@ -96,11 +96,12 @@ public sealed class ObjectRightsToolBehaviourTests {
 	[TestCase("include-connected")]
 	[TestCase("confirmation-code")]
 	[TestCase("confirm")]
-	[Description("A misspelled or retired set-object-rights argument is refused before any read or write — a typo is never dropped by the serializer and turned into the opposite change, and a caller still on the old contract (include-connected, confirmation-code, confirm) is told so instead of being half-understood.")]
+	[TestCase("allow-security-object")]
+	[Description("A misspelled or retired set-object-rights argument is refused before any read or write — a typo is never dropped by the serializer and turned into the opposite change, and a caller still on the old contract (include-connected, confirmation-code, confirm, allow-security-object) is told so instead of being half-understood.")]
 	public void SetObjectRights_ShouldRefuseBeforeAnyReadOrWrite_WhenAnArgumentIsUnknown(string unknown) {
 		// Arrange
 		SetObjectRightsArgs args = Bind<SetObjectRightsArgs>(
-			$$"""{"environment-name":"dev","entity-schema-name":"UsrFoo","grantee":"{{Grantee}}","{{unknown}}":true}""");
+			$$"""{"environment-name":"dev","entity-schema-name":"UsrFoo","grantee":"{{Grantee}}","operations":"read","{{unknown}}":true}""");
 
 		// Act
 		ObjectRightsToolResponse response = SetTool().SetObjectRights(args);
@@ -133,7 +134,7 @@ public sealed class ObjectRightsToolBehaviourTests {
 	[Description("With only the required args, the tool maps to a confirmed, non-revoking grant with every transition flag off: the host's approval of the call is the confirmation.")]
 	public void SetObjectRights_ShouldMapToAConfirmedGrant_WhenOnlyTheRequiredArgsArePassed() {
 		// Arrange
-		SetObjectRightsArgs args = new("dev", "UsrFoo", Grantee);
+		SetObjectRightsArgs args = new("dev", "UsrFoo", Grantee, "read,create,edit");
 
 		// Act
 		ObjectRightsToolResponse response = SetTool().SetObjectRights(args);
@@ -144,11 +145,10 @@ public sealed class ObjectRightsToolBehaviourTests {
 		_capturedSet.Environment.Should().Be("dev", because: "environment-name maps onto Environment");
 		_capturedSet.EntitySchemaName.Should().Be("UsrFoo", because: "entity-schema-name maps through");
 		_capturedSet.Grantee.Should().Be(Grantee, because: "grantee maps through");
-		_capturedSet.Operations.Should().BeNull(because: "omitted operations fall to the command's least-privilege default");
+		_capturedSet.Operations.Should().Be("read,create,edit", because: "operations maps through");
 		_capturedSet.Revoke.Should().BeFalse(because: "an omitted revoke is a grant");
 		_capturedSet.EnableOperationPermissions.Should().BeFalse(because: "enabling is an explicit opt-in only");
 		_capturedSet.DisableOperationPermissions.Should().BeFalse(because: "disabling is an explicit opt-in only");
-		_capturedSet.AllowSecurityObject.Should().BeFalse(because: "the security-object opt-in is explicit only");
 		_capturedSet.Preview.Should().BeFalse(because: "a call without preview applies the change");
 		_capturedSet.Confirm.Should().BeTrue(because: "MCP cannot prompt; the host approval of the call is the confirmation");
 		_writer.ReceivedWithAnyArgs(1).Save(default, default, default);
@@ -158,7 +158,7 @@ public sealed class ObjectRightsToolBehaviourTests {
 	[Description("preview=true maps to an unconfirmed dry run: nothing is saved.")]
 	public void SetObjectRights_ShouldRunADryRun_WhenPreviewIsTrue() {
 		// Arrange
-		SetObjectRightsArgs args = new("dev", "UsrFoo", Grantee, Preview: true);
+		SetObjectRightsArgs args = new("dev", "UsrFoo", Grantee, "read,create,edit", Preview: true);
 
 		// Act
 		ObjectRightsToolResponse response = SetTool().SetObjectRights(args);
@@ -172,12 +172,12 @@ public sealed class ObjectRightsToolBehaviourTests {
 	}
 
 	[Test]
-	[Description("Every explicit transition flag maps through: enable on a grant; revoke with disable and the security opt-in.")]
+	[Description("Every explicit transition flag maps through: enable on a grant; revoke with disable.")]
 	public void SetObjectRights_ShouldMapTransitionFlags_WhenProvided() {
 		// Arrange
 		SetObjectRightsArgs grant = new("dev", "UsrFoo", Grantee, Operations: "read", EnableOperationPermissions: true);
 		SetObjectRightsArgs revoke = new("dev", "UsrFoo", Grantee, Operations: "read", Revoke: true,
-			DisableOperationPermissions: true, AllowSecurityObject: true);
+			DisableOperationPermissions: true);
 
 		// Act
 		SetTool().SetObjectRights(grant);
@@ -189,21 +189,21 @@ public sealed class ObjectRightsToolBehaviourTests {
 		grantOptions.Operations.Should().Be("read", because: "operations maps through");
 		_capturedSet.Revoke.Should().BeTrue(because: "revoke maps through");
 		_capturedSet.DisableOperationPermissions.Should().BeTrue(because: "disable-operation-permissions maps through");
-		_capturedSet.AllowSecurityObject.Should().BeTrue(because: "allow-security-object maps through");
 	}
 
-	[TestCase(null, TestName = "SetObjectRights_ShouldRefuseARevoke_WhenOperationsAreOmitted")]
-	[TestCase("", TestName = "SetObjectRights_ShouldRefuseARevoke_WhenOperationsAreEmpty")]
-	[Description("A revoke must name its operations: the approved arguments show what is taken away, and an empty value is never read as the grant default.")]
-	public void SetObjectRights_ShouldRefuseARevoke_WhenItNamesNoOperation(string operations) {
+	[TestCase(null, false, TestName = "SetObjectRights_ShouldRefuseAGrant_WhenOperationsAreOmitted")]
+	[TestCase(null, true, TestName = "SetObjectRights_ShouldRefuseARevoke_WhenOperationsAreOmitted")]
+	[TestCase("", true, TestName = "SetObjectRights_ShouldRefuseARevoke_WhenOperationsAreEmpty")]
+	[Description("A call must name its operations: the approved arguments show what is granted or taken away, and nothing is granted by default.")]
+	public void SetObjectRights_ShouldRefuse_WhenTheCallNamesNoOperation(string operations, bool revoke) {
 		// Arrange
-		SetObjectRightsArgs args = new("dev", "UsrFoo", Grantee, Operations: operations, Revoke: true);
+		SetObjectRightsArgs args = new("dev", "UsrFoo", Grantee, Operations: operations, Revoke: revoke);
 
 		// Act
 		ObjectRightsToolResponse response = SetTool().SetObjectRights(args);
 
 		// Assert
-		response.Success.Should().BeFalse(because: "a revoke with no named operation is refused");
+		response.Success.Should().BeFalse(because: "a call with no named operation is refused");
 		response.Error.Should().Contain("operation", because: "the refusal says the operations are missing");
 		_reader.DidNotReceiveWithAnyArgs().GetObjectRights(default, default);
 		NothingSaved();
@@ -218,7 +218,7 @@ public sealed class ObjectRightsToolBehaviourTests {
 				new[] { new RoleOperationRights(AllEmployees, "All employees", 0, true, true, true, true) }));
 
 		// Act
-		ObjectRightsToolResponse response = SetTool().SetObjectRights(new SetObjectRightsArgs("dev", "UsrFoo", Grantee));
+		ObjectRightsToolResponse response = SetTool().SetObjectRights(new SetObjectRightsArgs("dev", "UsrFoo", Grantee, "read"));
 
 		// Assert
 		response.Success.Should().BeFalse(because: "turning operation permissions on must be named in the arguments");
@@ -251,7 +251,7 @@ public sealed class ObjectRightsToolBehaviourTests {
 			.Returns(_ => throw new ArgumentException("failed at " + SecretUri));
 
 		// Act
-		ObjectRightsToolResponse response = SetTool().SetObjectRights(new SetObjectRightsArgs("dev", "UsrFoo", Grantee));
+		ObjectRightsToolResponse response = SetTool().SetObjectRights(new SetObjectRightsArgs("dev", "UsrFoo", Grantee, "read"));
 
 		// Assert
 		response.Success.Should().BeFalse(because: "a thrown command is a failure");

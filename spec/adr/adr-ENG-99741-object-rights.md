@@ -2,6 +2,9 @@
 
 - **Status:** accepted by the author (2026-09-30); to be confirmed by the PR's approver.
   - Decided: D1 (one object per call), D4 (host approval), D8 (grant and revoke on MCP), `remove-role` as a follow-up.
+  - Decided after the self-review (2026-09-30): D5 (no separate opt-in for security/system objects), `operations`
+    required on every call (D4, invariant 8), R3 (the approval is of `clio-run`), a revoke on an object that is not
+    administered stays refused.
   - The facts under "Platform model" were checked on a stand on 2026-09-28/29.
 - **Date:** 2026-09-28 (updated 2026-09-30)
 - **Jira:** [ENG-99741](https://creatio.atlassian.net/browse/ENG-99741) (related ENG-99969, ENG-100406, ENG-100407)
@@ -104,8 +107,8 @@ Reviews are judged against it (see "Review baseline").
   - a typo that inverts the change;
   - a change whose targets or side effects the operator did not see in the arguments;
   - a change reported as done when it had no effect, or the opposite effect.
-- **Guard-rails are not boundaries.** The security/system name list protects against accidental writes. A way around
-  it is a Minor defect, not a vulnerability.
+- **Guard-rails are not boundaries.** The security/system name list keeps those objects out of the connected listing,
+  the step before granting. A way around it is a Minor defect, not a vulnerability.
 
 ## Decision
 
@@ -163,6 +166,9 @@ or the call is refused. The host approval then shows the operator everything the
   asks the operator to approve the call and shows its arguments.
 - After D1–D3 the arguments show the whole effect: one object, one role, the operations, and whether permissions are
   turned on or off.
+- `operations` is required on every call, grant and revoke. Nothing is granted by default, so the approval shows
+  exactly what is granted or taken away. A default of read/create/edit would be invisible in the approval, and wrong
+  for the main consumer, which grants read only.
 - The two-step preview + confirmation-code protocol is removed.
   - It existed to show targets and side effects that the arguments hid.
   - The code does not prove that the operator said yes. It only proves that nothing changed between the two calls,
@@ -171,14 +177,15 @@ or the call is refused. The host approval then shows the operator everything the
   carries no code.
 - ENG-99969 (a shared destructive-confirmation gate) builds on this.
 
-**D5 — One guard for security and system objects.**
-- A grant beyond `read`, or a disable, on a security/system object requires `allow-security-object`. A `read` grant
-  does not, because the boundary is the caller's Creatio rights (Threat model).
-- The `All employees` row that an enable adds (D2) grants every operation, so on a security/system object it is a
-  grant beyond `read` too, and the enable needs the flag (invariant 8).
-- The guard checks the named object. It uses the normalised name, as now, or better the canonical name returned by
-  `SysSchema`.
-- It is a guard-rail, not a boundary.
+**D5 — No separate opt-in for security and system objects on `set`.**
+- Each call names its one object (D1), so a change to a security or system object (`SysAdmin*`, `SysSettings*`, …) is
+  named in the arguments the host shows, as it is in the designer. The boundary is the caller's Creatio rights
+  (Threat model).
+- An opt-in flag for such objects (`allow-security-object`) existed while `set` fanned out to lookups, where one could be
+  written without being named. With D1 it only added rules of its own (for a grant beyond read, for the All employees
+  row an enable adds, for the stale rows an enable revives, for a disable), so it was removed.
+- `get-object-rights --include-connected` still does not list security and system objects as connected objects, so the
+  discovery step never offers them for a grant. The names are normalised before that filter, as for a named object.
 
 **D6 — The internal flow is read → plan → policy → apply → verify.**
 - `Plan(before, request) → (after, transitions)` is a pure function with no HTTP. It computes the full row list
@@ -207,7 +214,6 @@ report facts. The guidance explains what the facts mean and decides what to do.
 - makes exactly the one change that the arguments name, on one object;
 - refuses a risky transition that the arguments do not name:
   - enabling or disabling operation permissions without its flag;
-  - a grant beyond `read`, or a disable, on a security/system object without `allow-security-object`;
   - duplicate rows for the grantee;
   - a change that would leave an administered object with no granting row;
   - a revoke on an object that is not administered, which company employees reach whatever its rows say;
@@ -249,8 +255,9 @@ report facts. The guidance explains what the facts mean and decides what to do.
 
 - **`set` contract.**
   - Removed: `include-connected`, `connected-operations`, `confirmation-code` and the two-step MCP flow, implicit
-    enable, implicit row removal, and the lockout detection after the write.
-  - Added: `enable-operation-permissions`, and positions in the `get` and `set` output.
+    enable, implicit row removal, the lockout detection after the write, `allow-security-object` (D5) and the default
+    operations.
+  - Added: `enable-operation-permissions`, a required `operations`, and positions in the `get` and `set` output.
   - `preview` stays as a dry run.
 - **Jira ENG-99741 ACs** need a revision:
   - AC1 becomes one call per object;
@@ -281,9 +288,14 @@ report facts. The guidance explains what the facts mean and decides what to do.
 - **R1 — Last writer wins.** The save carries no version, so a change saved between our read and our save is lost.
   This is the same read-to-save gap as in other clio write tools. Concurrent edits are rare and admin-only, and this
   is documented.
-- **R2 — The name list is incomplete by design.** It is a guard-rail, not a boundary.
+- **R2 — The name list is incomplete by design.** It filters the connected listing only; it is not a boundary.
 - **R3 — The host approval is only as strong as the host.** Auto-approve modes skip it, as they do for every
-  destructive clio MCP tool.
+  destructive clio MCP tool. The host approves the `clio-run` call that carries `set-object-rights` and its
+  arguments, and every destructive long-tail tool (`odata-delete`, `set-record-rights`, `delete-schema`, …) is reached
+  the same way. So "always allow clio-run" removes the approval for all of them at once, not only for this tool. A
+  split into a safe `clio-run` and a `clio-run-destructive` was tried and reverted (6fc54cc37, 2026-06-19: models
+  looped on the redirect and never acted; see the lazy-schema ADR), so this is an accepted platform risk, and this
+  tool does not add to it.
 - **R4 — Live destructive behaviour is not in CI.** It is covered by the opt-in Sandbox e2e (Explicit) and the
   read-only Sandbox e2e. There is no destructive e2e in CI.
 - **R5 — Shadowing is reported, not prevented.** A grant row below a broader row may have no effect for users who are
@@ -311,7 +323,7 @@ Invariants:
 5. Policy is decided before the write, and a refused call writes nothing.
 6. Output and exit code come from the plan and the read-back. A change that was not saved is never reported as done.
 7. Unknown argument names are refused before any read or write.
-8. A grant beyond `read`, or a disable, on a security or system object happens only with `allow-security-object`.
+8. A call grants or revokes only the operations it names; no operation is implied by default.
 
 ## Open questions
 

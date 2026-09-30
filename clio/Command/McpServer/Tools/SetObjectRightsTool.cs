@@ -6,7 +6,6 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Command.ObjectRights;
 using Clio.Common;
-using Clio.Common.ObjectRights;
 using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
@@ -28,7 +27,7 @@ public sealed class SetObjectRightsTool(
 
 	internal const string ValidArguments =
 		"Valid: environment-name, entity-schema-name, grantee, operations, revoke, enable-operation-permissions, "
-		+ "disable-operation-permissions, allow-security-object, preview.";
+		+ "disable-operation-permissions, preview.";
 
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
@@ -41,13 +40,13 @@ public sealed class SetObjectRightsTool(
 	[Description("Grant or revoke OBJECT operation permissions (read/create/edit/delete) for one role on ONE object — the SysEntitySchemaOperationRight / \"Object permissions\" layer (DESTRUCTIVE — changes access rights). " +
 		"Works like the Object permissions designer, one object per call, for ANY role. To cover an object's lookups, read them with get-object-rights include-connected, decide per object, and make one call per object. " +
 		"grantee is a SysAdminUnit id (roles/users; names are not unique); it must exist. " +
-		"operations: a grant defaults to read/create/edit (delete not granted by default); revoke=true must name them, and clears them on the role's row while KEEPING the row (rows are never removed or moved). " +
+		"operations is required (read,create,edit,delete): nothing is granted by default. revoke=true clears the named operations on the role's row while KEEPING the row (rows are never removed or moved). " +
 		"The rows are a priority list: a user in several roles gets the highest matching row, and a row with an operation cleared denies it to users for whom it is that row. A new row goes at the lowest priority; the result names the rows above the grantee's row. " +
-		"Every access-changing transition must be named, or the call is refused: enable-operation-permissions to let a grant turn the object's operation permissions ON (from then on its rows decide who can reach it; when the object has rows but none for All employees, an All employees row with every operation is added below them); disable-operation-permissions with revoke to turn them OFF (the object becomes available to ALL internal users; needed when the revoke would leave no granting row); allow-security-object for a grant beyond read (including that All employees row), or a disable, on a security/system object. " +
+		"Every access-changing transition must be named, or the call is refused: enable-operation-permissions to let a grant turn the object's operation permissions ON (from then on its rows decide who can reach it; when the object has rows but none for All employees, an All employees row with every operation is added below them); disable-operation-permissions with revoke to turn them OFF (the object becomes available to ALL internal users; needed when the revoke would leave no granting row). " +
 		"preview=true is a dry run: it writes nothing and shows what the call would change. Read the result back with get-object-rights. Does NOT change column or record permissions. " +
 		"Unknown or misspelled argument names are REFUSED before any read or write.")]
 	public ObjectRightsToolResponse SetObjectRights(
-		[Description("Parameters: environment-name, entity-schema-name, grantee (required); operations, revoke, enable-operation-permissions, disable-operation-permissions, allow-security-object, preview (optional).")]
+		[Description("Parameters: environment-name, entity-schema-name, grantee, operations (required); revoke, enable-operation-permissions, disable-operation-permissions, preview (optional).")]
 		[Required]
 		SetObjectRightsArgs args) {
 		// A long-tail tool reached through clio-run: the flat-argument classifier never sees this wrapped payload,
@@ -68,7 +67,6 @@ public sealed class SetObjectRightsTool(
 				Revoke = args.Revoke ?? false,
 				EnableOperationPermissions = args.EnableOperationPermissions ?? false,
 				DisableOperationPermissions = args.DisableOperationPermissions ?? false,
-				AllowSecurityObject = args.AllowSecurityObject ?? false,
 				Preview = preview,
 				// MCP cannot prompt anyone: the host's approval of this call is the confirmation (as for
 				// set-record-rights and manage-access). A preview writes nothing, so it is never confirmed.
@@ -85,11 +83,10 @@ public sealed class SetObjectRightsTool(
 /// <param name="EnvironmentName">The registered environment.</param>
 /// <param name="EntitySchemaName">The one object whose operation permissions change.</param>
 /// <param name="Grantee">The SysAdminUnit id of the role or user.</param>
-/// <param name="Operations">Comma-separated operations.</param>
+/// <param name="Operations">Comma-separated operations to grant or revoke; required.</param>
 /// <param name="Revoke">Revoke instead of grant.</param>
 /// <param name="EnableOperationPermissions">Allow a grant to turn operation permissions on.</param>
 /// <param name="DisableOperationPermissions">With revoke: turn operation permissions off.</param>
-/// <param name="AllowSecurityObject">Allow a grant beyond read, or a disable, on a security/system object.</param>
 /// <param name="Preview">Write nothing; show what the call would change.</param>
 public sealed record SetObjectRightsArgs(
 	[property: JsonPropertyName("environment-name")]
@@ -108,8 +105,9 @@ public sealed record SetObjectRightsArgs(
 	string Grantee,
 
 	[property: JsonPropertyName("operations")]
-	[property: Description("Comma-separated operations: read,create,edit,delete. A grant defaults to read,create,edit (delete not granted by default); required with revoke. An empty value is refused.")]
-	string Operations = null,
+	[property: Description("Comma-separated operations to grant or revoke: read,create,edit,delete. Required: nothing is granted by default. An empty value is refused.")]
+	[property: Required]
+	string Operations,
 
 	[property: JsonPropertyName("revoke")]
 	[property: Description("Revoke the operations named in operations instead of granting them (default false). The role's row is kept, with those operations cleared.")]
@@ -122,10 +120,6 @@ public sealed record SetObjectRightsArgs(
 	[property: JsonPropertyName("disable-operation-permissions")]
 	[property: Description("With revoke: turn the object's operation permissions OFF, making it available to ALL internal users (default false). Needed when the revoke would leave no row that grants any operation.")]
 	bool? DisableOperationPermissions = null,
-
-	[property: JsonPropertyName("allow-security-object")]
-	[property: Description("Allow a grant beyond read, or disable-operation-permissions, on a security or system object (" + ObjectRightsSupport.SecurityObjectFamiliesText + "). Default false: such an object may only be granted read.")]
-	bool? AllowSecurityObject = null,
 
 	[property: JsonPropertyName("preview")]
 	[property: Description("Dry run (default false): write nothing and show what the call would change, the rows it affects, and whether it would be refused.")]

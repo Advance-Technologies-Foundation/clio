@@ -7,29 +7,13 @@ using NUnit.Framework;
 namespace Clio.Tests.Common.ObjectRights;
 
 /// <summary>
-/// The rules the object-rights commands share: the security/system guard and the text help and tool descriptions show
-/// for it, and the one-line rendering of names and service messages.
+/// The rules the object-rights commands share: the security/system name list the connected listing leaves out, and the
+/// one-line rendering of names and service messages.
 /// </summary>
 [TestFixture]
 [Category("Unit")]
 [Property("Module", "Common")]
 public class ObjectRightsSupportTests {
-
-	[Test]
-	[Description("The families that help and tool descriptions name are exactly the prefixes and suffixes the guard matches — in both directions — so the text can neither miss a guarded family nor promise one the guard dropped.")]
-	public void SecurityObjectFamiliesText_ShouldNameExactlyTheGuardedFamilies_WhenComparedBothWays() {
-		// Arrange
-		string[] guarded = ObjectRightsSupport.SecurityObjectPrefixList.Select(prefix => prefix + "*")
-			.Concat(ObjectRightsSupport.SecurityObjectSuffixList.Select(suffix => "*" + suffix))
-			.ToArray();
-
-		// Act
-		string[] named = ObjectRightsSupport.SecurityObjectFamiliesText
-			.Split(new[] { ',', '/' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-		// Assert
-		named.Should().BeEquivalentTo(guarded, because: "the text and the guard describe the same families");
-	}
 
 	[TestCase("SysAdminUnit", true)]
 	[TestCase("sysuserinrole", true)]

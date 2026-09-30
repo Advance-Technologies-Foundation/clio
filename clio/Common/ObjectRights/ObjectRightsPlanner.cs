@@ -11,17 +11,13 @@ namespace Clio.Common.ObjectRights;
 /// <param name="Revoke">Revoke the operations instead of granting them.</param>
 /// <param name="EnableOperationPermissions">The caller allows a grant to turn operation permissions ON.</param>
 /// <param name="DisableOperationPermissions">The caller asks a revoke to turn operation permissions OFF.</param>
-/// <param name="IsSecurityObject">The object is a security or system object.</param>
-/// <param name="AllowSecurityObject">The caller allows a grant beyond read, or a disable, on such an object.</param>
 public sealed record ObjectRightsChangeRequest(
 	Guid Grantee,
 	string GranteeName,
 	IReadOnlyCollection<ObjectOperation> Operations,
 	bool Revoke,
 	bool EnableOperationPermissions,
-	bool DisableOperationPermissions,
-	bool IsSecurityObject,
-	bool AllowSecurityObject);
+	bool DisableOperationPermissions);
 
 /// <summary>Why a planned change is refused. A refused plan writes nothing.</summary>
 public enum ObjectRightsRefusal {
@@ -39,8 +35,6 @@ public enum ObjectRightsRefusal {
 	RevokeOnNotAdministered,
 	/// <summary>The revoke would leave the administered object with no row that grants any operation.</summary>
 	LeavesNoGrantingRow,
-	/// <summary>A grant beyond read, or a disable, on a security or system object without <c>--allow-security-object</c>.</summary>
-	SecurityObjectNotAllowed,
 	/// <summary>
 	/// The grantee has more than one row. Which of them decides depends on the positions of every other row, so the
 	/// tool edits none of them; the duplicates need an explicit repair.
@@ -108,8 +102,7 @@ public sealed class ObjectRightsPlanner : IObjectRightsPlanner {
 	private enum Transitions {
 		None = 0,
 		EnableOperationPermissions = 1,
-		LeaveNoGrantingRow = 2,
-		WriteSecurityObject = 4
+		LeaveNoGrantingRow = 2
 	}
 
 	// THE POLICY for transitions: one row per transition, in the order the refusals are reported. A transition not in
@@ -117,7 +110,6 @@ public sealed class ObjectRightsPlanner : IObjectRightsPlanner {
 	// before any transition is computed: a grantee with several rows (D7), and a revoke on an object that is not
 	// administered (company employees reach it whatever its rows say).
 	private static readonly (Transitions Transition, Func<ObjectRightsChangeRequest, bool> Allowed, ObjectRightsRefusal Refusal)[] Policy = {
-		(Transitions.WriteSecurityObject, request => request.AllowSecurityObject, ObjectRightsRefusal.SecurityObjectNotAllowed),
 		(Transitions.EnableOperationPermissions, request => request.EnableOperationPermissions, ObjectRightsRefusal.EnableNotRequested),
 		// With --disable-operation-permissions the revoke turns the switch off instead, so a row-less administered
 		// object is never an allowed end state.
@@ -154,10 +146,6 @@ public sealed class ObjectRightsPlanner : IObjectRightsPlanner {
 		// the tool does, below the existing rows so none of them is renumbered.
 		bool addsAllEmployees = enabling && request.Grantee != SysAdminUnitIds.AllEmployees
 			&& rows.All(row => row.GranteeId != SysAdminUnitIds.AllEmployees);
-		// The All employees row grants every operation, so on a security object it is a grant beyond read too.
-		if (request.IsSecurityObject && (addsAllEmployees || request.Operations.Any(op => op != ObjectOperation.Read))) {
-			transitions |= Transitions.WriteSecurityObject;
-		}
 		if (addsAllEmployees) {
 			after.Add(new RoleOperationRights(SysAdminUnitIds.AllEmployees, AllEmployeesName, next++,
 				true, true, true, true));
@@ -199,9 +187,6 @@ public sealed class ObjectRightsPlanner : IObjectRightsPlanner {
 			after[after.IndexOf(granteeRow)] = granteeRow.With(request.Operations, false);
 		}
 		bool disabling = request.DisableOperationPermissions;
-		if (disabling && request.IsSecurityObject) {
-			transitions |= Transitions.WriteSecurityObject;
-		}
 		bool rowsChanged = granteeRow is not null && !after.SequenceEqual(rows);
 		if (!disabling && rowsChanged && !after.Any(row => row.HasAnyOperation)) {
 			transitions |= Transitions.LeaveNoGrantingRow;

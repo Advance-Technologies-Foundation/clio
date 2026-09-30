@@ -42,14 +42,13 @@ public sealed class SetObjectRightsToolE2ETests : ObjectRightsToolE2ETestsBase {
 	[Test]
 	[AllureTag(SetObjectRightsTool.ToolName)]
 	[AllureName("set-object-rights binds the explicit transition flags")]
-	[AllureDescription("enable-operation-permissions, disable-operation-permissions with revoke, allow-security-object and preview bind through the real MCP server and the call still fails on the missing environment, not as an unknown argument.")]
+	[AllureDescription("enable-operation-permissions, disable-operation-permissions with revoke, and preview bind through the real MCP server and the call still fails on the missing environment, not as an unknown argument.")]
 	[Description("Binds every explicit transition flag and the dry-run flag through the real MCP server: each is part of the one-call contract.")]
 	public async Task Tool_Should_Bind_Transition_And_Preview_Flags() {
 		// Arrange
 		string grantEnvironment = $"missing-{ToolName}-enable-env-{Guid.NewGuid():N}";
 		Dictionary<string, object?> grant = InvalidEnvironmentArgs(grantEnvironment);
 		grant["enable-operation-permissions"] = true;
-		grant["allow-security-object"] = true;
 		grant["preview"] = true;
 		string revokeEnvironment = $"missing-{ToolName}-disable-env-{Guid.NewGuid():N}";
 		Dictionary<string, object?> revoke = InvalidEnvironmentArgs(revokeEnvironment);
@@ -73,10 +72,11 @@ public sealed class SetObjectRightsToolE2ETests : ObjectRightsToolE2ETestsBase {
 	[TestCase("confirmation-code", "0123456789abcdef")]
 	[TestCase("include-connected", true)]
 	[TestCase("connected-operations", "read")]
+	[TestCase("allow-security-object", true)]
 	[AllureTag(SetObjectRightsTool.ToolName)]
 	[AllureName("set-object-rights refuses the retired arguments")]
 	[AllureDescription("An argument of the retired two-step / fan-out contract is refused through the real MCP server before the environment is resolved, so a caller on the old contract is told so instead of being half-understood.")]
-	[Description("Refuses an argument of the retired contract (confirm, confirmation-code, include-connected, connected-operations) before the environment is resolved.")]
+	[Description("Refuses an argument of the retired contract (confirm, confirmation-code, include-connected, connected-operations, allow-security-object) before the environment is resolved.")]
 	public async Task Tool_Should_Refuse_Retired_Argument(string argument, object value) {
 		// Arrange
 		string invalidEnvironmentName = $"missing-{ToolName}-retired-env-{Guid.NewGuid():N}";

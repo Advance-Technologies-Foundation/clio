@@ -86,7 +86,8 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 			.Returns(_ => before,
 				_ => readBack ?? (_saved is null ? before : Info(_saved.AdministratedByOperations, _saved.Roles.ToArray())));
 
-	private static SetObjectRightsOptions Options(string operations = null, Action<SetObjectRightsOptions> tweak = null) {
+	private static SetObjectRightsOptions Options(string operations = "read,create,edit",
+		Action<SetObjectRightsOptions> tweak = null) {
 		SetObjectRightsOptions options = new() {
 			EntitySchemaName = "UsrFoo", Grantee = GranteeText, Operations = operations, Confirm = true
 		};
@@ -120,17 +121,19 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 	}
 
 	[Test]
-	[Description("Omitted operations grant read/create/edit — never delete.")]
-	public void Execute_ShouldGrantReadCreateEdit_WhenOperationsOmitted() {
+	[Description("A grant names its operations: without --operations nothing is read or written, because no operation is granted by default.")]
+	public void Execute_ShouldRefuse_WhenAGrantNamesNoOperations() {
 		// Arrange
 		ObjectIs(Info(true, Row(AllEmployees, 0, "RCED")));
 
 		// Act
-		_command.Execute(Options());
+		int exitCode = _command.Execute(Options(tweak: o => { o.Operations = null; }));
 
 		// Assert
-		_saved.Roles.Single(row => row.GranteeId == Grantee).Should().Be(Row(Grantee, 1, "RCE"),
-			because: "the least-privilege default leaves delete out");
+		exitCode.Should().Be(1, because: "the approved arguments must show what is granted");
+		ErrorContains("--operations is required", because: "the error names the missing argument");
+		_reader.DidNotReceiveWithAnyArgs().GetObjectRights(default, default);
+		NothingSaved();
 	}
 
 	[Test]
@@ -231,29 +234,6 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 	}
 
 	[Test]
-	[Description("On a security object whose stale rows have no All employees row, an enabling read grant would add an All employees row with every operation — a grant beyond read — so it is refused without --allow-security-object and allowed with it.")]
-	public void Execute_ShouldGateTheAddedAllEmployeesRow_WhenEnablingASecurityObject() {
-		// Arrange
-		RoleOperationRights stale = new(Guid.NewGuid(), "Stale role", 0, true, false, false, false);
-		ObjectIs(Info(false, stale));
-
-		// Act
-		int refused = _command.Execute(Options("read", o => {
-			o.EntitySchemaName = "SysAdminUnit"; o.EnableOperationPermissions = true;
-		}));
-		int allowed = _command.Execute(Options("read", o => {
-			o.EntitySchemaName = "SysAdminUnit"; o.EnableOperationPermissions = true; o.AllowSecurityObject = true;
-		}));
-
-		// Assert
-		refused.Should().Be(1, because: "the All employees row grants every operation on a security object");
-		ErrorContains("adds an 'All employees' row", because: "the refusal names the row that needs the opt-in");
-		allowed.Should().Be(0, because: "the caller allowed the security object");
-		_saved.Roles.Should().Contain(Row(AllEmployees, 1, "RCED"),
-			because: "the All employees row goes below the stale row");
-	}
-
-	[Test]
 	[Description("A revoke on an object that does not use operation permissions is refused: company employees reach it whatever its rows say (only technical users follow the rows while it is off), and the refusal says how to limit access instead.")]
 	public void Execute_ShouldRefuse_WhenRevokingOnAnObjectThatIsNotAdministered() {
 		// Arrange
@@ -267,24 +247,6 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		ErrorContains("is not administered by operation permissions", because: "the refusal says why");
 		ErrorContains("then revoke from that row what employees must not have",
 			because: "an enable alone keeps every operation for All employees");
-		NothingSaved();
-	}
-
-	[Test]
-	[Description("Turning operation permissions off on a security object needs --allow-security-object: it would make the object available to all internal users.")]
-	public void Execute_ShouldRefuse_WhenDisablingASecurityObjectWithoutOptIn() {
-		// Arrange
-		ObjectIs(Info(true, Row(Grantee, 0, "R")));
-
-		// Act
-		int exitCode = _command.Execute(Options("read", o => {
-			o.EntitySchemaName = "SysAdminUnit"; o.Revoke = true; o.DisableOperationPermissions = true;
-		}));
-
-		// Assert
-		exitCode.Should().Be(1, because: "a disable on a security object must be allowed explicitly");
-		ErrorContains("--disable-operation-permissions on it needs --allow-security-object",
-			because: "the refusal names the opt-in");
 		NothingSaved();
 	}
 
@@ -339,8 +301,8 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 	}
 
 	[Test]
-	[Description("A padded security/system object name is normalized before the gate: a grant beyond read on it is refused.")]
-	public void Execute_ShouldGateSecurityObject_WhenNameIsPadded() {
+	[Description("A padded object name is trimmed before it is read, and a security or system object named in the call is changed like any other: the name is in the arguments the host shows.")]
+	public void Execute_ShouldChangeTheNamedSystemObject_WhenItsNameIsPadded() {
 		// Arrange
 		ObjectIs(Info(true, Row(AllEmployees, 0, "R")));
 
@@ -348,10 +310,9 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		int exitCode = _command.Execute(Options("read,edit", o => { o.EntitySchemaName = "SysAdminUnit "; }));
 
 		// Assert
-		exitCode.Should().Be(1, because: "a grant beyond read on a security object needs --allow-security-object");
+		exitCode.Should().Be(0, because: "a named system object needs no separate opt-in");
 		_reader.Received().GetObjectRights("SysAdminUnit", Arg.Any<CreatioRequestOptions>());
-		ErrorContains("security/system object", because: "the refusal says why");
-		NothingSaved();
+		_saved.Roles.Should().Contain(Row(Grantee, 1, "RE"), because: "the named change is saved");
 	}
 
 	[Test]
@@ -755,7 +716,8 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 			.SetName("Execute_ShouldReject_WhenOperationsAreGivenEmpty");
 		yield return new TestCaseData(Options(" "), "no operation given")
 			.SetName("Execute_ShouldReject_WhenOperationsAreBlank");
-		yield return new TestCaseData(Options(tweak: o => { o.Revoke = true; }), "--revoke needs --operations")
+		yield return new TestCaseData(Options(tweak: o => { o.Revoke = true; o.Operations = null; }),
+				"--operations is required")
 			.SetName("Execute_ShouldReject_WhenRevokeNamesNoOperations");
 		yield return new TestCaseData(Options("read,own\nUsrFoo"), "unknown operation 'own UsrFoo'")
 			.SetName("Execute_ShouldEchoTheUnknownOperationOnOneLine_WhenItHasALineBreak");

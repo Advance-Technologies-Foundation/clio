@@ -22,10 +22,10 @@ public class SetObjectRightsOptions : RemoteCommandOptions {
 		"SysAdminUnit id (organizational/functional role or user) to grant/revoke. Names are not unique — pass the id.")]
 	public string Grantee { get; set; }
 
-	/// <summary>Comma-separated operations. A grant defaults to read, create and edit; a revoke must name them.</summary>
-	[Option("operations", Required = false, HelpText =
-		"Comma-separated operations: read,create,edit,delete. A grant defaults to read,create,edit (delete not granted "
-		+ "by default); a revoke must name them.")]
+	/// <summary>Comma-separated operations to grant or revoke. Required: no operation is granted by default.</summary>
+	[Option("operations", Required = true, HelpText =
+		"Comma-separated operations to grant or revoke: read,create,edit,delete. Required - no operation is granted by "
+		+ "default.")]
 	public string Operations { get; set; }
 
 	/// <summary>Revoke the operations instead of granting them.</summary>
@@ -45,12 +45,6 @@ public class SetObjectRightsOptions : RemoteCommandOptions {
 		"With --revoke: turn the object's operation permissions OFF, which makes it available to ALL internal users. "
 		+ "Needed when the revoke would leave no row that grants any operation.")]
 	public bool DisableOperationPermissions { get; set; }
-
-	/// <summary>Allow a grant beyond read, or a disable, on a security or system object.</summary>
-	[Option("allow-security-object", Required = false, HelpText =
-		"Allow a grant beyond read, or --disable-operation-permissions, on a security or system object ("
-		+ ObjectRightsSupport.SecurityObjectFamiliesText + "). Without it such an object may only be granted read.")]
-	public bool AllowSecurityObject { get; set; }
 
 	/// <summary>Apply the change without a prompt.</summary>
 	[Option("confirm", Required = false, HelpText =
@@ -105,8 +99,7 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 			return 1;
 		}
 		ObjectRightsChangeRequest request = new(grantee, granteeName, operations, options.Revoke,
-			options.EnableOperationPermissions, options.DisableOperationPermissions,
-			ObjectRightsSupport.IsSecurityOrSystemObject(schemaName), options.AllowSecurityObject);
+			options.EnableOperationPermissions, options.DisableOperationPermissions);
 		ObjectRightsPlan plan = _planner.Plan(before.State, request);
 		Change change = new(schemaName, $"'{ObjectRightsSupport.Display(granteeName)}' ({grantee})", request, plan);
 		if (plan.Refused) {
@@ -194,9 +187,10 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 			_logger.WriteError("Error: --disable-operation-permissions applies to a revoke (--revoke).");
 			return false;
 		}
-		// The arguments show the whole effect: a revoke names what it takes away rather than inheriting the grant default.
-		if (options.Revoke && options.Operations is null) {
-			_logger.WriteError("Error: --revoke needs --operations: name the operations to revoke (read,create,edit,delete).");
+		// The arguments show the whole effect: every call names the operations it grants or revokes; none is implied.
+		if (options.Operations is null) {
+			_logger.WriteError("Error: --operations is required: name the operations to grant or revoke "
+				+ "(read,create,edit,delete).");
 			return false;
 		}
 		if (!TryParseOperations(options.Operations, out operations, out string opError)) {
@@ -260,17 +254,6 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 				$"after this revoke no row on '{schema}' would grant any operation, so nobody could reach it except "
 				+ "holders of the '…any data' system operations. To make it available to ALL internal users instead, "
 				+ "re-run with --disable-operation-permissions.",
-			ObjectRightsRefusal.SecurityObjectNotAllowed when change.Request.Revoke =>
-				$"'{schema}' is a security/system object. Turning its operation permissions off would make it available "
-				+ "to ALL internal users, so --disable-operation-permissions on it needs --allow-security-object.",
-			ObjectRightsRefusal.SecurityObjectNotAllowed when plan.AddsAllEmployeesRow
-				&& change.Request.Operations.All(op => op == ObjectOperation.Read) =>
-				$"'{schema}' is a security/system object. Turning its operation permissions on adds an 'All employees' "
-				+ "row with read/create/edit/delete, because the object has rows but none for All employees. That is a "
-				+ "grant beyond read, so it needs --allow-security-object.",
-			ObjectRightsRefusal.SecurityObjectNotAllowed =>
-				$"'{schema}' is a security/system object, so only read may be granted on it without "
-				+ "--allow-security-object.",
 			ObjectRightsRefusal.DuplicateGranteeRows =>
 				$"grantee {change.GranteeLabel} has {plan.DuplicatePositions.Count} rows on '{schema}' (positions "
 				+ $"{string.Join(", ", plan.DuplicatePositions)}). Which of them decides depends on the other rows, so "
@@ -483,20 +466,12 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 		return ops.Count == 0 ? "no operations" : string.Join("/", ops);
 	}
 
-	// Least-privilege default for a grant: read/create/edit, the access a role needs to work with an object. delete is
-	// NOT granted by default — pass it in --operations explicitly. A revoke has no default (see TryParseInputs).
-	private static readonly ObjectOperation[] DefaultGrantOperations =
-		{ ObjectOperation.Read, ObjectOperation.Create, ObjectOperation.Edit };
-
 	private static bool TryParseOperations(string raw, out IReadOnlyCollection<ObjectOperation> operations,
 		out string error) {
 		error = null;
-		if (raw is null) {
-			operations = DefaultGrantOperations;
-			return true;
-		}
 		List<ObjectOperation> parsed = new();
-		foreach (string token in raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)) {
+		foreach (string token in (raw ?? string.Empty).Split(',',
+				StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)) {
 			switch (token.ToLowerInvariant()) {
 				case "read": parsed.Add(ObjectOperation.Read); break;
 				case "create": case "append": parsed.Add(ObjectOperation.Create); break;
@@ -510,8 +485,7 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 			}
 		}
 		if (parsed.Count == 0) {
-			// Given but empty ("", " ", ","): the value the approval shows names no operation, so it is never read as
-			// the default.
+			// Given but empty ("", " ", ","): the value the approval shows names no operation.
 			operations = Array.Empty<ObjectOperation>();
 			error = "Error: --operations: no operation given. Use read,create,edit,delete.";
 			return false;
