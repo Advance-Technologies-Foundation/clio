@@ -1,4 +1,4 @@
-﻿# update-page
+# update-page
 
 ## Command Type
 
@@ -97,16 +97,22 @@ name instead of trying to edit a non-existent local `insert`.
 **Before editing the body**, understand the validation rules:
 
 - **SCHEMA_CONVERTERS keys** (object form) must follow `VendorPrefix.ConverterName` format
-  (e.g., `usr.MyConverter`). Call `clio get-guidance --name page-schema-converters` for details.
+  (e.g., `usr.MyConverter`). Call the MCP `get-guidance` tool with `name=page-schema-converters` for details.
 - **SCHEMA_HANDLERS** must be an array of `{ request, handler }` entries. Each `request` value
   must follow `VendorPrefix.HandlerName` format (e.g., `crt.HandleViewModelInitRequest`,
-  `usr.HandleSomeRequest`). Call `clio get-guidance --name page-schema-handlers` for details.
+  `usr.HandleSomeRequest`). Call the MCP `get-guidance` tool with `name=page-schema-handlers` for details.
 - **SCHEMA_VALIDATORS keys** (object form) must follow `VendorPrefix.ValidatorName` format
-  (e.g., `usr.RequiredValidator`). Call `clio get-guidance --name page-schema-validators` for details.
-- **Handler, converter, and validator calls** must resolve to a declaration in the page factory scope,
-  a callback parameter, or a known JavaScript/Creatio global. An undefined direct helper call is rejected
-  before the body is sent to Creatio; Page Designer can remove module-scope declarations while preserving
-  handler entries, leaving a runtime `ReferenceError` otherwise.
+  (e.g., `usr.RequiredValidator`). Call the MCP `get-guidance` tool with `name=page-schema-validators` for details.
+- **Designer-safe page code.** Keep only `return { ... }` in the page factory body. Extra statements
+  produce `designer-unsafe-factory-statement` warnings because Page Designer regenerates the factory
+  on save. Put helper functions, constants and caches in a client module listed in `SCHEMA_DEPS`,
+  bind its argument in `SCHEMA_ARGS`, and call it from a preserved handler, converter or validator.
+  Read the MCP `get-guidance` tool with `name=shared-client-logic` for the module workflow.
+- **Handler, converter, and validator calls** cannot rely on factory declarations: such direct calls
+  are rejected with `designer-unsafe-section-call` even when the helper exists now. Callback-local
+  declarations, callback parameters, AMD dependency arguments and known JavaScript/Creatio globals
+  remain valid. Missing direct callees produce `undefined-section-call`. These AST checks run only on
+  MCP `update-page` / `sync-pages` / `validate-page`; the CLI `update-page` verb does not run them.
 - **Mobile page rules.** These run only on the MCP `update-page` / `sync-pages` / `validate-page` tools.
   The CLI `update-page` verb does **not** run them — it validates a mobile body only for disallowed
   sections — so a body rejected through MCP still saves from the command line.
@@ -177,13 +183,13 @@ name instead of trying to edit a non-existent local `insert`.
     body you send back.
   - **Not enforced:** the same type-placement and merge-slot defects break **web** pages identically and are not checked
     there; `sync-pages` with `validate: false` skips these checks along with every other one.
-  Call `clio get-guidance --name mobile-page-modification` for details.
+  Call the MCP `get-guidance` tool with `name=mobile-page-modification` for details.
 - **User-visible text must be localizable.** Any `label`, `caption`, `title`, `tooltip`, or
   `placeholder` in `viewConfigDiff` (at any nesting depth) set to an inline string literal is
   **rejected**. Bind it via `$Resources.Strings.<Key>` (or `#ResourceString(<Key>)#` for data-grid
   column captions and validator messages) and register the key's default-language value through
   `--resources`. Binding expressions (any `$`-prefixed value) and non-string values (e.g.
-  `placeholder: false`) are not literals and pass. Call `clio get-guidance --name page-schema-resources`
+  `placeholder: false`) are not literals and pass. Call the MCP `get-guidance` tool with `name=page-schema-resources`
   for the full rule. Gallery's `itemConfig.templateValuesMapping` is excluded: values such as
   `caption: "GalleryDS_Name"` name projected record attributes. Keep those identifiers unchanged;
   captions elsewhere on the Gallery or its children still require localization. For a standalone
