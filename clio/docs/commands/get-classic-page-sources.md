@@ -94,9 +94,10 @@ The response JSON reports `success`, `schemaName`, `entity`, `manifestPath`, `la
 and, when resolvable, `seed`, `entity`, `entityColumns`, `columnTitles`, `resources`, `resourceStrings`,
 `detailSchemas`, `section`, `childPageSchemas`, and `enumVocabulary`.
 
-- `resources` maps each page string to its en-US text (else its first culture). `resourceStrings` maps each page
-  string to all its cultures, and `resources[key]` equals `resourceStrings[key]["en-US"]` whenever both exist.
-  Both are omitted, with a warning, when the page's merged strings cannot be loaded. Each nested
+- `resourceStrings` maps each page string to all its cultures and is authoritative for per-culture values.
+  `resources` maps each page string to one text: the en-US text (else the first culture's text) of the key's first
+  entry that has one. For a key with several merged entries, `resources` keeps that first-entry rule, so its text
+  can differ from `resourceStrings[key]["en-US"]`. Both are omitted, with a warning, when the page's merged strings cannot be loaded. Each nested
   `childPageSchemas` manifest carries its own `resourceStrings` the same way, and no flat `resources`; when a
   child page's strings cannot be loaded, its manifest omits `resourceStrings` and a warning names the child page.
 - Each `detailSchemas` entry carries `body` (the top layer's), `title`, and `resourceStrings`: the detail's strings

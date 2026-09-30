@@ -26,13 +26,16 @@ DESCRIPTION
     omitted, never written as an empty object; "enumVocabularyCount" in the
     response reports how many of the three were resolved.
 
-    Localizable strings are merged across the hierarchy. "resources" maps each
-    page string to its en-US text (else its first culture); "resourceStrings"
+    Localizable strings are merged across the hierarchy. "resourceStrings"
     maps each page string to every culture as
     { "Key": { "en-US": "...", "fr-FR": "..." } } (the get-page
-    bundle.resources.strings shape), and resources[key] equals
-    resourceStrings[key]["en-US"] whenever both exist. Both blocks are omitted
-    when the page's merged strings cannot be loaded, with a warning.
+    bundle.resources.strings shape) and is authoritative for per-culture
+    values. "resources" maps each page string to one text: the en-US text
+    (else the first culture's text) of the key's first entry that has one.
+    For a key with several merged entries, "resources" keeps that
+    first-entry rule, so its text can differ from
+    resourceStrings[key]["en-US"]. Both blocks are omitted when the page's
+    merged strings cannot be loaded, with a warning.
     Each detailSchemas entry carries "body" (the top layer's), "title", and
     "resourceStrings": the detail's strings merged across its layers, in every
     culture. "title" is the detail schema's internal caption, not the title the

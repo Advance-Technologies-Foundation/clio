@@ -851,7 +851,7 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 			$"Could not gather merged localizable strings (resources) of '{schemaName}'",
 			"Its manifest carries no resources, so localized captions will be missing from the folded page.");
 		JObject resourceStrings = BuildResourceStrings(strings);
-		return (BuildFlatResources(strings, resourceStrings), resourceStrings);
+		return (BuildFlatResources(strings), resourceStrings);
 	}
 
 	private JObject BuildChildResourceStrings(PageSourcesRunContext ctx, string topLayerUId, string childPageName) =>
@@ -881,16 +881,14 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 		return [];
 	}
 
-	// One text per key: the key's merged en-US value, else the first entry's en-US or first culture value, so
-	// resources[key] equals resourceStrings[key]["en-US"] whenever both exist.
-	private static JObject BuildFlatResources(IReadOnlyList<MergedLocalizableString> strings, JObject resourceStrings) {
+	// One text per key: the first entry whose en-US text (else, without en-US, its first culture's text) is non-empty.
+	private static JObject BuildFlatResources(IReadOnlyList<MergedLocalizableString> strings) {
 		var resources = new JObject();
 		foreach (MergedLocalizableString localizableString in strings) {
 			if (string.IsNullOrWhiteSpace(localizableString.Name) || localizableString.Values.Count == 0) {
 				continue;
 			}
-			string value = resourceStrings[localizableString.Name]?[DefaultCulture]?.ToString()
-				?? localizableString.Values
+			string value = localizableString.Values
 					.FirstOrDefault(v => string.Equals(v.CultureName, DefaultCulture, StringComparison.OrdinalIgnoreCase))?.Value
 				?? localizableString.Values[0].Value;
 			if (!string.IsNullOrEmpty(value) && resources[localizableString.Name] == null) {

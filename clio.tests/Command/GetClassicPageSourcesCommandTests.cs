@@ -229,6 +229,17 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		_applicationClient.Received(1).ExecutePostRequest(
 			Arg.Any<string>(),
 			Arg.Is<string>(body => body.Contains("\"uid-detail\"")));
+		_applicationClient.Received(1).ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => IsFullHierarchyRequestFor(body, "uid-detail")));
+	}
+
+	private static bool IsFullHierarchyRequestFor(string requestBody, string schemaUId) {
+		if (string.IsNullOrEmpty(requestBody)) {
+			return false;
+		}
+		JObject request = JObject.Parse(requestBody);
+		return request["schemaUId"]?.ToString() == schemaUId && (request["useFullHierarchy"]?.Value<bool>() ?? false);
 	}
 
 	[Test]
@@ -294,6 +305,8 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		child["resourceStrings"].Should().BeNull(because: "the child's merged strings could not be loaded");
 		manifest["resources"]!["HeaderCaption"]!.ToString().Should().Be("Header",
 			because: "the page's own strings are unaffected by the child's failure");
+		manifest["resourceStrings"]!["HeaderCaption"]!["en-US"]!.ToString().Should().Be("Header",
+			because: "the page's own resourceStrings are unaffected by the child's failure");
 		response.Warnings.Should().ContainSingle(w => w.Contains("child page 'UsrNotePage'") && w.Contains("resourceStrings"),
 			because: "the warning must name the child and the block it lacks, not read as the page losing its resources");
 		response.Warnings.Should().NotContain(w => w.Contains("carries no resources,"),
@@ -301,7 +314,7 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 	}
 
 	[Test]
-	[Description("TryAssemblePageSources merges duplicate string entries per culture (first non-empty text wins), skips empty texts, empty keys and empty cultures, canonicalizes culture casing, and keeps resources[key] equal to resourceStrings[key][\"en-US\"].")]
+	[Description("TryAssemblePageSources merges duplicate string entries into resourceStrings per culture (first non-empty text wins), skips empty texts, empty keys and empty cultures, and canonicalizes culture casing.")]
 	public void TryAssemblePageSources_ShouldApplyResourceStringsMergeRules() {
 		// Arrange
 		AddLayer("UsrOrderPage", "uid-page", "UsrApp", 200);
@@ -319,27 +332,54 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		// Assert
 		JObject manifest = JObject.Parse(ReadManifest(response));
 		var resourceStrings = (JObject)manifest["resourceStrings"];
-		var resources = (JObject)manifest["resources"];
 		resourceStrings!["DuplicateCaption"]!["fr-FR"]!.ToString().Should().Be("Premier",
 			because: "across duplicate entries the first non-empty text per culture wins");
 		resourceStrings["DuplicateCaption"]!["es-ES"]!.ToString().Should().Be("Primero",
 			because: "an empty text does not claim its culture, so a later entry fills it");
 		resourceStrings["DuplicateCaption"]!["en-US"]!.ToString().Should().Be("First",
 			because: "a culture missing from the first entry is filled from a later one");
-		resources!["DuplicateCaption"]!.ToString().Should().Be("First",
-			because: "the flat block takes the key's merged en-US text, not the first entry's fallback culture");
 		((JObject)resourceStrings["CasingCaption"]).Properties().Select(p => p.Name).Should().BeEquivalentTo(
 			new[] { "en-US", "fr-FR" }, because: "culture names are canonicalized");
-		resources["CasingCaption"]!.ToString().Should().Be("Lower",
-			because: "the flat block matches en-US regardless of casing");
 		resourceStrings["EmptyCaption"].Should().BeNull(because: "a key with no non-empty text in a named culture is omitted");
-		resources["EmptyCaption"].Should().BeNull(because: "the flat block skips a key whose en-US text is empty");
 		resourceStrings.Properties().Should().NotContain(p => p.Name.Length == 0, because: "an entry without a key is skipped");
-		resources.Properties().Should().NotContain(p => p.Name.Length == 0, because: "an entry without a key is skipped");
-		foreach (JProperty flat in resources.Properties()) {
-			flat.Value.ToString().Should().Be(resourceStrings[flat.Name]!["en-US"]!.ToString(),
-				because: $"resources['{flat.Name}'] and resourceStrings['{flat.Name}']['en-US'] must agree");
-		}
+	}
+
+	[Test]
+	[Description("TryAssemblePageSources keeps the flat resources rule unchanged: per key the first entry whose en-US text (else, without en-US, its first culture's text) is non-empty wins, en-US matches regardless of casing, and an empty en-US text does not fall back to another culture.")]
+	public void TryAssemblePageSources_ShouldKeepFlatResourcesFirstEntryRule() {
+		// Arrange
+		AddLayer("UsrOrderPage", "uid-page", "UsrApp", 200);
+		AddSchema("uid-page", "define(\"UsrOrderPage\", [], function() { return {}; });", EmptyGuid, "UsrApp");
+		AddLocalizable("uid-page", "DuplicateCaption", ("fr-FR", "Premier"), ("es-ES", ""));
+		AddLocalizable("uid-page", "DuplicateCaption", ("en-US", "First"), ("fr-FR", "Second"));
+		AddLocalizable("uid-page", "LateEnglishCaption", ("en-US", ""));
+		AddLocalizable("uid-page", "LateEnglishCaption", ("en-US", "Later"));
+		AddLocalizable("uid-page", "CasingCaption", ("en-us", "Lower"), ("fr-FR", "Minuscule"));
+		AddLocalizable("uid-page", "FrenchOnlyCaption", ("fr-FR", "Seulement"), ("es-ES", "Solo"));
+		AddLocalizable("uid-page", "EmptyEnglishCaption", ("en-US", ""), ("fr-FR", "Texte"));
+		AddLocalizable("uid-page", "", ("en-US", "No key"));
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrOrderPage" };
+
+		// Act
+		_command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
+
+		// Assert
+		JObject manifest = JObject.Parse(ReadManifest(response));
+		var resources = (JObject)manifest["resources"];
+		var resourceStrings = (JObject)manifest["resourceStrings"];
+		resources!.Properties().ToDictionary(p => p.Name, p => p.Value.ToString()).Should().BeEquivalentTo(
+			new Dictionary<string, string> {
+				["DuplicateCaption"] = "Premier",
+				["LateEnglishCaption"] = "Later",
+				["CasingCaption"] = "Lower",
+				["FrenchOnlyCaption"] = "Seulement"
+			},
+			because: "flat resources keep the original first-entry rule for every input");
+		resourceStrings!["DuplicateCaption"]!["en-US"]!.ToString().Should().Be("First",
+			because: "resourceStrings is authoritative per culture and may differ from the flat text for a duplicate key");
+		((JObject)resourceStrings["EmptyEnglishCaption"]).Properties().Select(p => p.Name).Should().BeEquivalentTo(
+			new[] { "fr-FR" },
+			because: "an empty en-US text omits the flat entry while resourceStrings keeps the key's other cultures");
 	}
 
 	[Test]
