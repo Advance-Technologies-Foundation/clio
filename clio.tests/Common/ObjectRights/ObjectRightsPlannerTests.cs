@@ -33,8 +33,7 @@ public class ObjectRightsPlannerTests {
 	private static ObjectRightsState State(bool administered, params RoleOperationRights[] rows) => new(administered, rows);
 
 	private static ObjectRightsChangeRequest Grant(params ObjectOperation[] ops) =>
-		new(Grantee, "Grantee", ops.Length == 0 ? ReadCreateEdit : ops, Revoke: false, EnableOperationPermissions: false,
-			DisableOperationPermissions: false);
+		new(Grantee, "Grantee", ops, Revoke: false, EnableOperationPermissions: false, DisableOperationPermissions: false);
 
 	private static ObjectRightsChangeRequest Revoke(params ObjectOperation[] ops) =>
 		Grant(ops) with { Revoke = true };
@@ -51,7 +50,7 @@ public class ObjectRightsPlannerTests {
 		ObjectRightsState before = State(true, Row(AllEmployees, 0, "RCED"));
 
 		// Act
-		ObjectRightsPlan plan = _planner.Plan(before, Grant());
+		ObjectRightsPlan plan = _planner.Plan(before, Grant(ReadCreateEdit));
 
 		// Assert
 		plan.Refused.Should().BeFalse(because: "a grant on an administered object needs no opt-in");
@@ -87,7 +86,7 @@ public class ObjectRightsPlannerTests {
 		ObjectRightsState before = State(true, Row(Grantee, 0, "RCE"));
 
 		// Act
-		ObjectRightsPlan plan = _planner.Plan(before, Grant());
+		ObjectRightsPlan plan = _planner.Plan(before, Grant(ReadCreateEdit));
 
 		// Assert
 		plan.Refused.Should().BeFalse(because: "a re-run is not refused");
@@ -101,7 +100,7 @@ public class ObjectRightsPlannerTests {
 		ObjectRightsState before = State(false, Row(AllEmployees, 0, "RCED"));
 
 		// Act
-		ObjectRightsPlan plan = _planner.Plan(before, Grant());
+		ObjectRightsPlan plan = _planner.Plan(before, Grant(ReadCreateEdit));
 
 		// Assert
 		plan.Refusal.Should().Be(ObjectRightsRefusal.EnableNotRequested,
@@ -118,7 +117,7 @@ public class ObjectRightsPlannerTests {
 		ObjectRightsState before = State(false, Row(AllEmployees, 0, "RCED"));
 
 		// Act
-		ObjectRightsPlan plan = _planner.Plan(before, Grant() with { EnableOperationPermissions = true });
+		ObjectRightsPlan plan = _planner.Plan(before, Grant(ReadCreateEdit) with { EnableOperationPermissions = true });
 
 		// Assert
 		plan.EnablesOperationPermissions.Should().BeTrue(because: "the switch goes on");
@@ -170,7 +169,7 @@ public class ObjectRightsPlannerTests {
 		ObjectRightsState before = State(true, Row(Grantee, 0, "R"), Row(AllEmployees, 1, "RCED"), Row(Grantee, 2, "RCED"));
 
 		// Act
-		ObjectRightsPlan plan = _planner.Plan(before, revoke ? Revoke(ObjectOperation.Read) : Grant());
+		ObjectRightsPlan plan = _planner.Plan(before, revoke ? Revoke(ObjectOperation.Read) : Grant(ReadCreateEdit));
 
 		// Assert
 		plan.Refusal.Should().Be(ObjectRightsRefusal.DuplicateGranteeRows, because: "duplicates need an explicit repair");
@@ -185,7 +184,7 @@ public class ObjectRightsPlannerTests {
 		ObjectRightsState before = State(true, Row(AllEmployees, 0, "RCED"), Row(Other, 5, "R"));
 
 		// Act
-		ObjectRightsPlan plan = _planner.Plan(before, Grant());
+		ObjectRightsPlan plan = _planner.Plan(before, Grant(ReadCreateEdit));
 
 		// Assert
 		plan.After.Roles.Select(row => row.Position).Should().Equal(new[] { 0, 5, 6 },
@@ -299,19 +298,22 @@ public class ObjectRightsPlannerTests {
 		plan.DisablesOperationPermissions.Should().BeFalse(because: "no disable was asked for");
 	}
 
-	[Test]
+	[TestCase(false, TestName = "Plan_ShouldThrow_WhenTheOperationListIsEmpty")]
+	[TestCase(true, TestName = "Plan_ShouldThrow_WhenTheOperationListIsNull")]
 	[Description("A request that names no operation is a caller bug: the planner refuses to plan it rather than turn operation permissions on for a grant of nothing (invariant 8).")]
-	public void Plan_ShouldThrow_WhenTheRequestNamesNoOperation() {
+	public void Plan_ShouldThrow_WhenTheRequestNamesNoOperation(bool nullOperations) {
 		// Arrange
 		ObjectRightsState before = State(false, Row(Other, 0, ""));
-		ObjectRightsChangeRequest request = new(AllEmployees, "All employees", System.Array.Empty<ObjectOperation>(),
+		ObjectRightsChangeRequest request = new(AllEmployees, "All employees",
+			nullOperations ? null : Array.Empty<ObjectOperation>(),
 			Revoke: false, EnableOperationPermissions: true, DisableOperationPermissions: false);
 
 		// Act
-		System.Action plan = () => _planner.Plan(before, request);
+		Action plan = () => _planner.Plan(before, request);
 
 		// Assert
-		plan.Should().Throw<System.ArgumentException>(because: "every call names the operations it grants or revokes");
+		plan.Should().ThrowExactly<ArgumentException>(because: "every call names the operations it grants or revokes")
+			.WithParameterName("request", because: "the request, not the object's state, is what is malformed");
 	}
 
 	[Test]

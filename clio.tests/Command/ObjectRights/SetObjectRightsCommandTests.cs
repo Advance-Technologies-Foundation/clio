@@ -707,7 +707,9 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 				"--operations is required")
 			.SetName("Execute_ShouldReject_WhenRevokeNamesNoOperations");
 		yield return new TestCaseData(Options("read,write"), "unknown operation 'write'")
-			.SetName("Execute_ShouldReject_WhenAnOperationIsAnUndocumentedAlias");
+			.SetName("Execute_ShouldReject_WhenAnOperationIsTheRetiredWriteAlias");
+		yield return new TestCaseData(Options("read,append"), "unknown operation 'append'")
+			.SetName("Execute_ShouldReject_WhenAnOperationIsTheRetiredAppendAlias");
 		yield return new TestCaseData(Options("read,own\nUsrFoo"), "unknown operation 'own UsrFoo'")
 			.SetName("Execute_ShouldEchoTheUnknownOperationOnOneLine_WhenItHasALineBreak");
 		yield return new TestCaseData(Options("read,create,edit", tweak: o => { o.Preview = true; }), "--preview writes nothing")

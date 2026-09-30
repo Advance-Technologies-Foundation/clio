@@ -89,6 +89,9 @@ public interface IObjectRightsPlanner {
 	/// <param name="before">The object as read.</param>
 	/// <param name="request">The change the call asks for.</param>
 	/// <returns>The plan, allowed or refused.</returns>
+	/// <exception cref="ArgumentNullException"><paramref name="before"/> or <paramref name="request"/> is null.</exception>
+	/// <exception cref="ArgumentException">The request names no operation: its operation list is null or empty.
+	/// Every call names what it grants or revokes; nothing is implied by default.</exception>
 	ObjectRightsPlan Plan(ObjectRightsState before, ObjectRightsChangeRequest request);
 }
 
