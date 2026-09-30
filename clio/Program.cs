@@ -151,6 +151,7 @@ internal class Program {
 		typeof(ProcessPageFactsOptions),
 		typeof(GetPageHierarchyOptions),
 		typeof(PageUpdateOptions),
+		typeof(LocalizePageOptions),
 		typeof(PageCreateOptions),
 		typeof(CreateRelatedPageAddonOptions),
 		typeof(GetRelatedPageAddonOptions),
@@ -770,6 +771,7 @@ internal class Program {
 			ProcessPageFactsOptions opts => Resolve<ProcessPageFactsCommand>(opts).Execute(opts),
 			GetPageHierarchyOptions opts => Resolve<GetPageHierarchyCommand>(opts).Execute(opts),
 			PageUpdateOptions opts => Resolve<PageUpdateCommand>(opts).Execute(opts),
+			LocalizePageOptions opts => Resolve<LocalizePageCommand>(opts).Execute(opts),
 			PageListOptions opts => Resolve<PageListCommand>(opts).Execute(opts),
 			QuizCommandOptions opts => Resolve<QuizCommand>().Execute(opts),
 			GenerateSourceCodeOptions opts => Resolve<GenerateSourceCodeCommand>(opts).Execute(opts),
@@ -1750,7 +1752,10 @@ internal class Program {
 			// Only when the update would actually have run. A line saying an update was deferred,
 			// printed on every command of a session whose schedule is disabled or not yet due,
 			// describes something that was never going to happen.
-			ConsoleLogger.Instance.WriteInfo(
+			// Stderr, not WriteInfo's stdout: the line precedes the output of EVERY command, so callers
+			// that read stdout (Clio Explorer parsing `clio info -s`, issue #1665) received it as the
+			// first line of data.
+			((ConsoleLogger)ConsoleLogger.Instance).WriteInfoToStderr(
 				$"clio self-update deferred: MCP host pid {residentHost.ProcessId} "
 				+ $"(version {residentHost.ClioVersion}) is running");
 		}

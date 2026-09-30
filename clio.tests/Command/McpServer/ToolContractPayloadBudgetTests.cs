@@ -60,16 +60,22 @@ public sealed class ToolContractPayloadBudgetTests {
 	// pinned where it stands.
 	// Registration and Classic parameter-page discovery add two independent long-tail tools.
 	// The combined default index measures 44986 bytes; round to the next 256-byte step (45056).
-	// Baseline before this branch (issue #1221): odata-read-to-file put the default index at a measured
-	// 45223 bytes, pinned to 177 * 256 = 45312. ENG-99741 then adds the matched set-object-rights /
-	// get-object-rights long-tail pair (object-level access grant + its read companion) — two ordinary
-	// long-tail additions, not sustained catalog growth — which grow the index by two more entries. Re-measured
-	// at 45697 bytes on the default surface after merging master at 5796d1a88 (ENG-99741 final review), so the
-	// ceiling is re-pinned to the next 256-byte step: 179 * 256 = 45824.
+	// Re-pinned deliberately for issue #1221: odata-read-to-file is one more long-tail tool, and one more
+	// tool is exactly what this ceiling is defined to grow by. Measured 45223 bytes on the default surface
+	// with it registered - 237 bytes for its index entry, which is one entry's worth and nothing else: the
+	// index carries only the FIRST SENTENCE of a description (BuildPurpose), so the sentences this branch
+	// adds to odata-read's own [Description] cost the index nothing. Next 256-byte step is 45312 (177).
+	// Re-pinned for ENG-90576: localize-page is one more long-tail tool. Measured 45442 bytes on the
+	// default surface with it registered (130 bytes for its index entry); next 256-byte step is 45568 (178).
 	// Serialization uses the default JSON encoder,
 	// which escapes non-ASCII (a purpose ellipsis is written as a 6-byte escape), so it over-counts the real
 	// UTF-8 wire size — conservative, which is the safe direction for a ceiling.
-	private const int MaxCompactIndexSerializedBytes = 179 * 256;
+	// Re-pinned for ENG-99741: set-object-rights and its read companion get-object-rights are two more long-tail
+	// tools - two ordinary additions, not sustained catalog growth. Measured 45911 bytes on the default surface
+	// with both registered after merging master (localize-page included). Pinned with the roughly three tools of
+	// slack the remarks above ask of this constant (the next 256-byte step, 180, would leave 169 bytes - less than
+	// one index entry): 182 * 256 = 46592.
+	private const int MaxCompactIndexSerializedBytes = 182 * 256;
 
 	// Worst-case ceiling for ONE named full contract, measured as the SERIALIZED contract in UTF-8 bytes
 	// — the same quantity the index ratchet above measures, and what the agent actually receives.

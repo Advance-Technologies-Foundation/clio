@@ -46,6 +46,10 @@ Default: false
 --timeout                           Overall timeout in milliseconds
 Default: 3600000 (60 minutes)
 
+--wait                              Accepted for symmetry with compile-package --wait;
+                                    changes nothing. compile-configuration always
+                                    blocks until the build has ended, bounded by --timeout
+
 --uri                   -u          Application uri
 
 --Password              -p          User password

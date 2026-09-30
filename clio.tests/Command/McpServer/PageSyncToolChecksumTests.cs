@@ -46,6 +46,8 @@ public sealed class PageSyncToolChecksumTests {
 		_applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(callInfo => "http://test" + callInfo.Arg<string>());
+		serviceUrlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>())
+			.Returns(ci => serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoutes[ci.Arg<ServiceUrlBuilder.KnownRoute>()]));
 		_applicationClient.ExecutePostRequest(
 				Arg.Is<string>(url => url.Contains("SelectQuery")),
 				Arg.Is<string>(body => body.Contains("byUId")),

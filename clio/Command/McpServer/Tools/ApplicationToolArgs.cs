@@ -268,6 +268,10 @@ public sealed record ApplicationSectionUpdateArgs(
 	[property: Description("Optional updated icon background color in #RRGGBB format. Must be one of the Freedom UI palette values that render as gradient tiles: #A6DE00, #20A959, #22AC14, #FFAC07, #FF8800, #F9307F, #FF602E, #FF4013, #B87CCF, #7848EE, #247EE5, #0058EF, #009DE3, #4F43C2, #08857E, #00BFA5.")]
 	string? IconBackground = null,
 
+	[property: JsonPropertyName("caption-culture")]
+	[property: Description("Optional culture the caption is written in (e.g. 'es-ES', 'de-DE'); requires caption. Precedence: caption-culture > detected profile culture > en-US. Use it to add or change the section title in another language: other languages of the title are kept. The culture must exist in the Languages section (an unknown culture fails, an inactive one is written with a warning). One culture per call.")]
+	string? CaptionCulture = null,
+
 	[property: JsonPropertyName("title-localizations")]
 	[property: Description("Rejected. update-app-section is scalar-only and does not accept localization maps.")]
 	IReadOnlyDictionary<string, string>? TitleLocalizations = null,
