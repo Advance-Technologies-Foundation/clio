@@ -366,13 +366,16 @@ public sealed class ODataCreateTool(
 			JsonElement root = doc.RootElement;
 			if (CreatioResponseError.TryDetect(root, CreatioResponseContext.ODataPayload, out string serverError)) {
 				// Redact like the sibling error paths: a routing Message can embed the absolute request
-				// URI (host/port/app path), which must not leak into the MCP transcript or logs.
+				// URI (host/port/app path), which must not leak into the MCP transcript or logs. The FK hint
+				// (GH-1699) adds the cause only: record-created stays unknown, because the violation can come
+				// from a post-insert handler writing another row after this one persisted.
 				return new ODataRowResult {
 					Index = index,
 					Success = false,
 					RecordCreated = null,
 					RetryGuidance = UnknownSideEffectGuidance,
-					Error = SensitiveErrorTextRedactor.Redact(serverError)
+					Error = CreatioResponseError.AppendStructuredODataWriteError(
+						SensitiveErrorTextRedactor.Redact(serverError), root)
 				};
 			}
 			// The primary key is normally a GUID string, but some entities key on a numeric column;
