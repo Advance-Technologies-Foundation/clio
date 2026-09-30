@@ -72,8 +72,8 @@ internal class PageBodyAstLinterTests {
 	}
 
 	[Test]
-	[Description("A handler call to a module-scope helper declared before the return object is accepted — declarations in the factory scope are visible to handler callbacks")]
-	public void Lint_ShouldNotEmitError_WhenHandlerCallsDeclaredFactoryHelper() {
+	[Description("A factory helper is declared JavaScript but is rejected because Designer deletes it while preserving the handler call")]
+	public void Lint_ShouldRejectDesignerUnsafeCall_WhenHandlerCallsDeclaredFactoryHelper() {
 		// Arrange
 		string body =
 			"define(\"X\", [], function() { var applyFilter = async function(request) { return request; }; " +
@@ -86,7 +86,75 @@ internal class PageBodyAstLinterTests {
 
 		// Assert
 		findings.Should().NotContain(f => f.Rule == PageBodyAstLinter.RuleUndefinedSectionCall,
-			because: "a helper declared in the AMD factory scope is available to handlers and must not be reported as missing");
+			because: "the helper exists now, so the diagnostic must distinguish Designer loss from an undefined name");
+		findings.Should().ContainSingle(f => f.Rule == PageBodyAstLinter.RuleDesignerUnsafeSectionCall
+			&& f.Severity == LintSeverity.Error && f.Message.Contains("SCHEMA_DEPS"),
+			because: "a factory declaration must not satisfy a handler call that survives a Designer save");
+		findings.Should().ContainSingle(f => f.Rule == PageBodyAstLinter.RuleDesignerUnsafeFactoryStatement
+			&& f.Severity == LintSeverity.Warning,
+			because: "the declaration itself needs a warning even when it is not called");
+	}
+
+	[TestCase("const text = 'value';")]
+	[TestCase("function helper() { return 1; }")]
+	[TestCase("class Helper {}")]
+	[TestCase("console.log('setup');")]
+	[TestCase("if (true) { console.log('setup'); }")]
+	[TestCase("'use strict';")]
+	[TestCase(";")]
+	[Description("Every extra factory statement is warned about, independently of direct helper calls")]
+	public void Lint_ShouldWarn_WhenFactoryContainsExtraStatement(string statement) {
+		// Arrange
+		string body = "define('X', [], function() {\n" + statement
+			+ "\nreturn { handlers: [], converters: {}, validators: {} }; });";
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+		// Assert
+		findings.Should().ContainSingle(f => f.Rule == PageBodyAstLinter.RuleDesignerUnsafeFactoryStatement
+			&& f.Severity == LintSeverity.Warning && f.Line == 2 && f.Column == 1,
+			because: "Designer discards the statement even when no handler calls it");
+	}
+
+	[TestCase("handlers: [{ handler: () => helper() }]")]
+	[TestCase("converters: { 'usr.Probe': () => helper() }")]
+	[TestCase("validators: { 'usr.Probe': { validator: () => () => helper() } }")]
+	[Description("Preserved handlers, converters and validators cannot depend on factory helper declarations")]
+	public void Lint_ShouldRejectFactoryBinding_WhenPreservedSectionCallsIt(string section) {
+		// Arrange
+		string body = "define('X', [], function() { function helper() { return 1; } return { "
+			+ section + " }; });";
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+		// Assert
+		findings.Should().ContainSingle(f => f.Rule == PageBodyAstLinter.RuleDesignerUnsafeSectionCall
+			&& f.Severity == LintSeverity.Error,
+			because: "all three preserved sections outlive the factory declaration");
+	}
+
+	[Test]
+	[Description("AMD dependencies and handler-local declarations remain valid and Designer-safe")]
+	public void Lint_ShouldReturnNoFindings_WhenHelpersUsePreservedScopes() {
+		// Arrange
+		const string body = "define('X', ['UsrLogic'], function(Logic) { return { handlers: [{ "
+			+ "handler: (request, next) => { function helper() { return Logic.run(request); } "
+			+ "helper(); next(request); parseInt('1'); } }], converters: {}, validators: {} }; });";
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+		// Assert
+		findings.Should().BeEmpty(because: "dependency arguments and code inside a preserved callback survive Designer saves");
+	}
+
+	[Test]
+	[Description("Missing helpers are directed to client modules rather than back into the discarded factory body")]
+	public void Lint_ShouldRecommendClientModule_WhenHelperIsMissing() {
+		// Arrange
+		const string body = "define('X', [], () => ({ handlers: [{ handler: () => missing() }] }));";
+		// Act
+		string message = LintBody(body).Single(f => f.Rule == PageBodyAstLinter.RuleUndefinedSectionCall).Message;
+		// Assert
+		message.Should().Contain("SCHEMA_DEPS", because: "the suggested repair must survive the next Designer save");
+		message.Should().Contain("shared-client-logic", because: "the client-module workflow has a published MCP guide");
+		message.Should().NotContain("before the `return`", because: "reintroducing the helper there repeats the failure");
 	}
 	[Test]
 	[Description("A name declared inside an UNRELATED nested function does not satisfy a handler call — resolution walks the lexical scope chain outwards, so a sibling scope's `const missingModuleHelper` cannot mask the handler's ReferenceError")]

@@ -65,6 +65,15 @@ internal static class PageBodyAstLinter {
 	internal const string RuleEntityDataSourceStaticFilters = "entity-data-source-static-filters";
 	internal const string RuleHandlerAttributeChangeUnscopedWrite = "handler-attribute-change-unscoped-write";
 	internal const string RuleUndefinedSectionCall = "undefined-section-call";
+	internal const string RuleDesignerUnsafeFactoryStatement = "designer-unsafe-factory-statement";
+	internal const string RuleDesignerUnsafeSectionCall = "designer-unsafe-section-call";
+	internal const string DesignerSafetySummary =
+		"Web page lint warns about extra factory-body statements and rejects direct section calls "
+		+ "to factory declarations removed by Designer saves. Keep helpers in client modules "
+		+ "declared in SCHEMA_DEPS/SCHEMA_ARGS; see get-guidance shared-client-logic. ";
+	private const string DesignerSafeHelperAdvice =
+		"Move the helper to a client module listed in SCHEMA_DEPS, bind its argument in SCHEMA_ARGS, "
+		+ "and call it from the preserved section (MCP guide: shared-client-logic).";
 
 	#endregion
 
@@ -469,6 +478,9 @@ internal static class PageBodyAstLinter {
 		/// </summary>
 		DeclaredButNotInitialized,
 
+		/// <summary>The binding exists now, but a Page Designer save removes its declaration.</summary>
+		RemovedByDesigner,
+
 		/// <summary>No binding of that name in any enclosing scope.</summary>
 		Undeclared
 
@@ -494,10 +506,15 @@ internal static class PageBodyAstLinter {
 		private readonly LexicalScope _parent;
 		private HashSet<string> _nestedFunctionAssignments;
 
-		public LexicalScope(LexicalScope parent, bool isFunctionBoundary = false){
+		public LexicalScope(LexicalScope parent, bool isFunctionBoundary = false,
+			bool designerRemovesDeclarations = false){
 			_parent = parent;
 			IsFunctionBoundary = isFunctionBoundary;
+			DesignerRemovesDeclarations = designerRemovesDeclarations;
 		}
+
+		/// <summary>True for declarations outside the page's preserved sections.</summary>
+		public bool DesignerRemovesDeclarations { get; }
 
 		/// <summary>True when this scope belongs to a function, so leaving it crosses a call boundary.</summary>
 		public bool IsFunctionBoundary { get; }
@@ -540,9 +557,11 @@ internal static class PageBodyAstLinter {
 			bool crossedFunctionBoundary = false;
 			for (LexicalScope scope = this; scope is not null; scope = scope._parent) {
 				if (scope._names.TryGetValue(name, out bool definitelyInitialized)) {
-					return !crossedFunctionBoundary || definitelyInitialized
-						? BindingResolution.Usable
-						: BindingResolution.DeclaredButNotInitialized;
+					if (crossedFunctionBoundary && !definitelyInitialized) {
+						return BindingResolution.DeclaredButNotInitialized;
+					}
+					return scope.DesignerRemovesDeclarations
+						? BindingResolution.RemovedByDesigner : BindingResolution.Usable;
 				}
 				if (scope.IsFunctionBoundary) {
 					crossedFunctionBoundary = true;
@@ -660,6 +679,7 @@ internal static class PageBodyAstLinter {
 		DeclareBlockNames(ast.Body, scriptScope, depth: 0, assignmentsAlwaysRun: true);
 		HashSet<Node> factories = new(NodeReferenceComparer.Instance);
 		CollectFactoryFunctions(ast, factories, depth: 0);
+		CheckDesignerUnsafeFactoryStatements(factories, budget);
 		HashSet<Node> sections = new(NodeReferenceComparer.Instance);
 		CollectSectionProperties(ast, factories, sections, depth: 0);
 		SectionScanState state = new(globalScope, factories, sections, budget, new UndefinedCallBudget());
@@ -672,6 +692,25 @@ internal static class PageBodyAstLinter {
 			//consistent. The summary is an Error, which the overall ceiling does not apply to.
 			budget.TryAdd(RuleUndefinedSectionCall, LintSeverity.Error, lastOmitted.Line,
 				lastOmitted.Column, () => BuildOmittedSummaryMessage(state.DistinctNameBudget));
+		}
+	}
+
+	private static void CheckDesignerUnsafeFactoryStatements(HashSet<Node> factories,
+		LintFindingBudget budget) {
+		foreach (Node factory in factories) {
+			if (factory is not IFunction {Body: BlockStatement body}) {
+				continue;
+			}
+			foreach (Statement statement in body.Body) {
+				if (statement is ReturnStatement {Argument: ObjectExpression}) {
+					continue;
+				}
+				budget.TryAdd(RuleDesignerUnsafeFactoryStatement, LintSeverity.Warning,
+					statement.Location.Start.Line, statement.Location.Start.Column + 1,
+					() => "Page Designer regenerates the page factory and removes statements outside "
+						+ "its SCHEMA_* regions. Keep only return { ... } in the factory body. "
+						+ DesignerSafeHelperAdvice);
+			}
 		}
 	}
 
@@ -1011,14 +1050,20 @@ internal static class PageBodyAstLinter {
 			case IFunction function: {
 				//The AMD factory chains to the runtime globals, NOT to the script scope: a helper
 				//declared outside `define(...)` is not something the factory's handlers can rely on.
-				LexicalScope parent = state.FactoryFunctions.Contains(node) ? state.GlobalScope : scope;
-				LexicalScope functionScope = new(parent, isFunctionBoundary: true);
+				bool isFactory = state.FactoryFunctions.Contains(node);
+				LexicalScope parent = isFactory ? state.GlobalScope : scope;
+				// AMD arguments survive in SCHEMA_ARGS; factory declarations do not. Keep those
+				// bindings in separate scopes so a discarded local also shadows a safe parameter.
+				LexicalScope parameterScope = isFactory ? new(parent) : null;
+				LexicalScope functionScope = new(parameterScope ?? parent, isFunctionBoundary: true,
+					designerRemovesDeclarations: isFactory);
 				//A named function expression can call itself by that name from inside its body.
 				if (function.Id is not null) {
 					functionScope.Declare(function.Id.Name, definitelyInitialized: true);
 				}
 				foreach (Node parameter in function.Params) {
-					DeclareBindings(parameter, functionScope, depth + 1, definitelyInitialized: true);
+					DeclareBindings(parameter, parameterScope ?? functionScope, depth + 1,
+						definitelyInitialized: true);
 				}
 				DeclareHoistedNames(function.Body, functionScope, depth + 1, strict,
 					atStatementLevel: true, unconditional: true);
@@ -1029,7 +1074,8 @@ internal static class PageBodyAstLinter {
 				return functionScope;
 			}
 			case BlockStatement block: {
-				LexicalScope blockScope = new(scope);
+				LexicalScope blockScope = new(scope,
+					designerRemovesDeclarations: scope.DesignerRemovesDeclarations);
 				//Reaching a block's scope at all means the block runs, so what it DECLARES is bound
 				//either way; whether its assignments to OUTER bindings run is the part that depends
 				//on how this block was reached.
@@ -1149,6 +1195,13 @@ internal static class PageBodyAstLinter {
 		if (resolution == BindingResolution.Usable) {
 			return;
 		}
+		if (resolution == BindingResolution.RemovedByDesigner) {
+			state.FindingBudget.TryAdd(RuleDesignerUnsafeSectionCall, LintSeverity.Error,
+				identifier.Location.Start.Line, identifier.Location.Start.Column + 1,
+				() => $"Call to `{identifier.Name}()` depends on a page factory declaration that "
+					+ "Page Designer removes on save. " + DesignerSafeHelperAdvice);
+			return;
+		}
 		int line = identifier.Location.Start.Line;
 		int column = identifier.Location.Start.Column + 1;
 		//The budget decides FIRST: a truncated body can repeat one broken call tens of thousands
@@ -1171,12 +1224,11 @@ internal static class PageBodyAstLinter {
 				+ "binding that is declared but not guaranteed to hold a value when the section runs "
 				+ "(declared without an initializer, initialized only inside a branch that may not "
 				+ "run, or assigned only after the factory's `return`). The call throws a TypeError at "
-				+ $"runtime. Assign `{name}` unconditionally before the `return` statement, or declare "
-				+ "it as a function declaration.";
+				+ "runtime. " + DesignerSafeHelperAdvice;
 		}
 		return NonCallableRuntimeGlobals.Contains(name)
 			? $"Call to `{name}()` in a handlers/converters/validators section: the runtime does supply `{name}`, but as a value rather than as a function callable without `new`, so this call throws a TypeError. Read it as a property, or construct it with `new`."
-			: $"Call to `{name}()` in a handlers/converters/validators section references an identifier that is not declared in the enclosing scopes of this page body and is not a known JavaScript, browser, AMD or Creatio global. A module-scope helper may have been removed by Page Designer; re-add it before the `return` statement.";
+			: $"Call to `{name}()` in a handlers/converters/validators section references an identifier that is not declared in the enclosing scopes of this page body and is not a known JavaScript, browser, AMD or Creatio global. A helper may have been deleted by a Page Designer save. " + DesignerSafeHelperAdvice;
 	}
 
 	#endregion
