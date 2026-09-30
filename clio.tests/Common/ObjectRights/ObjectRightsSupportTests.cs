@@ -1,5 +1,3 @@
-using System;
-using System.Linq;
 using Clio.Common.ObjectRights;
 using FluentAssertions;
 using NUnit.Framework;

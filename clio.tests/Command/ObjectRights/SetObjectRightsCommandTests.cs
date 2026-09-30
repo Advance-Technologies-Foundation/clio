@@ -4,6 +4,7 @@ using System.Linq;
 using Clio.Command.ObjectRights;
 using Clio.Common;
 using Clio.Common.ObjectRights;
+using CommandLine;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
@@ -86,8 +87,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 			.Returns(_ => before,
 				_ => readBack ?? (_saved is null ? before : Info(_saved.AdministratedByOperations, _saved.Roles.ToArray())));
 
-	private static SetObjectRightsOptions Options(string operations = "read,create,edit",
-		Action<SetObjectRightsOptions> tweak = null) {
+	private static SetObjectRightsOptions Options(string operations, Action<SetObjectRightsOptions> tweak = null) {
 		SetObjectRightsOptions options = new() {
 			EntitySchemaName = "UsrFoo", Grantee = GranteeText, Operations = operations, Confirm = true
 		};
@@ -121,22 +121,6 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 	}
 
 	[Test]
-	[Description("A grant names its operations: without --operations nothing is read or written, because no operation is granted by default.")]
-	public void Execute_ShouldRefuse_WhenAGrantNamesNoOperations() {
-		// Arrange
-		ObjectIs(Info(true, Row(AllEmployees, 0, "RCED")));
-
-		// Act
-		int exitCode = _command.Execute(Options(tweak: o => { o.Operations = null; }));
-
-		// Assert
-		exitCode.Should().Be(1, because: "the approved arguments must show what is granted");
-		ErrorContains("--operations is required", because: "the error names the missing argument");
-		_reader.DidNotReceiveWithAnyArgs().GetObjectRights(default, default);
-		NothingSaved();
-	}
-
-	[Test]
 	[Description("A preview writes nothing, prints what the call would change, and returns 0.")]
 	public void Execute_ShouldNotSave_WhenPreview() {
 		// Arrange
@@ -160,7 +144,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		ObjectIs(Info(true, Row(Grantee, 0, "RCE")));
 
 		// Act
-		int exitCode = _command.Execute(Options());
+		int exitCode = _command.Execute(Options("read,create,edit"));
 
 		// Assert
 		exitCode.Should().Be(0, because: "an idempotent re-run is a success");
@@ -209,7 +193,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		ObjectIs(Info(false, Row(AllEmployees, 0, "RCED")));
 
 		// Act
-		int exitCode = _command.Execute(Options());
+		int exitCode = _command.Execute(Options("read,create,edit"));
 
 		// Assert
 		exitCode.Should().Be(1, because: "turning operation permissions on must be named");
@@ -224,7 +208,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		ObjectIs(Info(false, Row(AllEmployees, 0, "RCED")));
 
 		// Act
-		int exitCode = _command.Execute(Options(tweak: o => { o.EnableOperationPermissions = true; }));
+		int exitCode = _command.Execute(Options("read,create,edit", tweak: o => { o.EnableOperationPermissions = true; }));
 
 		// Assert
 		exitCode.Should().Be(0, because: "the caller named the transition");
@@ -322,7 +306,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		ObjectIs(Info(true, Row(Grantee, 0, "R"), Row(Grantee, 2, "RCED")));
 
 		// Act
-		int exitCode = _command.Execute(Options());
+		int exitCode = _command.Execute(Options("read,create,edit"));
 
 		// Assert
 		exitCode.Should().Be(1, because: "which duplicate decides depends on the other rows");
@@ -340,7 +324,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		_console.IsInteractive.Returns(false);
 
 		// Act
-		int exitCode = _command.Execute(Options(tweak: o => { o.Confirm = false; }));
+		int exitCode = _command.Execute(Options("read,create,edit", tweak: o => { o.Confirm = false; }));
 
 		// Assert
 		exitCode.Should().Be(1, because: "a destructive change is never applied silently");
@@ -357,7 +341,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		_console.Prompt(Arg.Any<string>()).Returns(approved);
 
 		// Act
-		int exitCode = _command.Execute(Options(tweak: o => { o.Confirm = false; }));
+		int exitCode = _command.Execute(Options("read,create,edit", tweak: o => { o.Confirm = false; }));
 
 		// Assert
 		exitCode.Should().Be(expectedExit, because: "a cancelled change is not a failure");
@@ -373,7 +357,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		ObjectIs(new ObjectRightsInfo(false, "UsrFoo", null, false, Array.Empty<RoleOperationRights>()));
 
 		// Act
-		int exitCode = _command.Execute(Options());
+		int exitCode = _command.Execute(Options("read,create,edit"));
 
 		// Assert
 		exitCode.Should().Be(1, because: "a typo in the object name must not report success");
@@ -388,7 +372,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		ObjectIs(new ObjectRightsInfo(true, "UsrFoo", null, false, Array.Empty<RoleOperationRights>(), ReadError: "boom"));
 
 		// Act
-		int exitCode = _command.Execute(Options());
+		int exitCode = _command.Execute(Options("read,create,edit"));
 
 		// Assert
 		exitCode.Should().Be(1, because: "a failed read is never taken for 'available'");
@@ -403,7 +387,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		_granteeLookup.ResolveGranteeName(Arg.Any<Guid>(), Arg.Any<CreatioRequestOptions>()).Returns((string)null);
 
 		// Act
-		int exitCode = _command.Execute(Options());
+		int exitCode = _command.Execute(Options("read,create,edit"));
 
 		// Assert
 		exitCode.Should().Be(1, because: "a grant to nobody must not report success");
@@ -418,7 +402,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 			.Returns(_ => throw new InvalidOperationException("select failed"));
 
 		// Act
-		int exitCode = _command.Execute(Options());
+		int exitCode = _command.Execute(Options("read,create,edit"));
 
 		// Assert
 		exitCode.Should().Be(1, because: "the grantee could not be checked");
@@ -435,7 +419,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 			.Returns("no rights to save");
 
 		// Act
-		int exitCode = _command.Execute(Options());
+		int exitCode = _command.Execute(Options("read,create,edit"));
 
 		// Assert
 		exitCode.Should().Be(1, because: "a failed save is never reported as done");
@@ -486,7 +470,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		ObjectIs(before, readBack: before);
 
 		// Act
-		int exitCode = _command.Execute(Options());
+		int exitCode = _command.Execute(Options("read,create,edit"));
 
 		// Assert
 		exitCode.Should().Be(1, because: "the grantee's row is missing from the object read back");
@@ -501,7 +485,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 			readBack: Info(true, Row(Grantee, 0, "RCE"), Row(AllEmployees, 1, "RCED")));
 
 		// Act
-		int exitCode = _command.Execute(Options());
+		int exitCode = _command.Execute(Options("read,create,edit"));
 
 		// Assert
 		exitCode.Should().Be(1, because: "the plan put the grantee's row at the lowest priority");
@@ -676,7 +660,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		ObjectIs(Info(true, Row(AllEmployees, 0, "RCED")), readBack);
 
 		// Act
-		int exitCode = _command.Execute(Options());
+		int exitCode = _command.Execute(Options("read,create,edit"));
 
 		// Assert
 		exitCode.Should().Be(0, because: "the planned change landed");
@@ -692,7 +676,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 			new ObjectRightsInfo(true, "UsrFoo", null, false, Array.Empty<RoleOperationRights>(), ReadError: "timeout"));
 
 		// Act
-		int exitCode = _command.Execute(Options());
+		int exitCode = _command.Execute(Options("read,create,edit"));
 
 		// Assert
 		exitCode.Should().Be(1, because: "an unverified change is never reported as a success");
@@ -704,9 +688,9 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 	// ---- input validation ----
 
 	private static IEnumerable<TestCaseData> InvalidInputs() {
-		yield return new TestCaseData(Options(tweak: o => { o.EntitySchemaName = "Usr Foo"; }), "not a schema name")
+		yield return new TestCaseData(Options("read,create,edit", tweak: o => { o.EntitySchemaName = "Usr Foo"; }), "not a schema name")
 			.SetName("Execute_ShouldReject_WhenSchemaNameIsNotAnIdentifier");
-		yield return new TestCaseData(Options(tweak: o => { o.Grantee = "role-name"; }), "--grantee must be a SysAdminUnit id")
+		yield return new TestCaseData(Options("read,create,edit", tweak: o => { o.Grantee = "role-name"; }), "--grantee must be a SysAdminUnit id")
 			.SetName("Execute_ShouldReject_WhenGranteeIsNotAGuid");
 		yield return new TestCaseData(Options("read,own"), "unknown operation 'own'")
 			.SetName("Execute_ShouldReject_WhenOperationIsUnknown");
@@ -716,17 +700,40 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 			.SetName("Execute_ShouldReject_WhenOperationsAreGivenEmpty");
 		yield return new TestCaseData(Options(" "), "no operation given")
 			.SetName("Execute_ShouldReject_WhenOperationsAreBlank");
-		yield return new TestCaseData(Options(tweak: o => { o.Revoke = true; o.Operations = null; }),
+		yield return new TestCaseData(Options("read,create,edit", tweak: o => { o.Operations = null; }),
+				"--operations is required")
+			.SetName("Execute_ShouldReject_WhenAGrantNamesNoOperations");
+		yield return new TestCaseData(Options("read,create,edit", tweak: o => { o.Revoke = true; o.Operations = null; }),
 				"--operations is required")
 			.SetName("Execute_ShouldReject_WhenRevokeNamesNoOperations");
+		yield return new TestCaseData(Options("read,write"), "unknown operation 'write'")
+			.SetName("Execute_ShouldReject_WhenAnOperationIsAnUndocumentedAlias");
 		yield return new TestCaseData(Options("read,own\nUsrFoo"), "unknown operation 'own UsrFoo'")
 			.SetName("Execute_ShouldEchoTheUnknownOperationOnOneLine_WhenItHasALineBreak");
-		yield return new TestCaseData(Options(tweak: o => { o.Preview = true; }), "--preview writes nothing")
+		yield return new TestCaseData(Options("read,create,edit", tweak: o => { o.Preview = true; }), "--preview writes nothing")
 			.SetName("Execute_ShouldReject_WhenPreviewAndConfirmAreCombined");
-		yield return new TestCaseData(Options(tweak: o => { o.Revoke = true; o.EnableOperationPermissions = true; }),
+		yield return new TestCaseData(Options("read,create,edit", tweak: o => { o.Revoke = true; o.EnableOperationPermissions = true; }),
 			"--enable-operation-permissions applies to a grant").SetName("Execute_ShouldReject_WhenEnableIsCombinedWithRevoke");
-		yield return new TestCaseData(Options(tweak: o => { o.DisableOperationPermissions = true; }),
+		yield return new TestCaseData(Options("read,create,edit", tweak: o => { o.DisableOperationPermissions = true; }),
 			"--disable-operation-permissions applies to a revoke").SetName("Execute_ShouldReject_WhenDisableIsGivenWithoutRevoke");
+	}
+
+	[TestCase(new[] { "--operations", "read", "--allow-security-object" }, ParserResultType.NotParsed,
+		TestName = "Parse_ShouldRejectTheRetiredSecurityObjectOption_WhenItIsPassed")]
+	[TestCase(new string[0], ParserResultType.NotParsed, TestName = "Parse_ShouldRequireOperations_WhenTheyAreOmitted")]
+	[TestCase(new[] { "--operations", "read" }, ParserResultType.Parsed,
+		TestName = "Parse_ShouldAcceptTheCall_WhenOperationsAreNamed")]
+	[Description("The CLI parser requires --operations and refuses the retired --allow-security-object option, so neither a default grant nor a silently ignored option reaches the command.")]
+	public void Parse_ShouldEnforceTheOptionContract_WhenParsingTheCommandLine(string[] extra, ParserResultType expected) {
+		// Arrange
+		string[] args = new[] { "--entity-schema-name", "UsrFoo", "--grantee", GranteeText }.Concat(extra).ToArray();
+
+		// Act
+		ParserResult<SetObjectRightsOptions> result = new Parser(settings => settings.HelpWriter = null)
+			.ParseArguments<SetObjectRightsOptions>(args);
+
+		// Assert
+		result.Tag.Should().Be(expected, because: "the option contract is enforced before the command runs");
 	}
 
 	[TestCaseSource(nameof(InvalidInputs))]

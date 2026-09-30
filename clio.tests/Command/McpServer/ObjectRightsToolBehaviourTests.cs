@@ -191,11 +191,11 @@ public sealed class ObjectRightsToolBehaviourTests {
 		_capturedSet.DisableOperationPermissions.Should().BeTrue(because: "disable-operation-permissions maps through");
 	}
 
-	[TestCase(null, false, TestName = "SetObjectRights_ShouldRefuseAGrant_WhenOperationsAreOmitted")]
-	[TestCase(null, true, TestName = "SetObjectRights_ShouldRefuseARevoke_WhenOperationsAreOmitted")]
-	[TestCase("", true, TestName = "SetObjectRights_ShouldRefuseARevoke_WhenOperationsAreEmpty")]
+	[TestCase(null, false, "--operations is required", TestName = "SetObjectRights_ShouldRefuseAGrant_WhenOperationsAreOmitted")]
+	[TestCase(null, true, "--operations is required", TestName = "SetObjectRights_ShouldRefuseARevoke_WhenOperationsAreOmitted")]
+	[TestCase("", true, "no operation given", TestName = "SetObjectRights_ShouldRefuseARevoke_WhenOperationsAreEmpty")]
 	[Description("A call must name its operations: the approved arguments show what is granted or taken away, and nothing is granted by default.")]
-	public void SetObjectRights_ShouldRefuse_WhenTheCallNamesNoOperation(string operations, bool revoke) {
+	public void SetObjectRights_ShouldRefuse_WhenTheCallNamesNoOperation(string operations, bool revoke, string expected) {
 		// Arrange
 		SetObjectRightsArgs args = new("dev", "UsrFoo", Grantee, Operations: operations, Revoke: revoke);
 
@@ -204,7 +204,7 @@ public sealed class ObjectRightsToolBehaviourTests {
 
 		// Assert
 		response.Success.Should().BeFalse(because: "a call with no named operation is refused");
-		response.Error.Should().Contain("operation", because: "the refusal says the operations are missing");
+		response.Error.Should().Contain(expected, because: "the refusal names what is missing");
 		_reader.DidNotReceiveWithAnyArgs().GetObjectRights(default, default);
 		NothingSaved();
 	}

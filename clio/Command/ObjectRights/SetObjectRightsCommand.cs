@@ -163,8 +163,8 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 			_logger.WriteError("Error: --entity-schema-name is required.");
 			return false;
 		}
-		// A padded or decorated name must never reach the security gate: the gate matches the name as a string,
-		// while SQL Server ignores trailing spaces in the SysSchema.Name comparison and would still find the table.
+		// Only a plain identifier is read and written: SQL Server ignores trailing spaces in the SysSchema.Name
+		// comparison, so a padded name would reach the table under a spelling the approval does not show exactly.
 		if (!ObjectRightsSupport.TryNormalizeSchemaName(options.EntitySchemaName, out schemaName)) {
 			_logger.WriteError($"Error: --entity-schema-name '{ObjectRightsSupport.Display(options.EntitySchemaName)}' is "
 				+ "not a schema name (letters, digits and '_' only).");
@@ -470,12 +470,11 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 		out string error) {
 		error = null;
 		List<ObjectOperation> parsed = new();
-		foreach (string token in (raw ?? string.Empty).Split(',',
-				StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)) {
+		foreach (string token in raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)) {
 			switch (token.ToLowerInvariant()) {
 				case "read": parsed.Add(ObjectOperation.Read); break;
-				case "create": case "append": parsed.Add(ObjectOperation.Create); break;
-				case "edit": case "write": parsed.Add(ObjectOperation.Edit); break;
+				case "create": parsed.Add(ObjectOperation.Create); break;
+				case "edit": parsed.Add(ObjectOperation.Edit); break;
 				case "delete": parsed.Add(ObjectOperation.Delete); break;
 				default:
 					operations = Array.Empty<ObjectOperation>();

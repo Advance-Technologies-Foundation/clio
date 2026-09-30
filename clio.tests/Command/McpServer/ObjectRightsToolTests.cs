@@ -67,6 +67,24 @@ public class ObjectRightsToolTests {
 		args.ExtensionData.Should().BeNullOrEmpty(because: "every key is a known argument");
 	}
 
+	[TestCase("""{"environment-name":"dev","entity-schema-name":"UsrFoo","grantee":"720b771c-e7a7-4f31-9cfb-52cd21c3739f"}""",
+		null, TestName = "SetObjectRightsArgs_ShouldBindNullOperations_WhenTheKeyIsMissing")]
+	[TestCase("""{"environment-name":"dev","entity-schema-name":"UsrFoo","grantee":"720b771c-e7a7-4f31-9cfb-52cd21c3739f","Operations":"read"}""",
+		"read", TestName = "SetObjectRightsArgs_ShouldBindOperations_WhenTheKeyIsCapitalized")]
+	[Category("Unit")]
+	[Description("operations binds exactly what the caller sent with the real MCP serializer options: a missing key binds null, which the command refuses, and a differently cased key is the same argument, not an unknown one.")]
+	public void SetObjectRightsArgs_ShouldBindOperationsExactly_WhenDeserializedWithMcpOptions(string json, string expected) {
+		// Arrange
+		JsonSerializerOptions options = Clio.BindingsModule.CreateMcpSerializerOptions();
+
+		// Act
+		SetObjectRightsArgs args = JsonSerializer.Deserialize<SetObjectRightsArgs>(json, options)!;
+
+		// Assert
+		args.Operations.Should().Be(expected, because: "no default operation is added on the way in");
+		args.ExtensionData.Should().BeNullOrEmpty(because: "a differently cased known key is not an unknown argument");
+	}
+
 	[Test]
 	[Category("Unit")]
 	[Description("Declares get-object-rights as a read-only, non-destructive, idempotent tool under its canonical name.")]

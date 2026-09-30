@@ -300,6 +300,21 @@ public class ObjectRightsPlannerTests {
 	}
 
 	[Test]
+	[Description("A request that names no operation is a caller bug: the planner refuses to plan it rather than turn operation permissions on for a grant of nothing (invariant 8).")]
+	public void Plan_ShouldThrow_WhenTheRequestNamesNoOperation() {
+		// Arrange
+		ObjectRightsState before = State(false, Row(Other, 0, ""));
+		ObjectRightsChangeRequest request = new(AllEmployees, "All employees", System.Array.Empty<ObjectOperation>(),
+			Revoke: false, EnableOperationPermissions: true, DisableOperationPermissions: false);
+
+		// Act
+		System.Action plan = () => _planner.Plan(before, request);
+
+		// Assert
+		plan.Should().Throw<System.ArgumentException>(because: "every call names the operations it grants or revokes");
+	}
+
+	[Test]
 	[Description("A revoke names the rows above the grantee's row: for a user who is also in those roles, they decide first.")]
 	public void Plan_ShouldNameTheRowsAbove_WhenRevoking() {
 		// Arrange

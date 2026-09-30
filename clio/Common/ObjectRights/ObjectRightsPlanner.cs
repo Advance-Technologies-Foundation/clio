@@ -120,6 +120,11 @@ public sealed class ObjectRightsPlanner : IObjectRightsPlanner {
 	public ObjectRightsPlan Plan(ObjectRightsState before, ObjectRightsChangeRequest request) {
 		ArgumentNullException.ThrowIfNull(before);
 		ArgumentNullException.ThrowIfNull(request);
+		// A request names its operations (invariant 8); an empty list would plan a grant of nothing that still turns
+		// operation permissions on, or a revoke that clears nothing.
+		if (request.Operations is null || request.Operations.Count == 0) {
+			throw new ArgumentException("The request names no operation.", nameof(request));
+		}
 		List<RoleOperationRights> rows = before.Roles.OrderBy(row => row.Position).ToList();
 		ObjectRightsState ordered = before with { Roles = rows };
 		List<RoleOperationRights> granteeRows = rows.Where(row => row.GranteeId == request.Grantee).ToList();
