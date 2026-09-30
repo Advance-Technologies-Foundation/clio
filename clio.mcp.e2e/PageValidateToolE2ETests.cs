@@ -39,6 +39,61 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 		"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
 		"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
 
+	[TestCase(false)]
+	[TestCase(true)]
+	[Description("The real MCP transport warns about factory declarations and rejects section calls to helpers Designer removes")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page detects Designer-discarded factory code")]
+	[AllureDescription("Unused factory helpers produce a warning; calling one from a preserved handler produces a blocking error with client-module repair advice.")]
+	public async Task PageValidateTool_ShouldReportDesignerLoss_WhenFactoryContainsHelper(bool callHelper) {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string body = ValidPageBody.Replace("{ return {", "{ function helper() { return 1; } return {");
+		if (callHelper) {
+			body = body.Replace("/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+				"/**SCHEMA_HANDLERS*/[{request:'usr.ProbeRequest',handler:()=>helper()}]/**SCHEMA_HANDLERS*/");
+		}
+		// Act
+		PageValidateResponse response = await AllureApi.Step("Validate factory helper through stdio MCP",
+			async () => await CallAsync(context.Session, context.CancellationTokenSource.Token, body));
+		// Assert
+		AllureApi.Step("Verify validity reflects whether a section depends on discarded code", () =>
+			response.Valid.Should().Be(!callHelper, because: "unused statements warn, while unsafe section calls block"));
+		AllureApi.Step("Verify the factory statement warning reaches the client", () =>
+			response.Validation.Warnings.Should().Contain(w => w.Contains("designer-unsafe-factory-statement"),
+				because: "factory declarations must no longer pass silently"));
+		if (callHelper) {
+			AllureApi.Step("Verify the actionable section-call error", () =>
+				response.Validation.Errors.Should().Contain(e => e.Contains("designer-unsafe-section-call")
+					&& e.Contains("SCHEMA_DEPS") && e.Contains("shared-client-logic"),
+					because: "the repair must direct callers to code that survives Designer saves"));
+		}
+	}
+
+	[Test]
+	[Description("A page that calls an imported client module from its handler remains valid through real MCP")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page accepts Designer-safe module helpers")]
+	[AllureDescription("AMD dependency and argument markers preserve the module while the handler calls its exported helper.")]
+	public async Task PageValidateTool_ShouldAcceptModuleHelper_WhenDeclaredAsDependency() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string body = ValidPageBody.Replace("/**SCHEMA_DEPS*/[]", "/**SCHEMA_DEPS*/[\"UsrLogic\"]")
+			.Replace("/**SCHEMA_ARGS*/()", "/**SCHEMA_ARGS*/(Logic)")
+			.Replace("/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+				"/**SCHEMA_HANDLERS*/[{request:'usr.ProbeRequest',handler:()=>Logic.helper()}]/**SCHEMA_HANDLERS*/");
+		// Act
+		PageValidateResponse response = await AllureApi.Step("Validate imported helper through stdio MCP",
+			async () => await CallAsync(context.Session, context.CancellationTokenSource.Token, body));
+		// Assert
+		AllureApi.Step("Verify the module pattern is accepted", () =>
+			response.Valid.Should().BeTrue(because: "dependency arguments survive Designer saves; errors: "
+				+ string.Join("; ", response.Validation.Errors ?? [])));
+		AllureApi.Step("Verify no Designer-loss warning is emitted", () =>
+			(response.Validation.Warnings ?? []).Should().NotContain(w => w.Contains("designer-unsafe"),
+				because: "the factory contains only the returned schema"));
+	}
+
 	[Test]
 	[Description("Advertises validate-page MCP tool in the server tool list so callers can discover and invoke it.")]
 	[AllureTag(ToolName)]
