@@ -79,8 +79,10 @@ public class SetActiveProcessVersionTool(
 		 + "CrtProcessBuilder 1.6.1.0 or newer, which is where this operation first exists — an older package is "
 		 + "refused up front, naming the version this operation needs; install or update it with "
 		 + "install-process-builder. Activating does not normally require compile-creatio — but if the response "
-		 + "warns that the version cannot execute until the configuration is compiled, heed that warning and "
-		 + "run it. Use describe-business-process to see the family and which member is active.")]
+		 + "warns that the version cannot execute until the configuration is compiled (from CrtProcessBuilder "
+		 + "1.6.6.49 it does whenever the version carries C#), heed that warning: ask the user, then run it with "
+		 + "process-name set to that version. The warning speaks for THIS call only. Use describe-business-process "
+		 + "to see the family and which member is active.")]
 	public CommandExecutionResult SetActiveProcessVersion(
 		[Description("set-active-business-process-version parameters")] [Required]
 		SetActiveProcessVersionArgs args

@@ -382,9 +382,10 @@ public class DescribeProcessResult {
 
 	/// <summary>
 	/// The process's own using directives as it stores them (Process properties -> Methods -> Usings), in the shape
-	/// a build's <c>usings[]</c> takes - including an entry that repeats a namespace the platform's code generator
-	/// always imports, which carries <see cref="DescribedUsing.Ignored"/> from CrtProcessBuilder 1.6.6.51. The
-	/// namespaces the generator adds on its own are not listed.
+	/// a build's <c>usings[]</c> takes - including an entry the platform's code generator emits nothing for (a
+	/// default namespace, an alias on an imported namespace, a repeat of an earlier entry), which carries
+	/// <see cref="DescribedUsing.Ignored"/> from CrtProcessBuilder 1.6.6.51. The namespaces the generator adds on
+	/// its own are not listed.
 	/// <c>null</c> on a server that predates CrtProcessBuilder 1.6.6.30.
 	/// </summary>
 	[JsonPropertyName("usings")]

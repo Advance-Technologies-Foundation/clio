@@ -357,8 +357,8 @@ public class ModifyBusinessProcessTool(
 		 + "addUsing / removeUsing (using:{namespace, alias?}) and setMethods (methods: C# class members as one "
 		 + "string, empty clears): the process-level usings and methods of its scriptTask C#. "
 		 + "Operations apply in order; any failure aborts the edit (nothing is saved). A SUCCESSFUL edit may still "
-		 + "report caveats: they arrive as entries with message-type \"Warning\" in execution-log-messages (there is "
-		 + "no separate 'warnings' field on the response) — outcomes that APPLIED but are not what you would assume. "
+		 + "report caveats: they arrive as entries with message-type \"Warning\" in execution-log-messages (no "
+		 + "separate 'warnings' field) — outcomes that APPLIED but are not what you would assume. "
 		 + "Read them, and note some are neutral acknowledgements (a column that was already unbound), not failures. "
 		 + "Use describe-business-process to inspect the current elements/names first. May remove elements — destructive. "
 		 + "Removals are NOT structurally validated (a broken graph can still be saved) and every edit re-lays-out the "
@@ -366,7 +366,7 @@ public class ModifyBusinessProcessTool(
 		 + "first. For a setFlowCondition operation or an 'expression' mapping source read get-guidance "
 			 + "name=process-formulas - it owns the accepted vocabulary, the reference syntax, what each "
 			 + "refusal names, and the length bound. "
-			 + "Requires the ProcessDesignService (CrtProcessBuilder) package; install with install-process-builder. Unless the edit adds a scriptTask (get-guidance name=process-script-task first), replaces its body or changes a using or the methods, the process stays INTERPRETED and the result carries the compile-not-required note: do NOT run compile-creatio, and do NOT infer a compile need from a raw `VwSysProcess` read. Such an edit warns compile-REQUIRED instead: then, after asking the user, run compile-creatio with process-name. Either signal speaks for THIS call only: a compile an earlier save made owed is still owed.")]
+			 + "Requires the ProcessDesignService (CrtProcessBuilder) package; install with install-process-builder. Unless the edit adds a scriptTask (get-guidance name=process-script-task first), replaces its body or changes a using or the methods, the result carries the compile-not-required note: do NOT run compile-creatio, and do NOT infer a compile need from a raw `VwSysProcess` read. Such an edit warns compile-REQUIRED instead: ask the user, then run compile-creatio with process-name. Either signal covers THIS call only; a compile an earlier save owed stays owed.")]
 	public CommandExecutionResult ModifyBusinessProcess(
 		[Description("modify-business-process parameters")] [Required] ModifyBusinessProcessArgs args
 	) {

@@ -102,18 +102,9 @@ public sealed class CompileBusinessProcessService(
 		try {
 			responseBody = client.ExecutePostRequest(url, requestBody, CompileTimeoutMs);
 		} catch (Exception exception) when (IsTransportFault(exception)) {
-			// A 4xx is the one transport fault that settles the outcome: the server answered, and it answered
-			// before the handler ran - the handler turns every failure of its own, a failed compile included,
-			// into a result, never into a status. A 5xx settles nothing: a gateway answers one for a worker that
-			// died mid-compile.
-			if (TryGetClientErrorStatus(exception, out int status)) {
-				throw new InvalidOperationException(
-					$"CompileProcess answered HTTP {status} instead of a result: the call was refused before the "
-					+ "compile started, so nothing was compiled. A 401 or 403 means the environment's credentials "
-					+ "or rights; a 404 means CrtProcessBuilder is missing or older than the route. "
-					+ $"Transport detail: {exception.Message}",
-					exception);
-			}
+			// No HTTP status is classified here, because none arrives: Creatio.Client's POST reads the body without
+			// checking the status (docs/knowledge/Command/call-service-must-classify-creatio-client-error-bodies.md),
+			// so a 4xx comes back as an HTML or error body and is answered below as a body clio cannot read.
 			// A timeout or a dropped connection mid-compile says nothing about the compile itself, and a retry
 			// while it still runs is refused by the platform rather than queued - so the caller is told so.
 			throw new InvalidOperationException(
@@ -174,30 +165,6 @@ public sealed class CompileBusinessProcessService(
 		}
 		return exception is WebException or HttpRequestException or IOException or SocketException
 			or TimeoutException or OperationCanceledException;
-	}
-
-	// The HTTP status a transport fault carries when the server did answer, if it is a 4xx - through the same
-	// AggregateException unwrap as IsTransportFault.
-	private static bool TryGetClientErrorStatus(Exception exception, out int status) {
-		status = 0;
-		if (exception is AggregateException aggregate) {
-			foreach (Exception inner in aggregate.Flatten().InnerExceptions) {
-				if (TryGetClientErrorStatus(inner, out status)) {
-					return true;
-				}
-			}
-			return false;
-		}
-		int? code = exception switch {
-			HttpRequestException { StatusCode: { } httpStatus } => (int)httpStatus,
-			WebException { Response: HttpWebResponse response } => (int)response.StatusCode,
-			_ => null
-		};
-		if (code is >= 400 and < 500) {
-			status = code.Value;
-			return true;
-		}
-		return false;
 	}
 
 	private sealed class ResponseEnvelope {

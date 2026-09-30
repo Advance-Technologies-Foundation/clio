@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Net;
 using System.Net.Http;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
@@ -168,45 +167,6 @@ public sealed class CompileBusinessProcessServiceTests {
 		// Assert
 		act.Should().Throw<InvalidOperationException>(because: "the call did not answer")
 			.WithMessage("*UNKNOWN*still be running*", because: "a retry would be refused while the compile runs");
-	}
-
-	[Test]
-	[Description("A 4xx is the one transport fault that settles the outcome: the server answered before the handler ran, and the handler reports a failed compile as a result, never as a status - so the caller is told nothing was compiled, not that the outcome is unknown.")]
-	[TestCase(HttpStatusCode.Unauthorized)]
-	[TestCase(HttpStatusCode.Forbidden)]
-	[TestCase(HttpStatusCode.NotFound)]
-	public void Compile_ShouldSayNothingWasCompiled_WhenTheServerAnswersA4xx(HttpStatusCode status) {
-		// Arrange
-		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
-		client.ExecutePostRequest(CompileUrl, Arg.Any<string>(), Arg.Any<int>())
-			.Returns(_ => throw new AggregateException(new HttpRequestException("Refused.", null, status)));
-		CompileBusinessProcessService service = CreateService(client);
-
-		// Act
-		Action act = () => service.Compile(Env, new CompileBusinessProcessRequest("UsrProc", null));
-
-		// Assert
-		act.Should().Throw<InvalidOperationException>(because: "the call was refused")
-			.WithMessage($"*HTTP {(int)status}*nothing was compiled*",
-				because: "a refusal before the handler compiled nothing, and saying UNKNOWN would send the caller to a log for nothing");
-	}
-
-	[Test]
-	[Description("A 5xx still leaves the outcome open: a gateway answers one for a worker that died mid-compile.")]
-	public void Compile_ShouldSayTheOutcomeIsUnknown_WhenTheServerAnswersA5xx() {
-		// Arrange
-		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
-		client.ExecutePostRequest(CompileUrl, Arg.Any<string>(), Arg.Any<int>())
-			.Returns(_ => throw new AggregateException(
-				new HttpRequestException("Bad gateway.", null, HttpStatusCode.BadGateway)));
-		CompileBusinessProcessService service = CreateService(client);
-
-		// Act
-		Action act = () => service.Compile(Env, new CompileBusinessProcessRequest("UsrProc", null));
-
-		// Assert
-		act.Should().Throw<InvalidOperationException>(because: "the compile may have been running when the worker died")
-			.WithMessage("*UNKNOWN*last-compilation-log*", because: "the caller must read the log before compiling again");
 	}
 
 	[Test]

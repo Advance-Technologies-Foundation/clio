@@ -727,6 +727,50 @@ public sealed class CompileCreatioToolTests
 
 	[Test]
 	[Category("Unit")]
+	[Description("The business-process trigger - a save or activation that warns the process cannot run 'until the configuration is compiled' - is named in both channels an agent reads compile-creatio through: the resident [Description] and the curated contract, which wins over the attribute in get-tool-contract.")]
+	public void CompileCreatio_ProcessTrigger_Should_Appear_In_The_Description_And_The_Contract()
+	{
+		// Arrange
+		string marker = CommandExecutionResult.CompileRequiredWarningMarker;
+		string description = ((System.ComponentModel.DescriptionAttribute)typeof(CompileCreatioTool)
+			.GetMethod(nameof(CompileCreatioTool.CompileCreatio))!
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+			.Single()).Description;
+
+		// Act
+		ToolContractDefinition contract = new ToolContractGetTool()
+			.GetToolContracts(new ToolContractGetArgs([CompileCreatioTool.CompileCreatioToolName]))
+			.Tools!.Single();
+		string preconditions = string.Join(" ", contract.Preconditions!);
+
+		// Assert
+		description.Should().Contain(marker, because: "tools/list carries the attribute, and the trigger is the server's phrase");
+		preconditions.Should().Contain(marker, because: "get-tool-contract serves the curated contract, not the attribute");
+		preconditions.Should().Contain("speak for that call only",
+			because: "a compile an earlier save owed is not cancelled by a later call that owes none");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Every process-designer write that can answer with the compile warning says the signal speaks for that call only, so an agent does not read a later 'not required' as cancelling a compile an earlier save owed.")]
+	[TestCase(typeof(Clio.Command.McpServer.Tools.ProcessDesigner.CreateBusinessProcessTool), nameof(Clio.Command.McpServer.Tools.ProcessDesigner.CreateBusinessProcessTool.CreateBusinessProcess))]
+	[TestCase(typeof(Clio.Command.McpServer.Tools.ProcessDesigner.ModifyBusinessProcessTool), nameof(Clio.Command.McpServer.Tools.ProcessDesigner.ModifyBusinessProcessTool.ModifyBusinessProcess))]
+	[TestCase(typeof(Clio.Command.McpServer.Tools.ProcessDesigner.ModifyProcessAsNewVersionTool), nameof(Clio.Command.McpServer.Tools.ProcessDesigner.ModifyProcessAsNewVersionTool.ModifyProcessAsNewVersion))]
+	[TestCase(typeof(Clio.Command.McpServer.Tools.ProcessDesigner.SetActiveProcessVersionTool), nameof(Clio.Command.McpServer.Tools.ProcessDesigner.SetActiveProcessVersionTool.SetActiveProcessVersion))]
+	public void ProcessWrite_Description_Should_Say_The_Compile_Signal_Is_Per_Call(Type toolType, string methodName)
+	{
+		// Act
+		string description = ((System.ComponentModel.DescriptionAttribute)toolType.GetMethod(methodName)!
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+			.Single()).Description;
+
+		// Assert
+		description.Should().Contain("THIS call only",
+			because: "the compile signal is per call, and an agent must not let a later note cancel an owed compile");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Cross-channel drift guard (RC-8): the 'standing consent' pre-compile invariant must appear in the clio-owned guaranteed MCP channels — the compile-creatio [Description], both compile prompt branches, and the get-tool-contract precondition — so an edit that drops it from any one channel fails the build. (The core-rules guide moved to clio-knowledge under #927; its copy of the invariant is guarded there, not in clio.)")]
 	public void CompileConsentInvariant_Should_Appear_In_All_Clio_Channels()
 	{

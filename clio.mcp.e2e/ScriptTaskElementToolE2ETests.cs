@@ -93,7 +93,7 @@ public sealed class ScriptTaskElementToolE2ETests {
 
 	[Test]
 	[Description("Describe marks a using the platform's code generator emits nothing for - here a plain default namespace, which a build stores as redundant - so a caller feeding describe back into a build knows to leave it out; an entry the generator emits carries no mark.")]
-	[AllureTag(CreateToolName)]
+	[AllureTag(DescribeProcessTool.ToolName)]
 	[AllureName("describe-business-process marks a using the code generator skips")]
 	public async Task DescribeBusinessProcess_Should_Mark_A_Using_The_Generator_Skips() {
 		// Arrange

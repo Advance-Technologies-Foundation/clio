@@ -2,6 +2,7 @@
 description: call-service receives error bodies without HTTP status from Creatio.Client, so it must classify Creatio JSON and IIS HTML before writing the destination file
 applies-to:
   - clio/Query/DataServiceQuery.cs
+  - clio/Command/CompileBusinessProcessCommand.cs
 ticket: 1220
 date: 2026-08-27
 ---
@@ -18,4 +19,7 @@ without replacing that transport contract.
 
 **What breaks if you ignore it** — an HTTP failure is saved and reported as `Result saved` with exit
 code 0. Automation then parses an error envelope or an IIS HTML page as if the service succeeded,
-and the original request failure is discovered only downstream.
+and the original request failure is discovered only downstream. The opposite mistake is as easy: a
+catch that classifies `HttpRequestException.StatusCode` on a POST never fires, because no exception
+carries a status there, and a unit test that stubs one passes while production takes the other branch
+(`CompileBusinessProcessService` shipped such a 4xx branch for one review round).
