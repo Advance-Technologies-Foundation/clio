@@ -86,6 +86,23 @@ public sealed record LocalizePageCoverage {
 	[JsonProperty("captionSameAsDefault")]
 	[JsonPropertyName("captionSameAsDefault")]
 	public bool CaptionSameAsDefault { get; init; }
+
+	/// <summary>
+	/// Gets a value indicating whether the page title in the culture is the parent template's title in that culture,
+	/// i.e. the page has no title of its own there. <c>GetSchema</c> fills the cultures a page does not store from the
+	/// parent schema, so a page created from a template shows the template's translated title ("Página en blanco")
+	/// that is not a translation of the page's own title. Not set when the page keeps the template's <c>en-US</c> title.
+	/// </summary>
+	[DataMember(Name = "captionInherited")]
+	[JsonProperty("captionInherited")]
+	[JsonPropertyName("captionInherited")]
+	public bool CaptionInherited { get; init; }
+
+	/// <summary>Gets the page title in the culture as <c>GetSchema</c> returns it; <see langword="null"/> when there is none.</summary>
+	[DataMember(Name = "captionValue")]
+	[JsonProperty("captionValue")]
+	[JsonPropertyName("captionValue")]
+	public string CaptionValue { get; init; }
 }
 
 /// <summary>
@@ -135,7 +152,8 @@ public sealed record LocalizePageResponse {
 	[JsonPropertyName("cultureActive")]
 	public bool? CultureActive { get; init; }
 
-	/// <summary>Gets a value indicating whether a <c>SaveSchema</c> was sent.</summary>
+	/// <summary>Gets a value indicating whether the server confirmed a <c>SaveSchema</c>. <see langword="false"/> also
+	/// when the save was rejected, or when it failed in transport and its outcome is unknown (see <see cref="Error"/>).</summary>
 	[DataMember(Name = "saved")]
 	[JsonProperty("saved")]
 	[JsonPropertyName("saved")]
@@ -224,6 +242,22 @@ public sealed class LocalizePageCommand : Command<LocalizePageOptions>, ILocaliz
 	internal const string NullResourceValueMessageFormat =
 		"resources must map every key to a string value; key(s) with a null value: {0}.";
 
+	internal const string BlankResourceValueMessageFormat =
+		"resources must map every key to a non-blank value; key(s) with an empty or whitespace-only value: {0}. "
+		+ "Nothing was saved.";
+
+	internal const string BlankCaptionMessage =
+		"The caption is whitespace-only; pass the page title text, or omit caption. Nothing was saved.";
+
+	internal const string SaveOutcomeUnknownMessageFormat =
+		"The save request failed before Creatio confirmed it, so it may or may not have been stored: {0}. "
+		+ "Run localize-page again without resources and caption to see the stored coverage. The .clio-pages "
+		+ "baseline was not refreshed; run get-page before the next update-page.";
+
+	internal const string BaselineRefreshFailedWarningFormat =
+		"The page was saved, but refreshing the .clio-pages baseline failed: {0}. The next update-page may report "
+		+ "an external modification; run get-page again to refresh the baseline.";
+
 	// Same meaning as PageUpdateCommand.ResourceWorkspaceCaptureWarning, worded for the command that emits it.
 	internal const string WorkspaceCaptureWarning =
 		"Page translations were saved on the server; localize-page does not capture your workspace source. "
@@ -289,7 +323,9 @@ public sealed class LocalizePageCommand : Command<LocalizePageOptions>, ILocaliz
 		try {
 			return LocalizeCore(options);
 		} catch (Exception ex) when (ex is not OperationCanceledException) {
-			return Failure(options.SchemaName, ex.Message);
+			// Exception text can carry the environment URL or credentials; it is redacted, not truncated, because
+			// clio-authored messages (the culture list, the key list) are legitimately long.
+			return Failure(options.SchemaName, SensitiveErrorTextRedactor.Redact(ex.Message));
 		}
 	}
 
@@ -307,7 +343,11 @@ public sealed class LocalizePageCommand : Command<LocalizePageOptions>, ILocaliz
 		if (!TryParseResources(options.Resources, out Dictionary<string, string> resources, out string parseError)) {
 			return Failure(options.SchemaName, parseError);
 		}
-		string unstorableError = DescribeUnstorableValues(resources, options.Caption);
+		if (options.Caption is { Length: > 0 } && string.IsNullOrWhiteSpace(options.Caption)) {
+			return Failure(options.SchemaName, BlankCaptionMessage);
+		}
+		string caption = string.IsNullOrEmpty(options.Caption) ? null : options.Caption.Trim();
+		string unstorableError = DescribeUnstorableValues(resources, caption);
 		if (unstorableError != null) {
 			return Failure(options.SchemaName, unstorableError);
 		}
@@ -340,7 +380,7 @@ public sealed class LocalizePageCommand : Command<LocalizePageOptions>, ILocaliz
 		var written = new List<string>();
 		var unchanged = new List<string>();
 		ApplyResources(localizableStrings, knownKeys, resources, culture.Name, written, unchanged);
-		string captionOutcome = ApplyCaption(schema, options.Caption, culture.Name);
+		string captionOutcome = ApplyCaption(schema, caption, culture.Name);
 		bool mustSave = written.Count > 0 || captionOutcome == LocalizePageResponse.CaptionWritten;
 		var result = new LocalizePageResponse {
 			Success = true,
@@ -355,14 +395,15 @@ public sealed class LocalizePageCommand : Command<LocalizePageOptions>, ILocaliz
 			CaptionOutcome = captionOutcome,
 			// Resolved again on purpose: ApplyResources has just added the target-culture values (and new override
 			// entries) to localizableStrings, so the key map built before the write would report them as missing.
-			Coverage = BuildCoverage(ResolveHierarchyKeys(editable.Hierarchy, localizableStrings), schema, culture.Name),
+			Coverage = BuildCoverage(ResolveHierarchyKeys(editable.Hierarchy, localizableStrings), schema, editable.Hierarchy, culture.Name),
 			Warnings = warnings
 		};
-		return mustSave ? SaveAndVerify(options, schema, editable.Hierarchy, result, warnings) : result;
+		return mustSave ? SaveAndVerify(options, caption, schema, editable.Hierarchy, result, warnings) : result;
 	}
 
 	private LocalizePageResponse SaveAndVerify(
 		LocalizePageOptions options,
+		string caption,
 		JObject schema,
 		IReadOnlyList<PageDesignerHierarchySchema> hierarchy,
 		LocalizePageResponse result,
@@ -370,14 +411,30 @@ public sealed class LocalizePageCommand : Command<LocalizePageOptions>, ILocaliz
 		// Read right before the save: the on-disk baseline is refreshed only when it still equals this value,
 		// i.e. when nobody changed the page after the get-page that wrote it (ADR D8).
 		string preSaveChecksum = ReadSchemaMetadata(result.SchemaUId).Checksum;
-		if (!TrySaveSchema(schema, out string saveError)) {
+		bool saved;
+		string saveError;
+		try {
+			saved = TrySaveSchema(schema, out saveError);
+		} catch (Exception ex) when (ex is not OperationCanceledException) {
+			// A timeout or a non-JSON reply after the request was sent: the server may have stored the values, so the
+			// caller gets the identity of the page and the workspace warning, not a bare failure. The cache is reset
+			// anyway, so the recommended report-only re-run does not read the pre-save hierarchy.
+			ResetScriptCache();
+			warnings.Add(WorkspaceCaptureWarning);
+			return result with {
+				Success = false,
+				Saved = false,
+				Coverage = null,
+				Error = string.Format(SaveOutcomeUnknownMessageFormat,
+					ApplicationSectionLocalizationClient.DescribeServerText(ex.Message))
+			};
+		}
+		if (!saved) {
 			return result with { Success = false, Saved = false, Error = saveError, Coverage = null };
 		}
 		ResetScriptCache();
 		warnings.Add(WorkspaceCaptureWarning);
-		string baselineWarning = _pageBaselineGuard.RefreshAfterSave(
-			options, options.SchemaName, result.SchemaUId, options.OutputDirectory, preSaveChecksum,
-			() => ReadSchemaMetadata(result.SchemaUId));
+		string baselineWarning = RefreshBaseline(options, result.SchemaUId, preSaveChecksum);
 		if (!string.IsNullOrWhiteSpace(baselineWarning)) {
 			warnings.Add(baselineWarning);
 		}
@@ -387,14 +444,15 @@ public sealed class LocalizePageCommand : Command<LocalizePageOptions>, ILocaliz
 			if (!TryGetSchema(result.SchemaUId, out stored, out string readbackError)) {
 				return ReadbackFailure(result, readbackError);
 			}
-			mismatches = FindReadbackMismatches(stored, schema, result, options.Caption);
+			mismatches = FindReadbackMismatches(stored, schema, result, caption);
 		} catch (Exception ex) when (ex is not OperationCanceledException) {
 			return ReadbackFailure(result, ex.Message);
 		}
 		LocalizePageResponse verified = result with {
 			Saved = true,
 			Coverage = BuildCoverage(
-				ResolveHierarchyKeys(hierarchy, stored[LocalizableStringsKey] as JArray ?? new JArray()), stored, result.Culture)
+				ResolveHierarchyKeys(hierarchy, stored[LocalizableStringsKey] as JArray ?? new JArray()), stored, hierarchy,
+					result.Culture)
 		};
 		return mismatches.Count == 0
 			? verified
@@ -409,8 +467,19 @@ public sealed class LocalizePageCommand : Command<LocalizePageOptions>, ILocaliz
 		result with {
 			Success = false,
 			Saved = true,
-			Error = $"The page was saved, but reading it back failed: {reason}"
+			Error = $"The page was saved, but reading it back failed: {ApplicationSectionLocalizationClient.DescribeServerText(reason)}"
 		};
+
+	// The save has landed; a failed baseline refresh (file I/O) must not turn it into a failure.
+	private string RefreshBaseline(LocalizePageOptions options, string schemaUId, string preSaveChecksum) {
+		try {
+			return _pageBaselineGuard.RefreshAfterSave(
+				options, options.SchemaName, schemaUId, options.OutputDirectory, preSaveChecksum,
+				() => ReadSchemaMetadata(schemaUId));
+		} catch (Exception ex) when (ex is not OperationCanceledException) {
+			return string.Format(BaselineRefreshFailedWarningFormat, SensitiveErrorTextRedactor.Redact(ex.Message));
+		}
+	}
 
 	private static bool TryParseResources(string json, out Dictionary<string, string> resources, out string error) {
 		resources = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -428,6 +497,11 @@ public sealed class LocalizePageCommand : Command<LocalizePageOptions>, ILocaliz
 		List<string> nullKeys = resources.Where(pair => pair.Value is null).Select(pair => pair.Key).ToList();
 		if (nullKeys.Count > 0) {
 			error = string.Format(NullResourceValueMessageFormat, string.Join(", ", nullKeys));
+			return false;
+		}
+		List<string> blankKeys = resources.Where(pair => string.IsNullOrWhiteSpace(pair.Value)).Select(pair => pair.Key).ToList();
+		if (blankKeys.Count > 0) {
+			error = string.Format(BlankResourceValueMessageFormat, string.Join(", ", blankKeys));
 			return false;
 		}
 		return true;
@@ -556,6 +630,7 @@ public sealed class LocalizePageCommand : Command<LocalizePageOptions>, ILocaliz
 	private static LocalizePageCoverage BuildCoverage(
 		IReadOnlyDictionary<string, JArray> resolvedKeys,
 		JObject schema,
+		IReadOnlyList<PageDesignerHierarchySchema> hierarchy,
 		string culture) {
 		var missing = new List<string>();
 		var sameAsDefault = new List<string>();
@@ -572,14 +647,32 @@ public sealed class LocalizePageCommand : Command<LocalizePageOptions>, ILocaliz
 		}
 		var captionValues = schema[CaptionKey] as JArray;
 		string captionValue = ResourceStringHelper.GetCultureValue(captionValues, culture);
+		string defaultCaption = ResourceStringHelper.GetCultureValue(captionValues, ResourceStringHelper.DefaultCultureName);
 		return new LocalizePageCoverage {
 			Keys = keys,
 			Translated = keys - missing.Count,
 			Missing = missing,
 			SameAsDefault = sameAsDefault,
 			CaptionSameAsDefault = !string.IsNullOrEmpty(captionValue) && string.Equals(captionValue,
-				ResourceStringHelper.GetCultureValue(captionValues, ResourceStringHelper.DefaultCultureName), StringComparison.Ordinal)
+				defaultCaption, StringComparison.Ordinal),
+			// Only when the page renamed itself in en-US: a page that kept the template's title also keeps its translations.
+			CaptionInherited = !string.IsNullOrEmpty(captionValue)
+				&& AncestorCaptions(schema, hierarchy).Any(ancestor =>
+					string.Equals(captionValue, ResourceStringHelper.GetCultureValue(ancestor, culture), StringComparison.Ordinal)
+					&& !string.Equals(defaultCaption,
+						ResourceStringHelper.GetCultureValue(ancestor, ResourceStringHelper.DefaultCultureName), StringComparison.Ordinal)),
+			CaptionValue = string.IsNullOrEmpty(captionValue) ? null : captionValue
 		};
+	}
+
+	// The direct parent comes inline with GetSchema; the hierarchy adds every level above it, so a replacing page or a
+	// page derived from an intermediate page still finds the template the title came from.
+	private static IEnumerable<JArray> AncestorCaptions(JObject schema, IReadOnlyList<PageDesignerHierarchySchema> hierarchy) {
+		string schemaUId = schema["uId"]?.ToString();
+		IEnumerable<JArray> ancestors = (hierarchy ?? [])
+			.Where(part => !string.Equals(part.UId, schemaUId, StringComparison.OrdinalIgnoreCase))
+			.Select(part => part.Caption);
+		return ancestors.Prepend(schema["parent"]?[CaptionKey] as JArray).Where(caption => caption is { Count: > 0 });
 	}
 
 	private static List<string> FindReadbackMismatches(
@@ -614,7 +707,7 @@ public sealed class LocalizePageCommand : Command<LocalizePageOptions>, ILocaliz
 		(JToken metadata, string queryError) = PageSchemaMetadataHelper.QuerySysSchemaRow(
 			_applicationClient, _serviceUrlBuilder, schemaName, ("UId", "UId"));
 		if (metadata == null) {
-			error = queryError;
+			error = ApplicationSectionLocalizationClient.DescribeServerText(queryError);
 			return false;
 		}
 		string rawSchemaUId = metadata["UId"]?.ToString();
@@ -658,7 +751,10 @@ public sealed class LocalizePageCommand : Command<LocalizePageOptions>, ILocaliz
 		JObject response = JObject.Parse(_applicationClient.ExecutePostRequest(url, request.ToString(Formatting.None)));
 		if (!(response["success"]?.Value<bool>() ?? false) || response["schema"] is not JObject loaded) {
 			schema = null;
-			error = response["errorInfo"]?["message"]?.ToString() ?? $"Failed to load schema '{schemaUId}'";
+			string serverMessage = response["errorInfo"]?["message"]?.ToString();
+			error = serverMessage is null
+				? $"Failed to load schema '{schemaUId}'"
+				: ApplicationSectionLocalizationClient.DescribeServerText(serverMessage);
 			return false;
 		}
 		schema = loaded;
@@ -673,7 +769,8 @@ public sealed class LocalizePageCommand : Command<LocalizePageOptions>, ILocaliz
 			error = null;
 			return true;
 		}
-		error = PageSchemaMetadataHelper.ParseSaveErrorMessage(response, "Failed to save page schema");
+		error = ApplicationSectionLocalizationClient.DescribeServerText(
+			PageSchemaMetadataHelper.ParseSaveErrorMessage(response, "Failed to save page schema"));
 		return false;
 	}
 

@@ -16,6 +16,7 @@
       "color": "c5def5",
       "description": "Freedom UI page tools and commands",
       "owners": [
+        "kbondarenko-tech",
         "Alexandr-Kravchuk",
         "d-krestov"
       ],
@@ -25,6 +26,37 @@
         "clio/Command/McpServer/Tools/ClientUnitSchema*",
         "clio/Command/McpServer/Tools/ComponentInfoTool.cs",
         "clio/Command/RelatedPages/"
+      ]
+    },
+    {
+      "id": "custom-logic",
+      "option": "Freedom UI page custom logic (handlers, converters, validators, helper modules, code kept by a Designer save)",
+      "label": "component:custom-logic",
+      "color": "c5def5",
+      "description": "Custom client logic in Freedom UI pages and its page lint",
+      "owners": [
+        "ylypnytskyi-eng",
+        "a-trofimchuk"
+      ],
+      "paths": [
+        "clio/Command/McpServer/Tools/PageBodyAstLinter.cs",
+        "clio/Command/SchemaHandlerValidationService.cs"
+      ]
+    },
+    {
+      "id": "mobile-page-conversion",
+      "option": "Mobile page conversion (web to mobile Freedom UI pages, get-mobile-page-conversion-guide)",
+      "label": "component:mobile-page-conversion",
+      "color": "c5def5",
+      "description": "Web to mobile Freedom UI page conversion",
+      "owners": [
+        "OleksandrTyshchyk",
+        "dkorotin1"
+      ],
+      "paths": [
+        "clio/Command/McpServer/Tools/MobilePageConverter/",
+        "clio/Command/McpServer/Tools/MobilePageValidation.cs",
+        "clio/Command/McpServer/Data/WebToMobilePageConversionRules.json"
       ]
     },
     {
@@ -49,6 +81,7 @@
       "color": "c5def5",
       "description": "Application and section commands",
       "owners": [
+        "kbondarenko-tech",
         "Alexandr-Kravchuk",
         "b-horodyskyi"
       ],
@@ -58,18 +91,34 @@
       ]
     },
     {
-      "id": "schemas",
-      "option": "Entity, lookup, source code and SQL schema definitions (entity schema, create-lookup, sync-schemas)",
-      "label": "component:schemas",
+      "id": "entity",
+      "option": "Entities and lookups (create and edit objects, columns and their properties, lookups, sync-schemas)",
+      "label": "component:entity",
       "color": "c5def5",
-      "description": "Entity, source code and SQL schema tools",
+      "description": "Creating and editing objects, columns and lookups",
       "owners": [
-        "Alexandr-Kravchuk",
-        "kirillkrylov"
+        "kbondarenko-tech",
+        "Alexandr-Kravchuk"
       ],
       "paths": [
         "clio/Command/EntitySchemaDesigner/",
+        "clio/Command/*EntitySchema*Command.cs",
+        "clio/Common/EntitySchema/",
         "clio/Command/McpServer/Tools/EntitySchemaTool.cs",
+        "clio/Command/McpServer/Tools/ListEntityClientSchemasTool.cs"
+      ]
+    },
+    {
+      "id": "schemas",
+      "option": "Source code and SQL schemas (C# source code schemas, SQL schemas)",
+      "label": "component:schemas",
+      "color": "c5def5",
+      "description": "Source code and SQL schema tools",
+      "owners": [
+        "kirillkrylov",
+        "Alexandr-Kravchuk"
+      ],
+      "paths": [
         "clio/Command/McpServer/Tools/Schema*",
         "clio/Command/McpServer/Tools/SqlSchema*",
         "clio/ModelBuilder/"
@@ -77,21 +126,61 @@
     },
     {
       "id": "data",
-      "option": "Data access and system settings (OData, ESQ, run SQL scripts, data bindings, DataForge)",
+      "option": "ESQ and SQL (ESQ queries, run SQL scripts, DataForge)",
       "label": "component:data",
       "color": "c5def5",
-      "description": "Data queries, bindings and system settings",
+      "description": "ESQ queries, SQL scripts and DataForge",
       "owners": [
+        "kirillkrylov"
+      ],
+      "paths": [
+        "clio/Command/McpServer/Tools/ExecuteEsqTool.cs",
+        "clio/Command/McpServer/Tools/ExecuteSqlScriptTool.cs",
+        "clio/Command/McpServer/Tools/DataForge*",
+        "clio/Query/"
+      ]
+    },
+    {
+      "id": "data-bindings",
+      "option": "Data bindings (package data bindings, seed data)",
+      "label": "component:data-bindings",
+      "color": "c5def5",
+      "description": "Package data bindings",
+      "owners": [
+        "kbondarenko-tech",
+        "Alexandr-Kravchuk"
+      ],
+      "paths": [
+        "clio/Command/McpServer/Tools/DataBinding*"
+      ]
+    },
+    {
+      "id": "sys-settings",
+      "option": "System settings (create, read and set system settings)",
+      "label": "component:sys-settings",
+      "color": "c5def5",
+      "description": "System settings tools",
+      "owners": [
+        "ylypnytskyi-eng",
+        "a-trofimchuk"
+      ],
+      "paths": [
+        "clio/Command/McpServer/Tools/*SysSetting*"
+      ]
+    },
+    {
+      "id": "odata",
+      "option": "OData tools (odata-read, odata-create, odata-update, odata-delete)",
+      "label": "component:odata",
+      "color": "c5def5",
+      "description": "OData read and write tools",
+      "owners": [
+        "kbondarenko-tech",
         "Alexandr-Kravchuk",
         "kirillkrylov"
       ],
       "paths": [
-        "clio/Command/McpServer/Tools/OData*",
-        "clio/Command/McpServer/Tools/ExecuteEsqTool.cs",
-        "clio/Command/McpServer/Tools/DataBinding*",
-        "clio/Command/McpServer/Tools/SysSettingsTool.cs",
-        "clio/Command/McpServer/Tools/DataForgeTool.cs",
-        "clio/Query/"
+        "clio/Command/McpServer/Tools/OData*"
       ]
     },
     {
@@ -130,14 +219,29 @@
       ]
     },
     {
+      "id": "dashboards",
+      "option": "Dashboards (dashboards and the dashboards migrator)",
+      "label": "component:dashboards",
+      "color": "c5def5",
+      "description": "Dashboards and the dashboards migrator",
+      "owners": [
+        "bfedoronchuk"
+      ],
+      "paths": [
+        "clio/Command/InstallDashboardsMigratorCommand.cs",
+        "clio/Command/McpServer/Tools/InstallDashboardsMigratorTool.cs",
+        "clio/CrtDashboardsMigratorApp/"
+      ]
+    },
+    {
       "id": "package",
       "option": "Packages and compilation (push-pkg, compress, lock/unlock, dependencies, compile)",
       "label": "component:package",
       "color": "c5def5",
       "description": "Package management and compilation",
       "owners": [
-        "Alexandr-Kravchuk",
-        "kirillkrylov"
+        "kirillkrylov",
+        "Alexandr-Kravchuk"
       ],
       "paths": [
         "clio/Package/",

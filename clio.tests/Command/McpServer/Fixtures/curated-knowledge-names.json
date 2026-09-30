@@ -1,7 +1,7 @@
 {
   "library": "com.creatio.clio",
-  "libraryVersion": "1.15.75",
-  "sequence": 1015075000,
+  "libraryVersion": "1.15.84",
+  "sequence": 1015084000,
   "availableNames": [
     "administration",
     "agent-execution",
@@ -93,6 +93,7 @@
     "creatio.page-schema-creatio-devkit-common",
     "creatio.page-schema-handlers",
     "creatio.page-schema-resources",
+    "creatio.page-schema-translation",
     "creatio.page-schema-validators",
     "creatio.portal-service-routing",
     "creatio.process-access-rights",
@@ -192,6 +193,7 @@
     "page-schema-creatio-devkit-common",
     "page-schema-handlers",
     "page-schema-resources",
+    "page-schema-translation",
     "page-schema-validators",
     "portal-service-routing",
     "process-access-rights",

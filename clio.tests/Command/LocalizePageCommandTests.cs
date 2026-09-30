@@ -44,6 +44,8 @@ public sealed class LocalizePageCommandTests : BaseCommandTests<LocalizePageOpti
 	private string _savedBody;
 	private string _existingInPackageRows;
 	private bool _readbackThrows;
+	private Func<string> _saveResponse;
+	private Exception _cultureReadError;
 
 	private const string PreSaveChecksum = "checksum-before-save";
 	private const string PostSaveChecksum = "checksum-after-save";
@@ -69,6 +71,8 @@ public sealed class LocalizePageCommandTests : BaseCommandTests<LocalizePageOpti
 		_savedBody = null;
 		_existingInPackageRows = "[]";
 		_readbackThrows = false;
+		_saveResponse = null;
+		_cultureReadError = null;
 		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
 				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(call => Route(call.ArgAt<string>(0), call.ArgAt<string>(1)));
@@ -94,6 +98,9 @@ public sealed class LocalizePageCommandTests : BaseCommandTests<LocalizePageOpti
 		_calls.Add((url, body));
 		if (url.EndsWith("/0/DataService/json/SyncReply/SelectQuery", StringComparison.Ordinal)) {
 			if (body.Contains("\"SysCulture\"", StringComparison.Ordinal)) {
+				if (_cultureReadError is not null) {
+					throw _cultureReadError;
+				}
 				return $$"""{"success":true,"rows":{{_cultureRows}}}""";
 			}
 			if (body.Contains("SysPackage.UId", StringComparison.Ordinal)) {
@@ -115,6 +122,9 @@ public sealed class LocalizePageCommandTests : BaseCommandTests<LocalizePageOpti
 			return new JObject { ["success"] = true, ["schema"] = schema.DeepClone() }.ToString();
 		}
 		if (url.EndsWith("/0/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema", StringComparison.Ordinal)) {
+			if (_saveResponse is not null) {
+				return _saveResponse();
+			}
 			_savedBody = body;
 			return """{"success":true}""";
 		}
@@ -163,6 +173,16 @@ public sealed class LocalizePageCommandTests : BaseCommandTests<LocalizePageOpti
 
 	private static JObject Schema(params JObject[] entries) =>
 		Schema(" ", new JArray(Culture("en-US", "Lab form page")), entries);
+
+	// GetSchema returns the parent template inline, with its caption in every culture it has.
+	private static JObject WithParentCaption(JObject schema, params (string Culture, string Value)[] values) {
+		schema["parent"] = new JObject {
+			["name"] = "BlankPageTemplate",
+			["uId"] = AncestorUId,
+			["caption"] = new JArray(values.Select(v => Culture(v.Culture, v.Value)))
+		};
+		return schema;
+	}
 
 	private static LocalizePageOptions Options(string culture = "es-ES", string resources = null, string caption = null) =>
 		new() { SchemaName = SchemaName, Culture = culture, Resources = resources, Caption = caption, Environment = "dev" };
@@ -654,5 +674,256 @@ public sealed class LocalizePageCommandTests : BaseCommandTests<LocalizePageOpti
 		response.Success.Should().BeFalse(because: "the stored value could not be verified");
 		response.Error.Should().Contain("connection reset during readback", because: "the readback failure is reported");
 		SaveCount.Should().Be(1, because: "the save was sent once");
+	}
+
+	[Test]
+	[Description("Review follow-up: an empty or whitespace-only resource value is refused before any save, naming every such key, instead of being stored as a blank translation.")]
+	public void Execute_ShouldRefuseValue_WhenResourceValueIsBlank() {
+		// Arrange
+		_schema = Schema(
+			Entry(OwnKey, SchemaUId, ("en-US", "Lab label")),
+			Entry("UsrOther_caption", SchemaUId, ("en-US", "Other")));
+
+		// Act
+		LocalizePageResponse response = _command.Localize(
+			Options(resources: """{"UsrLabLabel_caption":"","UsrOther_caption":"   "}"""));
+
+		// Assert
+		response.Success.Should().BeFalse(because: "a blank value is not a translation");
+		response.Error.Should().Contain(OwnKey, because: "the empty value is named")
+			.And.Contain("UsrOther_caption", because: "the whitespace-only value is named too");
+		SaveCount.Should().Be(0, because: "nothing is saved for an invalid resources map");
+	}
+
+	[Test]
+	[Description("Review follow-up: a whitespace-only caption is refused before anything is read, instead of being stored as a blank page title.")]
+	public void Execute_ShouldRefuseCaption_WhenCaptionIsWhitespaceOnly() {
+		// Arrange
+		_schema = Schema(Entry(OwnKey, SchemaUId, ("en-US", "Lab label")));
+
+		// Act
+		LocalizePageResponse response = _command.Localize(Options(caption: "   "));
+
+		// Assert
+		response.Success.Should().BeFalse(because: "a blank title is not a translation");
+		response.Error.Should().Be(LocalizePageCommand.BlankCaptionMessage, because: "the caller is told what is wrong");
+		GetSchemaCount.Should().Be(0, because: "the input is rejected before the page is read");
+		SaveCount.Should().Be(0, because: "nothing is saved");
+	}
+
+	[Test]
+	[Description("Review follow-up: a caption with surrounding spaces is stored trimmed and the readback compares against the trimmed value, so the call succeeds and a re-run with the padded value saves nothing.")]
+	public void Execute_ShouldTrimCaption_WhenCaptionHasSurroundingSpaces() {
+		// Arrange
+		_schema = Schema(Entry(OwnKey, SchemaUId, ("en-US", "Lab label")));
+
+		// Act
+		LocalizePageResponse response = _command.Localize(Options(caption: "  Pagina  "));
+		_schema = SavedSchema;
+		_savedBody = null;
+		LocalizePageResponse rerun = _command.Localize(Options(caption: "  Pagina  "));
+
+		// Assert
+		response.Success.Should().BeTrue(because: "the trimmed title is stored and read back");
+		ValuesOf(new JObject { ["values"] = _schema["caption"] })["es-ES"].Should().Be("Pagina",
+			because: "the surrounding spaces are not part of the title");
+		rerun.CaptionOutcome.Should().Be(LocalizePageResponse.CaptionUnchanged,
+			because: "the padded value equals the stored trimmed one");
+		rerun.Saved.Should().BeFalse(because: "an unchanged title is not saved again");
+	}
+
+	[Test]
+	[Description("Review follow-up: when SaveSchema answers success:false, the result is saved:false with the server message, the script cache is not reset, the baseline is not refreshed and no workspace-capture warning is added.")]
+	public void Execute_ShouldReportServerMessage_WhenSaveIsRejected() {
+		// Arrange
+		_schema = Schema(Entry(OwnKey, SchemaUId, ("en-US", "Lab label")));
+		_saveResponse = () => """{"success":false,"errorInfo":{"message":"Schema is locked by another user"}}""";
+
+		// Act
+		LocalizePageResponse response = _command.Localize(Options(resources: """{"UsrLabLabel_caption":"Etiqueta"}"""));
+
+		// Assert
+		response.Success.Should().BeFalse(because: "the server rejected the save");
+		response.Saved.Should().BeFalse(because: "nothing was stored");
+		response.Error.Should().Contain("Schema is locked by another user", because: "the server reason reaches the caller");
+		CountCalls("WorkplaceService/ResetScriptCache").Should().Be(0, because: "there is no new bundle to invalidate");
+		_baselineGuard.DidNotReceiveWithAnyArgs().RefreshAfterSave(default, default, default, default, default, default);
+		response.Warnings.Should().NotContain(LocalizePageCommand.WorkspaceCaptureWarning,
+			because: "the workspace cannot be stale after a rejected save");
+	}
+
+	[Test]
+	[Description("Review follow-up: a credential in the server's save error is redacted before it reaches the caller.")]
+	public void Execute_ShouldRedactServerMessage_WhenSaveErrorCarriesCredential() {
+		// Arrange
+		_schema = Schema(Entry(OwnKey, SchemaUId, ("en-US", "Lab label")));
+		_saveResponse = () => """{"success":false,"errorInfo":{"message":"Login failed for password=Sup3rSecret"}}""";
+
+		// Act
+		LocalizePageResponse response = _command.Localize(Options(resources: """{"UsrLabLabel_caption":"Etiqueta"}"""));
+
+		// Assert
+		response.Success.Should().BeFalse(because: "the server rejected the save");
+		response.Error.Should().NotContain("Sup3rSecret", because: "server text is redacted like every other clio MCP error");
+	}
+
+	[Test]
+	[Description("Review follow-up: an exception caught by the command (here the SysCulture read) is redacted before it reaches the caller.")]
+	public void Execute_ShouldRedactExceptionText_WhenRemoteCallThrows() {
+		// Arrange
+		_schema = Schema(Entry(OwnKey, SchemaUId, ("en-US", "Lab label")));
+		_cultureReadError = new InvalidOperationException("request to https://dev.example/0/DataService failed, password=Sup3rSecret");
+
+		// Act
+		LocalizePageResponse response = _command.Localize(Options(resources: """{"UsrLabLabel_caption":"Etiqueta"}"""));
+
+		// Assert
+		response.Success.Should().BeFalse(because: "the culture could not be resolved");
+		response.Error.Should().NotContain("Sup3rSecret", because: "exception text is redacted before it is returned");
+		SaveCount.Should().Be(0, because: "nothing is saved when the culture read fails");
+	}
+
+	[Test]
+	[Description("Review follow-up: when SaveSchema throws after the request was sent (a timeout, a non-JSON reply), the result keeps the page identity and the written keys, says the outcome is unknown and carries the workspace-capture warning.")]
+	public void Execute_ShouldReportUnknownOutcome_WhenSaveThrows() {
+		// Arrange
+		_schema = Schema(Entry(OwnKey, SchemaUId, ("en-US", "Lab label")));
+		_saveResponse = () => throw new TimeoutException("The operation has timed out");
+
+		// Act
+		LocalizePageResponse response = _command.Localize(Options(resources: """{"UsrLabLabel_caption":"Etiqueta"}"""));
+
+		// Assert
+		response.Success.Should().BeFalse(because: "the save was not confirmed");
+		response.Saved.Should().BeFalse(because: "Creatio never confirmed the save");
+		response.Error.Should().Contain("may or may not have been stored", because: "the caller must not assume nothing was written")
+			.And.Contain("The operation has timed out", because: "the transport reason is kept");
+		response.SchemaUId.Should().Be(SchemaUId, because: "the caller needs the page identity to check it");
+		response.PackageName.Should().Be(PackageName, because: "the caller needs the package to capture it");
+		response.Written.Should().Equal([OwnKey], because: "the keys that were sent are still reported");
+		response.Warnings.Should().Contain(LocalizePageCommand.WorkspaceCaptureWarning,
+			because: "the values may be on the server, so the workspace may be stale");
+		_baselineGuard.DidNotReceiveWithAnyArgs().RefreshAfterSave(default, default, default, default, default, default);
+		CountCalls("WorkplaceService/ResetScriptCache").Should().Be(1,
+			because: "the save may have landed, so the next hierarchy read must not serve the pre-save bundle");
+	}
+
+	[Test]
+	[Description("Review follow-up: a failed .clio-pages baseline refresh after a confirmed save is a warning; the save still reports success.")]
+	public void Execute_ShouldWarn_WhenBaselineRefreshThrows() {
+		// Arrange
+		_schema = Schema(Entry(OwnKey, SchemaUId, ("en-US", "Lab label")));
+		_baselineGuard.RefreshAfterSave(default, default, default, default, default, default)
+			.ReturnsForAnyArgs(_ => throw new System.IO.IOException("meta.json is locked"));
+
+		// Act
+		LocalizePageResponse response = _command.Localize(Options(resources: """{"UsrLabLabel_caption":"Etiqueta"}"""));
+
+		// Assert
+		response.Success.Should().BeTrue(because: "the save landed and was read back");
+		response.Saved.Should().BeTrue(because: "Creatio confirmed the save");
+		response.Warnings.Should().Contain(warning => warning.Contains("meta.json is locked", StringComparison.Ordinal),
+			because: "the baseline failure is reported, not hidden");
+	}
+
+	[Test]
+	[Description("QA follow-up: on a page created from a template, a culture the page stores no title for shows the template's translated title; coverage reports it as captionInherited (untranslated) with its value, although it differs from en-US.")]
+	public void Execute_ShouldReportCaptionInherited_WhenTitleComesFromTemplate() {
+		// Arrange
+		_schema = WithParentCaption(
+			Schema(" ", new JArray(Culture("en-US", "Lab form page"), Culture("es-ES", "Página en blanco")),
+				Entry(OwnKey, SchemaUId, ("en-US", "Lab label"))),
+			("en-US", "Blank page"), ("es-ES", "Página en blanco"));
+
+		// Act
+		LocalizePageResponse response = _command.Localize(Options());
+
+		// Assert
+		response.Success.Should().BeTrue(because: "a report-only call on a readable page succeeds");
+		response.Coverage.CaptionSameAsDefault.Should().BeFalse(because: "the template's Spanish title differs from the page's en-US title");
+		response.Coverage.CaptionInherited.Should().BeTrue(
+			because: "the es-ES title is the template's, not a translation of the page's own title");
+		response.Coverage.CaptionValue.Should().Be("Página en blanco", because: "the current title in the culture is returned");
+		SaveCount.Should().Be(0, because: "report-only never saves");
+	}
+
+	[Test]
+	[Description("QA follow-up: a page that kept the template's en-US title also keeps its translations, so a culture value equal to the template's is not reported as inherited.")]
+	public void Execute_ShouldNotReportCaptionInherited_WhenPageKeepsTemplateTitle() {
+		// Arrange
+		_schema = WithParentCaption(
+			Schema(" ", new JArray(Culture("en-US", "Blank page"), Culture("es-ES", "Página en blanco")),
+				Entry(OwnKey, SchemaUId, ("en-US", "Lab label"))),
+			("en-US", "Blank page"), ("es-ES", "Página en blanco"));
+
+		// Act
+		LocalizePageResponse response = _command.Localize(Options());
+
+		// Assert
+		response.Coverage.CaptionInherited.Should().BeFalse(
+			because: "the template's es-ES title is a correct translation of a title the page did not change");
+		response.Coverage.CaptionValue.Should().Be("Página en blanco", because: "the current title in the culture is returned");
+	}
+
+	[Test]
+	[Description("QA follow-up: after the page title is written in the culture, the readback coverage no longer reports it as inherited and returns the written value.")]
+	public void Execute_ShouldClearCaptionInherited_WhenCaptionIsWritten() {
+		// Arrange
+		_schema = WithParentCaption(
+			Schema(" ", new JArray(Culture("en-US", "Lab form page"), Culture("es-ES", "Página en blanco")),
+				Entry(OwnKey, SchemaUId, ("en-US", "Lab label"))),
+			("en-US", "Blank page"), ("es-ES", "Página en blanco"));
+
+		// Act
+		LocalizePageResponse response = _command.Localize(Options(caption: "Página de laboratorio"));
+
+		// Assert
+		response.Success.Should().BeTrue(because: "the title was saved and read back");
+		response.Coverage.CaptionInherited.Should().BeFalse(because: "the page now has its own es-ES title");
+		response.Coverage.CaptionValue.Should().Be("Página de laboratorio", because: "coverage is computed from the stored schema");
+	}
+
+	[Test]
+	[Description("QA follow-up: a page without a parent in GetSchema, or without a title in the culture, reports captionInherited false and no captionValue.")]
+	public void Execute_ShouldReportNoCaptionValue_WhenCultureHasNoTitle() {
+		// Arrange
+		_schema = Schema(Entry(OwnKey, SchemaUId, ("en-US", "Lab label")));
+
+		// Act
+		LocalizePageResponse response = _command.Localize(Options());
+
+		// Assert
+		response.Coverage.CaptionInherited.Should().BeFalse(because: "there is no parent title to compare with");
+		response.Coverage.CaptionValue.Should().BeNull(because: "the page has no es-ES title");
+	}
+
+	[Test]
+	[Description("QA follow-up: when the direct parent is an intermediate page with the same en-US title (a replacing page), the title is still reported as inherited when it equals the template's title from a higher level of the hierarchy.")]
+	public void Execute_ShouldReportCaptionInherited_WhenTitleComesFromTemplateAboveDirectParent() {
+		// Arrange
+		_schema = WithParentCaption(
+			Schema(" ", new JArray(Culture("en-US", "Lab form page"), Culture("es-ES", "Página en blanco")),
+				Entry(OwnKey, SchemaUId, ("en-US", "Lab label"))),
+			("en-US", "Lab form page"), ("es-ES", "Página en blanco"));
+		_hierarchyClient.GetParentSchemas(SchemaUId, DesignPackageUId).Returns([
+			new PageDesignerHierarchySchema {
+				UId = SchemaUId, Name = SchemaName, PackageUId = DesignPackageUId, PackageName = PackageName
+			},
+			new PageDesignerHierarchySchema {
+				UId = AncestorUId, Name = SchemaName, PackageUId = "base-package", PackageName = "UsrBase",
+				Caption = new JArray(Culture("en-US", "Lab form page"), Culture("es-ES", "Página en blanco"))
+			},
+			new PageDesignerHierarchySchema {
+				UId = "template-uid", Name = "BlankPageTemplate", PackageUId = "crt-package", PackageName = "CrtUIPlatform",
+				Caption = new JArray(Culture("en-US", "Blank page"), Culture("es-ES", "Página en blanco"))
+			}
+		]);
+
+		// Act
+		LocalizePageResponse response = _command.Localize(Options());
+
+		// Assert
+		response.Coverage.CaptionInherited.Should().BeTrue(
+			because: "the es-ES title is the template's, although the direct parent carries the same en-US title as the page");
 	}
 }

@@ -91,6 +91,13 @@ Naming follows `MethodName_ShouldExpectedBehavior_WhenCondition`. Command tests 
 | TC-U-33 | `Execute_ShouldFailBeforeAnySave_WhenOneBatchOperationHasAbsentCulture` (update-entity-schema) | zero saves |
 | TC-U-34 | `CreateSchema_ShouldFailBeforeSave_WhenColumnMapCultureIsAbsent` | no SaveSchema |
 | TC-U-35 | `Execute_ShouldFail_WhenCultureCatalogReadFails` | no SaveSchema, error surfaced |
+| TC-U-36 | `Execute_ShouldRefuseValue_WhenResourceValueIsBlank` | no SaveSchema, blank keys named |
+| TC-U-37 | `Execute_ShouldRefuseCaption_WhenCaptionIsWhitespaceOnly` / `Execute_ShouldTrimCaption_WhenCaptionHasSurroundingSpaces` | refused before read / stored trimmed, re-run unchanged |
+| TC-U-38 | `Execute_ShouldReportServerMessage_WhenSaveIsRejected` | saved:false, no cache reset, no baseline refresh |
+| TC-U-39 | `Execute_ShouldReportUnknownOutcome_WhenSaveThrows` / `Execute_ShouldWarn_WhenBaselineRefreshThrows` | identity + warning kept / success with warning |
+| TC-U-48 | `Execute_ShouldRedactServerMessage_WhenSaveErrorCarriesCredential` / `Execute_ShouldRedactExceptionText_WhenRemoteCallThrows` | no credential in error |
+| TC-U-50 | `Execute_ShouldReportCaptionInherited_WhenTitleComesFromTemplate` / `Execute_ShouldNotReportCaptionInherited_WhenPageKeepsTemplateTitle` / `Execute_ShouldClearCaptionInherited_WhenCaptionIsWritten` | `captionInherited`, `captionValue` |
+| TC-U-49 | `UpdateSection_Should_WarnAboutFallbackTitle_WhenProfileCultureHasNoRow` | fallback title written with a warning |
 
 ## E2E cases (`clio.mcp.e2e/LocalizePageToolE2ETests.cs`, `McpE2E.Sandbox`)
 

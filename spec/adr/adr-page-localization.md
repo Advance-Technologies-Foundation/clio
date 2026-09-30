@@ -213,6 +213,13 @@ before saving, naming the key; it is refused, never stripped.
   an error: F8 shows that a schema caption holds the English text in every culture right after `create-page`, so
   "present" does not mean "translated"; but a word like "Email" can be the same in two languages, so clio cannot
   decide it.
+- `captionInherited` / `captionValue` (QA follow-up, 2026-09-29, measured on 10.2.312 .NET Framework): F8 does not
+  hold for every page. `GetSchema` returns, in each culture the page stores no title for, the PARENT template's title,
+  and returns that parent's `caption` array inline under `schema.parent`. A page created from `BlankPageTemplate`
+  showed "Página en blanco" / "Page blanche" in 27 of 28 cultures; a `create-app` list page showed the
+  `ListPageV3Template` title in 10 of 29. `captionInherited` is true when the culture value equals an ancestor's value (the inline parent or any level of
+  `GetParentSchemas`) in that culture while the page's `en-US` title differs from that ancestor's (a page that kept the template's title
+  also keeps its translations). `captionValue` is the title in the culture, so no `SysSchema` read is needed.
 - The workspace-capture warning carries the meaning of the one `update-page` returns
   (`McpToolDescriptions.PageResourcesAdditive` family), worded for `localize-page`: a server save does not update workspace metadata or
   culture XML, and a later `push-workspace` can revert it.
@@ -293,6 +300,12 @@ Review amendments (2026-09-26):
 - Under a non-default profile culture that has no localization row of its own, when no caption went through step 2,
   the snapshot has no profile-culture cell, so the value F12 requires is the one `SelectQuery` returns — the fallback (English) text — and step 3 creates
   the profile-culture row with that text.
+- Review follow-up (2026-09-28): that write can not be avoided (F12), but it is no longer silent — the result
+  carries a warning naming the profile culture and the fallback text.
+- Review follow-up (2026-09-28), `localize-page`: empty/whitespace resource values and a whitespace-only caption
+  are refused before any read; the caption is trimmed. A `SaveSchema` that throws after it was sent returns
+  `saved:false` with an outcome-unknown error, keeping `schemaUId`/`packageName`/`written` and the workspace
+  warning. Server text and caught exception text in `error` are redacted.
 
 Rejected: a `caption-localizations` map — the rest of the page-localization feature writes one culture per call
 (D1), and a map would need its own merge/required-culture rules. Rejected: leaving F11 unfixed and only adding
