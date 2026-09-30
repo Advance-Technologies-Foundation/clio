@@ -72,7 +72,8 @@ public sealed class CompileCreatioTool(
 			return new CommandExecutionResult(1, [new ErrorMessage("compile-creatio needs its args object.")]);
 		}
 
-		CommandExecutionResult? refusal = RefuseScope(args, out string? packageName, out string? processName);
+		CommandExecutionResult? refusal = RefuseScope(args, ExplicitNullScope(requestContext?.Params?.Arguments),
+			out string? packageName, out string? processName);
 		if (refusal is not null)
 		{
 			return refusal;
@@ -159,11 +160,12 @@ public sealed class CompileCreatioTool(
 	/// Each of those, read as "omitted", would turn a scoped request into a FULL compile.
 	/// </summary>
 	/// <param name="args">The call's arguments.</param>
+	/// <param name="explicitNullScope">The scope argument the call sent as an explicit JSON <c>null</c>, if any.</param>
 	/// <param name="packageName">The trimmed package name, or <c>null</c> when omitted.</param>
 	/// <param name="processName">The trimmed process code, or <c>null</c> when omitted.</param>
 	/// <returns>The refusal, or <c>null</c> when the call may proceed.</returns>
-	private static CommandExecutionResult? RefuseScope(CompileCreatioArgs args, out string? packageName,
-		out string? processName)
+	private static CommandExecutionResult? RefuseScope(CompileCreatioArgs args, string? explicitNullScope,
+		out string? packageName, out string? processName)
 	{
 		// Refused, not dropped: the scope arguments are all optional, so a dropped 'process-name' or 'package-name'
 		// leaves a call that means "compile everything" - a full compile reloading the runtime for every user.
@@ -205,6 +207,16 @@ public sealed class CompileCreatioTool(
 		}
 
 		processName = string.IsNullOrWhiteSpace(args.ProcessName) ? null : args.ProcessName.Trim();
+		if (explicitNullScope is not null && packageName is null && processName is null)
+		{
+			// Sent, but null, and no other scope left: the same refusal as a blank value, because a null binds to the
+			// C# null an OMITTED argument binds to, and omitted means a FULL compile the user never agreed to. A null
+			// beside a real scope is what clients that serialize every optional field send, and it is harmless.
+			return new CommandExecutionResult(1, [
+				new ErrorMessage($"`{explicitNullScope}` is null. Pass a value, or omit both scope arguments for a full compilation. Nothing was compiled.")
+			]);
+		}
+
 		if (packageName is not null && processName is not null)
 		{
 			return new CommandExecutionResult(1, [
@@ -212,6 +224,37 @@ public sealed class CompileCreatioTool(
 			]);
 		}
 
+		return null;
+	}
+
+	/// <summary>
+	/// The scope argument - <c>package-name</c> or <c>process-name</c> - that the raw call arguments carry as an
+	/// explicit JSON <c>null</c>.
+	/// </summary>
+	/// <remarks>
+	/// Read from the raw arguments because the binder cannot tell: a present <c>null</c> and an absent key both bind
+	/// the record's <c>string?</c> parameter to <c>null</c>, and neither reaches <see cref="CompileCreatioArgs.ExtensionData"/>.
+	/// Keeping the parameters <c>string?</c> keeps the published input schema a string; the binder matches names
+	/// case-insensitively, so this does too.
+	/// </remarks>
+	/// <param name="arguments">The call's raw arguments; <c>null</c> for a call made in process.</param>
+	/// <returns>The argument's name as sent, or <c>null</c> when neither scope argument is an explicit null.</returns>
+	internal static string? ExplicitNullScope(IDictionary<string, JsonElement>? arguments)
+	{
+		if (arguments is null || !arguments.TryGetValue("args", out JsonElement argsElement)
+			|| argsElement.ValueKind != JsonValueKind.Object)
+		{
+			return null;
+		}
+		foreach (JsonProperty property in argsElement.EnumerateObject())
+		{
+			if (property.Value.ValueKind == JsonValueKind.Null
+				&& (string.Equals(property.Name, "process-name", StringComparison.OrdinalIgnoreCase)
+					|| string.Equals(property.Name, "package-name", StringComparison.OrdinalIgnoreCase)))
+			{
+				return property.Name;
+			}
+		}
 		return null;
 	}
 

@@ -189,6 +189,32 @@ public sealed class CompileCreatioToolE2ETests : McpContractFixtureBase
 			because: "the refusal comes before the operation is registered, so no compile was started or reserved");
 	}
 
+	[Test]
+	[AllureTag(ToolName)]
+	[AllureDescription("Starts the real clio MCP server and calls compile-creatio with process-name sent as an explicit JSON null. The record binds that to the same null an omitted argument binds to, and omitted means a FULL compile, so the tool must refuse it. The environment is not registered, so even a regressed guard compiles nothing on a shared stand.")]
+	[AllureName("Compile Creatio refuses an explicit null process-name")]
+	[Description("A process-name sent as JSON null, with no other scope, is refused through the real MCP server, and no compile operation is tracked for the environment, so nothing was started.")]
+	public async Task CompileCreatio_WithAnExplicitNullProcessName_Should_RefuseWithoutStartingACompile()
+	{
+		// Arrange
+		await using var arrangeContext = Arrange();
+		string environmentName = $"null-scope-env-{Guid.NewGuid():N}";
+
+		// Act
+		CompileCreatioActResult actResult = await ActAsync(arrangeContext, environmentName,
+			extraArgs: new Dictionary<string, object?> { ["process-name"] = null });
+		CompileStatusResponse status = await ActStatusAsync(arrangeContext, environmentName);
+
+		// Assert
+		AssertToolCallFailed(actResult);
+		string combinedOutput = string.Join(Environment.NewLine,
+			(actResult.Execution.Output ?? []).Select(message => message.Value?.ToString()));
+		combinedOutput.Should().Contain("`process-name` is null",
+			because: "the refusal names the argument that was sent as null");
+		status.Status.Should().Be("not-found",
+			because: "the refusal comes before the operation is registered, so no compile was started or reserved");
+	}
+
 	private static async Task<CompileStatusResponse> ActStatusAsync(
 		ArrangeContext arrangeContext,
 		string environmentName)

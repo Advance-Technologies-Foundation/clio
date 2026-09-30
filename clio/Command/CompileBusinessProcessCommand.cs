@@ -9,6 +9,7 @@ using System.Net.Sockets;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using Clio.Common;
 using Clio.UserEnvironment;
 
@@ -25,11 +26,8 @@ namespace Clio.Command;
 [RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.33",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class CompileBusinessProcessOptions : EnvironmentOptions {
-	/// <summary>Schema name (code) of the process. Provide exactly one of <see cref="ProcessName"/> or <see cref="ProcessUid"/>.</summary>
+	/// <summary>Schema name (code) of the process.</summary>
 	public string ProcessName { get; set; } = string.Empty;
-
-	/// <summary>Schema UId of the process. Provide exactly one of <see cref="ProcessName"/> or <see cref="ProcessUid"/>.</summary>
-	public string ProcessUid { get; set; } = string.Empty;
 }
 
 /// <summary>
@@ -73,29 +71,22 @@ public sealed class CompileBusinessProcessService(
 		}
 
 		ArgumentNullException.ThrowIfNull(request);
-		if (string.IsNullOrWhiteSpace(request.ProcessName) && string.IsNullOrWhiteSpace(request.ProcessUid)) {
-			throw new ArgumentException("Either a process name or uid is required.", nameof(request));
+		if (string.IsNullOrWhiteSpace(request.ProcessName)) {
+			throw new ArgumentException("A process name is required.", nameof(request));
 		}
 
 		EnvironmentSettings environmentSettings = settingsRepository.FindEnvironment(environmentName)
 			?? throw new InvalidOperationException(
 				EnvironmentNotFoundError.Build(environmentName, settingsRepository));
 
-		var requestObject = new JsonObject();
-		if (!string.IsNullOrWhiteSpace(request.ProcessName)) {
-			requestObject["name"] = request.ProcessName;
-		}
-		if (!string.IsNullOrWhiteSpace(request.ProcessUid)) {
-			requestObject["uid"] = request.ProcessUid;
-		}
+		var requestObject = new JsonObject { ["name"] = request.ProcessName };
 
 		using IOwnedApplicationClient client = applicationClientFactory.CreateOwnedEnvironmentClient(environmentSettings);
 		string url = serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.CompileProcess, environmentSettings);
 		// ProcessDesignService uses BodyStyle=Wrapped: the request is wrapped under a "request" property.
 		string requestBody = new JsonObject { ["request"] = requestObject }.ToJsonString();
-		string identity = string.IsNullOrWhiteSpace(request.ProcessName) ? request.ProcessUid : request.ProcessName;
 		logger.WriteInfo(
-			$"Compiling the package of process '{identity}' on '{environmentName}'. A compile reloads the runtime "
+			$"Compiling the package of process '{request.ProcessName}' on '{environmentName}'. A compile reloads the runtime "
 			+ "for every user of the environment and usually takes a few minutes...");
 
 		string responseBody;
@@ -103,14 +94,17 @@ public sealed class CompileBusinessProcessService(
 			responseBody = client.ExecutePostRequest(url, requestBody, CompileTimeoutMs);
 		} catch (Exception exception) when (IsTransportFault(exception)) {
 			// No HTTP status is classified here, because none arrives: Creatio.Client's POST reads the body without
-			// checking the status (docs/knowledge/Command/call-service-must-classify-creatio-client-error-bodies.md),
-			// so a 4xx comes back as an HTML or error body and is answered below as a body clio cannot read.
+			// checking the status (docs/knowledge/Command/creatio-client-returns-error-bodies-without-status.md),
+			// so a 4xx comes back as an HTML or error body and is classified below, after the call returned.
 			// A timeout or a dropped connection mid-compile says nothing about the compile itself, and a retry
-			// while it still runs is refused by the platform rather than queued - so the caller is told so.
+			// while it still runs is refused by the platform rather than queued - so the caller is told so. The
+			// transport's own text is fenced: it routinely carries the request URI, and a proxy's answer is third-
+			// party prose, and this line reaches an agent through the MCP result and the compile-status tail.
 			throw new InvalidOperationException(
 				"CompileProcess did not answer, so whether the package was compiled is UNKNOWN - the compile may "
 				+ "still be running on the server. Wait, then read last-compilation-log for this environment before "
-				+ $"compiling again. Transport detail: {exception.Message}",
+				+ "compiling again. Transport detail: "
+				+ (UntrustedText.Fenced(exception.GetReadableMessageException()) ?? "none reported"),
 				exception);
 		}
 		if (string.IsNullOrWhiteSpace(responseBody)) {
@@ -119,6 +113,29 @@ public sealed class CompileBusinessProcessService(
 			throw new InvalidOperationException(
 				"CompileProcess returned an empty body, so whether the package was compiled is UNKNOWN. Read "
 				+ "last-compilation-log for this environment before compiling again.");
+		}
+		bool isErrorPage = CreatioResponseError.TryClassifyMarkupError(responseBody, out int? pageStatus);
+		if (isErrorPage && pageStatus is 401 or 404) {
+			// An authentication refusal or an unrouted request: the web server answered before the process builder
+			// ran, so this outcome is known. A 403 is not: a gateway that inspects responses answers 403 after the
+			// backend ran, and any other page - a 500 among them - can come after the compile too.
+			throw new InvalidOperationException(
+				$"CompileProcess was answered with an HTTP {pageStatus} error page: the request did not reach the "
+				+ "process builder, so nothing was compiled. "
+				+ (pageStatus == 404
+					? "The route was not found: check the environment's URL and its IsNetCore setting, and that "
+						+ "CrtProcessBuilder is installed and compiled there (install-process-builder)."
+					: "Check the environment's credentials.")
+				+ " Ask the user again before compiling.");
+		}
+		if (!(isErrorPage && pageStatus >= 500) && ReauthExecutor.IsSessionExpiredResponse(responseBody)) {
+			// The sign-in page or the JSON 401 envelope: authentication refused the request before routing, so
+			// the process builder never ran. Not on a 5xx page, which can link the sign-in page and come after the
+			// compile. Where the client can, it has already signed in again and replayed the call once.
+			throw new InvalidOperationException(
+				"CompileProcess was refused by the sign-in check, so the request did not reach the process builder "
+				+ "and nothing was compiled. Verify the environment's credentials (clio reg-web-app --check-login), "
+				+ "then ask the user again before compiling.");
 		}
 		ResponseEnvelope? envelope;
 		try {
@@ -129,17 +146,13 @@ public sealed class CompileBusinessProcessService(
 			// read that rather than inviting a retry the platform would refuse while a compile is running.
 			throw new InvalidOperationException(
 				"CompileProcess returned a response clio could not read, so whether the package was compiled is "
-				+ "UNKNOWN. Read last-compilation-log for this environment before compiling again. The parser "
-				+ "detail is on the inner exception.",
+				+ "UNKNOWN. Read last-compilation-log for this environment before compiling again.",
 				exception);
 		}
 
 		// Not the envelope: a JSON error body (a fault, a refusal before the handler ran) parses into one with no
 		// result. The outcome is as open as for a body that does not parse at all.
-		ResultDto result = envelope?.Result
-			?? throw new InvalidOperationException(
-				"CompileProcess returned a response without its result, so whether the package was compiled is "
-				+ "UNKNOWN. Read last-compilation-log for this environment before compiling again.");
+		ResultDto result = envelope?.Result ?? throw DescribeMissingResult(responseBody);
 		return new CompileBusinessProcessResult(
 			result.Success,
 			result.ErrorMessage,
@@ -154,6 +167,44 @@ public sealed class CompileBusinessProcessService(
 					error.Code, error.Message, error.InThisProcess))
 				.ToList(),
 			result.ErrorCount);
+	}
+
+	// A Creatio error body answers in place of the result, and the process builder reports its own failures INSIDE
+	// the result, so the error came from the platform around it - before the handler (a permission refusal, which
+	// compiled nothing) or after it (a response the service could not write), and the body does not say which. The
+	// server's wording is not reproduced: a service body is not trusted text in an MCP transcript. Its numeric
+	// code is, because clio reads it as a number. last-compilation-log shows the LATEST compile, which may be an
+	// earlier one, so the caller is told to check its time rather than to read it as this call's outcome.
+	private static InvalidOperationException DescribeMissingResult(string responseBody) {
+		string? code = null;
+		bool isErrorBody = false;
+		try {
+			using JsonDocument document = JsonDocument.Parse(responseBody);
+			JsonElement root = document.RootElement;
+			isErrorBody = CreatioResponseError.TryClassify(root, CreatioResponseContext.Service, out bool _);
+			// Either spelling, as the detector reads it; a code that is not an integer is left out rather than shown.
+			JsonElement codeElement = default;
+			bool hasCode = isErrorBody && root.ValueKind == JsonValueKind.Object
+				&& (root.TryGetProperty("Code", out codeElement) || root.TryGetProperty("code", out codeElement));
+			if (hasCode && codeElement.ValueKind == JsonValueKind.Number && codeElement.TryGetInt32(out int number)) {
+				code = number.ToString(System.Globalization.CultureInfo.InvariantCulture);
+			}
+		} catch (JsonException) {
+			// Deserialize parsed it a moment ago; a body that still refuses is described as one without a result.
+		}
+		if (!isErrorBody) {
+			return new InvalidOperationException(
+				"CompileProcess returned a response without its result, so whether the package was compiled is "
+				+ "UNKNOWN. Read last-compilation-log for this environment before compiling again.");
+		}
+		string codeText = code == null ? string.Empty : $" (code {code})";
+		return new InvalidOperationException(
+			$"CompileProcess answered with a Creatio error{codeText} instead of its result, so whether the package "
+			+ "was compiled is UNKNOWN. The process builder reports its own failures inside that result, so this "
+			+ "error came from the platform around it: a refusal before the builder ran compiled nothing, but a "
+			+ "failure after the compile looks the same. The server's wording is not reproduced here. Before "
+			+ "compiling again, read last-compilation-log and compare its time with this call's: it shows the latest "
+			+ "compile, which may be an earlier one.");
 	}
 
 	// Only a call that did not come back leaves the compile's fate open. Creatio's client reads Task.Result, so
@@ -242,16 +293,12 @@ public class CompileBusinessProcessCommand(
 				throw new InvalidOperationException("Environment name is required.");
 			}
 
-			bool hasName = !string.IsNullOrWhiteSpace(options.ProcessName);
-			bool hasUid = !string.IsNullOrWhiteSpace(options.ProcessUid);
-			if (hasName == hasUid) {
-				throw new InvalidOperationException(hasName
-					? "Provide only one of process-name or process-uid, not both."
-					: "One of process-name or process-uid is required.");
+			if (string.IsNullOrWhiteSpace(options.ProcessName)) {
+				throw new InvalidOperationException("process-name is required.");
 			}
 
 			CompileBusinessProcessResult result = compileBusinessProcessService.Compile(options.Environment,
-				new CompileBusinessProcessRequest(options.ProcessName, options.ProcessUid));
+				new CompileBusinessProcessRequest(options.ProcessName));
 			if (!result.Success) {
 				ReportFailure(result);
 				return 1;
@@ -259,7 +306,7 @@ public class CompileBusinessProcessCommand(
 
 			if (!result.CompileRequired) {
 				logger.WriteInfo(
-					$"Process '{result.ProcessName}' carries no C# (no script task and no process methods), so "
+					$"Process '{ServerName(result.ProcessName)}' carries no C# (no script task and no process methods), so "
 					+ "nothing was compiled and nothing needs to be.");
 				return 0;
 			}
@@ -268,9 +315,9 @@ public class CompileBusinessProcessCommand(
 			// made the process run the new code with no restart; on a .NET 8 host (2026-09-28) the process kept
 			// answering "Publish ... before starting it" until the application restarted, so the line says so there.
 			logger.WriteInfo(
-				$"Compiled package '{result.PackageName}' ({DescribePackageType(result.PackageType)}) in "
-				+ $"{TimeSpan.FromMilliseconds(result.DurationMs):m\\:ss}. Verify on a run that process "
-				+ $"'{result.ProcessName}' executes the saved code; on a .NET (Core) host restart the application "
+				$"Compiled package '{ServerName(result.PackageName)}' ({DescribePackageType(result.PackageType)}) in "
+				+ $"{DescribeDuration(result.DurationMs)}. Verify on a run that process "
+				+ $"'{ServerName(result.ProcessName)}' executes the saved code; on a .NET (Core) host restart the application "
 				+ "first, as after any compile.");
 			return 0;
 		} catch (Exception exception) {
@@ -279,31 +326,58 @@ public class CompileBusinessProcessCommand(
 		}
 	}
 
+	// A process or package name the server echoes back: shown as it is when it has the shape of a schema or package
+	// code, and fenced otherwise, because the server authored it and the line reaches an agent.
+	private static string ServerName(string? name) =>
+		name is not null && SchemaCode.IsMatch(name) ? name : UntrustedText.Fenced(name) ?? "(unnamed)";
+
+	private static readonly Regex SchemaCode = new(@"\A[A-Za-z_][A-Za-z0-9_]{0,127}\z",
+		RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100));
+
+	// The server's number, so it is not trusted to fit a TimeSpan: an out-of-range one would throw after a compile
+	// that succeeded and report it as a failure.
+	private static string DescribeDuration(long durationMs) =>
+		durationMs is >= 0 and <= 86_400_000
+			? TimeSpan.FromMilliseconds(durationMs).ToString(@"m\:ss", System.Globalization.CultureInfo.InvariantCulture)
+			: "an unreported time";
+
 	private static string DescribePackageType(string? packageType) =>
 		string.Equals(packageType, "assembly", StringComparison.OrdinalIgnoreCase)
 			? "its own assembly"
 			: "the shared configuration assembly";
 
 	/// <summary>
-	/// The errors listed one per line. compile-status keeps the LAST <see cref="Clio.Command.McpServer.Tools.CompileOperationRegistry.MessageTailCap"/>
-	/// lines of the run, and this run writes four around the list - the progress line, the summary, the "more
-	/// not listed" line and the consent line - so a longer list pushed the summary and the process's OWN errors,
-	/// which come first, out of the tail and kept another schema's.
+	/// The most lines one failed run writes, the service's progress line included. compile-status keeps the LAST
+	/// lines of a run, and a test holds its cap at or above this budget, so the summary and the process's OWN
+	/// errors - which come first - stay in the tail instead of another schema's.
 	/// </summary>
-	internal const int MaxListedErrors = Clio.Command.McpServer.Tools.CompileOperationRegistry.MessageTailCap - 4;
+	internal const int MaxOutputLines = 50;
+
+	// Written around the list: the service's progress line before the server answers, then the summary, the "more
+	// not listed" line and the consent line below. The test that fills the list counts what is actually written.
+	private const int LinesAroundTheList = 4;
+
+	/// <summary>The errors listed one per line: what <see cref="MaxOutputLines"/> leaves after the lines around them.</summary>
+	internal const int MaxListedErrors = MaxOutputLines - LinesAroundTheList;
 
 	// One line per error, the process's own first (the server orders them), so the caller reads what it has to
-	// fix before what another schema of the package broke. Sanitized on this side too: the compile covers the
-	// whole package, so a message can be another author's #error text, and it reaches an agent as tool output.
+	// fix before what another schema of the package broke. Every server-authored segment is FENCED, not only
+	// sanitized: the compile covers the whole package, so a message can be another author's #error text, and these
+	// lines reach an agent through the MCP result and the compile-status tail
+	// (docs/knowledge/Common/server-prose-never-reaches-a-non-debug-diagnostic-field.md). clio's own words stay
+	// outside the fence.
 	private void ReportFailure(CompileBusinessProcessResult result) {
-		logger.WriteError(TextUtilities.SanitizeForDisplay(result.ErrorMessage ?? "CompileProcess failed.", 1000));
+		logger.WriteError("CompileProcess failed: "
+			+ (UntrustedText.Fenced(result.ErrorMessage) ?? "the server reported no detail."));
 		List<CompileBusinessProcessError> listed = result.Errors.Take(MaxListedErrors).ToList();
 		foreach (CompileBusinessProcessError error in listed) {
 			string where = error.InThisProcess ? string.Empty : " [another schema of the package]";
-			logger.WriteError(
-				$"{TextUtilities.SanitizeForDisplay(error.FileName, 260)}({error.Line},{error.Column}): "
-				+ $"{TextUtilities.SanitizeForDisplay(error.Code, 32)} "
-				+ $"{TextUtilities.SanitizeForDisplay(error.Message)}{where}");
+			// Two fences, because each is capped: one fence over the location and the message cut a long CS1503
+			// message short.
+			string location = UntrustedText.Fenced($"{error.FileName}({error.Line},{error.Column}): {error.Code}")
+				?? "(no location)";
+			string message = UntrustedText.Fenced(error.Message) ?? "(no message)";
+			logger.WriteError($"{location} {message}{where}");
 		}
 		int omitted = Math.Max(result.ErrorCount, result.Errors.Count) - listed.Count;
 		if (omitted > 0) {
@@ -324,8 +398,7 @@ public class CompileBusinessProcessCommand(
 /// Request payload for compiling the package of one business process.
 /// </summary>
 /// <param name="ProcessName">Schema name (code) of the process.</param>
-/// <param name="ProcessUid">Schema UId of the process.</param>
-public sealed record CompileBusinessProcessRequest(string ProcessName, string ProcessUid);
+public sealed record CompileBusinessProcessRequest(string ProcessName);
 
 /// <summary>
 /// One compiler error, with the server's path stripped from the file.

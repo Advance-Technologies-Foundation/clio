@@ -9,6 +9,7 @@ using Clio.Command.McpServer.Prompts;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using FluentAssertions;
+using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using NSubstitute;
 using NUnit.Framework;
@@ -339,6 +340,73 @@ public sealed class CompileCreatioToolTests
 		{
 			ConsoleLogger.Instance.ClearMessages();
 		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A scope argument sent as an explicit JSON null is refused like a blank one: it binds to the same C# null an omitted argument does, and omitted means a FULL compile.")]
+	[TestCase("process-name")]
+	[TestCase("package-name")]
+	[TestCase("Process-Name")]
+	public async Task CompileCreatio_Should_Reject_An_Explicit_Null_Scope(string argumentName)
+	{
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		CompileCreatioTool tool = new(ConsoleLogger.Instance, commandResolver, new CompileOperationRegistry());
+		using JsonDocument raw = JsonDocument.Parse($"{{\"environment-name\":\"sandbox\",\"{argumentName}\":null}}");
+		var arguments = new Dictionary<string, JsonElement> { ["args"] = raw.RootElement.Clone() };
+		RequestContext<CallToolRequestParams> context =
+			McpRequestContextTestFactory.CreateCallToolContext(CompileCreatioTool.CompileCreatioToolName, arguments);
+
+		// Act
+		CommandExecutionResult result = await tool.CompileCreatio(new CompileCreatioArgs("sandbox"), null, context);
+
+		// Assert
+		result.ExitCode.Should().Be(1, because: "a scope sent as null is not a request for a full compile");
+		result.Output.Should().Contain(message => message.Value.ToString()!.Contains("is null"),
+			because: "the refusal names what was wrong with the call");
+		commandResolver.DidNotReceive().Resolve<CompileConfigurationCommand>(Arg.Any<CompileConfigurationOptions>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A null beside a real scope - what a client that serializes every optional field sends - is not refused: only a null that leaves no scope would become a full compile.")]
+	public async Task CompileCreatio_Should_Not_Reject_A_Null_Beside_A_Real_Scope()
+	{
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		CompileCreatioTool tool = new(ConsoleLogger.Instance, commandResolver, new CompileOperationRegistry());
+		using JsonDocument raw = JsonDocument.Parse("{\"environment-name\":\"sandbox\",\"package-name\":null,\"process-name\":\"UsrProc\"}");
+		var arguments = new Dictionary<string, JsonElement> { ["args"] = raw.RootElement.Clone() };
+		RequestContext<CallToolRequestParams> context =
+			McpRequestContextTestFactory.CreateCallToolContext(CompileCreatioTool.CompileCreatioToolName, arguments);
+
+		// Act
+		CommandExecutionResult result =
+			await tool.CompileCreatio(new CompileCreatioArgs("sandbox", ProcessName: "UsrProc"), null, context);
+
+		// Assert
+		result.Output.Should().NotContain(message => message.Value.ToString()!.Contains("is null"),
+			because: "the process-name scope stands, so the null package-name cannot turn the call into a full compile");
+		commandResolver.DidNotReceive().Resolve<CompileConfigurationCommand>(Arg.Any<CompileConfigurationOptions>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An absent scope argument, and one with a value, are not mistaken for an explicit null.")]
+	[TestCase("{\"environment-name\":\"sandbox\"}")]
+	[TestCase("{\"environment-name\":\"sandbox\",\"process-name\":\"UsrProc\"}")]
+	public void ExplicitNullScope_Should_Not_Fire_For_An_Absent_Or_Valued_Scope(string json)
+	{
+		// Arrange
+		using JsonDocument raw = JsonDocument.Parse(json);
+		var arguments = new Dictionary<string, JsonElement> { ["args"] = raw.RootElement.Clone() };
+
+		// Act
+		string? found = CompileCreatioTool.ExplicitNullScope(arguments);
+
+		// Assert
+		found.Should().BeNull(because: "only a scope argument sent as null reads as one");
 	}
 
 	[Test]

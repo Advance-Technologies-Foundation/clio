@@ -161,7 +161,6 @@ internal static class ProcessDesignerE2EArrange {
 			toolName, new Dictionary<string, object?> { ["args"] = args }, context.CancellationTokenSource.Token);
 	}
 
-	/// <summary>Reads a process back by code through <c>describe-business-process</c>.</summary>
 	/// <summary>
 	/// The schema name of the version a modify-business-process-as-new-version call created, read from the
 	/// decoded log messages of its envelope.
@@ -174,16 +173,31 @@ internal static class ProcessDesignerE2EArrange {
 	/// <returns>The version's schema name.</returns>
 	internal static string CreatedVersionName(CallToolResult created) {
 		string text = string.Concat(created.Content.OfType<TextContentBlock>().Select(block => block.Text));
-		JsonNode? envelope = JsonNode.Parse(text);
-		string messages = string.Join(" ", (envelope?["execution-log-messages"]?.AsArray() ?? new JsonArray())
-			.Select(message => message?["value"]?.GetValue<string>() ?? string.Empty));
-		Match name = Regex.Match(messages, @"[Vv]ersion(?: \d+)? '(?<name>[A-Za-z0-9_]+)' created");
+		Match name = Regex.Match(DecodedMessages(text), @"[Vv]ersion(?: \d+)? '(?<name>[A-Za-z0-9_]+)' created");
 		name.Success.Should().BeTrue(
 			because: "the created version's code is only knowable from the response that created it, and the "
 				+ $"envelope did not carry the sentence that names it: {text}");
 		return name.Groups["name"].Value;
 	}
 
+	// The string values of the envelope's log messages. Any other shape - text that is not one JSON document, a
+	// missing or non-array list, a non-object entry, a non-string value - reads as no text, so the caller's
+	// assertion fails with its reason instead of a parser or cast exception without one.
+	private static string DecodedMessages(string text) {
+		JsonNode? envelope;
+		try {
+			envelope = JsonNode.Parse(text);
+		} catch (JsonException) {
+			return string.Empty;
+		}
+		if (envelope is not JsonObject root || root["execution-log-messages"] is not JsonArray messages) {
+			return string.Empty;
+		}
+		return string.Join(" ", messages.OfType<JsonObject>().Select(message =>
+			message["value"] is JsonValue value && value.TryGetValue(out string? line) ? line : string.Empty));
+	}
+
+	/// <summary>Reads a process back by code through <c>describe-business-process</c>.</summary>
 	internal static async Task<CallToolResult> DescribeAsync(ProcessDesignerArrangeContext context,
 			string processCode) =>
 		await context.Session.CallToolAsync(

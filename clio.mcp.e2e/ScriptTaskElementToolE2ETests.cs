@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 using Allure.NUnit;
@@ -344,6 +343,10 @@ public sealed class ScriptTaskElementToolE2ETests {
 		activated.Should().Contain(ExitCodeZero, because: "the activation itself succeeds: {0}", activated);
 		activated.Should().Contain(CommandExecutionResult.CompileRequiredWarningMarker,
 			because: "every new instance now runs a version whose code does not exist until it is compiled");
+		activated.Should().Contain("which is a schema of its own",
+			because: "the warning must come from READING the interpreted version's C#: the compiled-class and "
+				+ "the unreadable-version answers carry the marker too, so the marker alone passes when the read "
+				+ "failed: {0}", activated);
 		activated.Should().NotContain(CommandExecutionResult.CompileNotRequiredNote,
 			because: "the note would tell the agent to skip the compile that version needs");
 	}
@@ -400,6 +403,17 @@ public sealed class ScriptTaskElementToolE2ETests {
 				["descriptor"] = BuildNoCodeDescriptor(processName)
 			}));
 		created.Should().Contain("created (UId:", because: "the arrange step must have built the process");
+		// Checked before the compile call as far as describe can show it: this fixture runs unattended against a
+		// shared stand, and a process that DID carry C# would make this call compile its package and reload the
+		// runtime for every other test (docs/knowledge/Tests/no-mcp-e2e-fixture-may-restart-or-recompile-the-shared-instance.md).
+		// Describe shows script tasks and methods; the other two reasons the server compiles - a process the runtime
+		// does not interpret, a user task's after-save script - do not apply to what this descriptor builds: a
+		// process create-business-process makes is interpreted, and the descriptor has no user task.
+		JsonObject graph = DescribedProcessGraph.Read(await ProcessDesignerE2EArrange.DescribeAsync(context, processName));
+		string.IsNullOrEmpty(graph["methods"]?.GetValue<string>()).Should().BeTrue(
+			because: "a process with methods would be compiled, which this unattended fixture must never cause");
+		graph["elements"]!.AsArray().Should().NotContain(element => element!["scriptTask"] != null,
+			because: "a process with a script task would be compiled, which this unattended fixture must never cause");
 
 		// Act
 		string compiled = JsonSerializer.Serialize(await ProcessDesignerE2EArrange.CallToolAsync(context,

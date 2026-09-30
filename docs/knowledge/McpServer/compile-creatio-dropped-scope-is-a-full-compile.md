@@ -8,7 +8,9 @@ date: 2026-09-28
 
 **What is true** — every scope argument of `compile-creatio` is optional, so a call whose `process-name` or
 `package-name` did not bind is a request to compile everything. From ENG-92711 the tool refuses any key its
-record cannot bind. Every clio build before that (all releases that predate `process-name`) drops the key
+record cannot bind, and a scope argument sent as an explicit JSON `null`: the record's `string?` binds that to
+the same `null` as an absent key and never puts it in `ExtensionData`, so the tool reads the raw call
+arguments to tell the two apart. Every clio build before that (all releases that predate `process-name`) drops the key
 without a word — see [mcp-arg-records-swallow-unbound-fields.md](mcp-arg-records-swallow-unbound-fields.md) —
 and runs `clio cc --all`. The knowledge library cannot stop an old clio from receiving guidance that says
 `process-name`: a bundle declares `compatibility.clio` as a range (`8.1.0`–`8.1.999`) and `requirements.tools`
