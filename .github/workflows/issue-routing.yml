@@ -9,7 +9,8 @@
 # workflow's own GITHUB_TOKEN do not trigger workflows, so the run cannot re-trigger itself.
 #
 # CODEOWNERS is deliberately NOT the source: an issue has no changed files to match against path
-# patterns, and issue components are coarser than paths. `paths` in the map is informational.
+# patterns, and issue components are coarser than paths. `paths` in the map feeds component-for.js,
+# which agents use to pick the component label; routing itself does not read it.
 #
 # Safety:
 # - The issue body is attacker-controlled text. It is read only by the JavaScript below, from the

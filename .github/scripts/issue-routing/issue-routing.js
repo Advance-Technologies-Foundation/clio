@@ -678,7 +678,76 @@ async function run({ github, context, core, configPath }) {
   await writeSummary(core, issueNumber, plan, { assigned: notified.assigned, mentioned: notified.mentioned, ...applied });
 }
 
+/**
+ * Creates every label the map declares (component labels and the triage label) that the repository
+ * does not have yet, so an agent can pass `--label component:<id>` for a new component before
+ * routing has ever used it. Existing labels are left alone: a team may have restyled them.
+ */
+async function syncLabels({ github, context, core, configPath }) {
+  const config = loadConfig(configPath);
+  const specs = [config.triageLabel, ...config.components.filter(c => c.label).map(c => labelSpec(c.label, config))];
+  const created = [];
+  for (const spec of specs) {
+    try {
+      await github.rest.issues.getLabel({ ...context.repo, name: spec.name });
+    } catch (error) {
+      if (error.status !== 404) {
+        core.warning(`Could not read label "${spec.name}": ${error.message}`);
+        continue;
+      }
+      if (await ensureLabel(github, core, context.repo, spec)) created.push(spec.name);
+    }
+  }
+  core.info(created.length > 0 ? `Created labels: ${created.join(', ')}` : 'All labels from the map already exist.');
+  return created;
+}
+
+// ---- Choosing a component from code paths (used by agents through component-for.js).
+
+// `paths` entries: a directory prefix ending with "/", an exact file, or a pattern with "*"
+// (matches within one path segment). Returns how specific the match is (literal characters), or -1.
+function pathMatchScore(pattern, file) {
+  const pat = String(pattern).replace(/\\/g, '/');
+  const target = String(file).replace(/\\/g, '/').replace(/^\.\//, '');
+  if (pat.endsWith('/')) return target.startsWith(pat) ? pat.length : -1;
+  if (!pat.includes('*')) return target === pat ? pat.length + 1 : -1;
+  const parts = pat.split('*').map(part => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&'));
+  return new RegExp('^' + parts.join('[^/]*') + '$').test(target) ? pat.replace(/\*/g, '').length : -1;
+}
+
+/**
+ * Ranks the components whose `paths` cover the given files. For each file only the most specific
+ * component counts (an exact file beats a directory), so a tool with its own entry is not claimed
+ * by the broad directory of the MCP server. Returns [{ component, files }] sorted by file count.
+ */
+// The components whose best pattern for this file is the most specific one (ties are all returned).
+function bestComponentsFor(file, config) {
+  let best = -1;
+  let winners = [];
+  for (const component of config.components) {
+    const score = Math.max(-1, ...(component.paths || []).map(pattern => pathMatchScore(pattern, file)));
+    if (score < 0 || score < best) continue;
+    if (score > best) { best = score; winners = []; }
+    winners.push(component);
+  }
+  return winners;
+}
+
+function matchComponents(files, config) {
+  const hits = new Map();
+  for (const file of files) {
+    for (const component of bestComponentsFor(file, config)) {
+      if (!hits.has(component.id)) hits.set(component.id, { component, files: [] });
+      hits.get(component.id).files.push(file);
+    }
+  }
+  return [...hits.values()].sort((a, b) => b.files.length - a.files.length);
+}
+
 module.exports = {
+  syncLabels,
+  pathMatchScore,
+  matchComponents,
   NO_RESPONSE,
   parseIssueFormSections,
   extractFieldValues,

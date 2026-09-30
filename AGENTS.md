@@ -15,6 +15,21 @@ Development links, issue relationships, and draft pull requests. Do not add a cu
 claim protocol. The required field must be provisioned as described in
 `.ai/skills/clio-issue-workflow/SKILL.md`; the skill fails before any GitHub write until it is ready.
 
+## Creating an issue in this repository
+
+Issues created through `gh` or the API have no Component field, so routing to the component owner
+(`.github/workflows/issue-routing.yml`) depends on the label you set:
+
+1. Resolve the component from the files or MCP tools the issue is about — do not guess:
+   `node .github/scripts/issue-routing/component-for.js <path-or-mcp-tool>...`
+   (`--list` prints all components). It reads `.github/component-owners.json`.
+2. Create the issue with exactly one `component:<id>` label, and assign yourself in the same
+   command when you are going to work on it, so routing notifies the owners instead of assigning
+   one of them:
+   `gh issue create --title "..." --body "..." --label component:<id> --assignee @me`
+3. If no single component fits, set no component label; the issue goes to `needs-triage`.
+   Never invent a `component:*` label; they are declared only in `component-owners.json`.
+
 # ClioGate integration
 
 ClioGate is a Creatio package (in `cliogate/`) that acts as a privileged backend service.

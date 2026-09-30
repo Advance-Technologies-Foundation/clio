@@ -25,7 +25,16 @@
         "clio/Command/McpServer/Tools/Page*",
         "clio/Command/McpServer/Tools/ClientUnitSchema*",
         "clio/Command/McpServer/Tools/ComponentInfoTool.cs",
-        "clio/Command/RelatedPages/"
+        "clio/Command/RelatedPages/",
+        "clio/Command/McpServer/Tools/CreateRelatedPageAddonTool.cs",
+        "clio/Command/McpServer/Tools/CreateUiProjectTool.cs",
+        "clio/Command/McpServer/Tools/CreatioArtifactMergeTool.cs",
+        "clio/Command/McpServer/Tools/ExportComponentRegistryTool.cs",
+        "clio/Command/McpServer/Tools/GetClassicListColumnsTool.cs",
+        "clio/Command/McpServer/Tools/GetClassicPageSourcesTool.cs",
+        "clio/Command/McpServer/Tools/GetClientUnitSchemaTool.cs",
+        "clio/Command/McpServer/Tools/GetRelatedPageAddonTool.cs",
+        "clio/Command/McpServer/Tools/LocalizePageTool.cs"
       ]
     },
     {
@@ -87,7 +96,10 @@
       ],
       "paths": [
         "clio/Command/ApplicationCommand/",
-        "clio/Command/McpServer/Tools/ApplicationTool.cs"
+        "clio/Command/McpServer/Tools/ApplicationTool.cs",
+        "clio/Command/McpServer/Tools/ApplicationDeleteTool.cs",
+        "clio/Command/McpServer/Tools/FindAppTool.cs",
+        "clio/Command/McpServer/Tools/InstallApplicationTool.cs"
       ]
     },
     {
@@ -121,7 +133,13 @@
       "paths": [
         "clio/Command/McpServer/Tools/Schema*",
         "clio/Command/McpServer/Tools/SqlSchema*",
-        "clio/ModelBuilder/"
+        "clio/ModelBuilder/",
+        "clio/Command/McpServer/Tools/AddItemModelTool.cs",
+        "clio/Command/McpServer/Tools/DeleteSchemaTool.cs",
+        "clio/Command/McpServer/Tools/ExportSchemaTool.cs",
+        "clio/Command/McpServer/Tools/GenerateSourceCodeTool.cs",
+        "clio/Command/McpServer/Tools/GetSchemaTool.cs",
+        "clio/Command/McpServer/Tools/ImportSchemaTool.cs"
       ]
     },
     {
@@ -137,7 +155,10 @@
         "clio/Command/McpServer/Tools/ExecuteEsqTool.cs",
         "clio/Command/McpServer/Tools/ExecuteSqlScriptTool.cs",
         "clio/Command/McpServer/Tools/DataForge*",
-        "clio/Query/"
+        "clio/Query/",
+        "clio/Command/McpServer/Tools/DataServiceBatchTool.cs",
+        "clio/Command/McpServer/Tools/EmailTemplateTool.cs",
+        "clio/Command/McpServer/Tools/ListPrintablesTool.cs"
       ]
     },
     {
@@ -197,7 +218,15 @@
       "paths": [
         "clio/Command/ProcessModel/",
         "clio/CrtProcessBuilder/",
-        "clio/Command/McpServer/Tools/UserTaskTool.cs"
+        "clio/Command/McpServer/Tools/UserTaskTool.cs",
+        "clio/Command/McpServer/Tools/CreateUserTaskPageTool.cs",
+        "clio/Command/McpServer/Tools/GenerateProcessModelTool.cs",
+        "clio/Command/McpServer/Tools/InstallProcessBuilderTool.cs",
+        "clio/Command/McpServer/Tools/ListUserTasksTool.cs",
+        "clio/Command/McpServer/Tools/ProcessPageFactsTool.cs",
+        "clio/Command/McpServer/Tools/RegisterProcessElementTool.cs",
+        "clio/Command/McpServer/Tools/SequenceContextTool.cs",
+        "clio/Command/McpServer/Tools/SequenceEnrollmentTool.cs"
       ]
     },
     {
@@ -215,7 +244,11 @@
         "clio/Command/Theming/",
         "clio/Command/Branding/",
         "clio/Theming/",
-        "clio/Command/McpServer/Tools/*Theme*"
+        "clio/Command/McpServer/Tools/*Theme*",
+        "clio/Command/McpServer/Tools/CheckThemingAccessTool.cs",
+        "clio/Command/McpServer/Tools/SetBackgroundImageTool.cs",
+        "clio/Command/McpServer/Tools/SetLogoTool.cs",
+        "clio/Command/McpServer/Tools/UploadImageTool.cs"
       ]
     },
     {
@@ -246,7 +279,20 @@
       "paths": [
         "clio/Package/",
         "clio/Command/PackageCommand/",
-        "clio/Command/McpServer/Tools/CompileCreatioTool.cs"
+        "clio/Command/McpServer/Tools/CompileCreatioTool.cs",
+        "clio/Command/McpServer/Tools/AddPackageDependencyTool.cs",
+        "clio/Command/McpServer/Tools/CompileStatusTool.cs",
+        "clio/Command/McpServer/Tools/DownloadConfigurationTool.cs",
+        "clio/Command/McpServer/Tools/FsmModeTool.cs",
+        "clio/Command/McpServer/Tools/GetPkgListTool.cs",
+        "clio/Command/McpServer/Tools/GetTargetPackageTool.cs",
+        "clio/Command/McpServer/Tools/LastCompilationLogTool.cs",
+        "clio/Command/McpServer/Tools/LinkFromRepositoryTool.cs",
+        "clio/Command/McpServer/Tools/LoadPackagesTool.cs",
+        "clio/Command/McpServer/Tools/PackageFileTool.cs",
+        "clio/Command/McpServer/Tools/PackageHotfixTool.cs",
+        "clio/Command/McpServer/Tools/RemovePackageDependencyTool.cs",
+        "clio/Command/McpServer/Tools/WatchCompilationTool.cs"
       ]
     },
     {
@@ -262,7 +308,10 @@
       "paths": [
         "clio/Workspace/",
         "clio/Workspaces/",
-        "clio/tpl/"
+        "clio/tpl/",
+        "clio/Command/McpServer/Tools/CreateWorkspaceTool.cs",
+        "clio/Command/McpServer/Tools/WorkspacePackageTool.cs",
+        "clio/Command/McpServer/Tools/WorkspaceSyncTool.cs"
       ]
     },
     {
@@ -278,7 +327,23 @@
       "paths": [
         "clio/Command/CreatioInstallCommand/",
         "clio/Command/McpServer/Tools/InstallerCommandTool.cs",
-        "clio/Command/McpServer/Tools/RestartTool.cs"
+        "clio/Command/McpServer/Tools/RestartTool.cs",
+        "clio/Command/McpServer/Tools/AddCustomLoggingTool.cs",
+        "clio/Command/McpServer/Tools/AssertInfrastructureTool.cs",
+        "clio/Command/McpServer/Tools/ClearRedisTool.cs",
+        "clio/Command/McpServer/Tools/DbTemplatePruneTool.cs",
+        "clio/Command/McpServer/Tools/FindEmptyIisPortTool.cs",
+        "clio/Command/McpServer/Tools/GetCreatioInfoTool.cs",
+        "clio/Command/McpServer/Tools/ListCreatioBuildsTool.cs",
+        "clio/Command/McpServer/Tools/RegWebAppTool.cs",
+        "clio/Command/McpServer/Tools/RestartStatusTool.cs",
+        "clio/Command/McpServer/Tools/RestoreDbTool.cs",
+        "clio/Command/McpServer/Tools/SettingsHealthTool.cs",
+        "clio/Command/McpServer/Tools/ShowPassingInfrastructureTool.cs",
+        "clio/Command/McpServer/Tools/ShowWebAppListTool.cs",
+        "clio/Command/McpServer/Tools/StartTool.cs",
+        "clio/Command/McpServer/Tools/StopTool.cs",
+        "clio/Command/McpServer/Tools/UninstallCreatioTool.cs"
       ]
     },
     {
@@ -295,7 +360,24 @@
         "clio/Command/Administration/",
         "clio/Command/RecordRights/",
         "clio/Command/OAuthAppConfiguration/",
-        "clio/Command/IdentityServiceDeployment/"
+        "clio/Command/IdentityServiceDeployment/",
+        "clio/Command/McpServer/Tools/ClearBrowserSessionTool.cs",
+        "clio/Command/McpServer/Tools/CreateOAuthTechnicalUserTool.cs",
+        "clio/Command/McpServer/Tools/CreateServerToServerOAuthAppTool.cs",
+        "clio/Command/McpServer/Tools/DeployIdentityTool.cs",
+        "clio/Command/McpServer/Tools/GetBrowserSessionTool.cs",
+        "clio/Command/McpServer/Tools/GetIdentityServiceConfigTool.cs",
+        "clio/Command/McpServer/Tools/GetRecordRightsTool.cs",
+        "clio/Command/McpServer/Tools/GetUserCultureTool.cs",
+        "clio/Command/McpServer/Tools/IdentityAssertionTool.cs",
+        "clio/Command/McpServer/Tools/ManageAccessTool.cs",
+        "clio/Command/McpServer/Tools/ManageLicenseTool.cs",
+        "clio/Command/McpServer/Tools/ManageRoleTool.cs",
+        "clio/Command/McpServer/Tools/ManageUserTool.cs",
+        "clio/Command/McpServer/Tools/ResolveOAuthSystemUserTool.cs",
+        "clio/Command/McpServer/Tools/SetRecordRightsTool.cs",
+        "clio/Command/McpServer/Tools/UninstallIdentityTool.cs",
+        "clio/Command/McpServer/Tools/VerifyOAuthAppTool.cs"
       ]
     },
     {
@@ -327,7 +409,9 @@
       ],
       "paths": [
         "clio/Command/McpServer/Knowledge/",
-        "clio/Command/McpServer/Tools/GuidanceGetTool.cs"
+        "clio/Command/McpServer/Tools/GuidanceGetTool.cs",
+        "clio/Command/McpServer/Tools/KnowledgeFeedbackPolicyTools.cs",
+        "clio/Command/McpServer/Tools/KnowledgeManagementTools.cs"
       ]
     },
     {
@@ -342,7 +426,8 @@
       ],
       "paths": [
         "cliogate/",
-        "clio/cliogate/"
+        "clio/cliogate/",
+        "clio/Command/McpServer/Tools/InstallGateTool.cs"
       ]
     },
     {

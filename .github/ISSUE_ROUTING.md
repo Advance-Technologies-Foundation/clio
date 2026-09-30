@@ -8,6 +8,8 @@ New issues are labelled and assigned from the **Component** dropdown in the issu
 | Component → label, owners map (**source of truth**) | `.github/component-owners.json` |
 | Routing logic (pure functions + GitHub calls) | `.github/scripts/issue-routing/issue-routing.js` |
 | Workflow (`issues: opened, edited, labeled`) | `.github/workflows/issue-routing.yml` |
+| Component lookup for agents (path or MCP tool → label) | `.github/scripts/issue-routing/component-for.js` |
+| Label sync (creates missing labels on map change) | `.github/workflows/issue-routing-labels.yml` |
 | Tests (`make test-issue-routing`) | `.github/scripts/issue-routing/issue-routing.test.js`, run on PRs by `issue-routing-tests.yml` |
 
 ## What happens
@@ -69,6 +71,22 @@ gh issue create --title "..." --body "..." --label component:package
 - Alternatively, put the form section into the body — `### Component` followed by the exact
   option text — and the issue is routed like a form issue.
 
+**Agents** resolve the label instead of guessing (rule in `AGENTS.md`):
+
+```bash
+node .github/scripts/issue-routing/component-for.js update-page            # MCP tool name
+node .github/scripts/issue-routing/component-for.js clio/Package/Foo.cs     # repository path
+node .github/scripts/issue-routing/component-for.js --list                  # all components
+gh issue create --title "..." --body "..." --label component:pages --assignee @me
+```
+
+Exit code 0 means exactly one component; 2 means none or several (pick one or leave it to triage).
+`--assignee @me` in the same command keeps routing from assigning an owner to an issue the agent is
+about to work on; the owners are still mentioned in `mention` mode.
+
+Every label in the map exists in the repository: `issue-routing-labels.yml` creates missing ones
+whenever `component-owners.json` changes on `master` (existing labels are never modified).
+
 Rules that protect manual work:
 
 - An existing assignee is **never** changed or added to — not on open and not on edit. Re-routing a
@@ -99,7 +117,10 @@ Rules that protect manual work:
   the default; a component's own `ownerNotification` overrides it.
 - **Labels** must start with `componentLabelPrefix`. Renaming one leaves the old label on older
   issues; relabel them by hand.
-- `paths` is informational (which code the component covers, `*` allowed); nothing reads it yet.
+- `paths` says which code the component covers: a directory ending with `/`, an exact file, or a
+  pattern with `*` (within one path segment). Agents pick the component label from it through
+  `component-for.js`, so list every MCP tool file of the component; the most specific entry wins
+  (an exact file beats a directory). A test fails if any MCP tool file matches two components equally.
 - Run `make test-issue-routing` (or `node --test .github/scripts/issue-routing/issue-routing.test.js`).
 
 The baseline owners (2026-09) come from one year of `master` history: commits to each group's MCP

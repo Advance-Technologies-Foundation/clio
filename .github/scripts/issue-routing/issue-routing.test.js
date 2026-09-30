@@ -739,3 +739,81 @@ test('run does not add needs-triage to an assigned issue when the mention commen
   // Assert
   assert.equal(only(calls, 'addLabels').length, 0, 'dave is on it; a failed notification does not make it a triage case');
 });
+
+// ---- Choosing a component from code paths (component-for.js, used by agents).
+
+test('path patterns: directory prefix, exact file and single-segment wildcard', () => {
+  // Arrange / Act / Assert
+  assert.ok(routing.pathMatchScore('clio/Command/McpServer/', 'clio/Command/McpServer/Tools/PageGetTool.cs') > 0, 'a directory covers everything under it');
+  assert.ok(routing.pathMatchScore('clio/Command/McpServer/Tools/PageGetTool.cs', 'clio/Command/McpServer/Tools/PageGetTool.cs')
+    > routing.pathMatchScore('clio/Command/McpServer/Tools/Page*', 'clio/Command/McpServer/Tools/PageGetTool.cs'), 'an exact file is more specific than a wildcard');
+  assert.equal(routing.pathMatchScore('clio/Command/Page*', 'clio/Command/McpServer/PageX.cs'), -1, '* does not cross a path separator');
+  assert.ok(routing.pathMatchScore('clio/Command/McpServer/Tools/*Theme*', 'clio/Command/McpServer/Tools/CreateThemeTool.cs') > 0, '* matches inside a file name');
+});
+
+test('matchComponents prefers the most specific component for each file', () => {
+  // Arrange
+  const map = routing.validateConfig({
+    fieldLabel: 'Component', componentLabelPrefix: 'component:', ownerNotification: 'assign', triageLabel: { name: 'needs-triage' },
+    components: [
+      { id: 'core', option: 'Core', label: 'component:core', owners: [], paths: ['src/'] },
+      { id: 'pages', option: 'Pages', label: 'component:pages', owners: [], paths: ['src/tools/Page*'] },
+    ],
+  });
+  // Act
+  const ranked = routing.matchComponents(['src/tools/PageGet.cs', 'src/tools/PageSet.cs', 'src/Program.cs'], map);
+  // Assert
+  assert.deepEqual(ranked.map(r => [r.component.id, r.files.length]), [['pages', 2], ['core', 1]], 'each file goes to its most specific component, ranked by file count');
+});
+
+test('every MCP tool file in the committed map belongs to exactly one component', () => {
+  // Arrange
+  const committed = routing.loadConfig(configPath);
+  const toolsDir = path.join(repoRoot, 'clio', 'Command', 'McpServer', 'Tools');
+  if (!fs.existsSync(toolsDir)) return;
+  const tools = fs.readdirSync(toolsDir).filter(f => f.endsWith('.cs') && fs.readFileSync(path.join(toolsDir, f), 'utf8').includes('McpServerTool('));
+  // Act
+  const ambiguous = tools.filter(f => routing.matchComponents([`clio/Command/McpServer/Tools/${f}`], committed).length !== 1);
+  // Assert
+  assert.deepEqual(ambiguous, [], 'an agent resolving a tool must get one component label, not a tie between two');
+});
+
+test('component-for resolves an MCP tool name and a path to one component', () => {
+  // Arrange
+  const cli = require('./component-for.js');
+  const out = [];
+  const log = console.log;
+  console.log = line => out.push(String(line));
+  try {
+    // Act
+    const byTool = cli.main(['update-page', '--json']);
+    const byUnknown = cli.main(['no-such-tool', '--json']);
+    // Assert
+    assert.equal(byTool, 0, 'a known tool resolves to exactly one component');
+    assert.equal(JSON.parse(out[0]).components[0].label, 'component:pages', 'update-page belongs to the pages component');
+    assert.equal(byUnknown, 2, 'an unknown name is not silently mapped');
+    assert.deepEqual(JSON.parse(out[1]).unknown, ['no-such-tool'], 'the unknown argument is reported');
+  } finally {
+    console.log = log;
+  }
+});
+
+test('syncLabels creates only the labels the repository is missing', async () => {
+  // Arrange
+  const { github, calls } = fakeGitHub({ existingLabels: ['needs-triage', 'component:mcp', 'component:package', 'component:docs'] });
+  const { core } = fakeCore();
+  // Act
+  const created = await routing.syncLabels({ github, context: { repo: { owner: 'o', repo: 'r' } }, core, configPath: fixtureConfigPath() });
+  // Assert
+  assert.deepEqual(created, ['component:ring'], 'only the missing label is created');
+  assert.equal(calls.filter(c => c[0] === 'createLabel').length, 1, 'existing labels are not touched');
+});
+
+test('component-for resolves a tool to the file that declares it, not one that mentions it', () => {
+  // Arrange
+  const cli = require('./component-for.js');
+  // Act
+  const file = cli.toolFile('deploy-identity');
+  // Assert
+  assert.equal(file, 'clio/Command/McpServer/Tools/DeployIdentityTool.cs', 'CreateOAuthTechnicalUserTool quotes "deploy-identity" but does not declare it');
+});
