@@ -396,6 +396,8 @@ This area gives the AI a clean application-level view of the platform.
   Configure package-specific NLog file routing in a registered local Net8 or .NET Framework installation. Reads the package's generated `Constants.LoggerName`, validates and rollback-protects both NLog file updates, and restarts Creatio only when explicitly requested.
 - `add-package-dependency`
   Add one or more package dependencies to a package via `PackageService.svc`. This is the recovery path when the schema designer or compiler fails for a package that extends objects owned by an app/package missing from its dependency list (symptom: `Schema '<NAME>' could not be opened in package '<PACKAGE>'` on a layered object, which names the ranked candidate packages to add). Idempotent — re-adding an existing dependency is a no-op. See `get-guidance name=package-dependencies`.
+- `create-package`
+  Create a new, empty, editable package in an environment via `PackageService.svc` (or inside an installed application with `application-code`). Prepends the environment's `SchemaNamePrefix`, sets the requested dependencies with a second request, and returns the readback (`package-uid`, `package-name`, `maintainer`, `dependencies`, `install-type`, `editable`). Destructive and not idempotent: a repeated name is refused and nothing changes; `package-created=true` with `success=false` means the package exists but a later step (dependencies or readback) failed; `package-created=null` means the outcome is unknown after a transport failure.
 - `remove-package-dependency`
   Remove one or more package dependencies from a package via `PackageService.svc` — the symmetric counterpart of `add-package-dependency`, used to roll back a dependency added only to unblock the schema designer. Matched by name (case-insensitive); idempotent — removing an absent dependency is a no-op.
 
@@ -409,6 +411,7 @@ What an external AI can practically do here:
 - remove apps
 - install packaged apps into an environment
 - add missing package dependencies to recover a broken schema designer or compile
+- create a new editable package to hold design-time changes
 
 The AI sees this as a higher abstraction layer than package-level commands.
 

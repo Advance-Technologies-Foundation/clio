@@ -248,7 +248,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["list-knowledge-sources"] = PassthroughClassification.NotEnvironmentSensitive,
 			["list-knowledge-examples"] = PassthroughClassification.NotEnvironmentSensitive,
 
-			// --- NotApplicable (139): class (a)/(b) — already passthrough-capable, out of this audit ---
+			// --- NotApplicable (140): class (a)/(b) — already passthrough-capable, out of this audit ---
 			["StopAllCreatio"] = PassthroughClassification.NotApplicable,
 			["add-item-model"] = PassthroughClassification.NotApplicable,
 			["add-custom-logging"] = PassthroughClassification.NotApplicable,
@@ -272,6 +272,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["create-entity-schema"] = PassthroughClassification.NotApplicable,
 			["create-lookup"] = PassthroughClassification.NotApplicable,
 			["create-oauth-technical-user"] = PassthroughClassification.NotApplicable,
+			["create-package"] = PassthroughClassification.NotApplicable,
 			["create-page"] = PassthroughClassification.NotApplicable,
 			["create-page-business-rules"] = PassthroughClassification.NotApplicable,
 			["create-related-page-addon"] = PassthroughClassification.NotApplicable,

@@ -147,6 +147,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="add-pkg-dependency"></a>
 <a id="add-pkg-dep"></a>
 - [`add-package-dependency`](docs/commands/add-package-dependency.md) - Add one or more package dependencies to a package, `add-pkg-dependency`, `add-pkg-dep`
+<a id="create-package"></a>
+- [`create-package`](docs/commands/create-package.md) - Create a new package in a Creatio environment
 <a id="remove-package-dependency"></a>
 <a id="remove-pkg-dependency"></a>
 <a id="remove-pkg-dep"></a>
