@@ -6590,7 +6590,7 @@ internal static class ToolContractCatalog {
 				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
 				Field("sourceSchemaName", StringType, "The source page the read was attempted against."),
 				Field("sourceType", StringType, "Detected source page type - an unsupported Classic UI page is how you learn it must be migrated to Freedom UI web first. Absent when the page could not be read at all."),
-				Field("guide", ObjectType, "The advisory guide: recommended template, containerMap, componentSuggestions, mobileContracts, sectionRegistration and more. What the caller must resolve: componentSuggestions[].category == RequiresManualDecision, and requestConversions.droppedRequests / flaggedRequests / unresolvedTargetRequests / missingTargetPages."),
+				Field("guide", ObjectType, "The advisory guide: recommended template, containerMap, componentSuggestions, mobileContracts, sectionRegistration and more. adaptiveLayout carries per-breakpoint placement - small (phone) is the supported canvas; medium/large (tablet/desktop) are baked in but stay EXPERIMENTAL and are outside the converter's supported scope. What the caller must resolve: componentSuggestions[].category == RequiresManualDecision, and requestConversions.droppedRequests / flaggedRequests / unresolvedTargetRequests / missingTargetPages."),
 				Field("resolvedTargetVersion", StringType, "The component-registry / rules version the guide was built against: a concrete version or 'latest'."),
 				Field("resolvedFrom", StringType, "How the version was resolved: environment, environment-superset or latest-fallback."),
 				Field("versionWarning", StringType, "Caveat when the catalog is approximate or the target version is unknown; absent when the version is exact."),
