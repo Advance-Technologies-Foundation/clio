@@ -178,13 +178,15 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 	}
 
 	[Test]
-	[Description("TryAssemblePageSources loads each detail with its full hierarchy and writes the detail's merged strings as resourceStrings in every culture, keeping title and the top-layer body.")]
+	[Description("TryAssemblePageSources loads each detail with its full hierarchy and writes the detail's merged strings as resourceStrings in every culture, keeping title and the top-layer body; the page resources Classic reads for the detail title travel in every culture.")]
 	public void TryAssemblePageSources_ShouldWriteDetailResourceStrings_FromFullHierarchyLoad() {
 		// Arrange
 		AddLayer("UsrOrderPage", "uid-page", "UsrApp", 200);
 		AddSchema("uid-page",
-			"define(\"UsrOrderPage\", [], function() { return { details: { V: { schemaName: \"UsrOrderLineDetail\" } } }; });",
+			"define(\"UsrOrderPage\", [], function() { return { details: { V: { schemaName: \"UsrOrderLineDetail\", captionName: \"OrderLinesCaption\" } } }; });",
 			EmptyGuid, "UsrApp");
+		AddLocalizable("uid-page", "OrderLinesCaption", ("en-US", "Lines"), ("fr-FR", "Lignes"));
+		AddLocalizable("uid-page", "VDetailCaptionOnPage", ("en-US", "Order items"), ("fr-FR", "Articles"));
 		AddLayer("UsrOrderLineDetail", "uid-detail", "UsrApp", 200);
 		AddSchema("uid-detail",
 			"define(\"UsrOrderLineDetail\", [], function() { return { entitySchemaName: \"UsrOrderLine\" }; });",
@@ -213,6 +215,13 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		((JObject)detail["resourceStrings"]).Properties().Select(p => p.Name).Should().Contain(
 			new[] { "SelectLineMessage", "AttachLineCaption" },
 			because: "every merged detail string travels, not only the caption");
+		detail["resourceStrings"]!["SelectLineMessage"]!["fr-FR"]!.ToString().Should().Be(
+			"Sélectionnez une ligne à attacher à la commande",
+			because: "detail messages travel in every culture");
+		manifest["resourceStrings"]!["OrderLinesCaption"]!["fr-FR"]!.ToString().Should().Be("Lignes",
+			because: "the page resource named by the detail's captionName travels in every culture");
+		manifest["resourceStrings"]!["VDetailCaptionOnPage"]!["fr-FR"]!.ToString().Should().Be("Articles",
+			because: "the page's <Detail>DetailCaptionOnPage resource travels in every culture");
 		detail["title"]!.ToString().Should().Be("Lignes de commande (hiérarchie)",
 			because: "title is the internal caption of the single full-hierarchy load");
 		detail["body"]!.ToString().Should().Contain("UsrOrderLineMerged",
