@@ -1,4 +1,4 @@
-﻿# sync-pages
+# sync-pages
 
 Updates multiple Freedom UI page schemas in a single MCP call. For each page: validates the
 body client-side (optional), saves to Creatio, and verifies the update (optional). Continues
@@ -17,15 +17,22 @@ Before editing handler or validator sections in raw page bodies, use `get-guidan
 
 ## Validation Rules
 
+On web pages, extra factory-body statements produce `designer-unsafe-factory-statement` warnings.
+Keep only `return { ... }` in the factory body. Direct calls from preserved handlers, converters or
+validators to factory declarations are rejected with `designer-unsafe-section-call`: Designer removes
+those declarations on save. Move helpers, constants and caches to a client module listed in
+`SCHEMA_DEPS`, with its argument in `SCHEMA_ARGS`; read the MCP `get-guidance` tool with
+`name=shared-client-logic`. Callback-local declarations and dependency arguments remain valid.
+
 When `validate` is `true` (the default), the body is checked client-side before save:
 
 - **SCHEMA_CONVERTERS keys** (object form) must follow `VendorPrefix.ConverterName` format
-  (e.g., `usr.MyConverter`). Call `clio get-guidance --name page-schema-converters` for details.
+  (e.g., `usr.MyConverter`). Call the MCP `get-guidance` tool with `name=page-schema-converters` for details.
 - **SCHEMA_HANDLERS** must be an array of `{ request, handler }` entries. Each `request` value
   must follow `VendorPrefix.HandlerName` format (e.g., `crt.HandleViewModelInitRequest`,
-  `usr.HandleSomeRequest`). Call `clio get-guidance --name page-schema-handlers` for details.
+  `usr.HandleSomeRequest`). Call the MCP `get-guidance` tool with `name=page-schema-handlers` for details.
 - **SCHEMA_VALIDATORS keys** (object form) must follow `VendorPrefix.ValidatorName` format
-  (e.g., `usr.RequiredValidator`). Call `clio get-guidance --name page-schema-validators` for details.
+  (e.g., `usr.RequiredValidator`). Call the MCP `get-guidance` tool with `name=page-schema-validators` for details.
 - **Mobile page rules.** Applied to each mobile body when `validate` is `true`. Note this validates the
   WHOLE body, so a page that already stores a rejected shape fails until it is corrected.
   - **Rejected** — an `operation:"insert"`/`"set"` whose `values` object carries no usable `"type"` while a
@@ -60,12 +67,12 @@ When `validate` is `true` (the default), the body is checked client-side before 
   - **Not enforced** — the same type-placement and merge-slot defects break **web** pages identically and are not checked
     there, and `validate: false` skips these checks along with every other one, re-opening the
     silent-persist path; do not use it to get past a rejection.
-  Call `clio get-guidance --name mobile-page-modification` for details.
+  Call the MCP `get-guidance` tool with `name=mobile-page-modification` for details.
 - **User-visible text must be localizable.** Any `label`, `caption`, `title`, `tooltip`, or
   `placeholder` in `viewConfigDiff` (at any nesting depth) set to an inline string literal is
   **rejected**. Bind it via `$Resources.Strings.<Key>` (or `#ResourceString(<Key>)#` for data-grid
   column captions and validator messages) and register the key's default-language value through
-  `resources`. Call `clio get-guidance --name page-schema-resources` for the full rule.
+  `resources`. Call the MCP `get-guidance` tool with `name=page-schema-resources` for the full rule.
   A **component's own data descriptor is exempt**: a `data` object that carries the platform's
   `typeName` marker, on a node declaring a component `type`, is component metadata (uId, schemaType,
   typeName and the caption the platform stamped on it) rather than page-authored text, so a literal

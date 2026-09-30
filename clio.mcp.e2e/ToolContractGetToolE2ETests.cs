@@ -1246,6 +1246,32 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 
 	[Test]
 	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("get-tool-contract serves compile-creatio's process-name argument")]
+	[Description("compile-creatio is long-tail, so an agent learns its arguments from the served contract: the process-name mode - the compile a script task saved by create/modify-business-process needs - must be in it, with an example.")]
+	public async Task ToolContractGet_Should_Serve_CompileCreatio_ProcessName() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		ToolContractGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["tool-names"] = new[] { CompileCreatioTool.CompileCreatioToolName }
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "the compile-creatio contract must be discoverable through the executable clio MCP catalog");
+		ToolContractDefinition contract = response.Tools!.Single();
+		contract.InputSchema.Properties.Should().Contain(field => field.Name == "process-name",
+			because: "the served contract is where an agent finds the process compile");
+		contract.Examples.Should().Contain(example => example.Arguments.ContainsKey("process-name"),
+			because: "an example keeps an agent from reaching for package-name instead");
+	}
+
+	[Test]
+	[AllureTag(ToolContractGetTool.ToolName)]
 	[AllureName("get-tool-contract advertises that a package compile fails on a C# compile error")]
 	[AllureDescription("Issues #1632/#1633: the real MCP server must serve the compile-creatio contract saying that a package compile waits for the finished build and fails with the CSxxxx compiler diagnostics, so an agent does not treat a package compile's success as unverified any more - and does not treat a failure as a transport glitch to retry.")]
 	[Description("The served compile-creatio contract says a package compile waits for the finished build and fails with CSxxxx diagnostics on a compile error.")]
@@ -1512,6 +1538,97 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 		AllureApi.Step("Assert a body-file example is included", () =>
 			contract.Examples.Should().Contain(example => example.Arguments.ContainsKey("body-file"),
 				because: "the live contract should demonstrate the file handoff"));
+	}
+
+	[Test]
+	[Description("Serves the curated contracts of the four *-to-file tools through the real MCP server, and each of them requires output-file.")]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureTag(ExecuteEsqToFileTool.ToolName)]
+	[AllureTag(ComponentInfoToFileTool.ToolName)]
+	[AllureTag(RequestInfoToFileTool.ToolName)]
+	[AllureTag(ListEntityClientSchemasToFileTool.ToolName)]
+	[AllureName("get-tool-contract serves the *-to-file contracts with output-file required")]
+	[AllureDescription("Requests the contracts of execute-esq-to-file, get-component-info-to-file, get-request-info-to-file and list-entity-client-schemas-to-file in one call and verifies all four are returned and each lists output-file among its required inputs.")]
+	public async Task ToolContractGet_ShouldRequireOutputFile_ForToFileTools() {
+		// Arrange
+		string[] toFileTools = [
+			ExecuteEsqToFileTool.ToolName,
+			ComponentInfoToFileTool.ToolName,
+			RequestInfoToFileTool.ToolName,
+			ListEntityClientSchemasToFileTool.ToolName
+		];
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		ToolContractGetResponse response = await AllureApi.Step(
+			"Request the four *-to-file contracts",
+			async () => await CallAsync(
+				context.Session,
+				context.CancellationTokenSource.Token,
+				new Dictionary<string, object?> {
+					["tool-names"] = toFileTools
+				}));
+
+		// Assert
+		AllureApi.Step("Assert contract lookup succeeded", () => response.Success.Should().BeTrue(
+			because: "every *-to-file tool has a curated contract and must resolve"));
+		AllureApi.Step("Assert all four contracts are returned", () =>
+			response.Tools!.Select(contract => contract.Name).Should().BeEquivalentTo(toFileTools,
+				because: "one contract is returned per requested tool"));
+		foreach (ToolContractDefinition contract in response.Tools!) {
+			AllureApi.Step($"Assert {contract.Name} requires output-file", () =>
+				(contract.InputSchema.Required ?? []).Should().Contain("output-file",
+					because: $"{contract.Name} writes its result to a caller-named file, so the file path is mandatory"));
+		}
+	}
+
+	[Test]
+	[Description("Serves update-page and get-page contracts that advertise the optional boolean include-operations input, with update-page stating that it applies only with verify=true.")]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureTag(PageUpdateTool.ToolName)]
+	[AllureTag(PageGetTool.ToolName)]
+	[AllureName("get-tool-contract advertises include-operations on update-page and get-page")]
+	[AllureDescription("Requests the update-page and get-page contracts over a real stdio MCP session and verifies each lists include-operations as an optional boolean field that swaps the operation list for per-type counts, and that the update-page field is tied to verify=true.")]
+	public async Task ToolContractGet_ShouldAdvertiseIncludeOperations_ForUpdatePageAndGetPage() {
+		// Arrange
+		const string includeOperations = "include-operations";
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		ToolContractGetResponse response = await AllureApi.Step(
+			"Request the update-page and get-page contracts",
+			async () => await CallAsync(
+				context.Session,
+				context.CancellationTokenSource.Token,
+				new Dictionary<string, object?> {
+					["tool-names"] = new[] { PageUpdateTool.ToolName, PageGetTool.ToolName }
+				}));
+
+		// Assert
+		AllureApi.Step("Assert contract lookup succeeded", () => response.Success.Should().BeTrue(
+			because: "update-page and get-page have curated contracts and must resolve"));
+		foreach (string toolName in new[] { PageUpdateTool.ToolName, PageGetTool.ToolName }) {
+			ToolContractDefinition contract = AllureApi.Step($"Assert the {toolName} contract is returned", () =>
+				response.Tools.Should().ContainSingle(definition => definition.Name == toolName,
+					because: "one contract is returned per requested tool").Which);
+			ToolContractField field = AllureApi.Step($"Assert {toolName} advertises include-operations", () =>
+				contract.InputSchema.Properties.Should().ContainSingle(item => item.Name == includeOperations,
+					because: "callers plan the argument from the served contract").Which);
+			AllureApi.Step($"Assert {toolName} include-operations is boolean", () =>
+				field.Type.Should().Be("boolean",
+					because: "include-operations switches between the operation list and the per-type counts"));
+			AllureApi.Step($"Assert {toolName} include-operations is optional", () =>
+				(contract.InputSchema.Required ?? []).Should().NotContain(includeOperations,
+					because: "the argument defaults to true, so omitting it keeps the full operation list"));
+			AllureApi.Step($"Assert {toolName} include-operations names the counts field", () =>
+				field.Description.Should().Contain("viewConfigDiffOpCounts",
+					because: "the caller must be told what replaces the operation list"));
+		}
+		AllureApi.Step("Assert update-page ties include-operations to verify", () =>
+			response.Tools!.Single(definition => definition.Name == PageUpdateTool.ToolName)
+				.InputSchema.Properties.Single(item => item.Name == includeOperations)
+				.Description.Should().Contain("verify=true",
+					because: "update-page returns a page summary only in the verify read-back, so the argument has no effect without it"));
 	}
 
 	private static async Task<ToolContractGetResponse> CallAsync(

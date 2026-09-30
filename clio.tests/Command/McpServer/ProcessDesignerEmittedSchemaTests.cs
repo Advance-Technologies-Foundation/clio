@@ -262,4 +262,25 @@ public sealed class ProcessDesignerEmittedSchemaTests {
 					+ "naming it on a write tool is the exact mistake a live agent made, and an older server "
 					+ "discards an unknown member silently");
 	}
+
+	[TestCase(CreateBusinessProcessTool.CreateBusinessProcessToolName, "elementParameter.column")]
+	[TestCase(ModifyBusinessProcessTool.ModifyBusinessProcessToolName, "elementParameter {elementName, parameter, column?}")]
+	[Category("Unit")]
+	[Description("The create and modify tools' emitted descriptions name the record-column source fields - sourceColumn beside the element source, and the filter's elementParameter column. The description is the agent's only contract for them, and ToolContractPayloadBudgetTests bounds only its size, so a trim for budget could remove the names with the suite green.")]
+	public void ProcessWriteTools_Should_NameTheRecordColumnSourceFields_InEmittedDescription(string toolName,
+			string filterColumnForm) {
+		// Arrange
+		McpToolInvokerRegistry registry = BuildProductionRegistry();
+		registry.TryGetTool(toolName, out McpServerTool tool).Should().BeTrue(
+			because: $"'{toolName}' must be a registered tool for its emitted description to be assertable");
+
+		// Act
+		string description = tool.ProtocolTool.Description ?? string.Empty;
+
+		// Assert
+		description.Should().Contain("sourceColumn",
+			because: "the mapping / value / recordId column source is named only here for the agent");
+		description.Should().Contain(filterColumnForm,
+			because: "the filter's column source has to be named too, in the form this tool documents");
+	}
 }

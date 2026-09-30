@@ -96,9 +96,12 @@ internal static class ODataKeyedWrite {
 		}
 		try {
 			using JsonDocument doc = JsonDocument.Parse(response);
+			// A foreign-key violation reports only "An error has occurred." in the headline and puts the
+			// cause under innererror, so the validated FK identifiers are appended (GH-1699).
 			return CreatioResponseError.TryDetect(doc.RootElement, CreatioResponseContext.ODataPayload,
 				out string serverError)
-				? SensitiveErrorTextRedactor.Redact(serverError)
+				? CreatioResponseError.AppendStructuredODataWriteError(
+					SensitiveErrorTextRedactor.Redact(serverError), doc.RootElement)
 				: null;
 		} catch (JsonException) {
 			return SensitiveErrorTextRedactor.Redact(CreatioResponseError.DescribeNonJsonResponse(response));

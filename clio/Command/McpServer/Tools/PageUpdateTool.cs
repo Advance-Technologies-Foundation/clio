@@ -87,6 +87,7 @@ public sealed class PageUpdateTool(
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.ClioPages)]
 	[Description("Update a Freedom UI page schema body. environment-name preferred; uri/login/password fallback only. " +
+		PageBodyAstLinter.DesignerSafetySummary +
 		"In append mode, SCHEMA_CONVERTERS and SCHEMA_VALIDATORS are merged by type key with incoming entries winning; the final merged body is rejected if it contains a custom validator reference without a matching SCHEMA_VALIDATORS declaration. " +
 		"Set validate=false only as an explicit escape hatch for a pre-existing page defect; it skips client-side content and run-process validation, while JavaScript syntax, AST loadability, replace-mode marker integrity, web parentName resolution against the target hierarchy, the mobile JSON-object structure check, and the page baseline/conflict guard remain mandatory. It stays combinable with force=true - the two flags are orthogonal (one gates content checks, the other the baseline/conflict guard) - and the response then warns that both are relaxed. " +
 		"On a successful non-dry-run save it also best-effort notifies active Creatio designers (Designer Presence); the save still succeeds if that notification is skipped (carried as a warning). " +
@@ -740,7 +741,7 @@ public sealed class PageUpdateTool(
 			};
 			PageGetCommand getCommand = _commandResolver.Resolve<PageGetCommand>(getOptions);
 			if (getCommand.TryGetPage(getOptions, out PageGetResponse getResponse) && getResponse.Success)
-				response.Page = getResponse.Page;
+				response.Page = getResponse.Page.ForResponse(args.IncludeOperations);
 		} catch {
 			// verify is best-effort; failure does not fail the update
 		}
@@ -795,5 +796,8 @@ public sealed record PageUpdateArgs(
 	string? Checksum = null,
 	[property: JsonPropertyName("validate")]
 	[property: Description("Run client-side content and run-process validation before saving. Default: true. Set false only as an explicit escape hatch for a pre-existing page defect; JavaScript syntax, AST loadability, replace-mode marker integrity, web parentName resolution against the target hierarchy, the mobile JSON-object structure check, and the page baseline/conflict guard remain mandatory. It stays combinable with force=true - the two flags are orthogonal (one gates content checks, the other the baseline/conflict guard) - and the response then warns that both are relaxed.")]
-	bool? Validate = null
+	bool? Validate = null,
+	[property: JsonPropertyName("include-operations")]
+	[property: Description("Optional, default true. Applies only with verify=true: false replaces page.ownBodySummary.viewConfigDiffOps in the read-back with viewConfigDiffOpCounts (count per operation type).")]
+	bool? IncludeOperations = null
 ) : ConnectionArgsBase;

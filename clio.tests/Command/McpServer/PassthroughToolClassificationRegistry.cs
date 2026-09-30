@@ -191,6 +191,10 @@ internal static class PassthroughToolClassificationRegistry {
 			["sync-pages"] = PassthroughClassification.Routed,
 			["get-component-info"] = PassthroughClassification.Routed,
 			["get-request-info"] = PassthroughClassification.Routed,
+			// The file twins reach Creatio only through the inline tool's own call, whose Routed coverage above
+			// proves the header-only, mixed-input and registered-environment paths.
+			["get-component-info-to-file"] = PassthroughClassification.NotApplicable,
+			["get-request-info-to-file"] = PassthroughClassification.NotApplicable,
 			["build-theme"] = PassthroughClassification.Routed,
 			// export-component-registry mirrors get-component-info exactly: version resolution routes the
 			// hasEnvironment branch through IToolCommandResolver.Resolve<EnvironmentSettings>, never
@@ -300,6 +304,7 @@ internal static class PassthroughToolClassificationRegistry {
 			// Environment-scoped BaseTool path; outside the original resident-tool passthrough audit.
 			[DownloadSysSettingFileTool.ToolName] = PassthroughClassification.NotApplicable,
 			["execute-esq"] = PassthroughClassification.NotApplicable,
+			["execute-esq-to-file"] = PassthroughClassification.NotApplicable, // runs through ExecuteEsqTool.Run, the same resolver path as execute-esq
 			["export-schema"] = PassthroughClassification.NotApplicable, // BaseTool<T>.InternalExecute<TCommand> - already resolver-backed (class a), not part of the ENG-93347 passthrough audit
 			["experimental"] = PassthroughClassification.NotApplicable,
 			["find-app"] = PassthroughClassification.NotApplicable,
@@ -356,6 +361,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["install-process-builder"] = PassthroughClassification.NotApplicable,
 			["install-sql-schema"] = PassthroughClassification.NotApplicable,
 			["list-entity-client-schemas"] = PassthroughClassification.NotApplicable,
+			["list-entity-client-schemas-to-file"] = PassthroughClassification.NotApplicable, // delegates to list-entity-client-schemas
 			["list-packages"] = PassthroughClassification.NotApplicable,
 			["list-page-templates"] = PassthroughClassification.NotApplicable,
 			["list-package-files"] = PassthroughClassification.NotApplicable, // BaseTool<T>.ExecuteResolved<TCommand,TResponse> is already resolver-backed (class a)

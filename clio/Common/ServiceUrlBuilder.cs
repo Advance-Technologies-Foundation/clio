@@ -358,10 +358,15 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		CreateNewClientUnitDesignerSchema = 107,
 		/// <summary>Read the parent (full hierarchy) schemas of a Freedom UI page from the page designer service.</summary>
 		GetClientUnitDesignerParentSchemas = 108,
+
+		/// <summary>
+		///     Compiles the package a business process lives in via the ProcessDesignService package.
+		/// </summary>
+		CompileProcess = 109,
 		/// <summary>Read one administrated object's per-role operation/record/column rights by schema UId.</summary>
-		GetAdministratedObject = 109,
+		GetAdministratedObject = 110,
 		/// <summary>Persist an administrated object's per-role operation/record/column rights (read-modify-write).</summary>
-		SaveAdministratedObject = 110
+		SaveAdministratedObject = 111
 
 	}
 
@@ -463,6 +468,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.ModifyProcess, "/rest/ProcessDesignService/ModifyProcess"},
 		{KnownRoute.ModifyProcessAsNewVersion, "/rest/ProcessDesignService/ModifyProcessAsNewVersion"},
 		{KnownRoute.SetActiveProcessVersion, "/rest/ProcessDesignService/SetActiveProcessVersion"},
+		{KnownRoute.CompileProcess, "/rest/ProcessDesignService/CompileProcess"},
 		{KnownRoute.LastCompilationResult, "api/ConfigurationStatus/GetLastCompilationResult"},
 		{KnownRoute.GetAvailableThemes, "ServiceModel/ThemeService.svc/GetAvailableThemes"},
 		{KnownRoute.ClearThemesCache, "ServiceModel/ThemeService.svc/ClearThemesCache"},
