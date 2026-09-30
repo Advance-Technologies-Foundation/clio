@@ -1809,6 +1809,39 @@ public sealed class ComponentInfoToolTests {
 	}
 
 	[Test]
+	[Description("When the documentation file cannot be created after the path was accepted (for example another writer created it first), get-component-info-to-file fails with the writer's error and returns neither documentationFile nor documentationSections.")]
+	public async Task ComponentInfoToFileTool_Should_Fail_With_The_Write_Error_When_The_File_Cannot_Be_Created() {
+		// Arrange
+		FakeDocsClient docs = new FakeDocsClient()
+			.Seed("latest", "docs/with-docs.intro.md", "# Intro\n\nBody.");
+		const string resolvedPath = "/tmp/component-docs.md";
+		const string writeError = "output-file '/tmp/component-docs.md' already exists.";
+		IMcpOutputFileWriter writer = Substitute.For<IMcpOutputFileWriter>();
+		writer.TryResolve(Arg.Any<string>(), out Arg.Any<string>(), out Arg.Any<string>())
+			.Returns(call => {
+				call[1] = resolvedPath;
+				call[2] = string.Empty;
+				return true;
+			});
+		writer.TryWriteNew(resolvedPath, Arg.Any<byte[]>(), out Arg.Any<string>())
+			.Returns(call => {
+				call[2] = writeError;
+				return false;
+			});
+		ComponentInfoToFileTool tool = new(BuildWithDocsTool(docs), writer);
+
+		// Act
+		System.Text.Json.Nodes.JsonObject response = await tool.GetComponentInfoToFile(
+			new ComponentInfoToFileArgs { ComponentType = "crt.WithDocs", OutputFile = resolvedPath });
+
+		// Assert
+		response.ToJsonString().Should().Be(
+			DocumentationFileProjection.Failure(writeError).ToJsonString(),
+			because: "a failed write is a failed call: the caller gets the writer's error and no path to a file that was not written");
+		writer.Received(1).TryWriteNew(resolvedPath, Arg.Any<byte[]>(), out Arg.Any<string>());
+	}
+
+	[Test]
 	[Description("get-component-info-to-file writes the documentation markdown to output-file and returns every other get-component-info field unchanged, plus the path and the section headings.")]
 	public async Task ComponentInfoToFileTool_Should_Write_Documentation_And_Keep_Every_Other_Field() {
 		// Arrange
@@ -1936,6 +1969,9 @@ public sealed class ComponentInfoToolTests {
 	[TestCase("# Title\n\ntext\n## Part", new[] { "# Title", "## Part" }, TestName = "ExtractHeadings_ReturnsAtxHeadingsWithTheirLevel")]
 	[TestCase("# Title\n```js\n# not a heading\n```\n## After", new[] { "# Title", "## After" }, TestName = "ExtractHeadings_SkipsFencedCodeBlocks")]
 	[TestCase("#NoSpace\n####### Seven\n    # Indented code", new string[0], TestName = "ExtractHeadings_IgnoresLinesThatAreNotHeadings")]
+	[TestCase("# Title\n````md\n```js\n# inner\n```\n# still code\n````\n## After", new[] { "# Title", "## After" }, TestName = "ExtractHeadings_KeepsALongerFenceOpenAcrossAShorterOne")]
+	[TestCase("```\n```js\n# still code\n```\n## After", new[] { "## After" }, TestName = "ExtractHeadings_DoesNotCloseAFenceOnALineWithAnInfoString")]
+	[TestCase("    ```\n# Title", new[] { "# Title" }, TestName = "ExtractHeadings_IgnoresAFenceIndentedIntoACodeBlock")]
 	[TestCase("## Usage ##\r\n## C#", new[] { "## Usage", "## C#" }, TestName = "ExtractHeadings_DropsOnlyAClosingSequenceAfterASpace")]
 	[Description("Documentation section headings are the ATX headings outside code fences, with their level kept.")]
 	public void ExtractHeadings_ShouldReturnMarkdownHeadings(string markdown, string[] expected) {

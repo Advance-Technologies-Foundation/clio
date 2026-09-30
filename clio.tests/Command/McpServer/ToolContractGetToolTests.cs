@@ -430,21 +430,23 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The output contracts of execute-esq-to-file and list-entity-client-schemas-to-file describe every field their success responses carry on the wire, so a renamed response member cannot leave the contract naming a field that no longer exists.")]
+	[Description("The output contracts of execute-esq-to-file, list-entity-client-schemas-to-file and the curated list-entity-client-schemas describe every field their success responses carry on the wire, so a renamed response member cannot leave the contract naming a field that no longer exists.")]
 	public void ToolContractGet_Should_Describe_Every_Wire_Field_Of_The_Typed_File_Twins() {
 		// Arrange
 		ToolContractGetTool tool = BuildToolWithRegistry();
-		(string ToolName, object Response)[] samples = [
-			(ExecuteEsqToFileTool.ToolName, new ExecuteEsqResponse(true, null, 2, null, OutputFile: "/tmp/rows.json")),
-			(ListEntityClientSchemasToFileTool.ToolName, new ListEntityClientSchemasToFileResponse(
+		(string ToolName, string WireJson)[] samples = [
+			(ExecuteEsqToFileTool.ToolName,
+				McpResponseBaseline.Serialize(new ExecuteEsqResponse(true, null, 2, null, OutputFile: "/tmp/rows.json"))),
+			(ListEntityClientSchemasToFileTool.ToolName, McpResponseBaseline.Serialize(new ListEntityClientSchemasToFileResponse(
 				true, "Contract", "uid", "/tmp/pages.json", new PageKindCounts(1, 1, 0, 0), new PageKindCounts(2, 1, 1, 0),
-				["warning"], "note", null))
+				["warning"], "note", null))),
+			(ListEntityClientSchemasTool.ToolName, ListEntityClientSchemasToolTests.PinnedWireJson)
 		];
 
-		foreach ((string toolName, object response) in samples) {
+		foreach ((string toolName, string wireJson) in samples) {
 			// Act
 			ToolContractDefinition contract = tool.GetToolContracts(new ToolContractGetArgs([toolName])).Tools!.Single();
-			string[] wireFields = JsonDocument.Parse(McpResponseBaseline.Serialize(response)).RootElement
+			string[] wireFields = JsonDocument.Parse(wireJson).RootElement
 				.EnumerateObject().Select(property => property.Name).ToArray();
 
 			// Assert

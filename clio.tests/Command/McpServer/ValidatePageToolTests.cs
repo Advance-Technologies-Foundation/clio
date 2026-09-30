@@ -138,6 +138,47 @@ public sealed class ValidatePageToolTests {
 	}
 
 	[Test]
+	[Description("Fifty unregistered captions, the size of page that motivated grouping, still produce one warning that lists all fifty bindings.")]
+	public async System.Threading.Tasks.Task ValidatePage_ShouldListEveryBinding_WhenFiftyCaptionsAreUnregistered() {
+		// Arrange
+		(string Node, string Property, string Key)[] captions = Enumerable.Range(1, 50)
+			.Select(i => ($"Button{i}", "caption", $"Button{i}_caption"))
+			.ToArray();
+		string body = BodyWithInsertedCaptions(captions);
+
+		// Act
+		PageValidateResponse response = await CreateTool().ValidatePage(new PageValidateArgs(Body: body));
+
+		// Assert
+		string warning = CaptionWarnings(response).Should().ContainSingle(because: "fifty bindings of one rule are one warning").Subject;
+		warning.Should().StartWith("50 view-node bindings", because: "the warning states how many bindings it lists");
+		warning.Split('\n').Count(line => line.StartsWith("- ", StringComparison.Ordinal)).Should().Be(50,
+			because: "grouping shortens the rule text, never the list of bindings");
+		foreach ((string node, string property, string key) in captions) {
+			warning.Should().Contain($"\n- '{node}', '{property}', '{key}'", because: "no binding may be dropped from the list");
+		}
+	}
+
+	[Test]
+	[Description("A localizable key carrying a newline cannot add a binding line to the grouped warning.")]
+	public async System.Threading.Tasks.Task ValidatePage_ShouldSanitizeKeys_InGroupedCaptionWarning() {
+		// Arrange
+		string insert = "{\"operation\":\"insert\",\"name\":\"SaveButton\",\"parentName\":\"Main\",\"propertyName\":\"items\"," +
+			"\"values\":{\"type\":\"crt.Button\",\"caption\":\"#ResourceString(Evil\\n- 'Fake', 'caption', 'Forged_caption')#\"}}";
+		string body = ValidWebBody.Replace("[]/**SCHEMA_VIEW_CONFIG_DIFF*/", "[" + insert + "]/**SCHEMA_VIEW_CONFIG_DIFF*/");
+
+		// Act
+		PageValidateResponse response = await CreateTool().ValidatePage(new PageValidateArgs(Body: body));
+
+		// Assert
+		string warning = CaptionWarnings(response).Should().ContainSingle(because: "one rule, one warning").Subject;
+		warning.Split('\n').Count(line => line.StartsWith("- ", StringComparison.Ordinal)).Should().Be(1,
+			because: "the body has one binding, however its key is spelled");
+		warning.Should().Contain("'SaveButton', 'caption', 'Evil - 'Fake'",
+			because: "the newline in the key is replaced, so the forged text stays inside its own binding line");
+	}
+
+	[Test]
 	[Description("Registered captions produce no caption warning, so grouping adds nothing for a clean page.")]
 	public async System.Threading.Tasks.Task ValidatePage_ShouldNotWarn_WhenCaptionKeysAreRegistered() {
 		// Arrange

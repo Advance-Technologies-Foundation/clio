@@ -776,12 +776,12 @@ public sealed class ExecuteEsqToolTests {
 			because: "an oversized result must be replaced before it reaches MCP serialization");
 		response.ErrorClass.Should().Be(ExecuteEsqTool.ResultTooLargeErrorClass,
 			because: "callers need a stable machine-readable classification for narrowing or paging the query");
-		response.Error.Should().Contain(ExecuteEsqTool.MaxResponseSizeBytes.ToString(),
-			because: "the failure must state the enforced byte budget");
-		response.Error.Should().Contain("explicit columns",
-			because: "the caller needs an actionable recovery that avoids blob-bearing allColumns results");
-		response.Error.Should().Contain(ExecuteEsqToFileTool.ToolName,
-			because: "a caller that needs every row is pointed at the tool that writes them to a file");
+		response.Error.Should().Be(
+			$"SelectQuery result exceeds the {ExecuteEsqTool.MaxResponseSizeBytes} UTF-8 byte limit. "
+			+ "Select explicit columns instead of allColumns, lower rowCount, or page with rowsOffset, then retry. "
+			+ "When every row is needed, run the same query with execute-esq-to-file, which writes the rows to a local file.",
+			because: "the text is pinned whole: it states the byte budget, the narrowing recovery, and (the one deliberate "
+				+ "ENG-101592 change to a default response) the file twin for a caller that needs every row");
 		response.Rows.Should().BeNull(
 			because: "none of the oversized DataService body may cross the MCP boundary");
 		response.Hint.Should().BeNull(

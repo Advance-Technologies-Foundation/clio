@@ -439,6 +439,74 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 			because: "a dry run must never reach TrySaveSchema; a unit test can only assert this against a substitute, so the wire path needs its own proof");
 	}
 
+	[Test]
+	[Description("ENG-101592: with verify=true, include-operations=false makes the update-page read-back carry page.ownBodySummary.viewConfigDiffOpCounts instead of viewConfigDiffOps, and omitting the argument keeps the full operation list.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page verify read-back honours include-operations")]
+	[AllureDescription("Submits the same one-operation append fragment to the seeded page ClioMcp_BlankPageToSave twice through update-page with dry-run=true and verify=true: once with include-operations=false, once without the argument. Reads the wire JSON of each response and verifies the first read-back summary has viewConfigDiffOpCounts and no viewConfigDiffOps, and the second keeps viewConfigDiffOps. Non-destructive: a dry run never reaches TrySaveSchema, and the verify read-back runs on every successful update-page call.")]
+	public async Task PageUpdateTool_Should_Honour_IncludeOperations_In_The_Verify_ReadBack() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+		const string savePage = "ClioMcp_BlankPageToSave";
+		string fragment = BuildAppendFragment(savePage);
+
+		// Act
+		JsonElement countsSummary = await ReadVerifiedOwnBodySummaryAsync(
+			arrangeContext, environmentName, savePage, fragment, includeOperations: false);
+		JsonElement listSummary = await ReadVerifiedOwnBodySummaryAsync(
+			arrangeContext, environmentName, savePage, fragment, includeOperations: null);
+
+		// Assert
+		countsSummary.TryGetProperty("viewConfigDiffOps", out _).Should().BeFalse(
+			because: "include-operations=false leaves the per-operation list out of the verify read-back");
+		countsSummary.TryGetProperty("viewConfigDiffOpCounts", out JsonElement counts).Should().BeTrue(
+			because: "include-operations=false puts the number of operations per operation type in place of the list");
+		counts.ValueKind.Should().Be(JsonValueKind.Object,
+			because: "the counts map each operation type to its number of operations");
+		listSummary.TryGetProperty("viewConfigDiffOps", out _).Should().BeTrue(
+			because: "without include-operations the read-back must stay byte-for-byte what update-page returned before ENG-101592");
+		listSummary.TryGetProperty("viewConfigDiffOpCounts", out _).Should().BeFalse(
+			because: "the counts are added only when the caller opts out of the operation list");
+	}
+
+	/// <summary>
+	/// Runs an append dry run with verify=true and returns <c>page.ownBodySummary</c> of the wire response,
+	/// read from JSON because the typed summary defaults the operation list to empty and cannot show absence.
+	/// </summary>
+	private static async Task<JsonElement> ReadVerifiedOwnBodySummaryAsync(
+			ArrangeContext arrangeContext, string environmentName, string schemaName, string fragment,
+			bool? includeOperations) {
+		Dictionary<string, object?> args = new() {
+			["schema-name"] = schemaName,
+			["body"] = fragment,
+			["mode"] = "append",
+			["dry-run"] = true,
+			["verify"] = true,
+			["environment-name"] = environmentName
+		};
+		if (includeOperations is not null) {
+			args["include-operations"] = includeOperations;
+		}
+		CallToolResult result = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> { ["args"] = args },
+			arrangeContext.CancellationTokenSource.Token);
+		result.IsError.Should().NotBeTrue(
+			because: "an append dry run against a seeded diff-form page is a structured result, not a transport error");
+		PageUpdateResponse response = EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(result);
+		response.Success.Should().BeTrue(
+			because: $"the fragment is a valid append against '{schemaName}'. Error: {response.Error}");
+		JsonElement raw = EntitySchemaStructuredResultParser.Extract<JsonElement>(result);
+		raw.TryGetProperty("page", out JsonElement page).Should().BeTrue(
+			because: "verify=true must attach the read-back page to a successful update-page response");
+		page.TryGetProperty("ownBodySummary", out JsonElement summary).Should().BeTrue(
+			because: "include-operations changes the content of the summary, not whether it is returned");
+		return summary.Clone();
+	}
+
 	/// <summary>Reads a page's raw stored body through <c>get-page</c> and returns its text.</summary>
 	private static async Task<string> ReadRawBodyAsync(
 			ArrangeContext arrangeContext, string environmentName, string schemaName) {

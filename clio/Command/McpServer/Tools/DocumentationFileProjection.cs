@@ -70,33 +70,47 @@ internal static class DocumentationFileProjection {
 	/// <param name="markdown">The documentation markdown.</param>
 	internal static IReadOnlyList<string> ExtractHeadings(string markdown) {
 		List<string> headings = [];
-		string? openFence = null;
+		Fence? openFence = null;
 		foreach (string rawLine in markdown.Split('\n')) {
 			string line = rawLine.TrimEnd('\r');
 			string trimmed = line.TrimStart();
-			if (TryGetFence(trimmed, out string fence)) {
+			bool withinIndent = line.Length - trimmed.Length <= 3;
+			if (withinIndent && TryGetFence(trimmed, out Fence fence)) {
 				openFence = NextOpenFence(openFence, fence);
 				continue;
 			}
-			if (openFence is null && line.Length - trimmed.Length <= 3 && TryParseHeading(trimmed, out string heading)) {
+			if (openFence is null && withinIndent && TryParseHeading(trimmed, out string heading)) {
 				headings.Add(heading);
 			}
 		}
 		return headings;
 	}
 
-	private static bool TryGetFence(string trimmed, out string fence) {
-		bool isFence = trimmed.StartsWith("```", StringComparison.Ordinal) || trimmed.StartsWith("~~~", StringComparison.Ordinal);
-		fence = isFence ? trimmed[..3] : string.Empty;
-		return isFence;
+	// A fence line: its character, the length of its run, and whether text follows the run (an info string).
+	private readonly record struct Fence(char Character, int Length, bool HasInfo);
+
+	private static bool TryGetFence(string trimmed, out Fence fence) {
+		fence = default;
+		if (trimmed.Length < 3 || (trimmed[0] != '`' && trimmed[0] != '~')) {
+			return false;
+		}
+		char character = trimmed[0];
+		int length = 0;
+		while (length < trimmed.Length && trimmed[length] == character) {
+			length++;
+		}
+		fence = new Fence(character, length, !string.IsNullOrWhiteSpace(trimmed[length..]));
+		return length >= 3;
 	}
 
-	// A fence opens a block; only the same fence closes it, so "~~~" inside a "```" block is content.
-	private static string? NextOpenFence(string? openFence, string fence) {
-		if (openFence is null) {
+	// CommonMark: only a fence of the same character, at least as long as the opening one and with no info string,
+	// closes a block, so a "```" sample inside a "````" block or a "~~~" inside a "```" block is content.
+	private static Fence? NextOpenFence(Fence? openFence, Fence fence) {
+		if (openFence is not { } open) {
 			return fence;
 		}
-		return openFence == fence ? null : openFence;
+		bool closes = fence.Character == open.Character && fence.Length >= open.Length && !fence.HasInfo;
+		return closes ? null : openFence;
 	}
 
 	private static bool TryParseHeading(string trimmed, out string heading) {

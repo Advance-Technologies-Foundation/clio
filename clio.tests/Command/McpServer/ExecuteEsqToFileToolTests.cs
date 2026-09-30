@@ -99,6 +99,28 @@ public sealed class ExecuteEsqToFileToolTests {
 	}
 
 	[Test]
+	[Description("A successful response without a rows array is written to output-file whole, and the response carries the path without a count, as the tool description promises.")]
+	public void ExecuteToFile_ShouldWriteTheWholeBody_WhenTheResponseHasNoRowsArray() {
+		// Arrange
+		const string projectionResponse = "{\"success\":true,\"total\":5}";
+		(ExecuteEsqToFileTool tool, _, MockFileSystem fileSystem) = BuildTool(projectionResponse);
+		string outputFile = TempPath(fileSystem, "esq-no-rows");
+
+		// Act
+		ExecuteEsqResponse response = tool.ExecuteToFile(new ExecuteEsqToFileArgs {
+			EnvironmentName = "dev", Query = Json(ContactQuery), OutputFile = outputFile
+		});
+
+		// Assert
+		response.Success.Should().BeTrue(because: "success:true without rows is a valid non-row projection");
+		response.OutputFile.Should().Be(outputFile, because: "the body went to the file the caller named");
+		response.Count.Should().BeNull(because: "there is no rows array to count");
+		response.Rows.Should().BeNull(because: "the body lives in the file, not in the MCP result");
+		fileSystem.File.ReadAllText(outputFile).Should().Be(projectionResponse,
+			because: "without a rows array the file holds the whole response body, as the inline tool returns it");
+	}
+
+	[Test]
 	[Description("A requested column the query did not return fails the call as it does inline, and no file is written.")]
 	public void ExecuteToFile_ShouldFailWithoutWriting_WhenARequestedColumnIsMissing() {
 		// Arrange
