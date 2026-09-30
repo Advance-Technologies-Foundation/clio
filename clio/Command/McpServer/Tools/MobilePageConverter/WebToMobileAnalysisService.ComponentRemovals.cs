@@ -610,9 +610,9 @@ public static partial class WebToMobileAnalysisService {
 	/// <para>
 	/// A nested COMPONENT means a live control would leave the page inside its owner, and a carried node is
 	/// only ever REPORTED when the prune is what removed it — so it would go with no <c>drop</c> entry at all.
-	/// Searched recursively because a menu can sit one object deeper than the slot a rule names
-	/// (<c>menuConfig.items</c> rather than <c>menuItems</c>), and a rule naming one property cannot see the
-	/// other.
+	/// Searched recursively because a live control can sit one object deeper than the slot a rule names — inside a
+	/// wrapper object, or in a single-object slot such as the mobile <c>crt.Scaffold.floatAction</c> — and a rule
+	/// naming one property cannot see the other.
 	/// </para>
 	/// <para>
 	/// A surviving CHILD is the entry-graph form of the same loss: its operation names this element as

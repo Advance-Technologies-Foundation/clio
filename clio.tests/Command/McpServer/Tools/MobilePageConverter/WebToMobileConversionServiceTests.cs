@@ -3029,13 +3029,13 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("The same binding-level settlement on the OTHER decision site: a component held in a single-object slot rather than as an array member. The two sites judge separately - the array path does not even ask IsComponentObject - so an assertion on one proves nothing about the other, and it was exactly this slot that hid a live menu item from both the prune and the veto in the first review round.")]
+	[Description("The same binding-level settlement on the OTHER decision site: a component held in a single-object slot rather than as an array member. The two sites judge separately - the array path does not even ask IsComponentObject - so an assertion on one proves nothing about the other, and it was exactly this slot that hid a live menu item from both the prune and the veto in the first review round. The carrying property is a CUSTOM one on purpose: the decision is structural - any object whose type starts crt. - and the platform's own single-object component slots (crt.Scaffold.floatAction, crt.List.itemLayout) sit on types no removal rule names, so nothing shipped can exercise this veto. A developer-authored page may nest a control under any property at all, which is the case the guard is actually for.")]
 	public void Analyze_ComponentInASingleObjectSlot_KeptOverALiveChild_HasItsDeadBindingStripped() {
-		// Arrange - menuConfig is refused by IsChildElementArray by construction, so it is ALWAYS carried.
+		// Arrange - a non-array slot is refused by IsChildElementArray by construction, so it is ALWAYS carried.
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
 				{ "name": "SettingsButton", "type": "crt.Button", "caption": "Settings",
-				  "menuConfig": { "name": "DeadParentItem", "type": "crt.MenuItem", "caption": "More",
+				  "usrMenuSlot": { "name": "DeadParentItem", "type": "crt.MenuItem", "caption": "More",
 				                  "clicked": { "request": "crt.PrintablesRequest", "params": {} },
 				                  "menuItems": [ { "name": "LiveChildItem", "type": "crt.MenuItem",
 				                                   "caption": "Save",
@@ -3183,13 +3183,13 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("A component held in a SINGLE-OBJECT slot, not an array, vetoes its owner's removal the same way an array member does. This is the shape the review gate caught: the prune and the veto both walked arrays, so a button holding menuConfig: { type: crt.MenuItem } was removed as action-less and the live menu item left the page inside it - with no droppedElements entry at all, because a carried node is only ever reported when the prune is what removed it.")]
+	[Description("A component held in a SINGLE-OBJECT slot, not an array, vetoes its owner's removal the same way an array member does. This is the shape the review gate caught: the prune and the veto both walked arrays, so a button holding a control under a NON-ARRAY property was removed as action-less and the live menu item left the page inside it - with no droppedElements entry at all, because a carried node is only ever reported when the prune is what removed it. The property is a custom one for the reason the binding-level twin of this test states: the test is structural, and no shipped single-object component slot sits on a type a removal rule names.")]
 	public void Analyze_ButtonHoldingAComponentInASingleObjectSlot_IsNotRemovedAsActionLess() {
 		// Arrange - no clicked and no menuItems, so both emptiness tests of the shipped rule match.
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
 				{ "name": "SettingsButton", "type": "crt.Button", "caption": "Settings",
-				  "menuConfig": { "name": "NestedItem", "type": "crt.MenuItem", "caption": "Save",
+				  "usrMenuSlot": { "name": "NestedItem", "type": "crt.MenuItem", "caption": "Save",
 				                  "clicked": { "request": "crt.SaveRecordRequest", "params": {} } } } ] } ]
 			""");
 
@@ -3476,13 +3476,13 @@ public sealed class WebToMobileConversionServiceTests {
 	[Test]
 	[Description("A control still holding a live menu one wrapper object deeper is KEPT. The survival test searches to the same depth the prune does, deliberately: a shallower one would let the prune remove what the survival test cannot see, so the owner would be dropped while holding a live action — and that action, being a carried node nobody removed, would vanish with it carrying no entry of its own.")]
 	public void Analyze_CarriedMenu_NestedUnderAWrapperObject_KeepsItsOwner() {
-		// Arrange — the live item sits under menuConfig.items, not directly under a values array.
+		// Arrange — the live item sits under a wrapper object's items, not directly under a values array.
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
 				{ "name": "SettingsButton", "type": "crt.Button", "caption": "Settings", "clickMode": "menu",
 				  "menuItems": [ { "name": "ExportItem", "type": "crt.MenuItem", "caption": "Export",
 				    "clicked": { "request": "crt.ExportDataGridToExcelRequest", "params": {} } } ],
-				  "menuConfig": { "items": [ { "name": "SaveItem", "type": "crt.MenuItem", "caption": "Save",
+				  "usrMenuSlot": { "items": [ { "name": "SaveItem", "type": "crt.MenuItem", "caption": "Save",
 				    "clicked": { "request": "crt.SaveRecordRequest", "params": {} } } ] } } ] } ]
 			""");
 
