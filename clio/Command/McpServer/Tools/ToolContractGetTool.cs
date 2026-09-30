@@ -86,9 +86,9 @@ public sealed class ToolContractGetTool {
 	// Before ENG-95885 the flat call bound `args` to null, fell through to the no-tool-names branch, and
 	// handed the agent the entire index back as a plausible success.
 	[McpRecoversUnknownArguments]
-	[Description("Returns clio MCP tool contracts. Omit tool-names for a compact index of ALL tools (names, purpose, safety flags); pass tool-names for full contracts (schemas, defaults, examples, workflows). Mixed batches retain valid contracts and report misses with suggestions in not-found. Pass detail=full without tool-names for every full contract.")]
+	[Description("Returns clio MCP tool contracts. Omit tool-names for a compact index of ALL tools (names, purpose, safety flags); pass tool-names for their contracts, fitted to one reply: the largest come back short unless detail=full. Mixed batches retain valid contracts and report misses with suggestions in not-found.")]
 	public ToolContractGetResponse GetToolContracts(
-		[Description("Parameters: tool-names (optional array of tool names) and detail (optional 'index' | 'full'). Omit entirely for a compact index of all tools; pass tool-names for full contracts; pass detail=full to expand all full contracts.")]
+		[Description("Parameters: tool-names (optional array) and detail (optional: index, full or short). Omit entirely for a compact index of all tools; pass tool-names for their contracts; detail=full expands every contract in full.")]
 		ToolContractGetArgs? args = null,
 		RequestContext<CallToolRequestParams>? requestContext = null) {
 		// A natural no-arguments discovery call (the first call an agent makes) sends no args object at all.
@@ -315,10 +315,10 @@ public sealed class ToolContractGetTool {
 
 public sealed record ToolContractGetArgs(
 	[property: JsonPropertyName("tool-names")]
-	[property: Description("Optional array of tool names. Omit to return a compact index of all clio MCP tools (names + one-line purpose); pass names to expand their full contracts.")]
+	[property: Description("Optional array of tool names. Omit to return a compact index of all clio MCP tools (names + one-line purpose); pass names to expand their contracts.")]
 	IReadOnlyList<string>? ToolNames = null,
 	[property: JsonPropertyName("detail")]
-	[property: Description("Optional detail level used only when tool-names is omitted: 'index' (default) returns the compact index of all tools; 'full' returns the full contracts of all tools (legacy behavior).")]
+	[property: Description("Optional. Without tool-names: index (default) or full (every full contract). With tool-names: omitted fits one reply by shortening the largest; full returns all in full, short all short.")]
 	string? Detail = null
 ) {
 	[JsonExtensionData]
@@ -395,7 +395,13 @@ public sealed record ToolContractDefinition(
 	[property: JsonPropertyName("fallback-flow")] IReadOnlyList<ToolFlowHint> FallbackFlow,
 	[property: JsonPropertyName("deprecations")] IReadOnlyList<ToolDeprecation> Deprecations,
 	[property: JsonPropertyName("anti-patterns")] IReadOnlyList<ToolAntiPattern>? AntiPatterns = null,
-	[property: JsonPropertyName("preconditions")] IReadOnlyList<string>? Preconditions = null
+	[property: JsonPropertyName("preconditions")] IReadOnlyList<string>? Preconditions = null,
+	// ENG-100154: set only on a SHORT contract (see ToolContractShortForm); a full contract omits both, so
+	// the wire shape of every full contract is unchanged.
+	[property: JsonPropertyName("detail"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	string? Detail = null,
+	[property: JsonPropertyName("full-contract-bytes"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	int? FullContractBytes = null
 );
 
 public sealed record ToolInputSchemaContract(
@@ -943,15 +949,12 @@ internal static class ToolContractCatalog {
 		SysSettingUpdateTool.UpdateSysSettingToolName
 	];
 
-	/// <summary>The <c>detail</c> value that opts into the legacy full-contract dump for a no-names request.</summary>
-	private const string FullDetail = "full";
-
 	/// <summary>The one-line purpose is truncated to this many characters for the compact index.</summary>
 	private const int MaxPurposeLength = 120;
 
 	/// <summary>
 	/// Abbreviations whose own terminating period IS followed by whitespace and therefore reads as a
-	/// sentence break to <see cref="FindFirstSentenceEnd"/>. Membership is decided by ONE property: the
+	/// sentence break to <see cref="FindSentenceEnd"/>. Membership is decided by ONE property: the
 	/// abbreviation is never sentence-FINAL in English, so skipping its period can only ever be right.
 	/// An ambiguous one must stay out — a wrong skip merges two sentences and pulls the next one (often
 	/// a safety warning) into the one-liner, which is the same truncated-thought symptom ENG-96389 set
@@ -1017,7 +1020,7 @@ internal static class ToolContractCatalog {
 		bool legacyNoNamesFullShape = false) {
 		return toolNames is null || toolNames.Count == 0
 			? ResolveNoNamesContracts(toolInvokerRegistry, detail, legacyNoNamesFullShape)
-			: ResolveNamedContracts(toolNames, toolInvokerRegistry);
+			: ResolveNamedContracts(toolNames, toolInvokerRegistry, detail);
 	}
 
 	/// <summary>
@@ -1030,7 +1033,9 @@ internal static class ToolContractCatalog {
 		IMcpToolInvokerRegistry? toolInvokerRegistry,
 		string? detail,
 		bool legacyNoNamesFullShape) {
-		if (string.Equals(detail, FullDetail, StringComparison.OrdinalIgnoreCase)) {
+		// The same value that returns a named contract complete (ENG-100154) opts a no-names request into the
+		// legacy full-contract dump.
+		if (ToolContractShortForm.IsDetail(detail, ToolContractShortForm.FullDetail)) {
 			return new ToolContractGetResponse(
 				true,
 				CanonicalToolNames.Select(name => Contracts[name]).ToArray());
@@ -1070,7 +1075,8 @@ internal static class ToolContractCatalog {
 	/// </summary>
 	private static ToolContractGetResponse ResolveNamedContracts(
 		IReadOnlyList<string> toolNames,
-		IMcpToolInvokerRegistry? toolInvokerRegistry) {
+		IMcpToolInvokerRegistry? toolInvokerRegistry,
+		string? detail) {
 		List<string> normalizedNames = [];
 		for (int index = 0; index < toolNames.Count; index++) {
 			string? name = toolNames[index];
@@ -1101,11 +1107,17 @@ internal static class ToolContractCatalog {
 					$"Tool '{normalizedName}' is not registered by clio MCP. {ToolContractGetTool.DiscoveryHint}",
 					BuildSuggestions(normalizedName, toolInvokerRegistry))));
 		}
+		IReadOnlyList<ToolContractNotFound>? misses = notFound.Count > 0 ? notFound : null;
+		IReadOnlyList<ToolContractDefinition> tools = ToolContractShortForm.Apply(results, detail,
+			candidate => ToolContractShortForm.MeasureBytes(
+				new ToolContractGetResponse(true, Tools: candidate, NotFound: misses)),
+			// Fails closed: a tool whose destructiveness is unknown keeps the longer lead, and its warning.
+			name => ResolveDestructive(toolInvokerRegistry, name) ?? true);
 		return new ToolContractGetResponse(
 			results.Count > 0,
-			Tools: results.Count > 0 ? results : null,
+			Tools: results.Count > 0 ? tools : null,
 			Error: results.Count == 0 ? notFound[0].Error : null,
-			NotFound: notFound.Count > 0 ? notFound : null);
+			NotFound: misses);
 	}
 
 	/// <summary>
@@ -1284,7 +1296,7 @@ internal static class ToolContractCatalog {
 		if (normalized.Length == 0) {
 			return string.Empty;
 		}
-		int sentenceEnd = FindFirstSentenceEnd(normalized);
+		int sentenceEnd = FindSentenceEnd(normalized, 0);
 		string firstSentence = sentenceEnd >= 0 ? normalized[..(sentenceEnd + 1)] : normalized;
 		if (firstSentence.Length <= MaxPurposeLength) {
 			return firstSentence;
@@ -1293,15 +1305,16 @@ internal static class ToolContractCatalog {
 	}
 
 	/// <summary>
-	/// Returns the index of the first sentence-terminating period (a '.' followed by whitespace or the end
-	/// of the text), or <c>-1</c> when the text has no sentence break. Abbreviation periods mid-word (for
+	/// Returns the index of the first sentence-terminating period at or after <paramref name="startIndex"/>
+	/// (a '.' followed by whitespace or the end of the text), or <c>-1</c> when there is no sentence break. Abbreviation periods mid-word (for
 	/// example <c>en-US</c> or version numbers) are kept because they are not followed by whitespace;
 	/// the abbreviations in <see cref="SentenceSafeAbbreviations"/> are kept explicitly, because their
 	/// final period IS followed by whitespace and the mid-word rule cannot see them.
 	/// </summary>
-	/// <param name="text">The whitespace-normalized description.</param>
-	private static int FindFirstSentenceEnd(string text) {
-		for (int index = 0; index < text.Length; index++) {
+	/// <param name="text">The description.</param>
+	/// <param name="startIndex">Where to start looking; the short form walks sentences with it (ENG-100154).</param>
+	internal static int FindSentenceEnd(string text, int startIndex) {
+		for (int index = Math.Max(0, startIndex); index < text.Length; index++) {
 			if (text[index] != '.') {
 				continue;
 			}
@@ -1355,12 +1368,15 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildToolContractGet() {
 		return new ToolContractDefinition(
 			ToolContractGetTool.ToolName,
-			"Returns clio MCP tool contracts. Omit tool-names for a compact index of all tools (name + one-line purpose + safety flags) for cheap discovery; pass tool-names to expand those tools' full executable contracts; pass detail=full (with no tool-names) to expand every tool's full contract.",
+			"Returns clio MCP tool contracts. Omit tool-names for a compact index of all tools (name + one-line purpose + safety flags) for cheap discovery; pass tool-names to expand those tools' executable contracts; pass detail=full (with no tool-names) to expand every tool's full contract. "
+			+ "A named lookup is FITTED to one inline reply by default: every contract comes back in full when the reply fits, and otherwise the largest are replaced by their SHORT form until it does. "
+			+ "A short contract carries detail=\"short\" and full-contract-bytes, keeps the purpose of its description and every sentence carrying a safety marker - a confirmation, an ask/tell/warn-the-user rule, a prohibition, an irreversibility warning - wherever it stands, in the description or in a field, plus the input schema with its required list and validators, the error codes, preconditions, aliases, defaults, flows, deprecations and anti-patterns, and says in its description what it left out (the rest of the description, the examples, other field descriptions past their first sentence). "
+			+ "Pass detail=full with tool-names to get every named contract complete, or detail=short to get them all short.",
 			new ToolInputSchemaContract(
 				[],
 				[
 					Field("tool-names", ArrayType, "Optional array of tool names. Omit for a compact index of all tools; pass names to expand their full contracts."),
-					Field("detail", StringType, "Optional detail level used only when tool-names is omitted: 'index' (default) returns the compact index; 'full' returns every tool's full contract.")
+					Field("detail", StringType, "Optional detail level. Without tool-names: 'index' (default) returns the compact index; 'full' returns every tool's full contract. With tool-names: omit it to fit the reply inline (the largest contracts come back short only when needed); 'full' returns every named contract complete; 'short' returns every named contract in its short form.")
 				]),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -1368,7 +1384,7 @@ internal static class ToolContractCatalog {
 					SuccessFalseSignal
 				],
 				Field(SuccessFieldName, BooleanType, "Whether discovery succeeded or at least one requested name resolved. Check not-found for partial results."),
-				Field("tools", ArrayType, "Full tool contract definitions; populated when tool-names are passed or detail=full."),
+				Field("tools", ArrayType, "Tool contract definitions; populated when tool-names are passed or detail=full. A short contract carries detail=\"short\" and full-contract-bytes (the size of its full form); a full contract carries neither."),
 				Field("not-found", ArrayType, "Unresolved names with per-name error codes, messages and suggestions. Valid contracts remain in tools; omitted when all names resolve. If no names resolve, success=false and error retains the first tool-not-found diagnostic."),
 				Field("index", ArrayType, "Compact tool index (name, purpose, contract-available, resident, destructive); populated for a no-names request unless detail=full. resident=true tools are present in tools/list and are called natively; resident=false tools are reachable only via clio-run/clio-run-destructive — never wrap a resident tool in clio-run."),
 				Field(ErrorFieldName, ObjectType, "Structured error payload when lookup fails.")
@@ -1379,10 +1395,14 @@ internal static class ToolContractCatalog {
 			[
 				Example("Return the compact index of all clio MCP tools (cheap discovery)", new Dictionary<string, object?>()),
 				Example("Return the full contracts of every tool (legacy behavior)", new Dictionary<string, object?> {
-					["detail"] = "full"
+					["detail"] = ToolContractShortForm.FullDetail
 				}),
 				Example("Return the contract for list-apps, update-page, and modify-entity-schema-column", new Dictionary<string, object?> {
 					["tool-names"] = new[] { "list-apps", "update-page", "modify-entity-schema-column" }
+				}),
+				Example("Return one short contract's complete form, examples included", new Dictionary<string, object?> {
+					["tool-names"] = new[] { "create-business-process" },
+					["detail"] = ToolContractShortForm.FullDetail
 				})
 			],
 			Flow(["get-tool-contract"], "Call with no args first for the compact index of all tools, then call with specific tool-names for full schemas before execution."),

@@ -1123,7 +1123,7 @@ public sealed class ToolContractGetToolTests {
 		// Act
 		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
 			CreateEntityBusinessRuleTool.BusinessRuleCreateToolName
-		]));
+		], ToolContractShortForm.FullDetail));
 
 		// Assert
 		result.Success.Should().BeTrue(
@@ -1356,7 +1356,7 @@ public sealed class ToolContractGetToolTests {
 		// Act
 		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
 			CreatePageBusinessRuleTool.BusinessRuleCreateToolName
-		]));
+		], ToolContractShortForm.FullDetail));
 
 		// Assert
 		result.Success.Should().BeTrue(
@@ -1748,7 +1748,7 @@ public sealed class ToolContractGetToolTests {
 			PageSyncTool.ToolName,
 			PageUpdateTool.ToolName,
 			ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName
-		]));
+		], ToolContractShortForm.FullDetail));
 
 		// Assert
 		result.Success.Should().BeTrue(
@@ -2062,7 +2062,7 @@ public sealed class ToolContractGetToolTests {
 		];
 
 		// Act
-		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs(requestedTools));
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs(requestedTools, ToolContractShortForm.FullDetail));
 
 		// Assert
 		result.Success.Should().BeTrue(
