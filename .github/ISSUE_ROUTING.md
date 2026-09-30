@@ -66,7 +66,11 @@ gh issue create --title "..." --body "..." --label component:package
   assigned or mentioned exactly as for a form issue, and labels are left as they are.
 - Owners are notified when the issue is opened or when that label is added, not on later text
   edits and not when some other label is added. Removing and re-adding the label re-routes.
-- **Two or more** component labels are not a choice; the issue is left to a human.
+  One exception: if the issue still carries `needs-triage` next to the component label, routing
+  never ran for that label (GitHub can replace a queued `labeled` run with a later `edited` one),
+  so an edit routes it.
+- **Two or more** component labels are not a choice: nobody is routed and an unassigned issue gets
+  `needs-triage`.
 - Adding a component label to a **form** issue does not re-route it; the form stays the source.
 - Alternatively, put the form section into the body — `### Component` followed by the exact
   option text — and the issue is routed like a form issue.
@@ -80,7 +84,8 @@ node .github/scripts/issue-routing/component-for.js --list                  # al
 gh issue create --title "..." --body "..." --label component:pages
 ```
 
-Exit code 0 means exactly one component; 2 means none or several (pick one or leave it to triage).
+Exit code 0 means exactly one component and every argument resolved; 2 means none, several, or an
+argument that is neither a path nor an MCP tool name (pick one, or set no label and leave it to triage).
 Add `--assignee @me` only when the agent was authorized to take the issue: an assigned issue is never
 re-assigned, so in `assign` mode the owners are then not notified (in `mention` mode they still are).
 

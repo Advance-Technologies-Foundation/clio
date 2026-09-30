@@ -659,12 +659,24 @@ test('a text edit of an API issue does not notify the owners again', () => {
   assert.equal(plan.unchanged, true, 'owners were told when the issue was opened or labelled');
 });
 
-test('an API issue with two component labels is left to a human', () => {
+test('an API issue with two component labels goes to triage when nobody took it', () => {
   // Arrange / Act
-  const plan = routing.planRouting({ body: apiBody, currentLabels: ['component:package', 'component:docs'], trigger: 'opened', config });
+  const unassigned = routing.planRouting({ body: apiBody, currentLabels: ['component:package', 'component:docs'], trigger: 'opened', config });
+  const assigned = routing.planRouting({ body: apiBody, currentLabels: ['component:package', 'component:docs'], currentAssignees: ['dave'], trigger: 'opened', config });
   // Assert
-  assert.equal(plan.unchanged, true, 'two labels are not a choice');
-  assert.equal(plan.source, 'ambiguous-labels', 'the reason is visible in the log');
+  assert.equal(unassigned.source, 'ambiguous-labels', 'two labels are not a choice');
+  assert.deepEqual(unassigned.labelsToAdd, ['needs-triage'], 'nobody can be routed, so a human has to pick one');
+  assert.deepEqual(unassigned.ownerCandidates, [], 'no owner is guessed');
+  assert.equal(assigned.unchanged, true, 'dave already took it');
+});
+
+test('an edit routes an API issue whose labeled run GitHub replaced', () => {
+  // Arrange: opened (no label) added needs-triage; the queued labeled run was replaced by this edit.
+  // Act
+  const plan = routing.planRouting({ body: `${apiBody}\nmore`, previousBody: apiBody, currentLabels: ['component:package', 'needs-triage'], currentAssignees: [], trigger: 'edited', config });
+  // Assert
+  assert.deepEqual(plan.ownerCandidates, ['carol'], 'label plus needs-triage means routing never ran for the label');
+  assert.deepEqual(plan.labelsToRemove, ['needs-triage'], 'the issue is routed now');
 });
 
 test('an API issue labelled with an ownerless component asks for triage only when unassigned', () => {
@@ -766,16 +778,24 @@ test('matchComponents prefers the most specific component for each file', () => 
   assert.deepEqual(ranked.map(r => [r.component.id, r.files.length]), [['pages', 2], ['core', 1]], 'each file goes to its most specific component, ranked by file count');
 });
 
-test('every MCP tool file in the committed map belongs to exactly one component', () => {
+test('every MCP tool file in the committed map belongs to exactly one specific component', () => {
   // Arrange
   const committed = routing.loadConfig(configPath);
   const toolsDir = path.join(repoRoot, 'clio', 'Command', 'McpServer', 'Tools');
   if (!fs.existsSync(toolsDir)) return;
-  const tools = fs.readdirSync(toolsDir).filter(f => f.endsWith('.cs') && fs.readFileSync(path.join(toolsDir, f), 'utf8').includes('McpServerTool('));
+  const tools = fs.readdirSync(toolsDir, { recursive: true }).map(String)
+    .filter(f => f.endsWith('.cs') && fs.readFileSync(path.join(toolsDir, f), 'utf8').includes('McpServerTool('))
+    .map(f => `clio/Command/McpServer/Tools/${f.split(path.sep).join('/')}`);
+  const broad = 'clio/Command/McpServer/'.length;
   // Act
-  const ambiguous = tools.filter(f => routing.matchComponents([`clio/Command/McpServer/Tools/${f}`], committed).length !== 1);
+  const problems = tools.flatMap(file => {
+    const winners = routing.matchComponents([file], committed);
+    if (winners.length !== 1) return [`${file}: ${winners.length} components`];
+    const score = Math.max(...winners[0].component.paths.map(p => routing.pathMatchScore(p, file)));
+    return score <= broad ? [`${file}: only the broad McpServer directory`] : [];
+  });
   // Assert
-  assert.deepEqual(ambiguous, [], 'an agent resolving a tool must get one component label, not a tie between two');
+  assert.deepEqual(problems, [], 'an agent resolving a tool must get its own component, not a tie and not the MCP server fallback (list the file under a component)');
 });
 
 test('component-for resolves an MCP tool name and a path to one component', () => {
@@ -834,4 +854,53 @@ test('component-for resolves every registered MCP tool name to the file that reg
   // Assert
   assert.ok(expected.size > 100, 'the tool catalog was found');
   assert.deepEqual(wrong, [], 'a tool name must never resolve to a file that only mentions it (create-lookup, deploy-identity)');
+});
+
+test('component-for resolves tools whose file declares the same constant name in several classes', () => {
+  // Arrange
+  const cli = require('./component-for.js');
+  const expected = {
+    'clio-run': 'ClioRunTool.cs',
+    'create-entity-business-rules': 'BusinessRuleTool.cs',
+    'read-page-business-rules': 'BusinessRuleTool.cs',
+    'get-identity-assertion': 'IdentityAssertionTool.cs',
+  };
+  if (!fs.existsSync(path.join(repoRoot, 'clio', 'Command', 'McpServer', 'Tools'))) return;
+  for (const [name, file] of Object.entries(expected)) {
+    // Act
+    const resolved = cli.toolFile(name);
+    // Assert
+    assert.equal(resolved, `clio/Command/McpServer/Tools/${file}`, `${name}: a constant shadowed by a later class in the same file must not hide the tool`);
+  }
+});
+
+test('every [McpServerTool] attribute yields a tool name', () => {
+  // Arrange
+  const cli = require('./component-for.js');
+  const toolsDir = path.join(repoRoot, 'clio', 'Command', 'McpServer', 'Tools');
+  if (!fs.existsSync(toolsDir)) return;
+  const files = fs.readdirSync(toolsDir, { recursive: true }).map(String).filter(f => f.endsWith('.cs'));
+  // Act
+  const missing = files.filter(f => {
+    const text = fs.readFileSync(path.join(toolsDir, f), 'utf8');
+    const attributes = (text.match(/\[McpServerTool\(\s*Name\s*=/g) || []).length;
+    return cli.declaredToolNames(text).length !== attributes;
+  });
+  // Assert
+  assert.deepEqual(missing, [], 'counted independently of name resolution: every attribute must resolve to a name');
+});
+
+test('component-for exits 2 when an argument is not recognised', () => {
+  // Arrange
+  const cli = require('./component-for.js');
+  const log = console.log;
+  console.log = () => {};
+  try {
+    // Act
+    const code = cli.main(['update-page', 'no-such-tool', '--json']);
+    // Assert
+    assert.equal(code, 2, 'a partially resolved input is not a clean answer');
+  } finally {
+    console.log = log;
+  }
 });

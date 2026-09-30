@@ -279,6 +279,14 @@ function planUnrouted({ base, current, previousBody, present, liveComponentLabel
   return { ...base, labelsToAdd: add, labelsToRemove: remove };
 }
 
+// Several component labels and no Component field: nobody can be routed, so an unassigned issue goes
+// to the triage queue instead of silently waiting.
+function planAmbiguous({ base, present, currentAssignees, config }) {
+  const routed = { ...base, source: 'ambiguous-labels' };
+  const needsTriage = currentAssignees.length === 0 && !present.has(normalize(config.triageLabel.name));
+  return needsTriage ? { ...routed, labelsToAdd: [config.triageLabel.name] } : unchangedPlan(routed);
+}
+
 // An issue created through the API has no Component field; its component can still be given as
 // exactly one `component:*` label (e.g. `gh issue create --label component:package`). The label is
 // the choice, so labels stay as they are and only the owners are notified. That happens when the
@@ -289,7 +297,11 @@ function planFromLabel({ base, present, liveComponentLabels, currentAssignees, t
   }
   const component = config.components.find(c => c.label && normalize(c.label) === liveComponentLabels[0]);
   const routed = { ...base, status: 'resolved', component, source: 'label' };
-  if (trigger === 'edited') return unchangedPlan(routed);
+  // A text edit does not re-notify, unless routing evidently never ran for this label: the label is
+  // there together with needs-triage (GitHub replaced the pending `labeled` run with this `edited`
+  // one). Once routing notified, needs-triage is gone, so an owner a human unassigned stays unassigned.
+  const triage = normalize(config.triageLabel.name);
+  if (trigger === 'edited' && !present.has(triage)) return unchangedPlan(routed);
   // Only the event that added THIS label routes; adding some other component label (a typo, or a
   // second one being considered) must not re-notify the owners or strip needs-triage.
   if (trigger === 'labeled' && normalize(labeledName) !== liveComponentLabels[0]) return unchangedPlan(routed);
@@ -366,6 +378,7 @@ function planRouting({ body, previousBody, currentLabels = [], currentAssignees 
   if (current.status === 'missing') {
     const fromLabel = planFromLabel(context);
     if (fromLabel.source === 'label') return fromLabel;
+    if (fromLabel.source === 'ambiguous-labels') return planAmbiguous(context);
     return { ...planUnrouted(context), source: fromLabel.source };
   }
   return planUnrouted(context);
@@ -584,7 +597,7 @@ function describePlan(issueNumber, plan) {
 const UNCHANGED_REASONS = {
   form: 'Labels already match the selected component; leaving labels and assignees as they are.',
   label: 'Routed from its component label when the issue was opened or labelled; a text edit changes nothing.',
-  'ambiguous-labels': 'No Component field and more than one component label; leaving the issue for a human.',
+  'ambiguous-labels': 'No Component field and more than one component label; nothing to route (already in triage or assigned).',
   none: 'No Component field and a component label or an assignee is already set; nothing to do.',
 };
 

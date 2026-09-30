@@ -117,7 +117,8 @@
         "clio/Command/*EntitySchema*Command.cs",
         "clio/Common/EntitySchema/",
         "clio/Command/McpServer/Tools/EntitySchemaTool.cs",
-        "clio/Command/McpServer/Tools/ListEntityClientSchemasTool.cs"
+        "clio/Command/McpServer/Tools/ListEntityClientSchemasTool.cs",
+        "clio/Command/McpServer/Tools/SchemaSyncTool.cs"
       ]
     },
     {
@@ -222,7 +223,8 @@
         "clio/Command/McpServer/Tools/InstallProcessBuilderTool.cs",
         "clio/Command/McpServer/Tools/ListUserTasksTool.cs",
         "clio/Command/McpServer/Tools/ProcessPageFactsTool.cs",
-        "clio/Command/McpServer/Tools/RegisterProcessElementTool.cs"
+        "clio/Command/McpServer/Tools/RegisterProcessElementTool.cs",
+        "clio/Command/McpServer/Tools/ProcessDesigner/"
       ]
     },
     {
@@ -404,7 +406,14 @@
         "clio/Command/McpServer/",
         "clio/Command/McpServer/Tools/ClioRunTool.cs",
         "clio/Command/McpServer/Tools/ToolContractGetTool.cs",
-        "clio.mcp.e2e/"
+        "clio.mcp.e2e/",
+        "clio/Command/McpServer/Tools/ExperimentalTool.cs",
+        "clio/Command/McpServer/Tools/GetTelemetryConsentTool.cs",
+        "clio/Command/McpServer/Tools/McpToolInvokerRegistry.cs",
+        "clio/Command/McpServer/Tools/RequestInfoTool.cs",
+        "clio/Command/McpServer/Tools/SendTelemetryTool.cs",
+        "clio/Command/McpServer/Tools/SkillManagementTool.cs",
+        "clio/Command/McpServer/Tools/WithdrawTelemetryConsentTool.cs"
       ]
     },
     {

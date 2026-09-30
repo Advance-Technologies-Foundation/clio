@@ -8,7 +8,8 @@
 //
 // Arguments are repository paths (clio/Command/PageUpdateCommand.cs) or MCP tool names
 // (update-page). Matching uses the `paths` of each component in .github/component-owners.json.
-// Add --json for machine-readable output. Exit code 0 = one component, 2 = several or none.
+// Add --json for machine-readable output. Exit code 0 = exactly one component and every argument
+// resolved; 2 = several components, none, or an argument that is neither a path nor a tool name.
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -18,13 +19,21 @@ const repoRoot = path.resolve(__dirname, '..', '..', '..');
 const TOOLS_DIR = 'clio/Command/McpServer/Tools';
 
 // The MCP tool names a C# file registers: the `Name` of each `[McpServerTool(...)]` attribute, as a
-// string literal or as a `const string` declared in the same file.
+// string literal or as a `const string`. One file can hold several tool classes that each declare the
+// same constant name (`ToolName`), so a constant resolves to the nearest declaration before the
+// attribute, not to whichever came last in the file.
 function declaredToolNames(text) {
-  const constants = new Map([...text.matchAll(/const\s+string\s+(\w+)\s*=\s*"([^"]+)"/g)].map(m => [m[1], m[2]]));
+  const constants = [...text.matchAll(/const\s+string\s+(\w+)\s*=\s*"([^"]+)"/g)]
+    .map(m => ({ name: m[1], value: m[2], index: m.index }));
+  const resolve = (identifier, at) => {
+    const candidates = constants.filter(c => c.name === identifier);
+    const before = candidates.filter(c => c.index < at);
+    return (before.at(-1) ?? candidates[0])?.value;
+  };
   const names = [];
   for (const match of text.matchAll(/\[McpServerTool\(\s*Name\s*=\s*([^,)\]]+)/g)) {
     const value = match[1].trim();
-    const name = value.startsWith('"') ? value.replaceAll('"', '') : constants.get(value.split('.').pop());
+    const name = value.startsWith('"') ? value.replaceAll('"', '') : resolve(value.split('.').pop(), match.index);
     if (name) names.push(name);
   }
   return names;
@@ -78,7 +87,8 @@ function main(argv) {
     if (unknown.length > 0) console.log(`Not an MCP tool name or a path: ${unknown.join(', ')}`);
     if (ranked.length > 1) console.log('Several components match: pick the one the issue is about and put exactly one component label on it.');
   }
-  return ranked.length === 1 ? 0 : 2;
+  // Any argument that could not be resolved makes the answer partial, so it is not a clean 0.
+  return ranked.length === 1 && unknown.length === 0 ? 0 : 2;
 }
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
