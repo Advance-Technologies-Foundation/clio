@@ -129,7 +129,14 @@ public sealed class ToolContractPayloadBudgetTests {
 	// lowering the ceiling: modify-business-process 34765, create-business-process 34731,
 	// describe-business-process 32900 (which gained the scriptTask block, usings[] and methods). Both write
 	// tools are within 90 bytes of the ceiling, so the warning above holds for both.
-	private const int MaxToolContractSerializedBytes = 136 * 256;
+	//
+	// Re-pinned DELIBERATELY to 137 * 256 = 35072 when ENG-92711 met ENG-91844 on master (2026-09-30). Each
+	// had paid for its text by swap and fit alone; together they measured modify-business-process 34883,
+	// create-business-process 34863 and describe-business-process 33148 - up to 67 bytes over. What the two
+	// added is what a caller writes (sourceColumn / elementParameter.column, the scriptTask block, usings[],
+	// methods, the operations that edit them), and the provenance around them was already swapped out, so the
+	// cut would have been a caller-facing fact. 189 bytes of headroom is about thirty escaped characters.
+	private const int MaxToolContractSerializedBytes = 137 * 256;
 
 	[Test]
 	[Category("Unit")]

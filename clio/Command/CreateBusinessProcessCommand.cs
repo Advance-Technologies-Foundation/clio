@@ -229,7 +229,15 @@ namespace Clio.Command;
 // setElement beside another field - are dropped by
 // its serializer while the call answers success, and the process then fails its compile on a namespace
 // nobody knows was lost.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.30",
+// Raised to 1.6.6.40 by ENG-91844: `sourceColumn` (mappings, changeData/addData/openEditPage values,
+// openEditPage recordId), a filter's `elementParameter.column` and the `[#Element.Parameter.Column#]` name in a
+// condition or formula body - ONE column of a record another element returned. Same failure shape as the
+// multi-instance raise: an older server's serializer DISCARDS both fields and answers success, so the source
+// silently widens to the WHOLE record - a mapping is then refused for incompatible types naming a parameter
+// rather than the package, and a filter compares its column against the record reference with no refusal at
+// all - while the three-segment name is passed through verbatim and fails the platform's gate as "Expression
+// expected". 1.6.6.40 is the first archive with sourceColumn.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.40",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class CreateBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Inline JSON process descriptor (name, caption, packageName, elements[], flows[], parameters[], mappings[], usings[], methods).</summary>
