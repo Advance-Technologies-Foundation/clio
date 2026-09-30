@@ -232,13 +232,14 @@ shape, since the registry does not declare `crt.MenuItem`, so it never reaches `
 be data, because the dead binding is PRESENT on the node and no emptiness test can tell a live request from a dead one.
 
 The second — "this control has nothing left to do" — IS data: `rules.componentRemovals`, a type plus a filter tree of
-`IsEmpty` tests combined by `Group` (`and` / `or`; anything unrecognised reads as `and`, the narrower). It is expressible
-as data precisely because it asks about ABSENCE. An expression resolves against the MERGED state of the property, in
-three tiers — child operations addressing this component by `parentName` + `propertyName`, then the operations named for
-it folded in order, then its own value — and that is what lets ONE filter cover both traversal shapes: a carried node is
-addressed by no operation, so it falls to the third tier. The shipped rules remove a `crt.Button` with neither `clicked`
-nor `menuItems` and a `crt.MenuItem` with no `clicked`, both under `drop-unsupported-request`. Reusing that code is a
-recorded cost, not an oversight: a button that never had a request is reported under a code naming one.
+`IsEmpty` tests combined by `Group` (`and` / `or`; an ABSENT operation reads as `and`, the narrower, and anything that
+is neither is REFUSED on load, which sends the whole document to the bundled rules). It is expressible as data precisely
+because it asks about ABSENCE. An expression resolves against the MERGED state of the property, in three tiers — child
+operations addressing this component by `parentName` + `propertyName`, then the operations named for it folded in order,
+then its own value — and that is what lets ONE filter cover both traversal shapes: a carried node is addressed by no
+operation, so it falls to the third tier. The shipped rules remove a `crt.Button` with neither `clicked` nor `menuItems`
+and a `crt.MenuItem` with no `clicked`, both under `drop-unsupported-request`. Reusing that code is a recorded cost, not
+an oversight: a button that never had a request is reported under a code naming one.
 
 Three guards hold whatever a rule says — a component is never removed while it still owns a live event binding, still
 carries a nested component anywhere in its values (as an array member OR as a single-object slot), or is still named as
@@ -247,10 +248,13 @@ that NOTHING reports: an orphaned `requestConversions` record describing an elem
 control leaving the page inside its owner with no `drop` entry of its own; and an orphaned child insert, which makes the
 platform differ reject the WHOLE pasted diff with “is not a container for other items”.
 
-A control whose `clicked` was STRIPPED because its navigation target cannot exist on mobile is removed by the same rule
-once that leaves it with nothing to do. ENG-94839 forbade the PROBE from removing such a control and assigned the removal
-here. Its `unresolvedTargetRequests` finding is deliberately NOT purged, unlike the empty-container and exclusion passes'
-— for them the finding is unrelated to the removal, here it is the only field that explains it.
+A missing navigation TARGET never reaches this pass. ENG-94839 forbade the PROBE from removing such a control, and
+master then replaced the strip with keep-and-blank: the request converts and only its target param is blanked, reported
+as `drop-request-target-missing` with the `unresolvedTargetRequests` finding beside it. The control therefore keeps its
+`clicked`, which is the very property BOTH shipped rules ask to be empty, so neither matches it — and the live-binding
+guard above would veto the removal even if one did. That is also why the pass purges no `unresolvedTargetRequests`
+finding, unlike the empty-container and exclusion passes: it removes no element the finding describes, so there is
+nothing to reconcile.
 
 The two traversal shapes must report IDENTICALLY. Which one runs depends on whether the published registry declares
 `crt.MenuItem` — invisible on the caller's page, so it must not reach the caller's report. That is why the pass mints no

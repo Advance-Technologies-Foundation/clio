@@ -3345,7 +3345,7 @@ public sealed class WebToMobileConversionServiceTests {
 		new() { Type = "crt.Button", Filters = filters };
 
 	[Test]
-	[Description("An unrecognised logicalOperation reads as `and`, never `or`. This is the most dangerous line in the grammar: the shipped crt.Button rule is `clicked IsEmpty AND menuItems IsEmpty`, so an `or` reading would remove every button whose clicked is empty - which is EVERY healthy menu button on the page, since a dropdown has no clicked of its own - and the rules document would still parse clean. For a value clio does not understand, the narrower reading is the only safe one.")]
+	[Description("An unrecognised logicalOperation reads as `and`, never `or`. This is the most dangerous line in the grammar: the shipped crt.Button rule is `clicked IsEmpty AND menuItems IsEmpty`, so an `or` reading would remove every button whose clicked is empty - which is EVERY healthy menu button on the page, since a dropdown has no clicked of its own - and the evaluator is the last line rather than the first: ValidateComponentRemovals refuses such a document on load, so this default only ever answers for an ABSENT operation. For a value clio does not understand, the narrower reading is the only safe one.")]
 	public void MatchesRemovalGroup_UnrecognisedLogicalOperation_ReadsAsAnd() {
 		// Arrange - fires a live request (clicked NOT empty) but holds no menu (menuItems empty).
 		List<ElementMapEntry> map = [InsertCarrying("SettingsButton", "crt.Button",

@@ -61,9 +61,11 @@ public abstract class ComponentPropertyFilter { }
 public sealed class ComponentPropertyGroupFilter : ComponentPropertyFilter {
 
 	/// <summary>
-	/// One of <see cref="ComponentPropertyLogicalOperations"/>. Anything else — including absent — is read as
-	/// <see cref="ComponentPropertyLogicalOperations.And"/>, the narrower of the two: a misspelled operation
-	/// must not silently WIDEN what a rule matches.
+	/// One of <see cref="ComponentPropertyLogicalOperations"/>. ABSENT is read as
+	/// <see cref="ComponentPropertyLogicalOperations.And"/>, the narrower of the two, so an omitted operation
+	/// cannot silently WIDEN what a rule matches. Anything ELSE never reaches the evaluator: the load-time
+	/// validation refuses it and the whole document falls back to the bundled rules, because a misspelling is
+	/// an author asking for the other operation and getting the narrower one with no signal at all.
 	/// </summary>
 	[JsonPropertyName("logicalOperation")]
 	public string LogicalOperation { get; init; }
