@@ -12147,7 +12147,7 @@ public sealed class WebToMobileConversionServiceTests {
 
 	private static readonly IReadOnlySet<string> EntryGraphMobileTypes =
 		new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
-			"crt.ExpansionPanel", "crt.GridContainer", "crt.FlexContainer", "crt.Button",
+			"crt.ExpansionPanel", "crt.GridContainer", "crt.FlexContainer", "crt.Button", "crt.MenuItem",
 			"crt.SearchFilter", "crt.QuickFilter", "crt.List", "crt.Input"
 		};
 
@@ -12243,6 +12243,138 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "only the banned type is removed — this rule names crt.QuickFilter, not crt.SearchFilter");
 		Element(guide, "ProductsList").Operation.Should().Be("insert",
 			because: "the list sharing a container with a banned component is untouched");
+	}
+
+	private static readonly RequestMappingRule LoadDataRequestMapping = new() {
+		Web = "crt.LoadDataRequest", Mobile = "crt.LoadDataRequest", Category = "DirectMapping"
+	};
+
+	/// <summary>An allow-list rule plus a request map under which the fixtures' buttons keep a live action.</summary>
+	private static WebToMobilePageConversionRules AllowListRules(ExcludedComponentFilterRule filter) => new() {
+		ExcludedComponents = [new ExcludedComponentGroup { Filters = [filter] }],
+		Requests = [LoadDataRequestMapping]
+	};
+
+	[Test]
+	[Description("ENG-96411: with the bundled rules, crt.ExpansionPanel.tools keeps only its buttons and their menu items — the search field and the quick-filter chip are dropped, and the flex container that only held the chip is removed as empty.")]
+	public void Analyze_ShouldKeepOnlyButtonsInExpansionPanelTools_WithBundledRules() {
+		// Arrange — the Opportunities_FormPage Leads panel: the chip sits in its own column flex beside the buttons.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "LeadsExpansionPanel", "type": "crt.ExpansionPanel",
+			    "tools": [ { "name": "LeadsToolsContainer", "type": "crt.GridContainer", "items": [
+			        { "name": "LeadsToolsFlexContainer", "type": "crt.FlexContainer", "items": [
+			            { "name": "LeadsAddButton", "type": "crt.Button", "clicked": { "request": "crt.LoadDataRequest", "params": {} } },
+			            { "name": "LeadsRefreshButton", "type": "crt.Button", "clicked": { "request": "crt.LoadDataRequest", "params": {} } },
+			            { "name": "LeadsSettingsButton", "type": "crt.Button", "menuItems": [
+			                { "name": "LeadsExportDataButton", "type": "crt.MenuItem", "clicked": { "request": "crt.LoadDataRequest", "params": {} } } ] },
+			            { "name": "LeadsSearchFilter", "type": "crt.SearchFilter" },
+			            { "name": "LeadsQuickFilterFlexContainer", "type": "crt.FlexContainer", "items": [
+			                { "name": "QuickFilterShowAllLeads", "type": "crt.QuickFilter" } ] } ] } ] } ],
+			    "items": [
+			        { "name": "LeadsListContainer", "type": "crt.GridContainer", "items": [
+			            { "name": "LeadsList", "type": "crt.List" } ] } ] } ]
+			""");
+		WebToMobilePageConversionRules rules = new() {
+			ExcludedComponents = WebToMobilePageConversionRulesCatalog.LoadBundled().ExcludedComponents,
+			EmptyContainerRemoval = EmptyRemoval,
+			Requests = [LoadDataRequestMapping]
+		};
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithExcludedComponentsEntryGraph(bundle, rules);
+
+		// Assert
+		DroppedElement quickFilter = Dropped(guide, "QuickFilterShowAllLeads");
+		Codes(quickFilter).Should().Contain(ReasonCodes.DropExcludedByRule,
+			because: "the chip does not fit the compact icon-only header strip, and the bundled rules say so");
+		ReasonParam(quickFilter, ReasonCodes.DropExcludedByRule, "slot").Should().Be("tools");
+		Codes(Dropped(guide, "LeadsSearchFilter")).Should().Contain(ReasonCodes.DropExcludedByRule,
+			because: "the allow-list covers the ENG-95081 search field too");
+		Codes(Dropped(guide, "LeadsQuickFilterFlexContainer")).Should().Contain(ReasonCodes.DropEmptyContainer,
+			because: "a wrapper left with nothing would still claim header width on the device");
+		Element(guide, "LeadsAddButton").Operation.Should().Be("insert");
+		Element(guide, "LeadsRefreshButton").Operation.Should().Be("insert");
+		Element(guide, "LeadsSettingsButton").Operation.Should().Be("insert");
+		Element(guide, "LeadsExportDataButton").Operation.Should().Be("insert",
+			because: "a button's menu items are part of the button, not a separate strip item");
+		Element(guide, "LeadsList").Operation.Should().Be("insert",
+			because: "the ban is scoped to tools; the panel body is untouched");
+	}
+
+	[Test]
+	[Description("An allow-list filter (no type, only exceptTypes) strips the verbatim-carried shape too, and each drop entry reports the removed node's OWN type rather than the wildcard.")]
+	public void Analyze_ShouldReportRemovedType_WhenAllowListStripsVerbatimCarriedTools() {
+		// Arrange — the minimal type set leaves the tools subtree unresolved, so it is carried verbatim.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "ProductsExpansionPanel", "type": "crt.ExpansionPanel",
+			    "tools": [ { "type": "crt.GridContainer", "items": [
+			        { "type": "crt.FlexContainer", "items": [
+			            { "name": "ProductsRefreshButton", "type": "crt.Button", "clicked": { "request": "crt.LoadDataRequest", "params": {} } },
+			            { "name": "ProductsSearchFilter", "type": "crt.SearchFilter" } ] } ] } ],
+			    "items": [] } ]
+			""");
+		ExcludedComponentFilterRule allowButtons = new() {
+			ExceptTypes = ["crt.Button", "crt.FlexContainer", "crt.GridContainer"],
+			ChildSlots = ["items"],
+			ParentType = "crt.ExpansionPanel", PropertiesContainerName = "tools"
+		};
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithExcludedComponents(bundle, AllowListRules(allowButtons));
+
+		// Assert
+		JsonArray toolsFlexItems = Element(guide, "ProductsExpansionPanel").Values!["tools"]![0]!["items"]![0]!["items"]!.AsArray();
+		toolsFlexItems.Select(i => i!["name"]!.GetValue<string>()).Should().Equal(["ProductsRefreshButton"],
+			because: "the containers and the button are allowed, the search filter is not");
+		Dropped(guide, "ProductsSearchFilter").WebType.Should().Be("crt.SearchFilter",
+			because: "the allow-list names what it keeps, not what was removed — the report must name the real type");
+	}
+
+	[Test]
+	[Description("An allow-list filter walks only the child slots its rule names: a typed object inside a kept button's configuration is not a component and stays.")]
+	public void Analyze_ShouldKeepTypedConfiguration_WhenAllowListStripsVerbatimCarriedTools() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "ProductsExpansionPanel", "type": "crt.ExpansionPanel",
+			    "tools": [ { "type": "crt.FlexContainer", "items": [
+			        { "name": "ProductsRefreshButton", "type": "crt.Button",
+			          "clicked": { "request": "crt.LoadDataRequest", "params": { "series": [ { "type": "bar" } ] } } } ] } ],
+			    "items": [] } ]
+			""");
+		ExcludedComponentFilterRule allowButtons = new() {
+			ExceptTypes = ["crt.Button", "crt.FlexContainer"],
+			ChildSlots = ["items"],
+			ParentType = "crt.ExpansionPanel", PropertiesContainerName = "tools"
+		};
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithExcludedComponents(bundle, AllowListRules(allowButtons));
+
+		// Assert
+		JsonNode button = Element(guide, "ProductsExpansionPanel").Values!["tools"]![0]!["items"]![0]!;
+		button["clicked"]!["params"]!["series"]![0]!["type"]!.GetValue<string>().Should().Be("bar",
+			because: "a request parameter is not a component the header strip has to make room for");
+		(guide.DroppedElements ?? []).Should().NotContain(e => e.Reason!.Any(r => r.Code == ReasonCodes.DropExcludedByRule),
+			because: "nothing in the strip is a disallowed component");
+	}
+
+	[Test]
+	[Description("An allow-list filter that names no slot is skipped: without one it would strip the host's whole content, not one strip of it.")]
+	public void Analyze_ShouldSkipAllowListFilter_WhenItNamesNoSlot() {
+		// Arrange
+		PageBundleInfo bundle = Bundle(LeadsLikeProductsPanelJson);
+		ExcludedComponentFilterRule unscopedAllowList = new() {
+			ExceptTypes = ["crt.Button"],
+			ParentType = "crt.ExpansionPanel"
+		};
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithExcludedComponentsEntryGraph(bundle, RulesWithExcludedComponents(unscopedAllowList));
+
+		// Assert
+		(guide.DroppedElements ?? []).Should().NotContain(e => e.Reason!.Any(r => r.Code == ReasonCodes.DropExcludedByRule),
+			because: "an unscoped allow-list is a rules-file mistake, not an instruction to empty the panel");
+		Element(guide, "ProductsList").Operation.Should().Be("insert");
 	}
 
 	[Test]

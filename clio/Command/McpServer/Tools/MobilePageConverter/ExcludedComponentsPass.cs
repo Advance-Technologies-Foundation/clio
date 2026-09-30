@@ -145,8 +145,9 @@ internal static class ExcludedComponentsPass {
 	private static bool DepthExceeded(int depth) => depth > MaxSearchDepth;
 
 	/// <summary>
-	/// The usable filters of every group, in rules-file order. A filter missing <c>Type</c>/<c>ParentType</c>
-	/// is skipped — nothing to match, nowhere to look.
+	/// The usable filters of every group, in rules-file order. A filter missing <c>ParentType</c>, or naming
+	/// neither a <c>Type</c> nor an allow-list, is skipped — nothing to match, nowhere to look — and so is an
+	/// allow-list that names no slot, which would otherwise strip the host's whole content rather than one strip.
 	/// </summary>
 	/// <remarks>
 	/// A skip is silent here on purpose, and the silence is covered elsewhere: a typo in a published rule
@@ -158,7 +159,10 @@ internal static class ExcludedComponentsPass {
 		IReadOnlyList<ExcludedComponentGroup> groups) =>
 		groups
 			.SelectMany(g => g?.Filters ?? [])
-			.Where(f => !string.IsNullOrWhiteSpace(f?.Type) && !string.IsNullOrWhiteSpace(f.ParentType))
+			.Where(f => f is not null && !string.IsNullOrWhiteSpace(f.ParentType))
+			.Where(f => f.IsAllowList
+				? !string.IsNullOrWhiteSpace(f.PropertiesContainerName)
+				: !string.IsNullOrWhiteSpace(f.Type))
 			.ToList();
 
 	// ── PHASE A: entry-graph removal ─────────────────────────────────────────────────────────────
@@ -190,7 +194,7 @@ internal static class ExcludedComponentsPass {
 				continue;
 			}
 			foreach (ExcludedComponentFilterRule filter in filters) {
-				if (!string.Equals(entry.MobileType, filter.Type, StringComparison.OrdinalIgnoreCase)) {
+				if (!filter.MatchesType(entry.MobileType)) {
 					continue;
 				}
 				string hostMobileName = FindHostOnAncestorPath(entry, filter, byMobileName);
@@ -475,8 +479,8 @@ internal static class ExcludedComponentsPass {
 	}
 
 	/// <summary>
-	/// Recursively removes every object node whose <c>type</c> equals <paramref name="filter"/>'s
-	/// <c>Type</c> from any array found anywhere under <paramref name="scope"/> — the target may be a
+	/// Recursively removes every object node whose <c>type</c> <paramref name="filter"/> matches
+	/// from any array found anywhere under <paramref name="scope"/> — the target may be a
 	/// direct child of <paramref name="scope"/> or several levels deeper; this walks either way. Does not
 	/// recurse into a removed node (it is gone). Bounded by <see cref="MaxSearchDepth"/> like the host walk.
 	/// <para>
@@ -501,8 +505,7 @@ internal static class ExcludedComponentsPass {
 		switch (scope) {
 			case JsonArray array:
 				for (int i = array.Count - 1; i >= 0; i--) {
-					if (array[i] is JsonObject child
-						&& string.Equals(child["type"]?.ToString(), filter.Type, StringComparison.OrdinalIgnoreCase)) {
+					if (array[i] is JsonObject child && filter.MatchesType(child["type"]?.ToString())) {
 						dropped.Add(BuildDropEntry(child, filter, hostMobileName));
 						array.RemoveAt(i);
 						continue; // do not recurse into a node that no longer exists
@@ -511,7 +514,7 @@ internal static class ExcludedComponentsPass {
 				}
 				break;
 			case JsonObject obj:
-				foreach (string key in obj.Select(p => p.Key).ToList()) {
+				foreach (string key in obj.Select(p => p.Key).Where(key => ShouldDescendInto(key, filter)).ToList()) {
 					// Only a collection this call EMPTIED is removed: an array that was already empty before the
 					// strip is the page's own shape, and rewriting it is not this pass's business.
 					bool wasOccupied = obj[key] is JsonArray { Count: > 0 };
@@ -525,6 +528,14 @@ internal static class ExcludedComponentsPass {
 	}
 
 	/// <summary>
+	/// A filter that declares <c>childSlots</c> walks only those properties: under any other one a "type" key is
+	/// configuration (a chart series, a request parameter), not a component to remove.
+	/// </summary>
+	private static bool ShouldDescendInto(string propertyName, ExcludedComponentFilterRule filter) =>
+		filter.ChildSlots is not { Count: > 0 } slots
+		|| slots.Contains(propertyName, StringComparer.OrdinalIgnoreCase);
+
+	/// <summary>
 	/// A synthetic "drop" <see cref="ElementMapEntry"/> for a removed component — the same
 	/// <c>Operation="drop"</c>/<c>Reason</c> shape WebToMobileAnalysisService's own removal passes
 	/// (empty-container removal, unsupported-request drop) use, so it surfaces in the caller's elementMap
@@ -533,9 +544,10 @@ internal static class ExcludedComponentsPass {
 	private static ElementMapEntry BuildDropEntry(
 		JsonObject removedNode, ExcludedComponentFilterRule filter, string hostMobileName) {
 		string name = removedNode["name"]?.ToString();
+		string type = removedNode["type"]?.ToString();
 		return new ElementMapEntry {
 			WebName = string.IsNullOrEmpty(name) ? null : name,
-			WebType = string.IsNullOrEmpty(filter.Type) ? null : filter.Type,
+			WebType = string.IsNullOrEmpty(type) ? null : type,
 			Operation = ElementMapOperations.Drop,
 			Reason = BuildDropReason(filter, hostMobileName)
 		};
