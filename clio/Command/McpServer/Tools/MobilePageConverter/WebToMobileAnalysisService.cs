@@ -2769,7 +2769,7 @@ public static partial class WebToMobileAnalysisService {
 			if (ctx.Map.TryGetValue(name, out string twinMobileName)) {
 				// The twin's type is the MOBILE element's type when the mobile template is readable: a containers
 				// entry may pair elements of different types (GeneralInfoTabContainer, a crt.GridContainer, merges
-				// onto the declared AdditionalInfoTab, a crt.TabContainer), and reporting the web type there would
+				// onto the declared MobileAdditionalInfoTab, a crt.TabContainer), and reporting the web type there would
 				// name a type the mobile element does not have — both to the model reading the guide and to
 				// ExcludedComponentsPass, which matches a filter's parentType against this field. A DECLARED mobile
 				// side has its type in the declaration whether or not the template was probed; only then does it fall
@@ -2797,9 +2797,9 @@ public static partial class WebToMobileAnalysisService {
 				// REMOVED it has no such node, that pair never matches, and the children belong where the page put
 				// them — in the tab's own twin, which is a crt.TabContainer and hosts items. Whether the two shapes
 				// convert apart is therefore the rules' decision, not this walk's: the shipped tabbed rule pairs
-				// BOTH the tab and its content grid onto the declared AdditionalInfoTab (GeneralInfoTab ->
-				// AdditionalInfoTab, GeneralInfoTabContainer -> AdditionalInfoTab), so both shapes land in that tab
-				// and BuildTabAreaLayers stacks them into its Area card; the web grid's two-column layout is not
+				// BOTH the tab and its content grid onto the declared MobileAdditionalInfoTab (GeneralInfoTab ->
+				// MobileAdditionalInfoTab, GeneralInfoTabContainer -> MobileAdditionalInfoTab), so both shapes land
+				// in that tab and BuildTabAreaLayers stacks them into its Area card; the web grid's two-column layout is not
 				// carried onto the tab (BuildAdaptiveLayout admits only a mobile grid).
 				if (items is not null) {
 					WalkElements(ctx, items, twinMobileName, sourceAncestors: Append(sourceAncestors, name),
@@ -5158,13 +5158,13 @@ public static partial class WebToMobileAnalysisService {
 		// Translate each count to the container's mobile name via its element-map entry so the lookup below
 		// matches renamed pairs; keep the web name as a fallback for containers that are not renamed.
 		// LAST WINS on a duplicate mobile name, which `containers` allows by design. Harmless as shipped: the one
-		// many-to-one pair that involves a grid (GeneralInfoTab and GeneralInfoTabContainer -> AdditionalInfoTab)
+		// many-to-one pair that involves a grid (GeneralInfoTab and GeneralInfoTabContainer -> MobileAdditionalInfoTab)
 		// never competes here — the tab has no captured count and the grid is rejected by the guard below — but a
 		// future many-to-one pair of two GRIDS would need an explicit tie-break.
 		// A RENAMED pair's mobile side is admitted only when its own type is MobileGridContainerComponentType:
 		// adaptive per-breakpoint columns is a property of that one component type, not of whatever element a
 		// `containers` pair happens to rename a grid onto (the shipped case: the two-column web
-		// GeneralInfoTabContainer -> the declared AdditionalInfoTab, a crt.TabContainer). Without this guard, a
+		// GeneralInfoTabContainer -> the declared MobileAdditionalInfoTab, a crt.TabContainer). Without this guard, a
 		// pair that renames a grid onto a mobile element of a DIFFERENT type would attach the web grid's column
 		// count to that element's name, and any of its children still parented to that name at this point would
 		// be placed as if they sat in a multi-column grid — a placement that can then outlive a later pass which
