@@ -7,7 +7,9 @@ New issues are labelled and assigned from the **Component** dropdown in the issu
 | Issue forms (Component dropdown, native type label) | `.github/ISSUE_TEMPLATE/bug_report.yml`, `feature_request.yml` |
 | Component → label, owners map (**source of truth**) | `.github/component-owners.json` |
 | Routing logic (pure functions + GitHub calls) | `.github/scripts/issue-routing/issue-routing.js` |
-| Workflow (`issues: opened, edited`) | `.github/workflows/issue-routing.yml` |
+| Workflow (`issues: opened, edited, labeled`) | `.github/workflows/issue-routing.yml` |
+| Component lookup for agents (path or MCP tool → label) | `.github/scripts/issue-routing/component-for.js` |
+| Label sync (creates missing labels on map change) | `.github/workflows/issue-routing-labels.yml` |
 | Tests (`make test-issue-routing`) | `.github/scripts/issue-routing/issue-routing.test.js`, run on PRs by `issue-routing-tests.yml` |
 
 ## What happens
@@ -27,8 +29,9 @@ New issues are labelled and assigned from the **Component** dropdown in the issu
    If the owners could not be told either way (nobody assignable, comment failed), the issue
    keeps `needs-triage`. A component with `owners: []` gets its label **and**
    `needs-triage`, because nobody is routed to pick it up.
-4. **No value, unknown value, or "Other / not sure"** → adds `needs-triage` (unless a component
-   label is already on the issue). A blank issue (no form) is treated the same way.
+4. **No value, unknown value, or "Other / not sure"** → adds `needs-triage`, unless a component
+   label is already on the issue or someone is already assigned. An issue without the form is
+   covered by **Issues created through the API** below.
 5. **An owner cannot be assigned** (not a collaborator, no access) → warning in the run log,
    the component label is still added, plus `needs-triage`. The run never fails because of routing;
    only an invalid `component-owners.json` fails it. If the live issue cannot be read, the run
@@ -47,6 +50,47 @@ New issues are labelled and assigned from the **Component** dropdown in the issu
      run of the switching edit). A component label a human triager applied to a "not sure" or
      blank issue is kept.
    Title-only edits are ignored.
+
+### Issues created through the API
+
+An issue created with `gh issue create` or the REST API has no Component field. Give the component
+as a label instead — exactly one `component:*` label, at creation or right after:
+
+```bash
+gh issue create --title "..." --body "..." --label component:package
+```
+
+- The workflow also runs on `labeled`, so a component label added a moment after creation (as
+  `gh` and agents often do) is picked up too.
+- With **one** component label and no Component field, that label is the choice: the owners are
+  assigned or mentioned exactly as for a form issue, and labels are left as they are.
+- Owners are notified when the issue is opened or when that label is added, not on later text
+  edits and not when some other label is added. Removing and re-adding the label re-routes.
+  One exception: if the issue still carries `needs-triage` next to the component label, routing
+  never ran for that label (GitHub can replace a queued `labeled` run with a later `edited` one),
+  so an edit routes it.
+- **Two or more** component labels are not a choice: nobody is routed and an unassigned issue gets
+  `needs-triage`.
+- Adding a component label to a **form** issue does not re-route it; the form stays the source.
+- Alternatively, put the form section into the body — `### Component` followed by the exact
+  option text — and the issue is routed like a form issue.
+
+**Agents** resolve the label instead of guessing (rule in `AGENTS.md`):
+
+```bash
+node .github/scripts/issue-routing/component-for.js update-page            # MCP tool name
+node .github/scripts/issue-routing/component-for.js clio/Package/Foo.cs     # repository path
+node .github/scripts/issue-routing/component-for.js --list                  # all components
+gh issue create --title "..." --body "..." --label component:pages
+```
+
+Exit code 0 means exactly one component and every argument resolved; 2 means none, several, or an
+argument that is neither a path nor an MCP tool name (pick one, or set no label and leave it to triage).
+Add `--assignee @me` only when the agent was authorized to take the issue: an assigned issue is never
+re-assigned, so in `assign` mode the owners are then not notified (in `mention` mode they still are).
+
+Every label in the map exists in the repository: `issue-routing-labels.yml` creates missing ones
+whenever `component-owners.json` changes on `master` (existing labels are never modified).
 
 Rules that protect manual work:
 
@@ -78,14 +122,17 @@ Rules that protect manual work:
   the default; a component's own `ownerNotification` overrides it.
 - **Labels** must start with `componentLabelPrefix`. Renaming one leaves the old label on older
   issues; relabel them by hand.
-- `paths` is informational (which code the component covers, `*` allowed); nothing reads it yet.
+- `paths` says which code the component covers: a directory ending with `/`, an exact file, or a
+  pattern with `*` (within one path segment). Agents pick the component label from it through
+  `component-for.js`, so list every MCP tool file of the component; the most specific entry wins
+  (an exact file beats a directory). A test fails if any MCP tool file matches two components equally.
 - Run `make test-issue-routing` (or `node --test .github/scripts/issue-routing/issue-routing.test.js`).
 
 The baseline owners (2026-09) come from one year of `master` history: commits to each group's MCP
 tool files and to the commands and services behind them, excluding bulk refactors (commits touching
 more than 40 files). The first owner is the domain author where one stands out; otherwise the most
 active maintainer. Commit share shows who wrote the code, not who maintains it now, so teams are
-expected to correct the list. `paths` may use `*` wildcards; they document scope only.
+expected to correct the list.
 
 ## Why a separate map and not CODEOWNERS
 
