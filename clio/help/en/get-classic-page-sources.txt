@@ -26,7 +26,8 @@ DESCRIPTION
     schema's internal caption, not the title the page shows; Classic takes that
     title from the page's captionName resource, then the page's
     <Detail>DetailCaptionOnPage resource, then the detail's own Caption string.
-    It also carries
+    Each nested childPageSchemas manifest carries its strings as
+    "resourceStrings" only, with no flat "resources". It also carries
     "enumVocabulary": the TARGET stand's own ViewItemType/ContentType/DataValueType
     enum tables, read live from that stand's sysenums.js (never copied from the
     engine's pinned tables), so the engine's enum-drift guard can catch a stand

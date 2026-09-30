@@ -215,8 +215,8 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 	}
 
 	[Test]
-	[Description("TryAssemblePageSources gives each nested child-page manifest its own merged strings as resources (en-US) and resourceStrings (every culture), like the main page.")]
-	public void TryAssemblePageSources_ShouldWriteChildPageResources_LikeMainPage() {
+	[Description("TryAssemblePageSources gives each nested child-page manifest its own merged strings as resourceStrings (every culture) and writes no flat resources there.")]
+	public void TryAssemblePageSources_ShouldWriteChildPageResourceStrings_WithoutFlatResources() {
 		// Arrange
 		AddLayer("UsrCasePage", "uid-page", "UsrApp", 200);
 		AddSchema("uid-page",
@@ -237,8 +237,10 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		// Assert
 		JObject manifest = JObject.Parse(ReadManifest(response));
 		JToken child = manifest["childPageSchemas"]!["UsrNotePage"];
-		child!["resources"]!["NotesTabCaption"]!.ToString().Should().Be("Notes",
-			because: "the child manifest carries its flat en-US strings like the main page");
+		child!["resources"].Should().BeNull(
+			because: "flat resources on a child manifest would change what an older engine folds");
+		child["resourceStrings"]!["NotesTabCaption"]!["en-US"]!.ToString().Should().Be("Notes",
+			because: "the child manifest carries its strings in every culture like the main page");
 		child["resourceStrings"]!["NotesTabCaption"]!["fr-FR"]!.ToString().Should().Be("Remarques",
 			because: "the child manifest carries its strings in every culture like the main page");
 		child["columnTitles"].Should().BeNull(because: "child-page column titles are not collected");

@@ -175,10 +175,10 @@ public sealed class GetClassicPageSourcesToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
-	[Description("Writes the page's, each detail's and each child page's localizable strings as resourceStrings ({ key: { culture: text } }) next to the flat en-US resources.")]
+	[Description("Writes the page's, each detail's and each child page's localizable strings as resourceStrings ({ key: { culture: text } }); only the page keeps the flat en-US resources.")]
 	[AllureTag(ToolName)]
 	[AllureName("get-classic-page-sources writes resourceStrings for the page, details and child pages")]
-	[AllureDescription("Collects the ContactPageV2 sources on a real stand and verifies the per-culture strings: page resourceStrings holds an en-US value for every key the flat resources carry, every detail entry with strings carries resourceStrings in the same shape, and every child-page manifest carries resources and resourceStrings when it has strings. No specific non-en-US culture is asserted, since the stand's cultures vary.")]
+	[AllureDescription("Collects the ContactPageV2 sources on a real stand and verifies the per-culture strings: page resourceStrings holds every key the flat resources carry with the same default text, every detail entry with strings carries resourceStrings in the same shape, and every child-page manifest carries resourceStrings and no flat resources. No specific non-en-US culture is asserted, since the stand's cultures vary.")]
 	public async Task GetPageSources_Should_Write_ResourceStrings_For_Page_Details_And_ChildPages() {
 		// Arrange & Act
 		SharedPageSources shared = await GetOrCollectSharedPageSourcesAsync();
@@ -197,8 +197,15 @@ public sealed class GetClassicPageSourcesToolE2ETests : McpContractFixtureBase {
 		foreach (JsonProperty flat in resources.EnumerateObject()) {
 			resourceStrings.TryGetProperty(flat.Name, out JsonElement cultures).Should().BeTrue(
 				because: $"page string '{flat.Name}' in resources must also be in resourceStrings");
-			cultures.TryGetProperty("en-US", out _).Should().BeTrue(
-				because: $"page string '{flat.Name}' has an en-US value in resources, so resourceStrings must carry en-US too");
+			string flatText = flat.Value.GetString();
+			if (cultures.TryGetProperty("en-US", out JsonElement enUs)) {
+				enUs.GetString().Should().Be(flatText,
+					because: $"page string '{flat.Name}' keeps its en-US text in resources");
+			}
+			else {
+				cultures.EnumerateObject().Select(c => c.Value.GetString()).Should().Contain(flatText,
+					because: $"page string '{flat.Name}' without en-US falls back to one of its cultures in resources");
+			}
 		}
 
 		// Assert — details
@@ -213,11 +220,9 @@ public sealed class GetClassicPageSourcesToolE2ETests : McpContractFixtureBase {
 		// Assert — child pages
 		if (root.TryGetProperty("childPageSchemas", out JsonElement childPages)) {
 			foreach (JsonProperty childPage in childPages.EnumerateObject()) {
-				bool hasFlat = childPage.Value.TryGetProperty("resources", out _);
-				bool hasCultures = childPage.Value.TryGetProperty("resourceStrings", out JsonElement childStrings);
-				hasFlat.Should().Be(hasCultures,
-					because: $"child page '{childPage.Name}' writes resources and resourceStrings together, from the same strings");
-				if (hasCultures) {
+				childPage.Value.TryGetProperty("resources", out _).Should().BeFalse(
+					because: $"child page '{childPage.Name}' carries no flat resources, so an older engine folds it as before");
+				if (childPage.Value.TryGetProperty("resourceStrings", out JsonElement childStrings)) {
 					AssertCultureMap(childStrings, $"child page '{childPage.Name}'");
 				}
 			}

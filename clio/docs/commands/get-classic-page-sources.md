@@ -96,7 +96,7 @@ and, when resolvable, `seed`, `entity`, `entityColumns`, `columnTitles`, `resour
 
 - `resources` maps each page string to its en-US text (else its first culture). `resourceStrings` maps each page
   string to all its cultures. Both are omitted when the page's merged strings cannot be loaded. Each nested
-  `childPageSchemas` manifest carries its own `resources` and `resourceStrings` the same way.
+  `childPageSchemas` manifest carries its own `resourceStrings` the same way, and no flat `resources`.
 - Each `detailSchemas` entry carries `body` (the top layer's), `title`, and `resourceStrings`: the detail's strings
   merged across its layers, in every culture. `title` is the detail schema's internal caption, not the title the
   page shows; Classic takes that title from the page's `captionName` resource, then the page's
@@ -140,7 +140,7 @@ underlying failure never reaches the caller's context.
   already sat at 48 of the old 50-detail cap, so a customer page with three more details crossed the line).
   Termination does not depend on those numbers: the parent walk follows each schema UId at most once, and
   detail / child-page collection admits each name once over a finite set of bodies.
-- Cost scales with the unit: gathering a detail or a child page is one designer round-trip each, so a very wide
+- Cost scales with the unit: gathering a detail is one designer round-trip and a child page two (its chain, its strings), so a very wide
   page takes proportionally longer to collect. This is a deliberate trade — a complete unit that takes longer
   beats a fast one that quietly omits part of the page. When calling over MCP, a very wide page can exceed a
   client's request timeout; run it from the CLI in that case.

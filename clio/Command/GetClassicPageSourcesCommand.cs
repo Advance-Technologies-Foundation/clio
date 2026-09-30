@@ -853,8 +853,8 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 			if (error != null || schema == null) {
 				// resourceCount:0 cannot be told apart from a page that declares no localizable strings, and the
 				// engine then folds captions it has no translation for. Same channel as the catch below.
-				string warning = $"Could not gather merged localizable strings (resources): {error ?? NoSchemaReturned}. " +
-					"The manifest carries no resources, so localized captions will be missing from the folded page.";
+				string warning = $"Could not gather merged localizable strings (resources) of '{schemaName}': {error ?? NoSchemaReturned}. " +
+					"Its manifest carries no resources, so localized captions will be missing from the folded page.";
 				_logger.WriteWarning(warning);
 				AddWarning(ctx, warning);
 				return (resources, resourceStrings);
@@ -874,7 +874,7 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 			}
 		}
 		catch (Exception ex) {
-			string warning = $"Could not gather merged localizable strings (resources): {ex.Message}";
+			string warning = $"Could not gather merged localizable strings (resources) of '{schemaName}': {ex.Message}";
 			_logger.WriteWarning(warning);
 			AddWarning(ctx, warning);
 		}
@@ -1443,8 +1443,8 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 		if (seed.Count > 0) {
 			manifest["seed"] = seed;
 		}
-		(JObject resources, JObject resourceStrings) = BuildResources(ctx, topLayerUId, editPageName);
-		AddBlock(manifest, "resources", resources);
+		// Child manifests carry resourceStrings only: flat resources would change what an older engine folds.
+		(_, JObject resourceStrings) = BuildResources(ctx, topLayerUId, editPageName);
 		AddBlock(manifest, "resourceStrings", resourceStrings);
 		return (manifest, null);
 	}
