@@ -156,9 +156,7 @@
         "clio/Command/McpServer/Tools/ExecuteSqlScriptTool.cs",
         "clio/Command/McpServer/Tools/DataForge*",
         "clio/Query/",
-        "clio/Command/McpServer/Tools/DataServiceBatchTool.cs",
-        "clio/Command/McpServer/Tools/EmailTemplateTool.cs",
-        "clio/Command/McpServer/Tools/ListPrintablesTool.cs"
+        "clio/Command/McpServer/Tools/DataServiceBatchTool.cs"
       ]
     },
     {
@@ -224,9 +222,7 @@
         "clio/Command/McpServer/Tools/InstallProcessBuilderTool.cs",
         "clio/Command/McpServer/Tools/ListUserTasksTool.cs",
         "clio/Command/McpServer/Tools/ProcessPageFactsTool.cs",
-        "clio/Command/McpServer/Tools/RegisterProcessElementTool.cs",
-        "clio/Command/McpServer/Tools/SequenceContextTool.cs",
-        "clio/Command/McpServer/Tools/SequenceEnrollmentTool.cs"
+        "clio/Command/McpServer/Tools/RegisterProcessElementTool.cs"
       ]
     },
     {
@@ -249,6 +245,20 @@
         "clio/Command/McpServer/Tools/SetBackgroundImageTool.cs",
         "clio/Command/McpServer/Tools/SetLogoTool.cs",
         "clio/Command/McpServer/Tools/UploadImageTool.cs"
+      ]
+    },
+    {
+      "id": "marketing",
+      "option": "Marketing (sequences, email templates, printables)",
+      "label": "component:marketing",
+      "color": "c5def5",
+      "description": "Marketing sequences, email templates and printables",
+      "owners": [],
+      "paths": [
+        "clio/Command/McpServer/Tools/SequenceContextTool.cs",
+        "clio/Command/McpServer/Tools/SequenceEnrollmentTool.cs",
+        "clio/Command/McpServer/Tools/EmailTemplateTool.cs",
+        "clio/Command/McpServer/Tools/ListPrintablesTool.cs"
       ]
     },
     {

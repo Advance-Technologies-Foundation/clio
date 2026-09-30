@@ -17,24 +17,35 @@ const { loadConfig, matchComponents } = require('./issue-routing.js');
 const repoRoot = path.resolve(__dirname, '..', '..', '..');
 const TOOLS_DIR = 'clio/Command/McpServer/Tools';
 
-// Finds the tool file that DECLARES an MCP tool name (`Name = "x"` or `const string X = "x"`). A tool
-// name quoted elsewhere (another tool's description, a cross-reference) is only a fallback.
+// The MCP tool names a C# file registers: the `Name` of each `[McpServerTool(...)]` attribute, as a
+// string literal or as a `const string` declared in the same file.
+function declaredToolNames(text) {
+  const constants = new Map([...text.matchAll(/const\s+string\s+(\w+)\s*=\s*"([^"]+)"/g)].map(m => [m[1], m[2]]));
+  const names = [];
+  for (const match of text.matchAll(/\[McpServerTool\(\s*Name\s*=\s*([^,)\]]+)/g)) {
+    const value = match[1].trim();
+    const name = value.startsWith('"') ? value.replace(/"/g, '') : constants.get(value.split('.').pop());
+    if (name) names.push(name);
+  }
+  return names;
+}
+
+// Finds the tool file that registers an MCP tool name. A name that is only quoted elsewhere (a
+// description, a cross-reference, a feature toggle) never counts; a name registered by more than one
+// file is reported as unknown rather than guessed.
 function toolFile(name) {
   const dir = path.join(repoRoot, TOOLS_DIR);
   if (!fs.existsSync(dir)) return null;
-  const quoted = `"${name}"`;
-  const declaration = new RegExp(`(?:Name\\s*=|const\\s+string\\s+\\w+\\s*=)\\s*${quoted.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
-  let mentioned = null;
+  const declaring = [];
   for (const entry of fs.readdirSync(dir, { recursive: true })) {
     const file = String(entry);
     if (!file.endsWith('.cs')) continue;
     const text = fs.readFileSync(path.join(dir, file), 'utf8');
-    if (!text.includes('McpServerTool') || !text.includes(quoted)) continue;
-    const relative = `${TOOLS_DIR}/${file.split(path.sep).join('/')}`;
-    if (declaration.test(text)) return relative;
-    mentioned ??= relative;
+    if (text.includes('McpServerTool(') && declaredToolNames(text).includes(name)) {
+      declaring.push(`${TOOLS_DIR}/${file.split(path.sep).join('/')}`);
+    }
   }
-  return mentioned;
+  return declaring.length === 1 ? declaring[0] : null;
 }
 
 function toFile(arg) {
@@ -72,4 +83,4 @@ function main(argv) {
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
 
-module.exports = { main, toolFile };
+module.exports = { main, toolFile, declaredToolNames };

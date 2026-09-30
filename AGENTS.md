@@ -23,10 +23,12 @@ Issues created through `gh` or the API have no Component field, so routing to th
 1. Resolve the component from the files or MCP tools the issue is about — do not guess:
    `node .github/scripts/issue-routing/component-for.js <path-or-mcp-tool>...`
    (`--list` prints all components). It reads `.github/component-owners.json`.
-2. Create the issue with exactly one `component:<id>` label, and assign yourself in the same
-   command when you are going to work on it, so routing notifies the owners instead of assigning
-   one of them:
-   `gh issue create --title "..." --body "..." --label component:<id> --assignee @me`
+2. Create the issue with exactly one `component:<id>` label:
+   `gh issue create --title "..." --body "..." --label component:<id>`
+   Routing then assigns the component's first owner, or mentions all owners in `mention` mode.
+   Add `--assignee @me` only when the user authorized you to take the issue (then continue with
+   the `claim-clio-issue` skill); an issue that already has an assignee is never re-assigned, so
+   in `assign` mode the owners are then not notified.
 3. If no single component fits, set no component label; the issue goes to `needs-triage`.
    Never invent a `component:*` label; they are declared only in `component-owners.json`.
 

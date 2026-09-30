@@ -817,3 +817,21 @@ test('component-for resolves a tool to the file that declares it, not one that m
   // Assert
   assert.equal(file, 'clio/Command/McpServer/Tools/DeployIdentityTool.cs', 'CreateOAuthTechnicalUserTool quotes "deploy-identity" but does not declare it');
 });
+
+test('component-for resolves every registered MCP tool name to the file that registers it', () => {
+  // Arrange
+  const cli = require('./component-for.js');
+  const toolsDir = path.join(repoRoot, 'clio', 'Command', 'McpServer', 'Tools');
+  if (!fs.existsSync(toolsDir)) return;
+  const expected = new Map();
+  for (const file of fs.readdirSync(toolsDir).filter(f => f.endsWith('.cs'))) {
+    for (const name of cli.declaredToolNames(fs.readFileSync(path.join(toolsDir, file), 'utf8'))) {
+      expected.set(name, `clio/Command/McpServer/Tools/${file}`);
+    }
+  }
+  // Act
+  const wrong = [...expected].filter(([name, file]) => cli.toolFile(name) !== file).map(([name]) => name);
+  // Assert
+  assert.ok(expected.size > 100, 'the tool catalog was found');
+  assert.deepEqual(wrong, [], 'a tool name must never resolve to a file that only mentions it (create-lookup, deploy-identity)');
+});

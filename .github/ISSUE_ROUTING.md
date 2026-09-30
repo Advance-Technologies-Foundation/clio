@@ -77,12 +77,12 @@ gh issue create --title "..." --body "..." --label component:package
 node .github/scripts/issue-routing/component-for.js update-page            # MCP tool name
 node .github/scripts/issue-routing/component-for.js clio/Package/Foo.cs     # repository path
 node .github/scripts/issue-routing/component-for.js --list                  # all components
-gh issue create --title "..." --body "..." --label component:pages --assignee @me
+gh issue create --title "..." --body "..." --label component:pages
 ```
 
 Exit code 0 means exactly one component; 2 means none or several (pick one or leave it to triage).
-`--assignee @me` in the same command keeps routing from assigning an owner to an issue the agent is
-about to work on; the owners are still mentioned in `mention` mode.
+Add `--assignee @me` only when the agent was authorized to take the issue: an assigned issue is never
+re-assigned, so in `assign` mode the owners are then not notified (in `mention` mode they still are).
 
 Every label in the map exists in the repository: `issue-routing-labels.yml` creates missing ones
 whenever `component-owners.json` changes on `master` (existing labels are never modified).
@@ -127,7 +127,7 @@ The baseline owners (2026-09) come from one year of `master` history: commits to
 tool files and to the commands and services behind them, excluding bulk refactors (commits touching
 more than 40 files). The first owner is the domain author where one stands out; otherwise the most
 active maintainer. Commit share shows who wrote the code, not who maintains it now, so teams are
-expected to correct the list. `paths` may use `*` wildcards; they document scope only.
+expected to correct the list.
 
 ## Why a separate map and not CODEOWNERS
 
