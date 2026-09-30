@@ -112,9 +112,10 @@ public sealed class ScriptTaskElementToolE2ETests {
 
 		// Assert
 		JsonObject[] usings = graph["usings"]!.AsArray().Select(entry => entry!.AsObject()).ToArray();
-		usings.Single(entry => entry["namespace"]!.GetValue<string>() == "Terrasoft.Core")["ignored"]!
+		string described = graph["usings"]!.ToJsonString();
+		usings.Single(entry => entry["namespace"]!.GetValue<string>() == "Terrasoft.Core")["ignored"]?
 			.GetValue<string>().Should().Contain("always imports",
-				because: "the generated code imports Terrasoft.Core anyway, so the entry adds nothing");
+				because: "the generated code imports Terrasoft.Core anyway, so the entry adds nothing; usings: {0}", described);
 		usings.Single(entry => entry["namespace"]!.GetValue<string>() == "System.Linq").ContainsKey("ignored")
 			.Should().BeFalse(because: "an entry the generator emits carries no mark");
 	}
