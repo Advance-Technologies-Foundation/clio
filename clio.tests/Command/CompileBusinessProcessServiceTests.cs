@@ -494,9 +494,10 @@ public sealed class CompileBusinessProcessCommandTests {
 			true, true, 201000, [], 0);
 
 		// Act
-		Execute(result);
+		int exitCode = Execute(result);
 
 		// Assert
+		exitCode.Should().Be(0, because: "the compile succeeded; only how its names are shown is under test");
 		_logger.Received(1).WriteInfo(Arg.Is<string>(message =>
 			message.Contains("[untrusted-source-text begin]") && message.Contains("'UsrProc' executes")));
 	}
@@ -537,9 +538,10 @@ public sealed class CompileBusinessProcessCommandTests {
 		CompileBusinessProcessResult result = new(true, null, "UsrProc", "Custom\n", "general", true, true, 201000, [], 0);
 
 		// Act
-		Execute(result);
+		int exitCode = Execute(result);
 
 		// Assert
+		exitCode.Should().Be(0, because: "the compile succeeded; only how its names are shown is under test");
 		_logger.Received(1).WriteInfo(Arg.Is<string>(message => message.Contains("[untrusted-source-text begin]")));
 	}
 }

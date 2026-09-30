@@ -27,6 +27,12 @@ public sealed class CompileCreatioTool(
 	/// </summary>
 	internal const string CompileCreatioToolName = "compile-creatio";
 
+	/// <summary>The wire name of the one-package scope argument.</summary>
+	internal const string PackageNameArgument = "package-name";
+
+	/// <summary>The wire name of the business-process scope argument.</summary>
+	internal const string ProcessNameArgument = "process-name";
+
 	/// <summary>
 	/// Test seam overriding the MCP response deadline passed to
 	/// <see cref="McpProgressHeartbeat.RunWithProgressAndDeadlineAsync{TResult}(global::ModelContextProtocol.Server.McpServer, global::ModelContextProtocol.Protocol.ProgressToken?, string, System.Func{TResult}, System.TimeSpan?, CancellationToken, System.TimeSpan?)"/>.
@@ -40,12 +46,12 @@ public sealed class CompileCreatioTool(
 	// hyphen and lands in the bag. Copying EnvironmentNameAliases under Ordinal would drop that spelling's hint.
 	private static readonly Dictionary<string, string> LegacyAliases =
 		new(McpToolArgumentSupport.EnvironmentNameAliases, StringComparer.OrdinalIgnoreCase) {
-			["packageName"] = "package-name",
-			["package_name"] = "package-name",
-			["package"] = "package-name",
-			["processName"] = "process-name",
-			["process_name"] = "process-name",
-			["process"] = "process-name"
+			["packageName"] = PackageNameArgument,
+			["package_name"] = PackageNameArgument,
+			["package"] = PackageNameArgument,
+			["processName"] = ProcessNameArgument,
+			["process_name"] = ProcessNameArgument,
+			["process"] = ProcessNameArgument
 		};
 
 	/// <summary>
@@ -249,8 +255,8 @@ public sealed class CompileCreatioTool(
 		foreach (JsonProperty property in argsElement.EnumerateObject())
 		{
 			if (property.Value.ValueKind == JsonValueKind.Null
-				&& (string.Equals(property.Name, "process-name", StringComparison.OrdinalIgnoreCase)
-					|| string.Equals(property.Name, "package-name", StringComparison.OrdinalIgnoreCase)))
+				&& (string.Equals(property.Name, ProcessNameArgument, StringComparison.OrdinalIgnoreCase)
+					|| string.Equals(property.Name, PackageNameArgument, StringComparison.OrdinalIgnoreCase)))
 			{
 				return property.Name;
 			}
@@ -404,11 +410,11 @@ public sealed record CompileCreatioArgs(
 	[Required]
 	string EnvironmentName,
 
-	[property: JsonPropertyName("package-name")]
+	[property: JsonPropertyName(CompileCreatioTool.PackageNameArgument)]
 	[Description("Optional package name: compiles that one package. When both package-name and process-name are omitted, the tool performs a full compilation. Exclusive with process-name.")]
 	string? PackageName = null,
 
-	[property: JsonPropertyName("process-name")]
+	[property: JsonPropertyName(CompileCreatioTool.ProcessNameArgument)]
 	[Description("Optional business process code. Compiles the package that process is in through the CrtProcessBuilder package - the compile a script task or process methods saved by create/modify-business-process need. Exclusive with package-name.")]
 	string? ProcessName = null) {
 
