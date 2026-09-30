@@ -12245,6 +12245,16 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "the list sharing a container with a banned component is untouched");
 	}
 
+	private static readonly RequestMappingRule LoadDataRequestMapping = new() {
+		Web = "crt.LoadDataRequest", Mobile = "crt.LoadDataRequest", Category = "DirectMapping"
+	};
+
+	/// <summary>An allow-list rule plus a request map under which the fixtures' buttons keep a live action.</summary>
+	private static WebToMobilePageConversionRules AllowListRules(ExcludedComponentFilterRule filter) => new() {
+		ExcludedComponents = [new ExcludedComponentGroup { Filters = [filter] }],
+		Requests = [LoadDataRequestMapping]
+	};
+
 	[Test]
 	[Description("ENG-96411: with the bundled rules, crt.ExpansionPanel.tools keeps only its buttons and their menu items — the search field and the quick-filter chip are dropped, and the flex container that only held the chip is removed as empty.")]
 	public void Analyze_ShouldKeepOnlyButtonsInExpansionPanelTools_WithBundledRules() {
@@ -12253,10 +12263,10 @@ public sealed class WebToMobileConversionServiceTests {
 			[ { "name": "LeadsExpansionPanel", "type": "crt.ExpansionPanel",
 			    "tools": [ { "name": "LeadsToolsContainer", "type": "crt.GridContainer", "items": [
 			        { "name": "LeadsToolsFlexContainer", "type": "crt.FlexContainer", "items": [
-			            { "name": "LeadsAddButton", "type": "crt.Button" },
-			            { "name": "LeadsRefreshButton", "type": "crt.Button" },
+			            { "name": "LeadsAddButton", "type": "crt.Button", "clicked": { "request": "crt.LoadDataRequest", "params": {} } },
+			            { "name": "LeadsRefreshButton", "type": "crt.Button", "clicked": { "request": "crt.LoadDataRequest", "params": {} } },
 			            { "name": "LeadsSettingsButton", "type": "crt.Button", "menuItems": [
-			                { "name": "LeadsExportDataButton", "type": "crt.MenuItem" } ] },
+			                { "name": "LeadsExportDataButton", "type": "crt.MenuItem", "clicked": { "request": "crt.LoadDataRequest", "params": {} } } ] },
 			            { "name": "LeadsSearchFilter", "type": "crt.SearchFilter" },
 			            { "name": "LeadsQuickFilterFlexContainer", "type": "crt.FlexContainer", "items": [
 			                { "name": "QuickFilterShowAllLeads", "type": "crt.QuickFilter" } ] } ] } ] } ],
@@ -12266,7 +12276,8 @@ public sealed class WebToMobileConversionServiceTests {
 			""");
 		WebToMobilePageConversionRules rules = new() {
 			ExcludedComponents = WebToMobilePageConversionRulesCatalog.LoadBundled().ExcludedComponents,
-			EmptyContainerRemoval = EmptyRemoval
+			EmptyContainerRemoval = EmptyRemoval,
+			Requests = [LoadDataRequestMapping]
 		};
 
 		// Act
@@ -12298,7 +12309,7 @@ public sealed class WebToMobileConversionServiceTests {
 			[ { "name": "ProductsExpansionPanel", "type": "crt.ExpansionPanel",
 			    "tools": [ { "type": "crt.GridContainer", "items": [
 			        { "type": "crt.FlexContainer", "items": [
-			            { "name": "ProductsRefreshButton", "type": "crt.Button" },
+			            { "name": "ProductsRefreshButton", "type": "crt.Button", "clicked": { "request": "crt.LoadDataRequest", "params": {} } },
 			            { "name": "ProductsSearchFilter", "type": "crt.SearchFilter" } ] } ] } ],
 			    "items": [] } ]
 			""");
@@ -12309,7 +12320,7 @@ public sealed class WebToMobileConversionServiceTests {
 		};
 
 		// Act
-		MobilePageConversionGuide guide = AnalyzeWithExcludedComponents(bundle, RulesWithExcludedComponents(allowButtons));
+		MobilePageConversionGuide guide = AnalyzeWithExcludedComponents(bundle, AllowListRules(allowButtons));
 
 		// Assert
 		JsonArray toolsFlexItems = Element(guide, "ProductsExpansionPanel").Values!["tools"]![0]!["items"]![0]!["items"]!.AsArray();
@@ -12327,7 +12338,7 @@ public sealed class WebToMobileConversionServiceTests {
 			[ { "name": "ProductsExpansionPanel", "type": "crt.ExpansionPanel",
 			    "tools": [ { "type": "crt.FlexContainer", "items": [
 			        { "name": "ProductsRefreshButton", "type": "crt.Button",
-			          "clicked": { "request": "usr.Refresh", "params": { "series": [ { "type": "bar" } ] } } } ] } ],
+			          "clicked": { "request": "crt.LoadDataRequest", "params": { "series": [ { "type": "bar" } ] } } } ] } ],
 			    "items": [] } ]
 			""");
 		ExcludedComponentFilterRule allowButtons = new() {
@@ -12337,7 +12348,7 @@ public sealed class WebToMobileConversionServiceTests {
 		};
 
 		// Act
-		MobilePageConversionGuide guide = AnalyzeWithExcludedComponents(bundle, RulesWithExcludedComponents(allowButtons));
+		MobilePageConversionGuide guide = AnalyzeWithExcludedComponents(bundle, AllowListRules(allowButtons));
 
 		// Assert
 		JsonNode button = Element(guide, "ProductsExpansionPanel").Values!["tools"]![0]!["items"]![0]!;
