@@ -1,6 +1,6 @@
 # Prevent unsafe page-helper repair advice
 
-Issue: #1697. Status: review.
+Issue: #1697. Status: done.
 
 As a page author, I need lint diagnostics to direct helpers into code that survives the
 next Designer save, so following the tool's advice does not recreate the failure.

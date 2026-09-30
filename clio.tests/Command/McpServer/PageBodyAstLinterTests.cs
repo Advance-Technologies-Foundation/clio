@@ -217,8 +217,8 @@ internal class PageBodyAstLinterTests {
 	}
 
 	[Test]
-	[Description("The alias a destructuring pattern binds IS in scope — `const { alpha: beta } = source` makes `beta()` legitimate")]
-	public void Lint_ShouldNotEmitError_WhenHandlerCallsADestructuringAlias() {
+	[Description("A destructuring alias resolves before regeneration but its factory declaration is Designer-unsafe")]
+	public void Lint_ShouldRejectDesignerUnsafeBinding_WhenHandlerCallsADestructuringAlias() {
 		// Arrange
 		string body =
 			"define(\"X\", [], function() { const source = {}; const { alpha: beta } = source; " +
@@ -232,6 +232,8 @@ internal class PageBodyAstLinterTests {
 		// Assert
 		findings.Should().NotContain(f => f.Rule == PageBodyAstLinter.RuleUndefinedSectionCall,
 			because: "the alias is the actual binding position and must resolve");
+		findings.Should().ContainSingle(f => f.Rule == PageBodyAstLinter.RuleDesignerUnsafeSectionCall,
+			because: "the binding resolves before regeneration but its factory declaration is discarded by Designer");
 	}
 
 	[TestCase("alert")]
@@ -1331,8 +1333,8 @@ internal class PageBodyAstLinterTests {
 	}
 
 	[Test]
-	[Description("The same `let helper;` assigned BEFORE the factory's return is accepted — the assignment, not the declaration, is what makes the binding callable, and blocking it would reject a page that runs")]
-	public void Lint_ShouldNotEmitError_WhenTheBindingIsAssignedBeforeTheReturn() {
+	[Description("Assignment before return initializes a binding that Designer still removes")]
+	public void Lint_ShouldRejectDesignerUnsafeBinding_WhenTheBindingIsAssignedBeforeTheReturn() {
 		// Arrange
 		string body =
 			"define(\"X\", [], function() { let helper; helper = function() { return 1; }; " +
@@ -1346,6 +1348,8 @@ internal class PageBodyAstLinterTests {
 		// Assert
 		findings.Should().NotContain(f => f.Rule == PageBodyAstLinter.RuleUndefinedSectionCall,
 			because: "an unconditional assignment before the return leaves a callable binding");
+		findings.Should().ContainSingle(f => f.Rule == PageBodyAstLinter.RuleDesignerUnsafeSectionCall,
+			because: "the binding resolves before regeneration but its factory declaration is discarded by Designer");
 	}
 
 	[Test]
@@ -1369,8 +1373,8 @@ internal class PageBodyAstLinterTests {
 	}
 
 	[Test]
-	[Description("The paired local declaration stays accepted: the same helper declared INSIDE the factory is visible to the handler, so factory isolation did not start rejecting working pages")]
-	public void Lint_ShouldNotEmitError_WhenTheSameHelperIsDeclaredInsideTheFactory() {
+	[Description("A factory helper is visible to the handler before regeneration but is Designer-unsafe")]
+	public void Lint_ShouldRejectDesignerUnsafeBinding_WhenTheSameHelperIsDeclaredInsideTheFactory() {
 		// Arrange
 		string body =
 			"define(\"X\", [], function() { function outerHelper() { return 1; } " +
@@ -1384,6 +1388,8 @@ internal class PageBodyAstLinterTests {
 		// Assert
 		findings.Should().NotContain(f => f.Rule == PageBodyAstLinter.RuleUndefinedSectionCall,
 			because: "the factory's own declarations are what its handlers close over");
+		findings.Should().ContainSingle(f => f.Rule == PageBodyAstLinter.RuleDesignerUnsafeSectionCall,
+			because: "the binding resolves before regeneration but its factory declaration is discarded by Designer");
 	}
 
 	[Test]
@@ -1463,8 +1469,8 @@ internal class PageBodyAstLinterTests {
 	}
 
 	[Test]
-	[Description("The verdict does not depend on where the assigning helper sits in the source: a hoisted `init()` declared after the factory's return still counts as initializing the binding it assigns")]
-	public void Lint_ShouldNotEmitError_WhenTheAssigningFunctionIsDeclaredAfterTheReturn() {
+	[Description("A hoisted initializer after return resolves the binding but cannot make factory code Designer-safe")]
+	public void Lint_ShouldRejectDesignerUnsafeBinding_WhenTheAssigningFunctionIsDeclaredAfterTheReturn() {
 		// Arrange
 		string body =
 			"define(\"X\", [], function() { let helper; init(); " +
@@ -1478,7 +1484,9 @@ internal class PageBodyAstLinterTests {
 
 		// Assert
 		findings.Should().NotContain(f => f.Rule == PageBodyAstLinter.RuleUndefinedSectionCall,
-			because: "the same body with `function init()` written before the return was already accepted, and a blocking rule whose answer depends on statement order is not one an author can act on");
+			because: "hoisting initializes the binding regardless of where the initializer function is declared");
+		findings.Should().ContainSingle(f => f.Rule == PageBodyAstLinter.RuleDesignerUnsafeSectionCall,
+			because: "the binding resolves before regeneration but its factory declaration is discarded by Designer");
 	}
 
 	[Test]
