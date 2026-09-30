@@ -14,6 +14,9 @@ internal static partial class CreatioResponseError {
 	/// </summary>
 	private const int MaxStructuredMessageLength = 2_048;
 
+	private const string ConstraintGroupName = "constraint";
+	private const string TableGroupName = "table";
+
 	/// <summary>
 	/// Composes a locally authored, one-line hint from the ENUM-LIKE parts of an OData v4 error body: the
 	/// <c>error.code</c> and, when a message matches one of the measured Creatio wordings, the identifiers
@@ -134,32 +137,32 @@ internal static partial class CreatioResponseError {
 				? $"a value in column '{detail.Groups["column"].Value}' has no matching record in referenced table "
 					+ $"'{detail.Groups["referenced"].Value}'."
 				: "a referenced record is missing. The response does not identify the foreign-key column or referenced table.";
-			return $"foreign key constraint '{insert.Groups["constraint"].Value}' on table "
-				+ $"'{insert.Groups["table"].Value}' rejected the write: {cause}{MissingLookupAdvice}";
+			return $"foreign key constraint '{insert.Groups[ConstraintGroupName].Value}' on table "
+				+ $"'{insert.Groups[TableGroupName].Value}' rejected the write: {cause}{MissingLookupAdvice}";
 		}
 		Match delete = PostgresDeleteForeignKeyPattern().Match(message);
 		if (!delete.Success) {
 			return null;
 		}
 		string referencing = delete.Groups["referencing"].Value;
-		return $"the record is still referenced: foreign key constraint '{delete.Groups["constraint"].Value}' "
-			+ $"on table '{referencing}' points at this row of table '{delete.Groups["table"].Value}'. "
+		return $"the record is still referenced: foreign key constraint '{delete.Groups[ConstraintGroupName].Value}' "
+			+ $"on table '{referencing}' points at this row of table '{delete.Groups[TableGroupName].Value}'. "
 			+ StillReferencedAdvice(referencing);
 	}
 
 	private static string DescribeSqlServerForeignKey(string message) {
 		Match insert = SqlServerInsertForeignKeyPattern().Match(message);
 		if (insert.Success) {
-			return $"foreign key constraint '{insert.Groups["constraint"].Value}' rejected the write: a referenced "
-				+ $"record is missing from referenced table '{insert.Groups["table"].Value}'. "
+			return $"foreign key constraint '{insert.Groups[ConstraintGroupName].Value}' rejected the write: a referenced "
+				+ $"record is missing from referenced table '{insert.Groups[TableGroupName].Value}'. "
 				+ $"The response does not identify the foreign-key column.{MissingLookupAdvice}";
 		}
 		Match delete = SqlServerDeleteForeignKeyPattern().Match(message);
 		if (!delete.Success) {
 			return null;
 		}
-		string referencing = delete.Groups["table"].Value;
-		return $"the record is still referenced: constraint '{delete.Groups["constraint"].Value}' on table "
+		string referencing = delete.Groups[TableGroupName].Value;
+		return $"the record is still referenced: constraint '{delete.Groups[ConstraintGroupName].Value}' on table "
 			+ $"'{referencing}' (column '{delete.Groups["column"].Value}') points at this row. "
 			+ StillReferencedAdvice(referencing);
 	}
