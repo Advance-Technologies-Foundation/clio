@@ -4,16 +4,22 @@ using System.Linq;
 
 namespace Clio.Common.ObjectRights;
 
-/// <summary>What the object read back after a save shows against the plan.</summary>
+/// <summary>The comparison of the object read back after a save with the plan.</summary>
 /// <param name="Critical">Differences in what the call claims: the switch, the grantee's rows and every row the call
 /// writes. Any of them means the call's own change did not land, so the call fails.</param>
 /// <param name="Differences">Every other difference, reported as a fact: another client may have changed the object
 /// between the read and the read-back.</param>
-public sealed record ObjectRightsReadBack(IReadOnlyList<string> Critical, IReadOnlyList<string> Differences);
+public sealed record ObjectRightsReadBackComparison(IReadOnlyList<string> Critical, IReadOnlyList<string> Differences);
 
 /// <summary>
 /// Compares the object read back after a save with the state the plan saved, row by row — grantee, position and
 /// operations — so a change that did not land is never reported as done. Pure: no I/O.
+/// <para>
+/// The switch, the grantee's rows and every row the call writes are what the call claims: a difference there is
+/// critical. When the call turns operation permissions on, the All employees row it stores counts as written even when
+/// the read only synthesized it. After a disable that leaves no stored rows, the read shows the All employees row the
+/// service synthesizes for such an object; nobody saved it, so it is not a difference.
+/// </para>
 /// </summary>
 public interface IObjectRightsReadBackVerifier {
 	/// <summary>Compares <paramref name="actual"/> with the state <paramref name="plan"/> saved.</summary>
@@ -22,14 +28,14 @@ public interface IObjectRightsReadBackVerifier {
 	/// <param name="actual">The object as read back.</param>
 	/// <returns>The critical differences and the others; both empty when the read-back matches the plan.</returns>
 	/// <exception cref="ArgumentNullException"><paramref name="plan"/> or <paramref name="actual"/> is null.</exception>
-	ObjectRightsReadBack Compare(ObjectRightsPlan plan, Guid grantee, ObjectRightsState actual);
+	ObjectRightsReadBackComparison Compare(ObjectRightsPlan plan, Guid grantee, ObjectRightsState actual);
 }
 
 /// <inheritdoc />
 public sealed class ObjectRightsReadBackVerifier : IObjectRightsReadBackVerifier {
 
 	/// <inheritdoc />
-	public ObjectRightsReadBack Compare(ObjectRightsPlan plan, Guid grantee, ObjectRightsState actual) {
+	public ObjectRightsReadBackComparison Compare(ObjectRightsPlan plan, Guid grantee, ObjectRightsState actual) {
 		ArgumentNullException.ThrowIfNull(plan);
 		ArgumentNullException.ThrowIfNull(actual);
 		ObjectRightsState planned = plan.After;
@@ -37,7 +43,8 @@ public sealed class ObjectRightsReadBackVerifier : IObjectRightsReadBackVerifier
 		List<string> critical = new();
 		List<string> differences = new();
 		if (actual.AdministratedByOperations != planned.AdministratedByOperations) {
-			critical.Add($"operation permissions are {OnOff(actual)}, the plan turned them {OnOff(planned)}");
+			critical.Add($"operation permissions are {ObjectRightsSupport.FormatSwitch(actual)}, the plan turned them "
+				+ ObjectRightsSupport.FormatSwitch(planned));
 		}
 		ObjectRightsRowDifference diff = planned.DiffRows(actual);
 		List<RoleOperationRights> extra = diff.Extra.Where(row => !IsSynthesizedRow(planned, actual, row)).ToList();
@@ -56,7 +63,7 @@ public sealed class ObjectRightsReadBackVerifier : IObjectRightsReadBackVerifier
 		foreach (RoleOperationRights row in extra) {
 			(row.GranteeId == grantee ? critical : differences).Add($"{ObjectRightsSupport.FormatRow(row)} is not in the plan");
 		}
-		return new ObjectRightsReadBack(critical, differences);
+		return new ObjectRightsReadBackComparison(critical, differences);
 	}
 
 	// The rows this call writes: every planned row the object did not have as read, plus — when the call turns operation
@@ -77,6 +84,4 @@ public sealed class ObjectRightsReadBackVerifier : IObjectRightsReadBackVerifier
 		!planned.AdministratedByOperations && planned.Roles.Count == 0 && !actual.AdministratedByOperations
 		&& actual.Roles.Count == 1 && row.GranteeId == SysAdminUnitIds.AllEmployees && row.Position == 0
 		&& row.CanRead && row.CanCreate && row.CanEdit && row.CanDelete;
-
-	private static string OnOff(ObjectRightsState state) => state.AdministratedByOperations ? "ON" : "OFF";
 }

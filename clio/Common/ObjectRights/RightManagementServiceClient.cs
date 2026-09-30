@@ -79,22 +79,12 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 
 	/// <inheritdoc />
 	public ObjectRightsInfo GetObjectRights(string schemaName, CreatioRequestOptions requestOptions) {
-		JsonObject node;
-		string error;
-		bool timedOut;
-		try {
-			(node, error, timedOut) = TryGetAdministratedObject(schemaName, requestOptions);
-		}
-		catch (Exception ex) when (ObjectRightsSupport.IsServiceFailure(ex)) {
-			return new ObjectRightsInfo(true, schemaName, null, false, Array.Empty<RoleOperationRights>(),
-				ReadError: ObjectRightsSupport.DisplayError(ex.Message), TimedOut: ObjectRightsSupport.IsTimeout(ex));
-		}
+		(JsonObject node, string error, bool timedOut) = TryGetAdministratedObject(schemaName, requestOptions);
 		if (node is null) {
 			// error set = the object exists but could not be read (a service fault); error null = the schema
 			// name resolved to no candidate at all (not found). Never report a failed read as "available".
 			return error is not null
-				? new ObjectRightsInfo(true, schemaName, null, false, Array.Empty<RoleOperationRights>(), ReadError: error,
-					TimedOut: timedOut)
+				? ObjectRightsInfo.ReadFailed(schemaName, error, timedOut)
 				: new ObjectRightsInfo(false, schemaName, null, false, Array.Empty<RoleOperationRights>());
 		}
 		return new ObjectRightsInfo(true, Str(node["name"]) ?? schemaName, Str(node["caption"]),
@@ -134,7 +124,7 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 				: ServiceMessage(response?.ErrorInfo?.Message, "SaveAdministratedObject reported failure.");
 		}
 		catch (Exception ex) when (ObjectRightsSupport.IsServiceFailure(ex)) {
-			return ObjectRightsSupport.DisplayError(ex.Message);
+			return ObjectRightsSupport.DisplayError(ex);
 		}
 	}
 
@@ -151,14 +141,21 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 		return response.Rows?.FirstOrDefault()?.Name;
 	}
 
-	// Returns the first candidate UId that describes the object as a mutable JSON node, or (null, error):
-	// error null means the schema name resolved to no candidate (not found); error set means every candidate
-	// answered but with a fault. The FIRST candidate's error is kept: it is the base row, whose real cause (a
-	// timeout, a permission error) is what the caller needs, not the opaque "Request Error" page a later
-	// replacing layer answers with.
+	// Returns the node of the first candidate UId that describes the object, or (null, error, timedOut): error null
+	// means the schema name resolved to no candidate (not found); error set means the UId lookup failed or every
+	// candidate answered with a fault. The FIRST candidate's error is kept: it is the base row, whose real cause (a
+	// permission error, say) is what the caller needs, not the opaque "Request Error" page a later replacing layer
+	// answers with. timedOut says the read ended on a hang; the error then names the hang too.
 	private (JsonObject node, string error, bool timedOut) TryGetAdministratedObject(
 		string schemaName, CreatioRequestOptions requestOptions) {
-		IReadOnlyList<Guid> candidates = ResolveEntitySchemaUIds(schemaName, requestOptions);
+		IReadOnlyList<Guid> candidates;
+		// Only the UId lookup is guarded here: each candidate's own call is guarded in TryFetchNode.
+		try {
+			candidates = ResolveEntitySchemaUIds(schemaName, requestOptions);
+		}
+		catch (Exception ex) when (ObjectRightsSupport.IsServiceFailure(ex)) {
+			return (null, ObjectRightsSupport.DisplayError(ex), ObjectRightsSupport.IsTimeout(ex));
+		}
 		if (candidates.Count == 0) {
 			return (null, null, false);
 		}
@@ -167,11 +164,12 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 			if (TryFetchNode(candidate, requestOptions, out JsonObject node, out string error, out bool timedOut)) {
 				return (node, null, false);
 			}
-			firstError ??= error;
 			if (timedOut) {
-				// A hang is not an answer from a wrong layer: the next candidate would only wait as long again.
-				return (null, firstError, true);
+				// A hang is not an answer from a wrong layer: the next candidate would only wait as long again. The error
+				// names the hang, so a listing that stops on it does not read as stopping on the earlier fault.
+				return (null, firstError is null ? error : $"{firstError}; then {error}", true);
 			}
+			firstError ??= error;
 		}
 		return (null, firstError, false);
 	}
@@ -194,7 +192,7 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 				requestOptions);
 		}
 		catch (Exception ex) when (ObjectRightsSupport.IsServiceFailure(ex)) {
-			error = ObjectRightsSupport.DisplayError(ex.Message);
+			error = ObjectRightsSupport.DisplayError(ex);
 			timedOut = ObjectRightsSupport.IsTimeout(ex);
 			return false;
 		}

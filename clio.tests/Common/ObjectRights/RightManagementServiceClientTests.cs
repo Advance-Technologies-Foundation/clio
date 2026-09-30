@@ -381,17 +381,22 @@ public class RightManagementServiceClientTests {
 	}
 
 	private static IEnumerable<TestCaseData> ServiceFailures() {
-		yield return new TestCaseData(new HttpRequestException("503")).SetName("ObjectRights_ShouldReportFailure_WhenTheServiceFailsWithHttpRequest");
-		yield return new TestCaseData(new IOException("reset")).SetName("ObjectRights_ShouldReportFailure_WhenTheServiceFailsWithIO");
-		yield return new TestCaseData(new JsonException("not json")).SetName("ObjectRights_ShouldReportFailure_WhenTheServiceFailsWithJson");
-		yield return new TestCaseData(new UnauthorizedAccessException("401")).SetName("ObjectRights_ShouldReportFailure_WhenTheServiceFailsWithUnauthorized");
-		yield return new TestCaseData(new TimeoutException("timeout")).SetName("ObjectRights_ShouldReportFailure_WhenTheServiceFailsWithTimeout");
-		yield return new TestCaseData(new TaskCanceledException("HTTP timeout")).SetName("ObjectRights_ShouldReportFailure_WhenTheServiceFailsWithTaskCanceled");
+		yield return new TestCaseData(new HttpRequestException("503"), false).SetName("ObjectRights_ShouldReportFailure_WhenTheServiceFailsWithHttpRequest");
+		yield return new TestCaseData(new IOException("reset"), false).SetName("ObjectRights_ShouldReportFailure_WhenTheServiceFailsWithIO");
+		yield return new TestCaseData(new JsonException("not json"), false).SetName("ObjectRights_ShouldReportFailure_WhenTheServiceFailsWithJson");
+		yield return new TestCaseData(new UnauthorizedAccessException("401"), false).SetName("ObjectRights_ShouldReportFailure_WhenTheServiceFailsWithUnauthorized");
+		yield return new TestCaseData(new TimeoutException("timeout"), true).SetName("ObjectRights_ShouldReportFailure_WhenTheServiceFailsWithTimeout");
+		yield return new TestCaseData(new TaskCanceledException("HTTP timeout"), true).SetName("ObjectRights_ShouldReportFailure_WhenTheServiceFailsWithTaskCanceled");
+		// Creatio's client runs the request through Task.Result: this is how a hang and a transport fault really arrive.
+		yield return new TestCaseData(new AggregateException(new TaskCanceledException("HTTP timeout")), true)
+			.SetName("ObjectRights_ShouldReportFailure_WhenATimeoutArrivesWrapped");
+		yield return new TestCaseData(new AggregateException(new HttpRequestException("503")), false)
+			.SetName("ObjectRights_ShouldReportFailure_WhenATransportFaultArrivesWrapped");
 	}
 
 	[TestCaseSource(nameof(ServiceFailures))]
-	[Description("A failure of the Creatio service (transport, timeout, non-JSON body, authentication) is attributed to the object: the read reports a ReadError and the save returns the failure, instead of ending the run.")]
-	public void ObjectRights_ShouldReportFailure_WhenServiceFails(Exception failure) {
+	[Description("A failure of the Creatio service (transport, timeout, non-JSON body, authentication — bare or wrapped the way Creatio's client throws it) is attributed to the object: the read reports a ReadError, marked as timed out only for a hang, and the save returns the failure so the caller reads the object back, instead of ending the run.")]
+	public void ObjectRights_ShouldReportFailure_WhenServiceFails(Exception failure, bool timedOut) {
 		// Arrange
 		GetReturns(AdministeredObject("x"));
 		ObjectRightsInfo read = Read();
@@ -404,7 +409,27 @@ public class RightManagementServiceClientTests {
 
 		// Assert
 		info.ReadError.Should().NotBeNull(because: "a service failure is reported on the object it happened to");
+		info.ReadError.Should().NotContain("One or more errors occurred",
+			because: "a wrapper around one fault is reported by that fault");
+		info.TimedOut.Should().Be(timedOut, because: "only a hang stops a caller that reads several objects");
 		saveError.Should().NotBeNullOrEmpty(because: "a failed save is reported, never taken for success");
+	}
+
+	[Test]
+	[Description("When an earlier candidate answered with a fault and a later one hangs, the read reports both: a listing that stops on the hang must not read as stopping on the earlier fault.")]
+	public void GetObjectRights_ShouldNameTheHang_WhenALaterCandidateTimesOutAfterAFault() {
+		// Arrange
+		SelectReturnsUIds(BaseUId, LayerUId);
+		GetThrowsFor(BaseUId, new InvalidOperationException("base failed"));
+		GetThrowsFor(LayerUId, new AggregateException(new TaskCanceledException("timed out")));
+
+		// Act
+		ObjectRightsInfo info = Read();
+
+		// Assert
+		info.TimedOut.Should().BeTrue(because: "the read ended on a hang");
+		info.ReadError.Should().Contain("base failed", because: "the base row's cause is still what the caller needs");
+		info.ReadError.Should().Contain("timed out", because: "the hang the listing stops on is named too");
 	}
 
 	[Test]

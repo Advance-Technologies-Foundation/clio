@@ -51,11 +51,13 @@ public class ConnectedObjectsResolver : IConnectedObjectsResolver {
 		}
 		EntitySchemaPropertiesInfo schema;
 		// Only the service call is guarded: a failure in the code that works on its result is a bug, not a service failure.
+		// The column manager rethrows its transport and parse faults — and a schema it cannot find — as
+		// EntitySchemaDesignerException, so that is an enumeration failure too: the root is still read on its own.
 		try {
 			schema = _columnManager.GetSchemaProperties(new GetEntitySchemaPropertiesOptions { SchemaName = rootSchemaName });
 		}
-		catch (Exception ex) when (ObjectRightsSupport.IsServiceFailure(ex)) {
-			return new ConnectedObjectsResolution(objects, Array.Empty<string>(), ObjectRightsSupport.DisplayError(ex.Message));
+		catch (Exception ex) when (ex is EntitySchemaDesignerException || ObjectRightsSupport.IsServiceFailure(ex)) {
+			return new ConnectedObjectsResolution(objects, Array.Empty<string>(), ObjectRightsSupport.DisplayError(ex));
 		}
 		// A referenced name is normalized like a caller's name before the security gate sees it: the gate matches the
 		// name as a string, while SQL Server ignores trailing spaces and would still find the table. A name that is not

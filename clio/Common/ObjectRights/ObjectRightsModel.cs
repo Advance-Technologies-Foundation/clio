@@ -85,6 +85,12 @@ public sealed record RoleOperationRights(
 /// <param name="Roles">The rows, in priority order.</param>
 public sealed record ObjectRightsState(bool AdministratedByOperations, IReadOnlyList<RoleOperationRights> Roles) {
 
+	/// <summary>
+	/// Whether one of the rows is for "All employees". Turning operation permissions on for an object whose rows have
+	/// none adds one with every operation, so internal users keep their access.
+	/// </summary>
+	public bool HasAllEmployeesRow => Roles.Any(row => row.GranteeId == SysAdminUnitIds.AllEmployees);
+
 	/// <summary>Whether <paramref name="other"/> is the same state: the same switch and the same rows at the same positions.</summary>
 	/// <param name="other">The state to compare with.</param>
 	/// <returns><see langword="true"/> when nothing differs.</returns>
@@ -165,4 +171,12 @@ public sealed record ObjectRightsInfo(
 
 	/// <summary>The state the planner works on.</summary>
 	public ObjectRightsState State => new(AdministratedByOperations, Roles);
+
+	/// <summary>The result of a read that failed: the object is taken to exist, and nothing about its rows is known.</summary>
+	/// <param name="name">The object (entity schema) name that was read.</param>
+	/// <param name="readError">Why the read failed, already safe to print.</param>
+	/// <param name="timedOut">The read failed because the service did not answer in time.</param>
+	/// <returns>The failed read.</returns>
+	public static ObjectRightsInfo ReadFailed(string name, string readError, bool timedOut = false) =>
+		new(true, name, null, false, Array.Empty<RoleOperationRights>(), ReadError: readError, TimedOut: timedOut);
 }

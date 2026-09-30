@@ -111,7 +111,8 @@ public sealed class ObjectRightsPlanner : IObjectRightsPlanner {
 	// THE POLICY for transitions: one row per transition, in the order the refusals are reported. A transition not in
 	// the request is refused, never applied as a side effect. Two requests cannot be planned at all and are refused
 	// before any transition is computed: a grantee with several rows (D7), and a revoke on an object that is not
-	// administered (company employees reach it whatever its rows say).
+	// administered (company employees reach it whatever its rows say) — except a revoke-and-disable that finds the
+	// state it asks for already in place, which changes nothing.
 	private static readonly (Transitions Transition, Func<ObjectRightsChangeRequest, bool> Allowed, ObjectRightsRefusal Refusal)[] Policy = {
 		(Transitions.EnableOperationPermissions, request => request.EnableOperationPermissions, ObjectRightsRefusal.EnableNotRequested),
 		// With --disable-operation-permissions the revoke turns the switch off instead, so a row-less administered
@@ -152,8 +153,7 @@ public sealed class ObjectRightsPlanner : IObjectRightsPlanner {
 		// Internal users reached the object with every operation while it was not administered. Turning operation
 		// permissions on without an All employees row would cut them all off; the designer adds none in that state,
 		// the tool does, below the existing rows so none of them is renumbered.
-		bool addsAllEmployees = enabling && request.Grantee != SysAdminUnitIds.AllEmployees
-			&& rows.All(row => row.GranteeId != SysAdminUnitIds.AllEmployees);
+		bool addsAllEmployees = enabling && request.Grantee != SysAdminUnitIds.AllEmployees && !before.HasAllEmployeesRow;
 		if (addsAllEmployees) {
 			after.Add(new RoleOperationRights(SysAdminUnitIds.AllEmployees, AllEmployeesName, next++,
 				true, true, true, true));

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -53,14 +54,27 @@ public static class ObjectRightsSupport {
 	public static string DisplayError(string message) =>
 		TextUtilities.SanitizeForDisplay(SensitiveErrorTextRedactor.Redact(message ?? string.Empty), MaxErrorLength);
 
+	/// <summary>
+	/// Renders an exception a service call threw, like <see cref="DisplayError(string)"/>. Creatio's client runs the
+	/// request through <c>Task.Result</c>, so a fault arrives wrapped in an <see cref="AggregateException"/> whose own
+	/// message ("One or more errors occurred.") names nothing; a wrapper around ONE fault is rendered by that fault.
+	/// </summary>
+	/// <param name="exception">The exception a service call threw.</param>
+	/// <returns>The display-safe message.</returns>
+	public static string DisplayError(Exception exception) =>
+		DisplayError(exception is AggregateException aggregate
+			&& aggregate.Flatten().InnerExceptions is { Count: 1 } inner
+				? inner[0].Message
+				: exception?.Message);
+
 	private const int MaxDisplayLength = 200;
 
 	private const int MaxErrorLength = 500;
 
 	/// <summary>
 	/// Renders one row for output: its position, the grantee's name — with its id when asked for — and its operations,
-	/// e.g. <c>[1] Sales managers: read/create</c>. Both commands and the read-back use it, so a row never reads
-	/// differently in two places.
+	/// e.g. <c>[1] Sales managers: read/create</c>. Both commands and the read-back use it, so a row is always rendered
+	/// the same way; get-object-rights adds the grantee's id.
 	/// </summary>
 	/// <param name="row">The row to render.</param>
 	/// <param name="withGranteeId">Also show the grantee's SysAdminUnit id.</param>
@@ -85,6 +99,17 @@ public static class ObjectRightsSupport {
 		return operations.Count == 0 ? "no operations" : string.Join("/", operations);
 	}
 
+	/// <summary>The operations a request names, in the order it names them (<c>read/create</c>).</summary>
+	/// <param name="operations">The operations.</param>
+	/// <returns>The operations text, in the same spelling as a row's.</returns>
+	public static string FormatOperations(IEnumerable<ObjectOperation> operations) =>
+		string.Join("/", operations.Select(operation => operation.ToString().ToLowerInvariant()));
+
+	/// <summary>The state of the "Use operation permissions" switch: <c>ON</c> or <c>OFF</c>.</summary>
+	/// <param name="state">The object's state.</param>
+	/// <returns>The switch text.</returns>
+	public static string FormatSwitch(ObjectRightsState state) => state.AdministratedByOperations ? "ON" : "OFF";
+
 	/// <summary>
 	/// Trims <paramref name="raw"/> and accepts it only when it is a plain schema identifier. A padded or
 	/// decorated name must never reach the security/system gate: the gate matches the name as a string, while
@@ -101,25 +126,41 @@ public static class ObjectRightsSupport {
 	/// <summary>
 	/// Whether <paramref name="exception"/> is a failure of the Creatio service call itself — a transport fault, a
 	/// timeout, a non-JSON or empty body, an authentication rejection, an oversized response — that must be
-	/// attributed to the object being read rather than end the run. An HTTP timeout surfaces as
-	/// TaskCanceledException, hence OperationCanceledException. InvalidOperationException is included because the
-	/// shared service clients report an empty or non-JSON body and a DataService error with it; so that a programming
-	/// error that throws it (a LINQ <c>First</c> on an empty sequence, say) is not reported as a service failure, every
-	/// caller guards ONLY the service call with this filter, never the code that works on the result. Other
-	/// programming errors (NullReferenceException, ArgumentException, ...) are never service failures.
+	/// attributed to the object being read rather than end the run. Creatio's client runs the request through
+	/// <c>Task.Result</c>, so a timeout or a transport fault arrives as an <see cref="AggregateException"/> (around a
+	/// TaskCanceledException or an HttpRequestException): a wrapper is a service failure when every fault in it is one.
+	/// InvalidOperationException is included because the shared service clients report an empty or non-JSON body and
+	/// a DataService error with it (and WebException derives from it); so that a programming error that throws it (a
+	/// LINQ <c>First</c> on an empty sequence, say) is not reported as a service failure, every caller guards only the
+	/// service call and the parsing of its response with this filter, never the code that works on the parsed result.
+	/// Other programming errors (NullReferenceException, ArgumentException, ...) are never service failures.
 	/// </summary>
 	/// <param name="exception">The exception a service call threw.</param>
 	/// <returns><see langword="true"/> for a service failure.</returns>
 	public static bool IsServiceFailure(Exception exception) =>
-		exception is InvalidOperationException or HttpRequestException or TimeoutException or IOException
-			or JsonException or UnauthorizedAccessException or ResponseTooLargeException or OperationCanceledException;
+		exception is AggregateException aggregate
+			? aggregate.Flatten().InnerExceptions is { Count: > 0 } faults && faults.All(IsSingleServiceFailure)
+			: IsSingleServiceFailure(exception);
 
 	/// <summary>
-	/// Whether <paramref name="exception"/> is a hang (a timeout) rather than a fault answered by the server. Probing
-	/// the next candidate after a timeout only multiplies the wait, so the probe loop stops on it.
+	/// Whether <paramref name="exception"/> is a hang (a timeout) rather than a fault answered by the server: a
+	/// TimeoutException or a cancellation (an HTTP timeout surfaces as TaskCanceledException), a WebException with the
+	/// Timeout status (how the login step reports its timeout), or an <see cref="AggregateException"/> that carries one
+	/// of them. Probing the next candidate, or reading the next object, after a timeout only multiplies the wait, so
+	/// the probe loop and the connected listing stop on it.
 	/// </summary>
 	/// <param name="exception">The exception a service call threw.</param>
 	/// <returns><see langword="true"/> for a timeout.</returns>
 	public static bool IsTimeout(Exception exception) =>
-		exception is TimeoutException or OperationCanceledException;
+		exception is AggregateException aggregate
+			? aggregate.Flatten().InnerExceptions.Any(IsSingleTimeout)
+			: IsSingleTimeout(exception);
+
+	private static bool IsSingleServiceFailure(Exception exception) =>
+		exception is InvalidOperationException or HttpRequestException or TimeoutException or IOException
+			or JsonException or UnauthorizedAccessException or ResponseTooLargeException or OperationCanceledException;
+
+	private static bool IsSingleTimeout(Exception exception) =>
+		exception is TimeoutException or OperationCanceledException
+			or WebException { Status: WebExceptionStatus.Timeout };
 }

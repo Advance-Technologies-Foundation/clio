@@ -69,6 +69,27 @@ public class ObjectRightsReadBackVerifierTests {
 			.SetName("Compare_ShouldReportAFact_WhenAnotherRoleRowDiffers");
 		yield return new TestCaseData(State(true), State(false), State(false, Row(AllEmployees, 0, "RCED")), null, null)
 			.SetName("Compare_ShouldIgnoreTheSynthesizedRow_WhenADisableLeavesNoStoredRows");
+		ObjectRightsState synthesized = State(false, Row(AllEmployees, 0, "RCED"));
+		ObjectRightsState enabled = State(true, Row(AllEmployees, 0, "RCED"), Row(Grantee, 1, "R"));
+		yield return new TestCaseData(synthesized, enabled, State(true, Row(Grantee, 1, "R")),
+				"[0] All employees: read/create/edit/delete is missing", null)
+			.SetName("Compare_ShouldFailTheCall_WhenTheSynthesizedAllEmployeesRowAnEnableKeepsIsMissing");
+		yield return new TestCaseData(synthesized, enabled, State(false, Row(AllEmployees, 0, "RCED"), Row(Grantee, 1, "R")),
+				"operation permissions are OFF, the plan turned them ON", null)
+			.SetName("Compare_ShouldFailTheCall_WhenAnEnableReadsBackOff");
+		yield return new TestCaseData(State(true, Row(AllEmployees, 0, "RCED"), Row(Other, 1, "R")),
+				State(true, Row(AllEmployees, 0, "RCED"), Row(Other, 1, "R"), Row(Grantee, 2, "R")),
+				State(true, Row(AllEmployees, 0, "RCED"), Row(Grantee, 2, "R")),
+				null, "[1] Other: read is missing")
+			.SetName("Compare_ShouldReportAFact_WhenAnotherRoleRowIsMissing");
+		yield return new TestCaseData(employeesOnly, granted,
+				State(true, Row(AllEmployees, 0, "RCED"), Row(Grantee, 1, "R"), Row(Other, 2, "R")),
+				null, "[2] Other: read is not in the plan")
+			.SetName("Compare_ShouldReportAFact_WhenTheReadBackHasAnExtraRowOfAnotherRole");
+		yield return new TestCaseData(State(true, Row(Grantee, 0, "R")), State(false, Row(Grantee, 0, "")),
+				State(false, Row(AllEmployees, 0, "RCED")),
+				"[0] Grantee: no operations is missing", "[0] All employees: read/create/edit/delete is not in the plan")
+			.SetName("Compare_ShouldFailTheCall_WhenADisableThatKeptRowsReadsBackOnlyTheSynthesizedRow");
 	}
 
 	[TestCaseSource(nameof(ReadBacks))]
@@ -79,7 +100,7 @@ public class ObjectRightsReadBackVerifierTests {
 		ObjectRightsPlan plan = PlanOf(before, planned);
 
 		// Act
-		ObjectRightsReadBack readBack = _verifier.Compare(plan, Grantee, actual);
+		ObjectRightsReadBackComparison readBack = _verifier.Compare(plan, Grantee, actual);
 
 		// Assert
 		if (expectedCritical is null) {

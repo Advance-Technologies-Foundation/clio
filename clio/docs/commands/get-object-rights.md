@@ -55,7 +55,8 @@ clio get-object-rights --entity-schema-name <EntitySchemaName> [--grantee <SysAd
 Object (entity schema) name to read. Required.
 
 --grantee GUID
-Optional SysAdminUnit id (role or user): show its row and the rows above it. Omit to list every row.
+Optional SysAdminUnit id (role or user): show its row and the rows above it — every row when it has none, and on an
+object that is not administered. Omit to list every row.
 
 --include-connected
 Also read the root object's own lookup objects. Security and system objects are skipped with a warning.

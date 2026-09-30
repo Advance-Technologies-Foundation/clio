@@ -55,7 +55,9 @@ public sealed class ObjectRightsReadOnlySandboxE2ETests : McpContractFixtureBase
 		(filtered.Output ?? string.Empty).Should().Match(output => output.Contains($"({AllEmployees}):")
 				|| output.Contains($"grantee {AllEmployees} has NO row"),
 			because: "the filtered read reports the All employees row, or that it has none");
-		filtered.Output.Should().NotBe(all.Output, because: "the grantee filter changes what is listed");
+		filtered.Output.Should().Contain($"(grantee {AllEmployees})",
+			because: "the filtered read names the grantee it reports on (on an object that is not administered every row "
+				+ "is listed with or without it, so the rows alone need not differ)");
 		missing.Success.Should().BeFalse(because: "a name that resolves to no schema fails instead of reporting access");
 	}
 

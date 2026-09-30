@@ -93,12 +93,23 @@ public class ConnectedObjectsResolverTests {
 			because: "naming the object yourself is the explicit way to grant it");
 	}
 
-	[Test]
-	[Description("A failed schema read is reported as an enumeration error with the root alone; it does not throw.")]
-	public void Resolve_ShouldReportEnumerationError_WhenSchemaReadThrows() {
+	private static IEnumerable<TestCaseData> SchemaReadFailures() {
+		yield return new TestCaseData(new InvalidOperationException("schema read failed"))
+			.SetName("Resolve_ShouldReportEnumerationError_WhenSchemaReadThrows");
+		// The column manager rethrows its transport and parse faults, and a schema it cannot find, as this type.
+		yield return new TestCaseData(new EntitySchemaDesignerException("schema read failed"))
+			.SetName("Resolve_ShouldReportEnumerationError_WhenTheColumnManagerThrowsItsOwnFailure");
+		// Creatio's client runs the request through Task.Result, so a transport fault can arrive wrapped.
+		yield return new TestCaseData(new AggregateException(new System.Net.Http.HttpRequestException("schema read failed")))
+			.SetName("Resolve_ShouldReportEnumerationError_WhenAWrappedTransportFaultIsThrown");
+	}
+
+	[TestCaseSource(nameof(SchemaReadFailures))]
+	[Description("A failed schema read is reported as an enumeration error with the root alone; it does not throw, so the root is still read.")]
+	public void Resolve_ShouldReportEnumerationError_WhenTheSchemaReadFails(Exception failure) {
 		// Arrange
 		_columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>())
-			.Returns(_ => throw new InvalidOperationException("schema read failed"));
+			.Returns(_ => throw failure);
 
 		// Act
 		ConnectedObjectsResolution result = _resolver.Resolve("UsrPortalSpike2", includeConnected: true);

@@ -95,7 +95,8 @@ EXIT CODES
         not be read, the grantee does not exist, the change was refused (a grant that would turn
         operation permissions on without --enable-operation-permissions, a revoke that would leave no
         granting row without --disable-operation-permissions, a revoke on an object that does not use
-        operation permissions, a grantee with more than one row), the save failed and the read-back does
+        operation permissions other than a revoke-and-disable whose state is already in place, a grantee
+        with more than one row), the save failed and the read-back does
         not show the plan, a successful save could not be read back (reported as saved but NOT verified),
         or the object read back does not show a row this call writes (the grantee's row, or the All
         employees row an enable stores) where it was planned, or the planned switch state.
@@ -127,7 +128,11 @@ NOTES
 
     A re-run of a call that already landed changes nothing and exits 0. That includes a revoke with
     --disable-operation-permissions run again on an object that is already off, whose grantee row
-    already has none of the operations, so a retry after a timeout is safe.
+    already has none of the operations, so a retry after a timeout is safe; the result says that the
+    object is available to all internal users. One retry is still refused: a revoke-and-disable from All
+    employees that left the object with no stored rows - the read then shows the synthesized All
+    employees row with every operation - is refused on retry as a revoke on an object that is not
+    administered, which is the state the first call left.
 
     After the save the object is read back and compared with the plan, row by row (grantee, position,
     operations). A missing or different row that this call writes fails it; a row of another role that

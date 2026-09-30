@@ -420,6 +420,87 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 			&& m.Contains("UsrType")));
 	}
 
+	[Test]
+	[Description("On an object that is not administered every row is listed, also with --grantee: all of them start to decide once operation permissions are turned on, including the rows below the grantee's.")]
+	public void Execute_ShouldListEveryRow_WhenTheObjectIsNotAdministeredAndAGranteeIsGiven() {
+		// Arrange
+		_rightsReader.GetObjectRights("UsrOpen", Arg.Any<CreatioRequestOptions>())
+			.Returns(new ObjectRightsInfo(true, "UsrOpen", "UsrOpen", false,
+				new[] { RoleRow(true, false, false, false, 0), EmployeesRow(1) }));
+		GetObjectRightsOptions options = new() { EntitySchemaName = "UsrOpen", Grantee = Role.ToString() };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "the read succeeded");
+		_logger.Received().WriteInfo($"    [0] Sales managers ({Role}): read");
+		_logger.Received().WriteInfo($"    [1] All employees ({Employees}): read/create/edit/delete");
+	}
+
+	[Test]
+	[Description("A read of the named object that times out fails the call and stops the listing: the connected objects are named as not read instead of waiting as long again.")]
+	public void Execute_ShouldFailAndStop_WhenTheRootReadTimesOut() {
+		// Arrange
+		_connectedObjects.Resolve("UsrOrder", true).Returns(Resolution("UsrOrder", "UsrStatus"));
+		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>())
+			.Returns(ObjectRightsInfo.ReadFailed("UsrOrder", "The request timed out.", timedOut: true));
+		GetObjectRightsOptions options = new() { EntitySchemaName = "UsrOrder", IncludeConnected = true };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "the object the caller named could not be read");
+		_rightsReader.DidNotReceive().GetObjectRights("UsrStatus", Arg.Any<CreatioRequestOptions>());
+		_logger.Received().WriteError(Arg.Is<string>(m => m.Contains("UsrOrder: could not read object rights")));
+		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("Stopped after the read of UsrOrder timed out")
+			&& m.Contains("UsrStatus")));
+	}
+
+	[Test]
+	[Description("A reader that throws a timeout the way Creatio's client does — wrapped in an AggregateException — stops the listing like one it reports in-band.")]
+	public void Execute_ShouldStopReadingConnectedObjects_WhenAWrappedTimeoutIsThrown() {
+		// Arrange
+		_connectedObjects.Resolve("UsrOrder", true).Returns(Resolution("UsrOrder", "UsrStatus", "UsrType"));
+		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>())
+			.Returns(Administered("UsrOrder", EmployeesRow(0)));
+		_rightsReader.GetObjectRights("UsrStatus", Arg.Any<CreatioRequestOptions>())
+			.Returns(_ => throw new AggregateException(new System.Threading.Tasks.TaskCanceledException("timed out")));
+		GetObjectRightsOptions options = new() { EntitySchemaName = "UsrOrder", IncludeConnected = true };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "the named object was read; a connected object that could not be read only warns");
+		_rightsReader.DidNotReceive().GetObjectRights("UsrType", Arg.Any<CreatioRequestOptions>());
+		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("UsrStatus: could not read object rights (timed out)")));
+		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("Stopped after the read of UsrStatus timed out")));
+	}
+
+	[Test]
+	[Description("A connected read that fails with a fault the server answered does not stop the listing: the next object may well be readable.")]
+	public void Execute_ShouldReadTheNextObject_WhenAConnectedReadFailsWithoutATimeout() {
+		// Arrange
+		_connectedObjects.Resolve("UsrOrder", true).Returns(Resolution("UsrOrder", "UsrStatus", "UsrType"));
+		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>())
+			.Returns(Administered("UsrOrder", EmployeesRow(0)));
+		_rightsReader.GetObjectRights("UsrStatus", Arg.Any<CreatioRequestOptions>())
+			.Returns(ObjectRightsInfo.ReadFailed("UsrStatus", "503 Service Unavailable"));
+		_rightsReader.GetObjectRights("UsrType", Arg.Any<CreatioRequestOptions>())
+			.Returns(Administered("UsrType", EmployeesRow(0)));
+		GetObjectRightsOptions options = new() { EntitySchemaName = "UsrOrder", IncludeConnected = true };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "a connected object that could not be read only warns");
+		_rightsReader.Received(1).GetObjectRights("UsrType", Arg.Any<CreatioRequestOptions>());
+		_logger.DidNotReceive().WriteWarning(Arg.Is<string>(m => m.Contains("Stopped after")));
+	}
+
 	[TestCase("Usr Order")]
 	[TestCase("UsrOrder;")]
 	[Description("A name that is not a schema identifier is refused before anything is read.")]

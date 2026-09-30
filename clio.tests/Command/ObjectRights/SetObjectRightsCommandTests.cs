@@ -247,6 +247,8 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		exitCode.Should().Be(0, because: "the state the first call asked for is in place, so a retry is not a failure");
 		_infos.Should().Contain(m => m.Contains("operation permissions are already OFF") && m.Contains("(no change)"),
 			because: "the result says why nothing changes");
+		_infos.Should().Contain(m => m.Contains("available to all internal users"),
+			because: "'(no change)' must not read as 'this role has no access' on an object that is off");
 		NothingSaved();
 	}
 

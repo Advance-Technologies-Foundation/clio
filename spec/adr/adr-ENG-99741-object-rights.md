@@ -4,7 +4,7 @@
   - Decided: D1 (one object per call), D4 (host approval), D8 (grant and revoke on MCP), `remove-role` as a follow-up.
   - Decided after the self-review (2026-09-30): D5 (no separate opt-in for security/system objects), `operations`
     required on every call (D4, invariant 8), R3 (the approval is of `clio-run`), a revoke on an object that is not
-    administered stays refused.
+    administered stays refused (a revoke-and-disable that finds its state already in place changes nothing).
   - The facts under "Platform model" were checked on a stand on 2026-09-28/29.
 - **Date:** 2026-09-28 (updated 2026-09-30)
 - **Jira:** [ENG-99741](https://creatio.atlassian.net/browse/ENG-99741) (related ENG-99969, ENG-100406, ENG-100407)
@@ -216,10 +216,13 @@ report facts. The guidance explains what the facts mean and decides what to do.
   - enabling or disabling operation permissions without its flag;
   - duplicate rows for the grantee;
   - a change that would leave an administered object with no granting row;
-  - a revoke on an object that is not administered, which company employees reach whatever its rows say. A
-    repeated revoke with `disable-operation-permissions` is the exception: when the switch is already off and the
-    grantee's row already lacks the named operations, the state it asks for is in place, so it changes nothing
-    (a safe retry) instead of being refused;
+  - a revoke on an object that is not administered, which company employees reach whatever its rows say. A revoke
+    with `disable-operation-permissions` that finds the switch already off and the grantee's row without the named
+    operations (typically a retry) is the exception: the state it asks for is in place, so it changes nothing, and
+    the result says the object is available to all internal users. The rule is on state, so a first such call on an
+    object that was never administered is no change too. A lone `All employees` row with every operation on an
+    object that is off cannot be told from the synthesized one, so a retry of a revoke-and-disable from All employees
+    that left no stored rows is refused;
 - never removes a row and never reorders rows;
 - reports facts:
   - rows in priority order, with their positions (`get`; with `--include-connected`, also for the object's own

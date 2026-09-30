@@ -19,8 +19,8 @@ public class GetObjectRightsOptions : RemoteCommandOptions {
 
 	/// <summary>An optional SysAdminUnit id: show its row and the rows above it instead of every row.</summary>
 	[Option("grantee", Required = false, HelpText =
-		"Optional SysAdminUnit id (role or user): show its row and the rows above it, which decide first. When omitted, "
-		+ "every row is listed.")]
+		"Optional SysAdminUnit id (role or user): show its row and the rows above it, which decide first; every row when "
+		+ "it has none, and on an object that is not administered. When omitted, every row is listed.")]
 	public string Grantee { get; set; }
 
 	/// <summary>Also read the objects the root object's own lookup columns reference.</summary>
@@ -61,13 +61,14 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 		}
 		CreatioRequestOptions requestOptions = ObjectRightsCommandInput.RequestOptions(options);
 		ConnectedObjectsResolution resolution;
-		// Only the service call is guarded: a failure in the code that reports the result is a bug, not a service
-		// failure. The reader never throws for one — it reports it as the object's read error.
+		// The resolver reports a failed schema read in-band (EnumerationError); this guard is the backstop for a
+		// service failure that still escapes it. Only the call is guarded: a failure in the code that reports the
+		// result is a bug, not a service failure.
 		try {
 			resolution = _connectedObjects.Resolve(options.EntitySchemaName, options.IncludeConnected);
 		}
 		catch (Exception ex) when (ObjectRightsSupport.IsServiceFailure(ex)) {
-			_logger.WriteError($"Error: {ObjectRightsSupport.DisplayError(ex.Message)}");
+			_logger.WriteError($"Error: {ObjectRightsSupport.DisplayError(ex)}");
 			return 1;
 		}
 		ReportHeader(options, granteeFilter, resolution);
@@ -120,15 +121,14 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 		}
 	}
 
-	// The reader reports a service failure as the object's read error; a reader that throws one is treated the same
-	// way. Only the call itself is guarded, never the code that reports its result.
+	// The reader reports a service failure as the object's read error; this guard is the backstop for one that still
+	// escapes it, which is then reported the same way. Only the call is guarded, never the code that reports its result.
 	private ObjectRightsInfo ReadRights(string schemaName, CreatioRequestOptions requestOptions) {
 		try {
 			return _rightsReader.GetObjectRights(schemaName, requestOptions);
 		}
 		catch (Exception ex) when (ObjectRightsSupport.IsServiceFailure(ex)) {
-			return new ObjectRightsInfo(true, schemaName, null, false, Array.Empty<RoleOperationRights>(),
-				ReadError: ObjectRightsSupport.DisplayError(ex.Message), TimedOut: ObjectRightsSupport.IsTimeout(ex));
+			return ObjectRightsInfo.ReadFailed(schemaName, ObjectRightsSupport.DisplayError(ex), ObjectRightsSupport.IsTimeout(ex));
 		}
 	}
 
@@ -158,7 +158,7 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 				_logger.WriteInfo("    Rows that apply if operation permissions are turned on:");
 				ReportRows(info.Roles, null);
 			}
-			if (info.Roles.All(row => row.GranteeId != SysAdminUnitIds.AllEmployees)) {
+			if (!info.State.HasAllEmployeesRow) {
 				// set-object-rights keeps internal users' access when it turns operation permissions on, so the listing
 				// says so rather than let a reader take the rows above for the whole effect of an enable.
 				_logger.WriteInfo("    It has no 'All employees' row: set-object-rights --enable-operation-permissions adds "
