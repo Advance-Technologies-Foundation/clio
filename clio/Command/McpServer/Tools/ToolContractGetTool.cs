@@ -633,6 +633,7 @@ internal static class ToolContractCatalog {
 	private const string OperationsFieldName = "operations";
 	private const string OffsetFieldName = "offset";
 	private const string PackageNameFieldName = "package-name";
+	private const string CompileProcessNameFieldName = "process-name";
 	private const string PackagesFieldName = "packages";
 	private const string PasswordFieldName = "password";
 	private const string PagesFieldName = "pages";
@@ -6022,7 +6023,8 @@ internal static class ToolContractCatalog {
 				[EnvironmentNameFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
-					Field(PackageNameFieldName, StringType, "Optional package name. When omitted, runs a full compilation (`clio cc -e ENV_NAME --all`). When provided, recompiles only that single package and waits for the finished build: a C# compile error fails the call (exit-code 1) with the CSxxxx compiler diagnostics, and the new code is not loaded. If the MCP response deadline is reached before the build finishes, the call returns exit-code 0 with an in-progress note and an operation-id instead; the compile keeps running and `compile-status` then reports its verdict, including a compile failure. Comma-separated lists are not supported.")
+					Field(PackageNameFieldName, StringType, "Optional package name. When omitted (and process-name is omitted too), runs a full compilation (`clio cc -e ENV_NAME --all`). When provided, recompiles only that single package and waits for the finished build: a C# compile error fails the call (exit-code 1) with the CSxxxx compiler diagnostics, and the new code is not loaded. If the MCP response deadline is reached before the build finishes, the call returns exit-code 0 with an in-progress note and an operation-id instead; the compile keeps running and `compile-status` then reports its verdict, including a compile failure. A blank value is refused rather than read as omitted. Comma-separated lists are not supported."),
+					Field(CompileProcessNameFieldName, StringType, "Optional business process code. Compiles the package that process is in through CrtProcessBuilder 1.6.6.33+ and answers with the compiler errors, the process's own first - the compile a Script Task or process methods saved by create/modify-business-process need: on Creatio 10.x a package-name compile does not pick such a save up, and a full one takes about 20 minutes. An interpreted process without C# is answered without a compile. Exclusive with package-name.")
 				]),
 			CommandExecutionOutput(),
 			CommonErrorContract,
@@ -6035,6 +6037,10 @@ internal static class ToolContractCatalog {
 				Example("Recompile a single package after a C# schema change", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
 					[PackageNameFieldName] = ExamplePackageName
+				}),
+				Example("Compile a business process's package after its save warned it cannot run until compiled", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[CompileProcessNameFieldName] = "UsrCalculateDiscount"
 				})
 			],
 			Flow(
@@ -6042,7 +6048,7 @@ internal static class ToolContractCatalog {
 					FsmModeTool.SetFsmModeToolName,
 					CompileCreatioTool.CompileCreatioToolName
 				],
-				"Call only after C# schema work, after `set-fsm-mode`, in response to a runtime schema-missing error, or after a culture was activated in the Languages section. Skip this tool entirely when the work touches only Freedom UI page bodies or DDL changes routed through `update-entity-schema`."),
+				"Call only after C# schema work - a business-process save or activation that warns the process cannot run \"until the configuration is compiled\" included, and then with `process-name` - after `set-fsm-mode`, in response to a runtime schema-missing error, or after a culture was activated in the Languages section. Skip this tool entirely when the work touches only Freedom UI page bodies or DDL changes routed through `update-entity-schema`."),
 			[],
 			[],
 			AntiPatterns: [
@@ -6068,11 +6074,11 @@ internal static class ToolContractCatalog {
 			Preconditions: [
 				"The user was warned that compilation is a heavy operation forcing a runtime reload that affects every connected user, and explicitly confirmed to compile now rather than postpone. Ask every time (not once per session) — a repeated or explicit compile request is not itself the confirmation and a prior in-session warning/answer is not standing consent; if the user postpones, do NOT call this tool.",
 				"`set-fsm-mode` was just toggled (full compilation only).",
-				"C# schemas were added or modified in the targeted package.",
+				"C# schemas were added or modified in the targeted package, or a business-process call answered that the process cannot run \"until the configuration is compiled\" (then pass `process-name`).",
 				"The runtime reported a missing-in-runtime or schema-not-found error that maps to a compilation gap.",
 				"A culture was activated in the Languages section and no full compilation has run since (full compilation only): until then the UI does not load in that culture.",
 				"Caller must NOT call this tool after `create-app`, `update-page`, `sync-pages`, `update-entity-schema`, `create-page`, `create-entity-business-rules`, or `create-page-business-rules`.",
-				"After `create-business-process`/`modify-business-process`, compile ONLY when the process carries C# you authored — a Script Task, or a user task with an after-activity-save script (the `C# schemas were added or modified` case above). Otherwise the process runs with no compile. A raw process read (e.g. `VwSysProcess`) shows `NeedInstall`, `NeedUpdateSourceCode` and `NeedUpdateStructure` all true on a fresh process; none is a compile trigger — read status with `describe-business-process`, not a raw process read. (A CUSTOM user-task SCHEMA is separate: creating/changing one needs a compile.)"
+				"After `create-business-process`, `modify-business-process`, `modify-business-process-as-new-version` or `set-active-business-process-version`, compile ONLY when the response warns that the process cannot run \"until the configuration is compiled\" — which it does for C# you authored (a Script Task, process methods, a user task with an after-activity-save script, or a changed using such code compiles under) and for a new or activated version that carries such C# — and then pass `process-name` (the NEW version's name for a version) rather than `package-name`. That warning, and the `compile-creatio not required` note, speak for that call only: a compile an earlier save made owed is still owed. Otherwise the process runs with no compile. A raw process read (e.g. `VwSysProcess`) shows `NeedInstall`, `NeedUpdateSourceCode` and `NeedUpdateStructure` all true on a fresh process; none is a compile trigger — read status with `describe-business-process`, not a raw process read. (A CUSTOM user-task SCHEMA is separate: creating/changing one needs a compile.)"
 			]);
 	}
 

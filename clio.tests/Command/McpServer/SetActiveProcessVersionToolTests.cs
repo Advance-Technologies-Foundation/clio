@@ -52,7 +52,7 @@ public class SetActiveProcessVersionToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Emits the deterministic compile-not-required note on success — activating a version puts the environment into no state that needs compiling, and an agent that assumes otherwise runs compile-creatio for nothing (ENG-95706).")]
+	[Description("Emits the deterministic compile-not-required note on success — activating a version of a process without C# puts the environment into no state that needs compiling, and an agent that assumes otherwise runs compile-creatio for nothing (ENG-95706).")]
 	public void SetActiveProcessVersion_Should_Emit_CompileNotRequiredNote_On_Success() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
@@ -69,6 +69,32 @@ public class SetActiveProcessVersionToolTests {
 		// Assert
 		result.Note.Should().Be(CommandExecutionResult.CompileNotRequiredNote,
 			because: "the note is the one channel an agent cannot skip past on the way to a wrong compile");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Withholds the compile-not-required note when the server warns that the activated version cannot run until the configuration is compiled: a version of a process that carries C# is a schema of its own, and activating it before a compile leaves every new instance refusing to start.")]
+	public void SetActiveProcessVersion_Should_Not_Emit_CompileNotRequiredNote_When_The_Server_Demands_A_Compile() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		string warning = "Every new instance of the process now runs version 'UsrSampleProcessCustom2'. The process "
+			+ "carries C# in script task 'Calc', so it cannot run the code it was saved with "
+			+ CommandExecutionResult.CompileRequiredWarningMarker + ".";
+		FakeCommand resolvedCommand = new(warning: warning);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<SetActiveProcessVersionCommand>(Arg.Any<SetActiveProcessVersionOptions>())
+			.Returns(resolvedCommand);
+		SetActiveProcessVersionTool tool = new(new FakeCommand(), ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.SetActiveProcessVersion(
+			new SetActiveProcessVersionArgs("docker_fix2", "UsrSampleProcessCustom2"));
+
+		// Assert
+		result.ExitCode.Should().Be(0, because: "the activation itself succeeded");
+		(result.Note ?? string.Empty).Should().NotContain(CommandExecutionResult.CompileNotRequiredNote,
+			because: "the note would contradict the server's own warning that the version must be compiled first");
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
@@ -303,16 +329,22 @@ public class SetActiveProcessVersionToolTests {
 
 	private sealed class FakeCommand : SetActiveProcessVersionCommand {
 		private readonly int _exitCode;
+		private readonly string? _warning;
 
 		public SetActiveProcessVersionOptions? CapturedOptions { get; private set; }
 
-		public FakeCommand(int exitCode = 0)
+		public FakeCommand(int exitCode = 0, string? warning = null)
 			: base(Substitute.For<ISetActiveProcessVersionService>(), Substitute.For<ILogger>()) {
 			_exitCode = exitCode;
+			_warning = warning;
 		}
 
 		public override int Execute(SetActiveProcessVersionOptions options) {
 			CapturedOptions = options;
+			if (_warning != null) {
+				// As the real command relays a server warning.
+				ConsoleLogger.Instance.WriteWarning(_warning);
+			}
 			return _exitCode;
 		}
 	}
