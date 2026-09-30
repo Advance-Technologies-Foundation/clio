@@ -18,22 +18,30 @@ DESCRIPTION
 
     The manifest contains the replacing-schema layer chain, parent-template
     seed layers, merged resources, entity columns, column titles, and best-effort
-    related schemas such as details, sections, and child pages. "resources"
-    holds one en-US text per page string; "resourceStrings" holds every culture
-    as { "Key": { "en-US": "...", "fr-FR": "..." } } (the get-page
-    bundle.resources.strings shape). Each detailSchemas entry carries its own
-    merged strings as "resourceStrings" in the same shape; its "title" is the
-    schema's internal caption, not the title the page shows; Classic takes that
-    title from the page's captionName resource, then the page's
-    <Detail>DetailCaptionOnPage resource, then the detail's own Caption string.
-    Each nested childPageSchemas manifest carries its strings as
-    "resourceStrings" only, with no flat "resources". It also carries
+    related schemas such as details, sections, and child pages. It also carries
     "enumVocabulary": the TARGET stand's own ViewItemType/ContentType/DataValueType
     enum tables, read live from that stand's sysenums.js (never copied from the
     engine's pinned tables), so the engine's enum-drift guard can catch a stand
     running a different platform version. An enum that could not be measured is
     omitted, never written as an empty object; "enumVocabularyCount" in the
     response reports how many of the three were resolved.
+
+    Localizable strings are merged across the hierarchy. "resources" maps each
+    page string to its en-US text (else its first culture); "resourceStrings"
+    maps each page string to every culture as
+    { "Key": { "en-US": "...", "fr-FR": "..." } } (the get-page
+    bundle.resources.strings shape), and resources[key] equals
+    resourceStrings[key]["en-US"] whenever both exist. Both blocks are omitted
+    when the page's merged strings cannot be loaded, with a warning.
+    Each detailSchemas entry carries "body" (the top layer's), "title", and
+    "resourceStrings": the detail's strings merged across its layers, in every
+    culture. "title" is the detail schema's internal caption, not the title the
+    page shows; Classic takes that title from the page's captionName resource,
+    then the page's <Detail>DetailCaptionOnPage resource, then the detail's own
+    Caption string. Each nested childPageSchemas manifest carries its strings
+    as "resourceStrings" only, with no flat "resources"; when a child page's
+    strings cannot be loaded, its manifest omits "resourceStrings" and a
+    warning names the child page.
 
     Child pages come from SysModuleEdit metadata: each detail's bound entity is
     resolved (the page's own details config wins when it overrides the entity,
@@ -62,8 +70,9 @@ DESCRIPTION
     or child edit pages a page may carry, and the parent-template chain is
     walked to its base template however deep it is. A page with 250 details
     yields all 250. On a very wide page this costs one designer round-trip per
-    detail, so the run takes proportionally longer - a slow complete unit is
-    preferred over a fast truncated one.
+    detail and two per child page (its chain and its strings), so the run takes
+    proportionally longer - a slow complete unit is preferred over a fast
+    truncated one.
 
 OPTIONS
     --schema-name                      Classic client-unit (page) schema name to collect

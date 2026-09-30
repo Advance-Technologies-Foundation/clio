@@ -3,6 +3,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -846,43 +847,62 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 
 	private (JObject resources, JObject resourceStrings) BuildResources(
 		PageSourcesRunContext ctx, string topLayerUId, string schemaName) {
-		var resources = new JObject();
-		var resourceStrings = new JObject();
+		IReadOnlyList<MergedLocalizableString> strings = LoadMergedStrings(ctx, topLayerUId, schemaName,
+			$"Could not gather merged localizable strings (resources) of '{schemaName}'",
+			"Its manifest carries no resources, so localized captions will be missing from the folded page.");
+		JObject resourceStrings = BuildResourceStrings(strings);
+		return (BuildFlatResources(strings, resourceStrings), resourceStrings);
+	}
+
+	private JObject BuildChildResourceStrings(PageSourcesRunContext ctx, string topLayerUId, string childPageName) =>
+		BuildResourceStrings(LoadMergedStrings(ctx, topLayerUId, childPageName,
+			$"Could not gather merged localizable strings (resourceStrings) of child page '{childPageName}'",
+			"Its nested manifest carries no resourceStrings, so the child page's localized captions will be missing."));
+
+	// Merged localizable strings from the full-hierarchy load; empty, with a response warning, when the load fails.
+	private IReadOnlyList<MergedLocalizableString> LoadMergedStrings(PageSourcesRunContext ctx, string topLayerUId,
+		string schemaName, string failurePrefix, string missingNote) {
 		try {
 			(JObject schema, string error) = LoadSchemaCached(ctx, topLayerUId, schemaName, useFullHierarchy: true);
-			if (error != null || schema == null) {
-				// resourceCount:0 cannot be told apart from a page that declares no localizable strings, and the
-				// engine then folds captions it has no translation for. Same channel as the catch below.
-				string warning = $"Could not gather merged localizable strings (resources) of '{schemaName}': {error ?? NoSchemaReturned}. " +
-					"Its manifest carries no resources, so localized captions will be missing from the folded page.";
-				_logger.WriteWarning(warning);
-				AddWarning(ctx, warning);
-				return (resources, resourceStrings);
+			if (error == null && schema != null) {
+				return SchemaDesignerHelper.ExtractMergedLocalizableStrings(schema);
 			}
-			IReadOnlyList<MergedLocalizableString> strings = SchemaDesignerHelper.ExtractMergedLocalizableStrings(schema);
-			resourceStrings = BuildResourceStrings(strings);
-			foreach (MergedLocalizableString localizableString in strings) {
-				if (string.IsNullOrWhiteSpace(localizableString.Name) || localizableString.Values.Count == 0) {
-					continue;
-				}
-				string value = localizableString.Values
-						.FirstOrDefault(v => string.Equals(v.CultureName, DefaultCulture, StringComparison.OrdinalIgnoreCase))?.Value
-					?? localizableString.Values[0].Value;
-				if (!string.IsNullOrEmpty(value) && resources[localizableString.Name] == null) {
-					resources[localizableString.Name] = value;
-				}
-			}
-		}
-		catch (Exception ex) {
-			string warning = $"Could not gather merged localizable strings (resources) of '{schemaName}': {ex.Message}";
+			// resourceCount:0 cannot be told apart from a page that declares no localizable strings, and the
+			// engine then folds captions it has no translation for. Same channel as the catch below.
+			string warning = $"{failurePrefix}: {error ?? NoSchemaReturned}. {missingNote}";
 			_logger.WriteWarning(warning);
 			AddWarning(ctx, warning);
 		}
-		return (resources, resourceStrings);
+		catch (Exception ex) {
+			string warning = $"{failurePrefix}: {ex.Message}";
+			_logger.WriteWarning(warning);
+			AddWarning(ctx, warning);
+		}
+		return [];
+	}
+
+	// One text per key: the key's merged en-US value, else the first entry's en-US or first culture value, so
+	// resources[key] equals resourceStrings[key]["en-US"] whenever both exist.
+	private static JObject BuildFlatResources(IReadOnlyList<MergedLocalizableString> strings, JObject resourceStrings) {
+		var resources = new JObject();
+		foreach (MergedLocalizableString localizableString in strings) {
+			if (string.IsNullOrWhiteSpace(localizableString.Name) || localizableString.Values.Count == 0) {
+				continue;
+			}
+			string value = resourceStrings[localizableString.Name]?[DefaultCulture]?.ToString()
+				?? localizableString.Values
+					.FirstOrDefault(v => string.Equals(v.CultureName, DefaultCulture, StringComparison.OrdinalIgnoreCase))?.Value
+				?? localizableString.Values[0].Value;
+			if (!string.IsNullOrEmpty(value) && resources[localizableString.Name] == null) {
+				resources[localizableString.Name] = value;
+			}
+		}
+		return resources;
 	}
 
 	// Merged localizable strings in get-page's bundle.resources.strings shape: { "Key": { "en-US": "…", "fr-FR": "…" } }.
-	// The first non-empty value per key and culture wins, matching the flat resources rule.
+	// Culture names are canonicalized (en-us -> en-US); entries without a key, culture or text are skipped; across
+	// duplicate entries of a key the first non-empty text per culture wins.
 	private static JObject BuildResourceStrings(IReadOnlyList<MergedLocalizableString> strings) {
 		var resourceStrings = new JObject();
 		foreach (MergedLocalizableString localizableString in strings) {
@@ -891,17 +911,29 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 			}
 			var cultures = resourceStrings[localizableString.Name] as JObject ?? new JObject();
 			foreach (MergedLocalizableStringValue value in localizableString.Values) {
-				if (string.IsNullOrWhiteSpace(value.CultureName) || string.IsNullOrEmpty(value.Value)
-					|| cultures[value.CultureName] != null) {
+				if (string.IsNullOrWhiteSpace(value.CultureName) || string.IsNullOrEmpty(value.Value)) {
 					continue;
 				}
-				cultures[value.CultureName] = value.Value;
+				string cultureName = NormalizeCultureName(value.CultureName);
+				if (cultures[cultureName] == null) {
+					cultures[cultureName] = value.Value;
+				}
 			}
 			if (cultures.HasValues) {
 				resourceStrings[localizableString.Name] = cultures;
 			}
 		}
 		return resourceStrings;
+	}
+
+	private static string NormalizeCultureName(string cultureName) {
+		string trimmed = cultureName.Trim();
+		try {
+			return CultureInfo.GetCultureInfo(trimmed, predefinedOnly: true).Name;
+		}
+		catch (CultureNotFoundException) {
+			return trimmed;
+		}
 	}
 
 	private (JObject entityColumns, JObject columnTitles) BuildEntityColumns(PageSourcesRunContext ctx, string entity) {
@@ -1444,8 +1476,7 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 			manifest["seed"] = seed;
 		}
 		// Child manifests carry resourceStrings only: flat resources would change what an older engine folds.
-		(_, JObject resourceStrings) = BuildResources(ctx, topLayerUId, editPageName);
-		AddBlock(manifest, "resourceStrings", resourceStrings);
+		AddBlock(manifest, "resourceStrings", BuildChildResourceStrings(ctx, topLayerUId, editPageName));
 		return (manifest, null);
 	}
 

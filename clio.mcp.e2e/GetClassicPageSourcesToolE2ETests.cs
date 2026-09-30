@@ -211,22 +211,32 @@ public sealed class GetClassicPageSourcesToolE2ETests : McpContractFixtureBase {
 		// Assert — details
 		root.TryGetProperty("detailSchemas", out JsonElement details).Should().BeTrue(
 			because: "ContactPageV2 references details");
+		int detailsWithCaption = 0;
 		foreach (JsonProperty detail in details.EnumerateObject()) {
 			if (detail.Value.TryGetProperty("resourceStrings", out JsonElement detailStrings)) {
 				AssertCultureMap(detailStrings, $"detail '{detail.Name}'");
-			}
-		}
-
-		// Assert — child pages
-		if (root.TryGetProperty("childPageSchemas", out JsonElement childPages)) {
-			foreach (JsonProperty childPage in childPages.EnumerateObject()) {
-				childPage.Value.TryGetProperty("resources", out _).Should().BeFalse(
-					because: $"child page '{childPage.Name}' carries no flat resources, so an older engine folds it as before");
-				if (childPage.Value.TryGetProperty("resourceStrings", out JsonElement childStrings)) {
-					AssertCultureMap(childStrings, $"child page '{childPage.Name}'");
+				if (detailStrings.TryGetProperty("Caption", out _)) {
+					detailsWithCaption++;
 				}
 			}
 		}
+		detailsWithCaption.Should().BeGreaterThan(0,
+			because: "at least one ContactPageV2 detail declares a Caption string, which must reach its resourceStrings");
+
+		// Assert — child pages
+		root.TryGetProperty("childPageSchemas", out JsonElement childPages).Should().BeTrue(
+			because: "ContactPageV2 details register child pages in SysModuleEdit");
+		int childPagesWithStrings = 0;
+		foreach (JsonProperty childPage in childPages.EnumerateObject()) {
+			childPage.Value.TryGetProperty("resources", out _).Should().BeFalse(
+				because: $"child page '{childPage.Name}' carries no flat resources, so an older engine folds it as before");
+			if (childPage.Value.TryGetProperty("resourceStrings", out JsonElement childStrings)) {
+				AssertCultureMap(childStrings, $"child page '{childPage.Name}'");
+				childPagesWithStrings++;
+			}
+		}
+		childPagesWithStrings.Should().BeGreaterThan(0,
+			because: "at least one ContactPageV2 child page declares localizable strings, which must reach its resourceStrings");
 	}
 
 	// A resourceStrings block is { key: { culture: text } } with at least one non-empty text per key.
