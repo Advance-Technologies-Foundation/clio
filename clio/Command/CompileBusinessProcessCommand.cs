@@ -134,10 +134,12 @@ public sealed class CompileBusinessProcessService(
 				exception);
 		}
 
-		ResultDto result = (envelope
-				?? throw new InvalidOperationException("CompileProcess returned an empty response."))
-			.Result
-			?? throw new InvalidOperationException("CompileProcess returned an unexpected response shape.");
+		// Not the envelope: a JSON error body (a fault, a refusal before the handler ran) parses into one with no
+		// result. The outcome is as open as for a body that does not parse at all.
+		ResultDto result = envelope?.Result
+			?? throw new InvalidOperationException(
+				"CompileProcess returned a response without its result, so whether the package was compiled is "
+				+ "UNKNOWN. Read last-compilation-log for this environment before compiling again.");
 		return new CompileBusinessProcessResult(
 			result.Success,
 			result.ErrorMessage,

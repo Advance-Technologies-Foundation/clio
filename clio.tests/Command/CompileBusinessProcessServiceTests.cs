@@ -170,6 +170,25 @@ public sealed class CompileBusinessProcessServiceTests {
 	}
 
 	[Test]
+	[Description("A JSON body that is not the compile envelope - an error envelope, the shape a refusal before the handler takes - says the outcome is unknown and where to read it, like a body that does not parse.")]
+	[TestCase("{\"Code\":403,\"Message\":\"Forbidden\"}")]
+	[TestCase("{\"CompileProcessResult\":null}")]
+	public void Compile_ShouldSayTheOutcomeIsUnknown_WhenTheBodyCarriesNoResult(string body) {
+		// Arrange
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
+		client.ExecutePostRequest(CompileUrl, Arg.Any<string>(), Arg.Any<int>()).Returns(body);
+		CompileBusinessProcessService service = CreateService(client);
+
+		// Act
+		Action act = () => service.Compile(Env, new CompileBusinessProcessRequest("UsrProc", null));
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(because: "there is no result to read")
+			.WithMessage("*UNKNOWN*last-compilation-log*",
+				because: "the caller is told what is unknown and where to find out");
+	}
+
+	[Test]
 	[Description("An empty or missing body says the outcome is unknown and where to read it, instead of the bare 'Value cannot be null' the parser throws for a null body.")]
 	[TestCase(null)]
 	[TestCase("")]

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 using Allure.NUnit;
@@ -51,6 +52,11 @@ public sealed class ScriptTaskElementToolE2ETests {
 
 	/// <summary>The first CrtProcessBuilder whose describe marks a using the code generator skips.</summary>
 	private const string MinimumIgnoredMarkPackageVersion = "1.6.6.51";
+
+	/// <summary>The first CrtProcessBuilder whose activation warns that a version with C# must be compiled.</summary>
+	private const string MinimumActivationWarningPackageVersion = "1.6.6.51";
+
+	private const string SetActiveToolName = SetActiveProcessVersionTool.SetActiveProcessVersionToolName;
 
 	private const string CompileToolName = CompileCreatioTool.CompileCreatioToolName;
 
@@ -113,9 +119,10 @@ public sealed class ScriptTaskElementToolE2ETests {
 		// Assert
 		JsonObject[] usings = graph["usings"]!.AsArray().Select(entry => entry!.AsObject()).ToArray();
 		string described = graph["usings"]!.ToJsonString();
-		usings.Single(entry => entry["namespace"]!.GetValue<string>() == "Terrasoft.Core")["ignored"]?
-			.GetValue<string>().Should().Contain("always imports",
-				because: "the generated code imports Terrasoft.Core anyway, so the entry adds nothing; usings: {0}", described);
+		JsonNode? mark = usings.Single(entry => entry["namespace"]!.GetValue<string>() == "Terrasoft.Core")["ignored"];
+		mark.Should().NotBeNull(because: "describe must mark the entry the code generator skips; usings: {0}", described);
+		mark!.GetValue<string>().Should().Contain("always imports",
+			because: "the generated code imports Terrasoft.Core anyway, so the entry adds nothing");
 		usings.Single(entry => entry["namespace"]!.GetValue<string>() == "System.Linq").ContainsKey("ignored")
 			.Should().BeFalse(because: "an entry the generator emits carries no mark");
 	}
@@ -301,6 +308,47 @@ public sealed class ScriptTaskElementToolE2ETests {
 			because: "the version's generated code does not exist until the configuration is compiled");
 		versioned.Should().NotContain(CommandExecutionResult.CompileNotRequiredNote,
 			because: "activating such a version without a compile refuses to start it");
+	}
+
+	[Test]
+	[Description("Activating a new version of a script-task process answers with the compile-required warning and not the compile-not-required note: the version is a schema of its own whose code does not exist until compiled, so an agent that trusted the note would put a version that refuses to start in front of every new instance. The version is created and activated on a test process of its own.")]
+	[AllureTag(SetActiveToolName)]
+	[AllureName("set-active-business-process-version of a script-task version demands a compile")]
+	public async Task SetActiveProcessVersion_OfAScriptTaskVersion_Should_DemandACompile() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context =
+			await ProcessDesignerE2EArrange.StartAsync("ScriptTask", MinimumActivationWarningPackageVersion);
+		string processName = $"UsrClioBpScriptTaskActivateE2e{Guid.NewGuid():N}";
+		JsonSerializer.Serialize(await ProcessDesignerE2EArrange.CallToolAsync(context, CreateToolName,
+				new Dictionary<string, object?> {
+					["environment-name"] = context.EnvironmentName,
+					["descriptor"] = BuildDescriptor(processName)
+				}))
+			.Should().Contain("created (UId:", because: "the arrange step must have built the process");
+		string versioned = JsonSerializer.Serialize(await ProcessDesignerE2EArrange.CallToolAsync(context,
+			VersionToolName, new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName,
+				["package-name"] = "Custom",
+				["operations"] = "[]"
+			}));
+		Match version = Regex.Match(versioned, @"[Vv]ersion(?: \d+)? \u0027(?<name>[A-Za-z0-9_]+)\u0027 created");
+		version.Success.Should().BeTrue(because: "the version's name is only known from the answer that created it: {0}",
+			versioned);
+
+		// Act
+		string activated = JsonSerializer.Serialize(await ProcessDesignerE2EArrange.CallToolAsync(context,
+			SetActiveToolName, new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["version-name"] = version.Groups["name"].Value
+			}));
+
+		// Assert
+		activated.Should().Contain(ExitCodeZero, because: "the activation itself succeeds: {0}", activated);
+		activated.Should().Contain(CommandExecutionResult.CompileRequiredWarningMarker,
+			because: "every new instance now runs a version whose code does not exist until it is compiled");
+		activated.Should().NotContain(CommandExecutionResult.CompileNotRequiredNote,
+			because: "the note would tell the agent to skip the compile that version needs");
 	}
 
 	[Test]

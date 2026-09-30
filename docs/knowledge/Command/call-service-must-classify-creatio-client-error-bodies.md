@@ -1,10 +1,10 @@
 ---
-description: call-service receives error bodies without HTTP status from Creatio.Client, so it must classify Creatio JSON and IIS HTML before writing the destination file
+description: Creatio.Client's POST returns an error body without its HTTP status and throws nothing that carries one, so a caller classifies the body (call-service, the process compile) and never an HttpRequestException status
 applies-to:
   - clio/Query/DataServiceQuery.cs
   - clio/Command/CompileBusinessProcessCommand.cs
 ticket: 1220
-date: 2026-08-27
+date: 2026-09-30
 ---
 
 **What is true** — the `Creatio.Client` methods used by `IApplicationClient` return the response body
@@ -21,5 +21,5 @@ without replacing that transport contract.
 code 0. Automation then parses an error envelope or an IIS HTML page as if the service succeeded,
 and the original request failure is discovered only downstream. The opposite mistake is as easy: a
 catch that classifies `HttpRequestException.StatusCode` on a POST never fires, because no exception
-carries a status there, and a unit test that stubs one passes while production takes the other branch
-(`CompileBusinessProcessService` shipped such a 4xx branch for one review round).
+carries a status there, and a unit test that stubs one passes while production takes the other branch.
+`CompileBusinessProcessService` therefore answers a body without its result as an UNKNOWN outcome.

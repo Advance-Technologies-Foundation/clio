@@ -759,8 +759,11 @@ public sealed class CompileCreatioToolTests
 	[TestCase(typeof(Clio.Command.McpServer.Tools.ProcessDesigner.SetActiveProcessVersionTool), nameof(Clio.Command.McpServer.Tools.ProcessDesigner.SetActiveProcessVersionTool.SetActiveProcessVersion))]
 	public void ProcessWrite_Description_Should_Say_The_Compile_Signal_Is_Per_Call(Type toolType, string methodName)
 	{
+		// Arrange
+		System.Reflection.MethodInfo method = toolType.GetMethod(methodName)!;
+
 		// Act
-		string description = ((System.ComponentModel.DescriptionAttribute)toolType.GetMethod(methodName)!
+		string description = ((System.ComponentModel.DescriptionAttribute)method
 			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
 			.Single()).Description;
 
