@@ -49,6 +49,9 @@ public sealed class ScriptTaskElementToolE2ETests {
 	/// <summary>The cut that ships the CompileProcess operation compile-creatio's process-name mode calls.</summary>
 	private const string MinimumCompilePackageVersion = "1.6.6.33";
 
+	/// <summary>The first CrtProcessBuilder whose describe marks a using the code generator skips.</summary>
+	private const string MinimumIgnoredMarkPackageVersion = "1.6.6.51";
+
 	private const string CompileToolName = CompileCreatioTool.CompileCreatioToolName;
 
 	#region Methods: Tests
@@ -86,6 +89,34 @@ public sealed class ScriptTaskElementToolE2ETests {
 		usings.Should().Contain("System.Linq", because: "a plain using is read back by namespace");
 		usings.Should().Contain("\"alias\":\"SysSettings\"",
 			because: "the alias is what makes the aliased type name compile, so it must survive the round trip");
+	}
+
+	[Test]
+	[Description("Describe marks a using the platform's code generator emits nothing for - here a plain default namespace, which a build stores as redundant - so a caller feeding describe back into a build knows to leave it out; an entry the generator emits carries no mark.")]
+	[AllureTag(CreateToolName)]
+	[AllureName("describe-business-process marks a using the code generator skips")]
+	public async Task DescribeBusinessProcess_Should_Mark_A_Using_The_Generator_Skips() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context =
+			await ProcessDesignerE2EArrange.StartAsync("ScriptTask", MinimumIgnoredMarkPackageVersion);
+		string processName = $"UsrClioBpScriptTaskE2e{Guid.NewGuid():N}";
+		JsonSerializer.Serialize(await ProcessDesignerE2EArrange.CallToolAsync(context, CreateToolName,
+				new Dictionary<string, object?> {
+					["environment-name"] = context.EnvironmentName,
+					["descriptor"] = BuildDescriptor(processName, withRedundantDefault: true)
+				}))
+			.Should().Contain("created (UId:", because: "a plain default namespace is stored with a redundancy notice");
+
+		// Act
+		JsonObject graph = DescribedProcessGraph.Read(await ProcessDesignerE2EArrange.DescribeAsync(context, processName));
+
+		// Assert
+		JsonObject[] usings = graph["usings"]!.AsArray().Select(entry => entry!.AsObject()).ToArray();
+		usings.Single(entry => entry["namespace"]!.GetValue<string>() == "Terrasoft.Core")["ignored"]!
+			.GetValue<string>().Should().Contain("always imports",
+				because: "the generated code imports Terrasoft.Core anyway, so the entry adds nothing");
+		usings.Single(entry => entry["namespace"]!.GetValue<string>() == "System.Linq").ContainsKey("ignored")
+			.Should().BeFalse(because: "an entry the generator emits carries no mark");
 	}
 
 	[Test]
@@ -388,7 +419,7 @@ public sealed class ScriptTaskElementToolE2ETests {
 		""";
 
 	private static string BuildDescriptor(string processName, bool withMethods = false,
-			bool withSysSettingsAlias = true) =>
+			bool withSysSettingsAlias = true, bool withRedundantDefault = false) =>
 		$$"""
 		{
 		  "name": "{{processName}}",
@@ -397,7 +428,9 @@ public sealed class ScriptTaskElementToolE2ETests {
 		  {{(withMethods ? "\"methods\": \"private int Doubled(int value) => value * 2;\"," : string.Empty)}}
 		  "usings": [
 		    { "namespace": "System.Linq" },
-		    { "namespace": "Terrasoft.Configuration" }{{(withSysSettingsAlias
+		    { "namespace": "Terrasoft.Configuration" }{{(withRedundantDefault
+			    ? ",\n    { \"namespace\": \"Terrasoft.Core\" }"
+			    : string.Empty)}}{{(withSysSettingsAlias
 			    ? ",\n    { \"namespace\": \"Terrasoft.Core.Configuration.SysSettings\", \"alias\": \"SysSettings\" }"
 			    : string.Empty)}}
 		  ],

@@ -258,6 +258,58 @@ public sealed class CompileCreatioToolTests
 
 	[Test]
 	[Category("Unit")]
+	[Description("Every way a process-name compile can fail after the reservation was taken - the package requirement refuses, the compile fails, the command throws - releases the reservation and finishes the tracked operation, so the next compile is not refused as one already running.")]
+	[TestCase("requirement")]
+	[TestCase("exit")]
+	[TestCase("throw")]
+	public async Task CompileCreatio_Should_Release_The_Reservation_When_A_Process_Compile_Fails(string failure)
+	{
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		string target = $"sandbox-target-release-{failure}";
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.GetTenantKey(Arg.Any<EnvironmentOptions>()).Returns("sandbox-tenant");
+		commandResolver.GetTargetKey(Arg.Any<EnvironmentOptions>()).Returns(target);
+		IRequiredPackageChecker checker = Substitute.For<IRequiredPackageChecker>();
+		if (failure == "requirement")
+		{
+			checker.When(c => c.EnsureRequirements(Arg.Any<object>()))
+				.Do(_ => throw new PackageRequirementException("CrtProcessBuilder 1.6.6.33 or newer is required."));
+		}
+		commandResolver.Resolve<IRequiredPackageChecker>(Arg.Any<CompileBusinessProcessOptions>()).Returns(checker);
+		commandResolver.Resolve<CompileBusinessProcessCommand>(Arg.Any<CompileBusinessProcessOptions>())
+			.Returns(failure switch
+			{
+				"exit" => new FakeCompileBusinessProcessCommand(exitCode: 1),
+				"throw" => new FakeCompileBusinessProcessCommand(fault: new InvalidOperationException("boom")),
+				_ => new FakeCompileBusinessProcessCommand()
+			});
+		ICompileOperationRegistry registry = new CompileOperationRegistry();
+		CompileCreatioTool tool = new(ConsoleLogger.Instance, commandResolver, registry);
+
+		try
+		{
+			// Act
+			CommandExecutionResult result = await tool.CompileCreatio(
+				new CompileCreatioArgs("sandbox", ProcessName: "UsrProc"));
+
+			// Assert
+			result.ExitCode.Should().NotBe(0, because: "the compile did not succeed");
+			registry.GetLatest("sandbox-tenant")!.Status.Should().Be(CompileOperationStatus.Failed,
+				because: "the tracked operation must not stay Running after a failure");
+			McpToolExecutionLock.TryReserveConfigurationBuild(target,
+				out McpToolExecutionLock.BuildReservation reservation).Should().BeTrue(
+				because: "a failed compile must not leave the environment reserved for the next one");
+			McpToolExecutionLock.ReleaseConfigurationBuild(target, reservation);
+		}
+		finally
+		{
+			ConsoleLogger.Instance.ClearMessages();
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("A package that is behind surfaces as exit 1 - the recoverable code BaseTool gives the same refusal - not -1, which tells an agent not to retry and breaks the install-then-retry path.")]
 	public async Task CompileCreatio_Should_Return_ExitOne_When_ThePackageRequirementFails()
 	{
@@ -902,17 +954,22 @@ public sealed class CompileCreatioToolTests
 
 	private sealed class FakeCompileBusinessProcessCommand : CompileBusinessProcessCommand
 	{
+		private readonly int _exitCode;
+		private readonly Exception? _fault;
+
 		public CompileBusinessProcessOptions? CapturedOptions { get; private set; }
 
-		public FakeCompileBusinessProcessCommand()
+		public FakeCompileBusinessProcessCommand(int exitCode = 0, Exception? fault = null)
 			: base(Substitute.For<ICompileBusinessProcessService>(), Substitute.For<ILogger>())
 		{
+			_exitCode = exitCode;
+			_fault = fault;
 		}
 
 		public override int Execute(CompileBusinessProcessOptions options)
 		{
 			CapturedOptions = options;
-			return 0;
+			return _fault is null ? _exitCode : throw _fault;
 		}
 	}
 

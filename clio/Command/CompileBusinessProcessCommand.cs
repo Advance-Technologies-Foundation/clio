@@ -102,6 +102,18 @@ public sealed class CompileBusinessProcessService(
 		try {
 			responseBody = client.ExecutePostRequest(url, requestBody, CompileTimeoutMs);
 		} catch (Exception exception) when (IsTransportFault(exception)) {
+			// A 4xx is the one transport fault that settles the outcome: the server answered, and it answered
+			// before the handler ran - the handler turns every failure of its own, a failed compile included,
+			// into a result, never into a status. A 5xx settles nothing: a gateway answers one for a worker that
+			// died mid-compile.
+			if (TryGetClientErrorStatus(exception, out int status)) {
+				throw new InvalidOperationException(
+					$"CompileProcess answered HTTP {status} instead of a result: the call was refused before the "
+					+ "compile started, so nothing was compiled. A 401 or 403 means the environment's credentials "
+					+ "or rights; a 404 means CrtProcessBuilder is missing or older than the route. "
+					+ $"Transport detail: {exception.Message}",
+					exception);
+			}
 			// A timeout or a dropped connection mid-compile says nothing about the compile itself, and a retry
 			// while it still runs is refused by the platform rather than queued - so the caller is told so.
 			throw new InvalidOperationException(
@@ -109,6 +121,13 @@ public sealed class CompileBusinessProcessService(
 				+ "still be running on the server. Wait, then read last-compilation-log for this environment before "
 				+ $"compiling again. Transport detail: {exception.Message}",
 				exception);
+		}
+		if (string.IsNullOrWhiteSpace(responseBody)) {
+			// Not a parser question: Deserialize throws ArgumentNullException on a null body, which reached the
+			// caller as a bare "Value cannot be null" without the one thing it needs to know.
+			throw new InvalidOperationException(
+				"CompileProcess returned an empty body, so whether the package was compiled is UNKNOWN. Read "
+				+ "last-compilation-log for this environment before compiling again.");
 		}
 		ResponseEnvelope? envelope;
 		try {
@@ -155,6 +174,30 @@ public sealed class CompileBusinessProcessService(
 		}
 		return exception is WebException or HttpRequestException or IOException or SocketException
 			or TimeoutException or OperationCanceledException;
+	}
+
+	// The HTTP status a transport fault carries when the server did answer, if it is a 4xx - through the same
+	// AggregateException unwrap as IsTransportFault.
+	private static bool TryGetClientErrorStatus(Exception exception, out int status) {
+		status = 0;
+		if (exception is AggregateException aggregate) {
+			foreach (Exception inner in aggregate.Flatten().InnerExceptions) {
+				if (TryGetClientErrorStatus(inner, out status)) {
+					return true;
+				}
+			}
+			return false;
+		}
+		int? code = exception switch {
+			HttpRequestException { StatusCode: { } httpStatus } => (int)httpStatus,
+			WebException { Response: HttpWebResponse response } => (int)response.StatusCode,
+			_ => null
+		};
+		if (code is >= 400 and < 500) {
+			status = code.Value;
+			return true;
+		}
+		return false;
 	}
 
 	private sealed class ResponseEnvelope {
@@ -272,19 +315,28 @@ public class CompileBusinessProcessCommand(
 			? "its own assembly"
 			: "the shared configuration assembly";
 
+	/// <summary>
+	/// The errors listed one per line. compile-status keeps the LAST <see cref="Clio.Command.McpServer.Tools.CompileOperationRegistry.MessageTailCap"/>
+	/// lines of the run, and this run writes four around the list - the progress line, the summary, the "more
+	/// not listed" line and the consent line - so a longer list pushed the summary and the process's OWN errors,
+	/// which come first, out of the tail and kept another schema's.
+	/// </summary>
+	internal const int MaxListedErrors = Clio.Command.McpServer.Tools.CompileOperationRegistry.MessageTailCap - 4;
+
 	// One line per error, the process's own first (the server orders them), so the caller reads what it has to
 	// fix before what another schema of the package broke. Sanitized on this side too: the compile covers the
 	// whole package, so a message can be another author's #error text, and it reaches an agent as tool output.
 	private void ReportFailure(CompileBusinessProcessResult result) {
 		logger.WriteError(TextUtilities.SanitizeForDisplay(result.ErrorMessage ?? "CompileProcess failed.", 1000));
-		foreach (CompileBusinessProcessError error in result.Errors) {
+		List<CompileBusinessProcessError> listed = result.Errors.Take(MaxListedErrors).ToList();
+		foreach (CompileBusinessProcessError error in listed) {
 			string where = error.InThisProcess ? string.Empty : " [another schema of the package]";
 			logger.WriteError(
 				$"{TextUtilities.SanitizeForDisplay(error.FileName, 260)}({error.Line},{error.Column}): "
 				+ $"{TextUtilities.SanitizeForDisplay(error.Code, 32)} "
 				+ $"{TextUtilities.SanitizeForDisplay(error.Message)}{where}");
 		}
-		int omitted = result.ErrorCount - result.Errors.Count;
+		int omitted = Math.Max(result.ErrorCount, result.Errors.Count) - listed.Count;
 		if (omitted > 0) {
 			logger.WriteError($"... and {omitted} more error(s) not listed.");
 		}

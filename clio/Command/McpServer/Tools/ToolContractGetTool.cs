@@ -6034,7 +6034,7 @@ internal static class ToolContractCatalog {
 					FsmModeTool.SetFsmModeToolName,
 					CompileCreatioTool.CompileCreatioToolName
 				],
-				"Call only after C# schema work, after `set-fsm-mode`, in response to a runtime schema-missing error, or after a culture was activated in the Languages section. Skip this tool entirely when the work touches only Freedom UI page bodies or DDL changes routed through `update-entity-schema`."),
+				"Call only after C# schema work - a business-process save or activation that warns the process cannot run \"until the configuration is compiled\" included, and then with `process-name` - after `set-fsm-mode`, in response to a runtime schema-missing error, or after a culture was activated in the Languages section. Skip this tool entirely when the work touches only Freedom UI page bodies or DDL changes routed through `update-entity-schema`."),
 			[],
 			[],
 			AntiPatterns: [
@@ -6060,11 +6060,11 @@ internal static class ToolContractCatalog {
 			Preconditions: [
 				"The user was warned that compilation is a heavy operation forcing a runtime reload that affects every connected user, and explicitly confirmed to compile now rather than postpone. Ask every time (not once per session) — a repeated or explicit compile request is not itself the confirmation and a prior in-session warning/answer is not standing consent; if the user postpones, do NOT call this tool.",
 				"`set-fsm-mode` was just toggled (full compilation only).",
-				"C# schemas were added or modified in the targeted package.",
+				"C# schemas were added or modified in the targeted package, or a business-process call answered that the process cannot run \"until the configuration is compiled\" (then pass `process-name`).",
 				"The runtime reported a missing-in-runtime or schema-not-found error that maps to a compilation gap.",
 				"A culture was activated in the Languages section and no full compilation has run since (full compilation only): until then the UI does not load in that culture.",
 				"Caller must NOT call this tool after `create-app`, `update-page`, `sync-pages`, `update-entity-schema`, `create-page`, `create-entity-business-rules`, or `create-page-business-rules`.",
-				"After `create-business-process`/`modify-business-process`, compile ONLY when the process carries C# you authored — a Script Task, or a user task with an after-activity-save script (the `C# schemas were added or modified` case above) — and then pass `process-name` rather than `package-name`. Otherwise the process runs with no compile. A raw process read (e.g. `VwSysProcess`) shows `NeedInstall`, `NeedUpdateSourceCode` and `NeedUpdateStructure` all true on a fresh process; none is a compile trigger — read status with `describe-business-process`, not a raw process read. (A CUSTOM user-task SCHEMA is separate: creating/changing one needs a compile.)"
+				"After `create-business-process`, `modify-business-process`, `modify-business-process-as-new-version` or `set-active-business-process-version`, compile ONLY when the response warns that the process cannot run \"until the configuration is compiled\" — which it does for C# you authored (a Script Task, process methods or usings, a user task with an after-activity-save script) and for a new or activated version that carries such C# — and then pass `process-name` (the NEW version's name for a version) rather than `package-name`. That warning, and the `compile-creatio not required` note, speak for that call only: a compile an earlier save made owed is still owed. Otherwise the process runs with no compile. A raw process read (e.g. `VwSysProcess`) shows `NeedInstall`, `NeedUpdateSourceCode` and `NeedUpdateStructure` all true on a fresh process; none is a compile trigger — read status with `describe-business-process`, not a raw process read. (A CUSTOM user-task SCHEMA is separate: creating/changing one needs a compile.)"
 			]);
 	}
 

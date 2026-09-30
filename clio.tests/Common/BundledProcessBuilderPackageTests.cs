@@ -584,8 +584,9 @@ public class BundledProcessBuilderPackageTests {
 		}
 
 		int end = archive.IndexOf("#endregion", start, StringComparison.Ordinal);
+		// Up to the name's closing quote, so a member declared with EmitDefaultValue = false counts too.
 		return end >= 0
-			&& archive[start..end].Contains($"[DataMember(Name = \"{dataMemberName}\")]", StringComparison.Ordinal);
+			&& archive[start..end].Contains($"[DataMember(Name = \"{dataMemberName}\"", StringComparison.Ordinal);
 	}
 
 	/// <summary>
@@ -1174,6 +1175,41 @@ public class BundledProcessBuilderPackageTests {
 				+ "misses a server-side save and the process keeps running its previous code");
 		archive.Should().Contain("compile-creatio with process-name set to the new version",
 			because: "the new-version warning must route the compile of the version to process-name as well");
+	}
+
+	[Test]
+	[Description("clio TYPES the compile response and the script-task describe members, hand-mirrored across two repositories: an archive whose names drifted answers every process compile with a result clio reads as empty, and every describe with no body, no usings and no methods. Each member is asserted on its NAMED type, because one field name alone is satisfied by any contract that carries it.")]
+	public void BundledArchive_ShouldDeclareTheCompileAndScriptWireNamesClioReads() {
+		// Arrange
+		string archive = ReadBundledArchiveAsText();
+
+		// Act & Assert
+		archive.Should().Contain("CompileProcessResponse CompileProcess(CompileProcessRequest request)",
+			because: "clio reads the wrapped answer as CompileProcessResult, named after this operation");
+		foreach (string member in new[] {
+				"success", "errorMessage", "processName", "packageName", "packageType", "compileRequired", "compiled",
+				"durationMs", "errors", "errorCount" }) {
+			DeclaresMemberOn(archive, "CompileProcessResponse", member).Should().BeTrue(
+				because: $"CompileBusinessProcessService reads '{member}' off the compile answer");
+		}
+		foreach (string member in new[] { "fileName", "line", "column", "code", "message", "inThisProcess" }) {
+			DeclaresMemberOn(archive, "CompileProcessDiagnostic", member).Should().BeTrue(
+				because: $"each compiler error is read with '{member}'");
+		}
+		foreach (string member in new[] { "usings", "methods", "compiledMethods", "legacyMethodCount" }) {
+			DeclaresMemberOn(archive, "DescribeProcessResponse", member).Should().BeTrue(
+				because: $"DescribeProcessResponse's '{member}' is what describe-business-process reports");
+		}
+		DeclaresMemberOn(archive, "DescribeProcessElement", "scriptTask").Should().BeTrue(
+			because: "a script task's body and variant are read from this member");
+		foreach (string member in new[] { "body", "forInterpretedProcess" }) {
+			DeclaresMemberOn(archive, "DescribeScriptTaskInfo", member).Should().BeTrue(
+				because: $"the script task's '{member}' reads back in the shape a build takes");
+		}
+		foreach (string member in new[] { "namespace", "alias", "ignored" }) {
+			DeclaresMemberOn(archive, "DescribeProcessUsing", member).Should().BeTrue(
+				because: $"DescribedUsing reads '{member}'");
+		}
 	}
 
 	[Test]

@@ -383,7 +383,8 @@ public class DescribeProcessResult {
 	/// <summary>
 	/// The process's own using directives as it stores them (Process properties -> Methods -> Usings), in the shape
 	/// a build's <c>usings[]</c> takes - including an entry that repeats a namespace the platform's code generator
-	/// always imports. The namespaces the generator adds on its own are not listed.
+	/// always imports, which carries <see cref="DescribedUsing.Ignored"/> from CrtProcessBuilder 1.6.6.51. The
+	/// namespaces the generator adds on its own are not listed.
 	/// <c>null</c> on a server that predates CrtProcessBuilder 1.6.6.30.
 	/// </summary>
 	[JsonPropertyName("usings")]
@@ -2039,6 +2040,14 @@ public sealed class DescribedUsing {
 	/// <summary>The alias of a <c>using Alias = Namespace;</c> directive; <c>null</c> for a plain one.</summary>
 	[JsonPropertyName("alias")]
 	public string Alias { get; set; }
+
+	/// <summary>
+	/// Why the platform's code generator emits nothing for this entry, or <c>null</c> when it emits it (and on a
+	/// server before CrtProcessBuilder 1.6.6.51). An entry that carries it does nothing at compile time; leave it
+	/// out when feeding describe back into a build, which refuses some of them.
+	/// </summary>
+	[JsonPropertyName("ignored")]
+	public string Ignored { get; set; }
 
 	/// <summary>Anything a newer server reports that this build does not declare.</summary>
 	[JsonExtensionData]

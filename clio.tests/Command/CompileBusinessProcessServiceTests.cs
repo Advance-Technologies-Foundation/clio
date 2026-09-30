@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
@@ -170,6 +171,64 @@ public sealed class CompileBusinessProcessServiceTests {
 	}
 
 	[Test]
+	[Description("A 4xx is the one transport fault that settles the outcome: the server answered before the handler ran, and the handler reports a failed compile as a result, never as a status - so the caller is told nothing was compiled, not that the outcome is unknown.")]
+	[TestCase(HttpStatusCode.Unauthorized)]
+	[TestCase(HttpStatusCode.Forbidden)]
+	[TestCase(HttpStatusCode.NotFound)]
+	public void Compile_ShouldSayNothingWasCompiled_WhenTheServerAnswersA4xx(HttpStatusCode status) {
+		// Arrange
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
+		client.ExecutePostRequest(CompileUrl, Arg.Any<string>(), Arg.Any<int>())
+			.Returns(_ => throw new AggregateException(new HttpRequestException("Refused.", null, status)));
+		CompileBusinessProcessService service = CreateService(client);
+
+		// Act
+		Action act = () => service.Compile(Env, new CompileBusinessProcessRequest("UsrProc", null));
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(because: "the call was refused")
+			.WithMessage($"*HTTP {(int)status}*nothing was compiled*",
+				because: "a refusal before the handler compiled nothing, and saying UNKNOWN would send the caller to a log for nothing");
+	}
+
+	[Test]
+	[Description("A 5xx still leaves the outcome open: a gateway answers one for a worker that died mid-compile.")]
+	public void Compile_ShouldSayTheOutcomeIsUnknown_WhenTheServerAnswersA5xx() {
+		// Arrange
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
+		client.ExecutePostRequest(CompileUrl, Arg.Any<string>(), Arg.Any<int>())
+			.Returns(_ => throw new AggregateException(
+				new HttpRequestException("Bad gateway.", null, HttpStatusCode.BadGateway)));
+		CompileBusinessProcessService service = CreateService(client);
+
+		// Act
+		Action act = () => service.Compile(Env, new CompileBusinessProcessRequest("UsrProc", null));
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(because: "the compile may have been running when the worker died")
+			.WithMessage("*UNKNOWN*last-compilation-log*", because: "the caller must read the log before compiling again");
+	}
+
+	[Test]
+	[Description("An empty or missing body says the outcome is unknown and where to read it, instead of the bare 'Value cannot be null' the parser throws for a null body.")]
+	[TestCase(null)]
+	[TestCase("")]
+	public void Compile_ShouldSayTheOutcomeIsUnknown_WhenTheBodyIsEmpty(string body) {
+		// Arrange
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
+		client.ExecutePostRequest(CompileUrl, Arg.Any<string>(), Arg.Any<int>()).Returns(body);
+		CompileBusinessProcessService service = CreateService(client);
+
+		// Act
+		Action act = () => service.Compile(Env, new CompileBusinessProcessRequest("UsrProc", null));
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(because: "there is no answer to read")
+			.WithMessage("*empty body*UNKNOWN*last-compilation-log*",
+				because: "the caller is told what is unknown and where to find out");
+	}
+
+	[Test]
 	[Description("A body that is not the envelope - an HTML error page from a wrong route - says the compile outcome is unknown and where to read it, instead of a parser message.")]
 	public void Compile_ShouldSayTheOutcomeIsUnknown_WhenTheBodyIsNotTheEnvelope() {
 		// Arrange
@@ -287,6 +346,36 @@ public sealed class CompileBusinessProcessCommandTests {
 		_logger.Received(1).WriteError("... and 3 more error(s) not listed.");
 		// A compile that ran and failed tells the caller its consent was spent on this one.
 		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("ask the user again")));
+	}
+
+	[Test]
+	[Description("A failure with more errors than compile-status keeps lines for lists only as many as fit, so the summary and the process's own errors - which the server puts first - stay in the tail instead of another schema's.")]
+	public void Execute_ShouldKeepTheSummaryAndTheOwnErrors_WithinTheStatusTail() {
+		// Arrange
+		List<CompileBusinessProcessError> errors = Enumerable.Range(0, 50)
+			.Select(index => new CompileBusinessProcessError(index < 3 ? "UsrProc.Custom.cs" : "UsrOther.Custom.cs",
+				index + 1, 1, "CS1002", "; expected", index < 3))
+			.ToList();
+		CompileBusinessProcessResult result = Result(success: false, errorCount: 120,
+			errorMessage: "Compiling package 'Custom' failed with 120 error(s), 3 of them in the code of process 'UsrProc'.",
+			errors: errors);
+		var written = new List<string>();
+		_logger.When(logger => logger.WriteError(Arg.Any<string>())).Do(call => written.Add(call.Arg<string>()));
+
+		// Act
+		int exitCode = Execute(result);
+
+		// Assert
+		exitCode.Should().Be(1, because: "the compile failed");
+		// One more line is the service's progress line, written before the server answers.
+		(written.Count + 1).Should().BeLessThanOrEqualTo(Clio.Command.McpServer.Tools.CompileOperationRegistry.MessageTailCap,
+			because: "compile-status keeps the last lines only, so the whole answer has to fit");
+		written.First().Should().StartWith("Compiling package 'Custom' failed",
+			because: "the summary leads and must survive the tail");
+		written.Should().Contain("UsrProc.Custom.cs(1,1): CS1002 ; expected",
+			because: "the process's own errors come first and must survive the tail");
+		written.Should().Contain($"... and {120 - CompileBusinessProcessCommand.MaxListedErrors} more error(s) not listed.",
+			because: "what was cut is counted against the server's total");
 	}
 
 	[Test]

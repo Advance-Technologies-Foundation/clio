@@ -91,6 +91,7 @@ public class ModifyProcessAsNewVersionTool(
 		 + "was itself not interpretable, or when the process carries a script task or process methods (a version "
 		 + "is a new process name, whose generated code does not exist until compiled). Heed the warning over this "
 		 + "sentence: in either case, ask the user and run compile-creatio with process-name set to the NEW version. "
+		 + "Either signal speaks for THIS call only: a compile an earlier save made owed is still owed. "
 		 + "Use describe-business-process to inspect the family.")]
 	public CommandExecutionResult ModifyProcessAsNewVersion(
 		[Description("modify-business-process-as-new-version parameters")] [Required]
