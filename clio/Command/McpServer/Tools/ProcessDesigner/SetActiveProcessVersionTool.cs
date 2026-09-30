@@ -80,7 +80,7 @@ public class SetActiveProcessVersionTool(
 		 + "refused up front, naming the version this operation needs; install or update it with "
 		 + "install-process-builder. Activating does not normally require compile-creatio — but if the response "
 		 + "warns that the version cannot execute until the configuration is compiled (from CrtProcessBuilder "
-		 + "1.6.6.49 it does whenever the version carries C#), heed that warning: ask the user, then run it with "
+		 + "1.6.6.51 it does for a version that carries C# or is not interpreted), heed that warning: ask the user, then run it with "
 		 + "process-name set to that version. The warning speaks for THIS call only. Use describe-business-process "
 		 + "to see the family and which member is active.")]
 	public CommandExecutionResult SetActiveProcessVersion(
@@ -121,8 +121,9 @@ public class SetActiveProcessVersionTool(
 		//
 		// Gated for the same reason the create path gates it: the note must never be the sentence that contradicts
 		// a warning in its own response. The server warns in the compile-required phrase when the activated version
-		// carries C# (CrtProcessBuilder 1.6.6.49+) - a version is a schema of its own, so until it is compiled every
-		// new instance refuses to start - and when it was saved from a non-interpretable source. Activation is the
+		// carries C# or is not interpreted (CrtProcessBuilder 1.6.6.51+; ENG-91844's 1.6.6.49 and main's 1.6.6.50
+		// do not) - a version is a schema of its own, so until it is compiled every new instance refuses to start -
+		// and when it was saved from a non-interpretable source. Activation is the
 		// more dangerous of the two to get wrong: it is the call that puts the version in front of the runtime.
 		CommandExecutionResult result = InternalExecute<SetActiveProcessVersionCommand>(options);
 		if (result.ExitCode != 0) {
