@@ -473,12 +473,16 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 	}
 
 	/// <summary>
-	/// Runs an append dry run with verify=true and returns <c>page.ownBodySummary</c> of the wire response,
+	/// Reads the page, runs an append dry run with verify=true and returns <c>page.ownBodySummary</c> of the wire response,
 	/// read from JSON because the typed summary defaults the operation list to empty and cannot show absence.
 	/// </summary>
 	private static async Task<JsonElement> ReadVerifiedOwnBodySummaryAsync(
 			ArrangeContext arrangeContext, string environmentName, string schemaName, string fragment,
 			bool? includeOperations) {
+		// Read the page first, as the append-projection test does: get-page re-arms this session's checksum
+		// baseline, and an earlier test in the fixture that saved the page out of band would otherwise make
+		// update-page refuse the call as an external modification.
+		await ReadRawBodyAsync(arrangeContext, environmentName, schemaName);
 		Dictionary<string, object?> args = new() {
 			["schema-name"] = schemaName,
 			["body"] = fragment,
