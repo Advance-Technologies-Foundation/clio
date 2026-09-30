@@ -41,6 +41,37 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("Over the real stdio server, the text of a tool result is written with the relaxed encoder: an apostrophe and a quote in a contract arrive as themselves, not as six-character \\u escapes the agent pays for (ENG-99970).")]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("get-tool-contract result text is not HTML-escaped")]
+	public async Task GetToolContracts_Should_WriteTheResultText_WithoutHtmlEscaping() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult result = await context.Session.CallToolAsync(
+			ToolContractGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> { ["tool-names"] = new[] { CreateBusinessProcessTool.CreateBusinessProcessToolName } }
+			},
+			context.CancellationTokenSource.Token);
+		string text = string.Concat((result.Content ?? []).OfType<TextContentBlock>().Select(block => block.Text));
+
+		// Assert
+		AllureApi.Step("Assert the apostrophe arrives as itself", () =>
+			text.Should().Contain("descriptor's packageName",
+				because: "the process-build tool's package-name field says so, and an apostrophe needs no escaping"));
+		AllureApi.Step("Assert no HTML escape survives", () => {
+			text.Should().NotContain("\\u0027",
+				because: "the default encoder wrote an apostrophe as six characters; a JSON-RPC reader needs none of them");
+			text.Should().NotContain("\\u0022",
+				because: "the default encoder wrote a quote inside a string as six characters, not the two JSON needs");
+			text.Should().Contain("\\\"",
+				because: "anti-vacuity: the contract carries quotes inside strings, so the short escape must be there");
+		});
+	}
+
+	[Test]
 	[TestCase(false)]
 	[TestCase(true)]
 	[Description("Returns valid contracts and individual misses through the real MCP server in either request order.")]
