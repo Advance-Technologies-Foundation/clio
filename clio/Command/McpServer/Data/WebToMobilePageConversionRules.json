@@ -289,11 +289,20 @@
     {
       "filters": [
         {
-          "type": "*",
-          "exceptTypes": ["crt.Button", "crt.MenuItem", "crt.FlexContainer", "crt.GridContainer"],
+          "type": "crt.SearchFilter",
           "parentType": "crt.ExpansionPanel",
-          "propertiesContainerName": "tools",
-          "note": "ENG-95081, ENG-96411: the panel's tools strip is a compact icon-only header row on mobile - a search field (ENG-95081) or a captioned quick-filter chip (ENG-96411) pushes the panel title out and overflows it. Only buttons, their menu items and the containers holding them stay. Positional only - the same types elsewhere on the page convert normally."
+          "propertiesContainerName": "tools"
+        },
+        {
+          "type": "crt.QuickFilter",
+          "parentType": "crt.ExpansionPanel",
+          "propertiesContainerName": "tools"
+        },
+        {
+          "exceptTypes": ["crt.Button", "crt.MenuItem", "crt.FlexContainer", "crt.GridContainer"],
+          "childSlots": ["items", "tools", "menuItems"],
+          "parentType": "crt.ExpansionPanel",
+          "propertiesContainerName": "tools"
         }
       ]
     }

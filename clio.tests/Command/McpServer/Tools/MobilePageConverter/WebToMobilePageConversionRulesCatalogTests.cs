@@ -203,8 +203,9 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 			because: "a group with no filters excludes nothing, so it is dead configuration rather than a rule");
 		rules.ExcludedComponents
 			.SelectMany(g => g.Filters ?? [])
-			.Should().OnlyContain(f => !string.IsNullOrWhiteSpace(f.Type) && !string.IsNullOrWhiteSpace(f.ParentType),
-				because: "both are required for the filter to run at all — type is what is banned and parentType "
+			.Should().OnlyContain(
+				f => (!string.IsNullOrWhiteSpace(f.Type) || f.IsAllowList) && !string.IsNullOrWhiteSpace(f.ParentType),
+				because: "both are required for the filter to run at all — type (or an exceptTypes allow-list) is what is banned and parentType "
 					+ "is the host it is banned from; a filter missing either is discarded and its exclusion "
 					+ "never fires, which on a real page means the banned component ships with no drop entry");
 	}
@@ -571,32 +572,35 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 	public void LoadBundled_ExcludedComponents_AllowsOnlyButtonsInExpansionPanelTools() {
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
 
-		ExcludedComponentFilterRule filter = rules.ExcludedComponents
+		List<ExcludedComponentFilterRule> panelFilters = [.. rules.ExcludedComponents
 			.SelectMany(g => g.Filters)
-			.Single(f => f.ParentType == "crt.ExpansionPanel");
-		filter.Type.Should().Be(ExcludedComponentFilterRule.AnyType,
-			because: "an allow-list keeps a new non-button type out of the strip without another rule");
-		filter.ExceptTypes.Should().BeEquivalentTo(
+			.Where(f => f.ParentType == "crt.ExpansionPanel")];
+		panelFilters.Should().OnlyContain(f => f.PropertiesContainerName == "tools",
+			because: "only the header strip lacks the room, not the panel's items");
+
+		ExcludedComponentFilterRule allowList = panelFilters.Single(f => f.IsAllowList);
+		allowList.ExceptTypes.Should().BeEquivalentTo(
 			["crt.Button", "crt.MenuItem", "crt.FlexContainer", "crt.GridContainer"],
 			because: "buttons sit inside a grid → flex pair and carry their menu items; dropping any of them empties the strip");
-		filter.PropertiesContainerName.Should().Be("tools",
-			because: "only the header strip lacks the room, not the panel's items");
-		filter.Note.Should().NotBeNullOrWhiteSpace(
-			because: "the rules file is where the next rule author looks for WHY an exclusion exists — the drop "
-				+ "reason deliberately carries only the mechanical fact, so the motivation has to live here");
+		allowList.ChildSlots.Should().BeEquivalentTo(["items", "tools", "menuItems"],
+			because: "the verbatim strip must walk only child-component slots, never a kept button's configuration");
+
+		panelFilters.Where(f => !f.IsAllowList).Select(f => f.Type).Should().BeEquivalentTo(
+			["crt.SearchFilter", "crt.QuickFilter"],
+			because: "a clio that predates allow-lists skips the typeless filter, so the known offenders stay listed by name");
 	}
 
 	[Test]
-	[Description("Every bundled allow-list filter names its slot, and exceptTypes appears only on allow-list filters — the pass skips an unscoped wildcard and ignores exceptTypes on a concrete type, so either would ship a rule that silently does nothing.")]
+	[Description("Every bundled allow-list filter names its slot and its child slots, and exceptTypes appears only on allow-list filters — the pass skips an unscoped allow-list and ignores exceptTypes on a concrete type, so either would ship a rule that silently does nothing.")]
 	public void LoadBundled_ExcludedComponents_AllowListFiltersAreScoped() {
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
 		List<ExcludedComponentFilterRule> filters = rules.ExcludedComponents.SelectMany(g => g.Filters).ToList();
 
+		filters.Where(f => f.IsAllowList).Should().OnlyContain(
+			f => !string.IsNullOrWhiteSpace(f.PropertiesContainerName) && f.ChildSlots.Count > 0,
+			because: "an unscoped allow-list is skipped by the pass, and one without child slots strips component-typed configuration");
 		filters.Should().NotContain(
-			f => f.Type == ExcludedComponentFilterRule.AnyType && string.IsNullOrWhiteSpace(f.PropertiesContainerName),
-			because: "an unscoped wildcard is skipped by the pass");
-		filters.Should().NotContain(
-			f => f.Type != ExcludedComponentFilterRule.AnyType && f.ExceptTypes != null && f.ExceptTypes.Count > 0,
+			f => !string.IsNullOrWhiteSpace(f.Type) && f.ExceptTypes.Count > 0,
 			because: "exceptTypes is ignored on a concrete type");
 	}
 

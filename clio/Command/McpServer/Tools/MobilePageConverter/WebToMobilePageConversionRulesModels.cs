@@ -602,32 +602,42 @@ public sealed class ExcludedComponentFilterRule {
 	/// A future rule that needs both sides should ship as two filter entries, one per name.
 	/// </para>
 	/// <para>
-	/// <see cref="AnyType"/> (<c>"*"</c>) matches every type except those in <see cref="ExceptTypes"/>, turning
-	/// the filter into an allow-list for its scope. Such a filter must name <see cref="PropertiesContainerName"/>;
-	/// without one it is skipped.
+	/// Optional: a filter with no type and a non-empty <see cref="ExceptTypes"/> is an allow-list — it removes
+	/// every type except those. An allow-list must name <see cref="PropertiesContainerName"/>; without one it is
+	/// skipped. A clio that predates allow-lists skips such a filter as typeless, so a rules document can pair it
+	/// with the concrete filters those versions still need.
 	/// </para>
 	/// </summary>
 	[JsonPropertyName("type")]
 	public string Type { get; init; }
 
-	/// <summary>The <see cref="Type"/> value that matches any component type not listed in <see cref="ExceptTypes"/>.</summary>
-	public const string AnyType = "*";
-
 	/// <summary>
-	/// Only with <see cref="Type"/> = <see cref="AnyType"/>: the component types the filter keeps. Containers the
-	/// kept components sit in must be listed too — they are types like any other here — and the empty-container
-	/// pass then removes the ones the exclusion emptied. Ignored for a filter that names a concrete type.
+	/// Allow-list filters only (no <see cref="Type"/>): the component types the filter keeps. Containers the kept
+	/// components sit in must be listed too — they are types like any other here — and the empty-container pass
+	/// then removes the ones the exclusion emptied. Ignored for a filter that names a type.
 	/// </summary>
 	[JsonPropertyName("exceptTypes")]
 	public IReadOnlyList<string> ExceptTypes { get; init; } = [];
+
+	/// <summary>
+	/// Optional: the properties a verbatim-carried component keeps its child components in (e.g. <c>items</c>,
+	/// <c>menuItems</c>). When set, the verbatim strip descends only into these, so a typed object elsewhere in a
+	/// kept component's configuration (a request parameter, a chart series) is never taken for a component.
+	/// Absent, it descends into every property. An allow-list should always set it.
+	/// </summary>
+	[JsonPropertyName("childSlots")]
+	public IReadOnlyList<string> ChildSlots { get; init; } = [];
+
+	/// <summary>Whether this filter keeps listed types instead of removing a named one.</summary>
+	public bool IsAllowList => string.IsNullOrWhiteSpace(Type) && ExceptTypes is { Count: > 0 };
 
 	/// <summary>Whether a component of <paramref name="componentType"/> is one this filter removes.</summary>
 	public bool MatchesType(string componentType) {
 		if (string.IsNullOrEmpty(componentType)) {
 			return false;
 		}
-		if (Type == AnyType) {
-			return !(ExceptTypes ?? []).Contains(componentType, StringComparer.OrdinalIgnoreCase);
+		if (IsAllowList) {
+			return !ExceptTypes.Contains(componentType, StringComparer.OrdinalIgnoreCase);
 		}
 		return string.Equals(componentType, Type, StringComparison.OrdinalIgnoreCase);
 	}

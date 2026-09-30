@@ -380,7 +380,7 @@ validated on load, and a refusal sends the whole document to the bundled rules.
 | `components[]` | `filters`, `path?`, `viewConfigTemplates` | Type conversion by filter + value skeleton (`ResolveTemplateTargetType` reads `viewConfigTemplates[].value.type`); `path` scopes to an ancestor |
 | `requests[]` | `web`, `mobile`, `category` | Action-binding map (§7); only supported requests are listed |
 | `componentPropertyOverrides[]` | `filters`, `values`, `mergeNestedObjects` | Standards stamped on inserted elements (`normalizations`) |
-| `excludedComponents[]` | `filters{type, parentType, propertiesContainerName?, exceptTypes?}` | Positional bans (`drop-excluded-by-rule`); `type: "*"` bans every type except `exceptTypes` (an allow-list for the slot) and must name `propertiesContainerName`; a filter missing `type` or `parentType`, or a `"*"` filter without a slot, is unusable and skipped |
+| `excludedComponents[]` | `filters{type?, parentType, propertiesContainerName?, exceptTypes?, childSlots?}` | Positional bans (`drop-excluded-by-rule`); a filter with no `type` and a non-empty `exceptTypes` is an allow-list that bans every other type and must name `propertiesContainerName`; `childSlots` limits the verbatim strip to those child-component properties; a filter missing `parentType`, a typeless filter without `exceptTypes`, or an allow-list without a slot is unusable and skipped |
 | `emptyContainerRemoval.removableTypes` | string[] | Closed set of container types removable when empty |
 | `contentContainerTypes` | string[] | Container types treated as content |
 | `nonConvertingScopeContainers` | string[] | Kept in the tree as `path` ancestors, emit no element (`drop-non-converting-scope`) |

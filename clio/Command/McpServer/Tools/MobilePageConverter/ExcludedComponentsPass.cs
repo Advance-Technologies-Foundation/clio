@@ -145,9 +145,9 @@ internal static class ExcludedComponentsPass {
 	private static bool DepthExceeded(int depth) => depth > MaxSearchDepth;
 
 	/// <summary>
-	/// The usable filters of every group, in rules-file order. A filter missing <c>Type</c>/<c>ParentType</c>
-	/// is skipped — nothing to match, nowhere to look — and so is a wildcard filter that names no slot, which
-	/// would otherwise strip the host's whole content rather than one strip of it.
+	/// The usable filters of every group, in rules-file order. A filter missing <c>ParentType</c>, or naming
+	/// neither a <c>Type</c> nor an allow-list, is skipped — nothing to match, nowhere to look — and so is an
+	/// allow-list that names no slot, which would otherwise strip the host's whole content rather than one strip.
 	/// </summary>
 	/// <remarks>
 	/// A skip is silent here on purpose, and the silence is covered elsewhere: a typo in a published rule
@@ -159,8 +159,10 @@ internal static class ExcludedComponentsPass {
 		IReadOnlyList<ExcludedComponentGroup> groups) =>
 		groups
 			.SelectMany(g => g?.Filters ?? [])
-			.Where(f => !string.IsNullOrWhiteSpace(f?.Type) && !string.IsNullOrWhiteSpace(f.ParentType))
-			.Where(f => f.Type != ExcludedComponentFilterRule.AnyType || !string.IsNullOrWhiteSpace(f.PropertiesContainerName))
+			.Where(f => f is not null && !string.IsNullOrWhiteSpace(f.ParentType))
+			.Where(f => f.IsAllowList
+				? !string.IsNullOrWhiteSpace(f.PropertiesContainerName)
+				: !string.IsNullOrWhiteSpace(f.Type))
 			.ToList();
 
 	// ── PHASE A: entry-graph removal ─────────────────────────────────────────────────────────────
@@ -526,14 +528,12 @@ internal static class ExcludedComponentsPass {
 	}
 
 	/// <summary>
-	/// A wildcard filter walks only the properties that hold child components: under any other property a
-	/// "type" key is configuration (a chart series, a request parameter), not a component to remove.
+	/// A filter that declares <c>childSlots</c> walks only those properties: under any other one a "type" key is
+	/// configuration (a chart series, a request parameter), not a component to remove.
 	/// </summary>
 	private static bool ShouldDescendInto(string propertyName, ExcludedComponentFilterRule filter) =>
-		filter.Type != ExcludedComponentFilterRule.AnyType || ComponentChildSlots.Contains(propertyName);
-
-	private static readonly HashSet<string> ComponentChildSlots =
-		new(StringComparer.OrdinalIgnoreCase) { DefaultSlotName, "tools", "menuItems" };
+		filter.ChildSlots is not { Count: > 0 } slots
+		|| slots.Contains(propertyName, StringComparer.OrdinalIgnoreCase);
 
 	/// <summary>
 	/// A synthetic "drop" <see cref="ElementMapEntry"/> for a removed component — the same

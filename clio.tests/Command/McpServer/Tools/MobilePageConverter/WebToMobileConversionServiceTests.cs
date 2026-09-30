@@ -12302,7 +12302,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("An allow-list filter (type \"*\") strips the verbatim-carried shape too, and each drop entry reports the removed node's OWN type rather than the wildcard.")]
+	[Description("An allow-list filter (no type, only exceptTypes) strips the verbatim-carried shape too, and each drop entry reports the removed node's OWN type rather than the wildcard.")]
 	public void Analyze_ShouldReportRemovedType_WhenAllowListStripsVerbatimCarriedTools() {
 		// Arrange — the minimal type set leaves the tools subtree unresolved, so it is carried verbatim.
 		PageBundleInfo bundle = Bundle("""
@@ -12314,8 +12314,8 @@ public sealed class WebToMobileConversionServiceTests {
 			    "items": [] } ]
 			""");
 		ExcludedComponentFilterRule allowButtons = new() {
-			Type = ExcludedComponentFilterRule.AnyType,
 			ExceptTypes = ["crt.Button", "crt.FlexContainer", "crt.GridContainer"],
+			ChildSlots = ["items"],
 			ParentType = "crt.ExpansionPanel", PropertiesContainerName = "tools"
 		};
 
@@ -12327,11 +12327,11 @@ public sealed class WebToMobileConversionServiceTests {
 		toolsFlexItems.Select(i => i!["name"]!.GetValue<string>()).Should().Equal(["ProductsRefreshButton"],
 			because: "the containers and the button are allowed, the search filter is not");
 		Dropped(guide, "ProductsSearchFilter").WebType.Should().Be("crt.SearchFilter",
-			because: "\"*\" is the rule's selector, not what was removed — the report must name the real type");
+			because: "the allow-list names what it keeps, not what was removed — the report must name the real type");
 	}
 
 	[Test]
-	[Description("An allow-list filter walks only child-component slots: a typed object inside a kept button's configuration is not a component and stays.")]
+	[Description("An allow-list filter walks only the child slots its rule names: a typed object inside a kept button's configuration is not a component and stays.")]
 	public void Analyze_ShouldKeepTypedConfiguration_WhenAllowListStripsVerbatimCarriedTools() {
 		// Arrange
 		PageBundleInfo bundle = Bundle("""
@@ -12342,8 +12342,8 @@ public sealed class WebToMobileConversionServiceTests {
 			    "items": [] } ]
 			""");
 		ExcludedComponentFilterRule allowButtons = new() {
-			Type = ExcludedComponentFilterRule.AnyType,
 			ExceptTypes = ["crt.Button", "crt.FlexContainer"],
+			ChildSlots = ["items"],
 			ParentType = "crt.ExpansionPanel", PropertiesContainerName = "tools"
 		};
 
@@ -12359,12 +12359,11 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("A wildcard filter that names no slot is skipped: without one it would strip the host's whole content, not one strip of it.")]
+	[Description("An allow-list filter that names no slot is skipped: without one it would strip the host's whole content, not one strip of it.")]
 	public void Analyze_ShouldSkipAllowListFilter_WhenItNamesNoSlot() {
 		// Arrange
 		PageBundleInfo bundle = Bundle(LeadsLikeProductsPanelJson);
 		ExcludedComponentFilterRule unscopedAllowList = new() {
-			Type = ExcludedComponentFilterRule.AnyType,
 			ExceptTypes = ["crt.Button"],
 			ParentType = "crt.ExpansionPanel"
 		};
