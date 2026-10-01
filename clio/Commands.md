@@ -778,7 +778,7 @@ See [external access login](docs/external-access-login.md).
 <a id="hc"></a>
 - [`healthcheck`](docs/commands/healthcheck.md) - Run Creatio health checks, `hc`
 <a id="register"></a>
-- [`register`](docs/commands/register.md) - Register clio shell integrations with a resolved direct ZIP deployment launcher
+- [`register`](docs/commands/register.md) - Register clio shell integrations with a resolved direct ZIP deployment launcher that disables forced Supervisor password changes by default
 <a id="config"></a>
 - [`config`](docs/commands/config.md) - View and set clio configuration defaults, including the deploy-creatio IIS port range
 <a id="pin-certificate"></a>
