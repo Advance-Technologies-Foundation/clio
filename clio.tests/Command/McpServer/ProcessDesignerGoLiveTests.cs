@@ -14,7 +14,7 @@ namespace Clio.Tests.Command.McpServer;
 
 /// <summary>
 /// Go-live lock-in for the process-designer MCP surface (ENG-96132): the five tools and five prompts
-/// shipped by REMOVING <c>[FeatureToggle("process-designer")]</c>, so business-process creation works by
+/// shipped by REMOVING <c>[FeatureToggle(Clio.Command.ExperimentalFeature.DeployIdentity)]</c>, so business-process creation works by
 /// default with no feature flag. These tests pin both the attribute absence and its consequence — the
 /// surface is registered on a clio whose <c>features</c> map is empty (the shipping default) — so a
 /// refactor cannot silently re-gate a GA capability the way "restoring consistency" once re-gated

@@ -767,7 +767,7 @@ public class BindingsModule {
 		// ExperimentalCommand.StandaloneFeatureKeys so `clio experimental` lists and sets it.
 		services.AddSingleton(provider => new KnowledgeUnsequencedGitOptions(
 			provider.GetRequiredService<IFeatureToggleService>()
-				.IsFeatureEnabled(KnowledgeUnsequencedGitOptions.FeatureName)));
+				.IsFeatureEnabled(ExperimentalFeature.KnowledgeAllowUnsequenced)));
 		services.AddSingleton<IKnowledgeResolver, KnowledgeResolver>();
 		services.AddSingleton<IKnowledgeBundleRuntime, KnowledgeBundleRuntime>();
 		services.AddSingleton<IKnowledgeRootPathProvider, KnowledgeRootPathProvider>();
@@ -929,6 +929,8 @@ public class BindingsModule {
 		services.AddTransient<ExperimentalCommand>();
 		services.AddTransient<ConfigCommand>();
 		services.AddTransient<RegisterCommand>();
+		services.AddTransient<InstallOperatorCommand>();
+		services.AddTransient<RuntimeCommand>();
 		services.AddTransient<UnregisterCommand>();
 		
 		services.AddTransient<IUserPromptService, UserPromptService>();

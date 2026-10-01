@@ -8,7 +8,7 @@ internal static class ClioExecutableResolver {
 		Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".dotnet", "dotnet");
 
 	public static ClioProcessDescriptor Resolve(McpE2ESettings settings) {
-		return Resolve(settings, "mcp-server");
+		return settings.RuntimeHost ? Resolve(settings, "mcp-server", "--runtime-host") : Resolve(settings, "mcp-server");
 	}
 
 	public static ClioProcessDescriptor Resolve(McpE2ESettings settings, params string[] commandArguments) {

@@ -23,7 +23,7 @@ public sealed class FeatureToggleFilterTests {
 
 	private sealed class UngatedTypeB { }
 
-	[FeatureToggle("gated-feature")]
+	[FeatureToggle(Clio.Command.ExperimentalFeature.Runtime)]
 	private sealed class GatedType { }
 
 	[Test]

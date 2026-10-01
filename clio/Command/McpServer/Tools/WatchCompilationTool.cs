@@ -10,7 +10,7 @@ namespace Clio.Command.McpServer.Tools;
 /// MCP tool surface for the <c>watch-compilation</c> command.
 /// </summary>
 [McpServerToolType]
-[FeatureToggle("watch-compilation")]
+[FeatureToggle(Clio.Command.ExperimentalFeature.WatchCompilation)]
 public sealed class WatchCompilationTool(
 	WatchCompilationCommand command,
 	ILogger logger,

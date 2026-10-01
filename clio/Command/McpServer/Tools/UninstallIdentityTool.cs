@@ -9,7 +9,7 @@ namespace Clio.Command.McpServer.Tools;
 
 /// <summary>MCP adapter for removal of the recorded local identity component.</summary>
 [McpServerToolType]
-[FeatureToggle("deploy-identity")]
+[FeatureToggle(Clio.Command.ExperimentalFeature.DeployIdentity)]
 public sealed class UninstallIdentityTool(ILogger logger, IToolCommandResolver commandResolver)
 	: BaseTool<UninstallIdentityOptions>(null, logger, commandResolver) {
 	/// <summary>Stable discovery name for identity removal.</summary>

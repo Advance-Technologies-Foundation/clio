@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
@@ -27,7 +27,7 @@ namespace Clio.Command.McpServer.Tools.MobilePageConverter;
 /// UI) are detected and reported as not yet supported.
 /// </summary>
 [McpServerToolType]
-[FeatureToggle("mobile-page-converter")]
+[FeatureToggle(Clio.Command.ExperimentalFeature.MobilePageConverter)]
 [SuppressMessage("Major Code Smell", "S1168:Empty arrays and collections should be returned instead of null", Justification = "The best-effort probe helpers return null to signal 'not read' (distinct from 'read, empty'); the caller treats null as skip.")]
 [SuppressMessage("Minor Code Smell", "S3267:Loops should be simplified with LINQ", Justification = "Explicit loops that build registry maps with side effects read more clearly than a LINQ rewrite here.")]
 // NOT sealed, and ReadPageUnderTenantLock below is virtual, purely so the two hard-stop refusals can be

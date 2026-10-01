@@ -19,7 +19,7 @@ public sealed class ProgramFeatureToggleGateTests {
 	}
 
 	[Verb("gated-verb")]
-	[FeatureToggle("experimental-feature")]
+	[FeatureToggle(Clio.Command.ExperimentalFeature.Runtime)]
 	private sealed class GatedOptions { }
 
 	private sealed class UngatedOptions { }
@@ -37,7 +37,7 @@ public sealed class ProgramFeatureToggleGateTests {
 		// Assert
 		blocked.Should().BeTrue(
 			because: "a gated options type whose feature flag is off must be refused at the dispatch chokepoint");
-		featureName.Should().Be("experimental-feature",
+		featureName.Should().Be("runtime",
 			because: "the disabled feature key is derived from the [FeatureToggle] attribute for the error message");
 	}
 

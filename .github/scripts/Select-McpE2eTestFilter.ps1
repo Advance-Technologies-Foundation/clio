@@ -1204,6 +1204,8 @@ if ($Inventory) {
         if (Test-GlobMatch $relative $manifest.ignoredPaths) { continue }
         if (Test-GlobMatch $relative $manifest.fullRunPaths) { continue }
         if (@($manifest.registrationFiles) -contains $relative) { continue }
+        # Explicit mappings take precedence over graph reachability, just as in selection.
+        if (@($manifest.explicitMappings | Where-Object { Test-GlobMatch $relative @($_.paths) }).Count -gt 0) { continue }
         # Skip only a file that really declares a tool - the same test the classify path applies.
         # Skipping everything under toolSourceRoot left the response records, linters and stores
         # that live there outside the pin, although classify routes them through the graph and can

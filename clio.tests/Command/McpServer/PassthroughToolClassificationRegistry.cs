@@ -307,6 +307,15 @@ internal static class PassthroughToolClassificationRegistry {
 			["execute-esq"] = PassthroughClassification.NotApplicable,
 			["execute-esq-to-file"] = PassthroughClassification.NotApplicable, // runs through ExecuteEsqTool.Run, the same resolver path as execute-esq
 			["export-schema"] = PassthroughClassification.NotApplicable, // BaseTool<T>.InternalExecute<TCommand> - already resolver-backed (class a), not part of the ENG-93347 passthrough audit
+			// Host Kubernetes/workspace operations do not resolve a Creatio environment; passthrough is additionally refused.
+			[RuntimeTools.ImagesName] = PassthroughClassification.NotEnvironmentSensitive,
+			[RuntimeTools.ListName] = PassthroughClassification.NotEnvironmentSensitive,
+			[RuntimeTools.StatusName] = PassthroughClassification.NotEnvironmentSensitive,
+			[RuntimeTools.CreateName] = PassthroughClassification.NotEnvironmentSensitive,
+			[RuntimeTools.BuildName] = PassthroughClassification.NotEnvironmentSensitive,
+			[RuntimeTools.AttachName] = PassthroughClassification.NotEnvironmentSensitive,
+			[RuntimeTools.DetachName] = PassthroughClassification.NotEnvironmentSensitive,
+			[InstallOperatorTool.ToolName] = PassthroughClassification.NotEnvironmentSensitive,
 			["experimental"] = PassthroughClassification.NotApplicable,
 			["find-app"] = PassthroughClassification.NotApplicable,
 			["find-entity-schema"] = PassthroughClassification.NotApplicable,

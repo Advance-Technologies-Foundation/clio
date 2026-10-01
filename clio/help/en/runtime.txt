@@ -1,0 +1,22 @@
+Experimental, disabled by default. Enable: clio experimental --name runtime --enable
+
+Build images or create, list or inspect an operator-managed Creatio runtime.
+
+clio runtime build --context rancher-desktop --from <Creatio.zip>
+clio runtime create <name> --context <context> [--namespace creatio-runtimes] --image <repository>:<tag>
+clio runtime status <name> --context <context> [--namespace creatio-runtimes]
+clio runtime list --context <context> [--namespace creatio-runtimes]
+
+Requires kubectl and the Creatio operator. No ClioGate required.
+Build currently requires Windows Rancher Desktop with Moby and rdctl. It builds base/db/dev images locally without pushing to a registry.
+Context is mandatory and never changes current-context. Names are scoped by context and namespace.
+Create submits asynchronous provisioning; use status until Ready, then attach the workspace.
+Existing runtimes are never overwritten. SSH key setup is a separate operation.
+Clio appsettings credentials are not automatically registered by this prototype.
+
+clio runtime attach <name> --workspace <path> --ssh-alias <alias> --context <context>
+clio runtime detach --workspace <path>
+Detach reads the cluster from the saved attachment receipt; --context is not required.
+
+clio runtime images --context <cluster> [--json] [--operator-namespace creatio-system]
+Lists built distributions from the operator. Default: table. JSON: array including exact image references and database readiness. Requires service proxy access and, for authenticated operators, read access to configured dashboard credentials.

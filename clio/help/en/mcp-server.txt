@@ -186,3 +186,5 @@ RETURN VALUES
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio
+
+--runtime-host  Explicitly permit developer-host runtime MCP operations (requires runtime feature; unavailable in containers).

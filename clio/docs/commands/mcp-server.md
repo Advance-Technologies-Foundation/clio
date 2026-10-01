@@ -238,3 +238,7 @@ get-guidance again with the selected name.
     https://github.com/Advance-Technologies-Foundation/clio
 
 - [Clio Command Reference](../../Commands.md#mcp-server)
+
+## Developer runtime host
+
+Use `clio mcp-server --runtime-host` with the `runtime` experimental feature enabled to permit host-side runtime tools. Keep this flag off for ordinary application MCP servers. Containers and credential passthrough are rejected. See [runtime](runtime.md#mcp-on-the-developer-host).

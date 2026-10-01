@@ -494,7 +494,7 @@ internal sealed record KnowledgeBundleClientCapabilities(
 /// </param>
 internal sealed record KnowledgeUnsequencedGitOptions(bool AllowUnsequencedGitBundles) {
 	/// <summary>The clio feature-flag key that supplies <see cref="AllowUnsequencedGitBundles"/>.</summary>
-	internal const string FeatureName = "knowledge-allow-unsequenced";
+	internal static string FeatureName => ExperimentalFeature.KnowledgeAllowUnsequenced.ToKey();
 }
 
 internal enum KnowledgeBundleActivationStatus {

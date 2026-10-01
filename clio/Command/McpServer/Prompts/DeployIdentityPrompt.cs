@@ -10,7 +10,7 @@ namespace Clio.Command.McpServer.Prompts;
 /// Prompt helpers for the <c>deploy-identity</c> MCP tool.
 /// </summary>
 [McpServerPromptType, Description("Prompts for deploying IdentityService through MCP")]
-[FeatureToggle("deploy-identity")]
+[FeatureToggle(Clio.Command.ExperimentalFeature.DeployIdentity)]
 public static class DeployIdentityPrompt
 {
 	/// <summary>

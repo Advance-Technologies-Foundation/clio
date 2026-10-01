@@ -13,7 +13,7 @@ namespace Clio.Command.McpServer.Tools;
 /// MCP tool surface for the <c>create-oauth-technical-user</c> command.
 /// </summary>
 [McpServerToolType]
-[FeatureToggle("deploy-identity")]
+[FeatureToggle(Clio.Command.ExperimentalFeature.DeployIdentity)]
 public sealed class CreateOAuthTechnicalUserTool(
 	CreateOAuthTechnicalUserCommand command,
 	ILogger logger,

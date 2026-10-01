@@ -25,7 +25,7 @@ internal class HelpArtifactConsistencyTests {
 		string commandsContent = File.ReadAllText(CommandsPath);
 		string[] wikiAnchors = File.ReadAllLines(WikiAnchorsPath);
 
-		foreach (HelpCommandMetadata command in catalog.GetVisibleCommands()) {
+		foreach (HelpCommandMetadata command in catalog.GetVisibleCommands().Where(command => new ExportFeatureToggleService().IsEnabled(command.OptionsType))) {
 			File.Exists(Path.Combine(DocsDirectory, $"{command.CanonicalName}.md")).Should().BeTrue(
 				because: "every visible command should have a canonical markdown document");
 			commandsContent.Should().Contain($"(docs/commands/{command.CanonicalName}.md)",

@@ -7,7 +7,7 @@ namespace Clio.Command.IdentityServiceDeployment;
 
 /// <summary>Options for removing the identity component while retaining its CRM.</summary>
 [Verb("uninstall-identity", HelpText = "Remove a recorded local IdentityService while preserving Creatio and its database")]
-[FeatureToggle("deploy-identity")]
+[FeatureToggle(Clio.Command.ExperimentalFeature.DeployIdentity)]
 public sealed class UninstallIdentityOptions : EnvironmentNameOptions {
 	/// <summary>Explicitly leave CRM system settings untouched when identity authentication is unavailable.</summary>
 	[Option("skip-crm-cleanup", Default = false,

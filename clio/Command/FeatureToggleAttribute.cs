@@ -22,18 +22,14 @@ public sealed class FeatureToggleAttribute : Attribute
 	/// <summary>
 	/// Initializes a new instance of the <see cref="FeatureToggleAttribute"/> class.
 	/// </summary>
-	/// <param name="featureName">
-	/// The feature key that gates the annotated type. Must be a non-empty, non-whitespace value.
-	/// </param>
-	/// <exception cref="ArgumentException">
-	/// Thrown when <paramref name="featureName"/> is <c>null</c>, empty, or whitespace.
-	/// </exception>
-	public FeatureToggleAttribute(string featureName) {
-		if (string.IsNullOrWhiteSpace(featureName)) {
-			throw new ArgumentException("Feature name must be a non-empty value.", nameof(featureName));
-		}
-		FeatureName = featureName;
+	/// <param name="feature">The built-in feature gating this type.</param>
+	public FeatureToggleAttribute(ExperimentalFeature feature) {
+		FeatureName = feature.ToKey();
+		Feature = feature;
 	}
+
+	/// <summary>Gets the built-in feature gating this type.</summary>
+	public ExperimentalFeature Feature { get; }
 
 	/// <summary>
 	/// Gets the feature key that gates the annotated type.

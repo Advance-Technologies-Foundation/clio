@@ -9,7 +9,7 @@ namespace Clio.Command.IdentityServiceDeployment;
 /// Options for the <c>deploy-identity</c> command.
 /// </summary>
 [Verb("deploy-identity", HelpText = "Deploy IdentityService to IIS and connect it to a Creatio environment")]
-[FeatureToggle("deploy-identity")]
+[FeatureToggle(Clio.Command.ExperimentalFeature.DeployIdentity)]
 public sealed class DeployIdentityOptions : EnvironmentNameOptions
 {
 	/// <summary>

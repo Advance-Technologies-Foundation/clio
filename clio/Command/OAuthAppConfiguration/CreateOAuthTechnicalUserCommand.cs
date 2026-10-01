@@ -13,7 +13,7 @@ namespace Clio.Command.OAuthAppConfiguration;
 /// </summary>
 [Verb("create-oauth-technical-user",
 	HelpText = "Create a Creatio technical user for a server-to-server OAuth app via OAuthConfigService REST")]
-[FeatureToggle("deploy-identity")]
+[FeatureToggle(Clio.Command.ExperimentalFeature.DeployIdentity)]
 public sealed class CreateOAuthTechnicalUserOptions : RemoteCommandOptions
 {
 	/// <summary>
