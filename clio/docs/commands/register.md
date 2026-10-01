@@ -24,6 +24,7 @@ The command performs the following actions:
 - Copies clio icon files to the user's AppData folder
 - Imports Windows registry entries to add clio to context menus
 - Enables right-click access to clio commands from Windows Explorer
+- ZIP Deploy Creatio includes --disable-reset-password by default on corporate-eligible machines. It preserves the password already present in the build database.
 - Registers ZIP deployment with the absolute path of the current clio build, including its assembly argument when running through dotnet
 
 REQUIREMENTS:

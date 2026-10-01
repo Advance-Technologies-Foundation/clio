@@ -34,6 +34,8 @@ public sealed class ExplorerContextMenuRegistrationTests {
 			StringComparison.Ordinal), because: "the ZIP path must remain one quoted process argument");
 		deployCommands.Should().OnlyContain(command => command.Contains("--explorer-launch", StringComparison.Ordinal),
 			because: "sole-local inference and failure acknowledgement must be scoped to Explorer launches");
+		deployCommands.Should().OnlyContain(command => command.Contains("--disable-reset-password", StringComparison.Ordinal),
+			because: "right-click deployments must opt into the existing forced password change disabling feature");
 	}
 
 	[Test]
