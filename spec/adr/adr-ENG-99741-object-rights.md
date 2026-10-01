@@ -25,7 +25,8 @@ any object. What a result means for a particular scenario belongs to the guidanc
 
 Two properties of the current contract drive this ADR:
 - **Effects that the arguments do not show.**
-  - A grant can turn operation permissions on for an object, and that narrows access for every other role.
+  - A grant can turn operation permissions on for an object. That narrows access for internal users, and can widen
+    it for external ones whose stored rows come back.
   - `include-connected` lets the tool choose which objects to write.
   - A revoke can remove a row.
 
@@ -145,11 +146,12 @@ or the call is refused. The host approval then shows the operator everything the
 - When the object has stale rows and no `All employees` row, the same save adds one, as the current implementation
   does. That is deliberately safer than the designer, which adds none (Platform model 2).
 - The added row goes below the stale rows (a new grantee row goes below it), so no row is renumbered (invariant 3). The stale rows above
-  it then restrict their members (Platform model 1), so the refusal and the preview name each of them as a
-  restriction that becomes effective.
+  it then decide for their members (Platform model 1): a restriction for internal members, and possibly a grant for
+  external ones. So the refusal and the preview name each of them as a row that starts to decide.
 - Each call names its one object, so enabling operation permissions on a shared lookup is its own call, with the flag
   visible in the arguments.
-- This removes the implicit narrowing and the lockout detection after the write.
+- This removes the implicit enable (a narrowing for internal users, a possible widening for external ones) and the
+  lockout detection after the write.
 
 **D3 — Positions are part of the model; rows are never removed implicitly.**
 - `RoleOperationRights` carries `Position`. `get-object-rights` lists rows in priority order, with the position, and
@@ -239,8 +241,8 @@ report facts. The guidance explains what the facts mean and decides what to do.
 - explains the consequences the agent must weigh:
   - the priority rule: the highest matching row decides, per row, and a `false` is a deny; a lower row can be
     shadowed;
-  - turning operation permissions on narrows access for every other role; the synthesized All employees row; the
-    stale rows that come back;
+  - turning operation permissions on narrows access for internal users and can widen it for external ones, because
+    the stale rows that come back can grant them; the synthesized All employees row;
   - external users are deny-by-default and need an explicit grant;
   - the "…any data" system operations override object permissions;
   - `read` on a shared lookup (Contact, Account and the like) is read on the whole table for that role;
