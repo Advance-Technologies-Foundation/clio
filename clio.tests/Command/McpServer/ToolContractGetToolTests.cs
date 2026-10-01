@@ -21,6 +21,24 @@ namespace Clio.Tests.Command.McpServer;
 [TestFixture]
 [Property("Module", "McpServer")]
 public sealed class ToolContractGetToolTests {
+
+	[Test]
+	[Category("Unit")]
+	[Description("Tells agents in the curated push-workspace contract that a newly pushed package comes out locked and points them to create-package.")]
+	public void PushWorkspaceContract_ShouldWarnThatNewPackagesComeOutLocked() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result =
+			tool.GetToolContracts(new ToolContractGetArgs([PushWorkspaceTool.PushWorkspaceToolName]));
+
+		// Assert
+		string description = result.Tools!.Single().Description;
+		description.Should().Contain("InstallType 1", because: "the agent must know the package will not be editable");
+		description.Should().Contain("create-package", because: "the agent needs the tool that creates an editable package");
+	}
+
 	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
 
 	[Test, Category("Unit")]
