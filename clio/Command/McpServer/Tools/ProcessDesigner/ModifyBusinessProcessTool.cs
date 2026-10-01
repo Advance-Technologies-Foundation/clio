@@ -61,15 +61,19 @@ public class ModifyBusinessProcessTool(
 	 // standing second — an agent reads the full contract before calling. See
 	 // docs/knowledge/McpServer/first-sentence-of-a-description-becomes-the-compact-index-purpose.md
 	 Description("Edit an EXISTING business process on a Creatio environment by applying an ordered JSON array of operations. "
+		 + "Every overwrite is irreversible; read describe's isActiveVersion first. TRUE: it replaces the running "
+		 + "graph, so get an explicit yes (the edit request is not one) and offer modify-business-process-as-new-version. "
+		 + "FALSE: do not modify it; re-describe by activeVersionSchemaUId, or report the standing and ask "
+		 + "(process-modeling owns both branches). "
 		 + "BEFORE CALLING with an accessRights block: that block changes who can read, edit or delete LIVE records. Show the user the target object, the record filter deciding WHICH records are affected, and every grantee with its operations and level - calling out level:delegate as onward re-sharing, level:restrict as the platform Deny level, which is DESTRUCTIVE rather than inert: it DOWNGRADES an existing Allow row to Deny, and a fresh insert denies the two operations you did not name. Call out a remove entry as a revoke, and a supplied add/remove as a REPLACEMENT dropping every entry it does not restate - and get an explicit yes; the element has no output parameters. The SAME confirmation is required for a clearFilter on a Change access rights element even with no accessRights block: it acts on EVERY record with record permissions disabled - name the element and object, and get an explicit yes. "
 		 + "Identify the process by name (schema code) or uid. Each operation is an object with an "
 		 + "'op': addElement (with an 'element' descriptor: name (the element handle/local code), type, caption, "
-		 + "userTaskName?, useBackgroundMode? (element-level, supported by every element kind), "
+		 + "userTaskName?, useBackgroundMode? (element-level; process-element-catalog owns where it acts), "
 		 + "email? (sendEmail elements — same block as create-business-process), "
 		 + "approval? (approval elements — same block as create-business-process), "
 		 + "performer? (performTask elements — same block as create-business-process: who performs the task), "
 		 + "signal? {entity, on:added|modified|deleted, changedColumns?:[<ColumnName>,...]}, "
-		 + "formula?), "
+		 + "formula?, scriptTask?), "
 		 + "removeElement (with 'elementName' = the element's local name or UId), addFlow "
 		 + "(with 'source' and 'target' element names, plus an optional 'kind' — sequence (default) | "
 		 + "conditional | default — for a conditional one its 'condition', and an optional 'label') / "
@@ -143,7 +147,7 @@ public class ModifyBusinessProcessTool(
 		 + "designer's 'create parameter from element' does; a collection output is REFUSED as a mirror source when it carries NO itemProperties, or when an item carries no column UId in its tag — the mirror would be a bound, tagged, unbindable empty shape — so mirror an output the platform shaped, or declare a bare Collection on purpose; a bare type Collection is an opaque list with no shape), "
 		 + "addMapping (with a 'mapping' whose keys are FLAT, not "
 		 + "nested under a 'target' object: a target of either 'targetProcessParameter' or 'elementName' + "
-		 + "'elementParameter', and one source of {sourceElement, sourceElementParameter} "
+		 + "'elementParameter', and one source of {sourceElement, sourceElementParameter (+ sourceColumn)} "
 		 + "| processParameter | value | expression; parameter-to-parameter mappings require compatible types; "
 		 + "an 'expression' is a formula the PLATFORM evaluates, not C#: it is an expression interpreter over a "
 		 + "flat, case-sensitive name registry — no namespace-qualified names (Math.Round yes, System.Math.Round "
@@ -157,14 +161,9 @@ public class ModifyBusinessProcessTool(
 		 + "[#BooleanValue.True#]. An expression is VALIDATED, by the PLATFORM, at the pre-save gate — so a bad "
 		 + "one aborts the whole edit with 'Process validation failed' and nothing is saved, rather than being "
 		 + "attributed to the one operation that carried it, which is why such a refusal reports NO "
-		 + "failedOperationIndex while one caused by a single operation reports its zero-based index (on CrtProcessBuilder this clio requires 1.6.6.14, for "
-		 + "subProcess.multiInstanceOptions {enabled, executionMode, ignoreErrors}; it subsumes 1.6.0.1's page-change reconciliation of a "
-		 + "Pre-configured page element's data sources; the message contract "
-		 + "described here is NOT where that collapse happened: 1.4.0.41 is where the PACKAGE stopped validating formulas a second "
-		 + "time and the platform's gate became the only one, .42 corrected the message that replaced the package's "
-		 + "own reference pre-check, and .44 is the first archive carrying both AND the ENG-96325 lookup-constant "
-		 + "contract. Below .41 a refused formula still "
-		 + "fails, with the package's own wording and its own reference pre-check). It must parse, every parameter "
+		 + "failedOperationIndex while one caused by a single operation reports its zero-based index (on CrtProcessBuilder this clio requires 1.6.6.40, for "
+		 + "sourceColumn, scriptTask, addUsing/removeUsing/setMethods and subProcess.multiInstanceOptions {enabled, executionMode, ignoreErrors}; "
+		 + "1.4.0.41 is where the PACKAGE stopped validating formulas itself). It must parse, every parameter "
 		 + "reference must resolve in THIS process, its result must fit the target parameter's DECLARED type (so a "
 		 + "fractional formula into an Integer parameter is refused), and every [#…#] macro family must be one a "
 		 + "converter resolves where you used it — an invented family and the real [#ColumnValue…#] and "
@@ -199,7 +198,8 @@ public class ModifyBusinessProcessTool(
 		 + "parameter, an element mapping, an execution-context parameter or a conditional-flow CONDITION still "
 		 + "references it — including from inside a sub-process; the refusal names each site), setFilter (elementName + a 'filter': {object, logicalOperation:and|or, "
 		 + "conditions:[{column (may be a lookup dot-path), comparison:equal|notEqual|greater|less|contains|isNull|..., "
-		 + "one of value|processParameter|elementParameter|expression|macro (+macroArgument), optional datePart}], groups?} — on a signalStart restricts the "
+		 + "one of value|processParameter|elementParameter {elementName, parameter, column?}|expression|macro "
+		 + "(+macroArgument), optional datePart}], groups?} — on a signalStart restricts the "
 		 + "record trigger (there its right side must be value/macro/datePart only, NOT a parameter reference — the "
 		 + "server rejects one); server serializes the platform filter), clearFilter (elementName), setSignal "
 		 + "(elementName + a 'signal':{entity?, on?:added|modified|deleted, changedColumns?:[<ColumnName>,...]} — "
@@ -207,15 +207,15 @@ public class ModifyBusinessProcessTool(
 		 + "element and its flows; partial update: omit on to keep the current change type, omit entity to keep the "
 		 + "current one (retargeting it clears any old-entity filter), omit changedColumns to clear column tracking; "
 		 + "changedColumns is valid only for on:modified), setElement (elementName + an 'elementUpdate':"
-		 + "{useBackgroundMode?, readData?, changeData?, addData?, deleteData?, accessRights?, email?, approval?, formula?, performer?, openEditPage?, preconfiguredPage?, subProcess? (get-guidance name=process-element-catalog owns the formula block, name=process-sub-process owns the subProcess block)} — changes element-level fields IN PLACE, preserving the element and its "
-		 + "flows; only the fields you pass change. useBackgroundMode applies to ANY element kind. readData "
+		 + "{useBackgroundMode?, readData?, changeData?, addData?, deleteData?, accessRights?, email?, approval?, formula?, scriptTask?, performer?, openEditPage?, preconfiguredPage?, subProcess? (get-guidance name=process-element-catalog owns the formula block, name=process-sub-process owns the subProcess block)} — changes element-level fields IN PLACE, preserving the element and its "
+		 + "flows; only the fields you pass change. readData "
 		 + "{source?, mode?:first|collection|count|aggregation, columns?, numberOfRecords? (collection only), "
 		 + "sort?:{column, direction?:asc|desc}, "
 		 + "aggregation?:{function:sum|avg|min|max, column} (aggregation only, required there)} reconfigures a readData "
 		 + "element's data configuration: omitted fields keep their stored value, pass columns:[] to reset to ALL "
 		 + "columns (first only). Changing the mode is a real conversion, REFUSED while ANY other parameter still "
 		 + "maps from the element (each mode produces a different output parameter); a conversion that proceeds "
-		 + "clears the previous mode's parameters and moves the result flag to the new mode's output. Retargeting "
+		 + "clears the previous mode's parameters and moves the output to the new mode's parameter. Retargeting "
 		 + "source is refused the same way and, proceeding, clears columns/sort/filter bound to the old entity - "
 		 + "re-supply them (and setFilter) in the same batch. get-guidance name=process-read-data owns the full "
 		 + "per-mode transition table (collection's columns/numberOfRecords rules, the output-parameter mapping "
@@ -355,9 +355,11 @@ public class ModifyBusinessProcessTool(
 		 + "element parameters in place; only 'column' is read and a source is rejected. Idempotent, and it reports "
 		 + "which bindings it actually cleared, because a cleared connection vanishes from describe-business-process "
 		 + "and is then indistinguishable from one that was never bound). "
+		 + "addUsing / removeUsing (using:{namespace, alias?}) and setMethods (methods: C# class members as one "
+		 + "string, empty clears): the process-level usings and methods of its scriptTask C#. "
 		 + "Operations apply in order; any failure aborts the edit (nothing is saved). A SUCCESSFUL edit may still "
-		 + "report caveats: they arrive as entries with message-type \"Warning\" in execution-log-messages (there is "
-		 + "no separate 'warnings' field on the response) — outcomes that APPLIED but are not what you would assume. "
+		 + "report caveats: they arrive as entries with message-type \"Warning\" in execution-log-messages (no "
+		 + "separate 'warnings' field) — outcomes that APPLIED but are not what you would assume. "
 		 + "Read them, and note some are neutral acknowledgements (a column that was already unbound), not failures. "
 		 + "Use describe-business-process to inspect the current elements/names first. May remove elements — destructive. "
 		 + "Removals are NOT structurally validated (a broken graph can still be saved) and every edit re-lays-out the "
@@ -365,7 +367,7 @@ public class ModifyBusinessProcessTool(
 		 + "first. For a setFlowCondition operation or an 'expression' mapping source read get-guidance "
 			 + "name=process-formulas - it owns the accepted vocabulary, the reference syntax, what each "
 			 + "refusal names, and the length bound. "
-			 + "Requires the ProcessDesignService (CrtProcessBuilder) package; install with install-process-builder. After a successful edit the process stays INTERPRETED and runs as-is: do NOT run compile-creatio, and do NOT infer a compile need from a raw `VwSysProcess` read (its dirty flags are not a compile trigger) — verify with describe-business-process, whose response carries a compile-not-required note; a compile is needed only for a Script Task (custom C#), which clio cannot author.")]
+			 + "Requires the ProcessDesignService (CrtProcessBuilder) package; install with install-process-builder. Unless the edit adds a scriptTask (get-guidance name=process-script-task first), replaces its body or changes a using or the methods, the result carries the compile-not-required note: do NOT run compile-creatio, and do NOT infer a compile need from a raw `VwSysProcess` read. Such an edit warns compile-REQUIRED instead: ask the user, then run compile-creatio with process-name. Either signal covers THIS call only; a compile an earlier save owed stays owed.")]
 	public CommandExecutionResult ModifyBusinessProcess(
 		[Description("modify-business-process parameters")] [Required] ModifyBusinessProcessArgs args
 	) {
@@ -390,21 +392,12 @@ public class ModifyBusinessProcessTool(
 			OperationsJson = args.Operations,
 			ConfirmLayoutChange = args.ConfirmLayoutChange ?? false
 		};
-		// A business process edited by clio stays interpreted and runs as-is — editing it never needs
-		// compilation (clio cannot author a Script Task or an after-activity-save script, the only in-process
-		// C#). Emit the deterministic post-op note on success (same channel as update-entity-schema) so
-		// "edited" is not mistaken for "must be compiled to run"; do not run compile-creatio, and do not infer
-		// one from a raw process read (ENG-95706).
+		// An edit that leaves no new C# behind needs no compile, and the deterministic post-op note says so
+		// (ENG-95706). An edit that adds a script task, replaces its body or changes a using does need one: the
+		// server then warns that the process cannot run "until the configuration is compiled", and the gate
+		// drops the note rather than contradict it (ENG-92711). The gate appends, so a command-set note stays.
 		CommandExecutionResult result = InternalExecute<ModifyBusinessProcessCommand>(options);
-		if (result.ExitCode != 0) {
-			return result;
-		}
-		// Append (not clobber) so a command-set success note is preserved (mirrors PageCreateTool).
-		return result with {
-			Note = string.IsNullOrWhiteSpace(result.Note)
-				? CommandExecutionResult.CompileNotRequiredNote
-				: result.Note + " " + CommandExecutionResult.CompileNotRequiredNote
-		};
+		return result.ExitCode != 0 ? result : result.WithCompileNotRequiredNote();
 	}
 }
 

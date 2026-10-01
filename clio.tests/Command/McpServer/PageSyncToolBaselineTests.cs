@@ -57,6 +57,8 @@ public sealed class PageSyncToolBaselineTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		serviceUrlBuilder.Build(Arg.Any<string>())
 			.Returns(callInfo => "http://test" + callInfo.Arg<string>());
+		serviceUrlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>())
+			.Returns(ci => serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoutes[ci.Arg<ServiceUrlBuilder.KnownRoute>()]));
 		Queue<string> checksumQueue = new(checksumResponses);
 		applicationClient.ExecutePostRequest(
 				Arg.Is<string>(url => url.Contains("SelectQuery")),
@@ -279,6 +281,8 @@ public sealed class PageSyncToolBaselineTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		serviceUrlBuilder.Build(Arg.Any<string>())
 			.Returns(callInfo => "http://test" + callInfo.Arg<string>());
+		serviceUrlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>())
+			.Returns(ci => serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoutes[ci.Arg<ServiceUrlBuilder.KnownRoute>()]));
 		applicationClient.ExecutePostRequest(
 				Arg.Is<string>(url => url.Contains("SelectQuery")),
 				Arg.Is<string>(body => body.Contains("byUId")),

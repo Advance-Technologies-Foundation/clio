@@ -223,7 +223,7 @@ public sealed class ODataReadRoutingErrorE2ETests {
 	[AllureTag(ODataReadTool.ToolName)]
 	[AllureName("odata-read classifies an unknown filter property as invalid-query")]
 	[AllureDescription("Serves the OData v4 error body Creatio returns for a property the entity type has not got, and verifies odata-read reports error-code invalid-query with a correlation-id and none of the server's own wording.")]
-	[Description("GH-1407 case 4: a filter on a property the entity does not expose is reported as error-code invalid-query, naming the caller's own field, with a correlation-id and no server prose.")]
+	[Description("GH-1407 case 4 / issue #1550: a filter on a property the entity does not expose is reported as error-code invalid-query, naming the caller's own field and the validated unknown-property identifiers, with a correlation-id and no server prose.")]
 	public async Task ODataRead_Should_Classify_An_Unknown_Filter_Property_As_Invalid_Query() {
 		await RunAgainstRoutingErrorStubAsync(async (session, environmentName, _, cancellationToken) => {
 			// Act
@@ -255,6 +255,10 @@ public sealed class ODataReadRoutingErrorE2ETests {
 				because: "the caller's own field name is the only text that may be echoed, and without it the caller cannot tell which member was rejected");
 			response.Error.Should().NotContain("Terrasoft.Configuration.OData",
 				because: "the server's own wording must not reach a field a model reads as trusted content");
+			response.Error.Should().Contain($"unknown property 'Nope' on '{InvalidQueryEntity}'",
+				because: "issue #1550: the validated property and entity identifiers from the error payload tell this rejection apart from every other invalid query");
+			response.Error.Should().NotContain("Could not find a property named",
+				because: "only the identifiers are restated; the server sentence they came from is withheld");
 		}, invalidQueryEntity: InvalidQueryEntity);
 	}
 
@@ -297,8 +301,90 @@ public sealed class ODataReadRoutingErrorE2ETests {
 				because: "GH-1407 reports that the navigation path succeeds where the raw column fails, and the caller had no way to discover it");
 			response.Error.Should().NotContain("Column by path",
 				because: "the sentence the classification was derived from is the server's own and stays on the debug channel");
+			response.Error.Should().Contain($"column path 'SysSettingsId' not found in schema '{InvalidQueryEntity}'",
+				because: "issue #1550: the column path and schema identifiers parsed from the nested message name the rejected member in clio's own sentence");
 			response.CorrelationId.Should().NotBeNullOrWhiteSpace(
 				because: "the correlation-id is the only bridge from this response to that debug line");
+		}, invalidQueryEntity: InvalidQueryEntity);
+	}
+
+	[TestCase("CreatedOn", "gt", "2026-09-15T06:00:00Z", "a filter compares a 'Edm.DateTimeOffset' column with a 'Edm.String' value (operator 'GreaterThan')",
+		TestName = "Issue 1550 case 1 - date filter sent as a string")]
+	[TestCase("UId", "eq", "2b4c6a55-4d52-4505-8e3c-f105d913136e", "a filter compares a 'Edm.Guid' column with a 'Edm.String' value (operator 'Equal')",
+		TestName = "Issue 1550 case 3 - GUID filter on UId sent as a string")]
+	[AllureTag(ODataReadTool.ToolName)]
+	[AllureName("odata-read names the operand types of a mistyped filter comparison")]
+	[AllureDescription("Serves the HTTP 400 OData v4 error body Creatio returns for a date or a UId compared with a string literal, and verifies odata-read reports invalid-query with the validated operand types in clio's own sentence and none of the server's wording.")]
+	[Description("Issue #1550 cases 1 and 3: a date or GUID filter value sent as a string literal is reported as invalid-query naming both operand types and the operator, with the execute-esq route, a correlation-id and no server prose.")]
+	public async Task ODataRead_Should_Name_The_Operand_Types_Of_A_Mistyped_Filter(
+		string field, string op, string value, string expectedFact) {
+		await RunAgainstRoutingErrorStubAsync(async (session, environmentName, _, cancellationToken) => {
+			// Act
+			CallToolResult callResult = await session.CallToolAsync(
+				ODataReadTool.ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["environment-name"] = environmentName,
+						["entity"] = InvalidQueryEntity,
+						["filters"] = new Dictionary<string, object?> {
+							["all"] = new object[] {
+								new Dictionary<string, object?> { ["field"] = field, ["op"] = op, ["value"] = value }
+							}
+						},
+						["top"] = 2
+					}
+				},
+				cancellationToken);
+			ODataReadResponse response = EntitySchemaStructuredResultParser.Extract<ODataReadResponse>(callResult);
+
+			// Assert
+			response.Success.Should().BeFalse(
+				because: "an OData error envelope is a failure, not a page of records");
+			response.ErrorCode.Should().Be("invalid-query",
+				because: "the structured hint is additive and must not change the classification callers branch on");
+			response.Error.Should().Contain(expectedFact,
+				because: "issue #1550: the operand types are the one fact that tells this rejection apart from every other invalid query");
+			response.Error.Should().Contain("execute-esq",
+				because: "odata-read cannot send a typed date or GUID literal here, so the hint names the tool that can");
+			response.Error.Should().NotContainAny(["A binary operator", "The query specified in the URI is not valid"],
+				because: "only the identifiers are restated; the server sentence they came from is withheld");
+			response.CorrelationId.Should().NotBeNullOrWhiteSpace(
+				because: "the correlation-id is the only bridge from this response to clio's own log lines");
+		}, invalidQueryEntity: InvalidQueryEntity);
+	}
+
+	[Test]
+	[AllureTag(ODataReadTool.ToolName)]
+	[AllureName("odata-read recognizes a binary column in select")]
+	[AllureDescription("Serves the HTTP 500 body Creatio returns for a $select naming a binary column (a null 'property' argument under innererror), and verifies odata-read reports server-reported-error with the binary-column hint and none of the server's wording.")]
+	[Description("Issue #1550 case 2: a select naming a binary column is reported as server-reported-error with the binary (Edm.Stream) column hint, a correlation-id and no server prose.")]
+	public async Task ODataRead_Should_Recognize_A_Binary_Column_In_Select() {
+		await RunAgainstRoutingErrorStubAsync(async (session, environmentName, _, cancellationToken) => {
+			// Act
+			CallToolResult callResult = await session.CallToolAsync(
+				ODataReadTool.ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["environment-name"] = environmentName,
+						["entity"] = InvalidQueryEntity,
+						["select"] = new[] { "Id", "MetaData" },
+						["top"] = 2
+					}
+				},
+				cancellationToken);
+			ODataReadResponse response = EntitySchemaStructuredResultParser.Extract<ODataReadResponse>(callResult);
+
+			// Assert
+			response.Success.Should().BeFalse(
+				because: "an OData error envelope is a failure, not a page of records");
+			response.ErrorCode.Should().Be("server-reported-error",
+				because: "the headline is the generic 'An error has occurred.', which classifies as a server fault, and the hint must not change that");
+			response.Error.Should().Contain("binary (Edm.Stream) column",
+				because: "issue #1550: nothing else in this HTTP 500 body tells the caller that a binary column in select is a known cause");
+			response.Error.Should().NotContainAny(["Value cannot be null", "An error has occurred."],
+				because: "the matched server sentence itself stays out of the transcript");
+			response.CorrelationId.Should().NotBeNullOrWhiteSpace(
+				because: "the correlation-id is the only bridge from this response to clio's own log lines");
 		}, invalidQueryEntity: InvalidQueryEntity);
 	}
 

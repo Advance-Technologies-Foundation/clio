@@ -15,6 +15,23 @@ Development links, issue relationships, and draft pull requests. Do not add a cu
 claim protocol. The required field must be provisioned as described in
 `.ai/skills/clio-issue-workflow/SKILL.md`; the skill fails before any GitHub write until it is ready.
 
+## Creating an issue in this repository
+
+Issues created through `gh` or the API have no Component field, so routing to the component owner
+(`.github/workflows/issue-routing.yml`) depends on the label you set:
+
+1. Resolve the component from the files or MCP tools the issue is about — do not guess:
+   `node .github/scripts/issue-routing/component-for.js <path-or-mcp-tool>...`
+   (`--list` prints all components). It reads `.github/component-owners.json`.
+2. Create the issue with exactly one `component:<id>` label:
+   `gh issue create --title "..." --body "..." --label component:<id>`
+   Routing then assigns the component's first owner, or mentions all owners in `mention` mode.
+   Add `--assignee @me` only when the user authorized you to take the issue (then continue with
+   the `claim-clio-issue` skill); an issue that already has an assignee is never re-assigned, so
+   in `assign` mode the owners are then not notified.
+3. If no single component fits, set no component label; the issue goes to `needs-triage`.
+   Never invent a `component:*` label; they are declared only in `component-owners.json`.
+
 # ClioGate integration
 
 ClioGate is a Creatio package (in `cliogate/`) that acts as a privileged backend service.
@@ -428,13 +445,18 @@ Before committing any change, run only the tests for affected modules — do not
 
 ```shell
 # Single module
-dotnet test clio.tests/clio.tests.csproj --filter "Category=Unit&Module=Command" --no-build
+dotnet test clio.tests/clio.tests.csproj --filter "TestCategory=Unit&Module=Command" --no-build
 
 # Multiple modules (pipe-separated)
-dotnet test clio.tests/clio.tests.csproj --filter "Category=Unit&(Module=Command|Module=Common)" --no-build
+dotnet test clio.tests/clio.tests.csproj --filter "TestCategory=Unit&(Module=Command|Module=Common)" --no-build
 ```
 
-4. **Full-suite triggers** — run `dotnet test clio.tests/clio.tests.csproj --filter "Category=Unit"` when any of the following changed:
+   Write `TestCategory`, never the `Category` alias, in any clio.tests filter. The NUnit adapter recognizes a
+   category filter only when it is spelled `TestCategory`; a filter it does not recognize is replaced with an empty
+   filter once it selects more than 2,000 tests, so the whole assembly runs while only the selected tests are
+   reported. See [docs/knowledge/Tests/nunit-adapter-drops-large-non-category-shard-filters.md](docs/knowledge/Tests/nunit-adapter-drops-large-non-category-shard-filters.md).
+
+4. **Full-suite triggers** — run `dotnet test clio.tests/clio.tests.csproj --filter "TestCategory=Unit"` when any of the following changed:
    - `clio/BindingsModule.cs` or `clio/Program.cs` — DI composition root, affects all modules
    - `clio/Common/` — shared dependency used by every module
    - Changes span more than 3 distinct modules
@@ -451,7 +473,7 @@ dotnet test Clio.Analyzers.Tests/Clio.Analyzers.Tests.csproj --no-build
 - **Before every commit**: run the targeted test filter for each changed module and confirm all pass.
 - **Do not commit if targeted tests fail.**
 - When targeted tests pass but the change touches shared infrastructure (rule 4), additionally run the full unit suite.
-- Include the filter command used in the commit message or PR description so reviewers know what was validated locally (e.g., `Validated: dotnet test --filter "Category=Unit&Module=Command"`).
+- Include the filter command used in the commit message or PR description so reviewers know what was validated locally (e.g., `Validated: dotnet test clio.tests/clio.tests.csproj --filter "TestCategory=Unit&Module=Command"`).
 
 # Instance creation and DI policy
 

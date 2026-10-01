@@ -28,12 +28,14 @@ public sealed class ExplorerContextMenuRegistrationTests {
 		// Assert
 		deployCommands.Should().HaveCount(2,
 			because: "both ZIP association locations must expose the same safe deploy launcher");
-		deployCommands.Should().OnlyContain(command => command.StartsWith("@=\"clio deploy-creatio ",
+		deployCommands.Should().OnlyContain(command => command.StartsWith("@=\"__CLIO_DEPLOY_LAUNCH__ deploy-creatio ",
 			StringComparison.Ordinal), because: "the registry must launch clio without cmd.exe or another command shell");
-		deployCommands.Should().OnlyContain(command => command.Contains("--zip-file \\\"%1%\\\"",
+		deployCommands.Should().OnlyContain(command => command.Contains("--zip-file \\\"%1\\\"",
 			StringComparison.Ordinal), because: "the ZIP path must remain one quoted process argument");
 		deployCommands.Should().OnlyContain(command => command.Contains("--explorer-launch", StringComparison.Ordinal),
 			because: "sole-local inference and failure acknowledgement must be scoped to Explorer launches");
+		deployCommands.Should().OnlyContain(command => command.Contains("--disable-reset-password", StringComparison.Ordinal),
+			because: "right-click deployments must opt into the existing forced password change disabling feature");
 	}
 
 	[Test]
@@ -47,10 +49,10 @@ public sealed class ExplorerContextMenuRegistrationTests {
 		const string hostileFilename = "%CMDCMDLINE% & echo INJECTION-MARKER & rem .zip";
 
 		// Act
-		string expandedCommand = deployCommand.Replace("%1%", hostileFilename, StringComparison.Ordinal);
+		string expandedCommand = deployCommand.Replace("%1", hostileFilename, StringComparison.Ordinal);
 
 		// Assert
-		expandedCommand.Should().StartWith("@=\"clio ",
+		expandedCommand.Should().StartWith("@=\"__CLIO_DEPLOY_LAUNCH__ ",
 			because: "a direct executable invocation gives the filename to clio without shell expansion");
 		expandedCommand.Contains("cmd.exe", StringComparison.OrdinalIgnoreCase).Should().BeFalse(
 			because: "cmd.exe expands percent variables inside quotes and can turn the filename into executable syntax");

@@ -4,6 +4,7 @@ add-item:add-item,create
 add-custom-logging:add-custom-logging
 add-package:add-package,ap
 add-package-dependency:add-package-dependency,add-pkg-dependency,add-pkg-dep
+create-package:create-package
 remove-package-dependency:remove-package-dependency,remove-pkg-dependency,remove-pkg-dep
 add-schema:add-schema
 add-user-task:add-user-task
@@ -164,6 +165,7 @@ list-app-sections:list-app-sections
 list-entity-client-schemas:list-entity-client-schemas,migration-unit-resolve
 list-pages:list-pages,page-list
 update-page:update-page,page-update
+localize-page:localize-page
 create-page:create-page,page-create
 list-page-templates:list-page-templates,page-templates,page-templates-list
 create-related-page-addon:create-related-page-addon,related-page-addon,set-related-pages
@@ -232,6 +234,9 @@ get-identity-assertion:get-identity-assertion,identity-assertion
 get-identity-public-jwk:get-identity-public-jwk,identity-public-jwk
 regenerate-identity-signing-key:regenerate-identity-signing-key,identity-regenerate-key
 check-auth-code-flow:check-auth-code-flow,auth-code-flow
+login:login,signin
+logout:logout,signout
+auth-status:auth-status,whoami
 register-sso-provider:register-sso-provider,sso-register-provider
 manage-user:manage-user
 manage-role:manage-role

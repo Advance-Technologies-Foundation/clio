@@ -3385,6 +3385,74 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
+	[Description("FindLocalizableTextViolations reports exactly the nodes the ValidateLocalizableTextLiterals gate rejects: a nested named child, an unnamed child under its nearest named ancestor, and never the crt.Gallery itemConfig mapping.")]
+	public void FindLocalizableTextViolations_ShouldMatchGate_WhenBodyHasNestedAndExemptNodes() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""
+			[{"operation":"insert","name":"UsrContainer","values":{"type":"crt.FlexContainer","items":[{"name":"UsrChild","type":"crt.Label","caption":"Child caption"},{"type":"crt.Label","caption":"Anonymous caption"}]}},
+			{"operation":"insert","name":"UsrGallery","values":{"type":"crt.Gallery","itemConfig":{"templateValuesMapping":{"caption":"GalleryDS_Name"}}}}]
+			""",
+			"[]");
+
+		// Act
+		IReadOnlyList<LocalizableTextViolation> violations = SchemaValidationService.FindLocalizableTextViolations(body);
+		SchemaValidationResult gate = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		violations.Should().Equal(
+			[
+				new LocalizableTextViolation("UsrChild", "caption", LocalizableTextViolationKind.InlineLiteral),
+				new LocalizableTextViolation("UsrContainer", "caption", LocalizableTextViolationKind.InlineLiteral)
+			],
+			because: "a nested named child is reported by its own name, an unnamed child under its nearest named ancestor, and the Gallery mapping is exempt");
+		gate.Errors.Should().HaveCount(violations.Count,
+			because: "the structured scan must report exactly the nodes the update-page gate rejects");
+		gate.Errors[0].Should().Contain("UsrChild").And.Contain("Child caption",
+			because: "violations and gate errors are produced by the same branch in document order");
+		gate.Errors[1].Should().Contain("UsrContainer").And.Contain("Anonymous caption",
+			because: "violations and gate errors are produced by the same branch in document order");
+	}
+
+	[Test]
+	[Description("FindLocalizableTextViolations reports a resource binding on crt.ImageInput.tooltip as its own kind, matching the gate's literal-required rejection.")]
+	public void FindLocalizableTextViolations_ShouldReportLiteralOnlyKind_WhenImageInputTooltipIsResourceBound() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"UsrPhoto","values":{"type":"crt.ImageInput","value":"$UsrPhoto","tooltip":"$Resources.Strings.PhotoTip"}}]""",
+			"[]");
+
+		// Act
+		IReadOnlyList<LocalizableTextViolation> violations = SchemaValidationService.FindLocalizableTextViolations(body);
+		SchemaValidationResult gate = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		violations.Should().Equal(
+			[new LocalizableTextViolation("UsrPhoto", "tooltip", LocalizableTextViolationKind.ResourceBindingOnLiteralOnlyProperty)],
+			because: "the gate rejects this binding because it renders empty, so the scan must report it as the literal-only kind");
+		gate.Errors.Should().ContainSingle(
+			because: "the structured scan and the gate must agree on the single rejected node");
+	}
+
+	[Test]
+	[Description("FindMobileLocalizableTextViolations reports the same nodes the ValidateMobileLocalizableTextLiterals gate rejects for a plain-JSON mobile body.")]
+	public void FindMobileLocalizableTextViolations_ShouldMatchGate_WhenMobileCaptionIsInlineLiteral() {
+		// Arrange
+		const string body = """{"viewConfigDiff":[{"operation":"insert","name":"UsrLabel","values":{"type":"crt.Label","caption":"Hello"}}]}""";
+
+		// Act
+		IReadOnlyList<LocalizableTextViolation> violations = SchemaValidationService.FindMobileLocalizableTextViolations(body);
+		SchemaValidationResult gate = SchemaValidationService.ValidateMobileLocalizableTextLiterals(body);
+
+		// Assert
+		violations.Should().Equal(
+			[new LocalizableTextViolation("UsrLabel", "caption", LocalizableTextViolationKind.InlineLiteral)],
+			because: "the mobile scan must report the inline caption literal the mobile gate rejects");
+		gate.Errors.Should().ContainSingle(error => error.Contains("UsrLabel"),
+			because: "the structured scan and the mobile gate must agree on the rejected node");
+	}
+
+	[Test]
 	[Description("A literal tooltip on crt.ImageInput is allowed — the control renders the raw text and never reads a localizable resource, so the mandated resource form would show no tooltip (ENG-92940).")]
 	public void ValidateLocalizableTextLiterals_ImageInputTooltipLiteral_ReturnsValid() {
 		// Arrange
@@ -8653,6 +8721,306 @@ public sealed class SchemaValidationServiceTests
 		// Assert
 		errors.Should().Contain(e => e.Contains("crt.Scaffold"),
 			because: "the invariant must be enforced by the validator the caller cannot skip, not stated in the conversion guide's constraints");
+	}
+
+	#endregion
+
+	#region ValidateMobileIndicatorWidgetProviding
+
+	private static string MobileIndicatorBody(string providing, string operation = "insert") =>
+		"{\"viewConfigDiff\":[{\"operation\":\"" + operation + "\",\"name\":\"TotalIndicator\","
+		+ "\"parentName\":\"MainContainer\",\"propertyName\":\"items\","
+		+ "\"values\":{\"type\":\"crt.IndicatorWidget\",\"config\":{\"title\":\"Total\","
+		+ DesignerRequiredIndicatorConfig + ",\"data\":{"
+		+ providing + "}}}}]}";
+
+	private const string DesignerRequiredIndicatorConfig =
+		"\"layout\":{\"color\":\"green\"},\"text\":{\"template\":\"{0}\",\"metricMacros\":\"{0}\"}";
+
+	[Test]
+	[Description("Aggregation providing without schemaName is blocked.")]
+	public void ValidateMobileIndicatorWidgetProviding_WhenAggregationHasNoSchemaName_AddsBlockingError() {
+		// Arrange
+		string body = MobileIndicatorBody(
+			"""
+			"providing":{"aggregation":{"column":{"expression":{"aggregationType":1,
+			  "functionArgument":{"columnPath":"Id"}}}}}
+			""");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileIndicatorWidgetProviding(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "the runtime skips the data request without schemaName");
+		result.Errors.Should().ContainSingle(e => e.Contains("config.data.providing.schemaName"),
+			because: "the diagnostic names the missing path");
+	}
+
+	[Test]
+	[Description("A bare columnPath on aggregation.column, the old document's shape, is blocked, also when nested in a container.")]
+	public void ValidateMobileIndicatorWidgetProviding_WhenAggregationColumnHasNoExpression_AddsBlockingError() {
+		// Arrange — the widget is nested inside a container's items, the way a real insert authors it.
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"insert","name":"Wrap","parentName":"Scaffold","propertyName":"items",
+		                   "values":{"type":"crt.GridContainer","items":[
+		                     {"name":"TotalIndicator","type":"crt.IndicatorWidget","config":{"title":"Total",
+		                      "layout":{"color":"green"},"text":{"template":"{0}","metricMacros":"{0}"},
+		                      "data":{"providing":{"schemaName":"Contact",
+		                        "aggregation":{"column":{"columnPath":"Id"}}}}}}]}}
+		                ]
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileIndicatorWidgetProviding(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "a column without an expression is not an aggregate");
+		result.Errors.Should().ContainSingle(e =>
+				e.Contains("config.data.providing.aggregation.column.expression") && e.Contains("TotalIndicator")
+				&& !e.Contains("config.layout"),
+			because: "the nested widget is found and only its real gap is named");
+	}
+
+	[Test]
+	[Description("A missing aggregationType is blocked.")]
+	public void ValidateMobileIndicatorWidgetProviding_WhenAggregationTypeIsMissing_AddsBlockingError() {
+		// Arrange
+		string body = MobileIndicatorBody(
+			"""
+			"providing":{"schemaName":"Contact","aggregation":{"column":{"expression":{
+			  "functionArgument":{"columnPath":"Id"}}}}}
+			""");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileIndicatorWidgetProviding(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "a missing aggregationType aggregates nothing");
+		result.Errors.Should().ContainSingle(e => e.Contains("aggregationType"),
+			because: "the diagnostic names the field");
+	}
+
+	[Test]
+	[Description("An aggregation expression without expressionType is blocked: the runtime cannot parse it.")]
+	public void ValidateMobileIndicatorWidgetProviding_WhenExpressionTypeIsMissing_AddsBlockingError() {
+		// Arrange
+		string body = MobileIndicatorBody(
+			"""
+			"providing":{"schemaName":"Contact","aggregation":{"column":{"expression":{
+			  "functionType":2,"aggregationType":1,"functionArgument":{"expressionType":0,"columnPath":"Id"}}}}}
+			""");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileIndicatorWidgetProviding(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "the typed parse throws on a missing expressionType and the device shows an error placeholder");
+		result.Errors.Should().ContainSingle(e => e.Contains("config.data.providing.aggregation.column.expression.expressionType")
+				&& e.Contains("get-component-info crt.IndicatorWidget with schema-type mobile"),
+			because: "the diagnostic names the missing field and points at the document that carries a working example");
+	}
+
+	[Test]
+	[Description("A column expression instead of a function expression names every missing path.")]
+	public void ValidateMobileIndicatorWidgetProviding_WhenColumnCarriesAPlainColumnExpression_NamesEveryMissingPath() {
+		// Arrange
+		string body = MobileIndicatorBody(
+			"""
+			"providing":{"schemaName":"Contact","aggregation":{"column":{
+			  "expression":{"expressionType":0,"columnPath":"Id"}}}}
+			""");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileIndicatorWidgetProviding(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "a column expression is not an aggregate");
+		result.Errors.Should().ContainSingle(e =>
+				e.Contains("expression.expressionType") && e.Contains("functionArgument.columnPath")
+				&& e.Contains("aggregationType"),
+			because: "expressionType 0 is not a function expression, and every gap arrives in one diagnostic");
+	}
+
+	[TestCase(0)]
+	[TestCase(6)]
+	[Description("aggregationType outside 1-5 is blocked: 0 aggregates nothing, 6 throws in QueryAggregationType.")]
+	public void ValidateMobileIndicatorWidgetProviding_WhenAggregationTypeIsOutOfRange_AddsBlockingError(int aggregationType) {
+		// Arrange
+		string body = MobileIndicatorBody(
+			"\"providing\":{\"schemaName\":\"Contact\",\"aggregation\":{\"column\":{\"expression\":{"
+			+ $"\"expressionType\":1,\"functionType\":2,\"aggregationType\":{aggregationType},"
+			+ "\"functionArgument\":{\"expressionType\":0,\"columnPath\":\"Id\"}}}}}");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileIndicatorWidgetProviding(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "only 1-5 produce an aggregate the runtime can read");
+		result.Errors.Should().ContainSingle(e => e.Contains("aggregationType"),
+			because: "the out-of-range field is named");
+	}
+
+	[Test]
+	[Description("A set authoring an incomplete widget is blocked.")]
+	public void ValidateMobileIndicatorWidgetProviding_WhenSetAuthorsTheWidget_AddsBlockingError() {
+		// Arrange
+		string body = MobileIndicatorBody("""
+		                                  "providing":{"schemaName":"Contact"}
+		                                  """, operation: "set");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileIndicatorWidgetProviding(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "set replaces the element wholesale");
+	}
+
+	[Test]
+	[Description("Missing config.layout and config.text are both named.")]
+	public void ValidateMobileIndicatorWidgetProviding_WhenDesignerObjectsAreMissing_NamesBoth() {
+		// Arrange
+		string body =
+			"{\"viewConfigDiff\":[{\"operation\":\"insert\",\"name\":\"TotalIndicator\","
+			+ "\"parentName\":\"Scaffold\",\"propertyName\":\"items\","
+			+ "\"values\":{\"type\":\"crt.IndicatorWidget\",\"config\":{\"title\":\"Total\",\"data\":{"
+			+ "\"providing\":{\"schemaName\":\"Contact\",\"aggregation\":{\"column\":{\"expression\":{"
+			+ "\"expressionType\":1,\"functionType\":2,\"aggregationType\":1,"
+			+ "\"functionArgument\":{\"expressionType\":0,\"columnPath\":\"Id\"}}}}}}}}}]}";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileIndicatorWidgetProviding(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "the designer cannot render the widget without them");
+		result.Errors.Should().ContainSingle(e => e.Contains("config.layout") && e.Contains("config.text"),
+			because: "both objects are named in one diagnostic");
+	}
+
+	[Test]
+	[Description("A widget with a data binding still needs config.layout.")]
+	public void ValidateMobileIndicatorWidgetProviding_WhenBoundDataWidgetLacksLayout_AddsBlockingError() {
+		// Arrange
+		string body =
+			"{\"viewConfigDiff\":[{\"operation\":\"insert\",\"name\":\"TotalIndicator\","
+			+ "\"parentName\":\"MainContainer\",\"propertyName\":\"items\","
+			+ "\"values\":{\"type\":\"crt.IndicatorWidget\",\"data\":\"$PreloadedTotal\","
+			+ "\"config\":{\"title\":\"Total\",\"text\":{\"template\":\"{0}\"}}}}]}";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileIndicatorWidgetProviding(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "the binding exempts the providing checks only");
+		result.Errors.Should().ContainSingle(e => e.Contains("config.layout") && !e.Contains("config.data"),
+			because: "only the designer gap is reported");
+	}
+
+	[Test]
+	[Description("A calculated metric passes on expressionSchema.")]
+	public void ValidateMobileIndicatorWidgetProviding_WhenProvidingIsExpressionSchema_Passes() {
+		// Arrange
+		string body = MobileIndicatorBody(
+			"""
+			"providing":{"attribute":"TotalIndicator_Data","expressionSchema":{"engineType":"PowerFx",
+			  "expression":"#Contact_a1#.countContact","expressionVariables":[]}}
+			""");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileIndicatorWidgetProviding(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "expressionSchema is a legal providing shape");
+		result.Errors.Should().BeEmpty(
+			because: "a valid calculated metric raises no error");
+	}
+
+	[Test]
+	[Description("A complete aggregation metric passes.")]
+	public void ValidateMobileIndicatorWidgetProviding_WhenProvidingIsComplete_Passes() {
+		// Arrange
+		string body = MobileIndicatorBody(
+			"""
+			"providing":{"attribute":"TotalIndicator_Data","schemaName":"Contact",
+			  "aggregation":{"column":{"orderDirection":0,"orderPosition":-1,"isVisible":true,
+			    "expression":{"expressionType":1,"functionType":2,"aggregationType":1,"aggregationEvalType":2,
+			      "functionArgument":{"expressionType":0,"columnPath":"Id"}}}}}
+			""");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileIndicatorWidgetProviding(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "this is the shape the runtime executes");
+		result.Errors.Should().BeEmpty(
+			because: "the reference body raises no error");
+	}
+
+	[Test]
+	[Description("A merge authoring an incomplete widget is blocked.")]
+	public void ValidateMobileIndicatorWidgetProviding_WhenMergeAuthorsTheWidget_AddsBlockingError() {
+		// Arrange
+		string body = MobileIndicatorBody("""
+		                                  "providing":{"schemaName":"Contact"}
+		                                  """, operation: "merge");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileIndicatorWidgetProviding(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "merge replaces config wholesale");
+	}
+
+	[Test]
+	[Description("A widget with a data binding skips the providing checks.")]
+	public void ValidateMobileIndicatorWidgetProviding_WhenWidgetCarriesABoundDataAttribute_Passes() {
+		// Arrange
+		string body =
+			"{\"viewConfigDiff\":[{\"operation\":\"insert\",\"name\":\"TotalIndicator\","
+			+ "\"parentName\":\"MainContainer\",\"propertyName\":\"items\","
+			+ "\"values\":{\"type\":\"crt.IndicatorWidget\",\"data\":\"$PreloadedTotal\","
+			+ "\"config\":{\"title\":\"Total\"," + DesignerRequiredIndicatorConfig + "}}}]}";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileIndicatorWidgetProviding(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "a data binding bypasses providing generation");
+	}
+
+	[Test]
+	[Description("A non-object expressionSchema is blocked and named as the cause.")]
+	public void ValidateMobileIndicatorWidgetProviding_WhenExpressionSchemaIsNotAnObject_AddsBlockingError() {
+		// Arrange
+		string body = MobileIndicatorBody("""
+		                                  "providing":{"attribute":"X","expressionSchema":"not-an-object"}
+		                                  """);
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileIndicatorWidgetProviding(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "the runtime throws casting a non-object expressionSchema");
+		result.Errors.Should().ContainSingle(e =>
+				e.Contains("config.data.providing.expressionSchema")
+				&& !e.Contains("config.data.providing.aggregation.column.expression"),
+			because: "the real cause is named, not the aggregation path");
 	}
 
 	#endregion

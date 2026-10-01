@@ -56,6 +56,24 @@ internal interface ICreatioClientTransport : IDisposable {
 	/// <inheritdoc cref="IApplicationClient.DownloadFile"/>
 	void DownloadFile(string url, string filePath, string requestData);
 
+	/// <summary>
+	/// Downloads a GET response straight to <paramref name="filePath"/>, abandoning the transfer once
+	/// <paramref name="maxBytes"/> is passed. EVERY status streams through the same counted loop, so an
+	/// error body is bounded and readable too.
+	/// </summary>
+	/// <remarks>
+	/// Needed on the seam because the bounded read in <see cref="CreatioClientAdapter"/> issues its GET
+	/// through this member; without it the adapter would have to reach past the seam to the concrete
+	/// NuGet client, and the bounded path would be the one member its unit tests cannot substitute.
+	/// </remarks>
+	/// <param name="url">Absolute request URL.</param>
+	/// <param name="filePath">Destination the response body is written to.</param>
+	/// <param name="maxBytes">Byte ceiling, tested before each write.</param>
+	/// <param name="requestTimeout">Request timeout in milliseconds.</param>
+	/// <param name="cancellationToken">Token that abandons the transfer.</param>
+	Task<HttpResponseMessage> DownloadFileByGetBoundedAsync(string url, string filePath, long maxBytes,
+		int requestTimeout, CancellationToken cancellationToken);
+
 	/// <inheritdoc cref="IApplicationClient.ExecuteDeleteRequest"/>
 	string ExecuteDeleteRequest(string url, string requestData, int requestTimeout, int maxAttempts, int delaySec);
 

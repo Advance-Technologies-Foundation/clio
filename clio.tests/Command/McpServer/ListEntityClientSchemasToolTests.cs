@@ -1,3 +1,4 @@
+using System.IO.Abstractions.TestingHelpers;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
@@ -167,6 +168,177 @@ public class ListEntityClientSchemasToolTests {
 
 		// Assert
 		actual.Should().Be(expected, because: "migration routing must not guess classic/freedom for unknown templates");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The default list-entity-client-schemas response serializes to the pinned wire JSON; the file-mode twin must not change it.")]
+	public void Resolve_Response_Should_Match_Pinned_Wire_Json() {
+		// Arrange
+		FakeListEntityClientSchemasCommand defaultCommand = new();
+		FakeListEntityClientSchemasCommand resolvedCommand = new() { ResponseToReturn = CreateSampleResponse() };
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<ListEntityClientSchemasCommand>(Arg.Any<ListEntityClientSchemasOptions>())
+			.Returns(resolvedCommand);
+		ListEntityClientSchemasTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		ListEntityClientSchemasResponse response = tool.Resolve(new ListEntityClientSchemasArgs("Contract") {
+			EnvironmentName = "dev" });
+
+		// Assert
+		McpResponseBaseline.Serialize(response).Should().Be(PinnedWireJson,
+			because: "the inline response is the default and stays byte-for-byte unchanged");
+	}
+
+	internal const string PinnedWireJson = """{"success":true,"entity":"Contract","entityUId":"11111111-1111-1111-1111-111111111111","sections":[{"caption":"Contracts","code":"Contract","sectionSchema":"ContractSectionV2","cardSchema":"ContractPageV2","cardSchemaUId":"22222222-2222-2222-2222-222222222222","template":"BasePageV2","kind":"classic","isTyped":true}],"editPages":[{"typeColumnValue":"33333333-3333-3333-3333-333333333333","typeColumnDisplayValue":"Service","cardSchema":"ContractPageV2","cardSchemaUId":"22222222-2222-2222-2222-222222222222","template":"BasePageV2","kind":"classic","miniPageSchema":"ContractMiniPage","miniPageSchemaUId":"44444444-4444-4444-4444-444444444444","miniPageTemplate":"BaseMiniPageTemplate","miniPageKind":"freedom","miniPageModes":"add"},{"cardSchema":"Contracts_FormPage","template":"PageWithTabsFreedomTemplate","kind":"freedom"},{"cardSchema":"UsrContractPage","template":"CustomTemplate","kind":"unknown"}],"warnings":["rowCount cap reached"],"note":"One level only."}""";
+
+	internal static ListEntityClientSchemasResponse CreateSampleResponse() => new() {
+		Success = true,
+		Entity = "Contract",
+		EntityUId = "11111111-1111-1111-1111-111111111111",
+		Sections = [
+			new MigrationSectionInfo {
+				Caption = "Contracts", Code = "Contract", SectionSchema = "ContractSectionV2", CardSchema = "ContractPageV2",
+				CardSchemaUId = "22222222-2222-2222-2222-222222222222", Template = "BasePageV2", Kind = "classic", IsTyped = true
+			}
+		],
+		EditPages = [
+			new MigrationEditPageInfo {
+				TypeColumnValue = "33333333-3333-3333-3333-333333333333", TypeColumnDisplayValue = "Service", CardSchema = "ContractPageV2",
+				CardSchemaUId = "22222222-2222-2222-2222-222222222222", Template = "BasePageV2", Kind = "classic",
+				MiniPageSchema = "ContractMiniPage", MiniPageSchemaUId = "44444444-4444-4444-4444-444444444444",
+				MiniPageTemplate = "BaseMiniPageTemplate", MiniPageKind = "freedom", MiniPageModes = "add"
+			},
+			new MigrationEditPageInfo { CardSchema = "Contracts_FormPage", Template = "PageWithTabsFreedomTemplate", Kind = "freedom" },
+			new MigrationEditPageInfo { CardSchema = "UsrContractPage", Template = "CustomTemplate", Kind = "unknown" }
+		],
+		Note = "One level only.",
+		Warnings = ["rowCount cap reached"]
+	};
+
+	private static (ListEntityClientSchemasToFileTool tool, FakeListEntityClientSchemasCommand command, MockFileSystem fileSystem)
+		BuildToFileTool(ListEntityClientSchemasResponse responseToReturn, MockFileSystem? fileSystem = null) {
+		MockFileSystem fs = fileSystem ?? new MockFileSystem();
+		FakeListEntityClientSchemasCommand resolvedCommand = new() { ResponseToReturn = responseToReturn };
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<ListEntityClientSchemasCommand>(Arg.Any<ListEntityClientSchemasOptions>())
+			.Returns(resolvedCommand);
+		ListEntityClientSchemasTool listTool = new(new FakeListEntityClientSchemasCommand(), ConsoleLogger.Instance, commandResolver);
+		ListEntityClientSchemasToFileTool tool = new(listTool, new McpOutputFileWriter(fs, new MockConfinedFileAccess(fs)));
+		return (tool, resolvedCommand, fs);
+	}
+
+	private static string TempPath(MockFileSystem fileSystem) =>
+		fileSystem.Path.Combine(fileSystem.Path.GetTempPath(), $"entity-schemas-{System.Guid.NewGuid():N}.json");
+
+	[Test]
+	[Category("Unit")]
+	[Description("The file twin writes exactly the inline list-entity-client-schemas response and returns the path and the classic/freedom counts instead of the list.")]
+	public void ResolveToFile_Should_Write_Inline_Response_And_Return_Counts() {
+		// Arrange
+		(ListEntityClientSchemasToFileTool tool, _, MockFileSystem fileSystem) = BuildToFileTool(CreateSampleResponse());
+		string outputFile = TempPath(fileSystem);
+
+		// Act
+		ListEntityClientSchemasToFileResponse response = tool.ResolveToFile(
+			new ListEntityClientSchemasToFileArgs("Contract", outputFile) { EnvironmentName = "dev" });
+
+		// Assert
+		response.Success.Should().BeTrue(because: "the lookup succeeded and the file was written");
+		fileSystem.File.ReadAllText(outputFile).Should().Be(PinnedWireJson,
+			because: "the file holds the same JSON the inline tool returns, so nothing is lost");
+		response.OutputFile.Should().Be(fileSystem.Path.GetFullPath(outputFile), because: "the caller needs the resolved path");
+		response.Sections.Should().Be(new PageKindCounts(1, 1, 0, 0), because: "the single section is classic");
+		response.EditPages.Should().Be(new PageKindCounts(3, 1, 1, 1),
+			because: "one edit page of each kind; an unknown kind is counted, not dropped");
+		response.Warnings.Should().Equal(["rowCount cap reached"], because: "warnings stay inline so a partial result is visible");
+		response.Note.Should().Be("One level only.", because: "the note explains how to read the result and stays inline too");
+		McpResponseBaseline.Serialize(response).Should().NotContain("cardSchema",
+			because: "the page list itself is not returned inline");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A failed lookup is returned without writing a file.")]
+	public void ResolveToFile_Should_Not_Write_When_Lookup_Fails() {
+		// Arrange
+		(ListEntityClientSchemasToFileTool tool, _, MockFileSystem fileSystem) = BuildToFileTool(
+			new ListEntityClientSchemasResponse { Success = false, Error = "entity not found" });
+		string outputFile = TempPath(fileSystem);
+
+		// Act
+		ListEntityClientSchemasToFileResponse response = tool.ResolveToFile(
+			new ListEntityClientSchemasToFileArgs("Nope", outputFile) { EnvironmentName = "dev" });
+
+		// Assert
+		response.Success.Should().BeFalse(because: "the lookup failed");
+		response.Error.Should().Be("entity not found", because: "the lookup failure reaches the caller");
+		fileSystem.File.Exists(outputFile).Should().BeFalse(because: "a failed lookup leaves no file");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An existing output-file is refused before the lookup runs.")]
+	public void ResolveToFile_Should_Reject_Existing_Output_File_Before_Lookup() {
+		// Arrange
+		MockFileSystem fileSystem = new();
+		string outputFile = TempPath(fileSystem);
+		fileSystem.AddFile(outputFile, new MockFileData("{}"));
+		(ListEntityClientSchemasToFileTool tool, FakeListEntityClientSchemasCommand command, _) =
+			BuildToFileTool(CreateSampleResponse(), fileSystem);
+
+		// Act
+		ListEntityClientSchemasToFileResponse response = tool.ResolveToFile(
+			new ListEntityClientSchemasToFileArgs("Contract", outputFile) { EnvironmentName = "dev" });
+
+		// Assert
+		response.Success.Should().BeFalse(because: "an existing file is never overwritten");
+		response.Error.Should().Contain("already exists", because: "the caller has to choose another path");
+		command.CapturedOptions.Should().BeNull(because: "a refused path must not cost the lookup");
+		fileSystem.File.ReadAllText(outputFile).Should().Be("{}", because: "the existing file is left untouched");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An output-file outside the workspace and the OS temp directory is refused before the lookup runs.")]
+	public void ResolveToFile_Should_Reject_Output_File_Outside_Allowed_Locations() {
+		// Arrange
+		(ListEntityClientSchemasToFileTool tool, FakeListEntityClientSchemasCommand command, MockFileSystem fileSystem) =
+			BuildToFileTool(CreateSampleResponse());
+		string outsidePath = System.IO.Path.Combine(
+			System.Environment.GetFolderPath(System.Environment.SpecialFolder.UserProfile),
+			$"clio-entity-schemas-probe-{System.Guid.NewGuid():N}.json");
+
+		// Act
+		ListEntityClientSchemasToFileResponse response = tool.ResolveToFile(
+			new ListEntityClientSchemasToFileArgs("Contract", outsidePath) { EnvironmentName = "dev" });
+
+		// Assert
+		response.Success.Should().BeFalse(because: "a path outside the allowed locations is never written");
+		response.Error.Should().Contain("allowed locations", because: "the caller is told confinement refused it");
+		response.Error.Should().Contain("list-entity-client-schemas", because: "the caller is sent to the inline tool");
+		command.CapturedOptions.Should().BeNull(because: "the path is checked before the lookup");
+		fileSystem.File.Exists(outsidePath).Should().BeFalse(because: "nothing is created on the file system the tool writes to");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Advertises a stable tool name and the write-capable annotations a local file write needs.")]
+	public void ResolveToFile_Should_Advertise_Stable_Name_And_Write_Capable_Annotations() {
+		// Arrange
+
+		// Act
+		ModelContextProtocol.Server.McpServerToolAttribute attribute = (ModelContextProtocol.Server.McpServerToolAttribute)
+			typeof(ListEntityClientSchemasToFileTool)
+				.GetMethod(nameof(ListEntityClientSchemasToFileTool.ResolveToFile))!
+				.GetCustomAttributes(typeof(ModelContextProtocol.Server.McpServerToolAttribute), false)[0];
+
+		// Assert
+		attribute.Name.Should().Be("list-entity-client-schemas-to-file", because: "the name is part of the MCP contract");
+		attribute.ReadOnly.Should().BeFalse(because: "the tool creates a local file");
+		attribute.Idempotent.Should().BeFalse(because: "a second call to the same path is refused");
+		attribute.Destructive.Should().BeFalse(because: "the tool only adds a local file");
 	}
 
 	private sealed class FakeListEntityClientSchemasCommand : ListEntityClientSchemasCommand {

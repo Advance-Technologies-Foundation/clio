@@ -1,0 +1,82 @@
+NAME
+    create-package - Create a new package in a Creatio environment
+
+SYNOPSIS
+    clio create-package --package-name <PACKAGE> [OPTIONS]
+
+DESCRIPTION
+    Creates a new, empty, editable package in a Creatio environment through
+    PackageService.svc, the same operation as "Create package" in the
+    Configuration section, then reads the stored package back.
+
+    The environment's SchemaNamePrefix system setting is prepended when the
+    name does not start with it: "Calls" becomes "UsrCalls". The maintainer is
+    taken from the environment's Maintainer system setting.
+
+    With --application-code the package is created inside that installed
+    application (ApplicationPackagesService.svc); without it the package is
+    standalone and is not registered as an installed application.
+
+    The platform ignores dependencies on creation, so clio saves them with a
+    second request. When that request or the readback fails, the package
+    already exists: the command reports it and exits with 1; add missing
+    dependencies with 'clio add-package-dependency'. When the create request
+    itself fails in transport and the environment cannot be asked afterwards,
+    the outcome is unknown: check 'clio list-packages' before retrying.
+
+    Nothing is created when a package with that name already exists, a
+    dependency or the application is not found, or the environment rejects
+    the name.
+
+OPTIONS
+    --package-name <PACKAGE>
+        Name of the package to create (required). The SchemaNamePrefix is
+        prepended when missing.
+
+    --description <TEXT>
+        Package description
+
+    --dependencies <DEP[,DEP...]>
+        Installed packages the new package depends on. Multiple entries can be
+        comma-separated or passed as separate values.
+
+    --application-code <CODE>
+        Code of an installed application to create the package in; omit for a
+        standalone package
+
+    -e, --environment <ENVIRONMENT_NAME>
+        Target environment name from your configuration
+
+    Environment options (can be used instead of -e):
+        -u, --uri <URI>
+            Application URI
+
+        -l, --Login <LOGIN>
+            User login (administrator permission required)
+
+        -p, --Password <PASSWORD>
+            User password
+
+EXAMPLES
+    Create a standalone package:
+        clio create-package --package-name Calls -e dev
+
+    Create a package with a description and dependencies:
+        clio create-package --package-name Calls --description "Calls migration" --dependencies CrtBase,CrtUIv2 -e dev
+
+    Create a package inside an installed application:
+        clio create-package --package-name CallsExt --application-code UsrCallsApp -e dev
+
+NOTES
+    - The user needs the CanManageSolution system operation.
+    - A package created from a workspace with 'clio push-workspace' is
+      installed as an archive and comes out locked; use this command to get an
+      editable package.
+
+SEE ALSO
+    add-package-dependency - Add one or more package dependencies to a package
+    list-packages - List packages in a Creatio environment
+    delete-pkg-remote - Delete a package from a Creatio environment
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

@@ -1,10 +1,14 @@
-﻿namespace Clio.Tests.Command.McpServer.Tools.MobilePageConverter;
+namespace Clio.Tests.Command.McpServer.Tools.MobilePageConverter;
 
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command;
+using Clio.Command.AddonSchemaDesigner;
 using Clio.Command.McpServer.Tools;
 using Clio.Command.McpServer.Tools.MobilePageConverter;
 using Clio.Common;
@@ -14,8 +18,9 @@ using NSubstitute;
 using NUnit.Framework;
 
 /// <summary>
-/// Drives <see cref="MobilePageConversionGuideTool.GetMobilePageConversionGuide"/> end to end so the two
-/// hard-stop refusals are asserted WHERE THEY ARE WIRED, not where they are defined.
+/// Drives <see cref="MobilePageConversionGuideTool.GetMobilePageConversionGuide"/> end to end so wiring
+/// gaps are asserted WHERE THEY ARE WIRED, not where the pieces they call are defined: the two hard-stop
+/// template refusals, and the existing-mobile-pages self-match exclusion (playbook step 2a).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -27,9 +32,20 @@ using NUnit.Framework;
 /// trusted, was entirely unguarded.
 /// </para>
 /// <para>
-/// The seam is <see cref="MobilePageConversionGuideTool.ReadPageUnderTenantLock"/>: overriding it decides
-/// what every page read in the method returns — the source page, the mobile template, the web template —
-/// which is exactly the surface the two refusals key on.
+/// The refusal seam is <see cref="MobilePageConversionGuideTool.ReadPageUnderTenantLock"/>: overriding it
+/// decides what every page read in the method returns — the source page, the mobile template, the web
+/// template — which is exactly the surface the two refusals key on.
+/// </para>
+/// <para>
+/// The existing-mobile-pages tests prove the WIRING between the tool's derived/explicit target schema name
+/// and <see cref="ExistingMobilePageProbeRequest.TargetName"/> — the self-match exclusion
+/// <see cref="MobilePageConversionGuide.ExistingMobilePages"/> depends on. A unit test on
+/// <see cref="MobilePageConversionGuideTool.DeriveMobileSchemaName"/> alone cannot catch a call-site bug
+/// that swaps the computed value for <c>args.SchemaName</c> (or forgets to trim an explicit override) —
+/// these tests drive the FULL entity-default-mobile-page probe chain (<c>SysSchema</c> by name, the
+/// <c>MobileRelatedPage</c> add-on, <c>SysSchema</c> by UId) with a real registered default mobile page, so
+/// a wrong target name changes the OBSERVABLE result: the match is reported instead of excluded, or vice
+/// versa.
 /// </para>
 /// </remarks>
 [TestFixture]
@@ -40,6 +56,17 @@ public sealed class MobilePageConversionGuideToolRefusalWiringTests {
 	private const string SourcePage = "UsrLead_FormPage";
 	private const string WebTemplate = "PageWithTabsFreedomTemplate";
 	private const string MobileTemplate = "BaseMobilePageTemplate";
+
+	private const string MobileComponentCatalog = "mobile-components";
+
+	private const string WebComponentCatalog = "web-components";
+
+	private const string MobileRequestCatalog = "mobile-requests";
+	private const string EntitySourcePage = "Lead_FormPage";
+	private const string BoundEntity = "Lead";
+	private const string PackageUId = "11111111-1111-1111-1111-111111111111";
+	private const string EntityUId = "44444444-4444-4444-4444-444444444444";
+	private const string CandidatePageUId = "55555555-5555-5555-5555-555555555555";
 
 	[Test]
 	[Description("An unreadable MOBILE template refuses the whole tool. Asserted through the tool method rather than through RejectUnobtainableMobileTemplate, because the defect this guards is a missing `return` at the call site, which a direct call on the helper cannot see.")]
@@ -109,6 +136,113 @@ public sealed class MobilePageConversionGuideToolRefusalWiringTests {
 			because: "the caller still needs to know which schema came back empty");
 	}
 
+	[TestCase(MobileComponentCatalog, "MOBILE component catalog")]
+	[TestCase(WebComponentCatalog, "WEB component catalog")]
+	[TestCase(MobileRequestCatalog, "MOBILE request catalog")]
+	[Description("A catalog whose load fails — a cold cache with no network — comes back as the tool's own failure result naming the catalog, not as an exception escaping the tool. All three loads sat between two try blocks, so this state produced a thrown MCP error instead of the structured failure every other unreachable-dependency path here returns.")]
+	public async Task GetGuide_ShouldFail_WhenACatalogCannotBeLoaded(string failingCatalog, string expectedInError) {
+		// Arrange
+		var tool = new StubbedTool(unreadable: null, failingCatalog: failingCatalog);
+
+		// Act
+		MobilePageConversionGuideResponse response = await tool.GetMobilePageConversionGuide(Args());
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a catalog the tool cannot read leaves it with no basis for any recommendation");
+		response.Error.Should().Contain(expectedInError,
+			because: "naming WHICH catalog failed is what tells the caller whether to retry, go online, or check the version");
+		response.Guide.Should().BeNull(
+			because: "a failure that still carried a guide would be acted on as though it were usable");
+	}
+
+	[Test]
+	[Description("A rules entry that targets a mobile request the registry does not publish reaches the caller as rulesWarning. The check existed but was called from nowhere, so such an entry was reported only to a unit test on the helper and never to the caller — while on the page the converted binding becomes a request the app cannot dispatch and fails silently.")]
+	public async Task GetGuide_ShouldReportRulesWarning_WhenARulesEntryTargetsAnUnpublishedMobileRequest() {
+		// Arrange
+		var tool = new StubbedTool(unreadable: null, rules: RulesFlavor.UnknownRequestTarget);
+
+		// Act
+		MobilePageConversionGuideResponse response = await tool.GetMobilePageConversionGuide(Args());
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "an unresolvable rules target is a caveat on the guide, not a reason to withhold it. Error: "
+				+ response.Error);
+		response.RulesWarning.Should().NotBeNull(
+			because: "the offending entry has to be visible to whoever acts on the guide")
+			.And.Contain("crt.LegacyOpenRequest -> crt.GhostRequest",
+				because: "naming the web -> mobile pair is what makes the warning actionable");
+	}
+
+	[Test]
+	[Description("The SHIPPED rules against the pinned live mobile request registry leave rulesWarning null. Without this control the test above would pass on a tool that warned unconditionally, and a warning present on every conversion is one nobody reads.")]
+	public async Task GetGuide_ShouldLeaveRulesWarningNull_WhenTheRegistryPublishesEveryShippedRulesTarget() {
+		// Arrange
+		var tool = new StubbedTool(unreadable: null, rules: RulesFlavor.Shipped);
+
+		// Act
+		MobilePageConversionGuideResponse response = await tool.GetMobilePageConversionGuide(Args());
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "nothing about the shipped rules blocks a guide. Error: " + response.Error);
+		response.RulesWarning.Should().BeNull(
+			because: "every shipped rules entry names a request the live registry publishes, so there is nothing to warn about");
+	}
+
+	[Test]
+	[Description("When --target-schema-name is omitted, the tool must probe existingMobilePages using the DERIVED mobile schema name (DeriveMobileSchemaName), not the source page's own name. The bound entity's registered default mobile page here IS that exact derived name ('Lead_MobileFormPage'), so correct wiring excludes it as a self-match; the review's named bug (swapping in args.SchemaName, 'Lead_FormPage') would leave it unexcluded and fail this assertion.")]
+	public async Task GetGuide_OmittedTargetSchemaName_ExcludesSelfMatch_UsingDerivedName() {
+		// Arrange
+		var tool = new StubbedEntityProbeTool(existingMobilePageName: "Lead_MobileFormPage");
+
+		// Act
+		MobilePageConversionGuideResponse response = await tool.GetMobilePageConversionGuide(EntityArgs(targetSchemaName: null));
+
+		// Assert
+		response.Success.Should().BeTrue(because: "the run must complete: " + response.Error);
+		response.Guide!.ExistingMobilePages.Should().BeEmpty(
+			because: "the derived target name ('Lead_MobileFormPage') equals the entity's already-registered "
+				+ "default mobile page, so it must be excluded as a self-match rather than offered for reuse");
+	}
+
+	[Test]
+	[Description("An explicit --target-schema-name (with surrounding whitespace) must reach the probe TRIMMED: the entity's already-registered default mobile page is excluded as a self-match only when it equals the TRIMMED value, proving both that the explicit override reaches the probe and that it is trimmed before the comparison.")]
+	public async Task GetGuide_ExplicitTargetSchemaName_ExcludesSelfMatch_UsingTrimmedValue() {
+		// Arrange
+		var tool = new StubbedEntityProbeTool(existingMobilePageName: "Custom_MobilePage");
+
+		// Act
+		MobilePageConversionGuideResponse response = await tool.GetMobilePageConversionGuide(
+			EntityArgs(targetSchemaName: "  Custom_MobilePage  "));
+
+		// Assert
+		response.Success.Should().BeTrue(because: "the run must complete: " + response.Error);
+		response.Guide!.ExistingMobilePages.Should().BeEmpty(
+			because: "the explicit target-schema-name, TRIMMED, equals the entity's already-registered default "
+				+ "mobile page, so it must be excluded as a self-match — an untrimmed comparison, or one that "
+				+ "silently ignored the explicit override, would leave this match unexcluded");
+	}
+
+	[Test]
+	[Description("Control case: when the resolved target name does NOT match the entity's existing default mobile page, the match is reported (not excluded) — without this, the two tests above could pass on a probe that always excludes everything, which is the same vacuity the refusal-wiring tests guard against for the other hard-stop gates.")]
+	public async Task GetGuide_TargetNameDoesNotMatchExistingPage_ReportsTheMatch() {
+		// Arrange — the registered page's name matches neither the derived name nor any explicit override used here.
+		var tool = new StubbedEntityProbeTool(existingMobilePageName: "SomeUnrelated_MobilePage");
+
+		// Act
+		MobilePageConversionGuideResponse response = await tool.GetMobilePageConversionGuide(EntityArgs(targetSchemaName: null));
+
+		// Assert
+		response.Success.Should().BeTrue(because: "the run must complete: " + response.Error);
+		response.Guide!.ExistingMobilePages.Should().ContainSingle(
+			p => p.SchemaName == "SomeUnrelated_MobilePage",
+			because: "an unrelated existing default mobile page is a genuine reuse candidate and must be "
+				+ "reported — proving the exclusion asserted above is a real self-match check, not a probe that "
+				+ "never reports anything");
+	}
+
 	/// <remarks>
 	/// An explicit <c>Version</c> short-circuits ResolveVersionAsync before it reaches the environment
 	/// resolver, so these tests need no settings repository or version-probe stub — version resolution is a
@@ -117,6 +251,12 @@ public sealed class MobilePageConversionGuideToolRefusalWiringTests {
 	/// </remarks>
 	private static MobilePageConversionGuideArgs Args() =>
 		new(SourcePage, TargetSchemaName: null, Version: "8.3.3", EnvironmentName: "unit-test-env");
+
+	private static MobilePageConversionGuideArgs EntityArgs(string targetSchemaName) =>
+		new(EntitySourcePage, TargetSchemaName: targetSchemaName, Version: "8.3.3", EnvironmentName: "unit-test-env");
+
+	/// <summary>A successful SelectQuery envelope carrying <paramref name="rows"/> (raw JSON objects).</summary>
+	private static string Rows(params string[] rows) => $"{{\"success\":true,\"rows\":[{string.Join(",", rows)}]}}";
 
 	/// <summary>
 	/// The tool with every page read answered in-memory. <paramref name="unreadable"/> names the ONE schema
@@ -128,9 +268,11 @@ public sealed class MobilePageConversionGuideToolRefusalWiringTests {
 
 		private readonly bool _templateWithoutViewConfig;
 
-		internal StubbedTool(string unreadable, bool templateWithoutViewConfig = false)
+		internal StubbedTool(string unreadable, bool templateWithoutViewConfig = false,
+			string failingCatalog = null, RulesFlavor rules = RulesFlavor.Minimal)
 			: base(Substitute.For<IToolCommandResolver>(), Substitute.For<ILogger>(),
-				MobileCatalog(), WebCatalog(), RulesCatalog(),
+				MobileCatalog(failingCatalog), WebCatalog(failingCatalog),
+				MobileRequestCatalogStub(failingCatalog, rules), RulesCatalog(rules),
 				Substitute.For<IPlatformVersionResolverFactory>(), Substitute.For<ISettingsRepository>()) {
 			_unreadable = unreadable;
 			_templateWithoutViewConfig = templateWithoutViewConfig;
@@ -150,16 +292,100 @@ public sealed class MobilePageConversionGuideToolRefusalWiringTests {
 		}
 	}
 
+	/// <summary>
+	/// A tool whose entity-default-mobile-page probe chain (<c>SysSchema</c> by name, the
+	/// <c>MobileRelatedPage</c> add-on, <c>SysSchema</c> by UId) is fully wired to answer with ONE existing
+	/// default mobile page named <paramref name="existingMobilePageName"/> for the bound entity — everything
+	/// else (templates, source page read) mirrors <see cref="StubbedTool"/>'s happy path.
+	/// </summary>
+	private sealed class StubbedEntityProbeTool : MobilePageConversionGuideTool {
+
+		internal StubbedEntityProbeTool(string existingMobilePageName)
+			: base(BuildEntityProbeResolver(existingMobilePageName), Substitute.For<ILogger>(),
+				MobileCatalog(failingCatalog: null), WebCatalog(failingCatalog: null),
+				MobileRequestCatalogStub(failingCatalog: null, rules: RulesFlavor.Minimal), RulesCatalog(RulesFlavor.Minimal),
+				Substitute.For<IPlatformVersionResolverFactory>(), Substitute.For<ISettingsRepository>()) {
+		}
+
+		internal override PageGetResponse ReadPageUnderTenantLock(PageGetOptions options) =>
+			string.Equals(options.SchemaName, EntitySourcePage, StringComparison.OrdinalIgnoreCase)
+				? EntitySourcePageResponse()
+				: TemplateResponse();
+	}
+
+	/// <summary>
+	/// Routes every <c>SysSchema</c> read the entity probe chain issues: the entity-by-NAME lookup (its query
+	/// carries the <c>EntitySchemaManager</c> manager filter) resolves <see cref="BoundEntity"/> to
+	/// <see cref="EntityUId"/>; every other read is <see cref="SchemaNameResolver"/>'s by-UId lookup (no
+	/// manager filter), answered with <paramref name="existingMobilePageName"/> regardless of which UId it
+	/// asked for — this test only ever has one candidate UId in flight.
+	/// </summary>
+	private static IToolCommandResolver BuildEntityProbeResolver(string existingMobilePageName) {
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns(callInfo => {
+				string query = callInfo.ArgAt<string>(1);
+				return query.Contains("EntitySchemaManager", StringComparison.Ordinal)
+					? Rows(
+						$$"""{"Name":"{{BoundEntity}}","UId":"{{EntityUId}}","PackageUId":"{{PackageUId}}","ExtendParent":false}""")
+					: Rows($$"""{"UId":"{{CandidatePageUId}}","Name":"{{existingMobilePageName}}"}""");
+			});
+
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		urlBuilder.Build(Arg.Any<string>()).Returns(callInfo => callInfo.Arg<string>());
+		urlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>()).Returns("/DataService/json/SyncReply/SelectQuery");
+
+		IAddonSchemaDesignerClient addonClient = Substitute.For<IAddonSchemaDesignerClient>();
+		addonClient.GetSchema(Arg.Any<AddonGetRequestDto>())
+			.Returns(new AddonSchemaDto {
+				MetaData = $$"""{"Pages":[{"PageSchemaUId":"{{CandidatePageUId}}","IsDefault":true}]}"""
+			});
+
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		resolver.Resolve<IAddonSchemaDesignerClient>(Arg.Any<EnvironmentOptions>()).Returns(addonClient);
+		return resolver;
+	}
+
 	private static PageGetResponse SourcePageResponse() => new() {
 		Success = true,
 		Page = new PageMetadataInfo { SchemaName = SourcePage, SchemaType = "web", ParentSchemaName = WebTemplate },
 		Bundle = new PageBundleInfo {
-			ViewConfig = System.Text.Json.Nodes.JsonNode.Parse("""
+			ViewConfig = JsonNode.Parse("""
 				[ { "name": "MainContainer", "type": "crt.FlexContainer", "items": [
 					{ "name": "UsrName", "type": "crt.Input", "label": "Name" } ] } ]
 				""")!.AsArray(),
-			ViewModelConfig = new System.Text.Json.Nodes.JsonObject(),
-			ModelConfig = new System.Text.Json.Nodes.JsonObject(),
+			ViewModelConfig = new JsonObject(),
+			ModelConfig = new JsonObject(),
+			Resources = new PageResourceInfo()
+		}
+	};
+
+	/// <summary>
+	/// The entity-bound source page: ends with "FormPage" (so <c>IsFormPage</c> is true without needing the
+	/// template list), bound to <see cref="BoundEntity"/> as its primary data source, and carries no request
+	/// bindings — so <c>MobileActionTargetProbe</c> finds no occurrences and never touches the environment,
+	/// leaving this test's assertions entirely about the entity-default-mobile-page reuse check.
+	/// </summary>
+	private static PageGetResponse EntitySourcePageResponse() => new() {
+		Success = true,
+		Page = new PageMetadataInfo {
+			SchemaName = EntitySourcePage, SchemaType = "web", ParentSchemaName = WebTemplate, PackageUId = PackageUId
+		},
+		Bundle = new PageBundleInfo {
+			ViewConfig = JsonNode.Parse("""
+				[ { "name": "MainContainer", "type": "crt.FlexContainer", "items": [
+					{ "name": "UsrName", "type": "crt.Input", "label": "Name" } ] } ]
+				""")!.AsArray(),
+			ViewModelConfig = new JsonObject(),
+			ModelConfig = JsonNode.Parse($$"""
+				{
+				  "primaryDataSourceName": "PDS",
+				  "dataSources": { "PDS": { "type": "crt.EntityDataSource",
+				    "config": { "entitySchemaName": "{{BoundEntity}}" } } }
+				}
+				""")!.AsObject(),
 			Resources = new PageResourceInfo()
 		}
 	};
@@ -168,11 +394,11 @@ public sealed class MobilePageConversionGuideToolRefusalWiringTests {
 		Success = true,
 		Page = new PageMetadataInfo { SchemaName = MobileTemplate, SchemaType = "web" },
 		Bundle = new PageBundleInfo {
-			ViewConfig = System.Text.Json.Nodes.JsonNode.Parse("""
+			ViewConfig = JsonNode.Parse("""
 				[ { "name": "MainContainer", "type": "crt.GridContainer", "items": [] } ]
 				""")!.AsArray(),
-			ViewModelConfig = new System.Text.Json.Nodes.JsonObject(),
-			ModelConfig = new System.Text.Json.Nodes.JsonObject(),
+			ViewModelConfig = new JsonObject(),
+			ModelConfig = new JsonObject(),
 			Resources = new PageResourceInfo()
 		}
 	};
@@ -183,34 +409,104 @@ public sealed class MobilePageConversionGuideToolRefusalWiringTests {
 		Page = new PageMetadataInfo { SchemaName = MobileTemplate, SchemaType = "web" },
 		Bundle = new PageBundleInfo {
 			ViewConfig = null,
-			ViewModelConfig = new System.Text.Json.Nodes.JsonObject(),
-			ModelConfig = new System.Text.Json.Nodes.JsonObject(),
+			ViewModelConfig = new JsonObject(),
+			ModelConfig = new JsonObject(),
 			Resources = new PageResourceInfo()
 		}
 	};
 
-	private static IMobileComponentInfoCatalog MobileCatalog() {
+	private static IMobileComponentInfoCatalog MobileCatalog(string failingCatalog) {
 		IMobileComponentInfoCatalog catalog = Substitute.For<IMobileComponentInfoCatalog>();
 		catalog.LoadAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-			.Returns(Task.FromResult(State(
-				Entries(("crt.FlexContainer", true), ("crt.GridContainer", true), ("crt.Input", false)))));
+			.Returns(failingCatalog == MobileComponentCatalog
+				? Task.FromException<ComponentCatalogState>(LoadFailure(MobileComponentCatalog))
+				: Task.FromResult(State(
+					Entries(("crt.FlexContainer", true), ("crt.GridContainer", true), ("crt.Input", false)))));
 		return catalog;
 	}
 
-	private static IComponentInfoCatalog WebCatalog() {
+	private static IComponentInfoCatalog WebCatalog(string failingCatalog) {
 		IComponentInfoCatalog catalog = Substitute.For<IComponentInfoCatalog>();
 		catalog.LoadAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-			.Returns(Task.FromResult(State(Entries(("crt.FlexContainer", true), ("crt.Input", false)))));
+			.Returns(failingCatalog == WebComponentCatalog
+				? Task.FromException<ComponentCatalogState>(LoadFailure(WebComponentCatalog))
+				: Task.FromResult(State(Entries(("crt.FlexContainer", true), ("crt.Input", false)))));
 		return catalog;
 	}
 
-	private static IWebToMobilePageConversionRulesCatalog RulesCatalog() {
+	/// <summary>The failure a catalog load hits on a cold cache with no network.</summary>
+	private static Exception LoadFailure(string catalogName) =>
+		new InvalidOperationException($"simulated {catalogName} load failure");
+
+	/// <summary>
+	/// A real <see cref="RequestCatalogState"/>, not a bare substitute: the tool awaits
+	/// <c>LoadAsync</c> and reads <c>ResolvedVersion</c> and <c>Entries</c> off the result, so a null
+	/// would NRE before any refusal could be reached.
+	/// </summary>
+	private static IMobileRequestInfoCatalog MobileRequestCatalogStub(string failingCatalog, RulesFlavor rules) {
+		IMobileRequestInfoCatalog catalog = Substitute.For<IMobileRequestInfoCatalog>();
+		catalog.LoadAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+			.Returns(failingCatalog == MobileRequestCatalog
+				? Task.FromException<RequestCatalogState>(LoadFailure(MobileRequestCatalog))
+				: Task.FromResult(RequestState(PublishedRequestTypes(rules))));
+		return catalog;
+	}
+
+	/// <summary>Which rules entries and mobile request registry the stub serves; they only make sense as a pair.</summary>
+	private enum RulesFlavor {
+		/// <summary>Templates only, over a two-entry registry — the shape the refusal tests need.</summary>
+		Minimal,
+		/// <summary>One rules entry targets a mobile request the registry does not publish.</summary>
+		UnknownRequestTarget,
+		/// <summary>The SHIPPED rules entries over the pinned live mobile request registry.</summary>
+		Shipped
+	}
+
+	private static IWebToMobilePageConversionRulesCatalog RulesCatalog(RulesFlavor rules) {
 		IWebToMobilePageConversionRulesCatalog catalog = Substitute.For<IWebToMobilePageConversionRulesCatalog>();
 		catalog.GetRulesAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
 			.Returns(Task.FromResult(new WebToMobilePageConversionRules {
-				Templates = [new TemplateMappingRule { Web = WebTemplate, Mobile = MobileTemplate }]
+				Templates = [new TemplateMappingRule { Web = WebTemplate, Mobile = MobileTemplate }],
+				Requests = RequestRules(rules)
 			}));
 		return catalog;
+	}
+
+	private static IReadOnlyList<RequestMappingRule> RequestRules(RulesFlavor rules) => rules switch {
+		RulesFlavor.UnknownRequestTarget => [
+			new RequestMappingRule { Web = "crt.SaveRecordRequest", Mobile = "crt.SaveRecordRequest" },
+			new RequestMappingRule { Web = "crt.LegacyOpenRequest", Mobile = "crt.GhostRequest" }
+		],
+		RulesFlavor.Shipped => WebToMobilePageConversionRulesCatalog.LoadBundled().Requests,
+		_ => []
+	};
+
+	/// <summary>
+	/// The request types the stubbed registry publishes. The <see cref="RulesFlavor.Shipped"/> pair reads
+	/// <c>MobileRequestRegistry.published-types.json</c> — the live CDN registry's type set captured for
+	/// MEMBERSHIP CHECKS ONLY, carrying no descriptions, parameters or doc links — so the null-warning control
+	/// asserts the shipped rules against the registry the runtime really ships and not against themselves.
+	/// </summary>
+	private static string[] PublishedRequestTypes(RulesFlavor rules) {
+		if (rules != RulesFlavor.Shipped) {
+			return ["crt.SaveRecordRequest", "crt.ClosePageRequest"];
+		}
+		string fixturePath = Path.Combine(
+			TestContext.CurrentContext.TestDirectory,
+			"Command/McpServer/Fixtures/MobileRequestRegistry.published-types.json");
+		using FileStream stream = File.OpenRead(fixturePath);
+		return [.. RequestInfoCatalog.LoadFromStream(stream).Entries.Select(entry => entry.RequestType)];
+	}
+
+	private static RequestCatalogState RequestState(params string[] requestTypes) {
+		var entries = new List<RequestRegistryEntry>();
+		var lookup = new Dictionary<string, RequestRegistryEntry>(StringComparer.OrdinalIgnoreCase);
+		foreach (string requestType in requestTypes) {
+			var entry = new RequestRegistryEntry { RequestType = requestType };
+			entries.Add(entry);
+			lookup[requestType] = entry;
+		}
+		return new RequestCatalogState(entries, lookup, "latest", ComponentRegistrySource.FileCache);
 	}
 
 	private static ComponentCatalogState State(IReadOnlyList<ComponentRegistryEntry> entries) {

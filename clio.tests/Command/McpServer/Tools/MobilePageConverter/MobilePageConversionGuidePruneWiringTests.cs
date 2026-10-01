@@ -142,7 +142,7 @@ public sealed class MobilePageConversionGuidePruneWiringTests {
 
 		internal StubbedTool(VersionResolutionSource source, string version)
 			: base(Substitute.For<IToolCommandResolver>(), Substitute.For<ILogger>(),
-				MobileCatalog(), WebCatalog(), RulesCatalog(),
+				MobileCatalog(), WebCatalog(), MobileRequestCatalog(), RulesCatalog(),
 				VersionResolverFactory(source, version), SettingsRepository()) { }
 
 		internal override PageGetResponse ReadPageUnderTenantLock(PageGetOptions options) =>
@@ -210,6 +210,17 @@ public sealed class MobilePageConversionGuidePruneWiringTests {
 		catalog.LoadAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
 			.Returns(Task.FromResult(State(
 				Entries(("crt.FlexContainer", new[] { "items" }), ("crt.Input", new[] { "label" })), null)));
+		return catalog;
+	}
+
+	// The tool reads the mobile request registry to decide request support; this fixture cares only
+	// about component pruning, so an empty catalog is the honest stand-in.
+	private static IMobileRequestInfoCatalog MobileRequestCatalog() {
+		IMobileRequestInfoCatalog catalog = Substitute.For<IMobileRequestInfoCatalog>();
+		catalog.LoadAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+			.Returns(Task.FromResult(new RequestCatalogState(
+				[], new Dictionary<string, RequestRegistryEntry>(StringComparer.OrdinalIgnoreCase),
+				"latest", ComponentRegistrySource.FileCache, null)));
 		return catalog;
 	}
 

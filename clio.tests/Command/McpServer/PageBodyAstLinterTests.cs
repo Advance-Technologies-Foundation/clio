@@ -72,8 +72,8 @@ internal class PageBodyAstLinterTests {
 	}
 
 	[Test]
-	[Description("A handler call to a module-scope helper declared before the return object is accepted — declarations in the factory scope are visible to handler callbacks")]
-	public void Lint_ShouldNotEmitError_WhenHandlerCallsDeclaredFactoryHelper() {
+	[Description("A factory helper is declared JavaScript but is rejected because Designer deletes it while preserving the handler call")]
+	public void Lint_ShouldRejectDesignerUnsafeCall_WhenHandlerCallsDeclaredFactoryHelper() {
 		// Arrange
 		string body =
 			"define(\"X\", [], function() { var applyFilter = async function(request) { return request; }; " +
@@ -86,7 +86,96 @@ internal class PageBodyAstLinterTests {
 
 		// Assert
 		findings.Should().NotContain(f => f.Rule == PageBodyAstLinter.RuleUndefinedSectionCall,
-			because: "a helper declared in the AMD factory scope is available to handlers and must not be reported as missing");
+			because: "the helper exists now, so the diagnostic must distinguish Designer loss from an undefined name");
+		findings.Should().ContainSingle(f => f.Rule == PageBodyAstLinter.RuleDesignerUnsafeSectionCall
+			&& f.Severity == LintSeverity.Error && f.Message.Contains("SCHEMA_DEPS"),
+			because: "a factory declaration must not satisfy a handler call that survives a Designer save");
+		findings.Should().ContainSingle(f => f.Rule == PageBodyAstLinter.RuleDesignerUnsafeFactoryStatement
+			&& f.Severity == LintSeverity.Warning,
+			because: "the declaration itself needs a warning even when it is not called");
+	}
+
+	[TestCase("const text = 'value';")]
+	[TestCase("function helper() { return 1; }")]
+	[TestCase("class Helper {}")]
+	[TestCase("console.log('setup');")]
+	[TestCase("if (true) { console.log('setup'); }")]
+	[TestCase("'use strict';")]
+	[TestCase(";")]
+	[Description("Every extra factory statement is warned about, independently of direct helper calls")]
+	public void Lint_ShouldWarn_WhenFactoryContainsExtraStatement(string statement) {
+		// Arrange
+		string body = "define('X', [], function() {\n" + statement
+			+ "\nreturn { handlers: [], converters: {}, validators: {} }; });";
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+		// Assert
+		findings.Should().ContainSingle(f => f.Rule == PageBodyAstLinter.RuleDesignerUnsafeFactoryStatement
+			&& f.Severity == LintSeverity.Warning && f.Line == 2 && f.Column == 1,
+			because: "Designer discards the statement even when no handler calls it");
+	}
+
+	[TestCase("handlers: [{ handler: () => helper() }]")]
+	[TestCase("converters: { 'usr.Probe': () => helper() }")]
+	[TestCase("validators: { 'usr.Probe': { validator: () => () => helper() } }")]
+	[Description("Preserved handlers, converters and validators cannot depend on factory helper declarations")]
+	public void Lint_ShouldRejectFactoryBinding_WhenPreservedSectionCallsIt(string section) {
+		// Arrange
+		string body = "define('X', [], function() { function helper() { return 1; } return { "
+			+ section + " }; });";
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+		// Assert
+		findings.Should().ContainSingle(f => f.Rule == PageBodyAstLinter.RuleDesignerUnsafeSectionCall
+			&& f.Severity == LintSeverity.Error,
+			because: "all three preserved sections outlive the factory declaration");
+	}
+
+	[Test]
+	[Description("AMD dependencies and handler-local declarations remain valid and Designer-safe")]
+	public void Lint_ShouldReturnNoFindings_WhenHelpersUsePreservedScopes() {
+		// Arrange
+		const string body = "define('X', ['UsrLogic'], function(Logic) { return { handlers: [{ "
+			+ "handler: (request, next) => { function helper() { return Logic.run(request); } "
+			+ "helper(); next(request); parseInt('1'); } }], converters: {}, validators: {} }; });";
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+		// Assert
+		findings.Should().BeEmpty(because: "dependency arguments and code inside a preserved callback survive Designer saves");
+	}
+
+	[TestCase("", "Logic()", false)]
+	[TestCase("var Logic;", "Logic()", false)]
+	[TestCase("var Logic = () => 1;", "Logic()", true)]
+	[TestCase("function Logic() { return 1; }", "Logic()", true)]
+	[TestCase("var Logic = () => 1;", "(() => { const Logic = () => 2; return Logic(); })()", false)]
+	[Description("Direct dependency calls preserve AMD parameter semantics while rejecting discarded replacements")]
+	public void Lint_ShouldResolveDirectAmdArgumentCalls(string declaration, string call, bool unsafeCall) {
+		// Arrange
+		string body = "define('X', ['UsrLogic'], function(Logic) { " + declaration
+			+ " return { handlers: [{ handler: () => " + call + " }] }; });";
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+		// Assert
+		findings.Should().NotContain(f => f.Rule == PageBodyAstLinter.RuleUndefinedSectionCall,
+			because: "a bare var redeclaration retains the initialized dependency argument");
+		findings.Count(f => f.Rule == PageBodyAstLinter.RuleDesignerUnsafeSectionCall).Should()
+			.Be(unsafeCall ? 1 : 0, because: "only a factory replacement is removed while parameters and callback locals survive");
+		findings.Count(f => f.Rule == PageBodyAstLinter.RuleDesignerUnsafeFactoryStatement).Should()
+			.Be(string.IsNullOrEmpty(declaration) ? 0 : 1, because: "every extra factory statement is still warned about");
+	}
+
+	[Test]
+	[Description("Missing helpers are directed to client modules rather than back into the discarded factory body")]
+	public void Lint_ShouldRecommendClientModule_WhenHelperIsMissing() {
+		// Arrange
+		const string body = "define('X', [], () => ({ handlers: [{ handler: () => missing() }] }));";
+		// Act
+		string message = LintBody(body).Single(f => f.Rule == PageBodyAstLinter.RuleUndefinedSectionCall).Message;
+		// Assert
+		message.Should().Contain("SCHEMA_DEPS", because: "the suggested repair must survive the next Designer save");
+		message.Should().Contain("shared-client-logic", because: "the client-module workflow has a published MCP guide");
+		message.Should().NotContain("before the `return`", because: "reintroducing the helper there repeats the failure");
 	}
 	[Test]
 	[Description("A name declared inside an UNRELATED nested function does not satisfy a handler call — resolution walks the lexical scope chain outwards, so a sibling scope's `const missingModuleHelper` cannot mask the handler's ReferenceError")]
@@ -128,8 +217,8 @@ internal class PageBodyAstLinterTests {
 	}
 
 	[Test]
-	[Description("The alias a destructuring pattern binds IS in scope — `const { alpha: beta } = source` makes `beta()` legitimate")]
-	public void Lint_ShouldNotEmitError_WhenHandlerCallsADestructuringAlias() {
+	[Description("A destructuring alias resolves before regeneration but its factory declaration is Designer-unsafe")]
+	public void Lint_ShouldRejectDesignerUnsafeBinding_WhenHandlerCallsADestructuringAlias() {
 		// Arrange
 		string body =
 			"define(\"X\", [], function() { const source = {}; const { alpha: beta } = source; " +
@@ -143,6 +232,8 @@ internal class PageBodyAstLinterTests {
 		// Assert
 		findings.Should().NotContain(f => f.Rule == PageBodyAstLinter.RuleUndefinedSectionCall,
 			because: "the alias is the actual binding position and must resolve");
+		findings.Should().ContainSingle(f => f.Rule == PageBodyAstLinter.RuleDesignerUnsafeSectionCall,
+			because: "the binding resolves before regeneration but its factory declaration is discarded by Designer");
 	}
 
 	[TestCase("alert")]
@@ -1242,8 +1333,8 @@ internal class PageBodyAstLinterTests {
 	}
 
 	[Test]
-	[Description("The same `let helper;` assigned BEFORE the factory's return is accepted — the assignment, not the declaration, is what makes the binding callable, and blocking it would reject a page that runs")]
-	public void Lint_ShouldNotEmitError_WhenTheBindingIsAssignedBeforeTheReturn() {
+	[Description("Assignment before return initializes a binding that Designer still removes")]
+	public void Lint_ShouldRejectDesignerUnsafeBinding_WhenTheBindingIsAssignedBeforeTheReturn() {
 		// Arrange
 		string body =
 			"define(\"X\", [], function() { let helper; helper = function() { return 1; }; " +
@@ -1257,6 +1348,8 @@ internal class PageBodyAstLinterTests {
 		// Assert
 		findings.Should().NotContain(f => f.Rule == PageBodyAstLinter.RuleUndefinedSectionCall,
 			because: "an unconditional assignment before the return leaves a callable binding");
+		findings.Should().ContainSingle(f => f.Rule == PageBodyAstLinter.RuleDesignerUnsafeSectionCall,
+			because: "the binding resolves before regeneration but its factory declaration is discarded by Designer");
 	}
 
 	[Test]
@@ -1280,8 +1373,8 @@ internal class PageBodyAstLinterTests {
 	}
 
 	[Test]
-	[Description("The paired local declaration stays accepted: the same helper declared INSIDE the factory is visible to the handler, so factory isolation did not start rejecting working pages")]
-	public void Lint_ShouldNotEmitError_WhenTheSameHelperIsDeclaredInsideTheFactory() {
+	[Description("A factory helper is visible to the handler before regeneration but is Designer-unsafe")]
+	public void Lint_ShouldRejectDesignerUnsafeBinding_WhenTheSameHelperIsDeclaredInsideTheFactory() {
 		// Arrange
 		string body =
 			"define(\"X\", [], function() { function outerHelper() { return 1; } " +
@@ -1295,6 +1388,8 @@ internal class PageBodyAstLinterTests {
 		// Assert
 		findings.Should().NotContain(f => f.Rule == PageBodyAstLinter.RuleUndefinedSectionCall,
 			because: "the factory's own declarations are what its handlers close over");
+		findings.Should().ContainSingle(f => f.Rule == PageBodyAstLinter.RuleDesignerUnsafeSectionCall,
+			because: "the binding resolves before regeneration but its factory declaration is discarded by Designer");
 	}
 
 	[Test]
@@ -1374,8 +1469,8 @@ internal class PageBodyAstLinterTests {
 	}
 
 	[Test]
-	[Description("The verdict does not depend on where the assigning helper sits in the source: a hoisted `init()` declared after the factory's return still counts as initializing the binding it assigns")]
-	public void Lint_ShouldNotEmitError_WhenTheAssigningFunctionIsDeclaredAfterTheReturn() {
+	[Description("A hoisted initializer after return resolves the binding but cannot make factory code Designer-safe")]
+	public void Lint_ShouldRejectDesignerUnsafeBinding_WhenTheAssigningFunctionIsDeclaredAfterTheReturn() {
 		// Arrange
 		string body =
 			"define(\"X\", [], function() { let helper; init(); " +
@@ -1389,7 +1484,9 @@ internal class PageBodyAstLinterTests {
 
 		// Assert
 		findings.Should().NotContain(f => f.Rule == PageBodyAstLinter.RuleUndefinedSectionCall,
-			because: "the same body with `function init()` written before the return was already accepted, and a blocking rule whose answer depends on statement order is not one an author can act on");
+			because: "hoisting initializes the binding regardless of where the initializer function is declared");
+		findings.Should().ContainSingle(f => f.Rule == PageBodyAstLinter.RuleDesignerUnsafeSectionCall,
+			because: "the binding resolves before regeneration but its factory declaration is discarded by Designer");
 	}
 
 	[Test]

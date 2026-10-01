@@ -1,0 +1,25 @@
+# Unit tests for the issue-routing script and the consistency between the issue forms'
+# "Component" dropdown and .github/component-owners.json. No npm install: node:test only.
+name: Issue routing tests
+
+on:
+  pull_request:
+    paths:
+      - .github/component-owners.json
+      - .github/ISSUE_TEMPLATE/**
+      - .github/scripts/issue-routing/**
+      - .github/workflows/issue-routing*.yml
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: node --test
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - run: node --test .github/scripts/issue-routing/issue-routing.test.js

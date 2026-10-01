@@ -12,6 +12,7 @@ using System.Threading.Tasks;
 using Clio.Mcp.E2E;
 using FluentAssertions;
 using NUnit.Framework;
+using NUnit.Framework.Interfaces;
 using YamlDotNet.Serialization;
 
 namespace Clio.Tests;
@@ -30,7 +31,7 @@ namespace Clio.Tests;
 /// </remarks>
 [TestFixture]
 [Category("Unit")]
-// Without a Module trait the repository's own smart-regression filter (Category=Unit&Module=X)
+// Without a Module trait the repository's own smart-regression filter (TestCategory=Unit&Module=X)
 // never runs this fixture, so an author who adds an unreachable product file sees their targeted
 // tests pass and learns about the pin only from full CI - at which point the path of least
 // resistance is to regenerate the list rather than to review it.
@@ -249,6 +250,134 @@ internal sealed class McpE2eSelectionCoverageTests {
 	}
 
 	[Test]
+	[Description("A tool file whose fixture file declares a NoEnvironment fixture next to a Creatio fixture still runs on TeamCity, because the tier is classified per fixture rather than per file (issue #1572).")]
+	public void Script_ShouldKeepTeamCityRun_WhenFixtureFileMixesTiers() {
+		// Arrange
+		string[] changed = ["clio/Command/McpServer/Tools/EmailTemplateTool.cs"];
+
+		// Act
+		JsonElement selection = RunSelection(changed, includeNoEnvironment: false);
+
+		// Assert
+		selection.GetProperty("mode").GetString().Should().Be("subset",
+			because: "EmailTemplateToolLiveE2ETests carries McpE2E.Creatio, not McpE2E.NoEnvironment, so the GitHub NoEnvironment tier does not run it and TeamCity must");
+		selection.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().Contain("EmailTemplateToolLiveE2ETests",
+			because: "the Creatio fixture declared in the same file as the NoEnvironment one has to stay in the TeamCity subset");
+		selection.GetProperty("filter").GetString().Should().Contain("FullyQualifiedName~Clio.Mcp.E2E.EmailTemplateToolLiveE2ETests",
+			because: "the filter TeamCity receives must name the Creatio fixture");
+	}
+
+	[Test]
+	[Description("In a synthetic repository, the NoEnvironment verdict is read per fixture from Category attributes only: a method-level Creatio test keeps its fixture on TeamCity, a comment that mentions a tier changes nothing, a baseFilter-excluded category counts as covered, and a partial class is NoEnvironment-only only if every part is.")]
+	public void Inventory_ShouldClassifyNoEnvironmentPerFixture_FromCategoryAttributesOnly() {
+		// Arrange
+		using SyntheticRepository repo = SyntheticRepository.Create();
+		repo.WriteFile("clio.mcp.e2e/OmegaMixedE2ETests.cs",
+			"/// <summary>Mentions McpE2E.Sandbox only in a comment.</summary>\n" +
+			"[TestFixture]\n[Category(\"McpE2E.NoEnvironment\")]\npublic sealed class OmegaContractE2ETests {\n" +
+			"\t[Test] public void Advertises() => Call(\"alpha-run\");\n}\n\n" +
+			"[TestFixture]\npublic sealed class OmegaMethodTierE2ETests {\n" +
+			"\t[Test, Category(\"McpE2E.NoEnvironment\")] public void Contract() => Call(\"alpha-run\");\n" +
+			"\t[Test, Category(\"McpE2E.Creatio\")] public void Live() => Call(\"alpha-run\");\n}\n\n" +
+			"[TestFixture]\npublic sealed class OmegaExcludedE2ETests {\n" +
+			"\t[Test, Category(\"McpE2E.NoEnvironment\")] public void Contract() => Call(\"alpha-run\");\n" +
+			"\t[Test]\n\t[Category(\"McpE2E.Manual\")]\n\tpublic void ManualOnly() => Call(\"alpha-run\");\n}\n\n" +
+			"/// Carries no <c>[Category(\"McpE2E.NoEnvironment\")]</c> tag.\n" +
+			"[TestFixture]\npublic sealed class OmegaCommentE2ETests {\n" +
+			"\t// [Category(\"McpE2E.NoEnvironment\")]\n\t[Test, Category(OmegaCommentE2ETests.Live)] public void Works() => Call(\"alpha-run\");\n}\n\n" +
+			"public partial class OmegaPartialE2ETests {\n" +
+			"\t[Test, Category(\"McpE2E.NoEnvironment\")] public void Contract() => Call(\"alpha-run\");\n}\n\n" +
+			"public partial class OmegaPartialE2ETests {\n" +
+			"\t[Test] public void Bare() => Call(\"alpha-run\");\n}\n");
+
+		// Act
+		JsonElement verdicts = RunScript(ps => ps.AddParameter("Inventory"), repo.Root).GetProperty("noEnvironmentOnly");
+
+		// Assert
+		verdicts.GetProperty("OmegaContractE2ETests").GetBoolean().Should().BeTrue(
+			because: "a class-level McpE2E.NoEnvironment covers every test, and a tier named only in a doc comment must not flip that");
+		verdicts.GetProperty("OmegaMethodTierE2ETests").GetBoolean().Should().BeFalse(
+			because: "the McpE2E.Creatio method survives the TeamCity subset filter, so skipping TeamCity would run it nowhere (review finding on PR #1679)");
+		verdicts.GetProperty("OmegaExcludedE2ETests").GetBoolean().Should().BeTrue(
+			because: "a McpE2E.Manual method is excluded by baseFilter, so nothing of this fixture runs on TeamCity either way");
+		verdicts.GetProperty("OmegaCommentE2ETests").GetBoolean().Should().BeFalse(
+			because: "a commented-out Category attribute is not a tier, and an unresolved constant reads as not NoEnvironment");
+		verdicts.GetProperty("OmegaPartialE2ETests").GetBoolean().Should().BeFalse(
+			because: "one part of the partial class has an untiered test, and a neighbour part must not make it look covered");
+	}
+
+	[Test]
+	[Description("Every fixture the script classifies as NoEnvironment-only has, by reflection over the compiled e2e assembly, no test that survives the TeamCity subset filter, so skipping TeamCity for it never leaves a test running nowhere.")]
+	public void NoEnvironmentVerdicts_ShouldAgreeWithCompiledCategories() {
+		// Arrange
+		JsonElement manifest = ReadManifest();
+		string noEnvironment = manifest.GetProperty("noEnvironmentCategory").GetString()!;
+		string[] excluded = manifest.GetProperty("baseFilter").GetString()!.Split('&')
+			.Select(clause => clause.Replace("TestCategory!=", string.Empty, StringComparison.Ordinal))
+			.ToArray();
+		Dictionary<string, Type> compiled = GetFixtureTypes().ToDictionary(fixture => fixture.Name, StringComparer.Ordinal);
+		string[] claimed = Inventory.Value.GetProperty("noEnvironmentOnly").EnumerateObject()
+			.Where(verdict => verdict.Value.GetBoolean())
+			.Select(verdict => verdict.Name)
+			.ToArray();
+
+		// Act
+		string[] wrong = claimed
+			.Where(name => !compiled.TryGetValue(name, out Type? fixture) || GetTeamCityRunnableTests(fixture, noEnvironment, excluded).Any())
+			.OrderBy(name => name, StringComparer.Ordinal)
+			.ToArray();
+
+		// Assert
+		claimed.Should().NotBeEmpty(because: "the guard is meaningless if the script classifies no fixture as NoEnvironment-only");
+		wrong.Should().BeEmpty(
+			because: "a fixture classified NoEnvironment-only skips TeamCity, so every one of its tests has to carry McpE2E.NoEnvironment or a category the base filter excludes");
+	}
+
+	[Test]
+	[Description("Every fixture the script says has no test surviving the pull-request TeamCity filter has, by reflection over the compiled e2e assembly, no such test, so a subset of them can become mode none without skipping a test TeamCity would have run.")]
+	public void TeamCitySurvivalVerdicts_ShouldAgreeWithCompiledCategories() {
+		// Arrange
+		JsonElement manifest = ReadManifest();
+		string noEnvironment = manifest.GetProperty("noEnvironmentCategory").GetString()!;
+		string[] excluded = manifest.GetProperty("baseFilter").GetString()!.Split('&')
+			.Select(clause => clause.Replace("TestCategory!=", string.Empty, StringComparison.Ordinal))
+			.ToArray();
+		Dictionary<string, Type> compiled = GetFixtureTypes().ToDictionary(fixture => fixture.Name, StringComparer.Ordinal);
+		string[] claimed = Inventory.Value.GetProperty("survivesTeamCity").EnumerateObject()
+			.Where(verdict => !verdict.Value.GetBoolean())
+			.Select(verdict => verdict.Name)
+			.ToArray();
+
+		// Act
+		string[] wrong = claimed
+			.Where(name => !compiled.TryGetValue(name, out Type? fixture) || GetTeamCityRunnableTests(fixture, noEnvironment, excluded).Any())
+			.OrderBy(name => name, StringComparer.Ordinal)
+			.ToArray();
+
+		// Assert
+		claimed.Should().NotBeEmpty(because: "the guard is meaningless if the script finds no fixture that TeamCity would run nothing of");
+		wrong.Should().BeEmpty(
+			because: "a subset made only of these fixtures queues no TeamCity build, so none of them may hold a test the pull-request filter keeps");
+	}
+
+	/// <summary>
+	/// Test methods of the fixture whose effective categories (class and method, inherited included) pass
+	/// <c>TestCategory!=McpE2E.NoEnvironment&amp;&lt;baseFilter&gt;</c>, i.e. the tests a TeamCity subset run executes.
+	/// </summary>
+	private static IEnumerable<string> GetTeamCityRunnableTests(Type fixture, string noEnvironment, string[] excluded) {
+		HashSet<string> classCategories = fixture.GetCustomAttributes<CategoryAttribute>(inherit: true)
+			.Select(attribute => attribute.Name).ToHashSet(StringComparer.Ordinal);
+		return fixture.GetMethods(BindingFlags.Public | BindingFlags.Instance)
+			.Where(method => method.GetCustomAttributes(inherit: true).Any(attribute => attribute is ITestBuilder or ISimpleTestBuilder))
+			.Where(method => {
+				HashSet<string> categories = new(classCategories, StringComparer.Ordinal);
+				categories.UnionWith(method.GetCustomAttributes<CategoryAttribute>(inherit: true).Select(attribute => attribute.Name));
+				return !categories.Contains(noEnvironment) && !categories.Overlaps(excluded);
+			})
+			.Select(method => method.Name);
+	}
+
+	[Test]
 	[Description("A full run that keeps the NoEnvironment tier sends no filter at all, so the TeamCity parameter default applies unchanged.")]
 	public void Script_ShouldSendNoFilter_WhenFullRunKeepsNoEnvironmentTier() {
 		// Arrange
@@ -396,6 +525,99 @@ internal sealed class McpE2eSelectionCoverageTests {
 			because: "neither the semicolon nor the closing parenthesis inside the lambda's string or its comment may end the registration statement before the implementation is named");
 		declarationInBlockComment.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["OmicronToolE2ETests"],
 			because: "a class written inside a block comment is not a declaration, and reading it as one would end OmicronService's body before the dependency it uses");
+	}
+
+	[Test]
+	[Description("The consumer closure stops at a concrete MCP tool: a registry that names every tool does not carry one tool's dependency to the others, while a tool that uses another tool, a non-tool type that calls a tool's member, and the non-tool consumers of an abstract [McpServerToolType] base still do.")]
+	public void Script_ShouldStopTheClosureAtConcreteToolTypes() {
+		// Arrange
+		using SyntheticRepository repo = SyntheticRepository.Create();
+
+		// Act
+		JsonElement behindOneTool = RunSelection(["clio/Common/PiService.cs"], includeNoEnvironment: false, repo.Root);
+		JsonElement behindAbstractBase = RunSelection(["clio/Common/UpsilonHelper.cs"], includeNoEnvironment: false, repo.Root);
+
+		// Assert
+		behindOneTool.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["PiToolE2ETests", "TauToolE2ETests", "QoppaToolE2ETests"],
+			because: "PiService is used by PiTool only; ToolCatalog names PiTool and RhoTool by typeof, and walking through it made every change behind one tool reach every tool, while TauTool uses PiTool and QoppaCommand calls PiTool.Format, so both really execute the changed code");
+		behindAbstractBase.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["UpsilonToolE2ETests", "KoppaToolE2ETests"],
+			because: "UpsilonToolBase carries [McpServerToolType] but is abstract, so it is walked through like any base class: KoppaRunner names it without calling a member, and treating the base as a tool would have stopped the walk before KoppaTool");
+	}
+
+	[Test]
+	[Description("A type name is matched case-sensitively and only in code: a local variable spelled like a type, an extension-method signature written in a comment, and a type named only in a comment add no edge, while a type named in a string literal still does.")]
+	public void Script_ShouldMatchTypeNamesCaseSensitivelyAndOutsideComments() {
+		// Arrange
+		using SyntheticRepository repo = SyntheticRepository.Create();
+
+		// Act
+		JsonElement lowerCaseLocal = RunSelection(["clio/Common/Phi.cs"], includeNoEnvironment: false, repo.Root);
+		JsonElement extensionInComment = RunSelection(["clio/Common/PsiHelpers.cs"], includeNoEnvironment: false, repo.Root);
+		JsonElement namedInComment = RunSelection(["clio/Common/PsiDocumented.cs"], includeNoEnvironment: false, repo.Root);
+		JsonElement namedInLiteral = RunSelection(["clio/Common/PsiByName.cs"], includeNoEnvironment: false, repo.Root);
+
+		// Assert
+		lowerCaseLocal.GetProperty("mode").GetString().Should().Be("none",
+			because: "ChiTool declares a local named phi, and C# does not fold case, so it does not reference the type Phi; a case-insensitive map made 2651 locals named command look like consumers of Command");
+		extensionInComment.GetProperty("mode").GetString().Should().Be("none",
+			because: "a comment that reads (this PsiValue ...) is not an extension method, so PsiHelpers must not inherit PsiValue's consumers");
+		namedInComment.GetProperty("mode").GetString().Should().Be("none",
+			because: "PsiTool names PsiDocumented only in its XML summary, which no code path follows");
+		namedInLiteral.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["PsiToolE2ETests"],
+			because: "a type name in a string literal can be a runtime lookup, so literals stay part of the reference scan and the selection is not narrowed by removing comments");
+	}
+
+	[Test]
+	[Description("The graph links an implementation whose base list follows a multi-line primary constructor or continues on the next line, a type named through a namespace-relative qualified name, an AddHttpClient registration pair, and an implementation registered under an external service type to the types naming that service; it runs the whole suite when no type names the external service.")]
+	public void Script_ShouldLinkPrimaryConstructorBaseListsRelativeNamesAndExternalServices() {
+		// Arrange
+		using SyntheticRepository repo = SyntheticRepository.Create();
+
+		// Act
+		JsonElement primaryConstructor = RunSelection(["clio/Common/SampiStore.cs"], includeNoEnvironment: false, repo.Root);
+		JsonElement relativeName = RunSelection(["clio/Common/Worker/HetaService.cs"], includeNoEnvironment: false, repo.Root);
+		JsonElement continuedBaseList = RunSelection(["clio/Common/StigmaStore.cs"], includeNoEnvironment: false, repo.Root);
+		JsonElement httpClientPair = RunSelection(["clio/Common/DigammaClient.cs"], includeNoEnvironment: false, repo.Root);
+		JsonElement namedExternalService = RunSelection(["clio/Common/KsiProvider.cs"], includeNoEnvironment: false, repo.Root);
+		JsonElement externalService = RunSelection(["clio/Common/SanProvider.cs"], includeNoEnvironment: false, repo.Root);
+		JsonElement behindExternalService = RunSelection(["clio/Common/SanHelper.cs"], includeNoEnvironment: false, repo.Root);
+
+		// Assert
+		primaryConstructor.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["SampiToolE2ETests"],
+			because: "SampiStore implements ISampiStore after a primary constructor spread over two lines, and SampiTool reaches it only through that interface");
+		relativeName.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["HetaToolE2ETests"],
+			because: "inside namespace Clio.Command.McpServer.Tools the name Common.Worker.HetaService resolves against the enclosing Clio, so the chain starts at a namespace segment that is not a root");
+		continuedBaseList.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["StigmaToolE2ETests"],
+			because: "StigmaStore names IStigmaStore on the line after the colon, and a base list read only to the end of the declaration line loses that implementation edge");
+		httpClientPair.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["DigammaToolE2ETests"],
+			because: "DigammaClient declares no base list, so AddHttpClient<IDigammaClient, DigammaClient>() is the only thing tying it to DigammaTool");
+		namedExternalService.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["KsiToolE2ETests"],
+			because: "KsiProvider is registered as IKsiExternal, which the repository does not declare, and KsiTool injects IKsiExternal - the implementation is consumed by whoever names the service, exactly as for an interface declared here");
+		externalService.GetProperty("mode").GetString().Should().Be("full",
+			because: "SanProvider is registered as IExternalProvider, which this repository does not declare and no type names, so nothing bounds the code that reaches it");
+		externalService.GetProperty("decisions").EnumerateArray().Select(d => d.GetString()).Should().Contain(d => d!.Contains("a service this repository does not declare"),
+			because: "the decision log must say why the run became full");
+		behindExternalService.GetProperty("mode").GetString().Should().Be("full",
+			because: "SanHelper is used only by SanProvider, so a change to it flows into every consumer of IExternalProvider; checking only the changed file's own types would call it unobservable");
+	}
+
+	[Test]
+	[Description("A subset whose fixtures hold no test the TeamCity filter keeps - every test is McpE2E.ProcessDesigner, McpE2E.Manual or NoEnvironment - becomes mode none, while one surviving test anywhere in the subset keeps the build.")]
+	public void Script_ShouldQueueNothing_WhenNoSelectedTestSurvivesTheTeamCityFilter() {
+		// Arrange
+		using SyntheticRepository repo = SyntheticRepository.Create();
+
+		// Act
+		JsonElement excludedOnly = RunSelection(["clio/Command/McpServer/Tools/OmegaTool.cs"], includeNoEnvironment: false, repo.Root);
+		JsonElement oneSurvivor = RunSelection(["clio/Command/McpServer/Tools/OmegaTool.cs", "clio/Command/McpServer/Tools/BetaTool.cs"], includeNoEnvironment: false, repo.Root);
+
+		// Assert
+		excludedOnly.GetProperty("mode").GetString().Should().Be("none",
+			because: "OmegaDesignerE2ETests is McpE2E.ProcessDesigner at class level and OmegaManualE2ETests marks its only test McpE2E.Manual, so TeamCity would deploy a Creatio and execute nothing");
+		excludedOnly.GetProperty("decisions").EnumerateArray().Select(d => d.GetString()).Should().Contain(d => d!.Contains("survives the TeamCity filter"),
+			because: "the decision log must say why no build is queued");
+		oneSurvivor.GetProperty("mode").GetString().Should().Be("subset",
+			because: "BetaToolE2ETests is a Sandbox fixture, so the build has something to run");
 	}
 
 	[Test]
@@ -749,6 +971,13 @@ internal sealed class McpE2eSelectionCoverageTests {
 			return CommitAll(message);
 		}
 
+		/// <summary>Adds or replaces one file in the layout without committing.</summary>
+		public void WriteFile(string relative, string content) {
+			string path = Path.Combine(Root, relative.Replace('/', Path.DirectorySeparatorChar));
+			Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+			File.WriteAllText(path, content);
+		}
+
 		public string ReadFile(string relative) =>
 			File.ReadAllText(Path.Combine(Root, relative.Replace('/', Path.DirectorySeparatorChar)));
 
@@ -759,9 +988,10 @@ internal sealed class McpE2eSelectionCoverageTests {
 		}
 
 		/// <summary>
-		/// Resolved from PATH rather than left as the bare name "git": the test project's own output
-		/// directory contains a git.dll (clio.process.fixture builds one), and the process launcher
-		/// picks that up first and fails with "The application to execute does not exist".
+		/// Resolved from PATH rather than left as the bare name "git": a bare-name launch searches the test
+		/// host's own directory first, and a git-named file there (clio.process.fixture's apphost used to be
+		/// copied in without its git.dll) wins over the real Git. TestOutputDirectoryTests keeps that directory
+		/// clear; this stays as defence in depth.
 		/// </summary>
 		private static readonly string GitExecutable = FindGit();
 
@@ -920,12 +1150,106 @@ internal sealed class McpE2eSelectionCoverageTests {
 				"\t[McpServerTool(Name = ToolName)]\n\tpublic void Run(IXiService service) { }\n}");
 			Write("clio/Common/IXiService.cs", "public interface IXiService { }");
 			Write("clio/Common/XiBackend.cs", "public sealed class XiBackend { }");
+			// A registry that names tools by typeof, the shape of ToolContractCatalog and McpCoreToolProfile.
+			// RhoTool consumes it, so walking through it would carry PiTool's dependency to RhoTool.
+			Write("clio/Common/PiService.cs", "public sealed class PiService { }");
+			Write("clio/Command/McpServer/Tools/PiTool.cs",
+				"public sealed class PiTool : BaseTool {\n\tinternal const string ToolName = \"pi-run\";\n" +
+				"\t[McpServerTool(Name = ToolName)]\n\tpublic void Run(PiService service) { }\n}");
+			Write("clio/Command/McpServer/ToolCatalog.cs",
+				"public static class ToolCatalog {\n\tpublic static readonly object[] All = { typeof(PiTool), typeof(RhoTool) };\n}");
+			Write("clio/Command/McpServer/Tools/RhoTool.cs",
+				"public sealed class RhoTool : BaseTool {\n\tinternal const string ToolName = \"rho-run\";\n" +
+				"\t[McpServerTool(Name = ToolName)]\n\tpublic object Run() => ToolCatalog.All;\n}");
+			Write("clio/Command/McpServer/Tools/TauTool.cs",
+				"public sealed class TauTool : BaseTool {\n\tinternal const string ToolName = \"tau-run\";\n" +
+				"\t[McpServerTool(Name = ToolName)]\n\tpublic void Run(PiTool inner) { }\n}");
+			// An abstract base carrying [McpServerToolType], the shape of BaseTool<T>.
+			Write("clio/Common/UpsilonHelper.cs", "public sealed class UpsilonHelper { }");
+			Write("clio/Command/McpServer/Tools/UpsilonToolBase.cs",
+				"[McpServerToolType]\npublic abstract class UpsilonToolBase {\n\tprotected void Use(UpsilonHelper helper) { }\n}");
+			Write("clio/Command/McpServer/Tools/UpsilonTool.cs",
+				"public sealed class UpsilonTool : UpsilonToolBase {\n\tinternal const string ToolName = \"upsilon-run\";\n" +
+				"\t[McpServerTool(Name = ToolName)]\n\tpublic void Run() { }\n}");
+			// Names that only look like references: a lower-case local, and types spelled in comments.
+			Write("clio/Common/Phi.cs", "public sealed class Phi { }");
+			Write("clio/Command/McpServer/Tools/ChiTool.cs",
+				"public sealed class ChiTool : BaseTool {\n\tinternal const string ToolName = \"chi-run\";\n" +
+				"\t[McpServerTool(Name = ToolName)]\n\tpublic void Run() { var phi = 1; }\n}");
+			Write("clio/Common/PsiValue.cs", "public sealed class PsiValue { }");
+			Write("clio/Common/PsiHelpers.cs",
+				"public static class PsiHelpers {\n\t// Not an extension: (this PsiValue value) is only prose.\n\tpublic static int Count() => 1;\n}");
+			Write("clio/Common/PsiDocumented.cs", "public sealed class PsiDocumented { }");
+			Write("clio/Common/PsiByName.cs", "public sealed class PsiByName { }");
+			Write("clio/Command/McpServer/Tools/PsiTool.cs",
+				"/// <summary>Formats like <c>PsiDocumented</c> does.</summary>\npublic sealed class PsiTool : BaseTool {\n" +
+				"\tinternal const string ToolName = \"psi-run\";\n\t[McpServerTool(Name = ToolName)]\n" +
+				"\tpublic void Run(PsiValue value) { Resolve(\"PsiByName\"); }\n}");
+			// A primary constructor spread over two lines before the base list.
+			Write("clio/Common/ISampiStore.cs", "public interface ISampiStore { }");
+			Write("clio/Common/SampiStore.cs", "public sealed class SampiStore(\n\tPsiValue value)\n\t: ISampiStore {\n}");
+			Write("clio/Command/McpServer/Tools/SampiTool.cs",
+				"public sealed class SampiTool : BaseTool {\n\tinternal const string ToolName = \"sampi-run\";\n" +
+				"\t[McpServerTool(Name = ToolName)]\n\tpublic void Run(ISampiStore store) { }\n}");
+			// A qualified name that starts at a non-root segment of the enclosing namespace.
+			Write("clio/Common/Worker/HetaService.cs", "namespace Clio.Common.Worker;\npublic sealed class HetaService { }");
+			Write("clio/Command/McpServer/Tools/HetaTool.cs",
+				"namespace Clio.Command.McpServer.Tools;\npublic sealed class HetaTool : BaseTool {\n" +
+				"\tinternal const string ToolName = \"heta-run\";\n\t[McpServerTool(Name = ToolName)]\n" +
+				"\tpublic void Run() { var x = new Common.Worker.HetaService(); }\n}");
+			// Registered under a service type declared outside the repository, like IDataProvider:
+			// SanProvider's service is named by nobody, KsiProvider's by KsiTool.
+			Write("clio/Common/SanProvider.cs", "public sealed class SanProvider : IExternalProvider {\n\tpublic void Use(SanHelper helper) { }\n}");
+			Write("clio/Common/SanHelper.cs", "public sealed class SanHelper { }");
+			Write("clio/Common/KsiProvider.cs", "public sealed class KsiProvider : IKsiExternal { }");
+			Write("clio/Command/McpServer/Tools/KsiTool.cs",
+				"public sealed class KsiTool : BaseTool {\n\tinternal const string ToolName = \"ksi-run\";\n" +
+				"\t[McpServerTool(Name = ToolName)]\n\tpublic void Run(IKsiExternal provider) { }\n}");
+			// A base list continued on the line after the colon.
+			Write("clio/Common/IStigmaStore.cs", "public interface IStigmaStore { }");
+			Write("clio/Common/StigmaStore.cs", "public sealed class StigmaStore : IDisposable,\n\tIStigmaStore {\n}");
+			Write("clio/Command/McpServer/Tools/StigmaTool.cs",
+				"public sealed class StigmaTool : BaseTool {\n\tinternal const string ToolName = \"stigma-run\";\n" +
+				"\t[McpServerTool(Name = ToolName)]\n\tpublic void Run(IStigmaStore store) { }\n}");
+			// Linked only by an AddHttpClient<TService, TImplementation>() pair.
+			Write("clio/Common/IDigammaClient.cs", "public interface IDigammaClient { }");
+			Write("clio/Common/DigammaClient.cs", "public sealed class DigammaClient { }");
+			Write("clio/Command/McpServer/Tools/DigammaTool.cs",
+				"public sealed class DigammaTool : BaseTool {\n\tinternal const string ToolName = \"digamma-run\";\n" +
+				"\t[McpServerTool(Name = ToolName)]\n\tpublic void Run(IDigammaClient client) { }\n}");
+			// A non-tool type that calls a member of a tool, the shape of ComponentInfoCommand.
+			Write("clio/Command/QoppaCommand.cs", "public sealed class QoppaCommand {\n\tpublic string Run() => PiTool.Format(1);\n}");
+			Write("clio/Command/McpServer/Tools/QoppaTool.cs",
+				"public sealed class QoppaTool : BaseTool {\n\tinternal const string ToolName = \"qoppa-run\";\n" +
+				"\t[McpServerTool(Name = ToolName)]\n\tpublic void Run(QoppaCommand command) { }\n}");
+			// A non-tool type that names the abstract tool base without calling a member.
+			Write("clio/Command/KoppaRunner.cs", "public sealed class KoppaRunner {\n\tpublic void Accept(UpsilonToolBase tool) { }\n}");
+			Write("clio/Command/McpServer/Tools/KoppaTool.cs",
+				"public sealed class KoppaTool : BaseTool {\n\tinternal const string ToolName = \"koppa-run\";\n" +
+				"\t[McpServerTool(Name = ToolName)]\n\tpublic void Run(KoppaRunner runner) { }\n}");
+			// A tool whose fixtures hold only tests the pull-request TeamCity filter excludes.
+			Write("clio/Command/McpServer/Tools/OmegaTool.cs",
+				"public sealed class OmegaTool : BaseTool {\n\tinternal const string ToolName = \"omega-run\";\n" +
+				"\t[McpServerTool(Name = ToolName)]\n\tpublic void Run() { }\n}");
+			Write("clio.mcp.e2e/OmegaDesignerE2ETests.cs",
+				"[TestFixture]\n[Category(McpE2ECategories.ProcessDesigner)]\npublic sealed class OmegaDesignerE2ETests {\n\t[Test] public void Works() => Call(OmegaTool.ToolName);\n}");
+			Write("clio.mcp.e2e/OmegaManualE2ETests.cs",
+				"[TestFixture]\npublic sealed class OmegaManualE2ETests {\n\t[Test]\n\t[Category(\"McpE2E.Sandbox\")]\n\t[Category(\"McpE2E.Manual\")]\n\tpublic void Works() => Call(\"omega-run\");\n}");
+			Write("clio.mcp.e2e/Support/Configuration/McpE2ECategories.cs",
+				"public static class McpE2ECategories {\n\tpublic const string ProcessDesigner = \"McpE2E.ProcessDesigner\";\n}");
+			foreach (string fixture in new[] { "Pi", "Rho", "Tau", "Upsilon", "Chi", "Psi", "Sampi", "Heta", "Ksi", "Stigma", "Digamma", "Qoppa", "Koppa" }) {
+				Write($"clio.mcp.e2e/{fixture}ToolE2ETests.cs",
+					$"[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class {fixture}ToolE2ETests {{\n\t[Test] public void Works() => Call({fixture}Tool.ToolName);\n}}");
+			}
 			Write("clio/BindingsModule.cs",
 				"public static class BindingsModule { static void Register() {\n" +
 				"\t_ = typeof(RegisteredOnlyService);\n\tservices.AddSingleton<IBetaService, BetaService>();\n" +
 				"\tservices.AddSingleton<IDeltaService>(sp => new DeltaAdapter(new DeltaBackend()));\n" +
 				"\tservices.AddSingleton<IIotaService>(\n\t\tsp => new IotaAdapter(new IotaBackend()));\n" +
-				"\tservices.AddSingleton<IXiService>(sp => {\n\t\tvar marker = \"a;b)\";\n\t\t// this comment contains )\n\t\treturn new XiBackend();\n\t});\n} }");
+				"\tservices.AddSingleton<IXiService>(sp => {\n\t\tvar marker = \"a;b)\";\n\t\t// this comment contains )\n\t\treturn new XiBackend();\n\t});\n" +
+				"\tservices.AddTransient<IExternalProvider>(sp => new SanProvider());\n" +
+				"\tservices.AddTransient<IKsiExternal>(sp => new KsiProvider());\n" +
+				"\tservices.AddHttpClient<IDigammaClient, DigammaClient>();\n} }");
 			Write("clio.mcp.e2e/AlphaToolE2ETests.cs",
 				"public abstract class AlphaFixtureBase { }\n[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class AlphaToolE2ETests : AlphaFixtureBase {\n\t[Test] public void Works() => Call(AlphaTool.ToolName);\n}");
 			Write("clio.mcp.e2e/AlphaLiteralE2ETests.cs",

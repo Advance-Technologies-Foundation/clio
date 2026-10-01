@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
@@ -40,7 +40,7 @@ public sealed class PageValidateTool(
 		BudgetPolicy = McpToolBudgetPolicy.None,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Validates a Freedom UI page body without saving. Checks web parent references (known-containers), markers, JS syntax, field/column bindings, handlers, converters, and validators; mobile disallowed constructs, diff application, `type` placement, Scaffold slot merges, and action-button placement. Accepts inline body or local-stdio get-page files.bodyFile via body-file; inline wins. Run before update-page. See get-guidance page-schema-converters, page-schema-handlers, page-schema-validators, or mobile-page-modification.")]
+	[Description("Validates a Freedom UI page body without saving. " + PageBodyAstLinter.DesignerSafetySummary + "Checks web parent references (known-containers), markers, JS syntax, field/column bindings, handlers, converters, and validators; mobile disallowed constructs, diff application, `type` placement, Scaffold slot merges, action-button placement, and metric-widget config. Accepts inline body or local-stdio get-page files.bodyFile via body-file; inline wins. Run before update-page. See get-guidance page-schema-converters, page-schema-handlers, page-schema-validators, or mobile-page-modification.")]
 	public async Task<PageValidateResponse> ValidatePage(
 		[Description("Parameters: body or body-file; optional resources and version")]
 		[Required] PageValidateArgs args,
@@ -276,7 +276,7 @@ public sealed class PageValidateTool(
 			InsertSelfConsistency: RunContentValidation(contentResult,
 				() => SchemaValidationService.ValidateInsertedFieldSelfConsistency(body, explicitResources)),
 			WidgetCaption: RunContentValidation(contentResult,
-				() => SchemaValidationService.ValidateInsertedWidgetCaptionResources(body, explicitResources)),
+				() => SchemaValidationService.ValidateInsertedWidgetCaptionResourcesGrouped(body, explicitResources)),
 			LocalizableText: RunContentValidation(contentResult,
 				() => SchemaValidationService.ValidateLocalizableTextLiterals(body)),
 			Binding: RunContentValidation(contentResult,
@@ -313,6 +313,7 @@ public sealed class PageValidateTool(
 		// Widget-caption resolvability is a body-only PRE-FLIGHT heuristic here (validate-page has no schema
 		// context, so it cannot see keys a prior save already registered). Surface it as a warning; the
 		// authoritative hard gate runs on the save path (PageUpdateCommand) against the final merged set.
+		// It arrives as ONE warning that states the rule once and lists every unresolved binding.
 		if (!content.WidgetCaption.IsValid) {
 			warnings.AddRange(content.WidgetCaption.Errors);
 		}

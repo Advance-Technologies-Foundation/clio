@@ -70,13 +70,17 @@ DESCRIPTION
       crt.HandleViewModelInitRequest, usr.HandleSomeRequest).
     - SCHEMA_VALIDATORS keys (object form) must follow VendorPrefix.Name
       format (e.g., usr.RequiredValidator).
-    - Direct calls from handlers, converters, and validators must resolve to
-      a declaration in the page factory scope, a callback parameter, or a known
-      JavaScript/Creatio global (MCP update-page / sync-pages / validate-page
-      only -- the CLI verb below does NOT run this check). Undefined helper
-      calls are rejected before the body is sent to Creatio because Page
-      Designer can remove module-scope declarations while preserving handler
-      entries, causing ReferenceError.
+    - Page Designer regenerates the factory body on save. Keep only return
+      { ... } there; other statements produce designer-unsafe-factory-statement
+      warnings. Put helper functions, constants and caches in a client module
+      listed in SCHEMA_DEPS, with its argument in SCHEMA_ARGS. Keep executable
+      handlers, converters and validators inside their SCHEMA_* regions.
+    - Direct section calls to factory declarations are rejected with
+      designer-unsafe-section-call, even when those declarations exist now.
+      Callback-local declarations, callback parameters, AMD dependency arguments
+      and known JavaScript/Creatio globals remain valid. Missing helper calls
+      are rejected with undefined-section-call. These AST checks run on MCP
+      update-page / sync-pages / validate-page only, not the CLI verb below.
     MOBILE RULES (MCP update-page / sync-pages / validate-page only --
     the CLI verb below does NOT run them; it checks a mobile body only
     for disallowed sections):
@@ -116,6 +120,14 @@ DESCRIPTION
       shadows the native element, so the top navigation bar and the page
       body silently come from the wrong one. A "merge" onto Scaffold is
       the SUPPORTED way to patch the template's own root and is allowed.
+    - Rejected: an "insert"/"set"/"merge" authoring a crt.IndicatorWidget
+      without config.layout and config.text, or whose config.data.providing
+      lacks schemaName, aggregation.column.expression with
+      expressionType 1, functionArgument.columnPath, or an aggregationType
+      of 1-5 (a calculated metric carries expressionSchema instead). Such a page
+      saves, but the metric shows no value or an error placeholder, or
+      the designer canvas does not build. A widget with its own "data" binding is exempt from the
+      providing checks.
     - Warned: a component type in NEITHER the mobile nor the web
       registry. It may be a custom mobile component registered in your
       own package, in which case ignore it; it is equally what a typo
@@ -162,10 +174,10 @@ DESCRIPTION
       registered. --resources is additions/overrides on top of what is persisted.
     A malformed VendorPrefix.Name causes a Creatio runtime error:
       "Error when register X. Type property should have format VendorPrefix.TypeName"
-    - Call `clio get-guidance --name page-schema-converters` for converter details
-    - Call `clio get-guidance --name page-schema-handlers` for handler details
-    - Call `clio get-guidance --name page-schema-validators` for validator details
-    - Call `clio get-guidance --name page-schema-resources` for localization details
+    - Call the MCP `get-guidance` tool with `name=page-schema-converters` for converter details
+    - Call the MCP `get-guidance` tool with `name=page-schema-handlers` for handler details
+    - Call the MCP `get-guidance` tool with `name=page-schema-validators` for validator details
+    - Call the MCP `get-guidance` tool with `name=page-schema-resources` for localization details
 
     CONFLICT DETECTION:
     update-page guards against overwriting schema changes made outside your

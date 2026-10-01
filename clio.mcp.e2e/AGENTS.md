@@ -23,7 +23,8 @@ would tear down the shared stand mid-suite. They stay `McpE2E.Sandbox` (additive
 developer-local so they never run automatically: `[Category("LocalOnly")]` + `[Explicit]` +
 `[Category("McpE2E.Manual")]` + a `TeamCityRunGuard.IsRunningUnderTeamCity()` `Assert.Ignore` guard.
 Members today: `UninstallCreatioWarningE2ETests`, `DbHubLifecycleWarningE2ETests`,
-`DataBindingDbColorSchemaE2ETests`. Their deterministic contract is covered off-stand by unit tests
+`DataBindingDbColorSchemaE2ETests`, and the two compiling fixtures `UserTaskUnlimitedTextToolE2ETests` and
+`ScriptTaskCompileLifecycleE2ETests` (a compile reloads the runtime for every user). Their deterministic contract is covered off-stand by unit tests
 (`CreatioUninstallerTestFixture`, `AppPoolProfileCleanerTests`, and `SchemaTestFixture` +
 `DataBindingDbCommandTests` for the Color mapping); `McpFixturePolicyTests` enforces the attribute
 invariant and `TeamCityRunGuardTests` covers the guard's runtime behavior. When adding another

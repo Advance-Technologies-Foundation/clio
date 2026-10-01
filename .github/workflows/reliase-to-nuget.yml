@@ -75,15 +75,27 @@ jobs:
 
       # The release is tag-only and is cut from a master commit that the `Build` workflow (build.yml) has
       # already tested: the same clio.tests suite, sharded across GitHub-hosted runners, plus the
-      # ConflictResolver, analyzer and .NET 8 jobs. The step removed here ran `dotnet test` with no
-      # category filter, so it also executed the Integration category; build.yml's unit shards exclude
-      # Integration and its integration shards only run on `pull_request`, so a green master `Build` does
-      # NOT re-prove integration coverage on the tagged commit - that evidence comes from the pre-merge PR
-      # run of the same commit tree. Re-running the whole suite here on a single self-hosted runner (with
-      # Coverlet instrumentation whose output nothing consumed) cost 6-9 minutes of a 9-17 minute release.
-      # Instead, confirm that the master push `Build` run for the tagged commit is green, and refuse to
-      # publish otherwise. A tag that races the master push is tolerated: the step waits for an in-flight
-      # run rather than failing on it.
+      # ConflictResolver, analyzer and .NET 8 jobs. Re-running the whole suite here on a single self-hosted
+      # runner (with Coverlet instrumentation whose output nothing consumed) cost 6-9 minutes of a 9-17
+      # minute release. Instead, confirm that the master push `Build` run for the tagged commit is green, and
+      # refuse to publish otherwise. A tag that races the master push is tolerated: the step waits for an
+      # in-flight run rather than failing on it. Which run counts is decided by
+      # .github/scripts/Select-ReleaseBuildRun.ps1 (only a `push` run of build.yml on `master`), and
+      # clio.tests/ReleaseWorkflow/ReleaseBuildRunSelectorTests.cs fails if that selection widens.
+      #
+      # Integration coverage - decision (issue #1573): rely on pre-merge evidence (option A).
+      # build.yml's unit shards exclude the Integration category and its integration shards run only on
+      # `pull_request`, so a green master `Build` does NOT re-prove integration coverage on the tagged
+      # commit. The integration evidence is the pre-merge pull-request run: the `Integration Tests` check
+      # is required by the master ruleset, and a pull_request run tests the PR merged into master, which is
+      # normally the tree that lands (it can differ only when master moved after that run). Re-running it
+      # here would repeat an identical tree's tests and add minutes to every release.
+      # Option B, if that guarantee is ever judged too weak: add a step before "Pack clio with release
+      # version" that runs
+      #   dotnet test .\clio.tests\clio.tests.csproj -c Release --filter "TestCategory=Integration"
+      # (spell it `TestCategory`, never the `Category` alias - see
+      # docs/knowledge/Tests/nunit-adapter-drops-large-non-category-shard-filters.md) and fails the job on a
+      # non-zero exit code. RELEASE.md records the same decision.
       - name: Verify Build workflow is green for the tagged commit
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -99,23 +111,19 @@ jobs:
           }
           $deadline = (Get-Date).AddMinutes(30)
           $pollSeconds = 30
+          $selectorScript = Join-Path $env:GITHUB_WORKSPACE ".github\scripts\Select-ReleaseBuildRun.ps1"
 
           while ($true) {
             $uri = "https://api.github.com/repos/$repo/actions/runs?head_sha=$sha&per_page=50"
             $response = Invoke-RestMethod -Uri $uri -Headers $headers -Method Get
-            # Only a `push` run on master counts. A `pull_request` run for the same SHA skips every real
-            # build and test job (they are gated on the event), so accepting one would let a green-looking
-            # run with zero executed tests satisfy this gate.
-            $buildRuns = @($response.workflow_runs | Where-Object {
-              $_.path -eq '.github/workflows/build.yml' -and $_.event -eq 'push' -and $_.head_branch -eq 'master'
-            })
+            # Newest `push` run of build.yml on master, or nothing. See the script for why a
+            # `pull_request` run of the same SHA must never count.
+            $latest = & $selectorScript -WorkflowRuns @($response.workflow_runs)
 
-            if ($buildRuns.Count -eq 0) {
+            if ($null -eq $latest) {
               throw "No 'Build' workflow run from a master push found for commit $sha. Release from a commit pushed to master that build.yml has tested; pull_request runs of the same SHA do not count."
             }
 
-            # The newest run is authoritative: a re-run supersedes an earlier failed attempt.
-            $latest = $buildRuns | Sort-Object { [datetime]$_.created_at } -Descending | Select-Object -First 1
             Write-Host "Build run $($latest.id) for $sha : status=$($latest.status) conclusion=$($latest.conclusion) ($($latest.html_url))"
 
             if ($latest.status -eq 'completed') {

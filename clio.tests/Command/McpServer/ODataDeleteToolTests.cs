@@ -208,7 +208,40 @@ public sealed class ODataDeleteToolTests {
 
 		// Assert
 		response.Success.Should().BeFalse(because: "an OData error envelope must not be reported as a successful delete");
-		response.Error.Should().Be("The DELETE request violates a foreign key constraint");
+		response.Error.Should().Be("The DELETE request violates a foreign key constraint",
+			because: "a message without a measured FK wording keeps today's result exactly");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("GH-1699: a delete blocked by a foreign key adds clio's 'record is still referenced' hint to the error.")]
+	public void Delete_Should_Add_The_Still_Referenced_Hint() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account(8ecab4a1-0ca3-4515-9399-efe0a19390bd)");
+		client.ExecuteDeleteRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(Clio.Tests.Common.CreatioResponseErrorStructuredDetailTests.PostgresDeleteForeignKeyBody);
+		ODataDeleteTool tool = new(resolver, new OperationCorrelationIdProvider());
+
+		// Act
+		ODataWriteResponse response = tool.Delete(new ODataDeleteArgs {
+			EnvironmentName = "dev", Entity = "Account", Id = Guid, Confirm = true
+		});
+
+		// Assert
+		response.Success.Should().BeFalse(because: "a delete the database refused is not a successful delete");
+		response.Error.Should().StartWith("An error has occurred. From the error payload (validated identifiers only): ",
+			because: "the hint is appended to today's message rather than replacing it");
+		response.Error.Should().Contain("the record is still referenced",
+			because: "the referencing rows have to be handled before this delete can succeed");
+		response.Error.Should().Contain("on table 'Contact'",
+			because: "the referencing table is where the blocking rows live");
+		response.Diagnostic!.SideEffect.Should().Be("unknown",
+			because: "the side-effect reporting of a server-reported failure is unchanged");
 	}
 
 	[TestCase(true, TestName = "Delete_Should_Carry_A_Correlation_Id_On_Success")]

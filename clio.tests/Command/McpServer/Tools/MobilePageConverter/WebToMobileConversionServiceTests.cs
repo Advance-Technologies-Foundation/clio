@@ -19,6 +19,12 @@ namespace Clio.Tests.Command.McpServer.Tools.MobilePageConverter;
 [Property("Module", "McpServer")]
 public sealed class WebToMobileConversionServiceTests {
 
+	/// <summary>No mobile request registry: support comes from the versioned rules alone, which is
+	/// what these component-level fixtures are about. Passed explicitly because the parameter is
+	/// required — an omitted registry must be a visible decision, not a silent empty default.</summary>
+	private static readonly IReadOnlySet<string> NoRequestRegistry =
+		new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
 	private static readonly IReadOnlySet<string> MobileTypes =
 		new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
 			"crt.Input", "crt.Toggle", "crt.RichTextEditor", "crt.List", "crt.FolderTreeActions", "crt.GridContainer", "crt.Label", "crt.IndicatorWidget", "crt.CommunicationOptions", "crt.QuickFilter", "crt.FileList", "crt.Feed"
@@ -28,6 +34,29 @@ public sealed class WebToMobileConversionServiceTests {
 		new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
 			"crt.Input", "crt.Checkbox", "crt.HtmlEditor", "crt.DataGrid", "crt.DataTable",
 			"crt.ColorButton", "crt.FolderTree", "crt.FolderTreeActions", "crt.QuickFilter"
+		};
+
+	/// <summary>
+	/// Stands in for the mobile request registry the tool loads from the catalog in production — it is NOT a
+	/// list to extend by hand when a test needs another request. A test that needs a different registry passes
+	/// its own <c>mobileRequestTypes</c>.
+	/// </summary>
+	private static readonly IReadOnlySet<string> MobileRequestTypes =
+		new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"crt.AddCommunicationOptionsRequest",
+			"crt.CancelRecordChangesRequest",
+			"crt.ClosePageRequest",
+			"crt.CreateRecordRequest",
+			"crt.DeleteRecordRequest",
+			"crt.LoadDataRequest",
+			"crt.OpenPageRequest",
+			"crt.RunBusinessProcessRequest",
+			"crt.SaveRecordRequest",
+			"crt.SetAttributeFromBarcodeRequest",
+			"crt.SetAttributeFromNfcRequest",
+			"crt.UpdateQuickFilterGroupRequest",
+			"crt.UpdateRecordRequest",
+			"crt.UploadFileRequest"
 		};
 
 	/// <summary>The shipped grid → list view-config template, so the fixture exercises the real skeleton.</summary>
@@ -289,7 +318,8 @@ public sealed class WebToMobileConversionServiceTests {
 		IReadOnlyDictionary<string, JObject> webTemplateBaselineNodes = null,
 		JObject webTemplateResources = null,
 		IReadOnlySet<string> mobileTypes = null,
-		WebToMobilePageConversionRules rules = null) =>
+		WebToMobilePageConversionRules rules = null,
+		IReadOnlySet<string> mobileRequestTypes = null) =>
 		WebToMobileAnalysisService.Analyze(
 			bundle, mobileTypes ?? MobileTypes, WebTypes,
 			webByType ?? new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase),
@@ -305,7 +335,8 @@ public sealed class WebToMobileConversionServiceTests {
 			mobileContainerParents: mobileContainerParents,
 			mobileTemplateNodesByName: mobileTemplateNodesByName,
 			webTemplateBaselineNodes: webTemplateBaselineNodes,
-			webTemplateResources: webTemplateResources);
+			webTemplateResources: webTemplateResources,
+			mobileRequestTypes: mobileRequestTypes ?? MobileRequestTypes);
 
 	/// <summary>The web template's own resource strings (key → { culture: text }) — the delta baseline a
 	/// twin's caption VALUE is compared against.</summary>
@@ -452,7 +483,8 @@ public sealed class WebToMobileConversionServiceTests {
 			new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase),
 			mobileByType: null, rules, templateRule: null,
 			sourcePage: "UsrApp_ListPage", sourceTemplate: "ListPageV3Template",
-			suggestedTarget: "UsrApp_MobileListPage", containerNameMap: null);
+			suggestedTarget: "UsrApp_MobileListPage", containerNameMap: null,
+			mobileRequestTypes: NoRequestRegistry);
 
 		ComponentSuggestion grid = ForType(guide, "crt.DataGrid");
 		grid.Category.Should().Be("AlternativeAvailable",
@@ -801,9 +833,36 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = WebToMobileAnalysisService.Analyze(
 			bundle, MobileTypes, WebTypes, Reg(("crt.FlexContainer", true)), null, Rules, templateRule: null,
 			sourcePage: "UsrApp_ListPage", sourceTemplate: "ListPageV3Template",
-			suggestedTarget: "UsrApp_MobileListPage", containerNameMap: null, sectionRegistration: registration);
+			suggestedTarget: "UsrApp_MobileListPage", containerNameMap: null, sectionRegistration: registration,
+			mobileRequestTypes: NoRequestRegistry);
 
 		guide.SectionRegistration.Should().BeSameAs(registration);
+	}
+
+	[Test]
+	[Description("A supplied existingMobilePages list is carried into the guide unchanged; null becomes an empty list rather than a null guide field.")]
+	public void Analyze_CarriesExistingMobilePagesIntoGuide() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "DataTable", "type": "crt.DataGrid" } ] } ]
+			""");
+		var existing = new List<ExistingMobilePageInfo> {
+			new() { SchemaName = "UsrApp_MobileFormPage", SchemaUId = "abc", Source = MobileActionTargetProbe.KindEntityDefaultMobilePage }
+		};
+
+		MobilePageConversionGuide guideWithExisting = WebToMobileAnalysisService.Analyze(
+			bundle, MobileTypes, WebTypes, Reg(("crt.FlexContainer", true)), null, Rules, templateRule: null,
+			sourcePage: "UsrApp_ListPage", sourceTemplate: "ListPageV3Template",
+			suggestedTarget: "UsrApp_MobileListPage", containerNameMap: null, existingMobilePages: existing,
+			mobileRequestTypes: NoRequestRegistry);
+		guideWithExisting.ExistingMobilePages.Should().BeSameAs(existing);
+
+		MobilePageConversionGuide guideWithoutExisting = WebToMobileAnalysisService.Analyze(
+			bundle, MobileTypes, WebTypes, Reg(("crt.FlexContainer", true)), null, Rules, templateRule: null,
+			sourcePage: "UsrApp_ListPage", sourceTemplate: "ListPageV3Template",
+			suggestedTarget: "UsrApp_MobileListPage", containerNameMap: null,
+			mobileRequestTypes: NoRequestRegistry);
+		guideWithoutExisting.ExistingMobilePages.Should().NotBeNull().And.BeEmpty();
 	}
 
 	[Test]
@@ -1195,7 +1254,8 @@ public sealed class WebToMobileConversionServiceTests {
 			sourcePage: "Leads_FormPage", sourceTemplate: "PageWithTabsFreedomTemplate",
 			suggestedTarget: "UsrLeads_MobileFormPage", containerNameMap: containerNameMap ?? TabbedContainerMap,
 			positionalPlacements: positionalPlacements,
-			mobileContainerParents: mobileContainerParents);
+			mobileContainerParents: mobileContainerParents,
+			mobileRequestTypes: NoRequestRegistry);
 
 	[Test]
 	[Description("Golden Leads_FormPage: Tabs merges; EVERY web tab inserts as its OWN new mobile tab (no general-tab collapsing); a tab with a caption keeps it; an UNSUPPORTED child drops while a child bound to a non-primary data source converts; template twins merge.")]
@@ -1312,7 +1372,8 @@ public sealed class WebToMobileConversionServiceTests {
 			mobileByType: null, GridRule, templateRule: null,
 			sourcePage: "Leads_FormPage", sourceTemplate: "PageWithTabsFreedomTemplate",
 			suggestedTarget: "UsrLeads_MobileFormPage", containerNameMap: map,
-			positionalPlacements: placements, mobileContainerParents: mobileParents);
+			positionalPlacements: placements, mobileContainerParents: mobileParents,
+			mobileRequestTypes: NoRequestRegistry);
 
 		// Anchor wrapper merges into the general tab's grid; its non-tab content lands there.
 		Element(guide, "CardContentWrapper").Operation.Should().Be("merge");
@@ -1363,7 +1424,8 @@ public sealed class WebToMobileConversionServiceTests {
 			mobileByType: null, GridRule, templateRule: null,
 			sourcePage: "Leads_FormPage", sourceTemplate: "PageWithTabsFreedomTemplate",
 			suggestedTarget: "UsrLeads_MobileFormPage", containerNameMap: map,
-			positionalPlacements: placements, mobileContainerParents: null);
+			positionalPlacements: placements, mobileContainerParents: null,
+			mobileRequestTypes: NoRequestRegistry);
 
 		ViewConfigDiffOperation progress = Element(guide, "ProgressBarContainer");
 		progress.ParentName.Should().Be("MainContainer", because: "the anchor's mobile parent is unknown → default");
@@ -1957,7 +2019,8 @@ public sealed class WebToMobileConversionServiceTests {
 			bundle, mobileTypes, WebTypes, webByType, mobileByType,
 			Rules, templateRule: null,
 			sourcePage: "UsrApp_FormPage", sourceTemplate: "PageWithTabsFreedomTemplate",
-			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: null);
+			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: null,
+			mobileRequestTypes: NoRequestRegistry);
 
 		JsonObject vals = Element(guide, "ProgressBar").Values!.AsObject();
 		vals["type"]!.GetValue<string>().Should().Be("crt.EntityStageProgressBar");
@@ -2005,7 +2068,8 @@ public sealed class WebToMobileConversionServiceTests {
 			bundle, mobileTypes, WebTypes, webByType, mobileByType,
 			Rules, templateRule: null,
 			sourcePage: "UsrApp_FormPage", sourceTemplate: "PageWithTabsFreedomTemplate",
-			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: null);
+			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: null,
+			mobileRequestTypes: NoRequestRegistry);
 
 		JsonObject vals = Element(guide, "Feed").Values!.AsObject();
 		vals["type"]!.GetValue<string>().Should().Be("crt.Feed");
@@ -2064,7 +2128,8 @@ public sealed class WebToMobileConversionServiceTests {
 			[ { "name": "Actions", "type": "crt.FlexContainer", "items": [
 				{ "name": "OrderButton", "type": "crt.Button", "caption": "#ResourceString(OrderButton_caption)#",
 				  "menuItems": [ { "name": "PrintItem", "type": "crt.MenuItem",
-					"caption": "#ResourceString(PrintItem_caption)#" } ] } ] } ]
+					"caption": "#ResourceString(PrintItem_caption)#",
+					"clicked": { "request": "crt.SaveRecordRequest", "params": {} } } ] } ] } ]
 			""");
 		var mobileTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
 			"crt.FlexContainer", "crt.Button", "crt.MenuItem"
@@ -2097,7 +2162,7 @@ public sealed class WebToMobileConversionServiceTests {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Panel", "type": "crt.ExpansionPanel",
 				"items": [ { "name": "Amount", "type": "crt.Input" } ],
-				"tools": [ { "name": "AddButton", "type": "crt.Button" } ] } ]
+				"tools": [ { "name": "AddButton", "type": "crt.Button", "clicked": { "request": "crt.SaveRecordRequest", "params": {} } } ] } ]
 			""");
 		var mobileTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
 			"crt.ExpansionPanel", "crt.Input", "crt.Button"
@@ -2156,7 +2221,7 @@ public sealed class WebToMobileConversionServiceTests {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Actions", "type": "crt.FlexContainer", "items": [
 				{ "name": "OrderButton", "type": "crt.Button", "caption": "#ResourceString(OrderButton_caption)#",
-				  "menuItems": [] } ] } ]
+				  "clicked": { "request": "crt.SaveRecordRequest", "params": {} }, "menuItems": [] } ] } ]
 			""");
 		var mobileTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
 			"crt.FlexContainer", "crt.Button", "crt.MenuItem"
@@ -2173,7 +2238,9 @@ public sealed class WebToMobileConversionServiceTests {
 		buttonValues.ContainsKey("menuItems").Should().BeTrue(
 			because: "an empty array is not a walked-out structural slot, so it is carried verbatim as a value");
 		buttonValues["menuItems"]!.AsArray().Count.Should().Be(0,
-			because: "the empty collection is carried exactly as authored");
+			because: "the empty collection is carried exactly as authored — note the button fires a live request, "
+				+ "which is the ONLY thing separating it from the EmptyMenuButton of "
+				+ "Analyze_ButtonThatNeverHadAMenuOrAClick_IsRemoved, whose identical shape is removed");
 	}
 
 	[Test]
@@ -2205,7 +2272,8 @@ public sealed class WebToMobileConversionServiceTests {
 			[ { "name": "Body", "type": "crt.FlexContainer", "items": [
 				{ "name": "OrderButton", "type": "crt.Button", "caption": "#ResourceString(OrderButton_caption)#",
 				  "menuItems": [ { "name": "PrintItem", "type": "crt.MenuItem",
-					"caption": "#ResourceString(PrintItem_caption)#" } ] } ] } ]
+					"caption": "#ResourceString(PrintItem_caption)#",
+					"clicked": { "request": "crt.SaveRecordRequest", "params": {} } } ] } ] } ]
 			""");
 		var mobileTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
 			"crt.FlexContainer", "crt.Button"
@@ -2569,7 +2637,7 @@ public sealed class WebToMobileConversionServiceTests {
 			[ { "name": "Box", "type": "crt.FlexContainer", "items": [
 				{ "name": "Field", "type": "crt.Input",
 				  "options": [ { "type": "text", "code": "a" }, { "type": "lookup", "code": "b" } ],
-				  "mixed": [ { "type": "crt.Button", "name": "X" }, { "type": "text", "code": "c" } ] } ] } ]
+				  "mixed": [ { "type": "crt.Button", "name": "X", "clicked": { "request": "crt.SaveRecordRequest", "params": {} } }, { "type": "text", "code": "c" } ] } ] } ]
 			""");
 
 		// Act
@@ -2582,7 +2650,9 @@ public sealed class WebToMobileConversionServiceTests {
 		fieldValues["options"]!.AsArray().Count.Should().Be(2,
 			because: "a data array of non-component objects is carried verbatim as a value");
 		fieldValues["mixed"]!.AsArray().Count.Should().Be(2,
-			because: "a MIXED array (component + non-component object) is carried verbatim, conservatively, not partly stripped");
+			because: "a MIXED array is carried verbatim by the WALK — no member is walked out into an entry of its "
+				+ "own. It is not immune to later passes: componentRemovals judges every carried component "
+				+ "member-by-member, which is why the button here fires a live request");
 	}
 
 	[Test]
@@ -2645,7 +2715,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("A header button whose clicked request is UNKNOWN/custom (not in the versioned map, not in the bundled supported set — e.g. a usr.* request) is DROPPED, not moved into the FAB: the scope/FAB gate uses the same support criterion as the leaf path, so a dead menu item is never shipped. The lost action is recorded in requestConversions.droppedRequests.")]
+	[Description("A header button whose clicked request is UNKNOWN/custom (not in the versioned map, not in the mobile request registry — e.g. a usr.* request) is DROPPED, not moved into the FAB: the scope/FAB gate uses the same support criterion as the leaf path, so a dead menu item is never shipped. The lost action is recorded in requestConversions.droppedRequests.")]
 	public void Analyze_Fab_HeaderButton_CustomRequest_Dropped_AndRecorded() {
 		// Arrange
 		PageBundleInfo bundle = Bundle("""
@@ -2674,9 +2744,9 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("Regression (ActionButtonsContainer bug): a header button whose clicked request is an unknown crt.* request absent from BOTH the versioned map and the bundled supported set (e.g. crt.PrintablesRequest) is DROPPED, not moved into the FAB. The scope/FAB gate now consults the bundled supported set the leaf path already used, so the two paths agree instead of one dropping the button and the other retargeting it. The lost action is recorded.")]
+	[Description("Regression (ActionButtonsContainer bug): a header button whose clicked request is an unknown crt.* request absent from BOTH the versioned map and the mobile request registry (e.g. crt.PrintablesRequest) is DROPPED, not moved into the FAB. The scope/FAB gate now consults the mobile request registry the leaf path already used, so the two paths agree instead of one dropping the button and the other retargeting it. The lost action is recorded.")]
 	public void Analyze_Fab_HeaderButton_UnsupportedPlatformRequest_Dropped_AndRecorded() {
-		// Arrange — crt.PrintablesRequest is NOT in the versioned map and NOT in the bundled supported set.
+		// Arrange — crt.PrintablesRequest is NOT in the versioned map and NOT in the mobile request registry.
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
 				{ "name": "PrintBtn", "type": "crt.Button", "caption": "#ResourceString(PrintBtn_caption)#",
@@ -2692,7 +2762,7 @@ public sealed class WebToMobileConversionServiceTests {
 		DroppedNames(guide).Should().Contain("PrintBtn",
 			because: "an unsupported clicked request must not be retargeted into the FAB, matching how the leaf path drops the same button");
 		ReasonParam(print, ReasonCodes.DropUnknownRequest, "request").Should().Be("crt.PrintablesRequest",
-			because: "this request is in NEITHER the versioned map nor the bundled set, so clio can only say it does not know it — the separate known-unsupported code would be a claim it cannot make");
+			because: "this request is in NEITHER the versioned map nor the registry, so clio can only say it does not know it — the separate known-unsupported code would be a claim it cannot make");
 		DroppedRequest printBinding = guide.RequestConversions!.DroppedRequests.Should().ContainSingle(r =>
 				r.ElementName == "PrintBtn" && r.WebRequest == "crt.PrintablesRequest",
 				because: "the lost header action must surface in requestConversions, not be moved into the FAB")
@@ -2702,8 +2772,8 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("A crt.MenuItem retargeted into the FAB whose clicked request is unsupported/unknown is NOT dropped (unlike a crt.Button): it converts and its binding is kept and flagged. This matches the leaf policy (UnsupportedRequestOf gates on crt.Button) and the tool contract that ONLY a crt.Button is dropped for an unsupported request.")]
-	public void Analyze_Fab_MenuItemUnsupportedRequest_ConvertsAndFlags_NotDropped() {
+	[Description("ENG-96178 inverted this: a crt.MenuItem in the header scope whose clicked request is unknown/custom is DROPPED, exactly as a crt.Button with the same request always was. Previously it converted into the FAB and its dead binding was kept and merely flagged, which shipped a menu entry that does nothing. A menu item has no purpose beyond firing its action, so keeping one whose action cannot fire is not the conservative choice it looks like.")]
+	public void Analyze_Fab_MenuItemUnsupportedRequest_IsDropped_LikeAButton() {
 		// Arrange — a crt.MenuItem directly in the header scope with an unknown/custom clicked.
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
@@ -2711,43 +2781,851 @@ public sealed class WebToMobileConversionServiceTests {
 				  "clicked": { "request": "usr.CustomMenuRequest", "params": {} } } ] } ]
 			""");
 
-		// Act — the rule matches crt.MenuItem too; the SAME unsupported request on a crt.Button would drop.
+		// Act — the rule matches crt.MenuItem too, so nothing but the request decides this.
 		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: HeaderMobileTypes,
 			rules: FabRule(["MainHeader"], ["MainHeader"], "crt.Button", "crt.MenuItem"));
 
 		// Assert
-		ViewConfigDiffOperation more = Element(guide, "MoreItem");
-		more.Operation.Should().Be("insert",
-			because: "a crt.MenuItem with an unsupported request is kept (flagged), not dropped — only a crt.Button is dropped");
-		more.ParentName.Should().Be("FloatingActionButton", because: "the menu item still retargets into the FAB");
-		FlaggedRequest moreBinding = guide.RequestConversions!.FlaggedRequests.Should().ContainSingle(r =>
-				r.ElementName == "MoreItem" && r.Request == "usr.CustomMenuRequest",
-				because: "the unknown request on a non-button is kept verbatim and flagged for manual review")
-			.Subject;
-		Codes(moreBinding.Reason).Should().Equal([ReasonCodes.FlagRequestUnmapped],
-			because: "a FLAG is not a drop — the component works and only the action is unverified — so it needs "
-				+ "its own code rather than borrowing one that tells the user something was lost");
+		guide.ViewConfigDiff.Should().NotContain(operation => operation.Name == "MoreItem",
+			because: "a dead menu item must not reach the FAB — the point of the change is the CANVAS, so the "
+				+ "operation list is checked rather than only the verdict in droppedElements");
+		DroppedElement more = Dropped(guide, "MoreItem");
+		Codes(more).Should().Equal([ReasonCodes.DropUnknownRequest],
+			because: "clio cannot assert a custom usr.* request is unavailable on mobile, only that it does not "
+				+ "know it — the stronger drop-unsupported-request would claim more than was established and "
+				+ "would tell the developer not to re-add an action they may well have implemented");
+		ReasonParam(more, ReasonCodes.DropUnknownRequest, "request").Should().Be("usr.CustomMenuRequest",
+			because: "the reason names the offending request so the developer knows what to re-wire");
+		(guide.RequestConversions?.FlaggedRequests ?? []).Should().NotContain(r => r.ElementName == "MoreItem",
+			because: "the element is gone, so a flag telling the caller to review its binding would describe a "
+				+ "control the mobile page does not have");
 	}
 
 	[Test]
-	[Description("A header crt.Button whose clicked request is supported ONLY via the bundled MobileSupportedRequests set (absent from the versioned map) still converts into the FAB — pinning the bundled-set positive branch of IsRequestSupported so a future map-only simplification cannot silently start dropping these buttons.")]
-	public void Analyze_Fab_HeaderButton_BundledSetSupportedRequest_ConvertsIntoFab() {
-		// Arrange — crt.SetAttributeFromNfcRequest is in the bundled supported set but NOT in the versioned map (FabRule carries no requests).
+	[Description("The companion of the case above, and the reason the drop policy is a CLOSED two-type set rather than 'anything with a dead request'. A component that is not a button or a menu item keeps its unsupported binding and is merely flagged, because it has a purpose beyond firing an action and dropping it would lose valid UI.")]
+	public void Analyze_Fab_NonActionComponentUnsupportedRequest_IsStillKeptAndFlagged() {
+		// Arrange — same scope, same unknown request, a component type that is not action-only.
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
-				{ "name": "NfcBtn", "type": "crt.Button", "caption": "#ResourceString(NfcBtn_caption)#",
-				  "clicked": { "request": "crt.SetAttributeFromNfcRequest", "params": {} } } ] } ]
+				{ "name": "Progress", "type": "crt.EntityStageProgressBar", "caption": "P",
+				  "clicked": { "request": "usr.CustomMenuRequest", "params": {} } } ] } ]
+			""");
+		var mobileTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"crt.FlexContainer", "crt.Button", "crt.MenuItem", "crt.FloatingActionButton", "crt.EntityStageProgressBar"
+		};
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: mobileTypes,
+			rules: FabRule(["MainHeader"], ["MainHeader"], "crt.Button", "crt.MenuItem", "crt.EntityStageProgressBar"));
+
+		// Assert
+		DroppedNames(guide).Should().NotContain("Progress",
+			because: "widening the drop to crt.MenuItem must not widen it to every component that binds a request "
+				+ "— without this pin the closed set could be opened later and nothing would fail");
+		guide.RequestConversions!.FlaggedRequests.Should().ContainSingle(r => r.ElementName == "Progress",
+			because: "a non-action component keeps its unverified binding and is flagged for manual review");
+	}
+
+	// ── ENG-96178: dead actions (unsupported menu items, and the buttons left holding none) ─────────────
+
+	/// <summary>
+	/// Mobile types for the dead-action tests in the ENTRY-GRAPH shape: <c>crt.MenuItem</c> resolves, so the
+	/// walk gives every menu item its own element-map entry.
+	/// </summary>
+	private static readonly IReadOnlySet<string> MenuEntryGraphTypes =
+		new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"crt.FlexContainer", "crt.Button", "crt.MenuItem"
+		};
+
+	/// <summary>
+	/// The same set WITHOUT <c>crt.MenuItem</c> — the VERBATIM-CARRY shape, and the one production actually
+	/// runs: the published mobile registry does not declare <c>crt.MenuItem</c>, so <c>IsChildElementArray</c>
+	/// refuses the slot and the whole array is copied into the button's values untouched. Every dead-action
+	/// assertion is made against BOTH sets, because the difference is invisible on the caller's page and must
+	/// therefore be invisible in the caller's report.
+	/// </summary>
+	private static readonly IReadOnlySet<string> MenuCarriedTypes =
+		new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"crt.FlexContainer", "crt.Button"
+		};
+
+	/// <summary>
+	/// A rules file that maps one supported request and CLEARS one — so a test can tell a known-unsupported
+	/// request (<c>crt.PrintablesRequest</c>) from an unknown/custom one apart by the code it produces.
+	/// </summary>
+	private static WebToMobilePageConversionRules MenuRules() =>
+		new() {
+			Requests = [
+				new RequestMappingRule {
+					Web = "crt.SaveRecordRequest", Mobile = "crt.SaveRecordRequest", Category = "DirectMapping"
+				},
+				new RequestMappingRule {
+					Web = "crt.PrintablesRequest", Mobile = null, Category = "Unsupported",
+					Note = "Printables are web-only."
+				}
+			]
+		};
+
+	/// <summary>
+	/// The two traversal shapes, for an assertion that must hold on both. Which one production takes is a
+	/// registry fact the caller cannot see, so a verdict that differed between them would be a report
+	/// changing for a reason the page does not contain.
+	/// </summary>
+	private static readonly IReadOnlyList<(string Shape, IReadOnlySet<string> Types)> BothMenuShapes = [
+		("entry-graph", MenuEntryGraphTypes),
+		("verbatim-carry", MenuCarriedTypes)
+	];
+
+	/// <summary>A settings button with no click of its own, holding the given menu items.</summary>
+	private static PageBundleInfo MenuButtonBundle(string menuItemsJson, string buttonExtras = "") =>
+		Bundle($$"""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "SettingsButton", "type": "crt.Button", "caption": "Settings",
+				  "clickMode": "menu"{{buttonExtras}},
+				  "menuItems": [ {{menuItemsJson}} ] } ] } ]
+			""");
+
+	private const string ExportMenuItem =
+		"""
+		{ "name": "ExportItem", "type": "crt.MenuItem", "caption": "Export",
+		  "clicked": { "request": "crt.ExportDataGridToExcelRequest", "params": {} } }
+		""";
+
+	private const string SaveMenuItem =
+		"""
+		{ "name": "SaveItem", "type": "crt.MenuItem", "caption": "Save",
+		  "clicked": { "request": "crt.SaveRecordRequest", "params": {} } }
+		""";
+
+	/// <summary>The menu items still carried inside a surviving element's values, by name.</summary>
+	private static string[] CarriedMenuItemNames(MobilePageConversionGuide guide, string elementName) =>
+		[.. (Element(guide, elementName).Values?["menuItems"]?.AsArray() ?? [])
+			.Select(item => item?["name"]?.GetValue<string>())];
+
+	[Test]
+	[TestCaseSource(nameof(BothMenuShapes))]
+	[Description("A control whose own action is dead but which still HOLDS a live component is NOT removed over that dead action. The drop path answers before any veto, and on both shapes it discards the whole subtree unvisited - so without this exemption a submenu whose parent entry lost its request would take its live children off the page under one droppedElements entry naming only the parent, which breaks the promise that droppedElements accounts for every removal. AC2 agrees: it removes a control with no menu item AND no click request, and this one has a menu.")]
+	public void Analyze_ActionComponentWithADeadRequest_ThatStillHoldsALiveChild_IsNotRemoved(
+		(string Shape, IReadOnlySet<string> Types) shape) {
+		// Arrange - a submenu: the outer item's own click is dead, its nested item's click converts.
+		PageBundleInfo bundle = MenuButtonBundle("""
+			{ "name": "DeadParentItem", "type": "crt.MenuItem", "caption": "More",
+			  "clicked": { "request": "crt.PrintablesRequest", "params": {} },
+			  "menuItems": [ { "name": "LiveChildItem", "type": "crt.MenuItem", "caption": "Save",
+			                   "clicked": { "request": "crt.SaveRecordRequest", "params": {} } } ] }
 			""");
 
 		// Act
-		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: HeaderMobileTypes,
-			rules: FabRule(["MainHeader"], ["MainHeader"], "crt.Button"));
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: shape.Types, rules: MenuRules());
 
 		// Assert
-		ViewConfigDiffOperation nfc = Element(guide, "NfcBtn");
-		nfc.Operation.Should().Be("insert",
-			because: "a request supported via the bundled set (not the versioned map) must still convert into the FAB");
-		nfc.ParentName.Should().Be("FloatingActionButton", because: "the supported header action retargets into the FAB");
+		DroppedNames(guide).Should().NotContain("LiveChildItem",
+			because: $"on the {shape.Shape} shape a live child may never leave the page, and it certainly may "
+				+ "not leave it unreported");
+		string diff = JsonSerializer.Serialize(guide.ViewConfigDiff);
+		diff.Should().Contain("LiveChildItem",
+			because: "the child fires a request the Mobile app supports, so it belongs on the converted page "
+				+ "whatever happened to the action of the item that holds it");
+	}
+
+	[Test]
+	[Description("A component held in a SINGLE-OBJECT slot, not an array, vetoes its owner's removal the same way an array member does. This is the shape the review gate caught: the prune and the veto both walked arrays, so a button holding menuConfig: { type: crt.MenuItem } was removed as action-less and the live menu item left the page inside it - with no droppedElements entry at all, because a carried node is only ever reported when the prune is what removed it.")]
+	public void Analyze_ButtonHoldingAComponentInASingleObjectSlot_IsNotRemovedAsActionLess() {
+		// Arrange - no clicked and no menuItems, so both emptiness tests of the shipped rule match.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "SettingsButton", "type": "crt.Button", "caption": "Settings",
+				  "menuConfig": { "name": "NestedItem", "type": "crt.MenuItem", "caption": "Save",
+				                  "clicked": { "request": "crt.SaveRecordRequest", "params": {} } } } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: MenuCarriedTypes, rules: MenuRules());
+
+		// Assert
+		DroppedNames(guide).Should().NotContain("SettingsButton",
+			because: "removing it would take the live menu item with it, and a rule naming menuItems cannot "
+				+ "see a component one object deeper in a slot it does not name");
+		JsonSerializer.Serialize(guide.ViewConfigDiff).Should().Contain("NestedItem",
+			because: "the nested control survives WITH its owner - the loss this veto exists to prevent is "
+				+ "precisely one that nothing in the response would have mentioned");
+	}
+
+	[Test]
+	[Description("The defect, in the shape production actually meets: crt.MenuItem is absent from the published mobile registry, so a settings button's menuItems array is carried VERBATIM into its values and never passes through ProcessEventBindings. Before ENG-96178 the dead export action was therefore neither converted, nor flagged, nor dropped — it simply shipped, and no field of the response mentioned it. Asserting on the carried VALUES and not only on droppedElements is the point: a drop entry beside a surviving verbatim copy is exactly the shape that kept rendering the action on mobile.")]
+	public void Analyze_CarriedMenuItemWithDeadRequest_IsStrippedFromTheValues_AndReported() {
+		// Arrange — the button keeps a supported click of its own so AC2 cannot be what removes it.
+		PageBundleInfo bundle = MenuButtonBundle(ExportMenuItem,
+			""", "clicked": { "request": "crt.SaveRecordRequest", "params": {} }""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: MenuCarriedTypes, rules: MenuRules());
+
+		// Assert
+		Element(guide, "SettingsButton").Operation.Should().Be("insert",
+			because: "the button has its own convertible click, so only its menu is under test here");
+		Element(guide, "SettingsButton").Values!.AsObject().ContainsKey("menuItems").Should().BeFalse(
+			because: "emptying the slot REMOVES the key rather than leaving [] behind — on a merge an empty "
+				+ "array is a delta that would overwrite the template's own menu, so the two shapes are kept "
+				+ "identical here rather than diverging on the host operation");
+		DroppedElement export = Dropped(guide, "ExportItem");
+		export.WebType.Should().Be("crt.MenuItem",
+			because: "the report names the carried node by its own type, not its host's");
+		ReasonParam(export, ReasonCodes.DropUnknownRequest, "request")
+			.Should().Be("crt.ExportDataGridToExcelRequest",
+				because: "the drop reason NAMES the action that was lost — for a carried node this entry is the "
+					+ "only place the caller learns the request existed at all");
+	}
+
+	[Test]
+	[Description("The same page, the same verdict, whichever shape the registry produces. crt.MenuItem resolving or not is an incidental fact about the published registry — invisible on the caller's page — so it must not change one field of the caller's report. Without this pin the entry-graph path and the verbatim path can drift apart silently, and the one that drifts is whichever the test suite does not happen to exercise.")]
+	public void Analyze_DeadMenuItem_ReportsIdentically_InBothTraversalShapes() {
+		// Arrange
+		PageBundleInfo EntryGraph() => MenuButtonBundle(ExportMenuItem);
+		PageBundleInfo Carried() => MenuButtonBundle(ExportMenuItem);
+
+		// Act
+		MobilePageConversionGuide asEntries =
+			Analyze(EntryGraph(), mobileTypes: MenuEntryGraphTypes, rules: MenuRules());
+		MobilePageConversionGuide asCarried =
+			Analyze(Carried(), mobileTypes: MenuCarriedTypes, rules: MenuRules());
+
+		// Assert
+		DroppedNames(asCarried).Should().BeEquivalentTo(DroppedNames(asEntries),
+			because: "the same source page loses the same elements either way");
+		Codes(Dropped(asCarried, "ExportItem")).Should().Equal(Codes(Dropped(asEntries, "ExportItem")),
+			because: "and it loses them for the same stated reason");
+		Codes(Dropped(asCarried, "SettingsButton")).Should().Equal(Codes(Dropped(asEntries, "SettingsButton")),
+			because: "including the button the dead menu item took with it");
+		(asCarried.RequestConversions?.DroppedRequests ?? []).Select(r => r.ElementName)
+			.Should().BeEquivalentTo((asEntries.RequestConversions?.DroppedRequests ?? []).Select(r => r.ElementName),
+				because: "the request summary is part of the report — a droppedRequests record minted on one path "
+					+ "and not the other is exactly the drift this guards");
+		(asCarried.RequestConversions?.DroppedRequests ?? []).Should().NotContain(r => r.ElementName == "ExportItem",
+			because: "NEITHER path mints one, and asserting that positively is what keeps the comparison above "
+				+ "from being two empty sets agreeing: the element drop already names the request, and adding a "
+				+ "binding record on the carried path alone is the drift the pass deliberately refuses");
+	}
+
+	[Test]
+	[Description("A menu item whose request the RULES explicitly clear is reported as known-unsupported, not as unknown. The two codes tell a developer opposite things — one says mobile cannot do this, the other says clio has never heard of it and you may re-add it — so the leaf path must make the same distinction the scope path always made.")]
+	public void Analyze_CarriedMenuItem_KnownUnsupportedRequest_UsesTheStrongerCode() {
+		// Arrange
+		PageBundleInfo bundle = MenuButtonBundle(
+			"""
+			{ "name": "PrintItem", "type": "crt.MenuItem", "caption": "Print",
+			  "clicked": { "request": "crt.PrintablesRequest", "params": {} } }
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: MenuCarriedTypes, rules: MenuRules());
+
+		// Assert
+		Codes(Dropped(guide, "PrintItem")).Should().Equal([ReasonCodes.DropUnsupportedRequest],
+			because: "the rules file clears the mobile target for crt.PrintablesRequest, which is the one "
+				+ "circumstance in which clio may assert the request is unavailable on mobile");
+	}
+
+	[Test]
+	[Description("A menu item whose request converts is left exactly where it was. The removal is driven by the request and nothing else — not by the component type, not by the traversal shape — so the supported control is the half of the contract that proves the pass is not simply stripping menus.")]
+	public void Analyze_CarriedMenuItem_SupportedRequest_IsKeptVerbatim() {
+		// Arrange
+		PageBundleInfo bundle = MenuButtonBundle(SaveMenuItem);
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: MenuCarriedTypes, rules: MenuRules());
+
+		// Assert
+		DroppedNames(guide).Should().NotContain("SaveItem",
+			because: "crt.SaveRecordRequest is in the versioned map with a mobile target, so the action converts");
+		CarriedMenuItemNames(guide, "SettingsButton").Should().Equal(["SaveItem"],
+			because: "a live menu item stays in the slot that carries it");
+		DroppedNames(guide).Should().NotContain("SettingsButton",
+			because: "the button still has a menu item, so it is not left with nothing to do");
+	}
+
+	[Test]
+	[Description("Mixed menu: only the dead item goes and the button stays. This is what stops the pass from being read as 'a button with any unsupported menu item is dead' — the survivor is what keeps the button alive, and a pass that removed the whole slot would pass a test that only checked the dead item was gone.")]
+	public void Analyze_CarriedMenu_WithOneLiveItem_KeepsTheItemAndTheButton() {
+		// Arrange
+		PageBundleInfo bundle = MenuButtonBundle(ExportMenuItem + ", " + SaveMenuItem);
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: MenuCarriedTypes, rules: MenuRules());
+
+		// Assert
+		DroppedNames(guide).Should().Contain("ExportItem", because: "the dead action still goes");
+		DroppedNames(guide).Should().NotContain("SettingsButton",
+			because: "one surviving menu item is enough — the button still opens a menu that does something");
+		CarriedMenuItemNames(guide, "SettingsButton").Should().Equal(["SaveItem"],
+			because: "the slot keeps its survivor in source order and loses only the dead entry");
+	}
+
+	[Test]
+	[Description("AC2 in the entry-graph shape: the menu items became their own element-map entries, the walk dropped every one of them, and the button that held them is then removed too — under drop-unsupported-request with NO params, which is the ACCEPTED COST of reusing one code rather than minting a second.")]
+	public void Analyze_MenuButton_WithEveryMenuItemDropped_IsRemovedAsHavingNoAction() {
+		// Arrange
+		PageBundleInfo bundle = MenuButtonBundle(ExportMenuItem);
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: MenuEntryGraphTypes, rules: MenuRules());
+
+		// Assert
+		guide.ViewConfigDiff.Should().NotContain(operation => operation.Name == "SettingsButton",
+			because: "a button that opens an empty menu is chrome the user can press to no effect");
+		DroppedElement button = Dropped(guide, "SettingsButton");
+		Codes(button).Should().Equal([ReasonCodes.DropUnsupportedRequest],
+			because: "the ticket reuses ONE code rather than minting a second, so a caller reads one cause "
+				+ "instead of rejoining two. The cost is visible right here: this button never had a request, "
+				+ "and it is still reported under a code that names one. Pinned so that stays a decision");
+		button.Reason![0].Params.Should().BeNull(
+			because: "the code declares no params — webName and webType already name the element, and each lost "
+				+ "menu item carries its own entry saying why it went");
+	}
+
+	[Test]
+	[Description("A button that keeps a click request of its own survives losing its entire menu. AC2 removes a button left with NOTHING to do, not a button that lost a menu.")]
+	public void Analyze_MenuButton_WithItsOwnClickRequest_SurvivesAnEmptiedMenu() {
+		// Arrange
+		PageBundleInfo bundle = MenuButtonBundle(ExportMenuItem,
+			""", "clicked": { "request": "crt.SaveRecordRequest", "params": {} }""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: MenuEntryGraphTypes, rules: MenuRules());
+
+		// Assert
+		DroppedNames(guide).Should().Contain("ExportItem", because: "the dead menu item still goes");
+		ViewConfigDiffOperation button = Element(guide, "SettingsButton");
+		button.Operation.Should().Be("insert", because: "the button still has an action of its own to fire");
+		button.Values!["clicked"]!["request"]!.GetValue<string>().Should().Be("crt.SaveRecordRequest",
+			because: "its own converted action is untouched by what happened to its menu");
+	}
+
+	[Test]
+	[Description("A button that never offered a menu and never bound a click is REMOVED. ENG-96178's second acceptance criterion is literal — no MenuItem and no click request — so the rule is 'this control does nothing', not 'this control LOST its menu'. An authored-but-empty menuItems array does not rescue it: an empty collection is still no menu item. This is the deliberate WIDENING beyond the reported defect, and it is what lets the rule live in the rules file as two emptiness tests rather than in code with a walk-time side table.")]
+	public void Analyze_ButtonThatNeverHadAMenuOrAClick_IsRemoved() {
+		// Arrange — an authored-but-EMPTY menuItems array is still no menu item.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "BareButton", "type": "crt.Button", "caption": "Bare" },
+				{ "name": "EmptyMenuButton", "type": "crt.Button", "caption": "Empty", "menuItems": [] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: MenuEntryGraphTypes, rules: MenuRules());
+
+		// Assert
+		DroppedNames(guide).Should().Contain("BareButton",
+			because: "it fires nothing and offers nothing, which is the acceptance criterion word for word");
+		DroppedNames(guide).Should().Contain("EmptyMenuButton",
+			because: "an authored empty collection is still an empty one — the rule asks what the control can DO, "
+				+ "not how it came to be able to do nothing");
+		Codes(Dropped(guide, "BareButton")).Should().Equal([ReasonCodes.DropUnsupportedRequest],
+			because: "the ACCEPTED COST of reusing one code is visible exactly here: nothing about this button was "
+				+ "ever unsupported, and it is still reported under that code. Pinned so the cost stays a decision "
+				+ "rather than becoming a surprise");
+	}
+
+	[Test]
+	[Description("A carried menu item with NO name is left in place even when its request is dead. ProjectDroppedElements omits a drop carrying no webName, so removing one would be a loss the response never mentions — and an unreported removal is worse than a reported dead control. Every component the designer authors has a name, so this costs nothing on a real page.")]
+	public void Analyze_CarriedMenuItem_WithoutAName_IsKeptRatherThanLostSilently() {
+		// Arrange
+		PageBundleInfo bundle = MenuButtonBundle(
+			"""
+			{ "type": "crt.MenuItem", "caption": "Anonymous",
+			  "clicked": { "request": "crt.ExportDataGridToExcelRequest", "params": {} } }
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: MenuCarriedTypes, rules: MenuRules());
+
+		// Assert
+		Element(guide, "SettingsButton").Values!["menuItems"]!.AsArray().Should().HaveCount(1,
+			because: "an unreportable removal is not performed — the nameless node stays where the caller can "
+				+ "at least see it");
+		(guide.DroppedElements ?? []).Should().NotContain(d => d.WebType == "crt.MenuItem",
+			because: "nothing was removed, so nothing may be reported as removed");
+	}
+
+	[Test]
+	[Description("A NESTED carried menu cascades: the submenu entry whose own entries all died is dead too, and so is the button holding it. The prune is POST-ORDER for this — judge a node after its subtree, not before — and without it the page ships SettingsButton -> MoreMenu -> (nothing), which is the control-that-does-nothing the ticket exists to remove, reported nowhere. It also has to match what the entry-graph shape does with the same page, or the response changes under a caller for a registry reason their page cannot show.")]
+	public void Analyze_CarriedNestedMenu_CascadesToTheSubmenuAndTheButton() {
+		// Arrange — two levels of carried menu, one dead leaf at the bottom.
+		PageBundleInfo Page() => MenuButtonBundle("""
+			{ "name": "MoreMenu", "type": "crt.MenuItem", "caption": "More", "clickMode": "menu",
+			  "menuItems": [ { "name": "ExportItem", "type": "crt.MenuItem", "caption": "Export",
+			    "clicked": { "request": "crt.ExportDataGridToExcelRequest", "params": {} } } ] }
+			""");
+
+		// Act
+		MobilePageConversionGuide carried = Analyze(Page(), mobileTypes: MenuCarriedTypes, rules: MenuRules());
+		MobilePageConversionGuide entries = Analyze(Page(), mobileTypes: MenuEntryGraphTypes, rules: MenuRules());
+
+		// Assert
+		DroppedNames(carried).Should().Contain(["ExportItem", "MoreMenu", "SettingsButton"],
+			because: "the dead leaf takes the submenu that held it, and the submenu takes the button — one "
+				+ "pass, bottom-up, because each node is judged after its own subtree has been pruned");
+		Codes(Dropped(carried, "MoreMenu")).Should().Equal([ReasonCodes.DropUnsupportedRequest],
+			because: "the submenu bound no action itself; it is gone because nothing is left inside it");
+		carried.ViewConfigDiff.Should().NotContain(operation => operation.Name == "SettingsButton",
+			because: "an empty menu behind an empty menu is still a control the user can press to no effect");
+		DroppedNames(carried).Should().BeEquivalentTo(DroppedNames(entries),
+			because: "whether crt.MenuItem resolves decides which traversal runs and nothing else — the two "
+				+ "must agree on a nested menu exactly as they do on a flat one");
+	}
+
+	[Test]
+	[Description("A dead menu item is found and removed however deep the carried subtree goes. The bound is the JSON readers' own parse ceiling rather than a private budget, because a private one is silent when it fires: the node below the cut-off ships and no droppedElements entry mentions it. ExcludedComponentsPass learned this at a budget of 32 (ENG-95827) and this walk searches the same space.")]
+	public void Analyze_CarriedMenuItem_IsFoundBelowTheOldPrivateBudget() {
+		// Arrange — wrap the dead item in ~20 object/array levels, past the 24-node budget this pass first
+		// shipped with and past the component depth that budget allowed.
+		string nested = """
+			{ "name": "ExportItem", "type": "crt.MenuItem", "caption": "Export",
+			  "clicked": { "request": "crt.ExportDataGridToExcelRequest", "params": {} } }
+			""";
+		for (int level = 0; level < 10; level++) {
+			nested = $$"""{ "name": "Wrap{{level}}", "type": "crt.MenuItem", "caption": "W", "menuItems": [ {{nested}} ] }""";
+		}
+		PageBundleInfo bundle = MenuButtonBundle(nested);
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: MenuCarriedTypes, rules: MenuRules());
+
+		// Assert
+		DroppedNames(guide).Should().Contain("ExportItem",
+			because: "a walk that gave up before reaching it would drop nothing and report nothing — the "
+				+ "failure mode this depth bound exists to make unreachable");
+		Codes(Dropped(guide, "ExportItem")).Should().Equal([ReasonCodes.DropUnknownRequest],
+			because: "depth changes where the node is, not why it cannot convert");
+	}
+
+	[Test]
+	[Description("An array nested DIRECTLY inside another array is pruned too. The object branch of the walk is what finds an array to prune, so an array reached from an array — with no object in between — was invisible to it: the dead action inside shipped, unreported. ExcludedComponentsPass has no such hole because it prunes inside its array branch.")]
+	public void Analyze_CarriedMenuItem_InAnArrayInsideAnArray_IsStillRemoved() {
+		// Arrange — a grouped menu: menuItems holds GROUPS, each an array of items.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "SettingsButton", "type": "crt.Button", "caption": "Settings", "clickMode": "menu",
+				  "clicked": { "request": "crt.SaveRecordRequest", "params": {} },
+				  "menuItems": [ [ { "name": "ExportItem", "type": "crt.MenuItem", "caption": "Export",
+				    "clicked": { "request": "crt.ExportDataGridToExcelRequest", "params": {} } } ] ] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: MenuCarriedTypes, rules: MenuRules());
+
+		// Assert
+		DroppedNames(guide).Should().Contain("ExportItem",
+			because: "an array is a place a component can hide whether or not an object wraps it");
+	}
+
+	[Test]
+	[Description("A control still holding a live menu one wrapper object deeper is KEPT. The survival test searches to the same depth the prune does, deliberately: a shallower one would let the prune remove what the survival test cannot see, so the owner would be dropped while holding a live action — and that action, being a carried node nobody removed, would vanish with it carrying no entry of its own.")]
+	public void Analyze_CarriedMenu_NestedUnderAWrapperObject_KeepsItsOwner() {
+		// Arrange — the live item sits under menuConfig.items, not directly under a values array.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "SettingsButton", "type": "crt.Button", "caption": "Settings", "clickMode": "menu",
+				  "menuItems": [ { "name": "ExportItem", "type": "crt.MenuItem", "caption": "Export",
+				    "clicked": { "request": "crt.ExportDataGridToExcelRequest", "params": {} } } ],
+				  "menuConfig": { "items": [ { "name": "SaveItem", "type": "crt.MenuItem", "caption": "Save",
+				    "clicked": { "request": "crt.SaveRecordRequest", "params": {} } } ] } } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: MenuCarriedTypes, rules: MenuRules());
+
+		// Assert
+		DroppedNames(guide).Should().Contain("ExportItem", because: "the dead item still goes");
+		DroppedNames(guide).Should().NotContain("SettingsButton",
+			because: "a live menu item one object deeper is still a live menu item");
+		DroppedNames(guide).Should().NotContain("SaveItem",
+			because: "and it must survive INTACT — losing it with its owner would be a silent loss, since a "
+				+ "carried node is only ever reported when the prune is what removed it");
+	}
+
+	[Test]
+	[Description("A button whose menu went but which still owns SOME OTHER event binding is kept. This is the whole reason the candidate test refuses any binding rather than only a clicked: a converted or flagged binding is recorded against the element name, and removing that element would leave requestConversions describing a control the element map says not to create. It is also why the pass reconciles nothing — the refusal is what makes that safe.")]
+	public void Analyze_MenuButton_StillOwningAnotherBinding_IsKept_SoNoRecordIsOrphaned() {
+		// Arrange — no clicked, one dead menu item, and a SUPPORTED non-clicked binding.
+		PageBundleInfo bundle = MenuButtonBundle(ExportMenuItem,
+			""", "updated": { "request": "crt.SaveRecordRequest", "params": {} }""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: MenuCarriedTypes, rules: MenuRules());
+
+		// Assert
+		DroppedNames(guide).Should().Contain("ExportItem", because: "the dead menu item still goes");
+		DroppedNames(guide).Should().NotContain("SettingsButton",
+			because: "it still fires something, so it is not a control with nothing to do");
+		guide.RequestConversions!.ConvertedRequests.Should().ContainSingle(r => r.ElementName == "SettingsButton",
+			because: "the recorded binding must still describe an element the map creates — the pass purges no "
+				+ "converted record, so it may never remove an element that owns one");
+	}
+
+	[Test]
+	[Description("UnsupportedCarriedRequest scans EVERY binding on a carried node, not just clicked — matching UnsupportedRequestOf, which is what makes the two traversal shapes agree. Narrowing it to clicked is a plausible simplification that no other test would catch.")]
+	public void Analyze_CarriedMenuItem_DeadOnANonClickedBinding_IsStillRemoved() {
+		// Arrange — clicked converts; a SECOND binding does not.
+		PageBundleInfo bundle = MenuButtonBundle("""
+			{ "name": "ExportItem", "type": "crt.MenuItem", "caption": "Export",
+			  "clicked": { "request": "crt.SaveRecordRequest", "params": {} },
+			  "updated": { "request": "usr.CustomExportRequest", "params": {} } }
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: MenuCarriedTypes, rules: MenuRules());
+
+		// Assert
+		ReasonParam(Dropped(guide, "ExportItem"), ReasonCodes.DropUnknownRequest, "request")
+			.Should().Be("usr.CustomExportRequest",
+				because: "a dead secondary binding kills the menu item just as a dead clicked would, and the "
+					+ "reason names the binding that actually failed rather than the one that converted");
+	}
+
+	[Test]
+	[Description("A container left holding only dead menu buttons is itself removed, by the empty-container pass that runs AFTER this one. The order is the point: run the dead-action pass later and the emptied container ships as a shell with nothing in it.")]
+	public void Analyze_ContainerHoldingOnlyDeadMenuButtons_CascadesAway() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "ActionsRow", "type": "crt.FlexContainer", "items": [
+				{ "name": "SettingsButton", "type": "crt.Button", "caption": "Settings", "clickMode": "menu",
+				  "menuItems": [ { "name": "ExportItem", "type": "crt.MenuItem", "caption": "Export",
+				    "clicked": { "request": "crt.ExportDataGridToExcelRequest", "params": {} } } ] } ] } ]
+			""");
+		var rules = new WebToMobilePageConversionRules {
+			Requests = MenuRules().Requests,
+			EmptyContainerRemoval = new EmptyContainerRemovalRule { RemovableTypes = ["crt.FlexContainer"] }
+		};
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: MenuEntryGraphTypes, rules: rules);
+
+		// Assert
+		DroppedNames(guide).Should().Contain(["ExportItem", "SettingsButton"],
+			because: "the dead action takes its button");
+		Codes(Dropped(guide, "ActionsRow")).Should().Equal([ReasonCodes.DropEmptyContainer],
+			because: "and the button leaves the row with no surviving child, which the later pass reads as "
+				+ "empty — an order this pass depends on and cannot enforce itself");
+	}
+
+	/// <summary>
+	/// The element map the pass sees, built by hand. A <c>merge</c> host whose DELTA carries a menu is not a
+	/// shape the walk produces from a page bundle, so it is unreachable through <c>Analyze</c> — the same
+	/// reason <c>RemoveExcludedComponents</c>'s merge test builds its map this way.
+	/// </summary>
+	private static ElementMapEntry MergeTwinCarrying(string valuesJson) =>
+		new() {
+			WebName = "SettingsButton", WebType = "crt.Button",
+			Operation = ElementMapOperations.Merge, Name = "SettingsButton", MobileType = "crt.Button",
+			Values = JsonNode.Parse(valuesJson)!.AsObject()
+		};
+
+	private static IReadOnlyDictionary<string, RequestMappingRule> MenuRequestMap() =>
+		(MenuRules().Requests ?? []).ToDictionary(rule => rule.Web!, rule => rule, StringComparer.OrdinalIgnoreCase);
+
+	/// <summary>
+	/// An INSERT the removal pass will consider: web-sourced, named, carrying object values. Built by hand
+	/// because these tests are about the RULE, and a page bundle would decide half the outcome before the rule
+	/// is reached.
+	/// </summary>
+	private static ElementMapEntry InsertCarrying(
+		string name, string type, string valuesJson, string parent = null, string slot = null) =>
+		new() {
+			WebName = name, WebType = type, Operation = ElementMapOperations.Insert, Name = name, MobileType = type,
+			ParentName = parent, PropertyName = slot,
+			Values = JsonNode.Parse(valuesJson)!.AsObject()
+		};
+
+	/// <summary>The shipped actionComponents table, resolved the way a conversion resolves it.</summary>
+	private static IReadOnlyDictionary<string, IReadOnlyList<string>> BundledActionComponents() =>
+		WebToMobileAnalysisService.ActionComponentPropertiesOf(rules: null);
+
+	private static ComponentRemovalRule ButtonRule(ComponentPropertyFilter filters) =>
+		new() { Type = "crt.Button", Filters = filters };
+
+	[Test]
+	[Description("An unrecognised logicalOperation reads as `and`, never `or`. This is the most dangerous line in the grammar: the shipped crt.Button rule is `clicked IsEmpty AND menuItems IsEmpty`, so an `or` reading would remove every button whose clicked is empty - which is EVERY healthy menu button on the page, since a dropdown has no clicked of its own - and the evaluator is the last line rather than the first: ValidateComponentRemovals refuses such a document on load, so this default only ever answers for an ABSENT operation. For a value clio does not understand, the narrower reading is the only safe one.")]
+	public void MatchesRemovalGroup_UnrecognisedLogicalOperation_ReadsAsAnd() {
+		// Arrange - fires a live request (clicked NOT empty) but holds no menu (menuItems empty).
+		List<ElementMapEntry> map = [InsertCarrying("SettingsButton", "crt.Button",
+			"""{ "clicked": { "request": "crt.SaveRecordRequest" } }""")];
+		ComponentRemovalRule rule = ButtonRule(new ComponentPropertyGroupFilter {
+			LogicalOperation = "xor",
+			Items = [
+				new ComponentPropertyIsEmptyFilter { LeftExpression = "clicked" },
+				new ComponentPropertyIsEmptyFilter { LeftExpression = "menuItems" }
+			]
+		});
+
+		// Act
+		WebToMobileAnalysisService.ApplyComponentRemovals(
+			map, MenuRequestMap(), MobileRequestTypes, BundledActionComponents(), [rule]);
+
+		// Assert
+		map[0].Operation.Should().Be(ElementMapOperations.Insert,
+			because: "under `and` the live clicked alone keeps the button; only an `or` reading would remove it, "
+				+ "and an operation clio cannot parse must never WIDEN what a rule removes");
+	}
+
+	[Test]
+	[Description("A Group that declares no items matches NOTHING, deliberately rather than everything. The opposite polarity would let one dropped key in the rules file take every component of that rule's type off the page, with the document still parsing clean and no error anywhere. ElementFilterRule's own Declares gate chose the same polarity for the same reason, and the catalog now refuses such a rule on load as well - this pins the evaluator's own answer, which is what a rules document from an older clio would still meet.")]
+	public void MatchesRemovalGroup_WithNoItems_MatchesNothing() {
+		// Arrange - a component that would match almost any real condition.
+		List<ElementMapEntry> map = [InsertCarrying("BareButton", "crt.Button", "{}")];
+		ComponentRemovalRule rule = ButtonRule(new ComponentPropertyGroupFilter { Items = [] });
+
+		// Act
+		WebToMobileAnalysisService.ApplyComponentRemovals(
+			map, MenuRequestMap(), MobileRequestTypes, BundledActionComponents(), [rule]);
+
+		// Assert
+		map[0].Operation.Should().Be(ElementMapOperations.Insert,
+			because: "a rule that states no condition states nothing, and the safe reading of an authoring "
+				+ "mistake is to remove nothing rather than everything");
+	}
+
+	[Test]
+	[Description("A crt.MenuItem owning a live SUBMENU is kept - and nothing in the rules file says so. The shipped rule for that type asks only `clicked IsEmpty`, and a submenu owner has no clicked of its own, so it matches unconditionally; what saves it is a code-side veto on removing any component a surviving operation calls its parent. Pinned because that asymmetry with the crt.Button rule is a deliberate data decision: without the veto the owner is dropped while its children stay as inserts naming an element the diff never creates, and the platform differ then rejects the WHOLE pasted viewConfigDiff.")]
+	public void ApplyComponentRemovals_MenuItemOwningALiveSubmenu_IsKept() {
+		// Arrange - the ENTRY-GRAPH shape: the submenu is a SEPARATE operation, never a value on its owner,
+		// so no amount of looking inside the owner's values can see it.
+		List<ElementMapEntry> map = [
+			InsertCarrying("More", "crt.MenuItem", "{}"),
+			InsertCarrying("Export", "crt.MenuItem", """{ "clicked": { "request": "crt.SaveRecordRequest" } }""",
+				parent: "More", slot: "menuItems")
+		];
+
+		// Act - the SHIPPED rules, so this pins the published data rather than a fixture.
+		WebToMobileAnalysisService.ApplyComponentRemovals(
+			map, MenuRequestMap(), MobileRequestTypes, BundledActionComponents(),
+			WebToMobileAnalysisService.ComponentRemovalsOf(rules: null));
+
+		// Assert
+		map[0].Operation.Should().Be(ElementMapOperations.Insert,
+			because: "removing a component that something is still parented into orphans the child, and an "
+				+ "insert into an element the diff never creates fails the whole paste");
+		map[1].Operation.Should().Be(ElementMapOperations.Insert,
+			because: "and the live submenu entry itself is untouched - it fires a request the mobile app supports");
+	}
+
+	[Test]
+	[Description("A request of nothing but WHITESPACE is not a binding, and both traversal shapes agree on that. The two IsEventBinding overloads are the only reason the shapes can be said to report identically, and they once disagreed here: the Newtonsoft twin rejected \"  \" through IsNullOrWhiteSpace while the STJ one accepted it on Length alone, so the carried shape dropped the item as an unknown request and the entry graph kept it. Nothing else in the suite compares the two on a value that is present but blank.")]
+	public void Analyze_MenuItemWithAWhitespaceRequest_IsTreatedIdenticallyInBothShapes() {
+		// Arrange — present, non-empty, and still not a request.
+		const string blank = """
+			{ "name": "BlankItem", "type": "crt.MenuItem", "caption": "Blank",
+			  "clicked": { "request": "  ", "params": {} } }
+			""";
+
+		// Act
+		MobilePageConversionGuide asEntries =
+			Analyze(MenuButtonBundle(blank), mobileTypes: MenuEntryGraphTypes, rules: MenuRules());
+		MobilePageConversionGuide asCarried =
+			Analyze(MenuButtonBundle(blank), mobileTypes: MenuCarriedTypes, rules: MenuRules());
+
+		// Assert
+		DroppedNames(asCarried).Should().BeEquivalentTo(DroppedNames(asEntries),
+			because: "a blank request is not a dead request on one path and a live one on the other — which is "
+				+ "exactly what a Length-only check made it");
+		DroppedNames(asEntries).Should().NotContain("BlankItem",
+			because: "whitespace is not a request the Mobile app fails to support; it is no request at all, so "
+				+ "nothing may be reported as lost over it");
+	}
+
+	[Test]
+	[Description("A dead action inside a MERGE delta is stripped, and the slot it emptied loses its KEY rather than being left as []. A merge's values are what the converter is about to ADD to the template's own element, so a dead action in them is the converter shipping one; but an empty ARRAY in a delta is not nothing — it would overwrite the template's own menu. ExcludedComponentsPass reached the same two conclusions, and this pass has to match them because the same rules file drives both.")]
+	public void ApplyComponentRemovals_ShouldStripAMergeDelta_AndDropTheSlotItEmpties() {
+		// Arrange — a template twin whose delta adds one dead menu item and one live one.
+		List<ElementMapEntry> mixed = [MergeTwinCarrying("""
+			{ "menuItems": [
+				{ "name": "ExportItem", "type": "crt.MenuItem",
+				  "clicked": { "request": "crt.ExportDataGridToExcelRequest" } },
+				{ "name": "SaveItem", "type": "crt.MenuItem",
+				  "clicked": { "request": "crt.SaveRecordRequest" } } ] }
+			""")];
+		List<ElementMapEntry> allDead = [MergeTwinCarrying("""
+			{ "menuItems": [
+				{ "name": "ExportItem", "type": "crt.MenuItem",
+				  "clicked": { "request": "crt.ExportDataGridToExcelRequest" } } ] }
+			""")];
+
+		// Act — null rules on purpose: both tables then resolve from the BUNDLED section, so this also pins
+		// that a rules document carrying neither section still removes dead actions rather than shipping them.
+		IReadOnlyDictionary<string, IReadOnlyList<string>> actionComponents =
+			WebToMobileAnalysisService.ActionComponentPropertiesOf(rules: null);
+		IReadOnlyList<ComponentRemovalRule> removals =
+			WebToMobileAnalysisService.ComponentRemovalsOf(rules: null);
+		WebToMobileAnalysisService.ApplyComponentRemovals(
+			mixed, MenuRequestMap(), MobileRequestTypes, actionComponents, removals);
+		WebToMobileAnalysisService.ApplyComponentRemovals(
+			allDead, MenuRequestMap(), MobileRequestTypes, actionComponents, removals);
+
+		// Assert
+		mixed.Should().Contain(e => e.WebName == "ExportItem" && e.Operation == ElementMapOperations.Drop,
+			because: "the delta must not add an action the mobile app cannot fire, and the removal is "
+				+ "reported rather than silent");
+		JsonObject mixedValues = mixed[0].Values!.AsObject();
+		mixedValues["menuItems"]!.AsArray().Select(item => item!["name"]!.GetValue<string>())
+			.Should().Equal(["SaveItem"],
+				because: "a partially pruned slot keeps its survivors — only the dead entry goes");
+		allDead[0].Values!.AsObject().ContainsKey("menuItems").Should().BeFalse(
+			because: "an emptied slot in a DELTA must lose its key: shipping [] would merge an empty array "
+				+ "over whatever menu the mobile template's own element already has");
+		allDead[0].Operation.Should().Be(ElementMapOperations.Merge,
+			because: "the twin itself stays — a drop cannot un-create an element the mobile template owns, "
+				+ "which is exactly why a componentRemovals candidate is insert-only");
+	}
+
+	[Test]
+	[Description("An excludedComponents rule can be what takes the last menu item off a button, and the button then goes as having nothing to do. This pins the pass ORDER: run the dead-action pass BEFORE the exclusion and the button still looks occupied, so it ships as a menu with nothing in it. Nothing else in the suite would notice the two being swapped.")]
+	public void Analyze_MenuButton_WhoseOnlyItemAnExclusionRemoved_IsAlsoDropped() {
+		// Arrange — the menu item's request CONVERTS, so only the exclusion can be what removes it.
+		PageBundleInfo bundle = MenuButtonBundle(SaveMenuItem);
+		var rules = new WebToMobilePageConversionRules {
+			Requests = MenuRules().Requests,
+			ExcludedComponents = [
+				new ExcludedComponentGroup {
+					Filters = [new ExcludedComponentFilterRule {
+						Type = "crt.MenuItem", ParentType = "crt.Button", PropertiesContainerName = "menuItems"
+					}]
+				}
+			]
+		};
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: MenuEntryGraphTypes, rules: rules);
+
+		// Assert
+		Codes(Dropped(guide, "SaveItem")).Should().Equal([ReasonCodes.DropExcludedByRule],
+			because: "the rule is what removed it — its request converts perfectly well");
+		Codes(Dropped(guide, "SettingsButton")).Should().Equal([ReasonCodes.DropUnsupportedRequest],
+			because: "the button is left with no menu item whatever emptied it, so the dead-action pass has "
+				+ "to run AFTER the exclusion to see that");
+	}
+
+	[Test]
+	[Description("An attribute bound only inside a removed menu item SURVIVES, in both traversal shapes, and the reason is worth pinning because it is not obvious: WalkConsumers descends `items` only, so a $Attr in a menuItems child was never credited to the menu item at all — it belongs to the host, which is still on the page. The dead-action pass therefore threads no name into the viewModelConfig keep-set and it costs nothing today. Written after a first version of this test asserted the opposite and failed: the pass's own call-site comment claimed these attributes were pruned, and they are not.")]
+	public void Analyze_CarriedMenuItems_KeepAttributesCreditedToTheHost() {
+		// Arrange — the dead item binds $CanExport; the live one binds $CanSave.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "SettingsButton", "type": "crt.Button", "caption": "Settings", "clickMode": "menu",
+				  "menuItems": [
+					{ "name": "ExportItem", "type": "crt.MenuItem", "visible": "$CanExport",
+					  "clicked": { "request": "crt.ExportDataGridToExcelRequest", "params": {} } },
+					{ "name": "SaveItem", "type": "crt.MenuItem", "visible": "$CanSave",
+					  "clicked": { "request": "crt.SaveRecordRequest", "params": {} } } ] } ] } ]
+			""",
+			viewModelConfigJson: """
+			{ "attributes": { "CanExport": { "value": true }, "CanSave": { "value": true } } }
+			""");
+
+		// Act
+		MobilePageConversionGuide carried = Analyze(bundle, mobileTypes: MenuCarriedTypes, rules: MenuRules());
+		MobilePageConversionGuide entries = Analyze(bundle, mobileTypes: MenuEntryGraphTypes, rules: MenuRules());
+
+		// Assert
+		DroppedNames(carried).Should().Contain("ExportItem",
+			because: "the dead menu item really is removed, or the attribute question below is moot");
+		string carriedViewModel = carried.ViewModelConfig?.ToJsonString() ?? string.Empty;
+		carriedViewModel.Should().Contain("CanExport",
+			because: "the consumer walk descends `items` only, so $CanExport was credited to SettingsButton "
+				+ "rather than to the menu item that spells it — the host survives, so the attribute does. "
+				+ "Pruning it would leave a surviving element binding an attribute the page no longer declares");
+		carriedViewModel.Should().Contain("CanSave",
+			because: "the surviving menu item still binds it, on any reading");
+		(entries.ViewModelConfig?.ToJsonString() ?? string.Empty).Should().Be(carriedViewModel,
+			because: "the two traversal shapes must not disagree about the view model either — this is the "
+				+ "same cross-shape parity the droppedElements tests hold, on the other data section");
+	}
+
+	[Test]
+	[Description("A header crt.Button whose clicked request the versioned rules map does not cover but the SUPPLIED mobile request registry does still converts into the FAB. This is the catalog positive branch of IsRequestSupported: if it regressed, every header action whose support comes from the registry alone — the two below are the only such requests the shipped rules file leaves uncovered — would silently drop off the converted page instead of becoming FAB menu items.")]
+	public void Analyze_ShouldConvertHeaderButtonIntoFab_WhenOnlyTheMobileRequestRegistryListsItsRequest() {
+		// Arrange — both requests are in the registry set but NOT in the versioned map (FabRule carries no requests).
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "NfcBtn", "type": "crt.Button", "caption": "#ResourceString(NfcBtn_caption)#",
+				  "clicked": { "request": "crt.SetAttributeFromNfcRequest", "params": {} } },
+				{ "name": "QuickFilterBtn", "type": "crt.Button", "caption": "#ResourceString(QuickFilterBtn_caption)#",
+				  "clicked": { "request": "crt.UpdateQuickFilterGroupRequest", "params": {} } } ] } ]
+			""");
+		var registry = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"crt.SetAttributeFromNfcRequest", "crt.UpdateQuickFilterGroupRequest"
+		};
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: HeaderMobileTypes,
+			rules: FabRule(["MainHeader"], ["MainHeader"], "crt.Button"), mobileRequestTypes: registry);
+
+		// Assert
+		foreach (string buttonName in new[] { "NfcBtn", "QuickFilterBtn" }) {
+			ViewConfigDiffOperation action = Element(guide, buttonName);
+			action.Operation.Should().Be("insert",
+				because: $"{buttonName}'s request is supported through the registry alone, so it must still convert");
+			action.ParentName.Should().Be("FloatingActionButton",
+				because: "a supported header action retargets into the FAB");
+		}
+		DroppedNames(guide).Should().NotContain("NfcBtn").And.NotContain("QuickFilterBtn",
+			because: "neither action is lost — a drop here is exactly the silent regression this test exists to catch");
+	}
+
+	[Test]
+	[Description("A header button whose clicked request is in NEITHER the versioned rules map NOR the supplied registry is dropped, for an unknown crt.* and for a custom usr.* alike. Support is a closed question answered by those two sources only; if this regressed, an action the mobile runtime cannot dispatch would ship as a live FAB menu item that does nothing when tapped.")]
+	public void Analyze_ShouldDropHeaderButton_WhenNeitherTheRulesMapNorTheRegistryListsItsRequest() {
+		// Arrange — the registry lists an unrelated request, so the negative answer comes from absence, not emptiness.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "MysteryBtn", "type": "crt.Button", "caption": "#ResourceString(MysteryBtn_caption)#",
+				  "clicked": { "request": "crt.NotOnMobileRequest", "params": {} } },
+				{ "name": "CustomBtn", "type": "crt.Button", "caption": "#ResourceString(CustomBtn_caption)#",
+				  "clicked": { "request": "usr.MyOwnRequest", "params": {} } } ] } ]
+			""");
+		var registry = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "crt.SaveRecordRequest" };
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: HeaderMobileTypes,
+			rules: FabRule(["MainHeader"], ["MainHeader"], "crt.Button"), mobileRequestTypes: registry);
+
+		// Assert
+		DroppedNames(guide).Should().Contain(["MysteryBtn", "CustomBtn"],
+			because: "a request absent from both sources is unsupported whichever prefix it carries");
+		ReasonParam(Dropped(guide, "MysteryBtn"), ReasonCodes.DropUnknownRequest, "request")
+			.Should().Be("crt.NotOnMobileRequest",
+				because: "clio can only say it does not know the request — the known-unsupported code would be a claim it cannot make");
+		ReasonParam(Dropped(guide, "CustomBtn"), ReasonCodes.DropUnknownRequest, "request")
+			.Should().Be("usr.MyOwnRequest",
+				because: "the reason names the offending request so the caller knows which action was lost");
+		guide.RequestConversions!.DroppedRequests.Should().Contain(r => r.ElementName == "MysteryBtn")
+			.And.Contain(r => r.ElementName == "CustomBtn",
+				because: "both lost actions must surface in requestConversions rather than disappearing silently");
+	}
+
+	[Test]
+	[Description("A rules entry that CLEARS its mobile target vetoes the request even when the registry lists it: the versioned file is the override, so a CDN rules update can disable a request the runtime still publishes without a clio release. If the precedence flipped, that kill switch would stop working.")]
+	public void Analyze_ShouldDropHeaderButton_WhenTheRulesMapClearsATargetTheRegistryLists() {
+		// Arrange — crt.SaveRecordRequest is in the registry set AND explicitly cleared by the rules map.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "SaveBtn", "type": "crt.Button", "caption": "#ResourceString(SaveBtn_caption)#",
+				  "clicked": { "request": "crt.SaveRecordRequest", "params": {} } } ] } ]
+			""");
+		WebToMobilePageConversionRules rules = FabRuleWithRequests(["MainHeader"], ["MainHeader"],
+			[new RequestMappingRule { Web = "crt.SaveRecordRequest", Mobile = null, Category = "Unsupported", Note = "Withdrawn on mobile." }],
+			"crt.Button");
+		var registry = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "crt.SaveRecordRequest" };
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: HeaderMobileTypes, rules: rules,
+			mobileRequestTypes: registry);
+
+		// Assert
+		DroppedNames(guide).Should().Contain("SaveBtn",
+			because: "the rules entry is consulted first, so clearing the target wins over the registry listing it");
+		ReasonParam(Dropped(guide, "SaveBtn"), ReasonCodes.DropUnsupportedRequest, "request")
+			.Should().Be("crt.SaveRecordRequest",
+				because: "an explicitly cleared target is KNOWN-unsupported, which is a different thing to tell the caller than an unknown request");
 	}
 
 	[Test]
@@ -4528,7 +5406,8 @@ public sealed class WebToMobileConversionServiceTests {
 			mobileTemplateTypesByName: mobileTemplateProbed
 				? WebToMobileAnalysisService.CollectComponentTypesByName(mobileTemplate)
 				: null,
-			webTemplateBaselineNodes: webBaselineNodes);
+			webTemplateBaselineNodes: webBaselineNodes,
+			mobileRequestTypes: NoRequestRegistry);
 	}
 
 	private static TemplateMappingRule DeclaredElementsBundledRule() => BundledRule(DeclaredElementsWebTemplate);
@@ -6132,7 +7011,8 @@ public sealed class WebToMobileConversionServiceTests {
 			mobileByType: null,
 			RequestRules, templateRule: null,
 			sourcePage: "UsrApp_FormPage", sourceTemplate: null,
-			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: null);
+			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: null,
+			mobileRequestTypes: NoRequestRegistry);
 
 	private static PageBundleInfo ButtonBundle(string buttonName, string request, string @params = """{ "preventCardClose": false }""") =>
 		Bundle($$"""
@@ -6179,6 +7059,10 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeRequests(ButtonBundle("CustomButton", "usr.MyCustomRequest"));
 
 		DroppedNames(guide).Should().Contain("CustomButton");
+		Codes(Dropped(guide, "CustomButton")).Should().Equal([ReasonCodes.DropUnknownRequest],
+			because: "clio has never seen usr.MyCustomRequest, so it may say only that — the stronger "
+				+ "drop-unsupported-request would assert mobile cannot run it, which is a claim the leaf path "
+				+ "used to make for every request it did not recognise (ENG-96178)");
 	}
 
 	[Test]
@@ -6199,7 +7083,8 @@ public sealed class WebToMobileConversionServiceTests {
 			mobileByType: null,
 			RequestRules, templateRule: null,
 			sourcePage: "UsrApp_FormPage", sourceTemplate: null,
-			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: null);
+			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: null,
+			mobileRequestTypes: NoRequestRegistry);
 
 		DroppedNames(guide).Should().NotContain("Progress",
 			because: "a non-button component is not dropped for an unsupported (likely system) request");
@@ -6232,12 +7117,13 @@ public sealed class WebToMobileConversionServiceTests {
 			mobileByType: null,
 			RequestRules, templateRule: null,
 			sourcePage: "UsrApp_FormPage", sourceTemplate: null,
-			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: null);
+			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: null,
+			mobileRequestTypes: NoRequestRegistry);
 
 		// Assert
 		DroppedNames(guide).Should().NotContain("Progress",
-			because: "only a crt.Button is dropped for a dead action — every other component still renders, just "
-				+ "without that binding");
+			because: "only an ACTION-ONLY component (a crt.Button or a crt.MenuItem) is dropped for a dead "
+				+ "action — every other component still renders, just without that binding");
 		Element(guide, "Progress").Values!.AsObject().ContainsKey("updated").Should().BeFalse(
 			because: "the binding itself must be gone, or the page ships a request the mobile app cannot serve");
 		DroppedRequest binding = guide.RequestConversions!.DroppedRequests.Should().ContainSingle(
@@ -6279,7 +7165,8 @@ public sealed class WebToMobileConversionServiceTests {
 			mobileByType: null,
 			rulesWithoutNote, templateRule: null,
 			sourcePage: "UsrApp_FormPage", sourceTemplate: null,
-			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: null);
+			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: null,
+			mobileRequestTypes: NoRequestRegistry);
 
 		// Assert
 		DroppedRequest binding = guide.RequestConversions!.DroppedRequests.Should().ContainSingle(
@@ -6315,11 +7202,11 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("A page with no event-binding requests yields a null requestConversions section.")]
+	[Description("A page with no event-binding requests yields a null requestConversions section. The element is a crt.Input rather than a crt.Button on purpose: the subject is “an element that binds nothing”, and an action-only type that binds nothing is REMOVED by componentRemovals — which would quietly turn this into a test about an empty page.")]
 	public void Analyze_NoRequests_RequestConversionsNull() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
-				{ "name": "Plain", "type": "crt.Button", "caption": "Act" } ] } ]
+				{ "name": "Plain", "type": "crt.Input", "label": "Act" } ] } ]
 			""");
 
 		MobilePageConversionGuide guide = AnalyzeRequests(bundle);
@@ -6329,7 +7216,150 @@ public sealed class WebToMobileConversionServiceTests {
 
 	#endregion
 
-	#region Action targets that do not exist on mobile (ENG-94839)
+	#region UnknownMobileRequestTargets (rules targets the mobile request registry does not publish)
+
+	/// <summary>
+	/// The request types the mobile runtime publishes, read from
+	/// <c>MobileRequestRegistry.published-types.json</c>: the live CDN registry's type set captured for
+	/// MEMBERSHIP CHECKS ONLY, which is why it deliberately carries no descriptions, parameters or doc links.
+	/// It is NOT the curated <c>MobileRequestRegistry.live-snapshot.json</c>, whose annotated entries pin
+	/// request CONTENT and must not be conflated with this list. Read from a fixture rather than enumerated
+	/// here because a hand-written list of the rules file's own targets makes the guard below assert the
+	/// rules against themselves.
+	/// </summary>
+	private static IReadOnlySet<string> PublishedMobileRequestTypes() {
+		string fixturePath = Path.Combine(
+			TestContext.CurrentContext.TestDirectory,
+			"Command/McpServer/Fixtures/MobileRequestRegistry.published-types.json");
+		using FileStream stream = File.OpenRead(fixturePath);
+		RequestCatalogState state = RequestInfoCatalog.LoadFromStream(stream);
+		return new HashSet<string>(state.Entries.Select(entry => entry.RequestType), StringComparer.OrdinalIgnoreCase);
+	}
+
+	[Test]
+	[Description("A rules entry whose mobile target the registry does not list is reported as a \"web -> mobile\" pair. Such an entry rewrites a binding into a request the runtime cannot dispatch and the failure is silent on the page, so losing this report would let a rules-file edit ship a dead action with nothing to notice it.")]
+	public void UnknownMobileRequestTargets_ShouldReportTheEntry_WhenTheRegistryDoesNotListItsMobileTarget() {
+		// Arrange — one entry maps to a request the registry publishes, one to a request it does not.
+		var rules = new WebToMobilePageConversionRules {
+			Requests = [
+				new RequestMappingRule { Web = "crt.SaveRecordRequest", Mobile = "crt.SaveRecordRequest", Category = "DirectMapping" },
+				new RequestMappingRule { Web = "crt.LegacyOpenRequest", Mobile = "crt.GhostRequest", Category = "WithAdaptation" },
+				new RequestMappingRule { Web = "crt.PrintablesRequest", Mobile = null, Category = "Unsupported" }
+			]
+		};
+		var registry = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "crt.SaveRecordRequest" };
+
+		// Act
+		IReadOnlyList<string> unknown = WebToMobileAnalysisService.UnknownMobileRequestTargets(rules, registry);
+
+		// Assert
+		unknown.Should().Equal(["crt.LegacyOpenRequest -> crt.GhostRequest"],
+			because: "only the entry naming an unpublished target is a finding — a mapped one is fine and a "
+				+ "cleared one names no target at all, so flagging either would bury the real report in noise");
+	}
+
+	[Test]
+	[Description("Every mobile target in the SHIPPED rules file is one the published mobile request registry lists. This is the regression guard on the data, not the code: the registry side comes from the captured published type set, so an edit that points an entry at a request the mobile runtime does not publish fails here instead of shipping silently. Driving it off a hand-written list of the rules' own targets would assert the rules against themselves and catch nothing.")]
+	public void UnknownMobileRequestTargets_ShouldReturnEmpty_WhenEveryShippedRulesTargetIsInTheRegistry() {
+		// Arrange
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+		IReadOnlySet<string> registry = PublishedMobileRequestTypes();
+
+		// Act
+		IReadOnlyList<string> unknown = WebToMobileAnalysisService.UnknownMobileRequestTargets(rules, registry);
+
+		// Assert
+		unknown.Should().BeEmpty(
+			because: "a shipped rules entry pointing at a request the mobile runtime never publishes converts a "
+				+ "binding into a dead action, and the page gives no sign of it");
+	}
+
+	#endregion
+
+	#region TargetCarryingRegistryOnlyRequests (registry types withheld until the rules map them)
+
+	private static IReadOnlyList<RequestRegistryEntry> RegistryEntries(params (string Type, string[] Params)[] types) {
+		var entries = new List<RequestRegistryEntry>();
+		foreach ((string type, string[] names) in types) {
+			var parameters = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
+			foreach (string name in names) {
+				parameters[name] = JsonSerializer.SerializeToElement(new { type = "string" });
+			}
+			entries.Add(new RequestRegistryEntry { RequestType = type, Parameters = parameters });
+		}
+		return entries;
+	}
+
+	[Test]
+	[Description("A request that opens a page chosen by its own parameter is withheld while no rules entry maps it. Without a rules entry there is no targetParam/targetKind pair, so the unresolved-target probe never runs and no paramMap applies: the binding would convert by identity and could look valid while opening nothing on the device.")]
+	public void TargetCarryingRegistryOnlyRequests_ShouldWithholdTheType_WhenNoRulesEntryMapsIt() {
+		// Arrange — the rules map something else entirely, so the subject is registry-only.
+		var rules = new WebToMobilePageConversionRules {
+			Requests = [new RequestMappingRule { Web = "crt.SaveRecordRequest", Mobile = "crt.SaveRecordRequest" }]
+		};
+		IReadOnlyList<RequestRegistryEntry> registry = RegistryEntries(
+			("crt.CreateCalendarRecordRequest", ["entityName"]),
+			("crt.SaveRecordRequest", []));
+
+		// Act
+		IReadOnlySet<string> withheld =
+			WebToMobileAnalysisService.TargetCarryingRegistryOnlyRequests(rules, registry);
+
+		// Assert
+		withheld.Should().Equal(["crt.CreateCalendarRecordRequest"],
+			because: "only the target-carrying type with no rules entry is unsafe to support on registry "
+				+ "membership alone; a mapped request is verified by its own entry");
+	}
+
+	[Test]
+	[Description("The same type stops being withheld once the rules map it. The list is a stopgap, not a policy: a rules entry brings targetParam/targetKind and a paramMap with it, which is exactly what makes the conversion verifiable, so the type must leave the withheld set without anyone editing code.")]
+	public void TargetCarryingRegistryOnlyRequests_ShouldWithholdNothing_WhenTheRulesMapTheType() {
+		// Arrange
+		var rules = new WebToMobilePageConversionRules {
+			Requests = [new RequestMappingRule {
+				Web = "crt.CreateCalendarRecordRequest", Mobile = "crt.CreateCalendarRecordRequest",
+				TargetParam = "entityName", TargetKind = "entity-default-mobile-page"
+			}]
+		};
+		IReadOnlyList<RequestRegistryEntry> registry =
+			RegistryEntries(("crt.CreateCalendarRecordRequest", ["entityName"]));
+
+		// Act
+		IReadOnlySet<string> withheld =
+			WebToMobileAnalysisService.TargetCarryingRegistryOnlyRequests(rules, registry);
+
+		// Assert
+		withheld.Should().BeEmpty(
+			because: "the rules entry is what makes the target verifiable, so the stopgap must release the type");
+	}
+
+	[Test]
+	[Description("A request that merely DECLARES entityName is not withheld. This pins why the withheld set is named rather than derived from the parameter names the rules use as targets: on crt.OpenFileRequest and crt.OpenSignatureServiceRequest entityName is the FILE schema, not a page, and a name-based rule withheld both. Deriving it measured 7 withheld types where 5 navigate.")]
+	public void TargetCarryingRegistryOnlyRequests_ShouldNotWithhold_WhenEntityNameIsAFileSchemaRatherThanATarget() {
+		// Arrange — entityName here names a file schema; the rules use the same name as a page target elsewhere.
+		var rules = new WebToMobilePageConversionRules {
+			Requests = [new RequestMappingRule {
+				Web = "crt.CreateRecordRequest", Mobile = "crt.CreateRecordRequest",
+				TargetParam = "entityName", TargetKind = "entity-default-mobile-page"
+			}]
+		};
+		IReadOnlyList<RequestRegistryEntry> registry = RegistryEntries(
+			("crt.OpenFileRequest", ["entityName", "entityId"]),
+			("crt.OpenSignatureServiceRequest", ["entityName", "recordId"]));
+
+		// Act
+		IReadOnlySet<string> withheld =
+			WebToMobileAnalysisService.TargetCarryingRegistryOnlyRequests(rules, registry);
+
+		// Assert
+		withheld.Should().BeEmpty(
+			because: "neither request opens a page, so withholding them would drop working file actions for a "
+				+ "reason that exists only in the parameter's NAME");
+	}
+
+	#endregion
+
+	#region Action targets that do not exist on mobile
 
 	/// <summary>Rules whose OpenPage / CreateRecord requests declare a navigation target to verify.</summary>
 	private static readonly WebToMobilePageConversionRules TargetRules = new() {
@@ -6369,12 +7399,13 @@ public sealed class WebToMobileConversionServiceTests {
 			TargetRules, templateRule: null,
 			sourcePage: "UsrApp_FormPage", sourceTemplate: null,
 			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: null,
-			actionTargetsProbe: probe);
+			actionTargetsProbe: probe,
+			mobileRequestTypes: NoRequestRegistry);
 
 	/// <summary>A probe result that resolved <paramref name="target"/> to <paramref name="state"/>.</summary>
 	private static MobileActionTargetProbeResult ProbeResult(
 		string elementName, string webRequest, string kind, string target, ActionTargetState state,
-		bool probeOk = true, string note = null) =>
+		bool probeOk = true, string note = null, string resolvedCandidateSchemaName = null) =>
 		new() {
 			ProbeOk = probeOk,
 			Note = note,
@@ -6385,8 +7416,10 @@ public sealed class WebToMobileConversionServiceTests {
 				}
 			],
 			TargetsByKey = new Dictionary<string, ActionTargetResolution>(StringComparer.OrdinalIgnoreCase) {
-				[MobileActionTargetProbe.TargetKey(kind, target)] =
-					new ActionTargetResolution { Kind = kind, Target = target, State = state }
+				[MobileActionTargetProbe.TargetKey(kind, target)] = new ActionTargetResolution {
+					Kind = kind, Target = target, State = state,
+					ResolvedCandidateSchemaName = resolvedCandidateSchemaName
+				}
 			}
 		};
 
@@ -6397,10 +7430,13 @@ public sealed class WebToMobileConversionServiceTests {
 		ButtonBundle(buttonName, "crt.CreateRecordRequest", $$"""{ "entityName": "{{entityName}}" }""");
 
 	[Test]
-	[Description("An action whose target does not exist on mobile loses its BINDING but keeps its control: the element still converts, mobileValues carries no clicked, and the action is reported in both droppedRequests and unresolvedTargetRequests.")]
-	public void Analyze_TargetMissing_StripsTheBindingAndKeepsTheControl() {
-		// Arrange
-		PageBundleInfo bundle = OpenPageButtonBundle("PostponeButton", "LegacyPage");
+	[Description("An action whose target does not exist on mobile keeps its BINDING and its control: the element still converts, mobileValues carries a clicked whose request converts and whose target param is blanked to \"\" (every other param, not just schemaName, survives), and the action is still reported in both droppedRequests and unresolvedTargetRequests.")]
+	public void Analyze_TargetMissing_BlanksTheTargetParamAndKeepsTheControl() {
+		// Arrange — schemaName is not the only param crt.OpenPageRequest can carry; modelInitConfigs proves only
+		// the target param is blanked, not the whole binding.
+		PageBundleInfo bundle = ButtonBundle("PostponeButton", "crt.OpenPageRequest", """
+			{ "schemaName": "LegacyPage", "modelInitConfigs": [ { "name": "PDS", "action": "add" } ] }
+			""");
 		MobileActionTargetProbeResult probe = ProbeResult(
 			"PostponeButton", "crt.OpenPageRequest", MobileActionTargetProbe.KindWebPage, "LegacyPage", ActionTargetState.Missing);
 
@@ -6421,20 +7457,26 @@ public sealed class WebToMobileConversionServiceTests {
 		finding.State.Should().Be("missing", because: "the absence was verified, not assumed");
 		guide.RequestConversions.TargetsProbed.Should().BeTrue(because: "the environment answered");
 		Element(guide, "PostponeButton").Operation.Should().NotBe("drop",
-			because: "a dead target costs the action, never the control");
-		ClickedOf(guide, "PostponeButton").Should().NotContainKey("clicked",
-			because: "the converted page must not ship an action that fails every time it is used");
-		DroppedRequest stripped = guide.RequestConversions.DroppedRequests.Should().ContainSingle(
+			because: "a dead target costs neither the control nor the binding — only the target param");
+		JsonObject clicked = ClickedOf(guide, "PostponeButton")["clicked"]!.AsObject();
+		clicked["request"]!.GetValue<string>().Should().Be("crt.OpenPageRequest",
+			because: "the request still converts even though its target cannot exist on mobile");
+		clicked["params"]!["schemaName"]!.GetValue<string>().Should().BeEmpty(
+			because: "the target param is blanked instead of left pointing at a page the mobile app cannot open");
+		clicked["params"]!["modelInitConfigs"].Should().NotBeNull(
+			because: "only the target param is blanked — every other param the web binding carried must survive");
+		DroppedRequest dropped = guide.RequestConversions.DroppedRequests.Should().ContainSingle(
 				r => r.ElementName == "PostponeButton",
-				because: "a stripped binding is a dropped request, exactly as an unsupported request type is")
+				because: "a blanked binding is still reported as a dropped request, exactly as before")
 			.Subject;
-		Codes(stripped.Reason).Should().Equal([ReasonCodes.DropRequestTargetMissing],
-			because: "only a DEFINITIONAL absence gets this far, and the code says which of the request-binding "
-				+ "losses this was — a sentence saying 'cannot exist' would have to be parsed to learn the same");
-		ReasonParam(stripped.Reason, ReasonCodes.DropRequestTargetMissing, "target").Should().Be("LegacyPage",
-			because: "the pair that names what to fix travels as params, not inside a sentence");
+		Codes(dropped.Reason).Should().Equal([ReasonCodes.DropRequestTargetMissing],
+			because: "the reason names a definitional absence, because only that verdict gets this far");
+		ReasonParam(dropped.Reason, ReasonCodes.DropRequestTargetMissing, "targetKind")
+			.Should().Be(MobileActionTargetProbe.KindWebPage, because: "the fix depends on which kind was missing");
+		ReasonParam(dropped.Reason, ReasonCodes.DropRequestTargetMissing, "target")
+			.Should().Be("LegacyPage", because: "the fix needs the destination name too");
 		guide.RequestConversions.ConvertedRequests.Should().NotContain(r => r.ElementName == "PostponeButton",
-			because: "an action that was removed was not converted");
+			because: "a blanked target is reported as dropped, not converted, even though the binding physically stays");
 		finding.BindingRemoved.Should().BeTrue(
 			because: "the caller must be able to read WHAT HAPPENED off the finding rather than re-deriving the "
 				+ "per-kind rule that decided it");
@@ -6482,8 +7524,8 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("A MENU ITEM nested in a button's menuItems is handled like a button: its dead action is reported and its binding removed, while the item itself stays as its own element-map entry. The ticket names buttons and menu items both, and the two reach the binding pass down different traversal paths.")]
-	public void Analyze_MenuItemTargetMissing_IsReportedAndStripped() {
+	[Description("A MENU ITEM nested in a button's menuItems is handled like a button: its dead action is reported and its binding's target param BLANKED (a definitional web-page absence), while the item itself stays as its own element-map entry. Buttons and menu items reach the binding pass down different traversal paths, so both need coverage.")]
+	public void Analyze_MenuItemTargetMissing_BlanksTheTargetParamAndKeepsTheItem() {
 		// Arrange — a real menuItems child, not a second button: the child-array traversal makes it its own
 		// element-map entry, which is the path this test exists to pin.
 		PageBundleInfo bundle = Bundle("""
@@ -6506,11 +7548,17 @@ public sealed class WebToMobileConversionServiceTests {
 				because: "the menu item converts as its own operation, so a finding can name it").Subject;
 		menuItem.PropertyName.Should().Be("menuItems",
 			because: "the operation must carry the slot it belongs in, or the caller cannot place it");
-		guide.RequestConversions!.UnresolvedTargetRequests
+		UnresolvedTargetRequest finding = guide.RequestConversions!.UnresolvedTargetRequests
 			.Should().ContainSingle(r => r.ElementName == "OpenLegacyItem",
-				because: "a dead navigation is dead whichever component type fires it");
-		ClickedOf(guide, "OpenLegacyItem").Should().NotContainKey("clicked",
-			because: "the menu item stays on the page, its dead action does not");
+				because: "a dead navigation is dead whichever component type fires it")
+			.Subject;
+		JsonObject clicked = ClickedOf(guide, "OpenLegacyItem")["clicked"]!.AsObject();
+		clicked["params"]!["schemaName"]!.GetValue<string>().Should().BeEmpty(
+			because: "the menu item stays on the page with its own binding kept — a definitional absence blanks "
+				+ "the target param just as it would on a plain button — the traversal path does not change the rule");
+		finding.BindingRemoved.Should().BeTrue(
+			because: "the insert builder processes menu items through the same ProcessOneEventBinding call, so "
+				+ "canRemoveBinding is true here too");
 	}
 
 	[Test]
@@ -6540,32 +7588,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("A verified-missing target reports the control as KEPT and the binding as removed, in typed fields. What to DO about it lives in the guidance article keyed by the finding, not in a sentence the response composes: that sentence would read the same on every conversion and would have to be parsed to learn which of the two — control or action — was lost.")]
-	public void Analyze_TargetMissing_ReportsTheControlKeptAndTheBindingRemoved() {
-		// Arrange
-		PageBundleInfo bundle = OpenPageButtonBundle("PostponeButton", "LegacyPage");
-		MobileActionTargetProbeResult probe = ProbeResult(
-			"PostponeButton", "crt.OpenPageRequest", MobileActionTargetProbe.KindWebPage, "LegacyPage", ActionTargetState.Missing);
-
-		// Act
-		MobilePageConversionGuide guide = AnalyzeTargets(bundle, probe);
-
-		// Assert
-		UnresolvedTargetRequest finding = guide.RequestConversions!.UnresolvedTargetRequests
-			.Should().ContainSingle(r => r.ElementName == "PostponeButton" && r.Target == "LegacyPage",
-				because: "the finding names the control and the destination, which is what the caller acts on")
-			.Subject;
-		finding.State.Should().Be("missing",
-			because: "the absence was verified, and the state is what separates a report from a guess");
-		finding.BindingRemoved.Should().BeTrue(
-			because: "the caller must read WHAT HAPPENED off the finding rather than re-derive the per-kind rule");
-		Element(guide, "PostponeButton").Operation.Should().NotBe("drop",
-			because: "a broken destination costs the action, never the control — the developer decides what to "
-				+ "do about the target, and a converter that removed the button would have decided for them");
-	}
-
-	[Test]
-	[Description("An unverified target reports the opposite: the control is kept AND so is the binding. State and bindingRemoved are separate fields because they answer different questions — how confidently the target was judged, and what was actually done about it.")]
+	[Description("An unverified target reports the control AND its binding as kept — an environment that could not answer never removes anything, unlike the definitional web-page absence.")]
 	public void Analyze_TargetUnknown_ReportsTheBindingKeptAsWellAsTheControl() {
 		// Arrange
 		PageBundleInfo bundle = OpenPageButtonBundle("OpenButton", "MaybePage");
@@ -6582,12 +7605,12 @@ public sealed class WebToMobileConversionServiceTests {
 		finding.State.Should().Be("unknown",
 			because: "an unverified target must never be reported as a verified break — that would send the "
 				+ "user chasing a page that may well already exist");
-		finding.BindingRemoved.Should().BeFalse(
-			because: "an unverified absence cannot justify removing a working action");
 		ClickedOf(guide, "OpenButton").Should().ContainKey("clicked",
 			because: "the binding the finding says was kept has to actually be in the operation");
 		guide.RequestConversions.DroppedRequests.Should().NotContain(r => r.ElementName == "OpenButton",
 			because: "nothing was dropped, so nothing may be reported as dropped");
+		finding.BindingRemoved.Should().BeFalse(
+			because: "an unverified absence cannot justify removing a working action");
 	}
 
 	[Test]
@@ -6626,11 +7649,16 @@ public sealed class WebToMobileConversionServiceTests {
 
 		// Assert
 		guide.RequestConversions!.TargetsProbed.Should().BeFalse(because: "the object reads did not succeed");
-		guide.RequestConversions.UnresolvedTargetRequests.Should().ContainSingle(r => r.ElementName == "OpenButton",
-			because: "discarding it is how a page with one web-page target AND one object target used to lose "
-				+ "the warning that the same page without the object target reports fine");
+		UnresolvedTargetRequest finding = guide.RequestConversions.UnresolvedTargetRequests
+			.Should().ContainSingle(r => r.ElementName == "OpenButton",
+				because: "discarding it is how a page with one web-page target AND one object target used to lose "
+					+ "the warning that the same page without the object target reports fine")
+			.Subject;
 		guide.RequestConversions.TargetsNote.Should().Be("Could not verify object action targets (denied).",
 			because: "the user must be able to tell a missing environment from a broken one");
+		finding.BindingRemoved.Should().BeTrue(
+			because: "a web-page verdict is settled OFFLINE and needs no environment read, so a degraded probe "
+				+ "that could not verify OBJECT targets must not soften this one");
 	}
 
 	[Test]
@@ -6656,19 +7684,22 @@ public sealed class WebToMobileConversionServiceTests {
 	[Test]
 	[Description("A note the probe set despite succeeding IS surfaced: a check that ran but left some targets unasked is incomplete in a way targetsProbed alone cannot express.")]
 	public void Analyze_ProbedSuccessfullyWithANote_SurfacesIt() {
-		// Arrange — the shape the probe returns when its per-object read ceiling was reached.
+		// Arrange — an arbitrary note the probe set despite the reads succeeding (TargetsProbed stays true;
+		// only the pass-through of a non-null Note is under test here).
 		PageBundleInfo bundle = OpenPageButtonBundle("OpenButton", "LegacyPage");
 		MobileActionTargetProbeResult probe = ProbeResult(
 			"OpenButton", "crt.OpenPageRequest", MobileActionTargetProbe.KindWebPage, "LegacyPage",
 			ActionTargetState.Missing,
-			note: "Only the first 8 object targets were checked; the rest are reported as unverified.");
+			note: $"Only the first {MobileActionTargetProbe.MaxEntityAddonProbes} object targets were checked; "
+				+ "the rest are reported as unverified.");
 
 		// Act
 		MobilePageConversionGuide guide = AnalyzeTargets(bundle, probe);
 
 		// Assert
 		guide.RequestConversions!.TargetsProbed.Should().BeTrue(because: "the reads themselves succeeded");
-		guide.RequestConversions.TargetsNote.Should().StartWith("Only the first 8",
+		guide.RequestConversions.TargetsNote.Should().StartWith(
+			$"Only the first {MobileActionTargetProbe.MaxEntityAddonProbes}",
 			because: "the caller cannot otherwise tell 'not asked' from 'asked, and the answer was no'");
 	}
 
@@ -6705,10 +7736,6 @@ public sealed class WebToMobileConversionServiceTests {
 		UnresolvedTargetRequest finding = guide.RequestConversions!.UnresolvedTargetRequests
 			.Should().ContainSingle(because: "the diagnosis is the whole value here").Subject;
 		finding.State.Should().Be("missing", because: "the add-on was read and declared no default page");
-		finding.BindingRemoved.Should().BeFalse(
-			because: "the add-on read addresses the add-on more cheaply than RelatedPageAddonService does, so a "
-				+ "body carrying no page set is equally the shape a mis-addressed read returns — removing a "
-				+ "working action on that is not a trade this tool makes");
 		JsonObject clicked = ClickedOf(guide, "ProductsAddButton")["clicked"]!.AsObject();
 		clicked["request"]!.GetValue<string>().Should().Be("crt.CreateRecordRequest",
 			because: "the request itself is not modified at all — the add-on declaring no default page is a "
@@ -6720,11 +7747,15 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "a kept action converted, so it belongs in convertedRequests and NOT in droppedRequests");
 		guide.RequestConversions.DroppedRequests.Should().NotContain(r => r.ElementName == "ProductsAddButton",
 			because: "nothing was dropped");
+		finding.BindingRemoved.Should().BeFalse(
+			because: "the add-on read addresses the add-on more cheaply than a full page read, so a body "
+				+ "carrying no page set is equally the shape a mis-addressed read returns — removing a working "
+				+ "action on that is not a trade this tool makes");
 	}
 
 	[Test]
-	[Description("A same-component TWIN's dead action is reported but never marked removed: the twin's mobileValues is a delta MERGE payload, where omitting a key means the mobile element keeps the template's own value — so no removal happened and claiming one would tell the caller a control 'renders and does nothing' when it may still fire the template's request.")]
-	public void Analyze_TwinMergeTargetMissing_ReportsWithoutClaimingARemoval() {
+	[Description("A same-component TWIN's dead action is reported AND marked BindingRemoved (the target param was blanked), AND the request IS written into the merge payload with its target param blanked: the twin's mobileValues is a delta MERGE payload, so writing the blanked clone overrides the template element's own value with the page's own (now-inert) action, rather than shipping one guaranteed to fail. BindingRemoved reports the blanking itself, not which writer performed it — a merge payload cannot remove a KEY, but it can and does blank the VALUE, and the flag must say so.")]
+	public void Analyze_TwinMergeTargetMissing_ReportsBindingRemovedAndWritesTheBlankedBinding() {
 		// Arrange — a same-component twin (crt.Feed -> crt.Feed) whose clicked binding the page CHANGED from
 		// the web-template baseline, pointing at a page that cannot exist on mobile.
 		PageBundleInfo bundle = Bundle("""
@@ -6755,7 +7786,8 @@ public sealed class WebToMobileConversionServiceTests {
 			templateComponentNames: Names("Main", "Feed"),
 			mobileTemplateTypesByName: MobileTypesByName(("Main", "crt.FlexContainer"), ("Feed", "crt.Feed")),
 			webTemplateBaselineNodes: baseline,
-			actionTargetsProbe: probe);
+			actionTargetsProbe: probe,
+			mobileRequestTypes: NoRequestRegistry);
 
 		// Assert
 		ViewConfigDiffOperation twin = guide.ViewConfigDiff.Should().ContainSingle(
@@ -6764,12 +7796,108 @@ public sealed class WebToMobileConversionServiceTests {
 		twin.Operation.Should().Be("merge", because: "a same-component twin merges onto the template element");
 		UnresolvedTargetRequest finding = guide.RequestConversions!.UnresolvedTargetRequests
 			.Should().ContainSingle(because: "the dead target is still worth reporting on a twin").Subject;
-		finding.BindingRemoved.Should().BeFalse(
-			because: "a merge payload cannot remove anything — an omitted key means the mobile element keeps "
-				+ "its own value, so 'ALREADY REMOVED' would be a claim about a write that never happened");
-		guide.RequestConversions.DroppedRequests.Should().NotContain(r => r.ElementName == "Feed",
-			because: "a droppedRequests entry saying 'the component still renders' would contradict a merge "
-				+ "whose payload never carried the binding");
+		guide.RequestConversions.DroppedRequests.Should().Contain(r => r.ElementName == "Feed" && r.Binding == "clicked",
+			because: "the target is verified missing, so the action is still reported as a dropped request even "
+				+ "though the binding itself stays in the merge payload with its target param blanked");
+		finding.BindingRemoved.Should().BeTrue(
+			because: "BindingRemoved reports whether the target param was blanked, independent of which writer "
+				+ "performed it — the twin-merge writer cannot remove the KEY, but it did blank the VALUE, so the "
+				+ "flag must say so or the caller (which gates the repoint on this flag) never fixes it later");
+		twin.Values.Should().NotBeNull(because: "the page also changed dataSourceName, so the merge still carries a payload");
+		JsonObject clicked = twin.Values!.AsObject()["clicked"]!.AsObject();
+		clicked["request"]!.GetValue<string>().Should().Be("crt.OpenPageRequest",
+			because: "the request still converts on the merge twin, exactly as it does on the insert path");
+		clicked["params"]!["schemaName"]!.GetValue<string>().Should().BeEmpty(
+			because: "the merge overrides the template element's own value with the page's action, but with the "
+				+ "dead target param blanked so it never fails at runtime");
+	}
+
+	[Test]
+	[Description("A definitionally-absent web-page target whose rule's paramMap maps TargetParam to a null value does not throw and blanks the ORIGINAL (unmapped) param: ApplyParamMap itself skips a rename with no usable value, so effectiveTargetParam must agree with it instead of computing a null key from the raw TryGetValue result.")]
+	public void Analyze_TargetMissing_ParamMapMapsTargetParamToNull_BlanksTheOriginalParam() {
+		// Arrange — paramMap declares a rename for schemaName (the TargetParam) to a null value, which
+		// ApplyParamMap's own guard skips as unusable.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "OpenBtn", "type": "crt.Button",
+				  "clicked": { "request": "crt.OpenPageRequest",
+				               "params": { "schemaName": "LegacyPage" } } } ] } ]
+			""");
+		WebToMobilePageConversionRules rules = new() {
+			Requests = [
+				new RequestMappingRule {
+					Web = "crt.OpenPageRequest", Mobile = "crt.OpenPageRequest", Category = "DirectMapping",
+					TargetParam = "schemaName", TargetKind = MobileActionTargetProbe.KindWebPage,
+					ParamMap = new Dictionary<string, string> { ["schemaName"] = null }
+				}
+			]
+		};
+		MobileActionTargetProbeResult probe = ProbeResult(
+			"OpenBtn", "crt.OpenPageRequest", MobileActionTargetProbe.KindWebPage, "LegacyPage",
+			ActionTargetState.Missing);
+
+		// Act
+		MobilePageConversionGuide guide = WebToMobileAnalysisService.Analyze(
+			bundle, TargetMobileTypes, WebTypes,
+			webByType: Reg(("crt.FlexContainer", true)),
+			mobileByType: null,
+			rules, templateRule: null,
+			sourcePage: "UsrApp_FormPage", sourceTemplate: null,
+			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: null,
+			actionTargetsProbe: probe,
+			mobileRequestTypes: NoRequestRegistry);
+
+		// Assert
+		JsonObject clicked = Element(guide, "OpenBtn").Values!.AsObject()["clicked"]!.AsObject();
+		clicked["params"]!.AsObject().ContainsKey("schemaName").Should().BeTrue(
+			because: "ApplyParamMap skipped the null-valued rename, so the original key is still the one carrying "
+				+ "the dead target, and that is the key the blank must land on");
+		clicked["params"]!["schemaName"]!.GetValue<string>().Should().BeEmpty(
+			because: "a null-valued paramMap entry for TargetParam must not throw or blank a null key — it must "
+				+ "fall back to blanking rule.TargetParam itself");
+	}
+
+	[Test]
+	[Description("A definitionally-absent web-page target whose rule's paramMap maps TargetParam to a whitespace-only value does not create a bogus whitespace key: ApplyParamMap skips the rename (its own guard), so effectiveTargetParam must fall back to the ORIGINAL TargetParam, leaving the real (dead) value blanked rather than untouched under the original key while a decoy blank key appears beside it.")]
+	public void Analyze_TargetMissing_ParamMapMapsTargetParamToWhitespace_BlanksTheOriginalParam() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "OpenBtn", "type": "crt.Button",
+				  "clicked": { "request": "crt.OpenPageRequest",
+				               "params": { "schemaName": "LegacyPage" } } } ] } ]
+			""");
+		WebToMobilePageConversionRules rules = new() {
+			Requests = [
+				new RequestMappingRule {
+					Web = "crt.OpenPageRequest", Mobile = "crt.OpenPageRequest", Category = "DirectMapping",
+					TargetParam = "schemaName", TargetKind = MobileActionTargetProbe.KindWebPage,
+					ParamMap = new Dictionary<string, string> { ["schemaName"] = "   " }
+				}
+			]
+		};
+		MobileActionTargetProbeResult probe = ProbeResult(
+			"OpenBtn", "crt.OpenPageRequest", MobileActionTargetProbe.KindWebPage, "LegacyPage",
+			ActionTargetState.Missing);
+
+		// Act
+		MobilePageConversionGuide guide = WebToMobileAnalysisService.Analyze(
+			bundle, TargetMobileTypes, WebTypes,
+			webByType: Reg(("crt.FlexContainer", true)),
+			mobileByType: null,
+			rules, templateRule: null,
+			sourcePage: "UsrApp_FormPage", sourceTemplate: null,
+			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: null,
+			actionTargetsProbe: probe,
+			mobileRequestTypes: NoRequestRegistry);
+
+		// Assert
+		JsonObject clicked = Element(guide, "OpenBtn").Values!.AsObject()["clicked"]!.AsObject();
+		clicked["params"]!.AsObject().ContainsKey("   ").Should().BeFalse(
+			because: "the whitespace-only mapped value must never be written as a literal key on the params object");
+		clicked["params"]!["schemaName"]!.GetValue<string>().Should().BeEmpty(
+			because: "the whitespace-only rename is unusable, so the blank must land on the original TargetParam "
+				+ "instead of leaving the dead value untouched under it");
 	}
 
 	[Test]
@@ -6790,11 +7918,418 @@ public sealed class WebToMobileConversionServiceTests {
 				because: "the finding names the control and the object, which is what the remedy is about")
 			.Subject;
 		finding.State.Should().Be("missing", because: "the read did return an absence verdict");
+		guide.RequestConversions.DroppedRequests.Should().NotContain(r => r.ElementName == "ProductsAddButton",
+			because: "a binding that was kept is not a dropped request");
 		finding.BindingRemoved.Should().BeFalse(
 			because: "an agent told the binding was removed would either re-add it or report a loss that never "
 				+ "happened — removal belongs to the definitional-absence group alone");
-		guide.RequestConversions.DroppedRequests.Should().NotContain(r => r.ElementName == "ProductsAddButton",
-			because: "a binding that was kept is not a dropped request");
+	}
+
+	[Test]
+	[Description("A missing entity-default-mobile-page target whose probe resolved a candidate web page carries that name on the finding, so the agent can offer it without inventing a page name.")]
+	public void Analyze_EntityTargetMissingWithResolvedCandidate_SurfacesItOnTheFinding() {
+		// Arrange
+		PageBundleInfo bundle = CreateRecordButtonBundle("ProductsAddButton", "LeadProduct");
+		MobileActionTargetProbeResult probe = ProbeResult(
+			"ProductsAddButton", "crt.CreateRecordRequest",
+			MobileActionTargetProbe.KindEntityDefaultMobilePage, "LeadProduct", ActionTargetState.Missing,
+			resolvedCandidateSchemaName: "LeadProduct_FormPage");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeTargets(bundle, probe);
+
+		// Assert
+		UnresolvedTargetRequest finding = guide.RequestConversions!.UnresolvedTargetRequests
+			.Should().ContainSingle().Subject;
+		finding.ResolvedCandidateSchemaName.Should().Be("LeadProduct_FormPage",
+			because: "the probe's resolved candidate must reach the finding the caller actually reads");
+	}
+
+	[Test]
+	[Description("A missing entity-default-mobile-page target with NO resolved candidate gets no candidate name at all — the finding must not claim a page that was never found.")]
+	public void Analyze_EntityTargetMissingWithoutCandidate_FindingOmitsCandidate() {
+		// Arrange
+		PageBundleInfo bundle = CreateRecordButtonBundle("ProductsAddButton", "LeadProduct");
+		MobileActionTargetProbeResult probe = ProbeResult(
+			"ProductsAddButton", "crt.CreateRecordRequest",
+			MobileActionTargetProbe.KindEntityDefaultMobilePage, "LeadProduct", ActionTargetState.Missing);
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeTargets(bundle, probe);
+
+		// Assert
+		guide.RequestConversions!.UnresolvedTargetRequests.Should().ContainSingle().Subject
+			.ResolvedCandidateSchemaName.Should().BeNull(
+				because: "no candidate was resolved, so the finding must not fabricate one");
+	}
+
+	[Test]
+	[Description("clio does NOT deduplicate entity-default-mobile-page findings the way it does missingTargetPages for web-page targets: two buttons creating the same missing object produce TWO unresolvedTargetRequests entries — but both share the identical resolvedCandidateSchemaName, which is the grouping key a caller (e.g. the mobile-page-conversion skill) must use to collapse them into one offer before proposing a conversion.")]
+	public void Analyze_TwoButtonsSameMissingEntity_ProduceSeparateFindingsSharingTheSameResolvedCandidate() {
+		// Arrange — two buttons, each creating a record for the same missing object.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "FirstAddButton", "type": "crt.Button", "caption": "First",
+				  "clicked": { "request": "crt.CreateRecordRequest", "params": { "entityName": "LeadProduct" } } },
+				{ "name": "SecondAddButton", "type": "crt.Button", "caption": "Second",
+				  "clicked": { "request": "crt.CreateRecordRequest", "params": { "entityName": "LeadProduct" } } }
+			] } ]
+			""");
+		MobileActionTargetProbeResult probe = ProbeResult(
+			"FirstAddButton", "crt.CreateRecordRequest",
+			MobileActionTargetProbe.KindEntityDefaultMobilePage, "LeadProduct", ActionTargetState.Missing,
+			resolvedCandidateSchemaName: "LeadProduct_FormPage");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeTargets(bundle, probe);
+
+		// Assert
+		guide.RequestConversions!.UnresolvedTargetRequests.Should().HaveCount(2,
+			because: "unlike missingTargetPages, clio reports one entity-default-mobile-page row per BUTTON, "
+				+ "not one per distinct target — the caller is responsible for grouping them");
+		guide.RequestConversions.UnresolvedTargetRequests.Should().OnlyContain(
+			r => r.Target == "LeadProduct" && r.ResolvedCandidateSchemaName == "LeadProduct_FormPage",
+			because: "both buttons name the SAME distinct target, so the probe resolves ONE candidate and both "
+				+ "findings must carry it identically — this is the grouping key a caller collapses on "
+				+ "(resolvedCandidateSchemaName when set, otherwise target)");
+		guide.RequestConversions.UnresolvedTargetRequests.Select(r => r.ElementName).Should().BeEquivalentTo(
+			["FirstAddButton", "SecondAddButton"],
+			because: "a caller grouping by resolvedCandidateSchemaName must still be able to recover every "
+				+ "control that referenced it");
+	}
+
+	[Test]
+	[Description("When no candidate is resolved, two buttons creating the same missing object still share the same (null) resolvedCandidateSchemaName AND the same target — the fallback grouping key a caller uses when there is no candidate name to group on.")]
+	public void Analyze_TwoButtonsSameMissingEntityNoCandidate_ShareTheSameTargetAsFallbackGroupingKey() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "FirstAddButton", "type": "crt.Button", "caption": "First",
+				  "clicked": { "request": "crt.CreateRecordRequest", "params": { "entityName": "LeadProduct" } } },
+				{ "name": "SecondAddButton", "type": "crt.Button", "caption": "Second",
+				  "clicked": { "request": "crt.CreateRecordRequest", "params": { "entityName": "LeadProduct" } } }
+			] } ]
+			""");
+		MobileActionTargetProbeResult probe = ProbeResult(
+			"FirstAddButton", "crt.CreateRecordRequest",
+			MobileActionTargetProbe.KindEntityDefaultMobilePage, "LeadProduct", ActionTargetState.Missing);
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeTargets(bundle, probe);
+
+		// Assert
+		guide.RequestConversions!.UnresolvedTargetRequests.Should().HaveCount(2);
+		guide.RequestConversions.UnresolvedTargetRequests.Should().OnlyContain(
+			r => r.Target == "LeadProduct" && r.ResolvedCandidateSchemaName == null,
+			because: "with no candidate resolved, target is the only grouping key available — it must still be "
+				+ "identical across both findings, or a caller grouping by it would silently split one object "
+				+ "into two rows");
+	}
+
+	[Test]
+	[Description("A missing web-page target is queued into requestConversions.missingTargetPages so the caller can offer converting it next, without needing to re-derive the queue from unresolvedTargetRequests itself.")]
+	public void Analyze_WebPageTargetMissing_QueuesItInMissingTargetPages() {
+		// Arrange
+		PageBundleInfo bundle = OpenPageButtonBundle("PostponeButton", "LegacyPage");
+		MobileActionTargetProbeResult probe = ProbeResult(
+			"PostponeButton", "crt.OpenPageRequest", MobileActionTargetProbe.KindWebPage, "LegacyPage",
+			ActionTargetState.Missing);
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeTargets(bundle, probe);
+
+		// Assert
+		MissingTargetPage candidate = guide.RequestConversions!.MissingTargetPages
+			.Should().ContainSingle(because: "one distinct web-page target was found missing").Subject;
+		candidate.Target.Should().Be("LegacyPage", because: "the queue entry names the page to convert next");
+		candidate.TargetKind.Should().Be(MobileActionTargetProbe.KindWebPage,
+			because: "only web-page targets are aggregated by this pass");
+		candidate.ResolvedCandidateSchemaName.Should().BeNull(
+			because: "a web-page row's Target is already a page name by construction — the discriminator is only "
+				+ "meaningful for entity-default-mobile-page rows, where the same Target shape is ambiguous");
+		candidate.References.Should().ContainSingle(
+			r => r.ElementName == "PostponeButton" && r.Binding == "clicked",
+			because: "the queue entry must name every control that references the missing page");
+	}
+
+	[Test]
+	[Description("A web-page target whose value is not a syntactically valid schema name (page-authored data, never read against the environment) is still reported in unresolvedTargetRequests but excluded from missingTargetPages — the queue a consuming agent executes automatically must never receive an unvalidated value (M6).")]
+	public void Analyze_WebPageTargetSyntacticallyInvalid_IsReportedButNotQueued() {
+		// Arrange — a schemaName value that cannot possibly be a real schema (starts with a digit, contains
+		// spaces) stands in for an untrusted / hostile page-authored value that reaches this far unchecked.
+		const string hostileTarget = "1 DROP TABLE SysSchema";
+		PageBundleInfo bundle = OpenPageButtonBundle("PostponeButton", hostileTarget);
+		MobileActionTargetProbeResult probe = ProbeResult(
+			"PostponeButton", "crt.OpenPageRequest", MobileActionTargetProbe.KindWebPage, hostileTarget,
+			ActionTargetState.Missing);
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeTargets(bundle, probe);
+
+		// Assert
+		guide.RequestConversions!.UnresolvedTargetRequests.Should().ContainSingle(
+			r => r.Target == hostileTarget,
+			because: "the dead action must still be reported so the caller can see it, even though the value "
+				+ "cannot be queued");
+		guide.RequestConversions.MissingTargetPages.Should().BeEmpty(
+			because: "a syntactically invalid target must never be promoted into missingTargetPages — that queue "
+				+ "is executed automatically by a consuming agent, unlike the report-only unresolvedTargetRequests");
+	}
+
+	[Test]
+	[Description("Two elements referencing the same missing web page dedupe into ONE missingTargetPages entry carrying both references, so the same page is never offered for conversion twice.")]
+	public void Analyze_TwoElementsSameMissingTarget_DedupesIntoOneMissingTargetPage() {
+		// Arrange — two buttons, each opening the same missing web page.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "FirstButton", "type": "crt.Button", "caption": "First",
+				  "clicked": { "request": "crt.OpenPageRequest", "params": { "schemaName": "LegacyPage" } } },
+				{ "name": "SecondButton", "type": "crt.Button", "caption": "Second",
+				  "clicked": { "request": "crt.OpenPageRequest", "params": { "schemaName": "LegacyPage" } } }
+			] } ]
+			""");
+		MobileActionTargetProbeResult probe = ProbeResult(
+			"FirstButton", "crt.OpenPageRequest", MobileActionTargetProbe.KindWebPage, "LegacyPage",
+			ActionTargetState.Missing);
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeTargets(bundle, probe);
+
+		// Assert
+		MissingTargetPage candidate = guide.RequestConversions!.MissingTargetPages
+			.Should().ContainSingle(because: "both buttons name the same distinct target").Subject;
+		candidate.References.Should().HaveCount(2,
+			because: "the report must list every button that opens the missing page, for the conversion-report text");
+		candidate.References.Should().Contain(r => r.ElementName == "FirstButton");
+		candidate.References.Should().Contain(r => r.ElementName == "SecondButton");
+	}
+
+	[Test]
+	[Description("Two buttons opening TWO DIFFERENT missing web pages must never cross-contaminate: each button's finding, dropped-request reason and missingTargetPages entry names ITS OWN target, and each button's OWN binding (never the other button's) is the one left on the element with its target param blanked.")]
+	public void Analyze_TwoElementsDifferentMissingTargets_EachKeepsItsOwnPage() {
+		// Arrange — two buttons, each opening a DIFFERENT missing web page.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "FirstButton", "type": "crt.Button", "caption": "First",
+				  "clicked": { "request": "crt.OpenPageRequest", "params": { "schemaName": "FirstLegacyPage" } } },
+				{ "name": "SecondButton", "type": "crt.Button", "caption": "Second",
+				  "clicked": { "request": "crt.OpenPageRequest", "params": { "schemaName": "SecondLegacyPage" } } }
+			] } ]
+			""");
+		var probe = new MobileActionTargetProbeResult {
+			ProbeOk = true,
+			Occurrences = [
+				new ActionTargetOccurrence {
+					ElementName = "FirstButton", Binding = "clicked", WebRequest = "crt.OpenPageRequest",
+					Kind = MobileActionTargetProbe.KindWebPage, Target = "FirstLegacyPage"
+				},
+				new ActionTargetOccurrence {
+					ElementName = "SecondButton", Binding = "clicked", WebRequest = "crt.OpenPageRequest",
+					Kind = MobileActionTargetProbe.KindWebPage, Target = "SecondLegacyPage"
+				}
+			],
+			TargetsByKey = new Dictionary<string, ActionTargetResolution>(StringComparer.OrdinalIgnoreCase) {
+				[MobileActionTargetProbe.TargetKey(MobileActionTargetProbe.KindWebPage, "FirstLegacyPage")] =
+					new ActionTargetResolution {
+						Kind = MobileActionTargetProbe.KindWebPage, Target = "FirstLegacyPage", State = ActionTargetState.Missing
+					},
+				[MobileActionTargetProbe.TargetKey(MobileActionTargetProbe.KindWebPage, "SecondLegacyPage")] =
+					new ActionTargetResolution {
+						Kind = MobileActionTargetProbe.KindWebPage, Target = "SecondLegacyPage", State = ActionTargetState.Missing
+					}
+			}
+		};
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeTargets(bundle, probe);
+
+		// Assert — two DISTINCT missingTargetPages entries, not one merged (they are different targets).
+		guide.RequestConversions!.MissingTargetPages.Should().HaveCount(2,
+			because: "two different pages are missing, so they must queue as two separate offers");
+		MissingTargetPage first = guide.RequestConversions.MissingTargetPages
+			.Should().ContainSingle(p => p.Target == "FirstLegacyPage").Subject;
+		MissingTargetPage second = guide.RequestConversions.MissingTargetPages
+			.Should().ContainSingle(p => p.Target == "SecondLegacyPage").Subject;
+		first.References.Should().ContainSingle(r => r.ElementName == "FirstButton",
+			because: "FirstButton's own target belongs under its OWN entry, not SecondButton's");
+		second.References.Should().ContainSingle(r => r.ElementName == "SecondButton",
+			because: "SecondButton's own target belongs under its OWN entry, not FirstButton's");
+		ClickedOf(guide, "FirstButton")["clicked"]!.AsObject()["params"]!["schemaName"]!.GetValue<string>()
+			.Should().BeEmpty(
+				because: "FirstButton's own binding gets its own target param blanked");
+		ClickedOf(guide, "SecondButton")["clicked"]!.AsObject()["params"]!["schemaName"]!.GetValue<string>()
+			.Should().BeEmpty(
+				because: "SecondButton's own binding gets its own target param blanked — swapping the two here "
+					+ "would silently repoint the wrong button once either page converts");
+		// unresolvedTargetRequests must show the same non-crossed pairing, and each dropped-request reason
+		// must name the button's OWN target too.
+		guide.RequestConversions.UnresolvedTargetRequests.Should().ContainSingle(
+			r => r.ElementName == "FirstButton" && r.Target == "FirstLegacyPage");
+		guide.RequestConversions.UnresolvedTargetRequests.Should().ContainSingle(
+			r => r.ElementName == "SecondButton" && r.Target == "SecondLegacyPage");
+		DroppedRequest firstDropped = guide.RequestConversions.DroppedRequests
+			.Should().ContainSingle(r => r.ElementName == "FirstButton").Subject;
+		DroppedRequest secondDropped = guide.RequestConversions.DroppedRequests
+			.Should().ContainSingle(r => r.ElementName == "SecondButton").Subject;
+		ReasonParam(firstDropped.Reason, ReasonCodes.DropRequestTargetMissing, "target")
+			.Should().Be("FirstLegacyPage", because: "the reason must name the button's own dead destination");
+		ReasonParam(secondDropped.Reason, ReasonCodes.DropRequestTargetMissing, "target")
+			.Should().Be("SecondLegacyPage", because: "the reason must name the button's own dead destination");
+	}
+
+	[Test]
+	[Description("A verified-missing entity-default-mobile-page target WITH a resolved candidate is queued into missingTargetPages, keyed by the resolved candidate schema name — clio now aggregates this kind too, so the caller no longer classifies or groups it by hand.")]
+	public void Analyze_EntityTargetMissingWithResolvedCandidate_QueuesItByResolvedCandidateSchemaName() {
+		// Arrange
+		PageBundleInfo bundle = CreateRecordButtonBundle("ProductsAddButton", "LeadProduct");
+		MobileActionTargetProbeResult probe = ProbeResult(
+			"ProductsAddButton", "crt.CreateRecordRequest",
+			MobileActionTargetProbe.KindEntityDefaultMobilePage, "LeadProduct", ActionTargetState.Missing,
+			resolvedCandidateSchemaName: "LeadProduct_FormPage");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeTargets(bundle, probe);
+
+		// Assert
+		MissingTargetPage candidate = guide.RequestConversions!.MissingTargetPages
+			.Should().ContainSingle(because: "the resolved candidate must be offered for conversion").Subject;
+		candidate.Target.Should().Be("LeadProduct_FormPage",
+			because: "the resolved candidate schema name is the page to actually convert, not the object name");
+		candidate.TargetKind.Should().Be(MobileActionTargetProbe.KindEntityDefaultMobilePage);
+		candidate.ResolvedCandidateSchemaName.Should().Be("LeadProduct_FormPage",
+			because: "a caller must be able to tell THIS shape (Target already IS a resolved page name) apart "
+				+ "from the no-candidate shape without re-deriving it, since both report the same TargetKind");
+		candidate.References.Should().ContainSingle(r => r.ElementName == "ProductsAddButton");
+	}
+
+	[Test]
+	[Description("A verified-missing entity-default-mobile-page target with NO resolved candidate falls back to the raw object name as its queue key, so it can still be offered (and deduped) even though there is no page name yet.")]
+	public void Analyze_EntityTargetMissingWithoutResolvedCandidate_QueuesItByRawTargetName() {
+		// Arrange
+		PageBundleInfo bundle = CreateRecordButtonBundle("ProductsAddButton", "LeadProduct");
+		MobileActionTargetProbeResult probe = ProbeResult(
+			"ProductsAddButton", "crt.CreateRecordRequest",
+			MobileActionTargetProbe.KindEntityDefaultMobilePage, "LeadProduct", ActionTargetState.Missing);
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeTargets(bundle, probe);
+
+		// Assert
+		MissingTargetPage candidate = guide.RequestConversions!.MissingTargetPages
+			.Should().ContainSingle().Subject;
+		candidate.Target.Should().Be("LeadProduct",
+			because: "with no candidate resolved, the raw object name is the only key available");
+		candidate.TargetKind.Should().Be(MobileActionTargetProbe.KindEntityDefaultMobilePage);
+		candidate.ResolvedCandidateSchemaName.Should().BeNull(
+			because: "Target here is just the raw object name, not a page — a caller must be able to tell this "
+				+ "apart from the resolved-candidate shape instead of risking get-page on an object name that "
+				+ "happens to collide with an unrelated page");
+	}
+
+	[Test]
+	[Description("An entity-default-mobile-page target whose state is unknown (unreachable environment, not a confirmed absence) is still reported only in unresolvedTargetRequests, never queued in missingTargetPages — an unverified guess must not be offered as a conversion candidate.")]
+	public void Analyze_EntityTargetUnknown_IsNotQueuedInMissingTargetPages() {
+		// Arrange
+		PageBundleInfo bundle = CreateRecordButtonBundle("ProductsAddButton", "LeadProduct");
+		MobileActionTargetProbeResult probe = ProbeResult(
+			"ProductsAddButton", "crt.CreateRecordRequest",
+			MobileActionTargetProbe.KindEntityDefaultMobilePage, "LeadProduct", ActionTargetState.Unknown);
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeTargets(bundle, probe);
+
+		// Assert
+		guide.RequestConversions!.UnresolvedTargetRequests.Should().ContainSingle(
+			because: "the object target is still reported");
+		guide.RequestConversions.MissingTargetPages.Should().BeEmpty(
+			because: "an unverified (unknown) entity target must never be queued as a conversion candidate");
+	}
+
+	[Test]
+	[Description("Two buttons creating the same missing object — sharing the same resolved candidate schema name — dedupe into ONE missingTargetPages entry, carrying both references, so the object's default page is never offered for conversion twice.")]
+	public void Analyze_TwoButtonsSameMissingEntity_DedupeIntoOneMissingTargetPage() {
+		// Arrange — mirrors Analyze_TwoButtonsSameMissingEntity_ProduceSeparateFindingsSharingTheSameResolvedCandidate,
+		// but asserts the missingTargetPages-level dedup this pass now performs on top of that.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "FirstAddButton", "type": "crt.Button", "caption": "First",
+				  "clicked": { "request": "crt.CreateRecordRequest", "params": { "entityName": "LeadProduct" } } },
+				{ "name": "SecondAddButton", "type": "crt.Button", "caption": "Second",
+				  "clicked": { "request": "crt.CreateRecordRequest", "params": { "entityName": "LeadProduct" } } }
+			] } ]
+			""");
+		MobileActionTargetProbeResult probe = ProbeResult(
+			"FirstAddButton", "crt.CreateRecordRequest",
+			MobileActionTargetProbe.KindEntityDefaultMobilePage, "LeadProduct", ActionTargetState.Missing,
+			resolvedCandidateSchemaName: "LeadProduct_FormPage");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeTargets(bundle, probe);
+
+		// Assert
+		MissingTargetPage candidate = guide.RequestConversions!.MissingTargetPages
+			.Should().ContainSingle(because: "both buttons name the same resolved candidate").Subject;
+		candidate.References.Should().HaveCount(2);
+		candidate.References.Should().Contain(r => r.ElementName == "FirstAddButton");
+		candidate.References.Should().Contain(r => r.ElementName == "SecondAddButton");
+	}
+
+	[Test]
+	[Description("A web-page target whose schema name coincides with an entity-default-mobile-page target's resolved candidate — a direct crt.OpenPageRequest on a page that also happens to be some object's default mobile edit page — collapse into ONE missingTargetPages row carrying references from BOTH sources, reported as web-page (the kind the step-8a repoint sub-step keys on).")]
+	public void Analyze_WebPageAndEntityTarget_SameResolvedSchema_MergeIntoOneMissingTargetPage() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "OpenButton", "type": "crt.Button", "caption": "Open",
+				  "clicked": { "request": "crt.OpenPageRequest", "params": { "schemaName": "LeadProduct_FormPage" } } },
+				{ "name": "AddButton", "type": "crt.Button", "caption": "Add",
+				  "clicked": { "request": "crt.CreateRecordRequest", "params": { "entityName": "LeadProduct" } } }
+			] } ]
+			""");
+		var probe = new MobileActionTargetProbeResult {
+			ProbeOk = true,
+			Occurrences = [
+				new ActionTargetOccurrence {
+					ElementName = "OpenButton", Binding = "clicked", WebRequest = "crt.OpenPageRequest",
+					Kind = MobileActionTargetProbe.KindWebPage, Target = "LeadProduct_FormPage"
+				},
+				new ActionTargetOccurrence {
+					ElementName = "AddButton", Binding = "clicked", WebRequest = "crt.CreateRecordRequest",
+					Kind = MobileActionTargetProbe.KindEntityDefaultMobilePage, Target = "LeadProduct"
+				}
+			],
+			TargetsByKey = new Dictionary<string, ActionTargetResolution>(StringComparer.OrdinalIgnoreCase) {
+				[MobileActionTargetProbe.TargetKey(MobileActionTargetProbe.KindWebPage, "LeadProduct_FormPage")] =
+					new ActionTargetResolution {
+						Kind = MobileActionTargetProbe.KindWebPage, Target = "LeadProduct_FormPage",
+						State = ActionTargetState.Missing
+					},
+				[MobileActionTargetProbe.TargetKey(MobileActionTargetProbe.KindEntityDefaultMobilePage, "LeadProduct")] =
+					new ActionTargetResolution {
+						Kind = MobileActionTargetProbe.KindEntityDefaultMobilePage, Target = "LeadProduct",
+						State = ActionTargetState.Missing, ResolvedCandidateSchemaName = "LeadProduct_FormPage"
+					}
+			}
+		};
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeTargets(bundle, probe);
+
+		// Assert
+		MissingTargetPage candidate = guide.RequestConversions!.MissingTargetPages
+			.Should().ContainSingle(
+				because: "the web-page target and the entity's resolved candidate name the SAME schema").Subject;
+		candidate.Target.Should().Be("LeadProduct_FormPage");
+		candidate.TargetKind.Should().Be(MobileActionTargetProbe.KindWebPage,
+			because: "a merged row reports as web-page — that is the kind the step-8a repoint sub-step keys on");
+		candidate.ResolvedCandidateSchemaName.Should().BeNull(
+			because: "the discriminator is scoped to rows still reported as entity-default-mobile-page; a merged "
+				+ "row reports web-page, whose Target is already a page name by construction — no disambiguation "
+				+ "needed here even though an entity finding also contributed to this row");
+		candidate.References.Should().HaveCount(2,
+			because: "the merged row must carry the reference from BOTH sources, not just the web-page one");
+		candidate.References.Should().Contain(r => r.ElementName == "OpenButton");
+		candidate.References.Should().Contain(r => r.ElementName == "AddButton");
 	}
 
 	#endregion
@@ -6867,6 +8402,63 @@ public sealed class WebToMobileConversionServiceTests {
 		co["small"]!["row"]!.GetValue<int>().Should().Be(2);
 		co["medium"]!["column"]!.GetValue<int>().Should().Be(2);
 		co["medium"]!["row"]!.GetValue<int>().Should().Be(1);
+	}
+
+	/// <summary>
+	/// A two-column web grid <c>GeneralInfoTabContainer</c> paired onto <paramref name="mobileName"/>, whose type the
+	/// probed mobile template reports as <paramref name="mobileType"/> — the only input that differs between the
+	/// guarded and the admitted case of the adaptive pass.
+	/// </summary>
+	private static MobilePageConversionGuide AnalyzeGridRenamedOnto(string mobileName, string mobileType) {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "GeneralInfoTabContainer", "type": "crt.GridContainer",
+			    "columns": [ "minmax(32px, 1fr)", "minmax(32px, 1fr)" ], "items": [
+				{ "name": "Name", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 1, "colSpan": 1, "rowSpan": 1 } },
+				{ "name": "CreatedOn", "type": "crt.Input", "layoutConfig": { "column": 2, "row": 1, "colSpan": 1, "rowSpan": 1 } } ] } ]
+			""");
+		var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+			["GeneralInfoTabContainer"] = mobileName
+		};
+		var mobileTemplateTypes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+			[mobileName] = mobileType
+		};
+		return Analyze(bundle,
+			webByType: Reg(("crt.GridContainer", true), ("crt.Input", false)),
+			containerNameMap: map,
+			mobileTemplateTypesByName: mobileTemplateTypes);
+	}
+
+	[Test]
+	[Description("A multi-column web grid renamed by a containers pair onto a mobile element that is NOT a crt.GridContainer (the shipped case: GeneralInfoTabContainer -> the declared MobileAdditionalInfoTab, a crt.TabContainer) does not carry its column count there: adaptive per-breakpoint columns is a property of the mobile grid type only, so no adaptive group is built and the children are not placed as if they sat in a multi-column grid.")]
+	public void Analyze_MultiColumnGrid_RenamedOntoNonGrid_GetsNoAdaptive() {
+		// Arrange & Act
+		MobilePageConversionGuide guide = AnalyzeGridRenamedOnto("MobileAdditionalInfoTab", "crt.TabContainer");
+
+		// Assert
+		Element(guide, "GeneralInfoTabContainer").Name.Should().Be("MobileAdditionalInfoTab",
+			because: "the pair must actually rename the grid onto the tab, or the guard is not exercised");
+		(guide.AdaptiveLayout ?? []).Should().NotContain(g => g.ContainerName == "MobileAdditionalInfoTab",
+			because: "a crt.TabContainer has no columns input, so the web grid's columns must not be attached to it");
+		foreach (string field in new[] { "Name", "CreatedOn" }) {
+			JsonNode layoutConfig = Element(guide, field).Values?["layoutConfig"];
+			(layoutConfig?["adaptive"]).Should().BeNull(
+				because: $"'{field}' does not sit in a multi-column mobile grid, so it must not get an adaptive "
+					+ "placement — an adaptive layoutConfig is never overwritten by a later placement pass");
+		}
+	}
+
+	[Test]
+	[Description("Control for the non-grid guard: the same web grid renamed onto a mobile element the template reports as crt.GridContainer still gets the adaptive group — the guard reads the MOBILE type, it does not reject renamed pairs.")]
+	public void Analyze_MultiColumnGrid_RenamedOntoMobileGrid_KeepsAdaptive() {
+		// Arrange & Act
+		MobilePageConversionGuide guide = AnalyzeGridRenamedOnto("GeneralTabContainer", "crt.GridContainer");
+
+		// Assert
+		guide.AdaptiveLayout.Should().ContainSingle(g => g.ContainerName == "GeneralTabContainer",
+			because: "a grid-to-grid pair keeps the web column count under the mobile name");
+		JsonObject co = AdaptiveOf(guide, "CreatedOn");
+		co["small"]!["column"]!.GetValue<int>().Should().Be(1, because: "the phone breakpoint stacks into one column");
+		co["medium"]!["column"]!.GetValue<int>().Should().Be(2, because: "tablet keeps the web two-column cell");
 	}
 
 	[Test]
@@ -7863,7 +9455,8 @@ public sealed class WebToMobileConversionServiceTests {
 			webByType: Reg(("crt.FlexContainer", true), ("crt.GridContainer", true), ("crt.Input", false)),
 			mobileByType: null, rules, templateRule: null,
 			sourcePage: "UsrApp_FormPage", sourceTemplate: "PageWithTabsFreedomTemplate",
-			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: null);
+			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: null,
+			mobileRequestTypes: NoRequestRegistry);
 
 	[Test]
 	[Description("A converted grid container's web gap (any value, e.g. the canonical columnGap large / rowGap none) is DISCARDED, not translated — the insert carries the mobile-standard gap Medium on both axes, and the advisory section lists the container.")]
@@ -8353,7 +9946,8 @@ public sealed class WebToMobileConversionServiceTests {
 				("crt.Button", false)),
 			mobileByType: null, rules, templateRule: null,
 			sourcePage: "UsrApp_FormPage", sourceTemplate: "PageWithTabsFreedomTemplate",
-			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: null);
+			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: null,
+			mobileRequestTypes: NoRequestRegistry);
 
 	/// <summary>A web metric carrying its own larger font size and a visible border, plus a data subtree.</summary>
 	private static PageBundleInfo MetricBundle() => Bundle("""
@@ -8436,12 +10030,12 @@ public sealed class WebToMobileConversionServiceTests {
 		// Arrange
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "InfoGrid", "type": "crt.GridContainer", "items": [
-				{ "name": "SaveButton", "type": "crt.Button", "caption": "Save" } ] } ]
+				{ "name": "SaveField", "type": "crt.Input", "label": "Save" } ] } ]
 			""");
 		var rules = new WebToMobilePageConversionRules {
 			ComponentPropertyOverrides = [
 				new ComponentPropertyOverrideRule {
-					Filters = [new ElementFilterRule { Type = "crt.Button" }],
+					Filters = [new ElementFilterRule { Type = "crt.Input" }],
 					Values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
 						"""{ "shape": "rounded" }""")
 				}
@@ -8452,7 +10046,7 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeMetric(bundle, rules);
 
 		// Assert
-		guide.Normalizations!.Keys.Should().BeEquivalentTo(["crt.Button"],
+		guide.Normalizations!.Keys.Should().BeEquivalentTo(["crt.Input"],
 			because: "an uncurated type keys its own section rather than borrowing another standard's");
 		Spacing(guide).Should().BeNull(
 			because: "nothing container-related was normalized, so the alias stays absent");
@@ -8897,7 +10491,8 @@ public sealed class WebToMobileConversionServiceTests {
 			bundle, MobileTypes, WebTypes,
 			Reg(("crt.FlexContainer", true), ("crt.DataGrid", false)), mobileByType: null, rules, templateRule: null,
 			sourcePage: "UsrApp_FormPage", sourceTemplate: "PageWithTabsFreedomTemplate",
-			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: null);
+			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: null,
+			mobileRequestTypes: NoRequestRegistry);
 
 	private const string RowOnlyTemplate = """
 		{ "type": "crt.List", "itemLayout": { "name": "{{ diff.name }}_ListItem", "type": "crt.ListItem",
@@ -9113,7 +10708,8 @@ public sealed class WebToMobileConversionServiceTests {
 	public void Analyze_TemplateDrivenPlacement_RetargetsParentAndProperty() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Box", "type": "crt.FlexContainer", "items": [
-				{ "name": "AddBtn", "type": "crt.Button", "caption": "#ResourceString(AddBtn_caption)#" } ] } ]
+				{ "name": "AddBtn", "type": "crt.Button", "caption": "#ResourceString(AddBtn_caption)#",
+				  "clicked": { "request": "crt.SaveRecordRequest", "params": {} } } ] } ]
 			""");
 		var mobileTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
 			"crt.FlexContainer", "crt.Button", "crt.MenuItem"
@@ -9285,7 +10881,8 @@ public sealed class WebToMobileConversionServiceTests {
 			WebToMobilePageConversionRulesCatalog.LoadBundled(), templateRule: null,
 			sourcePage: "UsrApp_ListPage", sourceTemplate: "ListPageV3Template",
 			suggestedTarget: "UsrApp_MobileListPage", containerNameMap: containerNameMap,
-			templateComponentNames: Names("ListContainer", "DataTable"), componentNameMap: componentNameMap);
+			templateComponentNames: Names("ListContainer", "DataTable"), componentNameMap: componentNameMap,
+			mobileRequestTypes: NoRequestRegistry);
 
 		// Assert
 		ViewConfigDiffOperation twin = guide.ViewConfigDiff.Single(e => SourceNameOf(guide, e) == "DataTable");
@@ -9321,7 +10918,8 @@ public sealed class WebToMobileConversionServiceTests {
 			suggestedTarget: "UsrApp_MobileListPage",
 			containerNameMap: MobilePageConversionGuideTool.BuildContainerNameMap(templateRule),
 			templateComponentNames: Names("SectionContentWrapper", "DataTable"),
-			componentNameMap: MobilePageConversionGuideTool.BuildComponentNameMap(templateRule));
+			componentNameMap: MobilePageConversionGuideTool.BuildComponentNameMap(templateRule),
+			mobileRequestTypes: NoRequestRegistry);
 
 		// Assert
 		ShouldBeAbsentEntirely(guide, "SectionContentWrapper",
@@ -9439,7 +11037,7 @@ public sealed class WebToMobileConversionServiceTests {
 		values["items"]?.GetValue<string>().Should().Be("$OverlaidBinding",
 			because: "a key the template NAMES wins — the shipped skeleton relies on that to declare the mobile "
 				+ "structure over what was carried");
-		values["layoutConfig"]?["colSpan"]?.GetValue<int>().Should().Be(2,
+		values["layoutConfig"]?["row"]?.GetValue<int>().Should().Be(3,
 			because: "a key the template does not name survives untouched, which is how the element keeps its "
 				+ "placement and the grid's own properties without any rule naming them");
 		values["type"]?.GetValue<string>().Should().Be("crt.List",
@@ -9609,7 +11207,8 @@ public sealed class WebToMobileConversionServiceTests {
 			bundle, mobileWithGrid, WebTypes,
 			Reg(("crt.FlexContainer", true), ("crt.DataGrid", false)), null, Rules, null,
 			sourcePage: "UsrApp_FormPage", sourceTemplate: "PageWithTabsFreedomTemplate",
-			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: null);
+			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: null,
+			mobileRequestTypes: NoRequestRegistry);
 
 		// Assert
 		ViewConfigDiffOperation grid = Element(guide, "SelfMapped");
@@ -9709,7 +11308,8 @@ public sealed class WebToMobileConversionServiceTests {
 		IReadOnlyList<WebToMobileAnalysisService.PositionalPlacement> positionalPlacements = null,
 		IReadOnlyDictionary<string, string> mobileContainerParents = null,
 		PageBusinessRuleProbeResult pageBusinessRulesProbe = null,
-		IReadOnlyDictionary<string, JsonObject> mobileTemplateLayoutConfigs = null) =>
+		IReadOnlyDictionary<string, JsonObject> mobileTemplateLayoutConfigs = null,
+		IReadOnlySet<string> mobileRequestTypes = null) =>
 		WebToMobileAnalysisService.Analyze(
 			bundle, EmptyRemovalMobileTypes,
 			new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "crt.Timeline" },
@@ -9719,7 +11319,8 @@ public sealed class WebToMobileConversionServiceTests {
 			suggestedTarget: "UsrLeads_MobileFormPage", containerNameMap: containerNameMap ?? TabbedContainerMap,
 			positionalPlacements: positionalPlacements, mobileContainerParents: mobileContainerParents,
 			pageBusinessRulesProbe: pageBusinessRulesProbe,
-			mobileTemplateLayoutConfigs: mobileTemplateLayoutConfigs);
+			mobileTemplateLayoutConfigs: mobileTemplateLayoutConfigs,
+			mobileRequestTypes: mobileRequestTypes ?? NoRequestRegistry);
 
 	[Test]
 	[Description("A converter-created container whose every child dropped is itself converted to a drop whose reason says 'empty container' — the entry is the whole report, so no constraint restates it.")]
@@ -9872,10 +11473,13 @@ public sealed class WebToMobileConversionServiceTests {
 	public void Analyze_ShouldConvertToolsButtons_AndKeepTheirPanel() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "ToolsOnlyPanel", "type": "crt.ExpansionPanel",
-			    "tools": [ { "name": "AddButton", "type": "crt.Button" } ], "items": [] } ]
+			    "tools": [ { "name": "AddButton", "type": "crt.Button", "clicked": { "request": "crt.SaveRecordRequest", "params": {} } } ], "items": [] } ]
 			""");
 
-		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+		// A registry, unlike every other caller of this helper: this test's SUBJECT is a crt.Button, and an
+		// action-only control whose request nothing supports is removed before the assertions below can look
+		// at it (ENG-96178). The slot routing under test is unaffected by which requests are declared.
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle, mobileRequestTypes: MobileRequestTypes);
 
 		ViewConfigDiffOperation addButton = Element(guide, "AddButton");
 		addButton.Operation.Should().Be("insert",
@@ -10139,7 +11743,8 @@ public sealed class WebToMobileConversionServiceTests {
 			mobileByType: null, rules, templateRule: null,
 			sourcePage: "Leads_FormPage", sourceTemplate: "PageWithTabsFreedomTemplate",
 			suggestedTarget: "UsrLeads_MobileFormPage",
-			containerNameMap: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
+			containerNameMap: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+			mobileRequestTypes: NoRequestRegistry);
 
 	[Test]
 	[Description("crt.SearchFilter does not fit crt.ExpansionPanel's compact icon-only tools header strip on mobile: it is stripped from tools while its sibling header buttons stay, in the same order, and the removal is recorded as a drop entry so it stays visible in the report.")]
@@ -10150,9 +11755,9 @@ public sealed class WebToMobileConversionServiceTests {
 			[ { "name": "ProductsExpansionPanel", "type": "crt.ExpansionPanel",
 			    "tools": [ { "type": "crt.GridContainer", "items": [
 			        { "type": "crt.FlexContainer", "items": [
-			            { "name": "ProductsRefreshButton", "type": "crt.Button" },
+			            { "name": "ProductsRefreshField", "type": "crt.Input" },
 			            { "name": "ProductsSearchFilter", "type": "crt.SearchFilter" },
-			            { "name": "ProductsSettingsButton", "type": "crt.Button" } ] } ] } ],
+			            { "name": "ProductsSettingsField", "type": "crt.Input" } ] } ] } ],
 			    "items": [] } ]
 			""");
 
@@ -10167,7 +11772,7 @@ public sealed class WebToMobileConversionServiceTests {
 		JsonArray toolsFlexItems = panel.Values!["tools"]![0]!["items"]![0]!["items"]!.AsArray();
 		toolsFlexItems.Should().HaveCount(2, because: "the search filter was stripped, its two button siblings stay");
 		toolsFlexItems.Select(i => i!["name"]!.GetValue<string>()).Should().Equal(
-			["ProductsRefreshButton", "ProductsSettingsButton"],
+			["ProductsRefreshField", "ProductsSettingsField"],
 			because: "removal must not reorder or duplicate the surviving siblings");
 		DroppedElement dropped = Dropped(guide, "ProductsSearchFilter");
 		DroppedNames(guide).Should().Contain("ProductsSearchFilter",
@@ -10267,7 +11872,7 @@ public sealed class WebToMobileConversionServiceTests {
 			[ { "name": "ProductsExpansionPanel", "type": "crt.ExpansionPanel",
 			    "tools": [ { "type": "crt.GridContainer", "items": [
 			        { "type": "crt.FlexContainer", "items": [
-			            { "name": "ProductsRefreshButton", "type": "crt.Button" },
+			            { "name": "ProductsRefreshField", "type": "crt.Input" },
 			            { "name": "ProductsSearchFilter", "type": "crt.SearchFilter" } ] } ] } ],
 			    "items": [] },
 			  { "name": "CustomHost", "type": "usr.Bar", "widgets": [
@@ -10282,7 +11887,7 @@ public sealed class WebToMobileConversionServiceTests {
 		DroppedNames(guide).Should().Contain("Buried",
 			because: "the second rule matches independently of the first — two rules do not interfere");
 		Element(guide, "ProductsExpansionPanel").Values!["tools"]![0]!["items"]![0]!["items"]!.AsArray()
-			.Should().ContainSingle(i => i!["name"]!.GetValue<string>() == "ProductsRefreshButton",
+			.Should().ContainSingle(i => i!["name"]!.GetValue<string>() == "ProductsRefreshField",
 				because: "the second, unrelated rule (usr.Foo inside usr.Bar) must not affect the ExpansionPanel host");
 		(Element(guide, "CustomHost").Values! as JsonObject)!.ContainsKey("widgets").Should().BeFalse(
 			because: "the first, unrelated rule (crt.SearchFilter inside crt.ExpansionPanel.tools) must not affect this host");
@@ -10542,7 +12147,7 @@ public sealed class WebToMobileConversionServiceTests {
 
 	private static readonly IReadOnlySet<string> EntryGraphMobileTypes =
 		new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
-			"crt.ExpansionPanel", "crt.GridContainer", "crt.FlexContainer", "crt.Button",
+			"crt.ExpansionPanel", "crt.GridContainer", "crt.FlexContainer", "crt.Button", "crt.MenuItem",
 			"crt.SearchFilter", "crt.QuickFilter", "crt.List", "crt.Input"
 		};
 
@@ -10559,7 +12164,8 @@ public sealed class WebToMobileConversionServiceTests {
 			mobileByType: null, rules, templateRule: null,
 			sourcePage: "Leads_FormPage", sourceTemplate: "PageWithTabsFreedomTemplate",
 			suggestedTarget: "UsrLeads_MobileFormPage",
-			containerNameMap: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
+			containerNameMap: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+			mobileRequestTypes: NoRequestRegistry);
 
 	/// <summary>The real Leads_FormPage products-panel shape: every tools element NAMED and mobile-resolvable,
 	/// so the traversal walks the whole subtree into entries instead of carrying it verbatim.</summary>
@@ -10567,9 +12173,9 @@ public sealed class WebToMobileConversionServiceTests {
 		[ { "name": "ProductsExpansionPanel", "type": "crt.ExpansionPanel",
 		    "tools": [ { "name": "ProductsToolsContainer", "type": "crt.GridContainer", "items": [
 		        { "name": "ProductsToolsFlexContainer", "type": "crt.FlexContainer", "items": [
-		            { "name": "ProductsRefreshButton", "type": "crt.Button" },
+		            { "name": "ProductsRefreshField", "type": "crt.Input" },
 		            { "name": "ProductsSearchFilter", "type": "crt.SearchFilter" },
-		            { "name": "ProductsSettingsButton", "type": "crt.Button" } ] } ] } ],
+		            { "name": "ProductsSettingsField", "type": "crt.Input" } ] } ] } ],
 		    "items": [
 		        { "name": "ProductsListContainer", "type": "crt.GridContainer", "items": [
 		            { "name": "QuickFilter_vitfc9y", "type": "crt.QuickFilter" },
@@ -10603,9 +12209,9 @@ public sealed class WebToMobileConversionServiceTests {
 		ReasonParam(dropped, ReasonCodes.DropExcludedByRule, "hostType").Should().Be("crt.ExpansionPanel");
 		ReasonParam(dropped, ReasonCodes.DropExcludedByRule, "slot").Should().Be("tools",
 			because: "the entry-graph phase must report the same traceable reason the verbatim phase reports");
-		Element(guide, "ProductsRefreshButton").Operation.Should().Be("insert",
+		Element(guide, "ProductsRefreshField").Operation.Should().Be("insert",
 			because: "siblings of the banned component are untouched");
-		Element(guide, "ProductsSettingsButton").Operation.Should().Be("insert",
+		Element(guide, "ProductsSettingsField").Operation.Should().Be("insert",
 			because: "removal must not spill beyond the matched entry");
 	}
 
@@ -10637,6 +12243,138 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "only the banned type is removed — this rule names crt.QuickFilter, not crt.SearchFilter");
 		Element(guide, "ProductsList").Operation.Should().Be("insert",
 			because: "the list sharing a container with a banned component is untouched");
+	}
+
+	private static readonly RequestMappingRule LoadDataRequestMapping = new() {
+		Web = "crt.LoadDataRequest", Mobile = "crt.LoadDataRequest", Category = "DirectMapping"
+	};
+
+	/// <summary>An allow-list rule plus a request map under which the fixtures' buttons keep a live action.</summary>
+	private static WebToMobilePageConversionRules AllowListRules(ExcludedComponentFilterRule filter) => new() {
+		ExcludedComponents = [new ExcludedComponentGroup { Filters = [filter] }],
+		Requests = [LoadDataRequestMapping]
+	};
+
+	[Test]
+	[Description("ENG-96411: with the bundled rules, crt.ExpansionPanel.tools keeps only its buttons and their menu items — the search field and the quick-filter chip are dropped, and the flex container that only held the chip is removed as empty.")]
+	public void Analyze_ShouldKeepOnlyButtonsInExpansionPanelTools_WithBundledRules() {
+		// Arrange — the Opportunities_FormPage Leads panel: the chip sits in its own column flex beside the buttons.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "LeadsExpansionPanel", "type": "crt.ExpansionPanel",
+			    "tools": [ { "name": "LeadsToolsContainer", "type": "crt.GridContainer", "items": [
+			        { "name": "LeadsToolsFlexContainer", "type": "crt.FlexContainer", "items": [
+			            { "name": "LeadsAddButton", "type": "crt.Button", "clicked": { "request": "crt.LoadDataRequest", "params": {} } },
+			            { "name": "LeadsRefreshButton", "type": "crt.Button", "clicked": { "request": "crt.LoadDataRequest", "params": {} } },
+			            { "name": "LeadsSettingsButton", "type": "crt.Button", "menuItems": [
+			                { "name": "LeadsExportDataButton", "type": "crt.MenuItem", "clicked": { "request": "crt.LoadDataRequest", "params": {} } } ] },
+			            { "name": "LeadsSearchFilter", "type": "crt.SearchFilter" },
+			            { "name": "LeadsQuickFilterFlexContainer", "type": "crt.FlexContainer", "items": [
+			                { "name": "QuickFilterShowAllLeads", "type": "crt.QuickFilter" } ] } ] } ] } ],
+			    "items": [
+			        { "name": "LeadsListContainer", "type": "crt.GridContainer", "items": [
+			            { "name": "LeadsList", "type": "crt.List" } ] } ] } ]
+			""");
+		WebToMobilePageConversionRules rules = new() {
+			ExcludedComponents = WebToMobilePageConversionRulesCatalog.LoadBundled().ExcludedComponents,
+			EmptyContainerRemoval = EmptyRemoval,
+			Requests = [LoadDataRequestMapping]
+		};
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithExcludedComponentsEntryGraph(bundle, rules);
+
+		// Assert
+		DroppedElement quickFilter = Dropped(guide, "QuickFilterShowAllLeads");
+		Codes(quickFilter).Should().Contain(ReasonCodes.DropExcludedByRule,
+			because: "the chip does not fit the compact icon-only header strip, and the bundled rules say so");
+		ReasonParam(quickFilter, ReasonCodes.DropExcludedByRule, "slot").Should().Be("tools");
+		Codes(Dropped(guide, "LeadsSearchFilter")).Should().Contain(ReasonCodes.DropExcludedByRule,
+			because: "the allow-list covers the ENG-95081 search field too");
+		Codes(Dropped(guide, "LeadsQuickFilterFlexContainer")).Should().Contain(ReasonCodes.DropEmptyContainer,
+			because: "a wrapper left with nothing would still claim header width on the device");
+		Element(guide, "LeadsAddButton").Operation.Should().Be("insert");
+		Element(guide, "LeadsRefreshButton").Operation.Should().Be("insert");
+		Element(guide, "LeadsSettingsButton").Operation.Should().Be("insert");
+		Element(guide, "LeadsExportDataButton").Operation.Should().Be("insert",
+			because: "a button's menu items are part of the button, not a separate strip item");
+		Element(guide, "LeadsList").Operation.Should().Be("insert",
+			because: "the ban is scoped to tools; the panel body is untouched");
+	}
+
+	[Test]
+	[Description("An allow-list filter (no type, only exceptTypes) strips the verbatim-carried shape too, and each drop entry reports the removed node's OWN type rather than the wildcard.")]
+	public void Analyze_ShouldReportRemovedType_WhenAllowListStripsVerbatimCarriedTools() {
+		// Arrange — the minimal type set leaves the tools subtree unresolved, so it is carried verbatim.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "ProductsExpansionPanel", "type": "crt.ExpansionPanel",
+			    "tools": [ { "type": "crt.GridContainer", "items": [
+			        { "type": "crt.FlexContainer", "items": [
+			            { "name": "ProductsRefreshButton", "type": "crt.Button", "clicked": { "request": "crt.LoadDataRequest", "params": {} } },
+			            { "name": "ProductsSearchFilter", "type": "crt.SearchFilter" } ] } ] } ],
+			    "items": [] } ]
+			""");
+		ExcludedComponentFilterRule allowButtons = new() {
+			ExceptTypes = ["crt.Button", "crt.FlexContainer", "crt.GridContainer"],
+			ChildSlots = ["items"],
+			ParentType = "crt.ExpansionPanel", PropertiesContainerName = "tools"
+		};
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithExcludedComponents(bundle, AllowListRules(allowButtons));
+
+		// Assert
+		JsonArray toolsFlexItems = Element(guide, "ProductsExpansionPanel").Values!["tools"]![0]!["items"]![0]!["items"]!.AsArray();
+		toolsFlexItems.Select(i => i!["name"]!.GetValue<string>()).Should().Equal(["ProductsRefreshButton"],
+			because: "the containers and the button are allowed, the search filter is not");
+		Dropped(guide, "ProductsSearchFilter").WebType.Should().Be("crt.SearchFilter",
+			because: "the allow-list names what it keeps, not what was removed — the report must name the real type");
+	}
+
+	[Test]
+	[Description("An allow-list filter walks only the child slots its rule names: a typed object inside a kept button's configuration is not a component and stays.")]
+	public void Analyze_ShouldKeepTypedConfiguration_WhenAllowListStripsVerbatimCarriedTools() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "ProductsExpansionPanel", "type": "crt.ExpansionPanel",
+			    "tools": [ { "type": "crt.FlexContainer", "items": [
+			        { "name": "ProductsRefreshButton", "type": "crt.Button",
+			          "clicked": { "request": "crt.LoadDataRequest", "params": { "series": [ { "type": "bar" } ] } } } ] } ],
+			    "items": [] } ]
+			""");
+		ExcludedComponentFilterRule allowButtons = new() {
+			ExceptTypes = ["crt.Button", "crt.FlexContainer"],
+			ChildSlots = ["items"],
+			ParentType = "crt.ExpansionPanel", PropertiesContainerName = "tools"
+		};
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithExcludedComponents(bundle, AllowListRules(allowButtons));
+
+		// Assert
+		JsonNode button = Element(guide, "ProductsExpansionPanel").Values!["tools"]![0]!["items"]![0]!;
+		button["clicked"]!["params"]!["series"]![0]!["type"]!.GetValue<string>().Should().Be("bar",
+			because: "a request parameter is not a component the header strip has to make room for");
+		(guide.DroppedElements ?? []).Should().NotContain(e => e.Reason!.Any(r => r.Code == ReasonCodes.DropExcludedByRule),
+			because: "nothing in the strip is a disallowed component");
+	}
+
+	[Test]
+	[Description("An allow-list filter that names no slot is skipped: without one it would strip the host's whole content, not one strip of it.")]
+	public void Analyze_ShouldSkipAllowListFilter_WhenItNamesNoSlot() {
+		// Arrange
+		PageBundleInfo bundle = Bundle(LeadsLikeProductsPanelJson);
+		ExcludedComponentFilterRule unscopedAllowList = new() {
+			ExceptTypes = ["crt.Button"],
+			ParentType = "crt.ExpansionPanel"
+		};
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithExcludedComponentsEntryGraph(bundle, RulesWithExcludedComponents(unscopedAllowList));
+
+		// Assert
+		(guide.DroppedElements ?? []).Should().NotContain(e => e.Reason!.Any(r => r.Code == ReasonCodes.DropExcludedByRule),
+			because: "an unscoped allow-list is a rules-file mistake, not an instruction to empty the panel");
+		Element(guide, "ProductsList").Operation.Should().Be("insert");
 	}
 
 	[Test]
@@ -10700,7 +12438,7 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "the container itself is the banned type reached through the host's tools edge");
 		Codes(Dropped(guide, "ProductsToolsFlexContainer")).Should().Contain(ReasonCodes.DropExcludedByRule,
 			because: "the container was removed BY the rule, so its reason names the rule — unlike its orphaned children below");
-		foreach (string orphan in new[] { "ProductsRefreshButton", "ProductsSearchFilter", "ProductsSettingsButton" }) {
+		foreach (string orphan in new[] { "ProductsRefreshField", "ProductsSearchFilter", "ProductsSettingsField" }) {
 			DroppedElement entry = Dropped(guide, orphan);
 			DroppedNames(guide).Should().Contain(orphan,
 				because: $"'{orphan}' lost its mobile parent — leaving it an insert would orphan it");
@@ -11093,7 +12831,8 @@ public sealed class WebToMobileConversionServiceTests {
 			webByType: new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase),
 			mobileByType: null, rules: RulesWithEmptyRemoval(), templateRule: null,
 			sourcePage: "Leads_FormPage", sourceTemplate: "PageWithTabsFreedomTemplate",
-			suggestedTarget: "UsrLeads_MobileFormPage", containerNameMap: TabbedContainerMap);
+			suggestedTarget: "UsrLeads_MobileFormPage", containerNameMap: TabbedContainerMap,
+			mobileRequestTypes: NoRequestRegistry);
 
 		// Assert
 		Element(guide, "Timeline").Values!["items"]!.AsArray().Should().BeEmpty(
@@ -11219,7 +12958,7 @@ public sealed class WebToMobileConversionServiceTests {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Panel", "type": "crt.ExpansionPanel",
 			    "items": [ { "name": "Amount", "type": "crt.Input" } ],
-			    "tools": [ { "name": "AddButton", "type": "crt.Button" } ] } ]
+			    "tools": [ { "name": "AddTool", "type": "crt.Input" } ] } ]
 			""");
 
 		// Act
@@ -11227,8 +12966,8 @@ public sealed class WebToMobileConversionServiceTests {
 		SchemaValidationResult result = MobileDiffApplyValidator.Validate(BuildViewConfigDiffBody(guide));
 
 		// Assert
-		Element(guide, "AddButton").PropertyName.Should().Be("tools",
-			because: "the header button is emitted as its own entry in the panel's tools slot, which is the slot its insert resolves against");
+		Element(guide, "AddTool").PropertyName.Should().Be("tools",
+			because: "the tools child is emitted as its own entry in the panel's tools slot, which is the slot its insert resolves against");
 		JsonObject panelValues = Element(guide, "Panel").Values!.AsObject();
 		panelValues["tools"]!.AsArray().Should().BeEmpty(
 			because: "the panel must physically declare the tools collection its own child inserts into — an undeclared tools slot is refused by the differ exactly like an undeclared items slot");
@@ -11282,7 +13021,7 @@ public sealed class WebToMobileConversionServiceTests {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Actions", "type": "crt.FlexContainer", "items": [
 			    { "name": "OrderButton", "type": "crt.Button", "menuItems": [
-			        { "name": "PrintItem", "type": "crt.MenuItem" } ] } ] } ]
+			        { "name": "PrintItem", "type": "crt.MenuItem", "clicked": { "request": "crt.SaveRecordRequest", "params": {} } } ] } ] } ]
 			""");
 		var mobileTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
 			"crt.FlexContainer", "crt.Button", "crt.MenuItem"
@@ -11340,7 +13079,7 @@ public sealed class WebToMobileConversionServiceTests {
 			    { "name": "OverviewTab", "type": "crt.TabContainer", "items": [
 			        { "name": "Panel", "type": "crt.ExpansionPanel",
 			          "items": [ { "name": "Amount", "type": "crt.Input" } ],
-			          "tools": [ { "name": "AddButton", "type": "crt.Button" } ] },
+			          "tools": [ { "name": "AddButton", "type": "crt.Button", "clicked": { "request": "crt.SaveRecordRequest", "params": {} } } ] },
 			        { "name": "Box", "type": "crt.GridContainer", "items": [
 			            { "name": "Stage", "type": "crt.ComboBox" } ] } ] } ] } ]
 			""");
@@ -11522,9 +13261,9 @@ public sealed class WebToMobileConversionServiceTests {
 		var adaptiveAnchor = new Dictionary<string, JsonObject>(StringComparer.OrdinalIgnoreCase) {
 			["Tabs"] = JsonNode.Parse("""
 				{ "adaptive": {
-				    "small":  { "row": 1, "column": 1, "colSpan": 1, "rowSpan": 1 },
-				    "medium": { "row": 1, "column": 1, "colSpan": 1, "rowSpan": 1 },
-				    "large":  { "row": 2, "column": 1, "colSpan": 1, "rowSpan": 1 } } }
+				    "small":  { "row": 1, "column": 1, "colSpan": 2, "rowSpan": 3 },
+				    "medium": { "row": 1, "column": 1, "colSpan": 4, "rowSpan": 1 },
+				    "large":  { "row": 2, "column": 1, "colSpan": 1, "rowSpan": 6 } } }
 				""")!.AsObject()
 		};
 
@@ -11537,8 +13276,14 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "each breakpoint's own row moves down by the number of siblings above the anchor");
 		anchor["adaptive"]!["large"]!["row"]!.GetValue<int>().Should().Be(3,
 			because: "the shift is relative to whatever row that breakpoint declared");
-		anchor["adaptive"]!["small"]!["colSpan"].Should().NotBeNull(
-			because: "the anchor's breakpoints are the template's own, carried verbatim apart from the row");
+		foreach (string breakpoint in new[] { "small", "medium", "large" }) {
+			anchor["adaptive"]![breakpoint]!["colSpan"]!.GetValue<int>().Should().Be(1,
+				because: $"the template declared a wider span at '{breakpoint}', and a span is the converter's to "
+					+ "own on every placement it emits — the anchor's breakpoints are otherwise the template's own, "
+					+ "carried apart from the row they are shifted by");
+			anchor["adaptive"]![breakpoint]!["rowSpan"]!.GetValue<int>().Should().Be(1,
+				because: $"a template-authored rowSpan at '{breakpoint}' is rewritten exactly like a web-carried one");
+		}
 
 		JsonNode sibling = LayoutConfigOf(Element(guide, "Top1"));
 		ShouldBeCell(sibling!["adaptive"]!["small"], row: 1, column: 1,
@@ -11927,6 +13672,104 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("The second invariant across the whole guide: every emitted span is 1. A mobile grid gives each item exactly one cell, so a web colSpan/rowSpan describes a width the page cannot have — carrying one writes a placement that disagrees with what the runtime renders, silently and on every breakpoint that carried it.")]
+	public void Analyze_ShouldEmitEverySpanAsOne_AnywhereInTheGuide() {
+		// Arrange — both leaks at once: a single-column grid whose child keeps its web placement verbatim, and a
+		// multi-column grid the adaptive pass rewrites per breakpoint. Both source children span more than a cell.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "OneCol", "type": "crt.GridContainer", "columns": [ "1fr" ], "items": [
+			    { "name": "FieldA", "type": "crt.Input",
+			      "layoutConfig": { "column": 1, "row": 1, "colSpan": 3, "rowSpan": 4 } } ] },
+			  { "name": "TwoCol", "type": "crt.GridContainer", "columns": [ "1fr", "1fr" ], "items": [
+			    { "name": "FieldB", "type": "crt.Input",
+			      "layoutConfig": { "column": 1, "row": 1, "colSpan": 2, "rowSpan": 6 } },
+			    { "name": "FieldC", "type": "crt.Input",
+			      "layoutConfig": { "column": 2, "row": 1, "colSpan": 1, "rowSpan": 1 } } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+
+		// Assert
+		List<JsonObject> placements = AllPlacements(guide);
+		placements.Should().NotBeEmpty(because: "the fixture carries placements on every field");
+		foreach (JsonObject placement in placements) {
+			List<JsonObject> cells = placement["adaptive"] is JsonObject adaptive
+				? [.. adaptive.Select(pair => pair.Value).OfType<JsonObject>()]
+				: [placement];
+			foreach (JsonObject cell in cells) {
+				cell["colSpan"]!.GetValue<int>().Should().Be(1,
+					because: "a mobile item occupies one cell; width is the container's column count");
+				cell["rowSpan"]!.GetValue<int>().Should().Be(1,
+					because: "a mobile item occupies one cell; height is the runtime's to decide");
+			}
+		}
+	}
+
+	[Test]
+	[Description("A span nested inside a CARRIED value is rewritten like any other. The normalizer walks the whole mobileValues tree, so a layoutConfig that reaches the page inside a carried itemLayout — which no placement pass ever visits, and which the property prune cannot reach either because the key is nested — states one cell like the placements around it.")]
+	public void Analyze_ShouldEmitSpansOfOne_InsideACarriedValue() {
+		// Arrange — the degraded-catalog path (no mobileByType) keeps itemLayout as a carried VALUE instead of
+		// walking it out into its own entry, which is what puts a placement somewhere no placement pass reaches.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "SimilarLeadList", "type": "crt.List", "items": "$SimilarLeadList",
+				  "itemLayout": [ { "type": "crt.ListItem", "title": "$DS_LeadName",
+				    "layoutConfig": { "column": 1, "row": 1, "colSpan": 5, "rowSpan": 7 } } ] } ] } ]
+			""");
+		var mobileTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"crt.FlexContainer", "crt.List"
+		};
+
+		// Act — mobileByType is null, so itemLayout survives as a value carrying its own placement.
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: mobileTypes);
+
+		// Assert
+		JsonNode itemLayout = Element(guide, "SimilarLeadList").Values!["itemLayout"];
+		itemLayout.Should().NotBeNull(because: "the carried row is what holds the nested placement");
+		var row = (JsonObject)(itemLayout is JsonArray array ? array[0]! : itemLayout!);
+		var nested = (JsonObject)row["layoutConfig"]!;
+		nested.Select(pair => pair.Key).Should().Contain(["row", "column", "colSpan", "rowSpan"],
+			because: "the designer reads a nested placement the same way it reads a top-level one");
+		nested["colSpan"]!.GetValue<int>().Should().Be(1,
+			because: "the web row declared colSpan 5, and a span the converter emits states one cell wherever it sits");
+		nested["rowSpan"]!.GetValue<int>().Should().Be(1,
+			because: "the web row declared rowSpan 7, and nesting is not an exemption from the same rule");
+		nested["column"]!.GetValue<int>().Should().Be(1,
+			because: "a POSITION the caller authored is the caller's own answer and is preserved, unlike a span");
+	}
+
+	[Test]
+	[Description("The guide's adaptiveLayout index reports the same spans the operations carry. It is built from its own object rather than the one pasted into values, so a span read off the web page would survive here after the placement was corrected — and the response would name a layout its own diff does not contain.")]
+	public void Analyze_ShouldReportSpansOfOne_InTheAdaptiveLayoutIndex() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "TwoCol", "type": "crt.GridContainer", "columns": [ "1fr", "1fr" ], "items": [
+			    { "name": "FieldA", "type": "crt.Input",
+			      "layoutConfig": { "column": 1, "row": 1, "colSpan": 2, "rowSpan": 9 } },
+			    { "name": "FieldB", "type": "crt.Input",
+			      "layoutConfig": { "column": 2, "row": 1, "colSpan": 1, "rowSpan": 1 } } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+
+		// Assert
+		List<JsonObject> reported = guide.AdaptiveLayout!
+			.SelectMany(group => group.Items)
+			.SelectMany(item => ((JsonObject)item.LayoutConfigAdaptive!).Select(pair => pair.Value))
+			.OfType<JsonObject>()
+			.ToList();
+		reported.Should().NotBeEmpty(because: "a multi-column grid is what produces an adaptiveLayout group");
+		foreach (JsonObject cell in reported) {
+			cell["colSpan"]!.GetValue<int>().Should().Be(1,
+				because: "the index must state the same placement the pasted values carry");
+			cell["rowSpan"]!.GetValue<int>().Should().Be(1,
+				because: "the index must state the same placement the pasted values carry");
+		}
+	}
+
+	[Test]
 	[Description("A layoutConfig the web page carried as something other than an object cannot be honoured as a placement — it is replaced by the default cell rather than left to keep the page unopenable.")]
 	public void Analyze_ShouldReplaceANonObjectPlacement_WithTheDefaultCell() {
 		// Arrange
@@ -11992,3 +13835,4 @@ public sealed class WebToMobileConversionServiceTests {
 	#endregion
 
 }
+

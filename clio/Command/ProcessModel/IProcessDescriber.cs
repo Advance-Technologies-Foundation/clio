@@ -381,6 +381,39 @@ public class DescribeProcessResult {
 	public List<DescribedParameter> Parameters { get; set; }
 
 	/// <summary>
+	/// The process's own using directives as it stores them (Process properties -> Methods -> Usings), in the shape
+	/// a build's <c>usings[]</c> takes - including an entry the platform's code generator emits nothing for (a
+	/// default namespace, an alias on an imported namespace, a repeat of an earlier entry), which carries
+	/// <see cref="DescribedUsing.Ignored"/> from CrtProcessBuilder 1.6.6.51. The namespaces the generator adds on
+	/// its own are not listed.
+	/// <c>null</c> on a server that predates CrtProcessBuilder 1.6.6.30.
+	/// </summary>
+	[JsonPropertyName("usings")]
+	public List<DescribedUsing> Usings { get; set; }
+
+	/// <summary>
+	/// The process's own C# methods (Process properties -> Methods), verbatim: class members compiled into the
+	/// same class as its interpreted script tasks, which call them. <c>null</c> when there are none, and on a
+	/// server that predates CrtProcessBuilder 1.6.6.30.
+	/// </summary>
+	[JsonPropertyName("methods")]
+	public string Methods { get; set; }
+
+	/// <summary>
+	/// The older compiled variant's methods, reported read-only: they live in the compiled process class and
+	/// only compiled-variant script tasks can call them. <c>null</c> when there are none.
+	/// </summary>
+	[JsonPropertyName("compiledMethods")]
+	public string CompiledMethods { get; set; }
+
+	/// <summary>
+	/// How many methods the process still keeps in the older per-method list, which has no text form here;
+	/// while it holds an interpreted method, <c>setMethods</c> is refused. <c>null</c> when there are none.
+	/// </summary>
+	[JsonPropertyName("legacyMethodCount")]
+	public int? LegacyMethodCount { get; set; }
+
+	/// <summary>
 	/// Captures every other field the server returns at the graph root so the description round-trips
 	/// losslessly: a newer <c>CrtProcessBuilder</c> reporting something this build does not declare reaches the
 	/// command output verbatim instead of being discarded without a trace.
@@ -675,6 +708,14 @@ public sealed class DescribedElement {
 	/// </remarks>
 	[JsonPropertyName("formula")]
 	public DescribedFormula Formula { get; set; }
+
+	/// <summary>
+	/// For a Script task (CrtProcessBuilder 1.6.6.30 and later): its C# body and which of the platform's two
+	/// script variants it is. <c>null</c> for other element kinds - a Formula task included, although its class
+	/// derives from the script task's - and on a server that predates the element.
+	/// </summary>
+	[JsonPropertyName("scriptTask")]
+	public DescribedScriptTask ScriptTask { get; set; }
 
 	/// <summary>
 	/// Captures every other field the server reports on an element so the description round-trips losslessly:
@@ -1864,20 +1905,30 @@ public sealed class DescribedParameter {
 	public string Type { get; set; }
 
 	/// <summary>
-	/// Direction: <c>In</c>, <c>Out</c>, <c>Variable</c>, or <c>Internal</c>. Together with <see cref="IsResult"/>
-	/// lets a caller tell an element's output parameters (mappable as a source) from its inputs. Omitted when the
-	/// server (an older <c>CrtProcessBuilder</c>) does not report it.
+	/// Direction: <c>In</c>, <c>Out</c>, <c>Variable</c>, or <c>Internal</c>, as stored. Not by itself an output
+	/// marker — read <see cref="IsOutput"/>. Omitted when the server (an older <c>CrtProcessBuilder</c>) does not
+	/// report it.
 	/// </summary>
 	[JsonPropertyName("direction")]
 	public string Direction { get; set; }
 
 	/// <summary>
-	/// True when the parameter is a result (output) of its element. A parameter is an output — and therefore usable
-	/// as a mapping source — when <see cref="Direction"/> is <c>Out</c> OR this flag is true. Omitted when the server
-	/// (an older <c>CrtProcessBuilder</c>) does not report it.
+	/// The stored result flag, as the server reports it. Not by itself an output marker: a Read data element carries
+	/// it on <c>ResultEntity</c> in first-record mode only, so its other modes' outputs read back <c>false</c> here —
+	/// read <see cref="IsOutput"/>. Omitted when the server (an older <c>CrtProcessBuilder</c>) does not report it.
 	/// </summary>
 	[JsonPropertyName("isResult")]
 	public bool? IsResult { get; set; }
+
+	/// <summary>
+	/// True when the server reports the parameter as one of its element's OUTPUTS, usable as a mapping source
+	/// (<c>sourceElementParameter</c>). Derived server-side: the generic flag-or-direction rule for most elements,
+	/// the element's mode for Read data. Declared here because this type carries no extension-data bag — without the
+	/// property the field is dropped on the way to the caller, which is how it went missing (ENG-99967). Omitted when
+	/// the server (an older <c>CrtProcessBuilder</c>) does not report it.
+	/// </summary>
+	[JsonPropertyName("isOutput")]
+	public bool? IsOutput { get; set; }
 
 	/// <summary>
 	/// True when the parameter's declaration marks it required. Omitted when the server (an older
@@ -1911,6 +1962,24 @@ public sealed class DescribedParameter {
 	/// </summary>
 	[JsonPropertyName("valueDisplay")]
 	public string ValueDisplay { get; set; }
+
+	/// <summary>
+	/// For a <see cref="Value"/> that reads ONE column of a record another element returned (the three-segment
+	/// <c>[Element].[Parameter].[EntityColumn]</c> meta path): the element's name. Reported with
+	/// <see cref="SourceElementParameter"/> and <see cref="SourceColumn"/> only when the server can name all three
+	/// AND those names re-apply to the identical stored value, so the trio feeds straight back into
+	/// <c>addMapping</c>. Null for every other value, and omitted by a <c>CrtProcessBuilder</c> older than 1.6.6.40.
+	/// </summary>
+	[JsonPropertyName("sourceElement")]
+	public string SourceElement { get; set; }
+
+	/// <summary>The record parameter on <see cref="SourceElement"/>, for example <c>ResultEntity</c>.</summary>
+	[JsonPropertyName("sourceElementParameter")]
+	public string SourceElementParameter { get; set; }
+
+	/// <summary>The column of that record, by its code, for example <c>Owner</c>.</summary>
+	[JsonPropertyName("sourceColumn")]
+	public string SourceColumn { get; set; }
 
 	/// <summary>
 	/// Provenance stamp, when the parameter carries one: a collection parameter mirrored from an element output is
@@ -1954,6 +2023,50 @@ public sealed class DescribedFormula {
 	/// <summary>Where the result is written. <c>null</c> when the element has no target yet.</summary>
 	[JsonPropertyName("target")]
 	public DescribedFormulaTarget Target { get; set; }
+
+	/// <summary>Anything a newer server reports that this build does not declare.</summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
+}
+
+/// <summary>A Script task read back: its C# body and which script variant it is.</summary>
+public sealed class DescribedScriptTask {
+
+	/// <summary>The C# body, verbatim as stored.</summary>
+	[JsonPropertyName("body")]
+	public string Body { get; set; }
+
+	/// <summary>
+	/// The designer's "For interpreted process" option. <c>true</c> - every script task clio builds - means the
+	/// body reaches parameters through <c>Get&lt;T&gt;("Name")</c> / <c>Set("Name", value)</c>; <c>false</c> is the
+	/// older compiled variant, where parameters are plain properties and Get/Set do not compile.
+	/// </summary>
+	[JsonPropertyName("forInterpretedProcess")]
+	public bool ForInterpretedProcess { get; set; }
+
+	/// <summary>Anything a newer server reports that this build does not declare.</summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
+}
+
+/// <summary>One process-level using directive, in the shape a build's <c>usings[]</c> entry takes.</summary>
+public sealed class DescribedUsing {
+
+	/// <summary>The imported namespace, or the type when <see cref="Alias"/> is set.</summary>
+	[JsonPropertyName("namespace")]
+	public string Namespace { get; set; }
+
+	/// <summary>The alias of a <c>using Alias = Namespace;</c> directive; <c>null</c> for a plain one.</summary>
+	[JsonPropertyName("alias")]
+	public string Alias { get; set; }
+
+	/// <summary>
+	/// Why the platform's code generator emits nothing for this entry, or <c>null</c> when it emits it (and on a
+	/// server before CrtProcessBuilder 1.6.6.51). An entry that carries it does nothing at compile time; leave it
+	/// out when feeding describe back into a build, which refuses some of them.
+	/// </summary>
+	[JsonPropertyName("ignored")]
+	public string Ignored { get; set; }
 
 	/// <summary>Anything a newer server reports that this build does not declare.</summary>
 	[JsonExtensionData]

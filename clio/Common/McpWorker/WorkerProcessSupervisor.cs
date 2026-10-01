@@ -695,6 +695,9 @@ public sealed class WorkerProcessSupervisor : IWorkerProcessSupervisor, IWorkerP
 	public Task<ProcessExecutionResult> ExecuteWithRealtimeOutputAsync(ProcessExecutionOptions options) =>
 		_processExecutor.ExecuteWithRealtimeOutputAsync(options);
 
+	/// <inheritdoc />
+	public bool OpenWithDefaultHandler(string target) => _processExecutor.OpenWithDefaultHandler(target);
+
 	#endregion
 
 	#region Methods: Private

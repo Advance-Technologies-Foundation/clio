@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Clio.Common;
@@ -11,7 +12,7 @@ using McpServer.Resources;
 
 public static class SchemaValidationService
 {
-	private const string SchemaViewConfigDiff = "SCHEMA_VIEW_CONFIG_DIFF";
+	internal const string SchemaViewConfigDiff = "SCHEMA_VIEW_CONFIG_DIFF";
 	private const string SchemaViewModelConfigDiff = "SCHEMA_VIEW_MODEL_CONFIG_DIFF";
 	private const string SchemaViewModelConfig = "SCHEMA_VIEW_MODEL_CONFIG";
 	private const string SchemaDiffMarker = "SCHEMA_DIFF";
@@ -25,7 +26,7 @@ public static class SchemaValidationService
 	private const string ParamsPropertyName = "params";
 	private const string TypePropertyName = "type";
 	private const string LabelPropertyName = "label";
-	private const string ViewConfigDiffPropertyName = "viewConfigDiff";
+	internal const string ViewConfigDiffPropertyName = "viewConfigDiff";
 	private const string ViewModelConfigDiffPropertyName = "viewModelConfigDiff";
 
 	// crt.RunBusinessProcessRequest.processRunType values. The platform matches the string EXACTLY, so
@@ -53,6 +54,7 @@ public static class SchemaValidationService
 	private const string ScaffoldItemsSlot = "items";
 	private const int MaxMergeSlotDiagnosticsPerEntry = 10;
 	private const string ButtonComponentType = "crt.Button";
+	private const string IndicatorWidgetComponentType = "crt.IndicatorWidget";
 
 	/// <summary>
 	/// The Scaffold slots a shipped template already populates, which is what makes a merge authoring into them the
@@ -338,7 +340,8 @@ public static class SchemaValidationService
 
 	/// <summary>
 	/// Canonical clause describing the widget-caption rule, authored here and embedded verbatim in the
-	/// per-occurrence diagnostic (<see cref="BuildUnresolvedCaptionError"/>)
+	/// per-occurrence diagnostic (<see cref="BuildUnresolvedCaptionError"/>) and, once, in the grouped one
+	/// (<see cref="BuildGroupedUnresolvedCaptionError"/>)
 	/// </summary>
 	internal const string InsertedWidgetCaptionClause =
 		"a user-visible caption on a freshly inserted widget/container (title, caption, tooltip, placeholder) " +
@@ -409,6 +412,9 @@ public static class SchemaValidationService
 
 		SchemaValidationResult componentResult = ValidateMobileComponentTypes(body, allowedMobileTypes, webOnlyTypes);
 		warnings.AddRange(componentResult.Warnings);
+
+		SchemaValidationResult indicatorProvidingResult = ValidateMobileIndicatorWidgetProviding(body);
+		if (!indicatorProvidingResult.IsValid) errors.AddRange(indicatorProvidingResult.Errors);
 
 		SchemaValidationResult bindingResult = ValidateMobileFieldBindings(body);
 		if (!bindingResult.IsValid) errors.AddRange(bindingResult.Errors);
@@ -842,6 +848,147 @@ public static class SchemaValidationService
 			$"viewConfigDiff[{index}] authors a second '{ScaffoldComponentType}'. The mobile template already "
 			+ "provides the Scaffold root and a page may not add another — it would shadow the native element. "
 			+ $"Use operation 'merge' on '{ScaffoldElementName}' to patch the template's own root instead.");
+	}
+
+	/// <summary>
+	/// Blocks an authored <c>crt.IndicatorWidget</c> that saves cleanly but shows no value: a data-providing block
+	/// the mobile runtime cannot execute, or no <c>config.layout</c> / <c>config.text</c>, which the Mobile
+	/// Interface Designer reads unguarded.
+	/// </summary>
+	/// <remarks>
+	/// Hardcoded rather than registry-driven like <see cref="ValidateChartWidgetConfig"/>: the mobile catalog marks
+	/// none of these fields required. <c>merge</c> is checked because <see cref="JsonDiffApplier.Merge"/> replaces
+	/// <c>config</c> wholesale.
+	/// </remarks>
+	/// <param name="body">Plain-JSON mobile page body.</param>
+	/// <returns>One error per incomplete widget.</returns>
+	public static SchemaValidationResult ValidateMobileIndicatorWidgetProviding(string body) =>
+		ScanMobileViewConfigDiffEntries(body, ValidateMobileIndicatorWidgetProvidingEntry);
+
+	private static void ValidateMobileIndicatorWidgetProvidingEntry(
+		JsonElement entry, int index, SchemaValidationResult result) {
+		if (entry.ValueKind != JsonValueKind.Object
+			|| !TryGetStringProperty(entry, OperationPropertyName, out string operation)
+			|| (!string.Equals(operation, InsertOperationName, StringComparison.Ordinal)
+				&& !string.Equals(operation, SetOperationName, StringComparison.Ordinal)
+				&& !string.Equals(operation, MergeOperationName, StringComparison.Ordinal))
+			|| !entry.TryGetProperty(ValuesPropertyName, out JsonElement values)) {
+			return;
+		}
+		ScanAuthoredIndicatorWidgets(values, DescribeViewConfigDiffEntry(entry, index), depth: 0, result);
+	}
+
+	private static void ScanAuthoredIndicatorWidgets(
+		JsonElement element, string entryLabel, int depth, SchemaValidationResult result) {
+		if (depth > JsonReaderLimits.MaxParseDepth) {
+			return;
+		}
+		switch (element.ValueKind) {
+			case JsonValueKind.Object:
+				if (TryGetStringProperty(element, TypePropertyName, out string componentType)
+					&& string.Equals(componentType, IndicatorWidgetComponentType, StringComparison.Ordinal)) {
+					ReportIndicatorWidgetGaps(element, entryLabel, result);
+				}
+				foreach (JsonProperty property in element.EnumerateObject()) {
+					ScanAuthoredIndicatorWidgets(property.Value, entryLabel, depth + 1, result);
+				}
+				break;
+			case JsonValueKind.Array:
+				foreach (JsonElement item in element.EnumerateArray()) {
+					ScanAuthoredIndicatorWidgets(item, entryLabel, depth + 1, result);
+				}
+				break;
+		}
+	}
+
+	// A data binding exempts a widget from the providing checks only: the designer still reads layout and text.
+	private static void ReportIndicatorWidgetGaps(
+		JsonElement widget, string entryLabel, SchemaValidationResult result) {
+		bool hasConfig = TryGetObjectProperty(widget, "config", out JsonElement config);
+		List<string> designerGaps = CollectDesignerGaps(hasConfig, config);
+		bool boundToData = widget.TryGetProperty("data", out JsonElement boundData)
+			&& boundData.ValueKind != JsonValueKind.Null;
+		List<string> providingGaps = boundToData ? [] : CollectProvidingGaps(hasConfig, config);
+		if (designerGaps.Count == 0 && providingGaps.Count == 0) {
+			return;
+		}
+		string widgetLabel = TryGetStringProperty(widget, NamePropertyName, out string widgetName)
+			? $"'{Sanitize(widgetName)}'"
+			: entryLabel;
+		var message = new StringBuilder(
+			$"{IndicatorWidgetComponentType} {widgetLabel} is incomplete: "
+			+ $"{string.Join(", ", designerGaps.Concat(providingGaps))} missing or malformed.");
+		if (designerGaps.Count > 0) {
+			message.Append(" The Mobile Interface Designer requires both: \"layout\": {\"color\": \"green\"}, "
+				+ "\"text\": {\"template\": \"{0}\", \"metricMacros\": \"{0}\"}.");
+		}
+		if (providingGaps.Count > 0) {
+			message.Append(" An aggregation metric needs schemaName and aggregation.column.expression with "
+				+ "expressionType 1, functionArgument.columnPath and aggregationType 1-5; a calculated metric uses an expressionSchema "
+				+ "object instead.");
+		}
+		message.Append(" Copy the working example from get-component-info crt.IndicatorWidget with schema-type mobile.");
+		result.IsValid = false;
+		result.Errors.Add(message.ToString());
+	}
+
+	private static List<string> CollectDesignerGaps(bool hasConfig, JsonElement config) {
+		var gaps = new List<string>();
+		if (!hasConfig || !TryGetObjectProperty(config, "layout", out _)) {
+			gaps.Add("config.layout");
+		}
+		if (!hasConfig || !TryGetObjectProperty(config, "text", out _)) {
+			gaps.Add("config.text");
+		}
+		return gaps;
+	}
+
+	private static List<string> CollectProvidingGaps(bool hasConfig, JsonElement config) {
+		var gaps = new List<string>();
+		if (!hasConfig || !TryGetObjectProperty(config, "data", out JsonElement data)) {
+			gaps.Add("config.data");
+		} else if (!TryGetObjectProperty(data, "providing", out JsonElement providing)) {
+			gaps.Add("config.data.providing");
+		} else if (providing.TryGetProperty("expressionSchema", out JsonElement expressionSchema)
+			&& expressionSchema.ValueKind != JsonValueKind.Null) {
+			// Present but not an object: the runtime branches on "non-null", then casts to a map and throws.
+			if (expressionSchema.ValueKind != JsonValueKind.Object) {
+				gaps.Add("config.data.providing.expressionSchema");
+			}
+		} else {
+			CollectAggregationProvidingGaps(providing, gaps);
+		}
+		return gaps;
+	}
+
+	private static void CollectAggregationProvidingGaps(JsonElement providing, List<string> missing) {
+		if (!TryGetStringProperty(providing, "schemaName", out _)) {
+			missing.Add("config.data.providing.schemaName");
+		}
+		if (!TryGetObjectProperty(providing, "aggregation", out JsonElement aggregation)
+			|| !TryGetObjectProperty(aggregation, "column", out JsonElement column)
+			|| !TryGetObjectProperty(column, "expression", out JsonElement expression)) {
+			missing.Add("config.data.providing.aggregation.column.expression");
+			return;
+		}
+		// An aggregate is a function expression (1); the runtime's typed parse throws when expressionType is absent.
+		if (!expression.TryGetProperty("expressionType", out JsonElement expressionType)
+			|| expressionType.ValueKind != JsonValueKind.Number
+			|| !expressionType.TryGetInt32(out int expressionTypeValue)
+			|| expressionTypeValue != 1) {
+			missing.Add("config.data.providing.aggregation.column.expression.expressionType");
+		}
+		if (!TryGetObjectProperty(expression, "functionArgument", out JsonElement functionArgument)
+			|| !TryGetStringProperty(functionArgument, "columnPath", out _)) {
+			missing.Add("config.data.providing.aggregation.column.expression.functionArgument.columnPath");
+		}
+		// Not 6 (TopOne): the column is also deserialised as QueryAggregationType, which stops at 5 and throws.
+		if (!expression.TryGetProperty("aggregationType", out JsonElement aggregationType)
+			|| aggregationType.ValueKind != JsonValueKind.Number
+			|| !aggregationType.TryGetInt32(out int aggregationTypeValue)
+			|| aggregationTypeValue is < 1 or > 5) {
+			missing.Add("config.data.providing.aggregation.column.expression.aggregationType");
+		}
 	}
 
 	/// <summary>
@@ -2663,22 +2810,48 @@ public static class SchemaValidationService
 	/// </returns>
 	public static SchemaValidationResult ValidateLocalizableTextLiterals(string jsBody) {
 		var result = new SchemaValidationResult { IsValid = true };
-		if (string.IsNullOrEmpty(jsBody)) {
-			return result;
-		}
-		if (!PageSchemaSectionReader.TryRead(jsBody, out string vcdContent, SchemaViewConfigDiff, SchemaDiffMarker)) {
-			return result;
-		}
-		if (!TryParseJsonDocument(vcdContent, out JsonDocument vcdDoc, out _)) {
-			return result;
-		}
-		using (vcdDoc) {
-			ScanViewConfigDiffForTextLiterals(vcdDoc.RootElement, result);
-		}
+		ScanWebBodyForTextLiterals(jsBody, result, violations: null);
 		if (result.Errors.Count > 0) {
 			result.IsValid = false;
 		}
 		return result;
+	}
+
+	/// <summary>
+	/// Returns the view nodes of a web page body whose user-visible text property breaks the localizable-text
+	/// rule, as structured (node, property, kind) values instead of diagnostic sentences. It runs the SAME scan
+	/// as <see cref="ValidateLocalizableTextLiterals"/>, so a node is reported here exactly when the MCP
+	/// <c>update-page</c> / <c>validate-page</c> / <c>sync-pages</c> gate rejects it: an inline literal is
+	/// reported as <see cref="LocalizableTextViolationKind.InlineLiteral"/>, and a resource binding on a
+	/// literal-only property (such as <c>crt.ImageInput.tooltip</c>) as
+	/// <see cref="LocalizableTextViolationKind.ResourceBindingOnLiteralOnlyProperty"/>. Used by
+	/// <c>push-workspace</c>, which only warns about these nodes (issue #1639).
+	/// </summary>
+	/// <param name="jsBody">Raw JavaScript body of a Freedom UI page schema (marker-delimited).</param>
+	/// <returns>
+	/// The offending nodes in document order; empty when the body has no <c>SCHEMA_VIEW_CONFIG_DIFF</c>
+	/// section, the section is not valid JSON, or every user-visible text value follows the rule.
+	/// </returns>
+	public static IReadOnlyList<LocalizableTextViolation> FindLocalizableTextViolations(string jsBody) {
+		var violations = new List<LocalizableTextViolation>();
+		ScanWebBodyForTextLiterals(jsBody, new SchemaValidationResult { IsValid = true }, violations);
+		return violations;
+	}
+
+	private static void ScanWebBodyForTextLiterals(
+		string jsBody, SchemaValidationResult result, List<LocalizableTextViolation>? violations) {
+		if (string.IsNullOrEmpty(jsBody)) {
+			return;
+		}
+		if (!PageSchemaSectionReader.TryRead(jsBody, out string vcdContent, SchemaViewConfigDiff, SchemaDiffMarker)) {
+			return;
+		}
+		if (!TryParseJsonDocument(vcdContent, out JsonDocument vcdDoc, out _)) {
+			return;
+		}
+		using (vcdDoc) {
+			ScanViewConfigDiffForTextLiterals(vcdDoc.RootElement, result, violations);
+		}
 	}
 
 	/// <summary>
@@ -2697,9 +2870,41 @@ public static class SchemaValidationService
 		if (string.IsNullOrEmpty(jsBody)) {
 			return new SchemaValidationResult { IsValid = true };
 		}
+		return ScanInsertedWidgetCaptions(jsBody, BodyOnlyCaptionResolver(jsBody, explicitResources));
+	}
+
+	/// <summary>
+	/// Same check as <see cref="ValidateInsertedWidgetCaptionResources"/>, reported as ONE error that states the
+	/// rule once and then lists every unresolved binding as node, property and key.
+	/// </summary>
+	/// <remarks>
+	/// For the read-only <c>validate-page</c> report, where a page with many unregistered captions otherwise
+	/// repeats the same rule text once per caption. The save paths keep the per-occurrence form.
+	/// </remarks>
+	/// <param name="jsBody">Raw JavaScript body of a Freedom UI page schema (marker-delimited).</param>
+	/// <param name="explicitResources">Explicit resources passed to the save, or <c>null</c>.</param>
+	/// <returns>A <see cref="SchemaValidationResult"/> with at most one error, invalid when any caption does not resolve.</returns>
+	public static SchemaValidationResult ValidateInsertedWidgetCaptionResourcesGrouped(
+		string jsBody,
+		IReadOnlyDictionary<string, string>? explicitResources = null) {
+		if (string.IsNullOrEmpty(jsBody)) {
+			return new SchemaValidationResult { IsValid = true };
+		}
+		IReadOnlyList<UnresolvedCaptionBinding> bindings = FindUnresolvedInsertedWidgetCaptions(
+			jsBody, BodyOnlyCaptionResolver(jsBody, explicitResources));
+		var result = new SchemaValidationResult { IsValid = bindings.Count == 0 };
+		if (bindings.Count > 0) {
+			result.Errors.Add(BuildGroupedUnresolvedCaptionError(bindings));
+		}
+		return result;
+	}
+
+	// The pre-flight resolver both body-only caption checks share: a key resolves when the explicit resources
+	// register it, clio derives it, or a data-source-bound view-model attribute provides it.
+	private static Func<string, bool> BodyOnlyCaptionResolver(
+		string jsBody, IReadOnlyDictionary<string, string>? explicitResources) {
 		var dsBoundKeys = CollectViewModelPaths(jsBody).Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
-		return ScanInsertedWidgetCaptions(
-			jsBody, key => ResourceStringHelper.WillResolve(key, explicitResources, dsBoundKeys));
+		return key => ResourceStringHelper.WillResolve(key, explicitResources, dsBoundKeys);
 	}
 
 	/// <summary>
@@ -2725,18 +2930,30 @@ public static class SchemaValidationService
 	// unparseable body, matching the sibling content validators.
 	private static SchemaValidationResult ScanInsertedWidgetCaptions(string jsBody, Func<string, bool> resolves) {
 		var result = new SchemaValidationResult { IsValid = true };
+		foreach (UnresolvedCaptionBinding binding in FindUnresolvedInsertedWidgetCaptions(jsBody, resolves)) {
+			result.Errors.Add(BuildUnresolvedCaptionError(binding.Node, binding.Property, binding.Key));
+		}
+		if (result.Errors.Count > 0) {
+			result.IsValid = false;
+		}
+		return result;
+	}
+
+	private static IReadOnlyList<UnresolvedCaptionBinding> FindUnresolvedInsertedWidgetCaptions(
+		string jsBody, Func<string, bool> resolves) {
+		var bindings = new List<UnresolvedCaptionBinding>();
 		if (string.IsNullOrEmpty(jsBody)) {
-			return result;
+			return bindings;
 		}
 		if (!PageSchemaSectionReader.TryRead(jsBody, out string vcdContent, SchemaViewConfigDiff, SchemaDiffMarker)) {
-			return result;
+			return bindings;
 		}
 		if (!TryParseJsonDocument(vcdContent, out JsonDocument vcdDoc, out _)) {
-			return result;
+			return bindings;
 		}
 		using (vcdDoc) {
 			if (vcdDoc.RootElement.ValueKind != JsonValueKind.Array) {
-				return result;
+				return bindings;
 			}
 			foreach (JsonElement entry in vcdDoc.RootElement.EnumerateArray()) {
 				if (entry.ValueKind != JsonValueKind.Object || !IsInsertOperation(entry)) {
@@ -2747,20 +2964,17 @@ public static class SchemaValidationService
 					continue;
 				}
 				string ownerName = TryGetNodeName(entry, out string entryName) ? entryName : string.Empty;
-				ScanNodeForUnresolvedCaptionBindings(values, ownerName, resolves, result);
+				ScanNodeForUnresolvedCaptionBindings(values, ownerName, resolves, bindings);
 			}
 		}
-		if (result.Errors.Count > 0) {
-			result.IsValid = false;
-		}
-		return result;
+		return bindings;
 	}
 
 	private static void ScanNodeForUnresolvedCaptionBindings(
 		JsonElement node,
 		string ownerName,
 		Func<string, bool> resolves,
-		SchemaValidationResult result) {
+		List<UnresolvedCaptionBinding> bindings) {
 		switch (node.ValueKind) {
 			case JsonValueKind.Object:
 				string currentName = TryGetNodeName(node, out string nodeName) ? nodeName : ownerName;
@@ -2777,14 +2991,14 @@ public static class SchemaValidationService
 					}
 					if (property.Value.ValueKind == JsonValueKind.String &&
 					    InsertedWidgetCaptionProperties.Contains(property.Name)) {
-						CheckCaptionBinding(currentName, property.Name, property.Value.GetString()!, resolves, result);
+						CheckCaptionBinding(currentName, property.Name, property.Value.GetString(), resolves, bindings);
 					}
-					ScanNodeForUnresolvedCaptionBindings(property.Value, currentName, resolves, result);
+					ScanNodeForUnresolvedCaptionBindings(property.Value, currentName, resolves, bindings);
 				}
 				break;
 			case JsonValueKind.Array:
 				foreach (JsonElement item in node.EnumerateArray()) {
-					ScanNodeForUnresolvedCaptionBindings(item, ownerName, resolves, result);
+					ScanNodeForUnresolvedCaptionBindings(item, ownerName, resolves, bindings);
 				}
 				break;
 		}
@@ -2795,7 +3009,7 @@ public static class SchemaValidationService
 		string property,
 		string value,
 		Func<string, bool> resolves,
-		SchemaValidationResult result) {
+		List<UnresolvedCaptionBinding> bindings) {
 		// ExtractKeys returns the keys referenced by both binding forms ($Resources.Strings.K and
 		// #ResourceString(K)#). A literal (no resource reference) yields no keys and is left to
 		// ValidateLocalizableTextLiterals; a non-resource binding ($SomeAttr) also yields no keys.
@@ -2809,7 +3023,7 @@ public static class SchemaValidationService
 		}
 		foreach (string key in keys) {
 			if (!resolves(key)) {
-				result.Errors.Add(BuildUnresolvedCaptionError(ownerName, property, key));
+				bindings.Add(new UnresolvedCaptionBinding(ownerName, property, key));
 			}
 		}
 	}
@@ -2828,8 +3042,34 @@ public static class SchemaValidationService
 			"See the page-schema-resources guide.";
 	}
 
+	private static string BuildGroupedUnresolvedCaptionError(IReadOnlyList<UnresolvedCaptionBinding> bindings) {
+		// Same facts as the per-occurrence form, with the rule text stated once: every binding keeps its node,
+		// property and key. The body-sourced values are sanitized, not only capped, because each binding is one
+		// line here and a newline inside a node name or key would otherwise add a binding the body does not have.
+		var text = new StringBuilder();
+		text.Append(bindings.Count == 1
+			? "1 view-node binding of a user-visible text property uses a localizable key"
+			: $"{bindings.Count} view-node bindings of user-visible text properties use localizable keys");
+		text.Append(" that will not be registered, so each binding will render raw ")
+			.Append($"(e.g. \"{ResourceBindingPrefix}<key>\") instead of the localized text. Rule: ")
+			.Append(InsertedWidgetCaptionClause)
+			.Append(". See the page-schema-resources guide. Unresolved bindings (node, property, key):");
+		foreach (UnresolvedCaptionBinding binding in bindings) {
+			string shownOwner = Sanitize(binding.Node);
+			string node = string.IsNullOrWhiteSpace(shownOwner) ? "a view node" : $"'{shownOwner}'";
+			text.Append($"\n- {node}, '{binding.Property}', '{Sanitize(binding.Key)}'");
+		}
+		return text.ToString();
+	}
+
 	private static string Truncate(string value) =>
 		string.IsNullOrEmpty(value) || value.Length <= 60 ? value : value[..60] + "…";
+
+	/// <summary>One widget-caption binding whose localizable key will not resolve.</summary>
+	/// <param name="Node">Name of the view node that owns the caption; empty when the node is unnamed.</param>
+	/// <param name="Property">The caption property, e.g. <c>caption</c> or <c>title</c>.</param>
+	/// <param name="Key">The localizable key the property binds to.</param>
+	private sealed record UnresolvedCaptionBinding(string Node, string Property, string Key);
 
 	/// <summary>
 	/// Mobile counterpart of <see cref="ValidateLocalizableTextLiterals"/>. Reads <c>viewConfigDiff</c>
@@ -2840,29 +3080,51 @@ public static class SchemaValidationService
 	/// <returns>A <see cref="SchemaValidationResult"/> with the same contract as the web variant.</returns>
 	public static SchemaValidationResult ValidateMobileLocalizableTextLiterals(string body) {
 		var result = new SchemaValidationResult { IsValid = true };
-		if (string.IsNullOrWhiteSpace(body)) {
-			return result;
-		}
-		JsonDocument document;
-		try {
-			document = JsonDocument.Parse(body);
-		} catch {
-			return result;
-		}
-		using (document) {
-			JsonElement root = document.RootElement;
-			if (root.ValueKind == JsonValueKind.Object &&
-			    root.TryGetProperty(ViewConfigDiffPropertyName, out JsonElement viewConfigDiff)) {
-				ScanViewConfigDiffForTextLiterals(viewConfigDiff, result);
-			}
-		}
+		ScanMobileBodyForTextLiterals(body, result, violations: null);
 		if (result.Errors.Count > 0) {
 			result.IsValid = false;
 		}
 		return result;
 	}
 
-	private static void ScanViewConfigDiffForTextLiterals(JsonElement viewConfigDiff, SchemaValidationResult result) {
+	/// <summary>
+	/// Mobile counterpart of <see cref="FindLocalizableTextViolations"/>: runs the SAME scan as
+	/// <see cref="ValidateMobileLocalizableTextLiterals"/> over a plain-JSON mobile page body and returns the
+	/// offending nodes as structured values.
+	/// </summary>
+	/// <param name="body">Plain-JSON mobile page body.</param>
+	/// <returns>
+	/// The offending nodes in document order; empty when the body is not a JSON object with a
+	/// <c>viewConfigDiff</c> array, or every user-visible text value follows the rule.
+	/// </returns>
+	public static IReadOnlyList<LocalizableTextViolation> FindMobileLocalizableTextViolations(string body) {
+		var violations = new List<LocalizableTextViolation>();
+		ScanMobileBodyForTextLiterals(body, new SchemaValidationResult { IsValid = true }, violations);
+		return violations;
+	}
+
+	private static void ScanMobileBodyForTextLiterals(
+		string body, SchemaValidationResult result, List<LocalizableTextViolation>? violations) {
+		if (string.IsNullOrWhiteSpace(body)) {
+			return;
+		}
+		JsonDocument document;
+		try {
+			document = JsonDocument.Parse(body);
+		} catch {
+			return;
+		}
+		using (document) {
+			JsonElement root = document.RootElement;
+			if (root.ValueKind == JsonValueKind.Object &&
+			    root.TryGetProperty(ViewConfigDiffPropertyName, out JsonElement viewConfigDiff)) {
+				ScanViewConfigDiffForTextLiterals(viewConfigDiff, result, violations);
+			}
+		}
+	}
+
+	private static void ScanViewConfigDiffForTextLiterals(JsonElement viewConfigDiff, SchemaValidationResult result,
+		List<LocalizableTextViolation>? violations) {
 		if (viewConfigDiff.ValueKind != JsonValueKind.Array) {
 			return;
 		}
@@ -2887,7 +3149,7 @@ public static class SchemaValidationService
 			// from their own "type" sibling (entryRootType is not threaded into the recursion), so the
 			// exemption never bleeds into a nested non-exempt node.
 			string entryRootType = ResolveEntryRootType(values, ownerName, entryNameToType);
-			ScanNodeForTextLiterals(values, ownerName, entryRootType, result);
+			ScanNodeForTextLiterals(values, ownerName, entryRootType, result, violations);
 		}
 	}
 
@@ -2934,7 +3196,7 @@ public static class SchemaValidationService
 	// its own AND is the entry root; nested children are recursed with an empty entryRootType so a nested
 	// non-exempt node can never inherit an ancestor's exemption.
 	private static void ScanNodeForTextLiterals(JsonElement node, string ownerName, string entryRootType,
-		SchemaValidationResult result, bool isGalleryItemConfig = false) {
+		SchemaValidationResult result, List<LocalizableTextViolation>? violations, bool isGalleryItemConfig = false) {
 		switch (node.ValueKind) {
 			case JsonValueKind.Object:
 				string currentName = TryGetNodeName(node, out string nodeName) ? nodeName : ownerName;
@@ -2951,14 +3213,14 @@ public static class SchemaValidationService
 					if (IsExemptFromTextScan(currentType, property, isGalleryItemConfig)) {
 						continue;
 					}
-					ScanTextPropertyForLiterals(currentName, currentType, property, result);
-					ScanNodeForTextLiterals(property.Value, currentName, string.Empty, result,
+					ScanTextPropertyForLiterals(currentName, currentType, property, result, violations);
+					ScanNodeForTextLiterals(property.Value, currentName, string.Empty, result, violations,
 						currentType == "crt.Gallery" && property.NameEquals("itemConfig"));
 				}
 				break;
 			case JsonValueKind.Array:
 				foreach (JsonElement item in node.EnumerateArray()) {
-					ScanNodeForTextLiterals(item, ownerName, string.Empty, result);
+					ScanNodeForTextLiterals(item, ownerName, string.Empty, result, violations);
 				}
 				break;
 		}
@@ -2968,7 +3230,8 @@ public static class SchemaValidationService
 	// for an exempt (component, property) pair a localizable-resource binding is rejected (it renders empty),
 	// and everywhere else an inline user-visible literal is rejected (it should be a localizable binding).
 	private static void ScanTextPropertyForLiterals(
-		string currentName, string currentType, JsonProperty property, SchemaValidationResult result) {
+		string currentName, string currentType, JsonProperty property, SchemaValidationResult result,
+		List<LocalizableTextViolation>? violations) {
 		if (property.Value.ValueKind != JsonValueKind.String ||
 		    !LocalizableTextProperties.Contains(property.Name)) {
 			return;
@@ -2980,11 +3243,23 @@ public static class SchemaValidationService
 			// resolves to empty at runtime. Reject the resource form and force the working literal —
 			// the mirror of the inline-literal rule applied to everything else (ENG-92940).
 			if (IsLocalizableResourceReference(textValue)) {
-				result.Errors.Add(BuildLiteralRequiredError(currentName, currentType, property.Name, textValue));
+				ReportTextViolation(result, violations,
+					BuildLiteralRequiredError(currentName, currentType, property.Name, textValue),
+					new LocalizableTextViolation(currentName, property.Name,
+						LocalizableTextViolationKind.ResourceBindingOnLiteralOnlyProperty));
 			}
 		} else if (IsInlineUserVisibleTextLiteral(textValue)) {
-			result.Errors.Add(BuildTextLiteralError(currentName, property.Name, textValue));
+			ReportTextViolation(result, violations, BuildTextLiteralError(currentName, property.Name, textValue),
+				new LocalizableTextViolation(currentName, property.Name, LocalizableTextViolationKind.InlineLiteral));
 		}
+	}
+
+	// The single place a text rejection is recorded: the update-page error and the push-workspace violation are
+	// written together, so a new rejection branch cannot feed one gate without the other.
+	private static void ReportTextViolation(SchemaValidationResult result, List<LocalizableTextViolation>? violations,
+		string error, LocalizableTextViolation violation) {
+		result.Errors.Add(error);
+		violations?.Add(violation);
 	}
 
 	private static bool TryGetNodeName(JsonElement element, out string name) {
@@ -3685,6 +3960,17 @@ public static class SchemaValidationService
 	private static bool TryGetCaptionExpression(JsonElement componentValues, out string captionExpression) {
 		return TryGetStringProperty(componentValues, LabelPropertyName, out captionExpression)
 			|| TryGetStringProperty(componentValues, "caption", out captionExpression);
+	}
+
+	private static bool TryGetObjectProperty(JsonElement owner, string propertyName, out JsonElement value) {
+		value = default;
+		if (owner.ValueKind != JsonValueKind.Object
+			|| !owner.TryGetProperty(propertyName, out JsonElement candidate)
+			|| candidate.ValueKind != JsonValueKind.Object) {
+			return false;
+		}
+		value = candidate;
+		return true;
 	}
 
 	private static bool TryGetStringProperty(JsonElement element, string propertyName, out string value) {
@@ -5527,6 +5813,30 @@ public enum SchemaValidationErrorKind {
 	/// </summary>
 	UnresolvedLabelResource
 }
+
+/// <summary>
+/// Why a user-visible text value breaks the localizable-text rule.
+/// </summary>
+public enum LocalizableTextViolationKind {
+
+	/// <summary>An inline literal where a localizable-string binding is required.</summary>
+	InlineLiteral,
+
+	/// <summary>
+	/// A localizable-string binding on a literal-only property (e.g. <c>crt.ImageInput.tooltip</c>); the
+	/// component never reads localizable strings, so the text renders empty at runtime.
+	/// </summary>
+	ResourceBindingOnLiteralOnlyProperty
+}
+
+/// <summary>
+/// One view node whose user-visible text property breaks the localizable-text rule
+/// (<see cref="SchemaValidationService.FindLocalizableTextViolations"/>).
+/// </summary>
+/// <param name="NodeName">The view node's <c>name</c>, or the nearest named ancestor; empty when none is named.</param>
+/// <param name="PropertyName">The offending text property, e.g. <c>caption</c>.</param>
+/// <param name="Kind">Which side of the rule the value breaks.</param>
+public sealed record LocalizableTextViolation(string NodeName, string PropertyName, LocalizableTextViolationKind Kind);
 
 public class SchemaValidationResult
 {

@@ -60,10 +60,22 @@ public sealed class ToolContractPayloadBudgetTests {
 	// pinned where it stands.
 	// Registration and Classic parameter-page discovery add two independent long-tail tools.
 	// The combined default index measures 44986 bytes; round to the next 256-byte step (45056).
+	// Re-pinned deliberately for issue #1221: odata-read-to-file is one more long-tail tool, and one more
+	// tool is exactly what this ceiling is defined to grow by. Measured 45223 bytes on the default surface
+	// with it registered - 237 bytes for its index entry, which is one entry's worth and nothing else: the
+	// index carries only the FIRST SENTENCE of a description (BuildPurpose), so the sentences this branch
+	// adds to odata-read's own [Description] cost the index nothing. Next 256-byte step is 45312 (177).
+	// Re-pinned for ENG-90576: localize-page is one more long-tail tool. Measured 45442 bytes on the
+	// default surface with it registered (130 bytes for its index entry); next 256-byte step is 45568 (178).
+	// Re-pinned for ENG-101592: execute-esq-to-file, get-component-info-to-file, get-request-info-to-file and
+	// list-entity-client-schemas-to-file are four more long-tail tools. Measured 46392 bytes on the default
+	// surface with them registered (824 bytes, about 206 per index entry); next 256-byte step is 46592 (182).
+	// ENG-101352 adds create-package, one more long-tail tool: measured 46567 bytes (175 for its index
+	// entry), still inside the 46592-byte step, so the ceiling does not move.
 	// Serialization uses the default JSON encoder,
 	// which escapes non-ASCII (a purpose ellipsis is written as a 6-byte escape), so it over-counts the real
 	// UTF-8 wire size — conservative, which is the safe direction for a ceiling.
-	private const int MaxCompactIndexSerializedBytes = 176 * 256;
+	private const int MaxCompactIndexSerializedBytes = 182 * 256;
 
 	// Worst-case ceiling for ONE named full contract, measured as the SERIALIZED contract in UTF-8 bytes
 	// — the same quantity the index ratchet above measures, and what the agent actually receives.
@@ -113,7 +125,23 @@ public sealed class ToolContractPayloadBudgetTests {
 	// so an author who edited a different one is not sent to the wrong file. If it starts firing on
 	// edits that are NOT budget decisions, re-pin it deliberately and say so here — never widen it in
 	// passing.
-	private const int MaxToolContractSerializedBytes = 136 * 256;
+	//
+	// ENG-92711 (the Script task element) paid for its text the same way, by SWAP: create-business-process
+	// dropped the floor-history paragraph about 1.4.0.58/.60 and the 88%/65% condition statistics - provenance,
+	// nothing decided at call time - and spent the room on the scriptTask block, usings[], and the compile
+	// signal becoming conditional; modify-business-process shortened the same history and lost a
+	// parenthetical. The process methods (`methods`, `setMethods`) followed the same way. Re-measured by
+	// lowering the ceiling: modify-business-process 34765, create-business-process 34731,
+	// describe-business-process 32900 (which gained the scriptTask block, usings[] and methods). Both write
+	// tools are within 90 bytes of the ceiling, so the warning above holds for both.
+	//
+	// Re-pinned DELIBERATELY to 137 * 256 = 35072 when ENG-92711 met ENG-91844 on master (2026-09-30). Each
+	// had paid for its text by swap and fit alone; together they measured modify-business-process 34883,
+	// create-business-process 34863 and describe-business-process 33148 - up to 67 bytes over. What the two
+	// added is what a caller writes (sourceColumn / elementParameter.column, the scriptTask block, usings[],
+	// methods, the operations that edit them), and the provenance around them was already swapped out, so the
+	// cut would have been a caller-facing fact. 189 bytes of headroom is about thirty escaped characters.
+	private const int MaxToolContractSerializedBytes = 137 * 256;
 
 	[Test]
 	[Category("Unit")]
