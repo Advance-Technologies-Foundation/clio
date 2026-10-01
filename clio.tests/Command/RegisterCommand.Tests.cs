@@ -188,7 +188,7 @@ public class RegisterCommandTests : BaseCommandTests<RegisterOptions>{
 		result.Should().Be(0, because: "an existing absolute executable is safe to register");
 		deployCommands.Should().HaveCount(2, because: "both ZIP association locations need the resolved launcher");
 		deployCommands.Should().OnlyContain(line => line.TrimEnd() ==
-			$"@=\"{escapedLaunch} deploy-creatio --zip-file \\\"%1\\\" --explorer-launch\"",
+			$"@=\"{escapedLaunch} deploy-creatio --zip-file \\\"%1\\\" --explorer-launch --disable-reset-password\"",
 			because: "Explorer must resolve the executable and pass the ZIP as one argument without a command shell");
 		generated.Should().NotContain("__CLIO_DEPLOY_LAUNCH__", because: "template markers must never reach the registry");
 		_processExecutor.ReceivedCalls().Select(call => call.GetArguments()[0]).Cast<ProcessExecutionOptions>()
