@@ -70,9 +70,11 @@ public sealed class ToolContractPayloadBudgetTests {
 	// Re-pinned for ENG-101592: execute-esq-to-file, get-component-info-to-file, get-request-info-to-file and
 	// list-entity-client-schemas-to-file are four more long-tail tools. Measured 46392 bytes on the default
 	// surface with them registered (824 bytes, about 206 per index entry); next 256-byte step is 46592 (182).
-	// Re-pinned for ENG-99741: set-object-rights and get-object-rights are two more long-tail tools. Measured 46861
-	// bytes on the default surface with them registered (469 bytes, about 235 per index entry); next 256-byte step
-	// is 47104 (184).
+	// ENG-101352 adds create-package, one more long-tail tool: measured 46567 bytes (175 for its index
+	// entry), still inside the 46592-byte step, so the ceiling does not move.
+	// Re-pinned for ENG-99741: set-object-rights and get-object-rights are two more long-tail tools. Measured 47036
+	// bytes on the default surface with them and create-package registered (469 bytes for the two, about 235 per
+	// index entry); next 256-byte step is 47104 (184).
 	// Serialization uses the default JSON encoder,
 	// which escapes non-ASCII (a purpose ellipsis is written as a 6-byte escape), so it over-counts the real
 	// UTF-8 wire size — conservative, which is the safe direction for a ceiling.

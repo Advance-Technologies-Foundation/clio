@@ -825,6 +825,7 @@ public class BindingsModule {
 		services.AddTransient<AddPackageDependencyTool>();
 		services.AddTransient<AddCustomLoggingTool>();
 		services.AddTransient<RemovePackageDependencyTool>();
+		services.AddTransient<CreatePackageTool>();
 		services.AddTransient<CreateUiProjectTool>();
 		services.AddTransient<DataForgeTool>();
 		services.AddTransient<GetTargetPackageTool>();
@@ -1139,6 +1140,7 @@ public class BindingsModule {
 		services.AddTransient<PackageEditableMutator>();
 		services.AddTransient<AddPackageDependencyCommand>();
 		services.AddTransient<RemovePackageDependencyCommand>();
+		services.AddTransient<CreatePackageCommand>();
 		services.AddTransient<PackageDependencyManager>();
 		services.AddTransient<SaveSettingsToManifestCommand>();
 		services.AddTransient<ShowDiffEnvironmentsCommand>();

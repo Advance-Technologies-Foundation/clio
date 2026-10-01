@@ -363,10 +363,17 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		///     Compiles the package a business process lives in via the ProcessDesignService package.
 		/// </summary>
 		CompileProcess = 109,
+
+		/// <summary>Creates a standalone package (PackageService CreatePackage).</summary>
+		CreatePackage = 110,
+
+		/// <summary>Creates a package inside an installed application (ApplicationPackagesService CreatePackageInApp).</summary>
+		CreatePackageInApp = 111,
+
 		/// <summary>Read one administrated object's per-role operation/record/column rights by schema UId.</summary>
-		GetAdministratedObject = 110,
+		GetAdministratedObject = 112,
 		/// <summary>Persist an administrated object's per-role operation/record/column rights (read-modify-write).</summary>
-		SaveAdministratedObject = 111
+		SaveAdministratedObject = 113
 
 	}
 
@@ -469,6 +476,8 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.ModifyProcessAsNewVersion, "/rest/ProcessDesignService/ModifyProcessAsNewVersion"},
 		{KnownRoute.SetActiveProcessVersion, "/rest/ProcessDesignService/SetActiveProcessVersion"},
 		{KnownRoute.CompileProcess, "/rest/ProcessDesignService/CompileProcess"},
+		{KnownRoute.CreatePackage, "ServiceModel/PackageService.svc/CreatePackage"},
+		{KnownRoute.CreatePackageInApp, "ServiceModel/ApplicationPackagesService.svc/CreatePackageInApp"},
 		{KnownRoute.LastCompilationResult, "api/ConfigurationStatus/GetLastCompilationResult"},
 		{KnownRoute.GetAvailableThemes, "ServiceModel/ThemeService.svc/GetAvailableThemes"},
 		{KnownRoute.ClearThemesCache, "ServiceModel/ThemeService.svc/ClearThemesCache"},

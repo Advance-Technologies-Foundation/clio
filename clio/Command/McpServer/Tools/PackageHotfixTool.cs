@@ -15,7 +15,8 @@ public class PackageHotfixTool(
 	internal const string UnlockForHotfixToolName = "unlock-for-hotfix";
 	internal const string FinishHotfixToolName = "finish-hotfix";
 
-	[McpServerTool(Name = UnlockForHotfixToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
+	// Destructive: it changes the editability of a package on a shared environment, so the host must confirm it.
+	[McpServerTool(Name = UnlockForHotfixToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
 		Lifetime = McpToolExecutionLifetime.PerCall,

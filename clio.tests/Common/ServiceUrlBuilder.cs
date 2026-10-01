@@ -227,6 +227,18 @@ internal class ServiceUrlBuilderCommandTests
 			yield return new TestCaseDataWithKnownRoutes(true, "https://localhost",
 				ServiceUrlBuilder.KnownRoute.GetPackageProperties,
 				"https://localhost/ServiceModel/PackageService.svc/GetPackageProperties");
+			yield return new TestCaseDataWithKnownRoutes(false, "https://localhost",
+				ServiceUrlBuilder.KnownRoute.CreatePackage,
+				"https://localhost/0/ServiceModel/PackageService.svc/CreatePackage");
+			yield return new TestCaseDataWithKnownRoutes(true, "https://localhost",
+				ServiceUrlBuilder.KnownRoute.CreatePackage,
+				"https://localhost/ServiceModel/PackageService.svc/CreatePackage");
+			yield return new TestCaseDataWithKnownRoutes(false, "https://localhost",
+				ServiceUrlBuilder.KnownRoute.CreatePackageInApp,
+				"https://localhost/0/ServiceModel/ApplicationPackagesService.svc/CreatePackageInApp");
+			yield return new TestCaseDataWithKnownRoutes(true, "https://localhost",
+				ServiceUrlBuilder.KnownRoute.CreatePackageInApp,
+				"https://localhost/ServiceModel/ApplicationPackagesService.svc/CreatePackageInApp");
 
 			yield return new TestCaseDataWithKnownRoutes(false, "http://localhost",
 				ServiceUrlBuilder.KnownRoute.RestoreFromPackageBackup,
