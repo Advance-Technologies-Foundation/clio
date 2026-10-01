@@ -196,9 +196,4 @@ clio/Utilities/WebBrowser.cs
 clio/WikiHelpViewer.cs
 clio/Workspace/WorkspaceEnvironment.cs
 clio/Workspace/WorkspaceMerger.cs
-clio/Common/RuntimeAttachment/AttachmentProcess.cs
-clio/Common/RuntimeAttachment/KubernetesAttachmentProvider.cs
-clio/Common/RuntimeAttachment/RuntimeAttachmentModels.cs
-clio/Common/OperatorBootstrap/LocalRuntimeImageBuilder.cs
-clio/Common/OperatorBootstrap/RancherDesktopTarget.cs
 clio/YAML/Scenario.cs
