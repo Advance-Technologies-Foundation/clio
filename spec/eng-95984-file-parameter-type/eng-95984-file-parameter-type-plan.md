@@ -62,7 +62,7 @@ the clio `[RequiresPackage]` floor moves and two shipped guidance passages are r
 Delivery is one feature PR per repository (CrtProcessBuilder, then clio, then clio-knowledge). Before them comes a
 docs-only clio PR with this ticket's BMAD set, which must merge before the package PR opens (section 10). A
 conditional fast-lane triple is added for an ENG-96230 Collection process parameter type mirror defect if stand
-measurement M3 confirms it. Effort is about 38.5-55 hours (about five to seven days); calendar about 6.5-8.5 working days. It blocks ENG-96506 Generated
+measurement M3 confirms it. With an AI agent writing the code, it takes about 7-15 h of agent time and 4.5-10 h of the owner's time; calendar about 3-5 working days from day 0. It blocks ENG-96506 Generated
 report + process parameter modes; ENG-96505 Element readiness and object attachments mode is not functionally
 blocked, but it merges after this ticket (section 4.3).
 
@@ -270,8 +270,8 @@ parameter modes needs it only through the shared cut order; its Process-paramete
 
 ## 5. Work packages
 
-Hours are engineering hours for an AI-assisted implementer following this plan; section 8 separates the work that
-compresses from the work that does not.
+The hours in this section are relative size weights from an earlier human-scale costing. They rank the work packages;
+they are not the estimate. The estimate, with an AI agent writing the code, is section 8.
 
 ### 5.0 W0: day-0 measurements and baseline (before code) - 3-4 h
 
@@ -334,7 +334,7 @@ exception: it goes in its own docs-only PR (CL-PT-DOC, section 10), which merges
 
 | WP | Files to change (path:line) | h |
 |---|---|---|
-| CL-0 BMAD set (docs-only PR CL-PT-DOC, branch `feature/ENG-95984-file-parameter-type-spec`) | AGENTS.md requires a PRD and an ADR before code for a non-trivial feature, and a story file before any PR opens. This ticket is non-trivial: 38.5-55 h of work, and it changes the shared `ApplyMapping` funnel. Today it has none of these files (grep of `spec/prd`, `spec/adr`, `spec/stories`, `spec/test-plans` and `spec/sprint-status.yaml` on clio master `03ef3944f`, 2026-10-01). The CL-DOC PR of the PR split carries only the ENG-92719 File processing element set, and its gate E7 covers only FE code PRs. The set uses the `/bmad-spec` form for a one-story feature (precedent: `spec/prd/spec-download-sys-setting-file.md` with its ADR, story and test plan). NEW `spec/prd/spec-eng-95984-file-parameter-type.md` (section 1 and AC-1..AC-10). NEW `spec/adr/adr-eng-95984-file-parameter-type.md` (D1-D9, D23, D25, D26 condensed). NEW `spec/stories/story-eng-95984-file-parameter-type-1.md`, whose Definition of Done is section 9. NEW `spec/test-plans/tp-eng-95984-file-parameter-type.md` (the PU / CU / E2E / KU / V ids of the test plan). `spec/sprint-status.yaml`: one `ready-for-dev` row with `jira`, `file`, `prd`, `adr`, `test_plan`, `depends_on` / `blocks`, in the shape of the ENG-99856 Sub-process element: support MULTI-INSTANCE (running the callee once per item of a collection) rows (`spec/sprint-status.yaml:4170-4196`). Also this spec folder, if the owner wants it in the repository. If M3 has already opened the mirror Sub-task, its story `-2` (with `jira:` set to that key) rides in the same PR. It is a Sub-task of this issue, so the PR keeps this issue's title. The three follow-up Sub-tasks of section 12 get their stories in this PR too (created on day 0). CL-PT-DOC merges after the M3 result is in, so MH's story rides in it if M3 confirms H-1. Precedence with CL-DOC: pr-split E10 | 1.5-2.5 |
+| CL-0 BMAD set (docs-only PR CL-PT-DOC, branch `feature/ENG-95984-file-parameter-type-spec`) | AGENTS.md requires a PRD and an ADR before code for a non-trivial feature, and a story file before any PR opens. This ticket is non-trivial: 7-15 h of agent work, 4.5-10 h of the owner's time, and it changes the shared `ApplyMapping` funnel. Today it has none of these files (grep of `spec/prd`, `spec/adr`, `spec/stories`, `spec/test-plans` and `spec/sprint-status.yaml` on clio master `03ef3944f`, 2026-10-01). The CL-DOC PR of the PR split carries only the ENG-92719 File processing element set, and its gate E7 covers only FE code PRs. The set uses the `/bmad-spec` form for a one-story feature (precedent: `spec/prd/spec-download-sys-setting-file.md` with its ADR, story and test plan). NEW `spec/prd/spec-eng-95984-file-parameter-type.md` (section 1 and AC-1..AC-10). NEW `spec/adr/adr-eng-95984-file-parameter-type.md` (D1-D9, D23, D25, D26 condensed). NEW `spec/stories/story-eng-95984-file-parameter-type-1.md`, whose Definition of Done is section 9. NEW `spec/test-plans/tp-eng-95984-file-parameter-type.md` (the PU / CU / E2E / KU / V ids of the test plan). `spec/sprint-status.yaml`: one `ready-for-dev` row with `jira`, `file`, `prd`, `adr`, `test_plan`, `depends_on` / `blocks`, in the shape of the ENG-99856 Sub-process element: support MULTI-INSTANCE (running the callee once per item of a collection) rows (`spec/sprint-status.yaml:4170-4196`). Also this spec folder, if the owner wants it in the repository. If M3 has already opened the mirror Sub-task, its story `-2` (with `jira:` set to that key) rides in the same PR. It is a Sub-task of this issue, so the PR keeps this issue's title. The three follow-up Sub-tasks of section 12 get their stories in this PR too (created on day 0). CL-PT-DOC merges after the M3 result is in, so MH's story rides in it if M3 confirms H-1. Precedence with CL-DOC: pr-split E10 | 1.5-2.5 |
 | CL-1 Rebundle and floor | `pwsh ./rebundle-process-builder.ps1 -PackageRepoPath <package at PR head> -Version <claimed>`; `clio/CrtProcessBuilder/CrtProcessBuilder.gz` and the four pins in `clio.tests/Common/BundledProcessBuilderPackageTests.cs` (`ExpectedArchiveVersion` `:318`); floor literals `clio/Command/CreateBusinessProcessCommand.cs:240`, `clio/Command/ModifyBusinessProcessCommand.cs:196`, `clio/Command/ModifyProcessAsNewVersionCommand.cs:59` with their comment blocks; `clio.tests/Command/ProcessDesignerRequiresPackageAttributeTests.cs:67-68, 106`; the enforced-floor sentence in the create, modify and modify-as-new-version descriptions (`EnforcedFloorSentences_ShouldEqualTheRequiresPackageLiteral`, `BundledProcessBuilderPackageTests.cs:1504`). An install reads the archive from the BUILD OUTPUT the script refreshed, so install from there | 1-1.5 |
 | CL-2 Descriptions | `clio/Command/McpServer/Tools/ProcessDesigner/CreateBusinessProcessTool.cs:287-289` and `ModifyBusinessProcessTool.cs:140-142` (type lists: +30 / +28 B); the swap: S1 (`CreateBusinessProcessTool.cs:301-306`) + C6 (`:326`) and S2 (`ModifyBusinessProcessTool.cs:164-166`) replaced by short clauses that KEEP three things. (1) `this clio requires <floor>`. (2) `multiInstanceOptions {enabled, executionMode, ignoreErrors}`. (3) A short collapse clause containing the exact words `stopped validating formulas`, for example "; 1.4.0.41 is where the package stopped validating formulas" (59 B). Put (3) after the `multiInstanceOptions` list, so the 60 characters before it hold no floor literal. The reason is `FloorSentences_ShouldNotCreditTheEnforcedFloorWithTheCollapse` (`clio.tests/Common/BundledProcessBuilderPackageTests.cs:1587-1625`). It requires that phrase in the create description (today `:303`, inside S1), the modify description (`:166`, inside S2) and `docs/McpCapabilityMap.md` (`:762`). It also fails when the enforced floor literal appears in the 60 characters before the phrase. Its own message would allow narrowing its surfaces in the same commit, but that drops a guard on a true claim, so it is not planned. Net about -390 B create and -55 B modify: the earlier -450 / -115 minus the kept clause (S1 and S2 clause lengths measured on clio master `03ef3944f`, 2026-10-01; final figures re-measured in the PR). The [test plan](eng-95984-file-parameter-type-test-plan.md)'s CU-07 pins it beside `EnforcedFloorSentences_ShouldEqualTheRequiresPackageLiteral`; `ModifyProcessAsNewVersionTool.cs:83-88` floor-history parenthetical rewritten once without the enumeration; `DescribeProcessTool.cs:50` decoded-source clause widened to "a value that IS another element's output" (about +40 B of 1,924); re-measure and rewrite the figures in the comment of `clio.tests/Command/McpServer/ToolContractPayloadBudgetTests.cs:136-142` (ceiling 137 x 256 = 35,072 unchanged). No `name=` pointer and no binder rules in any description. Where a clause carries a counted claim ("with four exceptions" in describe), grep both the description and the guide for the count word in the same change: nothing checks the two against each other (`docs/knowledge/McpServer/counted-claims-in-shipped-text-have-no-drift-oracle.md`) | 1-1.5 |
 | CL-3 ManagerMap arm | `clio/Command/ProcessModel/Schema.cs:1144-1145`: add `"fileprocessing" or "processfile"` to the explicit `EventType.UserTask` arm; `[TestCase]`s in `clio.tests/Command/ProcessModel/ManagerMapResolveDataIdTests.cs`; update `docs/knowledge/ProcessModel/subprocess-build-token-needs-a-managermap-arm.md` | 0.5 |
@@ -416,28 +416,49 @@ not say:
 
 ## 8. Estimate
 
-| Block | h | Compresses with AI? |
-|---|---|---|
-| W0 day-0 measurements (M3, MI-0, M6): each write waits for the user's go-ahead; M6 needs a designer-built probe | 3-4 | no |
-| CL-0 BMAD set in the docs-only PR CL-PT-DOC (agent work; the owner's review runs during implementation) | 1.5-2.5 | yes |
-| PB-1..PB-10 package code, docs and tests (the shared helper and drift guard in PB-9) | 16.5-22.5 | yes |
-| CL-1..CL-7 clio surface, rebundle, e2e | 6-9 | mostly (the e2e run is not) |
-| KB-1..KB-3 knowledge | 3-5 | yes |
-| First build of the package test project on a short path (net472, core-bin junction) | 1-2 | no |
-| Stand verification V0 (read-only, before code), SC-0 and V1-V6 after the final cut, sequential | 4-5 | no |
-| Review gates 1 and 3 (comprehensive, three lenses, the shared `ApplyMapping` funnel) in three repositories, plus fixing findings | 3-4 | no |
-| Knowledge publication check and budget re-measures | 0.5-1 | no |
-| **Total** | **38.5-55 (about 5-7 days)** | |
+**Model (the owner's rule):** an AI coding agent writes all code, tests, docs and guidance, and fixes review findings.
+The human time is the owner's: decisions and Jira, designer-built probes and stand checks, steering the agent and
+reading its output, merges and publication checks. Other reviewers' effort is not counted; their latency is in the
+calendar. The per-package hours in section 5 are relative size weights from the earlier human-scale costing, not
+effort. Calibration (12 delivered features, measured 2026-10-01) is in the
+[element plan](../eng-92719-file-processing-element/eng-92719-file-processing-element-plan.md) §8.4.
 
-V7 (optional) and V8 (only if M1 passed) add about 1-2.5 h when run; they are not in the total.
+Expected change size: the package PR about +2,300 to +3,200 lines (inference), clio about 0.2x of that (measured
+median), knowledge small; about 2.8-3.8k added lines in all.
 
-**Calendar: about 6.5-8.5 working days.** Day 0 for owner decisions, the measurements and opening CL-PT-DOC. Its human
-review runs in parallel with implementation and only has to finish before the package PR opens. Then 3.5-4.5 days of
-implementation;
-the package review (the PR is estimated at +2,300 to +3,200 lines, inference; the 12 package PRs of 1,500-4,500 added lines among
-46 merged feature PRs waited a median of 48.7 h, measured); the clio and knowledge tails take 30-71 minutes after the
-package merge (measured delivery history). If M3 confirms H-1 and the owner chooses a separate Sub-task, its triple
-(fast lane, under 1,500 lines, median 4-20 h) runs first and adds about one day; PB-4 and PB-8 shrink by about 1 h.
+### 8.1 AI agent time
+
+| Block | h |
+|---|---|
+| CL-0 BMAD set in the docs-only PR CL-PT-DOC | 1-2 |
+| PB-1..PB-10 package code, docs and tests; CL-1..CL-7 clio surface, rebundle, e2e; KB-1..KB-3 knowledge; review-fix rounds; the first net472 build on a short path | 6-13 |
+| **Total** | **7-15** |
+
+Rate: 2-3.5 h of agent wall clock per 1k added lines, the measured range of the owner's AI-written features of 3-10k
+lines.
+
+### 8.2 Human time (the owner)
+
+| Block | h |
+|---|---|
+| Decisions O-1..O-10, the AC-1..AC-10 replacement, Jira links | 1-1.5 |
+| W0 and stand checks: the M3 designer step, the M6 designer-built probe, V0, the UI checks after the final cut (M3, MI-0 and M6's builder half are run by the agent, each write after a go-ahead) | 1-2 |
+| Steering the agent and reading its output (0.5-1.2 h per 1k added lines; measured median 0.7) | 1.5-4.5 |
+| CL-PT-DOC review | 0.5-1 |
+| Merges, knowledge publication check, review replies | 0.5-1 |
+| **Total** | **4.5-10** |
+
+V7 (optional) and V8 (only if M1 passed) add about 0.5-1 h of human time when run; they are not in the total.
+
+### 8.3 Calendar
+
+**About 3-5 working days from day 0.** Day 0 for the owner's decisions, the day-0 measurements on 1.6.6.54 and
+opening CL-PT-DOC. Then 1-2 days of agent sessions. Then the package review: the PR falls in the 1,500-4,500-line
+bucket, where review start to merge took a median of 18.2 h (range 5.1-136.4 h) and the first human review arrived
+after about 33 h (measured). The clio and knowledge tails take 30-71 minutes after the package merge (measured). The
+owner's comparable AI-written features took 2.0-5.6 calendar days from first commit to the last merge. If M3 confirms
+H-1 and the owner chooses a separate Sub-task, its triple (under 1,500 lines; about 1-3 h of agent time and 1-2 h of
+human time) runs first and adds about 0.5-1 day.
 
 What this plan removed: no designer capture session (the shipped captures are the oracle); no Binary pin flips
 (Binary stays refused, so `PBT/ProcessParameterServiceTests.cs:144-150` and the e2e at

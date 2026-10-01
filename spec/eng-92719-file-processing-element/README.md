@@ -22,8 +22,10 @@ caller sends. Third, the platform accepts almost every configuration mistake sil
 Delivery is one package → clio → knowledge PR triple per Jira issue, plus one docs-only clio PR per spec set: 14
 PRs, or 17 with a conditional defect fix. The order is ENG-95984 File process parameter type, then ENG-96505 Element
 readiness and object attachments mode, then ENG-96506 Generated report + process parameter modes, then a new SysFile
-Sub-task. A human merges every PR. Effort is about 38.5-55 h for ENG-95984 File process parameter type and 99-122 h
-for ENG-92719 File processing element. Nineteen owner questions and 27 stand measurements are open. The day-0
+Sub-task. A human merges every PR. With an AI agent writing the code, ENG-95984 File process parameter type takes
+about 7-15 h of agent time and 4.5-10 h of the owner's time (3-5 working days), and ENG-92719 File processing element
+about 26-52 h of agent time and 15-33.5 h of the owner's time (about 7-10 working days after that); about 2-3 weeks
+from day 0 for both. Nineteen owner questions and 27 stand measurements are open. The day-0
 decisions and measurements come before any code.
 
 Written 2026-10-01, read-only. Nothing was built, committed, or written to Jira or to the stand. **Status: open.
@@ -289,34 +291,32 @@ Contingency splits fire only on a named trigger (§11):
 
 ## Estimate
 
-| Work | AI-written h | Does not compress, h | Effort | Calendar |
-|---|---|---|---|---|
-| ENG-95984 File process parameter type | 27-39 | 11.5-16 | **38.5-55 h, about 5-7 days** | about 6.5-8.5 working days |
-| FE shared day 0 (decisions, Jira, CL-DOC, capture session SC-0..SC-2) | 2-3 | 4-7 | 6-10 h | - |
-| OA (ENG-96505 Element readiness and object attachments mode) | 28.5-31.5 | 16.5-21.5 | 45-53 h, 5.5-6.5 days | - |
-| RP (ENG-96506 Generated report + process parameter modes) | 16-17.5 | 12.5-16 | 28.5-33.5 h, 3.5-4 days | - |
-| SF (new Sub-task) | 8.5-10 | 11-15 | 19.5-25 h, 2.5-3 days | - |
-| **ENG-92719 File processing element, total** | **about 55-62** | **about 44-59.5** | **99-122 h, 12.5-15 days** | **about 3-4 weeks after CL-PT merges** |
+**Model.** An AI coding agent writes all code, tests, docs and guidance, and fixes review findings. The human
+answers the owner decisions, builds the designer probes and runs the stand checks the agent cannot, steers the agent
+and reads its output, and merges. Calendar time is set by review latency and the gate order (one of our package PRs
+in review at a time, one cut on the stand at a time). Calibrated on 12 features delivered in these three repositories
+between 2026-08-10 and 2026-09-30 (measured; [plan](eng-92719-file-processing-element-plan.md) §8.4).
 
-Sources: [ENG-95984 File process parameter type
-plan](../eng-95984-file-parameter-type/eng-95984-file-parameter-type-plan.md) §8 and
-[plan](eng-92719-file-processing-element-plan.md) §8. Together the two plans sum to about 137.5-177 h of effort. The
-first row's AI and non-compressible columns are split from that plan's table, which marks each block "compresses
-with AI" or not.
+| Issue | AI agent, h (wall clock) | Human, h | Calendar, working days |
+|---|---|---|---|
+| ENG-95984 File process parameter type (incl. its docs-only PR CL-PT-DOC) | 7-15 | 4.5-10 | 3-5 from day 0 |
+| ENG-92719 File processing element: shared day 0 (decisions, Jira, CL-DOC) | 1-2 | 2-3.5 | day 0, shared with ENG-95984 File process parameter type |
+| ENG-96505 Element readiness and object attachments mode | 15-27 | 5.5-13 | 4-6 (adds 2-3 to the critical path) |
+| ENG-96506 Generated report + process parameter modes | 7-15 | 3.5-9 | 3-4 (adds 1.5-2) |
+| SF, new Sub-task "SysFile attachment storage in the Process file element" | 3-8 | 4-8 | 2-4 (adds 1.5-2.5) |
+| **ENG-92719 File processing element, total** | **26-52** | **15-33.5** | **about 7-10 after ENG-95984 File process parameter type merges** |
+| MH, conditional Sub-task "typeFromElement collection mirror leaves its items unbound" | 1-3 | 1-2 | +0.5-1, first |
+| **Both issues** | **33-67** | **19.5-43.5 (+1-2 with MH)** | **about 2-3 weeks from day 0** |
 
-The work that does not compress:
-- owner decisions;
-- the pre-code stand measurements, several of them built by the user in the designer;
-- one cut on the stand at a time;
-- review gates 1 and 3, plus one human review round per PR;
-- rebundle and reinstall cycles;
-- three knowledge publications.
+The human column is the owner's time: decisions and Jira edits, designer-built probes and stand checks, steering and
+reading the agent's output, merges and knowledge publication checks. Other reviewers' time is not in it; their
+latency is in the calendar column. The breakdown per issue is in the
+[ENG-95984 File process parameter type plan](../eng-95984-file-parameter-type/eng-95984-file-parameter-type-plan.md)
+§8 and the [plan](eng-92719-file-processing-element-plan.md) §8.
 
-[pr-split](eng-92719-file-processing-element-pr-split.md) §7 puts the serialized review wall clock for PT and FE
-together at about 7-9 calendar days after day 0 (at the measured medians). The 3-4 weeks add one implementer's effort,
-the measurement gates and the stand wait.
-
-What pushes the figure up:
+What pushes it up:
+- the owner's decision turnaround on day 0;
+- the review-latency tail (a 1,500-4,500-line package PR took up to 136 h from review start to merge);
 - a foreign restamp on `main` that forces a re-cut after approvals;
 - M1 or M23 failing;
 - M11 confirming H-G3-1;
@@ -324,11 +324,7 @@ What pushes the figure up:
   validator into the write path (ENG-88414) (the key in that title is ENG-88414 AI-driven application development)
   landing first.
 
-What pulls it down: a second disposable .NET Framework stand (O6).
-
-Calibration: the ENG-92707 Sub-process element: selection + parameter sync package PR
-(https://creatio.ghe.com/engineering/crt-process-builder/pull/68) added 7,506 lines, planned at 2.5-3 effort days.
-PK-OA is expected at 6-6.8k lines and carries more distinct subsystems, so it is costed at about twice that.
+What pulls it down: a second disposable .NET Framework stand (O6), which removes the one-cut-at-a-time wait.
 
 ---
 

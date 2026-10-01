@@ -56,10 +56,10 @@ process parameter type is a real prerequisite only for ENG-96506 Generated repor
 clio PR must merge before the package PR of ENG-96505 Element readiness and object attachments mode, because it carries
 the `ManagerMap` arm and the description-budget swap (pr-split E4, E6). Its knowledge PR must be published before the
 clio PR of ENG-96505 Element readiness and object attachments mode, because that PR writes the first
-`name=process-files` (E5; D10, D23, D25). Estimate: **about 55-62 h of AI-written
-work and 44-59.5 h that does not compress — roughly 12.5-15 effort days, and 3-4 calendar weeks after the clio PR of
-ENG-95984 File process parameter type merges**, dominated by serialized human review (one of our package PRs in review at a
-time), stand verification and the user-built probes (section 8).
+`name=process-files` (E5; D10, D23, D25). Estimate, with an AI agent writing the code: **about 26-52 h of
+agent time and 15-33.5 h of the owner's time, about 7-10 working days after ENG-95984 File process parameter type
+merges**, dominated by serialized human review (one of our package PRs in review at a time), stand verification and
+the user-built probes (section 8).
 
 ---
 
@@ -243,9 +243,9 @@ CL-SF / KB-SF.
 
 ## 5. Work packages
 
-Hours are for an AI-assisted implementer following this plan. "AI" = written by the agent (code, tests, texts);
-"NC" = work that does not compress (stand, human probes, review rounds, publication). An AI value per row is a point
-estimate; a package total runs from the sum of its rows to about 10% above it (integration friction). Paths are proposals where the
+The hours in these tables are relative size weights from an earlier human-scale costing ("AI" = rows the agent
+writes; "NC" = stand, human probes, review rounds, publication). They rank the work packages; they are not the
+estimate. The estimate, with an AI agent writing the code, is section 8. Paths are proposals where the
 file is new; the `FileProcessing/` folder follows the existing per-family folders `PB/Email/` and `PB/Approval/`.
 
 ### 5.0 Day 0 (shared, before any code)
@@ -448,54 +448,78 @@ clio-knowledge has no internal knowledge base; its deliverable is the shipped gu
 
 ## 8. Estimate
 
-Calibration: the closest precedent, the ENG-92707 Sub-process element: selection + parameter sync package PR
-(https://creatio.ghe.com/engineering/crt-process-builder/pull/68), added 7,506 lines and was planned at 2.5-3 effort
-days. The expected package diffs here are PK-OA about 6-6.8k lines, PK-RP 2.5-4k, PK-SF 1.2-2k (inference from the
-change lists). ENG-96505 Element readiness and object attachments mode carries more distinct subsystems than ENG-92707 Sub-process element: selection + parameter sync (resolver, scope filter, filter target,
-ledger, describe block) and a larger measurement gate, which is why it is costed at roughly twice that precedent.
+**Model (the owner's rule):** an AI coding agent writes all code, tests, docs and guidance, and fixes review findings.
+The human time below is the owner's: decisions and Jira, designer-built probes and stand checks, steering the agent
+and reading its output, merges and publication checks. Other reviewers' effort is not counted; their latency is in the
+calendar. The per-package hours in section 5 are relative size weights from the earlier human-scale costing, not
+effort; this section replaces them.
 
-### 8.1 AI-written work
+Expected change sizes (inference from the change lists, added lines incl. tests): PK-OA about 6-6.8k, PK-RP 2.5-4k,
+PK-SF 1.2-2k; clio adds a median 0.2x of the package lines (measured, 12 features), knowledge less.
 
-| Package | h |
-|---|---|
-| CL-DOC (BMAD set, story rows, spec hand-off) | 2-3 |
-| OA: family core, binder/applier, resolver, scope/filter/ledger (incl. the sort codec extraction and the refusing reconcile), refusals, describe + D20 (OA.1-OA.6) | 15-16.5 |
-| OA: package tests (incl. the Read data regression), docs (OA.7-OA.8) | 5-5.5 |
-| OA: clio rebundle, descriptions, prompts, DTO, e2e incl. TC-71 and the designer-fixture cases (OA.9-OA.11) | 6.5-7.5 |
-| OA: guidance (OA.12) | 2 |
-| RP: two registrations, claims, tests, docs (RP.1-RP.5) | 9.5-10.5 |
-| RP: clio incl. prompts + e2e incl. TC-74 and TC-91 + guidance (RP.6-RP.8) | 6.5-7 |
-| SF (SF.1-SF.4) | 8.5-10 |
-| **Total AI** | **about 55-62** |
+### 8.1 AI agent time (wall clock of agent sessions, incl. builds, test runs and review-fix rounds)
 
-### 8.2 Work that does not compress
-
-| Work | h | Why it does not compress |
+| Issue | Added lines, all repos | h |
 |---|---|---|
-| Owner decisions, Jira edits, cut claim, merge window (FE.0a, FE.0b) | 1.5-2.5 | people |
-| CL-DOC owner review | 1-2 | people |
-| Capture session SC-0..SC-2 (FE.0d) | 1.5-2.5 | the user builds and saves SC-1 in the designer; one schema write |
-| Pre-code measurements OA.0, RP.0, SF.0 | 11.5-16 | sequential stand writes; three SF probes, the M1 probe and the OA e2e fixture `UsrFpOaDesignerFixture` are built by the user in the designer, and the M26 probe |
-| Stand verification after each final cut (section 6.3), incl. M22 user checks | 9-11.5 | one cut on the stand at a time; e2e not run by CI (the `McpE2E.ProcessDesigner` category is excluded in TeamCity) |
-| Serialization parity checks against the shipped captures | 2-3 | a diff, not a resemblance, incl. the SC-4 builder twin per cut |
-| Review gates 1 and 3 per PR (three lenses) and one human review round each | 12-14 | mandatory; every push dismisses approvals on the package repository |
-| Rebundle / reinstall cycles, tag verification (`git ls-remote --tags origin`) | 3-4 | convergence and stand discipline |
-| Knowledge publication + `info-knowledge` check, three generations | 2-3 | a separate release train; publication gates the next clio merge |
-| net472 test runs from a short path | 0.5-1 | MAX_PATH; first-time setup if not done in PT |
-| **Total non-compressible** | **about 44-59.5** | |
+| Shared day 0: CL-DOC (BMAD set, story rows) | docs | 1-2 |
+| ENG-96505 Element readiness and object attachments mode (OA.1-OA.12) | about 7.2-8.2k | 15-27 |
+| ENG-96506 Generated report + process parameter modes (RP.1-RP.8) | about 3-4.8k | 7-15 |
+| SF, "SysFile attachment storage in the Process file element" (SF.1-SF.4) | about 1.4-2.4k | 3-8 |
+| **Total** | | **26-52** |
 
-### 8.3 The number
+Rate used: 2-3.5 h per 1k added lines, the measured range of the owner's AI-written features of 3-10k lines
+(section 8.4).
 
-**Effort about 99-122 h, i.e. 12.5-15 working days**: ENG-96505 Element readiness and object attachments mode 5.5-6.5
-days (45-53 h), ENG-96506 Generated report + process parameter modes 3.5-4 days (28.5-33.5 h), the SysFile Sub-task
-2.5-3 days (19.5-25 h), plus about one day of shared work (FE.0, 6-10 h). **Calendar about 3-4 weeks after CL-PT merges** (inference): human review is serialized on purpose (at
-most one of our package PRs in review), and the measured medians are about 2 days open for package PRs of 1,500 lines
-or more, with each clio + knowledge tail taking 30-71 minutes after its package merge (measured from delivery
-history; the medians include draft time). OA's development overlaps PK-PT's review; OA's first stand run waits for
-PT's verification, because the stand carries one cut at a time. The two calendar figures measure different things:
-[pr-split](eng-92719-file-processing-element-pr-split.md) §7 puts the serialized review wall clock alone, for PT and
-FE together at bucket medians, at about 7-9 calendar days after day 0; the 3-4 weeks here add one implementer's
-effort (12.5-15 days), the measurement gates and the stand's one-cut-at-a-time wait.
+### 8.2 Human time (the owner)
+
+| Issue | Decisions and Jira | Designer probes and stand checks | Steering and reading the agent's output | Merges, publication, review replies | Total h |
+|---|---|---|---|---|---|
+| Shared day 0 | 1.5-2.5 (Q3-Q5, Q13-Q18, AC D-2..D-4, links, Sub-tasks) | - | 0.5-1 (CL-DOC review) | - | 2-3.5 |
+| ENG-96505 Element readiness and object attachments mode | - | 1.5-2.5 (M26 probe, M22 after the cut, DT-01/DT-02; M10/M11 are read by the agent in a logged-in browser) | 3.5-9.5 | 0.5-1 | 5.5-13 |
+| ENG-96506 Generated report + process parameter modes | - | 1.5-2.5 (the M1+M2 script-task probe, M22, DT-03) | 1.5-5.5 | 0.5-1 | 3.5-9 |
+| SF | - | 3-4 (M8 upload and probe, SC-1/M21, M23a-d, M25, DT-04) | 0.5-3 | 0.5-1 | 4-8 |
+| **Total** | | | | | **15-33.5** |
+
+Steering is costed at 0.5-1.2 h per 1k added lines (measured median 0.7, section 8.4). The optional measurements that
+gate no code (M4, M9, M16, the M17 runs, M18, M19, M20, M24) add about 2-3 h of human time if they are all run.
+
+### 8.3 Calendar
+
+| Step | Working days | Basis |
+|---|---|---|
+| Day 0: decisions, day-0 builder probes on 1.6.6.54 (M13, M6, M3, M3b, M14, M19, M20, M24, one at a time), CL-PT-DOC and CL-DOC | about 1 | inference; decision turnaround dominates |
+| ENG-95984 File process parameter type to its knowledge merge | 2-4 after day 0 | its plan section 8 |
+| ENG-96505 Element readiness and object attachments mode: development overlaps the previous review; its own review of a 4.5k+ line package PR | +2-3 | median 23.5 h review start to merge, 1.58 approval dismissals per PR (measured) |
+| ENG-96506 Generated report + process parameter modes | +1.5-2 | 1.5-4.5k bucket median 18.2 h (measured) |
+| SF | +1.5-2.5 | the M8/M23 gates may extend it |
+| **ENG-92719 File processing element** | **about 7-10 after ENG-95984 File process parameter type merges** | |
+| **Both issues** | **about 2-3 weeks from day 0** | |
+
+The clio and knowledge tails take 30-71 minutes after each package merge (measured). At most one of our package PRs is
+in review at a time, and the stand carries one cut at a time, so these steps add up rather than overlap.
+
+### 8.4 Calibration (measured 2026-10-01)
+
+Twelve features delivered in these three repositories between 2026-08-10 and 2026-09-30. For seven of them, written
+by the owner with AI agents, the agent wall clock was read from the session transcripts:
+
+| Feature | Added lines (prod + test, all repos) | Agent wall h | h per 1k lines | Owner engaged h | Calendar days |
+|---|---|---|---|---|---|
+| ENG-92707 Sub-process element: selection + parameter sync | 7.9k | 22.6 | 2.9 | 5.3 | 5.1 |
+| ENG-99856 Sub-process element: support MULTI-INSTANCE (running the callee once per item of a collection) | 9.9k | 15.6 | 1.6 | 3.0 | 2.0 |
+| ENG-92711 Script task element | 10.4k | 24.4 | 2.3 | 3.4 | 5.0 |
+| ENG-91844 Implement full parameter mapping (sources) | 3.3k | 9.1 | 2.8 | 0.8 | 5.6 |
+| ENG-91853 Exclusive and parallel gateways, conditional/default flows + basic Y auto-layout | 18.8k | 134.1 | 7.1 | 55.9 | 11.2 |
+
+- Agent time over all seven: median 2.9 h per 1k lines (p25-p75 2.6-5.8). The upper tail comes from small fixes and from
+  ENG-91853 Exclusive and parallel gateways, conditional/default flows + basic Y auto-layout, which also carried its
+  research and an autolayout redesign; this work's research is already done, so the 3-10k feature range (1.6-2.9) is
+  used, widened to 2-3.5.
+- Owner engaged time (prompting plus reading the reply, capped at 10 minutes per prompt): median 0.7 h per 1k lines
+  (p25-p75 0.3-1.9). It does not include designer probes, which section 8.2 adds separately.
+- About 40% of agent time falls after review starts (review-fix rounds), and it is inside the agent figures above.
+- Review start to merge, package PRs: 18.2 h median for 1,500-4,500 added lines (range 5.1-136.4), 23.5 h for 4,500+;
+  the first human review arrives after a median of about 33 h.
 
 What pushes it up: a re-cut forced by a foreign restamp on `main` after approvals (each costs a cut, a reinstall and
 re-requested reviews); M1 or M23 failing (the single-file path or SysFile narrows, X2 may fire); M11 confirming
@@ -537,7 +561,7 @@ which removes the one-cut-at-a-time wait between PT, OA and RP verification.
 | C-5 | Whether a new Sub-task "Process file to Send email attachments" is created: D27's last clause and the last row of pr-split §12.3 ("day 0", parent ENG-95985 Send email attachments) say yes; this plan's §5.4 and D22 ("exists in the backlog with exactly this scope") say no, and the two creation lists, decisions D-5 and open-questions Q9, omit it | source (the four documents, re-read 2026-10-01) | **no new Sub-task**: ENG-95985 Send email attachments already owns the scope; only link L5 is made; D27 and pr-split §12.3 dropped the row in the reconciliation of 2026-10-01 |
 | C-6 | reuse RF1-RF3 correct D16 and D21, and each changes a work package: RF2, the sort methods are `private static` with Read data wording (`PB/Elements/ReadDataConfigBinder.cs:793`, `:917`), so "reused as it is" is impossible; RF1, identity resolves by schema NAME (`PB/Elements/UserTaskSchemaIdentity.cs:48-56`), so production code mirrors names, not UIds; RF3, the notice ledger never refuses (`PB/Elements/DeleteDataNoticeLedger.cs:46`), so a refusing reconcile at `PB/Design/ProcessEditPipeline.cs:135` and `PB/Design/ProcessBuildHandler.cs:547` is new | source, re-read 2026-10-01 | applied here: §2 Sort row, §3 D16/D21 rows, OA.1 (RF1), OA.4 (RF2 extraction and RF3 refusing reconcile, +0.5 h), OA.7 (codec tests and the unedited Read data suites, +0.5 h). D16, D11 and D21 now read "the extracted readData sort codec" / "Reuse + change"; the README "Resolved during review" lists RF1-RF3 |
 | C-7 | The sibling [ENG-95984 File process parameter type plan](../eng-95984-file-parameter-type/eng-95984-file-parameter-type-plan.md) misses two mandates that this plan carries: PB-10 has no `.codex/workspace-diary.md` entry, which the package's `CLAUDE.md` "Workspace diary" section makes mandatory after non-trivial work, and its DoD names review gates 1 and 3 but not gate 2 (per commit, with the tier stated) | source (both plans, `pkg:CLAUDE.md`) | applied in that plan: PB-10 and its DoD carry the diary entry, and its DoD carries gate 2 per commit with the tier stated |
-| C-8 | The estimate in the [README](README.md) (its summary paragraph and its estimate table: OA 26.5-29 / 15.5-20 / 42-49 h, RP 14.5-16 / 27-32 h, total 52-58 / 93-114 h, 11.5-14 days) predates C-3, C-6 and the OA.11 fixture | inference (arithmetic over section 5) | this plan's section 8 wins. After C-3, C-6 and the fixture it read OA 28-31 AI / 16-20.5 NC (44-51.5 h), RP 15-16.5 AI (27.5-32.5 h), total about 54-61 AI and 96-117 h, 12-14.5 days; the README is re-synced to section 8 (now 99-122 h after the reconciliation additions) |
+| C-8 | The estimate was first costed at human scale (99-122 h; 12.5-15 effort days; 3-4 weeks) | the owner, 2026-10-01: estimate on the assumption that an AI agent writes the code | section 8 is re-done on that model and calibrated on 12 delivered features (8.4); the README estimate table follows it; the section 5 hours are kept only as relative size weights |
 
 ---
 
