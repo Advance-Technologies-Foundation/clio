@@ -16,6 +16,8 @@ DESCRIPTION
     - Copies clio icon files to the user's AppData folder
     - Imports Windows registry entries to add clio to context menus
     - Enables right-click access to clio commands from Windows Explorer
+    - Registers ZIP deployment with the absolute path of this clio build,
+      including its assembly argument when running through dotnet
     
     REQUIREMENTS:
     - Windows operating system only
@@ -49,8 +51,9 @@ BEHAVIOR
     2. Verifies administrator privileges
     3. Creates %APPDATA%\clio folder if it doesn't exist
     4. Copies all icon files from clio installation img folder to AppData
-    5. Imports unregister registry file to clean previous entries
-    6. Imports register registry file to add new context menu entries
+    5. Resolves and validates the current executable and generates the registry file
+    6. Imports the unregister file, then the generated registration file
+       under %APPDATA%\clio to add new context menu entries
     7. Displays success or error message
 
 REGISTRY FILES USED
@@ -66,6 +69,8 @@ NOTES
     - Administrator privileges are mandatory
     - Previous context menu entries are automatically removed before registration
     - Icons are stored in: %APPDATA%\clio\
+    - ZIP deployment launches clio directly with one quoted file argument.
+    - Run clio register again after upgrading or moving clio to refresh paths.
     - To remove context menu entries, use the 'unregister' command
 
 SECURITY CONSIDERATIONS
