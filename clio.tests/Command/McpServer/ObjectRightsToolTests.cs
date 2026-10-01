@@ -1,3 +1,4 @@
+using System;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Text.Json;
@@ -133,5 +134,43 @@ public class ObjectRightsToolTests {
 		args.EntitySchemaName.Should().Be("UsrPortalSpike", because: "the kebab-case entity-schema-name binds");
 		args.Grantee.Should().Be("720b771c-e7a7-4f31-9cfb-52cd21c3739f", because: "the grantee id binds");
 		args.IncludeConnected.Should().BeTrue(because: "the include-connected flag binds");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An MCP set-object-rights call fits the worker budget (120 s): one attempt of at most 25 s per request, a shared 100 s limit — five sequential requests at most — and a confirmed write unless it is a preview.")]
+	public void SetObjectRightsTool_ShouldBoundEveryRequestByTheCallBudget_WhenBuildingOptions() {
+		// Arrange
+		SetObjectRightsArgs args = new("sandbox", "UsrFoo", "720b771c-e7a7-4f31-9cfb-52cd21c3739f", "read", Revoke: true);
+
+		// Act
+		Clio.Command.ObjectRights.SetObjectRightsOptions options = SetObjectRightsTool.BuildOptions(args);
+
+		// Assert
+		options.TimeOut.Should().Be(25_000, because: "one request may take at most 25 s");
+		options.MaxAttempts.Should().Be(1, because: "a retry would multiply the wait inside the worker budget");
+		options.CallBudget.Should().Be(TimeSpan.FromSeconds(100),
+			because: "all requests share a limit below the 120 s worker kill, so the result is reported before it");
+		(options.CallBudget!.Value.TotalMilliseconds).Should().BeGreaterThanOrEqualTo(4.0 * options.TimeOut,
+			because: "the budget leaves room for the reads before the save and for the save plus its read-back");
+		options.Confirm.Should().BeTrue(because: "the host's approval of the call is the confirmation");
+		options.Revoke.Should().BeTrue(because: "the arguments map one to one");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An MCP get-object-rights call fits the read deadline (120 s): one attempt of at most 30 s per request and a shared 90 s limit.")]
+	public void GetObjectRightsTool_ShouldBoundEveryRequestByTheReadBudget_WhenBuildingOptions() {
+		// Arrange
+		GetObjectRightsArgs args = new("sandbox", "UsrFoo", IncludeConnected: true);
+
+		// Act
+		Clio.Command.ObjectRights.GetObjectRightsOptions options = GetObjectRightsTool.BuildOptions(args);
+
+		// Assert
+		options.TimeOut.Should().Be(30_000, because: "one request may take at most 30 s");
+		options.MaxAttempts.Should().Be(1, because: "a retry would multiply the wait inside the read deadline");
+		options.ReadBudget.Should().Be(TimeSpan.FromSeconds(90), because: "the listing stops before the 120 s deadline");
+		options.IncludeConnected.Should().BeTrue(because: "the arguments map one to one");
 	}
 }

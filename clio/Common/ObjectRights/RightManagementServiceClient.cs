@@ -38,9 +38,9 @@ public interface IObjectRightsWriter {
 	/// </summary>
 	/// <param name="snapshot">The object as it was read.</param>
 	/// <param name="after">The planned state.</param>
-	/// <param name="requestOptions">Timeout and retry settings.</param>
+	/// <param name="requestOptions">Timeout, retry and deadline settings.</param>
 	/// <returns><see cref="ObjectRightsSaveResult.Saved"/> on success, otherwise why the save failed or was not sent, and
-	/// whether it failed on a hang (the save may then still land).</returns>
+	/// whether no answer came (the save may then still land).</returns>
 	ObjectRightsSaveResult Save(ObjectRightsSnapshot snapshot, ObjectRightsState after, CreatioRequestOptions requestOptions);
 }
 
@@ -119,6 +119,10 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 		// The save is sent exactly once, like the other clio writes (manage-access, the schema designer's save and
 		// build): Creatio.Client re-sends a request after ANY exception, a timeout included, and a new row is sent
 		// without an id, so a retry of a save the server already committed could add the row a second time.
+		// A save the call's deadline leaves no time for is not sent at all, so its outcome is known: nothing changed.
+		if (requestOptions.Deadline is { IsSpent: true }) {
+			return new ObjectRightsSaveResult("the call's time limit was spent before the save, so it was not sent");
+		}
 		try {
 			GetAdministratedObjectNodeResponse response = PostAndDeserialize<GetAdministratedObjectNodeResponse>(
 				ServiceUrlBuilder.KnownRoute.SaveAdministratedObject,
@@ -130,7 +134,10 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 					"SaveAdministratedObject reported failure."));
 		}
 		catch (Exception ex) when (ObjectRightsSupport.IsServiceFailure(ex)) {
-			return new ObjectRightsSaveResult(ObjectRightsSupport.DisplayFailure(ex), ObjectRightsSupport.IsTimeout(ex));
+			// No answer — a hang, or a connection that broke after the request went out — is not a refusal: the server
+			// may have committed the save, and may even commit it after the read-back.
+			return new ObjectRightsSaveResult(ObjectRightsSupport.DisplayFailure(ex),
+				ObjectRightsSupport.LeavesOutcomeUnknown(ex));
 		}
 	}
 
@@ -141,9 +148,9 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 			new[] { new SelectQueryHelper.SelectQueryColumnDefinition("Name", "Name") },
 			new[] { new SelectQueryHelper.SelectQueryFilterDefinition("Id", grantee, SelectQueryHelper.GuidDataValueType) },
 			1);
+		CreatioRequestOptions sendOptions = requestOptions.ForNextRequest();
 		GranteeSelectResponse response = SelectQueryHelper.ExecuteSelectQuery<GranteeSelectResponse>(
-			_applicationClient, _urlBuilder, query, requestOptions.TimeOut, requestOptions.MaxAttempts,
-			requestOptions.RetryDelay);
+			_applicationClient, _urlBuilder, query, sendOptions.TimeOut, sendOptions.MaxAttempts, sendOptions.RetryDelay);
 		return response.Rows?.FirstOrDefault()?.Name;
 	}
 
@@ -339,9 +346,9 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 			},
 			20);
 
+		CreatioRequestOptions sendOptions = requestOptions.ForNextRequest();
 		SchemaUIdSelectResponse response = SelectQueryHelper.ExecuteSelectQuery<SchemaUIdSelectResponse>(
-			_applicationClient, _urlBuilder, query, requestOptions.TimeOut, requestOptions.MaxAttempts,
-			requestOptions.RetryDelay);
+			_applicationClient, _urlBuilder, query, sendOptions.TimeOut, sendOptions.MaxAttempts, sendOptions.RetryDelay);
 
 		return response.Rows is null
 			? Array.Empty<Guid>()

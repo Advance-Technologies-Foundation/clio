@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -404,23 +405,27 @@ public class RightManagementServiceClientTests {
 			Arg.Is<int>(attempts => attempts != 1), Arg.Any<int>());
 	}
 
+	// (failure, timedOut, outcomeUnknown): a read stops a listing only on a hang; a save is "may still be applied" on any
+	// fault that got no answer — a hang, or a connection that broke after the request may have gone out.
 	private static IEnumerable<TestCaseData> ServiceFailures() {
-		yield return new TestCaseData(new HttpRequestException("503"), false).SetName("ObjectRights_ShouldReportFailure_WhenTheServiceFailsWithHttpRequest");
-		yield return new TestCaseData(new IOException("reset"), false).SetName("ObjectRights_ShouldReportFailure_WhenTheServiceFailsWithIO");
-		yield return new TestCaseData(new JsonException("not json"), false).SetName("ObjectRights_ShouldReportFailure_WhenTheServiceFailsWithJson");
-		yield return new TestCaseData(new UnauthorizedAccessException("401"), false).SetName("ObjectRights_ShouldReportFailure_WhenTheServiceFailsWithUnauthorized");
-		yield return new TestCaseData(new TimeoutException("timeout"), true).SetName("ObjectRights_ShouldReportFailure_WhenTheServiceFailsWithTimeout");
-		yield return new TestCaseData(new TaskCanceledException("HTTP timeout"), true).SetName("ObjectRights_ShouldReportFailure_WhenTheServiceFailsWithTaskCanceled");
+		yield return new TestCaseData(new HttpRequestException("connection closed"), false, true).SetName("ObjectRights_ShouldReportFailure_WhenTheServiceFailsWithHttpRequest");
+		yield return new TestCaseData(new IOException("reset"), false, true).SetName("ObjectRights_ShouldReportFailure_WhenTheServiceFailsWithIO");
+		yield return new TestCaseData(new JsonException("not json"), false, false).SetName("ObjectRights_ShouldReportFailure_WhenTheServiceFailsWithJson");
+		yield return new TestCaseData(new InvalidOperationException("an HTML page instead of JSON"), false, false).SetName("ObjectRights_ShouldReportFailure_WhenTheServiceAnswersWithAnErrorPage");
+		yield return new TestCaseData(new WebException("(401) Unauthorized", WebExceptionStatus.ProtocolError), false, false).SetName("ObjectRights_ShouldReportFailure_WhenTheServiceRejectsTheLogin");
+		yield return new TestCaseData(new UnauthorizedAccessException("401"), false, false).SetName("ObjectRights_ShouldReportFailure_WhenTheServiceFailsWithUnauthorized");
+		yield return new TestCaseData(new TimeoutException("timeout"), true, true).SetName("ObjectRights_ShouldReportFailure_WhenTheServiceFailsWithTimeout");
+		yield return new TestCaseData(new TaskCanceledException("HTTP timeout"), true, true).SetName("ObjectRights_ShouldReportFailure_WhenTheServiceFailsWithTaskCanceled");
 		// Creatio's client runs the request through Task.Result: this is how a hang and a transport fault really arrive.
-		yield return new TestCaseData(new AggregateException(new TaskCanceledException("HTTP timeout")), true)
+		yield return new TestCaseData(new AggregateException(new TaskCanceledException("HTTP timeout")), true, true)
 			.SetName("ObjectRights_ShouldReportFailure_WhenATimeoutArrivesWrapped");
-		yield return new TestCaseData(new AggregateException(new HttpRequestException("503")), false)
+		yield return new TestCaseData(new AggregateException(new HttpRequestException("reset", new IOException("reset by peer"))), false, true)
 			.SetName("ObjectRights_ShouldReportFailure_WhenATransportFaultArrivesWrapped");
 	}
 
 	[TestCaseSource(nameof(ServiceFailures))]
-	[Description("A failure of the Creatio service (transport, timeout, non-JSON body, authentication — bare or wrapped the way Creatio's client throws it) is attributed to the object: the read reports a ReadError, marked as timed out only for a hang, and the save returns the failure so the caller reads the object back, instead of ending the run.")]
-	public void ObjectRights_ShouldReportFailure_WhenServiceFails(Exception failure, bool timedOut) {
+	[Description("A failure of the Creatio service (transport, timeout, non-JSON body, authentication — bare or wrapped the way Creatio's client throws it) is attributed to the object: the read reports a ReadError, marked as timed out only for a hang, and the save returns the failure so the caller reads the object back, instead of ending the run; a save that got no answer is marked as possibly applied.")]
+	public void ObjectRights_ShouldReportFailure_WhenServiceFails(Exception failure, bool timedOut, bool outcomeUnknown) {
 		// Arrange
 		GetReturns(AdministeredObject("x"));
 		ObjectRightsInfo read = Read();
@@ -441,7 +446,8 @@ public class RightManagementServiceClientTests {
 			because: "a wrapper around one fault is reported by that fault");
 		save.Error.Should().Contain(failure is AggregateException aggregate ? aggregate.InnerException!.Message : failure.Message,
 			because: "the fault's own text is what the operator needs");
-		save.TimedOut.Should().Be(timedOut, because: "a save that hung may still land, and the caller says so");
+		save.OutcomeUnknown.Should().Be(outcomeUnknown,
+			because: "a save that got no answer may still land, and the caller says so; one the server answered did not");
 	}
 
 	[Test]
@@ -820,5 +826,66 @@ public class RightManagementServiceClientTests {
 		_applicationClient.Received().ExecutePostRequest(SelectUrl,
 			Arg.Is<string>(body => body.Contains("SysAdminUnit") && body.Contains(Grantee.ToString())),
 			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	// ---- The call's deadline ----
+
+	// A deadline whose elapsed time advances by the given steps, one per request (each request reads it once).
+	private static RequestDeadline SteppedDeadline(TimeSpan budget, params double[] elapsedSeconds) {
+		Queue<double> steps = new(elapsedSeconds);
+		double last = 0;
+		return new RequestDeadline(budget, () => TimeSpan.FromSeconds(last = steps.Count > 0 ? steps.Dequeue() : last));
+	}
+
+	[Test]
+	[Description("Every request of one read gets at most what is left of the call's deadline: the SysSchema lookup and the GetAdministratedObject call are bounded one by one, so the read as a whole cannot outlast the deadline.")]
+	public void GetObjectRights_ShouldCutEachRequestToTheDeadline_WhenTheCallHasOne() {
+		// Arrange
+		GetReturns(AdministeredObject("x"));
+		CreatioRequestOptions options = new() {
+			TimeOut = 30_000, MaxAttempts = 1, Deadline = SteppedDeadline(TimeSpan.FromSeconds(50), 10, 35)
+		};
+
+		// Act
+		ObjectRightsInfo info = _client.GetObjectRights("UsrFoo", options);
+
+		// Assert
+		info.IsRead.Should().BeTrue(because: "both requests answered");
+		_applicationClient.Received(1).ExecutePostRequest(SelectUrl, Arg.Any<string>(), 30_000, 1, Arg.Any<int>());
+		_applicationClient.Received(1).ExecutePostRequest(GetUrl, Arg.Any<string>(), 15_000, 1, Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("A read whose deadline is spent sends nothing and is reported as timed out, so a listing stops on it instead of waiting.")]
+	public void GetObjectRights_ShouldSendNothing_WhenTheDeadlineIsSpent() {
+		// Arrange
+		CreatioRequestOptions options = new() { Deadline = SteppedDeadline(TimeSpan.FromSeconds(10), 10) };
+
+		// Act
+		ObjectRightsInfo info = _client.GetObjectRights("UsrFoo", options);
+
+		// Assert
+		info.IsRead.Should().BeFalse(because: "nothing was read");
+		info.TimedOut.Should().BeTrue(because: "a spent deadline is a hang for the caller: the listing stops");
+		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default, default, default, default);
+	}
+
+	[Test]
+	[Description("A save the call's deadline leaves no time for is not sent, so its outcome is known — nothing changed — and it is never reported as possibly applied.")]
+	public void Save_ShouldNotSend_WhenTheDeadlineIsSpent() {
+		// Arrange
+		GetReturns(AdministeredObject("x"));
+		ObjectRightsInfo read = Read();
+		_applicationClient.ClearReceivedCalls();
+		CreatioRequestOptions options = new() { Deadline = SteppedDeadline(TimeSpan.FromSeconds(10), 10) };
+
+		// Act
+		ObjectRightsSaveResult save = _client.Save(read.Snapshot, read.State, options);
+
+		// Assert
+		save.Succeeded.Should().BeFalse(because: "the save was not sent");
+		save.OutcomeUnknown.Should().BeFalse(because: "a save that was never sent cannot land later");
+		save.Error.Should().Contain("not sent", because: "the result says nothing went out");
+		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default, default, default, default);
 	}
 }

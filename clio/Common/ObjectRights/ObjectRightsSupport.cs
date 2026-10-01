@@ -160,6 +160,27 @@ public static class ObjectRightsSupport {
 			? aggregate.Flatten().InnerExceptions.Any(IsSingleTimeout)
 			: IsSingleTimeout(exception);
 
+	/// <summary>
+	/// Whether a request that failed with <paramref name="exception"/> may still have been carried out: no answer came
+	/// back — a timeout, or a connection that broke (reset, closed) once the request may already have gone out. A fault
+	/// the server answered (an HTTP error page, an in-band failure, a body that is not JSON) is not one. A write that
+	/// failed this way must be read back and reported as possibly applied. Meaningful only for an exception
+	/// <see cref="IsServiceFailure"/> accepts.
+	/// </summary>
+	/// <param name="exception">The exception a service call threw.</param>
+	/// <returns><see langword="true"/> when the request may still have been carried out.</returns>
+	public static bool LeavesOutcomeUnknown(Exception exception) =>
+		IsTimeout(exception)
+		|| (exception is AggregateException aggregate
+			? aggregate.Flatten().InnerExceptions.Any(IsSingleConnectionFault)
+			: IsSingleConnectionFault(exception));
+
+	// Creatio.Client reports an HTTP error status by returning the body, not by throwing, so an HttpRequestException is a
+	// fault of the connection itself; a WebException with ProtocolError carries the server's answer (a login rejection).
+	private static bool IsSingleConnectionFault(Exception exception) =>
+		exception is HttpRequestException or IOException or SocketException
+			or WebException { Status: not WebExceptionStatus.ProtocolError };
+
 	// WebException is named although it derives from InvalidOperationException: the transport faults are meant here, not
 	// inherited by accident.
 	private static bool IsSingleServiceFailure(Exception exception) =>

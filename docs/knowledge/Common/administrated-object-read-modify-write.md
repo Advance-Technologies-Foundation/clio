@@ -31,7 +31,9 @@ native `RightManagementService.svc` (`GetAdministratedObject`, `SaveAdministrate
    `Creatio.Client` re-sends a request after ANY exception, a timeout included, up to `maxAttempts`. A save the server
    committed but answered too late would then be sent again, and the server takes an id-less row as a new one, so it could add the row a second time (inferred from both halves, not reproduced on a stand). So the save goes with
    `maxAttempts: 1`, like the other clio writes (`manage-access`, the schema designer's save and build), and a save that
-   did not answer in time is reported as possibly applied, to be re-read before a retry.
+   got no answer — it did not answer in time, or the connection broke after the request went out — is reported as
+   possibly applied, to be re-read before a retry. `Creatio.Client` returns the body of an HTTP error status instead of
+   throwing, so an `HttpRequestException` is a fault of the connection itself, not the server's answer.
 
 **Why it is this way** — the only write for a role's object operations is a coarse object-level save, and object
 rights are a per-package-layer artifact whose UId is not the plain schema UId a single `SysSchema` lookup returns.

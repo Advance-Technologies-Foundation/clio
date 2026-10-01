@@ -215,6 +215,17 @@ public sealed record ObjectRightsInfo(
 	/// <summary>The state the planner works on.</summary>
 	public ObjectRightsState State => new(AdministratedByOperations, Roles);
 
+	/// <summary>Whether the object was found and its operation permissions were read.</summary>
+	public bool IsRead => ReadError is null && Found;
+
+	/// <summary>
+	/// Why the object was not read, as a clause safe to print (<c>the schema was not found</c>); <see langword="null"/>
+	/// when <see cref="IsRead"/>.
+	/// </summary>
+	public string FailureReason => IsRead ? null
+		: ReadError is not null ? $"its operation permissions could not be read: {ReadError}"
+		: "the schema was not found";
+
 	/// <summary>The result of a read that failed: the object is taken to exist, and nothing about its rows is known.</summary>
 	/// <param name="name">The object (entity schema) name that was read.</param>
 	/// <param name="readError">Why the read failed, already safe to print. Required: without it the result would read as
@@ -230,13 +241,13 @@ public sealed record ObjectRightsInfo(
 }
 
 /// <summary>
-/// The outcome of a save: why it failed — <see langword="null"/> when the service reported it done — and whether it
-/// failed on a hang, after which the save may still land.
+/// The outcome of a save: why it failed — <see langword="null"/> when the service reported it done — and whether no
+/// answer came, after which the save may still land.
 /// </summary>
 /// <param name="Error">Why the save failed or was not sent, already safe to print; <see langword="null"/> on success.</param>
-/// <param name="TimedOut">The service did not answer in time: the save may still be applied after the caller reads
-/// the object back.</param>
-public sealed record ObjectRightsSaveResult(string Error, bool TimedOut = false) {
+/// <param name="OutcomeUnknown">No answer came — the service did not answer in time, or the connection broke after the
+/// request may have gone out: the save may still be applied, even after the caller reads the object back.</param>
+public sealed record ObjectRightsSaveResult(string Error, bool OutcomeUnknown = false) {
 
 	/// <summary>A save the service reported as done.</summary>
 	public static ObjectRightsSaveResult Saved { get; } = new((string)null);

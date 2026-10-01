@@ -151,11 +151,16 @@ clio set-object-rights --entity-schema-name UsrOrder --grantee <role-id> --opera
   verified, with a request to check the object with `get-object-rights` before retrying.
 - A save that reports an error — a timeout, for example — may still have been committed, so the object is read back:
   when it shows the planned change, the call succeeds with a warning; otherwise it fails and shows the object as read.
-  A save that did not answer in time may even land after that read-back, so its failure says the change may still be
-  applied: re-read the object with `get-object-rights` before retrying or reporting a failure.
+  A save that got no answer — it did not answer in time, or the connection broke after the request went out — may
+  even land after that read-back, so its failure says the change may still be applied: re-read the object with
+  `get-object-rights` before retrying or reporting a failure.
 - The save is sent exactly once, whatever the retry settings, like the other clio writes: a transport retry of a
   save the server already committed could add a new row a second time (it is sent without an id). The read-back
   after a failed save is one attempt too.
+- On MCP the worker is killed at its budget (120 s by default), so every request gets one attempt of at most 25 s,
+  all requests share a 100 s limit (a request gets at most what is left of it), and the save is sent only while
+  50 s are left for it and the read-back. Otherwise the call fails before the save (exit 1) and nothing is changed:
+  re-run it. A save that gets no answer is thus still read back and reported before the worker is killed.
 - Exit code 1: invalid input (an object name that is not a schema identifier, a grantee that is not a GUID, a missing
   `--operations`, an unknown operation, an `--operations` value that names no operation, `--preview` with `--confirm`,
   `--enable-operation-permissions` with `--revoke`, `--disable-operation-permissions` without `--revoke`); a missing

@@ -1,3 +1,4 @@
+using System;
 using Clio.Common;
 using Clio.Common.ObjectRights;
 
@@ -32,10 +33,16 @@ internal static class ObjectRightsCommandInput {
 		return true;
 	}
 
-	/// <summary>The request options built from a remote command's timeout and retry arguments.</summary>
+	/// <summary>
+	/// The request options built from a remote command's timeout and retry arguments and, for a caller bounded by a
+	/// deadline (MCP), the time the whole call may take, which starts now.
+	/// </summary>
 	/// <param name="options">The command's options.</param>
+	/// <param name="callBudget">The time every request of the call may take together; <see langword="null"/>: no limit
+	/// beyond each request's timeout.</param>
 	/// <returns>The request options for the service calls.</returns>
-	internal static CreatioRequestOptions RequestOptions(RemoteCommandOptions options) => new() {
-		TimeOut = options.TimeOut, MaxAttempts = options.MaxAttempts, RetryDelay = options.RetryDelay
+	internal static CreatioRequestOptions RequestOptions(RemoteCommandOptions options, TimeSpan? callBudget = null) => new() {
+		TimeOut = options.TimeOut, MaxAttempts = options.MaxAttempts, RetryDelay = options.RetryDelay,
+		Deadline = callBudget is { } budget ? new RequestDeadline(budget) : null
 	};
 }

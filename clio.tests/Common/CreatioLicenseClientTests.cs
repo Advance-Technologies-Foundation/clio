@@ -158,4 +158,24 @@ public class CreatioLicenseClientTests {
 		message.Should().NotContain("zq9K",
 			because: "capping first would cut the value's closing quote off, and the redactor leaves such a value as it is");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The preview of a body that is not JSON is capped at 200 characters: text past the cap never reaches the message, the log or an agent transcript.")]
+	public void GetLicenseOperationStatuses_ShouldCapThePreview_WhenTheBodyIsLong() {
+		// Arrange
+		(CreatioLicenseClient client, IApplicationClient applicationClient) = CreateClient();
+		string body = "Unavailable " + new string('x', 250) + " PASTTHECAPMARKER " + new string('y', 700);
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(body);
+
+		// Act
+		Action act = () => client.GetLicenseOperationStatuses(new[] { "CanCustomizeBranding" }, new CreatioRequestOptions());
+
+		// Assert
+		string message = act.Should().Throw<InvalidOperationException>(because: "the body is not JSON").Which.Message;
+		message.Should().Contain("Unavailable", because: "the start of the body is previewed");
+		message.Should().NotContain("PASTTHECAPMARKER", because: "the preview stops at 200 characters");
+	}
 }

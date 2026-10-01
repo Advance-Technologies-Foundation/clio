@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using Clio.Common;
 using Clio.Common.ObjectRights;
@@ -34,8 +33,8 @@ public class GetObjectRightsOptions : RemoteCommandOptions {
 
 	/// <summary>
 	/// The time the whole read may take, for a caller whose answer is bounded by a deadline (MCP); not a CLI option.
-	/// Once it is spent, no further connected object is read and the ones left are named. <see langword="null"/>: no
-	/// limit beyond each request's timeout.
+	/// Every request gets at most what is left of it; once it is spent, no further connected object is read and the ones
+	/// left are named. <see langword="null"/>: no limit beyond each request's timeout.
 	/// </summary>
 	internal TimeSpan? ReadBudget { get; set; }
 }
@@ -70,8 +69,7 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 			_logger.WriteError("Error: --grantee must be a SysAdminUnit id (GUID).");
 			return 1;
 		}
-		CreatioRequestOptions requestOptions = ObjectRightsCommandInput.RequestOptions(options);
-		Stopwatch elapsed = Stopwatch.StartNew();
+		CreatioRequestOptions requestOptions = ObjectRightsCommandInput.RequestOptions(options, options.ReadBudget);
 		ConnectedObjectsResolution resolution;
 		// The resolver reports a failed schema read in-band (EnumerationError); this guard is the backstop for a
 		// service failure that still escapes it. Only the call is guarded: a failure in the code that reports the
@@ -90,12 +88,13 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 			string target = resolution.Objects[index];
 			// The named object is always read; a connected one only while the budget lasts, so the answer — with what was
 			// read — arrives before the caller's deadline instead of being lost to it.
-			if (!isRoot && options.ReadBudget is { } budget && elapsed.Elapsed >= budget) {
-				_logger.WriteWarning($"  Stopped: the read budget of {budget.TotalSeconds:0} s is spent. Not read: "
+			if (!isRoot && requestOptions.Deadline is { IsSpent: true } deadline) {
+				_logger.WriteWarning($"  Stopped: the read budget of {deadline.Budget.TotalSeconds:0} s is spent. Not read: "
 					+ $"{string.Join(", ", resolution.Objects.Skip(index))} — read them one by one.");
 				break;
 			}
-			ObjectRightsInfo info = ReadRights(target, WithinBudget(requestOptions, options.ReadBudget, elapsed));
+			// Each request of the read gets at most what is left of the budget (CreatioRequestOptions.ForNextRequest).
+			ObjectRightsInfo info = ReadRights(target, requestOptions);
 			bool read = ReportTarget(target, info, isRoot, granteeFilter);
 			rootFailed |= isRoot && !read;
 			if (info.TimedOut && index < resolution.Objects.Count - 1) {
@@ -128,6 +127,7 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 			+ (options.IncludeConnected ? " and its connected objects" : "")
 			+ (granteeFilter is null ? "" : $" (grantee {granteeFilter})") + ":");
 		_logger.WriteInfo($"  {PriorityRule}");
+		_logger.WriteInfo($"  {GuidancePointer}");
 		if (resolution.EnumerationError is not null) {
 			_logger.WriteWarning(
 				$"  Could not enumerate the connected objects of '{options.EntitySchemaName}' "
@@ -138,16 +138,6 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 				$"  {excluded}: security/system object — not read as a connected object. Pass it as "
 				+ "--entity-schema-name to read it.");
 		}
-	}
-
-	// One read may not outlast what is left of the budget: its timeout is cut to the remainder (at least a second).
-	private static CreatioRequestOptions WithinBudget(CreatioRequestOptions requestOptions, TimeSpan? budget,
-		Stopwatch elapsed) {
-		if (budget is null) {
-			return requestOptions;
-		}
-		double remaining = Math.Max(1_000, (budget.Value - elapsed.Elapsed).TotalMilliseconds);
-		return requestOptions with { TimeOut = (int)Math.Min(requestOptions.TimeOut, remaining) };
 	}
 
 	// The reader reports a service failure as the object's read error; this guard is the backstop for one that still
@@ -164,10 +154,8 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 
 	// Reports one object and returns whether it could be read.
 	private bool ReportTarget(string schemaName, ObjectRightsInfo info, bool isRoot, Guid? granteeFilter) {
-		if (info.ReadError != null || !info.Found) {
-			string reason = info.ReadError != null
-				? $"could not read object rights ({info.ReadError})"
-				: "schema not found";
+		if (!info.IsRead) {
+			string reason = info.FailureReason;
 			if (isRoot) {
 				// The object the caller NAMED could not be read, so the read did not happen: fail, as
 				// set-object-rights does for the same case.
@@ -179,8 +167,8 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 		}
 		if (!info.AdministratedByOperations) {
 			_logger.WriteInfo(
-				$"  {schemaName}: not administered by operation permissions — available to all internal users; "
-				+ "external users reach it only through an explicit grant.");
+				$"  {schemaName}: not administered by operation permissions (they are OFF) — available to all internal "
+				+ "users.");
 			if (info.Roles.Count > 0) {
 				// The rows the service returns for such an object (a synthesized All employees row when none is
 				// stored) are the rows that start to decide once operation permissions are turned on — all of them,
@@ -197,8 +185,7 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 			return true;
 		}
 		if (!info.Roles.Any()) {
-			_logger.WriteInfo($"  {schemaName}: administered by operation permissions, with NO rows — only holders of the "
-				+ "'…any data' system operations can reach it.");
+			_logger.WriteInfo($"  {schemaName}: administered by operation permissions, with NO rows.");
 			return true;
 		}
 		_logger.WriteInfo($"  {schemaName}: administered by operation permissions. Rows in priority order:");
@@ -244,6 +231,11 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 
 	// The platform rule every row listing is read with. Stated once per call, so a reader never takes the rows for a
 	// sum of flags.
+	// What the rows mean for a scenario — external users, the '…any data' system operations, shared lookups — is the
+	// guidance's to explain, not the tool's; the output names where.
+	internal const string GuidancePointer =
+		"What the rows mean for a scenario (external users, system operations, shared lookups): get-guidance object-rights.";
+
 	internal const string PriorityRule =
 		"Rows are listed in priority order ([position], 0 is the highest). A user in several roles gets the operations "
 		+ "of the highest matching row; a row with no operations denies them.";

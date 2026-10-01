@@ -29,6 +29,15 @@ public sealed class SetObjectRightsTool(
 		"Valid: environment-name, entity-schema-name, grantee, operations, revoke, enable-operation-permissions, "
 		+ "disable-operation-permissions, preview.";
 
+	// The worker is killed at its budget (120 s by default, McpWorkerCallDispatcher.DefaultBudget), and a call makes up
+	// to five requests in sequence: the grantee lookup, the SysSchema lookup, the read, the save and the read-back. So
+	// each request gets one attempt of at most 25 s, all of them share a 100 s limit, and the save is sent only while
+	// 50 s are left for it and the read-back. A save that gets no answer is then still read back and reported as
+	// "may still be applied" before the kill, instead of being lost to it.
+	internal const int McpRequestTimeoutMilliseconds = 25_000;
+
+	internal static readonly TimeSpan McpCallBudget = TimeSpan.FromSeconds(100);
+
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
 		Lifetime = McpToolExecutionLifetime.PerCall,
@@ -58,24 +67,33 @@ public sealed class SetObjectRightsTool(
 			return ObjectRightsToolResponse.FromValidationError(aliasError);
 		}
 		try {
-			bool preview = args.Preview ?? false;
-			SetObjectRightsOptions options = new() {
-				Environment = args.EnvironmentName,
-				EntitySchemaName = args.EntitySchemaName,
-				Grantee = args.Grantee,
-				Operations = args.Operations,
-				Revoke = args.Revoke ?? false,
-				EnableOperationPermissions = args.EnableOperationPermissions ?? false,
-				DisableOperationPermissions = args.DisableOperationPermissions ?? false,
-				Preview = preview,
-				// MCP cannot prompt anyone: the host's approval of this call is the confirmation (as for
-				// set-record-rights and manage-access). A preview writes nothing, so it is never confirmed.
-				Confirm = !preview
-			};
-			return ObjectRightsToolResponse.From(InternalExecute<SetObjectRightsCommand>(options));
+			return ObjectRightsToolResponse.From(InternalExecute<SetObjectRightsCommand>(BuildOptions(args)));
 		} catch (Exception ex) {
 			return ObjectRightsToolResponse.FromError(ex);
 		}
+	}
+
+	/// <summary>The command options an MCP call runs with.</summary>
+	/// <param name="args">The call's arguments.</param>
+	/// <returns>The options, with the MCP request limits.</returns>
+	internal static SetObjectRightsOptions BuildOptions(SetObjectRightsArgs args) {
+		bool preview = args.Preview ?? false;
+		return new SetObjectRightsOptions {
+			Environment = args.EnvironmentName,
+			EntitySchemaName = args.EntitySchemaName,
+			Grantee = args.Grantee,
+			Operations = args.Operations,
+			Revoke = args.Revoke ?? false,
+			EnableOperationPermissions = args.EnableOperationPermissions ?? false,
+			DisableOperationPermissions = args.DisableOperationPermissions ?? false,
+			Preview = preview,
+			// MCP cannot prompt anyone: the host's approval of this call is the confirmation (as for
+			// set-record-rights and manage-access). A preview writes nothing, so it is never confirmed.
+			Confirm = !preview,
+			TimeOut = McpRequestTimeoutMilliseconds,
+			MaxAttempts = 1,
+			CallBudget = McpCallBudget
+		};
 	}
 }
 

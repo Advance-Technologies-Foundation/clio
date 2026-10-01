@@ -55,6 +55,13 @@ public class SetObjectRightsOptions : RemoteCommandOptions {
 	[Option("preview", Required = false, HelpText =
 		"Write nothing: show what the call would change, the rows it affects, and whether it would be refused")]
 	public bool Preview { get; set; }
+
+	/// <summary>
+	/// The time the whole call may take, for a caller whose answer is bounded by a deadline (MCP); not a CLI option.
+	/// Every request gets at most what is left of it, and the save is sent only while there is time left for it and
+	/// for the read-back. <see langword="null"/>: no limit beyond each request's timeout.
+	/// </summary>
+	internal TimeSpan? CallBudget { get; set; }
 }
 
 /// <summary>
@@ -91,12 +98,13 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 				out IReadOnlyCollection<ObjectOperation> operations)) {
 			return 1;
 		}
-		CreatioRequestOptions requestOptions = ObjectRightsCommandInput.RequestOptions(options);
+		CreatioRequestOptions requestOptions = ObjectRightsCommandInput.RequestOptions(options, options.CallBudget);
 		if (!TryResolveGranteeName(grantee, requestOptions, out string granteeName)) {
 			return 1;
 		}
 		ObjectRightsInfo before = _reader.GetObjectRights(schemaName, requestOptions);
-		if (!IsReadable(before, schemaName)) {
+		if (!before.IsRead) {
+			_logger.WriteError($"Error: '{schemaName}': {before.FailureReason}. Nothing was changed.");
 			return 1;
 		}
 		ObjectRightsChangeRequest request = new(grantee, granteeName, operations, options.Revoke,
@@ -122,6 +130,9 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 				return 0;
 			case ConfirmDecision.Refused:
 				return 1;
+		}
+		if (!HasTimeToSave(requestOptions, change)) {
+			return 1;
 		}
 		ObjectRightsSaveResult save = _writer.Save(before.Snapshot, plan.After, requestOptions);
 		// After a failed save the read-back is one attempt as well: the object is checked once, and on MCP the answer
@@ -208,17 +219,22 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 		return true;
 	}
 
-	private bool IsReadable(ObjectRightsInfo info, string schemaName) {
-		if (info.ReadError is not null) {
-			_logger.WriteError($"Error: '{schemaName}': could not read its operation permissions ({info.ReadError}). "
-				+ "Nothing was changed.");
-			return false;
+	// The save is sent only while the call's deadline leaves time for it AND for the read-back after it: a save that
+	// started later could still be in flight — or unverified — when the caller's deadline ends the call, and its
+	// outcome would then be lost. Refused before anything is sent, so nothing has changed.
+	private bool HasTimeToSave(CreatioRequestOptions requestOptions, Change change) {
+		if (requestOptions.Deadline is not { } deadline) {
+			return true;
 		}
-		if (!info.Found) {
-			_logger.WriteError($"Error: '{schemaName}': schema not found — nothing was changed. Check the object name.");
-			return false;
+		TimeSpan needed = TimeSpan.FromMilliseconds(2.0 * requestOptions.TimeOut);
+		if (deadline.Remaining >= needed) {
+			return true;
 		}
-		return true;
+		_logger.WriteError($"Error: '{change.SchemaName}': the reads before the save took most of the call's time limit "
+			+ $"of {deadline.Budget.TotalSeconds:0} s: {deadline.Remaining.TotalSeconds:0} s are left, and the save and "
+			+ $"the read-back need up to {needed.TotalSeconds:0} s. The save was not sent — nothing was changed. Re-run "
+			+ "the call.");
+		return false;
 	}
 
 	private static string RefusalMessage(Change change) {
@@ -237,26 +253,23 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 				+ ". Re-run with --enable-operation-permissions if that is intended.",
 			ObjectRightsRefusal.RevokeOnNotAdministered when change.Request.DisableOperationPermissions =>
 				$"operation permissions on '{schema}' are already OFF (if this call is a retry, an earlier call may have "
-				+ "turned them off). While they are off company employees reach the object whatever its rows say (only "
-				+ "technical users follow the rows), so the tool does not change a row of it: the revoke itself is refused. "
-				+ "Read the object with get-object-rights.",
+				+ "turned them off), so the tool does not change a row of it: the revoke itself is refused. Read the "
+				+ "object with get-object-rights.",
 			ObjectRightsRefusal.RevokeOnNotAdministered =>
-				$"'{schema}' is not administered by operation permissions — company employees reach it whatever its rows "
-				+ "say (only technical users follow the rows while it is off), so the tool does not revoke on it. To limit "
-				+ "access, first turn operation permissions on with a grant and --enable-operation-permissions; that keeps "
-				+ "the object's 'All employees' row as it is, or adds one with every operation when it has none, so then "
-				+ "revoke from that row what employees must not have.",
+				$"'{schema}' is not administered by operation permissions (they are OFF), so the tool does not revoke on "
+				+ "it. To limit access, turn operation permissions on first with a grant and "
+				+ "--enable-operation-permissions; see get-guidance object-rights.",
 			ObjectRightsRefusal.LeavesNoGrantingRow =>
-				$"after this revoke no row on '{schema}' would grant any operation, so nobody could reach it except "
-				+ "holders of the '…any data' system operations. To make it available to ALL internal users instead, "
-				+ "re-run with --disable-operation-permissions.",
+				$"after this revoke no row on '{schema}' would grant any operation. To turn operation permissions OFF "
+				+ "instead, which makes the object available to ALL internal users, re-run with "
+				+ "--disable-operation-permissions.",
 			ObjectRightsRefusal.DisableNotNeeded =>
 				$"--disable-operation-permissions is not needed on '{schema}': "
 				+ (plan.RowsStillGranting is { Count: > 0 } granting
 					? $"after this revoke rows still grant operations ({ObjectRightsSupport.FormatRows(granting)})"
-					: "this revoke does not empty the object's last granting row")
-				+ ", so operation permissions stay ON. Turning them off would make the object available to ALL internal "
-				+ "users. Re-run without --disable-operation-permissions.",
+					: $"no row on it grants any operation (rows: {ObjectRightsSupport.FormatRows(plan.Before.Roles)}), "
+						+ "so this revoke empties no granting row")
+				+ ", so operation permissions stay ON. Re-run without --disable-operation-permissions.",
 			ObjectRightsRefusal.DuplicateGranteeRows =>
 				$"grantee {change.GranteeLabel} has {plan.DuplicatePositions.Count} rows on '{schema}' (positions "
 				+ $"{string.Join(", ", plan.DuplicatePositions)}). Which of them decides depends on the other rows, so "
@@ -270,8 +283,7 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 	private static string NoChangeReason(Change change) {
 		string rowReason = RowNoChangeReason(change);
 		return change.Request.DisableOperationPermissions && !change.Plan.Before.AdministratedByOperations
-			? $"operation permissions are already OFF — the object is available to all internal users (only technical "
-				+ $"users follow the rows) — and {rowReason}"
+			? $"operation permissions are already OFF — the object is available to all internal users — and {rowReason}"
 			: rowReason;
 	}
 
@@ -295,15 +307,14 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 		List<string> facts = new();
 		if (plan.EnablesOperationPermissions) {
 			facts.Add($"Operation permissions on '{schema}' are turned ON: from then on its rows decide, in priority order, "
-				+ "for every user without the '…any data' system operations.");
+				+ "who can reach it.");
 			if (plan.RowsBecomingEffective.Count > 0) {
 				facts.Add($"Rows that start to decide: {ObjectRightsSupport.FormatRows(plan.RowsBecomingEffective)}.");
 			}
 			if (plan.AddsAllEmployeesRow) {
 				RoleOperationRights allEmployees = plan.After.Roles.First(row => row.GranteeId == SysAdminUnitIds.AllEmployees);
 				facts.Add($"An '{ObjectRightsSupport.Display(allEmployees.GranteeName)}' row with read/create/edit/delete is "
-					+ $"added at position {allEmployees.Position}, below the existing rows: while operation permissions were "
-					+ "off, every company employee had every operation.");
+					+ $"added at position {allEmployees.Position}, below the existing rows.");
 			}
 		}
 		facts.Add(DescribeGranteeRow(change));
@@ -356,9 +367,9 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 	// plan "no change" once the switch and the grantee's row are in place — so the call fails and says so.
 	private int ReportSaved(Change change, IReadOnlyList<string> facts, ObjectRightsInfo actual) {
 		string schema = change.SchemaName;
-		if (!IsReadBack(actual)) {
-			_logger.WriteError($"Error: '{schema}': saved, but NOT verified — reading it back failed "
-				+ $"({ReadBackFailure(actual)}). Check it with get-object-rights before retrying: the plan was:");
+		if (!actual.IsRead) {
+			_logger.WriteError($"Error: '{schema}': saved, but NOT verified — on the read-back "
+				+ $"{actual.FailureReason}. Check it with get-object-rights before retrying: the plan was:");
 			WriteFacts(facts);
 			return 1;
 		}
@@ -374,20 +385,20 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 	}
 
 	// A save that reported an error — a timeout, for example — may still have been committed, so the object is read
-	// back before the call is reported as failed. A save that did not answer in time can even land AFTER the read-back,
-	// so that failure says the change may still be applied instead of that it did not happen.
+	// back before the call is reported as failed. A save that got no answer (a hang, or a connection that broke after
+	// the request went out) can even land AFTER the read-back, so that failure says the change may still be applied
+	// instead of that it did not happen.
 	private int ReportFailedSave(Change change, IReadOnlyList<string> facts, ObjectRightsSaveResult save,
 		ObjectRightsInfo actual) {
 		string schema = change.SchemaName;
-		string failure = save.TimedOut
-			? $"the save did not answer in time ({save.Error}) and may still be applied"
+		string failure = save.OutcomeUnknown
+			? $"the save got no answer ({save.Error}) and may still be applied"
 			: $"the save failed ({save.Error})";
-		string recheck = save.TimedOut
+		string recheck = save.OutcomeUnknown
 			? " Re-read the object with get-object-rights before retrying or reporting a failure."
 			: " Read the object with get-object-rights before retrying.";
-		if (!IsReadBack(actual)) {
-			_logger.WriteError($"Error: '{schema}': {failure}, and reading it back failed too "
-				+ $"({ReadBackFailure(actual)}).{recheck}");
+		if (!actual.IsRead) {
+			_logger.WriteError($"Error: '{schema}': {failure}, and on the read-back {actual.FailureReason}.{recheck}");
 			return 1;
 		}
 		ObjectRightsReadBackComparison comparison =
@@ -395,7 +406,7 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 		if (comparison.Critical.Count > 0) {
 			_logger.WriteError($"Error: '{schema}': {failure}. The object now: operation permissions "
 				+ $"{ObjectRightsSupport.FormatSwitch(actual.State)}; rows "
-				+ $"{ObjectRightsSupport.FormatRows(actual.State.Roles)}.{(save.TimedOut ? recheck : "")}");
+				+ $"{ObjectRightsSupport.FormatRows(actual.State.Roles)}.{(save.OutcomeUnknown ? recheck : "")}");
 			return 1;
 		}
 		_logger.WriteWarning($"'{schema}': the save reported an error ({save.Error}), but the object read back "
@@ -422,10 +433,6 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 			_logger.WriteInfo($"  {fact}");
 		}
 	}
-
-	private static bool IsReadBack(ObjectRightsInfo actual) => actual.ReadError is null && actual.Found;
-
-	private static string ReadBackFailure(ObjectRightsInfo actual) => actual.ReadError ?? "the object was not found";
 
 	private static bool TryParseOperations(string raw, out IReadOnlyCollection<ObjectOperation> operations,
 		out string error) {

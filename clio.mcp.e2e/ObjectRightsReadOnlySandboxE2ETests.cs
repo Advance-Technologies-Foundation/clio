@@ -69,6 +69,44 @@ public sealed class ObjectRightsReadOnlySandboxE2ETests : McpContractFixtureBase
 		missing.Success.Should().BeFalse(because: "a name that resolves to no schema fails instead of reporting access");
 	}
 
+	[Test]
+	[Description("On a real stand, get-object-rights include-connected reads the root's OWN lookup objects only (ContactCommunication: Contact, not the inherited CommunicationType), names a security/system lookup instead of reading it (SysAdminUnitInRole → SysAdminUnit), and finishes within the MCP read budget.")]
+	[AllureTag(GetObjectRightsTool.ToolName)]
+	[AllureName("get-object-rights include-connected against the real schema metadata")]
+	[AllureDescription("Calls get-object-rights with include-connected on ContactCommunication and on SysAdminUnitInRole, through the real MCP server against the configured sandbox. Pins the column payload the connected listing depends on (Source == own) and the security/system filter. Nothing is written.")]
+	public async Task GetObjectRights_Should_List_Own_Connected_Objects_On_A_Real_Stand() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync();
+
+		// Act
+		ObjectRightsToolResponse communication = await CallAsync(context, GetObjectRightsTool.ToolName, new() {
+			["environment-name"] = context.EnvironmentName,
+			["entity-schema-name"] = "ContactCommunication",
+			["include-connected"] = true
+		});
+		ObjectRightsToolResponse inRole = await CallAsync(context, GetObjectRightsTool.ToolName, new() {
+			["environment-name"] = context.EnvironmentName,
+			["entity-schema-name"] = "SysAdminUnitInRole",
+			["include-connected"] = true
+		});
+
+		// Assert
+		communication.Success.Should().BeTrue(because: $"the root and its lookups are readable. Error: {communication.Error}");
+		communication.Output.Should().Contain("and its connected objects", because: "the listing says it covers the lookups");
+		communication.Output.Should().MatchRegex(@"(?m)^\s*Contact: (administered|not administered)",
+			because: "Contact is ContactCommunication's own lookup, so it is read as a connected object");
+		communication.Output.Should().NotMatchRegex(@"(?m)^\s*CommunicationType:",
+			because: "CommunicationType is an inherited column, and only the root's own lookups are connected objects");
+		inRole.Success.Should().BeTrue(because: $"a security object named as the root is read. Error: {inRole.Error}");
+		inRole.Output.Should().Contain("SysAdminUnit: security/system object — not read as a connected object",
+			because: "the role directory is never read as a connected object");
+		inRole.Output.Should().NotMatchRegex(@"(?m)^\s*SysAdminUnit: (administered|not administered)",
+			because: "a security/system lookup is named, not read");
+		foreach (ObjectRightsToolResponse response in new[] { communication, inRole }) {
+			response.Output.Should().NotContain("Stopped:", because: "two small listings fit the MCP read budget");
+		}
+	}
+
 	// The listed rows ("[position] Name (id): operations") that sit below the grantee's row in an unfiltered listing.
 	private static string[] RowsBelow(string output, string grantee) {
 		Match[] rows = Regex.Matches(output ?? string.Empty,

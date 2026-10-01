@@ -218,7 +218,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 	}
 
 	[Test]
-	[Description("A revoke on an object that does not use operation permissions is refused: company employees reach it whatever its rows say (only technical users follow the rows while it is off), and the refusal says how to limit access instead.")]
+	[Description("A revoke on an object that does not use operation permissions is refused, and the refusal names the flag that turns them on first and points to the guidance for what that means.")]
 	public void Execute_ShouldRefuse_WhenRevokingOnAnObjectThatIsNotAdministered() {
 		// Arrange
 		ObjectIs(Info(false, Row(AllEmployees, 0, "RCED")));
@@ -229,8 +229,9 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		// Assert
 		exitCode.Should().Be(1, because: "a revoke cannot restrict an object that is not administered");
 		ErrorContains("is not administered by operation permissions", because: "the refusal says why");
-		ErrorContains("then revoke from that row what employees must not have",
-			because: "an enable alone keeps every operation for All employees");
+		ErrorContains("turn operation permissions on first with a grant and --enable-operation-permissions",
+			because: "the refusal names the transition to take first");
+		ErrorContains("get-guidance object-rights", because: "what the transition means is the guidance's to explain");
 		NothingSaved();
 	}
 
@@ -250,7 +251,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		// Assert
 		exitCode.Should().Be(1, because: "a row of an object that is off is not changed");
 		ErrorContains("are already OFF", because: "the state the call asks for is named first");
-		_errors.Should().NotContain(m => m.Contains("first turn operation permissions on"),
+		_errors.Should().NotContain(m => m.Contains("turn operation permissions on first"),
 			because: "turning them back on would undo the disable the caller asked for");
 		NothingSaved();
 	}
@@ -432,7 +433,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 
 		// Assert
 		exitCode.Should().Be(1, because: "a typo in the object name must not report success");
-		ErrorContains("schema not found", because: "the error says what is wrong");
+		ErrorContains("the schema was not found", because: "the error says what is wrong");
 		NothingSaved();
 	}
 
@@ -506,7 +507,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		_writer.Save(Arg.Any<ObjectRightsSnapshot>(), Arg.Any<ObjectRightsState>(), Arg.Any<CreatioRequestOptions>())
 			.Returns(call => {
 				_saved = (ObjectRightsState)call[1];
-				return new ObjectRightsSaveResult("the request timed out", TimedOut: true);
+				return new ObjectRightsSaveResult("the request timed out", OutcomeUnknown: true);
 			});
 
 		// Act
@@ -526,32 +527,33 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		ObjectIs(Info(true, Row(AllEmployees, 0, "RCED")),
 			new ObjectRightsInfo(true, "UsrFoo", null, false, Array.Empty<RoleOperationRights>(), ReadError: "timeout"));
 		_writer.Save(Arg.Any<ObjectRightsSnapshot>(), Arg.Any<ObjectRightsState>(), Arg.Any<CreatioRequestOptions>())
-			.Returns(new ObjectRightsSaveResult("the request timed out", TimedOut: true));
+			.Returns(new ObjectRightsSaveResult("the request timed out", OutcomeUnknown: true));
 
 		// Act
 		int exitCode = _command.Execute(Options("read"));
 
 		// Assert
 		exitCode.Should().Be(1, because: "nothing shows that the change landed");
-		ErrorContains("reading it back failed too (timeout)", because: "both failures are named");
-		ErrorContains("may still be applied", because: "a save that did not answer in time can still land");
+		ErrorContains("on the read-back its operation permissions could not be read: timeout",
+			because: "both failures are named");
+		ErrorContains("may still be applied", because: "a save that got no answer can still land");
 	}
 
 	[Test]
-	[Description("A save that did not answer in time and whose read-back does not show the plan fails, but says the change may still be applied and asks to re-read before retrying or reporting a failure: the save can land after the read-back.")]
+	[Description("A save that got no answer and whose read-back does not show the plan fails, but says the change may still be applied and asks to re-read before retrying or reporting a failure: the save can land after the read-back.")]
 	public void Execute_ShouldSayTheChangeMayStillLand_WhenTheSaveTimedOutAndTheReadBackShowsTheOldState() {
 		// Arrange
 		ObjectRightsInfo before = Info(true, Row(AllEmployees, 0, "RCED"));
 		ObjectIs(before, readBack: before);
 		_writer.Save(Arg.Any<ObjectRightsSnapshot>(), Arg.Any<ObjectRightsState>(), Arg.Any<CreatioRequestOptions>())
-			.Returns(new ObjectRightsSaveResult("A task was canceled.", TimedOut: true));
+			.Returns(new ObjectRightsSaveResult("A task was canceled.", OutcomeUnknown: true));
 
 		// Act
 		int exitCode = _command.Execute(Options("read"));
 
 		// Assert
 		exitCode.Should().Be(1, because: "nothing shows that the change landed yet");
-		ErrorContains("the save did not answer in time (A task was canceled.) and may still be applied",
+		ErrorContains("the save got no answer (A task was canceled.) and may still be applied",
 			because: "a hang is not reported as a change that did not happen");
 		ErrorContains("Re-read the object with get-object-rights before retrying or reporting a failure",
 			because: "the operator must look again before telling anyone the grant failed");
@@ -640,18 +642,22 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		}, because: "the plan leaves both of Sales' rows as they were read");
 	}
 
-	[Test]
-	[Description("On an administered object with no rows a revoke-and-disable changes no row, so the disable is not needed and nothing is written.")]
-	public void Execute_ShouldRefuseTheDisable_WhenTheAdministeredObjectHasNoRows() {
+	[TestCase(false, TestName = "Execute_ShouldRefuseTheDisable_WhenTheAdministeredObjectHasNoRows")]
+	[TestCase(true, TestName = "Execute_ShouldRefuseTheDisable_WhenNoRowOfTheAdministeredObjectGrants")]
+	[Description("On an administered object where no row grants anything — it has no rows, or only rows with no operations — a revoke-and-disable changes no row, so the disable is not needed, nothing is written, and the refusal says that no row grants instead of naming a last granting row that does not exist.")]
+	public void Execute_ShouldRefuseTheDisable_WhenNoRowGrants(bool withDenyRow) {
 		// Arrange
-		ObjectIs(Info(true));
+		ObjectIs(withDenyRow ? Info(true, Row(Grantee, 0, "")) : Info(true));
 
 		// Act
 		int exitCode = _command.Execute(Options("read", o => { o.Revoke = true; o.DisableOperationPermissions = true; }));
 
 		// Assert
-		exitCode.Should().Be(1, because: "the revoke does not empty a granting row");
-		ErrorContains("this revoke does not empty the object's last granting row", because: "the refusal says why");
+		exitCode.Should().Be(1, because: "the revoke empties no granting row");
+		ErrorContains("no row on it grants any operation", because: "the refusal says why");
+		ErrorContains(withDenyRow ? "[0] Grantee: no operations" : "rows: none", because: "the refusal shows the rows it read");
+		_errors.Should().NotContain(message => message.Contains("last granting row"),
+			because: "there is no granting row to speak of");
 		NothingSaved();
 	}
 
@@ -661,7 +667,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		// Arrange
 		ObjectIs(Info(true, Row(AllEmployees, 0, "RCED")));
 		_writer.Save(Arg.Any<ObjectRightsSnapshot>(), Arg.Any<ObjectRightsState>(), Arg.Any<CreatioRequestOptions>())
-			.Returns(new ObjectRightsSaveResult("A task was canceled.", TimedOut: true));
+			.Returns(new ObjectRightsSaveResult("A task was canceled.", OutcomeUnknown: true));
 
 		// Act
 		_command.Execute(Options("read"));
@@ -767,7 +773,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		ObjectIs(Info(true, Row(AllEmployees, 0, "RCED")),
 			readBack: Info(true, Row(AllEmployees, 0, "RCED"), Row(Grantee, 1, "R"), someone));
 		_writer.Save(Arg.Any<ObjectRightsSnapshot>(), Arg.Any<ObjectRightsState>(), Arg.Any<CreatioRequestOptions>())
-			.Returns(new ObjectRightsSaveResult("the request timed out", TimedOut: true));
+			.Returns(new ObjectRightsSaveResult("the request timed out", OutcomeUnknown: true));
 
 		// Act
 		int exitCode = _command.Execute(Options("read"));
@@ -809,7 +815,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 
 		// Assert
 		exitCode.Should().Be(1, because: "an unverified change is never reported as a success");
-		ErrorContains("saved, but NOT verified — reading it back failed (timeout)",
+		ErrorContains("saved, but NOT verified — on the read-back its operation permissions could not be read: timeout",
 			because: "the operator is told the change was saved but could not be checked");
 		_infos.Should().NotContain(m => m.Contains("granted [read"), because: "an unverified save is not reported as done");
 	}
@@ -876,7 +882,65 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		// Assert
 		exitCode.Should().Be(1, because: "invalid input never reaches the service");
 		ErrorContains(error, because: "the error names what is wrong");
+		_granteeLookup.DidNotReceiveWithAnyArgs().ResolveGranteeName(default, default);
 		_reader.DidNotReceiveWithAnyArgs().GetObjectRights(default, default);
+		NothingSaved();
+	}
+
+	[Test]
+	[Description("--operations is read case-insensitively, trimmed and de-duplicated: ' READ , edit,edit ' grants exactly read and edit.")]
+	public void Execute_ShouldNormalizeOperations_WhenTheyAreCasedPaddedAndRepeated() {
+		// Arrange
+		ObjectIs(Info(true, Row(AllEmployees, 0, "RCED")));
+
+		// Act
+		int exitCode = _command.Execute(Options(" READ , edit,edit "));
+
+		// Assert
+		exitCode.Should().Be(0, because: "every token names a known operation");
+		_saved.Roles.Should().Equal(new[] { Row(AllEmployees, 0, "RCED"), Row(Grantee, 1, "RE") },
+			because: "the grantee gets read and edit once each, nothing else");
+		_infos.Should().Contain(message => message.Contains("granted [read/edit]"),
+			because: "the result names the normalized operations");
+	}
+
+	// ---- the call's deadline (MCP) ----
+
+	[Test]
+	[Description("With a call budget, every read gets the shared deadline, and a save that has time for itself and its read-back is sent.")]
+	public void Execute_ShouldPassTheDeadlineAndSave_WhenTheBudgetLeavesTimeForTheSave() {
+		// Arrange
+		ObjectIs(Info(true, Row(AllEmployees, 0, "RCED")));
+
+		// Act
+		int exitCode = _command.Execute(Options("read", o => {
+			o.TimeOut = 25_000;
+			o.CallBudget = TimeSpan.FromSeconds(100);
+		}));
+
+		// Assert
+		exitCode.Should().Be(0, because: "100 s leave time for the save and the read-back");
+		_saved.Should().NotBeNull(because: "the save was sent");
+		_reader.Received(2).GetObjectRights("UsrFoo", Arg.Is<CreatioRequestOptions>(o =>
+			o.Deadline != null && o.Deadline.Budget == TimeSpan.FromSeconds(100)));
+		_granteeLookup.Received(1).ResolveGranteeName(Grantee, Arg.Is<CreatioRequestOptions>(o => o.Deadline != null));
+	}
+
+	[Test]
+	[Description("When the reads leave less time than the save and the read-back may need (twice the request timeout), the save is not sent: the call fails before writing, so nothing changed and it can simply be re-run.")]
+	public void Execute_ShouldNotSave_WhenTooLittleTimeIsLeftForTheSaveAndTheReadBack() {
+		// Arrange
+		ObjectIs(Info(true, Row(AllEmployees, 0, "RCED")));
+
+		// Act
+		int exitCode = _command.Execute(Options("read", o => {
+			o.TimeOut = 25_000;
+			o.CallBudget = TimeSpan.FromSeconds(40);
+		}));
+
+		// Assert
+		exitCode.Should().Be(1, because: "a save that started now could outlast the call");
+		ErrorContains("The save was not sent — nothing was changed", because: "the operator learns that nothing landed");
 		NothingSaved();
 	}
 }

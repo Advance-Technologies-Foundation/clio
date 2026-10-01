@@ -135,8 +135,9 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 		exitCode.Should().Be(0, because: "the read completed");
 		_logger.Received().WriteInfo(Arg.Is<string>(m =>
 				m.Contains("not administered by operation permissions")
-				&& m.Contains("available to all internal users")
-				&& m.Contains("external users reach it only through an explicit grant")));
+				&& m.Contains("available to all internal users")));
+		_logger.DidNotReceive().WriteInfo(Arg.Is<string>(m => m.Contains("external users reach")));
+		_logger.Received().WriteInfo(Arg.Is<string>(m => m.Contains("get-guidance object-rights")));
 	}
 
 	[Test]
@@ -167,7 +168,7 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 
 		// Assert
 		exitCode.Should().Be(1, because: "the object the caller named could not be read");
-		_logger.Received().WriteError(Arg.Is<string>(m => m.Contains("could not read object rights")));
+		_logger.Received().WriteError(Arg.Is<string>(m => m.Contains("operation permissions could not be read")));
 	}
 
 	[Test]
@@ -206,7 +207,7 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 		// Assert
 		exitCode.Should().Be(0, because: "the root object was read");
 		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("UsrStatus")
-				&& (m.Contains("could not read object rights") || m.Contains("schema not found"))));
+				&& (m.Contains("operation permissions could not be read") || m.Contains("the schema was not found"))));
 	}
 
 	[Test]
@@ -315,14 +316,14 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 		lines.Should().Equal(new[] {
 			$"Object operation permissions for 'UsrOrder' and its connected objects (grantee {Role}):",
 			$"  {GetObjectRightsCommand.PriorityRule}",
+			$"  {GetObjectRightsCommand.GuidancePointer}",
 			"  UsrOrder: administered by operation permissions. Rows in priority order:",
 			$"    [0] Sales managers ({Role}): read/create/edit",
 			"  UsrStatus: administered by operation permissions. Rows in priority order:",
 			$"    grantee {Role} has NO row (no operations granted).",
 			"    A new row would go below every row; these decide first for a user who is also in those roles:",
 			$"      [0] All employees ({Employees}): read/create/edit/delete",
-			"  UsrOpen: not administered by operation permissions — available to all internal users; "
-				+ "external users reach it only through an explicit grant.",
+			"  UsrOpen: not administered by operation permissions (they are OFF) — available to all internal users.",
 			"    It has no 'All employees' row: set-object-rights --enable-operation-permissions adds one with "
 				+ "read/create/edit/delete below any stored rows, unless the grant is for All employees itself."
 		}, because: "the output is the facts per object, and nothing more — no verdict");
@@ -453,7 +454,7 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 		// Assert
 		exitCode.Should().Be(1, because: "the object the caller named could not be read");
 		_rightsReader.DidNotReceive().GetObjectRights("UsrStatus", Arg.Any<CreatioRequestOptions>());
-		_logger.Received().WriteError(Arg.Is<string>(m => m.Contains("UsrOrder: could not read object rights")));
+		_logger.Received().WriteError(Arg.Is<string>(m => m.Contains("UsrOrder: its operation permissions could not be read")));
 		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("Stopped after the read of UsrOrder timed out")
 			&& m.Contains("UsrStatus")));
 	}
@@ -475,7 +476,7 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 		// Assert
 		exitCode.Should().Be(0, because: "the named object was read; a connected object that could not be read only warns");
 		_rightsReader.DidNotReceive().GetObjectRights("UsrType", Arg.Any<CreatioRequestOptions>());
-		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("UsrStatus: could not read object rights (timed out)")));
+		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("UsrStatus: its operation permissions could not be read: timed out")));
 		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("Stopped after the read of UsrStatus timed out")));
 	}
 
@@ -538,8 +539,8 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 	}
 
 	[Test]
-	[Description("One read may not outlast what is left of the budget: its timeout is cut to the remainder, so a single hang cannot take the answer past the caller's deadline.")]
-	public void Execute_ShouldCutTheReadTimeoutToTheBudget_WhenABudgetIsSet() {
+	[Description("With a read budget, every read gets the call's deadline: each of its requests is then cut to what is left of it (CreatioRequestOptions.ForNextRequest), so neither one read nor its several requests can take the answer past the caller's deadline.")]
+	public void Execute_ShouldPassTheReadBudgetAsTheDeadline_WhenABudgetIsSet() {
 		// Arrange
 		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>())
 			.Returns(Administered("UsrOrder", EmployeesRow(0)));
@@ -551,8 +552,8 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 		_command.Execute(options);
 
 		// Assert
-		_rightsReader.Received(1).GetObjectRights("UsrOrder",
-			Arg.Is<CreatioRequestOptions>(request => request.TimeOut <= 5_000 && request.TimeOut >= 1_000));
+		_rightsReader.Received(1).GetObjectRights("UsrOrder", Arg.Is<CreatioRequestOptions>(request =>
+			request.Deadline != null && request.Deadline.Budget == TimeSpan.FromSeconds(5) && request.TimeOut == 30_000));
 	}
 
 	[Test]
@@ -567,7 +568,8 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 		_command.Execute(options);
 
 		// Assert
-		_rightsReader.Received(1).GetObjectRights("UsrOrder", Arg.Is<CreatioRequestOptions>(request => request.TimeOut == 30_000));
+		_rightsReader.Received(1).GetObjectRights("UsrOrder",
+			Arg.Is<CreatioRequestOptions>(request => request.TimeOut == 30_000 && request.Deadline == null));
 	}
 
 	[TestCase("Usr Order")]

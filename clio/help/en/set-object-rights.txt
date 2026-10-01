@@ -134,9 +134,9 @@ NOTES
     already has none of the operations, so a retry after a timeout is safe; the result says that the
     object is available to all internal users.
 
-    A save that did not answer in time may land after the read-back, so its failure says the change
-    may still be applied: re-read the object with get-object-rights before retrying or reporting a
-    failure. The save is sent exactly once, whatever the retry settings: a transport retry of a
+    A save that got no answer (it did not answer in time, or the connection broke after the request
+    went out) may land after the read-back, so its failure says the change may still be applied:
+    re-read the object with get-object-rights before retrying or reporting a failure. The save is sent exactly once, whatever the retry settings: a transport retry of a
     committed save could add a new row a second time (it is sent without an id).
 
     After the save the object is read back and compared with the plan, row by row (grantee, position,
