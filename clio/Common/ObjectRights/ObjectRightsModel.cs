@@ -31,13 +31,12 @@ public static class ObjectOperationNames {
 	/// <param name="operation">The operation, when the name is one of <see cref="All"/>.</param>
 	/// <returns><see langword="true"/> when the name is an operation's.</returns>
 	public static bool TryParse(string name, out ObjectOperation operation) {
-		foreach (ObjectOperation candidate in All.Where(candidate =>
-				string.Equals(Of(candidate), name, StringComparison.OrdinalIgnoreCase))) {
-			operation = candidate;
-			return true;
-		}
-		operation = default;
-		return false;
+		ObjectOperation[] match = All
+			.Where(candidate => string.Equals(Of(candidate), name, StringComparison.OrdinalIgnoreCase))
+			.Take(1)
+			.ToArray();
+		operation = match.FirstOrDefault();
+		return match.Length == 1;
 	}
 
 	/// <summary>The name of <paramref name="operation"/>: read, create, edit or delete.</summary>
