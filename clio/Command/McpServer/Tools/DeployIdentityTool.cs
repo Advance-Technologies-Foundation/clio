@@ -12,7 +12,7 @@ namespace Clio.Command.McpServer.Tools;
 /// MCP tool surface for the <c>deploy-identity</c> command.
 /// </summary>
 [McpServerToolType]
-[FeatureToggle("deploy-identity")]
+[FeatureToggle(Clio.Command.ExperimentalFeature.DeployIdentity)]
 public sealed class DeployIdentityTool(
 	ILogger logger,
 	IToolCommandResolver commandResolver)

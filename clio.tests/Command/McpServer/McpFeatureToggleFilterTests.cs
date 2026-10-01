@@ -24,10 +24,10 @@ public sealed class McpFeatureToggleFilterTests
 	private sealed class UngatedMarkedType { }
 
 	[FakeMcpMarker]
-	[FeatureToggle("synthetic-feature")]
+	[FeatureToggle(Clio.Command.ExperimentalFeature.Runtime)]
 	private sealed class GatedMarkedType { }
 
-	[FeatureToggle("synthetic-feature")]
+	[FeatureToggle(Clio.Command.ExperimentalFeature.Runtime)]
 	private sealed class GatedButUnmarkedType { }
 
 	private sealed class PlainType { }

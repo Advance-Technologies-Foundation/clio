@@ -21,6 +21,9 @@ internal sealed class McpE2ESettings {
 
 	public string? ClioProcessPath { get; set; }
 
+	/// <summary>Opt in to host runtime tools for an isolated test server.</summary>
+	public bool RuntimeHost { get; set; }
+
 	public Dictionary<string, string?> ProcessEnvironmentVariables { get; set; } = new();
 
 	/// <summary>

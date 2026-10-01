@@ -20,7 +20,7 @@ namespace Clio.Command;
 /// Controls the opt-in clio-ring desktop companion.
 /// </summary>
 [Verb("ring", HelpText = "Install, update, launch, inspect, or uninstall the experimental clio-ring desktop companion.")]
-[FeatureToggle("ring")]
+[FeatureToggle(Clio.Command.ExperimentalFeature.Ring)]
 public sealed class RingCommandOptions {
 
 	/// <summary>

@@ -28,8 +28,7 @@ are gated behind a feature flag do not appear in `clio help`, are not
 parseable, and their per-command help behaves like an unknown verb until the
 flag is enabled.
 
-Feature keys are matched case-insensitively, so `AiAssist`, `aiassist`, and
-`ai-assist` resolve to the same flag (the key is stored as you first type it).
+Feature keys are matched case-insensitively, so `RUNTIME` and `runtime` resolve to the same flag (the key is stored as you first type it).
 
 Changes are persisted to clio's appsettings.json and take effect immediately.
 
@@ -59,10 +58,10 @@ experimental
 clio exp
 
 # Enable an experimental feature
-experimental --name ai-assist --enable
+experimental --name runtime --enable
 
 # Disable an experimental feature
-experimental --name ai-assist --disable
+experimental --name runtime --disable
 ```
 
 ## Behavior
@@ -96,3 +95,6 @@ lower sequence is still refused. The flag is persistent, so disable it when done
     https://github.com/Advance-Technologies-Foundation/clio
 
 - [Clio Command Reference](../../Commands.md#experimental)
+
+Built-in flags: deploy-identity, mobile-page-converter, ring, runtime, watch-compilation, knowledge-allow-unsequenced.
+Runtime commands (including install-operator) are disabled until runtime is enabled.

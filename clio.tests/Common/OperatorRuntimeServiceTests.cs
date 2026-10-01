@@ -29,7 +29,7 @@ public class OperatorRuntimeServiceTests {
 			return "";
 		});
 		_container = new ServiceCollection().AddSingleton(_process).AddSingleton(Substitute.For<ILogger>())
-			.AddSingleton(Substitute.For<ILocalRuntimeImageBuilder>()).AddTransient<IOperatorRuntimeService, OperatorRuntimeService>().BuildServiceProvider();
+			.AddSingleton(Substitute.For<IRuntimeImageCatalog>()).AddSingleton(Substitute.For<ILocalRuntimeImageBuilder>()).AddTransient<IOperatorRuntimeService, OperatorRuntimeService>().BuildServiceProvider();
 		_service = _container.GetRequiredService<IOperatorRuntimeService>();
 	}
 
@@ -88,4 +88,17 @@ public class OperatorRuntimeServiceTests {
 		act.Should().Throw<ArgumentException>("a valid CR name can still be too long for generated Services");
 		_calls.Should().BeEmpty("an unprovisionable instance should not be submitted");
 	}
-}
+	[TestCase("rancher-desktop"), TestCase("omen")]
+	[Description("Image listing reads only the requested operator catalogue and emits undecorated JSON.")]
+	public void Execute_ShouldReadImagesInSelectedContext(string context) {
+		// Arrange
+		var catalog = _container.GetRequiredService<IRuntimeImageCatalog>();
+		catalog.Read(context, "creatio-system").Returns(new JArray());
+		var options = new RuntimeOptions { Action = "images", Context = context, Json = true };
+		// Act
+		_service.Execute(options);
+		// Assert
+		catalog.Received(1).Read(context, "creatio-system");
+		_container.GetRequiredService<ILogger>().Received(1).WriteLine("[]");
+		_calls.Should().BeEmpty(because: "listing must not deploy or inspect instances");
+	}}

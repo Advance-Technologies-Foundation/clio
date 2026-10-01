@@ -165,7 +165,12 @@
       "clio/Command/McpServer/Resources/MultiSourceKnowledgeResource.cs",
       "clio/Command/McpServer/Resources/RestartResource.cs"
   ],
-  "explicitMappings": [],
+  "explicitMappings": [
+    {
+      "paths": ["clio/Common/OperatorBootstrap/RuntimeImageCatalog.cs", "clio/Common/OperatorBootstrap/RuntimeImageOutput.cs"],
+      "fixtures": ["RuntimeToolsContractE2ETests"]
+    }
+  ],
   "_fullRunOnlyFixtures": [
     "Fixtures that exercise server-level behaviour (startup, shutdown, worker processes, HTTP routing,",
     "progress relay) rather than one MCP tool. Their code lives entirely under fullRunPaths, so they run",

@@ -1159,3 +1159,7 @@ If this capability map drifts, the correct places to re-audit are:
 - `clio.mcp.e2e/*.cs`
 
 That is the real public surface. Everything else is commentary.
+
+### Experimental developer runtime host
+
+With feature runtime enabled and mcp-server --runtime-host: runtime-images, runtime-list, runtime-status, runtime-create, runtime-build, runtime-attach, runtime-detach, install-operator. Long-tail tools discovered through get-tool-contract and executed through clio-run/clio-run-destructive. No Creatio environment registration required. Paths belong to the MCP server host. Container and credential-passthrough execution refused.

@@ -5,60 +5,29 @@ using NUnit.Framework;
 
 namespace Clio.Tests.Command;
 
-[TestFixture]
-[Category("Unit")]
-[Property("Module", "Command")]
-public sealed class FeatureToggleAttributeTests {
-
-	[Test]
-	[Description("Constructor exposes the supplied feature name via the FeatureName property.")]
-	public void Constructor_ShouldExposeFeatureName_WhenNameIsValid() {
-		// Arrange
-		const string featureName = "my-feature";
-
-		// Act
-		var attribute = new FeatureToggleAttribute(featureName);
-
+[TestFixture, Category("Unit"), Property("Module", "Command")]
+public class FeatureToggleAttributeTests {
+	[TestCase(ExperimentalFeature.DeployIdentity, "deploy-identity")]
+	[TestCase(ExperimentalFeature.MobilePageConverter, "mobile-page-converter")]
+	[TestCase(ExperimentalFeature.Ring, "ring")]
+	[TestCase(ExperimentalFeature.Runtime, "runtime")]
+	[TestCase(ExperimentalFeature.WatchCompilation, "watch-compilation")]
+	[TestCase(ExperimentalFeature.KnowledgeAllowUnsequenced, "knowledge-allow-unsequenced")]
+	[Description("Enum-backed attributes preserve the existing persisted feature names.")]
+	public void PreservesExternalNames(ExperimentalFeature feature, string key) {
+		// Arrange / Act
+		var attribute = new FeatureToggleAttribute(feature);
 		// Assert
-		attribute.FeatureName.Should().Be(featureName, because: "the attribute must surface the feature key it was constructed with");
+		attribute.Feature.Should().Be(feature, because: "code uses the typed feature identity");
+		attribute.FeatureName.Should().Be(key, because: "existing CLI and saved settings must remain compatible");
 	}
 
 	[Test]
-	[Description("Constructor throws ArgumentException when the feature name is null.")]
-	public void Constructor_ShouldThrowArgumentException_WhenNameIsNull() {
-		// Arrange
-		string featureName = null;
-
-		// Act
-		Action act = () => _ = new FeatureToggleAttribute(featureName);
-
+	[Description("Undefined enum values cannot silently introduce feature flags.")]
+	public void RejectsUnknownFeature() {
+		// Arrange / Act
+		Action act = () => _ = new FeatureToggleAttribute((ExperimentalFeature)999);
 		// Assert
-		act.Should().Throw<ArgumentException>(because: "a null feature name is not a valid feature key");
-	}
-
-	[Test]
-	[Description("Constructor throws ArgumentException when the feature name is empty.")]
-	public void Constructor_ShouldThrowArgumentException_WhenNameIsEmpty() {
-		// Arrange
-		string featureName = string.Empty;
-
-		// Act
-		Action act = () => _ = new FeatureToggleAttribute(featureName);
-
-		// Assert
-		act.Should().Throw<ArgumentException>(because: "an empty feature name is not a valid feature key");
-	}
-
-	[Test]
-	[Description("Constructor throws ArgumentException when the feature name is whitespace.")]
-	public void Constructor_ShouldThrowArgumentException_WhenNameIsWhitespace() {
-		// Arrange
-		const string featureName = "   ";
-
-		// Act
-		Action act = () => _ = new FeatureToggleAttribute(featureName);
-
-		// Assert
-		act.Should().Throw<ArgumentException>(because: "a whitespace-only feature name is not a valid feature key");
+		act.Should().Throw<ArgumentOutOfRangeException>(because: "features must be centrally declared");
 	}
 }

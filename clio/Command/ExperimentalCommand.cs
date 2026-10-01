@@ -175,7 +175,7 @@ public class ExperimentalCommand : Command<ExperimentalOptions> {
 	// Emphasize with UPPER CASE instead.
 	internal static readonly IReadOnlyDictionary<string, string> FeatureEnableNotices =
 		new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
-			["mobile-page-converter"] =
+			[ExperimentalFeature.MobilePageConverter.ToKey()] =
 				"⚠️ Heads up! Enabling this feature will activate the agent in BETA MODE. "
 				+ "Please be aware that behavior may vary and improvements are ongoing.",
 			[KnowledgeUnsequencedGitOptions.FeatureName] =

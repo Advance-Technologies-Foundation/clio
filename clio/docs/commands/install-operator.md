@@ -1,5 +1,7 @@
 # install-operator
 
+Experimental; enable with `clio experimental --name runtime --enable`.
+
 Install the Creatio operator into local Rancher Desktop without installing Nexus or another registry.
 
 ```sh
@@ -22,3 +24,5 @@ Open `http://creatio-operator.localhost`. New local installations use username `
 The command does not reset Rancher, wipe namespaces, switch current-context, or take over a different operator installation. A conflicting Nexus-managed policy requires an explicit migration. Failures leave resources available for inspection and retry. Operator readiness does not imply that every infrastructure component is ready; inspect the dashboard before creating a runtime.
 
 This is a host-side bootstrap command, not a remote MCP tool. Runtime attachment remains a separate `attach` operation with its own context, namespace and SSH identity.
+
+MCP: available as `install-operator` on an explicitly enabled developer-host server. See [runtime MCP setup](runtime.md#mcp-on-the-developer-host).

@@ -16,11 +16,18 @@ public interface IOperatorRuntimeService {
 }
 
 /// <inheritdoc/>
-public class OperatorRuntimeService(IAttachmentProcess process, ILogger logger, ILocalRuntimeImageBuilder builder) : IOperatorRuntimeService {
+public class OperatorRuntimeService(IAttachmentProcess process, ILogger logger, ILocalRuntimeImageBuilder builder, IRuntimeImageCatalog catalog) : IOperatorRuntimeService {
 	private const string Resource = "creatioinstances.apps.creatio.io";
 
 	/// <inheritdoc/>
 	public void Execute(RuntimeOptions options) {
+		if (options.Json && options.Action != "images") throw new ArgumentException("--json is supported for runtime images only.");
+		if (options.Action == "images") {
+			if (string.IsNullOrWhiteSpace(options.Context)) throw new ArgumentException("Specify --context explicitly.");
+			ValidateName(options.OperatorNamespace, "operator namespace");
+			RuntimeImageOutput.Write(catalog.Read(options.Context, options.OperatorNamespace), options.Json, logger);
+			return;
+		}
 		if (options.Action == "build") { builder.Build(options); return; }
 		Validate(options);
 		logger.WriteInfo($"Runtime target: context={options.Context}, namespace={options.Namespace}");
@@ -46,7 +53,7 @@ public class OperatorRuntimeService(IAttachmentProcess process, ILogger logger, 
 
 	private static void Validate(RuntimeOptions options) {
 		if (options.Action is not ("create" or "list" or "status")) {
-			throw new ArgumentException("Runtime action must be build, create, list or status.");
+			throw new ArgumentException("Runtime action must be build, create, list, status, attach or detach.");
 		}
 		if (string.IsNullOrWhiteSpace(options.Context)) { throw new ArgumentException("Specify --context explicitly."); }
 		ValidateName(options.Namespace, "namespace");

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -55,6 +55,8 @@ public sealed class DurableInvocationGateCompletenessTests {
 	/// instead of extending this list.
 	/// </remarks>
 	private static readonly HashSet<string> ReviewedSilentlyExecutableTools = new(StringComparer.Ordinal) {
+		// Runtime discovery only reads operator catalogues and Kubernetes instance status.
+		RuntimeTools.ImagesName, RuntimeTools.ListName, RuntimeTools.StatusName,
 		// Administration inspection rejects mutation actions before resolving the environment.
 		"inspect-user",
 		"inspect-role",

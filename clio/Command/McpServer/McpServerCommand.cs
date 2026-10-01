@@ -16,6 +16,10 @@ namespace Clio.Command.McpServer;
 [Verb("mcp-server", Aliases = ["mcp"], HelpText = "Starts mcp server in stdio mode")]
 public class McpServerCommandOptions : BaseCommandOptions
 {
+	/// <summary>Permit runtime tools to manage this developer host; requires the runtime feature.</summary>
+	[Option("runtime-host", HelpText = "Enable host runtime MCP operations on this developer machine. Requires runtime feature; unavailable in containers.")]
+	public bool RuntimeHost { get; set; }
+
 
 	/// <summary>
 	/// Gets or sets a value indicating whether this process serves MCP calls as a short-lived child worker

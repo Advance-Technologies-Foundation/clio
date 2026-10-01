@@ -10,8 +10,6 @@ add-user-task:add-user-task
 alm-deploy:alm-deploy,deploy
 apply-manifest:apply-manifest,apply-environment-manifest,applym
 assert:assert
-attach:attach
-detach:detach
 autoupdate:autoupdate
 build-docker-image:build-docker-image
 build-workspace:build-workspace,build,compile,compile-all,rebuild
@@ -244,5 +242,3 @@ get-sequence-context:get-sequence-context
 execute-dataservice-batch:execute-dataservice-batch
 create-user-task-page:create-user-task-page
 register-process-element:register-process-element
-install-operator:install-operator
-runtime:runtime

@@ -609,8 +609,8 @@ Experimental / not-for-public CLI commands can be hidden behind a runtime flag.
 
 **To make a command experimental:**
 
-1. Put `[FeatureToggle("feature-key")]` on its **options class**, next to `[Verb]` — **not** on the command class. The options type is the only thing the parser and help reflect over.
-2. If the command also has an MCP tool/resource/prompt, put the **same** `[FeatureToggle("feature-key")]` on that `[McpServerToolType]` / `[McpServerResourceType]` / `[McpServerPromptType]` class too. The MCP surface is gated separately; the CLI attribute does not cover it.
+1. Put `[FeatureToggle(ExperimentalFeature.Runtime)]` on its **options class**, next to `[Verb]` — **not** on the command class. The options type is the only thing the parser and help reflect over.
+2. If the command also has an MCP tool/resource/prompt, put the **same** `[FeatureToggle(ExperimentalFeature.Runtime)]` on that `[McpServerToolType]` / `[McpServerResourceType]` / `[McpServerPromptType]` class too. The MCP surface is gated separately; the CLI attribute does not cover it.
 3. The feature is **off by default.** Enable it to test: `clio experimental --name feature-key --enable` (list/inspect with bare `clio experimental`; turn off with `--disable`). Flags persist in `appsettings.json` under `features`; there is no environment-variable override.
 
 While off, the command is invisible and unreachable on every surface (CLI parse, help, generated docs, dispatch, MCP) and is omitted from generated public docs. A command with no `[FeatureToggle]` is unaffected.
@@ -762,3 +762,5 @@ AI agents implementing a story must:
 3. After implementation, ensure the test plan in `spec/test-plans/` is satisfied —
    all TC-U-* and TC-I-* test cases must be implemented.
 4. Never close a story as `done` if its Definition of Done checklist has unchecked items.
+
+Feature declarations use `ExperimentalFeature` in `clio/Command/ExperimentalFeature.cs`. Add built-in flags there and map their stable external name in `FeatureNames.ToKey`. String names remain only at CLI/configuration and external guidance boundaries.

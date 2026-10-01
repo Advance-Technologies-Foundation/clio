@@ -15,10 +15,6 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 
 ## Application Management
 
-<a id="attach"></a>
-- [`attach`](docs/commands/attach.md) - Attach a local workspace to an existing Kubernetes runtime
-<a id="detach"></a>
-- [`detach`](docs/commands/detach.md) - Detach a workspace without destroying its runtime or files
 
 <a id="clear-local-env"></a>
 <a id="clear-env"></a>
@@ -814,11 +810,3 @@ Enroll explicit contacts through Creatio's native sequence service. See [enroll-
 <a id="execute-dataservice-batch"></a>
 
 Write explicit records in a native DataService batch. See [execute-dataservice-batch](docs/commands/execute-dataservice-batch.md).
-
-<a id="install-operator"></a>
-
-- [install-operator](docs/commands/install-operator.md) - Install the Creatio operator into Rancher Desktop without a local registry.
-
-<a id="runtime"></a>
-
-- [runtime](docs/commands/runtime.md) - Create and inspect operator runtimes in an explicit Kubernetes context.

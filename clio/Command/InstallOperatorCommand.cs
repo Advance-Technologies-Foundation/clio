@@ -7,6 +7,7 @@ namespace Clio.Command;
 
 /// <summary>Installs the operator using the registry-free Rancher Desktop profile.</summary>
 [Verb("install-operator", HelpText = "Install the Creatio operator into Rancher Desktop without Nexus.")]
+[FeatureToggle(Clio.Command.ExperimentalFeature.Runtime)]
 public class InstallOperatorOptions {
 	/// <summary>Installation profile. Currently rancher-desktop only.</summary>
 	[Option("target", Required = true)]

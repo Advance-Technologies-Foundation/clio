@@ -23,16 +23,16 @@ public sealed class FeatureToggleServiceTests {
 		_sut = new FeatureToggleService(_settingsRepository);
 	}
 
-	[FeatureToggle("alpha-feature")]
+	[FeatureToggle(Clio.Command.ExperimentalFeature.Runtime)]
 	private sealed class GatedType { }
 
-	[FeatureToggle("alpha-feature")]
+	[FeatureToggle(Clio.Command.ExperimentalFeature.Runtime)]
 	private sealed class SecondGatedTypeSameKey { }
 
-	[FeatureToggle("beta-feature")]
+	[FeatureToggle(Clio.Command.ExperimentalFeature.Ring)]
 	private sealed class BetaGatedType { }
 
-	[FeatureToggle("ALPHA-FEATURE")]
+	[FeatureToggle(Clio.Command.ExperimentalFeature.Runtime)]
 	private sealed class AlphaGatedTypeUpperCaseKey { }
 
 	private sealed class UngatedType { }
@@ -55,7 +55,7 @@ public sealed class FeatureToggleServiceTests {
 	[Description("IsEnabled returns true for a gated type when its feature flag is enabled.")]
 	public void IsEnabled_ShouldReturnTrue_WhenAttributePresentAndFlagEnabled() {
 		// Arrange
-		_settingsRepository.IsFeatureEnabled("alpha-feature").Returns(true);
+		_settingsRepository.IsFeatureEnabled("runtime").Returns(true);
 
 		// Act
 		bool result = _sut.IsEnabled(typeof(GatedType));
@@ -68,7 +68,7 @@ public sealed class FeatureToggleServiceTests {
 	[Description("IsEnabled returns false for a gated type when its feature flag is disabled.")]
 	public void IsEnabled_ShouldReturnFalse_WhenAttributePresentAndFlagDisabled() {
 		// Arrange
-		_settingsRepository.IsFeatureEnabled("alpha-feature").Returns(false);
+		_settingsRepository.IsFeatureEnabled("runtime").Returns(false);
 
 		// Act
 		bool result = _sut.IsEnabled(typeof(GatedType));
@@ -81,7 +81,7 @@ public sealed class FeatureToggleServiceTests {
 	[Description("IsEnabled returns false for a gated type when its feature flag is absent (defaults to false).")]
 	public void IsEnabled_ShouldReturnFalse_WhenAttributePresentAndFlagAbsent() {
 		// Arrange
-		_settingsRepository.IsFeatureEnabled("alpha-feature").Returns(false);
+		_settingsRepository.IsFeatureEnabled("runtime").Returns(false);
 
 		// Act
 		bool result = _sut.IsEnabled(typeof(GatedType));
@@ -107,22 +107,22 @@ public sealed class FeatureToggleServiceTests {
 	[Description("IsFeatureEnabled delegates to the settings repository.")]
 	public void IsFeatureEnabled_ShouldDelegateToRepository_WhenCalled() {
 		// Arrange
-		_settingsRepository.IsFeatureEnabled("beta-feature").Returns(true);
+		_settingsRepository.IsFeatureEnabled("ring").Returns(true);
 
 		// Act
-		bool result = _sut.IsFeatureEnabled("beta-feature");
+		bool result = _sut.IsFeatureEnabled("ring");
 
 		// Assert
 		result.Should().BeTrue(because: "the service must delegate feature lookups to the repository");
-		_settingsRepository.Received(1).IsFeatureEnabled("beta-feature");
+		_settingsRepository.Received(1).IsFeatureEnabled("ring");
 	}
 
 	[Test]
 	[Description("GetCatalog produces one entry per distinct feature key, deduplicating shared keys.")]
 	public void GetCatalog_ShouldDedupeByFeatureName_WhenMultipleTypesShareKey() {
 		// Arrange
-		_settingsRepository.IsFeatureEnabled("alpha-feature").Returns(true);
-		_settingsRepository.IsFeatureEnabled("beta-feature").Returns(false);
+		_settingsRepository.IsFeatureEnabled("runtime").Returns(true);
+		_settingsRepository.IsFeatureEnabled("ring").Returns(false);
 		Type[] types = [typeof(GatedType), typeof(SecondGatedTypeSameKey), typeof(BetaGatedType), typeof(UngatedType)];
 
 		// Act
@@ -131,11 +131,11 @@ public sealed class FeatureToggleServiceTests {
 		// Assert
 		catalog.Should().HaveCount(2, because: "two distinct feature keys exist and the duplicate key is collapsed");
 		catalog.Select(c => c.FeatureName).Should().BeEquivalentTo(
-			["alpha-feature", "beta-feature"],
+			["runtime", "ring"],
 			because: "only gated types contribute and each key appears once");
-		catalog.Single(c => c.FeatureName == "alpha-feature").Enabled.Should().BeTrue(
+		catalog.Single(c => c.FeatureName == "runtime").Enabled.Should().BeTrue(
 			because: "the alpha feature flag is enabled in settings");
-		catalog.Single(c => c.FeatureName == "beta-feature").Enabled.Should().BeFalse(
+		catalog.Single(c => c.FeatureName == "ring").Enabled.Should().BeFalse(
 			because: "the beta feature flag is disabled in settings");
 	}
 

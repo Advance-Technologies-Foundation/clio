@@ -12,7 +12,7 @@ namespace Clio.Command;
 #region Class: WatchCompilationOptions
 
 [Verb("watch-compilation", Hidden = true, HelpText = "Observe Creatio compilation status without triggering a compile")]
-[FeatureToggle("watch-compilation")]
+[FeatureToggle(Clio.Command.ExperimentalFeature.WatchCompilation)]
 public class WatchCompilationOptions : RemoteCommandOptions {
 
 	[Option("give-up-after", Required = false, Default = 300,
