@@ -31,11 +31,10 @@ public static class ObjectOperationNames {
 	/// <param name="operation">The operation, when the name is one of <see cref="All"/>.</param>
 	/// <returns><see langword="true"/> when the name is an operation's.</returns>
 	public static bool TryParse(string name, out ObjectOperation operation) {
-		foreach (ObjectOperation candidate in All) {
-			if (string.Equals(Of(candidate), name, StringComparison.OrdinalIgnoreCase)) {
-				operation = candidate;
-				return true;
-			}
+		foreach (ObjectOperation candidate in All.Where(candidate =>
+				string.Equals(Of(candidate), name, StringComparison.OrdinalIgnoreCase))) {
+			operation = candidate;
+			return true;
 		}
 		operation = default;
 		return false;
@@ -222,9 +221,16 @@ public sealed record ObjectRightsInfo(
 	/// Why the object was not read, as a clause safe to print (<c>the schema was not found</c>); <see langword="null"/>
 	/// when <see cref="IsRead"/>.
 	/// </summary>
-	public string FailureReason => IsRead ? null
-		: ReadError is not null ? $"its operation permissions could not be read: {ReadError}"
-		: "the schema was not found";
+	public string FailureReason {
+		get {
+			if (IsRead) {
+				return null;
+			}
+			return ReadError is not null
+				? $"its operation permissions could not be read: {ReadError}"
+				: "the schema was not found";
+		}
+	}
 
 	/// <summary>The result of a read that failed: the object is taken to exist, and nothing about its rows is known.</summary>
 	/// <param name="name">The object (entity schema) name that was read.</param>
