@@ -1,27 +1,34 @@
 ﻿using System;
 using System.IO.Abstractions;
+using System.Linq;
 using System.Runtime.InteropServices;
+using System.Text;
 using Clio;
 using Clio.Common;
+using Clio.Common.McpWorker;
 using CommandLine;
 using IFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Command;
 
+/// <summary>Options for registering Windows Explorer commands.</summary>
 [Verb("register", HelpText = "Register clio commands in context menu ")]
 public class RegisterOptions{
 	#region Properties: Public
 
+	/// <summary>Gets or sets the legacy registration target option.</summary>
 	[Option('t', "Target", Default = "u", HelpText = "Target environment location. Could be user location or" +
 													 " machine location. Use 'u' for set user location and 'm' to set machine location.")]
 	public string Target { get; set; }
 
+	/// <summary>Gets or sets the legacy installation path option.</summary>
 	[Option('p', "Path", HelpText = "Path where clio is stored.")]
 	public string Path { get; set; }
 
 	#endregion
 }
 
+/// <summary>Registers Explorer commands using the current clio launch descriptor.</summary>
 public class RegisterCommand : Command<RegisterOptions>{
 	#region Fields: Private
 
@@ -29,6 +36,7 @@ public class RegisterCommand : Command<RegisterOptions>{
 	private readonly ILogger _logger;
 	private readonly IOperationSystem _operationSystem;
 	private readonly IProcessExecutor _processExecutor;
+	private readonly IClioExecutablePathProvider _clioExecutablePathProvider;
 
 	#endregion
 
@@ -41,12 +49,14 @@ public class RegisterCommand : Command<RegisterOptions>{
 	/// <param name="processExecutor">Process executor used to run system commands.</param>
 	/// <param name="fileSystem">Filesystem abstraction used for path and file operations.</param>
 	/// <param name="operationSystem">Operating system abstraction used for OS and privilege checks.</param>
+	/// <param name="clioExecutablePathProvider">Resolves this clio build for direct Explorer launches.</param>
 	public RegisterCommand(ILogger logger, IProcessExecutor processExecutor, IFileSystem fileSystem,
-		IOperationSystem operationSystem) {
+		IOperationSystem operationSystem, IClioExecutablePathProvider clioExecutablePathProvider) {
 		_logger = logger;
 		_processExecutor = processExecutor;
 		_fileSystem = fileSystem;
 		_operationSystem = operationSystem;
+		_clioExecutablePathProvider = clioExecutablePathProvider;
 	}
 
 	#endregion
@@ -103,6 +113,7 @@ public class RegisterCommand : Command<RegisterOptions>{
 
 	#region Methods: Public
 
+	/// <inheritdoc />
 	public override int Execute(RegisterOptions options) {
 		try {
 			if (_operationSystem.IsWindows) {
@@ -127,12 +138,26 @@ public class RegisterCommand : Command<RegisterOptions>{
 					"unreg_clio_context_menu_win.reg");
 				string regFileName = _fileSystem.Path.Combine(assemblyFolderPath, "reg",
 					"clio_context_menu_win.reg");
-				if (!TryExecuteProcess("cmd", $"/c reg import \"{unregFileName}\"",
+				ClioWorkerLaunchDescriptor launch = _clioExecutablePathProvider.Resolve();
+				if (!_fileSystem.Path.IsPathFullyQualified(launch.Executable)
+					|| !_fileSystem.File.Exists(launch.Executable)) {
+					_logger.WriteError("Cannot register Explorer deployment: clio executable must be an existing absolute path.");
+					return 1;
+				}
+
+				string command = string.Join(" ", new[] { launch.Executable }.Concat(launch.Arguments)
+					.Select(argument => $"\"{argument}\""));
+				string registration = _fileSystem.File.ReadAllText(regFileName).Replace("__CLIO_DEPLOY_LAUNCH__",
+					command.Replace("\\", "\\\\").Replace("\"", "\\\""), StringComparison.Ordinal);
+				string generatedRegFileName = _fileSystem.Path.Combine(appDataClioFolderPath,
+					"clio_context_menu_win.reg");
+				_fileSystem.File.WriteAllText(generatedRegFileName, registration, Encoding.Unicode);
+				if (!TryExecuteProcess("reg.exe", $"import \"{unregFileName}\"",
 						"import unregister context menu registry file")) {
 					return 1;
 				}
 
-				if (!TryExecuteProcess("cmd", $"/c reg import \"{regFileName}\"",
+				if (!TryExecuteProcess("reg.exe", $"import \"{generatedRegFileName}\"",
 						"import context menu registry file")) {
 					return 1;
 				}
