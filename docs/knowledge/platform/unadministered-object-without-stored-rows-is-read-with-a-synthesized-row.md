@@ -23,8 +23,7 @@ every operation) as a grid; it is not stored until a save sends it back.
 
 **What breaks if you ignore it** — an enabling save built from the grantee's row alone, on the belief that "the
 server adds All employees", cuts every internal user outside the grantee off the object; a save with no rows locks
-out everyone but the "…any data" holders. And a read-back after a disable that left no stored rows shows the
-synthesized row, which is not a row anybody saved. That is why the save sends the rows it read, the planner adds an
-All employees row itself only when an enable meets stored rows without one, the read-back treats a missing All
-employees row after an enable as a failed call, and the read-back after a disable does not report the synthesized
-row as a difference.
+out everyone but the "…any data" holders. That is why the save sends the rows it read, the planner adds an All
+employees row itself only when an enable meets stored rows without one, and the read-back treats a missing All
+employees row after an enable as a failed call. A disable never leaves an object without stored rows: it is accepted
+only when the revoke empties the last granting row, and that cleared row stays stored.

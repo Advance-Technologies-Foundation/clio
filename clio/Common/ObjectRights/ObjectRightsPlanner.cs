@@ -36,6 +36,12 @@ public enum ObjectRightsRefusal {
 	/// <summary>The revoke would leave the administered object with no row that grants any operation.</summary>
 	LeavesNoGrantingRow,
 	/// <summary>
+	/// <c>--disable-operation-permissions</c> was passed although the revoke does not need it: the revoke does not empty
+	/// the object's last granting row. Turning operation permissions off would open the object to ALL internal users
+	/// while the call reads as a revoke, so it is refused.
+	/// </summary>
+	DisableNotNeeded,
+	/// <summary>
 	/// The grantee has more than one row. Which of them decides depends on the positions of every other row, so the
 	/// tool edits none of them; the duplicates need an explicit repair.
 	/// </summary>
@@ -60,6 +66,8 @@ public enum ObjectRightsRefusal {
 /// <param name="RowsAboveGrantee">The rows above the grantee's row. For a user who is also in one of those roles, that
 /// row decides first.</param>
 /// <param name="DuplicatePositions">On <see cref="ObjectRightsRefusal.DuplicateGranteeRows"/>: the grantee's positions.</param>
+/// <param name="RowsStillGranting">On <see cref="ObjectRightsRefusal.DisableNotNeeded"/>: the rows that would still grant
+/// an operation after the revoke; <see langword="null"/> otherwise.</param>
 public sealed record ObjectRightsPlan(
 	ObjectRightsState Before,
 	ObjectRightsState After,
@@ -70,7 +78,8 @@ public sealed record ObjectRightsPlan(
 	bool AddsAllEmployeesRow,
 	IReadOnlyList<RoleOperationRights> RowsBecomingEffective,
 	IReadOnlyList<RoleOperationRights> RowsAboveGrantee,
-	IReadOnlyList<int> DuplicatePositions) {
+	IReadOnlyList<int> DuplicatePositions,
+	IReadOnlyList<RoleOperationRights> RowsStillGranting = null) {
 
 	/// <summary>The plan is refused and writes nothing.</summary>
 	public bool Refused => Refusal != ObjectRightsRefusal.None;
@@ -105,7 +114,8 @@ public sealed class ObjectRightsPlanner : IObjectRightsPlanner {
 	private enum Transitions {
 		None = 0,
 		EnableOperationPermissions = 1,
-		LeaveNoGrantingRow = 2
+		LeaveNoGrantingRow = 2,
+		DisableWithoutNeed = 4
 	}
 
 	// THE POLICY for transitions: one row per transition, in the order the refusals are reported. A transition not in
@@ -115,9 +125,12 @@ public sealed class ObjectRightsPlanner : IObjectRightsPlanner {
 	// state it asks for already in place, which changes nothing.
 	private static readonly (Transitions Transition, Func<ObjectRightsChangeRequest, bool> Allowed, ObjectRightsRefusal Refusal)[] Policy = {
 		(Transitions.EnableOperationPermissions, request => request.EnableOperationPermissions, ObjectRightsRefusal.EnableNotRequested),
-		// With --disable-operation-permissions the revoke turns the switch off instead, so a row-less administered
-		// object is never an allowed end state.
-		(Transitions.LeaveNoGrantingRow, _ => false, ObjectRightsRefusal.LeavesNoGrantingRow)
+		// A revoke that empties the object's last granting row is allowed only with --disable-operation-permissions: the
+		// switch then goes off instead, so a row-less administered object is never an end state.
+		(Transitions.LeaveNoGrantingRow, request => request.DisableOperationPermissions, ObjectRightsRefusal.LeavesNoGrantingRow),
+		// That is the only case the flag exists for. Anywhere else it would open the object to all internal users while
+		// the call reads as a revoke, so a disable the revoke does not need is never allowed.
+		(Transitions.DisableWithoutNeed, _ => false, ObjectRightsRefusal.DisableNotNeeded)
 	};
 
 	/// <inheritdoc />
@@ -198,15 +211,20 @@ public sealed class ObjectRightsPlanner : IObjectRightsPlanner {
 			// The row stays at its position: with its operations cleared it is an explicit deny for its members.
 			after[after.IndexOf(granteeRow)] = granteeRow.With(request.Operations, false);
 		}
-		bool disabling = request.DisableOperationPermissions;
 		bool rowsChanged = granteeRow is not null && !after.SequenceEqual(rows);
-		if (!disabling && rowsChanged && !after.Any(row => row.HasAnyOperation)) {
+		bool leavesNoGrantingRow = rowsChanged && !after.Any(row => row.HasAnyOperation);
+		if (leavesNoGrantingRow) {
 			transitions |= Transitions.LeaveNoGrantingRow;
+		} else if (request.DisableOperationPermissions) {
+			transitions |= Transitions.DisableWithoutNeed;
 		}
 		ObjectRightsRefusal refusal = Check(transitions, request);
 		if (refusal != ObjectRightsRefusal.None) {
-			return Refuse(before, refusal, Array.Empty<int>());
+			return Refuse(before, refusal, Array.Empty<int>(), rowsStillGranting:
+				refusal == ObjectRightsRefusal.DisableNotNeeded ? after.Where(row => row.HasAnyOperation).ToArray() : null);
 		}
+		// Past the policy, a revoke that empties the last granting row carries the disable: the switch goes off instead.
+		bool disabling = leavesNoGrantingRow;
 		return new ObjectRightsPlan(before, new ObjectRightsState(!disabling, after), ObjectRightsRefusal.None,
 			EnablesOperationPermissions: false,
 			DisablesOperationPermissions: disabling,
@@ -246,7 +264,7 @@ public sealed class ObjectRightsPlanner : IObjectRightsPlanner {
 
 	private static ObjectRightsPlan Refuse(ObjectRightsState before, ObjectRightsRefusal refusal,
 		IReadOnlyList<int> duplicatePositions, IReadOnlyList<RoleOperationRights> rowsBecomingEffective = null,
-		bool wouldAddAllEmployeesRow = false) =>
+		bool wouldAddAllEmployeesRow = false, IReadOnlyList<RoleOperationRights> rowsStillGranting = null) =>
 		new(before, before, refusal,
 			EnablesOperationPermissions: false,
 			DisablesOperationPermissions: false,
@@ -254,7 +272,8 @@ public sealed class ObjectRightsPlanner : IObjectRightsPlanner {
 			AddsAllEmployeesRow: wouldAddAllEmployeesRow,
 			RowsBecomingEffective: rowsBecomingEffective ?? Array.Empty<RoleOperationRights>(),
 			RowsAboveGrantee: Array.Empty<RoleOperationRights>(),
-			DuplicatePositions: duplicatePositions);
+			DuplicatePositions: duplicatePositions,
+			RowsStillGranting: rowsStillGranting);
 
 	private static IReadOnlyList<RoleOperationRights> OtherRows(IEnumerable<RoleOperationRights> rows, Guid grantee) =>
 		rows.Where(row => row.GranteeId != grantee).ToArray();

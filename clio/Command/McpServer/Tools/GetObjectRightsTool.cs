@@ -22,6 +22,13 @@ public sealed class GetObjectRightsTool(
 
 	internal const string ValidArguments = "Valid: environment-name, entity-schema-name, grantee, include-connected.";
 
+	// The call is bounded by the MCP read deadline (120 s by default). One read gets one attempt of at most 30 s, and
+	// the listing stops once 90 s are spent, so the answer — with what was read — arrives before the deadline instead
+	// of being lost to it (a hang would otherwise cost the 100 s request timeout three times over).
+	internal const int McpReadTimeoutMilliseconds = 30_000;
+
+	internal static readonly TimeSpan McpReadBudget = TimeSpan.FromSeconds(90);
+
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
@@ -35,7 +42,7 @@ public sealed class GetObjectRightsTool(
 		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Read OBJECT operation permissions — who may read/create/edit/delete a whole entity (the SysEntitySchemaOperationRight / \"Object permissions\" layer). " +
 		"Read-only companion of set-object-rights. Reports, per object, every role's row in PRIORITY order with its [position] (0 is the highest; a user in several roles gets the highest matching row, and a row with no operations denies them); pass grantee to show that role's row and the rows above it (every row when it has none, or when the object is not administered). " +
-		"include-connected also reports the root object's own lookup objects (security/system objects are skipped) — the discovery step before deciding, per object, what to change with set-object-rights; on an object with many lookups it can reach the read deadline, and a read that times out stops the listing and names the objects not read — then read the lookups one by one. The output is facts only, with no coverage verdict. Fails (success=false) when the root object cannot be read; a connected object that cannot be read is reported with a warning. " +
+		"include-connected also reports the root object's own lookup objects (security/system objects are skipped) — the discovery step before deciding, per object, what to change with set-object-rights; each read gets one attempt of at most 30 s, and the listing stops after 90 s or a read that times out, naming the objects not read — then read them one by one. The output is facts only, with no coverage verdict. Fails (success=false) when the root object cannot be read; a connected object that cannot be read is reported with a warning. " +
 		"An object not administered by operation permissions is available to all INTERNAL users; external users reach it only through an explicit grant; every row listed for it applies once operation permissions are turned on. " +
 		"Unknown or misspelled argument names are refused.")]
 	public ObjectRightsToolResponse GetObjectRights(
@@ -54,7 +61,10 @@ public sealed class GetObjectRightsTool(
 				Environment = args.EnvironmentName,
 				EntitySchemaName = args.EntitySchemaName,
 				Grantee = args.Grantee,
-				IncludeConnected = args.IncludeConnected ?? false
+				IncludeConnected = args.IncludeConnected ?? false,
+				TimeOut = McpReadTimeoutMilliseconds,
+				MaxAttempts = 1,
+				ReadBudget = McpReadBudget
 			};
 			return ObjectRightsToolResponse.From(InternalExecute<GetObjectRightsCommand>(options));
 		} catch (Exception ex) {

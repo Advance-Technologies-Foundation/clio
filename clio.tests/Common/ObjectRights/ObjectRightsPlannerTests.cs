@@ -253,6 +253,39 @@ public class ObjectRightsPlannerTests {
 		plan.After.Roles.Should().Equal(new[] { Row(Grantee, 0, "") }, because: "the rows are kept for a later re-enable");
 	}
 
+	[TestCase(true, TestName = "Plan_ShouldRefuseTheDisable_WhenOtherRowsStillGrant")]
+	[TestCase(false, TestName = "Plan_ShouldRefuseTheDisable_WhenTheGranteeHasNoRow")]
+	[Description("--disable-operation-permissions is accepted only when the revoke empties the object's last granting row: anywhere else it would open the object to all internal users while the call reads as a revoke, so it is refused, writes nothing and names the rows that still grant.")]
+	public void Plan_ShouldRefuseTheDisable_WhenTheRevokeDoesNotNeedIt(bool granteeHasRow) {
+		// Arrange
+		ObjectRightsState before = granteeHasRow
+			? State(true, Row(Grantee, 0, "R"), Row(AllEmployees, 1, "RCED"))
+			: State(true, Row(AllEmployees, 0, "RCED"));
+
+		// Act
+		ObjectRightsPlan plan = _planner.Plan(before, Revoke(ObjectOperation.Read) with { DisableOperationPermissions = true });
+
+		// Assert
+		plan.Refusal.Should().Be(ObjectRightsRefusal.DisableNotNeeded, because: "the revoke leaves a granting row");
+		plan.Changes.Should().BeFalse(because: "a refused plan writes nothing");
+		plan.RowsStillGranting.Should().Equal(new[] { Row(AllEmployees, granteeHasRow ? 1 : 0, "RCED") },
+			because: "the refusal names the rows that would still grant after the revoke");
+	}
+
+	[Test]
+	[Description("On an administered object where no row grants anything, a revoke that changes no row does not empty the last granting row either, so the disable is refused there too.")]
+	public void Plan_ShouldRefuseTheDisable_WhenTheRevokeChangesNoRow() {
+		// Arrange
+		ObjectRightsState before = State(true, Row(Grantee, 0, ""));
+
+		// Act
+		ObjectRightsPlan plan = _planner.Plan(before, Revoke(ObjectOperation.Read) with { DisableOperationPermissions = true });
+
+		// Assert
+		plan.Refusal.Should().Be(ObjectRightsRefusal.DisableNotNeeded, because: "the revoke itself empties no row");
+		plan.RowsStillGranting.Should().BeEmpty(because: "no row grants anything");
+	}
+
 	[TestCase(false, TestName = "Plan_ShouldRefuseRevoke_WhenObjectNotAdministered")]
 	[TestCase(true, TestName = "Plan_ShouldRefuseRevokeAndDisable_WhenObjectNotAdministeredAndTheRowStillHoldsTheOperation")]
 	[Description("A revoke on an object that is not administered is refused: every internal user reaches it whatever its rows say. With --disable-operation-permissions too, while the grantee's row still holds a named operation, because the call would change a row of an object that is off.")]

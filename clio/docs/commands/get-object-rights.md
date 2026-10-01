@@ -88,5 +88,5 @@ clio get-object-rights --entity-schema-name UsrOrder --grantee <role-id> --inclu
 - Exit code 1 when the named (root) object is not found or its rights cannot be read, or when the name is not
   a plain schema identifier (it is trimmed first). A connected object that cannot be read only warns.
 - On MCP the call is a read bounded by the read-response deadline (120 s by default,
-  `CLIO_MCP_READ_DEADLINE_SECONDS`); `--include-connected` on an object with many lookups can reach it — read
-  the lookups one by one then.
+  `CLIO_MCP_READ_DEADLINE_SECONDS`). So that the answer arrives before it, each read gets one attempt of at most
+  30 s and the listing stops once 90 s are spent, naming the objects not read yet — read them one by one then.

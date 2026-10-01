@@ -43,7 +43,7 @@ public class SetObjectRightsOptions : RemoteCommandOptions {
 	/// <summary>With a revoke: turn the object's operation permissions off.</summary>
 	[Option("disable-operation-permissions", Required = false, HelpText =
 		"With --revoke: turn the object's operation permissions OFF, which makes it available to ALL internal users. "
-		+ "Needed when the revoke would leave no row that grants any operation.")]
+		+ "Accepted only when the revoke would leave no row that grants any operation; otherwise the call is refused.")]
 	public bool DisableOperationPermissions { get; set; }
 
 	/// <summary>Apply the change without a prompt.</summary>
@@ -124,7 +124,10 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 				return 1;
 		}
 		ObjectRightsSaveResult save = _writer.Save(before.Snapshot, plan.After, requestOptions);
-		ObjectRightsInfo actual = _reader.GetObjectRights(schemaName, requestOptions);
+		// After a failed save the read-back is one attempt as well: the object is checked once, and on MCP the answer
+		// still arrives within the call's budget.
+		ObjectRightsInfo actual = _reader.GetObjectRights(schemaName,
+			save.Succeeded ? requestOptions : requestOptions with { MaxAttempts = 1 });
 		return save.Succeeded
 			? ReportSaved(change, facts, actual)
 			: ReportFailedSave(change, facts, save, actual);
@@ -233,10 +236,10 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 					: "")
 				+ ". Re-run with --enable-operation-permissions if that is intended.",
 			ObjectRightsRefusal.RevokeOnNotAdministered when change.Request.DisableOperationPermissions =>
-				$"operation permissions on '{schema}' are already OFF — the switch this call would turn off is off; on a "
-				+ "retry, the earlier call turned it off. While it is off company employees reach the object whatever its "
-				+ "rows say (only technical users follow the rows), so the tool does not change a row of it: the revoke "
-				+ "itself is refused. Read the object with get-object-rights.",
+				$"operation permissions on '{schema}' are already OFF (if this call is a retry, an earlier call may have "
+				+ "turned them off). While they are off company employees reach the object whatever its rows say (only "
+				+ "technical users follow the rows), so the tool does not change a row of it: the revoke itself is refused. "
+				+ "Read the object with get-object-rights.",
 			ObjectRightsRefusal.RevokeOnNotAdministered =>
 				$"'{schema}' is not administered by operation permissions — company employees reach it whatever its rows "
 				+ "say (only technical users follow the rows while it is off), so the tool does not revoke on it. To limit "
@@ -247,6 +250,13 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 				$"after this revoke no row on '{schema}' would grant any operation, so nobody could reach it except "
 				+ "holders of the '…any data' system operations. To make it available to ALL internal users instead, "
 				+ "re-run with --disable-operation-permissions.",
+			ObjectRightsRefusal.DisableNotNeeded =>
+				$"--disable-operation-permissions is not needed on '{schema}': "
+				+ (plan.RowsStillGranting is { Count: > 0 } granting
+					? $"after this revoke rows still grant operations ({ObjectRightsSupport.FormatRows(granting)})"
+					: "this revoke does not empty the object's last granting row")
+				+ ", so operation permissions stay ON. Turning them off would make the object available to ALL internal "
+				+ "users. Re-run without --disable-operation-permissions.",
 			ObjectRightsRefusal.DuplicateGranteeRows =>
 				$"grantee {change.GranteeLabel} has {plan.DuplicatePositions.Count} rows on '{schema}' (positions "
 				+ $"{string.Join(", ", plan.DuplicatePositions)}). Which of them decides depends on the other rows, so "
@@ -422,22 +432,18 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 		error = null;
 		List<ObjectOperation> parsed = new();
 		foreach (string token in raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)) {
-			switch (token.ToLowerInvariant()) {
-				case "read": parsed.Add(ObjectOperation.Read); break;
-				case "create": parsed.Add(ObjectOperation.Create); break;
-				case "edit": parsed.Add(ObjectOperation.Edit); break;
-				case "delete": parsed.Add(ObjectOperation.Delete); break;
-				default:
-					operations = Array.Empty<ObjectOperation>();
-					error = $"Error: --operations: unknown operation '{ObjectRightsSupport.Display(token)}'. Use "
-						+ "read,create,edit,delete.";
-					return false;
+			if (!ObjectOperationNames.TryParse(token, out ObjectOperation operation)) {
+				operations = Array.Empty<ObjectOperation>();
+				error = $"Error: --operations: unknown operation '{ObjectRightsSupport.Display(token)}'. Use "
+					+ $"{ObjectOperationNames.Accepted}.";
+				return false;
 			}
+			parsed.Add(operation);
 		}
 		if (parsed.Count == 0) {
 			// Given but empty ("", " ", ","): the value the approval shows names no operation.
 			operations = Array.Empty<ObjectOperation>();
-			error = "Error: --operations: no operation given. Use read,create,edit,delete.";
+			error = $"Error: --operations: no operation given. Use {ObjectOperationNames.Accepted}.";
 			return false;
 		}
 		operations = parsed.Distinct().OrderBy(op => op).ToArray();

@@ -13,8 +13,33 @@ public enum ObjectOperation {
 	Delete
 }
 
-/// <summary>The one spelling of each operation in the output, so a row and a request never read differently.</summary>
+/// <summary>
+/// The one spelling of each operation, for the output and for <c>--operations</c>, so a row, a request and the parser
+/// never read differently.
+/// </summary>
 public static class ObjectOperationNames {
+
+	/// <summary>Every operation, in grid order: read, create, edit, delete.</summary>
+	public static IReadOnlyList<ObjectOperation> All { get; } =
+		new[] { ObjectOperation.Read, ObjectOperation.Create, ObjectOperation.Edit, ObjectOperation.Delete };
+
+	/// <summary>The accepted names, comma-separated in grid order: <c>read,create,edit,delete</c>.</summary>
+	public static string Accepted { get; } = string.Join(",", All.Select(Of));
+
+	/// <summary>Reads one operation name, in any case.</summary>
+	/// <param name="name">The name, e.g. <c>read</c>.</param>
+	/// <param name="operation">The operation, when the name is one of <see cref="All"/>.</param>
+	/// <returns><see langword="true"/> when the name is an operation's.</returns>
+	public static bool TryParse(string name, out ObjectOperation operation) {
+		foreach (ObjectOperation candidate in All) {
+			if (string.Equals(Of(candidate), name, StringComparison.OrdinalIgnoreCase)) {
+				operation = candidate;
+				return true;
+			}
+		}
+		operation = default;
+		return false;
+	}
 
 	/// <summary>The name of <paramref name="operation"/>: read, create, edit or delete.</summary>
 	/// <param name="operation">The operation.</param>

@@ -17,8 +17,7 @@ public sealed record ObjectRightsReadBackComparison(IReadOnlyList<string> Critic
 /// <para>
 /// The switch, the grantee's rows and every row the call writes are what the call claims: a difference there is
 /// critical. When the call turns operation permissions on, the All employees row it stores counts as written even when
-/// the read only synthesized it. After a disable that leaves no stored rows, the read shows the All employees row the
-/// service synthesizes for such an object; nobody saved it, so it is not a difference.
+/// the read only synthesized it.
 /// </para>
 /// </summary>
 public interface IObjectRightsReadBackVerifier {
@@ -47,7 +46,7 @@ public sealed class ObjectRightsReadBackVerifier : IObjectRightsReadBackVerifier
 				+ ObjectRightsSupport.FormatSwitch(planned));
 		}
 		ObjectRightsRowDifference diff = planned.DiffRows(actual);
-		List<RoleOperationRights> extra = diff.Extra.Where(row => !IsSynthesizedRow(planned, actual, row)).ToList();
+		List<RoleOperationRights> extra = diff.Extra.ToList();
 		foreach (RoleOperationRights missing in diff.Missing) {
 			RoleOperationRights read = extra.FirstOrDefault(row =>
 				row.GranteeId == missing.GranteeId && row.Position == missing.Position);
@@ -77,11 +76,4 @@ public sealed class ObjectRightsReadBackVerifier : IObjectRightsReadBackVerifier
 		}
 		return written;
 	}
-
-	// A disable that leaves no stored rows is read back with the All employees row the service synthesizes for an
-	// object with no stored rows; nobody saved it.
-	private static bool IsSynthesizedRow(ObjectRightsState planned, ObjectRightsState actual, RoleOperationRights row) =>
-		!planned.AdministratedByOperations && planned.Roles.Count == 0 && !actual.AdministratedByOperations
-		&& actual.Roles.Count == 1 && row.GranteeId == SysAdminUnitIds.AllEmployees && row.Position == 0
-		&& row.CanRead && row.CanCreate && row.CanEdit && row.CanDelete;
 }

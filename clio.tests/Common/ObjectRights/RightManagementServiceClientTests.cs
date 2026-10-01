@@ -388,6 +388,22 @@ public class RightManagementServiceClientTests {
 			Arg.Is<string>(body => body.Contains("SysSchema")), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
+	[Test]
+	[Description("The save is sent exactly once, whatever the caller's retry settings: Creatio.Client re-sends a request after any exception, a timeout included, and a new row carries no id, so a retry of a save the server already committed would add the row twice.")]
+	public void Save_ShouldSendTheSaveOnce_WhenTheCallerAllowsRetries() {
+		// Arrange
+		GetReturns(AdministeredObject("x"));
+		ObjectRightsInfo read = Read();
+
+		// Act
+		_client.Save(read.Snapshot, read.State, new CreatioRequestOptions { MaxAttempts = 3 });
+
+		// Assert
+		_applicationClient.Received(1).ExecutePostRequest(SaveUrl, Arg.Any<string>(), Arg.Any<int>(), 1, Arg.Any<int>());
+		_applicationClient.DidNotReceive().ExecutePostRequest(SaveUrl, Arg.Any<string>(), Arg.Any<int>(),
+			Arg.Is<int>(attempts => attempts != 1), Arg.Any<int>());
+	}
+
 	private static IEnumerable<TestCaseData> ServiceFailures() {
 		yield return new TestCaseData(new HttpRequestException("503"), false).SetName("ObjectRights_ShouldReportFailure_WhenTheServiceFailsWithHttpRequest");
 		yield return new TestCaseData(new IOException("reset"), false).SetName("ObjectRights_ShouldReportFailure_WhenTheServiceFailsWithIO");

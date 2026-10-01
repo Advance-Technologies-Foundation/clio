@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using Clio.Common;
 using Clio.Common.ObjectRights;
@@ -30,6 +31,13 @@ public class GetObjectRightsOptions : RemoteCommandOptions {
 	[Option("include-connected", Required = false, HelpText =
 		"Also read every object referenced by the root object's own lookup columns")]
 	public bool IncludeConnected { get; set; }
+
+	/// <summary>
+	/// The time the whole read may take, for a caller whose answer is bounded by a deadline (MCP); not a CLI option.
+	/// Once it is spent, no further connected object is read and the ones left are named. <see langword="null"/>: no
+	/// limit beyond each request's timeout.
+	/// </summary>
+	internal TimeSpan? ReadBudget { get; set; }
 }
 
 /// <summary>
@@ -63,6 +71,7 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 			return 1;
 		}
 		CreatioRequestOptions requestOptions = ObjectRightsCommandInput.RequestOptions(options);
+		Stopwatch elapsed = Stopwatch.StartNew();
 		ConnectedObjectsResolution resolution;
 		// The resolver reports a failed schema read in-band (EnumerationError); this guard is the backstop for a
 		// service failure that still escapes it. Only the call is guarded: a failure in the code that reports the
@@ -79,7 +88,14 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 		for (int index = 0; index < resolution.Objects.Count; index++) {
 			bool isRoot = index == 0;
 			string target = resolution.Objects[index];
-			ObjectRightsInfo info = ReadRights(target, requestOptions);
+			// The named object is always read; a connected one only while the budget lasts, so the answer — with what was
+			// read — arrives before the caller's deadline instead of being lost to it.
+			if (!isRoot && options.ReadBudget is { } budget && elapsed.Elapsed >= budget) {
+				_logger.WriteWarning($"  Stopped: the read budget of {budget.TotalSeconds:0} s is spent. Not read: "
+					+ $"{string.Join(", ", resolution.Objects.Skip(index))} — read them one by one.");
+				break;
+			}
+			ObjectRightsInfo info = ReadRights(target, WithinBudget(requestOptions, options.ReadBudget, elapsed));
 			bool read = ReportTarget(target, info, isRoot, granteeFilter);
 			rootFailed |= isRoot && !read;
 			if (info.TimedOut && index < resolution.Objects.Count - 1) {
@@ -122,6 +138,16 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 				$"  {excluded}: security/system object — not read as a connected object. Pass it as "
 				+ "--entity-schema-name to read it.");
 		}
+	}
+
+	// One read may not outlast what is left of the budget: its timeout is cut to the remainder (at least a second).
+	private static CreatioRequestOptions WithinBudget(CreatioRequestOptions requestOptions, TimeSpan? budget,
+		Stopwatch elapsed) {
+		if (budget is null) {
+			return requestOptions;
+		}
+		double remaining = Math.Max(1_000, (budget.Value - elapsed.Elapsed).TotalMilliseconds);
+		return requestOptions with { TimeOut = (int)Math.Min(requestOptions.TimeOut, remaining) };
 	}
 
 	// The reader reports a service failure as the object's read error; this guard is the backstop for one that still

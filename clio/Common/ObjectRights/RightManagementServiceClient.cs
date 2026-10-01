@@ -116,11 +116,14 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 		// Read-modify-write is last-writer-wins: SaveAdministratedObject carries no version, so a change another
 		// client saves between our read and our save is overwritten. The caller reads the object back and reports
 		// any difference from the plan.
+		// The save is sent exactly once, like the other clio writes (manage-access, the schema designer's save and
+		// build): Creatio.Client re-sends a request after ANY exception, a timeout included, and a new row is sent
+		// without an id, so a retry of a save the server already committed could add the row a second time.
 		try {
 			GetAdministratedObjectNodeResponse response = PostAndDeserialize<GetAdministratedObjectNodeResponse>(
 				ServiceUrlBuilder.KnownRoute.SaveAdministratedObject,
 				new JsonObject { ["administratedObject"] = payload },
-				requestOptions);
+				requestOptions with { MaxAttempts = 1 });
 			return response is { Success: true }
 				? ObjectRightsSaveResult.Saved
 				: new ObjectRightsSaveResult(ServiceMessage(response?.ErrorInfo?.Message,

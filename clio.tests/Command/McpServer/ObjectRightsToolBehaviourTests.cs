@@ -192,6 +192,21 @@ public sealed class ObjectRightsToolBehaviourTests {
 		_capturedSet.DisableOperationPermissions.Should().BeTrue(because: "disable-operation-permissions maps through");
 	}
 
+	[Test]
+	[Description("On MCP each get-object-rights read gets one attempt of at most 30 s and the listing a 90 s budget, so the answer arrives before the MCP read deadline instead of being lost to it.")]
+	public void GetObjectRights_ShouldBoundTheRead_WhenCalledOverMcp() {
+		// Arrange
+		GetObjectRightsArgs args = new("dev", "UsrFoo", IncludeConnected: true);
+
+		// Act
+		GetTool().GetObjectRights(args);
+
+		// Assert
+		_capturedGet.TimeOut.Should().Be(30_000, because: "one read may take at most 30 s");
+		_capturedGet.MaxAttempts.Should().Be(1, because: "a hang is not retried under the read deadline");
+		_capturedGet.ReadBudget.Should().Be(TimeSpan.FromSeconds(90), because: "the listing stops before the 120 s deadline");
+	}
+
 	[TestCase(null, false, "--operations is required", TestName = "SetObjectRights_ShouldRefuseAGrant_WhenOperationsAreOmitted")]
 	[TestCase(null, true, "--operations is required", TestName = "SetObjectRights_ShouldRefuseARevoke_WhenOperationsAreOmitted")]
 	[TestCase("", true, "no operation given", TestName = "SetObjectRights_ShouldRefuseARevoke_WhenOperationsAreEmpty")]

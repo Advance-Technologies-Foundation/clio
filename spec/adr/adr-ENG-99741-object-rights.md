@@ -5,6 +5,9 @@
   - Decided after the self-review (2026-09-30): D5 (no separate opt-in for security/system objects), `operations`
     required on every call (D4, invariant 8), R3 (the approval is of `clio-run`), a revoke on an object that is not
     administered stays refused (a revoke-and-disable that finds its state already in place changes nothing).
+  - Decided after the author's independent review (2026-10-01): `disable-operation-permissions` is accepted only when
+    the revoke empties the object's last granting row (otherwise refused as not needed); the save is sent once, with
+    no transport retry; on MCP each `get` read is one attempt of at most 30 s and the listing has a 90 s budget.
   - The facts under "Platform model" were checked on a stand on 2026-09-28/29.
 - **Date:** 2026-09-28 (updated 2026-09-30)
 - **Jira:** [ENG-99741](https://creatio.atlassian.net/browse/ENG-99741) (related ENG-99969, ENG-100406, ENG-100407)
@@ -214,15 +217,15 @@ report facts. The guidance explains what the facts mean and decides what to do.
 - makes exactly the one change that the arguments name, on one object;
 - refuses a risky transition that the arguments do not name:
   - enabling or disabling operation permissions without its flag;
+  - a disable the revoke does not need — other rows still grant, or the revoke changes no row — which would open the
+    object to every internal user while the call reads as a revoke;
   - duplicate rows for the grantee;
   - a change that would leave an administered object with no granting row;
   - a revoke on an object that is not administered, which company employees reach whatever its rows say. A revoke
     with `disable-operation-permissions` that finds the switch already off and the grantee's row without the named
     operations (typically a retry) is the exception: the state it asks for is in place, so it changes nothing, and
     the result says the object is available to all internal users. The rule is on state, so a first such call on an
-    object that was never administered is no change too. The tool does not tell a lone stored `All employees` row
-    with every operation on an object that is off from the synthesized one, so a retry of a revoke-and-disable from
-    All employees that left no stored rows is refused — the refusal says the switch is already off;
+    object that was never administered is no change too;
 - never removes a row and never reorders rows;
 - reports facts:
   - rows in priority order, with their positions (`get`; with `--include-connected`, also for the object's own
@@ -322,7 +325,8 @@ Reviews of this feature are judged against this ADR:
 
 Invariants:
 1. A call writes only the object named in its arguments.
-2. `administratedByOperations` changes only with its explicit flag (enable or disable).
+2. `administratedByOperations` changes only with its explicit flag (enable or disable), and the disable is accepted
+   only when the revoke would otherwise leave no granting row.
 3. A row is created only as the arguments say, a row is never removed, and existing rows never change position.
 4. An administered object never ends up without a row that grants some operation, except through
    `disable-operation-permissions`.

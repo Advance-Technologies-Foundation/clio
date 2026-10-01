@@ -67,8 +67,6 @@ public class ObjectRightsReadBackVerifierTests {
 				State(true, Row(AllEmployees, 0, "RCED"), Row(Other, 1, "RC"), Row(Grantee, 2, "R")),
 				null, "[1] Other: read/create, the plan wrote read")
 			.SetName("Compare_ShouldReportAFact_WhenAnotherRoleRowDiffers");
-		yield return new TestCaseData(State(true), State(false), State(false, Row(AllEmployees, 0, "RCED")), null, null)
-			.SetName("Compare_ShouldIgnoreTheSynthesizedRow_WhenADisableLeavesNoStoredRows");
 		ObjectRightsState synthesized = State(false, Row(AllEmployees, 0, "RCED"));
 		ObjectRightsState enabled = State(true, Row(AllEmployees, 0, "RCED"), Row(Grantee, 1, "R"));
 		yield return new TestCaseData(synthesized, enabled, State(true, Row(Grantee, 1, "R")),
@@ -93,7 +91,7 @@ public class ObjectRightsReadBackVerifierTests {
 	}
 
 	[TestCaseSource(nameof(ReadBacks))]
-	[Description("Each difference between the read-back and the plan is sorted: a difference in what the call claims (the switch, the grantee's rows, a row it writes) fails the call, any other is reported as a fact, and the All employees row the service synthesizes for an object with no stored rows is not a difference.")]
+	[Description("Each difference between the read-back and the plan is sorted: a difference in what the call claims (the switch, the grantee's rows, a row it writes) fails the call, and any other is reported as a fact.")]
 	public void Compare_ShouldSortEachDifference_WhenTheReadBackIsCompared(ObjectRightsState before,
 		ObjectRightsState planned, ObjectRightsState actual, string expectedCritical, string expectedDifference) {
 		// Arrange

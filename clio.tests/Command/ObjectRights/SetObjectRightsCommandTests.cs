@@ -274,8 +274,25 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 	}
 
 	[Test]
-	[Description("A revoke with --disable-operation-permissions for a grantee with no row changes only the switch, and the result says so instead of 'revoked'.")]
-	public void Execute_ShouldReportOnlyTheSwitch_WhenTheRevokeChangesNoRow() {
+	[Description("A revoke with --disable-operation-permissions that does not empty the object's last granting row is refused and writes nothing: turning operation permissions off would open the object to all internal users while the call reads as a revoke.")]
+	public void Execute_ShouldRefuseTheDisable_WhenTheRevokeDoesNotNeedIt() {
+		// Arrange
+		ObjectIs(Info(true, Row(Grantee, 0, "R"), Row(AllEmployees, 1, "RCED")));
+
+		// Act
+		int exitCode = _command.Execute(Options("read", o => { o.Revoke = true; o.DisableOperationPermissions = true; }));
+
+		// Assert
+		exitCode.Should().Be(1, because: "a disable the revoke does not need is refused");
+		ErrorContains("--disable-operation-permissions is not needed", because: "the refusal names the flag");
+		ErrorContains("[1] All employees: read/create/edit/delete", because: "the refusal names the rows that still grant");
+		ErrorContains("Re-run without --disable-operation-permissions", because: "the refusal says how to go on");
+		NothingSaved();
+	}
+
+	[Test]
+	[Description("A revoke with --disable-operation-permissions for a grantee with no row changes no row, so the disable is not needed and the call is refused instead of turning the switch off.")]
+	public void Execute_ShouldRefuseTheDisable_WhenTheRevokeChangesNoRow() {
 		// Arrange
 		ObjectIs(Info(true, Row(AllEmployees, 0, "RCED")));
 
@@ -283,11 +300,26 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		int exitCode = _command.Execute(Options("read", o => { o.Revoke = true; o.DisableOperationPermissions = true; }));
 
 		// Assert
-		exitCode.Should().Be(0, because: "turning operation permissions off was asked for");
+		exitCode.Should().Be(1, because: "a disable the revoke does not need is refused");
+		ErrorContains("--disable-operation-permissions is not needed", because: "the refusal names the flag");
+		NothingSaved();
+	}
+
+	[Test]
+	[Description("A revoke with --disable-operation-permissions that empties the object's last granting row turns the switch off instead of being refused, and the result says so.")]
+	public void Execute_ShouldTurnTheSwitchOff_WhenTheRevokeEmptiesTheLastGrantingRow() {
+		// Arrange
+		ObjectIs(Info(true, Row(Grantee, 0, "R")));
+
+		// Act
+		int exitCode = _command.Execute(Options("read", o => { o.Revoke = true; o.DisableOperationPermissions = true; }));
+
+		// Assert
+		exitCode.Should().Be(0, because: "the disable is the named way out of leaving no granting row");
 		_saved.AdministratedByOperations.Should().BeFalse(because: "the switch goes off");
-		_infos.Should().Contain(m => m.Contains("operation permissions turned OFF; grantee") && m.Contains("has no row"),
-			because: "the result line comes from the plan: only the switch changed");
-		_infos.Should().NotContain(m => m.Contains("revoked [read]"), because: "no row lost an operation");
+		_saved.Roles.Should().Equal(new[] { Row(Grantee, 0, "") }, because: "the cleared row is kept for a later re-enable");
+		_infos.Should().Contain(m => m.Contains("revoked [read]"), because: "the grantee's row lost the operation");
+		_infos.Should().Contain(m => m.Contains("turned OFF"), because: "the result names the switch it turned off");
 	}
 
 	[Test]
@@ -609,17 +641,33 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 	}
 
 	[Test]
-	[Description("A disable that leaves no stored rows reads back with the All employees row the service synthesizes; it is not reported as a row the plan did not write.")]
-	public void Execute_ShouldNotReportTheSynthesizedRow_WhenADisableLeavesNoStoredRows() {
+	[Description("On an administered object with no rows a revoke-and-disable changes no row, so the disable is not needed and nothing is written.")]
+	public void Execute_ShouldRefuseTheDisable_WhenTheAdministeredObjectHasNoRows() {
 		// Arrange
-		ObjectIs(Info(true), readBack: Info(false, Row(AllEmployees, 0, "RCED")));
+		ObjectIs(Info(true));
 
 		// Act
 		int exitCode = _command.Execute(Options("read", o => { o.Revoke = true; o.DisableOperationPermissions = true; }));
 
 		// Assert
-		exitCode.Should().Be(0, because: "turning operation permissions off landed");
-		_warnings.Should().BeEmpty(because: "the synthesized row is not a stored row");
+		exitCode.Should().Be(1, because: "the revoke does not empty a granting row");
+		ErrorContains("this revoke does not empty the object's last granting row", because: "the refusal says why");
+		NothingSaved();
+	}
+
+	[Test]
+	[Description("After a failed save the object is read back with one attempt: it is checked once, and on MCP the answer still arrives within the call's budget.")]
+	public void Execute_ShouldReadBackWithOneAttempt_WhenTheSaveFailed() {
+		// Arrange
+		ObjectIs(Info(true, Row(AllEmployees, 0, "RCED")));
+		_writer.Save(Arg.Any<ObjectRightsSnapshot>(), Arg.Any<ObjectRightsState>(), Arg.Any<CreatioRequestOptions>())
+			.Returns(new ObjectRightsSaveResult("A task was canceled.", TimedOut: true));
+
+		// Act
+		_command.Execute(Options("read"));
+
+		// Assert
+		_reader.Received(1).GetObjectRights("UsrFoo", Arg.Is<CreatioRequestOptions>(options => options.MaxAttempts == 1));
 	}
 
 	[Test]

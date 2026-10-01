@@ -35,7 +35,10 @@ nothing is written:
   the service shows for an object with no stored rows; when the object has stored rows but none for `All employees`,
   it adds one with read/create/edit/delete below them. Rows above it still decide first for their members.
 - A revoke that would leave the object with no row granting any operation needs `--disable-operation-permissions`,
-  which turns operation permissions **OFF** instead: the object becomes available to all internal users.
+  which turns operation permissions **OFF** instead: the object becomes available to all internal users. That is the
+  only case the flag is accepted in: a disable the revoke does not need — other rows still grant, or the revoke
+  changes no row — is refused, because it would open the object to every internal user while the call reads as a
+  revoke.
 
 To cover an object's lookups, read them first with `get-object-rights --include-connected`, decide per object,
 and run one `set-object-rights` per object. The listing leaves out security and system objects (`SysAdmin*`,
@@ -83,8 +86,8 @@ with --revoke.
 
 --disable-operation-permissions
 With --revoke: turn the object's operation permissions OFF, which makes it available to ALL internal users. The
-rows are kept and apply again if operation permissions are turned back on. Needed when the revoke would leave no
-row that grants any operation; not valid without --revoke.
+rows are kept and apply again if operation permissions are turned back on. Accepted only when the revoke would leave
+no row that grants any operation; in any other case the call is refused. Not valid without --revoke.
 
 --confirm
 Confirm the destructive change without a prompt. Required in non-interactive runs. Not valid with --preview.
@@ -150,19 +153,20 @@ clio set-object-rights --entity-schema-name UsrOrder --grantee <role-id> --opera
   when it shows the planned change, the call succeeds with a warning; otherwise it fails and shows the object as read.
   A save that did not answer in time may even land after that read-back, so its failure says the change may still be
   applied: re-read the object with `get-object-rights` before retrying or reporting a failure.
+- The save is sent exactly once, whatever the retry settings, like the other clio writes: a transport retry of a
+  save the server already committed could add a new row a second time (it is sent without an id). The read-back
+  after a failed save is one attempt too.
 - Exit code 1: invalid input (an object name that is not a schema identifier, a grantee that is not a GUID, a missing
   `--operations`, an unknown operation, an `--operations` value that names no operation, `--preview` with `--confirm`,
   `--enable-operation-permissions` with `--revoke`, `--disable-operation-permissions` without `--revoke`); a missing
   `--confirm` in a non-interactive run; an object that is not found or cannot be read; a grantee that does not exist
-  in `SysAdminUnit`; a refused plan; a failed save whose read-back does not show the plan; a successful save whose
-  read-back fails; a read-back that does not show a row this call writes, or the planned switch.
+  in `SysAdminUnit`; a refused plan (including a `--disable-operation-permissions` the revoke does not need); a
+  failed save whose read-back does not show the plan; a successful save whose read-back fails; a read-back that does
+  not show a row this call writes, or the planned switch.
 - A re-run that changes nothing says which row already is in the requested state, or that the grantee has no row to
   revoke from (exit 0). That includes a revoke with `--disable-operation-permissions` run again on an object that is
   already off, whose grantee row already has none of the operations: a retry after a timeout is safe, and the result
-  says that the object is available to all internal users. One retry is still refused: when a revoke-and-disable
-  from `All employees` left the object with no stored rows, the read then shows the `All employees` row the service
-  synthesizes, with every operation, so the retry is refused as a revoke on an object that is not administered. The
-  refusal says the switch is already OFF: that is the state the first call left, not a failure.
+  says that the object is available to all internal users.
 - When the grantee is `All employees` and the object has no row for it, the new row gets exactly the operations the
   call names: an enable then adds no second `All employees` row with every operation.
 - A grantee with more than one row on the object is refused: which of them decides depends on the other rows, so

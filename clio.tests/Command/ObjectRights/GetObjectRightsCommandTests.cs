@@ -501,6 +501,75 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 		_logger.DidNotReceive().WriteWarning(Arg.Is<string>(m => m.Contains("Stopped after")));
 	}
 
+	[Test]
+	[Description("get passes its own request timeout to the enumeration of the connected objects, so the schema read honours it like every other read.")]
+	public void Execute_ShouldPassTheRequestTimeout_WhenEnumeratingConnectedObjects() {
+		// Arrange
+		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>())
+			.Returns(Administered("UsrOrder", EmployeesRow(0)));
+		GetObjectRightsOptions options = new() { EntitySchemaName = "UsrOrder", IncludeConnected = true, TimeOut = 12_345 };
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		_connectedObjects.Received(1).Resolve("UsrOrder", true, 12_345);
+	}
+
+	[Test]
+	[Description("With a read budget that is spent, the named object is still read and the connected objects left are named instead of read, so an answer bounded by a deadline arrives with what was read.")]
+	public void Execute_ShouldStopAtTheReadBudget_WhenItIsSpent() {
+		// Arrange
+		_connectedObjects.Resolve("UsrOrder", true, Arg.Any<int?>()).Returns(Resolution("UsrOrder", "UsrStatus", "UsrType"));
+		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>())
+			.Returns(Administered("UsrOrder", EmployeesRow(0)));
+		GetObjectRightsOptions options = new() {
+			EntitySchemaName = "UsrOrder", IncludeConnected = true, ReadBudget = TimeSpan.Zero
+		};
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "the named object was read");
+		_rightsReader.DidNotReceive().GetObjectRights("UsrStatus", Arg.Any<CreatioRequestOptions>());
+		_logger.Received().WriteWarning(Arg.Is<string>(message => message.Contains("the read budget of 0 s is spent")
+			&& message.Contains("Not read: UsrStatus, UsrType")));
+	}
+
+	[Test]
+	[Description("One read may not outlast what is left of the budget: its timeout is cut to the remainder, so a single hang cannot take the answer past the caller's deadline.")]
+	public void Execute_ShouldCutTheReadTimeoutToTheBudget_WhenABudgetIsSet() {
+		// Arrange
+		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>())
+			.Returns(Administered("UsrOrder", EmployeesRow(0)));
+		GetObjectRightsOptions options = new() {
+			EntitySchemaName = "UsrOrder", TimeOut = 30_000, ReadBudget = TimeSpan.FromSeconds(5)
+		};
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		_rightsReader.Received(1).GetObjectRights("UsrOrder",
+			Arg.Is<CreatioRequestOptions>(request => request.TimeOut <= 5_000 && request.TimeOut >= 1_000));
+	}
+
+	[Test]
+	[Description("Without a read budget (the CLI) each read keeps the command's own timeout.")]
+	public void Execute_ShouldKeepTheRequestTimeout_WhenNoBudgetIsSet() {
+		// Arrange
+		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>())
+			.Returns(Administered("UsrOrder", EmployeesRow(0)));
+		GetObjectRightsOptions options = new() { EntitySchemaName = "UsrOrder", TimeOut = 30_000 };
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		_rightsReader.Received(1).GetObjectRights("UsrOrder", Arg.Is<CreatioRequestOptions>(request => request.TimeOut == 30_000));
+	}
+
 	[TestCase("Usr Order")]
 	[TestCase("UsrOrder;")]
 	[Description("A name that is not a schema identifier is refused before anything is read.")]
