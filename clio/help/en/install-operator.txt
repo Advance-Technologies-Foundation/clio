@@ -12,3 +12,4 @@ Dashboard: http://creatio-operator.localhost
 Credentials: Secret creatio-system/creatio-operator-dashboard-admin, keys username/password.
 No Creatio environment or ClioGate is required. Local ZIP builds and runtime attachment are separate operations.
 New local dashboard installations default to Supervisor / Supervisor; retries preserve existing credentials.
+Default operator image is digest-pinned; bundled platform is linux/amd64. Apple Silicon local bootstrap is not supported by this pin.

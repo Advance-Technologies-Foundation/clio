@@ -14,7 +14,7 @@
 - Confirmed missing Mutagen fails before runtime preparation. Installed Mutagen 0.18.1 was used for live validation.
 - Runtime FSM configuration and effective status were checked separately; configuration alone does not prove that a restart has taken effect. Package export completed through the existing Clio HTTP service.
 - Agentic review completed; endpoint errors, concurrent link creation and failed-attachment cleanup findings were resolved.
-- MCP reviewed, no update required: attach/detach are host-side bootstrap operations, deliberately absent from the remote server tool surface. The unreachable-product-file inventory explicitly records that boundary.
+- MCP updated: host-only runtime adapters now expose attach/detach and lifecycle operations behind both the runtime feature and mcp-server --runtime-host. Container and credential-passthrough execution are refused. Real-process contract tests cover those gates.
 - ClioRing compatibility reviewed, no Ring-consumed contract changed. Inspected `clio-ring/ClioRing/Services/ClioAdapter.cs` and `IClioAdapter.cs`; environment-listing and existing command outputs are unchanged.
 - KISS check: provider discovery/preparation, one local receipt and an existing sync engine; no additional transport, server or deployment controller.
 

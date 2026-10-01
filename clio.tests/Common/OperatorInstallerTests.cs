@@ -71,6 +71,20 @@ public class OperatorInstallerTests {
 
 	private static InstallOperatorOptions Options() => new() { Target = "rancher-desktop", Context = "local-alias" };
 
+	[Test, Description("The installer uses the bundled image when no override is supplied.")]
+	public void Install_ShouldUseProvenanceImage_ByDefault() {
+		// Arrange
+		InstallOperatorOptions options = Options();
+		// Act
+		_installer.Install(options);
+		// Assert
+		JObject applied = _calls.Where(c => c.Input != null).Select(c => JObject.Parse(c.Input))
+			.Single(o => o["items"]?.Any(i => i.Value<string>("kind") == "Deployment") == true);
+		applied["items"].Single(i => i.Value<string>("kind") == "Deployment")
+			["spec"]["template"]["spec"]["containers"][0].Value<string>("image")
+			.Should().Be("test:1", "bootstrap must use provenance rather than a mutable default tag");
+	}
+
 	[Test, Description("Invalid profiles fail before any cluster calls.")]
 	public void Install_ShouldRejectUnsupportedTarget_BeforeMutation() {
 		// Arrange

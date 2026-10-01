@@ -71,7 +71,8 @@ public class RuntimeToolsContractE2ETests(bool runtimeHost) : McpContractFixture
 			catalogue.RootElement.GetArrayLength().Should().BeGreaterThan(0, because: "these test clusters have built distributions");
 			catalogue.RootElement[0].GetProperty("images").GetArrayLength().Should().BeGreaterThan(0, because: "agents need exact deployment references");
 		});
-	}}
+	}
+}
 
 /// <summary>Disabled runtime features must not appear in the lazy MCP catalogue.</summary>
 [TestFixture, Category("McpE2E.NoEnvironment"), AllureNUnit, NonParallelizable]

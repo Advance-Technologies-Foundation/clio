@@ -1,6 +1,6 @@
 # Local workspace attachment to an operator runtime
 
-Status: in-progress
+Status: review
 
 Implement attach/detach CLI commands, operator provider, local dependency preflight, safe Mutagen lifecycle and durable ownership receipt. Document prerequisites and scope. Validate two-way synchronization against a disposable runtime and preservation after detach.
 

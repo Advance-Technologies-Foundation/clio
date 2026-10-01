@@ -522,6 +522,38 @@
                   "spec": {
                     "type": "object",
                     "properties": {
+                      "emailListener": {
+                        "type": "object",
+                        "properties": {
+                          "enabled": {
+                            "type": "boolean",
+                            "default": false
+                          },
+                          "version": {
+                            "type": "string",
+                            "default": "2.0.31"
+                          },
+                          "imagePullSecret": {
+                            "type": "string",
+                            "default": "email-listener-registry"
+                          }
+                        }
+                      },
+                      "identity": {
+                        "type": "object",
+                        "properties": {
+                          "enabled": {
+                            "type": "boolean",
+                            "default": true
+                          },
+                          "image": {
+                            "type": "string"
+                          },
+                          "publicHost": {
+                            "type": "string"
+                          }
+                        }
+                      },
                       "postgres": {
                         "type": "object",
                         "properties": {
@@ -823,6 +855,27 @@
                           "Error",
                           "Suspended"
                         ]
+                      },
+                      "emailListener": {
+                        "type": "object",
+                        "x-kubernetes-preserve-unknown-fields": true
+                      },
+                      "identity": {
+                        "type": "object",
+                        "properties": {
+                          "image": {
+                            "type": "string"
+                          },
+                          "ready": {
+                            "type": "boolean"
+                          },
+                          "url": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
                       },
                       "postgres": {
                         "type": "object",

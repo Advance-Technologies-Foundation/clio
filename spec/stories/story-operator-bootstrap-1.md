@@ -1,6 +1,6 @@
 # Registry-free Rancher bootstrap
 
-Status: in-progress
+Status: review
 
 Given a running Rancher Moby Kubernetes cluster, `clio install-operator --target rancher-desktop` installs the operator with no Nexus resources and prints the dashboard URL. A context override targets only that context. Invalid targets fail before mutation. Existing dashboard credentials and shared infrastructure survive retries. A conflicting Nexus-managed policy fails before changes. Rollout failure returns nonzero.
 

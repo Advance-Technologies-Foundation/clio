@@ -23,6 +23,8 @@ Open `http://creatio-operator.localhost`. New local installations use username `
 
 The command does not reset Rancher, wipe namespaces, switch current-context, or take over a different operator installation. A conflicting Nexus-managed policy requires an explicit migration. Failures leave resources available for inspection and retry. Operator readiness does not imply that every infrastructure component is ready; inspect the dashboard before creating a runtime.
 
-This is a host-side bootstrap command, not a remote MCP tool. Runtime attachment remains a separate `attach` operation with its own context, namespace and SSH identity.
+This is a host-side bootstrap command. Runtime attachment remains a separate `runtime attach` operation with its own context, namespace and SSH identity.
+
+The bundled operator is pinned by OCI digest in `tpl/operator/rancher-desktop/provenance.json`, together with its source revision and supported image platforms. The CRD schemas are from the same operator revision; the registry-free deployment configuration is a Clio-specific profile. This pin supports `linux/amd64` only. Apple Silicon Kubernetes nodes are not currently supported by this bundled image. See the [Mac validation checklist](../../../docs/runtime-mac-validation.md) before testing this experimental branch.
 
 MCP: available as `install-operator` on an explicitly enabled developer-host server. See [runtime MCP setup](runtime.md#mcp-on-the-developer-host).
