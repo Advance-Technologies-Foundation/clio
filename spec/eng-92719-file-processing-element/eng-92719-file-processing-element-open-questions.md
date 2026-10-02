@@ -877,8 +877,10 @@ filter editor and gates only PK-SF) and **M12** (v2, gates nothing).
 
 ### C.7 Day-0 write probes of 2026-10-02 (CrtProcessBuilder 1.6.6.54)
 
-Built by the main session in package `Custom`, one call at a time, with the user's go-ahead. Probe processes left on
-the stand until cleanup (core-rules: they are deleted, with the user's confirmation, when the run is done):
+Built by the main session in package `Custom`, one call at a time, with the user's go-ahead. **All of it was deleted on
+2026-10-02 with the user's confirmation** (the eight processes through `clio delete-schema --remote`, 7-50 s each;
+the contact and its two files through one SQL DELETE by Id, whose cascades removed its `ContactSubscription` and
+`SysContactRight` rows; a recount found 0 rows left). The probe processes were:
 `UsrFpM14Generic` (`37788ae3…`), `UsrFpM14CreateOuter` (`70da289a…`), `UsrFpM3Callee` (`c50c6050…`), `UsrFpM3Control`
 (`d63a1617…`), `UsrFpM3ItemOnly` (`cee1f532…`), `UsrFpM3MirrorProbe` (`9cb856b5…`), `UsrFpM19CollectionFilter`
 (`ccb453a0…`), `UsrFpM6FlatFile` (`661ae7d4…`). For M6 one fixture was written: the contact `G1 Probe Source`

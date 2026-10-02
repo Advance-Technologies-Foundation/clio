@@ -3,7 +3,7 @@
 **Summary.** This is the catalogue of hazards that the implementation of ENG-95984 File process parameter type and
 ENG-92719 File processing element (sub-tasks ENG-96505 Element readiness and object attachments mode and ENG-96506
 Generated report + process parameter modes) has to neutralise, and that the new `process-files` guide has to teach.
-There are 67 entries. 57 of them are **silent**: nothing throws, nothing is logged and the save answers success at the
+There are 68 entries. 58 of them are **silent** (T-8 among them, which M3 refuted on 2026-10-02): nothing throws, nothing is logged and the save answers success at the
 moment the mistake is made, and the damage shows up later (at run time, in the designer, or on the next round trip),
 or never. Most of the dangerous ones sit in four places: the platform type NAME `File` (it is the BLOB type), the
 two-level binding of file collections, the attachment storage that the designer picks per entity, and empty or

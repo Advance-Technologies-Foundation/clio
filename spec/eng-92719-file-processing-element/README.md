@@ -25,11 +25,14 @@ readiness and object attachments mode, then ENG-96506 Generated report + process
 Sub-task. A human merges every PR. With an AI agent writing the code, ENG-95984 File process parameter type takes
 about 7-15 h of agent time and 4.5-10 h of the owner's time (3-5 working days), and ENG-92719 File processing element
 about 26-52 h of agent time and 15-33.5 h of the owner's time (about 7-10 working days after that); about 2-3 weeks
-from day 0 for both. Nineteen owner questions and 27 stand measurements are open. The day-0
-decisions and measurements come before any code.
+from day 0 for both. Eighteen owner questions are open (Q7 was answered by M3). Of the 27 stand measurements, 11 are
+done, 2 partly, 1 skipped and 13 open. Every measurement that gates PK-PT or PK-OA code is done; the seven that
+still gate code gate PK-RP (M1, M2) or PK-SF (M7, M8, M21, M23, M25). The day-0 decisions come before any code.
 
-Written 2026-10-01, read-only. Nothing was built, committed, or written to Jira or to the stand. **Status: open.
-Nothing has been decided yet.** The code was read at these points:
+Written 2026-10-01; measured on the stand 2026-10-02. No product code was written. The probes were built in package
+`Custom` and deleted with their fixtures the same day (open-questions C.7). The documents are on the local clio
+branch `feature/ENG-92719-process-file-spec` and attached to the four Jira issues. **Status: open. No owner
+decision has been taken yet.** The code was read at these points:
 
 | Source | Version read |
 |---|---|
@@ -68,7 +71,7 @@ Q1-Q19 are defined in [decisions](eng-92719-file-processing-element-decisions.md
 | 1 | [platform-reference](eng-92719-file-processing-element-platform-reference.md) | **What the platform does, end to end.** The three schemas and their 13 / 8 / 13 parameters. The runtime per variant. `ResultActionType`: Object and Report produce their output collections for both values, and the Process variant supports SaveToFiles only. The file data model. Storage chosen per entity. The classic designer field by field. The diagram, the feature flags, and what the server validates (almost nothing). §13 lists every load-bearing claim that is still only source-traced. |
 | 2 | [use-cases](eng-92719-file-processing-element-use-cases.md) | **Why customers use the element, and how the product uses it.** Academy and Community. All 16 shipped processes with the element (30 elements), of which 4 are product processes that follow one recipe. The five Jira patterns tested against the corpus. The recommended scope per pattern, and the "which variant for which intent" guidance. Proposed as the "attached use-case inventory" that the Story refers to; Jira has no such attachment today. |
 | 3 | [serialization-capture](eng-92719-file-processing-element-serialization-capture.md) | **The oracle for every "matches a designer-built capture" criterion.** Every metadata key decoded, and the provenance rules measured over 400 stored parameter entries. Which shipped capture each variant is compared with. What is missing: no saved SysFile-mode element exists anywhere. The named exceptions of the comparison rule, and the capture procedure SC-0..SC-4 on the stand. |
-| 4 | [traps](eng-92719-file-processing-element-traps.md) | **T-1..T-67, 57 of them silent; T-68 was added on 2026-10-02.** Each trap has its builder rule, refusal or test. The banner lists the traps that rest on a source trace only, and the run that settles each one. |
+| 4 | [traps](eng-92719-file-processing-element-traps.md) | **T-1..T-68, 58 of them silent (T-8 among them, refuted by M3; T-68 added on 2026-10-02).** Each trap has its builder rule, refusal or test. The banner lists the traps that rest on a source trace only, and the run that settles each one. |
 | 5 | [reuse](eng-92719-file-processing-element-reuse.md) | **What to reuse, mirror or write new.** What comes from core. About twenty constants and seven algorithms that must be mirrored from CrtProcessDesigner, because production code cannot reference `Terrasoft.Configuration`. The four CrtProcessBuilder pieces that must change before reuse. What is genuinely new. |
 | 6 | [decisions](eng-92719-file-processing-element-decisions.md) | **The contract.** D1-D29 with options and consequences; 14 of them wait for the owner (D9 was answered by M3). Part D holds the replacement acceptance criteria for FE, OA and RP (D-2..D-4); D-1 points to AC-1..AC-10 of the ENG-95984 File process parameter type plan §1.4; D-5 holds the proposed Sub-tasks. Appendix A is the refusal and notice catalogue; Appendix B is the review log. |
 | 7 | [ENG-95984 File process parameter type plan](../eng-95984-file-parameter-type/eng-95984-file-parameter-type-plan.md) | **The parameter type.** Replacement AC-1..AC-10, and the binder rules P1/P2/P2-MI/P3/R-M1/R-M2 in one table. Work packages PB/CL/KB with `path:line`. The stand rows W0, V0, SC-0 and V1-V6, the estimate, the Definition of Done, and owner items O-1..O-10. |
@@ -76,7 +79,7 @@ Q1-Q19 are defined in [decisions](eng-92719-file-processing-element-decisions.md
 | 9 | [plan](eng-92719-file-processing-element-plan.md) | **The element.** What the tickets say that is not true (N1-N16), and what exists versus what is missing. The delivery shape and the work packages OA / RP / SF, with files and hours. Stand gates and post-cut proofs, the knowledge records owed, the estimate, and the Definition of Done per issue. |
 | 10 | [test-plan](eng-92719-file-processing-element-test-plan.md) | **How the element is tested.** The harness per repository, and the C# mocking recipes adapted from `C:/Projects/UnitTests`. TC-01..TC-91 traced to the AC, stand scenarios ST-01..ST-08, and designer checks DT-01..DT-04. The methods for M1-M26 and the read-only evidence queries. |
 | 11 | [pr-split](eng-92719-file-processing-element-pr-split.md) | **How the work becomes PRs.** The verdict per repository and its measured basis, and the PRs with exact titles, branches and merge order. Hard edges E1-E10. What must land together and what must not. Version and floor rules, contingencies X1-X8, Jira link corrections, and the review / merge / stand protocol. |
-| 12 | [open-questions](eng-92719-file-processing-element-open-questions.md) | **What is still open.** Q1-Q19 for the owner, each with a recommendation, and 27 stand measurements with recipes and status. What was already measured on 2026-10-01. The 37 contradictions found during the research and how each was resolved; 7 are still open. |
+| 12 | [open-questions](eng-92719-file-processing-element-open-questions.md) | **What is still open.** Q1-Q19 for the owner, each with a recommendation, and 27 stand measurements with recipes and status. What was measured on 2026-10-01 and 2026-10-02. The 37 contradictions found during the research and how each was resolved; 7 are still open. |
 
 ### Where each part of the request is answered
 
@@ -121,7 +124,7 @@ committed in the docs-only clio PR (CL-DOC), as `spec/eng-92707-sub-process-elem
 | Cross-document review of the 13 documents | three reviewers: consistency, request and mandates, primary-source facts | 56 findings; every one applied in the documents it touched, in the reconciliation of 2026-10-01 (see [Resolved during review](#resolved-during-review)) |
 | Cross-check of the documents against each other | [open-questions](eng-92719-file-processing-element-open-questions.md) Part D | 37 contradictions resolved. 7 are still open: five wait for M1, M3b, M8 or M13, and two need no run because a refusal covers the case |
 | Read-only stand measurements, 2026-10-01 | versions; feature states; printables; the designer observations UO-1..UO-4; describe of the four shipped report processes | recorded in [open-questions](eng-92719-file-processing-element-open-questions.md) Part C. Three earlier readings were wrong and are corrected (Part D, rows 17-19). The UO-1 "only Use in process" list was a combobox text-filter artefact. The stand research's "Add files" claim was wrong. Its reading of describe output was wrong too: the missing `itemProperties` came from a stale MCP clio client |
-| Runtime measurements | 27 measurements, none run yet; M10, M15 and M25 are partly answered | see [Stand measurements pending](#stand-measurements-pending) |
+| Runtime measurements, 2026-10-02 | 11 of 27 done (M3, M3b, M6, M10, M11 in memory, M13, M14, M15, M19, M20, M24); M17 and M25 partly; M5 skipped; 13 open | see [Stand measurements pending](#stand-measurements-pending) |
 
 Corrections made while each document was written are listed in that document:
 - decisions §0 (X1-X7);
@@ -380,7 +383,8 @@ On 2026-10-02 five of the seven read-only measurements (M10, M11 a/b in memory, 
 [open-questions](eng-92719-file-processing-element-open-questions.md) C.6) and the day-0 builder probes M3b, M14,
 M19, M20 and M24 (C.7) were run. M3 was run the same day and refuted H-1, so MH is not created. The day-0 probes also
 found a new defect, a bare NullReferenceException for a nested-item mapping on the create path
-([traps](eng-92719-file-processing-element-traps.md) T-68). Fifteen measurements gate code.
+([traps](eng-92719-file-processing-element-traps.md) T-68). Fifteen measurements gate code; eight are done, and the seven left gate only PK-RP (M1, M2) and PK-SF (M7,
+M8, M21, M23, M25).
 Recipes and status are in [open-questions](eng-92719-file-processing-element-open-questions.md) Part B, and methods
 in [test-plan](eng-92719-file-processing-element-test-plan.md) §8.
 
