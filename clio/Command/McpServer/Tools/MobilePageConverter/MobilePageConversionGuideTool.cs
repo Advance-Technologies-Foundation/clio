@@ -27,7 +27,6 @@ namespace Clio.Command.McpServer.Tools.MobilePageConverter;
 /// UI) are detected and reported as not yet supported.
 /// </summary>
 [McpServerToolType]
-[FeatureToggle("mobile-page-converter")]
 [SuppressMessage("Major Code Smell", "S1168:Empty arrays and collections should be returned instead of null", Justification = "The best-effort probe helpers return null to signal 'not read' (distinct from 'read, empty'); the caller treats null as skip.")]
 [SuppressMessage("Minor Code Smell", "S3267:Loops should be simplified with LINQ", Justification = "Explicit loops that build registry maps with side effects read more clearly than a LINQ rewrite here.")]
 // NOT sealed, and ReadPageUnderTenantLock below is virtual, purely so the two hard-stop refusals can be
@@ -83,7 +82,10 @@ public class MobilePageConversionGuideTool {
 	[Description(
 		"Detect a page's source type and return an advisory mobile-conversion GUIDE. Supported source type today: "
 		+ "Freedom UI WEB (sourceType \"freedom-web\"); any other source type is detected and reported as not yet "
-		+ "supported. ADVISORY-ONLY: this tool builds NO page body and writes NOTHING to Creatio or disk — YOU build "
+		+ "supported. Supported TARGET canvas today: Mobile (phone). The guide DOES bake medium/large "
+		+ "(tablet/desktop) breakpoints into adaptiveLayout, but tablet output stays EXPERIMENTAL - it is not "
+		+ "covered by the converter's supported scope, so verify it on a tablet before relying on it. "
+		+ "ADVISORY-ONLY: this tool builds NO page body and writes NOTHING to Creatio or disk — YOU build "
 		+ "the mobile body from the guide, persist it with create-page (mobile template) + update-page, then "
 		+ "validate-page. The guide carries FACTS about this page and no prose: the rules are enforced by "
 		+ "validate-page / update-page, and the ordered flow plus every standing rule live in the guidance "
@@ -98,7 +100,8 @@ public class MobilePageConversionGuideTool {
 		+ "value: a real resolved page schema name, or (when no candidate was found) the raw object/entity "
 		+ "name — never call get-page on the latter expecting a page. resolvedCandidateSchemaName (present "
 		+ "only on that shape when a candidate WAS resolved) tells them apart. "
-		+ "MANDATORY before acting on the guide: get-guidance name `freedom-page-web-to-mobile-conversion`.")]
+		+ "MANDATORY before acting on the guide: get-guidance name=freedom-page-web-to-mobile-conversion. "
+		+ "Resolve any reason code it reports with get-guidance name=freedom-page-mobile-reason-codes.")]
 	public async Task<MobilePageConversionGuideResponse> GetMobilePageConversionGuide(
 		[Description("Parameters: schema-name (required, the source page); target-schema-name (optional suggested mobile page name); version (optional registry/Creatio version); environment-name preferred; uri/login/password emergency fallback only.")]
 		[Required] MobilePageConversionGuideArgs args,
@@ -916,12 +919,17 @@ public class MobilePageConversionGuideTool {
 			+ "action manually before shipping the converted page.";
 	}
 
+	// Redacted HERE, at the tool boundary, because this type does not derive from BaseTool and so gets none
+	// of its uniform redaction, and because a success:false RESULT never reaches McpToolErrorFilter's
+	// redacted catch. Callers upstream rely on this: PageSchemaMetadataHelper deliberately leaves the
+	// "(URL: <uri>)" prefix in the clear on the documented assumption that the MCP edge redacts the whole
+	// string (see SensitiveErrorTextRedactor's UriRegex remark). This tool IS that edge.
 	private static MobilePageConversionGuideResponse Fail(MobilePageConversionGuideArgs args, string sourceType, string error) =>
 		new() {
 			Success = false,
 			SourceSchemaName = args?.SchemaName,
 			SourceType = sourceType,
-			Error = error
+			Error = SensitiveErrorTextRedactor.Redact(error)
 		};
 
 	/// <summary>

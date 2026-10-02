@@ -345,6 +345,12 @@ This is one of the strongest and most AI-friendly parts of the MCP surface.
   Save many pages in one call with optional validation and optional read-back verification.
 - `component-info`
   Inspect a shipped local catalog of Freedom UI component contracts, grouped by category or returned in detail mode.
+- `get-mobile-page-conversion-guide` (read-only, long-tail via `clio-run`; discovered through `get-tool-contract`)
+  Detect a source page's type and return an **advisory** guide for converting a Freedom UI **web** page into
+  a Freedom UI **mobile** page — recommended template, container correspondence, component suggestions and
+  inline mobile contracts. It writes nothing; the caller builds the body with `create-page` / `update-page` /
+  `validate-page`. Freedom UI **web** form and list pages only: a Classic UI page must be migrated to Freedom
+  UI web first, an already-mobile page is rejected, and mobile manifest and wizard wiring stay manual.
 - `get-component-info-to-file`, `get-request-info-to-file`
   The same lookups as `get-component-info` / `get-request-info`, with the documentation markdown written
   to a local file; the response carries the path and the section headings instead of the markdown.
@@ -360,6 +366,7 @@ What an external AI can practically do here:
 - inspect unfamiliar `crt.*` component types without guessing
 - rewrite page bodies directly
 - batch page saves to reduce MCP chatter
+- get a deterministic web-to-mobile conversion guide instead of guessing the mobile component mapping
 
 What makes this area especially good for AI:
 
