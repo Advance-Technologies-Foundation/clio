@@ -9,6 +9,7 @@ using System.Text.Json.Serialization;
 using Clio.Common;
 using Clio.Command.BusinessRules;
 using Clio.Command.McpServer;
+using Clio.Command.McpServer.Tools.MobilePageConverter;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -886,7 +887,8 @@ internal static class ToolContractCatalog {
 			[UninstallIdentityTool.ToolName] = BuildUninstallIdentity(),
 			[RestoreWorkspaceTool.RestoreWorkspaceToolName] = BuildRestoreWorkspace(),
 			[PushWorkspaceTool.PushWorkspaceToolName] = BuildPushWorkspace(),
-			[ListCreatioBuildsTool.ListCreatioBuildsToolName] = BuildListCreatioBuilds()
+			[ListCreatioBuildsTool.ListCreatioBuildsToolName] = BuildListCreatioBuilds(),
+			[MobilePageConversionGuideTool.ToolName] = BuildMobilePageConversionGuide()
 		};
 
 	private static readonly string[] CanonicalToolNames = [
@@ -950,6 +952,7 @@ internal static class ToolContractCatalog {
 		PageUpdateTool.ToolName,
 		LocalizePageTool.ToolName,
 		PageValidateTool.ToolName,
+		MobilePageConversionGuideTool.ToolName,
 		ApplicationDeleteTool.ToolName,
 		SchemaNamePrefixTool.GetSchemaNamePrefixToolName,
 		CompileCreatioTool.CompileCreatioToolName,
@@ -6795,6 +6798,71 @@ internal static class ToolContractCatalog {
 			]);
 	}
 
+	private static ToolContractDefinition BuildMobilePageConversionGuide() {
+		return new ToolContractDefinition(
+			MobilePageConversionGuideTool.ToolName,
+			"Advisory: returns a guide for converting a Freedom UI WEB page into a mobile page; it writes nothing. The guide carries the recommended mobile template, container correspondence, the source component structure, per-type component suggestions and inline mobile component contracts - YOU build the body from it with create-page (mobile template) + update-page and prove it with validate-page. Candidate names are reported without classification: classify each one yourself before presenting a plan.",
+			new ToolInputSchemaContract(
+				[SchemaNameFieldName],
+				[
+					Field(SchemaNameFieldName, StringType, "Source page schema name, e.g. 'UsrMyApp_FormPage'. Only Freedom UI WEB pages are supported; a Classic UI page is detected and reported as not yet supported."),
+					Field("target-schema-name", StringType, "Optional suggested target mobile page schema name. Defaults to the source name with a mobile suffix (UsrMyApp_FormPage -> UsrMyApp_MobileFormPage)."),
+					Field("version", StringType, "Optional Creatio/registry version used to resolve the mobile and web component registries. A 3-part semver, e.g. '8.3.3', or 'latest'; anything else is rejected. Defaults to PROBING the target environment - an explicit value OVERRIDES that probe, so naming a version other than the target's own measures the conversion against a different mobile runtime."),
+					Field(EnvironmentNameFieldName, StringType, "PREFERRED. Registered clio environment name, e.g. 'local'."),
+					Field("uri", StringType, "Emergency fallback only: direct Creatio URL. Prefer 'environment-name'."),
+					Field(LoginFieldName, StringType, "Emergency fallback only: login paired with 'uri'."),
+					Field(PasswordFieldName, StringType, "Emergency fallback only: password paired with 'uri'.")
+				],
+				AnyOf: EnvironmentOrExplicitConnectionRequirements()),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[
+					SuccessFalseSignal
+				],
+				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
+				Field("sourceSchemaName", StringType, "The source page the read was attempted against."),
+				Field("sourceType", StringType, "Detected source page type - an unsupported Classic UI page is how you learn it must be migrated to Freedom UI web first. Absent when the page could not be read at all."),
+				Field("guide", ObjectType, "The advisory guide: recommended template, containerMap, componentSuggestions, mobileContracts, sectionRegistration and more. adaptiveLayout carries per-breakpoint placement - small (phone) is the supported canvas; medium/large (tablet/desktop) are baked in but stay EXPERIMENTAL and are outside the converter's supported scope. What the caller must resolve: componentSuggestions[].category == RequiresManualDecision, and requestConversions.droppedRequests / flaggedRequests / unresolvedTargetRequests / missingTargetPages."),
+				Field("resolvedTargetVersion", StringType, "The component-registry / rules version the guide was built against: a concrete version or 'latest'."),
+				Field("resolvedFrom", StringType, "How the version was resolved: environment, environment-superset or latest-fallback."),
+				Field("versionWarning", StringType, "Caveat when the catalog is approximate or the target version is unknown; absent when the version is exact."),
+				Field("requiresVersionConfirmation", BooleanType, "True only on latest-fallback: the target version is unknown, so confirm with the user before acting on the guide."),
+				Field("resolvedFromReason", StringType, "Stable kebab-case reason on latest-fallback, e.g. no-active-environment or probe-error."),
+				Field("rulesWarning", StringType, "READ THIS WHEN PRESENT: the rules file maps a web request onto a mobile request type the registry does not publish, so the action cannot dispatch - it does nothing and fails SILENTLY on the page. Review every affected action before shipping."),
+				Field("requestRegistryWarning", StringType, "The mobile request registry could not be resolved exactly, so request conversions are advisory-only."),
+				Field(ErrorFieldName, StringType, "Actionable diagnostic when success is false.")),
+			CommonErrorContract,
+			// No rejected-parameter aliases. The sibling page contracts publish them because they are
+			// RESIDENT and something above them classifies the payload; per Command/McpServer/AGENTS.md the
+			// flat-args normalization and argument-shape refusal are resident-only. This tool is
+			// deliberately non-resident and its args record carries no [JsonExtensionData] bag, so a caller
+			// sending 'schemaName' has the key dropped by System.Text.Json and gets "Could not read source
+			// page ''" - not the rename hint an alias entry would promise. Publishing one would advertise a
+			// refusal the tool cannot give.
+			[],
+			[],
+			[
+				Example("Get the conversion guide for a Freedom UI web form page", new Dictionary<string, object?> {
+					[SchemaNameFieldName] = "UsrMyApp_FormPage",
+					[EnvironmentNameFieldName] = "local"
+				})
+			],
+			Flow(
+				[
+					MobilePageConversionGuideTool.ToolName,
+					PageCreateTool.ToolName,
+					PageUpdateTool.ToolName,
+					PageValidateTool.ToolName
+				],
+				"Read the guide, then build the mobile page body yourself with create-page + update-page and prove it with validate-page. The guide writes nothing, so a caller that waits for a built page waits forever. Read get-guidance name=freedom-page-web-to-mobile-conversion before acting on it, and name=freedom-page-mobile-reason-codes to resolve a reason code it reports."),
+			[],
+			[],
+			Preconditions: [
+				"The environment is registered (see list-environments / reg-web-app), or an explicit uri + login + password is supplied.",
+				"The source page must be a Freedom UI WEB page. A Classic UI page must be migrated to Freedom UI web first, and an already-mobile page is rejected."
+			]);
+	}
+
 	private static ToolContractDefinition BuildListCreatioBuilds() {
 		return new ToolContractDefinition(
 			ListCreatioBuildsTool.ListCreatioBuildsToolName,
@@ -6851,7 +6919,7 @@ internal static class ToolContractCatalog {
 				Field("succeeded", NumberType, "Number of items that succeeded."),
 				Field("failed", NumberType, "Number of items that failed."),
 				Field("results", ArrayType, resultsDescription),
-				Field("error", StringType, "Request-level error that prevented the whole batch from running. Note: when the requested environment cannot be resolved (unknown/unreachable), the tool instead returns the standard command-execution envelope (exit-code 1 with execution-log-messages referencing the environment) rather than this batch shape.")
+				Field(ErrorFieldName, StringType, "Request-level error that prevented the whole batch from running. Note: when the requested environment cannot be resolved (unknown/unreachable), the tool instead returns the standard command-execution envelope (exit-code 1 with execution-log-messages referencing the environment) rather than this batch shape.")
 			]);
 	}
 
@@ -6875,7 +6943,7 @@ internal static class ToolContractCatalog {
 					+ "record-created is null, retry-guidance. A null record-created means Creatio failed the call "
 					+ "but may already have written the row - verify with odata-read before re-sending, a retry "
 					+ "duplicates it. " + ODataWriteForeignKeyHintDescription),
-				Field("error", StringType, "Request-level error that prevented any row from being attempted."),
+				Field(ErrorFieldName, StringType, "Request-level error that prevented any row from being attempted."),
 				Field(CorrelationIdFieldName, StringType, ODataWriteCorrelationIdDescription),
 				Field(DataWriteDiagnosticFieldName, ObjectType, DataWriteDiagnosticDescription)
 			]);
