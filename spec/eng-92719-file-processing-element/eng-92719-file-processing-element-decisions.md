@@ -138,7 +138,7 @@ same questions, with their options, are Q1-Q19 in
 | D2 | Declaring a file collection: `FileCollection` | PT | **yes** | - |
 | D3 | Direction and Tag defaults | PT | **yes** | - |
 | D4 | Dotted process-parameter paths | PT | no | - |
-| D5 | The two-level collection binder | PT | **yes** | M6 (R-M1) |
+| D5 | The two-level collection binder | PT | **yes** | M6 (R-M1; done 2026-10-02: refusal stays) |
 | D6 | The dotted-mirror bug | PT | no | - |
 | D7 | Constants, `referenceSchema`, delete guard, `setParameter` shape | PT | no | - |
 | D8 | Describe of file parameters, nested-only bindings, single-token element sources | PT | no | - |
@@ -400,7 +400,7 @@ dotted source and target, a meta path with no element segment, the failing segme
 | **P2** item pairing (file-consuming targets) | structured outer mapping, both sides collections, the target has a FileLocator item | each target FileLocator item <- the paired source item: (1) exact name, case-insensitive, type check passing; (2) else, when both sides have exactly one FileLocator item, pair those (`Files.File <- PF1.ObjectFiles.ObjectFile`) | always a notice naming every item it bound; never overwrites an item already bound into the new source; rebinds a stale item bound into another collection and says so; an unpairable FileLocator item gets "at run time it will be empty". Non-file items are never auto-paired |
 | **P2-MI** (notice only) | structured outer mapping onto a multi-instance `InputRecordCollection` with an unbound FileLocator item | nothing beyond the outer write | "callee parameter `<F>` will be empty on every iteration unless you map `InputRecordCollection.<F>`" |
 | **P3** plain source on an item | structured source; the target is an item; the source is not a collection item; single-instance owner | item <- source; the parent is **reset to None** if it was bound to a collection | notice ("`Files` was bound to `X`; it was cleared because `Files.File` now takes a single file") |
-| **R-M1** | flat FileLocator target <- a collection item (`F <- OF1.ObjectFiles.File`) | - | **refuse** ("a single File cannot take an item of `ObjectFiles`; use a FileCollection, or a multi-instance sub-process"). **Pending M6** |
+| **R-M1** | flat FileLocator target <- a collection item (`F <- OF1.ObjectFiles.File`) | - | **refuse** ("a single File cannot take an item of `ObjectFiles`; use a FileCollection, or a multi-instance sub-process"). **Measured by M6 (2026-10-02):** outside a row context `F` reads null while the source collection holds two files, so the refusal stays |
 | **R-M2** | a file-consuming target collection has a FileLocator item and the source collection has none (`Files <- ReadData.ResultCompositeObjectList`) | - | **refuse**. `ParameterTypeCompatibility` accepts it today (`PB/Mappings/ParameterTypeCompatibility.cs:240-242`: item shapes are not compared); the runtime is predicted to throw in the consumer |
 
 An explicit API for later consumers (ENG-95985 Send email attachments and the element variants):
@@ -1656,7 +1656,7 @@ the designer, because the builder cannot build them until these tickets land. Me
 | M2 | Does an unset single File make the element fail with an NRE? | yes | guide wording | with M1 |
 | M3 | Does the shipped collection mirror read null rows? (H-1) | yes | D9 | PK-PT (done 2026-10-02: no, H-1 refuted; no MH, X4) |
 | M4 | Does a FileCollection bound at both levels feed the Process variant, and does its `ObjectFiles` hold the copies? | yes | D2, D5, D18 end to end | verification |
-| M6 | What does a flat FileLocator <- collection item do outside a row context? | yes | R-M1 | PK-PT code |
+| M6 | What does a flat FileLocator <- collection item do outside a row context? | yes | R-M1 | PK-PT code (done 2026-10-02: reads null; refusal stays) |
 | M7 | The exact filter JSON the designer writes for a SysFile `RecordId` scope | no | D16 SysFile shape | PK-SF code |
 | M8 | Does an Object element find a Freedom UI upload to a SysFile-stored record? | yes | SysFile sources | PK-SF code |
 | M9 | Does a SysFile sort on a record-object column throw? | yes | issue severity | no |

@@ -41,7 +41,7 @@ rejects HTTP DELETE).
 |---|---|---|---|---|
 | [T-11](#t-11) | `Files.File` bound alone to a single File parameter copies ONE file; an unset one gives an NRE | M1, M2 (write) | **yes** (M1) | the single-file path of D18 is withdrawn and refused; the guide says "wrap one file in a FileCollection" |
 | [T-8](#t-8) | the shipped ENG-96230 Collection process parameter type mirror binds the outer level only, so every mirrored row reads null | M3 (write), **done 2026-10-02: refuted** | **yes** | items are still bound, as parity (D9); this applies, so no MH Sub-task (X4) |
-| [T-16](#t-16) | a single File mapped from a collection item outside a row context misbehaves | M6 (write) | **yes** | the R-M1 refusal is dropped |
+| [T-16](#t-16) | a single File mapped from a collection item outside a row context misbehaves | M6 (write), **done 2026-10-02: confirmed** (`F` reads null) | **yes** | the R-M1 refusal is dropped (did not happen: it stays) |
 | [T-22](#t-22) | the server-side storage resolver predicts the designer's object list | M10 (read-only, designer) | **yes** | the D15 refusal set R3-R5 is adjusted to the designer's list |
 | [T-23](#t-23) | an Object element finds a Freedom UI upload stored in SysFile | M8 (write) | **yes** (SF) | SysFile sources stay refused |
 | [T-24](#t-24) | copies written into SysFile carry `RecordId`, `RecordSchemaName`, `Type = File` and show in the Freedom UI list | M23 (write) | **yes** (SF) | SysFile targets stay refused |
@@ -144,7 +144,7 @@ M-G6-4), [T-43](#t-43).
 | T-13 | Multi-instance with only per-item mappings runs once | **yes** | source + measured | PT (D5, D25) |
 | T-14 | Multi-instance over non-file rows: the callee File is empty | **yes** | source + corpus | PT (D5) |
 | T-15 | Stale rows when something maps FROM the Process variant's `Files` | **yes** | source | RP (D18) |
-| T-16 | A single File taken from a collection item | unknown | source | M6, then PT (D5) |
+| T-16 | A single File taken from a collection item | **yes** | measured (M6) | PT (D5) |
 | T-17 | `ResultActionType` unset runs as "save"; the designer default is "use in process" | **yes** | source | OA, RP (D14) |
 | T-18 | The Process variant with "use in process" throws | at save **yes**, run loud | source | RP (D14) |
 | T-19 | After "save", `ObjectFiles` points at the SOURCE files | **yes** | source | M26, then OA (D12, D14), guide |
@@ -429,12 +429,13 @@ M-G6-4), [T-43](#t-43).
 ### T-16
 **A single File taken from an item of a collection, outside a row context.**
 - **What happens.** `F <- OF1.ObjectFiles.File` with `F` a flat FileLocator process parameter: outside a collection
-  context the nested value has no row; what the runtime returns is not traced end to end. CrtProcessBuilder 1.6.6.54
-  accepts the mapping.
-- **Silent or loud.** Unknown until M6.
-- **Basis / evidence.** source (gap G1, R-M1); not measured.
+  context the nested value has no row, and the runtime gives `F` **null**: no error, no first row. CrtProcessBuilder
+  1.6.6.54 accepts the mapping.
+- **Silent or loud.** Silent: the process runs on with an empty `F`.
+- **Basis / evidence.** measured 2026-10-02 (M6): `F` read empty (`M6 F=`) while OF1's `ObjectFiles` held two
+  `EntityFileLocator`s in `SysProcessElementData`; [open-questions](eng-92719-file-processing-element-open-questions.md) C.7.
 - **Neutraliser.** D5 R-M1 (F-M2): "a single File cannot take an item of `ObjectFiles`; use a FileCollection, or a
-  multi-instance sub-process", **pending M6**. If M6 shows a defined, useful result, the refusal is dropped.
+  multi-instance sub-process". M6 confirmed the refusal.
 
 ---
 

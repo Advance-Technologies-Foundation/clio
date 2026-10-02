@@ -396,7 +396,7 @@ Rules for every measurement:
 | Gate (first PR whose code waits) | Measurement | Write? | Built by |
 |---|---|---|---|
 | PK-PT | **M3**: does the shipped collection mirror read null rows (H-1)? **Done 2026-10-02: no, H-1 refuted** (3 iterations, all "name set"); no MH, X4 applies | yes | builder + one designer step |
-| | **M6**: a flat File taken from a collection item outside a row context | yes | designer + builder |
+| | **M6**: a flat File taken from a collection item outside a row context. **Done 2026-10-02: it reads null** (the source held two files), so R-M1 stays a refusal | yes | designer + builder |
 | PK-PT verification baseline (no code waits) | **M3b** (MI-0 in the ENG-95984 File process parameter type test-plan): baseline, an item-only multi-instance mapping runs one iteration on 1.6.6.54. It is the baseline for the post-cut proof V3 and for the PT row of [pr-split](eng-92719-file-processing-element-pr-split.md) §14 | yes | builder |
 | PK-OA | **M10**: the designer's object list against the resolver's prediction. **Done 2026-10-02: matches** | no | UO method |
 | | **M11 (a)(b)**: H-G3-1, does a designer open-and-close write `SourceDataEntitySchemaUId = <X>File`? **Done 2026-10-02 in memory: not reproduced on either half**; the optional save variant (c) remains | no (in memory) | UO method |

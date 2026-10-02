@@ -341,7 +341,7 @@ notice list the build or modify result returns (`Warnings`, `PB/Contracts/BuildC
 | PU-37 | regression | the same multi-instance element with explicit outer + per-item mappings | exactly the values 1.6.6.54 writes (fixture literal), nothing extra. D5 regression (2) | AC-5 |
 | PU-38 | P3 | single-instance `PF1`: `Files <- Docs`, then `Files.File <- Doc` (a File) | item <- `Doc`; `Files` reset to None; notice "it was cleared because Files.File now takes a single file" (owner decision O-3) | AC-5 |
 | PU-39 | nested-only | fresh `PF1`: `Files.File <- Doc` | item bound; `Files` stays Source None (the shipped single-file shape). Metadata only: whether the runtime copies one file is M1, an ENG-96506 Generated report + process parameter modes measurement | AC-5, AC-9 |
-| PU-40 | R-M1 | `targetProcessParameter Doc <- OF1.ObjectFiles.File`; `Doc <- Docs.File` | refused (F-M2), names FileCollection and multi-instance as the alternatives. Pending M6 (section 10) | AC-5 |
+| PU-40 | R-M1 | `targetProcessParameter Doc <- OF1.ObjectFiles.File`; `Doc <- Docs.File` | refused (F-M2), names FileCollection and multi-instance as the alternatives. Confirmed by M6 on 2026-10-02: the mapping reads null (section 10) | AC-5 |
 | PU-41 | R-M2 | `PF1.Files <- RD.ResultCompositeObjectList`; `Docs <- RD.ResultCompositeObjectList`; `Docs <- OF1.CreatedObjectFileIds` | refused (F-M3). Today `ParameterTypeCompatibility` accepts them (`PB/Mappings/ParameterTypeCompatibility.cs:240-242`: item shapes are not compared) | AC-5 |
 | PU-42 | R-M2 scope | `RD.ResultCompositeObjectList` onto (a) `SP1.InputRecordCollection` whose callee has no File, (b) another user task's collection | accepted as on 1.6.6.54 | AC-5 |
 | PU-43 | expression | `expression` onto `PF1.Files`, then onto `PF1.Files.File` (two describe-style formulas) | both written verbatim; no P1, no P3, no refusal; the other level untouched. D5 regression (3) | AC-5 |
@@ -553,7 +553,7 @@ source trace says: hold the clio and knowledge PRs and record the measured outco
 | O-3 (P3 resets a stale parent) | PU-38 | designer parity: PU-38 asserts the parent is kept and no notice |
 | O-4 (P2 scope: file-consuming targets) | PU-35, PU-36, PU-42, E2E-07 | every collection: PU-36/PU-42 assert pairing, and Read data -> multi-instance mappings change (unmeasured, out of this ticket) |
 | O-5 (D9 placement), M3 | PU-53 | refuted, and this applies (M3, 2026-10-02): PU-53 still asserts item binding as parity with 60 of 61 shipped collections; the "defect" wording leaves its `[Description]` |
-| M6 | PU-40, E2E-10 | "first row" semantics: R-M1 becomes a notice and both cases flip to accept-with-notice |
+| M6 | PU-40, E2E-10 | did not happen: M6 (2026-10-02) read `F` empty, so R-M1 stays a refusal and both cases stay as written |
 | M1, M2 (ENG-96506 Generated report + process parameter modes) | PU-39, E2E-14c, V8 | the single-file path fails: PU-39 stays (metadata), the guide says "wrap one file in a FileCollection", V8 is dropped |
 | O-TP1 (this plan: where E2E-14 runs) | E2E-14 | (A): E2E-14 moves into section 6.1 and the clio PR of ENG-96506 Generated report + process parameter modes rewrites its arrange step |
 | A foreign cut lands between ours (the PR split's capability probe rule) | V1 | add a capability probe on a named field and run it against both archives |

@@ -452,6 +452,12 @@ New text therefore goes to a NEW guide, born in KB-PT.
   takes about 6 minutes on this stand. Delete fixture and copied rows with one `execute-dataservice-batch` of
   DeleteQuery items, because the stand rejects HTTP DELETE. Then re-run the evidence queries to confirm.
 - **UI checks** (an attachment list, a card's display text) are made by the user.
+- **A designer publish is a stand outage:** publishing a process that carries a script task compiles the
+  configuration, and on 2026-10-02 the stand then answered no HTTP request for at least 45 minutes (C.7). Publish only
+  with the user's go-ahead given for the publish itself, send nothing to the stand until it answers again, and warn
+  the other users of the stand first.
+- **Cleanup tooling on 2026-10-02:** the session's clio client has no `execute-dataservice-batch`, and `odata-delete`
+  sends HTTP DELETE, which this stand rejects; the fixture rows need another path, chosen with the user.
 
 ### B.1 Common read-only evidence queries
 
@@ -474,6 +480,7 @@ no business data, so M17-Q7 stays in the read-only count.
 | EV-5 | after | the file rows that are not in EV-0: `Id, Name, Size, Version, TypeId`; on SysFile also `RecordId, RecordSchemaName`; where attribute inheritance is checked also `Notes, Tag, CreatedById` | EV-0's query plus `AND Id NOT IN (<EV-0 ids>)` |
 | EV-6 | after | the source rows again, compared with EV-5: same `Name` and `Size`, new `Id`s, sources unchanged | EV-0's source query |
 | EV-7 | while parked, then after | the temporary process files of the instance (the instance column is confirmed against `SysProcessData` on the first run) | `SELECT Id, Name FROM SysProcessFile WHERE SysProcessId = '<instance Id>'` |
+| EV-8 | after | what an executed element produced, per instance: its parameter values, collections included (each file locator with `_entitySchemaName` and `_recordId`). Measured on M6 | `SELECT d.SchemaElementUId, d.Status, CONVERT(varchar(max), d.PropertiesData) FROM SysProcessElementData d WHERE d.SysProcessId = '<EV-2 Id>'` |
 | MD | after a save | the saved metadata: `clio pull-pkg Custom -e Creatio -d <scratch dir> -r`, then `Schemas/<probe>/metadata.json`, or the `SysSchema.MetaData` row through `execute-esq`. Describe is not used to check a nested-only binding, because it hides one (`PB/Describe/ProcessDescriber.cs:187-193`) | - |
 
 Status values (`PS/CrtBase/branches/7.8.0/Data/SysProcessStatus`, basis=source): Running
@@ -495,7 +502,7 @@ short, the full stack is in `Error.log` under `C:\Windows\Temp\Creatio\Creatio\0
 | M17-Q7 | foreign key of `ContactFile` to Contact | no (audit row only: cliogate 2.0.0.53+ logs the statement in `ClioSqlRequestLog`) | agent | PK-OA | the F-E9 empty-record notice wording | **done 2026-10-02**: FK `ContactFile.ContactId` -> Contact, 0 empty-Id rows (C.6) |
 | M3 | the shipped mirror reads null rows (H-1) | write | builder + one designer step | PK-PT / MH | Q7, D9 | **done 2026-10-02**: H-1 refuted, 3 iterations all "name set"; no MH, X4 (C.7) |
 | M3b | baseline (MI-0 in the ENG-95984 File process parameter type test-plan): an item-only multi-instance mapping runs one iteration on 1.6.6.54 | write | builder | PK-PT verification | the version-gated guide sentence (D25) | **done 2026-10-02**: 1 iteration, Name empty (C.7) |
-| M6 | flat File <- collection item outside a row context | write | designer + builder | PK-PT | R-M1 (D5) | open |
+| M6 | flat File <- collection item outside a row context | write | designer + builder | PK-PT | R-M1 (D5) | **done 2026-10-02**: `F` empty while OF1 held two files; R-M1 stays a refusal (C.7) |
 | M14 | the server-built element shape on 1.6.6.54 | write | builder | PK-OA | D20 pins | **done 2026-10-02**, card display included (C.7) |
 | M1 | a nested-only `Files.File <- File` copies one file | write | designer (script task) | PK-RP | D18 single-file path; PT AC | open |
 | M2 | an unset single File gives an element Error (NRE) | write (save + run) | reuses M1 | with M1 | the guide's single-File wording (D18) | open |
@@ -893,7 +900,9 @@ the stand until cleanup (core-rules: they are deleted, with the user's confirmat
 | NEW: dotted `typeFromElementParameter` | `parameters[{name: F, typeFromElement: OF1, typeFromElementParameter: "ObjectFiles.File"}]` creates `F` with the right type (`L1` = FileLocator `a33c9252…`) but **no source** (`L8 {}`), while the outer form (M3's `P`) gets the Script mapping. The dotted form types the parameter only; the value needs an explicit `addMapping` (`3cf363739721`) |
 | NEW: Freedom UI upload lands in the legacy table | The two files uploaded on the Contact Freedom UI page landed in `ContactFile` (`TypeId` File), none in `SysFile`, on this stand (`UseSysFileInObjectFileProcessing` off). Consistent with the per-entity storage rule (Contact keeps its legacy `ContactFile`) |
 | NEW: transient timeout | One `modify` carrying `setFilter` and `addMapping` together timed out and wrote nothing (`ModifiedOn` unchanged); the same two operations sent one per call both applied (`74bc25618f3b`, `3cf363739721`). Not reproduced; recorded only so a later timeout is not read as a builder defect without a retry |
-| M6 | see below |
+| M6 | **R-M1 stays a refusal.** `UsrFpM6FlatFile` was saved and published in the designer by the main session (the publish compiled `PROBE`; its message window listed only warnings from other packages), then run once: instance `c3c86025…`, OF1 `Completed`, PROBE `Error` with **`System.Exception: M6 F=`**, so `F` was empty: no NullReferenceException, no first or last row. That the source was not empty is proven by the instance data: `SysProcessElementData.PropertiesData` of OF1 holds `ObjectFiles` with **two** `EntityFileLocator`s, `ContactFile` `ccfdece7…` and `1cac5fed…`, `CreatedObjectFileIds` empty, `ResultActionType` 1. F was mapped Script <- `[Element:{OF1}].[Parameter:{1ddb6de7…}]` (the item `ObjectFiles.File`). So a flat File taken from a collection item outside a row context reads **null, silently**: the builder must refuse it (F-M2) |
+| NEW: element output evidence | `SysProcessElementData.PropertiesData` (varbinary holding JSON; `CONVERT(varchar(max), …)` reads it) keeps each executed element's parameter values per instance, collections included, with each locator's `_entitySchemaName` and `_recordId`. It is a runtime oracle the plan did not have: it shows what an element produced without a second probe element (B.1 EV-8) |
+| NEW: a designer publish took the stand down | The publish of `UsrFpM6FlatFile` (about 01:44 UTC) compiled the configuration; right after it the stand stopped answering HTTP (TCP still accepted, even static files hung) and the `run-process` and SELECT sent next timed out without reaching the stand (no instance was logged). It was still down at 02:30 UTC and was back when the user next checked; the run above is from 06:15 UTC. Whether it came back by itself or was restarted is not recorded. Rule added to B.0 |
 
 ### C.5 Corpus and repository counts (not the stand)
 
