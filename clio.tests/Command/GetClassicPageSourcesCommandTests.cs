@@ -226,12 +226,15 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 			because: "title is the internal caption of the single full-hierarchy load");
 		detail["body"]!.ToString().Should().Contain("UsrOrderLineMerged",
 			because: "body comes from the same full-hierarchy load as title and resourceStrings");
-		_applicationClient.Received(1).ExecutePostRequest(
+		_applicationClient.Received(2).ExecutePostRequest(
 			Arg.Any<string>(),
 			Arg.Is<string>(body => body.Contains("\"uid-detail\"")));
 		_applicationClient.Received(1).ExecutePostRequest(
 			Arg.Any<string>(),
 			Arg.Is<string>(body => IsFullHierarchyRequestFor(body, "uid-detail")));
+		_applicationClient.Received(1).ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => IsOwnLayerRequestFor(body, "uid-detail")));
 	}
 
 	private static bool IsFullHierarchyRequestFor(string requestBody, string schemaUId) {
@@ -240,6 +243,14 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		}
 		JObject request = JObject.Parse(requestBody);
 		return request["schemaUId"]?.ToString() == schemaUId && (request["useFullHierarchy"]?.Value<bool>() ?? false);
+	}
+
+	private static bool IsOwnLayerRequestFor(string requestBody, string schemaUId) {
+		if (string.IsNullOrEmpty(requestBody)) {
+			return false;
+		}
+		JObject request = JObject.Parse(requestBody);
+		return request["schemaUId"]?.ToString() == schemaUId && request["useFullHierarchy"]?.Value<bool>() == false;
 	}
 
 	[Test]
@@ -351,7 +362,7 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 	}
 
 	[Test]
-	[Description("TryAssemblePageSources writes a single-layer detail's bodies as one item equal to the entry's body and package.")]
+	[Description("TryAssemblePageSources writes a single-layer detail's bodies as one item with the layer's package and its own-layer body, independent of the full-hierarchy body the entry carries.")]
 	public void TryAssemblePageSources_ShouldWriteSingleItemDetailBodies_ForSingleLayerDetail() {
 		// Arrange
 		AddLayer("UsrOrderPage", "uid-page", "UsrApp", 200);
@@ -362,6 +373,9 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		AddSchema("uid-detail",
 			"define(\"UsrOrderLineDetail\", [], function() { return { entitySchemaName: \"UsrOrderLine\" }; });",
 			EmptyGuid, "UsrApp");
+		_fullHierarchyViewByUid["uid-detail"] = (
+			"define(\"UsrOrderLineDetail\", [], function() { return { entitySchemaName: \"UsrOrderLineMerged\" }; });",
+			"Order lines");
 		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrOrderPage" };
 
 		// Act
@@ -373,8 +387,12 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		JArray bodies = (JArray)detail!["bodies"];
 		bodies.Should().ContainSingle(because: "a single-layer detail has a one-layer chain");
 		bodies[0]["pkg"]!.ToString().Should().Be("UsrApp", because: "the item names the layer's package");
-		bodies[0]["body"]!.ToString().Should().Be(detail["body"]!.ToString(),
-			because: "the only layer is the top layer, whose body the entry already carries");
+		bodies[0]["body"]!.ToString().Should().Contain("\"UsrOrderLine\"",
+			because: "the item carries the layer's own-layer body");
+		bodies[0]["body"]!.ToString().Should().NotContain("UsrOrderLineMerged",
+			because: "the item is not copied from the full-hierarchy load");
+		detail["body"]!.ToString().Should().Contain("UsrOrderLineMerged",
+			because: "body still comes from the full-hierarchy load");
 	}
 
 	[Test]
