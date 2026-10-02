@@ -5,7 +5,6 @@ applies-to:
   - clio/Command/ApplicationCreateService.cs
   - clio/Command/ApplicationSectionCreateCommand.cs
   - clio/Command/ApplicationSectionUpdateCommand.cs
-  - clio/Command/ResetNavigationCacheCommand.cs
 ticket: ENG-101680
 date: 2026-10-02
 ---
@@ -19,9 +18,9 @@ Freedom UI Shell tab then calls `GetData` with the bare JSON body `true` (`force
 which clears that session's entries, and reloads the left panel. A tab whose websocket was not connected at
 that moment never gets the message, and its session keeps the old menu across reloads. `GetData(true)` acts
 on the CALLING session only, so clio's own reset after `create-app`, `create-app-section` and
-`update-app-section` (and `reset-navigation-cache`) cannot clear a browser session; the same call run from
-inside the tab, with its cookies and `BPMCSRF` header, followed by a reload, does. The three commands and
-`reset-navigation-cache` return that in-tab call as `next-step`.
+`update-app-section` cannot clear a browser session; the same call run from
+inside the tab, with its cookies and `BPMCSRF` header, followed by a reload, does. The three commands return
+that in-tab call as `next-step`.
 
 **Why it is this way** — the platform refreshes a session's menu only through the websocket broadcast, and
 clio has no websocket. No public service clears another session's cache: `GetData(true)` and

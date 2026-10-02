@@ -248,7 +248,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["list-knowledge-sources"] = PassthroughClassification.NotEnvironmentSensitive,
 			["list-knowledge-examples"] = PassthroughClassification.NotEnvironmentSensitive,
 
-			// --- NotApplicable (141): class (a)/(b) — already passthrough-capable, out of this audit ---
+			// --- NotApplicable (140): class (a)/(b) — already passthrough-capable, out of this audit ---
 			["StopAllCreatio"] = PassthroughClassification.NotApplicable,
 			["add-item-model"] = PassthroughClassification.NotApplicable,
 			["add-custom-logging"] = PassthroughClassification.NotApplicable,
@@ -394,7 +394,6 @@ internal static class PassthroughToolClassificationRegistry {
 			["regenerate-identity-signing-key"] = PassthroughClassification.NotApplicable,
 			["remove-data-binding-row-db"] = PassthroughClassification.NotApplicable,
 			["remove-package-dependency"] = PassthroughClassification.NotApplicable,
-			["reset-navigation-cache"] = PassthroughClassification.NotApplicable,
 			["resolve-oauth-system-user"] = PassthroughClassification.NotApplicable,
 			["restart-by-credentials"] = PassthroughClassification.NotApplicable,
 			["restart-by-environment-name"] = PassthroughClassification.NotApplicable,

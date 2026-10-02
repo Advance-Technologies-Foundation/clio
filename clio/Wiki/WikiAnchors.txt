@@ -185,7 +185,6 @@ register:register
 ring:ring
 remove-data-binding-row:remove-data-binding-row
 remove-data-binding-row-db:remove-data-binding-row-db
-reset-navigation-cache:reset-navigation-cache
 restart-web-app:restart-web-app,restart
 restore-configuration:restore-configuration,rc,restore
 restore-db:restore-db,rdb

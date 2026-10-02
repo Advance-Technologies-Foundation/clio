@@ -45,8 +45,7 @@ DESCRIPTION
     menu across reloads. On success clio prints the call that fixes such a
     tab (NextStep in the output): run it in the developer console of that
     tab, then reload the tab. Never clear Redis for this: it logs out every
-    user. Other API sessions keep the old menu until their session ends;
-    reset-navigation-cache repeats the clear for clio's session.
+    user. Other API sessions keep the old menu until their session ends.
 
 SYNOPSIS
     clio update-app-section [options]

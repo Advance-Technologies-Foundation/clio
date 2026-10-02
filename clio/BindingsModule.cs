@@ -666,7 +666,6 @@ public class BindingsModule {
 		services.AddTransient<ApplicationCreateTool>();
 		services.AddTransient<ApplicationSectionCreateTool>();
 		services.AddTransient<ApplicationSectionUpdateTool>();
-		services.AddTransient<ResetNavigationCacheTool>();
 		services.AddTransient<CreateEntityBusinessRuleTool>();
 		services.AddTransient<CreatePageBusinessRuleTool>();
 		services.AddTransient<ReadEntityBusinessRuleTool>();
@@ -1134,7 +1133,6 @@ public class BindingsModule {
 		services.AddTransient<AddPackageDependencyCommand>();
 		services.AddTransient<RemovePackageDependencyCommand>();
 		services.AddTransient<CreatePackageCommand>();
-		services.AddTransient<ResetNavigationCacheCommand>();
 		services.AddTransient<PackageDependencyManager>();
 		services.AddTransient<SaveSettingsToManifestCommand>();
 		services.AddTransient<ShowDiffEnvironmentsCommand>();
