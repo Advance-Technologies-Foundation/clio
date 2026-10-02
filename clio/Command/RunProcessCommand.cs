@@ -58,6 +58,7 @@ public class RunProcessCommand(
 	IProcessModelGenerator generator,
 	IApplicationClient applicationClient,
 	IServiceUrlBuilder serviceUrlBuilder,
+	IProcessRunLogReader processRunLogReader,
 	ILogger logger)
 	: Command<RunProcessOptions> {
 
@@ -80,6 +81,19 @@ public class RunProcessCommand(
 
 	private const string ManualStartRefusedCode = "ProcessCannotBeManuallyStartedException";
 
+	// ProcessModel.GetScriptTaskMethod looks the element's <name>Execute up in the methods wrapper of the LOADED
+	// assembly, so a script task saved since the last compile is missing there and the run throws this when it
+	// reaches the element. An exception the script itself throws is swallowed by the element and arrives with NO
+	// errorCode, so this code does not come from user C#; another platform lookup can still raise it, hence
+	// "most often".
+	private const string MissingCompiledMethodCode = "KeyNotFoundException";
+
+	internal static string BuildMissingCompiledMethodHint(string processCode) =>
+		$" This is most often a script task or process methods saved since '{processCode}' was last compiled: the "
+		+ "compiled code does not have them yet, so the run stops when it reaches that element, and the elements "
+		+ "before it may already have run. Ask the user, then run compile-creatio with process-name set to this "
+		+ "process.";
+
 	internal static string BuildQueuedBackgroundNote(string processCode) =>
 		$"'{processCode}' starts in background mode, so the platform queued it and returned no process id, "
 		+ "no status and no result parameters. This is not an error — for a fire-and-forget process the "
@@ -88,7 +102,8 @@ public class RunProcessCommand(
 		+ "which is the only way to get a verdict for it.";
 
 	internal static string BuildRefusalMessage(string processCode, string errorCode, string message) {
-		string detail = string.IsNullOrWhiteSpace(message) ? "the platform returned no details" : message;
+		// Fenced: the platform's wording reaches an agent through the MCP result, and it can quote stored text.
+		string detail = UntrustedText.Fenced(message) ?? "the platform returned no details";
 		if (string.Equals(errorCode, ManualStartRefusedCode, StringComparison.Ordinal)) {
 			return $"'{processCode}' cannot be launched: {detail}. Nothing was started. A process whose only "
 				+ "start events are automatic runs when its own trigger fires (a record signal, a timer, a "
@@ -96,7 +111,10 @@ public class RunProcessCommand(
 				+ "the trigger instead, or add a manual start event to the process.";
 		}
 		return $"'{processCode}' was not started: {detail}."
-			+ (string.IsNullOrWhiteSpace(errorCode) ? string.Empty : $" [{errorCode}]");
+			+ (string.IsNullOrWhiteSpace(errorCode) ? string.Empty : $" [{errorCode}]")
+			+ (string.Equals(errorCode, MissingCompiledMethodCode, StringComparison.Ordinal)
+				? BuildMissingCompiledMethodHint(processCode)
+				: string.Empty);
 	}
 
 	// True only for an accepted launch with no failure verdict.
@@ -166,9 +184,40 @@ public class RunProcessCommand(
 		}
 
 		response = BuildResponse(platformResponse, model.Code);
+		AddLoggedError(platformResponse, response);
 		// Feeds Execute's exit code, so it tracks the outcome rather than "a request was sent" — a refusal
 		// and a failed run would otherwise both exit 0.
 		return response.Error is null;
+	}
+
+	// A run whose script task threw comes back with only "check the process log" and no errorCode: the platform
+	// swallows the element's exception before RunProcess builds its answer. It logged it, though, on the run's
+	// SysProcessLog row before returning, so the failure names it. Best effort: when the log cannot be read the
+	// generic message stays, and a warning says where to look.
+	private void AddLoggedError(ProcessStartResponse platformResponse, RunProcessResponse response) {
+		if (response.Error is null || platformResponse is null || platformResponse.ProcessId == Guid.Empty) {
+			return;
+		}
+		(string errorCode, _) = ReadErrorInfo(platformResponse.ErrorInfo);
+		if (!string.IsNullOrWhiteSpace(errorCode)) {
+			return;
+		}
+		string logged;
+		try {
+			logged = processRunLogReader.ReadErrorSummary(platformResponse.ProcessId);
+		}
+		catch (Exception exception) when (exception is not OutOfMemoryException) {
+			// Reading the log is a courtesy on top of a failure already reported; no failure of it may replace
+			// that report. Its own text is not shown: it is the server's.
+			logger.WriteWarning($"Could not read the process log of run {platformResponse.ProcessId}: "
+				+ (UntrustedText.Fenced(exception.GetReadableMessageException()) ?? "no detail reported"));
+			(response.Warnings ??= []).Add(
+				$"The error this run logged could not be read; it is in the process log of run {platformResponse.ProcessId}.");
+			return;
+		}
+		if (logged is not null) {
+			response.Error += $" The process log of this run reports: {UntrustedText.Fenced(logged)}";
+		}
 	}
 
 	// A refusal, a background queueing and an inactive descriptor arrive with the SAME empty id and
@@ -205,7 +254,7 @@ public class RunProcessCommand(
 		// A failed run can arrive with success=true: the platform only clears that flag while
 		// Feature-SetErrorInfoIfProcessHasFailedExecution is on. Both signals are read.
 		if (!platformResponse.Success || platformResponse.ProcessStatus == ErrorStatus) {
-			response.Error = DescribeFailure(errorCode, errorMessage);
+			response.Error = DescribeFailure(errorCode, errorMessage, processCode);
 		}
 		return response;
 	}
@@ -224,12 +273,14 @@ public class RunProcessCommand(
 			? member.GetString()
 			: null;
 
-	private static string DescribeFailure(string errorCode, string message) {
-		string detail = string.IsNullOrWhiteSpace(message)
-			? "the platform returned no error details"
-			: message;
+	private static string DescribeFailure(string errorCode, string message, string processCode) {
+		// Fenced: the platform's wording reaches an agent through the MCP result, and it can quote stored text.
+		string detail = UntrustedText.Fenced(message) ?? "the platform returned no error details";
 		return $"The process run failed: {detail}."
-			+ (string.IsNullOrWhiteSpace(errorCode) ? string.Empty : $" [{errorCode}]");
+			+ (string.IsNullOrWhiteSpace(errorCode) ? string.Empty : $" [{errorCode}]")
+			+ (string.Equals(errorCode, MissingCompiledMethodCode, StringComparison.Ordinal)
+				? BuildMissingCompiledMethodHint(processCode)
+				: string.Empty);
 	}
 
 	private static string ResolveStatusName(int status) =>

@@ -48,7 +48,8 @@ public sealed class RunProcessToolTests {
 		List<int> PostedTimeouts,
 		List<int> PostedAttempts);
 
-	private static Harness BuildHarness(List<ProcessParameter> signature, string platformResponseJson = null) {
+	private static Harness BuildHarness(List<ProcessParameter> signature, string platformResponseJson = null,
+			IProcessRunLogReader processRunLogReader = null) {
 		IProcessModelGenerator generator = Substitute.For<IProcessModelGenerator>();
 		generator.Generate(Arg.Any<GenerateProcessModelCommandOptions>())
 			.Returns(_ => new ProcessModelType(Guid.NewGuid(), ProcessCode) {
@@ -74,7 +75,8 @@ public sealed class RunProcessToolTests {
 		serviceUrlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>())
 			.Returns("ServiceModel/ProcessEngineService.svc/RunProcess");
 
-		RunProcessCommand command = new(generator, applicationClient, serviceUrlBuilder, ConsoleLogger.Instance);
+		RunProcessCommand command = new(generator, applicationClient, serviceUrlBuilder,
+			processRunLogReader ?? Substitute.For<IProcessRunLogReader>(), ConsoleLogger.Instance);
 		return new Harness(command, applicationClient, bodies, timeouts, attempts);
 	}
 
@@ -408,6 +410,80 @@ public sealed class RunProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("A run whose script task threw comes back with only 'check the process log' and no errorCode; the failure then names the exception the run logged, fenced as the server's text.")]
+	public void TryRun_Should_Name_The_Logged_Exception_When_The_Platform_Answered_Generically() {
+		// Arrange
+		IProcessRunLogReader reader = Substitute.For<IProcessRunLogReader>();
+		reader.ReadErrorSummary(Guid.Parse("0f5e3a2a-2c8f-4f1e-9d0b-6d4b2f1a7c31"))
+			.Returns("System.ArgumentException: Term must be positive");
+		Harness harness = BuildHarness(MigratorSignature(), """{"processId":"0f5e3a2a-2c8f-4f1e-9d0b-6d4b2f1a7c31","processStatus":3,"success":false,"errorInfo":{"message":"An error has occurred during the process execution. Please check the process log for details"}}""", reader);
+
+		// Act
+		bool launched = harness.Command.TryRun(new RunProcessOptions { ProcessName = ProcessCode },
+			out RunProcessResponse response);
+
+		// Assert
+		launched.Should().BeFalse(because: "the run failed");
+		response.Error.Should().Contain("Term must be positive",
+				because: "the exception the script threw is what the caller has to fix")
+			.And.Contain("[untrusted-source-text begin]", "the logged text is the server's and is fenced");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("When the run's log cannot be read, the failure is still reported as the platform worded it, and a warning names the run whose log holds the error.")]
+	public void TryRun_Should_Keep_The_Failure_When_The_Log_Cannot_Be_Read() {
+		// Arrange
+		IProcessRunLogReader reader = Substitute.For<IProcessRunLogReader>();
+		reader.ReadErrorSummary(Arg.Any<Guid>())
+			.Returns(_ => throw new InvalidOperationException("SelectQuery failed: Access denied"));
+		Harness harness = BuildHarness(MigratorSignature(), """{"processId":"0f5e3a2a-2c8f-4f1e-9d0b-6d4b2f1a7c31","processStatus":3,"success":false,"errorInfo":{"message":"An error has occurred during the process execution. Please check the process log for details"}}""", reader);
+
+		// Act
+		bool launched = harness.Command.TryRun(new RunProcessOptions { ProcessName = ProcessCode },
+			out RunProcessResponse response);
+
+		// Assert
+		launched.Should().BeFalse(because: "the run failed whether or not its log could be read");
+		response.Error.Should().Contain("check the process log",
+			because: "the platform's own answer stays when nothing better could be read");
+		response.Warnings.Should().Contain(warning => warning.Contains("0f5e3a2a-2c8f-4f1e-9d0b-6d4b2f1a7c31"),
+			because: "the caller is told which run's log holds the error");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A KeyNotFoundException errorCode is the platform's lookup of a script task's method in the compiled code - an exception the script throws arrives with no errorCode - so the failure says to compile, and the log is not read.")]
+	public void TryRun_Should_Point_To_A_Compile_When_The_Compiled_Method_Is_Missing() {
+		// Arrange
+		IProcessRunLogReader reader = Substitute.For<IProcessRunLogReader>();
+		Harness harness = BuildHarness(MigratorSignature(), """{"processId":"0f5e3a2a-2c8f-4f1e-9d0b-6d4b2f1a7c31","processStatus":3,"success":false,"errorInfo":{"errorCode":"KeyNotFoundException","message":"The given key was not present in the dictionary."}}""", reader);
+
+		// Act
+		harness.Command.TryRun(new RunProcessOptions { ProcessName = ProcessCode }, out RunProcessResponse response);
+
+		// Assert
+		response.Error.Should().Contain("compile-creatio with process-name",
+				because: "a script task saved since the last compile is the usual cause")
+			.And.Contain("may already have run", "the elements before the failing one ran before it stopped");
+		reader.DidNotReceive().ReadErrorSummary(Arg.Any<Guid>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The same hint is given when the platform rethrew the KeyNotFoundException at start-up and returned no process id (UseOldStartupExceptionHandling).")]
+	public void BuildRefusalMessage_Should_Point_To_A_Compile_For_A_Missing_Compiled_Method() {
+		// Act
+		string message = RunProcessCommand.BuildRefusalMessage(ProcessCode, "KeyNotFoundException",
+			"The given key was not present in the dictionary.");
+
+		// Assert
+		message.Should().Contain("compile-creatio with process-name",
+			because: "the cause and the fix are the same as for a failed run");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("A failed run is reported as a failure even when the platform itself answered success=true, which it does whenever its Feature-SetErrorInfoIfProcessHasFailedExecution flag is off.")]
 	public void BuildResponse_Should_Fail_On_Error_Status_Even_When_The_Platform_Reported_Success() {
 		// Arrange
@@ -621,7 +697,7 @@ public sealed class RunProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The run-process description states that a code names one version, points the caller at the active version, and does NOT claim this endpoint folds a non-active code onto it.")]
+	[Description("The run-process description states that a code names one version, points the caller at the active version, and says - as measured - that a non-active version's code runs the active one, so run-process cannot run a version before it is activated.")]
 	public void RunProcessTool_Should_StateTheVersionContract_WhenItsDescriptionIsRead() {
 		// Arrange
 		System.Reflection.MethodInfo method = typeof(RunProcessTool).GetMethod(nameof(RunProcessTool.RunProcess))!;
@@ -633,9 +709,9 @@ public sealed class RunProcessToolTests {
 		// Assert
 		description.Should().Contain("activeVersionName",
 			because: "an agent that must launch the running version needs the field naming the code to launch");
-		description.Should().Contain("NOT established",
-			because: "whether this endpoint redirects a non-active code is unverified, and shipped text must not "
-				+ "turn that gap into a promise an agent then relies on");
+		description.Should().Contain("cannot run a version that is not active",
+			because: "a run 'of' a new version before activation executes the previous one, so an agent that "
+				+ "believes it verified the new code activates a version that never ran (ENG-101880)");
 		description.Should().Contain("isActiveVersion",
 			because: "the description names the flag to read before launching, so the check is actionable here too");
 	}
