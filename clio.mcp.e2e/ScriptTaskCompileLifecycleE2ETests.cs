@@ -16,10 +16,11 @@ using ModelContextProtocol.Protocol;
 namespace Clio.Mcp.E2E;
 
 /// <summary>
-/// The whole Script task compile chain over the real MCP server (ENG-92711): a saved script task, a
+/// The Script task compile chains over the real MCP server (ENG-92711): a saved script task, a
 /// <c>compile-creatio process-name</c> compile that fails with CS0104 in the process's own code, an aliased using
 /// added through <c>modify-business-process</c>, a second compile that succeeds, and a run that returns what the
-/// code computes.
+/// code computes; and a new version compiled with <c>process-name</c> and then activated, which runs its new code
+/// with no second compile.
 /// </summary>
 /// <remarks>
 /// <para>Developer-local on purpose. Each compile rebuilds the <c>Custom</c> package and reloads the runtime for
@@ -37,13 +38,15 @@ namespace Clio.Mcp.E2E;
 /// run included, and its failed compile never reached the assembly, so the delete owes nothing. A run cut off
 /// while a compile may still be running keeps the process and says so, since deleting under a running compile is
 /// not safe.</para>
+/// <para>The activation test compiles once, and its bodies always compile, so it keeps its process and version on
+/// every path, under a unique <c>UsrClioBpActivateCompiledE2e*</c> name.</para>
 /// </remarks>
 [TestFixture]
 [Category("McpE2E.Sandbox")]
 [Category("McpE2E.Manual")]
 [Category("LocalOnly")]
 [Category(McpE2ECategories.ProcessDesigner)]
-[Explicit("Compiles the Custom package twice and reloads the runtime for every user; run it by hand against an owned stand.")]
+[Explicit("Compiles the Custom package and reloads the runtime for every user; run it by hand against an owned stand.")]
 // [AllureNUnit] is intentionally omitted, for the reason recorded on EntitySchemaToolE2ETests: its lifecycle hooks
 // deadlock a fixture with many sequential async operations, and this one polls compile-status for minutes.
 [AllureFeature(CompileCreatioTool.CompileCreatioToolName)]
@@ -197,6 +200,10 @@ public sealed class ScriptTaskCompileLifecycleE2ETests {
 					because: "a .NET host runs the newly compiled code only after a restart: {0}", restart);
 			}
 			activated.Should().Contain(ExitCodeZero, because: "the activation itself succeeds: {0}", activated);
+			activated.Should().Contain(CommandExecutionResult.CompileRequiredWarningMarker,
+				because: "the warning still carries the marker that keeps clio from calling the compile not required");
+			activated.Should().NotContain(CommandExecutionResult.CompileNotRequiredNote,
+				because: "a version that was never compiled would refuse to start, so the note must not be added");
 			activated.Should().Contain("owes no second compile",
 				because: "the warning must say that the compile made before the activation still covers the version, "
 					+ "or an agent asks the user for a reload the run below shows is not needed: {0}", activated);
@@ -208,8 +215,8 @@ public sealed class ScriptTaskCompileLifecycleE2ETests {
 				because: "the run executes the NEW version's body, which triples the amount; the first version's "
 					+ "doubles it (14)");
 		} finally {
-			// Like the other test: a process that reached a compile stays, under its unique name; one whose compile
-			// outcome is unknown stays too, since deleting a schema under a running compile is not safe.
+			// The process and its version stay on every path (the remarks say why); a compile whose outcome is
+			// unknown is reported, since deleting a schema under a running compile is not safe.
 			if (compileMayBeRunning) {
 				await TestContext.Error.WriteLineAsync($"The compile outcome is unknown; retained '{processName}' and "
 					+ $"'{versionName}'. Delete them once the compile has stopped.");
