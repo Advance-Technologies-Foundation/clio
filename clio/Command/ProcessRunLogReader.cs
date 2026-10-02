@@ -33,8 +33,9 @@ internal sealed class ProcessRunLogReader(IApplicationClient applicationClient, 
 	private const int GuidDataValueType = 0;
 
 	// Bounded, once and short: the read decorates a failure already reported, and it runs inside the MCP response
-	// deadline. A run that fails within the last seconds before that deadline can still come back as still-running
-	// (which says not to re-run); the bound keeps that window small rather than closing it.
+	// deadline, so the read itself can push the answer past it - a run that fails within this bound of the deadline
+	// comes back as still-running (which says not to re-run). The short bound narrows that window; it does not
+	// close it.
 	private const int ReadTimeoutMs = 10_000;
 
 	/// <inheritdoc />

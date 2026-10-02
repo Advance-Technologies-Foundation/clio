@@ -12,13 +12,16 @@ date: 2026-10-02
 runnable: the first run after the activation executes the new body (measured on the local .NET Framework stand,
 2026-10-02: a 17-character value was refused under the new version's 16 limit, no compile in between). The
 activation re-saves every member of the family, but it writes the family's flags, not the code the compiled
-wrapper holds. A compile is owed only when the version's C# was EDITED since its last compile. Not measured: a
-version the runtime does not interpret, and a .NET host, where a compile also needs a restart before the run.
+wrapper holds. A compile is owed only when the version's C# changed since its last SUCCESSFUL process-name
+compile; a compile that failed covers nothing. Not measured: a version the runtime does not interpret, and a
+.NET host, where a compile also needs a restart before the run.
 
-**Why it is this way** - CrtProcessBuilder before 1.6.6.57 worded the activation warning on the version's "last
-save", next to a "re-saved all N schemas" warning, and appended the save-time compile demand. An agent that had
-just compiled the version read that as owing a second compile and asked the user for it. 1.6.6.57 conditions the
-warning on the last edit and says the earlier compile still covers the version.
+**Why it is this way** - the compiled wrapper is generated from the version's C# (its script tasks and
+methods), and activation only moves the family's actual flag: it saves each member to do so, but no C# changes,
+so the wrapper compiled before the activation still matches the version that now runs. The warning cannot tell
+whether that compile happened, so CrtProcessBuilder (1.6.6.57 and later) states the condition instead of
+demanding a compile; before that it was worded on the version's "last save", which the activation's own re-save
+seemed to renew.
 
 **What breaks if you ignore it** - reverting to "last save" wording, or treating the family re-save as an edit,
 makes every compile-then-activate flow ask for a second compile: a runtime reload for every user of the stand

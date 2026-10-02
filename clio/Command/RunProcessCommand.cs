@@ -91,9 +91,10 @@ public class RunProcessCommand(
 	internal static string BuildMissingCompiledMethodHint(string processCode) =>
 		$" This is most often a script task saved since the active version of '{processCode}' was last compiled - "
 		+ "run-process runs the active version whatever code it is given - so the compiled code does not have it "
-		+ "yet: the run stops when it reaches that element, and the elements before it may already have run. Ask "
-		+ "the user, then run compile-creatio with process-name set to the active version (describe-business-process "
-		+ "names it).";
+		+ "yet: the run stops when it reaches that element, and the elements before it may already have run. If a "
+		+ "process-name compile of it succeeded only minutes ago, the runtime may still be reloading: run again in "
+		+ "about two minutes before compiling again. Otherwise ask the user, then run compile-creatio with "
+		+ "process-name set to the active version (describe-business-process names it).";
 
 	internal static string BuildQueuedBackgroundNote(string processCode) =>
 		$"'{processCode}' starts in background mode, so the platform queued it and returned no process id, "
@@ -190,9 +191,9 @@ public class RunProcessCommand(
 
 	// A run that failed inside an element - a script that threw, a formula that could not be computed - comes back
 	// with only "check the process log" and no errorCode: the platform swallows the element's exception before
-	// RunProcess builds its answer. It logged it, though, on the run's
-	// SysProcessLog row before returning, so the failure names it. Best effort: when the log cannot be read the
-	// generic message stays, and a warning says where to look.
+	// RunProcess builds its answer. It logged it, though, on the run's SysProcessLog row before returning, so the
+	// failure names it. Best effort: when the log cannot be read the generic message stays, and a warning says
+	// where to look.
 	private void AddLoggedError(ProcessStartResponse platformResponse, RunProcessResponse response) {
 		if (response.Error is null || platformResponse is null || platformResponse.ProcessId == Guid.Empty) {
 			return;

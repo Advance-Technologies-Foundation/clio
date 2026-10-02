@@ -56,7 +56,7 @@ public sealed class ScriptTaskElementToolE2ETests {
 	private const string MinimumActivationWarningPackageVersion = "1.6.6.51";
 
 	/// <summary>The first CrtProcessBuilder that refuses a C# keyword as a script task's name.</summary>
-	private const string MinimumQaRoundTwoPackageVersion = "1.6.6.56";
+	private const string MinimumKeywordNameRefusalPackageVersion = "1.6.6.56";
 
 	/// <summary>
 	/// The first CrtProcessBuilder that names a multi-line verbatim string with its regex check; 1.6.6.56-58 named it
@@ -166,7 +166,7 @@ public sealed class ScriptTaskElementToolE2ETests {
 	public async Task CreateBusinessProcess_WithAKeywordAsTheScriptTaskName_Should_Refuse() {
 		// Arrange
 		await using ProcessDesignerArrangeContext context =
-			await ProcessDesignerE2EArrange.StartAsync("ScriptTask", MinimumQaRoundTwoPackageVersion);
+			await ProcessDesignerE2EArrange.StartAsync("ScriptTask", MinimumKeywordNameRefusalPackageVersion);
 		string processName = $"UsrClioBpKeywordNameE2e{Guid.NewGuid():N}";
 
 		// Act

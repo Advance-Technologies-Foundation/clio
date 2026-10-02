@@ -246,8 +246,12 @@ public class SetActiveProcessVersionToolTests {
 		// Assert
 		description.Should().Contain("owes no second compile",
 			because: "the activation answer used to send an agent that had already compiled to ask for another");
-		description.Should().Contain("For an interpreted version",
+		description.Should().Contain("for an interpreted version only",
 			because: "the claim was measured for an interpreted version only, and must not cover the compiled one");
+		description.Should().Contain("compile that SUCCEEDED",
+			because: "a compile that failed covers nothing");
+		description.Should().NotContain("unless the version was compiled with process-name since its last edit",
+			because: "that clause sat on the warning for EVERY version, the non-interpreted one included");
 	}
 
 	[Test]

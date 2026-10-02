@@ -513,7 +513,9 @@ public sealed class RunProcessToolTests {
 		// Assert
 		response.Error.Should().Contain("compile-creatio with process-name",
 				because: "a script task saved since the last compile is the usual cause")
-			.And.Contain("may already have run", "the elements before the failing one ran before it stopped");
+			.And.Contain("may already have run", "the elements before the failing one ran before it stopped")
+			.And.Contain("run again in about two minutes before compiling again",
+				"right after a compile the runtime may still be reloading, and another compile reloads it for nothing");
 		reader.DidNotReceive().ReadErrorSummary(Arg.Any<Guid>());
 	}
 
