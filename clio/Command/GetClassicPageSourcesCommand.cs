@@ -629,19 +629,33 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 		JObject topSchema = null;
 		string topUId = null;
 		foreach (SchemaLayer layer in layers) {
-			(JObject layerSchema, string loadError) = LoadSchemaCached(ctx, layer.UId, schemaName);
+			(JObject item, JObject layerSchema, string loadError) = LoadLayerItem(ctx, layer, schemaName);
 			if (loadError != null) {
-				return (null, null, null, $"Failed to load layer '{layer.PackageName}' ({layer.UId}): {loadError}");
+				return (null, null, null, loadError);
 			}
-			schemas.Add(new JObject {
-				["pkg"] = layer.PackageName,
-				["body"] = layerSchema["body"]?.ToString() ?? string.Empty
-			});
+			schemas.Add(item);
 			topSchema = layerSchema;
 			topUId = layer.UId;
 		}
 		return (schemas, topSchema, topUId, null);
 	}
+
+	// Loads one layer's own schema as the engine-facing {pkg, body} item; the error names the layer.
+	private (JObject item, JObject schema, string error) LoadLayerItem(
+		PageSourcesRunContext ctx, SchemaLayer layer, string schemaName) {
+		(JObject layerSchema, string loadError) = LoadSchemaCached(ctx, layer.UId, schemaName);
+		if (loadError != null || layerSchema == null) {
+			return (null, null, LayerLoadError(layer, loadError ?? NoSchemaReturned));
+		}
+		var item = new JObject {
+			["pkg"] = layer.PackageName,
+			["body"] = layerSchema["body"]?.ToString() ?? string.Empty
+		};
+		return (item, layerSchema, null);
+	}
+
+	private static string LayerLoadError(SchemaLayer layer, string reason) =>
+		$"Failed to load layer '{layer.PackageName}' ({layer.UId}): {reason}";
 
 	private JArray BuildSeed(PageSourcesRunContext ctx, JObject topSchema) {
 		// Walk `parent` from the top layer up to the base template. At EACH template level, enumerate every
@@ -1097,24 +1111,20 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 		}
 		var bodies = new JArray();
 		foreach (SchemaLayer layer in layers) {
-			JObject layerSchema;
+			JObject item;
 			string loadError;
 			try {
-				(layerSchema, loadError) = LoadSchemaCached(ctx, layer.UId, detailName);
+				(item, _, loadError) = LoadLayerItem(ctx, layer, detailName);
 			}
 			catch (Exception ex) {
-				(layerSchema, loadError) = (null, ex.Message);
+				(item, loadError) = (null, LayerLoadError(layer, ex.Message ?? ex.GetType().Name));
 			}
-			if (loadError != null || layerSchema == null) {
-				WarnDetail(ctx, $"Could not gather the layer chain (bodies) of detail '{detailName}': "
-					+ $"Failed to load layer '{layer.PackageName}' ({layer.UId}): {loadError ?? NoSchemaReturned}. "
+			if (loadError != null) {
+				WarnDetail(ctx, $"Could not gather the layer chain (bodies) of detail '{detailName}': {loadError}. "
 					+ "Its entry carries no bodies; body is the top layer only.");
 				return;
 			}
-			bodies.Add(new JObject {
-				["pkg"] = layer.PackageName,
-				["body"] = layerSchema["body"]?.ToString() ?? string.Empty
-			});
+			bodies.Add(item);
 		}
 		detailEntry["bodies"] = bodies;
 	}

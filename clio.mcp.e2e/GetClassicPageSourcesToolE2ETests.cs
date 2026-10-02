@@ -236,7 +236,7 @@ public sealed class GetClassicPageSourcesToolE2ETests : McpContractFixtureBase {
 	[Description("Writes each detail entry's bodies as its replacing-layer chain base->top ([{pkg, body}]) whose last item is the entry's top-layer body; an entry without bodies is explained by a warning naming that detail.")]
 	[AllureTag(ToolName)]
 	[AllureName("get-classic-page-sources writes each detail's layer chain as bodies")]
-	[AllureDescription("Collects the ContactPageV2 sources on a real stand and verifies every detail entry carries bodies: a non-empty array of {pkg, body} items with non-empty pkg, whose last body equals the entry's body. A detail without bodies must be named in a warning. No specific layer count is asserted, since the installed products vary per stand.")]
+	[AllureDescription("Collects the ContactPageV2 sources on a real stand and verifies at least one detail entry carries bodies and every bodies value is a non-empty array of {pkg, body} items with non-empty pkg, whose last body equals the entry's body. A detail without bodies must be named in a warning. No specific layer count is asserted, since the installed products vary per stand.")]
 	public async Task GetPageSources_Should_Write_Detail_Bodies_As_Layer_Chain() {
 		// Arrange & Act
 		SharedPageSources shared = await GetOrCollectSharedPageSourcesAsync();
@@ -248,7 +248,11 @@ public sealed class GetClassicPageSourcesToolE2ETests : McpContractFixtureBase {
 		using JsonDocument manifest = JsonDocument.Parse(shared.ManifestJson);
 		manifest.RootElement.TryGetProperty("detailSchemas", out JsonElement details).Should().BeTrue(
 			because: "ContactPageV2 references details");
-		foreach (JsonProperty detail in details.EnumerateObject()) {
+		List<JsonProperty> detailEntries = details.EnumerateObject().ToList();
+		detailEntries.Should().NotBeEmpty(because: "ContactPageV2 references details");
+		detailEntries.Any(detail => detail.Value.TryGetProperty("bodies", out _)).Should().BeTrue(
+			because: "a detail whose every layer loads carries its layer chain");
+		foreach (JsonProperty detail in detailEntries) {
 			if (!detail.Value.TryGetProperty("bodies", out JsonElement bodies)) {
 				(response.Warnings ?? []).Should().Contain(w => w.Contains($"detail '{detail.Name}'") && w.Contains("bodies"),
 					because: $"detail '{detail.Name}' without bodies must be explained by a warning");
