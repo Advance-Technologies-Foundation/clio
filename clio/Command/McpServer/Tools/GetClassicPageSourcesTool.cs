@@ -52,7 +52,10 @@ public sealed class GetClassicPageSourcesTool(
 		"(`{ \"Key\": { \"en-US\": \"…\", \"fr-FR\": \"…\" } }`, the get-page bundle.resources.strings shape), " +
 		"and each detail entry and each nested child-page manifest carries its own merged strings as " +
 		"`resourceStrings` in the same shape (a child manifest has no flat `resources`). A detail's " +
-		"`title` is the schema's internal caption, not the title the page shows. " +
+		"`title` is the schema's internal caption, not the title the page shows. Each detail entry also carries " +
+		"`bodies`: every replacing layer of the detail base->top as [{pkg, body}], each with its own-layer body " +
+		"(`body` stays the top layer), so behavior declared only in a lower layer is visible; it is omitted, with a " +
+		"warning, when any layer of the detail fails to load. " +
 		"`enumVocabulary` carries the TARGET stand's own ViewItemType/ContentType/DataValueType enum member->value " +
 		"tables, read live from that stand's sysenums.js — never a copy of the engine's pinned tables — so the " +
 		"engine's enum-drift guard can catch a stand on a different platform version; an enum whose value could not " +

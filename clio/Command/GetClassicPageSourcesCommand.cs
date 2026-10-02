@@ -1043,6 +1043,7 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 				}
 				JObject detailEntry = BuildDetailEntry(ctx, layers[layers.Count - 1].UId, detailName);
 				if (detailEntry.HasValues) {
+					AddDetailBodies(ctx, detailEntry, layers, detailName);
 					detailSchemas[detailName] = detailEntry;
 				}
 			}
@@ -1081,6 +1082,33 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 			}
 		}
 		return detailEntry;
+	}
+
+	// bodies: every replacing layer of the detail base->top as {pkg, body}, each with its own-layer body. A single
+	// layer is the top layer, whose body the entry already carries. When any layer fails to load the entry carries
+	// no bodies, since a partial chain would hide that layer's content.
+	private void AddDetailBodies(
+		PageSourcesRunContext ctx, JObject detailEntry, IReadOnlyList<SchemaLayer> layers, string detailName) {
+		if (layers.Count == 1) {
+			detailEntry["bodies"] = new JArray {
+				new JObject { ["pkg"] = layers[0].PackageName, ["body"] = detailEntry["body"]?.ToString() ?? string.Empty }
+			};
+			return;
+		}
+		JArray bodies;
+		string chainError;
+		try {
+			(bodies, _, _, chainError) = LoadLayerChain(ctx, detailName);
+		}
+		catch (Exception ex) {
+			(bodies, chainError) = (null, ex.Message);
+		}
+		if (chainError != null) {
+			WarnDetail(ctx, $"Could not gather the layer chain (bodies) of detail '{detailName}': {chainError}. "
+				+ "Its entry carries no bodies; body is the top layer only.");
+			return;
+		}
+		detailEntry["bodies"] = bodies;
 	}
 
 	// An extraction failure omits only the detail's resourceStrings.
