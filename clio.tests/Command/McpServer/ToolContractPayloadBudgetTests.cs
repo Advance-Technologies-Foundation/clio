@@ -67,10 +67,15 @@ public sealed class ToolContractPayloadBudgetTests {
 	// adds to odata-read's own [Description] cost the index nothing. Next 256-byte step is 45312 (177).
 	// Re-pinned for ENG-90576: localize-page is one more long-tail tool. Measured 45442 bytes on the
 	// default surface with it registered (130 bytes for its index entry); next 256-byte step is 45568 (178).
+	// Re-pinned for ENG-101592: execute-esq-to-file, get-component-info-to-file, get-request-info-to-file and
+	// list-entity-client-schemas-to-file are four more long-tail tools. Measured 46392 bytes on the default
+	// surface with them registered (824 bytes, about 206 per index entry); next 256-byte step is 46592 (182).
+	// ENG-101352 adds create-package, one more long-tail tool: measured 46567 bytes (175 for its index
+	// entry), still inside the 46592-byte step, so the ceiling does not move.
 	// Serialization uses the default JSON encoder,
 	// which escapes non-ASCII (a purpose ellipsis is written as a 6-byte escape), so it over-counts the real
 	// UTF-8 wire size — conservative, which is the safe direction for a ceiling.
-	private const int MaxCompactIndexSerializedBytes = 178 * 256;
+	private const int MaxCompactIndexSerializedBytes = 182 * 256;
 
 	// Worst-case ceiling for ONE named full contract, measured as the SERIALIZED contract in UTF-8 bytes
 	// — the same quantity the index ratchet above measures, and what the agent actually receives.

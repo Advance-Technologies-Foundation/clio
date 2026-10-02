@@ -333,13 +333,25 @@ This is one of the strongest and most AI-friendly parts of the MCP surface.
   result is cross-checked once with a broader bounded read before absence is reported; failed
   verification returns a failure rather than a definitive empty result.
 - `get-page`
-  Read a page as a merged bundle plus raw editable JavaScript body.
+  Read a page as a merged bundle plus raw editable JavaScript body. `include-operations=false` replaces
+  `page.ownBodySummary.viewConfigDiffOps` in the response with `viewConfigDiffOpCounts` (operations per type);
+  `meta.json` keeps the full list.
 - `update-page`
-  Write a full page body back to Creatio, optionally in `dry-run` mode; its MCP surface also has an explicit `validate=false` escape hatch for pre-existing content defects while retaining syntax/loadability checks.
+  Write a full page body back to Creatio, optionally in `dry-run` mode; its MCP surface also has an explicit `validate=false` escape hatch for pre-existing content defects while retaining syntax/loadability checks. `include-operations=false` trims the `verify=true` read-back the same way as on `get-page`.
+- `validate-page`
+  Validate a page body without saving. Unregistered captions of inserted widgets come back as one warning
+  that states the rule once and lists every node, property and key.
 - `sync-pages`
   Save many pages in one call with optional validation and optional read-back verification.
 - `component-info`
   Inspect a shipped local catalog of Freedom UI component contracts, grouped by category or returned in detail mode.
+- `get-component-info-to-file`, `get-request-info-to-file`
+  The same lookups as `get-component-info` / `get-request-info`, with the documentation markdown written
+  to a local file; the response carries the path and the section headings instead of the markdown.
+- `execute-esq-to-file`, `list-entity-client-schemas-to-file`
+  The same reads as `execute-esq` / `list-entity-client-schemas`, with the rows or the page list written
+  to a local file; the response carries the path and the counts. Like `odata-read-to-file`, each is a
+  separate long-tail tool, so the inline read tools stay read-only.
 
 What an external AI can practically do here:
 
@@ -384,6 +396,8 @@ This area gives the AI a clean application-level view of the platform.
   Configure package-specific NLog file routing in a registered local Net8 or .NET Framework installation. Reads the package's generated `Constants.LoggerName`, validates and rollback-protects both NLog file updates, and restarts Creatio only when explicitly requested.
 - `add-package-dependency`
   Add one or more package dependencies to a package via `PackageService.svc`. This is the recovery path when the schema designer or compiler fails for a package that extends objects owned by an app/package missing from its dependency list (symptom: `Schema '<NAME>' could not be opened in package '<PACKAGE>'` on a layered object, which names the ranked candidate packages to add). Idempotent — re-adding an existing dependency is a no-op. See `get-guidance name=package-dependencies`.
+- `create-package`
+  Create a new, empty, editable package in an environment via `PackageService.svc` (or inside an installed application with `application-code`). Prepends the environment's `SchemaNamePrefix`, sets the requested dependencies with a second request, and returns the readback (`package-uid`, `package-name`, `maintainer`, `dependencies`, `install-type`, `editable`). Destructive and not idempotent: a repeated name is refused and nothing changes; `package-created=true` with `success=false` means the package exists but a later step (dependencies or readback) failed; `package-created=null` means the outcome is unknown after a transport failure.
 - `remove-package-dependency`
   Remove one or more package dependencies from a package via `PackageService.svc` — the symmetric counterpart of `add-package-dependency`, used to roll back a dependency added only to unblock the schema designer. Matched by name (case-insensitive); idempotent — removing an absent dependency is a no-op.
 
@@ -397,6 +411,7 @@ What an external AI can practically do here:
 - remove apps
 - install packaged apps into an environment
 - add missing package dependencies to recover a broken schema designer or compile
+- create a new editable package to hold design-time changes
 
 The AI sees this as a higher abstraction layer than package-level commands.
 

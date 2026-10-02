@@ -52,7 +52,20 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 	public ExecuteEsqResponse Execute(
 		[Description("Parameters: query, environment-name (required); timeout (optional).")]
 		[Required]
-		ExecuteEsqArgs args) {
+		ExecuteEsqArgs args) =>
+		Run(commandResolver, args, MaxResponseSizeBytes, suggestFileTwin: true);
+
+	/// <summary>
+	/// Validates the query, runs it and parses the rows. Shared with <see cref="ExecuteEsqToFileTool"/>, so the
+	/// inline and the file path refuse the same queries and return the same rows.
+	/// </summary>
+	/// <param name="commandResolver">Resolves the environment-scoped client.</param>
+	/// <param name="args">The bound tool arguments.</param>
+	/// <param name="maxResponseBytes">Largest UTF-8 DataService response accepted before result-too-large.</param>
+	/// <param name="suggestFileTwin">Whether a result-too-large failure points at <see cref="ExecuteEsqToFileTool"/>.</param>
+	/// <returns>The rows on success, or the failure.</returns>
+	internal static ExecuteEsqResponse Run(
+		IToolCommandResolver commandResolver, ExecuteEsqArgs args, long maxResponseBytes, bool suggestFileTwin) {
 		try {
 			if (!TryNormalizeQuery(args.Query, out JsonElement query, out string queryError)) {
 				return ExecuteEsqResponse.Failure(queryError + QueryShapeExample);
@@ -77,10 +90,10 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 
 			string url = urlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select);
 			string responseJson = client.ExecutePostRequest(url, query.GetRawText(), timeout);
-			bool responseIsTooLarge = responseJson.Length > MaxResponseSizeBytes
-				|| Encoding.UTF8.GetByteCount(responseJson) > MaxResponseSizeBytes;
+			bool responseIsTooLarge = responseJson.Length > maxResponseBytes
+				|| Encoding.UTF8.GetByteCount(responseJson) > maxResponseBytes;
 			if (responseIsTooLarge) {
-				return ExecuteEsqResponse.ResultTooLarge(MaxResponseSizeBytes);
+				return ExecuteEsqResponse.ResultTooLarge(maxResponseBytes, suggestFileTwin);
 			}
 
 			IReadOnlyList<string> requestedColumns = ExtractRequestedColumnAliases(query);
@@ -302,7 +315,7 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 /// <summary>
 /// Arguments for <see cref="ExecuteEsqTool"/>.
 /// </summary>
-public sealed record ExecuteEsqArgs {
+public record ExecuteEsqArgs {
 	/// <summary>The raw ESQ SelectQuery object to execute.</summary>
 	[JsonPropertyName("query")]
 	[Description(
@@ -355,7 +368,12 @@ public sealed record ExecuteEsqResponse(
 	[property: JsonPropertyName("error-class")]
 	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	[property: Description("Stable failure classification. result-too-large means the DataService response exceeded the MCP-safe byte budget.")]
-	string? ErrorClass = null) {
+	string? ErrorClass = null,
+
+	[property: JsonPropertyName("output-file")]
+	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[property: Description("Absolute path of the file the rows were written to. Present only on an execute-esq-to-file success.")]
+	string? OutputFile = null) {
 
 	/// <summary>
 	/// Recovery hint attached to every failure so a caller that guessed the ESQ format is pointed at the guidance.
@@ -379,11 +397,15 @@ public sealed record ExecuteEsqResponse(
 
 	/// <summary>Creates a structured failure for a DataService response that exceeds the MCP-safe byte budget.</summary>
 	/// <param name="maximumSizeBytes">Largest UTF-8 response the tool may return.</param>
-	public static ExecuteEsqResponse ResultTooLarge(int maximumSizeBytes) =>
+	/// <param name="suggestFileTwin">Whether to name execute-esq-to-file as the way to keep every row.</param>
+	public static ExecuteEsqResponse ResultTooLarge(long maximumSizeBytes, bool suggestFileTwin = false) =>
 		new(
 			false,
 			$"SelectQuery result exceeds the {maximumSizeBytes} UTF-8 byte limit. "
-			+ "Select explicit columns instead of allColumns, lower rowCount, or page with rowsOffset, then retry.",
+			+ "Select explicit columns instead of allColumns, lower rowCount, or page with rowsOffset, then retry."
+			+ (suggestFileTwin
+				? $" When every row is needed, run the same query with {ExecuteEsqToFileTool.ToolName}, which writes the rows to a local file."
+				: string.Empty),
 			null,
 			null,
 			null,

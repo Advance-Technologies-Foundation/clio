@@ -719,6 +719,7 @@ public class BindingsModule {
 		services.AddTransient<GetClientUnitSchemaTool>();
 		services.AddTransient<GetClassicPageSourcesTool>();
 		services.AddTransient<ListEntityClientSchemasTool>();
+		services.AddTransient<ListEntityClientSchemasToFileTool>();
 		services.AddTransient<SqlSchemaCreateTool>();
 		services.AddTransient<RegisterProcessElementTool>();
 		services.AddTransient<SqlSchemaGetTool>();
@@ -793,8 +794,10 @@ public class BindingsModule {
 		services.AddTransient<ListKnowledgeSourcesCommand>();
 		services.AddTransient<ListKnowledgeExamplesCommand>();
 		services.AddTransient<ComponentInfoTool>();
+		services.AddTransient<ComponentInfoToFileTool>();
 		services.AddTransient<ExportComponentRegistryTool>();
 		services.AddTransient<RequestInfoTool>();
+		services.AddTransient<RequestInfoToFileTool>();
 		services.AddTransient<BuildThemeTool>();
 		services.AddTransient<AdviseThemePaletteTool>();
 		services.AddTransient<ClearThemesCacheTool>();
@@ -819,6 +822,7 @@ public class BindingsModule {
 		services.AddTransient<AddPackageDependencyTool>();
 		services.AddTransient<AddCustomLoggingTool>();
 		services.AddTransient<RemovePackageDependencyTool>();
+		services.AddTransient<CreatePackageTool>();
 		services.AddTransient<CreateUiProjectTool>();
 		services.AddTransient<DataForgeTool>();
 		services.AddTransient<GetTargetPackageTool>();
@@ -892,6 +896,7 @@ public class BindingsModule {
 		services.AddTransient<IDataForgeContextService, DataForgeContextService>();
 		services.AddTransient<IConfinedFileAccess, ConfinedFileAccess>();
 		services.AddTransient<IODataFileContract, ODataFileContract>();
+		services.AddTransient<IMcpOutputFileWriter, McpOutputFileWriter>();
 		services.AddTransient<ODataReadTool>();
 		services.AddTransient<ODataReadToFileTool>();
 		services.AddTransient<ODataCreateTool>();
@@ -1127,6 +1132,7 @@ public class BindingsModule {
 		services.AddTransient<PackageEditableMutator>();
 		services.AddTransient<AddPackageDependencyCommand>();
 		services.AddTransient<RemovePackageDependencyCommand>();
+		services.AddTransient<CreatePackageCommand>();
 		services.AddTransient<PackageDependencyManager>();
 		services.AddTransient<SaveSettingsToManifestCommand>();
 		services.AddTransient<ShowDiffEnvironmentsCommand>();

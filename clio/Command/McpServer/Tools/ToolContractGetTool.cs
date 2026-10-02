@@ -501,6 +501,9 @@ internal static class ToolContractCatalog {
 	private const string CountFieldName = "count";
 	private const string OrderByFieldName = "order-by";
 	private const string OutputFileFieldName = "output-file";
+	private const string EntityNameFieldName = "entity-name";
+	private const string OutputFileTwinPrecondition =
+		"output-file must not already exist and must resolve inside the workspace or the OS temp directory.";
 	private const string ConstDefaultValueSourceName = nameof(Terrasoft.Core.Entities.EntitySchemaColumnDefSource.Const);
 	private const string DefaultValueConfigFieldName = "default-value-config";
 	private const string DefaultValueConfigSourceKey = "source";
@@ -630,6 +633,7 @@ internal static class ToolContractCatalog {
 	private const string NumberType = "number";
 	private const string ObjectType = "object";
 	private const string ComponentTypeFieldName = "component-type";
+	private const string CompositeFieldName = "composite";
 	private const string OperationsFieldName = "operations";
 	private const string OffsetFieldName = "offset";
 	private const string PackageNameFieldName = "package-name";
@@ -684,6 +688,7 @@ internal static class ToolContractCatalog {
 	private const string RuleFieldName = "rule";
 	private const string RulesFieldName = "rules";
 	private const string SectionCodeFieldName = "section-code";
+	private const string SectionsFieldName = "sections";
 	private const string DeleteEntitySchemaFieldName = "delete-entity-schema";
 	private const string SearchPatternFieldName = "search-pattern";
 	private const string EventNameFieldName = "event_name";
@@ -704,6 +709,7 @@ internal static class ToolContractCatalog {
 	private const string ValueFieldName = "value";
 	private const string ValuesFieldName = "values";
 	private const string VerifyFieldName = "verify";
+	private const string IncludeOperationsFieldName = "include-operations";
 	private const string BindingNameDescription = "Binding name.";
 	private const string WorkspacePathDescription = "Absolute local workspace path. Network-share paths are not supported.";
 	private const string DataBindingWorkspacePathDescription = "Absolute local workspace root containing .clio/workspaceSettings.json, not the package directory. The package is resolved under packages/<package-name> beneath that root. Network-share paths are not supported.";
@@ -799,6 +805,7 @@ internal static class ToolContractCatalog {
 			[CreatioArtifactMergeTool.ToolName] = BuildCreatioArtifactMerge(),
 			[GuidanceGetTool.ToolName] = BuildGuidanceGet(),
 			[ExecuteEsqTool.ToolName] = BuildExecuteEsq(),
+			[ExecuteEsqToFileTool.ToolName] = BuildExecuteEsqToFile(),
 			[SettingsHealthTool.ToolName] = BuildSettingsHealth(),
 			[GetTelemetryConsentTool.ToolName] = BuildGetTelemetryConsent(),
 			[SendTelemetryTool.ToolName] = BuildSendTelemetry(),
@@ -844,7 +851,11 @@ internal static class ToolContractCatalog {
 			[FindEntitySchemaTool.FindEntitySchemaToolName] = BuildFindEntitySchema(),
 			[ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName] = BuildModifyEntitySchemaColumn(),
 			[ComponentInfoTool.ToolName] = BuildComponentInfo(),
+			[ComponentInfoToFileTool.ToolName] = BuildComponentInfoToFile(),
 			[RequestInfoTool.ToolName] = BuildRequestInfo(),
+			[RequestInfoToFileTool.ToolName] = BuildRequestInfoToFile(),
+			[ListEntityClientSchemasTool.ToolName] = BuildListEntityClientSchemas(),
+			[ListEntityClientSchemasToFileTool.ToolName] = BuildListEntityClientSchemasToFile(),
 			[PageUpdateTool.ToolName] = BuildPageUpdate(),
 			[LocalizePageTool.ToolName] = BuildLocalizePage(),
 			[PageValidateTool.ToolName] = BuildPageValidate(),
@@ -882,6 +893,7 @@ internal static class ToolContractCatalog {
 		GuidanceGetTool.ToolName,
 		CreatioArtifactMergeTool.ToolName,
 		ExecuteEsqTool.ToolName,
+		ExecuteEsqToFileTool.ToolName,
 		SettingsHealthTool.ToolName,
 		GetTelemetryConsentTool.ToolName,
 		SendTelemetryTool.ToolName,
@@ -930,7 +942,11 @@ internal static class ToolContractCatalog {
 		GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName,
 		ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName,
 		ComponentInfoTool.ToolName,
+		ComponentInfoToFileTool.ToolName,
 		RequestInfoTool.ToolName,
+		RequestInfoToFileTool.ToolName,
+		ListEntityClientSchemasTool.ToolName,
+		ListEntityClientSchemasToFileTool.ToolName,
 		PageUpdateTool.ToolName,
 		LocalizePageTool.ToolName,
 		PageValidateTool.ToolName,
@@ -1749,7 +1765,11 @@ internal static class ToolContractCatalog {
 					ExecuteEsqTool.ToolName
 				],
 				"Read the 'esq' and 'esq-filters' guidance with get-guidance before composing a SelectQuery, then run it with execute-esq."),
-			[],
+			[
+				Flow(
+					[ExecuteEsqTool.ToolName, ExecuteEsqToFileTool.ToolName],
+					"When the rows are too many to read inline, run the same query with execute-esq-to-file, which writes them to a local file.")
+			],
 			[],
 			null,
 			[
@@ -2148,7 +2168,7 @@ internal static class ToolContractCatalog {
 				Field(ApplicationNameFieldName, StringType, InstalledApplicationDisplayNameDescription),
 				Field(ApplicationCodeFieldName, StringType, InstalledApplicationCodeDescription),
 				Field(ApplicationVersionFieldName, StringType, InstalledApplicationVersionDescription),
-				Field("sections", ArrayType, "List of section metadata objects in the application."),
+				Field(SectionsFieldName, ArrayType, "List of section metadata objects in the application."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
 			),
 			CommonErrorContract,
@@ -4598,7 +4618,8 @@ internal static class ToolContractCatalog {
 				[SchemaNameFieldName],
 				EnvironmentOrExplicitConnectionFields(
 					Field(SchemaNameFieldName, StringType, "Freedom UI page schema name."),
-					Field("output-directory", StringType, "Optional. Directory to anchor the `.clio-pages` output under (typically your project root). An explicit value is honored VERBATIM and is NOT confined to the workspace: `<output-directory>/.clio-pages/{schema-name}/` is REPLACED on every call \u2014 the existing directory is moved aside and then deleted recursively \u2014 so never point it at a directory holding anything but clio page output. Confinement of an explicit anchor is not implemented yet (issue #1185 review); until it is, the caller owns that choice. Omitted, the anchor resolves in THREE steps: the nearest ancestor of the current working directory containing `.clio/workspaceSettings.json`; else the current working directory itself; else \u2014 only when that is the bare home directory \u2014 the managed clio home root. In a plain checkout with no workspace marker the output therefore lands under the CURRENT DIRECTORY, not a workspace root.")),
+					Field("output-directory", StringType, "Optional. Directory to anchor the `.clio-pages` output under (typically your project root). An explicit value is honored VERBATIM and is NOT confined to the workspace: `<output-directory>/.clio-pages/{schema-name}/` is REPLACED on every call \u2014 the existing directory is moved aside and then deleted recursively \u2014 so never point it at a directory holding anything but clio page output. Confinement of an explicit anchor is not implemented yet (issue #1185 review); until it is, the caller owns that choice. Omitted, the anchor resolves in THREE steps: the nearest ancestor of the current working directory containing `.clio/workspaceSettings.json`; else the current working directory itself; else \u2014 only when that is the bare home directory \u2014 the managed clio home root. In a plain checkout with no workspace marker the output therefore lands under the CURRENT DIRECTORY, not a workspace root."),
+					Field(IncludeOperationsFieldName, BooleanType, "Optional, default true. false leaves `page.ownBodySummary.viewConfigDiffOps` out of the response and puts `page.ownBodySummary.viewConfigDiffOpCounts` (number of operations per operation type, e.g. {\"insert\": 12, \"merge\": 3}) in its place; every other field is unchanged and `meta.json` still carries the full list. Use false when only the size of the own body matters, not which components it names.")),
 				AnyOf: EnvironmentOrExplicitConnectionRequirements()),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -4606,7 +4627,7 @@ internal static class ToolContractCatalog {
 					SuccessFalseSignal
 				],
 				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
-				Field("page", ObjectType, "Current hierarchy leaf: schemaName, schemaUId, packageName (also currentLeafPackageName), packageUId, parentSchemaName. The leaf may be read-only. Default writes resolve designPackageUId; designPackageName names that stored or virtual package when metadata is available. willCreateReplacingInDesignPackage means a new replacing schema is needed, not necessarily a new package. A failed design-package read can fall back to the leaf; update-page resolves its destination independently and fails closed."),
+				Field("page", ObjectType, "Current hierarchy leaf: schemaName, schemaUId, packageName (also currentLeafPackageName), packageUId, parentSchemaName. The leaf may be read-only. Default writes resolve designPackageUId; designPackageName names that stored or virtual package when metadata is available. willCreateReplacingInDesignPackage means a new replacing schema is needed, not necessarily a new package. A failed design-package read can fall back to the leaf; update-page resolves its destination independently and fails closed. `ownBodySummary` counts the operations of the schema's own body and lists them in `viewConfigDiffOps`, or, with include-operations=false, counts them per operation type in `viewConfigDiffOpCounts` instead."),
 				Field("files", ObjectType, "Paths of the files written to disk: `bodyFile` (body.js \u2014 the editable JavaScript source to read, edit and send back), `bundleFile` (bundle.json \u2014 the full merged view; minified JSON, parse it with a JSON tool rather than grep), `metaFile` (meta.json) and `fetchedAt`. The body and the bundle are NOT inlined in this envelope. These are paths on the MCP SERVER host: a client that does not share that filesystem (a remote mcp-http caller) cannot read them. The whole `.clio-pages/{schema-name}/` directory is deleted and rewritten on every get-page of that schema, so do not keep in-progress edits there."),
 				Field("editable", ObjectType, "OPTIONAL \u2014 omitted when the best-effort SysSchema checksum query returned no row or failed; treat its ABSENCE as 'baseline unavailable', never as 'no editable schema'. When present: editable (own) schema state captured at fetch time \u2014 `editableSchemaExists` plus the identity and change signal used as the conflict-detection baseline for a later update-page / sync-pages call."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
@@ -4616,7 +4637,9 @@ internal static class ToolContractCatalog {
 				SchemaNameParameterAlias(),
 				EnvironmentNameParameterAlias()
 			],
-			[],
+			[
+				Default(IncludeOperationsFieldName, "true", "The response lists every own-body operation by default; pass false for counts per operation type.")
+			],
 			[
 				Example("Read an existing FormPage body", new Dictionary<string, object?> {
 					[SchemaNameFieldName] = ExampleTaskAppFormPageSchemaName,
@@ -5261,7 +5284,7 @@ internal static class ToolContractCatalog {
 				[],
 				[
 					Field(ComponentTypeFieldName, StringType, "Freedom UI component type, e.g. 'crt.TabContainer'. Omit or use 'list' to return the catalog (list mode); a known type returns that one component's full contract (detail mode); an unknown type returns a bounded suggestion shortlist. Mutually exclusive with 'composite'."),
-					Field("composite", StringType, "Composite Designer element caption, for example 'Expanded list' or 'Next steps'. Returns the composite's assembly docs — a composite is a pre-built combination of several components with NO componentType of its own. Discover available captions via list mode (composites section). Mutually exclusive with 'component-type'."),
+					Field(CompositeFieldName, StringType, "Composite Designer element caption, for example 'Expanded list' or 'Next steps'. Returns the composite's assembly docs — a composite is a pre-built combination of several components with NO componentType of its own. Discover available captions via list mode (composites section). Mutually exclusive with 'component-type'."),
 					Field("search", StringType, "Optional keyword filter applied in list mode and to not-found suggestions, e.g. 'tab'."),
 					Field("schema-type", StringType, "Component registry to query: 'web' (default) or 'mobile'. The mobile registry is separate (crt.Toggle, crt.BarcodeScanner, crt.Sort, ...) and excludes web-only types."),
 					Field(EnvironmentNameFieldName, StringType, "PREFERRED. Registered environment name; scopes the catalog to its real platform version. Mutually exclusive with 'version'."),
@@ -5274,7 +5297,7 @@ internal static class ToolContractCatalog {
 					new ToolContractValidator(
 						"mutually-exclusive",
 						InvalidWorkflowShapeCode,
-						Fields: [ComponentTypeFieldName, "composite"],
+						Fields: [ComponentTypeFieldName, CompositeFieldName],
 						Context: "'component-type' and 'composite' are mutually exclusive — pass one or the other, not both.")
 				]),
 			EnvelopeOutput(
@@ -5318,14 +5341,18 @@ internal static class ToolContractCatalog {
 					["schema-type"] = "mobile"
 				}),
 				Example("Get the assembly recipe for a composite Designer element", new Dictionary<string, object?> {
-					["composite"] = "Expanded list"
+					[CompositeFieldName] = "Expanded list"
 				})
 			],
 			Flow([ComponentInfoTool.ToolName],
 				"Use after get-page when bundle.viewConfig contains unfamiliar crt.* component types. "
 				+ "Use with composite=\"<caption>\" (not component-type) to get the authoritative assembly recipe for a composite Designer element "
 				+ "(e.g. 'Expanded list', 'Attachments', 'Next steps') — composites have no componentType and must be fetched by caption."),
-			[],
+			[
+				Flow(
+					[ComponentInfoTool.ToolName, ComponentInfoToFileTool.ToolName],
+					"When only part of a long documentation is needed, call get-component-info-to-file with the same arguments: it writes the documentation to a local file and returns its section headings.")
+			],
 			[],
 			[
 				new ToolAntiPattern(
@@ -5412,7 +5439,11 @@ internal static class ToolContractCatalog {
 				+ "then fetch its detail and author the binding's params ONLY from 'parameters'. "
 				+ "Read get-guidance name=when-to-use-requests for the decision rules; a parameter carrying a "
 				+ "valueSource annotation is resolved through the named probe tool, never invented."),
-			[],
+			[
+				Flow(
+					[RequestInfoTool.ToolName, RequestInfoToFileTool.ToolName],
+					"When only part of a long documentation is needed, call get-request-info-to-file with the same arguments: it writes the documentation to a local file and returns its section headings.")
+			],
 			[],
 			[
 				new ToolAntiPattern(
@@ -5424,6 +5455,198 @@ internal static class ToolContractCatalog {
 					"A parameter with a valueSource annotation is filled ONLY from the named probe tool's result "
 					+ "(list-printables, get-process-signature). A made-up value passes save and fails silently at runtime.")
 			]);
+	}
+
+	/// <summary>
+	/// Builds the contract of a <c>*-to-file</c> twin from the contract of its inline tool, so the two cannot drift
+	/// on the arguments they share: the twin takes every inline argument plus a required <c>output-file</c>.
+	/// </summary>
+	private static ToolContractDefinition FileTwinOf(
+		ToolContractDefinition inline,
+		string twinName,
+		string description,
+		string outputFileDescription,
+		ToolOutputContract output,
+		IReadOnlyList<ToolContractExample> examples,
+		string preferredFlowNotes) =>
+		inline with {
+			Name = twinName,
+			Description = description,
+			InputSchema = inline.InputSchema with {
+				Required = [.. inline.InputSchema.Required, OutputFileFieldName],
+				Properties = [.. inline.InputSchema.Properties, Field(OutputFileFieldName, StringType, outputFileDescription)],
+				Validators = [
+					.. inline.InputSchema.Validators ?? [],
+					new ToolContractValidator("output-file-required", "invalid-output-file", OutputFileFieldName,
+						Context: $"output-file is required. Use {inline.Name} when the result should be returned inline.")
+				]
+			},
+			OutputContract = output,
+			Examples = examples,
+			PreferredFlow = Flow([twinName], preferredFlowNotes),
+			FallbackFlow = [
+				Flow([inline.Name, twinName],
+					$"Call {inline.Name} for an ordinary read; switch to {twinName} with the same arguments when the result is too large to read inline.")
+			],
+			Preconditions = [.. inline.Preconditions ?? [], OutputFileTwinPrecondition]
+		};
+
+	private static ToolContractDefinition BuildExecuteEsqToFile() {
+		ToolContractDefinition inline = BuildExecuteEsq();
+		return FileTwinOf(
+			inline,
+			ExecuteEsqToFileTool.ToolName,
+			"Writes the rows of a raw EntitySchemaQuery (ESQ) SelectQuery to a local JSON file and returns the path and the row count instead of the rows. " +
+			"Takes the same query, environment-name and timeout as execute-esq and validates, runs and parses the query the same way, so a query that fails on execute-esq fails here with the same error and no file. " +
+			"The file holds exactly the rows array execute-esq returns inline, or the whole response body when it has no rows array (count is then absent). " +
+			$"The inline {ExecuteEsqTool.MaxResponseSizeBytes}-byte budget does not apply; the response is capped at {ExecuteEsqToFileTool.MaxResponseSizeBytes} bytes instead.",
+			"Required path for the JSON rows file, confined to the workspace or the OS temp directory. The file must not already exist, so a retry must use a different path.",
+			EnvelopeOutput(
+				SuccessFieldName,
+				[
+					SuccessFalseSignal
+				],
+				Field(SuccessFieldName, BooleanType, "Whether the query succeeded and the rows were written."),
+				Field(CountFieldName, NumberType, "Number of rows written to output-file."),
+				Field(OutputFileFieldName, StringType, "Absolute path of the JSON file holding the rows array."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription),
+				Field("hint", StringType, "Recovery hint on a failure caused by the query shape, pointing to the ESQ guidance."),
+				Field("error-class", StringType, $"Stable failure classification. result-too-large means the DataService response exceeded {ExecuteEsqToFileTool.MaxResponseSizeBytes} UTF-8 bytes.")),
+			[
+				.. inline.Examples.Select(example => example with {
+					Summary = example.Summary + " and keep the rows on disk",
+					Arguments = new Dictionary<string, object?>(example.Arguments) { [OutputFileFieldName] = "contacts.json" }
+				})
+			],
+			"Use when the rows of an ESQ SelectQuery are too many to read inline and should be kept on disk for a follow-up pass.");
+	}
+
+	private static ToolContractDefinition BuildComponentInfoToFile() {
+		ToolContractDefinition inline = BuildComponentInfo();
+		return FileTwinOf(
+			inline,
+			ComponentInfoToFileTool.ToolName,
+			"Writes the documentation markdown of a get-component-info response to a local file and returns every other field of that response plus the file path and the section headings. " +
+			"Takes the same arguments as get-component-info and resolves the same catalog version; only `documentation` is replaced. " +
+			"When the response carries no documentation (list mode, or a component without docs), nothing is written and the response is exactly the get-component-info response.",
+			"Required path for the documentation markdown file, confined to the workspace or the OS temp directory. The file must not already exist, so a retry must use a different path.",
+			DocumentationTwinOutput(inline.OutputContract),
+			[
+				Example("Keep a composite assembly recipe on disk", new Dictionary<string, object?> {
+					[CompositeFieldName] = "Expanded list",
+					[OutputFileFieldName] = "expanded-list.md"
+				})
+			],
+			"Use when a detail or composite response carries long documentation and only some of its sections are needed: read the headings, then read those sections from the file.");
+	}
+
+	private static ToolContractDefinition BuildRequestInfoToFile() {
+		ToolContractDefinition inline = BuildRequestInfo();
+		return FileTwinOf(
+			inline,
+			RequestInfoToFileTool.ToolName,
+			"Writes the documentation markdown of a get-request-info response to a local file and returns every other field of that response plus the file path and the section headings. " +
+			"Takes the same arguments as get-request-info and resolves the same catalog version; only `documentation` is replaced. " +
+			"When the response carries no documentation (list mode, or a request without docs), nothing is written and the response is exactly the get-request-info response.",
+			"Required path for the documentation markdown file, confined to the workspace or the OS temp directory. The file must not already exist, so a retry must use a different path.",
+			DocumentationTwinOutput(inline.OutputContract),
+			[
+				Example("Keep a request authoring recipe on disk", new Dictionary<string, object?> {
+					["request-type"] = "crt.PrintablesRequest",
+					[OutputFileFieldName] = "printables-request.md"
+				})
+			],
+			"Use when a detail response carries long documentation and only some of its sections are needed: read the headings, then read those sections from the file.");
+	}
+
+	// The inline output fields, with documentation replaced by the two fields the twin returns in its place.
+	private static ToolOutputContract DocumentationTwinOutput(ToolOutputContract inline) =>
+		inline with {
+			Fields = [
+				.. inline.Fields.Where(field => field.Name != DocumentationFileProjection.DocumentationFieldName),
+				Field(DocumentationFileProjection.DocumentationFileFieldName, StringType,
+					"Absolute path of the file holding the documentation markdown. Absent when the response carried no documentation, in which case no file was written."),
+				Field(DocumentationFileProjection.DocumentationSectionsFieldName, ArrayType,
+					"The markdown headings of the file in document order, each with its '#' prefix (for example '## Pitfalls'), so a caller can read only the sections it needs.")
+			]
+		};
+
+	private static ToolContractDefinition BuildListEntityClientSchemas() {
+		return new ToolContractDefinition(
+			ListEntityClientSchemasTool.ToolName,
+			"Resolves the page-role graph of an entity for a Classic to Freedom UI migration: its Classic sections, edit pages (including per-type pages) and add mini pages, each classified classic, freedom or unknown. " +
+			"One level only: call it per detail entity to recurse.",
+			new ToolInputSchemaContract(
+				[EntityNameFieldName],
+				EnvironmentOrExplicitConnectionFields(
+					Field(EntityNameFieldName, StringType, "Entity schema name, e.g. 'Contract' or 'SupportUnit'.")),
+				AnyOf: EnvironmentOrExplicitConnectionRequirements()),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[
+					SuccessFalseSignal
+				],
+				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
+				Field("entity", StringType, "The resolved entity schema name."),
+				Field("entityUId", StringType, "UId of the entity's base schema."),
+				Field(SectionsFieldName, ArrayType, "Classic sections bound to the entity, each with caption, code, sectionSchema, cardSchema, cardSchemaUId, template, kind (classic, freedom or unknown) and isTyped."),
+				Field("editPages", ArrayType, "Edit pages bound to the entity, each with typeColumnValue and typeColumnDisplayValue (per-type pages), cardSchema, cardSchemaUId, template, kind, and the add mini page fields miniPageSchema, miniPageSchemaUId, miniPageTemplate, miniPageKind and miniPageModes."),
+				Field(WarningsFieldName, ArrayType, "Non-fatal warnings, e.g. a lookup that hit its row cap; the result may then be partial."),
+				Field("note", StringType, "Advisory note on the scope of the result and how to read an empty one."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription)
+			),
+			CommonErrorContract,
+			[
+				EnvironmentNameParameterAlias()
+			],
+			[],
+			[
+				Example("Resolve the page roles of an entity", new Dictionary<string, object?> {
+					[EntityNameFieldName] = "Contract",
+					[EnvironmentNameFieldName] = ExampleEnvironmentName
+				})
+			],
+			Flow([ListEntityClientSchemasTool.ToolName],
+				"Use at the start of a Classic to Freedom UI migration to find which pages of the entity are Classic and must be migrated."),
+			[
+				Flow(
+					[ListEntityClientSchemasTool.ToolName, ListEntityClientSchemasToFileTool.ToolName],
+					"When the entity has many edit pages and only the counts are needed in context, call list-entity-client-schemas-to-file with the same arguments.")
+			],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildListEntityClientSchemasToFile() {
+		ToolContractDefinition inline = BuildListEntityClientSchemas();
+		return FileTwinOf(
+			inline,
+			ListEntityClientSchemasToFileTool.ToolName,
+			"Writes the page-role graph of an entity to a local JSON file and returns the path and the number of classic, freedom and unknown sections and edit pages instead of the lists. " +
+			"Takes the same arguments as list-entity-client-schemas; the file holds exactly the response that tool returns inline.",
+			"Required path for the JSON file, confined to the workspace or the OS temp directory. The file must not already exist, so a retry must use a different path.",
+			EnvelopeOutput(
+				SuccessFieldName,
+				[
+					SuccessFalseSignal
+				],
+				Field(SuccessFieldName, BooleanType, "Whether the graph was resolved and written."),
+				Field("entity", StringType, "The resolved entity schema name."),
+				Field("entityUId", StringType, "UId of the entity's base schema."),
+				Field(OutputFileFieldName, StringType, "Absolute path of the file holding the full list-entity-client-schemas response."),
+				Field(SectionsFieldName, ObjectType, "Number of Classic sections in the file: total, classic, freedom and unknown."),
+				Field("editPages", ObjectType, "Number of edit pages in the file: total, classic, freedom and unknown."),
+				Field(WarningsFieldName, ArrayType, "Non-fatal warnings of the lookup, the same as in the file; the result may then be partial."),
+				Field("note", StringType, "Advisory note on the scope of the result and how to read an empty one, the same as in the file."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription)
+			),
+			[
+				Example("Keep the page roles of an entity on disk", new Dictionary<string, object?> {
+					[EntityNameFieldName] = "Contract",
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[OutputFileFieldName] = "contract-pages.json"
+				})
+			],
+			"Use when an entity has many sections or edit pages and only the classic/freedom counts are needed in context; read the file for the pages themselves.");
 	}
 
 	private static ToolContractDefinition BuildPageUpdate() {
@@ -5447,7 +5670,8 @@ internal static class ToolContractCatalog {
 					Field("target-schema-uid", StringType, "Explicit schema UId to save into directly. Bypasses hierarchy resolution entirely \u2014 the UId is used as given, with no name resolution or existence check. With `mode: append` this is also the body a `dry-run` fetches and projects against, so an unintended UId is read, not just written to."),
 					Field("checksum", StringType, "Conflict baseline: the `editable.checksum` returned by the get-page call this edit is based on. When supplied it is the authoritative baseline, so the save is compared against the body you actually fetched rather than the on-disk .clio-pages baseline, which can be stale or anchored elsewhere."),
 					Field("force", BooleanType, "Skip the external-modification (checksum) conflict check and deliberately overwrite out-of-band changes. Set true ONLY after the user explicitly confirms overwriting changes made outside this session. A target-package-uid / target-schema-uid redirect skips only the on-disk baseline; an explicit checksum is still compared with the resolved target and a mismatch remains a conflict."),
-					Field("output-directory", StringType, "Optional. Directory that anchors the `.clio-pages` conflict-baseline lookup \u2014 pass the same value that was passed to get-page when it differs from the auto-detected workspace root. Used only for baseline discovery; it does NOT change where the page is saved.")),
+					Field("output-directory", StringType, "Optional. Directory that anchors the `.clio-pages` conflict-baseline lookup \u2014 pass the same value that was passed to get-page when it differs from the auto-detected workspace root. Used only for baseline discovery; it does NOT change where the page is saved."),
+					Field(IncludeOperationsFieldName, BooleanType, "Optional, default true. Applies only with verify=true: false leaves `page.ownBodySummary.viewConfigDiffOps` out of the read-back page and puts `page.ownBodySummary.viewConfigDiffOpCounts` (number of operations per operation type) in its place.")),
 				AnyOf: EnvironmentOrExplicitConnectionRequirements()),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -5473,6 +5697,7 @@ internal static class ToolContractCatalog {
 				Default(DryRunFieldName, BooleanFalseLiteral, "Saves by default; pass true to validate without writing."),
 				Default(ValidateFieldName, "true", "Runs client-side content validation by default; set false only for a pre-existing defect."),
 				Default(VerifyFieldName, BooleanFalseLiteral, "Read-back verification is optional and disabled by default."),
+				Default(IncludeOperationsFieldName, "true", "The verify read-back lists every own-body operation by default; pass false for counts per operation type."),
 				Default("mode", "replace", "Body is written verbatim by default; pass 'append' to merge with the existing body.")
 			],
 			[
@@ -5615,7 +5840,7 @@ internal static class ToolContractCatalog {
 					"valid == false"
 				],
 				Field("valid", BooleanType, "Whether the page body passed all validations."),
-				Field("validation", ObjectType, "Structured validation result with markers-ok, js-syntax-ok, content-ok, errors, and warnings.")
+				Field("validation", ObjectType, "Structured validation result with markers-ok, js-syntax-ok, content-ok, errors, and warnings. Captions of inserted widgets bound to localizable keys that will not be registered are reported as ONE warning: the rule text once, then one line per binding in the form `- '<node>', '<property>', '<key>'`.")
 			),
 			CommonErrorContract,
 			[],
@@ -6320,7 +6545,7 @@ internal static class ToolContractCatalog {
 				Field(StatusFieldName, StringType, "Overall infrastructure assertion status: pass, partial, or fail."),
 				Field("exit-code", NumberType, "Overall infrastructure assertion exit code."),
 				Field("summary", StringType, "Human-readable summary of the assertion sweep."),
-				Field("sections", ObjectType, "Per-scope assertion results (k8, local, filesystem)."),
+				Field(SectionsFieldName, ObjectType, "Per-scope assertion results (k8, local, filesystem)."),
 				Field("database-candidates", ArrayType, "Normalized database candidates discovered across passing sections.")),
 			CommonErrorContract,
 			[],
@@ -6536,6 +6761,7 @@ internal static class ToolContractCatalog {
 		return new ToolContractDefinition(
 			PushWorkspaceTool.PushWorkspaceToolName,
 			"Pushes the local workspace at workspace-path to the specified Creatio environment using the application installer. " +
+			"A package that does not yet exist in the environment is created locked (InstallType 1, not editable) and registered as an installed application; this tool has no option to install it unlocked. To create a new editable package in the environment use create-package instead. " +
 			"Before installing, it emits one non-blocking warning message per Freedom UI page schema (web or mobile) whose user-visible text (caption, label, title, tooltip, placeholder) is an inline literal - the same text update-page rejects - naming the schema, its package, and the offending <node>.<property> elements; bind the text via $Resources.Strings.<Key> or #ResourceString(<Key>)# to clear it. " +
 			"A second warning names literal-only properties (e.g. crt.ImageInput.tooltip) bound to a localizable resource, which update-page also rejects because the text renders empty; set them as plain literals (see get-guidance page-schema-resources).",
 			new ToolInputSchemaContract(

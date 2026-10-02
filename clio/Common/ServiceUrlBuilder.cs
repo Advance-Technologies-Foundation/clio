@@ -362,7 +362,13 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		/// <summary>
 		///     Compiles the package a business process lives in via the ProcessDesignService package.
 		/// </summary>
-		CompileProcess = 109
+		CompileProcess = 109,
+
+		/// <summary>Creates a standalone package (PackageService CreatePackage).</summary>
+		CreatePackage = 110,
+
+		/// <summary>Creates a package inside an installed application (ApplicationPackagesService CreatePackageInApp).</summary>
+		CreatePackageInApp = 111
 
 	}
 
@@ -465,6 +471,8 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.ModifyProcessAsNewVersion, "/rest/ProcessDesignService/ModifyProcessAsNewVersion"},
 		{KnownRoute.SetActiveProcessVersion, "/rest/ProcessDesignService/SetActiveProcessVersion"},
 		{KnownRoute.CompileProcess, "/rest/ProcessDesignService/CompileProcess"},
+		{KnownRoute.CreatePackage, "ServiceModel/PackageService.svc/CreatePackage"},
+		{KnownRoute.CreatePackageInApp, "ServiceModel/ApplicationPackagesService.svc/CreatePackageInApp"},
 		{KnownRoute.LastCompilationResult, "api/ConfigurationStatus/GetLastCompilationResult"},
 		{KnownRoute.GetAvailableThemes, "ServiceModel/ThemeService.svc/GetAvailableThemes"},
 		{KnownRoute.ClearThemesCache, "ServiceModel/ThemeService.svc/ClearThemesCache"},
