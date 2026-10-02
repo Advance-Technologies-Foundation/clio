@@ -8,6 +8,7 @@ using System.Text.Json.Serialization;
 using Clio.Command;
 using Clio.Command.McpServer;
 using Clio.Command.McpServer.Tools;
+using Clio.Command.McpServer.Tools.MobilePageConverter;
 using Clio.Command.McpServer.Tools.ProcessDesigner;
 using Clio.Common;
 using FluentAssertions;
@@ -4381,5 +4382,77 @@ public sealed class ToolContractGetToolTests {
 			because: "the compact index enumerates every tool this guard has to cover");
 		entries.Select(entry => entry.Purpose).Should().OnlyHaveUniqueItems(
 			because: "two tools sharing a byte-identical one-liner are indistinguishable in the index - which is what happened when create-business-process and modify-business-process both opened with the same accessRights warning, so a description must lead with what its tool DOES");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("get-mobile-page-conversion-guide appears in the compact discovery index as a non-resident, non-destructive tool - after GA (ENG-94638) it is ungated but deliberately still long-tail, so the index is the only place a caller learns it exists.")]
+	public void GetContracts_ShouldIndexMobilePageConversionGuide_AsNonResidentNonDestructiveTool() {
+		// Arrange
+		// Over the DEFAULT surface, not a bare tool: the index's destructive hint is derived from the
+		// invoker registry, so a registry-less tool reports null for every tool and would prove nothing.
+		string toolName = MobilePageConversionGuideTool.ToolName;
+		IServiceProvider provider = Substitute.For<IServiceProvider>();
+		IFeatureToggleService featureToggle = Substitute.For<IFeatureToggleService>();
+		featureToggle.IsEnabled(Arg.Any<Type>())
+			.Returns(call => McpProfileGatingTests.DefaultSurfaceEnabled(call.Arg<Type>()));
+		McpToolInvokerRegistry registry = new(
+			provider,
+			typeof(MobilePageConversionGuideTool).Assembly,
+			featureToggle,
+			JsonSerializerOptions.Default);
+		ToolContractGetTool tool = new(registry);
+
+		// Act
+		ToolContractGetResponse response = tool.GetToolContracts(new ToolContractGetArgs());
+
+		// Assert
+		ToolContractIndexEntry entry = response.Index.SingleOrDefault(item =>
+			string.Equals(item.Name, toolName, StringComparison.OrdinalIgnoreCase));
+		entry.Should().NotBeNull(
+			because: "an ungated converter that never sits in tools/list is discoverable only through the get-tool-contract index");
+		entry!.Resident.Should().BeFalse(
+			because: "MobilePageConversionGuideTool is deliberately absent from McpCoreToolProfile.CoreToolTypes - a single-skill niche path must not cost every session context");
+		entry.ContractAvailable.Should().BeTrue(
+			because: "a curated contract exists, so the index must tell a caller the full shape can be fetched");
+		entry.Destructive.Should().BeFalse(
+			because: "THIS is the GA guard, and the only assertion here that is one. Name, Resident and ContractAvailable all resolve from static tables and survive a re-gate; the destructive hint is resolved from the FEATURE-FILTERED invoker registry and fails CLOSED, so a re-gated tool keeps its index entry but reports destructive=true. Do not relax this to NotBeTrue()");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("get-mobile-page-conversion-guide resolves to a CURATED contract that states the advisory-only semantics and the Freedom-UI-web-only precondition, so a caller does not mistake the guide tool for a page builder and skip create-page/validate-page.")]
+	public void GetContracts_ShouldReturnCuratedContract_ForMobilePageConversionGuide() {
+		// Arrange
+		string toolName = MobilePageConversionGuideTool.ToolName;
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse response = tool.GetToolContracts(new ToolContractGetArgs([toolName]));
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "a curated tool name must resolve on the first step of the curated -> registry -> reflection cascade");
+		response.Tools.Should().ContainSingle(
+			because: "exactly one contract was requested");
+		ToolContractDefinition contract = response.Tools![0];
+		contract.Description.Should().Contain("writes nothing",
+			because: "the advisory semantics are the whole point of this tool - a caller that misses them will wait for a page the tool never builds");
+		// Against the EMITTED schema, not a hand-copied literal. The repo's curated-vs-emitted guard
+		// (EmittedSchemaRequiredContractTests) is scoped to RESIDENT tools on purpose, and this tool is
+		// deliberately non-resident - so it is the first curated contract that guard does not cover, and
+		// without this the curated Required set could drift from the tool silently.
+		using JsonDocument emitted = EmittedSchemaProbe.EmittedInputSchema(toolName);
+		string[] emittedRequired = [.. EmittedSchemaProbe
+			.RequiredNames(EmittedSchemaProbe.EffectiveArgumentSchema(emitted.RootElement))
+			.OrderBy(name => name, StringComparer.Ordinal)];
+		string[] curatedRequired = [.. (contract.InputSchema.Required ?? [])
+			.OrderBy(name => name, StringComparer.Ordinal)];
+		curatedRequired.Should().Equal(emittedRequired,
+			because: "a curated contract that demands a different argument set from the one clio-run actually dispatches against sends the agent to build a payload the tool rejects");
+		contract.InputSchema.AnyOf.Should().NotBeNullOrEmpty(
+			because: "this tool takes environment-name OR an explicit uri+login+password, and McpToolRegistrySchemaContract names it as a genuine connection fallback - the registry-derived contract published that alternative, so the curated one must not drop it");
+		contract.Preconditions.Should().NotBeNullOrEmpty(
+			because: "the Freedom-UI-web-only precondition must travel with the contract - a Classic page has to be migrated first and an already-mobile page is rejected");
 	}
 }

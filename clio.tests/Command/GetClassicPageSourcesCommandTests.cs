@@ -35,12 +35,17 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 	private readonly Dictionary<string, JArray> _layersByName = new(StringComparer.OrdinalIgnoreCase);
 	private readonly Dictionary<string, JObject> _schemaByUid = new(StringComparer.OrdinalIgnoreCase);
 	private readonly Dictionary<string, JArray> _localizableByUid = new(StringComparer.OrdinalIgnoreCase);
+	// layer UId -> body/caption returned only on a full-hierarchy load; layer UIds whose full-hierarchy load fails.
+	private readonly Dictionary<string, (string Body, string Caption)> _fullHierarchyViewByUid = new(StringComparer.OrdinalIgnoreCase);
+	private readonly HashSet<string> _failFullHierarchyUids = new(StringComparer.OrdinalIgnoreCase);
 
 	public override void Setup() {
 		base.Setup();
 		_layersByName.Clear();
 		_schemaByUid.Clear();
 		_localizableByUid.Clear();
+		_fullHierarchyViewByUid.Clear();
+		_failFullHierarchyUids.Clear();
 		_command = Container.GetRequiredService<GetClassicPageSourcesCommand>();
 	}
 
@@ -140,6 +145,297 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 			because: "the lookup column's reference schema is gathered into entityColumns");
 		manifest["detailSchemas"].Should().BeNull(because: "the page references no details");
 		manifest["section"].Should().BeNull(because: "no section schema resolves for this entity");
+	}
+
+	[Test]
+	[Description("TryAssemblePageSources writes page resourceStrings with every culture of each merged string, keyed like get-page's bundle.resources.strings, and leaves the flat en-US resources unchanged.")]
+	public void TryAssemblePageSources_ShouldWritePageResourceStrings_WithEveryCulture() {
+		// Arrange
+		AddLayer("UsrOrderPage", "uid-page", "UsrApp", 200);
+		AddSchema("uid-page", "define(\"UsrOrderPage\", [], function() { return {}; });", EmptyGuid, "UsrApp");
+		AddLocalizable("uid-page", "TabVisaCaption",
+			("en-US", "Approvals"), ("fr-FR", "Validations"), ("es-ES", "Aprobaciones"));
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrOrderPage" };
+
+		// Act
+		bool ok = _command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: "a resolvable page assembles successfully");
+		JObject manifest = JObject.Parse(ReadManifest(response));
+		manifest["resources"]!["TabVisaCaption"]!.Type.Should().Be(JTokenType.String,
+			because: "the flat resources block keeps its string shape for engines that read resources[key] as text");
+		manifest["resources"]!["TabVisaCaption"]!.ToString().Should().Be("Approvals",
+			because: "the flat resources block still carries the en-US value");
+		var cultures = (JObject)manifest["resourceStrings"]!["TabVisaCaption"];
+		cultures.Properties().Select(p => p.Name).Should().BeEquivalentTo(
+			new[] { "en-US", "fr-FR", "es-ES" },
+			because: "resourceStrings carries every culture the stand holds for the string");
+		cultures["es-ES"]!.ToString().Should().Be("Aprobaciones",
+			because: "each culture keeps its own Classic value");
+		cultures["fr-FR"]!.ToString().Should().Be("Validations",
+			because: "each culture keeps its own Classic value");
+	}
+
+	[Test]
+	[Description("TryAssemblePageSources loads each detail with its full hierarchy and writes the detail's merged strings as resourceStrings in every culture, keeping title and the top-layer body; the page resources Classic reads for the detail title travel in every culture.")]
+	public void TryAssemblePageSources_ShouldWriteDetailResourceStrings_FromFullHierarchyLoad() {
+		// Arrange
+		AddLayer("UsrOrderPage", "uid-page", "UsrApp", 200);
+		AddSchema("uid-page",
+			"define(\"UsrOrderPage\", [], function() { return { details: { V: { schemaName: \"UsrOrderLineDetail\", captionName: \"OrderLinesCaption\" } } }; });",
+			EmptyGuid, "UsrApp");
+		AddLocalizable("uid-page", "OrderLinesCaption", ("en-US", "Lines"), ("fr-FR", "Lignes"));
+		AddLocalizable("uid-page", "VDetailCaptionOnPage", ("en-US", "Order items"), ("fr-FR", "Articles"));
+		AddLayer("UsrOrderLineDetail", "uid-detail", "UsrApp", 200);
+		AddSchema("uid-detail",
+			"define(\"UsrOrderLineDetail\", [], function() { return { entitySchemaName: \"UsrOrderLine\" }; });",
+			EmptyGuid, "UsrApp", caption: "Lignes de commande (schéma)");
+		_fullHierarchyViewByUid["uid-detail"] = (
+			"define(\"UsrOrderLineDetail\", [], function() { return { entitySchemaName: \"UsrOrderLineMerged\" }; });",
+			"Lignes de commande (hiérarchie)");
+		AddLocalizable("uid-detail", "Caption", ("en-US", "Order lines"), ("fr-FR", "Lignes de commande"));
+		AddLocalizable("uid-detail", "SelectLineMessage",
+			("en-US", "Select a line to attach it to the order"),
+			("fr-FR", "Sélectionnez une ligne à attacher à la commande"));
+		AddLocalizable("uid-detail", "AttachLineCaption",
+			("en-US", "Attach line to the order"), ("fr-FR", "Attacher la ligne à la commande"));
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrOrderPage" };
+
+		// Act
+		_command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
+
+		// Assert
+		JObject manifest = JObject.Parse(ReadManifest(response));
+		JToken detail = manifest["detailSchemas"]!["UsrOrderLineDetail"];
+		detail!["resourceStrings"]!["Caption"]!["en-US"]!.ToString().Should().Be("Order lines",
+			because: "the detail's own Caption string is collected in en-US");
+		detail["resourceStrings"]!["Caption"]!["fr-FR"]!.ToString().Should().Be("Lignes de commande",
+			because: "the detail's own Caption string is collected in every culture");
+		((JObject)detail["resourceStrings"]).Properties().Select(p => p.Name).Should().Contain(
+			new[] { "SelectLineMessage", "AttachLineCaption" },
+			because: "every merged detail string travels, not only the caption");
+		detail["resourceStrings"]!["SelectLineMessage"]!["fr-FR"]!.ToString().Should().Be(
+			"Sélectionnez une ligne à attacher à la commande",
+			because: "detail messages travel in every culture");
+		manifest["resourceStrings"]!["OrderLinesCaption"]!["fr-FR"]!.ToString().Should().Be("Lignes",
+			because: "the page resource named by the detail's captionName travels in every culture");
+		manifest["resourceStrings"]!["VDetailCaptionOnPage"]!["fr-FR"]!.ToString().Should().Be("Articles",
+			because: "the page's <Detail>DetailCaptionOnPage resource travels in every culture");
+		detail["title"]!.ToString().Should().Be("Lignes de commande (hiérarchie)",
+			because: "title is the internal caption of the single full-hierarchy load");
+		detail["body"]!.ToString().Should().Contain("UsrOrderLineMerged",
+			because: "body comes from the same full-hierarchy load as title and resourceStrings");
+		_applicationClient.Received(1).ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"uid-detail\"")));
+		_applicationClient.Received(1).ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => IsFullHierarchyRequestFor(body, "uid-detail")));
+	}
+
+	private static bool IsFullHierarchyRequestFor(string requestBody, string schemaUId) {
+		if (string.IsNullOrEmpty(requestBody)) {
+			return false;
+		}
+		JObject request = JObject.Parse(requestBody);
+		return request["schemaUId"]?.ToString() == schemaUId && (request["useFullHierarchy"]?.Value<bool>() ?? false);
+	}
+
+	[Test]
+	[Description("TryAssemblePageSources gives each nested child-page manifest its own merged strings as resourceStrings (every culture) and writes no flat resources there.")]
+	public void TryAssemblePageSources_ShouldWriteChildPageResourceStrings_WithoutFlatResources() {
+		// Arrange
+		AddLayer("UsrCasePage", "uid-page", "UsrApp", 200);
+		AddSchema("uid-page",
+			"define(\"UsrCasePage\", [], function() { return { entitySchemaName: \"UsrCase\", details: { D: { schemaName: \"UsrNoteDetail\" } } }; });",
+			EmptyGuid, "UsrApp");
+		AddLayer("UsrNoteDetail", "uid-detail", "UsrApp", 200);
+		AddSchema("uid-detail",
+			"define(\"UsrNoteDetail\", [], function() { return { entitySchemaName: \"UsrNote\", getEditPageName: function() { return \"UsrNotePage\"; } }; });",
+			EmptyGuid, "UsrApp");
+		AddLayer("UsrNotePage", "uid-child", "UsrApp", 200);
+		AddSchema("uid-child", "define(\"UsrNotePage\", [], function() { return { entitySchemaName: \"UsrNote\" }; });", EmptyGuid, "UsrApp");
+		AddLocalizable("uid-child", "NotesTabCaption", ("en-US", "Notes"), ("fr-FR", "Remarques"));
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrCasePage" };
+
+		// Act
+		_command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
+
+		// Assert
+		JObject manifest = JObject.Parse(ReadManifest(response));
+		JToken child = manifest["childPageSchemas"]!["UsrNotePage"];
+		child!["resources"].Should().BeNull(
+			because: "flat resources on a child manifest would change what an older engine folds");
+		child["resourceStrings"]!["NotesTabCaption"]!["en-US"]!.ToString().Should().Be("Notes",
+			because: "the child manifest carries its strings in every culture like the main page");
+		child["resourceStrings"]!["NotesTabCaption"]!["fr-FR"]!.ToString().Should().Be("Remarques",
+			because: "the child manifest carries its strings in every culture like the main page");
+		child["columnTitles"].Should().BeNull(because: "child-page column titles are not collected");
+	}
+
+	[Test]
+	[Description("TryAssemblePageSources keeps a detail entry with its own-layer body and title but no resourceStrings when the detail's full-hierarchy load fails, and warns naming the detail and the missing resourceStrings.")]
+	public void TryAssemblePageSources_ShouldKeepDetailFromOwnLayer_WhenDetailFullHierarchyLoadFails() {
+		// Arrange
+		AddLayer("UsrOrderPage", "uid-page", "UsrApp", 200);
+		AddSchema("uid-page",
+			"define(\"UsrOrderPage\", [], function() { return { details: { V: { schemaName: \"UsrOrderLineDetail\" } } }; });",
+			EmptyGuid, "UsrApp");
+		AddLayer("UsrOrderLineDetail", "uid-detail", "UsrApp", 200);
+		AddSchema("uid-detail",
+			"define(\"UsrOrderLineDetail\", [], function() { return { entitySchemaName: \"UsrOrderLine\" }; });",
+			EmptyGuid, "UsrApp", caption: "Order lines");
+		AddLocalizable("uid-detail", "Caption", ("en-US", "Order lines"), ("fr-FR", "Lignes de commande"));
+		_failFullHierarchyUids.Add("uid-detail");
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrOrderPage" };
+
+		// Act
+		bool ok = _command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: "a detail's strings are best-effort and never fail the run");
+		JObject manifest = JObject.Parse(ReadManifest(response));
+		JToken detail = manifest["detailSchemas"]!["UsrOrderLineDetail"];
+		detail.Should().NotBeNull(because: "a failed full-hierarchy load drops only the detail's strings, not the detail");
+		detail!["body"]!.ToString().Should().Contain("UsrOrderLine",
+			because: "the body comes from the own-layer load");
+		detail["title"]!.ToString().Should().Be("Order lines",
+			because: "the title comes from the own-layer load");
+		detail["resourceStrings"].Should().BeNull(because: "the detail's merged strings could not be loaded");
+		response.Warnings.Should().ContainSingle(w => w.Contains("detail 'UsrOrderLineDetail'") && w.Contains("resourceStrings"),
+			because: "the warning must name the detail and the block it lacks");
+	}
+
+	[Test]
+	[Description("TryAssemblePageSources keeps a child-page manifest without resourceStrings when only that child's full-hierarchy load fails, and warns naming the child and the missing resourceStrings.")]
+	public void TryAssemblePageSources_ShouldWarnNamingChildPage_WhenOnlyChildStringsLoadFails() {
+		// Arrange
+		AddLayer("UsrCasePage", "uid-page", "UsrApp", 200);
+		AddSchema("uid-page",
+			"define(\"UsrCasePage\", [], function() { return { entitySchemaName: \"UsrCase\", details: { D: { schemaName: \"UsrNoteDetail\" } } }; });",
+			EmptyGuid, "UsrApp");
+		AddLocalizable("uid-page", "HeaderCaption", "Header");
+		AddLayer("UsrNoteDetail", "uid-detail", "UsrApp", 200);
+		AddSchema("uid-detail",
+			"define(\"UsrNoteDetail\", [], function() { return { entitySchemaName: \"UsrNote\", getEditPageName: function() { return \"UsrNotePage\"; } }; });",
+			EmptyGuid, "UsrApp");
+		AddLayer("UsrNotePage", "uid-child", "UsrApp", 200);
+		AddSchema("uid-child", "define(\"UsrNotePage\", [], function() { return { entitySchemaName: \"UsrNote\" }; });", EmptyGuid, "UsrApp");
+		AddLocalizable("uid-child", "NotesTabCaption", ("en-US", "Notes"), ("fr-FR", "Remarques"));
+		_failFullHierarchyUids.Add("uid-child");
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrCasePage" };
+
+		// Act
+		bool ok = _command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: "a child page's strings are best-effort and never fail the run");
+		JObject manifest = JObject.Parse(ReadManifest(response));
+		JToken child = manifest["childPageSchemas"]!["UsrNotePage"];
+		child.Should().NotBeNull(because: "the child manifest still carries its chain when only its strings fail");
+		child!["schemas"].Should().NotBeNull(because: "the child's chain loaded");
+		child["resourceStrings"].Should().BeNull(because: "the child's merged strings could not be loaded");
+		manifest["resources"]!["HeaderCaption"]!.ToString().Should().Be("Header",
+			because: "the page's own strings are unaffected by the child's failure");
+		manifest["resourceStrings"]!["HeaderCaption"]!["en-US"]!.ToString().Should().Be("Header",
+			because: "the page's own resourceStrings are unaffected by the child's failure");
+		response.Warnings.Should().ContainSingle(w => w.Contains("child page 'UsrNotePage'") && w.Contains("resourceStrings"),
+			because: "the warning must name the child and the block it lacks, not read as the page losing its resources");
+		response.Warnings.Should().NotContain(w => w.Contains("carries no resources,"),
+			because: "the page's flat resources were written");
+	}
+
+	[Test]
+	[Description("TryAssemblePageSources merges duplicate string entries into resourceStrings per culture (first non-empty text wins), skips empty texts, empty keys and empty cultures, and canonicalizes culture casing.")]
+	public void TryAssemblePageSources_ShouldApplyResourceStringsMergeRules() {
+		// Arrange
+		AddLayer("UsrOrderPage", "uid-page", "UsrApp", 200);
+		AddSchema("uid-page", "define(\"UsrOrderPage\", [], function() { return {}; });", EmptyGuid, "UsrApp");
+		AddLocalizable("uid-page", "DuplicateCaption", ("fr-FR", "Premier"), ("es-ES", ""));
+		AddLocalizable("uid-page", "DuplicateCaption", ("en-US", "First"), ("fr-FR", "Second"), ("es-ES", "Primero"));
+		AddLocalizable("uid-page", "CasingCaption", ("en-us", "Lower"), ("FR-fr", "Minuscule"));
+		AddLocalizable("uid-page", "EmptyCaption", ("en-US", ""), (" ", "Blank culture"));
+		AddLocalizable("uid-page", "", ("en-US", "No key"));
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrOrderPage" };
+
+		// Act
+		_command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
+
+		// Assert
+		JObject manifest = JObject.Parse(ReadManifest(response));
+		var resourceStrings = (JObject)manifest["resourceStrings"];
+		resourceStrings!["DuplicateCaption"]!["fr-FR"]!.ToString().Should().Be("Premier",
+			because: "across duplicate entries the first non-empty text per culture wins");
+		resourceStrings["DuplicateCaption"]!["es-ES"]!.ToString().Should().Be("Primero",
+			because: "an empty text does not claim its culture, so a later entry fills it");
+		resourceStrings["DuplicateCaption"]!["en-US"]!.ToString().Should().Be("First",
+			because: "a culture missing from the first entry is filled from a later one");
+		((JObject)resourceStrings["CasingCaption"]).Properties().Select(p => p.Name).Should().BeEquivalentTo(
+			new[] { "en-US", "fr-FR" }, because: "culture names are canonicalized");
+		resourceStrings["EmptyCaption"].Should().BeNull(because: "a key with no non-empty text in a named culture is omitted");
+		resourceStrings.Properties().Should().NotContain(p => p.Name.Length == 0, because: "an entry without a key is skipped");
+	}
+
+	[Test]
+	[Description("TryAssemblePageSources keeps the flat resources rule unchanged: per key the first entry whose en-US text (else, without en-US, its first culture's text) is non-empty wins, en-US matches regardless of casing, and an empty en-US text does not fall back to another culture.")]
+	public void TryAssemblePageSources_ShouldKeepFlatResourcesFirstEntryRule() {
+		// Arrange
+		AddLayer("UsrOrderPage", "uid-page", "UsrApp", 200);
+		AddSchema("uid-page", "define(\"UsrOrderPage\", [], function() { return {}; });", EmptyGuid, "UsrApp");
+		AddLocalizable("uid-page", "DuplicateCaption", ("fr-FR", "Premier"), ("es-ES", ""));
+		AddLocalizable("uid-page", "DuplicateCaption", ("en-US", "First"), ("fr-FR", "Second"));
+		AddLocalizable("uid-page", "LateEnglishCaption", ("en-US", ""));
+		AddLocalizable("uid-page", "LateEnglishCaption", ("en-US", "Later"));
+		AddLocalizable("uid-page", "CasingCaption", ("en-us", "Lower"), ("fr-FR", "Minuscule"));
+		AddLocalizable("uid-page", "FrenchOnlyCaption", ("fr-FR", "Seulement"), ("es-ES", "Solo"));
+		AddLocalizable("uid-page", "EmptyEnglishCaption", ("en-US", ""), ("fr-FR", "Texte"));
+		AddLocalizable("uid-page", "", ("en-US", "No key"));
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrOrderPage" };
+
+		// Act
+		_command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
+
+		// Assert
+		JObject manifest = JObject.Parse(ReadManifest(response));
+		var resources = (JObject)manifest["resources"];
+		var resourceStrings = (JObject)manifest["resourceStrings"];
+		resources!.Properties().ToDictionary(p => p.Name, p => p.Value.ToString()).Should().BeEquivalentTo(
+			new Dictionary<string, string> {
+				["DuplicateCaption"] = "Premier",
+				["LateEnglishCaption"] = "Later",
+				["CasingCaption"] = "Lower",
+				["FrenchOnlyCaption"] = "Seulement"
+			},
+			because: "flat resources keep the original first-entry rule for every input");
+		resourceStrings!["DuplicateCaption"]!["en-US"]!.ToString().Should().Be("First",
+			because: "resourceStrings is authoritative per culture and may differ from the flat text for a duplicate key");
+		((JObject)resourceStrings["EmptyEnglishCaption"]).Properties().Select(p => p.Name).Should().BeEquivalentTo(
+			new[] { "fr-FR" },
+			because: "an empty en-US text omits the flat entry while resourceStrings keeps the key's other cultures");
+	}
+
+	[Test]
+	[Description("TryAssemblePageSources omits a detail's resourceStrings when the detail declares no localizable strings, instead of writing an empty block.")]
+	public void TryAssemblePageSources_ShouldOmitDetailResourceStrings_WhenDetailHasNoStrings() {
+		// Arrange
+		AddLayer("UsrCasePage", "uid-page", "UsrApp", 200);
+		AddSchema("uid-page",
+			"define(\"UsrCasePage\", [], function() { return { details: { D: { schemaName: \"UsrNoteDetail\" } } }; });",
+			EmptyGuid, "UsrApp");
+		AddLayer("UsrNoteDetail", "uid-detail", "UsrApp", 200);
+		AddSchema("uid-detail", "define(\"UsrNoteDetail\", [], function() { return {}; });", EmptyGuid, "UsrApp");
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrCasePage" };
+
+		// Act
+		_command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
+
+		// Assert
+		JObject manifest = JObject.Parse(ReadManifest(response));
+		manifest["detailSchemas"]!["UsrNoteDetail"]!["resourceStrings"].Should().BeNull(
+			because: "an absent field reads as nothing collected; an empty object would read as resolved-but-empty");
+		manifest["resourceStrings"].Should().BeNull(
+			because: "a page without localizable strings writes no page resourceStrings block");
 	}
 
 	[Test]
@@ -1990,12 +2286,17 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		JObject request = JObject.Parse(requestBody);
 		string uid = request["schemaUId"]?.ToString();
 		bool fullHierarchy = request["useFullHierarchy"]?.Value<bool>() ?? false;
-		if (uid == null || !_schemaByUid.TryGetValue(uid, out JObject schema)) {
+		if (uid == null || !_schemaByUid.TryGetValue(uid, out JObject schema)
+			|| (fullHierarchy && _failFullHierarchyUids.Contains(uid))) {
 			return new JObject().ToString(); // no "schema" node -> LoadSchema reports a load error
 		}
 		var clone = (JObject)schema.DeepClone();
 		if (fullHierarchy && _localizableByUid.TryGetValue(uid, out JArray localizable)) {
 			clone["localizableStrings"] = localizable.DeepClone();
+		}
+		if (fullHierarchy && _fullHierarchyViewByUid.TryGetValue(uid, out (string Body, string Caption) view)) {
+			clone["body"] = view.Body;
+			clone["caption"] = new JArray { new JObject { ["cultureName"] = "en-US", ["value"] = view.Caption } };
 		}
 		return new JObject { ["schema"] = clone }.ToString();
 	}
@@ -2041,16 +2342,23 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		_schemaByUid[uid] = schema;
 	}
 
-	private void AddLocalizable(string uid, string name, string value) {
+	private void AddLocalizable(string uid, string name, string value) =>
+		AddLocalizable(uid, name, ("en-US", value));
+
+	private void AddLocalizable(string uid, string name, params (string Culture, string Value)[] values) {
 		if (!_localizableByUid.TryGetValue(uid, out JArray strings)) {
 			strings = new JArray();
 			_localizableByUid[uid] = strings;
+		}
+		var valueArray = new JArray();
+		foreach ((string culture, string value) in values) {
+			valueArray.Add(new JObject { ["cultureName"] = culture, ["value"] = value });
 		}
 		strings.Add(new JObject {
 			["name"] = name,
 			["parentSchemaUId"] = "p",
 			["uId"] = "ls-" + name,
-			["values"] = new JArray { new JObject { ["cultureName"] = "en-US", ["value"] = value } }
+			["values"] = valueArray
 		});
 	}
 

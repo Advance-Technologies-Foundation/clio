@@ -48,6 +48,11 @@ public sealed class GetClassicPageSourcesTool(
 		"add mini page — so `childPageCount` can exceed `detailCount`; an empty one with no warning means the details " +
 		"genuinely register no child page. Each detail entry carries the resolved `entity` and `editPage` (or " +
 		"`editPage: false` = verified no edit card), which is how the engine keys those nested manifests. " +
+		"`resources` holds one text per page string: the en-US text, else the first culture's text, of the key's first entry;`resourceStrings` holds every culture " +
+		"(`{ \"Key\": { \"en-US\": \"…\", \"fr-FR\": \"…\" } }`, the get-page bundle.resources.strings shape), " +
+		"and each detail entry and each nested child-page manifest carries its own merged strings as " +
+		"`resourceStrings` in the same shape (a child manifest has no flat `resources`). A detail's " +
+		"`title` is the schema's internal caption, not the title the page shows. " +
 		"`enumVocabulary` carries the TARGET stand's own ViewItemType/ContentType/DataValueType enum member->value " +
 		"tables, read live from that stand's sysenums.js — never a copy of the engine's pinned tables — so the " +
 		"engine's enum-drift guard can catch a stand on a different platform version; an enum whose value could not " +

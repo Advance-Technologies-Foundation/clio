@@ -26,6 +26,26 @@ DESCRIPTION
     omitted, never written as an empty object; "enumVocabularyCount" in the
     response reports how many of the three were resolved.
 
+    Localizable strings are merged across the hierarchy. "resourceStrings"
+    maps each page string to every culture as
+    { "Key": { "en-US": "...", "fr-FR": "..." } } (the get-page
+    bundle.resources.strings shape) and is authoritative for per-culture
+    values. "resources" maps each page string to one text: the en-US text
+    (else the first culture's text) of the key's first entry that has one.
+    For a key with several merged entries, "resources" keeps that
+    first-entry rule, so its text can differ from
+    resourceStrings[key]["en-US"]. Both blocks are omitted when the page's
+    merged strings cannot be loaded, with a warning.
+    Each detailSchemas entry carries "body" (the top layer's), "title", and
+    "resourceStrings": the detail's strings merged across its layers, in every
+    culture. "title" is the detail schema's internal caption, not the title the
+    page shows; Classic takes that title from the page's captionName resource,
+    then the page's <Detail>DetailCaptionOnPage resource, then the detail's own
+    Caption string. Each nested childPageSchemas manifest carries its strings
+    as "resourceStrings" only, with no flat "resources"; when a child page's
+    strings cannot be loaded, its manifest omits "resourceStrings" and a
+    warning names the child page.
+
     Child pages come from SysModuleEdit metadata: each detail's bound entity is
     resolved (the page's own details config wins when it overrides the entity,
     otherwise the detail body) and every page that entity registers - its edit
@@ -53,8 +73,9 @@ DESCRIPTION
     or child edit pages a page may carry, and the parent-template chain is
     walked to its base template however deep it is. A page with 250 details
     yields all 250. On a very wide page this costs one designer round-trip per
-    detail, so the run takes proportionally longer - a slow complete unit is
-    preferred over a fast truncated one.
+    detail and two per child page (its chain and its strings), so the run takes
+    proportionally longer - a slow complete unit is preferred over a fast
+    truncated one.
 
 OPTIONS
     --schema-name                      Classic client-unit (page) schema name to collect
