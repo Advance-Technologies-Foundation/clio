@@ -488,10 +488,10 @@ short, the full stack is in `Error.log` under `C:\Windows\Temp\Creatio\Creatio\0
 | M13 | describe of PrintContractsReport: converged or snapshot | no | agent | PK-OA (TC-45 Object fixtures), PK-RP (TC-45 Report fixtures) | D19 fixtures | **done 2026-10-02**: `Guid` with `referenceSchema: Contract` (C.6) |
 | M15 | FastReport packages and printables | no | agent | PK-RP | Q18 | **done 2026-10-02**: no FastReport package, 0 FastReport printables (C.6) |
 | M17-Q7 | foreign key of `ContactFile` to Contact | no (audit row only: cliogate 2.0.0.53+ logs the statement in `ClioSqlRequestLog`) | agent | PK-OA | the F-E9 empty-record notice wording | **done 2026-10-02**: FK `ContactFile.ContactId` -> Contact, 0 empty-Id rows (C.6) |
-| M3 | the shipped mirror reads null rows (H-1) | write | builder + one designer step | PK-PT / MH | Q7, D9 | open |
-| M3b | baseline (MI-0 in the ENG-95984 File process parameter type test-plan): an item-only multi-instance mapping runs one iteration on 1.6.6.54 | write | builder | PK-PT verification | the version-gated guide sentence (D25) | open |
+| M3 | the shipped mirror reads null rows (H-1) | write | builder + one designer step | PK-PT / MH | Q7, D9 | probes built 2026-10-02; waits for the user's designer step (C.7) |
+| M3b | baseline (MI-0 in the ENG-95984 File process parameter type test-plan): an item-only multi-instance mapping runs one iteration on 1.6.6.54 | write | builder | PK-PT verification | the version-gated guide sentence (D25) | **done 2026-10-02**: 1 iteration, Name empty (C.7) |
 | M6 | flat File <- collection item outside a row context | write | designer + builder | PK-PT | R-M1 (D5) | open |
-| M14 | the server-built element shape on 1.6.6.54 | write | builder | PK-OA | D20 pins | open |
+| M14 | the server-built element shape on 1.6.6.54 | write | builder | PK-OA | D20 pins | **done 2026-10-02** (C.7); the card display check by the user is open |
 | M1 | a nested-only `Files.File <- File` copies one file | write | designer (script task) | PK-RP | D18 single-file path; PT AC | open |
 | M2 | an unset single File gives an element Error (NRE) | write (save + run) | reuses M1 | with M1 | the guide's single-File wording (D18) | open |
 | M8 | an Object element finds a Freedom UI upload in SysFile | write | user + designer | PK-SF | SysFile sources | open |
@@ -503,10 +503,10 @@ short, the full stack is in `Error.log` under `C:\Windows\Temp\Creatio\Creatio\0
 | M16 | the lifetime of temporary report files | write | designer | none | D14/D17 notice wording | open |
 | M17 runs | an empty `ConnectedObjectId`: FK failure (legacy), orphan (SysFile) | write | designer | none | the F-E9 notice severity | open |
 | M18 | a constant file-name suffix under another culture | write | builder after PK-RP | none | culture note | open |
-| M19 | a collection parameter as a filter value | write | builder | none | urgency of "Refuse collection parameters as filter values" | open |
-| M20 | an unknown block next to a known field is silently dropped | write | builder | none | the D26 premise | open |
+| M19 | a collection parameter as a filter value | write | builder | none | urgency of "Refuse collection parameters as filter values" | **done 2026-10-02**: accepted at build, run fails with ArgumentException (C.7) |
+| M20 | an unknown block next to a known field is silently dropped | write | builder | none | the D26 premise | **done 2026-10-02**: silently dropped (C.7) |
 | M22 | the designer opens builder-made artifacts; a no-op save changes nothing | write (no-op save) | user, after each cut | verification | parity confidence | open |
-| M24 | an array sent into an object member, and an object into an array member, at the WCF binder | write | builder | none | the `attachments.sort` guide sentence | open |
+| M24 | an array sent into an object member, and an object into an array member, at the WCF binder | write | builder | none | the `attachments.sort` guide sentence | **done 2026-10-02**: both nulled by the binder, refused by a later rule with a misleading text (C.7) |
 | M26 | after "Save to object attachments", `ObjectFiles` holds the SOURCE locators ([traps](eng-92719-file-processing-element-traps.md#t-19) T-19) | write | user (designer-built probe) | none (it gates the OA.12 sentence and the CL-OA record) | the T-19 guide sentence and the knowledge record | open |
 | M5 | outer-only `Files` gives an NRE | - | - | - | nothing (refused anyway) | skipped |
 
@@ -862,6 +862,25 @@ there).
 
 Still open among the read-only rows: **M7** (the SysFile scope filter JSON; it needs a lookup condition built in the
 filter editor and gates only PK-SF) and **M12** (v2, gates nothing).
+
+### C.7 Day-0 write probes of 2026-10-02 (CrtProcessBuilder 1.6.6.54)
+
+Built by the main session in package `Custom`, one call at a time, with the user's go-ahead. Probe processes left on
+the stand until cleanup (core-rules: they are deleted, with the user's confirmation, when the run is done):
+`UsrFpM14Generic` (`37788ae3…`), `UsrFpM14CreateOuter` (`70da289a…`), `UsrFpM3Callee` (`c50c6050…`), `UsrFpM3Control`
+(`d63a1617…`), `UsrFpM3ItemOnly` (`cee1f532…`), `UsrFpM3MirrorProbe` (`9cb856b5…`), `UsrFpM19CollectionFilter`
+(`ccb453a0…`). No business record was written; the runs left process log rows only.
+
+| Id | Result |
+|---|---|
+| NEW: create-path NRE | `create-business-process` with the generic route `{type: userTask, userTaskName: ObjectFileProcessingUserTask / ProcessFileProcessingUserTask}` plus `mappings[]` failed with a bare **"Object reference not set to an instance of an object. Nothing was left behind."** (correlation `d43521be15cc`). Isolated: the same create with only the OUTER mapping `PF1.Files <- OF1.ObjectFiles` succeeds (`57c67716b563`); the NESTED mapping `PF1.Files.File <- OF1.ObjectFiles.File` is what throws on create, while the very same mapping through `modify-business-process addMapping` succeeds (`9ebc0ca62318`). So on 1.6.6.54 a dotted nested-item mapping in the create path NREs for these user tasks (multi-instance dotted mappings on create do work, see M3 control). The two-level binder of ENG-95984 File process parameter type must cover the create path, with a regression test |
+| M14 | Measured on `UsrFpM14Generic` (created bare, both mappings added by modify). `ConsiderTimeInFilter`: Script, `GS2 "false"`, `GS8 "false"` (template copy, as predicted). `RecordsToRead`: ConstValue `50`. Nested item UIds are the TEMPLATE's: `ObjectFiles.File` `1ddb6de7…`, `Files.File` `e5903ef0…`, PF1 `ObjectFiles.ObjectFile` `2d5e0436…` (as predicted: the builder does not re-mint, so D20's re-mint is real work). **`IL2` is PRESENT** on every element parameter and nested item (= the element UId), contrary to the prediction "absent". `BK15`: 21 rows for 21 top-level element parameters, none for nested items (as predicted). `BO2` absent, `BO3` true, `CL2` `FFFFFFFF`, `BL7` = `J6`, size `69;55` (as predicted). `ResultActionType` unset (`L8 {}`) on both elements. The two-level mapping is stored as `Files` <- Script `[#…[Element:{OF1}].[Parameter:{ObjectFiles}]#]` and `Files.File` <- Script `[#…[Element:{OF1}].[Parameter:{1ddb6de7…}]#]` (the nested source addressed by its own UId). Open: the user's look at PF1's card ("Files" display form) |
+| M3 (premise) | `UsrFpM3MirrorProbe`'s mirrored parameter `P` (`typeFromElement RD1.ResultCompositeObjectList`): outer `L8` = Script <- `RD1.ResultCompositeObjectList`, Tag `RD1.ResultCompositeObjectList`; its item `Name` (Tag = column UId) has **no source** (`L8 {}`). The H-1 premise holds. The run waits for the user's designer step (map `SP1`'s item `Name` from `P > Name`) |
+| M3 control | `UsrFpM3Control` (both levels from element paths) ran `completed`: **3** callee instances, all `M3 name set` |
+| M3b | `UsrFpM3ItemOnly` (only `InputRecordCollection.Name <- RD1.ResultCompositeObjectList.Name`) ran `completed`: **1** callee instance, `M3 name empty`. Same as the 1.6.6.22 measurement in the guidance; after the PT cut the same request must give 3 |
+| M19 | A collection parameter as a filter value (`RD2` filter `Id = RD1.ResultCompositeObjectList`) is **accepted at build**; the run fails at `RD2` with `System.ArgumentException: No mapping exists from object type Terrasoft.Common.CompositeObjectList… to a known managed provider native type` (SQL parameter binding). Loud at run time, silent at build: the "Refuse collection parameters as filter values" Sub-task is justified |
+| M20 | `setElement {useBackgroundMode: true, fileProcessing: {source: "attachments"}}` on 1.6.6.54 through the current clio: success, **no warning**, the unknown block is dropped silently end to end (`f63158412242`). The D26 premise (floor raise) holds |
+| M24 | (a) an array into the object member `readData.sort` is refused with "'sort' requires a 'column'" (`efb48ac50196`); (b) an object into the array member `readData.columns` is refused with "mode 'collection' requires explicit 'columns'" (`8bc67379307b`). Both wrong shapes are NULLED by the binder and only a later rule refuses, with a text that names the wrong cause; nothing was saved. The `attachments.sort` guide sentence: a wrong JSON shape is not reported as such |
 
 ### C.5 Corpus and repository counts (not the stand)
 

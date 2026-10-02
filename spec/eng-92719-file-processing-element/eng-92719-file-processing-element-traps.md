@@ -1147,6 +1147,22 @@ M-G6-4), [T-43](#t-43).
   mirror the configuration constants (`ResultActionType` 0/1, row keys `File` / `ObjectFile` / `Id`,
   `FileConsts.FileTypeUId`); runtime claims go to the stand runs in the banner. Platform tests in `UT` are a reference only.
 
+### T-68
+**A nested-item mapping on the CREATE path throws a bare NullReferenceException.**
+- **What happens.** On CrtProcessBuilder 1.6.6.54, `create-business-process` with a generic-route Process file
+  element pair and `mappings[]` that include `PF1.Files.File <- OF1.ObjectFiles.File` fails with "Object reference not
+  set to an instance of an object. Nothing was left behind." The same create with only the outer mapping succeeds, and
+  the same nested mapping succeeds through `modify-business-process addMapping`. The agent gets no hint which mapping
+  failed or why.
+- **Silent or loud.** Loud, but uninformative (no parameter named, no operation index).
+- **Basis / evidence.** measured 2026-10-02 on the stand, correlations `d43521be15cc` (create, both mappings: NRE),
+  `57c67716b563` (create, outer only: success), `9ebc0ca62318` (modify, nested: success);
+  [open-questions](eng-92719-file-processing-element-open-questions.md) C.7.
+- **Neutraliser.** The ENG-95984 File process parameter type two-level binder must run on the create path as well
+  as on modify, after the element's parameters are materialised; a package regression test builds the generic or the
+  `fileProcessing` element and a nested mapping in ONE create request. Root-cause the NRE (likely the nested item
+  parameters of a freshly added user task are not yet populated when `mappings[]` is applied) before PK-PT's code.
+
 ---
 
 ## K. Guidance

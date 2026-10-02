@@ -68,7 +68,7 @@ Q1-Q19 are defined in [decisions](eng-92719-file-processing-element-decisions.md
 | 1 | [platform-reference](eng-92719-file-processing-element-platform-reference.md) | **What the platform does, end to end.** The three schemas and their 13 / 8 / 13 parameters. The runtime per variant. `ResultActionType`: Object and Report produce their output collections for both values, and the Process variant supports SaveToFiles only. The file data model. Storage chosen per entity. The classic designer field by field. The diagram, the feature flags, and what the server validates (almost nothing). §13 lists every load-bearing claim that is still only source-traced. |
 | 2 | [use-cases](eng-92719-file-processing-element-use-cases.md) | **Why customers use the element, and how the product uses it.** Academy and Community. All 16 shipped processes with the element (30 elements), of which 4 are product processes that follow one recipe. The five Jira patterns tested against the corpus. The recommended scope per pattern, and the "which variant for which intent" guidance. Proposed as the "attached use-case inventory" that the Story refers to; Jira has no such attachment today. |
 | 3 | [serialization-capture](eng-92719-file-processing-element-serialization-capture.md) | **The oracle for every "matches a designer-built capture" criterion.** Every metadata key decoded, and the provenance rules measured over 400 stored parameter entries. Which shipped capture each variant is compared with. What is missing: no saved SysFile-mode element exists anywhere. The named exceptions of the comparison rule, and the capture procedure SC-0..SC-4 on the stand. |
-| 4 | [traps](eng-92719-file-processing-element-traps.md) | **T-1..T-67, 57 of them silent.** Each trap has its builder rule, refusal or test. The banner lists the traps that rest on a source trace only, and the run that settles each one. |
+| 4 | [traps](eng-92719-file-processing-element-traps.md) | **T-1..T-67, 57 of them silent; T-68 was added on 2026-10-02.** Each trap has its builder rule, refusal or test. The banner lists the traps that rest on a source trace only, and the run that settles each one. |
 | 5 | [reuse](eng-92719-file-processing-element-reuse.md) | **What to reuse, mirror or write new.** What comes from core. About twenty constants and seven algorithms that must be mirrored from CrtProcessDesigner, because production code cannot reference `Terrasoft.Configuration`. The four CrtProcessBuilder pieces that must change before reuse. What is genuinely new. |
 | 6 | [decisions](eng-92719-file-processing-element-decisions.md) | **The contract.** D1-D29 with options and consequences; 15 of them wait for the owner. Part D holds the replacement acceptance criteria for FE, OA and RP (D-2..D-4); D-1 points to AC-1..AC-10 of the ENG-95984 File process parameter type plan §1.4; D-5 holds the proposed Sub-tasks. Appendix A is the refusal and notice catalogue; Appendix B is the review log. |
 | 7 | [ENG-95984 File process parameter type plan](../eng-95984-file-parameter-type/eng-95984-file-parameter-type-plan.md) | **The parameter type.** Replacement AC-1..AC-10, and the binder rules P1/P2/P2-MI/P3/R-M1/R-M2 in one table. Work packages PB/CL/KB with `path:line`. The stand rows W0, V0, SC-0 and V1-V6, the estimate, the Definition of Done, and owner items O-1..O-10. |
@@ -370,9 +370,11 @@ Q7, Q19, Q1, Q2 and Q8 (O-10 is part of Q8). Two smaller items sit outside that 
 ## Stand measurements pending
 
 Stand `Creatio`: core 10.1.37, .NET Framework, CrtProcessBuilder 1.6.6.54.
-Five of the seven read-only measurements were run on 2026-10-02 (M10, M11 a/b in memory, M13, M15, M17-Q7; results in
-[open-questions](eng-92719-file-processing-element-open-questions.md) C.6); M7 and M12 and all twenty write
-measurements remain. Fifteen measurements gate code.
+On 2026-10-02 five of the seven read-only measurements (M10, M11 a/b in memory, M13, M15, M17-Q7;
+[open-questions](eng-92719-file-processing-element-open-questions.md) C.6) and the day-0 builder probes M3b, M14,
+M19, M20 and M24 (C.7) were run; M3 is built and waits for one designer step by the user. The day-0 probes also
+found a new defect, a bare NullReferenceException for a nested-item mapping on the create path
+([traps](eng-92719-file-processing-element-traps.md) T-68). Fifteen measurements gate code.
 Recipes and status are in [open-questions](eng-92719-file-processing-element-open-questions.md) Part B, and methods
 in [test-plan](eng-92719-file-processing-element-test-plan.md) §8.
 
