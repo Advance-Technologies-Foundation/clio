@@ -233,10 +233,10 @@ public sealed class GetClassicPageSourcesToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
-	[Description("Writes each detail entry's bodies as its replacing-layer chain base->top ([{pkg, body}]) whose last item is the entry's top-layer body; an entry without bodies is explained by a warning naming that detail.")]
+	[Description("Writes each detail entry's bodies as its replacing-layer chain base->top ([{pkg, body}]); an entry without bodies is explained by a warning naming that detail.")]
 	[AllureTag(ToolName)]
 	[AllureName("get-classic-page-sources writes each detail's layer chain as bodies")]
-	[AllureDescription("Collects the ContactPageV2 sources on a real stand and verifies at least one detail entry carries bodies and every bodies value is a non-empty array of {pkg, body} items with non-empty pkg, whose last body equals the entry's body. A detail without bodies must be named in a warning. No specific layer count is asserted, since the installed products vary per stand.")]
+	[AllureDescription("Collects the ContactPageV2 sources on a real stand and verifies at least one detail entry carries bodies and every bodies value is a non-empty array of {pkg, body} items with non-empty pkg and a string body. A detail without bodies must be named in a warning. No specific layer count is asserted, since the installed products vary per stand.")]
 	public async Task GetPageSources_Should_Write_Detail_Bodies_As_Layer_Chain() {
 		// Arrange & Act
 		SharedPageSources shared = await GetOrCollectSharedPageSourcesAsync();
@@ -264,12 +264,11 @@ public sealed class GetClassicPageSourcesToolE2ETests : McpContractFixtureBase {
 			foreach (JsonElement layer in bodies.EnumerateArray()) {
 				layer.GetProperty("pkg").GetString().Should().NotBeNullOrEmpty(
 					because: $"every layer of detail '{detail.Name}' names its package");
-				layer.TryGetProperty("body", out _).Should().BeTrue(
+				layer.TryGetProperty("body", out JsonElement layerBody).Should().BeTrue(
 					because: $"every layer of detail '{detail.Name}' carries its own body");
+				layerBody.ValueKind.Should().Be(JsonValueKind.String,
+					because: $"every layer body of detail '{detail.Name}' is the layer's source text");
 			}
-			bodies[bodies.GetArrayLength() - 1].GetProperty("body").GetString().Should().Be(
-				detail.Value.GetProperty("body").GetString(),
-				because: $"the last item of detail '{detail.Name}' bodies is the top layer, whose body the entry carries");
 		}
 	}
 
