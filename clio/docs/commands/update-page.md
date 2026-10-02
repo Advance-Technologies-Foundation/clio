@@ -55,6 +55,10 @@ diff sections and can discard comments inside those sections.
 > and reports the path in `files.bodyFile`. MCP callers pass that path straight through as
 > `body-file`, or send the file contents as `body`.
 
+The MCP `update-page` tool also accepts `include-operations: false`. It applies only with
+`verify: true`: the read-back page then carries `ownBodySummary.viewConfigDiffOpCounts`
+(operations per type) instead of the `viewConfigDiffOps` list.
+
 The MCP `update-page` tool also accepts `validate: false` as an explicit escape
 hatch when a full replacement body contains a pre-existing defect that is
 unrelated to the requested edit. This skips client-side content and run-process

@@ -22,6 +22,24 @@ namespace Clio.Tests.Command.McpServer;
 [TestFixture]
 [Property("Module", "McpServer")]
 public sealed class ToolContractGetToolTests {
+
+	[Test]
+	[Category("Unit")]
+	[Description("Tells agents in the curated push-workspace contract that a newly pushed package comes out locked and points them to create-package.")]
+	public void PushWorkspaceContract_ShouldWarnThatNewPackagesComeOutLocked() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result =
+			tool.GetToolContracts(new ToolContractGetArgs([PushWorkspaceTool.PushWorkspaceToolName]));
+
+		// Assert
+		string description = result.Tools!.Single().Description;
+		description.Should().Contain("InstallType 1", because: "the agent must know the package will not be editable");
+		description.Should().Contain("create-package", because: "the agent needs the tool that creates an editable package");
+	}
+
 	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
 
 	[Test, Category("Unit")]
@@ -401,6 +419,101 @@ public sealed class ToolContractGetToolTests {
 			because: "the curated contract must advertise every argument the real stdio binder accepts and no stale arguments");
 		contract.InputSchema.Required.Should().Contain("output-file",
 			because: "the file destination is what separates this tool from odata-read");
+	}
+
+	[TestCase(ExecuteEsqToFileTool.ToolName, typeof(ExecuteEsqToFileArgs))]
+	[TestCase(ComponentInfoToFileTool.ToolName, typeof(ComponentInfoToFileArgs))]
+	[TestCase(RequestInfoToFileTool.ToolName, typeof(RequestInfoToFileArgs))]
+	[TestCase(ListEntityClientSchemasToFileTool.ToolName, typeof(ListEntityClientSchemasToFileArgs))]
+	[TestCase(ListEntityClientSchemasTool.ToolName, typeof(ListEntityClientSchemasArgs))]
+	[Category("Unit")]
+	[Description("Keeps each curated *-to-file contract, and the list-entity-client-schemas contract it is built from, set-equal with the JSON members its arguments bind, so the curated literal cannot advertise an argument the binder drops.")]
+	public void ToolContractGet_Should_Keep_FileTwin_Input_Contract_In_Sync_With_Args(string toolName, Type argsType) {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+		string[] boundArgumentNames = argsType
+			.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+			.Where(property => property.GetCustomAttribute<JsonExtensionDataAttribute>() is null)
+			.Select(property => property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? property.Name)
+			.ToArray();
+
+		// Act
+		ToolContractDefinition contract = tool.GetToolContracts(new ToolContractGetArgs([toolName])).Tools!.Single();
+
+		// Assert
+		boundArgumentNames.Should().NotBeEmpty(because: "an empty reflected set would make the comparison pass vacuously");
+		contract.Name.Should().Be(toolName, because: "the curated contract, not the reflection fallback, must be served");
+		contract.InputSchema.Properties.Select(property => property.Name).Should().BeEquivalentTo(boundArgumentNames,
+			because: "the curated contract must advertise every argument the real stdio binder accepts and no stale ones");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The output contracts of execute-esq-to-file, list-entity-client-schemas-to-file and the curated list-entity-client-schemas describe every field their success responses carry on the wire, so a renamed response member cannot leave the contract naming a field that no longer exists.")]
+	public void ToolContractGet_Should_Describe_Every_Wire_Field_Of_The_Typed_File_Twins() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+		(string ToolName, string WireJson)[] samples = [
+			(ExecuteEsqToFileTool.ToolName,
+				McpResponseBaseline.Serialize(new ExecuteEsqResponse(true, null, 2, null, OutputFile: "/tmp/rows.json"))),
+			(ListEntityClientSchemasToFileTool.ToolName, McpResponseBaseline.Serialize(new ListEntityClientSchemasToFileResponse(
+				true, "Contract", "uid", "/tmp/pages.json", new PageKindCounts(1, 1, 0, 0), new PageKindCounts(2, 1, 1, 0),
+				["warning"], "note", null))),
+			(ListEntityClientSchemasTool.ToolName, ListEntityClientSchemasToolTests.PinnedWireJson)
+		];
+
+		foreach ((string toolName, string wireJson) in samples) {
+			// Act
+			ToolContractDefinition contract = tool.GetToolContracts(new ToolContractGetArgs([toolName])).Tools!.Single();
+			string[] wireFields = JsonDocument.Parse(wireJson).RootElement
+				.EnumerateObject().Select(property => property.Name).ToArray();
+
+			// Assert
+			wireFields.Should().BeSubsetOf(contract.OutputContract.Fields.Select(field => field.Name),
+				because: $"every field {toolName} returns must be described by its contract");
+		}
+	}
+
+	[TestCase(ComponentInfoToFileTool.ToolName)]
+	[TestCase(RequestInfoToFileTool.ToolName)]
+	[Category("Unit")]
+	[Description("The info file twins describe documentationFile and documentationSections, the names the projection writes, and no longer describe documentation.")]
+	public void ToolContractGet_Should_Describe_The_Documentation_Projection_Fields(string toolName) {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		string[] fields = tool.GetToolContracts(new ToolContractGetArgs([toolName])).Tools!.Single()
+			.OutputContract.Fields.Select(field => field.Name).ToArray();
+
+		// Assert
+		fields.Should().Contain([DocumentationFileProjection.DocumentationFileFieldName, DocumentationFileProjection.DocumentationSectionsFieldName],
+			because: "the contract must name the fields the twin returns in place of documentation");
+		fields.Should().NotContain(DocumentationFileProjection.DocumentationFieldName,
+			because: "the twin never returns documentation inline");
+	}
+
+	[TestCase(ExecuteEsqTool.ToolName, ExecuteEsqToFileTool.ToolName)]
+	[TestCase(ComponentInfoTool.ToolName, ComponentInfoToFileTool.ToolName)]
+	[TestCase(RequestInfoTool.ToolName, RequestInfoToFileTool.ToolName)]
+	[TestCase(ListEntityClientSchemasTool.ToolName, ListEntityClientSchemasToFileTool.ToolName)]
+	[Category("Unit")]
+	[Description("Each inline read tool keeps output-file off its contract and names its *-to-file twin, and the twin requires output-file.")]
+	public void ToolContractGet_Should_Point_Inline_Read_At_Its_File_Twin(string inlineName, string twinName) {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractDefinition inline = tool.GetToolContracts(new ToolContractGetArgs([inlineName])).Tools!.Single();
+		ToolContractDefinition twin = tool.GetToolContracts(new ToolContractGetArgs([twinName])).Tools!.Single();
+
+		// Assert
+		inline.InputSchema.Properties.Should().NotContain(property => property.Name == "output-file",
+			because: "the read-only tool does not take a file destination");
+		inline.FallbackFlow.SelectMany(flow => flow.Tools).Should().Contain(twinName,
+			because: "a caller with a large result must be pointed at the tool that writes it to a file");
+		twin.InputSchema.Required.Should().Contain("output-file",
+			because: "the file destination is what separates the twin from the inline tool");
 	}
 
 	[Test]

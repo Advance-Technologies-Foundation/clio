@@ -68,7 +68,7 @@ public sealed class PageGetTool(
 			// the prior WriteFilesAndCompact behavior.
 			return new PageGetResponse {
 				Success = true,
-				Page = written.Page,
+				Page = written.Page.ForResponse(args.IncludeOperations),
 				Editable = written.Editable,
 				Files = written.Files
 			};
@@ -87,5 +87,9 @@ public sealed record PageGetArgs(
 
 	[property: JsonPropertyName("output-directory")]
 	[property: Description("Optional. Directory to anchor .clio-pages output under (typically your project root). Defaults to the auto-detected workspace root.")]
-	string? OutputDirectory = null
+	string? OutputDirectory = null,
+
+	[property: JsonPropertyName("include-operations")]
+	[property: Description("false replaces page.ownBodySummary.viewConfigDiffOps with viewConfigDiffOpCounts (count per operation type); meta.json keeps the full list.")]
+	bool? IncludeOperations = null
 ) : ConnectionArgsBase;

@@ -3905,6 +3905,86 @@ public class PageToolsTests
 		json.Should().Contain("\"files\"", because: "file paths block must appear in serialized response");
 	}
 
+	internal const string PageBodyViewConfigDiffWithOperations = """
+		[
+			{ "operation": "insert", "name": "Field1", "parentName": "Main", "propertyName": "items", "values": { "type": "crt.Input" } },
+			{ "operation": "insert", "name": "Field2", "parentName": "Main", "propertyName": "items", "values": { "type": "crt.Input" } },
+			{ "operation": "merge", "name": "Main", "values": { "visible": true } },
+			{ "operation": "remove", "name": "OldButton" }
+		]
+		""";
+
+	[Test]
+	[Category("Unit")]
+	[Description("The default get-page response (page metadata and the meta.json it writes) serializes to the pinned JSON; include-operations must not change it when omitted.")]
+	public void PageGetTool_DefaultResponse_ShouldMatchPinnedJson() {
+		// Arrange
+		(PageGetTool tool, MockFileSystem mockFs) = CreatePageGetToolWithBody(
+			CreatePageBody(viewConfigDiff: PageBodyViewConfigDiffWithOperations).ReplaceLineEndings("\n"));
+
+		// Act
+		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage"));
+
+		// Assert
+		response.Success.Should().BeTrue(because: "the fixture page is readable");
+		McpResponseBaseline.Serialize(response.Page).Should().Be(PinnedPageWireJson,
+			because: "the page block of the MCP response is the default and stays byte-for-byte unchanged");
+		McpResponseBaseline.Serialize(response.Editable).Should().Be(PinnedEditableWireJson,
+			because: "the editable block of the MCP response stays byte-for-byte unchanged");
+		System.Text.RegularExpressions.Regex.Replace(
+				mockFs.File.ReadAllText(response.Files.MetaFile), "\\d{4}-\\d{2}-\\d{2}T[0-9:.]+Z", "<timestamp>")
+			.Should().Be(PinnedMetaJson, because: "meta.json keeps every operation and stays byte-for-byte unchanged");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("get-page with include-operations=true serializes exactly as the default response.")]
+	public void PageGetTool_IncludeOperationsTrue_ShouldMatchDefaultResponse() {
+		// Arrange
+		(PageGetTool tool, _) = CreatePageGetToolWithBody(
+			CreatePageBody(viewConfigDiff: PageBodyViewConfigDiffWithOperations).ReplaceLineEndings("\n"));
+
+		// Act
+		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", IncludeOperations: true));
+
+		// Assert
+		McpResponseBaseline.Serialize(response.Page).Should().Be(PinnedPageWireJson,
+			because: "include-operations=true is the default and must not change the response");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("get-page with include-operations=false leaves viewConfigDiffOps out of the response, returns their counts by operation type, and still writes every operation to meta.json.")]
+	public void PageGetTool_IncludeOperationsFalse_ShouldReturnCountsAndKeepMetaJsonFull() {
+		// Arrange
+		(PageGetTool tool, MockFileSystem mockFs) = CreatePageGetToolWithBody(
+			CreatePageBody(viewConfigDiff: PageBodyViewConfigDiffWithOperations).ReplaceLineEndings("\n"));
+
+		// Act
+		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", IncludeOperations: false));
+
+		// Assert
+		response.Success.Should().BeTrue(because: "the fixture page is readable");
+		response.Page.OwnBodySummary.ViewConfigDiffOps.Should().BeNull(
+			because: "include-operations=false drops the operation list from the response");
+		response.Page.OwnBodySummary.ViewConfigDiffOpCounts.Should().Equal(
+			new Dictionary<string, int> { ["insert"] = 2, ["merge"] = 1, ["remove"] = 1 },
+			because: "the counts per operation type replace the list and lose no operation");
+		string pageJson = McpResponseBaseline.Serialize(response.Page);
+		pageJson.Should().NotContain("\"viewConfigDiffOps\"", because: "the wire JSON must not carry the list at all");
+		pageJson.Should().Be(PinnedPageWireJson.Replace(
+				"\"viewConfigDiffOps\":[{\"operation\":\"insert\",\"name\":\"Field1\",\"type\":\"crt.Input\",\"parentName\":\"Main\"},{\"operation\":\"insert\",\"name\":\"Field2\",\"type\":\"crt.Input\",\"parentName\":\"Main\"},{\"operation\":\"merge\",\"name\":\"Main\"},{\"operation\":\"remove\",\"name\":\"OldButton\"}]",
+				"\"viewConfigDiffOpCounts\":{\"insert\":2,\"merge\":1,\"remove\":1}"),
+			because: "every other page field stays exactly as in the default response");
+		System.Text.RegularExpressions.Regex.Replace(
+				mockFs.File.ReadAllText(response.Files.MetaFile), "\\d{4}-\\d{2}-\\d{2}T[0-9:.]+Z", "<timestamp>")
+			.Should().Be(PinnedMetaJson, because: "meta.json is written before the response is trimmed and keeps every operation");
+	}
+
+	private const string PinnedPageWireJson = """{"schemaName":"UsrMcp_FormPage","schemaUId":"uid-1","packageName":"UsrMcp","currentLeafPackageName":"UsrMcp","packageUId":"pkg-1","parentSchemaName":"BasePage","ownBodySummary":{"viewConfigDiffOperations":4,"viewModelConfigDiffOperations":0,"modelConfigDiffOperations":0,"handlerEntries":0,"bodyLength":1077,"viewConfigDiffOps":[{"operation":"insert","name":"Field1","type":"crt.Input","parentName":"Main"},{"operation":"insert","name":"Field2","type":"crt.Input","parentName":"Main"},{"operation":"merge","name":"Main"},{"operation":"remove","name":"OldButton"}],"handlerRequests":[]},"designPackageUId":"pkg-1","designPackageName":"UsrMcp_FormPage","willCreateReplacingInDesignPackage":false,"rootSchemaUId":"uid-1","schema-type":"unknown"}""";
+	private const string PinnedEditableWireJson = """{"editableSchemaExists":true,"editableSchemaUId":"uid-1"}""";
+	private const string PinnedMetaJson = """{"fetchedAt":"<timestamp>","page":{"schemaName":"UsrMcp_FormPage","schemaUId":"uid-1","packageName":"UsrMcp","currentLeafPackageName":"UsrMcp","packageUId":"pkg-1","parentSchemaName":"BasePage","ownBodySummary":{"viewConfigDiffOperations":4,"viewModelConfigDiffOperations":0,"modelConfigDiffOperations":0,"handlerEntries":0,"bodyLength":1077,"viewConfigDiffOps":[{"operation":"insert","name":"Field1","type":"crt.Input","parentName":"Main"},{"operation":"insert","name":"Field2","type":"crt.Input","parentName":"Main"},{"operation":"merge","name":"Main","type":null,"parentName":null},{"operation":"remove","name":"OldButton","type":null,"parentName":null}],"handlerRequests":[]},"designPackageUId":"pkg-1","designPackageName":"UsrMcp_FormPage","willCreateReplacingInDesignPackage":false,"rootSchemaUId":"uid-1","schema-type":"unknown"},"baseline":{"schemaName":"UsrMcp_FormPage","editableSchemaExists":true,"editableSchemaUId":"uid-1","capturedAt":"<timestamp>"}}""";
+
 	[Test]
 	[Category("Unit")]
 	[Description("get-page places files under .clio-pages/{schema-name}/ subdirectory")]

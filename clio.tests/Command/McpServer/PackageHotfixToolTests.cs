@@ -2,7 +2,9 @@ using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using Clio.Package;
+using System.Reflection;
 using FluentAssertions;
+using ModelContextProtocol.Server;
 using NSubstitute;
 using NUnit.Framework;
 
@@ -11,6 +13,20 @@ namespace Clio.Tests.Command.McpServer;
 [TestFixture]
 [Property("Module", "McpServer")]
 public class PackageHotfixToolTests {
+
+	[Test]
+	[Category("Unit")]
+	[Description("Marks unlock-for-hotfix destructive, because it changes a package's editability on a shared environment.")]
+	public void UnlockForHotfix_ShouldBeDestructive() {
+		// Arrange & Act
+		McpServerToolAttribute attribute = typeof(PackageHotfixTool)
+			.GetMethod(nameof(PackageHotfixTool.UnlockForHotfix))!
+			.GetCustomAttribute<McpServerToolAttribute>()!;
+
+		// Assert
+		attribute.Destructive.Should().BeTrue(because: "the host must confirm a change to a package's editability");
+	}
+
 
 	[Test]
 	[Description("UnlockForHotfix resolves command for requested environment and sets Enable=true.")]
