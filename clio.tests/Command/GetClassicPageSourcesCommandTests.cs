@@ -445,6 +445,43 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 	}
 
 	[Test]
+	[Description("TryAssemblePageSources keeps a detail entry without bodies and warns naming the detail and the layer package when a lower layer of the detail yields no schema and no error.")]
+	public void TryAssemblePageSources_ShouldOmitDetailBodies_AndWarn_WhenDetailLayerReturnsNoSchema() {
+		// Arrange — the base layer's GetSchema request throws an exception without a message
+		AddLayer("UsrOrderPage", "uid-page", "UsrApp", 300);
+		AddSchema("uid-page",
+			"define(\"UsrOrderPage\", [], function() { return { details: { V: { schemaName: \"UsrOrderLineDetail\" } } }; });",
+			EmptyGuid, "UsrApp");
+		AddLayer("UsrOrderLineDetail", "uid-detail-base", "UsrBase", 100);
+		AddLayer("UsrOrderLineDetail", "uid-detail-top", "UsrExt", 300);
+		AddSchema("uid-detail-top",
+			"define(\"UsrOrderLineDetail\", [], function() { return { entitySchemaName: \"UsrOrderLine\" }; });",
+			EmptyGuid, "UsrExt", caption: "Order lines");
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Is<string>(body => body.Contains("\"uid-detail-base\"")))
+			.Returns(_ => throw new NullMessageException());
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrOrderPage" };
+
+		// Act
+		bool ok = _command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: "a detail's layer chain is best-effort and never fails the run");
+		JObject manifest = JObject.Parse(ReadManifest(response));
+		JToken detail = manifest["detailSchemas"]!["UsrOrderLineDetail"];
+		detail.Should().NotBeNull(because: "a layer without a schema drops only the detail's bodies, not the detail");
+		detail!["bodies"].Should().BeNull(because: "a partial chain would hide the missing layer's content");
+		detail["title"]!.ToString().Should().Be("Order lines", because: "title is kept");
+		response.Warnings.Should().ContainSingle(
+			w => w.Contains("detail 'UsrOrderLineDetail'") && w.Contains("UsrBase") && w.Contains("bodies")
+				&& w.Contains("no schema returned"),
+			because: "the warning must name the detail, the layer's package, the block it lacks and the missing schema");
+	}
+
+	private sealed class NullMessageException : Exception {
+		public override string Message => null!;
+	}
+
+	[Test]
 	[Description("TryAssemblePageSources keeps a child-page manifest without resourceStrings when only that child's full-hierarchy load fails, and warns naming the child and the missing resourceStrings.")]
 	public void TryAssemblePageSources_ShouldWarnNamingChildPage_WhenOnlyChildStringsLoadFails() {
 		// Arrange

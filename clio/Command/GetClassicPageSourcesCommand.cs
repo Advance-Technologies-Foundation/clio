@@ -1105,9 +1105,9 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 			catch (Exception ex) {
 				(layerSchema, loadError) = (null, ex.Message);
 			}
-			if (loadError != null) {
+			if (loadError != null || layerSchema == null) {
 				WarnDetail(ctx, $"Could not gather the layer chain (bodies) of detail '{detailName}': "
-					+ $"Failed to load layer '{layer.PackageName}' ({layer.UId}): {loadError}. "
+					+ $"Failed to load layer '{layer.PackageName}' ({layer.UId}): {loadError ?? NoSchemaReturned}. "
 					+ "Its entry carries no bodies; body is the top layer only.");
 				return;
 			}
