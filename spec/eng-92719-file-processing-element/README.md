@@ -370,7 +370,9 @@ Q7, Q19, Q1, Q2 and Q8 (O-10 is part of Q8). Two smaller items sit outside that 
 ## Stand measurements pending
 
 Stand `Creatio`: core 10.1.37, .NET Framework, CrtProcessBuilder 1.6.6.54.
-None of the 27 measurements has run, and three are partly answered. Seven are read-only, and fifteen gate code.
+Five of the seven read-only measurements were run on 2026-10-02 (M10, M11 a/b in memory, M13, M15, M17-Q7; results in
+[open-questions](eng-92719-file-processing-element-open-questions.md) C.6); M7 and M12 and all twenty write
+measurements remain. Fifteen measurements gate code.
 Recipes and status are in [open-questions](eng-92719-file-processing-element-open-questions.md) Part B, and methods
 in [test-plan](eng-92719-file-processing-element-test-plan.md) §8.
 
@@ -388,13 +390,13 @@ Rules for every measurement:
 | PK-MH / PK-PT | **M3**: does the shipped collection mirror read null rows (H-1)? | yes | builder + one designer step |
 | | **M6**: a flat File taken from a collection item outside a row context | yes | designer + builder |
 | PK-PT verification baseline (no code waits) | **M3b** (MI-0 in the ENG-95984 File process parameter type test-plan): baseline, an item-only multi-instance mapping runs one iteration on 1.6.6.54. It is the baseline for the post-cut proof V3 and for the PT row of [pr-split](eng-92719-file-processing-element-pr-split.md) §14 | yes | builder |
-| PK-OA | **M10**: the designer's object list against the resolver's prediction (partly answered by UO-2) | no | UO method |
-| | **M11 (a)(b)**: H-G3-1, does a designer open-and-close write `SourceDataEntitySchemaUId = <X>File`? | no (in memory) | UO method |
+| PK-OA | **M10**: the designer's object list against the resolver's prediction. **Done 2026-10-02: matches** | no | UO method |
+| | **M11 (a)(b)**: H-G3-1, does a designer open-and-close write `SourceDataEntitySchemaUId = <X>File`? **Done 2026-10-02 in memory: not reproduced on either half**; the optional save variant (c) remains | no (in memory) | UO method |
 | | **M14**: the server-built element shape on 1.6.6.54 (day 0, on 1.6.6.54, before the first cut) | yes | builder |
-| | **M17-Q7**: the foreign-key pre-check for an empty `ConnectedObjectId` | no | agent |
-| | **M13**: describe of PrintContractsReport, converged or snapshot (day 0). Decides the TC-45 fixtures: the Object ones in PK-OA, the Report ones in PK-RP | no | agent |
+| | **M17-Q7**: the foreign-key pre-check for an empty `ConnectedObjectId`. **Done 2026-10-02: FK present on `ContactFile` / `AccountFile`, none on `SysFile.RecordId`** | no | agent |
+| | **M13**: describe of PrintContractsReport, converged or snapshot. Decides the TC-45 fixtures: the Object ones in PK-OA, the Report ones in PK-RP. **Done 2026-10-02: `Guid` with `referenceSchema: Contract`** | no | agent |
 | PK-RP | **M1 + M2**: does a nested-only `Files.File <- File` copy one file, and does an unset File fail with an NRE? | yes | designer (script-task probe `UsrG1FilesBindingProbe`) |
-| | **M15**: FastReport packages and printables (partly answered: 0 printables) | no | agent |
+| | **M15**: FastReport packages and printables. **Done 2026-10-02: none**, so Q18 stands | no | agent |
 | PK-SF | **M7**: the filter JSON the designer writes for a SysFile `RecordId` scope | no | UO method |
 | | **M8**: an Object element finds a Freedom UI upload stored in SysFile | yes | user + designer |
 | | **M21**: a designer save capture of a SysFile-mode Object element | yes | designer |

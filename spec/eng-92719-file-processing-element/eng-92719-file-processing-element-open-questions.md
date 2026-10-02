@@ -482,12 +482,12 @@ short, the full stack is in `Error.log` under `C:\Windows\Temp\Creatio\Creatio\0
 | ID | Question | Write | Built by | Gates | Settles | Status |
 |---|---|---|---|---|---|---|
 | M7 | the designer's filter JSON for a SysFile `RecordId` scope | no | UO method | PK-SF | D16 SysFile scope shape | open |
-| M10 | the designer's object list against the resolver's prediction | no | UO method | PK-OA | D15 refusals R3-R5 | partly (UO-2) |
-| M11 (a)(b) | H-G3-1: the Report target half; the Object source half | no | UO method | PK-OA | D15/D19 severity; bug report; guide warning | open |
+| M10 | the designer's object list against the resolver's prediction | no | UO method | PK-OA | D15 refusals R3-R5 | **done 2026-10-02**: matches the prediction (C.6) |
+| M11 (a)(b) | H-G3-1: the Report target half; the Object source half | no | UO method | PK-OA | D15/D19 severity; bug report; guide warning | **done in memory 2026-10-02**: not reproduced on either half (C.6); (c) with a save remains optional |
 | M12 | SysFile + Account reloads as plain "Account" | no | UO method | none (v2) | Q17 override | open |
-| M13 | describe of PrintContractsReport: converged or snapshot | no | agent | PK-OA (TC-45 Object fixtures), PK-RP (TC-45 Report fixtures) | D19 fixtures | open |
-| M15 | FastReport packages and printables | no | agent | PK-RP | Q18 | partly (0 printables) |
-| M17-Q7 | foreign key of `ContactFile` to Contact | no (audit row only: cliogate 2.0.0.53+ logs the statement in `ClioSqlRequestLog`) | agent | PK-OA | the F-E9 empty-record notice wording | open |
+| M13 | describe of PrintContractsReport: converged or snapshot | no | agent | PK-OA (TC-45 Object fixtures), PK-RP (TC-45 Report fixtures) | D19 fixtures | **done 2026-10-02**: `Guid` with `referenceSchema: Contract` (C.6) |
+| M15 | FastReport packages and printables | no | agent | PK-RP | Q18 | **done 2026-10-02**: no FastReport package, 0 FastReport printables (C.6) |
+| M17-Q7 | foreign key of `ContactFile` to Contact | no (audit row only: cliogate 2.0.0.53+ logs the statement in `ClioSqlRequestLog`) | agent | PK-OA | the F-E9 empty-record notice wording | **done 2026-10-02**: FK `ContactFile.ContactId` -> Contact, 0 empty-Id rows (C.6) |
 | M3 | the shipped mirror reads null rows (H-1) | write | builder + one designer step | PK-PT / MH | Q7, D9 | open |
 | M3b | baseline (MI-0 in the ENG-95984 File process parameter type test-plan): an item-only multi-instance mapping runs one iteration on 1.6.6.54 | write | builder | PK-PT verification | the version-gated guide sentence (D25) | open |
 | M6 | flat File <- collection item outside a row context | write | designer + builder | PK-PT | R-M1 (D5) | open |
@@ -827,7 +827,7 @@ repeated; the raw outputs of the research passes are not attached.
 | Consumers | no downstream element maps `ReportFiles` or `CreatedObjectFileIds`; a Modify data element re-finds the file by `Name contains` + `CreatedOn = CurrentHour` and sets `Tag` | describe |
 | Describe today (PrintInvoiceReport, PrintQuotationReport, GenerateDNSRecordsSpecification x2) | `buildType: "usertask"`, `userTaskName: "ReportFileProcessingUserTask"`, every typed block null, `filter` decoded from `DataSourceFilters`, `ReportId` / `TargetEntitySchemaUId` raw GUIDs; `ConsiderTimeInFilter` and `TargetDataEntitySchemaUId` absent from these 2021-era elements | `describe-business-process` (re-measured the same day, correlation `16307feb8a4d`) |
 | Correction to that reading | the missing `itemProperties` / `isOutput` / `isRequired` came from the session's stale MCP clio client, not from the package; a current clio shows `itemProperties` (File) under `ReportFiles` | the same describe through a current clio |
-| Not yet described | PrintContractsReport (M13) | - |
+| PrintContractsReport (M13) | described 2026-10-02, see C.6 | `describe-business-process`, correlation `7534ca075c72` |
 
 ### C.4 Designer observations UO-1..UO-4
 
@@ -841,6 +841,27 @@ and UO-2..UO-4 were measured by the main research session in an already logged-i
 | UO-2 | Legacy file details are listed as `<Entity> (<file entity caption>)`: `Account (File and link of account)`, `Contact (Contact attachment)`, `Activity (File and link of activity)`. Every other object by its plain caption (a SysFile entry). |
 | UO-3 | SysFile mode (`Account address`, defaults untouched): `SourceEntitySchemaUId` = SysFile `70ec5d9f-a55e-4f5c-8f59-30d2c5149c4a` (ConstValue), `SourceDataEntitySchemaUId` = `8ab0fe8a-0340-41ac-8b09-b11f65dd83da` (ConstValue), `DataSourceFilters` = an empty FilterGroup, `RecordsToRead` 50, `ResultActionType` 1, `ConsiderTimeInFilter` Script `true`; the target fields, `OrderByInfo` and `ConnectedObject*` unset. |
 | UO-4 | Legacy mode (source `Account (File…)`, "Save to object attachments", target `Contact (Contact attachment)`, record left empty): `SourceEntitySchemaUId` = AccountFile `149d2eaf-cbd2-49fa-b565-637748ff823c`, `TargetEntitySchemaUId` = ContactFile `e9eafee9-c4e4-4793-ad0a-003bd2c6a9b4`, `ConnectedObjectColumnUId` = `ContactFile.Contact` `f442867d-73ca-49b3-a8ba-8a2566b1fc59`, `ResultActionType` 0, both `*DataEntitySchemaUId` CLEARED (None); `ConnectedObjectId` unset. Changing the source object raised no confirmation, because the old value was empty: `onEntitySchemaChange` asks only when the old value is set (`PD/BaseFileProcessingUserTaskPropertiesPage/BaseFileProcessingUserTaskPropertiesPage.js:794-823`, the check at `:807-810`). |
+
+### C.6 Read-only measurements of 2026-10-02
+
+Run by the main session on CrtProcessBuilder 1.6.6.54, one call at a time. Designer reads used the UO method in
+a NEW UNSAVED process and, for M11 (a), the shipped PrintQuotationReport opened without saving; both tabs were
+closed without saving, and `SysSchema` shows 0 process schemas created since 2026-10-01. On an existing process the
+open schema is not in `Terrasoft.ProcessSchemaManager.items`; it is
+`Ext.ComponentMgr.all.map["schema-designer-mainCt"].model.changedValues.Schema` (the UO sketch in B.0 needs that path
+there).
+
+| Id | Result | How |
+|---|---|---|
+| M10 | Matches the prediction. 1,218 objects are offered. Legacy file details are listed as `<Entity> (<file object caption>)` (about 40 of them), including `Lead (Lead attachment)` (the `FileLead` case). `DNS guide file`, `Uploaded file` (SysFile itself), `Process files`, `Feed uploaded file`, `Attached file`, `Message file`, `File and link of mailbox synchronization settings` and `File and object link of OAuth 2.0 application` are plain entries: file objects that no entity claims by name are offered as ordinary objects | full list read from the opened combobox's DOM with the field text cleared |
+| M11 (a) | Not reproduced. PrintQuotationReport's report element: before opening the panel `TargetDataEntitySchemaUId` had no value; after opening and closing the panel unchanged it holds source None, value null, not OpportunityFile `4135a9ba…`. The other target parameters (`TargetEntitySchemaUId` = OpportunityFile, `ConnectedObjectColumnUId`, `ConnectedObjectId`, `IsSeparateReports` true, `ResultActionType` 0) are unchanged. The panel shows "Generate separate report for each record" checked and disabled for the Word printable Quotation | designer JavaScript on the open schema |
+| M11 (b) | Not reproduced in memory. Object element, source `Account (File and link of account)`, "Use in process": `SourceDataEntitySchemaUId` is None/null after the first close and still None/null after reopening and closing the panel unchanged. Per the recipe this is "not reproduced in memory", not "refuted"; step (c), a save and reload, would settle it | designer JavaScript |
+| M13 | `ConnectedObjectId` reads back as type `Guid` with `referenceSchema: Contract`, source Script `[#ContractId#]`; the stored metadata types it Lookup. Describe therefore reports the CONVERGED type while keeping the snapshot's reference schema: D19 fixtures carry `Guid` plus `referenceSchema`. `TargetDataEntitySchemaUId` and `ConsiderTimeInFilter` are absent (not stored on this element) | `describe-business-process PrintContractsReport` through a current clio (`get-tool-contract` checked first), correlation `7534ca075c72` |
+| M15 | No FastReport package (`list-packages` filter "Fast": 0; "Report": `Reports`, `WordReporting`); `SysModuleReport` 5 rows, 0 of type FastReport. Q18 recommendation B (refuse FastReport) stands | `list-packages`; `execute-sql-script` SELECT |
+| M17-Q7 | `ContactFile.ContactId` -> Contact and `AccountFile.AccountId` -> Account are foreign keys; `SysFile` has none on `RecordId` (only `LockedById`, `FileGroupId`, `TypeId`); 0 rows with the empty Id in Contact and in Account. So an empty `ConnectedObjectId` is predicted to FAIL at the database for a legacy target and to ORPHAN the file for a SysFile target (the latter still needs the M17 runs) | `execute-sql-script` SELECT on `sys.foreign_keys` |
+
+Still open among the read-only rows: **M7** (the SysFile scope filter JSON; it needs a lookup condition built in the
+filter editor and gates only PK-SF) and **M12** (v2, gates nothing).
 
 ### C.5 Corpus and repository counts (not the stand)
 
