@@ -118,11 +118,8 @@ public class UiProjectCreatorIntegrationTests {
 		}
 		File.Exists(Path.Combine(_tempDir, "projects", ProjectName, "package.json")).Should().BeTrue(
 			because: "the Angular project should still be scaffolded when its host package already exists");
-		string angularJsonPath = Path.Combine(_tempDir, "projects", ProjectName, "angular.json");
-		JsonObject angularJson = JsonNode.Parse(File.ReadAllText(angularJsonPath)).AsObject();
-		string outputPath = angularJson["projects"]?[ProjectName]?["architect"]?["build"]?["options"]?
-			["outputPath"]?.GetValue<string>();
-		outputPath.Should().Be($"../../packages/{PackageName}/Files/src/js/{ProjectName}",
+		string rspackConfig = File.ReadAllText(Path.Combine(_tempDir, "projects", ProjectName, "rspack.config.js"));
+		rspackConfig.Should().Contain($"const OUTPUT_PATH = '../../packages/{PackageName}/Files/src/js/{ProjectName}';",
 			because: "the empty project must emit its bundle into the reused package");
 	}
 
@@ -177,9 +174,31 @@ public class UiProjectCreatorIntegrationTests {
 
 	[TestCase(false)]
 	[TestCase(true)]
-	[Description("Delegates Angular test-environment initialization to the configured Jest builder for every shipped UI template.")]
-	public void Create_ShouldDelegateAngularTestEnvironmentSetupToJestBuilder_WhenTemplateIsScaffolded(
-		bool isEmpty) {
+	[Description("Substitutes the remote name and bundle path into rspack.config.js and ships no webpack configuration for every shipped UI template.")]
+	public void Create_ShouldSubstituteTokensInRspackConfig_WhenTemplateIsScaffolded(bool isEmpty) {
+		// Arrange
+		string projectPath = Path.Combine(_tempDir, "projects", ProjectName);
+
+		// Act
+		_creator.Create(ProjectName, PackageName, VendorPrefix, isEmpty, string.Empty, _ => false);
+
+		// Assert
+		string rspackConfig = File.ReadAllText(Path.Combine(projectPath, "rspack.config.js"));
+		rspackConfig.Should().NotContain("<%", because: "all template tokens in the Rspack configuration must be substituted");
+		rspackConfig.Should().Contain($"const REMOTE_NAME = '{ProjectName}';",
+			because: "the Module Federation container name must match the build folder name the host resolves");
+		rspackConfig.Should().Contain($"const OUTPUT_PATH = '../../packages/{PackageName}/Files/src/js/{ProjectName}';",
+			because: "the bundle must be emitted straight into the package file content");
+		File.Exists(Path.Combine(projectPath, "webpack.config.js")).Should().BeFalse(
+			because: "the template builds with Rspack, so no webpack configuration is shipped");
+		File.Exists(Path.Combine(projectPath, "webpack.prod.config.js")).Should().BeFalse(
+			because: "the template builds with Rspack, so no webpack configuration is shipped");
+	}
+
+	[TestCase(false)]
+	[TestCase(true)]
+	[Description("Runs Jest directly and initializes Angular's zone-based test environment in setup-jest.ts for every shipped UI template.")]
+	public void Create_ShouldInitializeZoneTestEnvironmentForDirectJestRun_WhenTemplateIsScaffolded(bool isEmpty) {
 		// Arrange
 		string projectPath = Path.Combine(_tempDir, "projects", ProjectName);
 
@@ -189,9 +208,9 @@ public class UiProjectCreatorIntegrationTests {
 		// Assert
 		string setupContent = File.ReadAllText(Path.Combine(projectPath, "setup-jest.ts"));
 		setupContent.ReplaceLineEndings("\n").Trim().Should().Be(
-			"// The @angular-builders/jest runner initializes Angular's test environment. Use npm test or ng test.\n" +
-			"import '@angular/compiler';",
-			because: "the generated setup should retain only project-specific compiler setup and document its runner-owned test environment");
+			"import { setupZoneTestEnv } from 'jest-preset-angular/setup-env/zone';\n\n" +
+			"setupZoneTestEnv();",
+			because: "without an Angular CLI Jest builder the setup file owns Angular test-environment initialization");
 
 		string jestConfig = File.ReadAllText(Path.Combine(projectPath, "jest.config.ts"));
 		jestConfig.ReplaceLineEndings("\n").Trim().Should().Be(
@@ -204,20 +223,23 @@ public class UiProjectCreatorIntegrationTests {
 
 		JsonObject packageJson = JsonNode.Parse(File.ReadAllText(Path.Combine(projectPath, "package.json"))).AsObject();
 		string testScript = packageJson["scripts"]?["test"]?.GetValue<string>();
-		testScript.Should().Be("ng test",
-			because: "the documented zero-spec exit behavior requires the package script to preserve Jest's default result");
+		testScript.Should().Be("jest",
+			because: "the Angular CLI Jest builder depends on the deprecated webpack builder, and a plain script keeps Jest's documented zero-spec exit result");
 
 		JsonObject angularJson = JsonNode.Parse(File.ReadAllText(Path.Combine(projectPath, "angular.json"))).AsObject();
-		JsonNode testTarget = angularJson["projects"]?[ProjectName]?["architect"]?["test"];
-		string testBuilder = testTarget?["builder"]?.GetValue<string>();
-		string configPath = testTarget?["options"]?["configPath"]?.GetValue<string>();
-		string testTsConfig = testTarget?["options"]?["tsConfig"]?.GetValue<string>();
-		testBuilder.Should().Be("@angular-builders/jest:run",
-			because: "the builder must remain the single owner of Angular test-environment initialization");
-		configPath.Should().Be("jest.config.ts",
-			because: "the builder must load the project-specific setup extension point");
-		testTsConfig.Should().Be("tsconfig.spec.json",
-			because: "the builder must compile specs with the generated test TypeScript configuration");
+		JsonNode project = angularJson["projects"]?[ProjectName];
+		project.Should().NotBeNull(because: "the angular.json project key must be substituted with the project name");
+		project!["prefix"]?.GetValue<string>().Should().Be(VendorPrefix,
+			because: "the devkit AI guides read the component selector prefix from angular.json");
+		JsonObject targets = project["architect"]!.AsObject();
+		foreach (string target in new[] { "build", "serve", "test" }) {
+			targets.ContainsKey(target).Should().BeFalse(
+				because: $"{target} runs through an npm script, so ng {target} must not pick a builder");
+		}
+		targets["ng-update"]?["options"]?["tsConfig"]?.GetValue<string>().Should().Be("tsconfig.app.json",
+			because: "ng update migrations find the application sources through a target's tsConfig");
+		targets["ng-update-test"]?["options"]?["tsConfig"]?.GetValue<string>().Should().Be("tsconfig.spec.json",
+			because: "ng update migrations find the specs through a target whose name contains test");
 	}
 
 	#endregion
