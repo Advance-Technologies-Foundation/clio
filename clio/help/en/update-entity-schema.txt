@@ -71,6 +71,13 @@ NOTES
       (--title / --title-localizations)
     - at least one operation is required; a call with none reports what is missing
     - operations are applied in order
+    - an operation field the command does not know (for example a misspelled
+      colum-name) fails the batch before anything is saved, naming the field and
+      the nearest known field
+    - name is accepted as an alias of column-name; an operation that sets both to
+      different values is rejected
+    - each operation payload must be a JSON object; a field value of the wrong type
+      is reported with its JSON path (for example $.required)
     - a modify on an INHERITED column may override only its caption/description
       (title-localizations/description-localizations); changing its name, type, or
       flags is rejected, and stops the batch on that operation

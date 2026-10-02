@@ -27,6 +27,7 @@ using Clio.Package;
 using Clio.Query;
 using Clio.UserEnvironment;
 using CommandLine;
+using CommandLine.Text;
 using Creatio.Client;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
@@ -1672,11 +1673,130 @@ internal class Program {
 		// (indistinguishable from a typo). Types without [FeatureToggle] are always kept.
 		IFeatureToggleService featureToggleService = bm.GetRequiredService<IFeatureToggleService>();
 		Type[] enabledCommandOption = FeatureToggleFilter.GetEnabled(CommandOption, featureToggleService);
-		ParserResult<object> parserResult = Parser.Default.ParseArguments(normalizedArgs, enabledCommandOption);
+		// The library appends its full auto-generated help to EVERY parse error it writes, so its output is
+		// buffered and flushed only when clio does not render the error itself (help, version, unknown verb).
+		// A fresh parser is required: Parser.Default froze its HelpWriter when it was built.
+		// The library also shows help through the custom viewer when argv holds a -h the verb claims for itself
+		// (healthcheck/publish-app), so that output is held back too.
+		using StringWriter libraryHelpOutput = new();
+		DeferredHelpViewer libraryHelpViewer = new(Parser.Default.Settings.CustomHelpViewer);
+		ParserResult<object> parserResult;
+		using (Parser parser = CreateCommandLineParser(libraryHelpOutput, libraryHelpViewer)) {
+			parserResult = parser.ParseArguments(normalizedArgs, enabledCommandOption);
+		}
 		if (parserResult is Parsed<object> parsed) {
 			return ExecuteCommandWithOption(parsed.Value);
 		}
-		return HandleParseError(((NotParsed<object>)parserResult).Errors);
+		NotParsed<object> notParsed = (NotParsed<object>)parserResult;
+		if (IsVerbOptionError(notParsed, normalizedArgs)) {
+			WriteVerbOptionError(notParsed, bm.GetRequiredService<IOptionSuggestionService>());
+		}
+		else {
+			libraryHelpViewer.Replay();
+			Console.Error.Write(libraryHelpOutput.ToString());
+		}
+		return HandleParseError(notParsed.Errors);
+	}
+
+	/// <summary>
+	/// Help aliases CommandLineSDK honours besides <c>-h</c>/<c>--help</c>: with one present it renders help instead
+	/// of the parse errors, so clio leaves that output alone. No verb can claim them as its own option names.
+	/// </summary>
+	private static readonly string[] LibraryOnlyHelpAliases = ["-help", "--h"];
+
+	/// <summary>
+	/// Error kinds that are not a mistake in the options of a known verb: help and version requests, and an
+	/// unknown or missing verb. Their output stays the library's own.
+	/// </summary>
+	private static readonly ErrorType[] NonOptionErrorTypes = [
+		ErrorType.HelpRequestedError,
+		ErrorType.HelpVerbRequestedError,
+		ErrorType.VersionRequestedError,
+		ErrorType.BadVerbSelectedError,
+		ErrorType.NoVerbSelectedError
+	];
+
+	private static Parser CreateCommandLineParser(TextWriter helpWriter, CustomHelpViewer helpViewer) {
+		ParserSettings defaults = Parser.Default.Settings;
+		return new Parser(settings => {
+			settings.HelpWriter = helpWriter;
+			settings.ShowHeader = defaults.ShowHeader;
+			settings.HelpDirectory = defaults.HelpDirectory;
+			settings.CustomHelpViewer = helpViewer;
+		});
+	}
+
+	/// <summary>
+	/// Records the help CommandLineSDK asks its custom viewer to show during a parse instead of showing it, so the
+	/// caller can drop it when clio renders the parse error itself, or <see cref="Replay"/> it otherwise.
+	/// </summary>
+	private sealed class DeferredHelpViewer(CustomHelpViewer inner) : CustomHelpViewer {
+		// Both CheckHelp and Replay delegate to the wrapped viewer, so it is required up front rather than
+		// null-checked in one of them only.
+		private readonly CustomHelpViewer _inner = inner ?? throw new ArgumentNullException(nameof(inner));
+		private readonly List<string> _requestedCommands = [];
+
+		public bool CheckHelp(string commandName) => _inner.CheckHelp(commandName);
+
+		public void ViewHelp(string commandName) => _requestedCommands.Add(commandName);
+
+		/// <summary>Shows, through the wrapped viewer, every help screen the parse requested.</summary>
+		public void Replay() {
+			foreach (string commandName in _requestedCommands) {
+				_inner.ViewHelp(commandName);
+			}
+		}
+	}
+
+	/// <summary>
+	/// Decides whether a failed parse is a mistake in the options of a known verb, which clio reports in a short
+	/// form instead of the library's full help dump.
+	/// </summary>
+	/// <param name="notParsed">The failed parse result.</param>
+	/// <param name="normalizedArgs">The arguments the parser received.</param>
+	/// <returns><see langword="true"/> when clio should render the error itself.</returns>
+	internal static bool IsVerbOptionError(NotParsed<object> notParsed, string[] normalizedArgs) {
+		if (notParsed.TypeInfo.Current == typeof(NullInstance)
+			|| notParsed.TypeInfo.Current.GetCustomAttribute<VerbAttribute>() == null) {
+			return false;
+		}
+		// Position- and claim-aware: a -h/--help that is the value of an option, or that the verb binds to its own
+		// option (healthcheck/publish-app -h), is not a help request and must not hide a real option error.
+		// The claim is matched with the parser's own case sensitivity: healthcheck/publish-app claim -h, not -H,
+		// so for them -H is an unknown option and stays the library's help output, exactly as before ENG-101526.
+		if (ArgvRequestsUnclaimedHelp(normalizedArgs, notParsed.TypeInfo.Current, includeLibraryOnlyAliases: true,
+				matchParserCase: true)) {
+			return false;
+		}
+		Error[] errors = notParsed.Errors.ToArray();
+		// Mirrors the library's internal "meaningful error" filter, which decides whether it would print anything.
+		return !errors.Any(error => NonOptionErrorTypes.Contains(error.Tag))
+			&& errors.Any(error => !error.StopsProcessing
+				&& !(error is UnknownOptionError unknown
+					&& string.Equals(unknown.Token, "help", StringComparison.OrdinalIgnoreCase)));
+	}
+
+	private static void WriteVerbOptionError(NotParsed<object> notParsed, IOptionSuggestionService suggestionService) {
+		Type optionsType = notParsed.TypeInfo.Current;
+		string verbName = optionsType.GetCustomAttribute<VerbAttribute>()?.Name;
+		SentenceBuilder sentenceBuilder = SentenceBuilder.Create();
+		TextWriter output = Console.Error;
+		output.WriteLine(sentenceBuilder.ErrorsHeadingText());
+		foreach (string line in HelpText.RenderParsingErrorsTextAsLines(notParsed, sentenceBuilder.FormatError,
+					sentenceBuilder.FormatMutuallyExclusiveSetErrors, 2)) {
+			output.WriteLine(line);
+		}
+		string[] suggestions = notParsed.Errors.OfType<UnknownOptionError>()
+			.Select(error => suggestionService.SuggestOption(optionsType, error.Token))
+			.Where(suggestion => suggestion != null)
+			.Distinct(StringComparer.Ordinal)
+			.ToArray();
+		foreach (string suggestion in suggestions) {
+			output.WriteLine();
+			output.WriteLine($"Did you mean --{suggestion}?");
+		}
+		output.WriteLine();
+		output.WriteLine($"See command help: clio {verbName} --help");
 	}
 
 	/// <summary>
@@ -1884,7 +2004,13 @@ internal class Program {
 	// remaining `-h`/`--help` as a help request (and only when the verb has not claimed that name for its
 	// own option - see IsUnclaimedHelpFlagToken). Internal so tests can verify the decision hermetically,
 	// without driving a full command execution that may require a registered environment.
-	internal static bool ArgvRequestsUnclaimedHelp(string[] normalizedArgs, Type optionsType) {
+	// includeLibraryOnlyAliases also counts -help/--h, which CommandLineSDK renders as help but clio's own
+	// pre-parse help short-circuit deliberately does not intercept.
+	// matchParserCase decides a claim the way the parser does (ordinal, against the token's own spelling), so -H is
+	// unclaimed on a verb that claims only -h. The pre-parse short-circuit keeps the case-insensitive claim it has
+	// always had (it treats -H as claimed there and leaves it to the parser), so its behaviour does not change.
+	internal static bool ArgvRequestsUnclaimedHelp(string[] normalizedArgs, Type optionsType,
+		bool includeLibraryOnlyAliases = false, bool matchParserCase = false) {
 		(PropertyInfo Property, OptionAttribute Option)[] ownOptions = GetOwnOptionAttributes(optionsType).ToArray();
 		bool previousTokenConsumesValue = false;
 		// Index 0 is the verb name itself; only its arguments can be help tokens.
@@ -1895,7 +2021,9 @@ internal class Program {
 				previousTokenConsumesValue = false;
 				continue;
 			}
-			if (IsUnclaimedHelpFlagToken(token, optionsType)) {
+			if (IsUnclaimedHelpFlagToken(token, optionsType, matchParserCase)
+				|| includeLibraryOnlyAliases
+				&& LibraryOnlyHelpAliases.Contains(token, StringComparer.OrdinalIgnoreCase)) {
 				return true;
 			}
 			previousTokenConsumesValue = IsValueTakingOptionToken(token, ownOptions);
@@ -1908,12 +2036,17 @@ internal class Program {
 	// for that verb (e.g. healthcheck/publish-app bind their own -h to a different option).
 	// Internal (not private) so tests can verify the decision hermetically, without needing to
 	// drive a full command execution that may require a registered environment.
-	internal static bool IsUnclaimedHelpFlagToken(string token, Type optionsType) {
+	// matchParserCase: see ArgvRequestsUnclaimedHelp. With it, a claim counts only when the option name equals the
+	// token's own spelling ordinally, which is how CommandLineSDK binds it (healthcheck claims -h, so -H is unknown).
+	internal static bool IsUnclaimedHelpFlagToken(string token, Type optionsType, bool matchParserCase = false) {
+		StringComparison claimComparison = matchParserCase ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
 		if (string.Equals(token, "-h", StringComparison.OrdinalIgnoreCase)) {
-			return !GetOwnOptionAttributes(optionsType).Any(pair => string.Equals(pair.Option.ShortName, "h", StringComparison.OrdinalIgnoreCase));
+			string claimedName = matchParserCase ? token[1..] : "h";
+			return !GetOwnOptionAttributes(optionsType).Any(pair => string.Equals(pair.Option.ShortName, claimedName, claimComparison));
 		}
 		if (string.Equals(token, LongHelpFlag, StringComparison.OrdinalIgnoreCase)) {
-			return !GetOwnOptionAttributes(optionsType).Any(pair => string.Equals(pair.Option.LongName, "help", StringComparison.OrdinalIgnoreCase));
+			string claimedName = matchParserCase ? token[2..] : "help";
+			return !GetOwnOptionAttributes(optionsType).Any(pair => string.Equals(pair.Option.LongName, claimedName, claimComparison));
 		}
 		return false;
 	}
