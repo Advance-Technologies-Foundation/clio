@@ -46,7 +46,8 @@ internal static class ApplicationToolResultMapper {
 					ParentSchemaName = page.ParentSchemaName
 				})
 				.ToList(),
-			result.SchemaNamePrefix);
+			result.SchemaNamePrefix,
+			Warnings: result.Warnings is { Count: > 0 } ? result.Warnings : null);
 	}
 
 	public static ApplicationSectionContextResponse Map(ApplicationSectionCreateResult result) {
@@ -92,7 +93,8 @@ internal static class ApplicationToolResultMapper {
 					PackageName = page.PackageName,
 					ParentSchemaName = page.ParentSchemaName
 				})
-				.ToList());
+				.ToList(),
+			Warnings: result.Warnings is { Count: > 0 } ? result.Warnings : null);
 	}
 
 	public static ApplicationSectionUpdateContextResponse Map(ApplicationSectionUpdateResult result) {

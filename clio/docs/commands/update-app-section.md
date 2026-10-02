@@ -74,7 +74,7 @@ The command prints structured JSON that includes:
 - section metadata after the update (caption in the connected user's profile culture)
 - `CaptionCulture` / `CaptionCultureValue` — the culture the caption was written in and the stored value
 - `PreservedCultures` — the non-default languages whose other stored values (title, description) were kept; it can include `CaptionCulture` when its description was kept
-- `Warnings` — for example an inactive culture, or a package data binding that could not be re-saved
+- `Warnings` — for example an inactive culture, a package data binding that could not be re-saved, or a menu cache that could not be cleared
 
 ## Example
 
@@ -103,6 +103,7 @@ add the Spanish section title; the English and other titles are kept
 - `--caption-culture` is looked up in the environment's cultures (`SysCulture`) only, case-insensitively; the stored spelling is used (`de-de` → `de-DE`).
 - When titles in other languages are written back and the connected user's profile language (other than `en-US`) has no title of its own, Creatio requires one in the same write, so that language gets the fallback (`en-US`) title. The output carries a warning naming the language and the text; translate it with `--caption --caption-culture <profile language>`.
 - If writing the other languages back fails after the section update deleted them, the command fails and the error lists every value it read before the update (culture → title, description, module header), so they can be re-sent.
+- After the update, clio calls `ConfigurationDataService/GetData` with `forceGet = true` in the same Creatio session. That clears the session's cached module structure and its workplace and section caches, so the new caption and icon appear in the menu that session reads without clearing Redis or logging anyone out. Open browser tabs clear their own cache when the server notifies them; other API sessions keep the old menu until they clear it or their session ends. A failed clear does not fail the command: it is reported as a warning (`Warnings` in the output).
 
 ## Reporting Bugs
 

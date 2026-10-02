@@ -136,6 +136,10 @@ public sealed class CreateAppCommand(
 
 			logger.WriteInfo($"Application created: {result.ApplicationName} ({result.ApplicationCode}) v{result.ApplicationVersion}");
 			logger.WriteInfo($"Package: {result.PackageName}");
+			foreach (string warning in result.Warnings ?? []) {
+				logger.WriteWarning(warning);
+			}
+
 			return 0;
 		} catch (Exception exception) {
 			logger.WriteError(exception.Message);

@@ -27,6 +27,7 @@ public sealed class ApplicationCreateServiceTests {
 	private ICaptionCultureResolver _captionCultureResolver = null!;
 	private IRetryDelay _retryDelay = null!;
 	private IODataBuildGate _oDataBuildGate = null!;
+	private INavigationCacheResetter _navigationCacheResetter = null!;
 	private ILogger _logger = null!;
 	private ApplicationCreateService _sut = null!;
 	private EnvironmentSettings _environment = null!;
@@ -71,6 +72,7 @@ public sealed class ApplicationCreateServiceTests {
 		_captionCultureResolver.Resolve(Arg.Any<EnvironmentSettings>(), Arg.Any<string?>()).Returns("en-US");
 		_retryDelay = Substitute.For<IRetryDelay>();
 		_oDataBuildGate = Substitute.For<IODataBuildGate>();
+		_navigationCacheResetter = NavigationCacheResetterSubstitute.Succeeding();
 		_sut = new ApplicationCreateService(
 			_settingsRepository,
 			_applicationClientFactory,
@@ -80,7 +82,8 @@ public sealed class ApplicationCreateServiceTests {
 			_logger,
 			_captionCultureResolver,
 			_retryDelay,
-			_oDataBuildGate);
+			_oDataBuildGate,
+			_navigationCacheResetter);
 	}
 
 	[Test]
@@ -965,6 +968,82 @@ public sealed class ApplicationCreateServiceTests {
 		_applicationInfoService.Received(2).GetApplicationInfo(_environment, null, "UsrCodexApp");
 		_applicationInfoService.DidNotReceiveWithAnyArgs().GetApplicationInfo(default(string)!, default, default);
 		_settingsRepository.DidNotReceiveWithAnyArgs().FindEnvironment(default);
+	}
+
+	[Test]
+	[Description("ENG-101680: after a successful CreateApp the navigation cache is reset through the same client that sent CreateApp, and a successful reset adds no warning.")]
+	public void CreateApplication_Should_Reset_Navigation_Cache_In_Creating_Session_On_Success() {
+		// Arrange
+		ConfigureCreateSuccessForCode("UsrCodexApp");
+		_applicationInfoService.GetApplicationInfo("sandbox", "33333333-3333-3333-3333-333333333333", "UsrCodexApp")
+			.Returns(new ApplicationInfoResult("pkg-uid", "PrimaryPkg", []));
+
+		// Act
+		ApplicationInfoResult result = _sut.CreateApplication("sandbox", _fullRequest);
+
+		// Assert
+		_navigationCacheResetter.Received(1).TryReset(_applicationClient, _environment);
+		result.Warnings.Should().BeNull(
+			because: "a successful navigation cache reset is not a finding worth reporting");
+	}
+
+	[Test]
+	[Description("ENG-101680: a failed navigation cache reset becomes a result warning and does not fail the created application.")]
+	public void CreateApplication_Should_Return_Warning_When_Navigation_Cache_Reset_Fails() {
+		// Arrange
+		ConfigureCreateSuccessForCode("UsrCodexApp");
+		_applicationInfoService.GetApplicationInfo("sandbox", "33333333-3333-3333-3333-333333333333", "UsrCodexApp")
+			.Returns(new ApplicationInfoResult("pkg-uid", "PrimaryPkg", [], ApplicationId: "app-id"));
+		_navigationCacheResetter.TryReset(Arg.Any<IApplicationClient>(), Arg.Any<EnvironmentSettings>())
+			.Returns("navigation cache reset failed: boom");
+
+		// Act
+		ApplicationInfoResult result = _sut.CreateApplication("sandbox", _fullRequest);
+
+		// Assert
+		result.ApplicationId.Should().Be("app-id",
+			because: "the created application must still be returned when only the cache reset failed");
+		result.Warnings.Should().ContainSingle(
+				because: "the failed reset must reach the caller instead of being swallowed")
+			.Which.Should().Be("navigation cache reset failed: boom",
+				because: "the warning must carry the resetter's message unchanged");
+	}
+
+	[Test]
+	[Description("ENG-101680: a CreateApp that the server rejects changes nothing, so no navigation cache reset is sent.")]
+	public void CreateApplication_Should_Not_Reset_Navigation_Cache_When_CreateApp_Fails() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.EndsWith("CreateApp", StringComparison.Ordinal)),
+				Arg.Any<string>())
+			.Returns("""{"success":false,"errorInfo":{"message":"Template validation failed."}}""");
+
+		// Act
+		Action action = () => _sut.CreateApplication("sandbox", _fullRequest);
+
+		// Assert
+		action.Should().Throw<InvalidOperationException>(
+			because: "a rejected CreateApp must still fail the command");
+		_navigationCacheResetter.DidNotReceiveWithAnyArgs().TryReset(default!, default!);
+	}
+
+	[Test]
+	[Description("ENG-101680: when CreateApp times out but polling finds the application, the navigation cache is still reset, because the application exists.")]
+	public void CreateApplication_Should_Reset_Navigation_Cache_After_Timeout_Recovery() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.EndsWith("CreateApp", StringComparison.Ordinal)),
+				Arg.Any<string>())
+			.Returns(_ => throw new InvalidOperationException(
+				"App Installer CreateApp request failed for https://example.invalid with timeout of 30000ms exceeded."));
+		_applicationInfoService.GetApplicationInfo("sandbox", null, "UsrCodexApp")
+			.Returns(new ApplicationInfoResult("pkg-uid", "PrimaryPkg", []));
+
+		// Act
+		_sut.CreateApplication("sandbox", _fullRequest);
+
+		// Assert
+		_navigationCacheResetter.Received(1).TryReset(_applicationClient, _environment);
 	}
 
 	private void ConfigureCreateSuccessForCode(string appCode = "UsrCodexApp")

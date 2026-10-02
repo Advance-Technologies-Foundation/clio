@@ -67,7 +67,8 @@ public sealed class ApplicationCreateService(
 	ILogger logger,
 	ICaptionCultureResolver captionCultureResolver,
 	IRetryDelay retryDelay,
-	IODataBuildGate oDataBuildGate)
+	IODataBuildGate oDataBuildGate,
+	INavigationCacheResetter navigationCacheResetter)
 	: IApplicationCreateService
 {
 	private const string CreateApplicationRoute = "ServiceModel/AppInstallerService.svc/CreateApp";
@@ -179,7 +180,9 @@ public sealed class ApplicationCreateService(
 			logger.EndSpinner(false);
 			logger.WriteInfo($"Request timed out, polling for application '{resolvedRequest.Code}'...");
 			reportStage?.Invoke("waiting for application to be ready");
-			return PollApplicationInfo(loadApplicationInfo, resolvedRequest.Code, exception, schemaNamePrefix);
+			ApplicationInfoResult polled = PollApplicationInfo(
+				loadApplicationInfo, resolvedRequest.Code, exception, schemaNamePrefix);
+			return WithNavigationCacheReset(polled, client, environmentSettings);
 		}
 		catch
 		{
@@ -208,7 +211,16 @@ public sealed class ApplicationCreateService(
 		// environment barrier held until that background work has settled, so the next Clio mutation does
 		// not inherit a rebuild started by this operation.
 		oDataBuildGate.WaitUntilIdle(client, environmentSettings, resolvedRequest.Code);
-		return result;
+		return WithNavigationCacheReset(result, client, environmentSettings);
+	}
+
+	// CreateApp writes SysModule/SysModuleInWorkplace as package data and clears no server cache, so the session
+	// that sent it would keep serving a menu without the new section (ENG-101680).
+	private ApplicationInfoResult WithNavigationCacheReset(
+		ApplicationInfoResult result, IApplicationClient client, EnvironmentSettings environmentSettings)
+	{
+		string? warning = navigationCacheResetter.TryReset(client, environmentSettings);
+		return warning is null ? result : result with { Warnings = [warning] };
 	}
 
 	private static void ValidateRequest(ApplicationCreateRequest request)

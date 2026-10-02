@@ -99,6 +99,7 @@ The command prints structured JSON that includes:
 - created section identity and resolved entity schema name
 - resolved entity summary when available
 - created page summaries when available
+- `Warnings` when the menu cache of clio's session could not be cleared
 
 ## Example
 
@@ -131,6 +132,7 @@ create a web-only section with automatically resolved icon metadata
   when it does not already start with it, and the prefix casing is always
   canonicalized (for example --code usrContacts with prefix Usr gives
   UsrContacts). The code must contain only Latin letters, digits, or underscore.
+- After the section is created, clio calls `ConfigurationDataService/GetData` with `forceGet = true` in the same Creatio session. That clears the session's cached module structure and its workplace and section caches, so the new section appears in the menu that session reads without clearing Redis or logging anyone out. Open browser tabs clear their own cache when the server notifies them; other API sessions keep the old menu until they clear it or their session ends. A failed clear does not fail the command: it is reported as a warning (`Warnings` in the output, `warnings` in the MCP response).
 
 ## Timeout budget and failure classification
 

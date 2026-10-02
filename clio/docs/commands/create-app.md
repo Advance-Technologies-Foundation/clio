@@ -122,6 +122,7 @@ clio create-app --name "Orders" --code OrdersApp --template-code AppFreedomUI --
 - `useAIContentGeneration` is deliberately not exposed: it is rejected by the MCP `create-app` tool as well.
 - The two application commands use different endpoints, which explains their different timing and options: create-app posts to `ServiceModel/AppInstallerService.svc/CreateApp` (the platform's application generator), while create-app-section posts to `DataService/json/SyncReply/InsertQuery` (a direct insert into the section tables) and therefore accepts no template arguments.
 - --name and --description must be in the connected user's profile language. The application name is localized server-side under the profile, so a value whose script does not match a Latin-script profile (for example Cyrillic under an `en-US` profile) is rejected with an actionable error.
+- After the application is created, clio calls `ConfigurationDataService/GetData` with `forceGet = true` in the same Creatio session. That clears the session's cached module structure and its workplace and section caches, so the new section appears in the menu that session reads without clearing Redis or logging anyone out. Open browser tabs clear their own cache when the server notifies them; other API sessions keep the old menu until they clear it or their session ends. A failed clear does not fail the command: it is reported as a warning (printed after the package name; `warnings` in the MCP `create-app` response).
 
 ## Reporting Bugs
 

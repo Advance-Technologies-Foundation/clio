@@ -39,7 +39,8 @@ public sealed record ApplicationContextResponse(
 	[property: JsonPropertyName("pages")] IReadOnlyList<PageListItem>? Pages = null,
 	[property: JsonPropertyName("schema-name-prefix")] string? SchemaNamePrefix = null,
 	[property: JsonPropertyName("dataforge")] ApplicationDataForgeResult? DataForge = null,
-	[property: JsonPropertyName("error")] string? Error = null);
+	[property: JsonPropertyName("error")] string? Error = null,
+	[property: JsonPropertyName("warnings")] IReadOnlyList<string>? Warnings = null);
 
 /// <summary>
 /// Structured existing-app section creation envelope returned by application section MCP tools.
@@ -65,7 +66,8 @@ public sealed record ApplicationSectionContextResponse(
 	[property: JsonPropertyName("error")] string? Error = null,
 	[property: JsonPropertyName("error-class")] string? ErrorClass = null,
 	[property: JsonPropertyName("section-created")] string? SectionCreated = null,
-	[property: JsonPropertyName("retry-guidance")] string? RetryGuidance = null);
+	[property: JsonPropertyName("retry-guidance")] string? RetryGuidance = null,
+	[property: JsonPropertyName("warnings")] IReadOnlyList<string>? Warnings = null);
 
 /// <summary>
 /// Structured existing-app section update envelope returned by application section update MCP tools.

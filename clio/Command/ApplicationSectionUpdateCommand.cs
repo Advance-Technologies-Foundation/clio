@@ -94,7 +94,8 @@ public sealed class ApplicationSectionUpdateService(
 	ICaptionCultureResolver captionCultureResolver,
 	IApplicationSectionLocalizationClient sectionLocalizationClient,
 	ISectionLocalizationPlanner localizationPlanner,
-	ICreatioCultureCatalogFactory cultureCatalogFactory)
+	ICreatioCultureCatalogFactory cultureCatalogFactory,
+	INavigationCacheResetter navigationCacheResetter)
 	: IApplicationSectionUpdateService {
 	internal const string FallbackProfileCaptionWarningFormat =
 		"The section title had no '{0}' translation, and Creatio requires one when titles in other cultures are "
@@ -225,6 +226,13 @@ public sealed class ApplicationSectionUpdateService(
 			? sectionLocalizationClient.ReadLocalizations(client, environmentSettings, previousSection.Id)
 			: snapshot;
 		localizationPlanner.Verify(plan, storedLocalizations);
+		// The section caption and icon reach the menu through the session's cached module structure, which the
+		// ApplicationSection update does not clear (ENG-101680).
+		string? cacheResetWarning = navigationCacheResetter.TryReset(client, environmentSettings);
+		if (cacheResetWarning is not null) {
+			warnings.Add(cacheResetWarning);
+		}
+
 		string? captionCultureValue = ResolveCaptionCultureValue(
 			request,
 			captionThroughSection,
@@ -581,7 +589,8 @@ public sealed record ApplicationSectionUpdateRequest(
 /// <param name="CaptionCultureValue">The stored caption in <paramref name="CaptionCulture"/>.</param>
 /// <param name="PreservedCultures">Non-default cultures whose other stored section values (title, description) were
 /// kept or written back; can include <paramref name="CaptionCulture"/> when its description was kept.</param>
-/// <param name="Warnings">Non-fatal findings: inactive culture, stale package data binding.</param>
+/// <param name="Warnings">Non-fatal findings: inactive culture, stale package data binding, failed navigation
+/// cache reset.</param>
 public sealed record ApplicationSectionUpdateResult(
 	string PackageUId,
 	string PackageName,

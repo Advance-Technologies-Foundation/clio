@@ -918,6 +918,9 @@ public sealed record InstalledAppSummary(string Id, string Code, string Name, st
 /// <param name="ApplicationName">Installed application display name.</param>
 /// <param name="ApplicationCode">Installed application code.</param>
 /// <param name="ApplicationVersion">Installed application version.</param>
+/// <param name="SchemaNamePrefix">Schema name prefix of the environment, when known.</param>
+/// <param name="Warnings">Non-fatal findings of the operation that produced the result, for example a failed
+/// navigation cache reset after <c>create-app</c>; <see langword="null"/> when there are none.</param>
 public sealed record ApplicationInfoResult(
 	string PackageUId,
 	string PackageName,
@@ -927,7 +930,8 @@ public sealed record ApplicationInfoResult(
 	string? ApplicationName = null,
 	string? ApplicationCode = null,
 	string? ApplicationVersion = null,
-	string? SchemaNamePrefix = null);
+	string? SchemaNamePrefix = null,
+	IReadOnlyList<string>? Warnings = null);
 
 /// <summary>
 /// Structured entity information returned as part of application info results.
