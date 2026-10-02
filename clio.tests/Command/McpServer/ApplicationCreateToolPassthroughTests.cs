@@ -86,7 +86,8 @@ public sealed class ApplicationCreateToolPassthroughTests {
 			new NullLogger(),
 			_captionCultureResolver,
 			Substitute.For<IRetryDelay>(),
-			Substitute.For<IODataBuildGate>());
+			Substitute.For<IODataBuildGate>(),
+			NavigationCacheResetterSubstitute.Succeeding());
 		_tool = new ApplicationCreateTool(
 			Substitute.For<ILogger>(), _commandResolver, createService, _enrichmentService);
 	}
