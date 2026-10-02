@@ -30,8 +30,8 @@ namespace Clio.Command.EntitySchemaDesigner;
 /// established (issue #722).
 /// </param>
 /// <param name="DependenciesKnown">
-/// <see langword="false"/> when the target package's declared dependencies could not be read, so the
-/// subtraction that removes already-declared packages was a no-op and <paramref name="Candidates"/> may
+/// <see langword="false"/> when the target package's transitive dependencies could not be read, so the
+/// subtraction that removes already-reachable packages was a no-op and <paramref name="Candidates"/> may
 /// still contain them. The caller must carry that caveat into the message it surfaces, not only into a log
 /// warning an MCP client never sees.
 /// </param>
@@ -135,16 +135,16 @@ internal sealed class EntitySchemaDependencyResolver : IEntitySchemaDependencyRe
 	internal int ContributorsWaitTimeoutMs { get; set; } = DiagnosticReadTimeoutMs * 2;
 
 	private readonly FindEntitySchemaCommand _findCommand;
-	private readonly IPackageDependencyManager _dependencyManager;
+	private readonly IPackageExplorerClient _dependencyExplorer;
 	private readonly IApplicationClient _applicationClient;
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
 	private readonly ILogger _logger;
 
 	public EntitySchemaDependencyResolver(FindEntitySchemaCommand findCommand,
-		IPackageDependencyManager dependencyManager, IApplicationClient applicationClient,
+		IPackageExplorerClient dependencyExplorer, IApplicationClient applicationClient,
 		IServiceUrlBuilder serviceUrlBuilder, ILogger logger) {
 		_findCommand = findCommand;
-		_dependencyManager = dependencyManager;
+		_dependencyExplorer = dependencyExplorer;
 		_applicationClient = applicationClient;
 		_serviceUrlBuilder = serviceUrlBuilder;
 		_logger = logger;
@@ -338,8 +338,8 @@ internal sealed class EntitySchemaDependencyResolver : IEntitySchemaDependencyRe
 	private (HashSet<string> Existing, bool ReadSucceeded, string? FailureReason) ReadExistingDependencies(
 		Guid targetPackageUId, string targetPackageName) {
 		try {
-			return (_dependencyManager
-				.GetDependencies(targetPackageUId, targetPackageName, DiagnosticReadTimeoutMs)
+			return (_dependencyExplorer
+				.GetReachablePackageNames(targetPackageUId, targetPackageName, DiagnosticReadTimeoutMs)
 				.ToHashSet(StringComparer.OrdinalIgnoreCase), true, null);
 		} catch (Exception ex) when (ex is not OutOfMemoryException) {
 			// Degrade to "nothing known to be a dependency": an unfiltered candidate list is still useful,

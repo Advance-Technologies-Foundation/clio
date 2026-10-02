@@ -1,0 +1,5 @@
+# Package dependency explorer
+
+Issue #1729 / ENG-100222. Agents need to discover package dependencies before changing application code. Provide read-only dependencies, paths, reasons, schema ownership and graph export. Names or UIds identify packages. JSON preserves server evidence while adding graph-derived paths. Exact schema matches are the default; partial search is explicit. A capped result cannot prove absence. Unsupported servers fail clearly without fallback. Never add/remove dependencies automatically.
+
+Success: CLI and real stdio MCP execute against the disposable feature-branch runtime; graph/path/schema results agree with its data; an older runtime is refused; cycles and ambiguous names are tested. Removal impact is opt-in and scoped to reported validation coverage. The user explicitly authorized influencing the unreleased Creatio contract: see ../package-dependency-explorer/package-dependency-explorer-contract-review.md before implementation. Backend completeness, contextual resolution and compatibility are part of that review; the current four successful endpoint probes alone do not complete acceptance.

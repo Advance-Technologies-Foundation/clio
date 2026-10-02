@@ -31,7 +31,7 @@ internal sealed class EntitySchemaDependencyResolverTests
 	private static readonly Guid TargetPackageUId = new("6f1b6b4a-7f2e-4a4c-9a1e-2f3d4c5b6a70");
 
 	private FindEntitySchemaCommand _findCommand;
-	private IPackageDependencyManager _dependencyManager;
+	private IPackageExplorerClient _dependencyManager;
 	private IApplicationClient _applicationClient;
 	private IServiceUrlBuilder _serviceUrlBuilder;
 	private ILogger _logger;
@@ -44,11 +44,11 @@ internal sealed class EntitySchemaDependencyResolverTests
 		_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select).Returns(SelectQueryUrl);
 		_logger = Substitute.For<ILogger>();
 		_findCommand = Substitute.For<FindEntitySchemaCommand>(_applicationClient, _serviceUrlBuilder, _logger);
-		_dependencyManager = Substitute.For<IPackageDependencyManager>();
+		_dependencyManager = Substitute.For<IPackageExplorerClient>();
 		// Stubbed in Setup rather than per test: an unstubbed IReadOnlyList<string> member answers with an
 		// empty collection, which happens to be the "no existing dependencies" case, so a test that meant to
 		// exercise the filter would silently pass without it.
-		_dependencyManager.GetDependencies(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<int>()).Returns([]);
+		_dependencyManager.GetReachablePackageNames(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<int>()).Returns([]);
 		SetInstalledApplications();
 		_resolver = new EntitySchemaDependencyResolver(_findCommand, _dependencyManager, _applicationClient,
 			_serviceUrlBuilder, _logger);
@@ -103,8 +103,7 @@ internal sealed class EntitySchemaDependencyResolverTests
 		// Assert
 		resolution.Candidates.Should().Equal(["CrtLeadOppMgmtApp"],
 			because: "the caller needs the concrete package name to act on");
-		_dependencyManager.DidNotReceive()
-			.AddDependencies(Arg.Any<string>(), Arg.Any<IEnumerable<PackageDependencySpec>>());
+
 	}
 
 	[Test]
@@ -117,10 +116,10 @@ internal sealed class EntitySchemaDependencyResolverTests
 		_resolver.Resolve("Opportunity", TargetPackageUId, "Custom");
 
 		// Assert
-		_dependencyManager.DidNotReceive()
-			.AddDependencies(Arg.Any<string>(), Arg.Any<IEnumerable<PackageDependencySpec>>());
-		_dependencyManager.DidNotReceive()
-			.RemoveDependencies(Arg.Any<string>(), Arg.Any<IEnumerable<string>>());
+
+		_dependencyManager.ReceivedCalls().Should().OnlyContain(call =>
+			call.GetMethodInfo().Name == nameof(IPackageExplorerClient.GetReachablePackageNames),
+			because: "the resolver only consumes the read-only dependency graph contract");
 	}
 
 	[Test]
@@ -158,7 +157,7 @@ internal sealed class EntitySchemaDependencyResolverTests
 	[Description("Drops packages the target already depends on, so a candidate list never proposes a dependency that is already declared (issue #722).")]
 	public void Resolve_ShouldExcludeExistingDependencies_WhenTargetAlreadyDependsOnACandidate() {
 		// Arrange
-		_dependencyManager.GetDependencies(TargetPackageUId, "Custom", Arg.Any<int>()).Returns(["crtcore", "CoreLeadOpportunity"]);
+		_dependencyManager.GetReachablePackageNames(TargetPackageUId, "Custom", Arg.Any<int>()).Returns(["crtcore", "CoreLeadOpportunity"]);
 		SetContributingPackages("CoreLeadOpportunity", "CrtLeadOppMgmtApp", "CrtCore");
 
 		// Act
@@ -175,7 +174,7 @@ internal sealed class EntitySchemaDependencyResolverTests
 	[Description("Reports nothing at all when every contributing package is already a dependency, because a missing dependency is then not what the caller is looking at (issue #722).")]
 	public void Resolve_ShouldReportNoCandidates_WhenEveryContributorIsAlreadyADependency() {
 		// Arrange
-		_dependencyManager.GetDependencies(TargetPackageUId, "Custom", Arg.Any<int>()).Returns(["CrtLeadOppMgmtApp"]);
+		_dependencyManager.GetReachablePackageNames(TargetPackageUId, "Custom", Arg.Any<int>()).Returns(["CrtLeadOppMgmtApp"]);
 		SetContributingPackages("CrtLeadOppMgmtApp");
 
 		// Act
@@ -211,7 +210,7 @@ internal sealed class EntitySchemaDependencyResolverTests
 	[Description("Marks the candidate list as unfiltered when the current-dependencies read failed, so the caller can carry that caveat into the message instead of asserting the list excludes declared dependencies (issue #722).")]
 	public void Resolve_ShouldReportDependenciesUnknown_WhenTheExistingDependencyReadFailed() {
 		// Arrange
-		_dependencyManager.GetDependencies(TargetPackageUId, "Custom", Arg.Any<int>())
+		_dependencyManager.GetReachablePackageNames(TargetPackageUId, "Custom", Arg.Any<int>())
 			.Throws(new InvalidOperationException("SelectQuery failed"));
 		SetContributingPackages("CrtLeadOppMgmtApp");
 
@@ -255,7 +254,7 @@ internal sealed class EntitySchemaDependencyResolverTests
 		// Assert
 		_findCommand.Received(1).FindSchemas(Arg.Any<FindEntitySchemaOptions>(),
 			Arg.Is<int>(timeout => timeout > 0 && timeout != Timeout.Infinite));
-		_dependencyManager.Received(1).GetDependencies(TargetPackageUId, "Custom",
+		_dependencyManager.Received(1).GetReachablePackageNames(TargetPackageUId, "Custom",
 			Arg.Is<int>(timeout => timeout > 0 && timeout != Timeout.Infinite));
 		_applicationClient.Received().ExecutePostRequest(SelectQueryUrl, Arg.Any<string>(),
 			Arg.Is<int>(timeout => timeout > 0 && timeout != Timeout.Infinite), Arg.Any<int>(), Arg.Any<int>());
@@ -299,7 +298,7 @@ internal sealed class EntitySchemaDependencyResolverTests
 			because: "there are no candidate packages to report");
 		resolution.LookupSucceeded.Should().BeTrue(
 			because: "the search ran to completion, so its empty answer is a finding of fact");
-		_dependencyManager.Received(1).GetDependencies(TargetPackageUId, "Custom", Arg.Any<int>());
+		_dependencyManager.Received(1).GetReachablePackageNames(TargetPackageUId, "Custom", Arg.Any<int>());
 		_applicationClient.DidNotReceive().ExecutePostRequest(SelectQueryUrl, Arg.Any<string>(), Arg.Any<int>(),
 			Arg.Any<int>(), Arg.Any<int>());
 	}
@@ -313,7 +312,7 @@ internal sealed class EntitySchemaDependencyResolverTests
 		using Barrier bothReadsInFlight = new(2);
 		bool schemaSearchMetTheDependencyRead = false;
 		bool dependencyReadMetTheSchemaSearch = false;
-		_dependencyManager.GetDependencies(TargetPackageUId, "Custom", Arg.Any<int>())
+		_dependencyManager.GetReachablePackageNames(TargetPackageUId, "Custom", Arg.Any<int>())
 			.Returns(_ => {
 				dependencyReadMetTheSchemaSearch = bothReadsInFlight.SignalAndWait(TimeSpan.FromSeconds(10));
 				return new List<string>();
@@ -378,7 +377,7 @@ internal sealed class EntitySchemaDependencyResolverTests
 		const int budgetMs = 600;
 		const int dependencyReadMs = 400;
 		_resolver.ContributorsWaitTimeoutMs = budgetMs;
-		_dependencyManager.GetDependencies(TargetPackageUId, "Custom", Arg.Any<int>())
+		_dependencyManager.GetReachablePackageNames(TargetPackageUId, "Custom", Arg.Any<int>())
 			.Returns<IReadOnlyList<string>>(_ => { Thread.Sleep(dependencyReadMs); return []; });
 		_findCommand.FindSchemas(Arg.Any<FindEntitySchemaOptions>(), Arg.Any<int>())
 			.Returns(_ => {
@@ -406,7 +405,7 @@ internal sealed class EntitySchemaDependencyResolverTests
 	[Description("Says nothing about an unfiltered candidate list when there is no candidate list, because the dependency-read warning now travels into the MCP tool result and would describe a list that was never built (issue #1461).")]
 	public void Resolve_ShouldNotWarnAboutTheCandidateList_WhenTheDependencyReadFailedAndNothingContributes() {
 		// Arrange
-		_dependencyManager.GetDependencies(TargetPackageUId, "Custom", Arg.Any<int>())
+		_dependencyManager.GetReachablePackageNames(TargetPackageUId, "Custom", Arg.Any<int>())
 			.Throws(new InvalidOperationException("GetPackageProperties unreachable"));
 		_findCommand.FindSchemas(Arg.Any<FindEntitySchemaOptions>(), Arg.Any<int>()).Returns([]);
 
@@ -423,7 +422,7 @@ internal sealed class EntitySchemaDependencyResolverTests
 	[Description("Says nothing about an unfiltered candidate list when the schema search itself failed, so the only failure reported is the one that actually stopped the lookup (issue #1461).")]
 	public void Resolve_ShouldReportOnlyTheLookupFailure_WhenBothReadsFailed() {
 		// Arrange
-		_dependencyManager.GetDependencies(TargetPackageUId, "Custom", Arg.Any<int>())
+		_dependencyManager.GetReachablePackageNames(TargetPackageUId, "Custom", Arg.Any<int>())
 			.Throws(new InvalidOperationException("GetPackageProperties unreachable"));
 		_findCommand.FindSchemas(Arg.Any<FindEntitySchemaOptions>(), Arg.Any<int>())
 			.Throws(new InvalidOperationException("SelectQuery unreachable"));
@@ -443,7 +442,7 @@ internal sealed class EntitySchemaDependencyResolverTests
 	[Description("Still warns that the candidate list is unfiltered when the dependency read failed but candidates were found, because that list really may contain packages the target already depends on (issue #722).")]
 	public void Resolve_ShouldWarnAboutTheCandidateList_WhenTheDependencyReadFailedAndCandidatesExist() {
 		// Arrange
-		_dependencyManager.GetDependencies(TargetPackageUId, "Custom", Arg.Any<int>())
+		_dependencyManager.GetReachablePackageNames(TargetPackageUId, "Custom", Arg.Any<int>())
 			.Throws(new InvalidOperationException("GetPackageProperties unreachable"));
 		SetContributingPackages("CrtLeadOppMgmtApp");
 
@@ -476,7 +475,7 @@ internal sealed class EntitySchemaDependencyResolverTests
 	[Description("Still reports the candidates, marked unfiltered, when the dependency read fails while the schema search succeeds - one read failing must never discard the other's result (issue #1461).")]
 	public void Resolve_ShouldKeepTheSchemaSearchResult_WhenTheConcurrentDependencyReadFails() {
 		// Arrange
-		_dependencyManager.GetDependencies(TargetPackageUId, "Custom", Arg.Any<int>())
+		_dependencyManager.GetReachablePackageNames(TargetPackageUId, "Custom", Arg.Any<int>())
 			.Throws(new InvalidOperationException("GetPackageProperties unreachable"));
 		SetContributingPackages("CrtLeadOppMgmtApp", "CoreLeadOpportunity");
 

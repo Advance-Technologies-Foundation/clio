@@ -4690,3 +4690,12 @@ stories:
     depends_on:
       - story-page-localization-1
     blocks: []
+
+  - id: story-package-dependency-explorer-1
+    title: Read-only package dependency exploration
+    feature: package-dependency-explorer
+    status: review
+    file: spec/stories/story-package-dependency-explorer-1.md
+    prd: spec/prd/prd-package-dependency-explorer.md
+    adr: spec/adr/adr-package-dependency-explorer.md
+    test_plan: spec/test-plans/tp-package-dependency-explorer.md

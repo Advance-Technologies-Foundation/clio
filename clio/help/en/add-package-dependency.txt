@@ -20,6 +20,11 @@ DESCRIPTION
     installed applications first; add the owning one and the designer works. More
     than one candidate can be valid, so clio reports them rather than choosing.
 
+    Dependency diagnostics exclude indirectly reachable packages when Creatio
+    advertises dependency contract v1. On older or incomplete servers the
+    dependency set is explicitly unknown; candidates may already be reachable.
+    Confirm visibility before adding an edge.
+
     The operation is idempotent: adding a dependency that is already present is a
     no-op. When a dependency version is omitted, the installed version of the
     dependency package is used.

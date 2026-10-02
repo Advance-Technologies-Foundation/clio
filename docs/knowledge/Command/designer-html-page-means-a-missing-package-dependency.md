@@ -54,3 +54,7 @@ The same rule bites on the post-save verification reload. The write, the DB-stru
 have all succeeded by then, so a reload that cannot see the schema is the refresh window described above —
 never a missing dependency. A missing-dependency message there tells the caller a succeeded write failed,
 and an agent responds by repeating the mutation or adding a dependency it does not need.
+
+Dependency contract v1 can provide a read-only entity-context answer without asking the
+designer to create a design item. Its availability must be advertised by the target server;
+a Creatio release number or an HTML error alone does not establish that capability.

@@ -368,7 +368,21 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		CreatePackage = 110,
 
 		/// <summary>Creates a package inside an installed application (ApplicationPackagesService CreatePackageInApp).</summary>
-		CreatePackageInApp = 111
+		CreatePackageInApp = 111,
+		/// <summary>Stable dependency explorer DependencyCapabilities route.</summary>
+		DependencyCapabilities = 112,
+		/// <summary>Stable dependency explorer DependencyGraphV1 route.</summary>
+		DependencyGraphV1 = 113,
+		/// <summary>Stable dependency explorer DependencySearchV1 route.</summary>
+		DependencySearchV1 = 114,
+		/// <summary>Stable dependency explorer DependencyResolveV1 route.</summary>
+		DependencyResolveV1 = 115,
+		/// <summary>Stable dependency explorer DependencyReasonsV1 route.</summary>
+		DependencyReasonsV1 = 116,
+		/// <summary>Stable dependency explorer DependencyDropV1 route.</summary>
+		DependencyDropV1 = 117,
+		/// <summary>Stable dependency explorer DependencyAddV1 route.</summary>
+		DependencyAddV1 = 118
 
 	}
 
@@ -473,6 +487,13 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.CompileProcess, "/rest/ProcessDesignService/CompileProcess"},
 		{KnownRoute.CreatePackage, "ServiceModel/PackageService.svc/CreatePackage"},
 		{KnownRoute.CreatePackageInApp, "ServiceModel/ApplicationPackagesService.svc/CreatePackageInApp"},
+		{KnownRoute.DependencyCapabilities, "ServiceModel/PackageService.svc/dependencies/capabilities"},
+		{KnownRoute.DependencyGraphV1, "ServiceModel/PackageService.svc/dependencies/v1/graph"},
+		{KnownRoute.DependencySearchV1, "ServiceModel/PackageService.svc/dependencies/v1/schemas/search"},
+		{KnownRoute.DependencyResolveV1, "ServiceModel/PackageService.svc/dependencies/v1/schemas/resolve"},
+		{KnownRoute.DependencyReasonsV1, "ServiceModel/PackageService.svc/dependencies/v1/reasons"},
+		{KnownRoute.DependencyDropV1, "ServiceModel/PackageService.svc/dependencies/v1/drop-impact"},
+		{KnownRoute.DependencyAddV1, "ServiceModel/PackageService.svc/dependencies/v1/add-impact"},
 		{KnownRoute.LastCompilationResult, "api/ConfigurationStatus/GetLastCompilationResult"},
 		{KnownRoute.GetAvailableThemes, "ServiceModel/ThemeService.svc/GetAvailableThemes"},
 		{KnownRoute.ClearThemesCache, "ServiceModel/ThemeService.svc/ClearThemesCache"},

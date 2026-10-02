@@ -81,7 +81,8 @@ public sealed class ToolContractPayloadBudgetTests {
 	// Serialization uses the default JSON encoder,
 	// which escapes non-ASCII (a purpose ellipsis is written as a 6-byte escape), so it over-counts the real
 	// UTF-8 wire size — conservative, which is the safe direction for a ceiling.
-	private const int MaxCompactIndexSerializedBytes = 183 * 256;
+	// ENG-100222 adds six read-only long-tail tools: measured 47834 bytes; next 256 step is 47872.
+	private const int MaxCompactIndexSerializedBytes = 187 * 256;
 
 	// Worst-case ceiling for ONE named full contract, measured as the SERIALIZED contract in UTF-8 bytes
 	// — the same quantity the index ratchet above measures, and what the agent actually receives.

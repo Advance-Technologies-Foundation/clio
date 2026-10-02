@@ -823,3 +823,12 @@ Enroll explicit contacts through Creatio's native sequence service. See [enroll-
 <a id="execute-dataservice-batch"></a>
 
 Write explicit records in a native DataService batch. See [execute-dataservice-batch](docs/commands/execute-dataservice-batch.md).
+
+## Package dependency inspection
+
+- [get-pkg-dependencies](docs/commands/get-pkg-dependencies.md): Read direct or transitive dependencies; use before editing schemas or diagnosing a missing package dependency.
+- [pkg-dependency-path](docs/commands/pkg-dependency-path.md): Explain a shortest directed path between two packages; cycles are handled safely.
+- [pkg-dependency-why](docs/commands/pkg-dependency-why.md): Explain registered metadata references. No known reasons does not prove unused code. Removal checking performs no write.
+- [find-pkg-by-schema](docs/commands/find-pkg-by-schema.md): Find exact schema owners, or resolve entity visibility using package-name and purpose. Use when a schema cannot be opened or a dependency appears missing. hasMore means incomplete results.
+- [export-pkg-graph](docs/commands/export-pkg-graph.md): Export package graph as json or dot. Revision describes topology, not a schema snapshot.
+- [check-pkg-dependency](docs/commands/check-pkg-dependency.md): Preview add or remove dependency rules without a write. noKnownBlockers is limited to checkedKinds, never a guarantee for dynamic code or write authorization.

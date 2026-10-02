@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -121,6 +121,13 @@ public sealed class DurableInvocationGateCompletenessTests {
 		// Reads Creatio's persisted compilation-result endpoint and never starts or tracks a compilation.
 		"last-compilation-log",
 		"list-packages",
+		// Dependency v1 exploration and impact previews issue no writes.
+		"get-pkg-dependencies",
+		"pkg-dependency-path",
+		"pkg-dependency-why",
+		"find-pkg-by-schema",
+		"export-pkg-graph",
+		"check-pkg-dependency",
 		"list-page-templates",
 		// Inventories materialized package files through the read-only ClioGate endpoint.
 		"list-package-files",

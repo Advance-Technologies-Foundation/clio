@@ -29,3 +29,8 @@ and not a guarantee about the call.
 read added here sequentially reintroduces the sum and pushes the tool call back towards the MCP client's own
 ceiling, where the caller gets an opaque abort instead of the candidate list. And a warning that silently
 stops reaching the response is invisible in CLI use, where it still prints.
+
+Dependency inspection now uses a capability read followed by the v1 graph, with a shared
+30-second transport budget. It subtracts transitive reachability, not only declared direct
+edges. An unsupported server leaves dependencies explicitly unknown. The schema-search
+branch still runs concurrently and its execution-context requirement is unchanged.

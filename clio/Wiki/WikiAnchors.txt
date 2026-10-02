@@ -247,3 +247,10 @@ get-sequence-context:get-sequence-context
 execute-dataservice-batch:execute-dataservice-batch
 create-user-task-page:create-user-task-page
 register-process-element:register-process-element
+
+get-pkg-dependencies:get-pkg-dependencies
+pkg-dependency-path:pkg-dependency-path
+pkg-dependency-why:pkg-dependency-why
+find-pkg-by-schema:find-pkg-by-schema
+export-pkg-graph:export-pkg-graph
+check-pkg-dependency:check-pkg-dependency
