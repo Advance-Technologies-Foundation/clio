@@ -392,7 +392,9 @@ public sealed class ScriptTaskElementToolE2ETests {
 		activated.Should().Contain(ExitCodeZero, because: "the activation itself succeeds: {0}", activated);
 		activated.Should().Contain(CommandExecutionResult.CompileRequiredWarningMarker,
 			because: "every new instance now runs a version whose code does not exist until it is compiled");
-		activated.Should().Contain("which is a schema of its own",
+		// "a schema of its own" is in the interpreted-version warning of every CrtProcessBuilder since 1.6.6.51, and in
+		// neither the compiled-class nor the unreadable-version answer.
+		activated.Should().Contain("a schema of its own",
 			because: "the warning must come from READING the interpreted version's C#: the compiled-class and "
 				+ "the unreadable-version answers carry the marker too, so the marker alone passes when the read "
 				+ "failed: {0}", activated);
