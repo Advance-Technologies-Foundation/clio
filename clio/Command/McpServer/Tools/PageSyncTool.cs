@@ -65,6 +65,7 @@ public sealed class PageSyncTool(
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.ClioPages)]
 	[Description("Updates multiple Freedom UI page schemas in a single call. " +
+	             PageBodyAstLinter.DesignerSafetySummary +
 	             "For each page: validates body client-side (optional), saves to Creatio, " +
 	             "and verifies the update (optional). Continues processing remaining pages on failure. " +
 		             "CONFLICT DETECTION: pass the per-page `checksum` — the `editable.checksum` from the get-page that page's edit is based on — on every save that follows a get-page; it becomes the authoritative baseline for that page. Without it the check falls back to the baseline get-page stored in .clio-pages/{schema}/meta.json for the same environment, which is keyed by directory and schema name and can therefore describe a different body than the one you read. A page whose schema was modified outside this session fails with per-page `conflict: true` + `conflict-details` (other pages in the batch are unaffected). On a conflict: do NOT retry with the same body — re-run get-page for that schema, re-apply your change on top of the fresh body, then retry. Re-sending a conflict response's `actualChecksum` as `checksum` is NOT a resolution - it discards the external change exactly like force=true. Inform the user about the external changes and set the per-page `force: true` ONLY after they explicitly confirm overwriting them. " +

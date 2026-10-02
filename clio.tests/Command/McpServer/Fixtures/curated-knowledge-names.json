@@ -70,6 +70,8 @@
     "creatio.external-organizations",
     "creatio.feature-toggle",
     "creatio.feature-toggle-tests",
+    "creatio.freedom-page-mobile-reason-codes",
+    "creatio.freedom-page-web-to-mobile-conversion",
     "creatio.fsm-mode",
     "creatio.git-three-way-merge",
     "creatio.home-page",
@@ -171,6 +173,8 @@
     "external-organizations",
     "feature-toggle",
     "feature-toggle-tests",
+    "freedom-page-mobile-reason-codes",
+    "freedom-page-web-to-mobile-conversion",
     "fsm-mode",
     "home-page",
     "identity-assertion",
@@ -248,10 +252,5 @@
     "when-to-use-requests",
     "workplaces"
   ],
-  "featureGatedNames": [
-    "creatio.freedom-page-mobile-reason-codes",
-    "creatio.freedom-page-web-to-mobile-conversion",
-    "freedom-page-mobile-reason-codes",
-    "freedom-page-web-to-mobile-conversion"
-  ]
+  "featureGatedNames": []
 }

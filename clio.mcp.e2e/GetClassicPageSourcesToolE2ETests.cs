@@ -175,6 +175,82 @@ public sealed class GetClassicPageSourcesToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("Writes the page's, each detail's and each child page's localizable strings as resourceStrings ({ key: { culture: text } }); only the page keeps the flat en-US resources.")]
+	[AllureTag(ToolName)]
+	[AllureName("get-classic-page-sources writes resourceStrings for the page, details and child pages")]
+	[AllureDescription("Collects the ContactPageV2 sources on a real stand and verifies the per-culture strings: page resourceStrings holds every key the flat resources carry, with the flat text among that key's culture texts, every detail entry with strings carries resourceStrings in the same shape, and every child-page manifest carries resourceStrings and no flat resources. No specific non-en-US culture is asserted, since the stand's cultures vary.")]
+	public async Task GetPageSources_Should_Write_ResourceStrings_For_Page_Details_And_ChildPages() {
+		// Arrange & Act
+		SharedPageSources shared = await GetOrCollectSharedPageSourcesAsync();
+		GetClassicPageSourcesResponse response = shared.Response;
+
+		// Assert — page
+		response.Success.Should().BeTrue(
+			because: $"the page sources must assemble for '{MultiLayerPage}'. Error: {response.Error}");
+		using JsonDocument manifest = JsonDocument.Parse(shared.ManifestJson);
+		JsonElement root = manifest.RootElement;
+		root.TryGetProperty("resources", out JsonElement resources).Should().BeTrue(
+			because: "ContactPageV2 declares localizable strings, so the flat resources block must be written");
+		root.TryGetProperty("resourceStrings", out JsonElement resourceStrings).Should().BeTrue(
+			because: "the per-culture strings must be written next to the flat resources");
+		AssertCultureMap(resourceStrings, "page");
+		foreach (JsonProperty flat in resources.EnumerateObject()) {
+			resourceStrings.TryGetProperty(flat.Name, out JsonElement cultures).Should().BeTrue(
+				because: $"page string '{flat.Name}' in resources must also be in resourceStrings");
+			cultures.EnumerateObject().Select(c => c.Value.GetString()).Should().Contain(flat.Value.GetString(),
+				because: $"page string '{flat.Name}' in resources carries the text of its first entry, which resourceStrings also holds in some culture");
+		}
+
+		// Assert — details
+		root.TryGetProperty("detailSchemas", out JsonElement details).Should().BeTrue(
+			because: "ContactPageV2 references details");
+		int detailsWithCaption = 0;
+		foreach (JsonProperty detail in details.EnumerateObject()) {
+			if (detail.Value.TryGetProperty("resourceStrings", out JsonElement detailStrings)) {
+				AssertCultureMap(detailStrings, $"detail '{detail.Name}'");
+				if (detailStrings.TryGetProperty("Caption", out _)) {
+					detailsWithCaption++;
+				}
+			}
+		}
+		detailsWithCaption.Should().BeGreaterThan(0,
+			because: "at least one ContactPageV2 detail declares a Caption string, which must reach its resourceStrings");
+
+		// Assert — child pages
+		root.TryGetProperty("childPageSchemas", out JsonElement childPages).Should().BeTrue(
+			because: "ContactPageV2 details register child pages in SysModuleEdit");
+		int childPagesWithStrings = 0;
+		foreach (JsonProperty childPage in childPages.EnumerateObject()) {
+			childPage.Value.TryGetProperty("resources", out _).Should().BeFalse(
+				because: $"child page '{childPage.Name}' carries no flat resources, so an older engine folds it as before");
+			if (childPage.Value.TryGetProperty("resourceStrings", out JsonElement childStrings)) {
+				AssertCultureMap(childStrings, $"child page '{childPage.Name}'");
+				childPagesWithStrings++;
+			}
+		}
+		childPagesWithStrings.Should().BeGreaterThan(0,
+			because: "at least one ContactPageV2 child page declares localizable strings, which must reach its resourceStrings");
+	}
+
+	// A resourceStrings block is { key: { culture: text } } with at least one non-empty text per key.
+	private static void AssertCultureMap(JsonElement block, string owner) {
+		block.ValueKind.Should().Be(JsonValueKind.Object, because: $"{owner} resourceStrings must be an object");
+		block.EnumerateObject().Should().NotBeEmpty(because: $"{owner} resourceStrings is omitted rather than written empty");
+		foreach (JsonProperty entry in block.EnumerateObject()) {
+			entry.Value.ValueKind.Should().Be(JsonValueKind.Object,
+				because: $"{owner} string '{entry.Name}' must map cultures to texts");
+			entry.Value.EnumerateObject().Should().NotBeEmpty(
+				because: $"{owner} string '{entry.Name}' must carry at least one culture");
+			foreach (JsonProperty culture in entry.Value.EnumerateObject()) {
+				culture.Value.ValueKind.Should().Be(JsonValueKind.String,
+					because: $"{owner} string '{entry.Name}' in '{culture.Name}' must be text");
+				culture.Value.GetString().Should().NotBeNullOrEmpty(
+					because: $"{owner} string '{entry.Name}' writes no empty text for '{culture.Name}'");
+			}
+		}
+	}
+
+	[Test]
 	[Description("Reports a readable failure when get-classic-page-sources is asked for a schema that does not exist.")]
 	[AllureTag(ToolName)]
 	[AllureName("get-classic-page-sources reports a missing-schema failure")]

@@ -147,6 +147,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="add-pkg-dependency"></a>
 <a id="add-pkg-dep"></a>
 - [`add-package-dependency`](docs/commands/add-package-dependency.md) - Add one or more package dependencies to a package, `add-pkg-dependency`, `add-pkg-dep`
+<a id="create-package"></a>
+- [`create-package`](docs/commands/create-package.md) - Create a new package in a Creatio environment
 <a id="remove-package-dependency"></a>
 <a id="remove-pkg-dependency"></a>
 <a id="remove-pkg-dep"></a>
@@ -480,7 +482,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`update-client-unit-schema`](docs/commands/update-client-unit-schema.md) - Update the raw body of a client unit schema, `client-unit-schema-update`
 <a id="update-page"></a>
 <a id="page-update"></a>
-- [`update-page`](docs/commands/update-page.md) - Update Freedom UI page body and en-US resource values; validates parent references and warns to capture workspace resources before pushing, `page-update`
+- [`update-page`](docs/commands/update-page.md) - Update Freedom UI page body and en-US resource values; validates parent references and warns to capture workspace resources before pushing. MCP page lint also warns about code removed by Designer saves and rejects direct calls to factory helpers; use client modules in SCHEMA_DEPS, `page-update`
 <a id="localize-page"></a>
 - [`localize-page`](docs/commands/localize-page.md) - Add or update translations of a Freedom UI page's captions in one culture without changing other cultures; report-only when no values are supplied
 <a id="create-page"></a>
@@ -778,7 +780,7 @@ See [external access login](docs/external-access-login.md).
 <a id="hc"></a>
 - [`healthcheck`](docs/commands/healthcheck.md) - Run Creatio health checks, `hc`
 <a id="register"></a>
-- [`register`](docs/commands/register.md) - Register clio shell integrations
+- [`register`](docs/commands/register.md) - Register clio shell integrations with a resolved direct ZIP deployment launcher that disables forced Supervisor password changes by default
 <a id="config"></a>
 - [`config`](docs/commands/config.md) - View and set clio configuration defaults, including the deploy-creatio IIS port range
 <a id="pin-certificate"></a>

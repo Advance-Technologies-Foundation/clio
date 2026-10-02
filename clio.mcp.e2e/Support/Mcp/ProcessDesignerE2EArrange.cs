@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Clio.Mcp.E2E.Support.Configuration;
@@ -41,7 +42,7 @@ internal static class ProcessDesignerE2EArrange {
 	/// sends the developer to the test instead of to the stand.
 	/// </param>
 	internal static async Task<ProcessDesignerArrangeContext> StartAsync(string subject,
-			string minimumPackageVersion) {
+			string minimumPackageVersion, TimeSpan? sessionTimeout = null) {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string environmentName = settings.Sandbox.EnvironmentName;
@@ -54,7 +55,8 @@ internal static class ProcessDesignerE2EArrange {
 				+ $"'{environmentName}' was not reachable.");
 		}
 		await EnsurePackageIsNewEnoughAsync(settings, environmentName, subject, minimumPackageVersion);
-		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
+		// Three minutes covers every save-and-read scenario; a fixture that waits for a compile passes a longer one.
+		CancellationTokenSource cancellationTokenSource = new(sessionTimeout ?? TimeSpan.FromMinutes(3));
 		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
 		return new ProcessDesignerArrangeContext(session, cancellationTokenSource, environmentName);
 	}
@@ -157,6 +159,42 @@ internal static class ProcessDesignerE2EArrange {
 			because: "the tool must be discoverable before the end-to-end call");
 		return await context.Session.CallToolAsync(
 			toolName, new Dictionary<string, object?> { ["args"] = args }, context.CancellationTokenSource.Token);
+	}
+
+	/// <summary>
+	/// The schema name of the version a modify-business-process-as-new-version call created, read from the
+	/// decoded log messages of its envelope.
+	/// </summary>
+	/// <remarks>
+	/// Read from the DECODED messages, not from the serialized call result: there the apostrophes around the name
+	/// are the text <c>\u0027</c>, escaped once more, and a pattern written for the character matched nothing.
+	/// </remarks>
+	/// <param name="created">The result of the call that created the version.</param>
+	/// <returns>The version's schema name.</returns>
+	internal static string CreatedVersionName(CallToolResult created) {
+		string text = string.Concat(created.Content.OfType<TextContentBlock>().Select(block => block.Text));
+		Match name = Regex.Match(DecodedMessages(text), @"[Vv]ersion(?: \d+)? '(?<name>[A-Za-z0-9_]+)' created");
+		name.Success.Should().BeTrue(
+			because: "the created version's code is only knowable from the response that created it, and the "
+				+ $"envelope did not carry the sentence that names it: {text}");
+		return name.Groups["name"].Value;
+	}
+
+	// The string values of the envelope's log messages. Any other shape - text that is not one JSON document, a
+	// missing or non-array list, a non-object entry, a non-string value - reads as no text, so the caller's
+	// assertion fails with its reason instead of a parser or cast exception without one.
+	private static string DecodedMessages(string text) {
+		JsonNode? envelope;
+		try {
+			envelope = JsonNode.Parse(text);
+		} catch (JsonException) {
+			return string.Empty;
+		}
+		if (envelope is not JsonObject root || root["execution-log-messages"] is not JsonArray messages) {
+			return string.Empty;
+		}
+		return string.Join(" ", messages.OfType<JsonObject>().Select(message =>
+			message["value"] is JsonValue value && value.TryGetValue(out string? line) ? line : string.Empty));
 	}
 
 	/// <summary>Reads a process back by code through <c>describe-business-process</c>.</summary>

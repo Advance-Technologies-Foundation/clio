@@ -239,7 +239,7 @@ public sealed class PageEditableSchemaInfo {
 /// <summary>
 /// Represents page identity and ownership metadata.
 /// </summary>
-public sealed class PageMetadataInfo {
+public sealed record PageMetadataInfo {
 	/// <summary>
 	/// Gets or sets the schema name.
 	/// </summary>
@@ -352,12 +352,25 @@ public sealed class PageMetadataInfo {
 	[JsonPropertyName("schema-type-value")]
 	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
 	public int? SchemaTypeValue { get; init; }
+
+	/// <summary>
+	/// Returns this metadata as an MCP response carries it: unchanged when <paramref name="includeOperations"/>
+	/// is not <see langword="false"/>, otherwise with <see cref="PageOwnBodySummary.ViewConfigDiffOps"/>
+	/// replaced by its counts per operation type. The instance itself is never modified, so the
+	/// <c>meta.json</c> written from it keeps every operation.
+	/// </summary>
+	/// <param name="includeOperations">The caller's <c>include-operations</c> argument.</param>
+	/// <returns>The metadata to put into the response.</returns>
+	internal PageMetadataInfo ForResponse(bool? includeOperations) =>
+		includeOperations == false && OwnBodySummary is not null
+			? this with { OwnBodySummary = OwnBodySummary.WithOperationCounts() }
+			: this;
 }
 
 /// <summary>
 /// Describes how many operations are present in the current schema's own body per section.
 /// </summary>
-public sealed class PageOwnBodySummary {
+public sealed record PageOwnBodySummary {
 	/// <summary>
 	/// Number of operations in the schema's own <c>viewConfigDiff</c>.
 	/// </summary>
@@ -400,9 +413,20 @@ public sealed class PageOwnBodySummary {
 	/// Each entry exposes <c>name</c>, <c>operation</c>, <c>type</c>, and <c>parentName</c> so AI
 	/// callers can see which components already exist before composing a new delta.
 	/// </summary>
-	[JsonProperty("viewConfigDiffOps")]
+	[JsonProperty("viewConfigDiffOps", NullValueHandling = NullValueHandling.Ignore)]
 	[JsonPropertyName("viewConfigDiffOps")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public IReadOnlyList<PageOperationInfo> ViewConfigDiffOps { get; init; } = [];
+
+	/// <summary>
+	/// Number of <c>viewConfigDiff</c> operations per operation type (<c>insert</c>, <c>merge</c>, ...), present
+	/// only when the caller asked for the summary without <see cref="ViewConfigDiffOps"/>. An operation entry
+	/// without an operation type is counted under <c>unknown</c>.
+	/// </summary>
+	[JsonProperty("viewConfigDiffOpCounts", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("viewConfigDiffOpCounts")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyDictionary<string, int> ViewConfigDiffOpCounts { get; init; }
 
 	/// <summary>
 	/// Flat list of handler requests registered in the schema's own body.
@@ -410,6 +434,19 @@ public sealed class PageOwnBodySummary {
 	[JsonProperty("handlerRequests")]
 	[JsonPropertyName("handlerRequests")]
 	public IReadOnlyList<string> HandlerRequests { get; init; } = [];
+
+	/// <summary>
+	/// Returns a copy with <see cref="ViewConfigDiffOps"/> left out and <see cref="ViewConfigDiffOpCounts"/>
+	/// filled from it, in first-seen order.
+	/// </summary>
+	internal PageOwnBodySummary WithOperationCounts() {
+		Dictionary<string, int> counts = new(StringComparer.Ordinal);
+		foreach (PageOperationInfo operation in ViewConfigDiffOps ?? []) {
+			string key = string.IsNullOrEmpty(operation?.Operation) ? "unknown" : operation.Operation;
+			counts[key] = counts.TryGetValue(key, out int count) ? count + 1 : 1;
+		}
+		return this with { ViewConfigDiffOps = null, ViewConfigDiffOpCounts = counts };
+	}
 }
 
 /// <summary>
