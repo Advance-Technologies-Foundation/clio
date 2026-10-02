@@ -32,9 +32,10 @@ internal sealed class ProcessRunLogReader(IApplicationClient applicationClient, 
 	// DataValueType 0 is Guid, as in ClassicEntitySchemaQuery's UId filters.
 	private const int GuidDataValueType = 0;
 
-	// Bounded, once: the read decorates a failure already reported, so a hanging DataService must not turn that
-	// answer into a still-running one past the MCP deadline.
-	private const int ReadTimeoutMs = 30_000;
+	// Bounded, once and short: the read decorates a failure already reported, and it runs inside the MCP response
+	// deadline. A run that fails within the last seconds before that deadline can still come back as still-running
+	// (which says not to re-run); the bound keeps that window small rather than closing it.
+	private const int ReadTimeoutMs = 10_000;
 
 	/// <inheritdoc />
 	public string ReadErrorSummary(Guid processId) {

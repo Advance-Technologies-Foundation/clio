@@ -42,7 +42,7 @@ public sealed class ProcessRunLogReaderTests {
 		// Assert
 		summary.Should().Be("System.ArgumentException: Term must be positive",
 			because: "the first line is the exception's type and message, the part a caller can act on");
-		client.Received(1).ExecutePostRequest(SelectUrl, Arg.Is<string>(body => IsTheRunsRowQuery(body)), 30_000, 1,
+		client.Received(1).ExecutePostRequest(SelectUrl, Arg.Is<string>(body => IsTheRunsRowQuery(body)), 10_000, 1,
 			Arg.Any<int>());
 	}
 
@@ -50,6 +50,8 @@ public sealed class ProcessRunLogReaderTests {
 	[Description("A run whose row carries no error, or no row at all, reads as no summary rather than as an empty string a caller would print.")]
 	[TestCase("{\"success\":true,\"rows\":[]}")]
 	[TestCase("{\"success\":true,\"rows\":[{\"ErrorDescription\":\"\"}]}")]
+	[TestCase("{\"success\":true,\"rows\":[{\"ErrorDescription\":\"\\r\\n  \\r\\n\"}]}")]
+	[TestCase("{\"success\":true,\"rows\":[{\"ErrorDescription\":null}]}")]
 	public void ReadErrorSummary_Should_Return_Null_When_Nothing_Was_Logged(string selectResponse) {
 		// Arrange
 		(ProcessRunLogReader reader, _) = Create(selectResponse);
@@ -59,6 +61,21 @@ public sealed class ProcessRunLogReaderTests {
 
 		// Assert
 		summary.Should().BeNull(because: "there is no logged error to name");
+	}
+
+	[Test]
+	[Description("A SelectQuery the server refused throws, as the interface documents, instead of reading as 'nothing was logged': the caller turns it into a warning that names the run.")]
+	public void ReadErrorSummary_Should_Throw_When_The_SelectQuery_Failed() {
+		// Arrange
+		(ProcessRunLogReader reader, _) = Create(
+			"{\"success\":false,\"errorInfo\":{\"message\":\"Access denied\"}}");
+
+		// Act
+		Action read = () => reader.ReadErrorSummary(ProcessId);
+
+		// Assert
+		read.Should().Throw<InvalidOperationException>(
+			because: "a refused read is not an empty log, and the caller must be able to tell the two apart");
 	}
 
 	private static bool IsTheRunsRowQuery(string body) {

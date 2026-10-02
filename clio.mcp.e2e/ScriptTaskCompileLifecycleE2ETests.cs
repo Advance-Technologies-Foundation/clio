@@ -27,7 +27,8 @@ namespace Clio.Mcp.E2E;
 /// every user of the stand (about three minutes each on a local 10.1 stand), which the automatic lanes must never
 /// do to a shared instance - the same reason the other compiling fixture,
 /// <see cref="UserTaskUnlimitedTextToolE2ETests"/>, is in this sub-tier. Run it by hand against an owned stand
-/// with CrtProcessBuilder 1.6.6.33 or later, with <c>McpE2E__Sandbox__EnvironmentName</c> and
+/// with CrtProcessBuilder 1.6.6.33 or later (1.6.6.57 or later for the activation test), with
+/// <c>McpE2E__Sandbox__EnvironmentName</c> and
 /// <c>McpE2E__AllowDestructiveMcpTests=true</c>. On a .NET host it also restarts the application between the
 /// successful compile and the run, because there the new code does not run before a restart.</para>
 /// <para>A process that reached the successful compile is left on the stand under a unique

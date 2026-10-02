@@ -89,9 +89,11 @@ public class RunProcessCommand(
 	private const string MissingCompiledMethodCode = "KeyNotFoundException";
 
 	internal static string BuildMissingCompiledMethodHint(string processCode) =>
-		$" This is most often a script task saved since '{processCode}' was last compiled: the compiled code does not "
-		+ "have it yet, so the run stops when it reaches that element, and the elements before it may already have "
-		+ "run. Ask the user, then run compile-creatio with process-name set to this process.";
+		$" This is most often a script task saved since the active version of '{processCode}' was last compiled - "
+		+ "run-process runs the active version whatever code it is given - so the compiled code does not have it "
+		+ "yet: the run stops when it reaches that element, and the elements before it may already have run. Ask "
+		+ "the user, then run compile-creatio with process-name set to the active version (describe-business-process "
+		+ "names it).";
 
 	internal static string BuildQueuedBackgroundNote(string processCode) =>
 		$"'{processCode}' starts in background mode, so the platform queued it and returned no process id, "
@@ -213,8 +215,9 @@ public class RunProcessCommand(
 				$"The error this run logged could not be read; it is in the process log of run {platformResponse.ProcessId}.");
 			return;
 		}
-		if (logged is not null) {
-			response.Error += $" The process log of this run reports: {UntrustedText.Fenced(logged)}";
+		string fenced = UntrustedText.Fenced(logged);
+		if (fenced is not null) {
+			response.Error += $" The process log of this run reports: {fenced}";
 		}
 	}
 
