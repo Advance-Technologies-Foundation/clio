@@ -154,7 +154,18 @@ public interface ISysSettingsManager
 
 	#endregion
 
-	void CreateSysSettingIfNotExists(string optsCode, string code, string optsType);
+	/// <summary>
+	/// Creates the sys-setting <paramref name="code"/> with type <paramref name="optsType"/> when the
+	/// environment does not have it yet; an existing setting is left as it is.
+	/// </summary>
+	/// <param name="optsCode">The display name of the setting to create.</param>
+	/// <param name="code">The setting code.</param>
+	/// <param name="optsType">The value-type-name of the setting to create.</param>
+	/// <returns>
+	/// <see langword="true"/> when this call created the setting; <see langword="false"/> when it already
+	/// existed or the environment refused the insert.
+	/// </returns>
+	bool CreateSysSettingIfNotExists(string optsCode, string code, string optsType);
 	
 	/// <summary>
 	/// Returns all sys-settings with their values attached. Binary-type settings are excluded by default
@@ -1016,18 +1027,20 @@ public class SysSettingsManager : ISysSettingsManager
 		return false;
 	}
 	
-	public void CreateSysSettingIfNotExists(string optsCode, string code, string optsType){
+	public bool CreateSysSettingIfNotExists(string optsCode, string code, string optsType){
 		SysSettings sysSetting = GetSysSettingByCode(code); 
-		if(sysSetting is null) {
-			InsertSysSettingResponse result = InsertSysSetting(optsCode, code, optsType);
-			string text = result switch {
-				{Success: true, Id: var id} when id != Guid.Empty => $"SysSettings with code: {code} created.",
-				{Success: false, Id: var id} when id == Guid.Empty => $"SysSettings with code: {code} already exists.",
-				{Success: false}  => $"SysSettings with code: {code} already exists.",
-				{Success: true}  => $"SysSettings with code: {code} created.",
-			};
-			_logger.WriteInfo(text);
+		if(sysSetting is not null) {
+			return false;
 		}
+		InsertSysSettingResponse result = InsertSysSetting(optsCode, code, optsType);
+		string text = result switch {
+			{Success: true, Id: var id} when id != Guid.Empty => $"SysSettings with code: {code} created.",
+			{Success: false, Id: var id} when id == Guid.Empty => $"SysSettings with code: {code} already exists.",
+			{Success: false}  => $"SysSettings with code: {code} already exists.",
+			{Success: true}  => $"SysSettings with code: {code} created.",
+		};
+		_logger.WriteInfo(text);
+		return result.Success;
 	}
 
 	public Guid? FindSchemaUIdByName(string schemaName) {

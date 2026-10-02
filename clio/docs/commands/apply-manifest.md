@@ -37,6 +37,9 @@ Display canonical options and usage examples
   exit code of 0 means every entry in the manifest reached the environment.
 - A manifest that cannot be read at all still fails outright, because there is nothing to apply
   partially.
+- A system setting the environment does not have yet is created as a Text setting before its value is
+  written, the same way `set-syssetting` does it, and the command prints a warning naming it. An entry
+  with an empty or `undefined` value only updates a setting that already exists.
 
 ## See Also
 

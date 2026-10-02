@@ -234,6 +234,65 @@ public sealed class ApplyEnvironmentManifestCommandTests {
 	}
 
 	[Test]
+	[Description("Creates a manifest system setting the environment does not have yet as Text before writing its value, as set-syssetting does, instead of failing the write (issue #292).")]
+	public void Execute_ShouldCreateTheSystemSettingAsText_WhenTheManifestNamesOneTheEnvironmentLacks() {
+		// Arrange
+		_environmentManager.GetSettingsFromManifest(ManifestPath).Returns([
+			new CreatioManifestSetting { Code = "MrktApolloApiKey", Value = "My-Key" }
+		]);
+		_sysSettingsManager.CreateSysSettingIfNotExists("MrktApolloApiKey", "MrktApolloApiKey", "Text")
+			.Returns(true);
+
+		// Act
+		int exitCode = _sut.Execute(Options());
+
+		// Assert
+		exitCode.Should().Be(0, because: "the missing setting was created and its value written");
+		Received.InOrder(() => {
+			_sysSettingsManager.CreateSysSettingIfNotExists("MrktApolloApiKey", "MrktApolloApiKey", "Text");
+			_sysSettingsManager.UpdateSysSetting("MrktApolloApiKey", "My-Key", "Text");
+		});
+		_logger.Received(1).WriteWarning(Arg.Is<string>(message =>
+			message.Contains("MrktApolloApiKey") && message.Contains("created with type Text")));
+		_logger.DidNotReceive().WriteError(Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("Writes a manifest system setting the environment already has without a creation warning.")]
+	public void Execute_ShouldNotWarn_WhenTheSystemSettingAlreadyExists() {
+		// Arrange
+		_environmentManager.GetSettingsFromManifest(ManifestPath).Returns([
+			new CreatioManifestSetting { Code = "MaxFileSize", Value = "10" }
+		]);
+		_sysSettingsManager.CreateSysSettingIfNotExists("MaxFileSize", "MaxFileSize", "Text").Returns(false);
+
+		// Act
+		int exitCode = _sut.Execute(Options());
+
+		// Assert
+		exitCode.Should().Be(0, because: "the existing setting took the value");
+		_sysSettingsManager.Received(1).UpdateSysSetting("MaxFileSize", "10", "Text");
+		_logger.DidNotReceive().WriteWarning(Arg.Any<string>());
+	}
+
+	[TestCase("")]
+	[TestCase("undefined")]
+	[Description("Does not create a system setting for a manifest entry without a value, so an empty or undefined value never leaves a new unusable setting on the environment.")]
+	public void Execute_ShouldNotCreateTheSystemSetting_WhenTheManifestEntryHasNoValue(string value) {
+		// Arrange
+		_environmentManager.GetSettingsFromManifest(ManifestPath).Returns([
+			new CreatioManifestSetting { Code = "MrktApolloApiKey", Value = value }
+		]);
+
+		// Act
+		_sut.Execute(Options());
+
+		// Assert
+		_sysSettingsManager.DidNotReceiveWithAnyArgs().CreateSysSettingIfNotExists(default, default, default);
+		_sysSettingsManager.Received(1).UpdateSysSetting("MrktApolloApiKey", value, "Text");
+	}
+
+	[Test]
 	[Description("Records a manifest entry whose role does not exist as a failure, so a per-role state that was never written is not reported as applied.")]
 	public void Execute_ShouldRecordAFailure_WhenTheManifestNamesAnUnknownRole() {
 		// Arrange
