@@ -1042,7 +1042,7 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 					continue; // omit: an unresolved detail is left for the engine to flag, never fabricated
 				}
 				JObject detailEntry = BuildDetailEntry(ctx, layers[layers.Count - 1].UId, detailName);
-				if (detailEntry != null) {
+				if (detailEntry.HasValues) {
 					detailSchemas[detailName] = detailEntry;
 				}
 			}
@@ -1056,7 +1056,7 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 	}
 
 	// Body, title and merged resourceStrings from the full-hierarchy load. When that load fails, body and title come
-	// from the own-layer load and the entry carries no resourceStrings; null when neither load returns the schema.
+	// from the own-layer load and the entry carries no resourceStrings; empty when neither load returns the schema.
 	private JObject BuildDetailEntry(PageSourcesRunContext ctx, string topUId, string detailName) {
 		(JObject detailSchema, string mergedError) = LoadSchemaCached(ctx, topUId, detailName, useFullHierarchy: true);
 		bool merged = mergedError == null && detailSchema != null;
@@ -1064,7 +1064,7 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 			(detailSchema, string ownError) = LoadSchemaCached(ctx, topUId, detailName);
 			if (ownError != null || detailSchema == null) {
 				WarnDetail(ctx, $"Could not gather detail schema '{detailName}': {ownError ?? NoSchemaReturned}");
-				return null;
+				return new JObject();
 			}
 			WarnDetail(ctx, $"Could not gather merged localizable strings (resourceStrings) of detail '{detailName}': "
 				+ $"{mergedError ?? NoSchemaReturned}. Its entry carries no resourceStrings.");
