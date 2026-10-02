@@ -27,7 +27,7 @@ It:
   manifest shape;
 - resolves the entity (from `--entity` or inferred from the page body) and gathers `entityColumns` and
   `columnTitles` from the merged entity schema;
-- gathers the localizable strings merged across the hierarchy into `resources` (one en-US text per key) and
+- gathers the localizable strings merged across the hierarchy into `resources` (one text per key: the en-US text, else the first culture's text, of the key's first entry) and
   `resourceStrings` (every culture, in `get-page`'s `bundle.resources.strings` shape:
   `{ "Key": { "en-US": "…", "fr-FR": "…" } }`);
 - best-effort, gathers the related schemas the page references: custom `detailSchemas` (body, title, and the

@@ -1041,25 +1041,10 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 				if (layers.Count == 0) {
 					continue; // omit: an unresolved detail is left for the engine to flag, never fabricated
 				}
-				string topUId = layers[layers.Count - 1].UId;
-				// Full hierarchy merges the detail's localizable strings across its layers; the body stays the top layer's.
-				(JObject detailSchema, string loadError) = LoadSchemaCached(ctx, topUId, detailName, useFullHierarchy: true);
-				if (loadError != null || detailSchema == null) {
-					string warning = $"Could not gather detail schema '{detailName}': {loadError ?? NoSchemaReturned}";
-					_logger.WriteWarning(warning);
-					AddWarning(ctx, warning);
-					continue;
+				JObject detailEntry = BuildDetailEntry(ctx, layers[layers.Count - 1].UId, detailName);
+				if (detailEntry != null) {
+					detailSchemas[detailName] = detailEntry;
 				}
-				var detailEntry = new JObject { ["body"] = detailSchema["body"]?.ToString() ?? string.Empty };
-				string title = SchemaDesignerHelper.ExtractCaption(detailSchema);
-				if (!string.IsNullOrWhiteSpace(title)) {
-					detailEntry["title"] = title;
-				}
-				JObject detailStrings = BuildResourceStrings(SchemaDesignerHelper.ExtractMergedLocalizableStrings(detailSchema));
-				if (detailStrings.HasValues) {
-					detailEntry["resourceStrings"] = detailStrings;
-				}
-				detailSchemas[detailName] = detailEntry;
 			}
 			catch (Exception ex) {
 				string warning = $"Could not gather detail schema '{detailName}': {ex.Message}";
@@ -1068,6 +1053,51 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 			}
 		}
 		return detailSchemas;
+	}
+
+	// Body, title and merged resourceStrings from the full-hierarchy load. When that load fails, body and title come
+	// from the own-layer load and the entry carries no resourceStrings; null when neither load returns the schema.
+	private JObject BuildDetailEntry(PageSourcesRunContext ctx, string topUId, string detailName) {
+		(JObject detailSchema, string mergedError) = LoadSchemaCached(ctx, topUId, detailName, useFullHierarchy: true);
+		bool merged = mergedError == null && detailSchema != null;
+		if (!merged) {
+			(detailSchema, string ownError) = LoadSchemaCached(ctx, topUId, detailName);
+			if (ownError != null || detailSchema == null) {
+				WarnDetail(ctx, $"Could not gather detail schema '{detailName}': {ownError ?? NoSchemaReturned}");
+				return null;
+			}
+			WarnDetail(ctx, $"Could not gather merged localizable strings (resourceStrings) of detail '{detailName}': "
+				+ $"{mergedError ?? NoSchemaReturned}. Its entry carries no resourceStrings.");
+		}
+		var detailEntry = new JObject { ["body"] = detailSchema["body"]?.ToString() ?? string.Empty };
+		string title = SchemaDesignerHelper.ExtractCaption(detailSchema);
+		if (!string.IsNullOrWhiteSpace(title)) {
+			detailEntry["title"] = title;
+		}
+		if (merged) {
+			JObject detailStrings = BuildDetailResourceStrings(ctx, detailSchema, detailName);
+			if (detailStrings.HasValues) {
+				detailEntry["resourceStrings"] = detailStrings;
+			}
+		}
+		return detailEntry;
+	}
+
+	// An extraction failure omits only the detail's resourceStrings.
+	private JObject BuildDetailResourceStrings(PageSourcesRunContext ctx, JObject detailSchema, string detailName) {
+		try {
+			return BuildResourceStrings(SchemaDesignerHelper.ExtractMergedLocalizableStrings(detailSchema));
+		}
+		catch (Exception ex) {
+			WarnDetail(ctx, $"Could not gather merged localizable strings (resourceStrings) of detail '{detailName}': "
+				+ $"{ex.Message}. Its entry carries no resourceStrings.");
+			return new JObject();
+		}
+	}
+
+	private void WarnDetail(PageSourcesRunContext ctx, string warning) {
+		_logger.WriteWarning(warning);
+		AddWarning(ctx, warning);
 	}
 
 	// Section candidates in priority order: the schema names SysModule metadata binds to the entity first, then the

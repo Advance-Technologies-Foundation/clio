@@ -225,7 +225,7 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		detail["title"]!.ToString().Should().Be("Lignes de commande (hiérarchie)",
 			because: "title is the internal caption of the single full-hierarchy load");
 		detail["body"]!.ToString().Should().Contain("UsrOrderLineMerged",
-			because: "body comes from the same full-hierarchy load, which returns the top layer's body");
+			because: "body comes from the same full-hierarchy load as title and resourceStrings");
 		_applicationClient.Received(1).ExecutePostRequest(
 			Arg.Any<string>(),
 			Arg.Is<string>(body => body.Contains("\"uid-detail\"")));
@@ -272,6 +272,39 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		child["resourceStrings"]!["NotesTabCaption"]!["fr-FR"]!.ToString().Should().Be("Remarques",
 			because: "the child manifest carries its strings in every culture like the main page");
 		child["columnTitles"].Should().BeNull(because: "child-page column titles are not collected");
+	}
+
+	[Test]
+	[Description("TryAssemblePageSources keeps a detail entry with its own-layer body and title but no resourceStrings when the detail's full-hierarchy load fails, and warns naming the detail and the missing resourceStrings.")]
+	public void TryAssemblePageSources_ShouldKeepDetailFromOwnLayer_WhenDetailFullHierarchyLoadFails() {
+		// Arrange
+		AddLayer("UsrOrderPage", "uid-page", "UsrApp", 200);
+		AddSchema("uid-page",
+			"define(\"UsrOrderPage\", [], function() { return { details: { V: { schemaName: \"UsrOrderLineDetail\" } } }; });",
+			EmptyGuid, "UsrApp");
+		AddLayer("UsrOrderLineDetail", "uid-detail", "UsrApp", 200);
+		AddSchema("uid-detail",
+			"define(\"UsrOrderLineDetail\", [], function() { return { entitySchemaName: \"UsrOrderLine\" }; });",
+			EmptyGuid, "UsrApp", caption: "Order lines");
+		AddLocalizable("uid-detail", "Caption", ("en-US", "Order lines"), ("fr-FR", "Lignes de commande"));
+		_failFullHierarchyUids.Add("uid-detail");
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrOrderPage" };
+
+		// Act
+		bool ok = _command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: "a detail's strings are best-effort and never fail the run");
+		JObject manifest = JObject.Parse(ReadManifest(response));
+		JToken detail = manifest["detailSchemas"]!["UsrOrderLineDetail"];
+		detail.Should().NotBeNull(because: "a failed full-hierarchy load drops only the detail's strings, not the detail");
+		detail!["body"]!.ToString().Should().Contain("UsrOrderLine",
+			because: "the body comes from the own-layer load");
+		detail["title"]!.ToString().Should().Be("Order lines",
+			because: "the title comes from the own-layer load");
+		detail["resourceStrings"].Should().BeNull(because: "the detail's merged strings could not be loaded");
+		response.Warnings.Should().ContainSingle(w => w.Contains("detail 'UsrOrderLineDetail'") && w.Contains("resourceStrings"),
+			because: "the warning must name the detail and the block it lacks");
 	}
 
 	[Test]
