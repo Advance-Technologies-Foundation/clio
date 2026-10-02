@@ -126,6 +126,25 @@ public class GetClassicPageSourcesToolTests {
 			because: "redaction must scrub the host, not destroy the actionable part of the warning");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("The get-classic-page-sources tool description names the per-culture resourceStrings fields and marks a detail's title as the internal caption.")]
+	public void GetPageSources_Description_Should_Name_ResourceStrings() {
+		// Arrange
+		System.Reflection.MethodInfo method = typeof(GetClassicPageSourcesTool)
+			.GetMethod(nameof(GetClassicPageSourcesTool.GetPageSources));
+
+		// Act
+		string description = System.Reflection.CustomAttributeExtensions
+			.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>(method!)!.Description;
+
+		// Assert
+		description.Should().Contain("`resourceStrings`",
+			because: "callers must learn that per-culture strings travel in resourceStrings");
+		description.Should().Contain("internal caption",
+			because: "a detail's title must not be read as the title the page shows");
+	}
+
 	private sealed class FakeGetClassicPageSourcesCommand : GetClassicPageSourcesCommand {
 		public GetClassicPageSourcesOptions CapturedOptions { get; private set; }
 		public GetClassicPageSourcesResponse ResponseToReturn { get; init; }

@@ -27,8 +27,11 @@ It:
   manifest shape;
 - resolves the entity (from `--entity` or inferred from the page body) and gathers `entityColumns` and
   `columnTitles` from the merged entity schema;
-- gathers the localizable strings merged across the hierarchy into `resources`;
-- best-effort, gathers the related schemas the page references: custom `detailSchemas` (body + title), the
+- gathers the localizable strings merged across the hierarchy into `resources` (one text per key: the en-US text, else the first culture's text, of the key's first entry) and
+  `resourceStrings` (every culture, in `get-page`'s `bundle.resources.strings` shape:
+  `{ "Key": { "en-US": "…", "fr-FR": "…" } }`);
+- best-effort, gathers the related schemas the page references: custom `detailSchemas` (body, title, and the
+  detail's merged strings as `resourceStrings` in the same shape), the
   `*Section` chain, and the child pages each detail's entity registers — its edit card **and** its add mini
   page — each as a nested `childPageSchemas` manifest. These use conservative heuristics; anything that cannot
   be resolved is **omitted, never fabricated**;
@@ -88,8 +91,19 @@ clio get-classic-page-sources --schema-name UsrCasePage --entity UsrCase --outpu
 The response JSON reports `success`, `schemaName`, `entity`, `manifestPath`, `layerCount`, `seedCount`,
 `resourceCount`, `columnCount`, `detailCount`, `sectionLayerCount`, `childPageCount`, `enumVocabularyCount`,
 `warnings`, and `error`. The manifest file written to disk contains `schemas` (`[{ pkg, body }]`, base->top),
-and, when resolvable, `seed`, `entity`, `entityColumns`, `columnTitles`, `resources`, `detailSchemas`,
-`section`, `childPageSchemas`, and `enumVocabulary`.
+and, when resolvable, `seed`, `entity`, `entityColumns`, `columnTitles`, `resources`, `resourceStrings`,
+`detailSchemas`, `section`, `childPageSchemas`, and `enumVocabulary`.
+
+- `resourceStrings` maps each page string to all its cultures and is authoritative for per-culture values.
+  `resources` maps each page string to one text: the en-US text (else the first culture's text) of the key's first
+  entry that has one. For a key with several merged entries, `resources` keeps that first-entry rule, so its text
+  can differ from `resourceStrings[key]["en-US"]`. Both are omitted, with a warning, when the page's merged strings cannot be loaded. Each nested
+  `childPageSchemas` manifest carries its own `resourceStrings` the same way, and no flat `resources`; when a
+  child page's strings cannot be loaded, its manifest omits `resourceStrings` and a warning names the child page.
+- Each `detailSchemas` entry carries `body` (the top layer's), `title`, and `resourceStrings`: the detail's strings
+  merged across its layers, in every culture. `title` is the detail schema's internal caption, not the title the
+  page shows; Classic takes that title from the page's `captionName` resource, then the page's
+  `<Detail>DetailCaptionOnPage` resource, then the detail's own `Caption` string.
 
 `warnings` is present only when the collected sources are incomplete in a way the caller must weigh, and is
 omitted from a complete collection. **Read it before planning from the manifest** — every block that was
@@ -129,9 +143,9 @@ underlying failure never reaches the caller's context.
   already sat at 48 of the old 50-detail cap, so a customer page with three more details crossed the line).
   Termination does not depend on those numbers: the parent walk follows each schema UId at most once, and
   detail / child-page collection admits each name once over a finite set of bodies.
-- Cost scales with the unit: gathering a detail or a child page is one designer round-trip each, so a very wide
-  page takes proportionally longer to collect. This is a deliberate trade — a complete unit that takes longer
-  beats a fast one that quietly omits part of the page. When calling over MCP, a very wide page can exceed a
+- Cost scales with the unit: gathering a detail is one designer round-trip and a child page two (its chain and
+  its strings), so a very wide page takes proportionally longer to collect. This is a deliberate trade — a
+  complete unit that takes longer beats a fast one that quietly omits part of the page. When calling over MCP, a very wide page can exceed a
   client's request timeout; run it from the CLI in that case.
 - A schema name that exists in several packages resolves its layers deterministically by package hierarchy
   level (see also `get-client-unit-schema`).
