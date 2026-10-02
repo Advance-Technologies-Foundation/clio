@@ -78,7 +78,8 @@ public sealed class ApplicationSectionUpdateLocalizationTests {
 			_captionCultureResolver,
 			_localizationClient,
 			new SectionLocalizationPlanner(_localizationClient),
-			cultureCatalogFactory);
+			cultureCatalogFactory,
+			NavigationCacheResetterSubstitute.Succeeding());
 	}
 
 	[Test]
