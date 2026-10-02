@@ -449,13 +449,9 @@ New text therefore goes to a NEW guide, born in KB-PT.
   client stripped `itemProperties` from describe output (Part C.3). Before any guidance-dependent run, check that
   `info-knowledge` shows the expected library version, because a failed `update-knowledge` keeps serving the old one.
 - **Cleanup (write, go-ahead):** delete probe processes with `delete-schema` and a CLI `--timeout`; a remote delete
-  takes about 6 minutes on this stand. Delete fixture and copied rows with one `execute-dataservice-batch` of
+  took about 6 minutes on 2026-09-27 and 7-50 seconds on 2026-10-02. Delete fixture and copied rows with one `execute-dataservice-batch` of
   DeleteQuery items, because the stand rejects HTTP DELETE. Then re-run the evidence queries to confirm.
 - **UI checks** (an attachment list, a card's display text) are made by the user.
-- **A designer publish is a stand outage:** publishing a process that carries a script task compiles the
-  configuration, and on 2026-10-02 the stand then answered no HTTP request for at least 45 minutes (C.7). Publish only
-  with the user's go-ahead given for the publish itself, send nothing to the stand until it answers again, and warn
-  the other users of the stand first.
 - **Cleanup tooling on 2026-10-02:** the session's clio client has no `execute-dataservice-batch`, and `odata-delete`
   sends HTTP DELETE, which this stand rejects; the fixture rows need another path, chosen with the user.
 
@@ -904,7 +900,6 @@ the contact and its two files through one SQL DELETE by Id, whose cascades remov
 | NEW: transient timeout | One `modify` carrying `setFilter` and `addMapping` together timed out and wrote nothing (`ModifiedOn` unchanged); the same two operations sent one per call both applied (`74bc25618f3b`, `3cf363739721`). Not reproduced; recorded only so a later timeout is not read as a builder defect without a retry |
 | M6 | **R-M1 stays a refusal.** `UsrFpM6FlatFile` was saved and published in the designer by the main session (the publish compiled `PROBE`; its message window listed only warnings from other packages), then run once: instance `c3c86025…`, OF1 `Completed`, PROBE `Error` with **`System.Exception: M6 F=`**, so `F` was empty: no NullReferenceException, no first or last row. That the source was not empty is proven by the instance data: `SysProcessElementData.PropertiesData` of OF1 holds `ObjectFiles` with **two** `EntityFileLocator`s, `ContactFile` `ccfdece7…` and `1cac5fed…`, `CreatedObjectFileIds` empty, `ResultActionType` 1. F was mapped Script <- `[Element:{OF1}].[Parameter:{1ddb6de7…}]` (the item `ObjectFiles.File`). So a flat File taken from a collection item outside a row context reads **null, silently**: the builder must refuse it (F-M2) |
 | NEW: element output evidence | `SysProcessElementData.PropertiesData` (varbinary holding JSON; `CONVERT(varchar(max), …)` reads it) keeps each executed element's parameter values per instance, collections included, with each locator's `_entitySchemaName` and `_recordId`. It is a runtime oracle the plan did not have: it shows what an element produced without a second probe element (B.1 EV-8) |
-| NEW: a designer publish took the stand down | The publish of `UsrFpM6FlatFile` (about 01:44 UTC) compiled the configuration; right after it the stand stopped answering HTTP (TCP still accepted, even static files hung) and the `run-process` and SELECT sent next timed out without reaching the stand (no instance was logged). It was still down at 02:30 UTC and was back when the user next checked; the run above is from 06:15 UTC. Whether it came back by itself or was restarted is not recorded. Rule added to B.0 |
 
 ### C.5 Corpus and repository counts (not the stand)
 
