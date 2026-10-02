@@ -494,6 +494,8 @@ public sealed class ApplicationToolE2ETests {
 				+ $"Actual create-app payload: {DescribeCallResult(callResult)}");
 		createEnvelope.NextStep.Should().Contain("ConfigurationDataService/GetData",
 			because: "a successful create-app must tell the caller how to refresh an open browser tab that misses the new section");
+		(createEnvelope.Warnings ?? []).Should().NotContain(warning => warning.StartsWith("navigation cache reset failed: "),
+			because: "the GetData(true) reset must succeed against a real Creatio, not only against the unit-test mock");
 
 		// Wait for all three markers instead of asserting on whatever the sink held when the call returned:
 		// tool completion and notification dispatch use independent SDK continuations, so the final marker

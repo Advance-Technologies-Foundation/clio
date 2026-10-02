@@ -92,6 +92,23 @@ public sealed class NavigationCacheResetterTests {
 	}
 
 	[Test]
+	[Description("A transport exception that names the request URI is redacted before it becomes a warning, because the warning reaches MCP output and the console.")]
+	public void TryReset_Should_Redact_Uri_In_Exception_Warning() {
+		// Arrange
+		_client.ExecutePostRequest(GetDataUrl, "true", Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Throws(new InvalidOperationException($"Request to {GetDataUrl} failed"));
+
+		// Act
+		string? warning = _sut.TryReset(_client, _environmentSettings);
+
+		// Assert
+		warning.Should().StartWith(NavigationCacheResetter.WarningPrefix,
+			because: "the transport failure must still be reported as a reset warning");
+		warning.Should().NotContain("example.invalid",
+			because: "a host or URI from the exception must not reach the MCP transcript unredacted");
+	}
+
+	[Test]
 	[Description("The browser-session note names the environment's own GetData URL, the BPMCSRF header read from the tab's cookie, the body true, and the warning not to clear Redis.")]
 	public void BuildBrowserSessionNote_Should_Name_The_Environment_GetData_Url() {
 		// Act

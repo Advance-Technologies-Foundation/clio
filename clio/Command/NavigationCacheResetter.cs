@@ -67,11 +67,12 @@ public sealed class NavigationCacheResetter(IServiceUrlBuilder serviceUrlBuilder
 			string url = serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetConfigurationData, environmentSettings);
 			string response = client.ExecutePostRequest(url, ForceGetBody, RequestTimeoutMs, maxAttempts: 1, delaySec: 0);
 			string? failure = ReadFailure(response);
-			return failure is null ? null : WarningPrefix + failure;
+			return failure is null ? null : WarningPrefix + SensitiveErrorTextRedactor.Redact(failure);
 		}
 		catch (Exception exception)
 		{
-			return WarningPrefix + exception.Message;
+			// Transport exceptions can carry request URIs and hosts; the warning reaches MCP output and the console.
+			return WarningPrefix + SensitiveErrorTextRedactor.Redact(exception.Message);
 		}
 	}
 

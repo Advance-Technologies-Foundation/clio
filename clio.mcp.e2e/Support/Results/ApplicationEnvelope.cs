@@ -29,6 +29,7 @@ internal sealed record ApplicationContextResponseEnvelope(
 	[property: JsonPropertyName("pages")] IReadOnlyList<ApplicationPageEnvelope>? Pages,
 	[property: JsonPropertyName("dataforge")] ApplicationDataForgeEnvelope? DataForge,
 	[property: JsonPropertyName("error")] string? Error,
+	[property: JsonPropertyName("warnings")] IReadOnlyList<string>? Warnings = null,
 	[property: JsonPropertyName("next-step")] string? NextStep = null);
 
 internal sealed record ApplicationSectionContextResponseEnvelope(
@@ -46,6 +47,7 @@ internal sealed record ApplicationSectionContextResponseEnvelope(
 	[property: JsonPropertyName("error-class")] string? ErrorClass = null,
 	[property: JsonPropertyName("section-created")] string? SectionCreated = null,
 	[property: JsonPropertyName("retry-guidance")] string? RetryGuidance = null,
+	[property: JsonPropertyName("warnings")] IReadOnlyList<string>? Warnings = null,
 	[property: JsonPropertyName("next-step")] string? NextStep = null);
 
 internal sealed record ApplicationSectionUpdateContextResponseEnvelope(

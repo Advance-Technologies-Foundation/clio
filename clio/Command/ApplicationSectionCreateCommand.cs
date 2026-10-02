@@ -437,7 +437,7 @@ public sealed class ApplicationSectionCreateService(
 		string nextStep = navigationCacheResetter.BuildBrowserSessionNote(environmentSettings);
 		return cacheResetWarning is null
 			? created with { NextStep = nextStep }
-			: created with { Warnings = [cacheResetWarning], NextStep = nextStep };
+			: created with { Warnings = [.. created.Warnings ?? [], cacheResetWarning], NextStep = nextStep };
 	}
 
 	/// <summary>

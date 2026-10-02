@@ -223,7 +223,7 @@ public sealed class ApplicationCreateService(
 		string nextStep = navigationCacheResetter.BuildBrowserSessionNote(environmentSettings);
 		return warning is null
 			? result with { NextStep = nextStep }
-			: result with { Warnings = [warning], NextStep = nextStep };
+			: result with { Warnings = [.. result.Warnings ?? [], warning], NextStep = nextStep };
 	}
 
 	private static void ValidateRequest(ApplicationCreateRequest request)
