@@ -364,6 +364,13 @@ internal static class PassthroughToolClassificationRegistry {
 			["list-entity-client-schemas"] = PassthroughClassification.NotApplicable,
 			["list-entity-client-schemas-to-file"] = PassthroughClassification.NotApplicable, // delegates to list-entity-client-schemas
 			["list-packages"] = PassthroughClassification.NotApplicable,
+			// All explorer paths use BaseTool and the per-environment resolver.
+			["get-pkg-dependencies"] = PassthroughClassification.NotApplicable,
+			["pkg-dependency-path"] = PassthroughClassification.NotApplicable,
+			["pkg-dependency-why"] = PassthroughClassification.NotApplicable,
+			["find-pkg-by-schema"] = PassthroughClassification.NotApplicable,
+			["export-pkg-graph"] = PassthroughClassification.NotApplicable,
+			["check-pkg-dependency"] = PassthroughClassification.NotApplicable,
 			["list-page-templates"] = PassthroughClassification.NotApplicable,
 			["list-package-files"] = PassthroughClassification.NotApplicable, // BaseTool<T>.ExecuteResolved<TCommand,TResponse> is already resolver-backed (class a)
 			["list-pages"] = PassthroughClassification.NotApplicable,

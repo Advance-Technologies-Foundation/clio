@@ -820,6 +820,7 @@ public class BindingsModule {
 		services.AddTransient<ManageLicenseTool>();
 		services.AddTransient<PackageHotfixTool>();
 		services.AddTransient<AddPackageDependencyTool>();
+		services.AddTransient<PackageExplorerTool>();
 		services.AddTransient<AddCustomLoggingTool>();
 		services.AddTransient<RemovePackageDependencyTool>();
 		services.AddTransient<CreatePackageTool>();
@@ -1131,6 +1132,8 @@ public class BindingsModule {
 		services.AddTransient<PackageHotFixCommand>();
 		services.AddTransient<PackageEditableMutator>();
 		services.AddTransient<AddPackageDependencyCommand>();
+		services.AddTransient<PackageExplorerCommand>();
+		services.AddTransient<IPackageExplorerClient, PackageExplorerClient>();
 		services.AddTransient<RemovePackageDependencyCommand>();
 		services.AddTransient<CreatePackageCommand>();
 		services.AddTransient<PackageDependencyManager>();

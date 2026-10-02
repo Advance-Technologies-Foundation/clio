@@ -181,6 +181,20 @@ internal class ServiceUrlBuilderCommandTests
 
 	public static IEnumerable<TestCaseDataWithKnownRoutes> TestCasesWithKnownRoute {
 		get {
+			yield return new TestCaseDataWithKnownRoutes(true, "https://localhost", ServiceUrlBuilder.KnownRoute.DependencyCapabilities, "https://localhost/ServiceModel/PackageService.svc/dependencies/capabilities");
+			yield return new TestCaseDataWithKnownRoutes(false, "https://localhost", ServiceUrlBuilder.KnownRoute.DependencyCapabilities, "https://localhost/0/ServiceModel/PackageService.svc/dependencies/capabilities");
+			yield return new TestCaseDataWithKnownRoutes(true, "https://localhost", ServiceUrlBuilder.KnownRoute.DependencyGraphV1, "https://localhost/ServiceModel/PackageService.svc/dependencies/v1/graph");
+			yield return new TestCaseDataWithKnownRoutes(false, "https://localhost", ServiceUrlBuilder.KnownRoute.DependencyGraphV1, "https://localhost/0/ServiceModel/PackageService.svc/dependencies/v1/graph");
+			yield return new TestCaseDataWithKnownRoutes(true, "https://localhost", ServiceUrlBuilder.KnownRoute.DependencySearchV1, "https://localhost/ServiceModel/PackageService.svc/dependencies/v1/schemas/search");
+			yield return new TestCaseDataWithKnownRoutes(false, "https://localhost", ServiceUrlBuilder.KnownRoute.DependencySearchV1, "https://localhost/0/ServiceModel/PackageService.svc/dependencies/v1/schemas/search");
+			yield return new TestCaseDataWithKnownRoutes(true, "https://localhost", ServiceUrlBuilder.KnownRoute.DependencyResolveV1, "https://localhost/ServiceModel/PackageService.svc/dependencies/v1/schemas/resolve");
+			yield return new TestCaseDataWithKnownRoutes(false, "https://localhost", ServiceUrlBuilder.KnownRoute.DependencyResolveV1, "https://localhost/0/ServiceModel/PackageService.svc/dependencies/v1/schemas/resolve");
+			yield return new TestCaseDataWithKnownRoutes(true, "https://localhost", ServiceUrlBuilder.KnownRoute.DependencyReasonsV1, "https://localhost/ServiceModel/PackageService.svc/dependencies/v1/reasons");
+			yield return new TestCaseDataWithKnownRoutes(false, "https://localhost", ServiceUrlBuilder.KnownRoute.DependencyReasonsV1, "https://localhost/0/ServiceModel/PackageService.svc/dependencies/v1/reasons");
+			yield return new TestCaseDataWithKnownRoutes(true, "https://localhost", ServiceUrlBuilder.KnownRoute.DependencyDropV1, "https://localhost/ServiceModel/PackageService.svc/dependencies/v1/drop-impact");
+			yield return new TestCaseDataWithKnownRoutes(false, "https://localhost", ServiceUrlBuilder.KnownRoute.DependencyDropV1, "https://localhost/0/ServiceModel/PackageService.svc/dependencies/v1/drop-impact");
+			yield return new TestCaseDataWithKnownRoutes(true, "https://localhost", ServiceUrlBuilder.KnownRoute.DependencyAddV1, "https://localhost/ServiceModel/PackageService.svc/dependencies/v1/add-impact");
+			yield return new TestCaseDataWithKnownRoutes(false, "https://localhost", ServiceUrlBuilder.KnownRoute.DependencyAddV1, "https://localhost/0/ServiceModel/PackageService.svc/dependencies/v1/add-impact");
 			yield return new(false, "https://localhost", ServiceUrlBuilder.KnownRoute.GetSqlScriptSchema, "https://localhost/0/ServiceModel/SqlScriptSchemaDesignerService.svc/GetSchema");
 			yield return new(true, "https://localhost", ServiceUrlBuilder.KnownRoute.GetSqlScriptSchema, "https://localhost/ServiceModel/SqlScriptSchemaDesignerService.svc/GetSchema");
 			yield return new(false, "https://localhost", ServiceUrlBuilder.KnownRoute.SaveSqlScriptSchema, "https://localhost/0/ServiceModel/SqlScriptSchemaDesignerService.svc/SaveSchema");
