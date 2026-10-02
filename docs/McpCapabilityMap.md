@@ -391,6 +391,9 @@ This area gives the AI a clean application-level view of the platform.
   Serialized per environment + application in-process; a detail-less `InsertQuery failed` is classified `contention` (parallel creation OR a server-side rejection — the server gives no detail to tell them apart) and auto-retried once with verification (create sections sequentially; a persistent single-create failure is server-side — ENG-93089).
 - `update-app-section`
   Update metadata (caption, description, icon) of an existing section; returns before/after readback.
+  `create-app`, `create-app-section` and `update-app-section` then clear the menu cache of clio's own Creatio session (a failed clear is a `warnings` entry) and return `next-step`: the `ConfigurationDataService/GetData` call to run inside a browser tab that still shows the old menu after a reload, because a tab refreshes only when its websocket was connected at the moment of the change.
+- `reset-navigation-cache`
+  Clear the menu cache (module structure, workplaces, sections) of clio's own session and bump the client cache hash, for example after direct `SysModule` / `SysModuleInWorkplace` writes. Does not refresh other sessions or browser tabs; returns `success`, `error`, and the same `next-step`. Not destructive, idempotent; never a substitute for `clear-redis-db-by-environment`.
 - `delete-app-section`
   Remove a section from an existing application; returns the deleted-section readback.
 - `list-app-sections`

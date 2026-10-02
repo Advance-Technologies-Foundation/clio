@@ -297,6 +297,8 @@ public sealed class ApplicationSectionUpdateToolE2ETests {
 			because: "the post-update section must reflect the new caption that update-app-section was asked to apply");
 		updateResponse.Section.Description.Should().Be(updatedDescription,
 			because: "the post-update section must reflect the new description that update-app-section was asked to apply");
+		updateResponse.NextStep.Should().Contain("ConfigurationDataService/GetData",
+			because: "a successful update must tell the caller how to refresh an open browser tab that still shows the old caption");
 	}
 
 	[Category("McpE2E.Sandbox")]

@@ -434,7 +434,10 @@ public sealed class ApplicationSectionCreateService(
 		// The section insert clears no server cache, so the session that sent it would keep serving a menu
 		// without the new section (ENG-101680).
 		string? cacheResetWarning = navigationCacheResetter.TryReset(client, environmentSettings);
-		return cacheResetWarning is null ? created : created with { Warnings = [cacheResetWarning] };
+		string nextStep = navigationCacheResetter.BuildBrowserSessionNote(environmentSettings);
+		return cacheResetWarning is null
+			? created with { NextStep = nextStep }
+			: created with { Warnings = [cacheResetWarning], NextStep = nextStep };
 	}
 
 	/// <summary>
@@ -1899,6 +1902,10 @@ public sealed class CreateAppSectionCommand(
 				logger.WriteWarning(warning);
 			}
 
+			if (!string.IsNullOrWhiteSpace(result.NextStep)) {
+				logger.WriteInfo(result.NextStep);
+			}
+
 			logger.WriteInfo(JsonSerializer.Serialize(result));
 			return 0;
 		} catch (ApplicationSectionCreateException exception) {
@@ -1946,6 +1953,7 @@ public sealed record ApplicationSectionCreateRequest(
 /// <param name="Pages">Pages created by the section flow when available.</param>
 /// <param name="Warnings">Non-fatal findings, for example a failed navigation cache reset; <see langword="null"/>
 /// when there are none.</param>
+/// <param name="NextStep">What the caller does next when an open browser tab does not show the new section.</param>
 public sealed record ApplicationSectionCreateResult(
 	string PackageUId,
 	string PackageName,
@@ -1956,7 +1964,8 @@ public sealed record ApplicationSectionCreateResult(
 	ApplicationSectionInfoResult Section,
 	ApplicationEntityInfoResult? Entity,
 	IReadOnlyList<PageListItem> Pages,
-	IReadOnlyList<string>? Warnings = null);
+	IReadOnlyList<string>? Warnings = null,
+	string? NextStep = null);
 
 /// <summary>
 /// Structured section metadata returned by existing-app section creation.

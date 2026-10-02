@@ -253,7 +253,8 @@ public sealed class ApplicationSectionUpdateService(
 			request.Caption is not null ? targetCulture : null,
 			captionCultureValue,
 			plan.PreservedCultures,
-			warnings);
+			warnings,
+			navigationCacheResetter.BuildBrowserSessionNote(environmentSettings));
 	}
 
 	private string ResolveTargetCulture(
@@ -545,6 +546,10 @@ public sealed class UpdateAppSectionCommand(
 				logger.WriteWarning(warning);
 			}
 
+			if (!string.IsNullOrWhiteSpace(result.NextStep)) {
+				logger.WriteInfo(result.NextStep);
+			}
+
 			logger.WriteInfo(JsonSerializer.Serialize(result));
 			return 0;
 		} catch (Exception exception) {
@@ -591,6 +596,7 @@ public sealed record ApplicationSectionUpdateRequest(
 /// kept or written back; can include <paramref name="CaptionCulture"/> when its description was kept.</param>
 /// <param name="Warnings">Non-fatal findings: inactive culture, stale package data binding, failed navigation
 /// cache reset.</param>
+/// <param name="NextStep">What the caller does next when an open browser tab does not show the change.</param>
 public sealed record ApplicationSectionUpdateResult(
 	string PackageUId,
 	string PackageName,
@@ -603,4 +609,5 @@ public sealed record ApplicationSectionUpdateResult(
 	string? CaptionCulture = null,
 	string? CaptionCultureValue = null,
 	IReadOnlyList<string>? PreservedCultures = null,
-	IReadOnlyList<string>? Warnings = null);
+	IReadOnlyList<string>? Warnings = null,
+	string? NextStep = null);

@@ -268,6 +268,8 @@ public sealed class ApplicationSectionUpdateServiceTests {
 		_navigationCacheResetter.Received(1).TryReset(_applicationClient, _environmentSettings);
 		result.Warnings.Should().BeEmpty(
 			because: "a successful navigation cache reset is not a finding worth reporting");
+		result.NextStep.Should().Be(NavigationCacheResetterSubstitute.BrowserSessionNote,
+			because: "the caller must learn how to refresh an open browser tab that missed the websocket message");
 	}
 
 	[Test]

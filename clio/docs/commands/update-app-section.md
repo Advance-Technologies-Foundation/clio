@@ -75,6 +75,7 @@ The command prints structured JSON that includes:
 - `CaptionCulture` / `CaptionCultureValue` — the culture the caption was written in and the stored value
 - `PreservedCultures` — the non-default languages whose other stored values (title, description) were kept; it can include `CaptionCulture` when its description was kept
 - `Warnings` — for example an inactive culture, a package data binding that could not be re-saved, or a menu cache that could not be cleared
+- `NextStep` — how to refresh an open browser tab that still shows the old menu after a reload
 
 ## Example
 
@@ -103,7 +104,7 @@ add the Spanish section title; the English and other titles are kept
 - `--caption-culture` is looked up in the environment's cultures (`SysCulture`) only, case-insensitively; the stored spelling is used (`de-de` → `de-DE`).
 - When titles in other languages are written back and the connected user's profile language (other than `en-US`) has no title of its own, Creatio requires one in the same write, so that language gets the fallback (`en-US`) title. The output carries a warning naming the language and the text; translate it with `--caption --caption-culture <profile language>`.
 - If writing the other languages back fails after the section update deleted them, the command fails and the error lists every value it read before the update (culture → title, description, module header), so they can be re-sent.
-- After the update, clio calls `ConfigurationDataService/GetData` with `forceGet = true` in the same Creatio session. That clears the session's cached module structure and its workplace and section caches, so the new caption and icon appear in the menu that session reads without clearing Redis or logging anyone out. Open browser tabs clear their own cache when the server notifies them; other API sessions keep the old menu until they clear it or their session ends. A failed clear does not fail the command: it is reported as a warning (`Warnings` in the output).
+- After the update, clio calls `ConfigurationDataService/GetData` with `forceGet = true` in the same Creatio session. That clears the session's cached module structure and its workplace and section caches, so the new caption and icon appear in the menu that session reads without clearing Redis or logging anyone out. Other sessions keep the old menu: an open browser tab clears its own cache only when it receives the `ConfigurationStructureChanged` websocket message, so a tab that was not connected at that moment keeps the old menu across reloads, and other API sessions keep it until they clear it or their session ends. On success the command prints, and the MCP response carries as `next-step`, the call that fixes such a tab: run `fetch('<GetData URL>', {method:'POST', headers:{'Content-Type':'application/json', BPMCSRF:document.cookie.match(/BPMCSRF=([^;]+)/)[1]}, body:'true'})` in the developer console of that tab, then reload it; the URL is the environment's own `ConfigurationDataService/GetData` URL. Never clear Redis for this: it logs out every user. [`reset-navigation-cache`](reset-navigation-cache.md) repeats the clear for clio's session. A failed clear does not fail the command: it is reported as a warning (`Warnings` in the output).
 
 ## Reporting Bugs
 

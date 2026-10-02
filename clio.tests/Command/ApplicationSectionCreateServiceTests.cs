@@ -819,6 +819,8 @@ public sealed class ApplicationSectionCreateServiceTests {
 		_navigationCacheResetter.Received(1).TryReset(_applicationClient, _environmentSettings);
 		result.Warnings.Should().BeNull(
 			because: "a successful navigation cache reset is not a finding worth reporting");
+		result.NextStep.Should().Be(NavigationCacheResetterSubstitute.BrowserSessionNote,
+			because: "the caller must learn how to refresh an open browser tab that missed the websocket message");
 	}
 
 	[Test]
@@ -860,6 +862,7 @@ public sealed class ApplicationSectionCreateServiceTests {
 		action.Should().Throw<InvalidOperationException>(
 			because: "a rejected section insert must still fail the command");
 		_navigationCacheResetter.DidNotReceiveWithAnyArgs().TryReset(default!, default!);
+		_navigationCacheResetter.DidNotReceiveWithAnyArgs().BuildBrowserSessionNote(default!);
 	}
 
 	[Test]

@@ -100,6 +100,7 @@ The command prints structured JSON that includes:
 - resolved entity summary when available
 - created page summaries when available
 - `Warnings` when the menu cache of clio's session could not be cleared
+- `NextStep` — how to refresh an open browser tab that still shows the old menu after a reload
 
 ## Example
 
@@ -132,7 +133,7 @@ create a web-only section with automatically resolved icon metadata
   when it does not already start with it, and the prefix casing is always
   canonicalized (for example --code usrContacts with prefix Usr gives
   UsrContacts). The code must contain only Latin letters, digits, or underscore.
-- After the section is created, clio calls `ConfigurationDataService/GetData` with `forceGet = true` in the same Creatio session. That clears the session's cached module structure and its workplace and section caches, so the new section appears in the menu that session reads without clearing Redis or logging anyone out. Open browser tabs clear their own cache when the server notifies them; other API sessions keep the old menu until they clear it or their session ends. A failed clear does not fail the command: it is reported as a warning (`Warnings` in the output, `warnings` in the MCP response).
+- After the section is created, clio calls `ConfigurationDataService/GetData` with `forceGet = true` in the same Creatio session. That clears the session's cached module structure and its workplace and section caches, so the new section appears in the menu that session reads without clearing Redis or logging anyone out. Other sessions keep the old menu: an open browser tab clears its own cache only when it receives the `ConfigurationStructureChanged` websocket message, so a tab that was not connected at that moment keeps the old menu across reloads, and other API sessions keep it until they clear it or their session ends. On success the command prints, and the MCP response carries as `next-step`, the call that fixes such a tab: run `fetch('<GetData URL>', {method:'POST', headers:{'Content-Type':'application/json', BPMCSRF:document.cookie.match(/BPMCSRF=([^;]+)/)[1]}, body:'true'})` in the developer console of that tab, then reload it; the URL is the environment's own `ConfigurationDataService/GetData` URL. Never clear Redis for this: it logs out every user. [`reset-navigation-cache`](reset-navigation-cache.md) repeats the clear for clio's session. A failed clear does not fail the command: it is reported as a warning (`Warnings` in the output, `warnings` in the MCP response).
 
 ## Timeout budget and failure classification
 

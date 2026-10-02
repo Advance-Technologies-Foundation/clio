@@ -182,6 +182,7 @@ Commands:
   remove-data-binding-row-db                  Remove a row from a DB-first package data binding
   remove-knowledge-source                     Remove one configured knowledge source and its managed cache
   remove-package-dependency                   Remove one or more package dependencies from a package, remove-pkg-dep, remove-pkg-dependency
+  reset-navigation-cache                      Clear the menu cache (module structure, workplaces, sections) of clio's own Creatio session
   restart-web-app                             Restart a web application, restart
   restore-configuration                       Restore the configuration from the last backup, rc, restore
   restore-db                                  Restore a database backup, rdb

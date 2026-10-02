@@ -400,6 +400,7 @@ internal sealed class CommandHelpCatalog {
 			"open-web-app",
 			"ping-app",
 			"reg-web-app",
+			"reset-navigation-cache",
 			"set-dev-mode",
 			"set-feature",
 			"set-syssetting",

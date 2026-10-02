@@ -140,6 +140,10 @@ public sealed class CreateAppCommand(
 				logger.WriteWarning(warning);
 			}
 
+			if (!string.IsNullOrWhiteSpace(result.NextStep)) {
+				logger.WriteInfo(result.NextStep);
+			}
+
 			return 0;
 		} catch (Exception exception) {
 			logger.WriteError(exception.Message);

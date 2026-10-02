@@ -5,6 +5,7 @@ applies-to:
   - clio/Command/ApplicationCreateService.cs
   - clio/Command/ApplicationSectionCreateCommand.cs
   - clio/Command/ApplicationSectionUpdateCommand.cs
+  - clio/Command/ResetNavigationCacheCommand.cs
 ticket: ENG-101680
 date: 2026-10-02
 ---
@@ -23,7 +24,11 @@ keyed by user name + client IP + User-Agent under the `PreventMassSessionCheckIn
 `PreventMassSessionCheckCount` system settings.
 
 **Why it is this way** — the Freedom UI Shell clears its own session when the server broadcasts
-`ConfigurationStructureChanged` over the websocket; clio has no websocket. The platform feature
+`ConfigurationStructureChanged` over the websocket, by calling `GetData(true)` in that tab's session; clio
+has no websocket. A browser tab whose websocket was not connected at the moment of the change never gets the
+message, so its session keeps the old menu across reloads. Running the same `GetData` call with body `true`
+from inside that tab (its own cookies and `BPMCSRF` header), then reloading, fixes it; the three commands and
+`reset-navigation-cache` return that call as `next-step`. The platform feature
 `EnableReloadAppCacheForWorkplacesByDefault` that would reload workplaces on every read is off in every
 product. The cache is in Redis, so an application restart does not clear it.
 

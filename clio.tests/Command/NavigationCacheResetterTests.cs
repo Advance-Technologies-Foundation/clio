@@ -90,4 +90,40 @@ public sealed class NavigationCacheResetterTests {
 		warning.Should().Be(NavigationCacheResetter.WarningPrefix + "connection reset",
 			because: "the transport failure must be reported as a warning with its message");
 	}
+
+	[Test]
+	[Description("The browser-session note names the environment's own GetData URL, the BPMCSRF header read from the tab's cookie, the body true, and the warning not to clear Redis.")]
+	public void BuildBrowserSessionNote_Should_Name_The_Environment_GetData_Url() {
+		// Act
+		string note = _sut.BuildBrowserSessionNote(_environmentSettings);
+
+		// Assert
+		note.Should().Contain($"fetch('{GetDataUrl}'",
+			because: "the caller must be able to paste the call into the tab without looking the URL up");
+		note.Should().Contain("BPMCSRF:document.cookie.match(/BPMCSRF=([^;]+)/)[1]",
+			because: "Creatio rejects a POST from the tab without the anti-forgery header taken from its cookie");
+		note.Should().Contain("body:'true'",
+			because: "forceGet=true is the branch that clears the tab session's cache");
+		note.Should().Contain("Do not clear Redis",
+			because: "clearing Redis logs out every user and must not be the fix for a stale menu");
+	}
+
+	[TestCase(true, "/rest/ConfigurationDataService/GetData",
+		TestName = "BuildBrowserSessionNote_Should_Use_Root_Relative_Path_When_Uri_Is_Not_Absolute_On_NetCore")]
+	[TestCase(false, "/0/rest/ConfigurationDataService/GetData",
+		TestName = "BuildBrowserSessionNote_Should_Use_Root_Relative_Path_When_Uri_Is_Not_Absolute_On_NetFramework")]
+	[Description("When the environment URI cannot be turned into an absolute URL the note still names the GetData path relative to the site root, with the 0/ prefix on .NET Framework.")]
+	public void BuildBrowserSessionNote_Should_Fall_Back_To_Root_Relative_Path(bool isNetCore, string expectedPath) {
+		// Arrange
+		EnvironmentSettings settings = new() { Uri = "not a uri", IsNetCore = isNetCore };
+		_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetConfigurationData, settings)
+			.Throws(new ArgumentException("Misconfigured Url"));
+
+		// Act
+		string note = _sut.BuildBrowserSessionNote(settings);
+
+		// Assert
+		note.Should().Contain($"fetch('{expectedPath}'",
+			because: "a note must be returned even when the absolute URL cannot be built");
+	}
 }
