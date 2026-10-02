@@ -23,6 +23,30 @@ namespace Clio.Tests.Command.McpServer;
 [Property("Module", "McpServer")]
 public sealed class ToolContractGetToolTests {
 
+	[TestCase(ApplicationCreateTool.ApplicationCreateToolName)]
+	[TestCase(ApplicationSectionCreateTool.ApplicationSectionCreateToolName)]
+	[TestCase(ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName)]
+	[Category("Unit")]
+	[Description("Tells agents in the curated contracts of the menu-changing tools that only clio's session is cleared and that next-step carries the in-tab call for a stale browser tab.")]
+	public void MenuChangingToolContracts_ShouldAnnounceNextStepForStaleBrowserTabs(string toolName) {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([toolName]));
+
+		// Assert
+		ToolContractDefinition contract = result.Tools!.Single();
+		contract.Description.Should().Contain("clio's own Creatio session",
+			because: "the agent must know which session the tool refreshes");
+		contract.Description.Should().Contain("websocket",
+			because: "the agent must know why an open browser tab can keep the old menu");
+		contract.Description.Should().Contain("Never clear Redis",
+			because: "clearing Redis logs out every user and is not the fix for a stale menu");
+		contract.OutputContract.Fields.Select(field => field.Name).Should().Contain(["warnings", "next-step"],
+			because: "both fields are returned by the tool and the curated contract is the only one agents read");
+	}
+
 	[Test]
 	[Category("Unit")]
 	[Description("Tells agents in the curated push-workspace contract that a newly pushed package comes out locked and points them to create-package.")]

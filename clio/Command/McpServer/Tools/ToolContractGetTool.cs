@@ -723,6 +723,21 @@ internal static class ToolContractCatalog {
 	private const string CorrelationIdFieldName = "correlation-id";
 	private const string CaptionCultureFieldName = "caption-culture";
 	private const string WarningsFieldName = "warnings";
+	private const string NextStepFieldName = "next-step";
+
+	private const string NavigationCacheContractNote =
+		"After the change it clears the menu cache of clio's own Creatio session; a failed clear is a `warnings` " +
+		"entry, not a failure. Other sessions keep the old menu: an open browser tab refreshes only if its " +
+		"websocket was connected at the moment of the change, so a success returns `next-step` with the call to " +
+		"run inside a tab that still shows the old menu after a reload. Never clear Redis for this; it logs out " +
+		"every user.";
+
+	private const string NavigationCacheWarningsDescription =
+		"Non-fatal findings, for example a menu cache of clio's session that could not be cleared.";
+
+	private const string NavigationCacheNextStepDescription =
+		"Present on success: how to refresh an open browser tab that still shows the old menu after a reload " +
+		"(a fetch to ConfigurationDataService/GetData with body true, run in that tab, then a reload).";
 	private const string ExampleOrdersSectionCode = "UsrOrders";
 	private const string ExampleTaskAppFormPageSchemaName = "UsrTaskApp_FormPage";
 	private const string CultureFieldName = "culture";
@@ -1783,7 +1798,8 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildApplicationCreate() {
 		return new ToolContractDefinition(
 			ApplicationCreateTool.ApplicationCreateToolName,
-			"Creates a Creatio application and returns installed application identity plus the created application context envelope and Data Forge enrichment diagnostics.",
+			"Creates a Creatio application and returns installed application identity plus the created application context envelope and Data Forge enrichment diagnostics. " +
+			NavigationCacheContractNote,
 			new ToolInputSchemaContract(
 				["name", "code", TemplateCodeFieldName],
 				[
@@ -1832,7 +1848,9 @@ internal static class ToolContractCatalog {
 				Field(PagesFieldName, ArrayType, "Primary-package Freedom UI pages using list-pages item shape (`schema-name`, `uId`, `packageName`, `parentSchemaName`)."),
 				Field("schema-name-prefix", StringType, "Active SchemaNamePrefix resolved from the environment. Use as the prefix for all subsequent custom schema codes (lookups, columns, supporting entities). Empty string means no prefix is configured."),
 				Field("dataforge", ObjectType, "Optional Data Forge enrichment diagnostics including health/status/coverage, warnings, and a compact context-summary."),
-				Field(ErrorFieldName, StringType, FailureMessageDescription)
+				Field(ErrorFieldName, StringType, FailureMessageDescription),
+				Field(WarningsFieldName, ArrayType, NavigationCacheWarningsDescription),
+				Field(NextStepFieldName, StringType, NavigationCacheNextStepDescription)
 			),
 			CommonErrorContract,
 			[
@@ -1886,7 +1904,8 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildApplicationSectionCreate() {
 		return new ToolContractDefinition(
 			ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
-			"Creates a section inside an existing installed application and returns structured section, entity, and page readback data.",
+			"Creates a section inside an existing installed application and returns structured section, entity, and page readback data. " +
+			NavigationCacheContractNote,
 			new ToolInputSchemaContract(
 				[ApplicationCodeFieldName, CaptionFieldName],
 				[
@@ -1933,7 +1952,9 @@ internal static class ToolContractCatalog {
 				Field(ErrorFieldName, StringType, FailureMessageDescription),
 				Field("error-class", StringType, "Failure classification, present on classified errors only: 'transport' (request never reached Creatio — retry is safe), 'creatio-timeout' (no response within the budget — side effects unknown, verify with list-app-sections before retrying), 'contention' (insert aborted without a detailed reason — may be parallel creation in one app OR a server-side rejection unrelated to concurrency; no section created (verified); run list-app-sections, create sections one at a time if you were creating them concurrently (clio serializes and auto-retries once), and if a single sequential create still fails treat it as server-side), 'server-error' (Creatio rejected the operation with a real, detailed reason — fix inputs or server state first)."),
 				Field("section-created", StringType, "Side-effect verification outcome on classified errors: 'true', 'false', 'unknown', or 'in-progress'. 'in-progress' is not a verification outcome — it means the section is still being created server-side after the MCP response deadline returned early; do NOT retry create-app-section, poll list-app-sections / get-app-info until the section appears."),
-				Field("retry-guidance", StringType, "Actionable next step for the classified failure. Follow it instead of blind retries.")
+				Field("retry-guidance", StringType, "Actionable next step for the classified failure. Follow it instead of blind retries."),
+				Field(WarningsFieldName, ArrayType, NavigationCacheWarningsDescription),
+				Field(NextStepFieldName, StringType, NavigationCacheNextStepDescription)
 			),
 			CommonErrorContract,
 			[
@@ -1982,7 +2003,8 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildApplicationSectionUpdate() {
 		return new ToolContractDefinition(
 			ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName,
-			"Updates metadata of an existing installed application section and returns structured section readback data before and after the update.",
+			"Updates metadata of an existing installed application section and returns structured section readback data before and after the update. " +
+			NavigationCacheContractNote,
 			new ToolInputSchemaContract(
 				[ApplicationCodeFieldName, SectionCodeFieldName],
 				[
@@ -2030,7 +2052,8 @@ internal static class ToolContractCatalog {
 				Field(CaptionCultureFieldName, StringType, "Culture the caption was written in; absent when no caption was sent."),
 				Field("caption-culture-value", StringType, "The stored section caption in caption-culture."),
 				Field("preserved-cultures", ArrayType, "Non-default cultures whose other stored section values (title, description) were kept; can include the target culture when its description was kept."),
-				Field(WarningsFieldName, ArrayType, "Non-fatal findings, for example an inactive culture or a package data binding that could not be refreshed.")
+				Field(WarningsFieldName, ArrayType, "Non-fatal findings, for example an inactive culture, a package data binding that could not be refreshed, or a menu cache of clio's session that could not be cleared."),
+				Field(NextStepFieldName, StringType, NavigationCacheNextStepDescription)
 			),
 			CommonErrorContract,
 			[
