@@ -55,8 +55,8 @@ public sealed class ScriptTaskElementToolE2ETests {
 	/// <summary>The first CrtProcessBuilder whose activation warns that a version with C# must be compiled.</summary>
 	private const string MinimumActivationWarningPackageVersion = "1.6.6.51";
 
-	// The first cut that names a multi-line verbatim string and refuses a C# keyword as a script task's name.
-	private const string MinimumQaRoundTwoPackageVersion = "1.6.6.55";
+	/// <summary>The first cut that names a multi-line verbatim string and refuses a C# keyword as a script task's name.</summary>
+	private const string MinimumQaRoundTwoPackageVersion = "1.6.6.56";
 
 	private const string SetActiveToolName = SetActiveProcessVersionTool.SetActiveProcessVersionToolName;
 

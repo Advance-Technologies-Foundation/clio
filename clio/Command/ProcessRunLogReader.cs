@@ -18,7 +18,7 @@ public interface IProcessRunLogReader {
 	/// <returns>The first non-empty line, or <see langword="null"/> when the run logged no error.</returns>
 	/// <remarks>
 	/// RunProcess answers a run whose script task threw with only "check the process log": the platform swallows
-	/// the element's exception before it builds the answer (<c>ProcessActivity.HandleExecutionError</c>) and leaves
+	/// the element's exception before it builds the answer (<c>ProcessFlowElement.HandleExecutionError</c>) and leaves
 	/// <c>errorCode</c> empty, but it writes <c>exception.ToString()</c> to the run's log row, synchronously,
 	/// before RunProcess returns. The rest of that text is the stack trace.
 	/// </remarks>
@@ -32,6 +32,10 @@ internal sealed class ProcessRunLogReader(IApplicationClient applicationClient, 
 	// DataValueType 0 is Guid, as in ClassicEntitySchemaQuery's UId filters.
 	private const int GuidDataValueType = 0;
 
+	// Bounded, once: the read decorates a failure already reported, so a hanging DataService must not turn that
+	// answer into a still-running one past the MCP deadline.
+	private const int ReadTimeoutMs = 30_000;
+
 	/// <inheritdoc />
 	public string ReadErrorSummary(Guid processId) {
 		JObject query = ClassicEntitySchemaQuery.Query("SysProcessLog",
@@ -39,7 +43,10 @@ internal sealed class ProcessRunLogReader(IApplicationClient applicationClient, 
 			ClassicEntitySchemaQuery.Group(
 				("byId", ClassicEntitySchemaQuery.Eq("Id", processId.ToString(), GuidDataValueType))),
 			1);
-		JArray rows = ClassicEntitySchemaQuery.Select(applicationClient, serviceUrlBuilder, query);
+		string url = serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select);
+		string json = applicationClient.ExecutePostRequest(url, query.ToString(Newtonsoft.Json.Formatting.None),
+			ReadTimeoutMs, maxAttempts: 1);
+		JArray rows = DataServiceSelectResponse.ReadRows(json);
 		string text = rows.FirstOrDefault()?["ErrorDescription"]?.ToString();
 		if (string.IsNullOrWhiteSpace(text)) {
 			return null;

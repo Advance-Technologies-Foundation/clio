@@ -426,7 +426,7 @@ public sealed class RunProcessToolTests {
 		launched.Should().BeFalse(because: "the run failed");
 		response.Error.Should().Contain("Term must be positive",
 				because: "the exception the script threw is what the caller has to fix")
-			.And.Contain("[untrusted-source-text begin]", "the logged text is the server's and is fenced");
+			.And.Contain("reports: [untrusted-source-text begin]", "the logged text is the server's and is fenced");
 	}
 
 	[Test]
@@ -449,6 +449,10 @@ public sealed class RunProcessToolTests {
 			because: "the platform's own answer stays when nothing better could be read");
 		response.Warnings.Should().Contain(warning => warning.Contains("0f5e3a2a-2c8f-4f1e-9d0b-6d4b2f1a7c31"),
 			because: "the caller is told which run's log holds the error");
+		string.Join(" ", response.Warnings).Should().NotContain("Access denied",
+			because: "the failed read's own text is the server's and stays out of the response");
+		response.Error.Should().NotContain("Access denied",
+			because: "the failed read's own text is the server's and stays out of the response");
 	}
 
 	[Test]
@@ -471,15 +475,20 @@ public sealed class RunProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The same hint is given when the platform rethrew the KeyNotFoundException at start-up and returned no process id (UseOldStartupExceptionHandling).")]
-	public void BuildRefusalMessage_Should_Point_To_A_Compile_For_A_Missing_Compiled_Method() {
+	[Description("When the platform rethrew the KeyNotFoundException and returned no process id (UseOldStartupExceptionHandling), the answer is a FAILED run with the compile hint, not 'not started': the exception is thrown when the flow reaches the script task, after the elements before it ran.")]
+	public void BuildResponse_Should_Report_A_Failed_Run_For_A_Rethrown_Missing_Compiled_Method() {
+		// Arrange
+		ProcessStartResponse platform = PlatformResponse(
+			"""{"processId":"00000000-0000-0000-0000-000000000000","processStatus":0,"success":false,"errorInfo":{"errorCode":"KeyNotFoundException","message":"The given key was not present in the dictionary."}}""");
+
 		// Act
-		string message = RunProcessCommand.BuildRefusalMessage(ProcessCode, "KeyNotFoundException",
-			"The given key was not present in the dictionary.");
+		RunProcessResponse response = RunProcessCommand.BuildResponse(platform, ProcessCode);
 
 		// Assert
-		message.Should().Contain("compile-creatio with process-name",
-			because: "the cause and the fix are the same as for a failed run");
+		response.Status.Should().Be("error",
+			because: "a run that reached the script task started, so 'not-started' would invite a re-run of what already ran");
+		response.Error.Should().Contain("compile-creatio with process-name",
+			because: "the cause and the fix are the same as for a failed run that returned an id");
 	}
 
 	[Test]
