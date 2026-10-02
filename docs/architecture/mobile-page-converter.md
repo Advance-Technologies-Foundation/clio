@@ -1,7 +1,7 @@
 ﻿# Mobile page converter
 
-Tool `get-mobile-page-conversion-guide` · `[FeatureToggle("mobile-page-converter")]` (off by default) ·
-`clio/Command/McpServer/Tools/MobilePageConverter/`
+Tool `get-mobile-page-conversion-guide` · generally available, no feature flag · long-tail (reached via
+`clio-run`, discovered via `get-tool-contract`) · `clio/Command/McpServer/Tools/MobilePageConverter/`
 
 Turns a Freedom UI **web** page into the data an LLM caller needs to build the Freedom UI **mobile** page. Read-only:
 writes no page, no Creatio object, no file. Where this file and the code disagree, the code wins.
@@ -395,7 +395,7 @@ validated on load, and a refusal sends the whole document to the bundled rules.
 | `components[]` | `filters`, `path?`, `viewConfigTemplates` | Type conversion by filter + value skeleton (`ResolveTemplateTargetType` reads `viewConfigTemplates[].value.type`); `path` scopes to an ancestor |
 | `requests[]` | `web`, `mobile`, `category` | Action-binding map (§7); only supported requests are listed |
 | `componentPropertyOverrides[]` | `filters`, `values`, `mergeNestedObjects` | Standards stamped on inserted elements (`normalizations`) |
-| `excludedComponents[]` | `filters{type, parentType, propertiesContainerName?}` | Positional bans (`drop-excluded-by-rule`); a filter missing `type` or `parentType` is unusable and skipped |
+| `excludedComponents[]` | `filters{type?, parentType, propertiesContainerName?, exceptTypes?, childSlots?}` | Positional bans (`drop-excluded-by-rule`); a filter with no `type` and a non-empty `exceptTypes` is an allow-list that bans every other type and must name `propertiesContainerName`; `childSlots` limits the verbatim strip to those child-component properties; a filter missing `parentType`, a typeless filter without `exceptTypes`, or an allow-list without a slot is unusable and skipped |
 | `emptyContainerRemoval.removableTypes` | string[] | Closed set of container types removable when empty |
 | `contentContainerTypes` | string[] | Container types treated as content |
 | `nonConvertingScopeContainers` | string[] | Kept in the tree as `path` ancestors, emit no element (`drop-non-converting-scope`) |

@@ -7,6 +7,7 @@ using Clio.Common;
 using Clio.Tests.Command;
 using Clio.Tests.Extensions;
 using Clio.Utilities;
+using CommandLine.Text;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
@@ -230,6 +231,52 @@ internal class CommonProgramTest : BaseClioModuleTests{
 	}
 
 	[Test]
+	[Description("For an unknown verb the parser's own error text, buffered during the parse, is flushed to the error writer (ENG-101526).")]
+	public void ExecuteCommands_WithUnknownVerb_ShouldFlushLibraryErrorToErrorWriter() {
+		// Arrange
+		ThreadSafeStringWriter standardOutput = new();
+		ThreadSafeStringWriter errorOutput = new();
+		Console.SetOut(standardOutput);
+		Console.SetError(errorOutput);
+		string[] args = ["get-list"];
+
+		// Act
+		int exitCode = Program.ExecuteCommands(args);
+		string error = errorOutput.ToString();
+
+		// Assert
+		exitCode.Should().Be(1, because: "an unknown command must still fail the invocation");
+		error.Should().Contain("Verb 'get-list' is not recognized.",
+			because: "the buffered library output is the only place that names the unrecognized verb, so it must reach stderr");
+		standardOutput.ToString().Should().NotContain("Verb 'get-list' is not recognized.",
+			because: "the library error text belongs to the error writer, not to standard output");
+	}
+
+	[Test]
+	[Description("For '<verb> --version' the parser's version text, buffered during the parse, is flushed to the error writer (ENG-101526).")]
+	public void ExecuteCommands_WithVerbVersion_ShouldFlushLibraryVersionToErrorWriter() {
+		// Arrange
+		ThreadSafeStringWriter standardOutput = new();
+		ThreadSafeStringWriter errorOutput = new();
+		Console.SetOut(standardOutput);
+		Console.SetError(errorOutput);
+		string[] args = ["healthcheck", "--version"];
+
+		// Act
+		int exitCode = Program.ExecuteCommands(args);
+		string error = errorOutput.ToString();
+
+		// Assert
+		exitCode.Should().Be(0, because: "HandleParseError treats a VersionRequestedError as a request, not a failure");
+		error.Trim().Should().Be(HeadingInfo.Default.ToString(),
+			because: "the exact version line the library writes into the buffer (entry-assembly title and version) must be flushed to stderr, as in released clio");
+		standardOutput.ToString().Should().BeEmpty(
+			because: "the buffered library output is flushed to the error writer only");
+		error.Should().NotContain("See command help:",
+			because: "a version request is not an option error, so the short parse-error form must not replace it");
+	}
+
+	[Test]
 	[Description("Prints up to ten alphabetically sorted suggestions and help hints for an unknown top-level command.")]
 	public void ExecuteCommands_WithUnknownVerb_ShouldPrintSuggestionsAndKeepExitCodeOne() {
 		ThreadSafeStringWriter consoleOutput = new();
@@ -334,6 +381,419 @@ internal class CommonProgramTest : BaseClioModuleTests{
 			because: "short aliases such as sql should not outrank relevant canonical skill commands for longer input");
 		suggestionLines.Should().Equal(suggestionLines.OrderBy(line => line, StringComparer.Ordinal).ToArray(),
 			because: "the rendered suggestions should still be sorted alphabetically after ranking");
+	}
+
+	[Test]
+	[Description("An unknown option on a known verb prints the parse error, the nearest option and the command-help hint instead of the full option list (ENG-101526).")]
+	public void ExecuteCommands_WithUnknownOptionOnKnownVerb_ShouldPrintShortErrorWithNearestOption() {
+		// Arrange
+		ThreadSafeStringWriter consoleOutput = new();
+		Console.SetOut(consoleOutput);
+		Console.SetError(consoleOutput);
+		string[] args = ["update-entity-schema", "--name", "Foo"];
+
+		// Act
+		int exitCode = Program.ExecuteCommands(args);
+		string output = consoleOutput.ToString();
+
+		// Assert
+		exitCode.Should().Be(1, because: "a mistyped option must still fail the invocation");
+		output.Should().Contain("Option 'name' is unknown.",
+			because: "the error must name the option the parser rejected");
+		output.Should().Contain("Did you mean --schema-name?",
+			because: "the nearest option declared by the verb itself is the useful suggestion, not an inherited connection option");
+		output.Should().Contain("See command help: clio update-entity-schema --help",
+			because: "the short form must point to the full command help instead of printing it");
+		output.Should().NotContain("Target package name",
+			because: "the option list of the verb must not be dumped after a parse error");
+		output.Should().NotContain("--caption-culture",
+			because: "no option help lines may be printed in the short error form");
+	}
+
+	[Test]
+	[Description("A value-taking option supplied without a value prints the short error and the command-help hint only (ENG-101526).")]
+	public void ExecuteCommands_WithOptionMissingValue_ShouldPrintShortErrorWithoutHelp() {
+		// Arrange
+		ThreadSafeStringWriter consoleOutput = new();
+		Console.SetOut(consoleOutput);
+		Console.SetError(consoleOutput);
+		string[] args = ["modify-entity-schema-column", "--schema-name", "UsrVehicle", "--action", "modify",
+			"--column-name", "UsrStatus", "--required"];
+
+		// Act
+		int exitCode = Program.ExecuteCommands(args);
+		string output = consoleOutput.ToString();
+
+		// Assert
+		exitCode.Should().Be(1, because: "an option without its value is a parse error");
+		output.Should().Contain("'required'",
+			because: "the error must name the option that is missing its value");
+		output.Should().Contain("See command help: clio modify-entity-schema-column --help",
+			because: "the short form must point to the full command help");
+		output.Should().NotContain("Set indexed flag",
+			because: "the option list of the verb must not be dumped after a parse error");
+		output.Should().NotContain("Did you mean",
+			because: "a known option that only lacks its value needs no option suggestion");
+	}
+
+	[Test]
+	[Description("A missing required option prints the short error and the command-help hint only (ENG-101526).")]
+	public void ExecuteCommands_WithMissingRequiredOption_ShouldPrintShortErrorWithoutHelp() {
+		// Arrange
+		ThreadSafeStringWriter consoleOutput = new();
+		Console.SetOut(consoleOutput);
+		Console.SetError(consoleOutput);
+		string[] args = ["modify-entity-schema-column", "--schema-name", "UsrVehicle", "--action", "modify"];
+
+		// Act
+		int exitCode = Program.ExecuteCommands(args);
+		string output = consoleOutput.ToString();
+
+		// Assert
+		exitCode.Should().Be(1, because: "a missing required option is a parse error");
+		output.Should().Contain("Required option 'column-name' is missing.",
+			because: "the error must name the required option that was not supplied");
+		output.Should().Contain("See command help: clio modify-entity-schema-column --help",
+			because: "the short form must point to the full command help");
+		output.Should().NotContain("Set indexed flag",
+			because: "the option list of the verb must not be dumped after a parse error");
+	}
+
+	[Test]
+	[Description("An explicit verb --help still prints the full verb help and succeeds after the short parse-error change (ENG-101526).")]
+	public void ExecuteCommands_WithVerbHelp_ShouldStillPrintFullHelp() {
+		// Arrange
+		ThreadSafeStringWriter consoleOutput = new();
+		Console.SetOut(consoleOutput);
+		Console.SetError(consoleOutput);
+		string[] args = ["update-entity-schema", "--help"];
+
+		// Act
+		int exitCode = Program.ExecuteCommands(args);
+		string output = consoleOutput.ToString();
+
+		// Assert
+		exitCode.Should().Be(0, because: "a help request is not an error");
+		output.Should().Contain("--schema-name",
+			because: "the full verb help lists every option");
+		output.Should().Contain("--caption-culture",
+			because: "the full verb help lists every option, including the ones a parse error no longer prints");
+		output.Should().NotContain("See command help:",
+			because: "the short parse-error hint belongs to errors, not to help requests");
+	}
+
+	[Test]
+	[Description("A -h that the verb claims for its own option (healthcheck --web-host) is not a help request, so a real option error after it still prints the short error and no help screen (ENG-101526).")]
+	public void ExecuteCommands_WithVerbOwnedShortHAndUnknownOption_ShouldPrintShortError() {
+		// Arrange
+		ThreadSafeStringWriter consoleOutput = new();
+		Console.SetOut(consoleOutput);
+		Console.SetError(consoleOutput);
+		string[] args = ["healthcheck", "-h", "localhost", "--web-apq", "true"];
+
+		// Act
+		int exitCode = Program.ExecuteCommands(args);
+		string output = consoleOutput.ToString();
+
+		// Assert
+		exitCode.Should().Be(1, because: "a mistyped option must still fail the invocation");
+		output.Should().Contain("Option 'web-apq' is unknown.",
+			because: "the error must name the option the parser rejected");
+		output.Should().Contain("Did you mean --web-app?",
+			because: "the nearest option of the verb is the useful suggestion");
+		output.Should().Contain("See command help: clio healthcheck --help",
+			because: "the short form must point to the full command help instead of printing it");
+		output.Should().NotContain("Healthcheck monitoring",
+			because: "healthcheck binds -h to --web-host, so the help screen must not be shown for it");
+	}
+
+	[TestCase("healthcheck", "Healthcheck monitoring")]
+	[TestCase("publish-app", "Publish a workspace to a ZIP archive or hub folder")]
+	[Description("An upper-case -H on a verb that claims only the lower-case -h for its own option is an unknown option to the case-sensitive parser, so it keeps showing the command help exactly as the released clio does instead of the short parse error (ENG-101526 regression).")]
+	public void ExecuteCommands_WithUpperCaseHOnVerbClaimingLowerCaseH_ShouldShowCommandHelp(string verb, string helpMarker) {
+		// Arrange
+		ThreadSafeStringWriter consoleOutput = new();
+		Console.SetOut(consoleOutput);
+		Console.SetError(consoleOutput);
+		string[] args = [verb, "-H"];
+
+		// Act
+		int exitCode = Program.ExecuteCommands(args);
+		string output = consoleOutput.ToString();
+
+		// Assert
+		exitCode.Should().Be(1, because: "the released clio also exits 1 here: the parser still rejects -H as an unknown option");
+		output.Should().Contain(helpMarker,
+			because: "-H must keep showing the command help, as it did before the short parse-error change");
+		output.Should().NotContain("See command help:",
+			because: "the short parse-error form must not replace the help screen -H asks for");
+		output.Should().NotContain("Option 'H' is unknown.",
+			because: "the released clio shows only the help for -H, not the parse error");
+	}
+
+	[Test]
+	[Description("With the parser's case sensitivity, an upper-case -H is unclaimed on a verb that claims only -h, while a lower-case -h stays claimed (ENG-101526 regression).")]
+	public void IsUnclaimedHelpFlagToken_WithParserCase_ShouldDistinguishUpperAndLowerCaseH() {
+		// Arrange
+		const string upperCaseToken = "-H";
+		const string lowerCaseToken = "-h";
+		Type optionsType = typeof(HealthCheckOptions);
+
+		// Act
+		bool upperCase = Program.IsUnclaimedHelpFlagToken(upperCaseToken, optionsType, matchParserCase: true);
+		bool lowerCase = Program.IsUnclaimedHelpFlagToken(lowerCaseToken, optionsType, matchParserCase: true);
+
+		// Assert
+		upperCase.Should().BeTrue(because: "healthcheck claims -h, not -H, and the parser binds option names case-sensitively");
+		lowerCase.Should().BeFalse(because: "healthcheck binds -h to --web-host, so it is a real argument, not a help request");
+	}
+
+	[Test]
+	[Description("Without the parser's case sensitivity the pre-parse help short-circuit keeps its released behaviour: -H counts as claimed on a verb that claims -h, so it is left to the parser (ENG-101526 regression).")]
+	public void IsUnclaimedHelpFlagToken_WithoutParserCase_ShouldTreatUpperCaseHAsClaimed() {
+		// Arrange
+		const string token = "-H";
+		Type optionsType = typeof(PublishWorkspaceCommandOptions);
+
+		// Act
+		bool result = Program.IsUnclaimedHelpFlagToken(token, optionsType);
+
+		// Assert
+		result.Should().BeFalse(because: "the pre-parse short-circuit must not change: released clio sends publish-app -H to the parser, which shows the help and exits 1");
+	}
+
+	[Test]
+	[Description("A -help library help alias after an option error keeps the library's help output instead of the short error (ENG-101526).")]
+	public void ExecuteCommands_WithUnknownOptionAndLibraryHelpAlias_ShouldKeepLibraryHelp() {
+		// Arrange
+		ThreadSafeStringWriter consoleOutput = new();
+		Console.SetOut(consoleOutput);
+		Console.SetError(consoleOutput);
+		string[] args = ["healthcheck", "--web-apq", "true", "-help"];
+
+		// Act
+		int exitCode = Program.ExecuteCommands(args);
+		string output = consoleOutput.ToString();
+
+		// Assert
+		exitCode.Should().Be(1, because: "the library still reports the unknown option as a failed parse");
+		output.Should().Contain("Healthcheck monitoring",
+			because: "an explicit help alias asks for the command help");
+		output.Should().NotContain("See command help:",
+			because: "the short parse-error form is reserved for invocations that did not ask for help");
+	}
+
+	[Test]
+	[Description("An unknown option followed by --help still prints the full verb help and succeeds, as before the short parse-error change (ENG-101526).")]
+	public void ExecuteCommands_WithUnknownOptionAndHelp_ShouldPrintFullHelp() {
+		// Arrange
+		ThreadSafeStringWriter consoleOutput = new();
+		Console.SetOut(consoleOutput);
+		Console.SetError(consoleOutput);
+		string[] args = ["update-entity-schema", "--bogus", "--help"];
+
+		// Act
+		int exitCode = Program.ExecuteCommands(args);
+		string output = consoleOutput.ToString();
+
+		// Assert
+		exitCode.Should().Be(0, because: "an explicit help request is not an error");
+		output.Should().Contain("--caption-culture",
+			because: "the full verb help lists every option");
+		output.Should().NotContain("See command help:",
+			because: "the short parse-error hint belongs to errors, not to help requests");
+	}
+
+	[Test]
+	[Description("An option given twice prints the short error and the command-help hint only (ENG-101526).")]
+	public void ExecuteCommands_WithRepeatedOption_ShouldPrintShortErrorWithoutHelp() {
+		// Arrange
+		ThreadSafeStringWriter consoleOutput = new();
+		Console.SetOut(consoleOutput);
+		Console.SetError(consoleOutput);
+		string[] args = ["modify-entity-schema-column", "--schema-name", "UsrVehicle", "--schema-name", "UsrOther",
+			"--action", "modify", "--column-name", "UsrStatus"];
+
+		// Act
+		int exitCode = Program.ExecuteCommands(args);
+		string output = consoleOutput.ToString();
+
+		// Assert
+		exitCode.Should().Be(1, because: "a repeated option is a parse error");
+		output.Should().Contain("Option 'schema-name' is defined multiple times.",
+			because: "the error must name the repeated option");
+		output.Should().Contain("See command help: clio modify-entity-schema-column --help",
+			because: "the short form must point to the full command help");
+		output.Should().NotContain("Set indexed flag",
+			because: "the option list of the verb must not be dumped after a parse error");
+	}
+
+	[Test]
+	[Description("A value that cannot be converted to the option type prints the short error and the command-help hint only (ENG-101526).")]
+	public void ExecuteCommands_WithBadFormatValue_ShouldPrintShortErrorWithoutHelp() {
+		// Arrange
+		ThreadSafeStringWriter consoleOutput = new();
+		Console.SetOut(consoleOutput);
+		Console.SetError(consoleOutput);
+		string[] args = ["modify-entity-schema-column", "--schema-name", "UsrVehicle", "--action", "modify",
+			"--column-name", "UsrStatus", "--required", "maybe"];
+
+		// Act
+		int exitCode = Program.ExecuteCommands(args);
+		string output = consoleOutput.ToString();
+
+		// Assert
+		exitCode.Should().Be(1, because: "a value of the wrong type is a parse error");
+		output.Should().Contain("Option 'required' is defined with a bad format.",
+			because: "the error must name the option whose value could not be converted");
+		output.Should().Contain("See command help: clio modify-entity-schema-column --help",
+			because: "the short form must point to the full command help");
+		output.Should().NotContain("Set indexed flag",
+			because: "the option list of the verb must not be dumped after a parse error");
+	}
+
+	[Test]
+	[Description("The short parse error never echoes the value that follows a mistyped secret-bearing option (ENG-101526).")]
+	public void ExecuteCommands_WithMistypedPasswordOption_ShouldNotEchoItsValue() {
+		// Arrange
+		ThreadSafeStringWriter consoleOutput = new();
+		Console.SetOut(consoleOutput);
+		Console.SetError(consoleOutput);
+		const string secretValue = "Sup3rS3cretVal";
+		string[] args = ["reg-web-app", "probe-env", "--pasword", secretValue];
+
+		// Act
+		int exitCode = Program.ExecuteCommands(args);
+		string output = consoleOutput.ToString();
+
+		// Assert
+		exitCode.Should().Be(1, because: "a mistyped option must fail the invocation");
+		output.Should().Contain("Option 'pasword' is unknown.",
+			because: "the error names the option token only");
+		output.Should().NotContain(secretValue,
+			because: "the value after a mistyped password option is a secret and must never reach the console");
+	}
+
+	[Test]
+	[Description("The short parse error never echoes the value glued to a mistyped secret-bearing option in the --option=value form (ENG-101526).")]
+	public void ExecuteCommands_WithMistypedPasswordOptionInEqualsForm_ShouldNotEchoItsValue() {
+		// Arrange
+		ThreadSafeStringWriter consoleOutput = new();
+		Console.SetOut(consoleOutput);
+		Console.SetError(consoleOutput);
+		const string secretValue = "Sup3rS3cretVal";
+		string[] args = ["reg-web-app", "probe-env", $"--pasword={secretValue}"];
+
+		// Act
+		int exitCode = Program.ExecuteCommands(args);
+		string output = consoleOutput.ToString();
+
+		// Assert
+		exitCode.Should().Be(1, because: "a mistyped option must fail the invocation");
+		output.Should().Contain("Option 'pasword' is unknown.",
+			because: "the error names the option token only, without the glued value");
+		output.Should().NotContain(secretValue,
+			because: "the value glued to a mistyped password option is a secret and must never reach the console");
+	}
+
+	[Test]
+	[Description("The short verb-option error and its command-help hint go to the error writer, and nothing is written to standard output (ENG-101526).")]
+	public void ExecuteCommands_WithUnknownOptionOnKnownVerb_ShouldWriteShortErrorToErrorWriterOnly() {
+		// Arrange
+		ThreadSafeStringWriter standardOutput = new();
+		ThreadSafeStringWriter errorOutput = new();
+		Console.SetOut(standardOutput);
+		Console.SetError(errorOutput);
+		string[] args = ["update-entity-schema", "--name", "Foo"];
+
+		// Act
+		int exitCode = Program.ExecuteCommands(args);
+		string error = errorOutput.ToString();
+
+		// Assert
+		exitCode.Should().Be(1, because: "a mistyped option must still fail the invocation");
+		error.Should().Contain("Option 'name' is unknown.",
+			because: "the parse error belongs to the error writer");
+		error.Should().Contain("See command help: clio update-entity-schema --help",
+			because: "the command-help hint is part of the error report");
+		standardOutput.ToString().Should().BeEmpty(
+			because: "a parse error must not pollute standard output, which callers may parse");
+	}
+
+	[Test]
+	[Description("A bare 'healthcheck -h' is the verb's own --web-host option without a value, so it prints the short error naming that option, not the full help (ENG-101526).")]
+	public void ExecuteCommands_WithBareVerbOwnedShortH_ShouldPrintShortMissingValueError() {
+		// Arrange
+		ThreadSafeStringWriter consoleOutput = new();
+		Console.SetOut(consoleOutput);
+		Console.SetError(consoleOutput);
+		string[] args = ["healthcheck", "-h"];
+
+		// Act
+		int exitCode = Program.ExecuteCommands(args);
+		string output = consoleOutput.ToString();
+
+		// Assert
+		exitCode.Should().Be(1, because: "healthcheck binds -h to --web-host, so a missing value is a parse error");
+		output.Should().Contain("Option 'h, web-host' has no value.",
+			because: "the error must name the option that is missing its value");
+		output.Should().Contain("See command help: clio healthcheck --help",
+			because: "the short form must point to the full command help instead of printing it");
+		output.Should().NotContain("Healthcheck monitoring",
+			because: "the full help text must not be printed for an option error");
+	}
+
+	[Test]
+	[Description("A mistyped option on create-entity-schema, with repeated --column groups, prints the short error, the nearest option and the command-help hint only (ENG-101526).")]
+	public void ExecuteCommands_WithUnknownOptionOnCreateEntitySchema_ShouldPrintShortError() {
+		// Arrange
+		ThreadSafeStringWriter consoleOutput = new();
+		Console.SetOut(consoleOutput);
+		Console.SetError(consoleOutput);
+		string[] args = ["create-entity-schema", "--pakage", "UsrPkg", "--name", "UsrVehicle", "--title", "Vehicle",
+			"--column", "UsrMake:Text", "--column", "UsrModel:Text"];
+
+		// Act
+		int exitCode = Program.ExecuteCommands(args);
+		string output = consoleOutput.ToString();
+
+		// Assert
+		exitCode.Should().Be(1, because: "a mistyped option must still fail the invocation");
+		output.Should().Contain("ERROR(S):",
+			because: "the short form keeps the library's error heading");
+		output.Should().Contain("Option 'pakage' is unknown.",
+			because: "the error must name the option the parser rejected");
+		output.Should().NotContain("defined multiple times",
+			because: "repeated --column groups are normalized before parsing and are not an error");
+		output.Should().Contain("Did you mean --package?",
+			because: "the nearest option declared by the verb is the useful suggestion");
+		output.Should().Contain("See command help: clio create-entity-schema --help",
+			because: "the short form must point to the full command help instead of printing it");
+		output.Should().NotContain("Target package name",
+			because: "the option list of the verb must not be dumped after a parse error");
+	}
+
+	[Test]
+	[Description("Options from two mutually exclusive sets print the library's incompatibility message and the command-help hint, without the option list (ENG-101526).")]
+	public void ExecuteCommands_WithMutuallyExclusiveOptions_ShouldPrintShortError() {
+		// Arrange
+		ThreadSafeStringWriter consoleOutput = new();
+		Console.SetOut(consoleOutput);
+		Console.SetError(consoleOutput);
+		string[] args = ["autoupdate", "--enable", "--disable"];
+
+		// Act
+		int exitCode = Program.ExecuteCommands(args);
+		string output = consoleOutput.ToString();
+
+		// Assert
+		exitCode.Should().Be(1, because: "options from two exclusive sets are a parse error");
+		output.Should().Contain("Option: 'enable' is not compatible with: 'disable'.",
+			because: "the error must name the conflicting options");
+		output.Should().Contain("See command help: clio autoupdate --help",
+			because: "the short form must point to the full command help instead of printing it");
+		output.Should().NotContain("Disable automatic updates on startup",
+			because: "the option list of the verb must not be dumped after a parse error");
 	}
 
 	[Test]

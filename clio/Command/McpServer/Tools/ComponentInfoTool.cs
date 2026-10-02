@@ -465,7 +465,7 @@ public sealed class ComponentInfoTool(
 /// <summary>
 /// Arguments for the <c>get-component-info</c> MCP tool.
 /// </summary>
-public sealed record ComponentInfoArgs(
+public record ComponentInfoArgs(
 	[property: JsonPropertyName("component-type")]
 	[property: Description("Freedom UI component type, for example 'crt.TabContainer'. Omit or use 'list' to return the catalog (components AND composites).")]
 	string? ComponentType = null,

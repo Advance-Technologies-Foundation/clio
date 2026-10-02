@@ -114,6 +114,16 @@ cliogate must be installed on the target Creatio environment.
 - At least one operation is required; a call with none reports what is missing instead of
   failing with an opaque null-reference message.
 - A `modify` operation on an **inherited** column may override only its caption/description (`title-localizations`/`description-localizations`); changing its name, type, or flags is rejected and stops the batch on that operation.
+- An operation field the command does not know (for example a misspelled `colum-name`) fails the
+  batch before anything is saved; the error names the field and the nearest known field
+  (`Operation payload at index 0 has unknown field 'colum-name'. Did you mean 'column-name'?`).
+- `name` is accepted as an alias of `column-name`, matching the MCP tool and `create-entity-schema`.
+  An operation that sets both to different values is rejected.
+- Each operation payload must be a JSON object; `[]` or `42` is rejected with
+  `Operation payload at index 0 must be a JSON object.` A field whose value has the wrong type
+  (for example `"required":"yes"`) is reported with its JSON path
+  (`... has an invalid value at JSON path '$.required'.`); only text that is not JSON at all is
+  reported as `is not valid JSON`.
 - `--operation` payloads can include structured `default-value-config`.
 - `--operation` payloads can include `usage-type` (`General`, `Advanced`, or `None`; any column type); on `modify` the stored value is left unchanged when omitted.
 - For `SystemValue`, clio resolves Guid/alias/caption to canonical Guid before save.

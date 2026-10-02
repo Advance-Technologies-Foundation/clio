@@ -222,6 +222,13 @@ namespace Clio.Command;
 // The dotted path fails differently and just as quietly: an older server resolves `elementParameter` flat
 // only, finds no parameter of that name and refuses - loudly, but naming a parameter rather than the
 // package. 1.6.6.14 is the archive cut from crt-process-builder 13bd2a2.
+// Raised to 1.6.6.30 by ENG-92711: the Script task (`type:"scriptTask"` + its `scriptTask` block), the
+// process-level `usings[]` and `methods`, and the `addUsing` / `removeUsing` / `setMethods` operations. The
+// same silent-discard shape once more: the scriptTask TYPE and the three operations are refused loudly by
+// an older server, but a build's top-level `usings[]` and `methods` - and a `scriptTask` block riding a
+// setElement beside another field - are dropped by
+// its serializer while the call answers success, and the process then fails its compile on a namespace
+// nobody knows was lost.
 // Raised to 1.6.6.40 by ENG-91844: `sourceColumn` (mappings, changeData/addData/openEditPage values,
 // openEditPage recordId), a filter's `elementParameter.column` and the `[#Element.Parameter.Column#]` name in a
 // condition or formula body - ONE column of a record another element returned. Same failure shape as the
@@ -233,7 +240,7 @@ namespace Clio.Command;
 [RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.40",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class CreateBusinessProcessOptions : EnvironmentOptions {
-	/// <summary>Inline JSON process descriptor (name, caption, packageName, elements[], flows[], parameters[], mappings[]).</summary>
+	/// <summary>Inline JSON process descriptor (name, caption, packageName, elements[], flows[], parameters[], mappings[], usings[], methods).</summary>
 	public string DescriptorJson { get; set; } = string.Empty;
 
 	/// <summary>Overrides the target package from the descriptor (the package the process is created in).</summary>

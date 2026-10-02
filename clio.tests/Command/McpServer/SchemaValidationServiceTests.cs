@@ -8822,8 +8822,9 @@ public sealed class SchemaValidationServiceTests
 		// Assert
 		result.IsValid.Should().BeFalse(
 			because: "the typed parse throws on a missing expressionType and the device shows an error placeholder");
-		result.Errors.Should().ContainSingle(e => e.Contains("config.data.providing.aggregation.column.expression.expressionType"),
-			because: "the diagnostic names the missing field");
+		result.Errors.Should().ContainSingle(e => e.Contains("config.data.providing.aggregation.column.expression.expressionType")
+				&& e.Contains("get-component-info crt.IndicatorWidget with schema-type mobile"),
+			because: "the diagnostic names the missing field and points at the document that carries a working example");
 	}
 
 	[Test]
