@@ -163,7 +163,7 @@ public interface ISysSettingsManager
 	/// <param name="optsType">The value-type-name of the setting to create.</param>
 	/// <returns>
 	/// <see langword="true"/> when this call created the setting; <see langword="false"/> when it already
-	/// existed or the environment refused the insert.
+	/// existed, <paramref name="code"/> is not a valid Creatio identifier, or the environment refused the insert.
 	/// </returns>
 	bool CreateSysSettingIfNotExists(string optsCode, string code, string optsType);
 	
@@ -1028,6 +1028,11 @@ public class SysSettingsManager : ISysSettingsManager
 	}
 	
 	public bool CreateSysSettingIfNotExists(string optsCode, string code, string optsType){
+		//The same identifier check UpdateSysSetting runs: without it an invalid code was inserted first and
+		//only its value write was refused, leaving the definition behind.
+		if (string.IsNullOrWhiteSpace(code) || !SysSettingCodeRegex.IsMatch(code)) {
+			return false;
+		}
 		SysSettings sysSetting = GetSysSettingByCode(code); 
 		if(sysSetting is not null) {
 			return false;

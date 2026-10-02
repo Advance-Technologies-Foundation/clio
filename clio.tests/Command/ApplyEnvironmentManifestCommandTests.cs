@@ -271,6 +271,7 @@ public sealed class ApplyEnvironmentManifestCommandTests {
 
 		// Assert
 		exitCode.Should().Be(0, because: "the existing setting took the value");
+		_sysSettingsManager.Received(1).CreateSysSettingIfNotExists("MaxFileSize", "MaxFileSize", "Text");
 		_sysSettingsManager.Received(1).UpdateSysSetting("MaxFileSize", "10", "Text");
 		_logger.DidNotReceive().WriteWarning(Arg.Any<string>());
 	}
@@ -285,9 +286,10 @@ public sealed class ApplyEnvironmentManifestCommandTests {
 		]);
 
 		// Act
-		_sut.Execute(Options());
+		int exitCode = _sut.Execute(Options());
 
 		// Assert
+		exitCode.Should().Be(0, because: "the substitute environment accepts the value write");
 		_sysSettingsManager.DidNotReceiveWithAnyArgs().CreateSysSettingIfNotExists(default, default, default);
 		_sysSettingsManager.Received(1).UpdateSysSetting("MrktApolloApiKey", value, "Text");
 	}
