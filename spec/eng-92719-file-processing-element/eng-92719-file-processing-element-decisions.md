@@ -4,7 +4,7 @@
 |---|---|
 | Issues | ENG-92719 File processing element (Story), with its sub-tasks ENG-96505 Element readiness and object attachments mode and ENG-96506 Generated report + process parameter modes; ENG-95984 File process parameter type (Task), on which the element depends |
 | Epic | ENG-92704 Create BP via AI Toolkit |
-| Status | Proposed, 2026-10-01. 15 decisions wait for the owner (section 1) |
+| Status | Proposed, 2026-10-01. 14 decisions wait for the owner (section 1); D9 was answered by M3 on 2026-10-02 |
 | Baselines | CrtProcessBuilder `main` `3f4cce50` (package 1.6.6.54, also installed on the stand); clio `master` `03ef3944f`; clio-knowledge `master` `d0b5a2b` (guidance libraryVersion 1.15.90); Creatio core 10.1.37 (the stand's core) |
 | How it was made | Read-only. Nothing was built, run, committed or written to a repository or to the stand. Jira was read for issue wording only; no Jira text is used as evidence for a platform fact |
 
@@ -62,7 +62,7 @@ some branch is never an argument for or against an option.
 | OA | ENG-96505 Element readiness and object attachments mode (Sub-task of FE) |
 | RP | ENG-96506 Generated report + process parameter modes (Sub-task of FE) |
 | SF | NEW Sub-task of FE, "SysFile attachment storage in the Process file element" (key assigned on creation) |
-| MH | NEW Sub-task of PT, "typeFromElement collection mirror leaves its items unbound" (opened only if M3 confirms the defect) |
+| MH | not created: the conditional Sub-task of PT, "typeFromElement collection mirror leaves its items unbound", waited on M3, and M3 refuted the defect on 2026-10-02 |
 
 **Sibling documents.**
 
@@ -110,7 +110,7 @@ named decision and nothing else unless stated.
 | 2 | D3 | Default direction of a FileCollection | Out (one default per stored type, the shipped majority, the existing pin) | Variable (designer plain-Add parity; a second rule for one stored type) |
 | 3 | D5 | Plain source onto a collection item whose parent is bound to a collection (P3) | Reset the parent, with a notice | Designer parity: keep the stale parent, which yields N copies of one file |
 | 4 | D5 | Scope of item pairing and the wrong-shape refusal (P2, R-M2) | File-consuming targets only | Every collection: also changes Read data -> multi-instance mappings, unmeasured and outside this work |
-| 5 | D9 | If M3 confirms that the shipped collection mirror leaves its items unbound | A separate Sub-task MH, delivered first | Fix inside ENG-95984 File process parameter type (same code, ownership differs) |
+| 5 | D9 | Where the mirror defect H-1 is fixed | Answered by M3 (2026-10-02): H-1 refuted, so no MH; binding the items is one parity commit in PK-PT (X4) | - |
 | 6 | D10 | Element token and how the variant is chosen | Token `fileProcessing` (alias `processFile`); the variant is the group present; `source` is an optional check | A required `source` enum (collides with `readData.source`); a `fileSource` key |
 | 7 | D11 | Naming bundle of the block | `attachments`, `report`, `files`, `saveTo`, `action: useInProcess / saveToAttachments`, `report.printable`, `fileNameSuffix`, `recordId` inside the groups | Any renaming before code; afterwards renames cost a deprecation |
 | 8 | D14 | `ResultActionType` when `action` is omitted on create | Inferred: `saveTo` present -> save, absent -> use in process; always written | Designer default (use in process: a caller who forgot `action` gets a silent no-save); mandatory `action` |
@@ -120,7 +120,7 @@ named decision and nothing else unless stated.
 | 12 | D22 | Downstream consumer patterns | Send email -> ENG-95985 Send email attachments; Creatio.ai call out of scope | Keep both in ENG-92719 File processing element (needs dynamic attachment slots the builder cannot create) |
 | 13 | D23 | Jira links | L1-L5: ENG-95984 File process parameter type relates to ENG-96505 Element readiness and object attachments mode and blocks ENG-96506 Generated report + process parameter modes; OA blocks RP; RP blocks SF; PT and OA block ENG-95985 Send email attachments | Keep link 560203 "PT blocks OA" if the team uses "blocks" for sequencing (it then claims a functional dependency that does not exist) |
 | 14 | D24 | Acceptance criteria | Replace as in Part D | Keep as written (the "Binary / File" and "ResultActionType = 1" criteria cannot pass) |
-| 15 | D25, D27 | Guide name; PR split | One new guide `process-files`; one PR per Jira issue per repository (14 PRs, 17 with MH, including the docs-only clio PRs CL-PT-DOC and CL-DOC) | `process-file` or a guide per ticket; one PR per repository for everything |
+| 15 | D25, D27 | Guide name; PR split | One new guide `process-files`; one PR per Jira issue per repository (14 PRs, including the docs-only clio PRs CL-PT-DOC and CL-DOC) | `process-file` or a guide per ticket; one PR per repository for everything |
 
 Delivery-process decisions that do not change the contract are owner items O1-O8 in
 [pr-split](eng-92719-file-processing-element-pr-split.md) section 13: the slot order of RP and SF (O3, RP first
@@ -142,7 +142,7 @@ same questions, with their options, are Q1-Q19 in
 | D6 | The dotted-mirror bug | PT | no | - |
 | D7 | Constants, `referenceSchema`, delete guard, `setParameter` shape | PT | no | - |
 | D8 | Describe of file parameters, nested-only bindings, single-token element sources | PT | no | - |
-| D9 | The shipped collection mirror binds the outer level only (H-1) | PT / MH | **yes** | M3 |
+| D9 | The shipped collection mirror binds the outer level only (H-1; refuted by M3) | PT | no (answered by M3) | - |
 | D10 | Element token; the variant is the group present | OA | **yes** | - |
 | D11 | The `fileProcessing` block contract | OA, RP | **yes** | - |
 | D12 | Source immutability and `setElement` semantics | OA | no | - |
@@ -511,27 +511,29 @@ and FileCollection, describe read-back (D28). **Owner decision: no.**
 **Context.** `BindMirroredCollection` maps root to root only (`PB/Parameters/ProcessParameterService.cs:500-512`).
 If the runtime rebuilds rows by the target's own unbound items, every mirrored Read data row reads null
 (`CORE/Terrasoft.Core/Process/ProcessInstanceParametersDataReader.cs:441-488, 506-515, 967-971`). Shipped content
-never has that shape (0 of 61). basis=source, unmeasured. If true, it is a defect in shipped ENG-96230 Collection
-process parameter type behaviour, independent of files.
+never has that shape (0 of 61). basis=source. M3 refuted it on 2026-10-02 (below). Had it held, it would have been
+a defect in shipped ENG-96230 Collection process parameter type behaviour, independent of files.
 
 **Options.** (a) fix inside the PT package PR through `BindCollection` with the clone pairs; (b) a separate
 Sub-task, fixed first; (c) do nothing until it is reported.
 
-**Decision: measure first (M3).**
-- **Confirmed:** (b). A new Sub-task MH under ENG-95984 File process parameter type, "typeFromElement collection
+**Decision: measure first (M3). M3 refuted H-1, so the "Refuted" branch applies and contingency X4 fires.**
+M3 ran on CrtProcessBuilder 1.6.6.54 on 2026-10-02: 3 iterations, all `M3 name set`
+([open-questions](eng-92719-file-processing-element-open-questions.md) C.7). The outer Script mapping copies the whole
+collection value, items included, so the unbound item does not matter for reading.
+- **Confirmed (not taken):** (b). A new Sub-task MH under ENG-95984 File process parameter type, "typeFromElement collection
   mirror leaves its items unbound", is delivered FIRST as its own package, clio and knowledge triple. It introduces
   `BindCollection` with explicit pairs only, and the mirror calls it with the clone pairs (names are identical by
   construction). PT then adds the P2 policy (null pairs) on top, so no code is thrown away. Reasons: a confirmed
   silent defect in shipped behaviour deserves its own record, revert path and release note; the fix is small
   enough for the fast review lane; and it takes nothing off PT. This revises the first draft of this decision,
   which recommended (a) (see the review log).
-- **Refuted:** no MH. Items are still bound (the shipped shape, 60 of 61) as parity, as one commit in PT, and the
-  code comment at `ProcessParameterService.cs:440-447` is narrowed.
+- **Refuted (applies):** no MH. Items are still bound (the shipped shape, 60 of 61) as parity, as one commit in PT
+  (contingency X4), and the code comment at `ProcessParameterService.cs:440-447` is narrowed.
 
 **Consequences.** `AddProcessParameter_ShouldBindMirroredCollection_ToSourceOutput` (`PBT/ProcessParameterServiceTests.cs:1760`)
 is extended and the test description at `:1703` corrected. The guide sentence that pins the mirror behaviour moves
-in the same knowledge PR as the fix. **Owner decision: yes.** A separate Sub-task first (recommended) or the fix
-inside PT. The code is identical; ownership and release notes differ.
+in the same knowledge PR as the parity commit, KB-PT. **Owner decision: no longer needed.** M3 answered it (Q7).
 
 ---
 
@@ -1393,9 +1395,8 @@ L1-L5 of [pr-split](eng-92719-file-processing-element-pr-split.md) section 12.2.
 | L4 | none | ENG-96506 Generated report + process parameter modes **blocks** SF | default slot order (pr-split O3); reversed to "OA blocks SF" if the owner puts SF before RP |
 | L5 | none | ENG-95984 File process parameter type and ENG-96505 Element readiness and object attachments mode **block** ENG-95985 Send email attachments | that ticket reuses `BindCollection` and needs a file source (D22) |
 
-- New Sub-tasks: SF under ENG-92719 File processing element; MH under ENG-95984 File process parameter type only
-  if M3 confirms H-1 (a child of PT, so it needs no link); the follow-up Sub-tasks listed in D27 and Part D-5. All
-  are type Sub-task.
+- New Sub-tasks: SF under ENG-92719 File processing element; the follow-up Sub-tasks listed in D27 and Part D-5. All
+  are type Sub-task. MH is not created: M3 refuted H-1.
 - The delivery ORDER stays PT -> OA -> RP -> SF anyway: the package PRs share `descriptor.json`, the contracts,
   `ProcessMappingService.cs` and `ProcessDescriber.cs`; OA's consumer and per-file tests benefit from P1; the PT clio
   PR carries the ManagerMap arm (D10). OA iterates as a stacked draft during PT's review
@@ -1549,7 +1550,7 @@ stamped the same number twice (1.6.6.42 and 1.6.6.49, measured from git history)
   `pwsh ./rebundle-process-builder.ps1 -PackageRepoPath <package at PR head> -Version <claimed>`.
 - **Floor = the FINAL cut of that clio PR** (equal to `ExpectedArchiveVersion` when it merges), not the first cut: a
   foreign archive under our first number would satisfy a first-cut floor while lacking the feature.
-- The three literals move with MH (if it exists), PT, OA and RP. SF does not raise the floor: an older server refuses
+- The three literals move with PT, OA and RP. SF does not raise the floor: an older server refuses
   SysFile with a message. describe, list-user-tasks and validate-process-graph stay presence-only; set-active stays
   1.6.1.0. Because describe stays presence-only, an older clio can read a newer package's describe: the block
   survives through `DescribedElement`'s bag, and the ManagerMap arm is in clio from PT (D10).
@@ -1581,11 +1582,12 @@ https://github.com/Advance-Technologies-Foundation/clio-knowledge/pull/201). cli
 the pins, the descriptions and the floor literal to one tree. Package `main` is a release candidate at every moment,
 because any clio rebundle cuts from it. With per-cut scoping (D13) each cut is self-consistent.
 
-**Options.** (1) one PR per repository for all issues (one cut, but a 12-16k-line (12-17.5k with MH) package diff, one floor for four
+**Options.** (1) one PR per repository for all issues (one cut, but a 12-16k-line package diff, one floor for four
 blast radii, a long-lived branch); (2) one triple per Jira issue, stacked and merged in order; (3) a PT triple plus
 one FE triple for both sub-tasks (the largest diff of the cycle).
 
-**Decision: option 2, extended by the SysFile and mirror Sub-tasks.** Within each repository each issue is ONE PR;
+**Decision: option 2, extended by the SysFile Sub-task SF** (the mirror Sub-task MH waited on M3, which refuted
+H-1, so it is not created). Within each repository each issue is ONE PR;
 no layer splits (each would leave a shippable `main` that saves green and fails at run time). The package PR carries
 the descriptor restamp and its tag; the clio PR carries the rebundle, the pins, the descriptions, the floor, the DTOs,
 the knowledge-record updates and the e2e; the knowledge PR carries one generation. Merge order per issue: package,
@@ -1594,11 +1596,11 @@ stacked draft. Only a human merges.
 
 | Repository | PRs | Titles (exact) |
 |---|---|---|
-| crt-process-builder (https://creatio.ghe.com/engineering/crt-process-builder) | 4, plus MH if opened | `ENG-95984 File process parameter type`; `ENG-96505 Element readiness and object attachments mode`; `ENG-96506 Generated report + process parameter modes`; `<SF-KEY> SysFile attachment storage in the Process file element`; conditional `<MH-KEY> typeFromElement collection mirror leaves its items unbound` |
-| clio (https://github.com/Advance-Technologies-Foundation/clio) | 6, plus MH if opened | the same four titles, one rebundle PR per package PR, plus two docs-only PRs: `ENG-95984 File process parameter type` (CL-PT-DOC, its BMAD set) and `ENG-92719 File processing element` (CL-DOC, this spec set) |
-| clio-knowledge (https://github.com/Advance-Technologies-Foundation/clio-knowledge) | 4, plus MH if opened | the same four titles |
+| crt-process-builder (https://creatio.ghe.com/engineering/crt-process-builder) | 4 | `ENG-95984 File process parameter type`; `ENG-96505 Element readiness and object attachments mode`; `ENG-96506 Generated report + process parameter modes`; `<SF-KEY> SysFile attachment storage in the Process file element` |
+| clio (https://github.com/Advance-Technologies-Foundation/clio) | 6 | the same four titles, one rebundle PR per package PR, plus two docs-only PRs: `ENG-95984 File process parameter type` (CL-PT-DOC, its BMAD set) and `ENG-92719 File processing element` (CL-DOC, this spec set) |
+| clio-knowledge (https://github.com/Advance-Technologies-Foundation/clio-knowledge) | 4 | the same four titles |
 
-14 PRs, or 17 with MH. Sequencing, hard edges, review gates, contingency splits and the reasons against coarser or
+14 PRs. Sequencing, hard edges, review gates, contingency splits and the reasons against coarser or
 finer splits are in [pr-split](eng-92719-file-processing-element-pr-split.md).
 
 Out-of-scope fixes ship as their own Sub-tasks with their own PRs, off the critical path: "Declared item shape for
@@ -1609,7 +1611,7 @@ decode process-parameter sources into re-appliable names" (D8), all under ENG-95
 ENG-92719 File processing element. Process file -> Send email attachments needs no Sub-task: ENG-95985 Send email
 attachments already owns that scope, and link L5 is the only Jira action (plan section 5.4, C-5).
 
-**Owner decision: yes.** Option 2 with SF and MH (recommended); option 3 the alternative.
+**Owner decision: yes.** Option 2 with SF (recommended; MH is not created, M3 refuted H-1); option 3 the alternative.
 
 ## D28. Test strategy and C# mocking
 
@@ -1652,7 +1654,7 @@ the designer, because the builder cannot build them until these tickets land. Me
 |---|---|---|---|---|
 | M1 | Does a nested-only `Files.File <- File parameter` copy one file? | yes | D18 single-file path | PK-RP code |
 | M2 | Does an unset single File make the element fail with an NRE? | yes | guide wording | with M1 |
-| M3 | Does the shipped collection mirror read null rows? (H-1) | yes | D9 | PK-PT / MH |
+| M3 | Does the shipped collection mirror read null rows? (H-1) | yes | D9 | PK-PT (done 2026-10-02: no, H-1 refuted; no MH, X4) |
 | M4 | Does a FileCollection bound at both levels feed the Process variant, and does its `ObjectFiles` hold the copies? | yes | D2, D5, D18 end to end | verification |
 | M6 | What does a flat FileLocator <- collection item do outside a row context? | yes | R-M1 | PK-PT code |
 | M7 | The exact filter JSON the designer writes for a SysFile `RecordId` scope | no | D16 SysFile shape | PK-SF code |
@@ -1874,7 +1876,7 @@ verification in ENG-96505 Element readiness and object attachments mode, which c
 | Parent | Title | Acceptance criteria (proposed) |
 |---|---|---|
 | ENG-92719 File processing element | SysFile attachment storage in the Process file element | Objects without their own attachment object can be read from and saved to (SysFile storage) by all three variants, after stand measurements M7, M8, M21, M23 and M25; the record scope uses the shape the designer writes; record-object sort columns are refused; a SysFile-mode element built where the designer's storage flag is off gets a notice; serialization matches a designer capture taken on the stand; guidance states the SysFile hazards |
-| ENG-95984 File process parameter type (only if M3 confirms H-1) | typeFromElement collection mirror leaves its items unbound | A `typeFromElement` collection mirror binds the outer collection and every item; describe shows both levels; the stand evidence (M3) is in the PR; the guide sentence about the mirror is corrected |
+| ENG-95984 File process parameter type: **not created** (it waited on M3, and M3 refuted H-1 on 2026-10-02) | typeFromElement collection mirror leaves its items unbound | none: binding the items is one parity commit in PK-PT (contingency X4) |
 | ENG-95984 File process parameter type | Declared item shape for Collection process parameters | (to be refined; D2 option C) |
 | ENG-95984 File process parameter type | Allow-list the data types a typeFromElement mirror may copy | (to be refined; D6) |
 | ENG-95984 File process parameter type | Describe: decode process-parameter sources into re-appliable names | (to be refined; D8) |
@@ -1889,8 +1891,8 @@ When each Sub-task is created (now, when its parent's PR opens, or only after it
 [pr-split](eng-92719-file-processing-element-pr-split.md) section 12.3; a conditional Sub-task is not created before
 its measurement, because that would record an unproven defect as fact.
 
-**Done rule** (pr-split 12.4): ENG-95984 File process parameter type is done when its knowledge PR merges (MH, if it
-exists, before it); ENG-96505 Element readiness and object attachments mode, ENG-96506 Generated report + process
+**Done rule** (pr-split 12.4): ENG-95984 File process parameter type is done when its knowledge PR merges;
+ENG-96505 Element readiness and object attachments mode, ENG-96506 Generated report + process
 parameter modes and SF are each done when their own knowledge PR merges; ENG-92719 File processing element is done
 when all three are. The follow-up Sub-tasks do not gate their parent: the three ENG-95984 File process parameter type
 follow-ups (D2, D6, D8) and the two ENG-92719 File processing element side Sub-tasks (D20, D22) are separate scope
@@ -1983,9 +1985,9 @@ probe. All five are reflected above.
 | # | Change | Reason | Where |
 |---|---|---|---|
 | C1 | SysFile storage leaves OA unconditionally, into the new Sub-task SF; OA refuses SysFile sources and targets and describes designer-built SysFile elements without loss | SysFile has no runtime evidence; its five pre-code measurements include three that need the user to build designer probes; carving it out takes them and the two SysFile-only high findings (A1, A2) off OA's path | D15, D16, D24, D27, D29 |
-| C2 | If M3 confirms H-1, the mirror fix is its own Sub-task MH, delivered first, introducing `BindCollection` with explicit pairs; PT adds the P2 policy on top | a silent defect in shipped behaviour gets its own record and revert path, and the fix fits the fast review lane | D9, D5 |
+| C2 | If M3 confirms H-1, the mirror fix is its own Sub-task MH, delivered first, introducing `BindCollection` with explicit pairs; PT adds the P2 policy on top. Resolved later: M3 refuted H-1 on 2026-10-02, so MH was not created and X4 applies | a silent defect in shipped behaviour gets its own record and revert path, and the fix fits the fast review lane | D9, D5 |
 | C3 | Version numbers are claimed by rule at cut time, and the floor equals the FINAL cut of each clio PR (not 1.6.6.55, .56, .57 fixed in advance, and not the first cut) | two of the team's package PRs in review at once stamped the same number twice; a foreign archive under a first-cut number would satisfy the floor without the feature | D26, D25 |
-| C4 | The PR set is 13 PRs (16 with MH) (14 PRs, 17 with MH, once the ENG-95984 File process parameter type plan added CL-PT-DOC), with a docs-only clio PR for this spec set; at most one of our package PRs in human review at a time | approvals are dismissed on push in the package repository; the docs PR satisfies "no PR before its story file" | D27 |
+| C4 | The PR set is 13 PRs (16 with MH) (14 PRs, 17 with MH, once the ENG-95984 File process parameter type plan added CL-PT-DOC), with a docs-only clio PR for this spec set; at most one of our package PRs in human review at a time. Resolved later: M3 refuted H-1, MH was not created, so the set is 14 PRs | approvals are dismissed on push in the package repository; the docs PR satisfies "no PR before its story file" | D27 |
 | C5 | The PBT probe that used Binary to exercise the generic unsupported-type message moves to another unsupported type | Binary now has a dedicated message, and the clio e2e that pins the refusal never runs in TeamCity, so the PBT is the only automated guard | D1 |
 
 ### Round 3: cross-document review of Part D and D25 (3 findings: 2 high, 1 medium)

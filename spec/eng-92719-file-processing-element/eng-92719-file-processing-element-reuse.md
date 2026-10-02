@@ -75,7 +75,7 @@ several source facts.
 | OA | ENG-96505 Element readiness and object attachments mode |
 | RP | ENG-96506 Generated report + process parameter modes |
 | SF | NEW Sub-task of FE, "SysFile attachment storage in the Process file element" (key assigned on creation) |
-| MH | NEW Sub-task of PT, "typeFromElement collection mirror leaves its items unbound" (only if measurement M3 confirms it) |
+| MH | not created: the conditional Sub-task of PT, "typeFromElement collection mirror leaves its items unbound", waited on measurement M3, and M3 refuted the defect on 2026-10-02 |
 
 **Sibling documents.** [README](README.md) ·
 [platform-reference](eng-92719-file-processing-element-platform-reference.md) (what the platform does) ·
@@ -122,7 +122,7 @@ OA.1, OA.4 and OA.7, and test-plan TC-03 and section 3.5 (2026-10-01).
 | Value sources (`recordId`, `fileNameSuffix`, `files`) | `IProcessMappingService.ApplyMapping`, `RecordColumnReference` | Reuse | OA, RP | 4.2 |
 | Process-parameter items (`Docs.File`) | `ProcessSchemaElementLocator.DescendItemProperties` | Reuse + change (D4) | PT | 4.2 |
 | Two-level collection binding | `ApplyMapping` | Reuse + change (D5, new `BindCollection`) | PT | 4.2 |
-| File-collection declaration and the mirror | ENG-96230 Collection process parameter type code in `ProcessParameterService` | Reuse + change (D1, D2, D6, D7, D9) | PT (MH) | 4.3 |
+| File-collection declaration and the mirror | ENG-96230 Collection process parameter type code in `ProcessParameterService` | Reuse + change (D1, D2, D6, D7, D9) | PT | 4.3 |
 | Filter serialisation and decode | `ProcessFilterService.BuildFilterValue`, `FilterDescriptorReader`, `ProcessFilterTargetBase` | Reuse | OA, RP | 4.4 |
 | Filter root rule | `SignalStartFilterTarget` object-equals-root check | Pattern | OA, RP | 4.4 |
 | "Has a selecting filter" | `DataSourceFilterValue.HasStoredFilter` / `HasFilterConditions` | Reuse | OA, RP | 4.4 |
@@ -303,7 +303,7 @@ The cases are TC-01 to TC-03 in the [test-plan](eng-92719-file-processing-elemen
 | Describe decode of a single token | `ProcessSchemaElementLocator.TryNameNestedParameter` `:285-297`; `RecordColumnReference.TryDecode` `PB/Mappings/RecordColumnReference.cs:257-266` | **Reuse**: the D8 single-token element decode (PT) and the block's own value-source decode (D19) | A process-parameter twin of `TryNameNestedParameter` is new (D8 follow-up Sub-task; the element block decodes its own bindings without it) |
 | ENG-91844 Implement full parameter mapping (sources) | `RecordColumnReference` `PB/Mappings/RecordColumnReference.cs:42-236` (`ResolveRecordColumn` `:74`, `BuildReference` `:220`, `FindRecordSchema` `:236`) | **Reuse** through `ApplyMapping`'s `sourceColumn` arm, for example `saveTo.recordId {sourceElement: RD1, sourceElementParameter: ResultEntity, sourceColumn: Account}` | none |
 | Value-source descriptor member names | `OpenEditPageRecordDescriptor` `PB/Contracts/ProcessDescriptorContracts.cs:930`; single-source rule of `ApprovalRecordDescriptor` `:525` | **Pattern** for the shared `FileProcessingValueSourceDescriptor` (`value`, `processParameter`, `sourceElement`, `sourceElementParameter`, `sourceColumn`, `expression`) | No shared base type exists (the only contract inheritance is `FilterDescriptor : FilterGroupDescriptor`, `PB/Contracts/FilterContracts.cs:66`); the new type is a copy of the member set |
-| Two-level collection binding | `ApplyMapping` (`:48-63`) | **Reuse + change** (D5, PT): P1 / P2 / P2-MI / P3 / R-M1 / R-M2 inside `ApplyMapping` for structured sources, plus `BindCollection(schema, outer, itemPairs)` on `IProcessMappingService`. RP's `files` binder and, later, ENG-95985 Send email attachments call it | `BindCollection` lands in PT, or in MH if MH merges first (ENG-95984 File process parameter type plan, PB-4) |
+| Two-level collection binding | `ApplyMapping` (`:48-63`) | **Reuse + change** (D5, PT): P1 / P2 / P2-MI / P3 / R-M1 / R-M2 inside `ApplyMapping` for structured sources, plus `BindCollection(schema, outer, itemPairs)` on `IProcessMappingService`. RP's `files` binder and, later, ENG-95985 Send email attachments call it | `BindCollection` lands in PT (ENG-95984 File process parameter type plan, PB-4) |
 
 ### 4.3 Collection parameter code from ENG-96230 Collection process parameter type
 
@@ -313,7 +313,7 @@ The cases are TC-01 to TC-03 in the [test-plan](eng-92719-file-processing-elemen
 | `NormalizeParameterTypeName` | `:1033-1078`; doc comment `:1021-1032` | **Reuse + change** (D1): File aliases return the FileLocator name; dedicated `binary` / `blob` refusal; generic list names `File, FileCollection` | Existing Binary pins stay green (`PBT/ProcessParameterServiceTests.cs:144-150`); the probe at `:1671-1678` moves to another unsupported type |
 | `EnsureNotCollectionConstant` | `:425-431` | **Reuse + change** (D7): generalised to "no constant form" for File too | The mapping route has no equivalent; D7 adds it to `ProcessParameterValueValidator.ValidateConstantValue` (`PB/Parameters/ProcessParameterValueValidator.cs:133-221`), which covers every constant route |
 | `CloneItemProperties` | `:456-492` (refuses no items `:458-464`, refuses an item without a GUID `Tag` `:466-473`) | **Reuse, refusal kept** (D2 option B rejected); only the message changes, pointing to `type: FileCollection` | Do not use it to shape a declared FileCollection; D2 creates the one `File` item directly (`ContainerUId = schema.UId`, `Tag = null`) |
-| `BindMirroredCollection` | `:500-512` (outer level only, rolls back on failure) | **Reuse + change** (D9 / MH): call `BindCollection` with the clone pairs | pending M3 |
+| `BindMirroredCollection` | `:500-512` (outer level only, rolls back on failure) | **Reuse + change** (D9, PT): call `BindCollection` with the clone pairs, as parity (contingency X4) | M3 refuted H-1 (2026-10-02): the outer mapping already copies the items' values, so this is parity, not a defect fix |
 | Mirror source resolution | `ResolveTypeSourceParameter` `:402-410` (accepts dotted paths) | **Reuse + change** (D6): flat only, with a targeted refusal for an item path | today a dotted mirror of `ObjectFiles.File` silently creates an unbound FileLocator parameter |
 | Type-change rule | `SetProcessParameter` `:222-237` ("Remove the parameter and add it with the new type instead", `:236`) | **Pattern** for source immutability on `setElement` (D12) | - |
 | Describe projection | `ToDescribeParameter` `:141-181`; `DecodeRecordColumnSource` `:184-220`; `WithNestedParameters` `:937-971` | **Reuse + change** (D2, D8): the FileCollection predicate; the nested-only listing walks items like `WithNestedParameters` | `DescribedParameter` in clio has no bag (5.1); no new per-parameter fields |
@@ -532,10 +532,10 @@ follow the existing per-family folders `PB/Email/` and `PB/Approval/`.
 |---|---|---|---|
 | File and FileCollection aliases; the one `File` item a FileCollection is born with; the dedicated Binary refusal | PT | `NormalizeParameterTypeName`, the collection aliases, `FileLocatorDataValueType` | PB-1, PB-2 |
 | `ProcessSchemaElementLocator.ResolveProcessParameterPath` (no `ContainerUId` backfill) | PT | `DescendItemProperties` refactored to a root collection | PB-3 |
-| P1, P2, P2-MI, P3, R-M1, R-M2 inside `ApplyMapping`; `BindCollection` on `IProcessMappingService` | PT (or MH) | `ApplyMapping`, the locator, `IProcessDesignNotices` | PB-4 |
+| P1, P2, P2-MI, P3, R-M1, R-M2 inside `ApplyMapping`; `BindCollection` on `IProcessMappingService` | PT | `ApplyMapping`, the locator, `IProcessDesignNotices` | PB-4 |
 | Dotted-mirror refusal; the FileCollection hint in `CloneItemProperties`; constant refusal for FileLocator and collection targets; the item-aware delete guard | PT | `ResolveTypeSourceParameter`, `ValidateConstantValue`, `WithNestedParameters` | PB-5, PB-6 |
 | Nested-only listing and the single-token element-source decode in describe; the FileCollection predicate | PT | `ProcessDescriber`, `TryNameNestedParameter`, `ToDescribeParameter` | PB-7 |
-| `BindMirroredCollection` binding items (if M3 confirms H-1) | MH or PT | `BindCollection` | PB-8 |
+| `BindMirroredCollection` binding items (parity; M3 refuted H-1, X4) | PT | `BindCollection` | PB-8 |
 | `ElementTypes.FileProcessing` (`fileprocessing`, `processfile`); mirrored constants (section 3.2) | OA | `ProcessDesignConstants` | OA.1 |
 | Variant registry (`IFileProcessingVariant`, `FileProcessingVariantRegistry`) | OA (Object), RP (Report, Process) | `UserTaskSchemaIdentity` x3 | OA.1, RP.3 |
 | `FileProcessingElementHandler` (Create, Configure, CanBuild, CanDescribe, Describe; `SerializeToDB`; nested-UId re-mint) | OA | `OpenEditPageElementHandler` pattern, the platform sync, template definitions | OA.1 |

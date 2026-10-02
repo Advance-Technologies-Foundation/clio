@@ -40,7 +40,7 @@ rejects HTTP DELETE).
 | Trap | Claim that is only traced | Run | Before code? | If the run refutes the claim |
 |---|---|---|---|---|
 | [T-11](#t-11) | `Files.File` bound alone to a single File parameter copies ONE file; an unset one gives an NRE | M1, M2 (write) | **yes** (M1) | the single-file path of D18 is withdrawn and refused; the guide says "wrap one file in a FileCollection" |
-| [T-8](#t-8) | the shipped ENG-96230 Collection process parameter type mirror binds the outer level only, so every mirrored row reads null | M3 (write) | **yes** | if confirmed: MH Sub-task first; if refuted: items are still bound, as parity (D9) |
+| [T-8](#t-8) | the shipped ENG-96230 Collection process parameter type mirror binds the outer level only, so every mirrored row reads null | M3 (write), **done 2026-10-02: refuted** | **yes** | items are still bound, as parity (D9); this applies, so no MH Sub-task (X4) |
 | [T-16](#t-16) | a single File mapped from a collection item outside a row context misbehaves | M6 (write) | **yes** | the R-M1 refusal is dropped |
 | [T-22](#t-22) | the server-side storage resolver predicts the designer's object list | M10 (read-only, designer) | **yes** | the D15 refusal set R3-R5 is adjusted to the designer's list |
 | [T-23](#t-23) | an Object element finds a Freedom UI upload stored in SysFile | M8 (write) | **yes** (SF) | SysFile sources stay refused |
@@ -120,7 +120,7 @@ M-G6-4), [T-43](#t-43).
 | **OA** | ENG-96505 Element readiness and object attachments mode |
 | **RP** | ENG-96506 Generated report + process parameter modes |
 | **SF** | NEW Sub-task of FE: "SysFile attachment storage in the Process file element" |
-| **MH** | NEW conditional Sub-task of PT: "typeFromElement collection mirror leaves its items unbound" |
+| **MH** | not created: the conditional Sub-task of PT "typeFromElement collection mirror leaves its items unbound" waited on M3, and M3 refuted H-1 on 2026-10-02 |
 | **SK** | ENG-95244 [Arch debt] Proven Solutions: give the process descriptor a real schema and wire the R1-R17 graph validator into the write path (ENG-88414) (the key in that title is ENG-88414 AI-driven application development; in flight; makes descriptor keys strict) |
 
 ---
@@ -136,7 +136,7 @@ M-G6-4), [T-43](#t-43).
 | T-5 | Shape change is a no-op; the delete guard does not see items | **yes** | source | PT (D7) |
 | T-6 | An Out FileCollection cannot be filled by a caller | no | source + measured | PT (D3) |
 | T-7 | The dotted mirror creates an unbound FileLocator parameter | **yes** | source | PT (D6) |
-| T-8 | The ENG-96230 Collection process parameter type mirror binds the outer level only (H-1) | **yes** | source | M3, then MH or PT (D9) |
+| T-8 | The ENG-96230 Collection process parameter type mirror binds the outer level only (H-1) | **yes** | source; refuted by M3 (2026-10-02) | PT, as parity (D9, X4) |
 | T-9 | Process-parameter paths are flat-only | no | source | PT (D4) |
 | T-10 | Outer-only binding of `Files` | at save **yes**, run loud | source | PT, RP (D5, D18) |
 | T-11 | Nested-only binding of `Files` (disputed) | depends on M1 | source, disputed | M1, then RP (D18) |
@@ -182,7 +182,7 @@ M-G6-4), [T-43](#t-43).
 | T-51 | A server-built `ConsiderTimeInFilter` is "false" | **yes** | source + measured | OA (D20) |
 | T-52 | Template nested-item UIds are shared | **yes** | source | OA (D20) |
 | T-53 | An in-place value edit keeps the template's provenance | **yes** | source | OA, RP (D20) |
-| T-54 | Schema UIds through the mapping path's Lookup validator | no | source | OA (D11) |
+| T-54 | Schema UIds through the mapping path's Lookup validator | no | source + measured | OA (D11) |
 | T-55 | Describe hides nested-only bindings | **yes** | source | PT (D8), RP (D19) |
 | T-56 | Describe today: generic user task, raw GUIDs | **yes** | measured | OA, RP (D19) |
 | T-57 | Describe decodes only three-segment column paths | **yes** | source | PT (D8) |
@@ -196,6 +196,7 @@ M-G6-4), [T-43](#t-43).
 | T-65 | Unit tests cannot prove runtime behaviour | **yes** | source | stand runs (D28, D29) |
 | T-66 | Academy wording differs from the product | **yes** | source | guide (D25) |
 | T-67 | Consumers the builder cannot wire; a collection as a filter value | **yes** | source | guide (D22), Sub-task |
+| T-68 | A nested-item mapping on the create path throws a bare NRE | no (loud, uninformative) | measured | PT (two-level binder on create) |
 
 ---
 
@@ -308,11 +309,14 @@ M-G6-4), [T-43](#t-43).
 - **What happens.** `BindMirroredCollection` maps root to root. The runtime rebuilds the rows of a target that has item
   properties by the TARGET's item names and fills an unbound item with its default. If that holds, every mirrored Read
   data row reads null. No shipped process has that shape (0 of 61 bound top-level collections bind the outer level only).
-- **Silent or loud.** Silent.
-- **Basis / evidence.** source, unmeasured: `PB/Parameters/ProcessParameterService.cs:500-512`;
-  `CORE/Terrasoft.Core/Process/ProcessInstanceParametersDataReader.cs:441-488`. measured (corpus): 0/61.
-- **Neutraliser.** M3 first. Confirmed: the MH Sub-task ships first (see [pr-split](eng-92719-file-processing-element-pr-split.md))
-  with `BindCollection` and explicit clone pairs. Refuted: items are still bound, as parity, and the comment at
+- **Measured: refuted.** M3 on 2026-10-02 (CrtProcessBuilder 1.6.6.54): 3 iterations, all `M3 name set`. The outer
+  Script mapping copies the whole collection value, items included, so the unbound item does not matter for reading.
+- **Silent or loud.** It would have been silent; M3 found no null rows.
+- **Basis / evidence.** source: `PB/Parameters/ProcessParameterService.cs:500-512`;
+  `CORE/Terrasoft.Core/Process/ProcessInstanceParametersDataReader.cs:441-488`. measured (corpus): 0/61. measured
+  (stand, 2026-10-02): M3, [open-questions](eng-92719-file-processing-element-open-questions.md) C.7.
+- **Neutraliser.** M3 refuted H-1, so there is no MH Sub-task. Items are still bound, as parity (one commit in
+  PK-PT, contingency X4 of [pr-split](eng-92719-file-processing-element-pr-split.md)), and the comment at
   `ProcessParameterService.cs:440-447` is narrowed (D9).
 
 ### T-9
@@ -991,7 +995,10 @@ M-G6-4), [T-43](#t-43).
   binder that writes these through `ApplyMapping` is refused or validates the wrong thing.
 - **Silent or loud.** Loud (refused) or silently wrong, depending on the value.
 - **Basis / evidence.** source: `PB/Parameters/ProcessParameterValueValidator.cs:166-189, 286-293`; the same trap in
-  `PB/Elements/ChangeDataConfigBinder.cs:900-909`.
+  `PB/Elements/ChangeDataConfigBinder.cs:900-909`. **Measured 2026-10-02** on 1.6.6.54: `addMapping` of the ContactFile
+  schema UId `e9eafee9…` onto `OF1.SourceEntitySchemaUId` is refused with "no SysSchema record has this id"
+  (`48118164cdf1`), the loud half; so today an agent cannot set the element's object through the generic route at
+  all and has to pick it in the designer ([open-questions](eng-92719-file-processing-element-open-questions.md) C.7).
 - **Neutraliser.** D11: these parameters are written directly as ConstValue by the binder; raw `addMapping` onto them is
   refused (T-47).
 

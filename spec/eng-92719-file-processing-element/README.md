@@ -20,7 +20,7 @@ caller sends. Third, the platform accepts almost every configuration mistake sil
 - a describe block that round-trips.
 
 Delivery is one package → clio → knowledge PR triple per Jira issue, plus one docs-only clio PR per spec set: 14
-PRs, or 17 with a conditional defect fix. The order is ENG-95984 File process parameter type, then ENG-96505 Element
+PRs. The order is ENG-95984 File process parameter type, then ENG-96505 Element
 readiness and object attachments mode, then ENG-96506 Generated report + process parameter modes, then a new SysFile
 Sub-task. A human merges every PR. With an AI agent writing the code, ENG-95984 File process parameter type takes
 about 7-15 h of agent time and 4.5-10 h of the owner's time (3-5 working days), and ENG-92719 File processing element
@@ -53,7 +53,7 @@ constraints.
 | **OA** | ENG-96505 Element readiness and object attachments mode (Sub-task of FE) |
 | **RP** | ENG-96506 Generated report + process parameter modes (Sub-task of FE) |
 | **SF** | NEW Sub-task of FE, "SysFile attachment storage in the Process file element" (key assigned on creation) |
-| **MH** | NEW Sub-task of PT, "typeFromElement collection mirror leaves its items unbound" (only if measurement M3 confirms the defect) |
+| **MH** | not created: the conditional Sub-task of PT, "typeFromElement collection mirror leaves its items unbound", waited on measurement M3, and M3 refuted the defect on 2026-10-02 |
 
 PR ids: `PK-` = crt-process-builder, `CL-` = clio, `KB-` = clio-knowledge (for example PK-OA). D1-D29, M1-M26 and
 Q1-Q19 are defined in [decisions](eng-92719-file-processing-element-decisions.md) and
@@ -70,13 +70,13 @@ Q1-Q19 are defined in [decisions](eng-92719-file-processing-element-decisions.md
 | 3 | [serialization-capture](eng-92719-file-processing-element-serialization-capture.md) | **The oracle for every "matches a designer-built capture" criterion.** Every metadata key decoded, and the provenance rules measured over 400 stored parameter entries. Which shipped capture each variant is compared with. What is missing: no saved SysFile-mode element exists anywhere. The named exceptions of the comparison rule, and the capture procedure SC-0..SC-4 on the stand. |
 | 4 | [traps](eng-92719-file-processing-element-traps.md) | **T-1..T-67, 57 of them silent; T-68 was added on 2026-10-02.** Each trap has its builder rule, refusal or test. The banner lists the traps that rest on a source trace only, and the run that settles each one. |
 | 5 | [reuse](eng-92719-file-processing-element-reuse.md) | **What to reuse, mirror or write new.** What comes from core. About twenty constants and seven algorithms that must be mirrored from CrtProcessDesigner, because production code cannot reference `Terrasoft.Configuration`. The four CrtProcessBuilder pieces that must change before reuse. What is genuinely new. |
-| 6 | [decisions](eng-92719-file-processing-element-decisions.md) | **The contract.** D1-D29 with options and consequences; 15 of them wait for the owner. Part D holds the replacement acceptance criteria for FE, OA and RP (D-2..D-4); D-1 points to AC-1..AC-10 of the ENG-95984 File process parameter type plan §1.4; D-5 holds the proposed Sub-tasks. Appendix A is the refusal and notice catalogue; Appendix B is the review log. |
+| 6 | [decisions](eng-92719-file-processing-element-decisions.md) | **The contract.** D1-D29 with options and consequences; 14 of them wait for the owner (D9 was answered by M3). Part D holds the replacement acceptance criteria for FE, OA and RP (D-2..D-4); D-1 points to AC-1..AC-10 of the ENG-95984 File process parameter type plan §1.4; D-5 holds the proposed Sub-tasks. Appendix A is the refusal and notice catalogue; Appendix B is the review log. |
 | 7 | [ENG-95984 File process parameter type plan](../eng-95984-file-parameter-type/eng-95984-file-parameter-type-plan.md) | **The parameter type.** Replacement AC-1..AC-10, and the binder rules P1/P2/P2-MI/P3/R-M1/R-M2 in one table. Work packages PB/CL/KB with `path:line`. The stand rows W0, V0, SC-0 and V1-V6, the estimate, the Definition of Done, and owner items O-1..O-10. |
 | 8 | [ENG-95984 File process parameter type test-plan](../eng-95984-file-parameter-type/eng-95984-file-parameter-type-test-plan.md) | **How the parameter type is tested.** Package (PU), clio (CU), e2e, knowledge (KU) and stand (V0-V8) cases, traced to AC-1..AC-10. The package mocking recipe. The cases that move with an open decision. |
 | 9 | [plan](eng-92719-file-processing-element-plan.md) | **The element.** What the tickets say that is not true (N1-N16), and what exists versus what is missing. The delivery shape and the work packages OA / RP / SF, with files and hours. Stand gates and post-cut proofs, the knowledge records owed, the estimate, and the Definition of Done per issue. |
 | 10 | [test-plan](eng-92719-file-processing-element-test-plan.md) | **How the element is tested.** The harness per repository, and the C# mocking recipes adapted from `C:/Projects/UnitTests`. TC-01..TC-91 traced to the AC, stand scenarios ST-01..ST-08, and designer checks DT-01..DT-04. The methods for M1-M26 and the read-only evidence queries. |
 | 11 | [pr-split](eng-92719-file-processing-element-pr-split.md) | **How the work becomes PRs.** The verdict per repository and its measured basis, and the PRs with exact titles, branches and merge order. Hard edges E1-E10. What must land together and what must not. Version and floor rules, contingencies X1-X8, Jira link corrections, and the review / merge / stand protocol. |
-| 12 | [open-questions](eng-92719-file-processing-element-open-questions.md) | **What is still open.** Q1-Q19 for the owner, each with a recommendation, and 27 stand measurements with recipes and status. What was already measured on 2026-10-01. The 37 contradictions found during the research and how each was resolved; 8 are still open. |
+| 12 | [open-questions](eng-92719-file-processing-element-open-questions.md) | **What is still open.** Q1-Q19 for the owner, each with a recommendation, and 27 stand measurements with recipes and status. What was already measured on 2026-10-01. The 37 contradictions found during the research and how each was resolved; 7 are still open. |
 
 ### Where each part of the request is answered
 
@@ -117,9 +117,9 @@ committed in the docs-only clio PR (CL-DOC), as `spec/eng-92707-sub-process-elem
 | Ten research reports (platform runtime, file data model, designer client, diagram, corpus, Academy, CrtProcessBuilder, test mocking, delivery surface, the earlier refinement's claims) | each re-checked by an independent refute-first verifier. The verifier did not use Jira, the refinement or other agents' output as evidence, and its log wins over its report | 139 claims: **95 confirmed and 44 partial**, each partial corrected in its log. No claim was refuted as a whole. The corrections are carried into these documents |
 | Eight gap reports, G1-G8 | the completeness critic's gaps: runtime binding, filter and sort roots, the storage resolver, builder serialization, consumers, report edge cases, the parameter contract, budgets and versions | each gap answered by a gap report. Their runtime claims are basis=source, and each one a decision depends on has an M-number |
 | Decisions, review round 1 | two adversarial reviewers | 32 findings (8 high, 9 medium, 15 low), all accepted, none rejected ([decisions](eng-92719-file-processing-element-decisions.md) Appendix B) |
-| Decisions, review round 2 | the PR split, judged from three competing proposals: reviewer-load-first 25 of 30 points, risk-first 24, throughput-first 19 | five changes C1-C5, among them SysFile moving out of OA, the MH Sub-task, and version numbers by rule ([decisions](eng-92719-file-processing-element-decisions.md) Appendix B, Round 2) |
+| Decisions, review round 2 | the PR split, judged from three competing proposals: reviewer-load-first 25 of 30 points, risk-first 24, throughput-first 19 | five changes C1-C5, among them SysFile moving out of OA, the MH Sub-task (later dropped: M3 refuted H-1 on 2026-10-02), and version numbers by rule ([decisions](eng-92719-file-processing-element-decisions.md) Appendix B, Round 2) |
 | Cross-document review of the 13 documents | three reviewers: consistency, request and mandates, primary-source facts | 56 findings; every one applied in the documents it touched, in the reconciliation of 2026-10-01 (see [Resolved during review](#resolved-during-review)) |
-| Cross-check of the documents against each other | [open-questions](eng-92719-file-processing-element-open-questions.md) Part D | 37 contradictions resolved. 8 are still open: six wait for M1, M3, M3b, M8 or M13, and two need no run because a refusal covers the case |
+| Cross-check of the documents against each other | [open-questions](eng-92719-file-processing-element-open-questions.md) Part D | 37 contradictions resolved. 7 are still open: five wait for M1, M3b, M8 or M13, and two need no run because a refusal covers the case |
 | Read-only stand measurements, 2026-10-01 | versions; feature states; printables; the designer observations UO-1..UO-4; describe of the four shipped report processes | recorded in [open-questions](eng-92719-file-processing-element-open-questions.md) Part C. Three earlier readings were wrong and are corrected (Part D, rows 17-19). The UO-1 "only Use in process" list was a combobox text-filter artefact. The stand research's "Add files" claim was wrong. Its reading of describe output was wrong too: the missing `itemProperties` came from a stale MCP clio client |
 | Runtime measurements | 27 measurements, none run yet; M10, M15 and M25 are partly answered | see [Stand measurements pending](#stand-measurements-pending) |
 
@@ -160,8 +160,9 @@ Text: decisions D1-D3, Part D.
 - P1 changes what an item-only multi-instance mapping writes: one iteration becomes N. So the `[RequiresPackage]`
   floor moves, and two shipped guidance passages (`sub-process.md`, `sub-process-when.md`) are rewritten under a
   version gate.
-- The shipped ENG-96230 Collection process parameter type mirror may leave its items unbound (H-1, pending M3). If
-  M3 confirms this, the fix ships first as the Sub-task MH.
+- The shipped ENG-96230 Collection process parameter type mirror leaves its items unbound, but its rows still read
+  their values: M3 refuted H-1 on 2026-10-02, because the outer mapping copies the whole collection, items included.
+  So there is no Sub-task MH. PT binds the items anyway, as one parity commit (contingency X4).
 
 Text: ENG-95984 File process parameter type plan §0, §3.1.
 
@@ -261,20 +262,20 @@ Text: pr-split §7, §12; ENG-95984 File process parameter type plan §4.3; deci
 
 The answer to "one PR or several": **in every repository, one PR per Jira issue.** No PR combines two issues, and
 nothing is split further by layer or by size. The issue order is PT, then OA, then RP, then SF. Within an issue,
-the order is package, then clio, then knowledge, and a human merges each PR. That makes **14 PRs, or 17 with
-MH**: 4 package, 6 clio (two of them docs-only), 4 knowledge. For ENG-95984 File process parameter type alone, this
+the order is package, then clio, then knowledge, and a human merges each PR. That makes **14 PRs**: 4
+package, 6 clio (two of them docs-only), 4 knowledge. For ENG-95984 File process parameter type alone, this
 is one PR in each repository, plus its docs-only clio PR CL-PT-DOC.
 
 | Repository | Verdict | PRs (exact titles) | Why |
 |---|---|---|---|
-| crt-process-builder (https://creatio.ghe.com/engineering/crt-process-builder) | **4 PRs, +1 conditional** | `ENG-95984 File process parameter type`; `ENG-96505 Element readiness and object attachments mode`; `ENG-96506 Generated report + process parameter modes`; `<SF-KEY> SysFile attachment storage in the Process file element`; conditional, and first: `<MH-KEY> typeFromElement collection mirror leaves its items unbound` | `main` is a release candidate at every moment, so every merged PR must leave a releasable state. A layer split fails that: it would ship a `main` that saves green and fails at run time. Pushes dismiss approvals (ruleset 82837), so only one of our package PRs is in review at a time. Splitting by size does not shorten review (48.7 h median for 1,500-4,500 added lines, 50.5 h above that). One PR for everything would be about 12-16k lines (12-17.5k with MH) |
-| clio (https://github.com/Advance-Technologies-Foundation/clio) | **6 PRs, +1 conditional** | one rebundle PR per package PR, under the same titles, plus two docs-only PRs: `ENG-95984 File process parameter type` (CL-PT-DOC: PT's BMAD set, merged before PK-PT opens) and `ENG-92719 File processing element` (CL-DOC: FE's BMAD set, merged before PK-OA opens) | four guard tests bind the archive, the pins, the floor literals, the enforced-floor sentences, the capability map and the e2e floor to one tree. So a rebundle cannot leave its feature PR, and two cuts cannot share one clio PR |
-| clio-knowledge (https://github.com/Advance-Technologies-Foundation/clio-knowledge) | **4 PRs, +1 conditional** | the same titles as the package PRs | a guidance generation reaches every installed clio once it is published. So it must name a version that a merged clio bundles. The one knowledge-first merge in this epic needed a corrective PR (https://github.com/Advance-Technologies-Foundation/clio-knowledge/pull/198, fixed by https://github.com/Advance-Technologies-Foundation/clio-knowledge/pull/201) |
+| crt-process-builder (https://creatio.ghe.com/engineering/crt-process-builder) | **4 PRs** | `ENG-95984 File process parameter type`; `ENG-96505 Element readiness and object attachments mode`; `ENG-96506 Generated report + process parameter modes`; `<SF-KEY> SysFile attachment storage in the Process file element` | `main` is a release candidate at every moment, so every merged PR must leave a releasable state. A layer split fails that: it would ship a `main` that saves green and fails at run time. Pushes dismiss approvals (ruleset 82837), so only one of our package PRs is in review at a time. Splitting by size does not shorten review (48.7 h median for 1,500-4,500 added lines, 50.5 h above that). One PR for everything would be about 12-16k lines |
+| clio (https://github.com/Advance-Technologies-Foundation/clio) | **6 PRs** | one rebundle PR per package PR, under the same titles, plus two docs-only PRs: `ENG-95984 File process parameter type` (CL-PT-DOC: PT's BMAD set, merged before PK-PT opens) and `ENG-92719 File processing element` (CL-DOC: FE's BMAD set, merged before PK-OA opens) | four guard tests bind the archive, the pins, the floor literals, the enforced-floor sentences, the capability map and the e2e floor to one tree. So a rebundle cannot leave its feature PR, and two cuts cannot share one clio PR |
+| clio-knowledge (https://github.com/Advance-Technologies-Foundation/clio-knowledge) | **4 PRs** | the same titles as the package PRs | a guidance generation reaches every installed clio once it is published. So it must name a version that a merged clio bundles. The one knowledge-first merge in this epic needed a corrective PR (https://github.com/Advance-Technologies-Foundation/clio-knowledge/pull/198, fixed by https://github.com/Advance-Technologies-Foundation/clio-knowledge/pull/201) |
 
 The hard edges that set the order are in [pr-split](eng-92719-file-processing-element-pr-split.md) §7:
 - PK-OA merges only after CL-PT (edges E4 and E6);
 - CL-OA merges only after KB-PT is **published** (E5);
-- PK-PT (and PK-MH, if it exists) opens only after CL-PT-DOC merged (E9);
+- PK-PT opens only after CL-PT-DOC merged (E9);
 - CL-DOC merges after CL-PT-DOC when both carry their analysis folders, so the FE folder's links into
   ../eng-95984-file-parameter-type/ resolve on master (E10);
 - the floor is the FINAL cut of each clio PR, and version numbers are claimed at cut time, never projected (§9).
@@ -286,6 +287,9 @@ Contingency splits fire only on a named trigger (§11):
 - X1, an early clio PR for the budget swap;
 - X2, cherry-pick RP's Report half if the Process-parameter half fails its stand proof;
 - X3, swap the RP and SF slots.
+
+X4 has fired: M3 refuted H-1 on 2026-10-02, so there is no MH triple, and binding the mirror's items is one parity
+commit in PK-PT.
 
 ---
 
@@ -305,8 +309,10 @@ between 2026-08-10 and 2026-09-30 (measured; [plan](eng-92719-file-processing-el
 | ENG-96506 Generated report + process parameter modes | 7-15 | 3.5-9 | 3-4 (adds 1.5-2) |
 | SF, new Sub-task "SysFile attachment storage in the Process file element" | 3-8 | 4-8 | 2-4 (adds 1.5-2.5) |
 | **ENG-92719 File processing element, total** | **26-52** | **15-33.5** | **about 7-10 after ENG-95984 File process parameter type merges** |
-| MH, conditional Sub-task "typeFromElement collection mirror leaves its items unbound" | 1-3 | 1-2 | +0.5-1, first |
-| **Both issues** | **33-67** | **19.5-43.5 (+1-2 with MH)** | **about 2-3 weeks from day 0** |
+| **Both issues** | **33-67** | **19.5-43.5** | **about 2-3 weeks from day 0** |
+
+The MH share is removed: M3 refuted H-1, so the conditional Sub-task MH (1-3 h agent, 1-2 h human, +0.5-1 day) is not
+created. It was never inside the totals above.
 
 The human column is the owner's time: decisions and Jira edits, designer-built probes and stand checks, steering and
 reading the agent's output, merges and knowledge publication checks. Other reviewers' time is not in it; their
@@ -340,10 +346,10 @@ changes, are in [open-questions](eng-92719-file-processing-element-open-question
 | Q3 | Where SysFile storage ships | the new Sub-task SF; OA refuses SysFile with a message | PK-OA |
 | Q4 | Slot order of RP and SF | RP first, unless custom-object attachments rank above generated reports | PK-RP |
 | Q5 | Downstream consumers | Send email → ENG-95985 Send email attachments; the Creatio.ai call is out of scope ("not buildable through this tool yet", never "Creatio cannot") | FE AC |
-| Q6 | PR split | one PR per Jira issue per repository, plus SF, conditional MH, CL-PT-DOC and CL-DOC (14 PRs, 17 with MH: the docs-only CL-PT-DOC and CL-DOC included) | any PR |
-| Q7 | Where defect H-1 is fixed, if M3 confirms it | its own Sub-task MH, delivered first | PK-PT |
+| Q6 | PR split | one PR per Jira issue per repository, plus SF, CL-PT-DOC and CL-DOC (14 PRs, the docs-only CL-PT-DOC and CL-DOC included) | any PR |
+| Q7 | Where defect H-1 is fixed | answered by M3 (2026-10-02): H-1 refuted, so no MH; binding the items is one parity commit in PK-PT (X4) | - |
 | Q8 | Delivery protocol (O4-O8, and the ENG-95984 File process parameter type plan's O-10) | CL-PT-DOC and CL-DOC first; the variant registry recorded in the ADR; merge commits for stacked PRs; merge windows with the owners of the in-flight branches; ask for a second stand | CL-PT-DOC and CL-DOC |
-| Q9 | Follow-up Sub-tasks | the unconditional ones on day 0; MH only after M3; the designer bug report only after M11; the X2 one only on that contingency | any PR |
+| Q9 | Follow-up Sub-tasks | the unconditional ones on day 0; MH not created (M3 refuted H-1); the designer bug report only after M11; the X2 one only on that contingency | any PR |
 | Q10 | How a file collection is declared | `type: FileCollection`, read back as `FileCollection` | PK-PT |
 | Q11 | Default direction of a FileCollection | Out (a caller-filled one is declared `In`) | PK-PT |
 | Q12 | Binder policy | P3 resets a stale parent with a notice; P2 and R-M2 apply only to file-consuming targets | PK-PT |
@@ -372,7 +378,7 @@ Q7, Q19, Q1, Q2 and Q8 (O-10 is part of Q8). Two smaller items sit outside that 
 Stand `Creatio`: core 10.1.37, .NET Framework, CrtProcessBuilder 1.6.6.54.
 On 2026-10-02 five of the seven read-only measurements (M10, M11 a/b in memory, M13, M15, M17-Q7;
 [open-questions](eng-92719-file-processing-element-open-questions.md) C.6) and the day-0 builder probes M3b, M14,
-M19, M20 and M24 (C.7) were run; M3 is built and waits for one designer step by the user. The day-0 probes also
+M19, M20 and M24 (C.7) were run. M3 was run the same day and refuted H-1, so MH is not created. The day-0 probes also
 found a new defect, a bare NullReferenceException for a nested-item mapping on the create path
 ([traps](eng-92719-file-processing-element-traps.md) T-68). Fifteen measurements gate code.
 Recipes and status are in [open-questions](eng-92719-file-processing-element-open-questions.md) Part B, and methods
@@ -389,7 +395,7 @@ Rules for every measurement:
 
 | Gate (first PR whose code waits) | Measurement | Write? | Built by |
 |---|---|---|---|
-| PK-MH / PK-PT | **M3**: does the shipped collection mirror read null rows (H-1)? | yes | builder + one designer step |
+| PK-PT | **M3**: does the shipped collection mirror read null rows (H-1)? **Done 2026-10-02: no, H-1 refuted** (3 iterations, all "name set"); no MH, X4 applies | yes | builder + one designer step |
 | | **M6**: a flat File taken from a collection item outside a row context | yes | designer + builder |
 | PK-PT verification baseline (no code waits) | **M3b** (MI-0 in the ENG-95984 File process parameter type test-plan): baseline, an item-only multi-instance mapping runs one iteration on 1.6.6.54. It is the baseline for the post-cut proof V3 and for the PT row of [pr-split](eng-92719-file-processing-element-pr-split.md) §14 | yes | builder |
 | PK-OA | **M10**: the designer's object list against the resolver's prediction. **Done 2026-10-02: matches** | no | UO method |
@@ -420,7 +426,7 @@ The ENG-95984 File process parameter type test-plan adds three rows:
 - V8, a single builder-declared File, run only if M1 passed.
 
 Order ([open-questions](eng-92719-file-processing-element-open-questions.md) B.2): on day 0, on 1.6.6.54, before
-the first MH or PT cut is installed: M13, then M6, M3, M3b, M14, M19, M20 and M24, one at a time. The
+the first PT cut is installed: M13, then M6, M3, M3b, M14, M19, M20 and M24, one at a time. The
 version-independent gates M10, M11(a)(b), M17-Q7 (PK-OA), M1 and M15 (PK-RP), the SF set, and M26 may run on any
 cut, so also while PK-PT is in review.
 
@@ -447,7 +453,7 @@ carried the old reading. Each was aligned in every document it touches; none is 
 | 12 | Modify data re-find, and Add data → report | tested (TC-71 in CL-OA, TC-74 in CL-RP), plus guidance | plan C-3; [decisions](eng-92719-file-processing-element-decisions.md) D22, D-2 |
 | 13 | MCP prompts | `ListUserTasksPrompt`, `CreateBusinessProcessPrompt`, `ModifyBusinessProcessPrompt` and `DescribeProcessPrompt` change per cut, pinned by TC-90 | decisions D25 |
 | 14 | "Rarely an endpoint" | replaced; TC-88 pins the new sentence | decisions D-3 |
-| 15 | BMAD for PT | CL-PT-DOC before PK-PT (E9); 14 PRs, 17 with MH | ENG-95984 File process parameter type plan CL-0, O-10; pr-split §5.8 |
+| 15 | BMAD for PT | CL-PT-DOC before PK-PT (E9); 14 PRs (no MH: M3 refuted H-1) | ENG-95984 File process parameter type plan CL-0, O-10; pr-split §5.8 |
 | 16 | M26 | in D29 | [traps](eng-92719-file-processing-element-traps.md) T-19 |
 | 17 | Version numbers | rules, claimed at cut time; the floor is each clio PR's final cut | pr-split §9 |
 

@@ -3,10 +3,10 @@
 **Summary.** In all three repositories the work is split into **one PR per Jira issue per repository**, with
 no further split by layer or by size: ENG-95984 File process parameter type, ENG-96505 Element readiness and
 object attachments mode, ENG-96506 Generated report + process parameter modes, and one NEW Sub-task that takes
-SysFile attachment storage out of ENG-96505 Element readiness and object attachments mode (a second NEW Sub-task,
-for the collection-mirror defect, exists only if stand measurement M3 confirms the defect). That is **4 package
+SysFile attachment storage out of ENG-96505 Element readiness and object attachments mode. That is **4 package
 PRs, 6 clio PRs** (two extra docs-only PRs, one per spec set: ENG-95984 File process parameter type and ENG-92719
-File processing element) **and 4 knowledge PRs: 14 in total, or 17 with the conditional defect fix.** Each issue
+File processing element) **and 4 knowledge PRs: 14 in total.** No defect-fix Sub-task is added: stand measurement M3
+refuted the collection-mirror defect H-1 on 2026-10-02, so contingency X4 applies (section 11). Each issue
 ships as a triple - package PR, then the clio rebundle PR, then the knowledge PR - and the issues ship one after
 another in the order PT -> OA -> RP -> SF (aliases in section 1), with at most one of our package PRs in human
 review at a time while the next ticket iterates as a stacked draft. The critical path is the four serialized
@@ -54,7 +54,7 @@ Written 2026-10-01, read-only: nothing was built, committed, pushed, merged, or 
 | **OA** | ENG-96505 Element readiness and object attachments mode | Sub-task of FE |
 | **RP** | ENG-96506 Generated report + process parameter modes | Sub-task of FE |
 | **SF** | NEW: "SysFile attachment storage in the Process file element" (key assigned on creation) | Sub-task of FE |
-| **MH** | NEW, only if M3 confirms defect H-1: "typeFromElement collection mirror leaves its items unbound" | Sub-task of PT |
+| **MH** | not created: "typeFromElement collection mirror leaves its items unbound" waited on M3, and M3 refuted defect H-1 on 2026-10-02 | (would have been a Sub-task of PT) |
 
 In-flight work that shares files with this split:
 - **CA** = ENG-99970 CAADT runs for BPMS Tools cost 6-15x other teams - find and close the gap;
@@ -75,9 +75,9 @@ A **cut** is a rebundled CrtProcessBuilder archive under a claimed version numbe
 
 | Repository | Verdict | Reasons |
 |---|---|---|
-| **crt-process-builder** | **Split: 4 PRs, plus 1 conditional.** One PR each for PT, OA, RP and SF. MH is added only if M3 confirms H-1. | `main` is a release candidate: any rebundle by any team cuts from it, and CI (https://creatio.ghe.com/engineering/crt-process-builder/pull/83) would open a clio rebundle PR on every `main` build. So every merged package PR must leave a releasable product state. A split by layer fails that test (section 10.2). A split by size slows delivery here (section 3, row 9). A push dismisses approvals (section 3, row 1), so the PRs are reviewed one at a time. |
-| **clio** | **Split: 6 PRs, plus 1 conditional.** Two docs-only PRs, `ENG-95984 File process parameter type` (CL-PT-DOC) and `ENG-92719 File processing element` (CL-DOC), the BMAD spec sets, plus exactly ONE rebundle PR per package PR. | Four guard tests bind the archive, the four pins, the `[RequiresPackage]` literals, the enforced-floor sentences, the capability-map literals and the e2e floor to one tree (section 3, row 5). So a rebundle cannot leave its feature PR, and two cuts cannot share one clio PR (the first cut would ship in no clio). The early "groundwork" clio PRs proposed during analysis prevent no silent failure. They are kept only as contingency X1 (section 11). |
-| **clio-knowledge** | **Split: 4 PRs, plus 1 conditional.** One guidance generation per package PR, each merged after its clio PR. | Knowledge reaches every installed clio the moment it is published. So each generation must name a version that a merged clio bundles. The one knowledge-first merge in this epic shipped a floor that no clio bundled (https://github.com/Advance-Technologies-Foundation/clio-knowledge/pull/198) and needed a corrective PR (https://github.com/Advance-Technologies-Foundation/clio-knowledge/pull/201). |
+| **crt-process-builder** | **Split: 4 PRs.** One PR each for PT, OA, RP and SF. No MH: M3 refuted H-1. | `main` is a release candidate: any rebundle by any team cuts from it, and CI (https://creatio.ghe.com/engineering/crt-process-builder/pull/83) would open a clio rebundle PR on every `main` build. So every merged package PR must leave a releasable product state. A split by layer fails that test (section 10.2). A split by size slows delivery here (section 3, row 9). A push dismisses approvals (section 3, row 1), so the PRs are reviewed one at a time. |
+| **clio** | **Split: 6 PRs.** Two docs-only PRs, `ENG-95984 File process parameter type` (CL-PT-DOC) and `ENG-92719 File processing element` (CL-DOC), the BMAD spec sets, plus exactly ONE rebundle PR per package PR. | Four guard tests bind the archive, the four pins, the `[RequiresPackage]` literals, the enforced-floor sentences, the capability-map literals and the e2e floor to one tree (section 3, row 5). So a rebundle cannot leave its feature PR, and two cuts cannot share one clio PR (the first cut would ship in no clio). The early "groundwork" clio PRs proposed during analysis prevent no silent failure. They are kept only as contingency X1 (section 11). |
+| **clio-knowledge** | **Split: 4 PRs.** One guidance generation per package PR, each merged after its clio PR. | Knowledge reaches every installed clio the moment it is published. So each generation must name a version that a merged clio bundles. The one knowledge-first merge in this epic shipped a floor that no clio bundled (https://github.com/Advance-Technologies-Foundation/clio-knowledge/pull/198) and needed a corrective PR (https://github.com/Advance-Technologies-Foundation/clio-knowledge/pull/201). |
 
 **Why one PR per Jira issue:**
 - one floor and one guide generation per blast radius;
@@ -129,14 +129,12 @@ knowledge. A human merges each row.
 
 | Merge # | Id | Repo | Title (exact) | Branch | Base | Depends on (hard edges in section 7) |
 |---|---|---|---|---|---|---|
-| 0 | **CL-PT-DOC** | clio | `ENG-95984 File process parameter type` | `feature/ENG-95984-file-parameter-type-spec` | `master` | the owner decisions O-1..O-10 of the ENG-95984 File process parameter type plan; the M3 result, so MH's story rides in it if M3 confirms H-1 |
+| 0 | **CL-PT-DOC** | clio | `ENG-95984 File process parameter type` | `feature/ENG-95984-file-parameter-type-spec` | `master` | the owner decisions O-1..O-10 of the ENG-95984 File process parameter type plan; the M3 result (in: H-1 refuted, so no MH story) |
 | 0b | **CL-DOC** | clio | `ENG-92719 File processing element` | `feature/ENG-92719-process-file-spec` | `master` | owner decisions (section 13); CL-PT-DOC merged, when both carry their analysis folders (E10) |
-| 1 | PK-MH (cond.) | pkg | `<MH-KEY> typeFromElement collection mirror leaves its items unbound` | `feature/<MH-KEY>-mirror-item-binding` | `main` | M3 confirmed; owner chose a separate fix (D9); CL-PT-DOC merged (E9) |
-| 2 | CL-MH (cond.) | clio | same title | same | `master` | PK-MH merged and tagged |
-| 3 | KB-MH (cond.) | kb | same title | same | `master` | CL-MH merged |
-| 4 | **PK-PT** | pkg | `ENG-95984 File process parameter type` | `feature/ENG-95984-file-process-parameter-type` | draft on PK-MH's branch while that PR is open, else `main`; retargeted to `main` before leaving draft | M6; M3 decided; PK-MH merged (if it exists); CL-PT-DOC merged (E9) |
-| 5 | **CL-PT** | clio | `ENG-95984 File process parameter type` | same | draft on CL-MH's branch, then `master` | PK-PT merged and tagged |
-| 6 | **KB-PT** | kb | `ENG-95984 File process parameter type` | same | draft on KB-MH's branch, then `master` | CL-PT merged; **must be published** before CL-OA (merge row 8) |
+| 1-3 | - | - | not created: the conditional MH triple (PK-MH, CL-MH, KB-MH) waited on M3, which refuted H-1 on 2026-10-02 (X4) | - | - | - |
+| 4 | **PK-PT** | pkg | `ENG-95984 File process parameter type` | `feature/ENG-95984-file-process-parameter-type` | `main` | M6; M3 (done 2026-10-02); CL-PT-DOC merged (E9) |
+| 5 | **CL-PT** | clio | `ENG-95984 File process parameter type` | same | `master` | PK-PT merged and tagged |
+| 6 | **KB-PT** | kb | `ENG-95984 File process parameter type` | same | `master` | CL-PT merged; **must be published** before CL-OA (merge row 8) |
 | 7 | **PK-OA** | pkg | `ENG-96505 Element readiness and object attachments mode` | `feature/ENG-96505-process-file-object-attachments` | draft on PK-PT's branch, then `main` | PK-PT merged **and CL-PT merged**; CL-DOC merged; M10, M11(a)(b), M14, M17-Q7 |
 | 8 | **CL-OA** | clio | `ENG-96505 Element readiness and object attachments mode` | same | draft on CL-PT's branch, then `master` | PK-OA merged and tagged; **KB-PT published** |
 | 9 | **KB-OA** | kb | `ENG-96505 Element readiness and object attachments mode` | same | draft on KB-PT's branch, then `master` | CL-OA merged |
@@ -147,7 +145,7 @@ knowledge. A human merges each row.
 | 14 | **CL-SF** | clio | `<SF-KEY> SysFile attachment storage in the Process file element` | same | draft on CL-RP's branch, then `master` | PK-SF merged and tagged |
 | 15 | **KB-SF** | kb | `<SF-KEY> SysFile attachment storage in the Process file element` | same | draft on KB-RP's branch, then `master` | CL-SF merged |
 
-CL-PT-DOC and CL-DOC are numbered 0 and 0b: CL-PT-DOC must merge before PK-PT (or PK-MH) opens (E9); CL-DOC only
+CL-PT-DOC and CL-DOC are numbered 0 and 0b: CL-PT-DOC must merge before PK-PT opens (E9); CL-DOC only
 needs to merge before PK-OA opens (E7) and can merge in parallel with PT, after CL-PT-DOC when both carry their
 analysis folders (E10).
 Knowledge branches live in a dedicated worktree under `.worktrees/<task>/` (`kbm/AGENTS.md:26-30`). net472
@@ -159,8 +157,6 @@ package worktrees live on a short path, `C:/Projects/workspace/<short>`, because
 |---|---|---|---|---|---|
 | CL-PT-DOC | none | none | docs only | none | gate 1 comprehensive; gate 2 skipped (docs); gate 3 comprehensive |
 | CL-DOC | none | none | docs only | none | gate 1 comprehensive; gate 2 skipped (docs); gate 3 comprehensive |
-| PK-MH | descriptor restamp inside the PR; claims the first free number at or above 1.6.6.55 | - | under 1.5k lines (fast lane) | PBT `ProcessParameterServiceTests` mirror cases | gates 1 and 3 comprehensive; gate 2 single lens |
-| CL-MH | rebundle (archive + 4 pins) | **yes**, to the final cut | small | pins, floor tests, one e2e | gates 1 and 3 comprehensive |
 | PK-PT | restamp inside the PR | - | 2.3-3.2k lines | PBT D1-D8 lists, D5 regressions | gates 1 and 3 comprehensive (shared `ApplyMapping` funnel); gate 2 full on binder commits |
 | CL-PT | rebundle | **yes** | medium | full `TestCategory=Unit` (4 modules) + NEW `FileParameterToolE2ETests.cs` | gates 1 and 3 comprehensive |
 | KB-PT | libraryVersion above master at merge | - | small-medium (new guide) | pin, size and cross-reference tests | refute-first fact check |
@@ -189,7 +185,7 @@ sentences are written. An earlier draft of D26 (not attached) fixed the numbers
 1.6.6.55, .56 and .57; they would hold only if nothing else landed and no PR were re-cut, so the attached D26 states
 the rule instead.
 
-The package total, about 12-16k lines (12-17.5k with MH), is the main argument against one PR (section 10.1).
+The package total, about 12-16k lines, is the main argument against one PR (section 10.1).
 
 ---
 
@@ -200,21 +196,18 @@ Each package row lists only what the PR must contain. The design is in [plan](en
 [test-plan](eng-92719-file-processing-element-test-plan.md) and the
 [ENG-95984 File process parameter type test-plan](../eng-95984-file-parameter-type/eng-95984-file-parameter-type-test-plan.md).
 
-### 5.1 MH (conditional): typeFromElement collection mirror leaves its items unbound
+### 5.1 MH: not created
 
-| Repo | Contents |
-|---|---|
-| pkg | `BindCollection(ProcessSchema, ProcessMappingDescriptor outer, IReadOnlyList<(string TargetItem, string SourceItem)> itemPairs)` on `IProcessMappingService` (`PB/Mappings/IProcessMappingService.cs:13-22`), with explicit pairs only. `ProcessParameterService.BindMirroredCollection` (`PB/Parameters/ProcessParameterService.cs:500-512`) calls it with the clone pairs, and comment K3 (`:440-447`) is corrected. The M3 evidence goes in the PR description. Restamp. Tests: extend `AddProcessParameter_ShouldBindMirroredCollection_ToSourceOutput` (`PBT/ProcessParameterServiceTests.cs:1760`). |
-| clio | Rebundle; floor raise (every file in 9.2); McpCapabilityMap floor rows; an e2e where a Read data `typeFromElement` mirror is then described with both levels bound. |
-| kb | The ENG-96230 Collection process parameter type mirror sentence in `guidance/mcp/guides/processes/parameters.md`, version-gated; a pin test. |
-
-If M3 refutes H-1, this triple does not exist (contingency X4), and D9's parity change becomes one commit in PK-PT.
+M3 refuted H-1 on 2026-10-02 (3 iterations, all "name set"), so the conditional MH triple does not exist
+(contingency X4). `BindCollection` comes with PK-PT (section 5.2, commit 4), and D9's parity change, the mirror
+binding its items with the clone pairs, is one commit in PK-PT (commit 8). The guide sentence that pins the mirror
+behaviour moves in KB-PT (decisions D9).
 
 ### 5.2 PT: ENG-95984 File process parameter type
 
 | Repo | Contents |
 |---|---|
-| pkg | The PR description maps each commit to its D-id. The commits:<br>(1) D1 aliases, and the Binary/BLOB refusal, which names File and keeps the substrings `not supported` and `Binary`;<br>(2) D2 `FileCollection` write alias and describe predicate; D3 defaults;<br>(3) D4 `ResolveProcessParameterPath`, with both `ResolveProcessParameter` callers switched (`ProcessMappingService.cs:221, 280`); behaviour-neutral, pinned by the existing tests;<br>(4) D5 binder rules P1/P2/P2-MI/P3/R-M1/R-M2 in `ApplyMapping` (`:48-63`), and the P2 policy on `BindCollection` (the whole API if MH does not exist);<br>(5) D6 dotted-mirror refusal;<br>(6) D7 constants, `referenceSchema`, delete guard, `setParameter` shape;<br>(7) D8 nested-only listing (`PB/Describe/ProcessDescriber.cs:187-193`) and the element-source decode;<br>(8) D9 parity, if there is no MH;<br>(9) `docs/file-parameter-capture.md`;<br>(10) restamp, last.<br>The probe `AddProcessParameter_ShouldNameCollection_InUnsupportedTypeMessage` (`PBT/ProcessParameterServiceTests.cs:1670-1678`) moves from `Binary` to `Image` or `Color`. Otherwise it would stop exercising the generic message once Binary gets its own. It is the only automated guard of the refusal text, because the clio e2e that pins the same substrings is in `McpE2E.ProcessDesigner`, which TeamCity never runs (section 3, row 7). `:144-150` is unchanged.<br>The PR's "Visible behaviour changes" section lists: (a) rule P1 of D5 changes what an item-only `InputRecordCollection` mapping writes: when the source is an item of a collection, the parent `InputRecordCollection` is now bound to the source's collection too, so a multi-instance sub-process iterates once per source row instead of once; (b) describe reports `sourceElement`/`sourceElementParameter` for every single-token element-to-element value; (c) `type: File` and `type: FileCollection` are accepted, and Binary/BLOB are refused with a message that names File. |
+| pkg | The PR description maps each commit to its D-id. The commits:<br>(1) D1 aliases, and the Binary/BLOB refusal, which names File and keeps the substrings `not supported` and `Binary`;<br>(2) D2 `FileCollection` write alias and describe predicate; D3 defaults;<br>(3) D4 `ResolveProcessParameterPath`, with both `ResolveProcessParameter` callers switched (`ProcessMappingService.cs:221, 280`); behaviour-neutral, pinned by the existing tests;<br>(4) D5 binder rules P1/P2/P2-MI/P3/R-M1/R-M2 in `ApplyMapping` (`:48-63`), and the whole `BindCollection` API with the P2 policy (MH does not exist);<br>(5) D6 dotted-mirror refusal;<br>(6) D7 constants, `referenceSchema`, delete guard, `setParameter` shape;<br>(7) D8 nested-only listing (`PB/Describe/ProcessDescriber.cs:187-193`) and the element-source decode;<br>(8) D9 parity: the mirror binds its items too (contingency X4, M3 refuted H-1);<br>(9) `docs/file-parameter-capture.md`;<br>(10) restamp, last.<br>The probe `AddProcessParameter_ShouldNameCollection_InUnsupportedTypeMessage` (`PBT/ProcessParameterServiceTests.cs:1670-1678`) moves from `Binary` to `Image` or `Color`. Otherwise it would stop exercising the generic message once Binary gets its own. It is the only automated guard of the refusal text, because the clio e2e that pins the same substrings is in `McpE2E.ProcessDesigner`, which TeamCity never runs (section 3, row 7). `:144-150` is unchanged.<br>The PR's "Visible behaviour changes" section lists: (a) rule P1 of D5 changes what an item-only `InputRecordCollection` mapping writes: when the source is an item of a collection, the parent `InputRecordCollection` is now bound to the source's collection too, so a multi-instance sub-process iterates once per source row instead of once; (b) describe reports `sourceElement`/`sourceElementParameter` for every single-token element-to-element value; (c) `type: File` and `type: FileCollection` are accepted, and Binary/BLOB are refused with a message that names File. |
 | clio | Rebundle; floor raise; type lists in create and modify (+30 B / +28 B). Budget swap S1 + C6 (create) and S2 (modify), which must keep `this clio requires <floor>`, `multiInstanceOptions {...}` and the `stopped validating formulas` collapse clause, with no floor literal in the 60 characters before it (ENG-95984 File process parameter type plan CL-2). `ModifyProcessAsNewVersionTool.cs:83-88` floor parenthetical rewritten once. Describe decoded-source clause. **ManagerMap arm `"fileprocessing" or "processfile"`** (`Schema.cs:1144-1145`), with `ManagerMapResolveDataIdTests` cases and the update to `docs/knowledge/ProcessModel/subprocess-build-token-needs-a-managermap-arm.md`. McpCapabilityMap rows. The Binary e2e `[Description]` reworded (refused for good). PT's story status flips (in-progress, review; the done flip rides in CL-OA). The spec set is CL-PT-DOC's (section 5.7). NEW `clio.mcp.e2e/FileParameterToolE2ETests.cs` (`[Category(McpE2ECategories.ProcessDesigner)]`, `MinimumPackageVersion` = floor). Must stay green on the stand, each result recorded in the PR: `SubProcessMultiInstanceToolE2ETests`, `ModifyBusinessProcess_Should_RejectUnsupportedParameterType`, `RecordColumnSourceToolE2ETests`, `DescribeProcessToolE2ETests`. |
 | kb | **Births the `process-files` guide** (no banner), with full registration: `bundle-source.json` entry, `requirements.itemIds`, `resourceUris`, `GuidanceMigrationTests.PostMigrationGuidance`, routing row, `ProcessGuideSet.GoLiveFloor`, a pin test. `parameters.md`: the type list plus the FileCollection exception, measured against the 345 chars left. `sub-process.md:133-137` and `sub-process-when.md:49-51` rewritten with a version gate, keeping the "send both" advice. |
 
@@ -269,7 +262,7 @@ is a deliberate reading of the AGENTS.md sprint tracker rule for stacked drafts.
   `spec/prd/spec-eng-95984-file-parameter-type.md`, `spec/adr/adr-eng-95984-file-parameter-type.md` (D1-D9, D23,
   D25, D26), `spec/stories/story-eng-95984-file-parameter-type-1.md`, `spec/test-plans/tp-eng-95984-file-parameter-type.md`,
   and `spec/sprint-status.yaml` rows in `ready-for-dev`.
-- The stories of PT's children: MH (if M3 confirmed H-1) and the three follow-up Sub-tasks.
+- The stories of PT's children: the three follow-up Sub-tasks (MH is not created: M3 refuted H-1).
 - The `../eng-95984-file-parameter-type/` folder, if the owner wants it in the repository.
 
 ### 5.8 BMAD artifacts each issue needs before its package PR opens
@@ -277,7 +270,7 @@ is a deliberate reading of the AGENTS.md sprint tracker rule for stacked drafts.
 | Issue | PRD / spec | ADR | Story | Test plan | sprint-status | Carried by | Before |
 |---|---|---|---|---|---|---|---|
 | ENG-95984 File process parameter type | `spec-eng-95984-file-parameter-type.md` | `adr-eng-95984-file-parameter-type.md` | `story-eng-95984-file-parameter-type-1.md` | `tp-eng-95984-file-parameter-type.md` | one row | CL-PT-DOC | PK-PT opens (E9) |
-| MH (only if M3 confirms H-1) | PT's | PT's | its story, numbered in creation order | PT's (PU-53) | one row | CL-PT-DOC | PK-MH opens (E9) |
+| MH: not created (M3 refuted H-1) | - | - | - | - | - | - | - |
 | PT follow-ups (Declared item shape; mirror allow-list; describe decode) | PT's | PT's | one each | own rows | one row each | CL-PT-DOC | their package PRs open |
 | ENG-92719 File processing element (Story) | `prd-eng-92719-file-processing-element.md` | `adr-eng-92719-file-processing-element.md` (D10-D29, O5) | delivered through its Sub-tasks | `tp-eng-92719-file-processing-element.md` (with a TC-nn to TC-U-/TC-I- column) | Story row | CL-DOC | PK-OA opens (E7) |
 | ENG-96505 Element readiness and object attachments mode | FE's | FE's | `story-eng-92719-file-processing-element-1.md` | FE's | one row | CL-DOC | PK-OA opens (E7) |
@@ -293,22 +286,20 @@ is a deliberate reading of the AGENTS.md sprint tracker rule for stacked drafts.
 
 ```
 DAY 0 - in parallel; nothing merges except CL-PT-DOC and CL-DOC
-  Owner : decisions O1-O8 (section 13) + D2 D3 D5 D9 D10 D11 D14-D17 D22-D25
-  Jira  : create SF (+ MH if M3 confirms); re-link (section 12); AC edits
+  Owner : decisions O1-O8 (section 13) + D2 D3 D5 D10 D11 D14-D17 D22-D25
+  Jira  : create SF; re-link (section 12); AC edits
   Stand : one at a time; every write needs the user's go-ahead; read-only probes first
-          [M13][M6][M3]+baseline[M14][M19][M20][M24] .. on 1.6.6.54, BEFORE the first MH or PT cut is installed
-                    (M6, M3 gate PK-MH / PK-PT; M14 gates PK-OA; M13 gates PK-RP; M19, M20, M24 gate no code)
+          [M13][M6][M3]+baseline[M14][M19][M20][M24] .. on 1.6.6.54, BEFORE the first PT cut is installed
+                    (M6, M3 gate PK-PT, M3 done; M14 gates PK-OA; M13 gates PK-RP; M19, M20, M24 gate no code)
           [M10][M11ab][M17-Q7] ...... gate PK-OA  (version-independent; may run during PK-PT review)
           [M1][M15] ................. gate PK-RP  (version-independent; may run during PK-PT / PK-OA review)
           [M7][M8][M21][M23a-d][M25] gate PK-SF  (user builds the probes; off the path)
           [M26] ..................... before CL-OA / KB-OA (gates the CL-OA record and the KB-OA sentence; no code)
-  CL-PT-DOC: gate 1 -> review -> human merge   (before PK-PT / PK-MH opens, E9)
+  CL-PT-DOC: gate 1 -> review -> human merge   (before PK-PT opens, E9)
   CL-DOC: gate 1 -> review -> human merge      (before PK-OA opens, E7)
 
 Per ticket: package PR (GHE) ==> clio PR ==> knowledge PR. Tickets run top to bottom.
 
-MH? PK-MH  draft -> gate 3 -> review -> M(tag) ==> CL-MH M ==> KB-MH M
-      |
 PT  PK-PT  draft (stacked) .. final cut -> gate 3 -> review -> M(tag) ==> CL-PT M ==> KB-PT M + PUBLISHED
       |                                                                  |              |
       |                                          E4/E6: PK-OA merges after CL-PT   E5: before CL-OA merges
@@ -339,12 +330,12 @@ SIDE (in gaps only, never in a final review window of the main track): "Refuse c
 | E5 | KB-PT **published** -> CL-OA merges | CL-OA writes `name=process-files` into a description. CI checks only the curated fixture, never publication, and a failed `update-knowledge` keeps serving the old library silently. "Published" means: merged, the release exists, and `info-knowledge` shows the library version. | source `WorkspaceTemplateGuidanceDriftTests.cs:540` |
 | E6 | CL-PT merged (it carries the ManagerMap arm) -> PK-OA merges | an older clio meeting `fileprocessing` raises a hard validator Error (section 3 row 8). With the arm in CL-PT, it ships one release before any package emits the token. | source (read 2026-10-01; section 3 row 8) |
 | E7 | CL-DOC merged -> any FE code PR opens (PT's equivalent is E9) | BMAD: no PR is opened before its story file exists | AGENTS.md |
-| E8 | M6 -> R-M1 code in PK-PT; M3 -> MH or D9 parity; M1 -> the D18 single-file path; M7, M8, M21, M23, M25 -> PK-SF code | the code rests on runtime behaviour that has been traced in source but not yet measured | decisions D29 |
-| E9 | CL-PT-DOC merged -> PK-PT (and PK-MH, if it exists) opens | BMAD: no PR is opened before its story file exists; PT's spec, ADR, story and test plan are in CL-PT-DOC | AGENTS.md; ENG-95984 File process parameter type plan CL-0 |
+| E8 | M6 -> R-M1 code in PK-PT; M3 -> D9 parity (M3 done: H-1 refuted, X4); M1 -> the D18 single-file path; M7, M8, M21, M23, M25 -> PK-SF code | the code rests on runtime behaviour that has been traced in source but not yet measured | decisions D29 |
+| E9 | CL-PT-DOC merged -> PK-PT opens | BMAD: no PR is opened before its story file exists; PT's spec, ADR, story and test plan are in CL-PT-DOC | AGENTS.md; ENG-95984 File process parameter type plan CL-0 |
 | E10 | CL-PT-DOC merged -> CL-DOC merges, when both carry their analysis folders | the FE folder links into `../eng-95984-file-parameter-type/`, which resolves on master only after that folder lands | source (link check of the folder) |
 
 **Critical path:**
-1. Owner decisions, M6 and M3 (day 0).
+1. Owner decisions and M6 (day 0); M3 is done (2026-10-02).
 2. PK-PT review (1,500-4,500-line bucket, median about 2 days), then the CL-PT and KB-PT tail.
 3. PK-OA stand run, gate 3 and review (4,500+ bucket, median about 2 days, more with review rounds), then the tail.
 4. PK-RP (about 2 days), then the tail.
@@ -355,7 +346,7 @@ If every PR hits its bucket median, that is **about 7-9 calendar days of seriali
 
 - **Tails.** Each tail (clio plus knowledge after the package merge) takes 30-71 minutes, unless `main` moved and
   forces a re-cut (measured history, section 3 row 10).
-- **MH** is off the path as long as it finishes before PK-PT is ready for review.
+- **MH** is not created (M3 refuted H-1), so it adds nothing to the path.
 - **PK-OA development** overlaps PK-PT's review. It is on the path only if it takes longer.
 - **The stand.** It carries one cut at a time, so PK-OA's first stand run waits until PK-PT's verification ends.
   A second disposable .NET Framework stand (O6, X7) removes that wait.
@@ -424,7 +415,7 @@ The same applies to CL-RP and KB-RP, and to CL-SF and KB-SF.
 7. Run the currency check before opening a PR and again before marking it ready:
    `git -C <pkg> log --oneline <ExpectedProducingCommit>..HEAD -- packages/CrtProcessBuilder/`.
 
-### 9.2 Files that move with a floor raise (CL-MH, CL-PT, CL-OA, CL-RP)
+### 9.2 Files that move with a floor raise (CL-PT, CL-OA, CL-RP)
 
 All of them move to the PR's final cut, in the same commit as the archive:
 - `CreateBusinessProcessCommand.cs:240`, `ModifyBusinessProcessCommand.cs:196`, `ModifyProcessAsNewVersionCommand.cs:59`,
@@ -463,7 +454,7 @@ What does not move:
 
 | Argument | Detail |
 |---|---|
-| Size | The package diff would be about 12-16k lines, 12-17.5k with MH (inference, the sum of section 4.2). PRs of 4,500+ lines collect 1.58 dismissed approvals each (measured). https://creatio.ghe.com/engineering/crt-process-builder/pull/73 (+13,992 lines, 92 files) shows a diff of that size can only be rubber-stamped, which leaves the AGENTS.md final gate as the only real review. |
+| Size | The package diff would be about 12-16k lines (inference, the sum of section 4.2). PRs of 4,500+ lines collect 1.58 dismissed approvals each (measured). https://creatio.ghe.com/engineering/crt-process-builder/pull/73 (+13,992 lines, 92 files) shows a diff of that size can only be rubber-stamped, which leaves the AGENTS.md final gate as the only real review. |
 | Blast radius | One floor and one guide version would cover four different risks. PT changes what existing mapping operations write in every process. OA adds an element. RP re-routes describe and `setFilter` for four shipped product processes. SF is a runtime path with no measurement yet. A defect in any one would hold back all four, and revert granularity would be lost. |
 | Long-lived branch | Four package PRs are open now, each with its own descriptor stamp (measured). Every conflict lands on one branch that cannot merge until everything is done, and each conflict forces a re-cut, often after approvals. |
 | Tracking | Nothing reaches users until the end. Three Jira issues close on one merge, and the guide cannot state a released floor per sub-task. |
@@ -488,7 +479,7 @@ Other finer splits also fail:
   50.5 h median (measured). So two serialized medium PRs take about twice the wall clock of one large one. A
   split pays only if one part drops into the fast lane (under 1,500 lines), isolates a risk-distinct change, or
   takes a blocking dependency off the critical path.
-  - MH qualifies: fast lane, and it fixes a shipped defect.
+  - MH would have qualified (fast lane, a shipped defect), but M3 refuted the defect, so MH is not created.
   - SF qualifies: an unmeasured runtime path whose measurements need a human, taken off the path.
   - The two RP halves do not: both are medium. A second RP triple would cost one more cut, floor raise, stand
     reinstall and knowledge generation, and would give two feature PRs the same title.
@@ -510,7 +501,7 @@ Other finer splits also fail:
 | X1 | CL-PT cannot merge before an in-flight branch needs create/modify description bytes. Candidates: CA (+42 B on create), ENG-100153 O5: accept an object for create-business-process 'descriptor', and ENG-100154 O4: short-form get-tool-contract by default. | Move the S1/C6/S2 swap and the ManagerMap arm into an early clio PR `ENG-95984 File process parameter type` from `master`, branch `feature/ENG-95984-description-budget`. It keeps `this clio requires 1.6.6.40`, so the floor guard stays green, and it merges before CL-PT. This PR shares CL-PT's title by the title rule and is told apart by its branch (section 2). |
 | X2 | PK-RP's Process-parameter variant fails its stand proof (the M4 chain) while the Report variant is ready | Cherry-pick the Report commit group into PK-RP. Move the Process-parameter group to a NEW Sub-task under FE, "Process parameter source of the Process file element". RP is re-scoped to the Report mode (owner decision). |
 | X3 | The owner ranks custom-object attachments above reports (AI Toolkit apps create custom objects, which is the typical SysFile case; inference) | Swap the PK-RP and PK-SF slots. PK-SF then lifts SysFile for the Object variant only. PK-RP ships with SysFile targets refused through the registry, unless M23 (c)(d) passed before its code freeze. |
-| X4 | M3 refutes H-1 | No MH triple; the D9 parity change becomes one commit in PK-PT. |
+| X4 | M3 refutes H-1. **Fired 2026-10-02:** 3 iterations, all "name set" | No MH triple; the D9 parity change becomes one commit in PK-PT (section 5.2, commit 8). |
 | X5 | PK-OA's diff exceeds about 8k lines at gate 3 | Look for a seam again. None is known: describe-first and element-before-policy are both unsafe (section 10.2). |
 | X6 | CI (https://creatio.ghe.com/engineering/crt-process-builder/pull/83) merges | Our clio PR keeps its own cut during review. If the automated rebundle PR merges first, ours takes master's archive and pins on conflict, and re-cuts if its package is newer. An automated rebundle that ships our package before our clio PR does is safe, but un-advertised: the ManagerMap arm is already in CL-PT (E6), and describe passes an unknown block through `DescribedElement`'s overflow bag. |
 | X7 | A second disposable .NET Framework stand becomes available | The next ticket's draft iterates there, and the E3 stand wait disappears. Merge order is unchanged. |
@@ -549,14 +540,14 @@ dotted process-parameter addressing and the two-level binder, and RP has no Jira
 | L6 | ENG-92719 File processing element is blocked by ENG-91843 Add and modify process parameters (Closed) | no change | already satisfied |
 | L7 | ENG-92725 Execute AI Intent element (BP generation) is Closed | no link | the Creatio.ai pattern leaves FE's acceptance criteria (D24); the guidance says "not buildable through this tool yet" |
 
-MH needs no link: it is a child of PT, and PK-PT's dependency on PK-MH is in the PR table.
+MH is not created (M3 refuted H-1), so it needs no link.
 
 ### 12.3 New issues (all of type Sub-task)
 
 | Proposed title | Parent | When | Slot |
 |---|---|---|---|
 | SysFile attachment storage in the Process file element (**SF**) | ENG-92719 File processing element | day 0 (owner decision O1) | main track, after RP |
-| typeFromElement collection mirror leaves its items unbound (**MH**) | ENG-95984 File process parameter type | only if M3 confirms H-1 (O2) | main track, first |
+| typeFromElement collection mirror leaves its items unbound (**MH**) | ENG-95984 File process parameter type | not created: M3 refuted H-1 (O2) | - |
 | Refuse collection parameters as filter values (D22) | ENG-92719 File processing element | day 0 | side lane, while PK-OA is still a draft (touches only `PB/Filters/ProcessFilterService.cs:525-591`) |
 | Builder-made user tasks do not set SerializeToDB (D20) | ENG-92719 File processing element | day 0 | after PK-SF |
 | Allow-list the data types a typeFromElement mirror may copy (D6) | ENG-95984 File process parameter type | day 0 | after PK-RP |
@@ -579,8 +570,8 @@ itself (O1) changes three things:
   described without loss, and SF delivers the support."*
 - **The SysFile capture (M21).** The FE and OA AC rows that name it move to SF.
 - **When each issue is done.** OA moves to done when KB-OA merges, RP when KB-RP merges, SF when KB-SF merges,
-  and FE when all three are done (CL-DOC long merged). PT moves to done when KB-PT merges; MH, if it exists,
-  is done before that. The follow-up Sub-tasks do not gate their parent. The three ENG-95984 File process parameter
+  and FE when all three are done (CL-DOC long merged). PT moves to done when KB-PT merges.
+  The follow-up Sub-tasks do not gate their parent. The three ENG-95984 File process parameter
   type follow-ups (after PK-RP) and the two FE side Sub-tasks (after PK-SF) are separate scope; PT and FE close with
   them open, and the owner confirms that the Jira workflow allows this (open-questions Q9).
 
@@ -593,7 +584,7 @@ These are also collected in [open-questions](eng-92719-file-processing-element-o
 | # | Decision | Recommendation |
 |---|---|---|
 | O1 | SysFile storage leaves OA and becomes the NEW Sub-task SF under ENG-92719 File processing element. Accept one interim release that refuses SysFile-mode sources and targets. | yes |
-| O2 | If M3 confirms H-1, the NEW Sub-task MH under ENG-95984 File process parameter type lands first (D9) | yes |
+| O2 | If M3 confirms H-1, the NEW Sub-task MH under ENG-95984 File process parameter type lands first (D9) | moot: M3 refuted H-1 on 2026-10-02, so MH is not created (X4) |
 | O3 | Slot order: RP before SF, or the reverse (X3) | RP first: one set of measurements and one SysFile lift for all three variants. Revisit if AI Toolkit custom-object attachments are the priority. |
 | O4 | The FE spec goes in a docs-only clio PR (CL-DOC) | yes |
 | O5 | The variant registry becomes OA's design, recorded in the ADR | yes |
@@ -673,7 +664,6 @@ in short (basis = measured once run; the cases and recipes are in the two test p
 
 | Ticket | Runtime proof on the cut | Pass condition | If it fails |
 |---|---|---|---|
-| MH | M3 re-run | every caller run shows only "M3 name set" rows (EV-4); the control matches | do not merge |
 | PT | Item-only multi-instance (`InputRecordCollection.Name <- RD.ResultCompositeObjectList.Name`) over 3 contacts; baseline taken on 1.6.6.54 during the day-0 measurements | 3 iterations on the cut against 1 on the baseline (this is what KB-PT's version-gated sentence states) | hold CL-PT and KB-PT |
 | PT | SC-0 first (read-only), then SC-4's PK-PT twin `UsrFpSc4Pt` (File, Variable and Out FileCollection), compared with the shipped `FileParameterProcess` and `MarkProcessesToCancel` captures | equal under the AC-8 comparison rule ([ENG-95984 File process parameter type test-plan](../eng-95984-file-parameter-type/eng-95984-file-parameter-type-test-plan.md) section 4.2: N5, PT-a, N9, N15, N14, PT-b; anything else fails) | fix before merge |
 | OA | Object SaveToFiles in dedicated storage (Account with 2 attachments copied to a Contact); Object useInProcess into a multi-instance sub-process per file; empty-filter save refused at the end of the request; a designer-built SysFile element described and its `setElement` refused | 2 `ContactFile` rows with `Type = File`; `CreatedObjectFileIds` has 2 rows; iterations = attachments; the refusal has `failedOperationIndex: null` | do not merge |

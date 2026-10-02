@@ -10,8 +10,8 @@ queries. Seven are read-only. The rest need writes on disposable processes in th
 the user's go-ahead. Fifteen of them gate code; the rest verify or tune wording. **Part C** records what was already
 measured on 2026-10-01: versions, feature states, the user's designer observations UO-1..UO-4, describe of the
 shipped report processes, and corpus counts. **Part D** lists 37 contradictions found during the research and
-while the sibling documents were cross-checked, and how each was resolved. Eight are still open, because their
-resolution rests on a source trace or on documentation: six wait for a scheduled measurement (M1, M3, M3b, M8, M13),
+while the sibling documents were cross-checked, and how each was resolved. Seven are still open, because their
+resolution rests on a source trace or on documentation: five wait for a scheduled measurement (M1, M3b, M8, M13),
 and two have none scheduled because a refusal covers the case. Nothing in this document was built, run or written to a repository or to the stand.
 
 | | |
@@ -31,7 +31,7 @@ Aliases, as in [pr-split](eng-92719-file-processing-element-pr-split.md):
 | **OA** | ENG-96505 Element readiness and object attachments mode |
 | **RP** | ENG-96506 Generated report + process parameter modes |
 | **SF** | NEW Sub-task of FE: "SysFile attachment storage in the Process file element" |
-| **MH** | NEW Sub-task of PT, only if M3 confirms H-1: "typeFromElement collection mirror leaves its items unbound" |
+| **MH** | not created: the conditional Sub-task of PT "typeFromElement collection mirror leaves its items unbound" waited on M3, and M3 refuted H-1 on 2026-10-02 |
 | `PK-` / `CL-` / `KB-` | the crt-process-builder / clio / clio-knowledge PR of a ticket, for example PK-OA |
 | PB, PBT | crt-process-builder `packages/CrtProcessBuilder/Files/src/cs/` (main `3f4cce50`, 1.6.6.54); its tests `tests/UnitTests/CrtProcessBuilder.Tests/` |
 | PD, PS | `PackageStore/CrtProcessDesigner/branches/7.8.0/Schemas` (byte-identical to what the stand serves, measured 2026-10-01); `PackageStore` (the shipped corpus) |
@@ -54,10 +54,10 @@ the owner row of the sibling documents.
 | Q3 | Where SysFile attachment storage ships | in the NEW Sub-task SF; OA refuses SysFile sources and targets with a message | PK-OA | D15; O1 |
 | Q4 | Slot order of RP and SF | RP first, SF last | PK-RP | O3; X3 |
 | Q5 | Downstream consumer patterns | Send email to ENG-95985 Send email attachments; Creatio.ai call out of scope | FE AC | D22; decisions row 12 |
-| Q6 | PR split | one PR per Jira issue per repository, plus SF, conditional MH and the docs-only CL-PT-DOC and CL-DOC (14 PRs, 17 with MH) | any PR | D27; decisions row 15 |
-| Q7 | Where the mirror defect H-1 is fixed, if M3 confirms it | its own Sub-task MH, delivered first | PK-PT | D9; O2 |
+| Q6 | PR split | one PR per Jira issue per repository, plus SF and the docs-only CL-PT-DOC and CL-DOC (14 PRs) | any PR | D27; decisions row 15 |
+| Q7 | Where the mirror defect H-1 is fixed | answered by M3 (2026-10-02): H-1 refuted, so no MH; binding the items is one parity commit in PK-PT (X4) | - | D9; O2; X4 |
 | Q8 | Delivery protocol bundle | yes to CL-PT-DOC and CL-DOC first, the variant registry in the ADR, merge commits for stacked PRs, merge windows, a second stand | CL-PT-DOC and CL-DOC | O4-O8; ENG-95984 File process parameter type plan O-10 |
-| Q9 | Which follow-up Sub-tasks to create, and when | the unconditional ones now (day 0); MH only after M3; the designer bug report only after M11; the X2 one only on that contingency | any PR | decisions D-5; pr-split 12.3 |
+| Q9 | Which follow-up Sub-tasks to create, and when | the unconditional ones now (day 0); MH not created (M3 refuted H-1); the designer bug report only after M11; the X2 one only on that contingency | any PR | decisions D-5; pr-split 12.3 |
 | Q10 | How a caller declares a file collection | `type: FileCollection`, read back as `FileCollection` | PK-PT | D2; decisions row 1 |
 | Q11 | Default direction of a FileCollection | Out | PK-PT | D3; decisions row 2 |
 | Q12 | Two-level binder policy (P3, P2 scope) | P3 resets a stale parent with a notice; P2 and R-M2 only on file-consuming targets | PK-PT | D5; decisions rows 3, 4 |
@@ -164,30 +164,35 @@ attachments' scope (link L5), and the "Consumers" section of the new guide.
 
 | Option | PRs | Comment |
 |---|---|---|
-| 1. One PR per repository for everything | 3 | a package diff of about 12-16k lines (12-17.5k with MH) in one review; three issues close on one merge; every in-flight branch re-cuts against it (pr-split 10.1) |
+| 1. One PR per repository for everything | 3 | a package diff of about 12-16k lines in one review; three issues close on one merge; every in-flight branch re-cuts against it (pr-split 10.1) |
 | 2. One triple per Jira issue (PT, OA, RP), as in the first draft of decisions D27 (not attached) | 9 | SysFile stays inside OA, conditionally |
-| 3. One triple per Jira issue plus SF, conditional MH and the docs-only CL-PT-DOC and CL-DOC (pr-split) | 14, or 17 with MH | at most one package PR in human review at a time; each merged package PR is a self-consistent product state |
+| 3. One triple per Jira issue plus SF and the docs-only CL-PT-DOC and CL-DOC (pr-split) | 14 | at most one package PR in human review at a time; each merged package PR is a self-consistent product state |
 | 4. A PT triple plus one FE triple for both sub-tasks | 6 | the largest package diff of the cycle |
 
 **Recommendation: 3.** The measured reasons are in pr-split section 3: approvals are dismissed on push, review
 latency does not drop below 1.5k added lines, and two of our package PRs in review at once stamped the same number
 twice. **What changes:** the PR table in pr-split section 4, four rebundles and four floor raises.
 
-#### Q7. Where is the mirror defect H-1 fixed, if M3 confirms it?
+#### Q7. Where is the mirror defect H-1 fixed? (answered by M3: there is no defect)
+
+**Answered by M3 on 2026-10-02 (CrtProcessBuilder 1.6.6.54): H-1 is refuted.** The mirror probe ran 3 iterations, all
+`M3 name set` (C.7). The outer Script mapping copies the whole collection value, items included, so the unbound item
+does not matter for reading. MH is not created, and contingency X4 applies. The question and its options are kept
+below as the record of what was considered.
 
 H-1: the shipped `typeFromElement` mirror of ENG-96230 Collection process parameter type binds the outer level only
 (`PB/Parameters/ProcessParameterService.cs:500-512`). The runtime rebuilds rows by the TARGET item names
 (`CORE/Terrasoft.Core/Process/ProcessInstanceParametersDataReader.cs:441-488`), so every mirrored row would read null
-(basis=source, unmeasured). Shipped content never has this shape: 0 of 61 bound collections (measured).
+(basis=source; M3 refuted it). Shipped content never has this shape: 0 of 61 bound collections (measured).
 
 | Option | Effect |
 |---|---|
 | a. Its own Sub-task MH under PT, delivered first as its own triple (pr-split O2) | a shipped defect gets a ticket, its own evidence and its own revert; PT adds the P2 policy on top of MH's `BindCollection` |
 | b. Inside PK-PT, with a Sub-task opened for the record only (decisions D9, first version) | one cut fewer; the fix is reviewed inside a larger diff |
 
-If M3 refutes H-1, MH does not exist. Binding the items anyway becomes one parity commit in PK-PT (contingency X4).
-**Recommendation: a.** **What changes:** one more triple at the head of the track; the guide sentence about the
-mirror moves into KB-MH.
+M3 refuted H-1, so neither option applies: MH does not exist, and binding the items anyway is one parity commit in
+PK-PT (contingency X4). **Recommendation before M3: a.** **What changes now:** nothing on the track; no MH triple, no
+KB-MH.
 
 #### Q8. Delivery protocol bundle (O4-O8, O-10)
 
@@ -209,7 +214,7 @@ All are of type Sub-task (titles from decisions D-5 and pr-split 12.3):
 | Title | Parent | Create | Slot (pr-split 12.3) |
 |---|---|---|---|
 | SysFile attachment storage in the Process file element (SF) | FE | day 0, if Q3 = a | main track, after RP |
-| typeFromElement collection mirror leaves its items unbound (MH) | PT | only after M3 confirms H-1 | main track, first |
+| typeFromElement collection mirror leaves its items unbound (MH) | PT | not created: M3 refuted H-1 | - |
 | Refuse collection parameters as filter values | FE | day 0 (M19 sets its urgency, not its existence) | side lane while PK-OA is a draft |
 | Declared item shape for Collection process parameters | PT | day 0 | after PK-RP |
 | Allow-list the data types a typeFromElement mirror may copy | PT | day 0 | after PK-RP |
@@ -408,7 +413,7 @@ New text therefore goes to a NEW guide, born in KB-PT.
   the stand rules); a draft may also be cut for the stand earlier (step 2). "During PK-PT's review" therefore means
   "on PT's cut". The probes that characterise shipped CrtProcessBuilder behaviour (M3, M3b, M6's builder mapping,
   M14, M19, M20, M24, and M13's describe as a precaution) run on **day 0, on 1.6.6.54, before the first cut of this
-  work (MH or PT, a draft cut included) is installed**. M14 is the sharpest case: from PT's first cut its mappings
+  work (PT's, a draft cut included) is installed**. M14 is the sharpest case: from PT's first cut its mappings
   `PF1.Files <- OF1.ObjectFiles` and `PF1.Files.File <- OF1.ObjectFiles.File` go through binder rules P2 (the outer
   mapping pairs the file item itself) and P1 (the item mapping then becomes a no-op)
   ([ENG-95984 File process parameter type plan](../eng-95984-file-parameter-type/eng-95984-file-parameter-type-plan.md),
@@ -488,10 +493,10 @@ short, the full stack is in `Error.log` under `C:\Windows\Temp\Creatio\Creatio\0
 | M13 | describe of PrintContractsReport: converged or snapshot | no | agent | PK-OA (TC-45 Object fixtures), PK-RP (TC-45 Report fixtures) | D19 fixtures | **done 2026-10-02**: `Guid` with `referenceSchema: Contract` (C.6) |
 | M15 | FastReport packages and printables | no | agent | PK-RP | Q18 | **done 2026-10-02**: no FastReport package, 0 FastReport printables (C.6) |
 | M17-Q7 | foreign key of `ContactFile` to Contact | no (audit row only: cliogate 2.0.0.53+ logs the statement in `ClioSqlRequestLog`) | agent | PK-OA | the F-E9 empty-record notice wording | **done 2026-10-02**: FK `ContactFile.ContactId` -> Contact, 0 empty-Id rows (C.6) |
-| M3 | the shipped mirror reads null rows (H-1) | write | builder + one designer step | PK-PT / MH | Q7, D9 | probes built 2026-10-02; waits for the user's designer step (C.7) |
+| M3 | the shipped mirror reads null rows (H-1) | write | builder + one designer step | PK-PT / MH | Q7, D9 | **done 2026-10-02**: H-1 refuted, 3 iterations all "name set"; no MH, X4 (C.7) |
 | M3b | baseline (MI-0 in the ENG-95984 File process parameter type test-plan): an item-only multi-instance mapping runs one iteration on 1.6.6.54 | write | builder | PK-PT verification | the version-gated guide sentence (D25) | **done 2026-10-02**: 1 iteration, Name empty (C.7) |
 | M6 | flat File <- collection item outside a row context | write | designer + builder | PK-PT | R-M1 (D5) | open |
-| M14 | the server-built element shape on 1.6.6.54 | write | builder | PK-OA | D20 pins | **done 2026-10-02** (C.7); the card display check by the user is open |
+| M14 | the server-built element shape on 1.6.6.54 | write | builder | PK-OA | D20 pins | **done 2026-10-02**, card display included (C.7) |
 | M1 | a nested-only `Files.File <- File` copies one file | write | designer (script task) | PK-RP | D18 single-file path; PT AC | open |
 | M2 | an unset single File gives an element Error (NRE) | write (save + run) | reuses M1 | with M1 | the guide's single-File wording (D18) | open |
 | M8 | an Object element finds a Freedom UI upload in SysFile | write | user + designer | PK-SF | SysFile sources | open |
@@ -511,8 +516,8 @@ short, the full stack is in `Error.log` under `C:\Windows\Temp\Creatio\Creatio\0
 | M5 | outer-only `Files` gives an NRE | - | - | - | nothing (refused anyway) | skipped |
 
 Order, read-only first (B.0 "Which package version"):
-- **Day 0, on 1.6.6.54, before the first cut of MH or PT is installed:** [M13] (read-only), then the builder probes
-  [M6][M3][M3b][M14][M19][M20][M24], one at a time. M6 and M3 gate PK-MH / PK-PT code, M14 gates PK-OA code, M13
+- **Day 0, on 1.6.6.54, before the first PT cut is installed:** [M13] (read-only), then the builder probes
+  [M6][M3][M3b][M14][M19][M20][M24], one at a time. M6 and M3 gate PK-PT code (M3 is done), M14 gates PK-OA code, M13
   gates PK-OA and PK-RP (the TC-45 fixtures); M3b is PT's baseline; M19, M20 and M24 gate no code, but they measure 1.6.6.54 behaviour that a later
   cut changes or makes unmeasurable (from OA's cut `fileProcessing` is a known block, so M20 can no longer drop it).
   Moving M14, M19, M20 and M24 here adds four sequential builder probes to day 0 (M14 and M19 are creates; M20 and
@@ -658,7 +663,7 @@ give 3 (P1 binds the parent). **Settles** the version-gated sentences in `sub-pr
 last source row would allow a documented "first row" rule instead. The owner then chooses between that rule and the
 refusal (the recommendation stays: refuse).
 
-**M14: the server-built element shape on 1.6.6.54.** On day 0, before the first cut of MH or PT is installed
+**M14: the server-built element shape on 1.6.6.54.** On day 0, before the first PT cut is installed
 (B.0): from PT's first cut the two mappings below go through binder rules P1 and P2, so this probe cannot wait for
 PK-PT's review.
 Builder on 1.6.6.54: `create-business-process
@@ -869,18 +874,26 @@ Built by the main session in package `Custom`, one call at a time, with the user
 the stand until cleanup (core-rules: they are deleted, with the user's confirmation, when the run is done):
 `UsrFpM14Generic` (`37788ae3…`), `UsrFpM14CreateOuter` (`70da289a…`), `UsrFpM3Callee` (`c50c6050…`), `UsrFpM3Control`
 (`d63a1617…`), `UsrFpM3ItemOnly` (`cee1f532…`), `UsrFpM3MirrorProbe` (`9cb856b5…`), `UsrFpM19CollectionFilter`
-(`ccb453a0…`). No business record was written; the runs left process log rows only.
+(`ccb453a0…`), `UsrFpM6FlatFile` (`661ae7d4…`). For M6 one fixture was written: the contact `G1 Probe Source`
+(`ffe9dd78…`, created through `odata-create`) with two small `.txt` attachments uploaded on its Freedom UI page
+(`ContactFile` `ccfdece7…`, `1cac5fed…`). Everything else left process log rows only.
 
 | Id | Result |
 |---|---|
 | NEW: create-path NRE | `create-business-process` with the generic route `{type: userTask, userTaskName: ObjectFileProcessingUserTask / ProcessFileProcessingUserTask}` plus `mappings[]` failed with a bare **"Object reference not set to an instance of an object. Nothing was left behind."** (correlation `d43521be15cc`). Isolated: the same create with only the OUTER mapping `PF1.Files <- OF1.ObjectFiles` succeeds (`57c67716b563`); the NESTED mapping `PF1.Files.File <- OF1.ObjectFiles.File` is what throws on create, while the very same mapping through `modify-business-process addMapping` succeeds (`9ebc0ca62318`). So on 1.6.6.54 a dotted nested-item mapping in the create path NREs for these user tasks (multi-instance dotted mappings on create do work, see M3 control). The two-level binder of ENG-95984 File process parameter type must cover the create path, with a regression test |
-| M14 | Measured on `UsrFpM14Generic` (created bare, both mappings added by modify). `ConsiderTimeInFilter`: Script, `GS2 "false"`, `GS8 "false"` (template copy, as predicted). `RecordsToRead`: ConstValue `50`. Nested item UIds are the TEMPLATE's: `ObjectFiles.File` `1ddb6de7…`, `Files.File` `e5903ef0…`, PF1 `ObjectFiles.ObjectFile` `2d5e0436…` (as predicted: the builder does not re-mint, so D20's re-mint is real work). **`IL2` is PRESENT** on every element parameter and nested item (= the element UId), contrary to the prediction "absent". `BK15`: 21 rows for 21 top-level element parameters, none for nested items (as predicted). `BO2` absent, `BO3` true, `CL2` `FFFFFFFF`, `BL7` = `J6`, size `69;55` (as predicted). `ResultActionType` unset (`L8 {}`) on both elements. The two-level mapping is stored as `Files` <- Script `[#…[Element:{OF1}].[Parameter:{ObjectFiles}]#]` and `Files.File` <- Script `[#…[Element:{OF1}].[Parameter:{1ddb6de7…}]#]` (the nested source addressed by its own UId). Open: the user's look at PF1's card ("Files" display form) |
-| M3 (premise) | `UsrFpM3MirrorProbe`'s mirrored parameter `P` (`typeFromElement RD1.ResultCompositeObjectList`): outer `L8` = Script <- `RD1.ResultCompositeObjectList`, Tag `RD1.ResultCompositeObjectList`; its item `Name` (Tag = column UId) has **no source** (`L8 {}`). The H-1 premise holds. The run waits for the user's designer step (map `SP1`'s item `Name` from `P > Name`) |
+| M14 | Measured on `UsrFpM14Generic` (created bare, both mappings added by modify). `ConsiderTimeInFilter`: Script, `GS2 "false"`, `GS8 "false"` (template copy, as predicted). `RecordsToRead`: ConstValue `50`. Nested item UIds are the TEMPLATE's: `ObjectFiles.File` `1ddb6de7…`, `Files.File` `e5903ef0…`, PF1 `ObjectFiles.ObjectFile` `2d5e0436…` (as predicted: the builder does not re-mint, so D20's re-mint is real work). **`IL2` is PRESENT** on every element parameter and nested item (= the element UId), contrary to the prediction "absent". `BK15`: 21 rows for 21 top-level element parameters, none for nested items (as predicted). `BO2` absent, `BO3` true, `CL2` `FFFFFFFF`, `BL7` = `J6`, size `69;55` (as predicted). `ResultActionType` unset (`L8 {}`) on both elements. The two-level mapping is stored as `Files` <- Script `[#…[Element:{OF1}].[Parameter:{ObjectFiles}]#]` and `Files.File` <- Script `[#…[Element:{OF1}].[Parameter:{1ddb6de7…}]#]` (the nested source addressed by its own UId). **Card display** (read in the designer without saving): PF1's "What is the source of the file?" shows `Process parameter` and its "Files" field shows `[#OF1 object files.Collection of files:File#]`, so the designer resolves the server-built two-level mapping and renders it like a designer-built one |
+| M3 (premise) | `UsrFpM3MirrorProbe`'s mirrored parameter `P` (`typeFromElement RD1.ResultCompositeObjectList`): outer `L8` = Script <- `RD1.ResultCompositeObjectList`, Tag `RD1.ResultCompositeObjectList`; its item `Name` (Tag = column UId) has **no source** (`L8 {}`). The H-1 premise holds |
+| M3 | **H-1 refuted.** The designer step was done in the designer by the main session (Claude in Chrome): `SP1`'s item `Name` <- `P > Full name` (`[#Full name#]`), then SAVE; the saved metadata was read back before the run. `UsrFpM3MirrorProbe` ran `completed`: **3** callee instances, all `M3 name set` (callee totals went from 1 empty / 3 set to 1 empty / 6 set, correlation `484118f1ce57`). The mirror's item having no source does not matter for reading: the outer Script mapping copies the whole collection value, items included. Per B.4 M3 this is the "3 set" outcome: **MH is not created**, contingency X4 applies (binding the items anyway is one parity commit in PK-PT), Q7 is moot, and the PR count is **14** |
 | M3 control | `UsrFpM3Control` (both levels from element paths) ran `completed`: **3** callee instances, all `M3 name set` |
 | M3b | `UsrFpM3ItemOnly` (only `InputRecordCollection.Name <- RD1.ResultCompositeObjectList.Name`) ran `completed`: **1** callee instance, `M3 name empty`. Same as the 1.6.6.22 measurement in the guidance; after the PT cut the same request must give 3 |
 | M19 | A collection parameter as a filter value (`RD2` filter `Id = RD1.ResultCompositeObjectList`) is **accepted at build**; the run fails at `RD2` with `System.ArgumentException: No mapping exists from object type Terrasoft.Common.CompositeObjectList… to a known managed provider native type` (SQL parameter binding). Loud at run time, silent at build: the "Refuse collection parameters as filter values" Sub-task is justified |
 | M20 | `setElement {useBackgroundMode: true, fileProcessing: {source: "attachments"}}` on 1.6.6.54 through the current clio: success, **no warning**, the unknown block is dropped silently end to end (`f63158412242`). The D26 premise (floor raise) holds |
 | M24 | (a) an array into the object member `readData.sort` is refused with "'sort' requires a 'column'" (`efb48ac50196`); (b) an object into the array member `readData.columns` is refused with "mode 'collection' requires explicit 'columns'" (`8bc67379307b`). Both wrong shapes are NULLED by the binder and only a later rule refuses, with a text that names the wrong cause; nothing was saved. The `attachments.sort` guide sentence: a wrong JSON shape is not reported as such |
+| NEW: schema UId as a Lookup constant | `modify addMapping {elementName: OF1, elementParameter: SourceEntitySchemaUId, value: "e9eafee9-…"}` (the ContactFile schema UId, exactly what the designer stores, UO-4) is **refused**: "no SysSchema record has this id" (`48118164cdf1`). The builder's Lookup-constant check looks the value up by `SysSchema.Id`, while these parameters hold a schema **UId**. So on 1.6.6.54 the generic route cannot write a correct `SourceEntitySchemaUId` / `TargetEntitySchemaUId` / `*DataEntitySchemaUId` (a `SysSchema.Id` would pass the check and reference the wrong thing at run time); for M6 the object was picked in the designer. The `fileProcessing` binder must write these through its own path (schema name -> UId), not through the generic Lookup-constant mapping ([traps](eng-92719-file-processing-element-traps.md) T-54, predicted from source and now measured) |
+| NEW: dotted `typeFromElementParameter` | `parameters[{name: F, typeFromElement: OF1, typeFromElementParameter: "ObjectFiles.File"}]` creates `F` with the right type (`L1` = FileLocator `a33c9252…`) but **no source** (`L8 {}`), while the outer form (M3's `P`) gets the Script mapping. The dotted form types the parameter only; the value needs an explicit `addMapping` (`3cf363739721`) |
+| NEW: Freedom UI upload lands in the legacy table | The two files uploaded on the Contact Freedom UI page landed in `ContactFile` (`TypeId` File), none in `SysFile`, on this stand (`UseSysFileInObjectFileProcessing` off). Consistent with the per-entity storage rule (Contact keeps its legacy `ContactFile`) |
+| NEW: transient timeout | One `modify` carrying `setFilter` and `addMapping` together timed out and wrote nothing (`ModifiedOn` unchanged); the same two operations sent one per call both applied (`74bc25618f3b`, `3cf363739721`). Not reproduced; recorded only so a later timeout is not read as a builder defect without a retry |
+| M6 | see below |
 
 ### C.5 Corpus and repository counts (not the stand)
 
@@ -917,7 +930,7 @@ the cell names the measurement that settles it, or says why none is scheduled.
 | 9 | "ResultActionType 1 is used by the variants that PRODUCE the collection" (earlier refinement) | every variant fills its outputs for both values; 0 also saves (`PD/ObjectFileProcessingUserTask/ObjectFileProcessingUserTask.cs:60-87`) | AC rewritten (Q1, D14) | source + corpus | no |
 | 10 | "Attachment storage changed in the current version, and writes follow the active mode" (earlier refinement) | the feature class exists at least since 8.1.5 (TSBpm history); the designer chooses storage per object, not globally (UO-2..UO-4) | per-object resolver (D15) | source + measured | no |
 | 11 | The package comment "the designer creates a collection as OUT" (`PB/Parameters/ProcessParameterService.cs:103-104`) | plain Add writes Variable (`PD/ProcessSchemaPropertiesPage/ProcessSchemaPropertiesPage.js:1204-1236`); Out comes only from "Create from element" | the comment is corrected in PK-PT; Out stays as a package rule (Q11) | source | no |
-| 12 | The mirror comment "the runtime keys values by the SOURCE items' names" (`PB/Parameters/ProcessParameterService.cs:440-447`, comment K3) | rows are rebuilt by TARGET item names (`CORE/Terrasoft.Core/Process/ProcessInstanceParametersDataReader.cs:441-488`) | hypothesis H-1 (Q7) | source | **yes (M3)** |
+| 12 | The mirror comment "the runtime keys values by the SOURCE items' names" (`PB/Parameters/ProcessParameterService.cs:440-447`, comment K3) | rows are rebuilt by TARGET item names (`CORE/Terrasoft.Core/Process/ProcessInstanceParametersDataReader.cs:441-488`) | hypothesis H-1 (Q7); M3 refuted it on 2026-10-02: the outer Script mapping copies the whole collection value, items included, so no mirrored row reads null (C.7) | source + measured | no (M3 done) |
 | 13 | "The source switch replaces the element after an 'all settings lost' warning" (earlier refinement) | the dialog appears only when the element is configured, and the switch is refused when the element cannot be removed (`PD/BaseFileProcessingUserTaskPropertiesPage/BaseFileProcessingUserTaskPropertiesPage.js:233-237, 278-310`) | as corrected | source | no |
 | 14 | UO-4: changing the source object raised no confirmation, although the page has `ChangeReferenceSchemaWarningMessage` | `onEntitySchemaChange` asks only when the old value is set (`PD/BaseFileProcessingUserTaskPropertiesPage/BaseFileProcessingUserTaskPropertiesPage.js:794-823`) | consistent; not a bug | source + measured | no |
 | 15 | "Position -1 hides the Report and Process entries from the palette" (stand research, a hypothesis) | the live designer excludes them through `getExcludedMenuItems()` | the exclusion list is the mechanism (C.1) | measured | no |
@@ -952,7 +965,7 @@ the cell names the measurement that settles it, or says why none is scheduled.
 | 29 | A retarget keeps a filter whose root name matches (`DataSourceFilterValue.ClearIfForeign`) (decisions, first draft) | in SysFile mode the root is SysFile for every object, so a foreign `RecordId` scope survives | any storage-pair change clears filter, scope and sort (decisions review A1, D12) |
 | 30 | "Read-only members are accepted only when equal" (decisions, first draft) | captions, issues and repaired states legitimately differ, so correct resubmissions would be refused | two kinds: identity CHECK vs describe-only (decisions review B2) |
 | 31 | Two shipped guide passages: an item-only multi-instance mapping "runs ONE iteration" (`KB/guidance/mcp/guides/processes/sub-process.md:133-137`, measured on 1.6.6.22; `sub-process-when.md:49-51`) | P1 changes that behaviour from PT's cut | both rewritten with a version gate in KB-PT; M3b gives the baseline (decisions review B13) |
-| 32 | H-1 fixed inside PT (decisions D9, first version) | a shipped defect, small, revertible on its own (pr-split O2) | Sub-task MH first, if M3 confirms (Q7) |
+| 32 | H-1 fixed inside PT (decisions D9, first version) | a shipped defect, small, revertible on its own (pr-split O2) | Sub-task MH first, if M3 confirms (Q7). M3 refuted H-1 on 2026-10-02: MH not created; binding the items is one parity commit in PK-PT (X4) |
 | 33 | SysFile conditional inside OA (decisions D15 and D27, first version) | five pre-code measurements, three of them user-built, and no runtime evidence (pr-split O1) | Sub-task SF (Q3) |
 | 34 | Fixed versions 1.6.6.55 / .56 / .57 (decisions D26, first version), and "floor = the first cut" (a review proposal) | collisions under one number happened twice; a review round can add a write member after the first cut | numbers are claimed per cut, and the floor is the FINAL cut of each clio PR ([pr-split](eng-92719-file-processing-element-pr-split.md) section 3 row 3, section 9.1) |
 | 35 | M3 in the [ENG-95984 File process parameter type plan](../eng-95984-file-parameter-type/eng-95984-file-parameter-type-plan.md) W0 and [ENG-95984 File process parameter type test-plan](../eng-95984-file-parameter-type/eng-95984-file-parameter-type-test-plan.md) 8.1: the builder writes `InputRecordCollection.Name <- P.Name`, and the callee writes `Name` into an Activity title. M25 in [test-plan](eng-92719-file-processing-element-test-plan.md) section 8 writes the feature value into an Activity title | on 1.6.6.54 `ResolveProcessParameter` resolves a process parameter by its whole name (`PB/Mappings/ProcessMappingService.cs:425-435`, callers `:221, :280`), so `P.Name` is refused as "not found" | M3 here maps the item in one designer step. M3 and M25 here record their result in branch captions and an error text, which writes no business record; the Activity-title form stays valid where a record is acceptable (B.4). Applied: the ENG-95984 File process parameter type plan W0, its test-plan 8.1 and test-plan section 8 carry this recipe. |
