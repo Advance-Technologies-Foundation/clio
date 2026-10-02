@@ -1095,18 +1095,26 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 			};
 			return;
 		}
-		JArray bodies;
-		string chainError;
-		try {
-			(bodies, _, _, chainError) = LoadLayerChain(ctx, detailName);
-		}
-		catch (Exception ex) {
-			(bodies, chainError) = (null, ex.Message);
-		}
-		if (chainError != null) {
-			WarnDetail(ctx, $"Could not gather the layer chain (bodies) of detail '{detailName}': {chainError}. "
-				+ "Its entry carries no bodies; body is the top layer only.");
-			return;
+		var bodies = new JArray();
+		foreach (SchemaLayer layer in layers) {
+			JObject layerSchema;
+			string loadError;
+			try {
+				(layerSchema, loadError) = LoadSchemaCached(ctx, layer.UId, detailName);
+			}
+			catch (Exception ex) {
+				(layerSchema, loadError) = (null, ex.Message);
+			}
+			if (loadError != null) {
+				WarnDetail(ctx, $"Could not gather the layer chain (bodies) of detail '{detailName}': "
+					+ $"Failed to load layer '{layer.PackageName}' ({layer.UId}): {loadError}. "
+					+ "Its entry carries no bodies; body is the top layer only.");
+				return;
+			}
+			bodies.Add(new JObject {
+				["pkg"] = layer.PackageName,
+				["body"] = layerSchema["body"]?.ToString() ?? string.Empty
+			});
 		}
 		detailEntry["bodies"] = bodies;
 	}

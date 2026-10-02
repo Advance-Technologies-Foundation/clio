@@ -412,7 +412,7 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 	}
 
 	[Test]
-	[Description("TryAssemblePageSources keeps a detail entry without bodies and warns naming the detail when loading a lower layer of the detail throws.")]
+	[Description("TryAssemblePageSources keeps a detail entry without bodies and warns naming the detail and the layer package when loading a lower layer of the detail throws.")]
 	public void TryAssemblePageSources_ShouldOmitDetailBodies_AndWarn_WhenDetailLayerLoadThrows() {
 		// Arrange — the base layer's GetSchema request throws instead of returning an error envelope
 		AddLayer("UsrOrderPage", "uid-page", "UsrApp", 300);
@@ -439,8 +439,9 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		detail!["bodies"].Should().BeNull(because: "a partial chain would hide the failed layer's content");
 		detail["title"]!.ToString().Should().Be("Order lines", because: "title is kept");
 		response.Warnings.Should().ContainSingle(
-			w => w.Contains("detail 'UsrOrderLineDetail'") && w.Contains("bodies") && w.Contains("connection reset"),
-			because: "the warning must name the detail, the block it lacks and the failure");
+			w => w.Contains("detail 'UsrOrderLineDetail'") && w.Contains("UsrBase") && w.Contains("bodies")
+				&& w.Contains("connection reset"),
+			because: "the warning must name the detail, the failed layer's package, the block it lacks and the failure");
 	}
 
 	[Test]
