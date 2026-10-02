@@ -557,6 +557,54 @@ internal sealed class UpdateEntitySchemaCommandTests : BaseClioModuleTests
 			mutations.Count() == 1 && mutations.ElementAt(0).ColumnName == "UsrStatus"));
 	}
 
+	[TestCase("""{"Action":"modify","COLUMN-NAME":"UsrStatus","Title":"Status"}""")]
+	[TestCase("""{"ACTION":"modify","Name":"UsrStatus","TITLE":"Status"}""")]
+	[Description("Known operation fields, including the 'name' alias, are matched case-insensitively by the unknown-field check, keeping the case-insensitive JSON contract (ENG-101526).")]
+	public void Execute_AcceptsKnownFields_WrittenInMixedCase(string payload) {
+		// Arrange
+		UpdateEntitySchemaOptions options = new() {
+			Environment = "dev",
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Operations = [payload]
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "a known field written in another case is not an unknown field");
+		_logger.DidNotReceive().WriteError(Arg.Is<string>(message => message.Contains("unknown field")));
+		_columnManager.Received(1).ModifyColumns(Arg.Is<IEnumerable<ModifyEntitySchemaColumnOptions>>(mutations =>
+			mutations.Count() == 1
+			&& mutations.ElementAt(0).ColumnName == "UsrStatus"
+			&& mutations.ElementAt(0).Title == "Status"));
+	}
+
+	[Test]
+	[Description("An unknown field in a later operation fails the whole batch before anything is saved, even when an earlier operation is valid, and the error names the failing index (ENG-101526).")]
+	public void Execute_FailsWholeBatch_WhenLaterOperationHasUnknownField() {
+		// Arrange
+		UpdateEntitySchemaOptions options = new() {
+			Environment = "dev",
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Operations = [
+				"""{"action":"modify","column-name":"UsrStatus","title":"Status"}""",
+				"""{"action":"modify","colum-name":"UsrOwner","title":"Owner"}"""
+			]
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "one invalid operation fails the batch");
+		_columnManager.DidNotReceiveWithAnyArgs().ModifyColumns(default!);
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("Operation payload at index 1 has unknown field 'colum-name'.")));
+	}
+
 	[Test]
 	[Description("Preserves semicolons inside structured JSON --operation payloads so valid titles and defaults are not split by the command-line parser.")]
 	public void Parse_Should_Preserve_Semicolons_In_Json_Operation_Payload() {
