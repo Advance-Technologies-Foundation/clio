@@ -15,7 +15,7 @@ public static class StudioProfile {
 	public const string Schema = "creatio-studio-handoff/v1";
 	/// <summary>Maximum UTF-8 input size, leaving room for Kubernetes Secret metadata.</summary>
 	public const int MaximumBytes = 800 * 1024;
-	private static readonly Regex NamePattern = new("^[a-z](?:[a-z0-9-]{0,48}[a-z0-9])?$", RegexOptions.CultureInvariant);
+	private static readonly Regex NamePattern = new("^[a-z](?:[a-z0-9-]{0,48}[a-z0-9])?$", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
 
 	/// <summary>Reads bounded JSON and validates the common envelope only.</summary>
 	public static JObject Read(string path) {
@@ -49,18 +49,18 @@ public static class StudioProfile {
 			string url = entry.Value<string>("url") ?? "";
 			bool https = Uri.TryCreate(url, UriKind.Absolute, out Uri uri) && uri.Scheme == "https" &&
 				string.IsNullOrEmpty(uri.UserInfo) && string.IsNullOrEmpty(uri.Query) && string.IsNullOrEmpty(uri.Fragment);
-			bool ssh = Regex.IsMatch(url, @"^git@[a-zA-Z0-9.-]+:[a-zA-Z0-9_./-]+(?:\.git)?$", RegexOptions.CultureInvariant);
+			bool ssh = Regex.IsMatch(url, @"^git@[a-zA-Z0-9.-]+:[a-zA-Z0-9_./-]+(?:\.git)?$", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
 			if (!https && !ssh) throw new ArgumentException($"Source {name} needs an HTTPS URL without credentials or a git@host:path SSH URL.");
 			string commit = entry.Value<string>("commit") ?? "";
-			if (!Regex.IsMatch(commit, "^[a-fA-F0-9]{40}$|^[a-fA-F0-9]{64}$", RegexOptions.CultureInvariant)) throw new ArgumentException($"Source {name} requires a full commit SHA.");
+			if (!Regex.IsMatch(commit, "^[a-fA-F0-9]{40}$|^[a-fA-F0-9]{64}$", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1))) throw new ArgumentException($"Source {name} requires a full commit SHA.");
 			string branch = entry.Value<string>("branch") ?? "";
 			if (branch.Length == 0 || branch.StartsWith('-') || branch.Any(char.IsWhiteSpace)) throw new ArgumentException($"Source {name} requires a branch name.");
 			string path = entry.Value<string>("path") ?? name;
 			string[] segments = path.Replace('\\', '/').Split('/');
 			if (Path.IsPathRooted(path) || segments.Any(s => s.Length == 0 || s is "." or ".." ||
-				!Regex.IsMatch(s, "^[a-zA-Z0-9_-][a-zA-Z0-9_.-]*$", RegexOptions.CultureInvariant) || s.EndsWith('.') ||
+				!Regex.IsMatch(s, "^[a-zA-Z0-9_-][a-zA-Z0-9_.-]*$", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1)) || s.EndsWith('.') ||
 				s.Equals(".studio-repositories", StringComparison.OrdinalIgnoreCase) ||
-				Regex.IsMatch(s, @"^(CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9])(?:\.|$)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))) {
+				Regex.IsMatch(s, @"^(CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9])(?:\.|$)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1)))) {
 				throw new ArgumentException($"Source {name} has an unsafe workspace path.");
 			}
 			path = string.Join(Path.DirectorySeparatorChar, segments);

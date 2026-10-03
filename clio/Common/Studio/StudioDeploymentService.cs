@@ -104,13 +104,13 @@ public class StudioDeploymentService(IAttachmentProcess process, IRancherDesktop
 		JObject crd = Read(options.Context, "crd", Resource);
 		JObject controller = Read(options.Context, "deployment", "creatio-operator", "creatio-system");
 		string image = profile["operator"]?.Value<string>("image");
-		if (image is not null && !Regex.IsMatch(image, @"^[^\s]+@sha256:[a-f0-9]{64}$"))
+		if (image is not null && !Regex.IsMatch(image, @"^[^\s]+@sha256:[a-f0-9]{64}$", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1)))
 			throw new ArgumentException("The handoff operator image must be pinned by sha256 digest.");
 		if (image is not null && image != JObject.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "tpl", "operator", "rancher-desktop", "provenance.json"))).Value<string>("image"))
 			throw new InvalidOperationException("The handoff requests an operator image outside this Clio release. Install a matching Clio release or have an administrator explicitly manage the operator; a handoff cannot select arbitrary cluster-wide controller code.");
 		bool SupportsStudio() => crd?["metadata"]?["annotations"]?.Value<string>("apps.creatio.io/studio-handoff-schema") == StudioProfile.Schema &&
 			controller?["spec"]?["template"]?["metadata"]?["annotations"]?.Value<string>("apps.creatio.io/studio-handoff-schema") == StudioProfile.Schema;
-		if (SupportsStudio() && image is not null && controller["spec"]?["template"]?["spec"]?["containers"]?.Any(c => c.Value<string>("image") == image) != true)
+		if (SupportsStudio() && image is not null && controller?["spec"]?["template"]?["spec"]?["containers"]?.Any(c => c.Value<string>("image") == image) != true)
 			throw new InvalidOperationException("The installed Studio-capable operator differs from the handoff's requested release. Resolve that version choice explicitly; Studio deploy does not replace an already compatible controller.");
 		bool needsKeda = profile["deployment"]?["dependencies"] is JArray dependencies && dependencies.Values<string>().Contains("keda-2.20.2");
 		bool missingKedaRoles = needsKeda && (new[] { "keda-operator", "keda-operator-minimal-cluster-role", "keda-operator-external-metrics-reader", "keda-operator-webhook" }.Any(n => Read(options.Context, "clusterrole", n) is null) ||
@@ -118,7 +118,7 @@ public class StudioDeploymentService(IAttachmentProcess process, IRancherDesktop
 		if (!SupportsStudio() || missingKedaRoles) {
 			if (controller is not null && controller["metadata"]?["annotations"]?.Value<string>(OperatorInstaller.Annotation) != OperatorInstaller.Profile)
 				throw new InvalidOperationException("Existing operator is outside the Clio installation profile or lacks the requested Studio release. An administrator must upgrade it with the matching operator bootstrap and image, preserving its configuration; see docs/studio-handoff.md in creatio-operator. No adoption was attempted.");
-			string retainedImage = SupportsStudio() ? controller["spec"]?["template"]?["spec"]?["containers"]?.FirstOrDefault()?.Value<string>("image") : null;
+			string retainedImage = SupportsStudio() ? controller?["spec"]?["template"]?["spec"]?["containers"]?.FirstOrDefault()?.Value<string>("image") : null;
 			installer.Install(new InstallOperatorOptions { Target = "rancher-desktop", Context = options.Context, Image = retainedImage ?? image, IncludeStudioDependencies = needsKeda });
 			crd = Read(options.Context, "crd", Resource);
 			controller = Read(options.Context, "deployment", "creatio-operator", "creatio-system");

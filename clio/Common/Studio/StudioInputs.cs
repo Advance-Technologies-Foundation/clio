@@ -9,7 +9,7 @@ namespace Clio.Common.Studio;
 
 /// <summary>Resolves declared inputs as JSON values, never executable text.</summary>
 public static class StudioInputs {
-	private static readonly Regex Placeholder = new(@"(\$?)\$\{([a-zA-Z][a-zA-Z0-9_]*)\}", RegexOptions.CultureInvariant);
+	private static readonly Regex Placeholder = new(@"(\$?)\$\{([a-zA-Z][a-zA-Z0-9_]*)\}", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
 
 	/// <summary>Returns resolved values and the complete missing-input inventory.</summary>
 	public static (JObject Values, JArray Missing) Resolve(JObject profile, JObject supplied, JObject previous, bool generate) {
@@ -20,7 +20,7 @@ public static class StudioInputs {
 			if (definitions[property.Name] is null) throw new ArgumentException("Inputs file contains an undeclared input name.");
 		}
 		foreach (JProperty property in definitions.Properties()) {
-			if (!Regex.IsMatch(property.Name, "^[a-zA-Z][a-zA-Z0-9_]*$", RegexOptions.CultureInvariant) || property.Value is not JObject definition) {
+			if (!Regex.IsMatch(property.Name, "^[a-zA-Z][a-zA-Z0-9_]*$", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1)) || property.Value is not JObject definition) {
 				throw new ArgumentException("Each input must have a valid name and a definition object.");
 			}
 			bool required = definition.Value<bool?>("required") == true;
