@@ -70,9 +70,11 @@ public sealed class RunProcessTool(
 		+ "version is a separate schema with its own code, and the version the platform's own triggers and "
 		+ "schedules execute is the family's ACTIVE version - which is usually NOT the family root you reach by "
 		+ "the base name. Before launching a process that has versions, read `isActiveVersion` from "
-		+ "describe-business-process and launch the code it reports in `activeVersionName`. Whether this endpoint "
-		+ "itself folds a non-active code onto the active version is NOT established, so do not rely on it: pass "
-		+ "the active version's code explicitly. A display caption is still refused - launching must name a code "
+		+ "describe-business-process and launch the code it reports in `activeVersionName`. Measured: this endpoint "
+		+ "folds a non-active version's code onto the ACTIVE version, so run-process cannot run a version that is "
+		+ "not active - a run 'of' a new version executes the previous one. Pass the active version's code "
+		+ "explicitly; to see a new version run before activating it, the user runs it from the process designer. "
+		+ "A display caption is still refused - launching must name a code "
 		+ "- but the refusal names the code it resolved to, and that IS the active version's code, so the refusal "
 		+ "message is the short path to the right one.")]
 	public async Task<RunProcessResponse> RunProcess(

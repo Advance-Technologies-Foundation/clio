@@ -80,8 +80,12 @@ public class SetActiveProcessVersionTool(
 		 + "refused up front, naming the version this operation needs; install or update it with "
 		 + "install-process-builder. Activating does not normally require compile-creatio — but if the response "
 		 + "warns that the version cannot execute until the configuration is compiled (from CrtProcessBuilder "
-		 + "1.6.6.51 it does for a version that carries C# or is not interpreted), heed that warning: ask the user, then run it with "
-		 + "process-name set to that version. The warning speaks for THIS call only. Use describe-business-process "
+		 + "1.6.6.51 it does for a version that carries C# or is not interpreted), heed that warning: ask the user, "
+		 + "then run it with process-name set to that version. One exception, for an interpreted version only "
+		 + "(the warning calls it 'a schema of its own'): a process-name compile that SUCCEEDED after the version's "
+		 + "C# last changed still covers it - activation re-saves the family but changes no code, so it owes no "
+		 + "second compile (measured on .NET Framework; a .NET host also needs its restart after the compile). The "
+		 + "warning speaks for THIS call only. Use describe-business-process "
 		 + "to see the family and which member is active.")]
 	public CommandExecutionResult SetActiveProcessVersion(
 		[Description("set-active-business-process-version parameters")] [Required]

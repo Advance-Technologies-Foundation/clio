@@ -16,17 +16,19 @@ using ModelContextProtocol.Protocol;
 namespace Clio.Mcp.E2E;
 
 /// <summary>
-/// The whole Script task compile chain over the real MCP server (ENG-92711): a saved script task, a
+/// The Script task compile chains over the real MCP server (ENG-92711): a saved script task, a
 /// <c>compile-creatio process-name</c> compile that fails with CS0104 in the process's own code, an aliased using
 /// added through <c>modify-business-process</c>, a second compile that succeeds, and a run that returns what the
-/// code computes.
+/// code computes; and a new version compiled with <c>process-name</c> and then activated, which runs its new code
+/// with no second compile.
 /// </summary>
 /// <remarks>
 /// <para>Developer-local on purpose. Each compile rebuilds the <c>Custom</c> package and reloads the runtime for
 /// every user of the stand (about three minutes each on a local 10.1 stand), which the automatic lanes must never
 /// do to a shared instance - the same reason the other compiling fixture,
 /// <see cref="UserTaskUnlimitedTextToolE2ETests"/>, is in this sub-tier. Run it by hand against an owned stand
-/// with CrtProcessBuilder 1.6.6.33 or later, with <c>McpE2E__Sandbox__EnvironmentName</c> and
+/// with CrtProcessBuilder 1.6.6.33 or later (1.6.6.57 or later for the activation test), with
+/// <c>McpE2E__Sandbox__EnvironmentName</c> and
 /// <c>McpE2E__AllowDestructiveMcpTests=true</c>. On a .NET host it also restarts the application between the
 /// successful compile and the run, because there the new code does not run before a restart.</para>
 /// <para>A process that reached the successful compile is left on the stand under a unique
@@ -37,13 +39,15 @@ namespace Clio.Mcp.E2E;
 /// run included, and its failed compile never reached the assembly, so the delete owes nothing. A run cut off
 /// while a compile may still be running keeps the process and says so, since deleting under a running compile is
 /// not safe.</para>
+/// <para>The activation test compiles once, and its bodies always compile, so it keeps its process and version on
+/// every path, under a unique <c>UsrClioBpActivateCompiledE2e*</c> name.</para>
 /// </remarks>
 [TestFixture]
 [Category("McpE2E.Sandbox")]
 [Category("McpE2E.Manual")]
 [Category("LocalOnly")]
 [Category(McpE2ECategories.ProcessDesigner)]
-[Explicit("Compiles the Custom package twice and reloads the runtime for every user; run it by hand against an owned stand.")]
+[Explicit("Compiles the Custom package and reloads the runtime for every user; run it by hand against an owned stand.")]
 // [AllureNUnit] is intentionally omitted, for the reason recorded on EntitySchemaToolE2ETests: its lifecycle hooks
 // deadlock a fixture with many sequential async operations, and this one polls compile-status for minutes.
 [AllureFeature(CompileCreatioTool.CompileCreatioToolName)]
@@ -54,6 +58,9 @@ public sealed class ScriptTaskCompileLifecycleE2ETests {
 
 	/// <summary>The first CrtProcessBuilder whose CompileProcess compiles every process that needs it.</summary>
 	private const string MinimumCompilePackageVersion = "1.6.6.33";
+
+	/// <summary>The first CrtProcessBuilder whose activation warning says a compile made before it still counts.</summary>
+	private const string MinimumActivationCoversCompilePackageVersion = "1.6.6.57";
 
 	[Test]
 	[Description("A script task that references SysSettings under a Terrasoft.Configuration import fails the process-name compile with CS0104 flagged as the process's own error; an aliased using added through modify-business-process makes the second compile succeed, and the run returns the values the code computes (after a restart on a .NET host, which the new code needs there) - the path an agent takes to repair a colleague's process, end to end.")]
@@ -98,19 +105,7 @@ public sealed class ScriptTaskCompileLifecycleE2ETests {
 			compileMayBeRunning = true;
 			secondCompile = await CompileAndWaitAsync(context, processName);
 			compileMayBeRunning = false;
-			string? restart = null;
-			if (secondCompile.Succeeded && await IsNetCoreHostAsync(context)) {
-				// The wait stays under the ~150 s MCP response deadline: past it the tool answers "in progress" with
-				// exit-code 0, which would let the run below start against an application still warming up.
-				restart = JsonSerializer.Serialize(await context.Session.CallToolAsync(
-					RestartTool.RestartByEnvironmentNameToolName,
-					new Dictionary<string, object?> {
-						["environmentName"] = context.EnvironmentName,
-						["waitReady"] = true,
-						["waitTimeoutSeconds"] = 120
-					},
-					context.CancellationTokenSource.Token));
-			}
+			string? restart = secondCompile.Succeeded ? await RestartOnNetCoreHostAsync(context) : null;
 			CallToolResult ran = await ProcessDesignerE2EArrange.CallToolAsync(context, RunProcessTool.ToolName,
 				new Dictionary<string, object?> {
 					["environment-name"] = context.EnvironmentName,
@@ -146,6 +141,110 @@ public sealed class ScriptTaskCompileLifecycleE2ETests {
 				await DeleteProcessAsync(context.EnvironmentName, processName);
 			}
 		}
+	}
+
+	[Test]
+	[Description("A new version of a script-task process, compiled with process-name and THEN activated, runs its new code with no second compile: activation re-saves the version family but changes no code, and its warning says the earlier compile still covers the version. The order the guidance gives an agent - compile the version, activate it, then verify it on a run - end to end; an answer that demanded another compile here sent an agent to reload the stand for nothing (measured on a .NET Framework stand, 2026-10-02).")]
+	[AllureTag(SetActiveProcessVersionTool.SetActiveProcessVersionToolName)]
+	[AllureName("A version compiled before its activation runs its new code without a second compile")]
+	public async Task NewVersion_CompiledBeforeActivation_Should_RunItsNewCode_WithoutASecondCompile() {
+		TeamCityRunGuard.IgnoreIfRunningUnderTeamCityOrGitHubActions(
+			"This fixture compiles the Custom package, reloading the runtime for every user of the stand. "
+			+ "Run it by hand against an owned stand.");
+		if (!TestConfiguration.Load().AllowDestructiveMcpTests) {
+			Assert.Ignore("Opt in with McpE2E__AllowDestructiveMcpTests for this local compile test.");
+		}
+
+		// Arrange
+		await using ProcessDesignerArrangeContext context = await ProcessDesignerE2EArrange.StartAsync(
+			"ScriptTask version activation", MinimumActivationCoversCompilePackageVersion,
+			sessionTimeout: TimeSpan.FromMinutes(15));
+		string processName = $"UsrClioBpActivateCompiledE2e{Guid.NewGuid():N}";
+		string created = JsonSerializer.Serialize(await ProcessDesignerE2EArrange.CallToolAsync(context,
+			CreateBusinessProcessTool.CreateBusinessProcessToolName, new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["descriptor"] = BuildMultiplyDescriptor(processName)
+			}));
+		created.Should().Contain("created (UId:", because: "the arrange step must have built the process");
+		string versionName = ProcessDesignerE2EArrange.CreatedVersionName(await ProcessDesignerE2EArrange.CallToolAsync(
+			context, ModifyProcessAsNewVersionTool.ModifyProcessAsNewVersionToolName, new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName,
+				["package-name"] = "Custom",
+				["operations"] = """[{"op":"setElement","elementName":"Compute","elementUpdate":{"scriptTask":{"body":"Set(\"Total\", Get<int>(\"Amount\") * 3);\nreturn true;"}}}]"""
+			}));
+
+		bool compileMayBeRunning = false;
+		try {
+			// Act
+			compileMayBeRunning = true;
+			CompileOutcome compiled = await CompileAndWaitAsync(context, versionName);
+			compileMayBeRunning = false;
+			string? restart = compiled.Succeeded ? await RestartOnNetCoreHostAsync(context) : null;
+			string activated = JsonSerializer.Serialize(await ProcessDesignerE2EArrange.CallToolAsync(context,
+				SetActiveProcessVersionTool.SetActiveProcessVersionToolName, new Dictionary<string, object?> {
+					["environment-name"] = context.EnvironmentName,
+					["version-name"] = versionName
+				}));
+			CallToolResult ran = await ProcessDesignerE2EArrange.CallToolAsync(context, RunProcessTool.ToolName,
+				new Dictionary<string, object?> {
+					["environment-name"] = context.EnvironmentName,
+					["process-name"] = versionName,
+					["parameters"] = new Dictionary<string, object?> { ["Amount"] = 7 },
+					["result-parameters"] = new[] { "Total" }
+				});
+
+			// Assert
+			compiled.Succeeded.Should().BeTrue(because: "the new version's body is valid C#: {0}", compiled.Text);
+			if (restart is not null) {
+				restart.Should().Contain(ExitCodeZero,
+					because: "a .NET host runs the newly compiled code only after a restart: {0}", restart);
+			}
+			activated.Should().Contain(ExitCodeZero, because: "the activation itself succeeds: {0}", activated);
+			activated.Should().Contain(CommandExecutionResult.CompileRequiredWarningMarker,
+				because: "the warning still carries the marker that keeps clio from calling the compile not required");
+			activated.Should().NotContain(CommandExecutionResult.CompileNotRequiredNote,
+				because: "a version that was never compiled would refuse to start, so the note must not be added");
+			activated.Should().Contain("owes no second compile",
+				because: "the warning must say that the compile made before the activation still covers the version, "
+					+ "or an agent asks the user for a reload the run below shows is not needed: {0}", activated);
+			using JsonDocument run = JsonDocument.Parse(ran.Content.OfType<TextContentBlock>().First().Text);
+			run.RootElement.GetProperty("status").GetString().Should().Be("completed",
+				because: "the activated version was compiled before its activation and needs no other compile: {0}",
+				run.RootElement.GetRawText());
+			run.RootElement.GetProperty("resultParameterValues").GetProperty("Total").ToString().Should().Be("21",
+				because: "the run executes the NEW version's body, which triples the amount; the first version's "
+					+ "doubles it (14)");
+		} finally {
+			// The process and its version stay on every path (the remarks say why); a compile whose outcome is
+			// unknown is reported, since deleting a schema under a running compile is not safe.
+			if (compileMayBeRunning) {
+				await TestContext.Error.WriteLineAsync($"The compile outcome is unknown; retained '{processName}' and "
+					+ $"'{versionName}'. Delete them once the compile has stopped.");
+			}
+		}
+	}
+
+	/// <summary>
+	/// Restarts the application when the stand is a .NET host, where newly compiled code runs only after a restart,
+	/// and returns the restart's answer; <c>null</c> on .NET Framework, where the compile's own reload is enough.
+	/// </summary>
+	/// <remarks>
+	/// The wait stays under the ~150 s MCP response deadline: past it the tool answers "in progress" with exit-code
+	/// 0, which would let a following run start against an application still warming up.
+	/// </remarks>
+	private static async Task<string?> RestartOnNetCoreHostAsync(ProcessDesignerArrangeContext context) {
+		if (!await IsNetCoreHostAsync(context)) {
+			return null;
+		}
+		return JsonSerializer.Serialize(await context.Session.CallToolAsync(
+			RestartTool.RestartByEnvironmentNameToolName,
+			new Dictionary<string, object?> {
+				["environmentName"] = context.EnvironmentName,
+				["waitReady"] = true,
+				["waitTimeoutSeconds"] = 120
+			},
+			context.CancellationTokenSource.Token));
 	}
 
 	// Measured on a .NET 8 stand (2026-09-28): after a clean process-name compile the process kept answering
@@ -232,6 +331,29 @@ public sealed class ScriptTaskCompileLifecycleE2ETests {
 
 	/// <summary>What one compile ended with, and the text that says so.</summary>
 	private sealed record CompileOutcome(bool Succeeded, string Text);
+
+	private static string BuildMultiplyDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Activate Compiled E2E",
+		  "packageName": "Custom",
+		  "parameters": [
+		    { "name": "Amount", "type": "Integer", "direction": "In" },
+		    { "name": "Total", "type": "Integer", "direction": "Out" }
+		  ],
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "Compute", "type": "scriptTask", "caption": "Compute",
+		      "scriptTask": { "body": "Set(\"Total\", Get<int>(\"Amount\") * 2);\nreturn true;" } },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "Compute" },
+		    { "source": "Compute", "target": "EndEvent1" }
+		  ]
+		}
+		""";
 
 	private static string BuildDescriptor(string processName) =>
 		$$"""

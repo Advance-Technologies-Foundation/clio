@@ -58,6 +58,7 @@ public class RunProcessCommand(
 	IProcessModelGenerator generator,
 	IApplicationClient applicationClient,
 	IServiceUrlBuilder serviceUrlBuilder,
+	IProcessRunLogReader processRunLogReader,
 	ILogger logger)
 	: Command<RunProcessOptions> {
 
@@ -80,6 +81,21 @@ public class RunProcessCommand(
 
 	private const string ManualStartRefusedCode = "ProcessCannotBeManuallyStartedException";
 
+	// ProcessModel.GetScriptTaskMethod looks the element's <name>Execute up in the methods wrapper of the LOADED
+	// assembly, so a script task saved since the last compile is missing there and the run throws this when it
+	// reaches the element - after the elements before it ran. An exception the script itself throws is swallowed
+	// by the element and arrives with NO errorCode, so this code does not come from user C#; another platform
+	// lookup can still raise it, hence "most often".
+	private const string MissingCompiledMethodCode = "KeyNotFoundException";
+
+	internal static string BuildMissingCompiledMethodHint(string processCode) =>
+		$" This is most often a script task saved since the active version of '{processCode}' was last compiled - "
+		+ "run-process runs the active version whatever code it is given - so the compiled code does not have it "
+		+ "yet: the run stops when it reaches that element, and the elements before it may already have run. If a "
+		+ "process-name compile of it succeeded only minutes ago, the runtime may still be reloading: run again in "
+		+ "about two minutes before compiling again. Otherwise ask the user, then run compile-creatio with "
+		+ "process-name set to the active version (describe-business-process names it).";
+
 	internal static string BuildQueuedBackgroundNote(string processCode) =>
 		$"'{processCode}' starts in background mode, so the platform queued it and returned no process id, "
 		+ "no status and no result parameters. This is not an error — for a fire-and-forget process the "
@@ -88,7 +104,8 @@ public class RunProcessCommand(
 		+ "which is the only way to get a verdict for it.";
 
 	internal static string BuildRefusalMessage(string processCode, string errorCode, string message) {
-		string detail = string.IsNullOrWhiteSpace(message) ? "the platform returned no details" : message;
+		// Fenced: the platform's wording reaches an agent through the MCP result, and it can quote stored text.
+		string detail = UntrustedText.Fenced(message) ?? "the platform returned no details";
 		if (string.Equals(errorCode, ManualStartRefusedCode, StringComparison.Ordinal)) {
 			return $"'{processCode}' cannot be launched: {detail}. Nothing was started. A process whose only "
 				+ "start events are automatic runs when its own trigger fires (a record signal, a timer, a "
@@ -96,7 +113,7 @@ public class RunProcessCommand(
 				+ "the trigger instead, or add a manual start event to the process.";
 		}
 		return $"'{processCode}' was not started: {detail}."
-			+ (string.IsNullOrWhiteSpace(errorCode) ? string.Empty : $" [{errorCode}]");
+			+ DescribeErrorCode(errorCode);
 	}
 
 	// True only for an accepted launch with no failure verdict.
@@ -166,9 +183,43 @@ public class RunProcessCommand(
 		}
 
 		response = BuildResponse(platformResponse, model.Code);
+		AddLoggedError(platformResponse, response);
 		// Feeds Execute's exit code, so it tracks the outcome rather than "a request was sent" — a refusal
 		// and a failed run would otherwise both exit 0.
 		return response.Error is null;
+	}
+
+	// A run that failed inside an element - a script that threw, a formula that could not be computed - comes back
+	// with only "check the process log" and no errorCode: the platform swallows the element's exception before
+	// RunProcess builds its answer. It logged it, though, on the run's SysProcessLog row before returning, so the
+	// failure names it. Best effort: when the log cannot be read the generic message stays, and a warning says
+	// where to look.
+	private void AddLoggedError(ProcessStartResponse platformResponse, RunProcessResponse response) {
+		if (response.Error is null || platformResponse is null || platformResponse.ProcessId == Guid.Empty) {
+			return;
+		}
+		(string errorCode, _) = ReadErrorInfo(platformResponse.ErrorInfo);
+		if (!string.IsNullOrWhiteSpace(errorCode)) {
+			return;
+		}
+		string logged;
+		try {
+			logged = processRunLogReader.ReadErrorSummary(platformResponse.ProcessId);
+		}
+		catch (Exception exception) when (exception is not OutOfMemoryException) {
+			// Reading the log is a courtesy on top of a failure already reported; no failure of it may replace
+			// that report. Its text goes to the console line only, rendered for a terminal (the MCP tool clears the
+			// captured log), never into the response.
+			logger.WriteWarning($"Could not read the process log of run {platformResponse.ProcessId}: "
+				+ (UntrustedText.ForConsole(exception.GetReadableMessageException()) ?? "no detail reported"));
+			(response.Warnings ??= []).Add(
+				$"The error this run logged could not be read; it is in the process log of run {platformResponse.ProcessId}.");
+			return;
+		}
+		string fenced = UntrustedText.Fenced(logged);
+		if (fenced is not null) {
+			response.Error += $" The process log of this run reports: {fenced}";
+		}
 	}
 
 	// A refusal, a background queueing and an inactive descriptor arrive with the SAME empty id and
@@ -182,6 +233,17 @@ public class RunProcessCommand(
 		(string errorCode, string errorMessage) = ReadErrorInfo(platformResponse.ErrorInfo);
 		bool noHandle = platformResponse.ProcessId == Guid.Empty
 			&& platformResponse.ProcessStatus == InactiveStatus;
+
+		// With UseOldStartupExceptionHandling on, the platform rethrows a run's exception and returns no id, which
+		// reads as a refusal - but the missing compiled method is thrown when the flow REACHES the script task, so
+		// the elements before it ran. Reported as a failed run, so a caller does not re-run them as not-started.
+		if (noHandle && !platformResponse.Success
+				&& string.Equals(errorCode, MissingCompiledMethodCode, StringComparison.Ordinal)) {
+			return new RunProcessResponse {
+				Status = StatusNames[ErrorStatus],
+				Error = DescribeFailure(errorCode, errorMessage, processCode)
+			};
+		}
 
 		if (noHandle && !platformResponse.Success) {
 			return new RunProcessResponse {
@@ -205,7 +267,7 @@ public class RunProcessCommand(
 		// A failed run can arrive with success=true: the platform only clears that flag while
 		// Feature-SetErrorInfoIfProcessHasFailedExecution is on. Both signals are read.
 		if (!platformResponse.Success || platformResponse.ProcessStatus == ErrorStatus) {
-			response.Error = DescribeFailure(errorCode, errorMessage);
+			response.Error = DescribeFailure(errorCode, errorMessage, processCode);
 		}
 		return response;
 	}
@@ -224,13 +286,27 @@ public class RunProcessCommand(
 			? member.GetString()
 			: null;
 
-	private static string DescribeFailure(string errorCode, string message) {
-		string detail = string.IsNullOrWhiteSpace(message)
-			? "the platform returned no error details"
-			: message;
+	private static string DescribeFailure(string errorCode, string message, string processCode) {
+		// Fenced: the platform's wording reaches an agent through the MCP result, and it can quote stored text.
+		string detail = UntrustedText.Fenced(message) ?? "the platform returned no error details";
 		return $"The process run failed: {detail}."
-			+ (string.IsNullOrWhiteSpace(errorCode) ? string.Empty : $" [{errorCode}]");
+			+ DescribeErrorCode(errorCode)
+			+ (string.Equals(errorCode, MissingCompiledMethodCode, StringComparison.Ordinal)
+				? BuildMissingCompiledMethodHint(processCode)
+				: string.Empty);
 	}
+
+	// The platform fills errorCode with the exception's type name (ResponseUtils.CreateErrorInfo), so an identifier
+	// is shown as it is; anything else is the server's text like the message, and is fenced.
+	private static string DescribeErrorCode(string errorCode) {
+		if (string.IsNullOrWhiteSpace(errorCode)) {
+			return string.Empty;
+		}
+		return ErrorCodeShape.IsMatch(errorCode) ? $" [{errorCode}]" : $" [{UntrustedText.Fenced(errorCode)}]";
+	}
+
+	private static readonly System.Text.RegularExpressions.Regex ErrorCodeShape = new(@"\A[A-Za-z_][A-Za-z0-9_.]{0,127}\z",
+		System.Text.RegularExpressions.RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100));
 
 	private static string ResolveStatusName(int status) =>
 		StatusNames.TryGetValue(status, out string name) ? name : $"unknown-status-{status}";
