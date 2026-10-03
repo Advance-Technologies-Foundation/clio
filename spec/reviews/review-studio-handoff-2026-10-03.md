@@ -47,13 +47,38 @@ A final live operator revision also removed an omitted ConfigMap key while chang
 another value and returning Ready; this verifies the native field-ownership
 transfer through the actual controller, not only a standalone API experiment.
 
-## Remaining release gate
+## Runtime acceptance completed (2026-10-03)
 
-Full snapshot login, Twin reply and Builder build/deploy/reply are **not proven**.
-Recipient model access is still unspecified. Browser/pod OIDC routing and other
-application-specific snapshot configuration need validation. Draft PRs must not
-be described as a completed environment reproduction. No CRM–Studio wiring,
-automatic data migration or automatic whole-resource pruning is included.
+The prepared Omen handoff was installed on Rancher Desktop through the new
+Clio/operator path. After portability repairs in the handoff, the 119-resource
+subscription variant reached Ready. All source images were pulled from the
+public registry; deployment did not build the platform or check out source.
+
+- Fresh bootstrap-user PKCE login, callback and Studio session: HTTP 200.
+- Real model request: `PORTABLE_MODEL_OK`.
+- Twin sandbox runtime: non-mock run completed with `PORTABLE_TWIN_OK`.
+- Builder created a new deterministic agent, passed its tests and seven review
+  lenses, built/pushed its image, deployed it to sandbox and returned
+  `PORTABLE_BUILDER_OK` through Twin. Its scope was released after verification.
+- Repeat submission retained generated inputs, Secret/Job/PVC identities and
+  existing CRM/shared-infrastructure specifications; three CRM instances stayed Ready.
+- Builder runner network tests allowed Studio and denied direct access to Builder,
+  PostgreSQL and the Kubernetes API.
+
+The user authorized a read-only export of model/registry credentials from Omen.
+Credentials stayed outside Git and the shareable profile. The temporary account
+export has no refresh token and expires on October 8; recipients supply their own
+model/account credentials. The final handoff includes idempotent storage and tenant
+bootstrap Jobs, local identity routing, explicit Builder namespace and an
+operator-managed runner NetworkPolicy using the Builder's supported external-policy
+setting. These are producer handoff fixes, not application image rebuilds.
+
+Boundaries: validation covers text Studio/Twin/Builder. Voice/LiveKit and existing
+Omen project/data transfer were not validated or reproduced. CRM-to-Studio wiring,
+automatic database migration and automatic whole-resource pruning remain excluded.
+The preview image is not yet a published operator release. This was an installation
+onto fresh local databases with iterative handoff repairs, followed by repeat
+validation; it was not a second pristine-cluster replay of the final profile.
 
 KISS check: the flow remains handoff -> Clio input resolution -> operator CR;
 source checkout is an independent worktree operation. Native Kubernetes status,
