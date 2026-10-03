@@ -31,6 +31,10 @@ public class OperatorInstaller(IAttachmentProcess process, AbstractionsFileSyste
 		Validate(options);
 		JObject crds = ReadBundle("crds.json");
 		JObject resources = ReadBundle("operator.json");
+		if (!options.IncludeStudioDependencies) {
+			resources["items"] = new JArray(resources["items"].Where(r =>
+				r["metadata"]?["labels"]?.Value<string>("apps.creatio.io/studio-dependency") != "keda-2.20.2"));
+		}
 		string image = options.Image ?? ReadBundle("provenance.json").Value<string>("image");
 		foreach (JObject deployment in resources["items"].OfType<JObject>().Where(d => d.Value<string>("kind") == "Deployment")) {
 			deployment["spec"]["template"]["spec"]["containers"][0]["image"] = image;

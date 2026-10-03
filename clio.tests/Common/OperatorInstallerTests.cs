@@ -27,6 +27,7 @@ public class OperatorInstallerTests {
 	private string _targetUid;
 	private bool _existingServices;
 	private bool _foreignBinding;
+	private bool _foreignKeda;
 
 	[SetUp]
 	public void SetUp() {
@@ -36,6 +37,7 @@ public class OperatorInstallerTests {
 		_targetUid = "local-cluster";
 		_existingServices = false;
 		_foreignBinding = false;
+		_foreignKeda = false;
 		_process = Substitute.For<IAttachmentProcess>();
 		_process.Run("rdctl", Arg.Any<IReadOnlyList<string>>(), Arg.Any<string>())
 			.Returns("{\"containerEngine\":{\"name\":\"moby\"}}");
@@ -46,6 +48,7 @@ public class OperatorInstallerTests {
 			if (args.Contains("secret")) { return _existingSecret ? "secret/admin" : ""; }
 			if (args.Contains("service")) { return _existingServices ? "service/existing" : ""; }
 			if (args.Contains("ClusterRoleBinding") && _foreignBinding) { return "{\"metadata\":{}}"; }
+			if (args.Contains("keda-operator") && _foreignKeda) { return "{\"metadata\":{}}"; }
 			if (args.Contains("get") && args.Contains("default")) { return _existingInfrastructure; }
 			if (args.Contains("get") && args.Contains("crd")) { return "crd/shared"; }
 			return "";
@@ -56,6 +59,7 @@ public class OperatorInstallerTests {
 		files.AddFile(Path.Combine(root, "operator.json"), new MockFileData("""
 		{"items":[
 		 {"kind":"ClusterRoleBinding","metadata":{"name":"creatio-operator"}},
+		 {"kind":"ClusterRole","metadata":{"name":"keda-operator","labels":{"apps.creatio.io/studio-dependency":"keda-2.20.2"}}},
 		 {"kind":"Deployment","metadata":{"name":"creatio-operator","namespace":"creatio-system"},
 		  "spec":{"template":{"spec":{"containers":[{"image":"__OPERATOR_IMAGE__"}]}}}}
 		]}
@@ -70,6 +74,19 @@ public class OperatorInstallerTests {
 	public void TearDown() => _container.Dispose();
 
 	private static InstallOperatorOptions Options() => new() { Target = "rancher-desktop", Context = "local-alias" };
+
+	[TestCase(false), TestCase(true), Description("Ordinary CRM bootstrap ignores existing KEDA; Studio dependency opt-in checks ownership before writes.")]
+	public void Install_ShouldScopeKedaOwnershipToStudio(bool studio) {
+		_foreignKeda = true; var options = Options(); options.IncludeStudioDependencies = studio;
+		if (studio) {
+			Action act = () => _installer.Install(options);
+			act.Should().Throw<InvalidOperationException>("Studio cannot replace a foreign KEDA installation");
+			_calls.Should().OnlyContain(c => c.Input == null, "dependency ownership refusal must precede mutation");
+		} else {
+			_installer.Install(options);
+			_calls.Should().NotContain(c => c.Args.Contains("keda-operator") || (c.Input != null && c.Input.Contains("keda-operator")), "ordinary CRM installation must not claim unrelated KEDA resources");
+		}
+	}
 
 	[Test, Description("The installer uses the bundled image when no override is supplied.")]
 	public void Install_ShouldUseProvenanceImage_ByDefault() {

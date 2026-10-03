@@ -1,11 +1,6 @@
 {
   "source": "creatio-operator/bootstrap.yaml",
-  "sourceSha256": "ab912537497bfb520c9480ec7cda7a4e2a1308653c69972be839b9225f3c0559",
+  "sourceSha256": "9e7bc344cae4eabb093449d5321eb687314c961e37e61d9cc28733bdb9e23f58",
   "profile": "rancher-desktop-v1",
-  "image": "registry.krylov.cloud/creatio-operator@sha256:80afb7d808e395f3dd793da9e204c77d00351666ebee8eff8388392ae2313a7f",
-  "sourceRevision": "2cd5b73f04e1a5a58e0996c8d86d8277258acc35",
-  "imageTag": "main-2cd5b73-clio",
-  "platforms": [
-    "linux/amd64"
-  ]
+  "image": "registry.krylov.cloud/creatio-operator@sha256:5c3d6ff5093d2e16ad61d372c4e497022258449ce33c055c1059f4ddaf4a2d80"
 }

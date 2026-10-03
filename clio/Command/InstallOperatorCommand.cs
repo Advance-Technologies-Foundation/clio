@@ -18,6 +18,8 @@ public class InstallOperatorOptions {
 	/// <summary>Optional operator image reference, overriding the bundled digest.</summary>
 	[Option("image")]
 	public string Image { get; set; }
+	/// <summary>Internal Studio bootstrap opt-in; ordinary CRM installs do not claim KEDA roles.</summary>
+	public bool IncludeStudioDependencies { get; set; }
 }
 
 /// <summary>Host-side operator bootstrap. Does not remove existing infrastructure.</summary>

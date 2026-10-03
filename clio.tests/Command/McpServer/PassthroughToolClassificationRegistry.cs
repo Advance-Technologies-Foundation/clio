@@ -316,6 +316,10 @@ internal static class PassthroughToolClassificationRegistry {
 			[RuntimeTools.AttachName] = PassthroughClassification.NotEnvironmentSensitive,
 			[RuntimeTools.DetachName] = PassthroughClassification.NotEnvironmentSensitive,
 			[InstallOperatorTool.ToolName] = PassthroughClassification.NotEnvironmentSensitive,
+			// Studio uses the explicit developer-host context, never a Creatio environment.
+			["studio-deploy"] = PassthroughClassification.NotEnvironmentSensitive,
+			["studio-checkout"] = PassthroughClassification.NotEnvironmentSensitive,
+			["studio-status"] = PassthroughClassification.NotEnvironmentSensitive,
 			["experimental"] = PassthroughClassification.NotApplicable,
 			["find-app"] = PassthroughClassification.NotApplicable,
 			["find-entity-schema"] = PassthroughClassification.NotApplicable,
