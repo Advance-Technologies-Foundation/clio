@@ -1,0 +1,21 @@
+studio deploy --profile <handoff.json> --context rancher-desktop [--inputs <inputs.json>]
+studio checkout --profile <handoff.json> --directory <workspace>
+studio status --context rancher-desktop --namespace <namespace> --name <name>
+
+Experimental: enable with clio experimental --name runtime --enable.
+
+Deploy submits a trusted portable AI Studio handoff to creatio-operator. It does
+not clone source repositories or build images. Missing required values produce
+an InputRequired JSON result listing every missing input; provide them in a JSON
+inputs file and retry. Generated credentials are retained in Kubernetes Secrets.
+
+Checkout creates detached Git worktrees at exact recorded commits. It requires
+repository access but no deployment, Kubernetes context or deployment inputs.
+Existing mismatching worktrees are refused; local changes are never reset.
+
+Status reports operator progress and the applied revision. Ready means declared
+Kubernetes workloads are ready; functional login and agent tests are separate.
+
+MCP: studio-deploy, studio-checkout and studio-status. Requires the runtime
+feature and a host-side server started with clio mcp-server --runtime-host.
+All file paths refer to the host running Clio.

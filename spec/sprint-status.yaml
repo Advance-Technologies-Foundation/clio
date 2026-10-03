@@ -4698,3 +4698,15 @@ stories:
     depends_on:
       - story-page-localization-1
     blocks: []
+
+  - id: story-studio-handoff-1
+    title: "Independent Studio handoff deployment and source checkout"
+    feature: "studio-handoff"
+    size: L
+    status: in-progress
+    file: spec/stories/story-studio-handoff-1.md
+    prd: spec/prd/prd-studio-handoff.md
+    adr: spec/adr/adr-studio-handoff.md
+    test_plan: spec/test-plans/tp-studio-handoff.md
+    depends_on: []
+    blocks: []

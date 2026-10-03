@@ -1259,6 +1259,107 @@
           }
         ]
       }
+    },
+    {
+      "apiVersion": "apiextensions.k8s.io/v1",
+      "kind": "CustomResourceDefinition",
+      "metadata": {
+        "name": "creatioaistudios.apps.creatio.io",
+        "annotations": {
+          "apps.creatio.io/studio-handoff-schema": "creatio-studio-handoff/v1",
+          "clio.creatio.com/install-profile": "rancher-desktop-v1"
+        }
+      },
+      "spec": {
+        "group": "apps.creatio.io",
+        "scope": "Namespaced",
+        "names": {
+          "plural": "creatioaistudios",
+          "singular": "creatioaistudio",
+          "kind": "CreatioAiStudio",
+          "shortNames": [
+            "studio"
+          ]
+        },
+        "versions": [
+          {
+            "name": "v1alpha1",
+            "served": true,
+            "storage": true,
+            "subresources": {
+              "status": {}
+            },
+            "additionalPrinterColumns": [
+              {
+                "name": "Phase",
+                "type": "string",
+                "jsonPath": ".status.phase"
+              },
+              {
+                "name": "Step",
+                "type": "string",
+                "jsonPath": ".status.currentPhase"
+              }
+            ],
+            "schema": {
+              "openAPIV3Schema": {
+                "type": "object",
+                "required": [
+                  "spec"
+                ],
+                "properties": {
+                  "spec": {
+                    "type": "object",
+                    "required": [
+                      "handoffSecret",
+                      "handoffRevision"
+                    ],
+                    "properties": {
+                      "handoffSecret": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 253
+                      },
+                      "handoffRevision": {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{64}$"
+                      }
+                    }
+                  },
+                  "status": {
+                    "type": "object",
+                    "properties": {
+                      "phase": {
+                        "type": "string",
+                        "enum": [
+                          "Pending",
+                          "Progressing",
+                          "Blocked",
+                          "Failed",
+                          "Ready"
+                        ]
+                      },
+                      "message": {
+                        "type": "string"
+                      },
+                      "observedGeneration": {
+                        "type": "integer",
+                        "format": "int64"
+                      },
+                      "appliedRevision": {
+                        "type": "string"
+                      },
+                      "currentPhase": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
     }
   ]
 }

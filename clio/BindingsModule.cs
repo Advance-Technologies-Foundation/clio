@@ -931,6 +931,9 @@ public class BindingsModule {
 		services.AddTransient<RegisterCommand>();
 		services.AddTransient<InstallOperatorCommand>();
 		services.AddTransient<RuntimeCommand>();
+		services.AddTransient<StudioCommand>();
+		services.AddTransient<Clio.Common.Studio.IStudioCheckout, Clio.Common.Studio.StudioCheckout>();
+		services.AddTransient<Clio.Common.Studio.IStudioDeploymentService, Clio.Common.Studio.StudioDeploymentService>();
 		services.AddTransient<UnregisterCommand>();
 		
 		services.AddTransient<IUserPromptService, UserPromptService>();

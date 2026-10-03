@@ -297,6 +297,209 @@
             "patch",
             "delete"
           ]
+        },
+        {
+          "apiGroups": [
+            "rbac.authorization.k8s.io"
+          ],
+          "resources": [
+            "clusterroles"
+          ],
+          "resourceNames": [
+            "env-operator",
+            "creatio-studio-bootstrapper"
+          ],
+          "verbs": [
+            "get",
+            "bind"
+          ]
+        },
+        {
+          "apiGroups": [
+            "rbac.authorization.k8s.io"
+          ],
+          "resources": [
+            "clusterrolebindings"
+          ],
+          "verbs": [
+            "get",
+            "create",
+            "delete"
+          ]
+        },
+        {
+          "apiGroups": [
+            "apps.creatio.io"
+          ],
+          "resources": [
+            "creatioaistudios",
+            "creatioaistudios/status"
+          ],
+          "verbs": [
+            "get",
+            "list",
+            "watch",
+            "patch",
+            "update"
+          ]
+        },
+        {
+          "apiGroups": [
+            ""
+          ],
+          "resources": [
+            "serviceaccounts"
+          ],
+          "verbs": [
+            "get",
+            "list",
+            "create",
+            "patch",
+            "update"
+          ]
+        },
+        {
+          "apiGroups": [
+            "rbac.authorization.k8s.io"
+          ],
+          "resources": [
+            "roles",
+            "rolebindings"
+          ],
+          "verbs": [
+            "get",
+            "list",
+            "create",
+            "patch",
+            "update"
+          ]
+        },
+        {
+          "apiGroups": [
+            "networking.k8s.io"
+          ],
+          "resources": [
+            "networkpolicies"
+          ],
+          "verbs": [
+            "get",
+            "list",
+            "create",
+            "patch",
+            "update",
+            "watch",
+            "delete"
+          ]
+        },
+        {
+          "apiGroups": [
+            "storage.k8s.io"
+          ],
+          "resources": [
+            "storageclasses"
+          ],
+          "verbs": [
+            "get",
+            "list",
+            "watch"
+          ]
+        },
+        {
+          "apiGroups": [
+            "authorization.k8s.io"
+          ],
+          "resources": [
+            "selfsubjectaccessreviews"
+          ],
+          "verbs": [
+            "create"
+          ]
+        },
+        {
+          "apiGroups": [
+            "rbac.authorization.k8s.io"
+          ],
+          "resources": [
+            "clusterroles"
+          ],
+          "resourceNames": [
+            "keda-operator",
+            "keda-operator-external-metrics-reader",
+            "keda-operator-minimal-cluster-role",
+            "keda-operator-webhook",
+            "system:auth-delegator"
+          ],
+          "verbs": [
+            "bind"
+          ]
+        },
+        {
+          "apiGroups": [
+            "apiextensions.k8s.io"
+          ],
+          "resources": [
+            "customresourcedefinitions"
+          ],
+          "verbs": [
+            "get",
+            "create"
+          ]
+        },
+        {
+          "apiGroups": [
+            "apiregistration.k8s.io"
+          ],
+          "resources": [
+            "apiservices"
+          ],
+          "verbs": [
+            "get",
+            "create"
+          ]
+        },
+        {
+          "apiGroups": [
+            "admissionregistration.k8s.io"
+          ],
+          "resources": [
+            "validatingwebhookconfigurations"
+          ],
+          "verbs": [
+            "get",
+            "create"
+          ]
+        },
+        {
+          "apiGroups": [
+            "rbac.authorization.k8s.io"
+          ],
+          "resources": [
+            "roles"
+          ],
+          "resourceNames": [
+            "keda-operator-certs",
+            "extension-apiserver-authentication-reader"
+          ],
+          "verbs": [
+            "bind"
+          ]
+        },
+        {
+          "apiGroups": [
+            "rbac.authorization.k8s.io"
+          ],
+          "resources": [
+            "clusterroles"
+          ],
+          "resourceNames": [
+            "keda-operator",
+            "keda-operator-minimal-cluster-role",
+            "keda-operator-external-metrics-reader",
+            "keda-operator-webhook"
+          ],
+          "verbs": [
+            "get"
+          ]
         }
       ]
     },
@@ -365,6 +568,9 @@
         },
         "template": {
           "metadata": {
+            "annotations": {
+              "apps.creatio.io/studio-handoff-schema": "creatio-studio-handoff/v1"
+            },
             "labels": {
               "app.kubernetes.io/name": "creatio-operator"
             }
@@ -561,6 +767,751 @@
           }
         ]
       }
+    },
+    {
+      "apiVersion": "rbac.authorization.k8s.io/v1",
+      "kind": "ClusterRole",
+      "metadata": {
+        "name": "env-operator",
+        "labels": {
+          "app.kubernetes.io/managed-by": "creatio-operator-installer"
+        },
+        "annotations": {
+          "clio.creatio.com/install-profile": "rancher-desktop-v1"
+        }
+      },
+      "rules": [
+        {
+          "apiGroups": [
+            "apps"
+          ],
+          "resources": [
+            "deployments"
+          ],
+          "verbs": [
+            "get",
+            "list",
+            "watch",
+            "create",
+            "update",
+            "patch",
+            "delete"
+          ]
+        },
+        {
+          "apiGroups": [
+            "keda.sh"
+          ],
+          "resources": [
+            "scaledobjects"
+          ],
+          "verbs": [
+            "get",
+            "list",
+            "watch",
+            "create",
+            "update",
+            "patch"
+          ]
+        },
+        {
+          "apiGroups": [
+            ""
+          ],
+          "resources": [
+            "pods"
+          ],
+          "verbs": [
+            "get",
+            "list",
+            "watch",
+            "patch"
+          ]
+        },
+        {
+          "apiGroups": [
+            "rbac.authorization.k8s.io"
+          ],
+          "resources": [
+            "roles",
+            "rolebindings"
+          ],
+          "verbs": [
+            "create",
+            "get",
+            "update"
+          ]
+        },
+        {
+          "apiGroups": [
+            ""
+          ],
+          "resources": [
+            "events"
+          ],
+          "verbs": [
+            "create",
+            "patch"
+          ]
+        },
+        {
+          "apiGroups": [
+            ""
+          ],
+          "resources": [
+            "secrets"
+          ],
+          "verbs": [
+            "get",
+            "create",
+            "update"
+          ]
+        }
+      ]
+    },
+    {
+      "apiVersion": "rbac.authorization.k8s.io/v1",
+      "kind": "ClusterRole",
+      "metadata": {
+        "name": "creatio-studio-bootstrapper",
+        "labels": {
+          "app.kubernetes.io/managed-by": "creatio-operator-installer"
+        },
+        "annotations": {
+          "clio.creatio.com/install-profile": "rancher-desktop-v1"
+        }
+      },
+      "rules": [
+        {
+          "apiGroups": [
+            ""
+          ],
+          "resources": [
+            "namespaces"
+          ],
+          "verbs": [
+            "create",
+            "delete"
+          ]
+        },
+        {
+          "apiGroups": [
+            ""
+          ],
+          "resources": [
+            "resourcequotas"
+          ],
+          "verbs": [
+            "create"
+          ]
+        },
+        {
+          "apiGroups": [
+            ""
+          ],
+          "resources": [
+            "serviceaccounts"
+          ],
+          "verbs": [
+            "create"
+          ]
+        },
+        {
+          "apiGroups": [
+            ""
+          ],
+          "resources": [
+            "secrets"
+          ],
+          "verbs": [
+            "create"
+          ]
+        },
+        {
+          "apiGroups": [
+            ""
+          ],
+          "resources": [
+            "services"
+          ],
+          "verbs": [
+            "create"
+          ]
+        },
+        {
+          "apiGroups": [
+            "apps"
+          ],
+          "resources": [
+            "deployments"
+          ],
+          "verbs": [
+            "create"
+          ]
+        },
+        {
+          "apiGroups": [
+            "apps"
+          ],
+          "resources": [
+            "deployments"
+          ],
+          "verbs": [
+            "patch"
+          ],
+          "resourceNames": [
+            "env-orchestrator"
+          ]
+        },
+        {
+          "apiGroups": [
+            "networking.k8s.io"
+          ],
+          "resources": [
+            "networkpolicies"
+          ],
+          "verbs": [
+            "create"
+          ]
+        },
+        {
+          "apiGroups": [
+            "networking.k8s.io"
+          ],
+          "resources": [
+            "networkpolicies"
+          ],
+          "verbs": [
+            "patch"
+          ],
+          "resourceNames": [
+            "agent-egress",
+            "tenant-ingress-isolation"
+          ]
+        },
+        {
+          "apiGroups": [
+            "keda.sh"
+          ],
+          "resources": [
+            "scaledobjects"
+          ],
+          "verbs": [
+            "create"
+          ]
+        },
+        {
+          "apiGroups": [
+            "rbac.authorization.k8s.io"
+          ],
+          "resources": [
+            "rolebindings"
+          ],
+          "verbs": [
+            "create"
+          ]
+        },
+        {
+          "apiGroups": [
+            "rbac.authorization.k8s.io"
+          ],
+          "resources": [
+            "clusterroles"
+          ],
+          "verbs": [
+            "get",
+            "bind"
+          ],
+          "resourceNames": [
+            "env-operator"
+          ]
+        }
+      ]
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Namespace",
+      "metadata": {
+        "name": "keda",
+        "labels": {
+          "apps.creatio.io/studio-dependency": "keda-2.20.2"
+        },
+        "annotations": {
+          "clio.creatio.com/install-profile": "rancher-desktop-v1"
+        }
+      }
+    },
+    {
+      "apiVersion": "rbac.authorization.k8s.io/v1",
+      "kind": "ClusterRole",
+      "metadata": {
+        "labels": {
+          "app.kubernetes.io/name": "keda-operator",
+          "helm.sh/chart": "keda-2.20.2",
+          "app.kubernetes.io/component": "operator",
+          "app.kubernetes.io/part-of": "keda-operator",
+          "app.kubernetes.io/version": "2.20.2",
+          "app.kubernetes.io/instance": "keda",
+          "apps.creatio.io/studio-dependency": "keda-2.20.2"
+        },
+        "name": "keda-operator",
+        "annotations": {
+          "clio.creatio.com/install-profile": "rancher-desktop-v1"
+        }
+      },
+      "rules": [
+        {
+          "apiGroups": [
+            ""
+          ],
+          "resources": [
+            "configmaps",
+            "configmaps/status",
+            "limitranges",
+            "pods",
+            "services",
+            "serviceaccounts"
+          ],
+          "verbs": [
+            "get",
+            "list",
+            "watch"
+          ]
+        },
+        {
+          "apiGroups": [
+            "events.k8s.io",
+            ""
+          ],
+          "resources": [
+            "events"
+          ],
+          "verbs": [
+            "create",
+            "patch"
+          ]
+        },
+        {
+          "apiGroups": [
+            "discovery.k8s.io"
+          ],
+          "resources": [
+            "endpointslices"
+          ],
+          "verbs": [
+            "get",
+            "list",
+            "watch"
+          ]
+        },
+        {
+          "apiGroups": [
+            ""
+          ],
+          "resources": [
+            "secrets"
+          ],
+          "verbs": [
+            "list",
+            "watch"
+          ]
+        },
+        {
+          "apiGroups": [
+            "*"
+          ],
+          "resources": [
+            "*/scale"
+          ],
+          "verbs": [
+            "get",
+            "list",
+            "patch",
+            "update",
+            "watch"
+          ]
+        },
+        {
+          "apiGroups": [
+            "*"
+          ],
+          "resources": [
+            "*"
+          ],
+          "verbs": [
+            "get"
+          ]
+        },
+        {
+          "apiGroups": [
+            "apps"
+          ],
+          "resources": [
+            "deployments/scale",
+            "statefulsets/scale"
+          ],
+          "verbs": [
+            "get",
+            "list",
+            "patch",
+            "update",
+            "watch"
+          ]
+        },
+        {
+          "apiGroups": [
+            "apps"
+          ],
+          "resources": [
+            "deployments",
+            "replicasets",
+            "statefulsets"
+          ],
+          "verbs": [
+            "get",
+            "list",
+            "watch"
+          ]
+        },
+        {
+          "apiGroups": [
+            "autoscaling"
+          ],
+          "resources": [
+            "horizontalpodautoscalers"
+          ],
+          "verbs": [
+            "create",
+            "delete",
+            "get",
+            "list",
+            "patch",
+            "update",
+            "watch"
+          ]
+        },
+        {
+          "apiGroups": [
+            "batch"
+          ],
+          "resources": [
+            "jobs"
+          ],
+          "verbs": [
+            "create",
+            "delete",
+            "get",
+            "list",
+            "patch",
+            "update",
+            "watch"
+          ]
+        },
+        {
+          "apiGroups": [
+            "eventing.keda.sh"
+          ],
+          "resources": [
+            "cloudeventsources",
+            "cloudeventsources/status",
+            "clustercloudeventsources",
+            "clustercloudeventsources/status"
+          ],
+          "verbs": [
+            "get",
+            "list",
+            "patch",
+            "update",
+            "watch"
+          ]
+        },
+        {
+          "apiGroups": [
+            "keda.sh"
+          ],
+          "resources": [
+            "scaledjobs",
+            "scaledjobs/finalizers",
+            "scaledjobs/status",
+            "scaledobjects",
+            "scaledobjects/finalizers",
+            "scaledobjects/status",
+            "triggerauthentications",
+            "triggerauthentications/status"
+          ],
+          "verbs": [
+            "get",
+            "list",
+            "patch",
+            "update",
+            "watch"
+          ]
+        }
+      ]
+    },
+    {
+      "apiVersion": "rbac.authorization.k8s.io/v1",
+      "kind": "ClusterRole",
+      "metadata": {
+        "labels": {
+          "app.kubernetes.io/name": "keda-operator-minimal-cluster-role",
+          "helm.sh/chart": "keda-2.20.2",
+          "app.kubernetes.io/component": "operator",
+          "app.kubernetes.io/part-of": "keda-operator",
+          "app.kubernetes.io/version": "2.20.2",
+          "app.kubernetes.io/instance": "keda",
+          "apps.creatio.io/studio-dependency": "keda-2.20.2"
+        },
+        "name": "keda-operator-minimal-cluster-role",
+        "annotations": {
+          "clio.creatio.com/install-profile": "rancher-desktop-v1"
+        }
+      },
+      "rules": [
+        {
+          "apiGroups": [
+            "keda.sh"
+          ],
+          "resources": [
+            "clustertriggerauthentications",
+            "clustertriggerauthentications/status"
+          ],
+          "verbs": [
+            "get",
+            "list",
+            "patch",
+            "update",
+            "watch"
+          ]
+        },
+        {
+          "apiGroups": [
+            "admissionregistration.k8s.io"
+          ],
+          "resources": [
+            "validatingwebhookconfigurations"
+          ],
+          "verbs": [
+            "get",
+            "list",
+            "patch",
+            "update",
+            "watch"
+          ]
+        },
+        {
+          "apiGroups": [
+            "apiregistration.k8s.io"
+          ],
+          "resources": [
+            "apiservices"
+          ],
+          "verbs": [
+            "get",
+            "list",
+            "patch",
+            "update",
+            "watch"
+          ]
+        },
+        {
+          "apiGroups": [
+            "eventing.keda.sh"
+          ],
+          "resources": [
+            "cloudeventsources",
+            "cloudeventsources/status",
+            "clustercloudeventsources",
+            "clustercloudeventsources/status"
+          ],
+          "verbs": [
+            "get",
+            "list",
+            "patch",
+            "update",
+            "watch"
+          ]
+        }
+      ]
+    },
+    {
+      "apiVersion": "rbac.authorization.k8s.io/v1",
+      "kind": "ClusterRole",
+      "metadata": {
+        "labels": {
+          "app.kubernetes.io/name": "keda-operator-external-metrics-reader",
+          "helm.sh/chart": "keda-2.20.2",
+          "app.kubernetes.io/component": "operator",
+          "app.kubernetes.io/part-of": "keda-operator",
+          "app.kubernetes.io/version": "2.20.2",
+          "app.kubernetes.io/instance": "keda",
+          "apps.creatio.io/studio-dependency": "keda-2.20.2"
+        },
+        "name": "keda-operator-external-metrics-reader",
+        "annotations": {
+          "clio.creatio.com/install-profile": "rancher-desktop-v1"
+        }
+      },
+      "rules": [
+        {
+          "apiGroups": [
+            "external.metrics.k8s.io"
+          ],
+          "resources": [
+            "externalmetrics"
+          ],
+          "verbs": [
+            "get"
+          ]
+        }
+      ]
+    },
+    {
+      "apiVersion": "rbac.authorization.k8s.io/v1",
+      "kind": "ClusterRole",
+      "metadata": {
+        "labels": {
+          "app.kubernetes.io/name": "keda-operator-webhook",
+          "helm.sh/chart": "keda-2.20.2",
+          "app.kubernetes.io/component": "operator",
+          "app.kubernetes.io/part-of": "keda-operator",
+          "app.kubernetes.io/version": "2.20.2",
+          "app.kubernetes.io/instance": "keda",
+          "apps.creatio.io/studio-dependency": "keda-2.20.2"
+        },
+        "name": "keda-operator-webhook",
+        "annotations": {
+          "clio.creatio.com/install-profile": "rancher-desktop-v1"
+        }
+      },
+      "rules": [
+        {
+          "apiGroups": [
+            "autoscaling"
+          ],
+          "resources": [
+            "horizontalpodautoscalers"
+          ],
+          "verbs": [
+            "list",
+            "watch"
+          ]
+        },
+        {
+          "apiGroups": [
+            "keda.sh"
+          ],
+          "resources": [
+            "scaledobjects"
+          ],
+          "verbs": [
+            "list",
+            "watch"
+          ]
+        },
+        {
+          "apiGroups": [
+            "apps"
+          ],
+          "resources": [
+            "deployments",
+            "statefulsets"
+          ],
+          "verbs": [
+            "get",
+            "list",
+            "watch"
+          ]
+        },
+        {
+          "apiGroups": [
+            ""
+          ],
+          "resources": [
+            "limitranges"
+          ],
+          "verbs": [
+            "list"
+          ]
+        },
+        {
+          "apiGroups": [
+            "events.k8s.io"
+          ],
+          "resources": [
+            "events"
+          ],
+          "verbs": [
+            "create",
+            "patch"
+          ]
+        }
+      ]
+    },
+    {
+      "apiVersion": "rbac.authorization.k8s.io/v1",
+      "kind": "Role",
+      "metadata": {
+        "labels": {
+          "app.kubernetes.io/name": "keda-operator-certs",
+          "helm.sh/chart": "keda-2.20.2",
+          "app.kubernetes.io/component": "operator",
+          "app.kubernetes.io/part-of": "keda-operator",
+          "app.kubernetes.io/version": "2.20.2",
+          "app.kubernetes.io/instance": "keda",
+          "apps.creatio.io/studio-dependency": "keda-2.20.2"
+        },
+        "name": "keda-operator-certs",
+        "namespace": "keda",
+        "annotations": {
+          "clio.creatio.com/install-profile": "rancher-desktop-v1"
+        }
+      },
+      "rules": [
+        {
+          "apiGroups": [
+            "coordination.k8s.io"
+          ],
+          "resources": [
+            "leases"
+          ],
+          "verbs": [
+            "create",
+            "delete",
+            "get",
+            "list",
+            "patch",
+            "update",
+            "watch"
+          ]
+        },
+        {
+          "apiGroups": [
+            ""
+          ],
+          "resources": [
+            "secrets"
+          ],
+          "verbs": [
+            "get"
+          ],
+          "resourceNames": [
+            "kedaorg-certs"
+          ]
+        },
+        {
+          "apiGroups": [
+            ""
+          ],
+          "resources": [
+            "secrets"
+          ],
+          "verbs": [
+            "create",
+            "update"
+          ]
+        }
+      ]
     }
   ]
 }

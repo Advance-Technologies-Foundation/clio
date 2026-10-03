@@ -210,6 +210,7 @@ internal sealed class CommandHelpCatalog {
 
 	private static readonly HashSet<string> DeploymentCommands =
 		[
+			"studio",
 			"build-docker-image",
 			"check-windows-features",
 			"compare-web-farm-node",

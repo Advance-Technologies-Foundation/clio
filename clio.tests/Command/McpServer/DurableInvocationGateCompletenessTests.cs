@@ -57,6 +57,7 @@ public sealed class DurableInvocationGateCompletenessTests {
 	private static readonly HashSet<string> ReviewedSilentlyExecutableTools = new(StringComparer.Ordinal) {
 		// Runtime discovery only reads operator catalogues and Kubernetes instance status.
 		RuntimeTools.ImagesName, RuntimeTools.ListName, RuntimeTools.StatusName,
+		"studio-status",
 		// Administration inspection rejects mutation actions before resolving the environment.
 		"inspect-user",
 		"inspect-role",
