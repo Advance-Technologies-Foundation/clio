@@ -1,0 +1,153 @@
+COMMAND TYPE
+    Object rights
+
+NAME
+    set-object-rights - Grant or revoke object operation permissions (read/create/edit/delete) for one role on one object
+
+SYNOPSIS
+    set-object-rights --entity-schema-name <EntitySchemaName> --grantee <SysAdminUnitId> --operations <read,create,edit,delete> [--revoke] [--enable-operation-permissions] [--disable-operation-permissions] [--confirm | --preview] [OPTIONS]
+
+DESCRIPTION
+    Grants (or, with --revoke, revokes) object operation permissions for one role on ONE object — the
+    SysEntitySchemaOperationRight / "Object permissions" layer that decides who may read/create/edit/delete
+    ANY record of an entity. It works like the Object permissions designer, one object per call, and
+    for any role. This is the object-level analog of set-record-rights (which is per-record).
+
+    Every call names the operations it grants or revokes in --operations: nothing is granted by
+    default.
+
+    The rows of an object are a priority list: position 0 is the highest, and a user who is in several
+    roles gets the operations of the highest matching row — decided per row, so a row with no
+    operations denies them. A new row goes at the lowest priority (one past the highest position), as
+    in the designer, and the result names the rows above the grantee's row. A revoke clears the named
+    operations on the role's row and KEEPS the row: for a user whose highest matching row it is, they
+    are then denied. No row is ever removed or moved.
+
+    Every change that alters who can reach the object must be named in the arguments, or the call is
+    refused and nothing is written:
+      - a grant that would turn operation permissions ON needs --enable-operation-permissions. The same
+        save keeps the "All employees" row the service shows for an object with no stored rows; when the
+        object has stored rows but none for All employees, it adds one with read/create/edit/delete below
+        them;
+      - a revoke that would leave no row granting any operation needs --disable-operation-permissions,
+        which turns operation permissions OFF: the object becomes available to all internal users. The
+        flag is accepted only in that case: a disable the revoke does not need is refused.
+
+    To cover an object's lookups, read them with get-object-rights --include-connected, decide per
+    object, and run one set-object-rights per object. The listing leaves out security and system
+    objects (SysAdmin*, SysSettings*, ...); a call that names one of them is applied like any other.
+
+    It is a read-modify-write over the native RightManagementService: the object is read, the change
+    is planned, the rows the plan changes or adds are saved (every other row is sent exactly as read),
+    and the object is read back and compared with the plan, row by row. It does NOT change column or
+    record permissions.
+
+    DESTRUCTIVE: this command changes access. In a non-interactive run it refuses to apply unless
+    --confirm is passed; in an interactive run it shows the planned change and asks for a y/n
+    confirmation. --preview writes nothing. On MCP the call applies the change: the host's approval of
+    the call is the confirmation.
+
+    The object name is trimmed and must be a plain schema identifier (letters, digits, '_').
+
+OPTIONS
+    --entity-schema-name
+        The one object (entity schema) whose operation permissions are changed (for example UsrOrder). Required.
+
+    --grantee
+        SysAdminUnit id (organizational/functional role or user) to grant or revoke. Names are not
+        unique, so the id is required. Resolve it yourself (e.g. execute-esq on SysAdminUnit).
+
+    --operations
+        Comma-separated operations to grant or revoke: read, create, edit, delete. Required: no operation is granted by default. A value that names no operation is refused.
+
+    --revoke
+        Revoke the operations named in --operations instead of granting them. The role's row is kept,
+        with those operations cleared.
+
+    --enable-operation-permissions
+        Allow a grant to turn the object's operation permissions ON. Without it, a grant on an object
+        that does not use operation permissions changes nothing and exits 1, and the refusal names the
+        rows that would start to decide. Not valid with --revoke.
+
+    --disable-operation-permissions
+        With --revoke: turn the object's operation permissions OFF, which makes it available to ALL
+        internal users. The rows are kept and apply again if operation permissions are turned back on.
+        Accepted only when the revoke would leave no row that grants any operation; otherwise the call is
+        refused. Not valid without --revoke.
+
+    --confirm
+        Confirm the destructive change without a prompt. Required in non-interactive runs. Not valid
+        with --preview.
+
+    --preview
+        Write nothing: show the planned change — which rows start or keep deciding, where the grantee's
+        row sits, what turns on or off — or why the call would be refused.
+
+    -e, --environment
+        Name of the registered environment to change.
+
+EXIT CODES
+    0   The change was applied (or was already in the requested state, or cancelled at the prompt), or a
+        --preview completed (nothing was written). A save that reported an error but whose read-back shows
+        the plan succeeds with a warning.
+    1   An input was invalid (missing or non-identifier entity-schema-name, grantee not a GUID, missing
+        --operations, unknown operation, an --operations value that names no operation, --preview with
+        --confirm, --enable-operation-permissions with --revoke, --disable-operation-permissions without
+        --revoke), confirmation was missing in a non-interactive run, the object was not found or could
+        not be read, the grantee does not exist, the change was refused (a grant that would turn
+        operation permissions on without --enable-operation-permissions, a revoke that would leave no
+        granting row without --disable-operation-permissions, a --disable-operation-permissions the
+        revoke does not need, a revoke on an object that does not use operation permissions (except a
+        revoke-and-disable whose state is already in place), a grantee with more than one row), the save
+        failed and the read-back does
+        not show the plan, a successful save could not be read back (reported as saved but NOT verified),
+        or the object read back does not show a row this call writes (the grantee's row, or the All
+        employees row an enable stores) where it was planned, or the planned switch state.
+
+EXAMPLES
+    Show what a grant would change, without writing anything:
+        clio set-object-rights --entity-schema-name UsrOrder --grantee <role-id> --operations read --preview -e production
+
+    Grant a functional role read/create/edit on an object that already uses operation permissions:
+        clio set-object-rights --entity-schema-name UsrOrder --grantee <role-id> --operations read,create,edit --confirm -e production
+
+    Grant read on an object that does not use operation permissions yet (turns them on, keeps All employees):
+        clio set-object-rights --entity-schema-name UsrOrder --grantee <role-id> --operations read --enable-operation-permissions --confirm -e production
+
+    Cover a lookup of the object in its own call, after reading the lookups with get-object-rights --include-connected:
+        clio set-object-rights --entity-schema-name UsrOrderStatus --grantee <role-id> --operations read --enable-operation-permissions --confirm -e production
+
+    Revoke delete from a role (its row stays, now without delete):
+        clio set-object-rights --entity-schema-name UsrOrder --grantee <role-id> --operations delete --revoke --confirm -e production
+
+    Return an object to "available to all internal users" when the revoke takes away its last granting row:
+        clio set-object-rights --entity-schema-name UsrOrder --grantee <role-id> --operations read,create,edit,delete --revoke --disable-operation-permissions --confirm -e production
+
+NOTES
+    The grantee must exist in SysAdminUnit; an unknown id fails before anything is written.
+
+    When the grantee is All employees and the object has no row for it, the new row gets exactly the
+    operations the call names: an enable then adds no second All employees row with every operation.
+
+    A re-run of a call that already landed changes nothing and exits 0. That includes a revoke with
+    --disable-operation-permissions run again on an object that is already off, whose grantee row
+    already has none of the operations, so a retry after a timeout is safe; the result says that the
+    object is available to all internal users.
+
+    A save that got no answer (it did not answer in time, or the connection broke after the request
+    went out) may land after the read-back, so its failure says the change may still be applied:
+    re-read the object with get-object-rights before retrying or reporting a failure. The save is sent exactly once, whatever the retry settings: a transport retry of a
+    committed save could add a new row a second time (it is sent without an id).
+
+    After the save the object is read back and compared with the plan, row by row (grantee, position,
+    operations). A missing or different row that this call writes fails it; a row of another role that
+    differs from the plan, or that the plan did not write, is reported as a warning. If the read-back
+    itself fails, the call fails too: the change is reported as saved but NOT verified, with a request
+    to check the object with get-object-rights before retrying.
+
+    A grantee with more than one row on the object is refused: which of them decides depends on the
+    other rows, so the command changes none of them. Remove the duplicates in the Object permissions
+    designer, then re-run.
+
+    Read-modify-write is last-writer-wins: a change another client saves between the read and the save
+    is overwritten. The read-back reports any difference from the plan.

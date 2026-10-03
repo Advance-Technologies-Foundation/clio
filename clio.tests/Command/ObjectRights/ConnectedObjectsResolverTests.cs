@@ -1,0 +1,220 @@
+using System;
+using System.Linq;
+using System.Collections.Generic;
+using Clio.Command;
+using Clio.Command.EntitySchemaDesigner;
+using Clio.Command.ObjectRights;
+using Clio.Common.ObjectRights;
+using FluentAssertions;
+using NSubstitute;
+using NUnit.Framework;
+
+namespace Clio.Tests.Command.ObjectRights;
+
+[TestFixture]
+[Category("Unit")]
+[Property("Module", "Command")]
+public class ConnectedObjectsResolverTests {
+
+	private IRemoteEntitySchemaColumnManager _columnManager;
+	private ConnectedObjectsResolver _resolver;
+
+	[SetUp]
+	public void SetUp() {
+		_columnManager = Substitute.For<IRemoteEntitySchemaColumnManager>();
+		_resolver = new ConnectedObjectsResolver(_columnManager);
+	}
+
+	[Test]
+	[Description("Returns only the root object and does not read the schema when include-connected is false.")]
+	public void Resolve_ShouldReturnRootOnly_WhenIncludeConnectedFalse() {
+		// Act
+		ConnectedObjectsResolution result = _resolver.Resolve("UsrPortalSpike2", includeConnected: false);
+
+		// Assert
+		result.Objects.Should().Equal(new[] { "UsrPortalSpike2" }, because: "without include-connected only the root is read");
+		result.EnumerationError.Should().BeNull(because: "nothing was enumerated, so nothing could fail");
+		_columnManager.DidNotReceive().GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>());
+	}
+
+	[Test]
+	[Description("Returns the root plus distinct OWN lookup targets, excluding inherited audit lookups and self-references.")]
+	public void Resolve_ShouldReturnRootAndOwnLookups_WhenIncludeConnectedTrue() {
+		// Arrange
+		_columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>())
+			.Returns(Schema("UsrPortalSpike2",
+				Column("UsrCategory", "own", "UsrPSCategory"),
+				Column("UsrRegion", "own", "UsrPSRegion"),
+				Column("UsrDup", "own", "UsrPSCategory"),      // duplicate reference — de-duped
+				Column("UsrSelf", "own", "UsrPortalSpike2"),    // self reference — excluded
+				Column("CreatedBy", "inherited", "Contact"),    // inherited audit lookup — excluded
+				Column("UsrText", "own", null)));               // non-lookup — excluded
+
+		// Act
+		ConnectedObjectsResolution result = _resolver.Resolve("UsrPortalSpike2", includeConnected: true);
+
+		// Assert
+		result.Objects.Should().Equal(new[] { "UsrPortalSpike2", "UsrPSCategory", "UsrPSRegion" },
+			because: "root first, then distinct own-lookup targets in order, without inherited/self/non-lookup columns");
+		result.Excluded.Should().BeEmpty(because: "none of the lookups is a security or system object");
+	}
+
+	[Test]
+	[Description("Security and system lookups (role/user directory, schema metadata, rights tables) are not read as connected objects; they are reported instead.")]
+	public void Resolve_ShouldExcludeSecurityAndSystemObjects_WhenTheyAreConnectedLookups() {
+		// Arrange
+		_columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>())
+			.Returns(Schema("UsrPortalSpike2",
+				Column("UsrCategory", "own", "UsrPSCategory"),
+				Column("UsrRole", "own", "SysAdminUnit"),
+				Column("UsrUserRole", "own", "SysUserInRole"),
+				Column("UsrSchema", "own", "SysSchema"),
+				Column("UsrRight", "own", "SysContactRight"),
+				Column("UsrContact", "own", "Contact")));
+
+		// Act
+		ConnectedObjectsResolution result = _resolver.Resolve("UsrPortalSpike2", includeConnected: true);
+
+		// Assert
+		result.Objects.Should().Equal(new[] { "UsrPortalSpike2", "Contact", "UsrPSCategory" },
+			because: "an ordinary lookup is still fanned out to, a security or system object never is");
+		result.Excluded.Should().BeEquivalentTo(new[] { "SysAdminUnit", "SysContactRight", "SysSchema", "SysUserInRole" },
+			because: "the skipped objects are reported so the caller can warn about them");
+	}
+
+	[Test]
+	[Description("A security or system object named as the ROOT is still read: the exclusion applies to connected objects only.")]
+	public void Resolve_ShouldKeepSystemRoot_WhenNamedExplicitly() {
+		// Act
+		ConnectedObjectsResolution result = _resolver.Resolve("SysAdminUnit", includeConnected: false);
+
+		// Assert
+		result.Objects.Should().Equal(new[] { "SysAdminUnit" },
+			because: "naming the object yourself is the explicit way to grant it");
+	}
+
+	private static IEnumerable<TestCaseData> SchemaReadFailures() {
+		yield return new TestCaseData(new InvalidOperationException("schema read failed"))
+			.SetName("Resolve_ShouldReportEnumerationError_WhenSchemaReadThrows");
+		// The column manager rethrows its transport and parse faults, and a schema it cannot find, as this type.
+		yield return new TestCaseData(new EntitySchemaDesignerException("schema read failed"))
+			.SetName("Resolve_ShouldReportEnumerationError_WhenTheColumnManagerThrowsItsOwnFailure");
+		// Creatio's client runs the request through Task.Result, so a transport fault can arrive wrapped.
+		yield return new TestCaseData(new AggregateException(new System.Net.Http.HttpRequestException("schema read failed")))
+			.SetName("Resolve_ShouldReportEnumerationError_WhenAWrappedTransportFaultIsThrown");
+	}
+
+	[TestCaseSource(nameof(SchemaReadFailures))]
+	[Description("A failed schema read is reported as an enumeration error with the root alone; it does not throw, so the root is still read.")]
+	public void Resolve_ShouldReportEnumerationError_WhenTheSchemaReadFails(Exception failure) {
+		// Arrange
+		_columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>())
+			.Returns(_ => throw failure);
+
+		// Act
+		ConnectedObjectsResolution result = _resolver.Resolve("UsrPortalSpike2", includeConnected: true);
+
+		// Assert
+		result.Objects.Should().Equal(new[] { "UsrPortalSpike2" }, because: "only the root is known");
+		result.EnumerationError.Should().Be("schema read failed",
+			because: "the caller must know the connected set is unknown, not empty");
+	}
+
+	[Test]
+	[Description("The schema read honours the caller's request timeout instead of waiting without a bound.")]
+	public void Resolve_ShouldPassTheReadTimeout_WhenEnumeratingTheConnectedObjects() {
+		// Arrange
+		_columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>())
+			.Returns(Schema("UsrPortalSpike2", Column("UsrCategory", "own", "UsrPSCategory")));
+
+		// Act
+		_resolver.Resolve("UsrPortalSpike2", includeConnected: true, readTimeoutMilliseconds: 5_000);
+
+		// Assert
+		_columnManager.Received(1).GetSchemaProperties(Arg.Is<GetEntitySchemaPropertiesOptions>(options =>
+			options.RuntimeReadTimeoutMilliseconds == 5_000));
+	}
+
+	[TestCase("SysPackageSchemaData")]
+	[TestCase("SysLicPackage")]
+	[TestCase("SysProcessData")]
+	[TestCase("VwSysSchemaInfo")]
+	[TestCase("SysSettingsValue")]
+	[TestCase("UsrOrderRights")]
+	[TestCase("sysadminunit")]
+	[TestCase("SYSUSERINROLE")]
+	[Description("Every excluded family is matched — SysPackage*, SysSettings*, SysLic*, SysProcess*, Vw*, the Rights suffix — and matching ignores case.")]
+	public void Resolve_ShouldExcludeEveryFamily_WhenTheNameMatchesInAnyCase(string referenced) {
+		// Arrange
+		_columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>())
+			.Returns(Schema("UsrOrder", Column("UsrRef", "own", referenced)));
+
+		// Act
+		ConnectedObjectsResolution result = _resolver.Resolve("UsrOrder", includeConnected: true);
+
+		// Assert
+		result.Objects.Should().Equal(new[] { "UsrOrder" }, because: $"'{referenced}' is a security or system object");
+		result.Excluded.Should().Equal(new[] { referenced }, because: "the exclusion is reported");
+	}
+
+	[TestCase("SysAdminUnit ", new string[0], new[] { "SysAdminUnit" },
+		TestName = "Resolve_ShouldExcludeAPaddedSecurityName_WhenItIsNormalized")]
+	[TestCase("UsrStatus ", new[] { "UsrStatus" }, new string[0],
+		TestName = "Resolve_ShouldReadAPaddedLookupName_WhenItIsNormalized")]
+	[Description("A referenced name is normalized like a caller's name before the security gate sees it: a trailing space never lets a security object past the gate, and an ordinary lookup is read under its plain name.")]
+	public void Resolve_ShouldNormalizeReferencedNames_WhenTheyArePadded(string referenced, string[] connected,
+		string[] excluded) {
+		// Arrange
+		_columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>())
+			.Returns(Schema("UsrOrder", Column("UsrRef", "own", referenced)));
+
+		// Act
+		ConnectedObjectsResolution result = _resolver.Resolve("UsrOrder", includeConnected: true);
+
+		// Assert
+		result.Objects.Should().Equal(new[] { "UsrOrder" }.Concat(connected),
+			because: "only a non-security lookup is read, under its normalized name");
+		result.Excluded.Should().Equal(excluded, because: "a security object is excluded whatever padding it carries");
+	}
+
+	[Test]
+	[Description("The own-column source is matched without regard to case.")]
+	public void Resolve_ShouldTreatSourceCaseInsensitively_WhenTheSourceIsUpperCase() {
+		// Arrange
+		_columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>())
+			.Returns(Schema("UsrOrder", Column("UsrStatus", "OWN", "UsrStatus")));
+
+		// Act
+		ConnectedObjectsResolution result = _resolver.Resolve("UsrOrder", includeConnected: true);
+
+		// Assert
+		result.Objects.Should().Equal(new[] { "UsrOrder", "UsrStatus" }, because: "'OWN' is an own column");
+	}
+
+	private static EntitySchemaPropertyColumnInfo Column(string name, string source, string referenceSchemaName) =>
+		new(Name: name, UId: Guid.NewGuid(), Source: source, Title: null, Description: null,
+			Type: referenceSchemaName is null ? "Text" : "Lookup", Required: false, Indexed: false,
+			ReferenceSchemaName: referenceSchemaName);
+
+	private static EntitySchemaPropertiesInfo Schema(string name, params EntitySchemaPropertyColumnInfo[] columns) =>
+		new(Name: name, Title: null, Description: null, PackageName: name, ParentSchemaName: null,
+			ExtendParent: false, PrimaryColumnName: null, PrimaryDisplayColumnName: null, OwnColumnCount: 0,
+			InheritedColumnCount: 0, IndexesCount: null, TrackChangesInDb: false, DbView: false, SspAvailable: null,
+			Virtual: false, UseRecordDeactivation: null, ShowInAdvancedMode: false, AdministratedByOperations: false,
+			AdministratedByColumns: false, AdministratedByRecords: false, UseDenyRecordRights: null,
+			UseLiveEditing: null, Columns: columns);
+
+	[Test]
+	[Description("A programming error while reading the root schema is not reported as 'could not enumerate': it escapes.")]
+	public void Resolve_ShouldThrow_WhenSchemaReadHasProgrammingError() {
+		// Arrange
+		_columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>())
+			.Returns(_ => throw new NullReferenceException("bug"));
+
+		// Act
+		Action act = () => _resolver.Resolve("UsrOrder", includeConnected: true);
+
+		// Assert
+		act.Should().Throw<NullReferenceException>(because: "only service failures become an enumeration error");
+	}
+}
