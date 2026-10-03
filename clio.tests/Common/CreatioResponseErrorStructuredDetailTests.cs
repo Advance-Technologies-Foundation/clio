@@ -321,8 +321,16 @@ public sealed class CreatioResponseErrorStructuredDetailTests {
 		""";
 
 	/// <summary>MSSQL 547 for an insert whose lookup Id is missing; the conflict names the REFERENCED table.</summary>
-	internal const string SqlServerInsertForeignKeyBody = """
+	private const string SqlServerInsertForeignKeyBody = """
 		{"error":{"code":"","message":"An error has occurred.","innererror":{"message":"The INSERT statement conflicted with the FOREIGN KEY constraint \"FKContactAccount\". The conflict occurred in database \"Creatio_8_3_prod_db\", table \"dbo.Account\", column 'Id'.\r\nThe statement has been terminated.","type":"System.Data.SqlClient.SqlException","stacktrace":""}}}
+		""";
+
+	/// <summary>
+	/// MSSQL 547 for an UPDATE that sets a lookup to an Id missing from the referenced table. This is the UPDATE
+	/// form of the 547 wording; a live odata-update (PATCH) on a local MSSQL stand was matched by the same pattern.
+	/// </summary>
+	internal const string SqlServerUpdateForeignKeyBody = """
+		{"error":{"code":"","message":"An error has occurred.","innererror":{"message":"The UPDATE statement conflicted with the FOREIGN KEY constraint \"FKContactAccount\". The conflict occurred in database \"Creatio_8_3_prod_db\", table \"dbo.Account\", column 'Id'.\r\nThe statement has been terminated.","type":"System.Data.SqlClient.SqlException","stacktrace":""}}}
 		""";
 
 	/// <summary>MSSQL 547 for a delete of a still-referenced row; the conflict names the REFERENCING table and column.</summary>
@@ -415,6 +423,54 @@ public sealed class CreatioResponseErrorStructuredDetailTests {
 			because: "a key update or an event handler can produce the same error as a delete");
 		detail.Should().Contain("Do not delete or re-point records without authorization",
 			because: "diagnosing a relationship must not authorize destructive changes to dependent records");
+	}
+
+	[TestCase("The INSERT statement conflicted with the FOREIGN KEY constraint \"FKContactAccount\".",
+		TestName = "SqlServer INSERT statement FOREIGN KEY constraint")]
+	[TestCase("The UPDATE statement conflicted with the FOREIGN KEY constraint \"FKContactAccount\".",
+		TestName = "SqlServer UPDATE statement FOREIGN KEY constraint")]
+	[TestCase("The INSERT statement conflicted with the FOREIGN KEY SAME TABLE constraint \"FKContactAccount\".",
+		TestName = "SqlServer INSERT statement FOREIGN KEY SAME TABLE constraint")]
+	[Category("Unit")]
+	[Description("Every SQL Server 547 missing-lookup wording - INSERT, UPDATE and the self-referencing SAME TABLE form - yields the missing-lookup hint naming the referenced table.")]
+	public void DescribeStructuredODataWriteError_Should_Recognize_Each_SqlServer_Missing_Lookup_Wording(string headline) {
+		// Arrange
+		string message = $"{headline} The conflict occurred in database \"Creatio_8_3_prod_db\", table \"dbo.Account\", "
+			+ "column 'Id'.\r\nThe statement has been terminated.";
+		string body = JsonSerializer.Serialize(new { error = new { code = "", message = "An error has occurred.", innererror = new { message } } });
+
+		// Act
+		string detail = DescribeWrite(body);
+
+		// Assert
+		detail.Should().Contain("foreign key constraint 'FKContactAccount' rejected the write",
+			because: "the statement kind and the SAME TABLE qualifier change the wording, not the cause");
+		detail.Should().Contain("a referenced record is missing from referenced table 'Account'",
+			because: "the table MSSQL names in this wording is the referenced one");
+	}
+
+	[TestCase("The DELETE statement conflicted with the REFERENCE constraint \"FKContactAccount\".",
+		TestName = "SqlServer DELETE statement REFERENCE constraint")]
+	[TestCase("The UPDATE statement conflicted with the REFERENCE constraint \"FKContactAccount\".",
+		TestName = "SqlServer UPDATE statement REFERENCE constraint")]
+	[TestCase("The DELETE statement conflicted with the SAME TABLE REFERENCE constraint \"FKContactAccount\".",
+		TestName = "SqlServer DELETE statement SAME TABLE REFERENCE constraint")]
+	[Category("Unit")]
+	[Description("Every SQL Server 547 still-referenced wording - DELETE, a key UPDATE and the self-referencing SAME TABLE form - yields the still-referenced hint naming the referencing table and column.")]
+	public void DescribeStructuredODataWriteError_Should_Recognize_Each_SqlServer_Still_Referenced_Wording(string headline) {
+		// Arrange
+		string message = $"{headline} The conflict occurred in database \"Creatio_8_3_prod_db\", table \"dbo.Contact\", "
+			+ "column 'AccountId'.\r\nThe statement has been terminated.";
+		string body = JsonSerializer.Serialize(new { error = new { code = "", message = "An error has occurred.", innererror = new { message } } });
+
+		// Act
+		string detail = DescribeWrite(body);
+
+		// Assert
+		detail.Should().Contain("the record is still referenced: constraint 'FKContactAccount' on table 'Contact' (column 'AccountId')",
+			because: "the statement kind and the SAME TABLE qualifier change the wording, not the referencing table and column");
+		detail.Should().NotContain("Creatio_8_3_prod_db",
+			because: "the database name is matched but never copied");
 	}
 
 	[Test]
