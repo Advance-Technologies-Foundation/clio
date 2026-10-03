@@ -44,6 +44,22 @@ public class SysSettingsManagerNewBehaviorTests {
 			new SysSettingFailureClassifier(sink, new OperationCorrelationIdProvider()));
 	}
 
+	[TestCase("1Bad")]
+	[TestCase("Bad-Code")]
+	[Description("Refuses to create a sys-setting whose code is not a valid Creatio identifier, so an invalid code is never inserted ahead of a value write that would reject it (issue #292).")]
+	public void CreateSysSettingIfNotExists_ShouldNotInsert_WhenTheCodeIsNotAValidIdentifier(string code) {
+		// Arrange
+		IApplicationClient applicationClient = BuildAcceptedClient();
+		ISysSettingsManager sut = BuildSut(Substitute.For<IDataProvider>(), applicationClient);
+
+		// Act
+		bool created = sut.CreateSysSettingIfNotExists(code, code, "Text");
+
+		// Assert
+		created.Should().BeFalse(because: "an invalid code is refused before anything reaches the environment");
+		applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default);
+	}
+
 	#region Helpers
 
 	// Both lines a failed CLI update writes end with "(correlation-id: X)". Pulling the ID out is how a
