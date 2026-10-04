@@ -16,7 +16,8 @@ namespace Clio.Mcp.E2E;
 /// Developer-local end-to-end proof of the object-rights read-modify-write against a REAL Creatio: the platform
 /// facts the tools' safety rests on — the save envelope, that the untouched record/column collections stay
 /// untouched, that the save keeps the All employees row an unadministered object is read with, that a revoke keeps
-/// its row, the refusals of unnamed transitions and the disable path — are otherwise tested only against mocks.
+/// its row, the refusals of unnamed transitions, and that the switch turned off and on alone keeps every row — are
+/// otherwise tested only against mocks.
 /// </summary>
 /// <remarks>
 /// It publishes two schemas into a fixture-owned package, so it belongs to the destructive LocalOnly sub-tier
@@ -40,11 +41,11 @@ public sealed class ObjectRightsSandboxE2ETests : DataBindingDbFixtureBase {
 	private const string AllEmployees = "a29a3ba5-4b0d-de11-9a51-005056c00008";
 
 	[Test]
-	[Description("On a real stand, one object per call: an unnamed enable is refused and writes nothing; a named enable grants read on a disposable object and, in its own call, on its lookup, keeping All employees; record and column administration stay untouched; a revoke keeps the row; the last granting row is refused without the disable and turned off with it.")]
+	[Description("On a real stand, one object per call: an unnamed enable is refused and writes nothing; a named enable grants read on a disposable object and, in its own call, on its lookup, keeping All employees; record and column administration stay untouched; a revoke keeps the row; a revoke of the last granting row is refused; a disable alone turns the switch off keeping every row with its operations, and an enable alone turns it back on with the same rows; each repeated switch call changes nothing.")]
 	[AllureTag(SetObjectRightsTool.ToolName)]
 	[AllureTag(GetObjectRightsTool.ToolName)]
 	[AllureName("object-rights read-modify-write round-trips on a real Creatio stand")]
-	[AllureDescription("Creates a disposable lookup and an object referencing it, shows an unnamed enable is refused, grants All external users read on each object in its own call with enable-operation-permissions, reads them back, checks record/column administration is untouched, revokes the grantee (its row stays), then proves the no-granting-row refusal and the disable-operation-permissions path. The fixture package is deleted in teardown.")]
+	[AllureDescription("Creates a disposable lookup and an object referencing it, shows an unnamed enable is refused, grants All external users read on each object in its own call with enable-operation-permissions, reads them back, checks record/column administration is untouched, revokes the grantee (its row stays), proves the no-granting-row refusal, then turns the switch off and on with the flags alone and checks the rows survive both. The fixture package is deleted in teardown.")]
 	public async Task ObjectRights_Should_RoundTrip_On_A_Real_Stand() {
 		TeamCityRunGuard.IgnoreIfRunningUnderTeamCityOrGitHubActions(
 			"create-entity-schema publishes configuration and starts the global OData rebuild, which makes every "
@@ -79,14 +80,19 @@ public sealed class ObjectRightsSandboxE2ETests : DataBindingDbFixtureBase {
 		AssertCommandExitCode(rootResult, 0, "the disposable root object must exist before its rights are changed");
 
 		Dictionary<string, object?> Args(string schema, string grantee, string operations, bool revoke = false,
-			bool enable = false, bool disable = false) => new() {
+			bool enable = false) => new() {
 			["environment-name"] = arrangeContext.EnvironmentName,
 			["entity-schema-name"] = schema,
 			["grantee"] = grantee,
 			["operations"] = operations,
 			["revoke"] = revoke,
-			["enable-operation-permissions"] = enable,
-			["disable-operation-permissions"] = disable
+			["enable-operation-permissions"] = enable
+		};
+		// A call that only turns the switch: no grantee, no operations.
+		Dictionary<string, object?> Switch(string schema, bool on) => new() {
+			["environment-name"] = arrangeContext.EnvironmentName,
+			["entity-schema-name"] = schema,
+			[on ? "enable-operation-permissions" : "disable-operation-permissions"] = true
 		};
 		Dictionary<string, object?> Read(string schema, string? grantee = null, bool includeConnected = false) {
 			Dictionary<string, object?> args = new() {
@@ -157,34 +163,58 @@ public sealed class ObjectRightsSandboxE2ETests : DataBindingDbFixtureBase {
 		revokedRow.Output.Should().Contain($"[1] All external users ({ExternalUsers}): no operations",
 			because: "the row is kept at its position with read cleared");
 
-		// Act — take away the last granting row, first without and then with the explicit disable
+		// Act — take away the last granting row: a revoke never turns the switch off, so it is refused
 		ObjectRightsToolResponse lastRow = await CallRightsAsync(arrangeContext, SetObjectRightsTool.ToolName,
 			Args(rootName, AllEmployees, "read,create,edit,delete", revoke: true));
-		ObjectRightsToolResponse disabled = await CallRightsAsync(arrangeContext, SetObjectRightsTool.ToolName,
-			Args(rootName, AllEmployees, "read,create,edit,delete", revoke: true, disable: true));
 
 		// Assert
 		lastRow.Success.Should().BeFalse(because: "an administered object is never left with no granting row");
-		lastRow.Error.Should().Contain("disable-operation-permissions", because: "the refusal names the explicit way out");
-		disabled.Success.Should().BeTrue(because: $"the caller named the transition. Error: {disabled.Error}");
-		disabled.Output.Should().Contain("turned OFF", because: "the object is available to all internal users again");
-		disabled.Output.Should().NotContain("Differs from the plan",
-			because: "the read-back matches the plan: the disable wrote the cleared row and the switch, nothing else");
+		lastRow.Error.Should().Contain("A revoke never turns operation permissions off",
+			because: "the switch is not a side effect of a revoke");
+		lastRow.Error.Should().Contain("disable-operation-permissions only",
+			because: "the refusal names the separate call that turns the switch off");
 
-		// Act — read the object back after the disable, then run the same disable again
+		// Act — turn the switch off in a call of its own, read the object back, then run the same disable again
+		ObjectRightsToolResponse disabled = await CallRightsAsync(arrangeContext, SetObjectRightsTool.ToolName,
+			Switch(rootName, on: false));
 		ObjectRightsToolResponse afterDisable = await CallRightsAsync(arrangeContext, GetObjectRightsTool.ToolName,
 			Read(rootName));
 		ObjectRightsToolResponse disabledAgain = await CallRightsAsync(arrangeContext, SetObjectRightsTool.ToolName,
-			Args(rootName, AllEmployees, "read,create,edit,delete", revoke: true, disable: true));
+			Switch(rootName, on: false));
 
-		// Assert — the stored rows are kept for a later re-enable, and the re-run changes nothing
+		// Assert — off, with every row kept as it was, operations included; the re-run changes nothing
+		disabled.Success.Should().BeTrue(because: $"the call names the transition. Error: {disabled.Error}");
+		disabled.Output.Should().Contain("operation permissions turned OFF; every row is kept as it is",
+			because: "the result names the switch and that no row changed");
+		disabled.Output.Should().NotContain("Differs from the plan",
+			because: "the read-back matches the plan: the disable wrote the switch and nothing else");
 		afterDisable.Output.Should().Contain($"{rootName}: not administered", because: "the switch is off");
-		afterDisable.Output.Should().Contain($"[0] All employees ({AllEmployees}): no operations",
-			because: "a disable keeps the stored rows: All employees stays, with its operations cleared");
+		afterDisable.Output.Should().Contain($"[0] All employees ({AllEmployees}): read/create/edit/delete",
+			because: "a disable keeps the rows with their operations, as the designer's switch does");
 		afterDisable.Output.Should().Contain($"[1] All external users ({ExternalUsers}): no operations",
 			because: "the revoked grantee's row is kept at its position too");
 		disabledAgain.Success.Should().BeTrue(because: $"a re-run of a call that landed is safe. Error: {disabledAgain.Error}");
-		disabledAgain.Output.Should().Contain("(no change)", because: "the switch is already off and the row already cleared");
+		disabledAgain.Output.Should().Contain("(no change)", because: "the switch is already off");
+
+		// Act — turn the switch back on in a call of its own, read the object back, then run the same enable again
+		ObjectRightsToolResponse enabled = await CallRightsAsync(arrangeContext, SetObjectRightsTool.ToolName,
+			Switch(rootName, on: true));
+		ObjectRightsToolResponse afterEnable = await CallRightsAsync(arrangeContext, GetObjectRightsTool.ToolName,
+			Read(rootName));
+		ObjectRightsToolResponse enabledAgain = await CallRightsAsync(arrangeContext, SetObjectRightsTool.ToolName,
+			Switch(rootName, on: true));
+
+		// Assert — the same rows decide again, and the re-run changes nothing
+		enabled.Success.Should().BeTrue(because: $"the call names the transition. Error: {enabled.Error}");
+		enabled.Output.Should().Contain("operation permissions turned ON", because: "the result names the switch");
+		afterEnable.Output.Should().Contain($"{rootName}: administered by operation permissions",
+			because: "the switch is on again");
+		afterEnable.Output.Should().Contain($"[0] All employees ({AllEmployees}): read/create/edit/delete",
+			because: "the rows the disable kept decide again, unchanged");
+		afterEnable.Output.Should().Contain($"[1] All external users ({ExternalUsers}): no operations",
+			because: "the enable adds or changes no row when an All employees row is stored");
+		enabledAgain.Success.Should().BeTrue(because: $"a re-run of a call that landed is safe. Error: {enabledAgain.Error}");
+		enabledAgain.Output.Should().Contain("(no change)", because: "the switch is already on");
 	}
 
 	private static async Task<ObjectRightsToolResponse> CallRightsAsync(DataBindingDbArrangeContext arrangeContext,

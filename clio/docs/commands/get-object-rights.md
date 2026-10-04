@@ -21,8 +21,9 @@ denies them. Every listing states that rule once. Per object the output is one o
 - `administered by operation permissions. Rows in priority order:` followed by the rows;
 - `administered by operation permissions, with NO rows` — only holders of the "…any data" system operations
   reach it;
-- `not administered by operation permissions` — available to all **internal** users; external users reach it
-  only through an explicit grant. Every row that would start to decide once operation permissions are turned on
+- `not administered by operation permissions (they are OFF) — available to all internal users.` What that means
+  for external users, system operations and shared lookups is the guidance's to explain: the output names
+  `get-guidance object-rights` next to the priority rule. Every row that would start to decide once operation permissions are turned on
   is listed below it, also with `--grantee` (for an object with no stored rows, that is the `All employees` row
   the service shows, which is not stored). When those rows have none for `All employees`, the output says that
   `set-object-rights --enable-operation-permissions` adds one with read/create/edit/delete below them, unless the

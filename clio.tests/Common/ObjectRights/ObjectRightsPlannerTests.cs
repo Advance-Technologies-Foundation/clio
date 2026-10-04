@@ -238,85 +238,146 @@ public class ObjectRightsPlannerTests {
 	}
 
 	[Test]
-	[Description("With --disable-operation-permissions the revoke turns the switch off instead of being refused, and keeps the rows.")]
-	public void Plan_ShouldTurnSwitchOff_WhenRevokeAsksToDisable() {
+	[Description("A revoke never turns the switch off: asking a grant or revoke to disable is a caller bug, because turning operation permissions off is a request of its own that changes no row.")]
+	public void Plan_ShouldThrow_WhenARevokeAsksToDisable() {
 		// Arrange
 		ObjectRightsState before = State(true, Row(Grantee, 0, "R"));
 
 		// Act
-		ObjectRightsPlan plan = _planner.Plan(before, Revoke(ObjectOperation.Read) with { DisableOperationPermissions = true });
+		Action plan = () => _planner.Plan(before, Revoke(ObjectOperation.Read) with { DisableOperationPermissions = true });
 
 		// Assert
-		plan.Refused.Should().BeFalse(because: "the caller named the transition");
-		plan.DisablesOperationPermissions.Should().BeTrue(because: "the switch goes off");
-		plan.After.AdministratedByOperations.Should().BeFalse(because: "the object becomes available to all internal users");
-		plan.After.Roles.Should().Equal(new[] { Row(Grantee, 0, "") }, because: "the rows are kept for a later re-enable");
-	}
-
-	[TestCase(true, TestName = "Plan_ShouldRefuseTheDisable_WhenOtherRowsStillGrant")]
-	[TestCase(false, TestName = "Plan_ShouldRefuseTheDisable_WhenTheGranteeHasNoRow")]
-	[Description("--disable-operation-permissions is accepted only when the revoke empties the object's last granting row: anywhere else it would open the object to all internal users while the call reads as a revoke, so it is refused, writes nothing and names the rows that still grant.")]
-	public void Plan_ShouldRefuseTheDisable_WhenTheRevokeDoesNotNeedIt(bool granteeHasRow) {
-		// Arrange
-		ObjectRightsState before = granteeHasRow
-			? State(true, Row(Grantee, 0, "R"), Row(AllEmployees, 1, "RCED"))
-			: State(true, Row(AllEmployees, 0, "RCED"));
-
-		// Act
-		ObjectRightsPlan plan = _planner.Plan(before, Revoke(ObjectOperation.Read) with { DisableOperationPermissions = true });
-
-		// Assert
-		plan.Refusal.Should().Be(ObjectRightsRefusal.DisableNotNeeded, because: "the revoke leaves a granting row");
-		plan.Changes.Should().BeFalse(because: "a refused plan writes nothing");
-		plan.RowsStillGranting.Should().Equal(new[] { Row(AllEmployees, granteeHasRow ? 1 : 0, "RCED") },
-			because: "the refusal names the rows that would still grant after the revoke");
+		plan.Should().ThrowExactly<ArgumentException>(because: "a disable never rides on a revoke")
+			.WithParameterName("request", because: "the request, not the object's state, is malformed");
 	}
 
 	[Test]
-	[Description("On an administered object where no row grants anything, a revoke that changes no row does not empty the last granting row either, so the disable is refused there too.")]
-	public void Plan_ShouldRefuseTheDisable_WhenTheRevokeChangesNoRow() {
-		// Arrange
-		ObjectRightsState before = State(true, Row(Grantee, 0, ""));
-
-		// Act
-		ObjectRightsPlan plan = _planner.Plan(before, Revoke(ObjectOperation.Read) with { DisableOperationPermissions = true });
-
-		// Assert
-		plan.Refusal.Should().Be(ObjectRightsRefusal.DisableNotNeeded, because: "the revoke itself empties no row");
-		plan.RowsStillGranting.Should().BeEmpty(because: "no row grants anything");
-	}
-
-	[TestCase(false, TestName = "Plan_ShouldRefuseRevoke_WhenObjectNotAdministered")]
-	[TestCase(true, TestName = "Plan_ShouldRefuseRevokeAndDisable_WhenObjectNotAdministeredAndTheRowStillHoldsTheOperation")]
-	[Description("A revoke on an object that is not administered is refused: every internal user reaches it whatever its rows say. With --disable-operation-permissions too, while the grantee's row still holds a named operation, because the call would change a row of an object that is off.")]
-	public void Plan_ShouldRefuseRevoke_WhenObjectNotAdministered(bool disable) {
+	[Description("A revoke on an object that is not administered is refused: every internal user reaches it whatever its rows say.")]
+	public void Plan_ShouldRefuseRevoke_WhenObjectNotAdministered() {
 		// Arrange
 		ObjectRightsState before = State(false, Row(Grantee, 0, "R"));
 
 		// Act
-		ObjectRightsPlan plan = _planner.Plan(before, Revoke(ObjectOperation.Read) with { DisableOperationPermissions = disable });
+		ObjectRightsPlan plan = _planner.Plan(before, Revoke(ObjectOperation.Read));
 
 		// Assert
 		plan.Refusal.Should().Be(ObjectRightsRefusal.RevokeOnNotAdministered,
 			because: "a revoke cannot restrict an object every internal user already reaches");
 	}
 
-	[TestCase(true, TestName = "Plan_ShouldChangeNothing_WhenARevokeAndDisableIsRepeated")]
-	[TestCase(false, TestName = "Plan_ShouldChangeNothing_WhenARevokeAndDisableMeetsNoGranteeRowWhileOff")]
-	[Description("A revoke with --disable-operation-permissions that finds the switch already OFF and the grantee's row without the named operations asks for the state already in place, so it changes nothing instead of being refused: a re-run of the same call is safe.")]
-	public void Plan_ShouldChangeNothing_WhenTheRevokeAndDisableStateIsInPlace(bool granteeHasRow) {
+	// ---- The switch alone ----
+
+	[Test]
+	[Description("Turning operation permissions off, alone, keeps every row exactly as it is — operations included — like the designer's switch, so turning them back on restores the same access.")]
+	public void Plan_ShouldTurnTheSwitchOffAndKeepEveryRow_WhenTheSwitchIsTurnedOff() {
 		// Arrange
-		ObjectRightsState before = granteeHasRow
-			? State(false, Row(Grantee, 0, ""), Row(AllEmployees, 1, "RCED"))
-			: State(false, Row(AllEmployees, 0, "RCED"));
+		ObjectRightsState before = State(true, Row(Other, 0, "RCED"), Row(AllEmployees, 1, "RCED"));
 
 		// Act
-		ObjectRightsPlan plan = _planner.Plan(before, Revoke(ObjectOperation.Read) with { DisableOperationPermissions = true });
+		ObjectRightsPlan plan = _planner.Plan(before, ObjectRightsChangeRequest.TurnOff());
+
+		// Assert
+		plan.Refused.Should().BeFalse(because: "the call names the transition: the disable is the whole request");
+		plan.DisablesOperationPermissions.Should().BeTrue(because: "the switch goes off");
+		plan.After.AdministratedByOperations.Should().BeFalse(because: "the object becomes available to all internal users");
+		plan.After.Roles.Should().Equal(before.Roles,
+			because: "no row is emptied or moved: the rows keep their operations for a later re-enable");
+	}
+
+	[Test]
+	[Description("Turning off an administered object with no stored rows leaves it with none: the plan writes no row.")]
+	public void Plan_ShouldTurnTheSwitchOff_WhenTheObjectHasNoStoredRows() {
+		// Arrange
+		ObjectRightsState before = State(true);
+
+		// Act
+		ObjectRightsPlan plan = _planner.Plan(before, ObjectRightsChangeRequest.TurnOff());
+
+		// Assert
+		plan.Changes.Should().BeTrue(because: "the switch goes off");
+		plan.After.Roles.Should().BeEmpty(because: "a disable adds no row");
+	}
+
+	[TestCase(false, TestName = "Plan_ShouldChangeNothing_WhenTheSwitchIsAlreadyOff")]
+	[TestCase(true, TestName = "Plan_ShouldChangeNothing_WhenTheSwitchIsAlreadyOn")]
+	[Description("Turning the switch to the side it is already on changes nothing and is not refused, so a re-run of the same call is safe.")]
+	public void Plan_ShouldChangeNothing_WhenTheSwitchIsAlreadyInPlace(bool on) {
+		// Arrange
+		ObjectRightsState before = State(on, Row(AllEmployees, 0, "RCED"));
+
+		// Act
+		ObjectRightsPlan plan = _planner.Plan(before, (on ? ObjectRightsChangeRequest.TurnOn() : ObjectRightsChangeRequest.TurnOff()));
 
 		// Assert
 		plan.Refused.Should().BeFalse(because: "the state the call asks for is already in place");
-		plan.Changes.Should().BeFalse(because: "the switch is already off and no row loses an operation");
-		plan.DisablesOperationPermissions.Should().BeFalse(because: "the switch is not turned off again");
+		plan.Changes.Should().BeFalse(because: "the switch is already where the call puts it");
+	}
+
+	[Test]
+	[Description("Turning operation permissions on, alone, keeps the stored rows as they are, and stores the All employees row the read synthesized for an object with no stored rows.")]
+	public void Plan_ShouldTurnTheSwitchOnWithTheRowsAsTheyAre_WhenTheSwitchIsTurnedOnAlone() {
+		// Arrange
+		ObjectRightsState before = State(false, Row(AllEmployees, 0, "RCED"));
+
+		// Act
+		ObjectRightsPlan plan = _planner.Plan(before, ObjectRightsChangeRequest.TurnOn());
+
+		// Assert
+		plan.Refused.Should().BeFalse(because: "the call names the transition");
+		plan.EnablesOperationPermissions.Should().BeTrue(because: "the switch goes on");
+		plan.After.AdministratedByOperations.Should().BeTrue(because: "the switch goes on");
+		plan.After.Roles.Should().Equal(new[] { Row(AllEmployees, 0, "RCED") },
+			because: "no row changes; the synthesized All employees row is stored as read");
+		plan.AddsAllEmployeesRow.Should().BeFalse(because: "the object already has an All employees row");
+		plan.RowsBecomingEffective.Should().Equal(before.Roles, because: "every row starts to decide");
+	}
+
+	[Test]
+	[Description("Turning operation permissions on, alone, over stored rows without an All employees row adds one with every operation below them, as an enabling grant does, so internal users are not cut off.")]
+	public void Plan_ShouldAddAnAllEmployeesRow_WhenTheSwitchIsTurnedOnOverRowsWithoutOne() {
+		// Arrange
+		ObjectRightsState before = State(false, Row(Other, 0, "R"));
+
+		// Act
+		ObjectRightsPlan plan = _planner.Plan(before, ObjectRightsChangeRequest.TurnOn());
+
+		// Assert
+		plan.AddsAllEmployeesRow.Should().BeTrue(because: "the stored rows have no All employees row");
+		plan.After.Roles.Should().Equal(new[] { Row(Other, 0, "R"), Row(AllEmployees, 1, "RCED") },
+			because: "the row goes below the stored rows, so none is renumbered");
+	}
+
+	[Test]
+	[Description("Turning operation permissions on, alone, over stored rows that grant nothing is refused: the object would admit nobody but the holders of the '…any data' system operations.")]
+	public void Plan_ShouldRefuseTheEnable_WhenNoRowWouldGrantAnything() {
+		// Arrange
+		ObjectRightsState before = State(false, Row(Other, 0, ""), Row(AllEmployees, 1, ""));
+
+		// Act
+		ObjectRightsPlan plan = _planner.Plan(before, ObjectRightsChangeRequest.TurnOn());
+
+		// Assert
+		plan.Refusal.Should().Be(ObjectRightsRefusal.LeavesNoGrantingRow,
+			because: "an administered object with no granting row is never an end state");
+		plan.Changes.Should().BeFalse(because: "a refused plan writes nothing");
+		plan.RowsBecomingEffective.Should().Equal(before.Roles, because: "the refusal names the rows that would decide");
+	}
+
+	[TestCase(true, true, false, TestName = "Plan_ShouldThrow_WhenASwitchRequestTurnsBothWays")]
+	[TestCase(false, false, false, TestName = "Plan_ShouldThrow_WhenARequestNamesNoChange")]
+	[TestCase(false, true, true, TestName = "Plan_ShouldThrow_WhenASwitchRequestCarriesRevoke")]
+	[Description("A request without a grantee and operations must turn the switch exactly one way: both ways, neither way (which must never read as a disable), or with revoke is a caller bug.")]
+	public void Plan_ShouldThrow_WhenASwitchRequestIsMalformed(bool enable, bool disable, bool revoke) {
+		// Arrange
+		ObjectRightsState before = State(true, Row(AllEmployees, 0, "RCED"));
+		ObjectRightsChangeRequest request = new(Guid.Empty, null, Array.Empty<ObjectOperation>(), revoke, enable, disable);
+
+		// Act
+		Action plan = () => _planner.Plan(before, request);
+
+		// Assert
+		plan.Should().ThrowExactly<ArgumentException>(because: "the switch goes exactly one way per call")
+			.WithParameterName("request", because: "the request is malformed");
 	}
 
 	[Test]

@@ -3,13 +3,15 @@
 - **Status:** accepted by the author (2026-09-30); to be confirmed by the PR's approver.
   - Decided: D1 (one object per call), D4 (host approval), D8 (grant and revoke on MCP), `remove-role` as a follow-up.
   - Decided after the self-review (2026-09-30): D5 (no separate opt-in for security/system objects), `operations`
-    required on every call (D4, invariant 8), R3 (the approval is of `clio-run`), a revoke on an object that is not
-    administered stays refused (a revoke-and-disable that finds its state already in place changes nothing).
-  - Decided after the author's independent review (2026-10-01): `disable-operation-permissions` is accepted only when
-    the revoke empties the object's last granting row (otherwise refused as not needed); the save is sent once, with
-    no transport retry; on MCP each `get` read is one attempt of at most 30 s and the listing has a 90 s budget.
+    required on every grant and revoke (D4, invariant 8), R3 (the approval is of `clio-run`), a revoke on an object
+    that is not administered stays refused.
+  - Decided after the author's independent review (2026-10-01): the save is sent once, with no transport retry; on
+    MCP each `get` read is one attempt of at most 30 s and the listing has a 90 s budget.
+  - Decided after the manual test run (2026-10-05), superseding the 2026-10-01 rule that accepted
+    `disable-operation-permissions` only on a revoke that empties the last granting row: the switch and the rows
+    change separately (D9). The disable is a call of its own that keeps every row; the enable can be one too.
   - The facts under "Platform model" were checked on a stand on 2026-09-28/29.
-- **Date:** 2026-09-28 (updated 2026-09-30)
+- **Date:** 2026-09-28 (updated 2026-10-05)
 - **Jira:** [ENG-99741](https://creatio.atlassian.net/browse/ENG-99741) (related ENG-99969, ENG-100406, ENG-100407)
 - **PR:** clio [#1655](https://github.com/Advance-Technologies-Foundation/clio/pull/1655); guidance clio-knowledge #221, #227; toolkit #208
 
@@ -139,8 +141,8 @@ or the call is refused. The host approval then shows the operator everything the
     fan-out; connected objects are re-resolved on every call.
 
 **D2 — Turning operation permissions on is explicit.**
-- A grant on an object that is not administered is refused unless `enable-operation-permissions` is given, mirroring
-  `disable-operation-permissions`. The refusal names the existing rows that would become effective.
+- A grant on an object that is not administered is refused unless `enable-operation-permissions` is given. The refusal
+  names the existing rows that would become effective. The flag can also be passed alone (D9).
 - With the flag, the save keeps the synthesized `All employees` row that the read returns for an object with no
   stored rows.
 - When the object has stale rows and no `All employees` row, the same save adds one, as the current implementation
@@ -171,7 +173,8 @@ or the call is refused. The host approval then shows the operator everything the
   asks the operator to approve the call and shows its arguments.
 - After D1–D3 the arguments show the whole effect: one object, one role, the operations, and whether permissions are
   turned on or off.
-- `operations` is required on every call, grant and revoke. Nothing is granted by default, so the approval shows
+- `operations` is required on every grant and revoke (a call that only turns the switch, D9, names none). Nothing is
+  granted by default, so the approval shows
   exactly what is granted or taken away. A default of read/create/edit would be invisible in the approval, and wrong
   for the main consumer, which grants read only.
 - The two-step preview + confirmation-code protocol is removed.
@@ -210,6 +213,30 @@ does not edit several rows whose positions give them different effects.
 **D8 — MCP `set` offers grant and revoke** *(decided)*, with the D1–D7 semantics, plus the explicit enable and
 disable flags.
 
+**D9 — The switch and the rows change separately** *(decided 2026-10-05, after the manual test run)*.
+- `disable-operation-permissions` is a call of its own: the object name and the flag, no grantee, operations or
+  revoke. It turns the switch off and keeps every row exactly as it is, operations included, as the designer's switch
+  does, so turning it back on restores the same access. Already off: no change.
+- `enable-operation-permissions` can be a call of its own too: it turns the switch on with the stored rows as they
+  are, under the D2 rule for the `All employees` row, and is refused when no row would grant anything (invariant 4).
+  Already on: no change. With a grant it stays as D2 describes, so the portal flow is still one call.
+- A revoke never turns the switch off. A revoke that would leave no granting row is refused, and the refusal names
+  the disable call.
+- *Why.* The disable used to ride on a revoke, the explicit replacement for the old "the last revoke turns it off".
+  Two rules were tried and both failed:
+  - a disable on any revoke opened the object to every internal user while the call read as a revoke;
+  - a disable only on the revoke that empties the last granting row (decided 2026-10-01) meant that turning the
+    switch off took one revoke per granting row and emptied every row. Turned back on, such an object denied
+    everyone. A manual test on `Activity` (rows for All external users and All employees) needed two calls for what
+    the designer does with one switch.
+
+  Both came from tying the switch to a revoke. A disable that names only the switch reads exactly as what it does,
+  and keeps the rows.
+- *Consequences.* While the switch is off, external users have no access whatever the rows say, so a disable closes
+  the object to the external roles its rows grant; the guidance has the agent name those rows before a disable, as it
+  does for an enable. Technical users keep following the rows. Emptying the last granting row is not possible with
+  the tool, before or after a disable, because a revoke on an object that is off is refused; the designer can do it.
+
 ## Responsibilities: tool vs guidance
 
 The tools work like the designer, one object at a time, plus a few guard-rails that the designer does not have. They
@@ -218,16 +245,12 @@ report facts. The guidance explains what the facts mean and decides what to do.
 **The tool:**
 - makes exactly the one change that the arguments name, on one object;
 - refuses a risky transition that the arguments do not name:
-  - enabling or disabling operation permissions without its flag;
-  - a disable the revoke does not need — other rows still grant, or the revoke changes no row — which would open the
-    object to every internal user while the call reads as a revoke;
+  - enabling or disabling operation permissions without its flag — the switch changes only through its flag, and a
+    disable is a call of its own that changes no row (D9);
   - duplicate rows for the grantee;
-  - a change that would leave an administered object with no granting row;
-  - a revoke on an object that is not administered, which company employees reach whatever its rows say. A revoke
-    with `disable-operation-permissions` that finds the switch already off and the grantee's row without the named
-    operations (typically a retry) is the exception: the state it asks for is in place, so it changes nothing, and
-    the result says the object is available to all internal users. The rule is on state, so a first such call on an
-    object that was never administered is no change too;
+  - a change that would leave an administered object with no granting row — a revoke that empties the last granting
+    row, or an enable over rows that grant nothing;
+  - a revoke on an object that is not administered, which company employees reach whatever its rows say;
 - never removes a row and never reorders rows;
 - reports facts:
   - rows in priority order, with their positions (`get`; with `--include-connected`, also for the object's own
@@ -243,6 +266,8 @@ report facts. The guidance explains what the facts mean and decides what to do.
     shadowed;
   - turning operation permissions on narrows access for internal users and can widen it for external ones, because
     the stale rows that come back can grant them; the synthesized All employees row;
+  - turning them off is the mirror: it opens the object to every internal user and closes it to the external roles
+    its rows grant, while the rows are kept for a later enable;
   - external users are deny-by-default and need an explicit grant;
   - the "…any data" system operations override object permissions;
   - `read` on a shared lookup (Contact, Account and the like) is read on the whole table for that role;
@@ -268,7 +293,12 @@ report facts. The guidance explains what the facts mean and decides what to do.
   - Removed: `include-connected`, `connected-operations`, `confirmation-code` and the two-step MCP flow, implicit
     enable, implicit row removal, the lockout detection after the write, `allow-security-object` (D5) and the default
     operations.
-  - Added: `enable-operation-permissions`, a required `operations`, and positions in the `get` and `set` output.
+  - Added: `enable-operation-permissions`, `operations` required on every grant and revoke, and positions in the
+    `get` and `set` output.
+  - D9: `disable-operation-permissions` is a call of its own that keeps every row, `enable-operation-permissions` can
+    be one too, and a revoke never changes the switch. On a security or system object (no opt-in, D5) the disable is
+    one explicit call as well: its name and the flag are in the arguments the host shows, and the guidance never
+    proposes such an object.
   - `preview` stays as a dry run.
 - **Jira ENG-99741 ACs** need a revision:
   - AC1 becomes one call per object;
@@ -327,11 +357,11 @@ Reviews of this feature are judged against this ADR:
 
 Invariants:
 1. A call writes only the object named in its arguments.
-2. `administratedByOperations` changes only with its explicit flag (enable or disable), and the disable is accepted
-   only when the revoke would otherwise leave no granting row.
+2. `administratedByOperations` changes only with its explicit flag (enable or disable). A disable is a call of its own
+   that changes no row, and a revoke never changes the switch (D9).
 3. A row is created only as the arguments say, a row is never removed, and existing rows never change position.
-4. An administered object never ends up without a row that grants some operation, except through
-   `disable-operation-permissions`.
+4. An administered object never ends up without a row that grants some operation: a revoke or an enable that would
+   leave it so is refused.
 5. Policy is decided before the write, and a refused call writes nothing.
 6. Output and exit code come from the plan and the read-back. A change that was not saved is never reported as done.
 7. Unknown argument names are refused before any read or write.
