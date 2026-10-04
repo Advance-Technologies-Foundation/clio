@@ -53,6 +53,9 @@ public sealed class ObjectRightsReadOnlySandboxE2ETests : McpContractFixtureBase
 		// Assert
 		all.Success.Should().BeTrue(because: $"Contact's rights must be readable on a real stand. Error: {all.Error}");
 		all.Output.Should().Contain("Contact", because: "the result names the object it read");
+		all.Output.Should().Contain("Record permissions:",
+			because: "the record layer (switch and default rules) is read from the same administrated object");
+		all.Output.Should().MatchRegex("(?i)existing record", because: "the named object's record count is reported");
 		filtered.Success.Should().BeTrue(because: $"a grantee filter is a read too. Error: {filtered.Error}");
 		(filtered.Output ?? string.Empty).Should().Match(output => output.Contains($"({AllEmployees}):")
 				|| output.Contains($"grantee {AllEmployees} has NO row"),
@@ -155,6 +158,40 @@ public sealed class ObjectRightsReadOnlySandboxE2ETests : McpContractFixtureBase
 			because: "a preview either shows the planned change or says which row already holds it — and writes nothing");
 		after.Output.Should().Be(before.Output, because: "the preview must leave Contact's rights exactly as they were");
 		before.Output.Should().Contain("priority order", because: "every listing states the priority rule its rows follow");
+	}
+
+	[Test]
+	[Description("On a real stand, a set-default-record-rights preview reads Contact's record layer, plans an enable plus a rule, and writes nothing.")]
+	[AllureTag(SetDefaultRecordRightsTool.ToolName)]
+	[AllureName("set-default-record-rights preview against the real RightManagementService")]
+	[AllureDescription("Previews an enable plus an All employees → All employees read rule on Contact, then checks Contact's rights are unchanged. Nothing is written.")]
+	public async Task SetDefaultRecordRights_Should_Preview_Without_Writing_On_A_Real_Stand() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync();
+		Dictionary<string, object?> readContact = new() {
+			["environment-name"] = context.EnvironmentName, ["entity-schema-name"] = "Contact"
+		};
+		ObjectRightsToolResponse before = await CallAsync(context, GetObjectRightsTool.ToolName, readContact);
+		Dictionary<string, object?> grant = new() {
+			["environment-name"] = context.EnvironmentName,
+			["entity-schema-name"] = "Contact",
+			["author"] = AllEmployees,
+			["grantee"] = AllEmployees,
+			["operations"] = "read",
+			["enable-record-permissions"] = true,
+			["preview"] = true
+		};
+
+		// Act
+		ObjectRightsToolResponse preview = await CallAsync(context, SetDefaultRecordRightsTool.ToolName, grant);
+		ObjectRightsToolResponse after = await CallAsync(context, GetObjectRightsTool.ToolName, readContact);
+
+		// Assert
+		preview.Success.Should().BeTrue(because: $"a preview of an allowed change is not a failure. Error: {preview.Error}");
+		(preview.Output ?? string.Empty).Should().Match(output => output.Contains("PREVIEW — nothing was changed")
+				|| output.Contains("(no change)"),
+			because: "a preview either shows the planned change or says the rule already holds it — and writes nothing");
+		after.Output.Should().Be(before.Output, because: "the preview must leave Contact's rights exactly as they were");
 	}
 
 	private static async Task<ObjectRightsToolResponse> CallAsync(ArrangeContext context, string toolName,

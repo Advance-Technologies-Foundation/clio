@@ -9,7 +9,8 @@ namespace Clio.Command.ObjectRights;
 
 /// <summary>Options of <c>get-object-rights</c>: read the per-role object operation permissions of an object.</summary>
 [Verb("get-object-rights", HelpText =
-	"Read object operation permissions (read/create/edit/delete per role) for an object and, optionally, its connected objects")]
+	"Read object permissions: operation permissions (read/create/edit/delete per role) and record permissions (the "
+	+ "switch and the default record rules) of an object and, optionally, its connected objects")]
 public class GetObjectRightsOptions : RemoteCommandOptions {
 
 	/// <summary>The object (entity schema) to read.</summary>
@@ -25,6 +26,12 @@ public class GetObjectRightsOptions : RemoteCommandOptions {
 		"Optional SysAdminUnit id (role or user): show its row and the rows above it, which decide first (every row when "
 		+ "it has none or when the object is not administered). When omitted, every row is listed.")]
 	public string Grantee { get; set; }
+
+	/// <summary>An optional SysAdminUnit id: show only the default record rules with this author.</summary>
+	[Option("author", Required = false, HelpText =
+		"Optional SysAdminUnit id (role or user): list only the default record rules whose author it is. --grantee also "
+		+ "filters the rules by their grantee.")]
+	public string Author { get; set; }
 
 	/// <summary>Also read the objects the root object's own lookup columns reference.</summary>
 	[Option("include-connected", Required = false, HelpText =
@@ -49,13 +56,15 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 
 	private readonly IObjectRightsReader _rightsReader;
 	private readonly IConnectedObjectsResolver _connectedObjects;
+	private readonly IObjectRecordCounter _recordCounter;
 	private readonly ILogger _logger;
 
 	/// <summary>Creates the command.</summary>
 	public GetObjectRightsCommand(IObjectRightsReader rightsReader,
-		IConnectedObjectsResolver connectedObjects, ILogger logger) {
+		IConnectedObjectsResolver connectedObjects, IObjectRecordCounter recordCounter, ILogger logger) {
 		_rightsReader = rightsReader;
 		_connectedObjects = connectedObjects;
+		_recordCounter = recordCounter;
 		_logger = logger;
 	}
 
@@ -65,10 +74,15 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 			return 1;
 		}
 		options.EntitySchemaName = schemaName;
-		if (!TryParseGranteeFilter(options.Grantee, out Guid? granteeFilter)) {
+		if (!TryParseUnitFilter(options.Grantee, out Guid? granteeFilter)) {
 			_logger.WriteError("Error: --grantee must be a SysAdminUnit id (GUID).");
 			return 1;
 		}
+		if (!TryParseUnitFilter(options.Author, out Guid? authorFilter)) {
+			_logger.WriteError("Error: --author must be a SysAdminUnit id (GUID).");
+			return 1;
+		}
+		RuleFilter ruleFilter = new(authorFilter, granteeFilter);
 		CreatioRequestOptions requestOptions = ObjectRightsCommandInput.RequestOptions(options, options.ReadBudget);
 		ConnectedObjectsResolution resolution;
 		// The resolver reports a failed schema read in-band (EnumerationError); this guard is the backstop for a
@@ -95,7 +109,7 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 			}
 			// Each request of the read gets at most what is left of the budget (CreatioRequestOptions.ForNextRequest).
 			ObjectRightsInfo info = ReadRights(target, requestOptions);
-			bool read = ReportTarget(target, info, isRoot, granteeFilter);
+			bool read = ReportTarget(target, info, isRoot, granteeFilter, ruleFilter, requestOptions);
 			rootFailed |= isRoot && !read;
 			if (info.TimedOut && index < resolution.Objects.Count - 1) {
 				// A hang, not a fault: every further read against the same stand would most likely wait as long, and on
@@ -109,15 +123,15 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 	}
 
 	// An omitted grantee means "every role"; a given one must be a non-empty GUID.
-	private static bool TryParseGranteeFilter(string raw, out Guid? granteeFilter) {
-		granteeFilter = null;
+	private static bool TryParseUnitFilter(string raw, out Guid? filter) {
+		filter = null;
 		if (string.IsNullOrWhiteSpace(raw)) {
 			return true;
 		}
 		if (!Guid.TryParse(raw, out Guid parsed) || parsed == Guid.Empty) {
 			return false;
 		}
-		granteeFilter = parsed;
+		filter = parsed;
 		return true;
 	}
 
@@ -125,7 +139,8 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 		_logger.WriteInfo(
 			$"Object operation permissions for '{options.EntitySchemaName}'"
 			+ (options.IncludeConnected ? " and its connected objects" : "")
-			+ (granteeFilter is null ? "" : $" (grantee {granteeFilter})") + ":");
+			+ (granteeFilter is null ? "" : $" (grantee {granteeFilter})")
+			+ (string.IsNullOrWhiteSpace(options.Author) ? "" : $" (rules of author {options.Author})") + ":");
 		_logger.WriteInfo($"  {PriorityRule}");
 		_logger.WriteInfo($"  {GuidancePointer}");
 		if (resolution.EnumerationError is not null) {
@@ -152,8 +167,15 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 		}
 	}
 
+	// The filters of the default record rules: --author and --grantee.
+	private sealed record RuleFilter(Guid? Author, Guid? Grantee) {
+		public bool Matches(DefaultRecordRule rule) =>
+			(Author is null || rule.AuthorId == Author) && (Grantee is null || rule.GranteeId == Grantee);
+	}
+
 	// Reports one object and returns whether it could be read.
-	private bool ReportTarget(string schemaName, ObjectRightsInfo info, bool isRoot, Guid? granteeFilter) {
+	private bool ReportTarget(string schemaName, ObjectRightsInfo info, bool isRoot, Guid? granteeFilter,
+		RuleFilter ruleFilter, CreatioRequestOptions requestOptions) {
 		if (!info.IsRead) {
 			string reason = info.FailureReason;
 			if (isRoot) {
@@ -165,6 +187,56 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 			}
 			return false;
 		}
+		ReportOperationLayer(schemaName, info, granteeFilter);
+		ReportRecordLayer(info.RecordState, ruleFilter);
+		if (isRoot) {
+			// Only for the named object: the number of records is what a user needs to decide on
+			// apply-default-record-rights, and counting every connected object would cost a query each.
+			ReportRecordCount(schemaName, requestOptions);
+		}
+		return true;
+	}
+
+	// The record layer: the switch and the default record rules, facts only.
+	private void ReportRecordLayer(DefaultRecordRightsState state, RuleFilter filter) {
+		IReadOnlyList<DefaultRecordRule> rules = state.Rules;
+		if (state.AdministratedByRecords && rules.Count == 0) {
+			_logger.WriteInfo("    Record permissions: ON, with NO default record rules: every user sees only the records "
+				+ "they create (and their managers and holders of 'view any data' see them too).");
+			return;
+		}
+		if (rules.Count == 0) {
+			_logger.WriteInfo("    Record permissions: OFF, no default record rules.");
+			return;
+		}
+		_logger.WriteInfo(state.AdministratedByRecords
+			? "    Record permissions: ON. Default record rules (records created by author → rights of grantee; rules add "
+				+ "up, their order has no meaning):"
+			: "    Record permissions: OFF — record rights are not evaluated. Stored default record rules (not in effect "
+				+ "while record permissions are off; they come into effect when record permissions are turned on):");
+		DefaultRecordRule[] shown = rules.Where(filter.Matches).ToArray();
+		if (shown.Length == 0) {
+			_logger.WriteInfo($"      no rule matches the filter ({rules.Count} rule(s) in all).");
+			return;
+		}
+		foreach (DefaultRecordRule rule in shown) {
+			_logger.WriteInfo($"      {DefaultRecordRightsFormat.Rule(rule, withIds: true)}");
+		}
+	}
+
+	// A failed count is reported and never fails the read.
+	private void ReportRecordCount(string schemaName, CreatioRequestOptions requestOptions) {
+		string fact = ObjectRightsCommandInput.DescribeRecordCount(_recordCounter, schemaName, requestOptions,
+			out long? count);
+		string line = $"    {char.ToUpperInvariant(fact[0])}{fact[1..]}.";
+		if (count is null) {
+			_logger.WriteWarning(line);
+		} else {
+			_logger.WriteInfo(line);
+		}
+	}
+
+	private void ReportOperationLayer(string schemaName, ObjectRightsInfo info, Guid? granteeFilter) {
 		if (!info.AdministratedByOperations) {
 			_logger.WriteInfo(
 				$"  {schemaName}: not administered by operation permissions (they are OFF) — available to all internal "
@@ -182,15 +254,14 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 				_logger.WriteInfo("    It has no 'All employees' row: set-object-rights --enable-operation-permissions adds "
 					+ "one with read/create/edit/delete below any stored rows, unless the grant is for All employees itself.");
 			}
-			return true;
+			return;
 		}
 		if (!info.Roles.Any()) {
 			_logger.WriteInfo($"  {schemaName}: administered by operation permissions, with NO rows.");
-			return true;
+			return;
 		}
 		_logger.WriteInfo($"  {schemaName}: administered by operation permissions. Rows in priority order:");
 		ReportRows(info.Roles, granteeFilter);
-		return true;
 	}
 
 	// Every row with its position — or, with a grantee, the grantee's row and the rows above it, which decide first

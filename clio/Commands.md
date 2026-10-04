@@ -682,7 +682,13 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`set-object-rights`](docs/commands/set-object-rights.md) - Grant or revoke object operation permissions (read/create/edit/delete) for one role on one object (destructive)
 
 <a id="get-object-rights"></a>
-- [`get-object-rights`](docs/commands/get-object-rights.md) - Read object operation permissions (read/create/edit/delete per role, in priority order) for an object and, optionally, its connected objects
+- [`get-object-rights`](docs/commands/get-object-rights.md) - Read object operation permissions (read/create/edit/delete per role, in priority order) and record permissions (the switch and the default record rules) for an object and, optionally, its connected objects
+
+<a id="set-default-record-rights"></a>
+- [`set-default-record-rights`](docs/commands/set-default-record-rights.md) - Turn record permissions on/off for one object and grant or revoke one of its default record rules (destructive)
+
+<a id="apply-default-record-rights"></a>
+- [`apply-default-record-rights`](docs/commands/apply-default-record-rights.md) - Apply an object's default record rules to its existing records (destructive, heavy)
 
 ## Integrations & Tools
 

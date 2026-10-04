@@ -200,6 +200,9 @@ public sealed class ObjectRightsSnapshot {
 /// <param name="Snapshot">The object as read, for a save; <see langword="null"/> when the read failed.</param>
 /// <param name="TimedOut">The read failed because the service did not answer in time (a hang, not a fault it
 /// answered): another read against the same stand would most likely wait as long.</param>
+/// <param name="AdministratedByRecords">Whether "Use record permissions" is on.</param>
+/// <param name="RecordRules">The object's default record rules; <see langword="null"/> when the read failed.</param>
+/// <param name="SchemaUId">The UId of the schema the service answered for (the base schema).</param>
 public sealed record ObjectRightsInfo(
 	bool Found,
 	string Name,
@@ -208,10 +211,17 @@ public sealed record ObjectRightsInfo(
 	IReadOnlyList<RoleOperationRights> Roles,
 	string ReadError = null,
 	ObjectRightsSnapshot Snapshot = null,
-	bool TimedOut = false) {
+	bool TimedOut = false,
+	bool AdministratedByRecords = false,
+	IReadOnlyList<DefaultRecordRule> RecordRules = null,
+	Guid SchemaUId = default) {
 
 	/// <summary>The state the planner works on.</summary>
 	public ObjectRightsState State => new(AdministratedByOperations, Roles);
+
+	/// <summary>The record layer: the "Use record permissions" switch and the default record rules.</summary>
+	public DefaultRecordRightsState RecordState =>
+		new(AdministratedByRecords, RecordRules ?? Array.Empty<DefaultRecordRule>());
 
 	/// <summary>Whether the object was found and its operation permissions were read.</summary>
 	public bool IsRead => ReadError is null && Found;

@@ -69,7 +69,7 @@ public sealed class ObjectRightsToolBehaviourTests {
 		_resolver.Resolve<SetObjectRightsCommand>(Arg.Do<EnvironmentOptions>(o => _capturedSet = (SetObjectRightsOptions)o))
 			.Returns(_ => SetCommand());
 		_resolver.Resolve<GetObjectRightsCommand>(Arg.Do<EnvironmentOptions>(o => _capturedGet = (GetObjectRightsOptions)o))
-			.Returns(_ => new GetObjectRightsCommand(_reader, _connected, _logger));
+			.Returns(_ => new GetObjectRightsCommand(_reader, _connected, Substitute.For<IObjectRecordCounter>(), _logger));
 	}
 
 	private SetObjectRightsCommand SetCommand() =>
@@ -78,7 +78,7 @@ public sealed class ObjectRightsToolBehaviourTests {
 
 	private SetObjectRightsTool SetTool() => new(SetCommand(), _logger, _resolver);
 
-	private GetObjectRightsTool GetTool() => new(new GetObjectRightsCommand(_reader, _connected, _logger), _logger, _resolver);
+	private GetObjectRightsTool GetTool() => new(new GetObjectRightsCommand(_reader, _connected, Substitute.For<IObjectRecordCounter>(), _logger), _logger, _resolver);
 
 	private static IGranteeLookup Granted() {
 		IGranteeLookup lookup = Substitute.For<IGranteeLookup>();

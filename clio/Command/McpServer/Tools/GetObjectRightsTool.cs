@@ -10,7 +10,10 @@ using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
 
-/// <summary>MCP surface of <c>get-object-rights</c>: reads the per-role object operation permissions of an object.</summary>
+/// <summary>
+/// MCP surface of <c>get-object-rights</c>: reads the per-role object operation permissions of an object and its record
+/// permissions (the switch and the default record rules).
+/// </summary>
 [McpServerToolType]
 public sealed class GetObjectRightsTool(
 	GetObjectRightsCommand command,
@@ -20,7 +23,8 @@ public sealed class GetObjectRightsTool(
 
 	internal const string ToolName = "get-object-rights";
 
-	internal const string ValidArguments = "Valid: environment-name, entity-schema-name, grantee, include-connected.";
+	internal const string ValidArguments =
+		"Valid: environment-name, entity-schema-name, grantee, author, include-connected.";
 
 	// The call is bounded by the MCP read deadline (120 s by default). Each request gets one attempt of at most 30 s,
 	// all of them share a 90 s limit, and the listing stops once it is spent, so the answer — with what was read —
@@ -45,9 +49,10 @@ public sealed class GetObjectRightsTool(
 		"Read-only companion of set-object-rights. Reports, per object, every role's row in PRIORITY order with its [position] (0 is the highest; a user in several roles gets the highest matching row, and a row with no operations denies them); pass grantee to show that role's row and the rows above it (every row when it has none, or when the object is not administered). " +
 		"include-connected also reports the root object's own lookup objects (security/system objects are skipped) — the discovery step before deciding, per object, what to change with set-object-rights; each request gets one attempt of at most 30 s, and the listing stops after 90 s or a read that times out, naming the objects not read — then read them one by one. The output is facts only, with no coverage verdict. Fails (success=false) when the root object cannot be read; a connected object that cannot be read is reported with a warning. " +
 		"An object not administered by operation permissions is available to all INTERNAL users; external users reach it only through an explicit grant; every row listed for it applies once operation permissions are turned on. " +
+		"Also reports RECORD permissions per object: whether \"Use record permissions\" is ON, and every default record rule (records created by author -> read/edit/delete level for grantee, and \"do not apply for manager\"); rules stored while it is OFF are listed as not in effect; ON with no rule means every user sees only the records they create. grantee and author filter the rules. For the named object it reports the number of existing records (for the apply-default-record-rights decision). Change the record layer with set-default-record-rights. " +
 		"Unknown or misspelled argument names are refused.")]
 	public ObjectRightsToolResponse GetObjectRights(
-		[Description("Parameters: environment-name, entity-schema-name (required); grantee, include-connected (optional).")]
+		[Description("Parameters: environment-name, entity-schema-name (required); grantee, author, include-connected (optional).")]
 		[Required]
 		GetObjectRightsArgs args) {
 		// Long-tail (clio-run): the serializer would silently drop a misspelled key — e.g. "grantee-id" — and the
@@ -71,6 +76,7 @@ public sealed class GetObjectRightsTool(
 		Environment = args.EnvironmentName,
 		EntitySchemaName = args.EntitySchemaName,
 		Grantee = args.Grantee,
+		Author = args.Author,
 		IncludeConnected = args.IncludeConnected ?? false,
 		TimeOut = McpReadTimeoutMilliseconds,
 		MaxAttempts = 1,
@@ -96,7 +102,11 @@ public sealed record GetObjectRightsArgs(
 
 	[property: JsonPropertyName("include-connected")]
 	[property: Description("Also read the root object's own lookup objects, skipping security/system objects (default false).")]
-	bool? IncludeConnected = null
+	bool? IncludeConnected = null,
+
+	[property: JsonPropertyName("author")]
+	[property: Description("Optional SysAdminUnit id (role or user): list only the default record rules whose author it is. Omit to list every rule.")]
+	string Author = null
 ) {
 	/// <summary>Overflow bag for unknown JSON fields; a non-empty bag refuses the call.</summary>
 	[JsonExtensionData]
