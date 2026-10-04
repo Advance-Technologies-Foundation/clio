@@ -171,9 +171,16 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 	private sealed record Change(string SchemaName, string GranteeLabel, ObjectRightsChangeRequest Request,
 		ObjectRightsPlan Plan) {
 
-		public string Summary => Request.SwitchOnly
-			? $"Turn operation permissions {(Request.DisableOperationPermissions ? "OFF" : "ON")} on '{SchemaName}'."
-			: $"{(Request.Revoke ? "Revoke" : "Grant")} [{Operations}] for grantee {GranteeLabel} on '{SchemaName}'.";
+		public string Summary {
+			get {
+				if (Request.SwitchOnly) {
+					string state = Request.DisableOperationPermissions ? "OFF" : "ON";
+					return $"Turn operation permissions {state} on '{SchemaName}'.";
+				}
+				string verb = Request.Revoke ? "Revoke" : "Grant";
+				return $"{verb} [{Operations}] for grantee {GranteeLabel} on '{SchemaName}'.";
+			}
+		}
 
 		public string Operations => ObjectRightsSupport.FormatOperations(Request.Operations);
 
@@ -198,31 +205,11 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 			_logger.WriteError("Error: --preview writes nothing, so it cannot be combined with --confirm.");
 			return false;
 		}
-		if (options.EnableOperationPermissions && options.DisableOperationPermissions) {
-			_logger.WriteError("Error: --enable-operation-permissions and --disable-operation-permissions turn the switch "
-				+ "opposite ways; pass one of them.");
+		if (!TryReadCallShape(options, out bool switchOnly)) {
 			return false;
 		}
-		bool namesRow = options.Grantee is not null || options.Operations is not null;
-		// Turning operation permissions off changes no row, so it is a call of its own: an argument about a row beside it
-		// would read as part of the change while nothing of it happens.
-		if (options.DisableOperationPermissions) {
-			if (namesRow || options.Revoke) {
-				_logger.WriteError("Error: --disable-operation-permissions is a call of its own: it turns operation "
-					+ "permissions OFF and keeps every row as it is, so --grantee, --operations and --revoke do not go with "
-					+ "it. To clear a role's operations, revoke them in a separate call.");
-				return false;
-			}
+		if (switchOnly) {
 			return true;
-		}
-		if (options.EnableOperationPermissions && !namesRow && !options.Revoke) {
-			return true;
-		}
-		if (!namesRow && !options.Revoke) {
-			_logger.WriteError("Error: name the change: --grantee and --operations for a grant or a revoke, or "
-				+ "--enable-operation-permissions / --disable-operation-permissions alone to turn operation permissions on "
-				+ "or off.");
-			return false;
 		}
 		if (options.Revoke && options.EnableOperationPermissions) {
 			_logger.WriteError("Error: --enable-operation-permissions applies to a grant; a revoke never turns operation "
@@ -241,6 +228,41 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 		}
 		if (!TryParseOperations(options.Operations, out operations, out string opError)) {
 			_logger.WriteError(opError);
+			return false;
+		}
+		return true;
+	}
+
+	// Which kind of call the arguments describe. A switch-only call (--enable- or --disable-operation-permissions
+	// alone) needs nothing else; any other call goes on to name a grantee and operations.
+	private bool TryReadCallShape(SetObjectRightsOptions options, out bool switchOnly) {
+		switchOnly = false;
+		if (options.EnableOperationPermissions && options.DisableOperationPermissions) {
+			_logger.WriteError("Error: --enable-operation-permissions and --disable-operation-permissions turn the switch "
+				+ "opposite ways; pass one of them.");
+			return false;
+		}
+		bool namesRow = options.Grantee is not null || options.Operations is not null;
+		// Turning operation permissions off changes no row, so it is a call of its own: an argument about a row beside it
+		// would read as part of the change while nothing of it happens.
+		if (options.DisableOperationPermissions) {
+			if (namesRow || options.Revoke) {
+				_logger.WriteError("Error: --disable-operation-permissions is a call of its own: it turns operation "
+					+ "permissions OFF and keeps every row as it is, so --grantee, --operations and --revoke do not go with "
+					+ "it. To clear a role's operations, revoke them in a separate call.");
+				return false;
+			}
+			switchOnly = true;
+			return true;
+		}
+		if (options.EnableOperationPermissions && !namesRow && !options.Revoke) {
+			switchOnly = true;
+			return true;
+		}
+		if (!namesRow && !options.Revoke) {
+			_logger.WriteError("Error: name the change: --grantee and --operations for a grant or a revoke, or "
+				+ "--enable-operation-permissions / --disable-operation-permissions alone to turn operation permissions on "
+				+ "or off.");
 			return false;
 		}
 		return true;
