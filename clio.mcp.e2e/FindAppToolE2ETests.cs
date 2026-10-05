@@ -25,6 +25,7 @@ namespace Clio.Mcp.E2E;
 [NonParallelizable]
 public sealed class FindAppToolE2ETests : McpContractFixtureBase {
 	private const string FindAppToolName = FindAppTool.FindAppToolName;
+	private const string SectionListToolName = ApplicationSectionGetListTool.ApplicationSectionGetListToolName;
 	private const int MaxCodeLookups = 20;
 
 	[Category("McpE2E.Sandbox")]
@@ -63,11 +64,11 @@ public sealed class FindAppToolE2ETests : McpContractFixtureBase {
 
 	[Category("McpE2E.Sandbox")]
 	[Test]
-	[Description("Starts the real clio MCP server and verifies that find-app with no filter returns, for every application, the same sections as find-app with that application's exact code (ENG-102120).")]
+	[Description("Starts the real clio MCP server and verifies that find-app with no filter returns, for every application, the same sections as list-app-sections for that application (ENG-102120).")]
 	[AllureTag(FindAppToolName)]
 	[AllureName("find-app batch returns every application's sections")]
-	[AllureDescription("Calls find-app with no filter, then find-app with each of the first 20 returned application codes, and verifies the section codes match per application. The batch request covers all applications at once, the code request covers one; the virtual ApplicationSection schema once answered a multi-application OR filter with the first application's sections only.")]
-	public async Task FindApp_Should_Return_The_Same_Sections_As_A_Code_Lookup_For_Every_Application() {
+	[AllureDescription("Calls find-app with no filter, then list-app-sections for each of the first 20 returned application codes, and verifies the section codes match per application. list-app-sections reads sections through its own query, so it is an independent reference for the batch IN filter; the virtual ApplicationSection schema once answered a multi-application OR filter with the first application's sections only.")]
+	public async Task FindApp_Should_Return_The_Same_Sections_As_List_App_Sections_For_Every_Application() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
@@ -80,15 +81,17 @@ public sealed class FindAppToolE2ETests : McpContractFixtureBase {
 		FindAppResponseEnvelope batch = EntitySchemaStructuredResultParser.Extract<FindAppResponseEnvelope>(
 			await CallFindAppAsync(session, environmentName, cancellationTokenSource.Token));
 		batch.Success.Should().BeTrue(because: $"find-app with no filter should succeed: {batch.Error}");
-		// One sequential code lookup per application; bounded so a stand with many apps stays inside the timeout.
+		// One sequential list-app-sections call per application; bounded so a stand with many apps stays inside the timeout.
+		// list-app-sections does not go through find-app's batch query, so a defect there cannot cancel out on both sides.
 		FindAppItemEnvelope[] sampled = (batch.Applications ?? []).Take(MaxCodeLookups).ToArray();
 		Dictionary<string, string[]> expectedSectionsByCode = new(StringComparer.OrdinalIgnoreCase);
 		foreach (FindAppItemEnvelope application in sampled) {
-			FindAppResponseEnvelope single = EntitySchemaStructuredResultParser.Extract<FindAppResponseEnvelope>(
-				await CallFindAppAsync(session, environmentName, cancellationTokenSource.Token, code: application.Code));
-			single.Success.Should().BeTrue(
-				because: $"find-app with the exact code '{application.Code}' should succeed: {single.Error}");
-			expectedSectionsByCode[application.Code!] = SectionCodes(single.Applications!.Single());
+			ApplicationSectionListContextResponseEnvelope listed = ApplicationResultParser.ExtractSectionList(
+				await CallListAppSectionsAsync(session, environmentName, application.Code!, cancellationTokenSource.Token));
+			listed.Success.Should().BeTrue(
+				because: $"list-app-sections for '{application.Code}' should succeed: {listed.Error}");
+			expectedSectionsByCode[application.Code!] = (listed.Sections ?? [])
+				.Select(section => section.Code ?? string.Empty).Order(StringComparer.Ordinal).ToArray();
 		}
 		if (expectedSectionsByCode.Values.Count(codes => codes.Length > 0) < 2) {
 			Assert.Inconclusive("The sandbox needs at least two applications with sections among the first " +
@@ -135,12 +138,26 @@ public sealed class FindAppToolE2ETests : McpContractFixtureBase {
 	private static string[] SectionCodes(FindAppItemEnvelope application) =>
 		(application.Sections ?? []).Select(section => section.Code ?? string.Empty).Order(StringComparer.Ordinal).ToArray();
 
+	private static Task<CallToolResult> CallListAppSectionsAsync(
+		McpServerSession session,
+		string environmentName,
+		string applicationCode,
+		CancellationToken cancellationToken) =>
+		session.CallToolAsync(
+			SectionListToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["application-code"] = applicationCode
+				}
+			},
+			cancellationToken);
+
 	private static async Task<CallToolResult> CallFindAppAsync(
 		McpServerSession session,
 		string environmentName,
 		CancellationToken cancellationToken,
-		string? searchPattern = null,
-		string? code = null) {
+		string? searchPattern = null) {
 		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
 		tools.Select(tool => tool.Name).Should().Contain(FindAppToolName,
 			because: "the find-app MCP tool must be advertised before the end-to-end call can be executed");
@@ -150,10 +167,6 @@ public sealed class FindAppToolE2ETests : McpContractFixtureBase {
 		};
 		if (!string.IsNullOrWhiteSpace(searchPattern)) {
 			args["search-pattern"] = searchPattern;
-		}
-
-		if (!string.IsNullOrWhiteSpace(code)) {
-			args["code"] = code;
 		}
 
 		return await session.CallToolAsync(
