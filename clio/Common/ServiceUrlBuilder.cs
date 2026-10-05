@@ -368,7 +368,13 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		CreatePackage = 110,
 
 		/// <summary>Creates a package inside an installed application (ApplicationPackagesService CreatePackageInApp).</summary>
-		CreatePackageInApp = 111
+		CreatePackageInApp = 111,
+
+		/// <summary>
+		///     Reads the configuration data (ConfigurationDataService GetData). Called with <c>forceGet = true</c>
+		///     it clears the calling session's cached module structure and workplace/section caches.
+		/// </summary>
+		GetConfigurationData = 112
 
 	}
 
@@ -473,6 +479,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.CompileProcess, "/rest/ProcessDesignService/CompileProcess"},
 		{KnownRoute.CreatePackage, "ServiceModel/PackageService.svc/CreatePackage"},
 		{KnownRoute.CreatePackageInApp, "ServiceModel/ApplicationPackagesService.svc/CreatePackageInApp"},
+		{KnownRoute.GetConfigurationData, "/rest/ConfigurationDataService/GetData"},
 		{KnownRoute.LastCompilationResult, "api/ConfigurationStatus/GetLastCompilationResult"},
 		{KnownRoute.GetAvailableThemes, "ServiceModel/ThemeService.svc/GetAvailableThemes"},
 		{KnownRoute.ClearThemesCache, "ServiceModel/ThemeService.svc/ClearThemesCache"},

@@ -1298,6 +1298,7 @@ public class BindingsModule {
 		services.AddTransient<IPostgres, Postgres>();
 		services.AddSingleton<CommandHelpCatalog>();
 		services.AddTransient<CommandHelpRenderer>();
+		services.AddSingleton<IOptionSuggestionService, OptionSuggestionService>();
 		// HelpArtifactExporter is constructed directly in Program.ExportHelpArtifacts with a
 		// deterministic export-baseline IFeatureToggleService (see ExportFeatureToggleService) so
 		// committed docs never depend on local feature flags. It is therefore not DI-resolved.

@@ -78,7 +78,8 @@ public sealed class ApplicationSectionUpdateToolPassthroughTests {
 			_captionCultureResolver,
 			sectionLocalizationClient,
 			new SectionLocalizationPlanner(sectionLocalizationClient),
-			Substitute.For<ICreatioCultureCatalogFactory>());
+			Substitute.For<ICreatioCultureCatalogFactory>(),
+			NavigationCacheResetterSubstitute.Succeeding());
 		_tool = new ApplicationSectionUpdateTool(Substitute.For<ILogger>(), _commandResolver, sectionUpdateService);
 	}
 

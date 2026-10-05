@@ -9,6 +9,7 @@ using System.Text.Json.Serialization;
 using Clio.Common;
 using Clio.Command.BusinessRules;
 using Clio.Command.McpServer;
+using Clio.Command.McpServer.Tools.MobilePageConverter;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -722,6 +723,21 @@ internal static class ToolContractCatalog {
 	private const string CorrelationIdFieldName = "correlation-id";
 	private const string CaptionCultureFieldName = "caption-culture";
 	private const string WarningsFieldName = "warnings";
+	private const string NextStepFieldName = "next-step";
+
+	private const string NavigationCacheContractNote =
+		"After the change it clears the menu cache of clio's own Creatio session; a failed clear is a `warnings` " +
+		"entry, not a failure. Other sessions keep the old menu: an open browser tab refreshes only if its " +
+		"websocket was connected at the moment of the change, so a success returns `next-step` with the call to " +
+		"run inside a tab that still shows the old menu after a reload. Never clear Redis for this; it logs out " +
+		"every user.";
+
+	private const string NavigationCacheWarningsDescription =
+		"Non-fatal findings, for example a menu cache of clio's session that could not be cleared.";
+
+	private const string NavigationCacheNextStepDescription =
+		"Present on success: how to refresh an open browser tab that still shows the old menu after a reload " +
+		"(a fetch to ConfigurationDataService/GetData with body true, run in that tab, then a reload).";
 	private const string ExampleOrdersSectionCode = "UsrOrders";
 	private const string ExampleTaskAppFormPageSchemaName = "UsrTaskApp_FormPage";
 	private const string CultureFieldName = "culture";
@@ -886,7 +902,8 @@ internal static class ToolContractCatalog {
 			[UninstallIdentityTool.ToolName] = BuildUninstallIdentity(),
 			[RestoreWorkspaceTool.RestoreWorkspaceToolName] = BuildRestoreWorkspace(),
 			[PushWorkspaceTool.PushWorkspaceToolName] = BuildPushWorkspace(),
-			[ListCreatioBuildsTool.ListCreatioBuildsToolName] = BuildListCreatioBuilds()
+			[ListCreatioBuildsTool.ListCreatioBuildsToolName] = BuildListCreatioBuilds(),
+			[MobilePageConversionGuideTool.ToolName] = BuildMobilePageConversionGuide()
 		};
 
 	private static readonly string[] CanonicalToolNames = [
@@ -950,6 +967,7 @@ internal static class ToolContractCatalog {
 		PageUpdateTool.ToolName,
 		LocalizePageTool.ToolName,
 		PageValidateTool.ToolName,
+		MobilePageConversionGuideTool.ToolName,
 		ApplicationDeleteTool.ToolName,
 		SchemaNamePrefixTool.GetSchemaNamePrefixToolName,
 		CompileCreatioTool.CompileCreatioToolName,
@@ -1780,7 +1798,8 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildApplicationCreate() {
 		return new ToolContractDefinition(
 			ApplicationCreateTool.ApplicationCreateToolName,
-			"Creates a Creatio application and returns installed application identity plus the created application context envelope and Data Forge enrichment diagnostics.",
+			"Creates a Creatio application and returns installed application identity plus the created application context envelope and Data Forge enrichment diagnostics. " +
+			NavigationCacheContractNote,
 			new ToolInputSchemaContract(
 				["name", "code", TemplateCodeFieldName],
 				[
@@ -1829,7 +1848,9 @@ internal static class ToolContractCatalog {
 				Field(PagesFieldName, ArrayType, "Primary-package Freedom UI pages using list-pages item shape (`schema-name`, `uId`, `packageName`, `parentSchemaName`)."),
 				Field("schema-name-prefix", StringType, "Active SchemaNamePrefix resolved from the environment. Use as the prefix for all subsequent custom schema codes (lookups, columns, supporting entities). Empty string means no prefix is configured."),
 				Field("dataforge", ObjectType, "Optional Data Forge enrichment diagnostics including health/status/coverage, warnings, and a compact context-summary."),
-				Field(ErrorFieldName, StringType, FailureMessageDescription)
+				Field(ErrorFieldName, StringType, FailureMessageDescription),
+				Field(WarningsFieldName, ArrayType, NavigationCacheWarningsDescription),
+				Field(NextStepFieldName, StringType, NavigationCacheNextStepDescription)
 			),
 			CommonErrorContract,
 			[
@@ -1883,7 +1904,8 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildApplicationSectionCreate() {
 		return new ToolContractDefinition(
 			ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
-			"Creates a section inside an existing installed application and returns structured section, entity, and page readback data.",
+			"Creates a section inside an existing installed application and returns structured section, entity, and page readback data. " +
+			NavigationCacheContractNote,
 			new ToolInputSchemaContract(
 				[ApplicationCodeFieldName, CaptionFieldName],
 				[
@@ -1930,7 +1952,9 @@ internal static class ToolContractCatalog {
 				Field(ErrorFieldName, StringType, FailureMessageDescription),
 				Field("error-class", StringType, "Failure classification, present on classified errors only: 'transport' (request never reached Creatio — retry is safe), 'creatio-timeout' (no response within the budget — side effects unknown, verify with list-app-sections before retrying), 'contention' (insert aborted without a detailed reason — may be parallel creation in one app OR a server-side rejection unrelated to concurrency; no section created (verified); run list-app-sections, create sections one at a time if you were creating them concurrently (clio serializes and auto-retries once), and if a single sequential create still fails treat it as server-side), 'server-error' (Creatio rejected the operation with a real, detailed reason — fix inputs or server state first)."),
 				Field("section-created", StringType, "Side-effect verification outcome on classified errors: 'true', 'false', 'unknown', or 'in-progress'. 'in-progress' is not a verification outcome — it means the section is still being created server-side after the MCP response deadline returned early; do NOT retry create-app-section, poll list-app-sections / get-app-info until the section appears."),
-				Field("retry-guidance", StringType, "Actionable next step for the classified failure. Follow it instead of blind retries.")
+				Field("retry-guidance", StringType, "Actionable next step for the classified failure. Follow it instead of blind retries."),
+				Field(WarningsFieldName, ArrayType, NavigationCacheWarningsDescription),
+				Field(NextStepFieldName, StringType, NavigationCacheNextStepDescription)
 			),
 			CommonErrorContract,
 			[
@@ -1979,7 +2003,8 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildApplicationSectionUpdate() {
 		return new ToolContractDefinition(
 			ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName,
-			"Updates metadata of an existing installed application section and returns structured section readback data before and after the update.",
+			"Updates metadata of an existing installed application section and returns structured section readback data before and after the update. " +
+			NavigationCacheContractNote,
 			new ToolInputSchemaContract(
 				[ApplicationCodeFieldName, SectionCodeFieldName],
 				[
@@ -2027,7 +2052,8 @@ internal static class ToolContractCatalog {
 				Field(CaptionCultureFieldName, StringType, "Culture the caption was written in; absent when no caption was sent."),
 				Field("caption-culture-value", StringType, "The stored section caption in caption-culture."),
 				Field("preserved-cultures", ArrayType, "Non-default cultures whose other stored section values (title, description) were kept; can include the target culture when its description was kept."),
-				Field(WarningsFieldName, ArrayType, "Non-fatal findings, for example an inactive culture or a package data binding that could not be refreshed.")
+				Field(WarningsFieldName, ArrayType, "Non-fatal findings, for example an inactive culture, a package data binding that could not be refreshed, or a menu cache of clio's session that could not be cleared."),
+				Field(NextStepFieldName, StringType, NavigationCacheNextStepDescription)
 			),
 			CommonErrorContract,
 			[
@@ -6795,6 +6821,71 @@ internal static class ToolContractCatalog {
 			]);
 	}
 
+	private static ToolContractDefinition BuildMobilePageConversionGuide() {
+		return new ToolContractDefinition(
+			MobilePageConversionGuideTool.ToolName,
+			"Advisory: returns a guide for converting a Freedom UI WEB page into a mobile page; it writes nothing. The guide carries the recommended mobile template, container correspondence, the source component structure, per-type component suggestions and inline mobile component contracts - YOU build the body from it with create-page (mobile template) + update-page and prove it with validate-page. Candidate names are reported without classification: classify each one yourself before presenting a plan.",
+			new ToolInputSchemaContract(
+				[SchemaNameFieldName],
+				[
+					Field(SchemaNameFieldName, StringType, "Source page schema name, e.g. 'UsrMyApp_FormPage'. Only Freedom UI WEB pages are supported; a Classic UI page is detected and reported as not yet supported."),
+					Field("target-schema-name", StringType, "Optional suggested target mobile page schema name. Defaults to the source name with a mobile suffix (UsrMyApp_FormPage -> UsrMyApp_MobileFormPage)."),
+					Field("version", StringType, "Optional Creatio/registry version used to resolve the mobile and web component registries. A 3-part semver, e.g. '8.3.3', or 'latest'; anything else is rejected. Defaults to PROBING the target environment - an explicit value OVERRIDES that probe, so naming a version other than the target's own measures the conversion against a different mobile runtime."),
+					Field(EnvironmentNameFieldName, StringType, "PREFERRED. Registered clio environment name, e.g. 'local'."),
+					Field("uri", StringType, "Emergency fallback only: direct Creatio URL. Prefer 'environment-name'."),
+					Field(LoginFieldName, StringType, "Emergency fallback only: login paired with 'uri'."),
+					Field(PasswordFieldName, StringType, "Emergency fallback only: password paired with 'uri'.")
+				],
+				AnyOf: EnvironmentOrExplicitConnectionRequirements()),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[
+					SuccessFalseSignal
+				],
+				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
+				Field("sourceSchemaName", StringType, "The source page the read was attempted against."),
+				Field("sourceType", StringType, "Detected source page type - an unsupported Classic UI page is how you learn it must be migrated to Freedom UI web first. Absent when the page could not be read at all."),
+				Field("guide", ObjectType, "The advisory guide: recommended template, containerMap, componentSuggestions, mobileContracts, sectionRegistration and more. adaptiveLayout carries per-breakpoint placement - small (phone) is the supported canvas; medium/large (tablet/desktop) are baked in but stay EXPERIMENTAL and are outside the converter's supported scope. What the caller must resolve: componentSuggestions[].category == RequiresManualDecision, and requestConversions.droppedRequests / flaggedRequests / unresolvedTargetRequests / missingTargetPages."),
+				Field("resolvedTargetVersion", StringType, "The component-registry / rules version the guide was built against: a concrete version or 'latest'."),
+				Field("resolvedFrom", StringType, "How the version was resolved: environment, environment-superset or latest-fallback."),
+				Field("versionWarning", StringType, "Caveat when the catalog is approximate or the target version is unknown; absent when the version is exact."),
+				Field("requiresVersionConfirmation", BooleanType, "True only on latest-fallback: the target version is unknown, so confirm with the user before acting on the guide."),
+				Field("resolvedFromReason", StringType, "Stable kebab-case reason on latest-fallback, e.g. no-active-environment or probe-error."),
+				Field("rulesWarning", StringType, "READ THIS WHEN PRESENT: the rules file maps a web request onto a mobile request type the registry does not publish, so the action cannot dispatch - it does nothing and fails SILENTLY on the page. Review every affected action before shipping."),
+				Field("requestRegistryWarning", StringType, "The mobile request registry could not be resolved exactly, so request conversions are advisory-only."),
+				Field(ErrorFieldName, StringType, "Actionable diagnostic when success is false.")),
+			CommonErrorContract,
+			// No rejected-parameter aliases. The sibling page contracts publish them because they are
+			// RESIDENT and something above them classifies the payload; per Command/McpServer/AGENTS.md the
+			// flat-args normalization and argument-shape refusal are resident-only. This tool is
+			// deliberately non-resident and its args record carries no [JsonExtensionData] bag, so a caller
+			// sending 'schemaName' has the key dropped by System.Text.Json and gets "Could not read source
+			// page ''" - not the rename hint an alias entry would promise. Publishing one would advertise a
+			// refusal the tool cannot give.
+			[],
+			[],
+			[
+				Example("Get the conversion guide for a Freedom UI web form page", new Dictionary<string, object?> {
+					[SchemaNameFieldName] = "UsrMyApp_FormPage",
+					[EnvironmentNameFieldName] = "local"
+				})
+			],
+			Flow(
+				[
+					MobilePageConversionGuideTool.ToolName,
+					PageCreateTool.ToolName,
+					PageUpdateTool.ToolName,
+					PageValidateTool.ToolName
+				],
+				"Read the guide, then build the mobile page body yourself with create-page + update-page and prove it with validate-page. The guide writes nothing, so a caller that waits for a built page waits forever. Read get-guidance name=freedom-page-web-to-mobile-conversion before acting on it, and name=freedom-page-mobile-reason-codes to resolve a reason code it reports."),
+			[],
+			[],
+			Preconditions: [
+				"The environment is registered (see list-environments / reg-web-app), or an explicit uri + login + password is supplied.",
+				"The source page must be a Freedom UI WEB page. A Classic UI page must be migrated to Freedom UI web first, and an already-mobile page is rejected."
+			]);
+	}
+
 	private static ToolContractDefinition BuildListCreatioBuilds() {
 		return new ToolContractDefinition(
 			ListCreatioBuildsTool.ListCreatioBuildsToolName,
@@ -6851,7 +6942,7 @@ internal static class ToolContractCatalog {
 				Field("succeeded", NumberType, "Number of items that succeeded."),
 				Field("failed", NumberType, "Number of items that failed."),
 				Field("results", ArrayType, resultsDescription),
-				Field("error", StringType, "Request-level error that prevented the whole batch from running. Note: when the requested environment cannot be resolved (unknown/unreachable), the tool instead returns the standard command-execution envelope (exit-code 1 with execution-log-messages referencing the environment) rather than this batch shape.")
+				Field(ErrorFieldName, StringType, "Request-level error that prevented the whole batch from running. Note: when the requested environment cannot be resolved (unknown/unreachable), the tool instead returns the standard command-execution envelope (exit-code 1 with execution-log-messages referencing the environment) rather than this batch shape.")
 			]);
 	}
 
@@ -6875,7 +6966,7 @@ internal static class ToolContractCatalog {
 					+ "record-created is null, retry-guidance. A null record-created means Creatio failed the call "
 					+ "but may already have written the row - verify with odata-read before re-sending, a retry "
 					+ "duplicates it. " + ODataWriteForeignKeyHintDescription),
-				Field("error", StringType, "Request-level error that prevented any row from being attempted."),
+				Field(ErrorFieldName, StringType, "Request-level error that prevented any row from being attempted."),
 				Field(CorrelationIdFieldName, StringType, ODataWriteCorrelationIdDescription),
 				Field(DataWriteDiagnosticFieldName, ObjectType, DataWriteDiagnosticDescription)
 			]);

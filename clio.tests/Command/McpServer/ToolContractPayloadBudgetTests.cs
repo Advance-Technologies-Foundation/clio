@@ -72,10 +72,16 @@ public sealed class ToolContractPayloadBudgetTests {
 	// surface with them registered (824 bytes, about 206 per index entry); next 256-byte step is 46592 (182).
 	// ENG-101352 adds create-package, one more long-tail tool: measured 46567 bytes (175 for its index
 	// entry), still inside the 46592-byte step, so the ceiling does not move.
+	// Re-pinned for ENG-94638: get-mobile-page-conversion-guide went GA, so the converter is no longer
+	// gated off the default surface and its index entry is now paid by every discovery call. Measured
+	// 46788 bytes with it ungated and carrying a curated contract (221 for its index entry, which includes
+	// contract-available flipping to true and the curated purpose replacing the reflected one); next
+	// 256-byte step is 46848 (183). The tool stays long-tail on purpose - it is NOT in
+	// McpCoreToolProfile.CoreToolTypes - so that entry is the whole per-session cost of the un-gate.
 	// Serialization uses the default JSON encoder,
 	// which escapes non-ASCII (a purpose ellipsis is written as a 6-byte escape), so it over-counts the real
 	// UTF-8 wire size — conservative, which is the safe direction for a ceiling.
-	private const int MaxCompactIndexSerializedBytes = 182 * 256;
+	private const int MaxCompactIndexSerializedBytes = 183 * 256;
 
 	// Worst-case ceiling for ONE named full contract, measured as the SERIALIZED contract in UTF-8 bytes
 	// — the same quantity the index ratchet above measures, and what the agent actually receives.
