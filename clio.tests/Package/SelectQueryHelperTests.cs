@@ -1,4 +1,6 @@
 using System;
+using System.Linq;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using Clio.Common;
@@ -11,7 +13,7 @@ namespace Clio.Tests.Package;
 
 /// <summary>
 /// Covers the transient-failure retry that <see cref="SelectQueryHelper.ExecuteSelectQuery{T}" /> applies to
-/// server-reported failures (issue #1119).
+/// server-reported failures (issue #1119) and the wire shape of the SelectQuery builders.
 /// </summary>
 [TestFixture]
 [Category("Unit")]
@@ -26,6 +28,11 @@ public class SelectQueryHelperTests {
 		"""{"success":false,"errorInfo":{"message":"System.InvalidOperationException: Collection was modified; enumeration operation may not execute."}}""";
 
 	private const string SuccessJson = """{"success":true}""";
+
+	private static readonly SelectQueryHelper.SelectQueryColumnDefinition[] Columns = [
+		new("Id", "Id"),
+		new("Name", "Name")
+	];
 
 	#endregion
 
@@ -131,6 +138,95 @@ public class SelectQueryHelperTests {
 		_applicationClient.Received(1).ExecutePostRequest(
 			SelectUrl, Arg.Any<string>(), boundedTimeoutMs, Arg.Any<int>(), Arg.Any<int>());
 	}
+
+
+	[Test]
+	[Description("Builds one IN filter (filterType 4, comparisonType 3) inside an AND group, carrying every value as an ordered right expression of the given data value type (ENG-102120).")]
+	public void BuildSelectQueryWithInFilter_Should_Emit_Single_In_Filter_With_Ordered_Values() {
+		// Arrange
+		string[] values = [
+			"33333333-3333-3333-3333-333333333333",
+			"11111111-1111-1111-1111-111111111111",
+			"22222222-2222-2222-2222-222222222222"
+		];
+
+		// Act
+		using JsonDocument query = Serialize(SelectQueryHelper.BuildSelectQueryWithInFilter(
+			"ApplicationSection", Columns, "ApplicationId", values, SelectQueryHelper.GuidDataValueType));
+
+		// Assert
+		JsonElement group = query.RootElement.GetProperty("filters");
+		group.GetProperty("filterType").GetInt32().Should().Be(6,
+			because: "the filters of a SelectQuery are always wrapped in a filter group");
+		group.GetProperty("logicalOperation").GetInt32().Should().Be(0,
+			because: "the single IN filter needs no OR between filters, so the group stays AND");
+		JsonElement[] filters = FilterItems(group);
+		filters.Should().ContainSingle(
+			because: "the virtual ApplicationSection schema reads only the first filter on a column");
+		filters[0].GetProperty("filterType").GetInt32().Should().Be(4,
+			because: "filterType 4 is the DataService IN filter");
+		filters[0].GetProperty("comparisonType").GetInt32().Should().Be(3,
+			because: "comparisonType 3 is equality");
+		filters[0].GetProperty("leftExpression").GetProperty("columnPath").GetString().Should().Be("ApplicationId",
+			because: "the filter compares the requested column");
+		JsonElement[] parameters = filters[0].GetProperty("rightExpressions").EnumerateArray()
+			.Select(expression => expression.GetProperty("parameter")).ToArray();
+		parameters.Select(parameter => parameter.GetProperty("value").GetString())
+			.Should().Equal(values, because: "every value must be carried, in the order the caller passed them");
+		parameters.Select(parameter => parameter.GetProperty("dataValueType").GetInt32())
+			.Should().AllBeEquivalentTo(SelectQueryHelper.GuidDataValueType,
+				because: "every value must carry the caller's data value type");
+	}
+
+	[Test]
+	[Description("Keeps the OR builder emitting logicalOperation 1 with one equality filter per value after the shared envelope refactor.")]
+	public void BuildSelectQueryWithOrFilter_Should_Emit_Or_Group_With_One_Filter_Per_Value() {
+		// Arrange
+		string[] values = ["a", "b"];
+
+		// Act
+		using JsonDocument query = Serialize(SelectQueryHelper.BuildSelectQueryWithOrFilter(
+			"SysSchema", Columns, "Name", values, SelectQueryHelper.TextDataValueType));
+
+		// Assert
+		JsonElement group = query.RootElement.GetProperty("filters");
+		group.GetProperty("logicalOperation").GetInt32().Should().Be(1,
+			because: "the OR builder must combine its per-value filters with OR, or it would match nothing");
+		FilterItems(group).Select(filter => filter.GetProperty("rightExpression").GetProperty("parameter")
+				.GetProperty("value").GetString())
+			.Should().Equal(values, because: "the OR builder emits one comparison filter per value");
+	}
+
+	[Test]
+	[Description("Keeps the plain builder emitting logicalOperation 0 with its columns after the shared envelope refactor.")]
+	public void BuildSelectQuery_Should_Emit_And_Group_With_Columns() {
+		// Arrange
+		SelectQueryHelper.SelectQueryFilterDefinition[] filters = [
+			new("Name", "a", SelectQueryHelper.TextDataValueType),
+			new("Code", "b", SelectQueryHelper.TextDataValueType)
+		];
+
+		// Act
+		using JsonDocument query = Serialize(SelectQueryHelper.BuildSelectQuery("SysSchema", Columns, filters));
+
+		// Assert
+		query.RootElement.GetProperty("rootSchemaName").GetString().Should().Be("SysSchema",
+			because: "the envelope must target the requested schema");
+		query.RootElement.GetProperty("filters").GetProperty("logicalOperation").GetInt32().Should().Be(0,
+			because: "the plain builder combines its filters with AND");
+		query.RootElement.GetProperty("columns").GetProperty("items").EnumerateObject()
+			.Select(column => column.Value.GetProperty("expression").GetProperty("columnPath").GetString())
+			.Should().Equal(["Id", "Name"], because: "the envelope must carry every requested column");
+	}
+
+	#endregion
+
+	#region Methods: Private
+
+	private static JsonDocument Serialize(object query) => JsonDocument.Parse(JsonSerializer.Serialize(query));
+
+	private static JsonElement[] FilterItems(JsonElement group) =>
+		group.GetProperty("items").EnumerateObject().Select(item => item.Value).ToArray();
 
 	#endregion
 

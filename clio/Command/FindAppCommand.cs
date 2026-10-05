@@ -66,7 +66,7 @@ public sealed record AppSectionSearchResult(
 /// <summary>
 /// Finds installed applications and their sections within a single command invocation. Issues exactly
 /// two DataService queries: one <c>SysInstalledApp</c> query for all applications, then one batch
-/// <c>ApplicationSection</c> query with an OR-grouped <c>ApplicationId</c> filter that loads sections
+/// <c>ApplicationSection</c> query with an IN filter on <c>ApplicationId</c> that loads sections
 /// for all candidate applications at once. Results are filtered by an optional case-insensitive pattern
 /// (matched across application name/code/description and section captions/codes) and/or an exact
 /// application code; an empty pattern returns every application with its sections. The whole sweep
@@ -202,11 +202,16 @@ public class FindAppCommand : Command<FindAppOptions> {
 	}
 
 	/// <summary>
-	/// Loads sections for all candidate applications in a single batch query using an OR-grouped
-	/// <c>ApplicationId</c> filter, then groups the rows by application identifier for in-memory
-	/// lookup. On query failure, logs a warning and returns an empty dictionary so callers still
-	/// receive applications — just without sections.
+	/// Loads sections for all candidate applications in a single batch query using an IN filter on
+	/// <c>ApplicationId</c>, then groups the rows by application identifier for in-memory lookup.
+	/// A failed query throws: returning no sections would be indistinguishable from applications
+	/// that really have none (ENG-102120).
 	/// </summary>
+	/// <remarks>
+	/// The filter must be one IN filter, not an OR group of equality filters: the virtual
+	/// <c>ApplicationSection</c> schema reads only the first <c>ApplicationId</c> filter, so an OR group
+	/// returns the sections of the first application and an empty list for every other one.
+	/// </remarks>
 	/// <param name="applicationIds">Identifiers of the applications whose sections to fetch.</param>
 	/// <returns>Dictionary keyed by application identifier, each value ordered by caption then code.</returns>
 	private IReadOnlyDictionary<string, IReadOnlyList<AppSectionSearchResult>> LoadSectionsBatch(
@@ -214,36 +219,37 @@ public class FindAppCommand : Command<FindAppOptions> {
 		if (applicationIds.Count == 0) {
 			return new Dictionary<string, IReadOnlyList<AppSectionSearchResult>>();
 		}
+		SectionsResponse response;
 		try {
-			SectionsResponse response = ExecuteSelectQuery<SectionsResponse>(
+			response = ExecuteSelectQuery<SectionsResponse>(
 				_applicationClient,
 				_serviceUrlBuilder,
-				BuildSelectQueryWithOrFilter(
+				BuildSelectQueryWithInFilter(
 					"ApplicationSection",
 					SectionColumns,
 					"ApplicationId",
 					applicationIds,
 					GuidDataValueType));
-			return response.Rows
-				.GroupBy(row => row.ApplicationId ?? string.Empty, StringComparer.OrdinalIgnoreCase)
-				.ToDictionary(
-					group => group.Key,
-					group => (IReadOnlyList<AppSectionSearchResult>)group
-						.Select(section => new AppSectionSearchResult(
-							section.Code ?? string.Empty,
-							section.Caption ?? string.Empty,
-							string.IsNullOrWhiteSpace(section.EntitySchemaName)
-								? null
-								: section.EntitySchemaName,
-							string.IsNullOrWhiteSpace(section.Description) ? null : section.Description))
-						.OrderBy(section => section.Caption, StringComparer.OrdinalIgnoreCase)
-						.ThenBy(section => section.Code, StringComparer.OrdinalIgnoreCase)
-						.ToList(),
-					StringComparer.OrdinalIgnoreCase);
-		} catch (Exception ex) {
-			_logger.WriteWarning($"Failed to load sections: {ex.Message}. Applications will be returned without sections.");
-			return new Dictionary<string, IReadOnlyList<AppSectionSearchResult>>();
+		} catch (InvalidOperationException ex) {
+			// The application query fails with the same "SelectQuery failed: ..." text; name the step.
+			throw new InvalidOperationException($"Failed to load application sections: {ex.Message}", ex);
 		}
+		return response.Rows
+			.GroupBy(row => row.ApplicationId ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+			.ToDictionary(
+				group => group.Key,
+				group => (IReadOnlyList<AppSectionSearchResult>)group
+					.Select(section => new AppSectionSearchResult(
+						section.Code ?? string.Empty,
+						section.Caption ?? string.Empty,
+						string.IsNullOrWhiteSpace(section.EntitySchemaName)
+							? null
+							: section.EntitySchemaName,
+						string.IsNullOrWhiteSpace(section.Description) ? null : section.Description))
+					.OrderBy(section => section.Caption, StringComparer.OrdinalIgnoreCase)
+					.ThenBy(section => section.Code, StringComparer.OrdinalIgnoreCase)
+					.ToList(),
+				StringComparer.OrdinalIgnoreCase);
 	}
 
 	private static bool MatchesPattern(AppSearchResult app, string? pattern) {

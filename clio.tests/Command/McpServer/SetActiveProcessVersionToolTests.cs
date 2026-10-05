@@ -233,6 +233,29 @@ public class SetActiveProcessVersionToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The description says that a compile made before the activation still covers an interpreted version - activation re-saves the family but changes no code - so an agent that compiled and then activated does not ask for a second compile (measured, ENG-92711). Nothing but this pin fails if the sentence goes.")]
+	public void SetActiveProcessVersion_Description_ShouldSayAnEarlierCompileStillCovers() {
+		// Arrange
+		MethodInfo method = typeof(SetActiveProcessVersionTool)
+			.GetMethod(nameof(SetActiveProcessVersionTool.SetActiveProcessVersion))!;
+
+		// Act
+		string description = ((System.ComponentModel.DescriptionAttribute)method!
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false).Single()).Description;
+
+		// Assert
+		description.Should().Contain("owes no second compile",
+			because: "the activation answer used to send an agent that had already compiled to ask for another");
+		description.Should().Contain("for an interpreted version only",
+			because: "the claim was measured for an interpreted version only, and must not cover the compiled one");
+		description.Should().Contain("compile that SUCCEEDED",
+			because: "a compile that failed covers nothing");
+		description.Should().NotContain("unless the version was compiled with process-name since its last edit",
+			because: "that clause sat on the warning for EVERY version, the non-interpreted one included");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("The description states that ANY member is a valid activation target, the family ROOT included. It said the opposite until ENG-94374 - 'it must be the version itself, not the family root' - and there is no guard behind either wording, so nothing but this pin fails when the sentence regresses. A mutation run restoring the old sentence left the whole suite green.")]
 	public void SetActiveProcessVersion_Description_ShouldStateThatTheRootIsAValidTarget() {
 		// Arrange

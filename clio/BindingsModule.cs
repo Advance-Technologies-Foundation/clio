@@ -1176,6 +1176,7 @@ public class BindingsModule {
 		services.AddTransient<GenerateProcessModelCommand>();
 		services.AddTransient<DescribeProcessCommand>();
 		services.AddTransient<GetProcessSignatureCommand>();
+		services.AddTransient<IProcessRunLogReader, ProcessRunLogReader>();
 		services.AddTransient<RunProcessCommand>();
 		services.AddTransient<ListPrintablesCommand>();
 		services.AddTransient<AddItemCommand>();
