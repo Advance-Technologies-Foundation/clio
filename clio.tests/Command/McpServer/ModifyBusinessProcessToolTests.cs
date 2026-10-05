@@ -478,6 +478,9 @@ public class ModifyBusinessProcessToolTests {
 				+ "the wrong value before it writes one");
 		description.Should().Contain("only setElement sets or changes that object",
 			because: "addMapping refuses to set or change the object, so the contract has to name the route that does");
+		ModifyBusinessProcessPrompt.PromptByProcess("env", "UsrSampleProcess").Should()
+			.Contain("never the registry row Id", because: "the prompt states the same Lookup rule and must carry "
+				+ "the same exception, or an agent following it passes the view's row Id and is refused");
 	}
 
 
