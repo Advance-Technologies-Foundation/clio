@@ -139,6 +139,8 @@ public class RecordRightsActualizationClientTests {
 
 		// Assert
 		response.Error.Should().Contain(expected, because: "an unreadable answer is reported as such");
+		response.Status.Should().Be(RecordRightsActualizationClient.OutcomeUnknownStatus,
+			because: "the run may have started though the answer was lost");
 		response.ProcessId.Should().BeNull(because: "no run can be followed");
 	}
 
@@ -169,6 +171,8 @@ public class RecordRightsActualizationClientTests {
 		running.Should().ContainSingle(because: "one run is going").Which.ProcessId.Should().Be(ProcessId, because: "its id is read");
 		_body.Should().Contain("SysSchema.Name").And.Contain("ObjectRecordRightsActualizationProcess",
 			because: "only runs of the update are looked at");
+		System.Text.Json.JsonDocument.Parse(_body).RootElement.GetProperty("columns").GetProperty("items")
+			.TryGetProperty("Id", out _).Should().BeTrue(because: "the warning names the running process by its Id");
 		_body.Should().Contain(ProcessRunStatus.Running.ToString(), because: "only running runs count");
 	}
 }

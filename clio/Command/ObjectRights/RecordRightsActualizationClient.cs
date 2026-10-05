@@ -71,6 +71,12 @@ public sealed record ProcessRunStatus(Guid StatusId, string StatusName) {
 /// </summary>
 public sealed class RecordRightsActualizationClient : IRecordRightsActualization {
 
+	/// <summary>
+	/// The <see cref="RunProcessResponse.Status"/> of a launch whose answer could not be read (an empty or non-JSON body,
+	/// as a proxy 502/504 returns): the run may have started.
+	/// </summary>
+	internal const string OutcomeUnknownStatus = "outcome-unknown";
+
 	/// <summary>The platform process that applies an object's default record rules to its existing records.</summary>
 	internal const string ProcessName = "ObjectRecordRightsActualizationProcess";
 
@@ -96,14 +102,16 @@ public sealed class RecordRightsActualizationClient : IRecordRightsActualization
 		string body = _applicationClient.ExecutePostRequest(_urlBuilder.Build(ServiceUrlBuilder.KnownRoute.RunProcess),
 			JsonSerializer.Serialize(args), sendOptions.TimeOut, maxAttempts: 1);
 		if (string.IsNullOrWhiteSpace(body)) {
-			return new RunProcessResponse { Error = "RunProcess returned an empty response" };
+			return new RunProcessResponse { Status = OutcomeUnknownStatus, Error = "RunProcess returned an empty response" };
 		}
 		ProcessStartResponse started;
 		try {
 			started = JsonSerializer.Deserialize<ProcessStartResponse>(body);
 		}
 		catch (JsonException e) {
-			return new RunProcessResponse { Error = $"RunProcess returned a response clio could not read: {e.Message}" };
+			return new RunProcessResponse {
+				Status = OutcomeUnknownStatus, Error = $"RunProcess returned a response clio could not read: {e.Message}"
+			};
 		}
 		return RunProcessCommand.BuildResponse(started, ProcessName);
 	}
@@ -125,6 +133,7 @@ public sealed class RecordRightsActualizationClient : IRecordRightsActualization
 	public IReadOnlyList<RunningUpdate> FindRunning(CreatioRequestOptions requestOptions) {
 		object query = SelectQueryHelper.BuildSelectQuery("SysProcessLog",
 			new[] {
+				new SelectQueryHelper.SelectQueryColumnDefinition("Id", "Id"),
 				new SelectQueryHelper.SelectQueryColumnDefinition("StartDate", "StartDate", OrderDirection: 2, OrderPosition: 0)
 			},
 			new[] {

@@ -132,6 +132,8 @@ public sealed class DefaultRecordRightsSandboxE2ETests : DataBindingDbFixtureBas
 		lateRights.Should().Contain("granted -> All employees", because: "a default rule applies to a record created after it");
 		earlyBeforeApply.Should().NotContain("-> All employees", because: "an enable gives existing records no rights");
 		firstApply.Success.Should().BeTrue(because: $"the record-rights update must complete. Error: {firstApply.Error}");
+		firstApply.Output.Should().NotContain("could not check whether a record-rights update is already running",
+			because: "the running-update check must work on a real stand, not only fail quietly");
 		earlyAfterApply.Should().Contain("granted -> All employees",
 			because: "the update applies the current rules to a record that had none");
 
@@ -149,6 +151,8 @@ public sealed class DefaultRecordRightsSandboxE2ETests : DataBindingDbFixtureBas
 			because: "the full-list save kept the rule the call did not name");
 		secondApply.Success.Should().BeTrue(because: $"the record-rights update must complete. Error: {secondApply.Error}");
 		secondApply.Output.Should().Contain("completed", because: "a small table finishes well within the wait");
+		secondApply.Output.Should().NotContain("could not check whether a record-rights update is already running",
+			because: "the running-update check must work on a real stand");
 		lateAfterApply.Should().Contain("Supervisor", because: "the record's rights were read: its author keeps its own right");
 		lateAfterApply.Should().NotContain("-> All employees",
 			because: "the update removes the rights that came from a rule that no longer exists");
@@ -168,6 +172,24 @@ public sealed class DefaultRecordRightsSandboxE2ETests : DataBindingDbFixtureBas
 		applyWhileOff.Success.Should().BeFalse(because: "there is nothing to apply while record rights are not evaluated");
 		applyWhileOff.Error.Should().Contain("are OFF", because: "the refusal says why");
 		disabledAgain.Output.Should().Contain("(no change)", because: "a repeated call changes nothing");
+
+		// Act — remove the last stored rule while record permissions are off (the save sends an empty list)
+		ObjectRightsToolResponse lastRemoved = await CallAsync(arrangeContext, SetDefaultRecordRightsTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = arrangeContext.EnvironmentName,
+				["entity-schema-name"] = objectName,
+				["author"] = AllExternalUsers,
+				["grantee"] = AllEmployees,
+				["operations"] = "read",
+				["revoke"] = true
+			});
+		ObjectRightsToolResponse noRules = await CallAsync(arrangeContext, GetObjectRightsTool.ToolName, ReadArgs());
+
+		// Assert
+		lastRemoved.Success.Should().BeTrue(because: $"the platform must accept an empty rule list. Error: {lastRemoved.Error}");
+		lastRemoved.Output.Should().Contain("is removed", because: "the last rule is removed");
+		noRules.Output.Should().Contain("Record permissions: OFF, no default record rules",
+			because: "the empty list was saved and read back");
 
 		Dictionary<string, object?> ReadArgs() => new() {
 			["environment-name"] = arrangeContext.EnvironmentName, ["entity-schema-name"] = objectName

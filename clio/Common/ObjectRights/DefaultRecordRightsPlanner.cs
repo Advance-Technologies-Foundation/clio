@@ -43,8 +43,6 @@ public enum DefaultRecordRightsRefusal {
 	/// be stored but give nobody anything, and the stored rules would all come into effect with a later enable.
 	/// </summary>
 	EnableNotRequested,
-	/// <summary><c>--disable-record-permissions</c> together with a grant: the grant would have no effect.</summary>
-	DisableNotNeeded,
 	/// <summary>
 	/// The stored rules have two or more rules for one (author, grantee) pair. The save replaces the whole list and the
 	/// server keeps only the last rule of a pair, so sending the list back would lose rights silently.
@@ -106,8 +104,9 @@ public interface IDefaultRecordRightsPlanner {
 	/// <param name="request">The change the call asks for.</param>
 	/// <returns>The plan, allowed or refused.</returns>
 	/// <exception cref="ArgumentNullException"><paramref name="before"/> or <paramref name="request"/> is null.</exception>
-	/// <exception cref="ArgumentException">The request names neither a rule nor a switch flag, names both flags, or
-	/// names a rule with no operation. The command refuses those shapes before any read.</exception>
+	/// <exception cref="ArgumentException">The request names neither a rule nor a switch flag, names both flags, a rule
+	/// with the disable, a revoke with the enable, or a rule with no operation. The command refuses those shapes before
+	/// any read.</exception>
 	DefaultRecordRightsPlan Plan(DefaultRecordRightsState before, DefaultRecordRightsChangeRequest request);
 }
 
@@ -129,9 +128,6 @@ public sealed class DefaultRecordRightsPlanner : IDefaultRecordRightsPlanner {
 		bool grants = change is { Revoke: false };
 
 		// THE POLICY, in the order the refusals are reported. A refusal writes nothing.
-		if (grants && request.DisableRecordPermissions) {
-			return Refuse(before, DefaultRecordRightsRefusal.DisableNotNeeded, ruleBefore, ruleAfter);
-		}
 		if (grants && !switchAfter) {
 			return Refuse(before, DefaultRecordRightsRefusal.EnableNotRequested, ruleBefore, ruleAfter,
 				storedRules: before.Rules);
@@ -165,6 +161,13 @@ public sealed class DefaultRecordRightsPlanner : IDefaultRecordRightsPlanner {
 		}
 		if (request.Rule is null && !request.EnableRecordPermissions && !request.DisableRecordPermissions) {
 			throw new ArgumentException("The request names neither a rule nor a switch flag.", nameof(request));
+		}
+		// The switch and the rules change separately: a disable names no rule, and a revoke names no switch flag.
+		if (request.Rule is not null && request.DisableRecordPermissions) {
+			throw new ArgumentException("A disable is a call of its own; it names no rule.", nameof(request));
+		}
+		if (request.Rule is { Revoke: true } && request.EnableRecordPermissions) {
+			throw new ArgumentException("A revoke never changes the switch.", nameof(request));
 		}
 		// A rule change names its operations (nothing is granted by default).
 		if (request.Rule is { Operations: null or { Count: 0 } }) {

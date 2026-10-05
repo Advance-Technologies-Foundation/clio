@@ -206,4 +206,21 @@ public class RightManagementServiceClientRecordTests {
 		rules[1].GetProperty("authorSysAdminUnit").EnumerateObject().Select(property => property.Name)
 			.Should().Equal(new[] { "id" }, because: "a unit is named by its id");
 	}
+
+	[Test]
+	[Description("Removing the last rule sends an EMPTY rule list ([]), never null: null would leave the rule in place.")]
+	public void SaveRecords_ShouldSendEmptyList_WhenTheLastRuleIsRemoved() {
+		// Arrange
+		ObjectIs(true, RuleJson(AllEmployees, Admins, 1, 0, 0));
+		ObjectRightsInfo info = Read();
+
+		// Act
+		_client.Save(info.Snapshot, new DefaultRecordRightsState(true, Array.Empty<DefaultRecordRule>()),
+			new CreatioRequestOptions());
+
+		// Assert
+		JsonElement rules = Saved().GetProperty("entitySchemaRecordDefRights");
+		rules.ValueKind.Should().Be(JsonValueKind.Array, because: "the save replaces the list; null would keep the rule");
+		rules.GetArrayLength().Should().Be(0, because: "the only rule is removed");
+	}
 }

@@ -33,7 +33,8 @@ Every transition of the switch is named in the arguments, or the call is refused
 | Refusal | When |
 |---|---|
 | record permissions are OFF | a grant without `--enable-record-permissions`; the refusal names the stored rules that would come into effect |
-| disable with a grant | `--disable-record-permissions` together with a grant — the rule would give nobody anything |
+| disable with a rule | `--disable-record-permissions` with any rule argument (before any read) — the disable is a call of its own and keeps every rule |
+| revoke with a switch flag | `--revoke` with `--enable-record-permissions` (before any read) — a revoke never changes the switch |
 | both flags | `--enable-record-permissions` and `--disable-record-permissions` together (before any read) |
 | duplicate pairs | the stored list has two rules for one author + grantee pair, and the call would send the list |
 | invalid stored level | a stored level outside not set / granted / delegated, and the call would send the list |

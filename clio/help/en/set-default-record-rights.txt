@@ -30,7 +30,8 @@ DESCRIPTION
     The switch changes only with its flag:
       - a grant on an object whose record permissions are OFF is refused without
         --enable-record-permissions; the refusal names the stored rules that would come into effect;
-      - --disable-record-permissions is refused together with a grant;
+      - --disable-record-permissions is a call of its own (only the object and the flag); it keeps
+        every rule as it is. A revoke never changes the switch, so --revoke is refused with either flag;
       - turning record permissions ON with NO rule means every user sees only the records they
         create (their managers and holders of "view any data" see them too).
 

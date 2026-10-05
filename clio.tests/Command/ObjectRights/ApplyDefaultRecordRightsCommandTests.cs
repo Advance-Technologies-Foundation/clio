@@ -467,4 +467,61 @@ public class ApplyDefaultRecordRightsCommandTests : BaseCommandTests<ApplyDefaul
 			because: "the failed check is reported");
 		_actualization.Received(1).Start(Arg.Any<Guid>(), Arg.Any<CreatioRequestOptions>());
 	}
+
+	[Test]
+	[Description("With --confirm (as on MCP) nobody reads the summary, so the records are not counted: the count would only take time from the wait.")]
+	public void Execute_ShouldNotCount_WhenConfirmed() {
+		// Arrange
+		ObjectIs(true);
+		_actualization.ReadStatus(ProcessId, Arg.Any<CreatioRequestOptions>())
+			.Returns(new ProcessRunStatus(ProcessRunStatus.Completed, "Completed"));
+
+		// Act
+		int exitCode = _command.Execute(Options());
+
+		// Assert
+		exitCode.Should().Be(0, because: "the run completed");
+		_counter.DidNotReceiveWithAnyArgs().CountRecords(default, default);
+	}
+
+	[Test]
+	[Description("A launch answered with a body that could not be read (a proxy 502/504 page) may still have started the run: the failure says so and forbids starting it again.")]
+	public void Execute_ShouldWarnRunMayBeGoing_WhenLaunchAnswerIsUnreadable() {
+		// Arrange
+		ObjectIs(true);
+		_actualization.Start(Arg.Any<Guid>(), Arg.Any<CreatioRequestOptions>()).Returns(new RunProcessResponse {
+			Status = RecordRightsActualizationClient.OutcomeUnknownStatus, Error = "RunProcess returned an empty response"
+		});
+
+		// Act
+		int exitCode = _command.Execute(Options());
+
+		// Assert
+		exitCode.Should().Be(1, because: "the outcome is not known");
+		_errors.Should().Contain(e => e.Contains("MAY already be going") && e.Contains("Do NOT start it again"),
+			because: "a re-sent launch would start a second heavy run");
+	}
+
+	[Test]
+	[Description("When the call's time limit is spent by the launch, no status is read at all, and the result says the wait ended before the status could be read — not that no log row was found.")]
+	public void Execute_ShouldSayTheWaitEnded_WhenNoReadHappened() {
+		// Arrange
+		ObjectIs(true);
+		_actualization.Start(Arg.Any<Guid>(), Arg.Any<CreatioRequestOptions>()).Returns(_ => {
+			System.Threading.Thread.Sleep(300);
+			return new RunProcessResponse { Status = "running", ProcessId = ProcessId.ToString() };
+		});
+
+		// Act
+		int exitCode = _command.Execute(Options(o => {
+			o.TimeOut = 50;
+			o.CallBudget = TimeSpan.FromMilliseconds(200);
+		}));
+
+		// Assert
+		exitCode.Should().Be(0, because: "the run was started");
+		_actualization.DidNotReceiveWithAnyArgs().ReadStatus(default, default);
+		_warnings.Should().Contain(w => w.Contains("the wait ended before the status could be read"),
+			because: "the honest reason is given");
+	}
 }

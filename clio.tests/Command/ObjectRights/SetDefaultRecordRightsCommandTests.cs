@@ -510,23 +510,11 @@ public class SetDefaultRecordRightsCommandTests : BaseCommandTests<SetDefaultRec
 		NothingSaved();
 	}
 
-	[Test]
-	[Description("disable-record-permissions with a grant is refused at command level and nothing is saved.")]
-	public void Execute_ShouldRefuseDisableWithGrant() {
-		// Arrange
-		ObjectIs(Info(true));
-
-		// Act
-		int exitCode = _command.Execute(RuleOptions("read", o => o.DisableRecordPermissions = true));
-
-		// Assert
-		exitCode.Should().Be(1, because: "a grant while off gives nobody anything");
-		_errors.Should().ContainSingle().Which.Should().Contain("cannot go with a grant", because: "the refusal says why");
-		NothingSaved();
-	}
-
 	[TestCase("flag-with-revoke", "--level and --do-not-apply-for-manager apply to a grant",
 		TestName = "Execute_ShouldRefuseManagerFlagWithRevoke")]
+	[TestCase("grant-disable", "is a call of its own", TestName = "Execute_ShouldRefuseDisableWithGrant")]
+	[TestCase("revoke-disable", "is a call of its own", TestName = "Execute_ShouldRefuseDisableWithRevoke")]
+	[TestCase("revoke-enable", "a revoke never changes the switch", TestName = "Execute_ShouldRefuseEnableWithRevoke")]
 	[TestCase("revoke-switch-only", "need a rule", TestName = "Execute_ShouldRefuseRevokeWithoutRule")]
 	[TestCase("level-switch-only", "need a rule", TestName = "Execute_ShouldRefuseLevelWithoutRule")]
 	[TestCase("preview-confirm", "cannot be combined with --confirm", TestName = "Execute_ShouldRefusePreviewWithConfirm")]
@@ -537,6 +525,9 @@ public class SetDefaultRecordRightsCommandTests : BaseCommandTests<SetDefaultRec
 		// Arrange
 		SetDefaultRecordRightsOptions options = shape switch {
 			"flag-with-revoke" => RuleOptions("read", o => { o.Revoke = true; o.DoNotApplyForManager = true; }),
+			"grant-disable" => RuleOptions("read", o => o.DisableRecordPermissions = true),
+			"revoke-disable" => RuleOptions("read", o => { o.Revoke = true; o.DisableRecordPermissions = true; }),
+			"revoke-enable" => RuleOptions("read", o => { o.Revoke = true; o.EnableRecordPermissions = true; }),
 			"revoke-switch-only" => new SetDefaultRecordRightsOptions {
 				EntitySchemaName = "UsrFoo", Revoke = true, EnableRecordPermissions = true, Confirm = true
 			},
@@ -588,7 +579,7 @@ public class SetDefaultRecordRightsCommandTests : BaseCommandTests<SetDefaultRec
 	}
 
 	[Test]
-	[Description("A grant repeated on an object whose record permissions are OFF is refused like the first one (AC6): an identical first call could not have landed, so the refusal is the stable outcome, and a call that names the enable reports no change once the state is in place.")]
+	[Description("A grant repeated on an object whose record permissions are OFF is refused like the first one (AC6): an identical first call could not have landed, so the refusal is the stable outcome.")]
 	public void Execute_ShouldRefuseRepeatedGrantOnObjectThatIsOff() {
 		// Arrange
 		ObjectIs(Info(false, Rule(Author, Grantee, RecordRightLevel.Granted, RecordRightLevel.NotSet, RecordRightLevel.NotSet)));
@@ -599,6 +590,39 @@ public class SetDefaultRecordRightsCommandTests : BaseCommandTests<SetDefaultRec
 		// Assert
 		exitCode.Should().Be(1, because: "without the enable the rule gives nobody anything");
 		_errors.Should().ContainSingle().Which.Should().Contain("--enable-record-permissions", because: "the way out is named");
+		NothingSaved();
+	}
+
+	[Test]
+	[Description("A run that is about to be refused for want of --confirm does not count the records: nobody would see the number.")]
+	public void Execute_ShouldNotCount_WhenRefusedForWantOfConfirm() {
+		// Arrange
+		ObjectIs(Info(true));
+		_console.IsInteractive.Returns(false);
+
+		// Act
+		int exitCode = _command.Execute(RuleOptions("read", o => o.Confirm = false));
+
+		// Assert
+		exitCode.Should().Be(1, because: "a destructive change needs confirmation");
+		_counter.DidNotReceiveWithAnyArgs().CountRecords(default, default);
+	}
+
+	[Test]
+	[Description("When the call's time limit leaves no room for the save and the read-back, the save is not sent and nothing changes.")]
+	public void Execute_ShouldNotSave_WhenTheCallBudgetIsSpent() {
+		// Arrange
+		ObjectIs(Info(true));
+
+		// Act
+		int exitCode = _command.Execute(RuleOptions("read", o => {
+			o.TimeOut = 25_000;
+			o.CallBudget = TimeSpan.FromMilliseconds(1);
+		}));
+
+		// Assert
+		exitCode.Should().Be(1, because: "a save that could outlive the call would leave its outcome unknown");
+		_errors.Should().Contain(e => e.Contains("The save was not sent"), because: "the refusal says nothing was sent");
 		NothingSaved();
 	}
 }

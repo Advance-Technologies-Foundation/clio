@@ -69,7 +69,10 @@ public interface IDefaultRecordRightsWriter {
 		CreatioRequestOptions requestOptions);
 }
 
-/// <summary>Resolves a SysAdminUnit (role or user) id to its name, to confirm a grantee exists before a write.</summary>
+/// <summary>
+/// Resolves a SysAdminUnit (role or user) id to its name, to confirm that a grantee — or a default record rule's author —
+/// exists before a write.
+/// </summary>
 public interface IGranteeLookup {
 	/// <summary>
 	/// Returns the name of the SysAdminUnit <paramref name="grantee"/>, or <see langword="null"/> when no such

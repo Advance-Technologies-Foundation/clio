@@ -203,20 +203,6 @@ public class DefaultRecordRightsPlannerTests {
 		plan.StoredRulesComingIntoEffect.Should().HaveCount(2, because: "every rule starts to apply on enable");
 	}
 
-	[Test]
-	[Description("disable-record-permissions together with a grant is refused: while off the rule would give nobody anything.")]
-	public void Plan_ShouldRefuseDisableNotNeeded_WhenDisableWithGrant() {
-		// Arrange
-		DefaultRecordRightsState before = State(true);
-
-		// Act
-		DefaultRecordRightsPlan plan = _planner.Plan(before,
-			Grant(AllEmployees, Admins, G, disable: true, operations: new[] { RecordOperation.Read }));
-
-		// Assert
-		plan.Refusal.Should().Be(DefaultRecordRightsRefusal.DisableNotNeeded, because: "a grant and a disable contradict");
-	}
-
 	[TestCase(true, false, true)]
 	[TestCase(false, true, false)]
 	[Description("A switch-only call changes only the switch and plans no rule change; on an object already in that state it changes nothing.")]
@@ -333,4 +319,38 @@ public class DefaultRecordRightsPlannerTests {
 		many.Should().HaveCount(4, because: "the switch, the changed flag, the missing rule and the unexpected rule each differ");
 	}
 
+
+	[Test]
+	[Description("The switch and the rules change separately (D9): a disable that names a rule, and a revoke that names the enable, are shapes the command refuses before any read; the planner rejects them too.")]
+	public void Plan_ShouldThrow_WhenSwitchAndRuleAreMixed() {
+		// Arrange
+		DefaultRecordRightsState state = State(true, Rule(AllEmployees, Admins, G, N, N));
+
+		// Act
+		Action grantAndDisable = () => _planner.Plan(state,
+			Grant(AllEmployees, Admins, G, disable: true, operations: new[] { RecordOperation.Read }));
+		Action revokeAndDisable = () => _planner.Plan(state, Revoke(AllEmployees, Admins, RecordOperation.Read) with {
+			DisableRecordPermissions = true
+		});
+		Action revokeAndEnable = () => _planner.Plan(state, Revoke(AllEmployees, Admins, RecordOperation.Read) with {
+			EnableRecordPermissions = true
+		});
+
+		// Assert
+		grantAndDisable.Should().Throw<ArgumentException>(because: "a disable is a call of its own");
+		revokeAndDisable.Should().Throw<ArgumentException>(because: "a revoke never changes the switch");
+		revokeAndEnable.Should().Throw<ArgumentException>(because: "a revoke never changes the switch");
+	}
+
+	[Test]
+	[Description("A revoke that removes the last rule leaves an empty rule list, and the plan changes the rules (the save sends []).")]
+	public void Plan_ShouldLeaveEmptyList_WhenTheLastRuleIsRemoved() {
+		// Act
+		DefaultRecordRightsPlan plan = _planner.Plan(State(true, Rule(AllEmployees, Admins, G, N, N)),
+			Revoke(AllEmployees, Admins, RecordOperation.Read));
+
+		// Assert
+		plan.After.Rules.Should().BeEmpty(because: "the only rule lost its last right");
+		plan.ChangesRules.Should().BeTrue(because: "the save must send the empty list, not leave the rules untouched");
+	}
 }

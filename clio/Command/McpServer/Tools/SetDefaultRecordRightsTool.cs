@@ -48,7 +48,7 @@ public sealed class SetDefaultRecordRightsTool(
 		"A default rule says: records created by members of author get read/edit/delete for grantee. Rules have no order and add up. One call changes at most one rule (one author+grantee pair) and/or the switch; every other rule is kept exactly as read, and the read-back proves it. " +
 		"A call is EITHER a rule change (author + grantee + operations, all three; author and grantee are SysAdminUnit ids that must exist; operations read,edit,delete is required, nothing is granted by default) OR a switch-only change (none of them, plus enable-record-permissions or disable-record-permissions). " +
 		"level granted|delegated (default granted) is what a grant sets for the named operations; do-not-apply-for-manager true/false sets the rule's flag (omitted: kept, false for a new rule). revoke=true sets the named operations to not set; a rule left with no right is removed; a revoke is allowed while record permissions are OFF (it cleans a stored rule before an enable brings it into effect). " +
-		"The switch changes only with its flag: a grant on an object whose record permissions are OFF is refused without enable-record-permissions (the refusal names the stored rules that would come into effect); disable-record-permissions is refused with a grant. Turning record permissions ON with NO rule means every user sees only the records they create. " +
+		"The switch changes only with its flag: a grant on an object whose record permissions are OFF is refused without enable-record-permissions (the refusal names the stored rules that would come into effect); disable-record-permissions is a call of its own (only the object and the flag; it keeps every rule), and a revoke never changes the switch. Turning record permissions ON with NO rule means every user sees only the records they create. " +
 		"The tool NEVER applies the rules to existing records: an enable or a rule change affects records created from then on, and the result reports the number of existing records. Ask the user whether and when to apply them with apply-default-record-rights; never run it on your own. " +
 		"Refused, writing nothing: duplicate author+grantee rules or invalid levels in the stored list (repair them in the designer). preview=true is a dry run. Read back with get-object-rights. Does NOT change operation or column permissions. " +
 		"Unknown or misspelled argument names are REFUSED before any read or write.")]
@@ -133,11 +133,11 @@ public sealed record SetDefaultRecordRightsArgs(
 	bool? Revoke = null,
 
 	[property: JsonPropertyName("enable-record-permissions")]
-	[property: Description("Turn the object's record permissions ON (default false). Required for a grant on an object whose record permissions are off.")]
+	[property: Description("Turn the object's record permissions ON (default false), alone or with a grant (required for a grant on an object whose record permissions are off). Never with a revoke.")]
 	bool? EnableRecordPermissions = null,
 
 	[property: JsonPropertyName("disable-record-permissions")]
-	[property: Description("Turn the object's record permissions OFF (default false): every user with read operation rights reaches every record. Not with a grant.")]
+	[property: Description("Turn the object's record permissions OFF (default false): every user with read operation rights reaches every record. A call of its own: no author, grantee, operations or revoke; every rule is kept.")]
 	bool? DisableRecordPermissions = null,
 
 	[property: JsonPropertyName("preview")]

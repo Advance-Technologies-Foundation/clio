@@ -101,9 +101,14 @@ public class ApplyDefaultRecordRightsCommand : Command<ApplyDefaultRecordRightsO
 			return 1;
 		}
 		WarnIfAnUpdateIsRunning(schemaName, requestOptions);
-		string summary = $"Apply the default record rules of '{schemaName}' to its existing records "
-			+ $"({ObjectRightsCommandInput.DescribeRecordCount(_recordCounter, schemaName, requestOptions, out _)}). Rights that came from default rules are replaced by "
-			+ "the current rules; rights granted by hand stay. The run is heavy on large tables.";
+		// The count reads the whole table, so it is taken only for the prompt a person reads: with --confirm (and on MCP)
+		// the decision was taken before the call, and a refused run needs no count.
+		string count = !options.Confirm && _console.IsInteractive
+			? $" ({ObjectRightsCommandInput.DescribeRecordCount(_recordCounter, schemaName, requestOptions, out _)})"
+			: "";
+		string summary = $"Apply the default record rules of '{schemaName}' to its existing records{count}. Rights that "
+			+ "came from default rules are replaced by the current rules; rights granted by hand stay. The run is heavy on "
+			+ "large tables.";
 		switch (ObjectRightsCommandInput.Confirm(options.Confirm, _console, _logger, CommandName, "record rights",
 					summary, new[] { $"Current rules: {DefaultRecordRightsFormat.Rules(info.RecordState.Rules)}." },
 					"Record-rights update cancelled.", hasPreview: false)) {
@@ -126,6 +131,9 @@ public class ApplyDefaultRecordRightsCommand : Command<ApplyDefaultRecordRightsO
 			return ReportLaunchFailure(schemaName, ex);
 		}
 		if (started.Error is not null) {
+			if (started.Status == RecordRightsActualizationClient.OutcomeUnknownStatus) {
+				return ReportLaunchOutcomeUnknown(schemaName, started.Error);
+			}
 			_logger.WriteError($"Error: '{schemaName}': {ObjectRightsSupport.DisplayError(started.Error)}");
 			return 1;
 		}
@@ -168,14 +176,20 @@ public class ApplyDefaultRecordRightsCommand : Command<ApplyDefaultRecordRightsO
 	// A launch that got no answer may still have started the run, and re-sending it would start a second heavy run.
 	private int ReportLaunchFailure(string schemaName, Exception ex) {
 		if (ObjectRightsSupport.LeavesOutcomeUnknown(ex)) {
-			_logger.WriteError($"Error: '{schemaName}': the launch of the record-rights update got no answer "
-				+ $"({ObjectRightsSupport.DisplayFailure(ex)}), so the run MAY already be going. Do NOT start it again: "
-				+ $"check the newest {RecordRightsActualizationClient.ProcessName} row in SysProcessLog, or the records' "
-				+ "rights with get-record-rights.");
-			return 1;
+			return ReportLaunchOutcomeUnknown(schemaName, $"no answer: {ObjectRightsSupport.DisplayFailure(ex)}");
 		}
 		_logger.WriteError($"Error: '{schemaName}': the record-rights update was not started "
 			+ $"({ObjectRightsSupport.DisplayFailure(ex)}).");
+		return 1;
+	}
+
+	// The launch may have started the run though no usable answer came back — no answer, or a body a proxy replaced (an
+	// empty or non-JSON 502/504 page).
+	private int ReportLaunchOutcomeUnknown(string schemaName, string reason) {
+		_logger.WriteError($"Error: '{schemaName}': the launch of the record-rights update got no usable answer "
+			+ $"({ObjectRightsSupport.DisplayError(reason)}), so the run MAY already be going. Do NOT start it again: "
+			+ $"check the newest {RecordRightsActualizationClient.ProcessName} row in SysProcessLog, or the records' "
+			+ "rights with get-record-rights.");
 		return 1;
 	}
 
@@ -190,8 +204,10 @@ public class ApplyDefaultRecordRightsCommand : Command<ApplyDefaultRecordRightsO
 		RequestDeadline wait = new(waitFor);
 		CreatioRequestOptions pollOptions = requestOptions with { Deadline = wait };
 		bool statusSeen = false;
+		int reads = 0;
 		string lastReadError = null;
 		while (!wait.IsSpent) {
+			reads++;
 			try {
 				ProcessRunStatus status = _actualization.ReadStatus(processId, pollOptions);
 				if (status is not null) {
@@ -211,15 +227,17 @@ public class ApplyDefaultRecordRightsCommand : Command<ApplyDefaultRecordRightsO
 		}
 		return statusSeen
 			? ReportStillRunning(schemaName, processId, waited: true)
-			: ReportStatusUnknown(schemaName, processId, lastReadError);
+			: ReportStatusUnknown(schemaName, processId, reads == 0
+				? "the wait ended before the status could be read"
+				: lastReadError ?? "no SysProcessLog row was found");
 	}
 
 	// The run was started, but no status of it was ever read (no SysProcessLog row, or every read failed): clio cannot
 	// say whether it is going, finished or failed — so it does not say "still running".
-	private int ReportStatusUnknown(string schemaName, Guid processId, string readError) {
+	private int ReportStatusUnknown(string schemaName, Guid processId, string reason) {
 		_logger.WriteWarning($"'{schemaName}': the record-rights update was started (process {processId}), but its status "
-			+ "could not be read" + (readError is null ? " (no SysProcessLog row was found)" : $" ({readError})")
-			+ $". Do NOT start it again: check SysProcessLog (Id = {processId}) for its outcome.");
+			+ $"could not be read ({reason}). Do NOT start it again: check SysProcessLog (Id = {processId}) for its "
+			+ "outcome.");
 		return 0;
 	}
 

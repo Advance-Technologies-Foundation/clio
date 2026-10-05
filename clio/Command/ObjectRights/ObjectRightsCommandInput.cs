@@ -61,23 +61,23 @@ internal static class ObjectRightsCommandInput {
 	/// </summary>
 	/// <param name="lookup">The SysAdminUnit lookup.</param>
 	/// <param name="id">The SysAdminUnit id.</param>
-	/// <param name="role">What the id is in the call, for the messages: <c>grantee</c> or <c>author</c>.</param>
+	/// <param name="argumentName">What the id is in the call, for the messages: <c>grantee</c> or <c>author</c>.</param>
 	/// <param name="requestOptions">Timeout, retry and deadline settings.</param>
 	/// <param name="logger">Where the refusal is written.</param>
 	/// <param name="name">The name, when found.</param>
 	/// <returns><see langword="true"/> when the id names an existing role or user.</returns>
-	internal static bool TryResolveUnitName(IGranteeLookup lookup, Guid id, string role,
+	internal static bool TryResolveUnitName(IGranteeLookup lookup, Guid id, string argumentName,
 		CreatioRequestOptions requestOptions, ILogger logger, out string name) {
 		try {
 			name = lookup.ResolveGranteeName(id, requestOptions);
 		}
 		catch (Exception ex) when (ObjectRightsSupport.IsServiceFailure(ex)) {
 			name = null;
-			logger.WriteError($"Error: could not check {role} {id}: {ObjectRightsSupport.DisplayFailure(ex)}");
+			logger.WriteError($"Error: could not check {argumentName} {id}: {ObjectRightsSupport.DisplayFailure(ex)}");
 			return false;
 		}
 		if (name is null) {
-			logger.WriteError($"Error: {role} {id} was not found in SysAdminUnit. Nothing was changed — pass the id of an "
+			logger.WriteError($"Error: {argumentName} {id} was not found in SysAdminUnit. Nothing was changed — pass the id of an "
 				+ "existing role or user.");
 			return false;
 		}

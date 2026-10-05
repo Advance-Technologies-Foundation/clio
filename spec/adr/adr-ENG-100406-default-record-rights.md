@@ -128,8 +128,9 @@ returns the record layer. The output adds, after the operation rows (which stay 
   model 4 (existing records get no rights until they are applied) and the record count.
 - `disable-record-permissions` alone is allowed: the call names it, so the approval shows that every user with read
   operation rights will reach every record. The output states platform model 6.
-- `disable-record-permissions` together with a grant is refused (`DisableNotNeeded`): the grant would have no effect.
-  Together with a revoke it is allowed.
+- The switch and the rules change separately, as ENG-99741 D9 (decided 2026-10-05): `disable-record-permissions` is a
+  call of its own (the object and the flag only) and keeps every rule; a revoke never changes the switch, so
+  `--revoke` with either flag is refused before any read. Only a grant may carry `enable-record-permissions`.
 - Both flags together are refused (`ContradictoryFlags`).
 
 **RD4 — Policy table.** Evaluated after the read and before the write; a refusal writes nothing.
@@ -137,7 +138,7 @@ returns the record layer. The output adds, after the operation rows (which stay 
 | Refusal | When |
 |---|---|
 | `EnableNotRequested` | grant on an object whose switch is off, without `enable-record-permissions` |
-| `DisableNotNeeded` | `disable-record-permissions` together with a grant |
+| (call shape) | `disable-record-permissions` with a rule, or `revoke` with a switch flag — refused before the read (D9) |
 | `ContradictoryFlags` | `enable-record-permissions` and `disable-record-permissions` together (refused before the read) |
 | `DuplicatePairs` | the stored list already has two rules for one (author, grantee) pair, any pair (platform model 3) |
 | `InvalidStoredLevel` | a stored level outside 0..2, any rule (platform model 3) |

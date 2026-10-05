@@ -67,7 +67,7 @@ public class SetDefaultRecordRightsOptions : RemoteCommandOptions {
 	/// <summary>Turn the object's record permissions off.</summary>
 	[Option("disable-record-permissions", Required = false, HelpText =
 		"Turn the object's record permissions OFF: every user with read operation rights reaches every record. Rules "
-		+ "and record rights are kept. Not with a grant.")]
+		+ "and record rights are kept. A call of its own: no --author, --grantee, --operations or --revoke.")]
 	public bool DisableRecordPermissions { get; set; }
 
 	/// <summary>Apply the change without a prompt.</summary>
@@ -157,7 +157,10 @@ public class SetDefaultRecordRightsCommand : Command<SetDefaultRecordRightsOptio
 		// one rule the call names.
 		facts.Add($"Planned: record permissions {DefaultRecordRightsFormat.Switch(plan.After)}; rules: "
 			+ $"{DefaultRecordRightsFormat.Rules(plan.After.Rules)}.");
-		if (plan.Enables || plan.ChangesRules) {
+		// The count reads the whole table, so it is taken only when someone will see it: in the preview, in the prompt,
+		// or in the result of a confirmed call — never for a run that is about to be refused for want of a --confirm.
+		bool countShown = options.Preview || options.Confirm || _console.IsInteractive;
+		if ((plan.Enables || plan.ChangesRules) && countShown) {
 			facts.Add($"'{schemaName}' has {ObjectRightsCommandInput.DescribeRecordCount(_recordCounter, schemaName,
 				requestOptions, out _)}. Applying the rules to existing records is a separate, heavy step "
 				+ "(apply-default-record-rights): ask the user whether and when to run it.");
@@ -253,6 +256,18 @@ public class SetDefaultRecordRightsCommand : Command<SetDefaultRecordRightsOptio
 		if (!TryParseOperations(options.Operations, out IReadOnlyCollection<RecordOperation> operations)) {
 			return false;
 		}
+		// The switch and the rules change separately (as ENG-99741 D9): a disable is a call of its own, and a revoke never
+		// changes the switch. Only a grant may carry the enable.
+		if (options.DisableRecordPermissions) {
+			_logger.WriteError("Error: --disable-record-permissions is a call of its own: pass only --entity-schema-name "
+				+ "and the flag. It keeps every rule as it is.");
+			return false;
+		}
+		if (options.Revoke && options.EnableRecordPermissions) {
+			_logger.WriteError("Error: a revoke never changes the switch. Turn record permissions on in a call of its own "
+				+ "(--enable-record-permissions), or with a grant.");
+			return false;
+		}
 		if (options.Revoke && (options.Level is not null || options.DoNotApplyForManager is not null)) {
 			_logger.WriteError("Error: --level and --do-not-apply-for-manager apply to a grant; a revoke sets the named "
 				+ "operations to 'not set'.");
@@ -323,9 +338,6 @@ public class SetDefaultRecordRightsCommand : Command<SetDefaultRecordRightsOptio
 						+ $"{DefaultRecordRightsFormat.Rules(plan.StoredRulesComingIntoEffect)}"
 					: "")
 				+ ".",
-			DefaultRecordRightsRefusal.DisableNotNeeded =>
-				$"--disable-record-permissions cannot go with a grant on '{schema}': while record permissions are OFF the "
-				+ "rule gives nobody anything. Grant without it, or turn record permissions off in a separate call.",
 			DefaultRecordRightsRefusal.DuplicatePairs =>
 				$"the stored rules of '{schema}' have more than one rule for one author → grantee pair "
 				+ $"({DefaultRecordRightsFormat.Rules(plan.ProblemRules)}). The save replaces the whole rule list and the "
