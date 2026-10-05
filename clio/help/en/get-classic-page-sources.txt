@@ -41,7 +41,12 @@ DESCRIPTION
     culture. "title" is the detail schema's internal caption, not the title the
     page shows; Classic takes that title from the page's captionName resource,
     then the page's <Detail>DetailCaptionOnPage resource, then the detail's own
-    Caption string. Each nested childPageSchemas manifest carries its strings
+    Caption string. Each detailSchemas entry also carries "bodies": every
+    replacing layer of the detail, base->top, as [{ "pkg", "body" }], each with
+    that layer's own body (the last item is the top layer). When any layer of
+    the detail fails to load, the entry omits "bodies", keeps "body", "title"
+    and "resourceStrings", and a warning names the detail and the layer.
+    Each nested childPageSchemas manifest carries its strings
     as "resourceStrings" only, with no flat "resources"; when a child page's
     strings cannot be loaded, its manifest omits "resourceStrings" and a
     warning names the child page.

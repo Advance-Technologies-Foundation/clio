@@ -55,6 +55,15 @@ public sealed class ScriptTaskElementToolE2ETests {
 	/// <summary>The first CrtProcessBuilder whose activation warns that a version with C# must be compiled.</summary>
 	private const string MinimumActivationWarningPackageVersion = "1.6.6.51";
 
+	/// <summary>The first CrtProcessBuilder that refuses a C# keyword as a script task's name.</summary>
+	private const string MinimumKeywordNameRefusalPackageVersion = "1.6.6.56";
+
+	/// <summary>
+	/// The first CrtProcessBuilder that names a multi-line verbatim string with its regex check; 1.6.6.56-58 named it
+	/// with a lexer, and 1.6.6.59 did not name it at all.
+	/// </summary>
+	private const string MinimumVerbatimNoticePackageVersion = "1.6.6.61";
+
 	private const string SetActiveToolName = SetActiveProcessVersionTool.SetActiveProcessVersionToolName;
 
 	private const string CompileToolName = CompileCreatioTool.CompileCreatioToolName;
@@ -124,6 +133,52 @@ public sealed class ScriptTaskElementToolE2ETests {
 			because: "the generated code imports Terrasoft.Core anyway, so the entry adds nothing");
 		usings.Single(entry => entry["namespace"]!.GetValue<string>() == "System.Linq").ContainsKey("ignored")
 			.Should().BeFalse(because: "an entry the generator emits carries no mark");
+	}
+
+	[Test]
+	[Description("A build whose script body holds a verbatim string spanning lines says that the string gains tabs: the platform's code generator indents every line of the body, the lines inside the string included.")]
+	[AllureTag(CreateToolName)]
+	[AllureName("create-business-process names a multi-line verbatim string")]
+	public async Task CreateBusinessProcess_WithAMultiLineVerbatimString_Should_SayItGainsTabs() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context =
+			await ProcessDesignerE2EArrange.StartAsync("ScriptTask", MinimumVerbatimNoticePackageVersion);
+		string processName = $"UsrClioBpVerbatimE2e{Guid.NewGuid():N}";
+		const string body = "var text = @\"line1\nline2\";\nSet(\"Total\", text.Length);\nreturn true;";
+
+		// Act
+		string created = JsonSerializer.Serialize(await ProcessDesignerE2EArrange.CallToolAsync(context, CreateToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["descriptor"] = BuildOneScriptDescriptor(processName, "BuildText", body)
+			}));
+
+		// Assert
+		created.Should().Contain("created (UId:", because: "a multi-line verbatim string is valid C#: {0}", created);
+		created.Should().Contain("has a verbatim string",
+			because: "the string's continuation lines gain tabs in the compiled code, which the caller must hear: {0}", created);
+	}
+
+	[Test]
+	[Description("A C# keyword is refused as a script task's name: the interpreted process compiles <name>Execute, but a process that is ever compiled emits the bare name as a property, and a keyword breaks the whole configuration's compile.")]
+	[AllureTag(CreateToolName)]
+	[AllureName("create-business-process refuses a C# keyword as a script task name")]
+	public async Task CreateBusinessProcess_WithAKeywordAsTheScriptTaskName_Should_Refuse() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context =
+			await ProcessDesignerE2EArrange.StartAsync("ScriptTask", MinimumKeywordNameRefusalPackageVersion);
+		string processName = $"UsrClioBpKeywordNameE2e{Guid.NewGuid():N}";
+
+		// Act
+		string refused = JsonSerializer.Serialize(await ProcessDesignerE2EArrange.CallToolAsync(context, CreateToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["descriptor"] = BuildOneScriptDescriptor(processName, "class", "return true;")
+			}));
+
+		// Assert
+		refused.Should().NotContain("created (UId:", because: "a keyword name must not be saved");
+		refused.Should().Contain("is a C# keyword", because: "the refusal names the reason: {0}", refused);
 	}
 
 	[Test]
@@ -343,7 +398,9 @@ public sealed class ScriptTaskElementToolE2ETests {
 		activated.Should().Contain(ExitCodeZero, because: "the activation itself succeeds: {0}", activated);
 		activated.Should().Contain(CommandExecutionResult.CompileRequiredWarningMarker,
 			because: "every new instance now runs a version whose code does not exist until it is compiled");
-		activated.Should().Contain("which is a schema of its own",
+		// "a schema of its own" is in the interpreted-version warning of every CrtProcessBuilder since 1.6.6.51, and in
+		// neither the compiled-class nor the unreadable-version answer.
+		activated.Should().Contain("a schema of its own",
 			because: "the warning must come from READING the interpreted version's C#: the compiled-class and "
 				+ "the unreadable-version answers carry the marker too, so the marker alone passes when the read "
 				+ "failed: {0}", activated);
@@ -463,6 +520,26 @@ public sealed class ScriptTaskElementToolE2ETests {
 	#endregion
 
 	#region Methods: Private
+
+	private static string BuildOneScriptDescriptor(string processName, string elementName, string body) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Script Task QA E2E",
+		  "packageName": "Custom",
+		  "parameters": [ { "name": "Total", "type": "Integer", "direction": "Out" } ],
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "{{elementName}}", "type": "scriptTask", "caption": "QA script",
+		      "scriptTask": { "body": {{JsonSerializer.Serialize(body)}} } },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "{{elementName}}" },
+		    { "source": "{{elementName}}", "target": "EndEvent1" }
+		  ]
+		}
+		""";
 
 	private static string BuildNoCodeDescriptor(string processName) =>
 		$$"""

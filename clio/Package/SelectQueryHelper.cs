@@ -170,22 +170,6 @@ internal static class SelectQueryHelper
 		IReadOnlyList<SelectQueryFilterDefinition> filters,
 		int rowCount = 10000)
 	{
-		Dictionary<string, object> columnItems = columns
-			.ToDictionary(
-				column => column.Alias,
-				column => (object)new
-				{
-					expression = new
-					{
-						expressionType = 0,
-						columnPath = column.Path
-					},
-					orderDirection = column.OrderDirection,
-					orderPosition = column.OrderPosition,
-					isVisible = true
-				},
-				StringComparer.Ordinal);
-
 		Dictionary<string, object> filterItems = filters
 			.Select((filter, index) => new { filter, index })
 			.ToDictionary(
@@ -213,35 +197,16 @@ internal static class SelectQueryHelper
 				},
 				StringComparer.Ordinal);
 
-		return new
-		{
-			rootSchemaName,
-			operationType = 0,
-			allColumns = false,
-			isDistinct = false,
-			ignoreDisplayValues = false,
-			rowCount,
-			rowsOffset = -1,
-			isPageable = false,
-			columns = new
-			{
-				items = columnItems
-			},
-			filters = new
-			{
-				filterType = 6,
-				isEnabled = true,
-				trimDateTimeParameterToDate = false,
-				logicalOperation = 0,
-				items = filterItems
-			}
-		};
+		return BuildQueryEnvelope(rootSchemaName, columns, 0, filterItems, rowCount);
 	}
 
 	/// <summary>
 	/// Builds a SelectQuery where all <paramref name="filterValues"/> for <paramref name="filterColumn"/>
-	/// are combined with an OR logical operator, producing an IN-style batch filter in a single request.
+	/// are combined with an OR logical operator, one comparison filter per value, in a single request.
 	/// </summary>
+	/// <remarks>
+	/// Do not use it for the virtual <c>ApplicationSection</c> schema; use <see cref="BuildSelectQueryWithInFilter"/>.
+	/// </remarks>
 	internal static object BuildSelectQueryWithOrFilter(
 		string rootSchemaName,
 		IReadOnlyList<SelectQueryColumnDefinition> columns,
@@ -250,22 +215,6 @@ internal static class SelectQueryHelper
 		int dataValueType,
 		int rowCount = 10000)
 	{
-		Dictionary<string, object> columnItems = columns
-			.ToDictionary(
-				column => column.Alias,
-				column => (object)new
-				{
-					expression = new
-					{
-						expressionType = 0,
-						columnPath = column.Path
-					},
-					orderDirection = column.OrderDirection,
-					orderPosition = column.OrderPosition,
-					isVisible = true
-				},
-				StringComparer.Ordinal);
-
 		Dictionary<string, object> filterItems = filterValues
 			.Select((value, index) => new { value, index })
 			.ToDictionary(
@@ -293,6 +242,89 @@ internal static class SelectQueryHelper
 				},
 				StringComparer.Ordinal);
 
+		return BuildQueryEnvelope(rootSchemaName, columns, 1, filterItems, rowCount);
+	}
+
+	/// <summary>
+	/// Builds a SelectQuery with a single IN filter: <paramref name="filterColumn"/> equals any of
+	/// <paramref name="filterValues"/>, all carried as right expressions of one filter.
+	/// </summary>
+	/// <remarks>
+	/// Use it instead of <see cref="BuildSelectQueryWithOrFilter"/> for the virtual <c>ApplicationSection</c>
+	/// schema: its query executor reads the values of the FIRST filter on a column and ignores the group's
+	/// logical operation, so an OR group returns the rows of the first value only.
+	/// </remarks>
+	/// <param name="rootSchemaName">Schema to query.</param>
+	/// <param name="columns">Columns to return.</param>
+	/// <param name="filterColumn">Column the values are compared with.</param>
+	/// <param name="filterValues">Values to match; a row matches when it equals any of them.</param>
+	/// <param name="dataValueType">DataService data value type of the values.</param>
+	/// <param name="rowCount">Maximum number of rows to return.</param>
+	/// <returns>The query, ready for JSON serialization.</returns>
+	internal static object BuildSelectQueryWithInFilter(
+		string rootSchemaName,
+		IReadOnlyList<SelectQueryColumnDefinition> columns,
+		string filterColumn,
+		IReadOnlyList<string> filterValues,
+		int dataValueType,
+		int rowCount = 10000)
+	{
+		Dictionary<string, object> filterItems = new(StringComparer.Ordinal)
+		{
+			["filter0"] = new
+			{
+				filterType = 4,
+				comparisonType = 3,
+				isEnabled = true,
+				trimDateTimeParameterToDate = false,
+				leftExpression = new
+				{
+					expressionType = 0,
+					columnPath = filterColumn
+				},
+				rightExpressions = filterValues
+					.Select(value => BuildParameterExpression(dataValueType, value))
+					.ToList()
+			}
+		};
+
+		return BuildQueryEnvelope(rootSchemaName, columns, 0, filterItems, rowCount);
+	}
+
+	/// <summary>
+	/// Builds the column items of a SelectQuery: one visible column expression per definition, keyed by alias, with
+	/// the definition's order (unordered by default).
+	/// </summary>
+	private static Dictionary<string, object> BuildColumnItems(IReadOnlyList<SelectQueryColumnDefinition> columns)
+	{
+		return columns
+			.ToDictionary(
+				column => column.Alias,
+				column => (object)new
+				{
+					expression = new
+					{
+						expressionType = 0,
+						columnPath = column.Path
+					},
+					orderDirection = column.OrderDirection,
+					orderPosition = column.OrderPosition,
+					isVisible = true
+				},
+				StringComparer.Ordinal);
+	}
+
+	/// <summary>
+	/// Builds the DataService SelectQuery wire envelope shared by every builder in this class: the root
+	/// schema, the columns and one filter group (<c>filterType: 6</c>) with the given logical operation.
+	/// </summary>
+	private static object BuildQueryEnvelope(
+		string rootSchemaName,
+		IReadOnlyList<SelectQueryColumnDefinition> columns,
+		int logicalOperation,
+		Dictionary<string, object> filterItems,
+		int rowCount)
+	{
 		return new
 		{
 			rootSchemaName,
@@ -305,14 +337,14 @@ internal static class SelectQueryHelper
 			isPageable = false,
 			columns = new
 			{
-				items = columnItems
+				items = BuildColumnItems(columns)
 			},
 			filters = new
 			{
 				filterType = 6,
 				isEnabled = true,
 				trimDateTimeParameterToDate = false,
-				logicalOperation = 1,
+				logicalOperation,
 				items = filterItems
 			}
 		};
