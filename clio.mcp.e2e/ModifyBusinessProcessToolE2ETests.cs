@@ -3286,7 +3286,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		""";
 
 	[Test]
-	[Description("clio#1300 over the real MCP path: a Modify data element's object is a Lookup on the schema registry, and the EntitySchemaUId describe reports for it re-submits through addMapping unchanged - the object stays Contact. Before the fix the value describe returned was refused with 'no SysSchema record has this id'. Needs CrtProcessBuilder 1.6.6.66 or later on the stand.")]
+	[Description("clio#1300 over the real MCP path: a Modify data element's object is a Lookup on the schema registry, and the EntitySchemaUId describe reports for it re-submits through addMapping unchanged - the object stays Contact. Before the fix the value describe returned was refused with 'no SysSchema record has this id'. Needs CrtProcessBuilder 1.6.6.67 or later on the stand.")]
 	[AllureTag(ToolName)]
 	[AllureName("modify-business-process re-submits the described object of a schema-registry Lookup")]
 	public async Task ModifyBusinessProcess_Should_ResubmitTheDescribedObject_WhenAddMappingTargetsASchemaRegistryLookup() {
@@ -3319,7 +3319,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	}
 
 	[Test]
-	[Description("addMapping only keeps a data element's object, over the real MCP path. Setting one on an Add data element that has none, changing a Modify data element's object to Account, and passing Contact's registry ROW Id (the view's primary column, which the runtime cannot load) are each refused, naming setElement.<block> or the schema UId to pass - and the element keeps its object. The block re-checks what this route cannot: dependent mappings, the values for the new object, a filter written for the old one. Needs CrtProcessBuilder 1.6.6.66 or later on the stand.")]
+	[Description("addMapping only keeps a data element's object, over the real MCP path. Setting one on an Add data element that has none, changing a Modify data element's object to Account, and passing Contact's registry ROW Id (the view's primary column, which the runtime cannot load) are each refused, naming setElement.<block> or the schema UId to pass - and the element keeps its object. The block re-checks what this route cannot: dependent mappings, the values for the new object, a filter written for the old one. Needs CrtProcessBuilder 1.6.6.67 or later on the stand.")]
 	[AllureTag(ToolName)]
 	[AllureName("modify-business-process refuses to set or change a data element's object through addMapping")]
 	public async Task ModifyBusinessProcess_Should_RefuseToSetOrChange_ADataElementsObject() {

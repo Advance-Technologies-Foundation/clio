@@ -41,8 +41,9 @@ encodes the ordinary "To do" category the other 272 store as a plain Guid. By th
 have silently lost their result list; they are the defect this record describes, not an exception
 to it.
 
-On an element parameter whose reference object is the schema REGISTRY (Add data `EntitySchemaId`, Modify data
-`EntitySchemaUId`, Delete data `EntitySchemaId`) the bare Guid is a SCHEMA UId, not a record id - see
+On an element parameter whose reference object is the schema REGISTRY (Add data `EntitySchemaId` and
+`FilterEntitySchemaId`, Modify data `EntitySchemaUId`, Delete data `EntitySchemaId`) the bare Guid is a SCHEMA UId,
+not a record id - see
 `a-schema-registry-lookup-holds-a-schema-uid.md`.
 
 Both display forms of the macro exist in the wild — with the record id as a fourth segment (253 of
