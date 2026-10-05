@@ -147,6 +147,12 @@ public sealed class ToolContractPayloadBudgetTests {
 	// added is what a caller writes (sourceColumn / elementParameter.column, the scriptTask block, usings[],
 	// methods, the operations that edit them), and the provenance around them was already swapped out, so the
 	// cut would have been a caller-facing fact. 189 bytes of headroom is about thirty escaped characters.
+	//
+	// Re-measured by lowering the ceiling after ENG-102113 (2026-10-05): modify-business-process 35053,
+	// create-business-process 34863, describe-business-process 33148. modify paid for the schema-registry
+	// clause - which value a Lookup on Add/Modify/Delete data's object holds, and that only setElement sets or
+	// changes the object - by tightening its own wording, not by raising the ceiling; that leaves it 19 bytes,
+	// about three escaped characters.
 	private const int MaxToolContractSerializedBytes = 137 * 256;
 
 	[Test]

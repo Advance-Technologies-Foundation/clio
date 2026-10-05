@@ -128,7 +128,11 @@ public static class ModifyBusinessProcessPrompt {
 		 bundles, refuses the gap to the bundled version instead — while an older clio surfaces the old
 		 package's `[#Lookup…#]`-macro rejection; either refusal
 		 means the environment's package is behind, so update it rather than concluding the parameter is
-		 unsettable). Any failed operation aborts the whole edit
+		 unsettable). A data element's object is the exception: Add/Delete data `EntitySchemaId`, Add data
+		 `FilterEntitySchemaId` and Modify data `EntitySchemaUId` are schema-registry Lookups that hold the
+		 object's schema UId (what describe reports), never the registry row Id, and `addMapping` only keeps the
+		 object the element already holds - set or change it with `setElement.addData` / `changeData` /
+		 `deleteData`. Any failed operation aborts the whole edit
 		 (nothing is saved). Example — switch a process to start on record save: `removeElement` the start event,
 		 `addElement` a `signalStart`, then `addFlow` from it to the first task. Confirm destructive removals
 		 (`removeElement` / `removeFlow` / `removeParameter` / `clearConnections`) with the user before proceeding.
