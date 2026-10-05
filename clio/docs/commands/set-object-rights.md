@@ -6,16 +6,19 @@ Object rights
 
 ## Name
 
-set-object-rights - grant or revoke object operation permissions (read/create/edit/delete) for one role on one object
+set-object-rights - grant or revoke object operation permissions (read/create/edit/delete) for one role on one object, or turn an object's operation permissions on or off
 
 ## Description
 
 Grants (or, with `--revoke`, revokes) **object operation permissions** for one role on **one object** — the
 `SysEntitySchemaOperationRight` / "Object permissions" layer that decides who may read/create/edit/delete ANY
-record of an entity. It works like the Object permissions designer, one object per call, and for **any** role.
-It is the object-level analog of `set-record-rights` (which is per-record).
+record of an entity — or turns the object's "Use operation permissions" switch on or off. It works like the Object
+permissions designer, one object per call, and for **any** role. It is the object-level analog of `set-record-rights`
+(which is per-record).
 
-Every call names the operations it grants or revokes in `--operations`: nothing is granted by default.
+A grant or revoke names the role in `--grantee` and the operations in `--operations`: nothing is granted by default.
+A call that only turns the switch names neither. The switch and the rows change separately: a revoke never turns the
+switch off, and turning it off keeps every row.
 
 The rows of an object are a **priority list**: position 0 is the highest, and a user who is in several roles gets
 the operations of the highest matching row — decided per row, so a row with no operations denies them. The command
@@ -34,11 +37,16 @@ nothing is written:
   decide who can reach it. That needs `--enable-operation-permissions`. The same save keeps the `All employees` row
   the service shows for an object with no stored rows; when the object has stored rows but none for `All employees`,
   it adds one with read/create/edit/delete below them. Rows above it still decide first for their members.
-- A revoke that would leave the object with no row granting any operation needs `--disable-operation-permissions`,
-  which turns operation permissions **OFF** instead: the object becomes available to all internal users. That is the
-  only case the flag is accepted in: a disable the revoke does not need — other rows still grant, or the revoke
-  changes no row — is refused, because it would open the object to every internal user while the call reads as a
-  revoke.
+- `--enable-operation-permissions` alone — with no `--grantee` and no `--operations` — turns operation permissions
+  **ON** with the stored rows as they are, under the same `All employees` rule. It is refused when no row would grant
+  any operation (every internal user would be cut off): grant the operations in the same call instead — for internal
+  users to `All employees`, whose row decides before a new row of any other role.
+- `--disable-operation-permissions` is a call of its own — no `--grantee`, `--operations` or `--revoke` — that turns
+  operation permissions **OFF** and keeps every row exactly as it is, operations included, as the designer's switch
+  does: the object becomes available to ALL internal users, external users have no access while it is off, and the
+  rows apply again when the switch is turned back on.
+- A revoke never turns operation permissions off. A revoke that would leave the object with no row granting any
+  operation is refused; to turn the switch off instead, make the disable call.
 
 To cover an object's lookups, read them first with `get-object-rights --include-connected`, decide per object,
 and run one `set-object-rights` per object. The listing leaves out security and system objects (`SysAdmin*`,
@@ -59,7 +67,8 @@ The object name is trimmed and must be a plain schema identifier (letters, digit
 ## Synopsis
 
 ```bash
-clio set-object-rights --entity-schema-name <EntitySchemaName> --grantee <SysAdminUnitId> --operations <read,create,edit,delete> [--revoke] [--enable-operation-permissions] [--disable-operation-permissions] [--confirm | --preview] -e <environment>
+clio set-object-rights --entity-schema-name <EntitySchemaName> --grantee <SysAdminUnitId> --operations <read,create,edit,delete> [--revoke] [--enable-operation-permissions] [--confirm | --preview] -e <environment>
+clio set-object-rights --entity-schema-name <EntitySchemaName> (--enable-operation-permissions | --disable-operation-permissions) [--confirm | --preview] -e <environment>
 ```
 
 ## Options
@@ -69,25 +78,26 @@ clio set-object-rights --entity-schema-name <EntitySchemaName> --grantee <SysAdm
 The one object (entity schema) whose operation permissions are changed. Required.
 
 --grantee GUID
-SysAdminUnit id (role or user) to grant/revoke. Names are not unique — pass the id. It must exist.
+SysAdminUnit id (role or user) to grant/revoke. Names are not unique — pass the id. It must exist. Required for a
+grant or revoke; not given when the call only turns operation permissions on or off.
 
 --operations LIST
-Comma-separated operations to grant or revoke: read,create,edit,delete. Required: no operation is granted by default.
-A value that names no operation ("", ",") is refused.
+Comma-separated operations to grant or revoke: read,create,edit,delete. Required for a grant or revoke: no operation
+is granted by default. A value that names no operation ("", ",") is refused.
 
 --revoke
 Revoke the operations named in --operations instead of granting them. The role's row is kept, with those operations
 cleared.
 
 --enable-operation-permissions
-Allow a grant to turn the object's operation permissions ON. Without it, a grant on an object that does not use
-operation permissions is refused (exit 1) and the refusal names the rows that would start to decide. Not valid
-with --revoke.
+Turn the object's operation permissions ON. With --grantee and --operations it lets the grant turn them on; without
+it, a grant on an object that does not use operation permissions is refused (exit 1) and the refusal names the rows
+that would start to decide. Alone it turns them on with the stored rows as they are. Not valid with --revoke.
 
 --disable-operation-permissions
-With --revoke: turn the object's operation permissions OFF, which makes it available to ALL internal users. The
-rows are kept and apply again if operation permissions are turned back on. Accepted only when the revoke would leave
-no row that grants any operation; in any other case the call is refused. Not valid without --revoke.
+Turn the object's operation permissions OFF, keeping every row as it is, operations included: the object becomes
+available to ALL internal users, and the rows apply again if operation permissions are turned back on. A call of its
+own: not valid with --grantee, --operations, --revoke or --enable-operation-permissions.
 
 --confirm
 Confirm the destructive change without a prompt. Required in non-interactive runs. Not valid with --preview.
@@ -133,10 +143,16 @@ Revoke delete from a role (its row stays, now without delete):
 clio set-object-rights --entity-schema-name UsrOrder --grantee <role-id> --operations delete --revoke --confirm -e production
 ```
 
-Return an object to "available to all internal users" when the revoke takes away its last granting row:
+Turn an object's operation permissions off — available to all internal users — keeping every row as it is:
 
 ```bash
-clio set-object-rights --entity-schema-name UsrOrder --grantee <role-id> --operations read,create,edit,delete --revoke --disable-operation-permissions --confirm -e production
+clio set-object-rights --entity-schema-name UsrOrder --disable-operation-permissions --confirm -e production
+```
+
+Turn them back on with the rows as they are:
+
+```bash
+clio set-object-rights --entity-schema-name UsrOrder --enable-operation-permissions --confirm -e production
 ```
 
 ## Notes
@@ -162,23 +178,25 @@ clio set-object-rights --entity-schema-name UsrOrder --grantee <role-id> --opera
   50 s are left for it and the read-back. Otherwise the call fails before the save (exit 1) and nothing is changed:
   re-run it. A save that gets no answer is thus still read back and reported before the worker is killed.
 - Exit code 1: invalid input (an object name that is not a schema identifier, a grantee that is not a GUID, a missing
-  `--operations`, an unknown operation, an `--operations` value that names no operation, `--preview` with `--confirm`,
-  `--enable-operation-permissions` with `--revoke`, `--disable-operation-permissions` without `--revoke`); a missing
-  `--confirm` in a non-interactive run; an object that is not found or cannot be read; a grantee that does not exist
-  in `SysAdminUnit`; a refused plan (including a `--disable-operation-permissions` the revoke does not need); a
-  failed save whose read-back does not show the plan; a successful save whose read-back fails; a read-back that does
-  not show a row this call writes, or the planned switch.
+  `--operations` on a grant or revoke, an unknown operation, an `--operations` value that names no operation,
+  `--preview` with `--confirm`, `--enable-operation-permissions` with `--revoke`,
+  `--disable-operation-permissions` with `--grantee`, `--operations`, `--revoke` or `--enable-operation-permissions`,
+  a call that names no change at all); a missing `--confirm` in a non-interactive run; an object that is not found or
+  cannot be read; a grantee that does not exist in `SysAdminUnit`; a refused plan; a failed save whose read-back does
+  not show the plan; a successful save whose read-back fails; a read-back that does not show a row this call writes,
+  or the planned switch.
 - A re-run that changes nothing says which row already is in the requested state, or that the grantee has no row to
-  revoke from (exit 0). That includes a revoke with `--disable-operation-permissions` run again on an object that is
-  already off, whose grantee row already has none of the operations: a retry after a timeout is safe, and the result
-  says that the object is available to all internal users.
+  revoke from, or that the switch already is where the call puts it (exit 0): a retry after a timeout is safe. A
+  disable on an object that is already off says that the object is available to all internal users.
+- A disable of an administered object with no stored rows writes no row. The object read back — now off — shows the
+  `All employees` row the service synthesizes for an object with no stored rows; the read-back does not count it as a
+  difference.
 - When the grantee is `All employees` and the object has no row for it, the new row gets exactly the operations the
   call names: an enable then adds no second `All employees` row with every operation.
 - A grantee with more than one row on the object is refused: which of them decides depends on the other rows, so
   the command changes none of them. Remove the duplicates in the Object permissions designer, then re-run.
 - A revoke on an object that does not use operation permissions is refused: company employees reach it whatever its
-  rows say (only technical users follow the rows while it is off). The exception is a revoke-and-disable that finds
-  the state it asks for already in place (see above). To limit access, turn operation permissions on
+  rows say (only technical users follow the rows while it is off). To limit access, turn operation permissions on
   first (a grant with `--enable-operation-permissions`, which keeps the object's `All employees` row as it is or adds
   one with every operation), then revoke from that row what employees must not have.
 - Read-modify-write is last-writer-wins: a change another client saves between the read and the save is

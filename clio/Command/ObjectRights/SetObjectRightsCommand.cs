@@ -7,9 +7,13 @@ using CommandLine;
 
 namespace Clio.Command.ObjectRights;
 
-/// <summary>Options of <c>set-object-rights</c>: grant or revoke one role's operation permissions on one object.</summary>
+/// <summary>
+/// Options of <c>set-object-rights</c>: grant or revoke one role's operation permissions on one object, or turn the
+/// object's operation permissions on or off alone.
+/// </summary>
 [Verb("set-object-rights", HelpText =
-	"Grant or revoke object operation permissions (read/create/edit/delete) for one role on one object (destructive)")]
+	"Grant or revoke object operation permissions (read/create/edit/delete) for one role on one object, or turn the "
+	+ "object's operation permissions on or off (destructive)")]
 public class SetObjectRightsOptions : RemoteCommandOptions {
 
 	/// <summary>The object (entity schema) whose operation permissions change.</summary>
@@ -17,15 +21,23 @@ public class SetObjectRightsOptions : RemoteCommandOptions {
 		"Object (entity schema) name whose operation permissions are changed. One object per call.")]
 	public string EntitySchemaName { get; set; }
 
-	/// <summary>The SysAdminUnit id of the role or user whose row changes.</summary>
-	[Option("grantee", Required = true, HelpText =
-		"SysAdminUnit id (organizational/functional role or user) to grant/revoke. Names are not unique — pass the id.")]
+	/// <summary>
+	/// The SysAdminUnit id of the role or user whose row changes. Required for a grant or revoke; not given when the call
+	/// only turns operation permissions on or off.
+	/// </summary>
+	[Option("grantee", Required = false, HelpText =
+		"SysAdminUnit id (organizational/functional role or user) to grant/revoke. Names are not unique — pass the id. "
+		+ "Required for a grant or revoke; not given with --disable-operation-permissions, or with "
+		+ "--enable-operation-permissions alone.")]
 	public string Grantee { get; set; }
 
-	/// <summary>Comma-separated operations to grant or revoke. Required: no operation is granted by default.</summary>
-	[Option("operations", Required = true, HelpText =
-		"Comma-separated operations to grant or revoke: read,create,edit,delete. Required - no operation is granted by "
-		+ "default.")]
+	/// <summary>
+	/// Comma-separated operations to grant or revoke. Required for a grant or revoke: no operation is granted by default.
+	/// </summary>
+	[Option("operations", Required = false, HelpText =
+		"Comma-separated operations to grant or revoke: read,create,edit,delete. Required for a grant or revoke - no "
+		+ "operation is granted by default. Not given with --disable-operation-permissions, or with "
+		+ "--enable-operation-permissions alone.")]
 	public string Operations { get; set; }
 
 	/// <summary>Revoke the operations instead of granting them.</summary>
@@ -34,16 +46,20 @@ public class SetObjectRightsOptions : RemoteCommandOptions {
 		+ "operations cleared: a row is never removed.")]
 	public bool Revoke { get; set; }
 
-	/// <summary>Allow a grant to turn the object's operation permissions on.</summary>
+	/// <summary>Turn the object's operation permissions on: with a grant, or alone.</summary>
 	[Option("enable-operation-permissions", Required = false, HelpText =
-		"Allow a grant to turn the object's operation permissions ON; from then on its rows decide who can reach it. "
-		+ "Without this, a grant on an object that does not use operation permissions is refused.")]
+		"Turn the object's operation permissions ON; from then on its rows decide who can reach it. With a grant "
+		+ "(--grantee, --operations) it lets the grant turn them on; alone it turns them on with the stored rows as they "
+		+ "are. Either way the All employees row is kept, or added with read/create/edit/delete when the object has "
+		+ "stored rows but none for All employees. Without this, a grant on an object that does not use operation "
+		+ "permissions is refused.")]
 	public bool EnableOperationPermissions { get; set; }
 
-	/// <summary>With a revoke: turn the object's operation permissions off.</summary>
+	/// <summary>Turn the object's operation permissions off; a call of its own that changes no row.</summary>
 	[Option("disable-operation-permissions", Required = false, HelpText =
-		"With --revoke: turn the object's operation permissions OFF, which makes it available to ALL internal users. "
-		+ "Accepted only when the revoke would leave no row that grants any operation; otherwise the call is refused.")]
+		"Turn the object's operation permissions OFF, keeping every row as it is, operations included: the object "
+		+ "becomes available to ALL internal users, and the rows apply again if operation permissions are turned back "
+		+ "on. A call of its own: not with --grantee, --operations or --revoke.")]
 	public bool DisableOperationPermissions { get; set; }
 
 	/// <summary>Apply the change without a prompt.</summary>
@@ -65,9 +81,11 @@ public class SetObjectRightsOptions : RemoteCommandOptions {
 }
 
 /// <summary>
-/// <c>set-object-rights</c>: changes one role's operations on ONE object, like the "Object permissions" designer,
-/// with every access-changing transition named in the arguments. The flow is read → plan → policy → confirm → save →
-/// read back; the output and the exit code come from the plan and the read-back. Destructive and confirm-gated.
+/// <c>set-object-rights</c>: changes one role's operations on ONE object, or turns the object's "Use operation
+/// permissions" switch on or off, like the "Object permissions" designer, with every access-changing transition named
+/// in the arguments. The switch and the rows change separately: a revoke never turns the switch off, and turning it
+/// off keeps every row. The flow is read → plan → policy → confirm → save → read back; the output and the exit code
+/// come from the plan and the read-back. Destructive and confirm-gated.
 /// </summary>
 public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 
@@ -99,19 +117,24 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 			return 1;
 		}
 		CreatioRequestOptions requestOptions = ObjectRightsCommandInput.RequestOptions(options, options.CallBudget);
-		if (!ObjectRightsCommandInput.TryResolveUnitName(_granteeLookup, grantee, "grantee", requestOptions, _logger,
+		ObjectRightsChangeRequest request = new(grantee, null, operations, options.Revoke,
+			options.EnableOperationPermissions, options.DisableOperationPermissions);
+		// A call that only turns the switch names no grantee: there is no row of a role to change, so none is looked up.
+		if (!request.SwitchOnly) {
+			if (!ObjectRightsCommandInput.TryResolveUnitName(_granteeLookup, grantee, "grantee", requestOptions, _logger,
 				out string granteeName)) {
-			return 1;
+				return 1;
+			}
+			request = request with { GranteeName = granteeName };
 		}
 		ObjectRightsInfo before = _reader.GetObjectRights(schemaName, requestOptions);
 		if (!before.IsRead) {
 			_logger.WriteError($"Error: '{schemaName}': {before.FailureReason}. Nothing was changed.");
 			return 1;
 		}
-		ObjectRightsChangeRequest request = new(grantee, granteeName, operations, options.Revoke,
-			options.EnableOperationPermissions, options.DisableOperationPermissions);
 		ObjectRightsPlan plan = _planner.Plan(before.State, request);
-		Change change = new(schemaName, $"'{ObjectRightsSupport.Display(granteeName)}' ({grantee})", request, plan);
+		Change change = new(schemaName,
+			request.SwitchOnly ? null : $"'{ObjectRightsSupport.Display(request.GranteeName)}' ({grantee})", request, plan);
 		if (plan.Refused) {
 			_logger.WriteError($"Error: {RefusalMessage(change)} Nothing was changed.");
 			return 1;
@@ -150,8 +173,16 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 	private sealed record Change(string SchemaName, string GranteeLabel, ObjectRightsChangeRequest Request,
 		ObjectRightsPlan Plan) {
 
-		public string Summary =>
-			$"{(Request.Revoke ? "Revoke" : "Grant")} [{Operations}] for grantee {GranteeLabel} on '{SchemaName}'.";
+		public string Summary {
+			get {
+				if (Request.SwitchOnly) {
+					string state = Request.DisableOperationPermissions ? "OFF" : "ON";
+					return $"Turn operation permissions {state} on '{SchemaName}'.";
+				}
+				string verb = Request.Revoke ? "Revoke" : "Grant";
+				return $"{verb} [{Operations}] for grantee {GranteeLabel} on '{SchemaName}'.";
+			}
+		}
 
 		public string Operations => ObjectRightsSupport.FormatOperations(Request.Operations);
 
@@ -172,24 +203,26 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 		if (!ObjectRightsCommandInput.TryReadSchemaName(options.EntitySchemaName, _logger, out schemaName)) {
 			return false;
 		}
-		if (!Guid.TryParse(options.Grantee, out grantee) || grantee == Guid.Empty) {
-			_logger.WriteError("Error: --grantee must be a SysAdminUnit id (GUID).");
-			return false;
-		}
 		if (options.Preview && options.Confirm) {
 			_logger.WriteError("Error: --preview writes nothing, so it cannot be combined with --confirm.");
 			return false;
+		}
+		if (!TryReadCallShape(options, out bool switchOnly)) {
+			return false;
+		}
+		if (switchOnly) {
+			return true;
 		}
 		if (options.Revoke && options.EnableOperationPermissions) {
 			_logger.WriteError("Error: --enable-operation-permissions applies to a grant; a revoke never turns operation "
 				+ "permissions on.");
 			return false;
 		}
-		if (!options.Revoke && options.DisableOperationPermissions) {
-			_logger.WriteError("Error: --disable-operation-permissions applies to a revoke (--revoke).");
+		if (!Guid.TryParse(options.Grantee, out grantee) || grantee == Guid.Empty) {
+			_logger.WriteError("Error: --grantee must be a SysAdminUnit id (GUID).");
 			return false;
 		}
-		// The arguments show the whole effect: every call names the operations it grants or revokes; none is implied.
+		// The arguments show the whole effect: every grant or revoke names its operations; none is implied.
 		if (options.Operations is null) {
 			_logger.WriteError("Error: --operations is required: name the operations to grant or revoke "
 				+ "(read,create,edit,delete).");
@@ -197,6 +230,41 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 		}
 		if (!TryParseOperations(options.Operations, out operations, out string opError)) {
 			_logger.WriteError(opError);
+			return false;
+		}
+		return true;
+	}
+
+	// Which kind of call the arguments describe. A switch-only call (--enable- or --disable-operation-permissions
+	// alone) needs nothing else; any other call goes on to name a grantee and operations.
+	private bool TryReadCallShape(SetObjectRightsOptions options, out bool switchOnly) {
+		switchOnly = false;
+		if (options.EnableOperationPermissions && options.DisableOperationPermissions) {
+			_logger.WriteError("Error: --enable-operation-permissions and --disable-operation-permissions turn the switch "
+				+ "opposite ways; pass one of them.");
+			return false;
+		}
+		bool namesRow = options.Grantee is not null || options.Operations is not null;
+		// Turning operation permissions off changes no row, so it is a call of its own: an argument about a row beside it
+		// would read as part of the change while nothing of it happens.
+		if (options.DisableOperationPermissions) {
+			if (namesRow || options.Revoke) {
+				_logger.WriteError("Error: --disable-operation-permissions is a call of its own: it turns operation "
+					+ "permissions OFF and keeps every row as it is, so --grantee, --operations and --revoke do not go with "
+					+ "it. To clear a role's operations, revoke them in a separate call.");
+				return false;
+			}
+			switchOnly = true;
+			return true;
+		}
+		if (options.EnableOperationPermissions && !namesRow && !options.Revoke) {
+			switchOnly = true;
+			return true;
+		}
+		if (!namesRow && !options.Revoke) {
+			_logger.WriteError("Error: name the change: --grantee and --operations for a grant or a revoke, or "
+				+ "--enable-operation-permissions / --disable-operation-permissions alone to turn operation permissions on "
+				+ "or off.");
 			return false;
 		}
 		return true;
@@ -216,25 +284,21 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 					? "; an 'All employees' row with read/create/edit/delete would be added below them"
 					: "")
 				+ ". Re-run with --enable-operation-permissions if that is intended.",
-			ObjectRightsRefusal.RevokeOnNotAdministered when change.Request.DisableOperationPermissions =>
-				$"operation permissions on '{schema}' are already OFF (if this call is a retry, an earlier call may have "
-				+ "turned them off), so the tool does not change a row of it: the revoke itself is refused. Read the "
-				+ "object with get-object-rights.",
 			ObjectRightsRefusal.RevokeOnNotAdministered =>
 				$"'{schema}' is not administered by operation permissions (they are OFF), so the tool does not revoke on "
 				+ "it. To limit access, turn operation permissions on first with a grant and "
 				+ "--enable-operation-permissions; see get-guidance object-rights.",
+			ObjectRightsRefusal.LeavesNoGrantingRow when change.Request.SwitchOnly =>
+				$"turning operation permissions on would leave no row on '{schema}' that grants any operation "
+				+ $"({ObjectRightsSupport.FormatRows(plan.RowsBecomingEffective)}), so every internal user would be cut "
+				+ "off. Grant the operations in the same call instead (--grantee, --operations and "
+				+ "--enable-operation-permissions); for internal users grant them to All employees, whose row decides "
+				+ "before a new row of any other role, which goes at the lowest priority.",
 			ObjectRightsRefusal.LeavesNoGrantingRow =>
-				$"after this revoke no row on '{schema}' would grant any operation. To turn operation permissions OFF "
-				+ "instead, which makes the object available to ALL internal users, re-run with "
-				+ "--disable-operation-permissions.",
-			ObjectRightsRefusal.DisableNotNeeded =>
-				$"--disable-operation-permissions is not needed on '{schema}': "
-				+ (plan.RowsStillGranting is { Count: > 0 } granting
-					? $"after this revoke rows still grant operations ({ObjectRightsSupport.FormatRows(granting)})"
-					: $"no row on it grants any operation (rows: {ObjectRightsSupport.FormatRows(plan.Before.Roles)}), "
-						+ "so this revoke empties no granting row")
-				+ ", so operation permissions stay ON. Re-run without --disable-operation-permissions.",
+				$"after this revoke no row on '{schema}' would grant any operation. A revoke never turns operation "
+				+ "permissions off: to turn them OFF instead — the object becomes available to ALL internal users and "
+				+ "every row is kept as it is — call set-object-rights with --entity-schema-name and "
+				+ "--disable-operation-permissions only.",
 			ObjectRightsRefusal.DuplicateGranteeRows =>
 				$"grantee {change.GranteeLabel} has {plan.DuplicatePositions.Count} rows on '{schema}' (positions "
 				+ $"{string.Join(", ", plan.DuplicatePositions)}). Which of them decides depends on the other rows, so "
@@ -243,13 +307,15 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 		};
 	}
 
-	// Why a call changes nothing. A revoke-and-disable that finds the switch already off — typically a retry — says so,
-	// and what OFF means, so "(no change)" never reads as "this role has no access".
+	// Why a call changes nothing. A disable that finds the switch already off — typically a retry — says what OFF means,
+	// so "(no change)" never reads as "nobody has access".
 	private static string NoChangeReason(Change change) {
-		string rowReason = RowNoChangeReason(change);
-		return change.Request.DisableOperationPermissions && !change.Plan.Before.AdministratedByOperations
-			? $"operation permissions are already OFF — the object is available to all internal users — and {rowReason}"
-			: rowReason;
+		if (!change.Request.SwitchOnly) {
+			return RowNoChangeReason(change);
+		}
+		return change.Request.DisableOperationPermissions
+			? "operation permissions are already OFF — the object is available to all internal users"
+			: "operation permissions are already ON";
 	}
 
 	// A fact about the grantee's row only: other rows may still decide for the grantee's members.
@@ -282,14 +348,21 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 					+ $"added at position {allEmployees.Position}, below the existing rows.");
 			}
 		}
+		if (plan.DisablesOperationPermissions) {
+			facts.Add($"Operation permissions on '{schema}' are turned OFF: it becomes available to ALL internal users. "
+				+ "Every row is kept as it is, operations included, and applies again if operation permissions are turned "
+				+ "back on"
+				+ (plan.Before.Roles.Count > 0
+					? $": {ObjectRightsSupport.FormatRows(plan.Before.Roles)}."
+					: "; it has no stored rows."));
+		}
+		if (change.Request.SwitchOnly) {
+			return facts;
+		}
 		facts.Add(DescribeGranteeRow(change));
 		if (plan.RowsAboveGrantee.Count > 0) {
 			facts.Add("Rows above the grantee's row, which decide first for a user who is also in those roles: "
 				+ $"{ObjectRightsSupport.FormatRows(plan.RowsAboveGrantee)}.");
-		}
-		if (plan.DisablesOperationPermissions) {
-			facts.Add($"Operation permissions on '{schema}' are turned OFF: it becomes available to ALL internal users. "
-				+ "Its rows are kept and apply again if operation permissions are turned back on.");
 		}
 		return facts;
 	}
@@ -316,15 +389,19 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 
 	// The call's own result line, from the plan: a row that changed, or — when only the switch changes — that.
 	private static string DoneLine(Change change) {
+		if (change.Request.SwitchOnly) {
+			return $"'{change.SchemaName}': operation permissions turned "
+				+ $"{(change.Plan.DisablesOperationPermissions ? "OFF; every row is kept as it is" : "ON")}.";
+		}
 		if (change.GranteeRowChanges) {
 			return $"'{change.SchemaName}': {(change.Request.Revoke ? "revoked" : "granted")} [{change.Operations}] for "
 				+ $"grantee {change.GranteeLabel}.";
 		}
+		// A grant that changed no row: only its enable did something. A grant or revoke never turns the switch off.
 		string granteeRow = change.GranteeRowAfter is null
 			? $"grantee {change.GranteeLabel} has no row"
 			: $"the row of grantee {change.GranteeLabel} is unchanged";
-		return $"'{change.SchemaName}': operation permissions turned "
-			+ $"{(change.Plan.EnablesOperationPermissions ? "ON" : "OFF")}; {granteeRow}.";
+		return $"'{change.SchemaName}': operation permissions turned ON; {granteeRow}.";
 	}
 
 	// The save succeeded; the read-back is compared with the plan, so a change that did not land is never reported as

@@ -54,8 +54,8 @@ public class ObjectRightsReadBackVerifierTests {
 		yield return new TestCaseData(beforeRevoke, State(true, Row(AllEmployees, 0, "RCED"), Row(Grantee, 1, "R")),
 				beforeRevoke, "[1] Grantee: read/create, the plan wrote read", null)
 			.SetName("Compare_ShouldFailTheCall_WhenARevokeDidNotLand");
-		yield return new TestCaseData(State(true, Row(Grantee, 0, "R")), State(false, Row(Grantee, 0, "")),
-				State(true, Row(Grantee, 0, "")), "operation permissions are ON, the plan turned them OFF", null)
+		yield return new TestCaseData(State(true, Row(Other, 0, "R")), State(false, Row(Other, 0, "R")),
+				State(true, Row(Other, 0, "R")), "operation permissions are ON, the plan turned them OFF", null)
 			.SetName("Compare_ShouldFailTheCall_WhenADisableReadsBackOn");
 		yield return new TestCaseData(State(false, Row(Other, 0, "R")),
 				State(true, Row(Other, 0, "R"), Row(AllEmployees, 1, "RCED"), Row(Grantee, 2, "R")),
@@ -84,10 +84,24 @@ public class ObjectRightsReadBackVerifierTests {
 				State(true, Row(AllEmployees, 0, "RCED"), Row(Grantee, 1, "R"), Row(Other, 2, "R")),
 				null, "[2] Other: read is not in the plan")
 			.SetName("Compare_ShouldReportAFact_WhenTheReadBackHasAnExtraRowOfAnotherRole");
-		yield return new TestCaseData(State(true, Row(Grantee, 0, "R")), State(false, Row(Grantee, 0, "")),
+		yield return new TestCaseData(State(true, Row(Other, 0, "R")), State(false, Row(Other, 0, "R")),
 				State(false, Row(AllEmployees, 0, "RCED")),
-				"[0] Grantee: no operations is missing", "[0] All employees: read/create/edit/delete is not in the plan")
+				"[0] Other: read is missing", "[0] All employees: read/create/edit/delete is not in the plan")
 			.SetName("Compare_ShouldFailTheCall_WhenADisableThatKeptRowsReadsBackOnlyTheSynthesizedRow");
+		yield return new TestCaseData(State(true, Row(Other, 0, "R"), Row(AllEmployees, 1, "RCED")),
+				State(false, Row(Other, 0, "R"), Row(AllEmployees, 1, "RCED")),
+				State(false, Row(Other, 0, "RC"), Row(AllEmployees, 1, "RCED")),
+				"[0] Other: read/create, the plan wrote read", null)
+			.SetName("Compare_ShouldFailTheCall_WhenADisableReadsBackARowItKeptChanged");
+		ObjectRightsState kept = State(true, Row(Other, 0, "RCED"), Row(AllEmployees, 1, "RCED"));
+		ObjectRightsState keptOff = State(false, Row(Other, 0, "RCED"), Row(AllEmployees, 1, "RCED"));
+		yield return new TestCaseData(kept, keptOff, keptOff, null, null)
+			.SetName("Compare_ShouldReportNothing_WhenADisableReadsBackEveryRowItKept");
+		yield return new TestCaseData(State(true), State(false), State(false, Row(AllEmployees, 0, "RCED")), null, null)
+			.SetName("Compare_ShouldReportNothing_WhenADisableOfAnObjectWithNoStoredRowsReadsBackTheSynthesizedRow");
+		yield return new TestCaseData(State(true), State(false), State(false, Row(AllEmployees, 0, "R")),
+				null, "[0] All employees: read is not in the plan")
+			.SetName("Compare_ShouldReportAFact_WhenADisableOfAnObjectWithNoStoredRowsReadsBackAStoredRow");
 	}
 
 	[TestCaseSource(nameof(ReadBacks))]

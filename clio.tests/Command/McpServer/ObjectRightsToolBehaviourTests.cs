@@ -173,23 +173,44 @@ public sealed class ObjectRightsToolBehaviourTests {
 	}
 
 	[Test]
-	[Description("Every explicit transition flag maps through: enable on a grant; revoke with disable.")]
+	[Description("Every explicit transition flag maps through: enable on a grant, and a disable alone, with no grantee and no operations.")]
 	public void SetObjectRights_ShouldMapTransitionFlags_WhenProvided() {
 		// Arrange
 		SetObjectRightsArgs grant = new("dev", "UsrFoo", Grantee, Operations: "read", EnableOperationPermissions: true);
-		SetObjectRightsArgs revoke = new("dev", "UsrFoo", Grantee, Operations: "read", Revoke: true,
-			DisableOperationPermissions: true);
+		SetObjectRightsArgs disable = new("dev", "UsrFoo", DisableOperationPermissions: true);
 
 		// Act
 		SetTool().SetObjectRights(grant);
 		SetObjectRightsOptions grantOptions = _capturedSet;
-		SetTool().SetObjectRights(revoke);
+		SetTool().SetObjectRights(disable);
 
 		// Assert
 		grantOptions.EnableOperationPermissions.Should().BeTrue(because: "enable-operation-permissions maps through");
 		grantOptions.Operations.Should().Be("read", because: "operations maps through");
-		_capturedSet.Revoke.Should().BeTrue(because: "revoke maps through");
 		_capturedSet.DisableOperationPermissions.Should().BeTrue(because: "disable-operation-permissions maps through");
+		_capturedSet.Grantee.Should().BeNull(because: "a disable names no grantee");
+		_capturedSet.Operations.Should().BeNull(because: "a disable names no operation");
+	}
+
+	[Test]
+	[Description("disable-operation-permissions alone turns the switch off over MCP in one call: the rows are saved as read and the result says the switch is off.")]
+	public void SetObjectRights_ShouldTurnTheSwitchOff_WhenDisableIsCalledAlone() {
+		// Arrange
+		ObjectRightsInfo before = new(true, "UsrFoo", "UsrFoo", true,
+			new[] { new RoleOperationRights(AllEmployees, "All employees", 0, true, true, true, true) });
+		_reader.GetObjectRights(Arg.Any<string>(), Arg.Any<CreatioRequestOptions>())
+			.Returns(before, before with { AdministratedByOperations = false });
+
+		// Act
+		ObjectRightsToolResponse response = SetTool().SetObjectRights(
+			new SetObjectRightsArgs("dev", "UsrFoo", DisableOperationPermissions: true));
+
+		// Assert
+		response.Success.Should().BeTrue(because: $"the switch went off as planned. Error: {response.Error}");
+		response.Output.Should().Contain("operation permissions turned OFF", because: "the result names the switch");
+		_writer.Received(1).Save(Arg.Any<ObjectRightsSnapshot>(),
+			Arg.Is<ObjectRightsState>(state => !state.AdministratedByOperations && state.Roles.Count == 1),
+			Arg.Any<CreatioRequestOptions>());
 	}
 
 	[Test]

@@ -5,7 +5,7 @@ applies-to:
   - clio/Common/ObjectRights/ObjectRightsPlanner.cs
   - clio/Common/ObjectRights/ObjectRightsReadBackVerifier.cs
 ticket: ENG-99741
-date: 2026-09-30
+date: 2026-10-05
 ---
 
 **What is true** — for an object that is not administered by operation permissions and has no rows in
@@ -25,5 +25,6 @@ every operation) as a grid; it is not stored until a save sends it back.
 server adds All employees", cuts every internal user outside the grantee off the object; a save with no rows locks
 out everyone but the "…any data" holders. That is why the save sends the rows it read, the planner adds an All
 employees row itself only when an enable meets stored rows without one, and the read-back treats a missing All
-employees row after an enable as a failed call. A disable never leaves an object without stored rows: it is accepted
-only when the revoke empties the last granting row, and that cleared row stays stored.
+employees row after an enable as a failed call. A disable keeps every stored row as it is, so an object that had rows
+is read back with them; an administered object with NO stored rows is left with none, and the read of it — now off —
+synthesizes the All employees row again. The read-back after such a disable does not count that row as a difference.

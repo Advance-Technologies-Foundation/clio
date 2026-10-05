@@ -42,30 +42,33 @@ public sealed class SetObjectRightsToolE2ETests : ObjectRightsToolE2ETestsBase {
 	[Test]
 	[AllureTag(SetObjectRightsTool.ToolName)]
 	[AllureName("set-object-rights binds the explicit transition flags")]
-	[AllureDescription("enable-operation-permissions, disable-operation-permissions with revoke, and preview bind through the real MCP server and the call still fails on the missing environment, not as an unknown argument.")]
-	[Description("Binds every explicit transition flag and the dry-run flag through the real MCP server: each is part of the one-call contract.")]
+	[AllureDescription("enable-operation-permissions on a grant, disable-operation-permissions alone (no grantee, no operations) and preview bind through the real MCP server, and each call still fails on the missing environment, not on an unknown or missing argument.")]
+	[Description("Binds every explicit transition flag and the dry-run flag through the real MCP server: enable on a grant, and a disable alone, whose call names neither grantee nor operations.")]
 	public async Task Tool_Should_Bind_Transition_And_Preview_Flags() {
 		// Arrange
 		string grantEnvironment = $"missing-{ToolName}-enable-env-{Guid.NewGuid():N}";
 		Dictionary<string, object?> grant = InvalidEnvironmentArgs(grantEnvironment);
 		grant["enable-operation-permissions"] = true;
 		grant["preview"] = true;
-		string revokeEnvironment = $"missing-{ToolName}-disable-env-{Guid.NewGuid():N}";
-		Dictionary<string, object?> revoke = InvalidEnvironmentArgs(revokeEnvironment);
-		revoke["revoke"] = true;
-		revoke["disable-operation-permissions"] = true;
+		string disableEnvironment = $"missing-{ToolName}-disable-env-{Guid.NewGuid():N}";
+		Dictionary<string, object?> disable = new() {
+			["environment-name"] = disableEnvironment,
+			["entity-schema-name"] = "Contact",
+			["disable-operation-permissions"] = true
+		};
 
 		// Act
 		(CallToolResult grantResult, ObjectRightsToolResponse grantResponse) = await CallAsync(grant);
-		(CallToolResult revokeResult, ObjectRightsToolResponse revokeResponse) = await CallAsync(revoke);
+		(CallToolResult disableResult, ObjectRightsToolResponse disableResponse) = await CallAsync(disable);
 
 		// Assert
 		grantResult.IsError.Should().NotBeTrue(because: "the flags are part of the tool contract and bind like any argument");
 		grantResponse.Error.Should().Contain(grantEnvironment,
 			because: "the call must fail on the missing environment rather than on an unknown argument");
-		revokeResult.IsError.Should().NotBeTrue(because: "revoke with disable-operation-permissions is part of the contract");
-		revokeResponse.Error.Should().Contain(revokeEnvironment,
-			because: "the call must fail on the missing environment rather than on an unknown argument");
+		disableResult.IsError.Should().NotBeTrue(
+			because: "a disable alone is part of the contract: grantee and operations are not required for it");
+		disableResponse.Error.Should().Contain(disableEnvironment,
+			because: "the call must fail on the missing environment rather than on a missing grantee or operations");
 	}
 
 	[TestCase("confirm", true)]
