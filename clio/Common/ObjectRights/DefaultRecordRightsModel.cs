@@ -231,8 +231,8 @@ public static class DefaultRecordRightsFormat {
 	public static string Switch(DefaultRecordRightsState state) => state.AdministratedByRecords ? "ON" : "OFF";
 
 	/// <summary>
-	/// One rule: <c>All employees → Sales: read granted, edit delegated, delete -</c>, plus <c>do not apply for manager</c>
-	/// when set. With the ids when asked for.
+	/// One rule: <c>All employees → Sales: read granted, edit delegated, delete -, do not apply for manager: false</c>.
+	/// With the ids when asked for.
 	/// </summary>
 	/// <param name="rule">The rule.</param>
 	/// <param name="withIds">Also show the SysAdminUnit ids.</param>
@@ -241,13 +241,16 @@ public static class DefaultRecordRightsFormat {
 		$"{Name(rule.AuthorName, rule.AuthorId, withIds)} → {Name(rule.GranteeName, rule.GranteeId, withIds)}: "
 		+ Levels(rule);
 
-	/// <summary>The levels and the manager flag of a rule: <c>read granted, edit -, delete -</c>.</summary>
+	/// <summary>
+	/// The levels and the manager flag of a rule: <c>read granted, edit -, delete -, do not apply for manager: false</c>.
+	/// The flag is always shown, so its absence is never read as "false".
+	/// </summary>
 	/// <param name="rule">The rule.</param>
 	/// <returns>The levels text.</returns>
 	public static string Levels(DefaultRecordRule rule) =>
 		string.Join(", ", RecordRightNames.AllOperations.Select(operation =>
 			$"{RecordRightNames.Of(operation)} {RecordRightNames.Of(rule.LevelOf(operation))}"))
-		+ (rule.DoNotApplyForManager ? ", do not apply for manager" : "");
+		+ $", do not apply for manager: {(rule.DoNotApplyForManager ? "true" : "false")}";
 
 	/// <summary>Rules separated by <c>"; "</c>, or <c>"none"</c>.</summary>
 	/// <param name="rules">The rules.</param>

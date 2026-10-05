@@ -442,6 +442,9 @@ public class ApplyDefaultRecordRightsCommandTests : BaseCommandTests<ApplyDefaul
 		exitCode.Should().Be(0, because: "the warning does not block: the running update may be for another object");
 		_warnings.Should().Contain(w => w.Contains("already running") && w.Contains(running.ToString()),
 			because: "the running process is named so the user can check it");
+		_warnings.Should().Contain(w => w.Contains("started 2026-10-05T10:00:00 in the calling user's time zone"),
+			because: "DataService gives the start in the user's time zone with no zone in the text, so the zone is named"
+				+ " — SysProcessLog read elsewhere shows UTC");
 		Received.InOrder(() => {
 			_actualization.FindRunning(Arg.Any<CreatioRequestOptions>());
 			_actualization.Start(Arg.Any<Guid>(), Arg.Any<CreatioRequestOptions>());

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Threading.Tasks;
+using Allure.Net.Commons;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E.Support.Configuration;
@@ -95,101 +96,145 @@ public sealed class DefaultRecordRightsSandboxE2ETests : DataBindingDbFixtureBas
 		};
 
 		// Act — a record created while record permissions are off gets no record rights
-		string earlyRecord = await InsertAsync(arrangeContext, objectName);
+		string earlyRecord = await AllureApi.Step("Insert a record while record permissions are off",
+			() => InsertAsync(arrangeContext, objectName));
 
 		// Act — a grant on an object whose record permissions are off, without naming the enable
-		ObjectRightsToolResponse unnamed = await CallAsync(arrangeContext, SetDefaultRecordRightsTool.ToolName, Rule("read"));
+		ObjectRightsToolResponse unnamed = await AllureApi.Step("Grant without naming the enable",
+			() => CallAsync(arrangeContext, SetDefaultRecordRightsTool.ToolName, Rule("read")));
 
 		// Assert
-		unnamed.Success.Should().BeFalse(because: "turning record permissions on must be named in the arguments");
-		unnamed.Error.Should().Contain("enable-record-permissions", because: "the refusal names the flag");
+		AllureApi.Step("Verify the unnamed enable is refused", () => {
+			unnamed.Success.Should().BeFalse(because: "turning record permissions on must be named in the arguments");
+			unnamed.Error.Should().Contain("enable-record-permissions", because: "the refusal names the flag");
+		});
 
 		// Act — enable and grant in one call, add a second, unrelated rule, then read the object back
-		ObjectRightsToolResponse granted = await CallAsync(arrangeContext, SetDefaultRecordRightsTool.ToolName,
-			Rule("read,edit", enable: true));
-		ObjectRightsToolResponse second = await CallAsync(arrangeContext, SetDefaultRecordRightsTool.ToolName, ExternalRule());
-		ObjectRightsToolResponse read = await CallAsync(arrangeContext, GetObjectRightsTool.ToolName, ReadArgs());
+		ObjectRightsToolResponse granted = await AllureApi.Step("Enable and grant in one call",
+			() => CallAsync(arrangeContext, SetDefaultRecordRightsTool.ToolName, Rule("read,edit", enable: true)));
+		ObjectRightsToolResponse second = await AllureApi.Step("Add a second rule in its own call",
+			() => CallAsync(arrangeContext, SetDefaultRecordRightsTool.ToolName, ExternalRule()));
+		ObjectRightsToolResponse read = await AllureApi.Step("Read the object back",
+			() => CallAsync(arrangeContext, GetObjectRightsTool.ToolName, ReadArgs()));
 
 		// Assert
-		granted.Success.Should().BeTrue(because: $"the named enable and grant must apply. Error: {granted.Error}");
-		granted.Output.Should().Contain("A rule is added", because: "the result reports the rule");
-		granted.Output.Should().Contain("existing record(s)", because: "the result reports the record count for the apply decision");
-		second.Success.Should().BeTrue(because: $"a second rule is added in its own call. Error: {second.Error}");
-		read.Output.Should().Contain("Record permissions: ON", because: "the switch was turned on");
-		read.Output.Should().Contain("read granted, edit granted, delete -, do not apply for manager",
-			because: "the first rule and its manager flag were saved and read back");
-		read.Output.Should().Contain($"All external users ({AllExternalUsers}) → All employees ({AllEmployees}): read granted",
-			because: "the second rule was saved without touching the first");
+		AllureApi.Step("Verify the enable and the first rule", () => {
+			granted.Success.Should().BeTrue(because: $"the named enable and grant must apply. Error: {granted.Error}");
+			granted.Output.Should().Contain("A rule is added", because: "the result reports the rule");
+			granted.Output.Should().Contain("existing record(s)", because: "the result reports the record count for the apply decision");
+		});
+		AllureApi.Step("Verify the second rule is added", () => second.Success.Should().BeTrue(
+			because: $"a second rule is added in its own call. Error: {second.Error}"));
+		AllureApi.Step("Verify the read-back shows the switch and both rules", () => {
+			read.Output.Should().Contain("Record permissions: ON", because: "the switch was turned on");
+			read.Output.Should().Contain("read granted, edit granted, delete -, do not apply for manager: true",
+				because: "the first rule and its manager flag were saved and read back");
+			read.Output.Should().Contain($"All external users ({AllExternalUsers}) → All employees ({AllEmployees}): read granted",
+				because: "the second rule was saved without touching the first");
+		});
 
 		// Act — a record created now gets the rule's rights on insert; apply gives them to the early record too
-		string lateRecord = await InsertAsync(arrangeContext, objectName);
-		string lateRights = await ReadRecordRightsAsync(arrangeContext, objectName, lateRecord);
-		string earlyBeforeApply = await ReadRecordRightsAsync(arrangeContext, objectName, earlyRecord);
-		ObjectRightsToolResponse firstApply = await CallAsync(arrangeContext, ApplyDefaultRecordRightsTool.ToolName, Apply());
-		string earlyAfterApply = await ReadRecordRightsAsync(arrangeContext, objectName, earlyRecord);
+		string lateRecord = await AllureApi.Step("Insert a record after the enable",
+			() => InsertAsync(arrangeContext, objectName));
+		string lateRights = await AllureApi.Step("Read the late record's rights",
+			() => ReadRecordRightsAsync(arrangeContext, objectName, lateRecord));
+		string earlyBeforeApply = await AllureApi.Step("Read the early record's rights before apply",
+			() => ReadRecordRightsAsync(arrangeContext, objectName, earlyRecord));
+		ObjectRightsToolResponse firstApply = await AllureApi.Step("Apply the rules to existing records",
+			() => CallAsync(arrangeContext, ApplyDefaultRecordRightsTool.ToolName, Apply()));
+		string earlyAfterApply = await AllureApi.Step("Read the early record's rights after apply",
+			() => ReadRecordRightsAsync(arrangeContext, objectName, earlyRecord));
 
 		// Assert
-		lateRights.Should().Contain("granted -> All employees", because: "a default rule applies to a record created after it");
-		earlyBeforeApply.Should().NotContain("-> All employees", because: "an enable gives existing records no rights");
-		firstApply.Success.Should().BeTrue(because: $"the record-rights update must complete. Error: {firstApply.Error}");
-		firstApply.Output.Should().NotContain("could not check whether a record-rights update is already running",
-			because: "the running-update check must work on a real stand, not only fail quietly");
-		earlyAfterApply.Should().Contain("granted -> All employees",
-			because: "the update applies the current rules to a record that had none");
+		AllureApi.Step("Verify a record inserted after the rule gets its rights", () => lateRights.Should().Contain(
+			"granted -> All employees", because: "a default rule applies to a record created after it"));
+		AllureApi.Step("Verify the enable gave the early record no rights", () => earlyBeforeApply.Should().NotContain(
+			"-> All employees", because: "an enable gives existing records no rights"));
+		AllureApi.Step("Verify the first apply completed", () => {
+			firstApply.Success.Should().BeTrue(because: $"the record-rights update must complete. Error: {firstApply.Error}");
+			firstApply.Output.Should().NotContain("could not check whether a record-rights update is already running",
+				because: "the running-update check must work on a real stand, not only fail quietly");
+		});
+		AllureApi.Step("Verify apply gave the early record the rule's rights", () => earlyAfterApply.Should().Contain(
+			"granted -> All employees", because: "the update applies the current rules to a record that had none"));
 
 		// Act — revoke the first rule's last rights (it is removed), then apply again
-		ObjectRightsToolResponse revoked = await CallAsync(arrangeContext, SetDefaultRecordRightsTool.ToolName,
-			Rule("read,edit", revoke: true));
-		ObjectRightsToolResponse afterRevoke = await CallAsync(arrangeContext, GetObjectRightsTool.ToolName, ReadArgs());
-		ObjectRightsToolResponse secondApply = await CallAsync(arrangeContext, ApplyDefaultRecordRightsTool.ToolName, Apply());
-		string lateAfterApply = await ReadRecordRightsAsync(arrangeContext, objectName, lateRecord);
+		ObjectRightsToolResponse revoked = await AllureApi.Step("Revoke the first rule's last rights",
+			() => CallAsync(arrangeContext, SetDefaultRecordRightsTool.ToolName, Rule("read,edit", revoke: true)));
+		ObjectRightsToolResponse afterRevoke = await AllureApi.Step("Read the object after the revoke",
+			() => CallAsync(arrangeContext, GetObjectRightsTool.ToolName, ReadArgs()));
+		ObjectRightsToolResponse secondApply = await AllureApi.Step("Apply again after the revoke",
+			() => CallAsync(arrangeContext, ApplyDefaultRecordRightsTool.ToolName, Apply()));
+		string lateAfterApply = await AllureApi.Step("Read the late record's rights after the second apply",
+			() => ReadRecordRightsAsync(arrangeContext, objectName, lateRecord));
 
 		// Assert
-		revoked.Success.Should().BeTrue(because: $"the revoke must apply. Error: {revoked.Error}");
-		revoked.Output.Should().Contain("is removed", because: "a rule left with no right is removed");
-		afterRevoke.Output.Should().Contain($"All external users ({AllExternalUsers}) → All employees ({AllEmployees}): read granted",
-			because: "the full-list save kept the rule the call did not name");
-		secondApply.Success.Should().BeTrue(because: $"the record-rights update must complete. Error: {secondApply.Error}");
-		secondApply.Output.Should().Contain("completed", because: "a small table finishes well within the wait");
-		secondApply.Output.Should().NotContain("could not check whether a record-rights update is already running",
-			because: "the running-update check must work on a real stand");
-		lateAfterApply.Should().Contain("Supervisor", because: "the record's rights were read: its author keeps its own right");
-		lateAfterApply.Should().NotContain("-> All employees",
-			because: "the update removes the rights that came from a rule that no longer exists");
+		AllureApi.Step("Verify the revoke removed the rule", () => {
+			revoked.Success.Should().BeTrue(because: $"the revoke must apply. Error: {revoked.Error}");
+			revoked.Output.Should().Contain("is removed", because: "a rule left with no right is removed");
+		});
+		AllureApi.Step("Verify the full-list save kept the other rule", () => afterRevoke.Output.Should().Contain(
+			$"All external users ({AllExternalUsers}) → All employees ({AllEmployees}): read granted",
+			because: "the full-list save kept the rule the call did not name"));
+		AllureApi.Step("Verify the second apply completed", () => {
+			secondApply.Success.Should().BeTrue(because: $"the record-rights update must complete. Error: {secondApply.Error}");
+			secondApply.Output.Should().Contain("completed", because: "a small table finishes well within the wait");
+			secondApply.Output.Should().NotContain("could not check whether a record-rights update is already running",
+				because: "the running-update check must work on a real stand");
+		});
+		AllureApi.Step("Verify the second apply removed the default-origin right", () => {
+			lateAfterApply.Should().Contain("Supervisor", because: "the record's rights were read: its author keeps its own right");
+			lateAfterApply.Should().NotContain("-> All employees",
+				because: "the update removes the rights that came from a rule that no longer exists");
+		});
 
 		// Act — turn record permissions off with a rule still stored, then try to apply, then disable again
-		ObjectRightsToolResponse disabled = await CallAsync(arrangeContext, SetDefaultRecordRightsTool.ToolName, Switch(false));
-		ObjectRightsToolResponse afterDisable = await CallAsync(arrangeContext, GetObjectRightsTool.ToolName, ReadArgs());
-		ObjectRightsToolResponse applyWhileOff = await CallAsync(arrangeContext, ApplyDefaultRecordRightsTool.ToolName, Apply());
-		ObjectRightsToolResponse disabledAgain = await CallAsync(arrangeContext, SetDefaultRecordRightsTool.ToolName, Switch(false));
+		ObjectRightsToolResponse disabled = await AllureApi.Step("Disable record permissions",
+			() => CallAsync(arrangeContext, SetDefaultRecordRightsTool.ToolName, Switch(false)));
+		ObjectRightsToolResponse afterDisable = await AllureApi.Step("Read the object after the disable",
+			() => CallAsync(arrangeContext, GetObjectRightsTool.ToolName, ReadArgs()));
+		ObjectRightsToolResponse applyWhileOff = await AllureApi.Step("Apply while record permissions are off",
+			() => CallAsync(arrangeContext, ApplyDefaultRecordRightsTool.ToolName, Apply()));
+		ObjectRightsToolResponse disabledAgain = await AllureApi.Step("Disable again",
+			() => CallAsync(arrangeContext, SetDefaultRecordRightsTool.ToolName, Switch(false)));
 
 		// Assert
-		disabled.Success.Should().BeTrue(because: $"the named disable must apply. Error: {disabled.Error}");
-		disabled.Output.Should().Contain("turned OFF", because: "the result states the switch");
-		afterDisable.Output.Should().Contain("not in effect while record permissions are off",
-			because: "a switch-only save keeps the stored rules");
-		afterDisable.Output.Should().Contain("All external users", because: "the stored rule is still listed");
-		applyWhileOff.Success.Should().BeFalse(because: "there is nothing to apply while record rights are not evaluated");
-		applyWhileOff.Error.Should().Contain("are OFF", because: "the refusal says why");
-		disabledAgain.Output.Should().Contain("(no change)", because: "a repeated call changes nothing");
+		AllureApi.Step("Verify the disable applied", () => {
+			disabled.Success.Should().BeTrue(because: $"the named disable must apply. Error: {disabled.Error}");
+			disabled.Output.Should().Contain("turned OFF", because: "the result states the switch");
+		});
+		AllureApi.Step("Verify the disable kept the stored rule", () => {
+			afterDisable.Output.Should().Contain("not in effect while record permissions are off",
+				because: "a switch-only save keeps the stored rules");
+			afterDisable.Output.Should().Contain("All external users", because: "the stored rule is still listed");
+		});
+		AllureApi.Step("Verify apply is refused while off", () => {
+			applyWhileOff.Success.Should().BeFalse(because: "there is nothing to apply while record rights are not evaluated");
+			applyWhileOff.Error.Should().Contain("are OFF", because: "the refusal says why");
+		});
+		AllureApi.Step("Verify a repeated disable changes nothing", () => disabledAgain.Output.Should().Contain(
+			"(no change)", because: "a repeated call changes nothing"));
 
 		// Act — remove the last stored rule while record permissions are off (the save sends an empty list)
-		ObjectRightsToolResponse lastRemoved = await CallAsync(arrangeContext, SetDefaultRecordRightsTool.ToolName,
-			new Dictionary<string, object?> {
+		ObjectRightsToolResponse lastRemoved = await AllureApi.Step("Revoke the last stored rule while off",
+			() => CallAsync(arrangeContext, SetDefaultRecordRightsTool.ToolName, new Dictionary<string, object?> {
 				["environment-name"] = arrangeContext.EnvironmentName,
 				["entity-schema-name"] = objectName,
 				["author"] = AllExternalUsers,
 				["grantee"] = AllEmployees,
 				["operations"] = "read",
 				["revoke"] = true
-			});
-		ObjectRightsToolResponse noRules = await CallAsync(arrangeContext, GetObjectRightsTool.ToolName, ReadArgs());
+			}));
+		ObjectRightsToolResponse noRules = await AllureApi.Step("Read the object with no rule left",
+			() => CallAsync(arrangeContext, GetObjectRightsTool.ToolName, ReadArgs()));
 
 		// Assert
-		lastRemoved.Success.Should().BeTrue(because: $"the platform must accept an empty rule list. Error: {lastRemoved.Error}");
-		lastRemoved.Output.Should().Contain("is removed", because: "the last rule is removed");
-		noRules.Output.Should().Contain("Record permissions: OFF, no default record rules",
-			because: "the empty list was saved and read back");
+		AllureApi.Step("Verify the last rule is removed", () => {
+			lastRemoved.Success.Should().BeTrue(because: $"the platform must accept an empty rule list. Error: {lastRemoved.Error}");
+			lastRemoved.Output.Should().Contain("is removed", because: "the last rule is removed");
+		});
+		AllureApi.Step("Verify the empty list was saved", () => noRules.Output.Should().Contain(
+			"Record permissions: OFF, no default record rules", because: "the empty list was saved and read back"));
 
 		Dictionary<string, object?> ReadArgs() => new() {
 			["environment-name"] = arrangeContext.EnvironmentName, ["entity-schema-name"] = objectName

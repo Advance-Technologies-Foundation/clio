@@ -622,7 +622,7 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 		exitCode.Should().Be(0, because: "the read succeeded");
 		_logger.Received().WriteInfo(Arg.Is<string>(line => line.StartsWith("    Record permissions: ON.")));
 		_logger.Received().WriteInfo($"      Author ({Employees}) → Grantee ({Role}): read granted, edit delegated, delete -, "
-			+ "do not apply for manager");
+			+ "do not apply for manager: true");
 	}
 
 	[Test]

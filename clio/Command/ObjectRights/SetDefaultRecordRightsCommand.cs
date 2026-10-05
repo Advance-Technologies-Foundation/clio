@@ -60,8 +60,8 @@ public class SetDefaultRecordRightsOptions : RemoteCommandOptions {
 	/// <summary>Turn the object's record permissions on.</summary>
 	[Option("enable-record-permissions", Required = false, HelpText =
 		"Turn the object's record permissions ON. Required for a grant on an object whose record permissions are off. "
-		+ "With no rule, every user sees only the records they create. Existing records get no record rights until "
-		+ "apply-default-record-rights runs.")]
+		+ "With no rule, every user sees only the records they create. On a first enable existing records get no "
+		+ "record rights until apply-default-record-rights runs; on a re-enable they get back the rights they had.")]
 	public bool EnableRecordPermissions { get; set; }
 
 	/// <summary>Turn the object's record permissions off.</summary>
@@ -159,8 +159,9 @@ public class SetDefaultRecordRightsCommand : Command<SetDefaultRecordRightsOptio
 			+ $"{DefaultRecordRightsFormat.Rules(plan.After.Rules)}.");
 		// The count reads the whole table, so it is taken only when someone will see it: in the preview, in the prompt,
 		// or in the result of a confirmed call — never for a run that is about to be refused for want of a --confirm.
+		// While the switch stays off there is nothing to apply (apply is refused), so neither the count nor the hint.
 		bool countShown = options.Preview || options.Confirm || _console.IsInteractive;
-		if ((plan.Enables || plan.ChangesRules) && countShown) {
+		if ((plan.Enables || plan.ChangesRules) && plan.After.AdministratedByRecords && countShown) {
 			facts.Add($"'{schemaName}' has {ObjectRightsCommandInput.DescribeRecordCount(_recordCounter, schemaName,
 				requestOptions, out _)}. Applying the rules to existing records is a separate, heavy step "
 				+ "(apply-default-record-rights): ask the user whether and when to run it.");
@@ -379,9 +380,13 @@ public class SetDefaultRecordRightsCommand : Command<SetDefaultRecordRightsOptio
 					+ "records they create (and their managers and holders of 'view any data' see them too)."
 				: "Rules that apply to records created from now on: "
 					+ $"{DefaultRecordRightsFormat.Rules(plan.StoredRulesComingIntoEffect)}.";
-			yield return "Existing records get no record rights from this: until apply-default-record-rights runs for "
-				+ $"'{schema}', an existing record is reachable only by its owner/author, their managers and holders of "
-				+ "'view any data'.";
+			// The platform keeps the records' rights while the switch is off, so a re-enable brings them back; only a
+			// record that never got rights (a first enable, or one created while off) has none. Which case it is is not
+			// read: the sentence states both.
+			yield return "Existing records keep the record rights they have: a record that had record rights before "
+				+ "record permissions were turned off gets them back. A record created while they were off — and every "
+				+ "record on a first enable — has none until apply-default-record-rights runs for "
+				+ $"'{schema}': it is reachable only by its owner/author, their managers and holders of 'view any data'.";
 		}
 		if (change.Rule is not null) {
 			yield return DescribeRule(change);

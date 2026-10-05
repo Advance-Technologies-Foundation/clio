@@ -166,9 +166,10 @@ public class ApplyDefaultRecordRightsCommand : Command<ApplyDefaultRecordRightsO
 			return;
 		}
 		RunningUpdate newest = running[0];
+		// DataService returns the start date in the calling user's time zone, with no zone in the text.
 		_logger.WriteWarning($"'{schemaName}': a record-rights update is already running on this environment (process "
-			+ $"{newest.ProcessId}, started {ObjectRightsSupport.Display(newest.StartDate)}"
-			+ (running.Count > 1 ? $", and {running.Count - 1} more" : "") + "). The log does not say which object it is "
+			+ $"{newest.ProcessId}, started {ObjectRightsSupport.Display(newest.StartDate)} in the calling user's time "
+			+ "zone" + (running.Count > 1 ? $", and {running.Count - 1} more" : "") + "). The log does not say which object it is "
 			+ "for: if it is this one, wait for it to end (check SysProcessLog, Id = that process) instead of starting "
 			+ "another — two runs at once double the load.");
 	}

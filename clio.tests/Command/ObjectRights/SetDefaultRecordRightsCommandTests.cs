@@ -267,6 +267,29 @@ public class SetDefaultRecordRightsCommandTests : BaseCommandTests<SetDefaultRec
 		_saved.Rules.Should().BeEmpty(because: "the rule lost its last right and is removed");
 		_infos.Should().Contain(i => i.Contains("is removed"), because: "the removal is reported");
 		_infos.Should().Contain(i => i.Contains("access does not change now"), because: "the switch is off");
+		_infos.Should().NotContain(i => i.Contains("apply-default-record-rights): ask the user"),
+			because: "apply is refused while the switch is off, so it is not offered");
+		_counter.DidNotReceiveWithAnyArgs().CountRecords(default, default);
+	}
+
+	[Test]
+	[Description("An enable states that a record which had record rights before the switch was turned off gets them back (they are kept), and that only a record created while off — or every record on a first enable — has none until apply: the stand showed a re-enable restores the rights.")]
+	public void Execute_ShouldStateThatKeptRightsComeBack_WhenEnabling() {
+		// Arrange
+		ObjectIs(Info(false, Rule(Author, Grantee, RecordRightLevel.Granted, RecordRightLevel.NotSet, RecordRightLevel.NotSet)));
+
+		// Act
+		int exitCode = _command.Execute(new SetDefaultRecordRightsOptions {
+			EntitySchemaName = "UsrFoo", EnableRecordPermissions = true, Confirm = true
+		});
+
+		// Assert
+		exitCode.Should().Be(0, because: "a switch-only enable is a legitimate call");
+		_infos.Should().Contain(i => i.Contains("gets them back")
+				&& i.Contains("A record created while they were off — and every record on a first enable — has none"),
+			because: "a re-enable restores the kept rights; only records that never got rights wait for apply");
+		_infos.Should().NotContain(i => i.Contains("Existing records get no record rights from this"),
+			because: "that is true only of a first enable and misled a re-enable into an unneeded apply");
 	}
 
 	[Test]
