@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Clio.Command.McpServer.Tools.MobileComponentRegistry;
 
 namespace Clio.Command.McpServer.Tools;
 
@@ -11,9 +12,8 @@ namespace Clio.Command.McpServer.Tools;
 /// Returns a <see cref="PageSyncValidationResult"/> with <c>MarkersOk</c> and <c>JsSyntaxOk</c>
 /// set to <c>true</c> (mobile pages have neither), errors on structural/binding issues,
 /// and warnings for web-only component types. Both catalogs are async (cache → CDN
-/// fallback chain); validators use <c>latest</c> because catalogs differ in component
-/// SET, not per-version semantics — knowing the GA-pinned version is not required to
-/// decide whether a component type is mobile-allowed or web-only.
+/// fallback chain) and read at <c>latest</c>. The mobile catalog's per-type inputs also narrow the
+/// binding check, so a stand older than <c>latest</c> is checked against the newest runtime's surface.
 /// </summary>
 internal static class MobilePageValidation {
 	internal static async Task<PageSyncValidationResult> RunAsync(
@@ -24,12 +24,13 @@ internal static class MobilePageValidation {
 		MobilePageMergedConfigContext? templateBaseContext = null,
 		Func<(string ViewModelConfigJson, string ModelConfigJson)>? resolveTemplateBase = null,
 		CancellationToken cancellationToken = default) {
-		Task<IReadOnlyList<ComponentRegistryEntry>> mobileTask =
-			mobileCatalog.GetAllAsync(ComponentRegistryClient.LatestVersion, cancellationToken);
+		Task<ComponentCatalogState> mobileStateTask =
+			mobileCatalog.LoadAsync(ComponentRegistryClient.LatestVersion, cancellationToken);
 		Task<IReadOnlyList<ComponentRegistryEntry>> webTask =
 			webCatalog.GetAllAsync(ComponentRegistryClient.LatestVersion, cancellationToken);
-		await Task.WhenAll(mobileTask, webTask).ConfigureAwait(false);
-		IReadOnlyList<ComponentRegistryEntry> mobileEntries = mobileTask.Result ?? [];
+		await Task.WhenAll(mobileStateTask, webTask).ConfigureAwait(false);
+		ComponentCatalogState? mobileState = await mobileStateTask.ConfigureAwait(false);
+		IReadOnlyList<ComponentRegistryEntry> mobileEntries = mobileState?.Entries ?? [];
 		IReadOnlyList<ComponentRegistryEntry> webEntries = webTask.Result ?? [];
 		HashSet<string> allowedMobile = new(
 			mobileEntries.Select(e => e.ComponentType),
@@ -38,8 +39,9 @@ internal static class MobilePageValidation {
 			webEntries.Select(e => e.ComponentType)
 				.Where(t => !allowedMobile.Contains(t)),
 			StringComparer.OrdinalIgnoreCase);
-		(List<string> errors, List<string> warnings) =
-			SchemaValidationService.ValidateMobilePage(body, allowedMobile, webOnly, explicitResources);
+		DeclaredPropertyIndex declaredInputs = BuildDeclaredInputs(mobileState);
+		(List<string> errors, List<string> warnings) = SchemaValidationService.ValidateMobilePage(
+			body, allowedMobile, webOnly, declaredInputs, explicitResources);
 		// Once the cheap structural checks pass, run the faithful differ oracle: apply the diff sections
 		// through the client-engine clones (JsonDiffApplier / JsonPathDiffApplier) and surface any exception
 		// the Creatio differ would raise (e.g. "Item \"X\" is not a container for other items"). The error is
@@ -78,6 +80,12 @@ internal static class MobilePageValidation {
 			Warnings = warnings.Count > 0 ? warnings : null
 		};
 	}
+
+	// The same index the converter prunes with, so a property it would drop is one this check ignores.
+	private static DeclaredPropertyIndex BuildDeclaredInputs(ComponentCatalogState? state) =>
+		state?.GlobalReferences?.BaseInputs is null
+			? DeclaredPropertyIndex.Disabled
+			: DeclaredPropertyIndex.Build(state.Lookup, new MobileRegistryGeneration(state.GlobalReferences.BaseInputs));
 }
 
 /// <summary>
