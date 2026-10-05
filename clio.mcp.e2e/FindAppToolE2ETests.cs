@@ -62,6 +62,42 @@ public sealed class FindAppToolE2ETests : McpContractFixtureBase {
 
 	[Category("McpE2E.Sandbox")]
 	[Test]
+	[Description("Starts the real clio MCP server and verifies that find-app with no filter returns, for every application, the same sections as find-app with that application's exact code (ENG-102120).")]
+	[AllureTag(FindAppToolName)]
+	[AllureName("find-app batch returns every application's sections")]
+	[AllureDescription("Calls find-app with no filter, then find-app with each returned application code, and verifies the section codes match per application. The batch request covers all applications at once, the code request covers one; the virtual ApplicationSection schema once answered a multi-application OR filter with the first application's sections only.")]
+	public async Task FindApp_Should_Return_The_Same_Sections_As_A_Code_Lookup_For_Every_Application() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		TestConfiguration.EnsureSandboxIsConfigured(settings);
+		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(5));
+		McpServerSession session = Session;
+		string environmentName = settings.Sandbox.EnvironmentName!;
+
+		// Act
+		FindAppResponseEnvelope batch = EntitySchemaStructuredResultParser.Extract<FindAppResponseEnvelope>(
+			await CallFindAppAsync(session, environmentName, cancellationTokenSource.Token));
+		Dictionary<string, string[]> expectedSectionsByCode = new(StringComparer.OrdinalIgnoreCase);
+		foreach (FindAppItemEnvelope application in batch.Applications ?? []) {
+			FindAppResponseEnvelope single = EntitySchemaStructuredResultParser.Extract<FindAppResponseEnvelope>(
+				await CallFindAppAsync(session, environmentName, cancellationTokenSource.Token, code: application.Code));
+			single.Success.Should().BeTrue(
+				because: $"find-app with the exact code '{application.Code}' should succeed: {single.Error}");
+			expectedSectionsByCode[application.Code!] = SectionCodes(single.Applications!.Single());
+		}
+
+		// Assert
+		batch.Success.Should().BeTrue(because: $"find-app with no filter should succeed: {batch.Error}");
+		expectedSectionsByCode.Values.Count(codes => codes.Length > 0).Should().BeGreaterThan(1,
+			because: "the sandbox must have at least two applications with sections, or a batch that returns only the first application's sections would pass unnoticed");
+		batch.Applications!.ToDictionary(application => application.Code!, SectionCodes, StringComparer.OrdinalIgnoreCase)
+			.Should().BeEquivalentTo(expectedSectionsByCode,
+				because: "the batch request must return every application's sections, not only the first application's");
+	}
+
+	[Category("McpE2E.Sandbox")]
+	[Test]
 	[Description("Starts the real clio MCP server, calls find-app with an unknown environment, and verifies the structured error carries an actionable reg-web-app fix.")]
 	[AllureTag(FindAppToolName)]
 	[AllureName("find-app reports invalid environment with an actionable reg-web-app hint")]
@@ -90,6 +126,9 @@ public sealed class FindAppToolE2ETests : McpContractFixtureBase {
 		result.Error.Should().Contain(invalidEnvironmentName,
 			because: "the actionable fix should reference the exact environment name the caller tried to use");
 	}
+
+	private static string[] SectionCodes(FindAppItemEnvelope application) =>
+		(application.Sections ?? []).Select(section => section.Code ?? string.Empty).Order(StringComparer.Ordinal).ToArray();
 
 	private static async Task<CallToolResult> CallFindAppAsync(
 		McpServerSession session,
