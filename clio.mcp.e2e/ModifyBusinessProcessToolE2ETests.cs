@@ -1285,7 +1285,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	// performer and Log activity block are optional. Deliberately NOT named ...AddModeDescriptor - that name
 	// is taken by the clearing test's builder, and an overload pair would silently route a one-argument call
 	// to the other one.
-	private static string BuildOpenEditPageSetElementDescriptor(string processName, string performerType = null,
+	private static string BuildOpenEditPageSetElementDescriptor(string processName, string? performerType = null,
 			bool withLogActivity = false) {
 		string performer = performerType == null
 			? string.Empty
