@@ -1153,7 +1153,7 @@ public sealed class ComponentRegistryEnvelope {
 	/// 2026-09-17 while the catalog content stayed runtime-derived, so a feature gated on it switched itself
 	/// off with nothing failing. The converter's property prune (ENG-96589) is gated on the platform version
 	/// plus the inherited <c>baseInputs</c> surface instead — see
-	/// <c>WebToMobileAnalysisService.MobileRegistryGeneration</c> — and the conversion guide reports
+	/// <c>MobileRegistryGeneration</c> — and the conversion guide reports
 	/// <c>propertyPruneApplied</c> rather than this marker, because a field that is absent from every
 	/// published catalog cannot tell a caller whether anything ran. Mapped here so the marker stays out of
 	/// <see cref="UnmappedExtensions"/> and the snapshot guard keeps checking its shape.

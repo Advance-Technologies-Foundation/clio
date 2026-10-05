@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
+using Clio.Command.McpServer.Tools.MobileComponentRegistry;
 using Clio.Command.McpServer.Tools.MobilePageConverter;
 using FluentAssertions;
 using NUnit.Framework;
@@ -669,7 +670,7 @@ public sealed class WebToMobilePropertyPruneTests {
 	/// It takes no version, because the gate has none: the record carries the loaded payload's inherited
 	/// surface and nothing else. A test that wants the prune refused supplies a different SURFACE.
 	/// </remarks>
-	private static WebToMobileAnalysisService.MobileRegistryGeneration Generation(
+	private static MobileRegistryGeneration Generation(
 		IReadOnlyDictionary<string, JsonElement> baseInputs = null,
 		bool omitBaseInputs = false) =>
 		new(omitBaseInputs ? null : baseInputs ?? LiveMobileCatalog().GlobalReferences?.BaseInputs);
@@ -696,7 +697,7 @@ public sealed class WebToMobilePropertyPruneTests {
 	/// </summary>
 	private static MobilePageConversionGuide Analyze(
 		PageBundleInfo bundle,
-		WebToMobileAnalysisService.MobileRegistryGeneration generation,
+		MobileRegistryGeneration generation,
 		IReadOnlyCollection<string> extraMobileTypes = null,
 		WebToMobilePageConversionRules rules = null,
 		IReadOnlyDictionary<string, string> autoTwinNames = null) {
