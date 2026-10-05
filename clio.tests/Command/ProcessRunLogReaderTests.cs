@@ -37,7 +37,7 @@ public sealed class ProcessRunLogReaderTests {
 			"{\"success\":true,\"rows\":[{\"ErrorDescription\":\"\\r\\nSystem.ArgumentException: Term must be positive\\r\\n   at Terrasoft.Core.Process.Foo()\"}]}");
 
 		// Act
-		string summary = reader.ReadErrorSummary(ProcessId);
+		string summary = reader.ReadErrorSummary(ProcessId, 60_000);
 
 		// Assert
 		summary.Should().Be("System.ArgumentException: Term must be positive",
@@ -57,10 +57,25 @@ public sealed class ProcessRunLogReaderTests {
 		(ProcessRunLogReader reader, _) = Create(selectResponse);
 
 		// Act
-		string summary = reader.ReadErrorSummary(ProcessId);
+		string summary = reader.ReadErrorSummary(ProcessId, 60_000);
 
 		// Assert
 		summary.Should().BeNull(because: "there is no logged error to name");
+	}
+
+	[Test]
+	[Description("The read spends no more than the caller has left of its deadline, and never more than its own 10 s bound.")]
+	[TestCase(2_500, 2_500)]
+	[TestCase(60_000, 10_000)]
+	public void ReadErrorSummary_Should_Bound_The_Read_By_The_Time_The_Caller_Has_Left(int given, int expected) {
+		// Arrange
+		(ProcessRunLogReader reader, IApplicationClient client) = Create("{\"success\":true,\"rows\":[]}");
+
+		// Act
+		reader.ReadErrorSummary(ProcessId, given);
+
+		// Assert
+		client.Received(1).ExecutePostRequest(SelectUrl, Arg.Any<string>(), expected, 1, Arg.Any<int>());
 	}
 
 	[Test]
@@ -71,7 +86,7 @@ public sealed class ProcessRunLogReaderTests {
 			"{\"success\":false,\"errorInfo\":{\"message\":\"Access denied\"}}");
 
 		// Act
-		Action read = () => reader.ReadErrorSummary(ProcessId);
+		Action read = () => reader.ReadErrorSummary(ProcessId, 60_000);
 
 		// Assert
 		read.Should().Throw<InvalidOperationException>(

@@ -82,7 +82,7 @@ public sealed class RunProcessToolTests {
 
 	private static IProcessRunLogReader NothingLogged() {
 		IProcessRunLogReader reader = Substitute.For<IProcessRunLogReader>();
-		reader.ReadErrorSummary(Arg.Any<Guid>()).Returns((string)null);
+		reader.ReadErrorSummary(Arg.Any<Guid>(), Arg.Any<int>()).Returns((string)null);
 		return reader;
 	}
 
@@ -420,7 +420,7 @@ public sealed class RunProcessToolTests {
 	public void TryRun_Should_Name_The_Logged_Exception_When_The_Platform_Answered_Generically() {
 		// Arrange
 		IProcessRunLogReader reader = Substitute.For<IProcessRunLogReader>();
-		reader.ReadErrorSummary(Guid.Parse("0f5e3a2a-2c8f-4f1e-9d0b-6d4b2f1a7c31"))
+		reader.ReadErrorSummary(Guid.Parse("0f5e3a2a-2c8f-4f1e-9d0b-6d4b2f1a7c31"), Arg.Any<int>())
 			.Returns("System.ArgumentException: Term must be positive");
 		Harness harness = BuildHarness(MigratorSignature(), """{"processId":"0f5e3a2a-2c8f-4f1e-9d0b-6d4b2f1a7c31","processStatus":3,"success":false,"errorInfo":{"message":"An error has occurred during the process execution. Please check the process log for details"}}""", reader);
 
@@ -443,7 +443,7 @@ public sealed class RunProcessToolTests {
 	public void TryRun_Should_Keep_The_Failure_Unchanged_When_Nothing_Was_Logged(string logged) {
 		// Arrange
 		IProcessRunLogReader reader = Substitute.For<IProcessRunLogReader>();
-		reader.ReadErrorSummary(Arg.Any<Guid>()).Returns(logged);
+		reader.ReadErrorSummary(Arg.Any<Guid>(), Arg.Any<int>()).Returns(logged);
 		Harness harness = BuildHarness(MigratorSignature(), """{"processId":"0f5e3a2a-2c8f-4f1e-9d0b-6d4b2f1a7c31","processStatus":3,"success":false,"errorInfo":{"message":"An error has occurred during the process execution. Please check the process log for details"}}""", reader);
 
 		// Act
@@ -454,6 +454,101 @@ public sealed class RunProcessToolTests {
 			because: "the platform's answer is all there is when the run logged nothing");
 		response.Error.Should().NotContain("reports:",
 			because: "a clause that names nothing would read as an empty exception text");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The log read runs inside the MCP response deadline: with too little of it left the log is not read, so the failed verdict is answered in time, and a warning names the run whose log holds the error.")]
+	public void TryRun_Should_Skip_The_Log_Read_When_The_Response_Deadline_Is_Nearly_Spent() {
+		// Arrange
+		IProcessRunLogReader reader = Substitute.For<IProcessRunLogReader>();
+		Harness harness = BuildHarness(MigratorSignature(), """{"processId":"0f5e3a2a-2c8f-4f1e-9d0b-6d4b2f1a7c31","processStatus":3,"success":false,"errorInfo":{"message":"An error has occurred during the process execution. Please check the process log for details"}}""", reader);
+
+		// Act
+		bool launched = harness.Command.TryRun(new RunProcessOptions {
+			ProcessName = ProcessCode,
+			ResponseDeadline = DateTimeOffset.UtcNow.AddSeconds(2)
+		}, out RunProcessResponse response);
+
+		// Assert
+		launched.Should().BeFalse(because: "the run failed whether or not its log was read");
+		reader.DidNotReceive().ReadErrorSummary(Arg.Any<Guid>(), Arg.Any<int>());
+		response.Error.Should().Contain("check the process log",
+			because: "the platform's answer is reported in time instead of turning into still-running");
+		response.Warnings.Should().Contain(warning => warning.Contains("too little of the response time")
+				&& warning.Contains("0f5e3a2a-2c8f-4f1e-9d0b-6d4b2f1a7c31"),
+			because: "the caller is told why the log was not read, and which run's log holds the error");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("With time left before the MCP response deadline, the log read gets that time less a margin for the answer, so it cannot push the failed verdict past the deadline.")]
+	public void TryRun_Should_Bound_The_Log_Read_By_What_Is_Left_Of_The_Response_Deadline() {
+		// Arrange
+		IProcessRunLogReader reader = Substitute.For<IProcessRunLogReader>();
+		Harness harness = BuildHarness(MigratorSignature(), """{"processId":"0f5e3a2a-2c8f-4f1e-9d0b-6d4b2f1a7c31","processStatus":3,"success":false,"errorInfo":{"message":"An error has occurred during the process execution. Please check the process log for details"}}""", reader);
+
+		// Act
+		harness.Command.TryRun(new RunProcessOptions {
+			ProcessName = ProcessCode,
+			ResponseDeadline = DateTimeOffset.UtcNow.AddSeconds(8)
+		}, out RunProcessResponse _);
+
+		// Assert
+		reader.Received(1).ReadErrorSummary(Arg.Any<Guid>(), Arg.Is<int>(timeout => timeout > 0 && timeout <= 5_000));
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("No response deadline, no cap from the caller: the read is left to its own bound.")]
+	public void ResolveLogReadTimeout_Should_Leave_The_Read_Uncapped_Without_A_Deadline() {
+		// Arrange
+		DateTimeOffset now = DateTimeOffset.UtcNow;
+
+		// Act
+		int? uncapped = RunProcessCommand.ResolveLogReadTimeout(null, now);
+		int? spent = RunProcessCommand.ResolveLogReadTimeout(now.AddMilliseconds(3_500), now);
+
+		// Assert
+		uncapped.Should().Be(int.MaxValue, because: "a path with no response deadline needs no cap from the caller");
+		spent.Should().BeNull(because: "3.5 s left is under the 3 s margin plus the 1 s minimum read");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An over-long logged line reaches the answer bounded: the fence caps the server's text, so a whole page of exception text cannot flood the MCP result.")]
+	public void TryRun_Should_Bound_An_Over_Long_Logged_Line() {
+		// Arrange
+		IProcessRunLogReader reader = Substitute.For<IProcessRunLogReader>();
+		reader.ReadErrorSummary(Arg.Any<Guid>(), Arg.Any<int>()).Returns("System.Exception: " + new string('x', 5_000));
+		Harness harness = BuildHarness(MigratorSignature(), """{"processId":"0f5e3a2a-2c8f-4f1e-9d0b-6d4b2f1a7c31","processStatus":3,"success":false,"errorInfo":{"message":"An error has occurred during the process execution. Please check the process log for details"}}""", reader);
+
+		// Act
+		harness.Command.TryRun(new RunProcessOptions { ProcessName = ProcessCode }, out RunProcessResponse response);
+
+		// Assert
+		response.Error.Should().Contain("reports: [untrusted-source-text begin]",
+			because: "the logged text is the server's and is fenced");
+		response.Error.Length.Should().BeLessThan(1_000,
+			because: "the fence caps the logged text, so a 5,000-character line does not reach the answer whole");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The compile hint also fires when the platform names the exception with its full type name, so it does not depend on which form a platform version sends.")]
+	public void BuildResponse_Should_Point_To_A_Compile_For_A_Fully_Named_Missing_Compiled_Method() {
+		// Arrange
+		ProcessStartResponse platform = PlatformResponse(
+			"""{"processId":"0f5e3a2a-2c8f-4f1e-9d0b-6d4b2f1a7c31","processStatus":3,"success":false,"errorInfo":{"errorCode":"System.Collections.Generic.KeyNotFoundException","message":"The given key was not present in the dictionary."}}""");
+
+		// Act
+		RunProcessResponse response = RunProcessCommand.BuildResponse(platform, ProcessCode);
+
+		// Assert
+		response.Error.Should().Contain("compile-creatio with process-name",
+			because: "the full type name is the same missing compiled method as the short one");
+		response.Error.Should().Contain("the active version of the process run as",
+			because: "the code run may not be the active version, so the hint does not call it that");
 	}
 
 	[Test]
@@ -470,7 +565,7 @@ public sealed class RunProcessToolTests {
 
 		// Assert
 		launched.Should().BeTrue(because: "the default platform answer is a completed run: {0}", response.Error);
-		reader.DidNotReceive().ReadErrorSummary(Arg.Any<Guid>());
+		reader.DidNotReceive().ReadErrorSummary(Arg.Any<Guid>(), Arg.Any<int>());
 	}
 
 	[Test]
@@ -479,7 +574,7 @@ public sealed class RunProcessToolTests {
 	public void TryRun_Should_Keep_The_Failure_When_The_Log_Cannot_Be_Read() {
 		// Arrange
 		IProcessRunLogReader reader = Substitute.For<IProcessRunLogReader>();
-		reader.ReadErrorSummary(Arg.Any<Guid>())
+		reader.ReadErrorSummary(Arg.Any<Guid>(), Arg.Any<int>())
 			.Returns(_ => throw new InvalidOperationException("SelectQuery failed: Access denied"));
 		Harness harness = BuildHarness(MigratorSignature(), """{"processId":"0f5e3a2a-2c8f-4f1e-9d0b-6d4b2f1a7c31","processStatus":3,"success":false,"errorInfo":{"message":"An error has occurred during the process execution. Please check the process log for details"}}""", reader);
 
@@ -516,7 +611,7 @@ public sealed class RunProcessToolTests {
 			.And.Contain("may already have run", "the elements before the failing one ran before it stopped")
 			.And.Contain("run again in about two minutes before compiling again",
 				"right after a compile the runtime may still be reloading, and another compile reloads it for nothing");
-		reader.DidNotReceive().ReadErrorSummary(Arg.Any<Guid>());
+		reader.DidNotReceive().ReadErrorSummary(Arg.Any<Guid>(), Arg.Any<int>());
 	}
 
 	[Test]

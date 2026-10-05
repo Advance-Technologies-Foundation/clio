@@ -225,6 +225,107 @@ public sealed class ScriptTaskCompileLifecycleE2ETests {
 		}
 	}
 
+	[Test]
+	[Description("The run-time answers of QA round 2 against the real platform: a compiled script task that throws reaches run-process as the exception it logged, and a script task added after that compile and run before the next one fails with the platform's own KeyNotFoundException errorCode, which clio turns into the compile hint and a FAILED run - not not-started, because the elements before it already ran.")]
+	[AllureTag(RunProcessTool.ToolName)]
+	[AllureName("A throwing script task names its logged exception, and one added since the compile points to a compile")]
+	public async Task ScriptTask_ThatThrows_AndOneAddedSinceTheCompile_Should_NameTheLoggedException_AndPointToACompile() {
+		TeamCityRunGuard.IgnoreIfRunningUnderTeamCityOrGitHubActions(
+			"This fixture compiles the Custom package, reloading the runtime for every user of the stand. "
+			+ "Run it by hand against an owned stand.");
+		if (!TestConfiguration.Load().AllowDestructiveMcpTests) {
+			Assert.Ignore("Opt in with McpE2E__AllowDestructiveMcpTests for this local compile test.");
+		}
+
+		// Arrange
+		await using ProcessDesignerArrangeContext context = await ProcessDesignerE2EArrange.StartAsync(
+			"ScriptTask run-time answers", MinimumCompilePackageVersion, sessionTimeout: TimeSpan.FromMinutes(15));
+		string processName = $"UsrClioBpRunTimeAnswersE2e{Guid.NewGuid():N}";
+		string created = JsonSerializer.Serialize(await ProcessDesignerE2EArrange.CallToolAsync(context,
+			CreateBusinessProcessTool.CreateBusinessProcessToolName, new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["descriptor"] = BuildThrowingDescriptor(processName)
+			}));
+		created.Should().Contain("created (UId:", because: "the arrange step must have built the process");
+
+		bool compileMayBeRunning = false;
+		try {
+			// Act
+			compileMayBeRunning = true;
+			CompileOutcome compiled = await CompileAndWaitAsync(context, processName);
+			compileMayBeRunning = false;
+			string? restart = compiled.Succeeded ? await RestartOnNetCoreHostAsync(context) : null;
+			// The reload can trail the compile's answer, so the first run is retried until the compiled code answers.
+			string threw = await RunUntilAsync(context, processName, 0,
+				text => text.Contains("Term must be positive", StringComparison.Ordinal));
+			string added = JsonSerializer.Serialize(await ProcessDesignerE2EArrange.CallToolAsync(context,
+				ModifyBusinessProcessTool.ModifyBusinessProcessToolName, new Dictionary<string, object?> {
+					["environment-name"] = context.EnvironmentName,
+					["process-name"] = processName,
+					["operations"] = """[{"op":"removeFlow","source":"Check","target":"EndEvent1"},{"op":"addElement","element":{"name":"Double","type":"scriptTask","caption":"Double","scriptTask":{"body":"Set(\"Total\", Get<int>(\"Total\") * 2);\nreturn true;"}}},{"op":"addFlow","source":"Check","target":"Double"},{"op":"addFlow","source":"Double","target":"EndEvent1"}]"""
+				}));
+			string missing = (await ProcessDesignerE2EArrange.CallToolAsync(context, RunProcessTool.ToolName,
+				new Dictionary<string, object?> {
+					["environment-name"] = context.EnvironmentName,
+					["process-name"] = processName,
+					["parameters"] = new Dictionary<string, object?> { ["Amount"] = 1 },
+					["result-parameters"] = new[] { "Total" }
+				})).Content.OfType<TextContentBlock>().First().Text;
+
+			// Assert
+			compiled.Succeeded.Should().BeTrue(because: "the throwing body is valid C#: {0}", compiled.Text);
+			if (restart is not null) {
+				restart.Should().Contain(ExitCodeZero,
+					because: "a .NET host runs the newly compiled code only after a restart: {0}", restart);
+			}
+			threw.Should().Contain("The process log of this run reports",
+				because: "the platform answers a script's own exception only with 'check the process log', and "
+					+ "clio reads the line the run logged: {0}", threw);
+			threw.Should().Contain("Term must be positive",
+				because: "the first logged line is the script's own exception, not an invocation wrapper: {0}", threw);
+			added.Should().Contain(ExitCodeZero, because: "adding a script task is a valid edit: {0}", added);
+			using JsonDocument run = JsonDocument.Parse(missing);
+			run.RootElement.GetProperty("status").GetString().Should().Be("error",
+				because: "the run stopped at the uncompiled script task after the elements before it ran: {0}", missing);
+			string error = run.RootElement.GetProperty("error").GetString()!;
+			error.Should().Contain("[KeyNotFoundException]",
+				because: "the platform's own errorCode for a script task missing from the compiled code is the "
+					+ "exception's short type name: {0}", error);
+			error.Should().Contain("compile-creatio with process-name",
+				because: "clio turns that errorCode into the compile hint: {0}", error);
+		} finally {
+			// The process reached a compile and stays under its unique name, like the activation test's; a compile
+			// whose outcome is unknown is reported, since deleting a schema under it is not safe.
+			if (compileMayBeRunning) {
+				await TestContext.Error.WriteLineAsync($"The compile outcome is unknown; retained '{processName}'. "
+					+ "Delete it once the compile has stopped.");
+			}
+		}
+	}
+
+	// Runs the process until the answer satisfies the predicate, up to about three minutes: right after a
+	// process-name compile the runtime can still be reloading, and the first runs may answer from the old code.
+	private static async Task<string> RunUntilAsync(ProcessDesignerArrangeContext context, string processName,
+			int amount, Func<string, bool> answered) {
+		string text = string.Empty;
+		for (int attempt = 0; attempt < 7; attempt++) {
+			if (attempt > 0) {
+				await Task.Delay(TimeSpan.FromSeconds(30), context.CancellationTokenSource.Token);
+			}
+			text = (await ProcessDesignerE2EArrange.CallToolAsync(context, RunProcessTool.ToolName,
+				new Dictionary<string, object?> {
+					["environment-name"] = context.EnvironmentName,
+					["process-name"] = processName,
+					["parameters"] = new Dictionary<string, object?> { ["Amount"] = amount },
+					["result-parameters"] = new[] { "Total" }
+				})).Content.OfType<TextContentBlock>().First().Text;
+			if (answered(text)) {
+				break;
+			}
+		}
+		return text;
+	}
+
 	/// <summary>
 	/// Restarts the application when the stand is a .NET host, where newly compiled code runs only after a restart,
 	/// and returns the restart's answer; <c>null</c> on .NET Framework, where the compile's own reload is enough.
@@ -331,6 +432,29 @@ public sealed class ScriptTaskCompileLifecycleE2ETests {
 
 	/// <summary>What one compile ended with, and the text that says so.</summary>
 	private sealed record CompileOutcome(bool Succeeded, string Text);
+
+	private static string BuildThrowingDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Run-time Answers E2E",
+		  "packageName": "Custom",
+		  "parameters": [
+		    { "name": "Amount", "type": "Integer", "direction": "In" },
+		    { "name": "Total", "type": "Integer", "direction": "Out" }
+		  ],
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "Check", "type": "scriptTask", "caption": "Check",
+		      "scriptTask": { "body": "if (Get<int>(\"Amount\") <= 0) {\n    throw new System.ArgumentException(\"Term must be positive\");\n}\nSet(\"Total\", Get<int>(\"Amount\") * 2);\nreturn true;" } },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "Check" },
+		    { "source": "Check", "target": "EndEvent1" }
+		  ]
+		}
+		""";
 
 	private static string BuildMultiplyDescriptor(string processName) =>
 		$$"""

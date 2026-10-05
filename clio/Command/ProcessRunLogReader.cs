@@ -15,6 +15,10 @@ public interface IProcessRunLogReader {
 	/// element's exception as <c>Type: message</c> - read from <c>SysProcessLog.ErrorDescription</c>.
 	/// </summary>
 	/// <param name="processId">The run's process id, as RunProcess returned it.</param>
+	/// <param name="timeoutMs">
+	/// What the read may spend, in milliseconds - the caller passes what is left of its own deadline; the read never
+	/// takes more than its own 10 s bound.
+	/// </param>
 	/// <returns>The first non-empty line, or <see langword="null"/> when the run logged no error.</returns>
 	/// <remarks>
 	/// RunProcess answers a run whose script task threw with only "check the process log": the platform swallows
@@ -23,7 +27,7 @@ public interface IProcessRunLogReader {
 	/// before RunProcess returns. The rest of that text is the stack trace.
 	/// </remarks>
 	/// <exception cref="InvalidOperationException">The SelectQuery failed.</exception>
-	string ReadErrorSummary(Guid processId);
+	string ReadErrorSummary(Guid processId, int timeoutMs);
 }
 
 internal sealed class ProcessRunLogReader(IApplicationClient applicationClient, IServiceUrlBuilder serviceUrlBuilder)
@@ -32,14 +36,12 @@ internal sealed class ProcessRunLogReader(IApplicationClient applicationClient, 
 	// DataValueType 0 is Guid, as in ClassicEntitySchemaQuery's UId filters.
 	private const int GuidDataValueType = 0;
 
-	// Bounded, once and short: the read decorates a failure already reported, and it runs inside the MCP response
-	// deadline, so the read itself can push the answer past it - a run that fails within this bound of the deadline
-	// comes back as still-running (which says not to re-run). The short bound narrows that window; it does not
-	// close it.
+	// Bounded, once and short: the read decorates a failure already reported. The caller also caps it by what is
+	// left of the MCP response deadline, so it cannot push a failed run's answer past it.
 	private const int ReadTimeoutMs = 10_000;
 
 	/// <inheritdoc />
-	public string ReadErrorSummary(Guid processId) {
+	public string ReadErrorSummary(Guid processId, int timeoutMs) {
 		JObject query = ClassicEntitySchemaQuery.Query("SysProcessLog",
 			new JObject { ["ErrorDescription"] = ClassicEntitySchemaQuery.Column("ErrorDescription") },
 			ClassicEntitySchemaQuery.Group(
@@ -47,7 +49,7 @@ internal sealed class ProcessRunLogReader(IApplicationClient applicationClient, 
 			1);
 		string url = serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select);
 		string json = applicationClient.ExecutePostRequest(url, query.ToString(Newtonsoft.Json.Formatting.None),
-			ReadTimeoutMs, maxAttempts: 1);
+			Math.Max(1, Math.Min(ReadTimeoutMs, timeoutMs)), maxAttempts: 1);
 		JArray rows = DataServiceSelectResponse.ReadRows(json);
 		string text = rows.FirstOrDefault()?["ErrorDescription"]?.ToString();
 		if (string.IsNullOrWhiteSpace(text)) {

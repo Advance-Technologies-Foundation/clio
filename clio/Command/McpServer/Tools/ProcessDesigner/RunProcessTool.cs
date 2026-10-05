@@ -103,7 +103,9 @@ public sealed class RunProcessTool(
 			Environment = args.EnvironmentName,
 			Uri = args.Uri,
 			Login = args.Login,
-			Password = args.Password
+			Password = args.Password,
+			// The same deadline the race below uses, so a failed run's log read never outlives it.
+			ResponseDeadline = DateTimeOffset.UtcNow + (ResponseDeadlineOverride ?? McpProgressHeartbeat.DefaultResponseDeadline)
 		};
 
 		try {

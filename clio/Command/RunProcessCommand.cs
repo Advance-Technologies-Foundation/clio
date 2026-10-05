@@ -25,6 +25,10 @@ public sealed class RunProcessOptions : EnvironmentOptions {
 	public IReadOnlyList<string> ResultParameters { get; set; }
 
 	public int TimeoutSeconds { get; set; }
+
+	// When the MCP response deadline falls, set by the tool: past it the tool answers still-running, so the read of
+	// a failed run's log gets only what is left. Null on a path with no such deadline.
+	internal DateTimeOffset? ResponseDeadline { get; set; }
 }
 
 public sealed class RunProcessResponse {
@@ -88,9 +92,21 @@ public class RunProcessCommand(
 	// lookup can still raise it, hence "most often".
 	private const string MissingCompiledMethodCode = "KeyNotFoundException";
 
+	// The platform puts the exception's type name in errorCode (ResponseUtils.CreateErrorInfo, measured as the short
+	// name); a full name is accepted too, so the hint does not depend on which of the two a platform version sends.
+	private static bool IsMissingCompiledMethod(string errorCode) =>
+		string.Equals(errorCode, MissingCompiledMethodCode, StringComparison.Ordinal)
+		|| (errorCode?.EndsWith("." + MissingCompiledMethodCode, StringComparison.Ordinal) ?? false);
+
+	// The read of a failed run's log gets what is left of the MCP response deadline, less this margin for building
+	// and sending the answer, and is skipped when less than the minimum would be left.
+	private const int LogReadMarginMs = 3_000;
+	private const int MinimumLogReadMs = 1_000;
+
 	internal static string BuildMissingCompiledMethodHint(string processCode) =>
-		$" This is most often a script task saved since the active version of '{processCode}' was last compiled - "
-		+ "run-process runs the active version whatever code it is given - so the compiled code does not have it "
+		" This is most often a script task saved since the active version of the process run as "
+		+ $"'{processCode}' was last compiled - run-process runs the active version whatever code it is given - so the "
+		+ "compiled code does not have it "
 		+ "yet: the run stops when it reaches that element, and the elements before it may already have run. If a "
 		+ "process-name compile of it succeeded only minutes ago, the runtime may still be reloading: run again in "
 		+ "about two minutes before compiling again. Otherwise ask the user, then run compile-creatio with "
@@ -183,7 +199,7 @@ public class RunProcessCommand(
 		}
 
 		response = BuildResponse(platformResponse, model.Code);
-		AddLoggedError(platformResponse, response);
+		AddLoggedError(platformResponse, response, options.ResponseDeadline);
 		// Feeds Execute's exit code, so it tracks the outcome rather than "a request was sent" — a refusal
 		// and a failed run would otherwise both exit 0.
 		return response.Error is null;
@@ -193,8 +209,10 @@ public class RunProcessCommand(
 	// with only "check the process log" and no errorCode: the platform swallows the element's exception before
 	// RunProcess builds its answer. It logged it, though, on the run's SysProcessLog row before returning, so the
 	// failure names it. Best effort: when the log cannot be read the generic message stays, and a warning says
-	// where to look.
-	private void AddLoggedError(ProcessStartResponse platformResponse, RunProcessResponse response) {
+	// where to look. The read runs inside the MCP response deadline, so it gets only what is left of it: past the
+	// deadline the tool answers still-running, and the failure - with what the log said - would be lost.
+	private void AddLoggedError(ProcessStartResponse platformResponse, RunProcessResponse response,
+		DateTimeOffset? responseDeadline) {
 		if (response.Error is null || platformResponse is null || platformResponse.ProcessId == Guid.Empty) {
 			return;
 		}
@@ -202,9 +220,15 @@ public class RunProcessCommand(
 		if (!string.IsNullOrWhiteSpace(errorCode)) {
 			return;
 		}
+		int? readTimeoutMs = ResolveLogReadTimeout(responseDeadline, DateTimeOffset.UtcNow);
+		if (readTimeoutMs is null) {
+			(response.Warnings ??= []).Add("The error this run logged was not read, because too little of the "
+				+ $"response time was left; it is in the process log of run {platformResponse.ProcessId}.");
+			return;
+		}
 		string logged;
 		try {
-			logged = processRunLogReader.ReadErrorSummary(platformResponse.ProcessId);
+			logged = processRunLogReader.ReadErrorSummary(platformResponse.ProcessId, readTimeoutMs.Value);
 		}
 		catch (Exception exception) when (exception is not OutOfMemoryException) {
 			// Reading the log is a courtesy on top of a failure already reported; no failure of it may replace
@@ -220,6 +244,16 @@ public class RunProcessCommand(
 		if (fenced is not null) {
 			response.Error += $" The process log of this run reports: {fenced}";
 		}
+	}
+
+	// What the log read may spend: everything when no response deadline applies, otherwise what is left of it less
+	// the margin, or null when that is under the minimum.
+	internal static int? ResolveLogReadTimeout(DateTimeOffset? responseDeadline, DateTimeOffset now) {
+		if (responseDeadline is null) {
+			return int.MaxValue;
+		}
+		double left = (responseDeadline.Value - now).TotalMilliseconds - LogReadMarginMs;
+		return left < MinimumLogReadMs ? null : (int)Math.Min(left, int.MaxValue);
 	}
 
 	// A refusal, a background queueing and an inactive descriptor arrive with the SAME empty id and
@@ -238,7 +272,7 @@ public class RunProcessCommand(
 		// reads as a refusal - but the missing compiled method is thrown when the flow REACHES the script task, so
 		// the elements before it ran. Reported as a failed run, so a caller does not re-run them as not-started.
 		if (noHandle && !platformResponse.Success
-				&& string.Equals(errorCode, MissingCompiledMethodCode, StringComparison.Ordinal)) {
+				&& IsMissingCompiledMethod(errorCode)) {
 			return new RunProcessResponse {
 				Status = StatusNames[ErrorStatus],
 				Error = DescribeFailure(errorCode, errorMessage, processCode)
@@ -291,7 +325,7 @@ public class RunProcessCommand(
 		string detail = UntrustedText.Fenced(message) ?? "the platform returned no error details";
 		return $"The process run failed: {detail}."
 			+ DescribeErrorCode(errorCode)
-			+ (string.Equals(errorCode, MissingCompiledMethodCode, StringComparison.Ordinal)
+			+ (IsMissingCompiledMethod(errorCode)
 				? BuildMissingCompiledMethodHint(processCode)
 				: string.Empty);
 	}

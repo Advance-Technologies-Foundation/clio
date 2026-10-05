@@ -9,8 +9,10 @@ date: 2026-10-02
 
 **What is true** - on an interpreted process with a script task, the order "compile the new version with
 `compile-creatio process-name=<version>`, then `set-active-business-process-version`" leaves the version
-runnable: the first run after the activation executes the new body (measured on the local .NET Framework stand,
-2026-10-02: a 17-character value was refused under the new version's 16 limit, no compile in between). The
+runnable: the first run after the activation executes the new body. Measured twice on the local .NET Framework
+stand, 2026-10-02: in an agent session, a 17-character value was refused under the new version's 16 limit with no
+compile in between; and the manual lifecycle E2E named below, which pins it, runs Amount 7 through a version whose
+body triples it and gets 21, not the root's 14. The
 activation re-saves every member of the family, but it writes the family's flags, not the code the compiled
 wrapper holds. A compile is owed only when the version's C# changed since its last SUCCESSFUL process-name
 compile; a compile that failed covers nothing. Not measured: a version the runtime does not interpret, and a
