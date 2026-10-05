@@ -392,12 +392,13 @@ public sealed class DescribeProcessToolTests {
 
 		// Assert
 		start.Should().BeGreaterThan(-1, because: "a field the contract never names is a field no caller reads");
-		description.Should().Contain("addData, changeData, deleteData",
+		description.Should().Contain("each data block's objectWarning (addData, changeData, deleteData",
 			because: "the warning is carried by all three data blocks, and naming them tells a caller where to look");
 		description.Should().Contain("ItemNotFoundException",
 			because: "a stored row id fails at run time, which is the half of the warning a designer view cannot show");
-		description.Should().Contain("naming the setElement repair",
-			because: "the repair is setElement.<block> {source}, and the warning carries it");
+		description.Should().Contain("naming the in-place addMapping repair",
+			because: "the repair is an addMapping of the schema UId, which keeps the element's values and filter - "
+				+ "the block route would read the stored row id as a different object");
 	}
 
 	/// <summary>Reads the describe tool's own [Description] - the agent-facing contract under test.</summary>

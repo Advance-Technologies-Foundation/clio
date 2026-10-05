@@ -45,7 +45,7 @@ public sealed class SchemaReferenceLookupContractToolE2ETests : McpContractFixtu
 		string description = await AdvertisedDescriptionAsync(context, ModifyToolName);
 
 		// Assert
-		description.Should().Contain("a Lookup on the schema registry (Add data EntitySchemaId",
+		description.Should().Contain("a Lookup on the schema registry (Add/Delete data EntitySchemaId",
 			because: "naming the parameters is how a caller recognises the case before it writes one");
 		description.Should().Contain("holds the schema UId, and a registry row id is stored as that UId",
 			because: "both halves are the contract: the UId describe reports is accepted, and a row id is "
@@ -65,12 +65,12 @@ public sealed class SchemaReferenceLookupContractToolE2ETests : McpContractFixtu
 		string description = await AdvertisedDescriptionAsync(context, DescribeToolName);
 
 		// Assert
-		description.Should().Contain("(addData, changeData, deleteData) also carries objectWarning",
+		description.Should().Contain("each data block's objectWarning (addData, changeData, deleteData",
 			because: "a caller has to know which blocks carry the field to look for it");
 		description.Should().Contain("ItemNotFoundException",
 			because: "a stored row id fails at run time, the half of the warning no designer view shows");
-		description.Should().Contain("naming the setElement repair",
-			because: "the warning is only useful if it says how to repair the element");
+		description.Should().Contain("naming the in-place addMapping repair",
+			because: "the warning is only useful if it names a repair the element in that state accepts");
 	}
 
 	/// <summary>

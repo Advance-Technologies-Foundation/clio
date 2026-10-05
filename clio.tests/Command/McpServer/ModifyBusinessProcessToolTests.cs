@@ -468,9 +468,10 @@ public class ModifyBusinessProcessToolTests {
 		int schemaRule = description.IndexOf("holds the schema UId", StringComparison.Ordinal);
 
 		// Assert
+		recordRule.Should().BeGreaterThan(-1, because: "the general rule the exception narrows must still be stated");
 		schemaRule.Should().BeGreaterThan(recordRule,
 			because: "the exception has to follow the general rule it narrows, in the same addMapping clause");
-		description.Should().Contain("Add data EntitySchemaId",
+		description.Should().Contain("Add/Delete data EntitySchemaId, Modify data EntitySchemaUId",
 			because: "naming the parameters is what lets a caller recognise the case before it writes one");
 		description.Should().Contain("a registry row id is stored as that UId",
 			because: "the row id is the reference object's primary column, so a caller holding one must learn it "

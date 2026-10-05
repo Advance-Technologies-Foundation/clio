@@ -3294,33 +3294,27 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
 		string processName = $"UsrClioBpSchemaRefE2e{Guid.NewGuid():N}";
 		try {
-			await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			CallToolResult created = await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
 				["descriptor"] = BuildSchemaReferenceDescriptor(processName)
 			});
+			created.IsError.Should().NotBeTrue(because: "arrange: the process the edits run against must exist");
 			(string contactRowId, string contactSchemaUId) = await ReadContactRegistryRowAsync(context);
 
-			// Act - the row id onto Add data, then describe's own value back onto Modify data
-			CallToolResult byRowId = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
-				["environment-name"] = context.EnvironmentName,
-				["process-name"] = processName,
-				["operations"] = AddMappingOperation("AddData1", "EntitySchemaId", contactRowId)
-			});
+			// Act - the row id onto Add data, then describe's own value back onto Modify data. Both go through
+			// ModifyExpectingSuccessAsync: the success line, not the absence of one refusal, is what proves an edit.
+			await ModifyExpectingSuccessAsync(context, processName,
+				AddMappingOperation("AddData1", "EntitySchemaId", contactRowId));
 			DescribeProcessResult described = ParseDescribeResult(await CallToolAsync(context, DescribeToolName,
 				new Dictionary<string, object?> {
 					["environment-name"] = context.EnvironmentName, ["process-name"] = processName
 				}));
 			string describedChangeTarget = described.Elements.Single(e => e.Name == "ChangeData1").Parameters
 				.Single(p => p.Name == "EntitySchemaUId").Value;
-			CallToolResult resubmitted = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
-				["environment-name"] = context.EnvironmentName,
-				["process-name"] = processName,
-				["operations"] = AddMappingOperation("ChangeData1", "EntitySchemaUId", describedChangeTarget)
-			});
+			await ModifyExpectingSuccessAsync(context, processName,
+				AddMappingOperation("ChangeData1", "EntitySchemaUId", describedChangeTarget));
 
-			// Assert
-			JsonSerializer.Serialize(byRowId.Content).Should().NotContain("is not valid for parameter",
-				because: "the row id is the reference object's primary column, so it is normalized, not refused");
+			// Assert - both edits were applied (asserted inside ModifyExpectingSuccessAsync); what they stored:
 			JsonElement addData = described.Elements.Single(e => e.Name == "AddData1").AdditionalData["addData"];
 			addData.GetProperty("source").GetString().Should().Be("Contact",
 				because: "a stored schema UId resolves back to the object's name; a stored row id read back as null");
@@ -3329,9 +3323,8 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			addData.TryGetProperty("objectWarning", out _).Should().BeFalse(
 				because: "the warning is for objects the designer cannot show, and this one is the designer's form");
 			describedChangeTarget.Should().Be(contactSchemaUId,
-				because: "the changeData block wrote Contact's schema UId, which describe reports verbatim");
-			JsonSerializer.Serialize(resubmitted.Content).Should().NotContain("is not valid for parameter",
-				because: "a described value re-submits unchanged - the promise clio#1300 found broken");
+				because: "the changeData block wrote Contact's schema UId, which describe reports verbatim - and "
+					+ "re-submitting it was refused with 'no SysSchema record has this id' before the fix (clio#1300)");
 		} finally {
 			await DeleteProcessAsync(context.EnvironmentName!, processName);
 		}
