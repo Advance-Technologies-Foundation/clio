@@ -455,6 +455,28 @@ public class ModifyBusinessProcessToolTests {
 		}
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("clio#1368 / #1300: the Lookup-value rule in modify-business-process carries its one exception. A Lookup on the schema registry (Add data EntitySchemaId, Modify data EntitySchemaUId, Delete data EntitySchemaId) holds the SCHEMA UId describe reports, not a record id; without the sentence the 'bare record Guid' rule beside it sends a caller to the view's row Id, the one value that failed at run time.")]
+	public void ModifyBusinessProcess_ShouldStateTheSchemaRegistryLookupRule() {
+		// Arrange
+		string description = ReadToolDescription(typeof(ModifyBusinessProcessTool),
+			nameof(ModifyBusinessProcessTool.ModifyBusinessProcess));
+
+		// Act
+		int recordRule = description.IndexOf("takes a bare non-empty record Guid", StringComparison.Ordinal);
+		int schemaRule = description.IndexOf("holds the schema UId", StringComparison.Ordinal);
+
+		// Assert
+		schemaRule.Should().BeGreaterThan(recordRule,
+			because: "the exception has to follow the general rule it narrows, in the same addMapping clause");
+		description.Should().Contain("Add data EntitySchemaId",
+			because: "naming the parameters is what lets a caller recognise the case before it writes one");
+		description.Should().Contain("a registry row id is stored as that UId",
+			because: "the row id is the reference object's primary column, so a caller holding one must learn it "
+				+ "is normalized rather than refused");
+	}
+
 
 	[Test]
 	[Category("Unit")]

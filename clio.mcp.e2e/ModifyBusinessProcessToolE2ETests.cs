@@ -3285,6 +3285,141 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		[ { "op": "setConnections", "elementName": "Task1", "connections": [ { "column": "Account", "expression": "[#DateValue.2026-01-01#]" } ] } ]
 		""";
 
+	[Test]
+	[Description("clio#1368 / #1300 over the real MCP path: a Lookup on the schema registry holds the schema UId. addMapping on an Add data element's EntitySchemaId given Contact's VwSysEntitySchemaInWorkspace ROW Id - the view's primary column - stores Contact's schema UId, so describe names the object and raises no objectWarning; before the fix the row id was stored verbatim, failed at run time with ItemNotFoundException and opened blank in the designer. Re-submitting the EntitySchemaUId that describe reports for a Modify data element then succeeds, where it was refused with 'no SysSchema record has this id'. Needs CrtProcessBuilder 1.6.6.64 or later on the stand.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process stores a schema-registry Lookup as the schema UId")]
+	public async Task ModifyBusinessProcess_Should_StoreTheSchemaUId_WhenAddMappingTargetsASchemaRegistryLookup() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpSchemaRefE2e{Guid.NewGuid():N}";
+		try {
+			await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["descriptor"] = BuildSchemaReferenceDescriptor(processName)
+			});
+			(string contactRowId, string contactSchemaUId) = await ReadContactRegistryRowAsync(context);
+
+			// Act - the row id onto Add data, then describe's own value back onto Modify data
+			CallToolResult byRowId = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName,
+				["operations"] = AddMappingOperation("AddData1", "EntitySchemaId", contactRowId)
+			});
+			DescribeProcessResult described = ParseDescribeResult(await CallToolAsync(context, DescribeToolName,
+				new Dictionary<string, object?> {
+					["environment-name"] = context.EnvironmentName, ["process-name"] = processName
+				}));
+			string describedChangeTarget = described.Elements.Single(e => e.Name == "ChangeData1").Parameters
+				.Single(p => p.Name == "EntitySchemaUId").Value;
+			CallToolResult resubmitted = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName,
+				["operations"] = AddMappingOperation("ChangeData1", "EntitySchemaUId", describedChangeTarget)
+			});
+
+			// Assert
+			JsonSerializer.Serialize(byRowId.Content).Should().NotContain("is not valid for parameter",
+				because: "the row id is the reference object's primary column, so it is normalized, not refused");
+			JsonElement addData = described.Elements.Single(e => e.Name == "AddData1").AdditionalData["addData"];
+			addData.GetProperty("source").GetString().Should().Be("Contact",
+				because: "a stored schema UId resolves back to the object's name; a stored row id read back as null");
+			addData.GetProperty("sourceSchemaUId").GetString().Should().Be(contactSchemaUId,
+				because: "what is stored must be the UId the runtime's GetInstanceByUId loads");
+			addData.TryGetProperty("objectWarning", out _).Should().BeFalse(
+				because: "the warning is for objects the designer cannot show, and this one is the designer's form");
+			describedChangeTarget.Should().Be(contactSchemaUId,
+				because: "the changeData block wrote Contact's schema UId, which describe reports verbatim");
+			JsonSerializer.Serialize(resubmitted.Content).Should().NotContain("is not valid for parameter",
+				because: "a described value re-submits unchanged - the promise clio#1300 found broken");
+		} finally {
+			await DeleteProcessAsync(context.EnvironmentName!, processName);
+		}
+	}
+
+	private static string AddMappingOperation(string elementName, string elementParameter, string value) =>
+		JsonSerializer.Serialize(new object[] {
+			new Dictionary<string, object> {
+				["op"] = "addMapping",
+				["mapping"] = new Dictionary<string, string> {
+					["elementName"] = elementName, ["elementParameter"] = elementParameter, ["value"] = value
+				}
+			}
+		});
+
+	/// <summary>
+	/// Contact's ROOT row in the registry view: its row Id (the view's primary column) and its schema UId. The
+	/// view also lists one row per package extending Contact, each with its own pair; ExtendParent picks the root.
+	/// </summary>
+	private static async Task<(string RowId, string SchemaUId)> ReadContactRegistryRowAsync(ArrangeContext context) {
+		CallToolResult result = await context.Session.CallToolAsync(ClioRunTool.ToolName,
+			new Dictionary<string, object?> {
+				["command"] = ExecuteEsqTool.ToolName,
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = context.EnvironmentName,
+					["query"] = JsonSerializer.Deserialize<JsonElement>("""
+						{ "rootSchemaName": "VwSysEntitySchemaInWorkspace", "operationType": 0, "allColumns": false,
+						  "columns": { "items": {
+						    "Id": { "expression": { "expressionType": 0, "columnPath": "Id" } },
+						    "UId": { "expression": { "expressionType": 0, "columnPath": "UId" } } } },
+						  "filters": { "filterType": 6, "logicalOperation": 0, "items": {
+						    "name": { "filterType": 1, "comparisonType": 3,
+						      "leftExpression": { "expressionType": 0, "columnPath": "Name" },
+						      "rightExpression": { "expressionType": 2, "parameter": { "dataValueType": 1, "value": "Contact" } } },
+						    "root": { "filterType": 1, "comparisonType": 3,
+						      "leftExpression": { "expressionType": 0, "columnPath": "ExtendParent" },
+						      "rightExpression": { "expressionType": 2, "parameter": { "dataValueType": 12, "value": false } } } } } }
+						""")
+				}
+			}, context.CancellationTokenSource.Token);
+		ExecuteEsqResponse response = EntitySchemaStructuredResultParser.Extract<ExecuteEsqResponse>(result);
+		response.Success.Should().BeTrue(because: "arrange: the registry view must be readable to pick Contact's row");
+		JsonElement row = response.Rows!.Value.EnumerateArray().Single();
+		return (row.GetProperty("Id").GetString()!, row.GetProperty("UId").GetString()!);
+	}
+
+	/// <summary>Removes the process the test built; a failure is reported, not thrown, so it cannot mask the test's own.</summary>
+	private static async Task DeleteProcessAsync(string environmentName, string processName) {
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		using CancellationTokenSource cleanup = new(TimeSpan.FromMinutes(10));
+		ClioCliCommandResult deleted = await ClioCliCommandRunner.RunAsync(settings,
+			["delete-schema", processName, "--remote", "-e", environmentName], cancellationToken: cleanup.Token);
+		if (deleted.ExitCode != 0) {
+			await TestContext.Error.WriteLineAsync(
+				$"Could not delete '{processName}': {deleted.StandardOutput} {deleted.StandardError}");
+		}
+	}
+
+	private static string BuildSchemaReferenceDescriptor(string processName) =>
+		JsonSerializer.Serialize(new Dictionary<string, object> {
+			["name"] = processName,
+			["caption"] = "Schema reference E2E",
+			["packageName"] = "Custom",
+			["elements"] = new object[] {
+				new Dictionary<string, object> { ["name"] = "Start1", ["type"] = "startEvent", ["caption"] = "Start" },
+				new Dictionary<string, object> {
+					["name"] = "AddData1", ["type"] = "userTask", ["userTaskName"] = "AddDataUserTask",
+					["caption"] = "Add data"
+				},
+				new Dictionary<string, object> {
+					["name"] = "ChangeData1", ["type"] = "changeData", ["caption"] = "Modify data",
+					["changeData"] = new Dictionary<string, object> {
+						["source"] = "Contact",
+						["values"] = new object[] {
+							new Dictionary<string, string> { ["column"] = "JobTitle", ["value"] = "e2e" }
+						}
+					}
+				},
+				new Dictionary<string, object> { ["name"] = "End1", ["type"] = "endEvent", ["caption"] = "End" }
+			},
+			["flows"] = new object[] {
+				new Dictionary<string, string> { ["source"] = "Start1", ["target"] = "AddData1" },
+				new Dictionary<string, string> { ["source"] = "AddData1", ["target"] = "ChangeData1" },
+				new Dictionary<string, string> { ["source"] = "ChangeData1", ["target"] = "End1" }
+			}
+		});
+
 	private static DescribeProcessResult ParseDescribeResult(CallToolResult callResult) {
 		JsonSerializerOptions options = new() { PropertyNameCaseInsensitive = true };
 		JsonElement content = JsonSerializer.SerializeToElement(callResult.Content);
