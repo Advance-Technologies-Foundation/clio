@@ -242,8 +242,8 @@ internal class FindAppCommandTests : BaseCommandTests<FindAppOptions> {
 		// Assert
 		act.Should().Throw<InvalidOperationException>(
 				because: "empty sections after a failed query would look exactly like an application without sections")
-			.WithMessage("*Column not found*",
-				because: "the caller must see why the sections could not be loaded");
+			.WithMessage("Failed to load application sections:*Column not found*",
+				because: "the caller must see which step failed and why the sections could not be loaded");
 	}
 
 	[Test]

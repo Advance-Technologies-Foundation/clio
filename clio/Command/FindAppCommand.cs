@@ -219,15 +219,21 @@ public class FindAppCommand : Command<FindAppOptions> {
 		if (applicationIds.Count == 0) {
 			return new Dictionary<string, IReadOnlyList<AppSectionSearchResult>>();
 		}
-		SectionsResponse response = ExecuteSelectQuery<SectionsResponse>(
-			_applicationClient,
-			_serviceUrlBuilder,
-			BuildSelectQueryWithInFilter(
-				"ApplicationSection",
-				SectionColumns,
-				"ApplicationId",
-				applicationIds,
-				GuidDataValueType));
+		SectionsResponse response;
+		try {
+			response = ExecuteSelectQuery<SectionsResponse>(
+				_applicationClient,
+				_serviceUrlBuilder,
+				BuildSelectQueryWithInFilter(
+					"ApplicationSection",
+					SectionColumns,
+					"ApplicationId",
+					applicationIds,
+					GuidDataValueType));
+		} catch (InvalidOperationException ex) {
+			// The application query fails with the same "SelectQuery failed: ..." text; name the step.
+			throw new InvalidOperationException($"Failed to load application sections: {ex.Message}", ex);
+		}
 		return response.Rows
 			.GroupBy(row => row.ApplicationId ?? string.Empty, StringComparer.OrdinalIgnoreCase)
 			.ToDictionary(

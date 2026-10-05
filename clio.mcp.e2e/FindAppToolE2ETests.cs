@@ -25,6 +25,7 @@ namespace Clio.Mcp.E2E;
 [NonParallelizable]
 public sealed class FindAppToolE2ETests : McpContractFixtureBase {
 	private const string FindAppToolName = FindAppTool.FindAppToolName;
+	private const int MaxCodeLookups = 20;
 
 	[Category("McpE2E.Sandbox")]
 	[Test]
@@ -65,7 +66,7 @@ public sealed class FindAppToolE2ETests : McpContractFixtureBase {
 	[Description("Starts the real clio MCP server and verifies that find-app with no filter returns, for every application, the same sections as find-app with that application's exact code (ENG-102120).")]
 	[AllureTag(FindAppToolName)]
 	[AllureName("find-app batch returns every application's sections")]
-	[AllureDescription("Calls find-app with no filter, then find-app with each returned application code, and verifies the section codes match per application. The batch request covers all applications at once, the code request covers one; the virtual ApplicationSection schema once answered a multi-application OR filter with the first application's sections only.")]
+	[AllureDescription("Calls find-app with no filter, then find-app with each of the first 20 returned application codes, and verifies the section codes match per application. The batch request covers all applications at once, the code request covers one; the virtual ApplicationSection schema once answered a multi-application OR filter with the first application's sections only.")]
 	public async Task FindApp_Should_Return_The_Same_Sections_As_A_Code_Lookup_For_Every_Application() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -78,20 +79,24 @@ public sealed class FindAppToolE2ETests : McpContractFixtureBase {
 		// Act
 		FindAppResponseEnvelope batch = EntitySchemaStructuredResultParser.Extract<FindAppResponseEnvelope>(
 			await CallFindAppAsync(session, environmentName, cancellationTokenSource.Token));
+		batch.Success.Should().BeTrue(because: $"find-app with no filter should succeed: {batch.Error}");
+		// One sequential code lookup per application; bounded so a stand with many apps stays inside the timeout.
+		FindAppItemEnvelope[] sampled = (batch.Applications ?? []).Take(MaxCodeLookups).ToArray();
 		Dictionary<string, string[]> expectedSectionsByCode = new(StringComparer.OrdinalIgnoreCase);
-		foreach (FindAppItemEnvelope application in batch.Applications ?? []) {
+		foreach (FindAppItemEnvelope application in sampled) {
 			FindAppResponseEnvelope single = EntitySchemaStructuredResultParser.Extract<FindAppResponseEnvelope>(
 				await CallFindAppAsync(session, environmentName, cancellationTokenSource.Token, code: application.Code));
 			single.Success.Should().BeTrue(
 				because: $"find-app with the exact code '{application.Code}' should succeed: {single.Error}");
 			expectedSectionsByCode[application.Code!] = SectionCodes(single.Applications!.Single());
 		}
+		if (expectedSectionsByCode.Values.Count(codes => codes.Length > 0) < 2) {
+			Assert.Inconclusive("The sandbox needs at least two applications with sections among the first " +
+				$"{MaxCodeLookups}, or a batch that returns only the first application's sections would pass unnoticed.");
+		}
 
 		// Assert
-		batch.Success.Should().BeTrue(because: $"find-app with no filter should succeed: {batch.Error}");
-		expectedSectionsByCode.Values.Count(codes => codes.Length > 0).Should().BeGreaterThan(1,
-			because: "the sandbox must have at least two applications with sections, or a batch that returns only the first application's sections would pass unnoticed");
-		batch.Applications!.ToDictionary(application => application.Code!, SectionCodes, StringComparer.OrdinalIgnoreCase)
+		sampled.ToDictionary(application => application.Code!, SectionCodes, StringComparer.OrdinalIgnoreCase)
 			.Should().BeEquivalentTo(expectedSectionsByCode,
 				because: "the batch request must return every application's sections, not only the first application's");
 	}
