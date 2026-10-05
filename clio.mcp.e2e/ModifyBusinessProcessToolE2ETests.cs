@@ -3353,8 +3353,11 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 				.GetString().Should().Be("Contact", because: "every refused call left the element on its object");
 			DescribedElement addData = after.Elements.Single(e => e.Name == "AddData1");
 			(addData.AdditionalData != null && addData.AdditionalData.TryGetValue("addData", out JsonElement block)
-					&& block.TryGetProperty("source", out JsonElement source) ? source.GetString() : null)
-				.Should().BeNull(because: "the refused set left the Add data element without an object");
+					&& block.ValueKind == JsonValueKind.Object && block.TryGetProperty("source", out JsonElement source)
+						? source.GetString()
+						: null)
+				.Should().BeNull(because: "the refused set left the Add data element without an object - describe "
+					+ "reports its block as null");
 		} finally {
 			await DeleteProcessAsync(context.EnvironmentName!, processName);
 		}
