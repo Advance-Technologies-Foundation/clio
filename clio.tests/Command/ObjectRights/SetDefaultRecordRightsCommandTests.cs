@@ -485,42 +485,120 @@ public class SetDefaultRecordRightsCommandTests : BaseCommandTests<SetDefaultRec
 		_errors.Should().Contain(e => e.Contains("saved, but NOT verified"), because: "the operator must re-read");
 	}
 
-	[Test]
-	[Description("A stored list with a duplicate pair or an invalid level, and a disable with a grant, are refused at command level and nothing is saved.")]
-	public void Execute_ShouldRefuseBadStoredListAndDisableWithGrant() {
+
+	private static readonly DefaultRecordRule StoredRule =
+		Rule(External, Author, RecordRightLevel.Granted, RecordRightLevel.NotSet, RecordRightLevel.NotSet);
+
+	[TestCase("duplicate", "more than one rule for one author → grantee pair", TestName = "Execute_ShouldRefuseDuplicatePairs")]
+	[TestCase("invalid", "invalid level 3", TestName = "Execute_ShouldRefuseInvalidStoredLevel")]
+	[Description("A stored list the save would lose data on — a duplicate pair, a number outside 0..2 — is refused at command level, named, and nothing is saved.")]
+	public void Execute_ShouldRefuseBadStoredList(string kind, string expected) {
 		// Arrange
-		DefaultRecordRule a = Rule(External, Author, RecordRightLevel.Granted, RecordRightLevel.NotSet, RecordRightLevel.NotSet);
-		ObjectIs(Info(true, a, a with { Edit = RecordRightLevel.Granted }));
-		int duplicate = _command.Execute(RuleOptions("read"));
-		_reader.ClearReceivedCalls();
-		ObjectIs(Info(true, a with { Read = (RecordRightLevel)3 }));
-		int invalid = _command.Execute(RuleOptions("read"));
-		ObjectIs(Info(true));
-		int disable = _command.Execute(RuleOptions("read", o => o.DisableRecordPermissions = true));
+		ObjectRightsInfo before = kind switch {
+			"duplicate" => Info(true, StoredRule, StoredRule with { Edit = RecordRightLevel.Granted }),
+			_ => Info(true, StoredRule with { Read = (RecordRightLevel)3 })
+		};
+		ObjectIs(before);
+
+		// Act
+		int exitCode = _command.Execute(RuleOptions("read"));
 
 		// Assert
-		duplicate.Should().Be(1, because: "the save would lose one rule of the pair");
-		invalid.Should().Be(1, because: "the save would resend an invalid level");
-		disable.Should().Be(1, because: "a grant while off gives nobody anything");
-		_errors.Should().Contain(e => e.Contains("more than one rule for one author → grantee pair"), because: "duplicates are named");
-		_errors.Should().Contain(e => e.Contains("invalid level 3"), because: "the invalid level is named");
-		_errors.Should().Contain(e => e.Contains("cannot go with a grant"), because: "the disable refusal says why");
+		exitCode.Should().Be(1, because: "the save would resend the bad list");
+		_errors.Should().ContainSingle(because: "one refusal is reported").Which.Should().Contain(expected,
+			because: "the refusal names the problem");
 		NothingSaved();
 	}
 
 	[Test]
-	[Description("Argument shapes that make no sense are refused before any read: --do-not-apply-for-manager with --revoke, --revoke on a switch-only call, --preview with --confirm.")]
-	public void Execute_ShouldRefuseMeaninglessShapes() {
+	[Description("disable-record-permissions with a grant is refused at command level and nothing is saved.")]
+	public void Execute_ShouldRefuseDisableWithGrant() {
+		// Arrange
+		ObjectIs(Info(true));
+
 		// Act
-		int flagWithRevoke = _command.Execute(RuleOptions("read", o => { o.Revoke = true; o.DoNotApplyForManager = true; }));
-		int revokeSwitchOnly = _command.Execute(new SetDefaultRecordRightsOptions {
-			EntitySchemaName = "UsrFoo", Revoke = true, EnableRecordPermissions = true, Confirm = true
-		});
-		int previewConfirm = _command.Execute(RuleOptions("read", o => o.Preview = true));
+		int exitCode = _command.Execute(RuleOptions("read", o => o.DisableRecordPermissions = true));
 
 		// Assert
-		new[] { flagWithRevoke, revokeSwitchOnly, previewConfirm }.Should().AllBeEquivalentTo(1,
-			because: "each shape is refused");
+		exitCode.Should().Be(1, because: "a grant while off gives nobody anything");
+		_errors.Should().ContainSingle().Which.Should().Contain("cannot go with a grant", because: "the refusal says why");
+		NothingSaved();
+	}
+
+	[TestCase("flag-with-revoke", "--level and --do-not-apply-for-manager apply to a grant",
+		TestName = "Execute_ShouldRefuseManagerFlagWithRevoke")]
+	[TestCase("revoke-switch-only", "need a rule", TestName = "Execute_ShouldRefuseRevokeWithoutRule")]
+	[TestCase("level-switch-only", "need a rule", TestName = "Execute_ShouldRefuseLevelWithoutRule")]
+	[TestCase("preview-confirm", "cannot be combined with --confirm", TestName = "Execute_ShouldRefusePreviewWithConfirm")]
+	[TestCase("author-not-guid", "--author must be a SysAdminUnit id", TestName = "Execute_ShouldRefuseNonGuidAuthor")]
+	[TestCase("grantee-empty-guid", "--grantee must be a SysAdminUnit id", TestName = "Execute_ShouldRefuseEmptyGuidGrantee")]
+	[Description("Argument shapes that make no sense are refused before any read, each with its own message.")]
+	public void Execute_ShouldRefuseShape(string shape, string expected) {
+		// Arrange
+		SetDefaultRecordRightsOptions options = shape switch {
+			"flag-with-revoke" => RuleOptions("read", o => { o.Revoke = true; o.DoNotApplyForManager = true; }),
+			"revoke-switch-only" => new SetDefaultRecordRightsOptions {
+				EntitySchemaName = "UsrFoo", Revoke = true, EnableRecordPermissions = true, Confirm = true
+			},
+			"level-switch-only" => new SetDefaultRecordRightsOptions {
+				EntitySchemaName = "UsrFoo", Level = "granted", EnableRecordPermissions = true, Confirm = true
+			},
+			"preview-confirm" => RuleOptions("read", o => o.Preview = true),
+			"author-not-guid" => RuleOptions("read", o => o.Author = "All employees"),
+			_ => RuleOptions("read", o => o.Grantee = Guid.Empty.ToString())
+		};
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "the shape is refused");
+		_errors.Should().ContainSingle().Which.Should().Contain(expected, because: "the refusal names what is wrong");
 		NothingRead();
+	}
+
+	[Test]
+	[Description("A grantee that does not exist in SysAdminUnit fails before the object is read.")]
+	public void Execute_ShouldFail_WhenGranteeDoesNotExist() {
+		// Arrange
+		_unitLookup.ResolveGranteeName(Grantee, Arg.Any<CreatioRequestOptions>()).Returns((string)null);
+
+		// Act
+		int exitCode = _command.Execute(RuleOptions("read"));
+
+		// Assert
+		exitCode.Should().Be(1, because: "a rule for an unknown grantee would be reported as done for nobody");
+		_errors.Should().Contain(e => e.Contains($"grantee {Grantee} was not found"), because: "the role is named");
+		NothingRead();
+	}
+
+	[Test]
+	[Description("A switch-only disable changes no rule, so it does not count the records: the count supports the apply decision, which a disable does not raise.")]
+	public void Execute_ShouldNotCount_WhenOnlyDisabling() {
+		// Arrange
+		ObjectIs(Info(true));
+
+		// Act
+		_command.Execute(new SetDefaultRecordRightsOptions {
+			EntitySchemaName = "UsrFoo", DisableRecordPermissions = true, Confirm = true
+		});
+
+		// Assert
+		_counter.DidNotReceiveWithAnyArgs().CountRecords(default, default);
+	}
+
+	[Test]
+	[Description("A grant repeated on an object whose record permissions are OFF is refused like the first one (AC6): an identical first call could not have landed, so the refusal is the stable outcome, and a call that names the enable reports no change once the state is in place.")]
+	public void Execute_ShouldRefuseRepeatedGrantOnObjectThatIsOff() {
+		// Arrange
+		ObjectIs(Info(false, Rule(Author, Grantee, RecordRightLevel.Granted, RecordRightLevel.NotSet, RecordRightLevel.NotSet)));
+
+		// Act
+		int exitCode = _command.Execute(RuleOptions("read"));
+
+		// Assert
+		exitCode.Should().Be(1, because: "without the enable the rule gives nobody anything");
+		_errors.Should().ContainSingle().Which.Should().Contain("--enable-record-permissions", because: "the way out is named");
+		NothingSaved();
 	}
 }

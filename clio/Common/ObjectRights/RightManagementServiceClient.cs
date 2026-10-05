@@ -8,14 +8,16 @@ using Clio.Package;
 namespace Clio.Common.ObjectRights;
 
 /// <summary>
-/// Reads object operation permissions (the SysEntitySchemaOperationRight layer) for an entity, using the native
-/// Creatio <c>RightManagementService.svc/GetAdministratedObject</c> service — the same service the System
-/// Designer "Object permissions" section uses. Reports EVERY role's row, in priority order.
+/// Reads object permissions for an entity, using the native Creatio
+/// <c>RightManagementService.svc/GetAdministratedObject</c> service — the same service the System Designer "Object
+/// permissions" section uses: the operation layer (SysEntitySchemaOperationRight, EVERY role's row in priority order)
+/// and the record layer (the "Use record permissions" switch and the default record rules).
 /// </summary>
 public interface IObjectRightsReader {
 	/// <summary>
-	/// Reads the operation permissions of the entity schema <paramref name="schemaName"/>: the switch, every role's
-	/// row in priority order, and a snapshot a save can write back. A failed read is reported in
+	/// Reads the object permissions of the entity schema <paramref name="schemaName"/>: the operation switch and every
+	/// role's row in priority order, the record switch and the default record rules, and a snapshot a save can write
+	/// back. A failed read is reported in
 	/// <see cref="ObjectRightsInfo.ReadError"/> and never as "not administered".
 	/// </summary>
 	/// <param name="schemaName">The entity schema name.</param>
@@ -330,10 +332,14 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 					["authorSysAdminUnit"] = new JsonObject { ["id"] = rule.AuthorId.ToString() },
 					["granteeSysAdminUnit"] = new JsonObject { ["id"] = rule.GranteeId.ToString() }
 				};
-			if (index < 0 || !read[index].Read.SameRuleAs(rule)) {
-				ruleNode[LevelField(RecordOperation.Read)] = (int)rule.Read;
-				ruleNode[LevelField(RecordOperation.Edit)] = (int)rule.Edit;
-				ruleNode[LevelField(RecordOperation.Delete)] = (int)rule.Delete;
+			// Only what the plan changes is written: a field the change does not touch stays exactly as read.
+			DefaultRecordRule readRule = index >= 0 ? read[index].Read : null;
+			foreach (RecordOperation operation in RecordRightNames.AllOperations) {
+				if (readRule is null || readRule.LevelOf(operation) != rule.LevelOf(operation)) {
+					ruleNode[LevelField(operation)] = (int)rule.LevelOf(operation);
+				}
+			}
+			if (readRule is null || readRule.DoNotApplyForManager != rule.DoNotApplyForManager) {
 				ruleNode["doNotApplyForManager"] = rule.DoNotApplyForManager;
 			}
 			if (index >= 0) {
@@ -344,8 +350,9 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 		return rules;
 	}
 
-	// Every default record rule, in the order the service returned it. A missing level is "not set"; a stored level
-	// outside 0..2 is kept as it is, so the planner can refuse to send it back.
+	// Every default record rule, in the order the service returned it. A missing level is "not set"; a stored number
+	// outside 0..2 is kept as it is, so the planner can refuse to send it back. A level field the plan does not change is
+	// never written (BuildRecordRules), so whatever the service stored there stays as it was.
 	private static List<DefaultRecordRule> ProjectRecordRules(JsonObject node) =>
 		ReadRecordRuleNodes(node).Select(ProjectRecordRule).ToList();
 

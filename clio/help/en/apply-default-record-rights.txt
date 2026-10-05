@@ -45,7 +45,8 @@ OPTIONS
         Name of the registered environment.
 
 EXIT CODES
-    0   The run completed, is still running (reported with its process id), was queued without an
+    0   The run completed, is still running (reported with its process id), was started but its status
+        could not be read (reported as such, with the process id), was queued without an
         id, or the prompt was cancelled.
     1   An input was invalid, confirmation was missing in a non-interactive run, the object could not
         be read, its record permissions are OFF, the run could not be started, or it ended in error

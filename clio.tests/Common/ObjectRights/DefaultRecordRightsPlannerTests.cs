@@ -332,4 +332,5 @@ public class DefaultRecordRightsPlannerTests {
 		none.Should().BeEmpty(because: "order and display names are not stored rule fields");
 		many.Should().HaveCount(4, because: "the switch, the changed flag, the missing rule and the unexpected rule each differ");
 	}
+
 }

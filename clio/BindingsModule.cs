@@ -415,7 +415,7 @@ public class BindingsModule {
 		services.AddTransient<Clio.Command.ObjectRights.GetObjectRightsCommand>();
 		services.AddTransient<Clio.Command.ObjectRights.SetDefaultRecordRightsCommand>();
 		services.AddTransient<Clio.Command.ObjectRights.ApplyDefaultRecordRightsCommand>();
-		services.AddTransient<Clio.Command.ObjectRights.IObjectRecordCounter, Clio.Command.ObjectRights.RecordRightsActualizationClient>();
+		services.AddTransient<Clio.Common.ObjectRights.IObjectRecordCounter, Clio.Common.ObjectRights.ObjectRecordCounter>();
 		services.AddTransient<Clio.Command.ObjectRights.IRecordRightsActualization, Clio.Command.ObjectRights.RecordRightsActualizationClient>();
 		services.AddTransient<Clio.Command.ObjectRights.IConnectedObjectsResolver, Clio.Command.ObjectRights.ConnectedObjectsResolver>();
 		services.AddTransient<Clio.Command.Administration.ManageUserCommand>();

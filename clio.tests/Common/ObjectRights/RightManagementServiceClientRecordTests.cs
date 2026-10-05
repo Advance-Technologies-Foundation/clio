@@ -181,4 +181,29 @@ public class RightManagementServiceClientRecordTests {
 		// Assert
 		Saved().GetProperty("recordRightsDenied").GetBoolean().Should().BeTrue(because: "the legacy field is sent back as read");
 	}
+
+	[Test]
+	[Description("A changed rule gets only the fields the plan changes: a level field the change does not touch — here a missing one — stays exactly as read, and a new rule node carries the two units, the three levels and the flag.")]
+	public void SaveRecords_ShouldWriteOnlyChangedFields() {
+		// Arrange
+		string withoutEdit = RuleJson(AllEmployees, Admins, 1, 0, 0).Replace(",\"editRightLevel\":0", "");
+		ObjectIs(true, withoutEdit);
+		ObjectRightsInfo info = Read();
+		DefaultRecordRule changed = info.RecordRules[0] with { Read = RecordRightLevel.Delegated };
+		DefaultRecordRule added = new(External, "External", AllEmployees, "Employees", RecordRightLevel.Granted,
+			RecordRightLevel.NotSet, RecordRightLevel.NotSet, false);
+
+		// Act
+		_client.Save(info.Snapshot, new DefaultRecordRightsState(true, new[] { changed, added }), new CreatioRequestOptions());
+
+		// Assert
+		JsonElement[] rules = Saved().GetProperty("entitySchemaRecordDefRights").EnumerateArray().ToArray();
+		rules[0].GetProperty("readRightLevel").GetInt32().Should().Be(2, because: "the named level is written");
+		rules[0].TryGetProperty("editRightLevel", out _).Should().BeFalse(because: "a field the change does not touch stays as read");
+		rules[1].EnumerateObject().Select(property => property.Name).Should().BeEquivalentTo(new[] {
+			"authorSysAdminUnit", "granteeSysAdminUnit", "readRightLevel", "editRightLevel", "deleteRightLevel",
+			"doNotApplyForManager" }, because: "a new rule carries exactly the fields the page writes");
+		rules[1].GetProperty("authorSysAdminUnit").EnumerateObject().Select(property => property.Name)
+			.Should().Equal(new[] { "id" }, because: "a unit is named by its id");
+	}
 }

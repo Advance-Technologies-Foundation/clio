@@ -9,16 +9,6 @@ using Clio.Package;
 
 namespace Clio.Command.ObjectRights;
 
-/// <summary>Counts the records of an object, the fact a user needs before deciding to apply record rules to them.</summary>
-public interface IObjectRecordCounter {
-	/// <summary>Counts the records of <paramref name="schemaName"/> that the caller's account can read.</summary>
-	/// <param name="schemaName">The entity schema name.</param>
-	/// <param name="requestOptions">The deadline, and a timeout the count is further capped below; it is sent once.</param>
-	/// <returns>The number of records.</returns>
-	/// <exception cref="InvalidOperationException">The query failed or its answer could not be read.</exception>
-	long CountRecords(string schemaName, CreatioRequestOptions requestOptions);
-}
-
 /// <summary>
 /// Starts <c>ObjectRecordRightsActualizationProcess</c> — the platform's "Update record permissions" — for one object,
 /// and reads the state of that run.
@@ -38,7 +28,20 @@ public interface IRecordRightsActualization {
 	/// <param name="requestOptions">Timeout, retry and deadline settings.</param>
 	/// <returns>The status, or <see langword="null"/> when the run has no log row.</returns>
 	ProcessRunStatus ReadStatus(Guid processId, CreatioRequestOptions requestOptions);
+
+	/// <summary>
+	/// Finds runs of the update that are still going on the environment, for any object: <c>SysProcessLog</c> does not
+	/// record which object a run is for in a column that can be filtered on.
+	/// </summary>
+	/// <param name="requestOptions">Timeout, retry and deadline settings.</param>
+	/// <returns>The running runs, newest first (at most a few).</returns>
+	IReadOnlyList<RunningUpdate> FindRunning(CreatioRequestOptions requestOptions);
 }
+
+/// <summary>A run of the record-rights update that is still going.</summary>
+/// <param name="ProcessId">The run's process id (its <c>SysProcessLog</c> Id).</param>
+/// <param name="StartDate">When it started, as the service returned it.</param>
+public sealed record RunningUpdate(Guid ProcessId, string StartDate);
 
 /// <summary>The status of a process run, as its <c>SysProcessLog</c> row holds it.</summary>
 /// <param name="StatusId">The <c>SysProcessStatus</c> id.</param>
@@ -61,14 +64,15 @@ public sealed record ProcessRunStatus(Guid StatusId, string StatusName) {
 	public bool IsFinal => StatusId == Completed || StatusId == Error || StatusId == Canceled;
 }
 
-/// <inheritdoc cref="IRecordRightsActualization" />
-public sealed class RecordRightsActualizationClient : IRecordRightsActualization, IObjectRecordCounter {
+/// <summary>
+/// Starts <c>ObjectRecordRightsActualizationProcess</c> through <c>ProcessEngineService.svc/RunProcess</c> and reads its
+/// <c>SysProcessLog</c> status. It lives with the commands because the launch answer is interpreted by
+/// <see cref="RunProcessCommand.BuildResponse"/>, the same rules <c>run-process</c> applies.
+/// </summary>
+public sealed class RecordRightsActualizationClient : IRecordRightsActualization {
 
 	/// <summary>The platform process that applies an object's default record rules to its existing records.</summary>
 	internal const string ProcessName = "ObjectRecordRightsActualizationProcess";
-
-	/// <summary>The most a record count may take, in milliseconds: the count is only informational.</summary>
-	internal const int CountTimeOutMilliseconds = 10_000;
 
 	private readonly IApplicationClient _applicationClient;
 	private readonly IServiceUrlBuilder _urlBuilder;
@@ -77,21 +81,6 @@ public sealed class RecordRightsActualizationClient : IRecordRightsActualization
 	public RecordRightsActualizationClient(IApplicationClient applicationClient, IServiceUrlBuilder urlBuilder) {
 		_applicationClient = applicationClient;
 		_urlBuilder = urlBuilder;
-	}
-
-	/// <inheritdoc />
-	public long CountRecords(string schemaName, CreatioRequestOptions requestOptions) {
-		// Best effort: one short attempt. The count is informational, and a COUNT that timed out once (the SQL keeps
-		// running server-side) would most likely time out again, holding the call for minutes.
-		CreatioRequestOptions nextOptions = requestOptions.ForNextRequest();
-		CreatioRequestOptions sendOptions = nextOptions with {
-			MaxAttempts = 1, TimeOut = Math.Min(nextOptions.TimeOut, CountTimeOutMilliseconds)
-		};
-		CountSelectResponse response = SelectQueryHelper.ExecuteSelectQuery<CountSelectResponse>(_applicationClient,
-			_urlBuilder, SelectQueryHelper.BuildCountQuery(schemaName, "Count"), sendOptions.TimeOut,
-			sendOptions.MaxAttempts, sendOptions.RetryDelay);
-		return response.Rows?.FirstOrDefault()?.Count
-			?? throw new InvalidOperationException($"The record count of '{schemaName}' returned no row.");
 	}
 
 	/// <inheritdoc />
@@ -132,14 +121,40 @@ public sealed class RecordRightsActualizationClient : IRecordRightsActualization
 		return status is null ? null : new ProcessRunStatus(status.Value, status.DisplayValue);
 	}
 
-	private sealed class CountSelectResponse : SelectQueryHelper.SelectQueryResponseBaseDto {
-		[JsonPropertyName("rows")]
-		public List<CountRow> Rows { get; set; }
+	/// <inheritdoc />
+	public IReadOnlyList<RunningUpdate> FindRunning(CreatioRequestOptions requestOptions) {
+		object query = SelectQueryHelper.BuildSelectQuery("SysProcessLog",
+			new[] {
+				new SelectQueryHelper.SelectQueryColumnDefinition("StartDate", "StartDate", OrderDirection: 2, OrderPosition: 0)
+			},
+			new[] {
+				new SelectQueryHelper.SelectQueryFilterDefinition("SysSchema.Name", ProcessName,
+					SelectQueryHelper.TextDataValueType),
+				new SelectQueryHelper.SelectQueryFilterDefinition("Status", ProcessRunStatus.Running,
+					SelectQueryHelper.GuidDataValueType)
+			},
+			MaxRunningShown);
+		CreatioRequestOptions sendOptions = requestOptions.ForNextRequest();
+		RunningSelectResponse response = SelectQueryHelper.ExecuteSelectQuery<RunningSelectResponse>(_applicationClient,
+			_urlBuilder, query, sendOptions.TimeOut, sendOptions.MaxAttempts, sendOptions.RetryDelay);
+		return response.Rows?.Select(row => new RunningUpdate(row.Id, row.StartDate)).ToArray()
+			?? Array.Empty<RunningUpdate>();
 	}
 
-	private sealed class CountRow {
-		[JsonPropertyName("Count")]
-		public long Count { get; set; }
+	// Enough to say "one is going" and name it; the warning does not list every run.
+	private const int MaxRunningShown = 3;
+
+	private sealed class RunningSelectResponse : SelectQueryHelper.SelectQueryResponseBaseDto {
+		[JsonPropertyName("rows")]
+		public List<RunningRow> Rows { get; set; }
+	}
+
+	private sealed class RunningRow {
+		[JsonPropertyName("Id")]
+		public Guid Id { get; set; }
+
+		[JsonPropertyName("StartDate")]
+		public string StartDate { get; set; }
 	}
 
 	private sealed class StatusSelectResponse : SelectQueryHelper.SelectQueryResponseBaseDto {

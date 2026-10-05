@@ -3,6 +3,7 @@ using System.Text.Json;
 using Clio.Command;
 using Clio.Command.ObjectRights;
 using Clio.Common;
+using Clio.Common.ObjectRights;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
@@ -25,6 +26,7 @@ public class RecordRightsActualizationClientTests {
 
 	private IApplicationClient _applicationClient;
 	private RecordRightsActualizationClient _client;
+	private ObjectRecordCounter _counter;
 	private string _body;
 
 	[SetUp]
@@ -35,6 +37,7 @@ public class RecordRightsActualizationClientTests {
 		urlBuilder.Build(ServiceUrlBuilder.KnownRoute.RunProcess).Returns(RunUrl);
 		_body = null;
 		_client = new RecordRightsActualizationClient(_applicationClient, urlBuilder);
+		_counter = new ObjectRecordCounter(_applicationClient, urlBuilder);
 	}
 
 	private void Answers(string url, string response) =>
@@ -48,7 +51,7 @@ public class RecordRightsActualizationClientTests {
 		Answers(SelectUrl, "{\"success\":true,\"rows\":[{\"Count\":2}]}");
 
 		// Act
-		long count = _client.CountRecords("Account", new CreatioRequestOptions { TimeOut = 100_000, MaxAttempts = 3 });
+		long count = _counter.CountRecords("Account", new CreatioRequestOptions { TimeOut = 100_000, MaxAttempts = 3 });
 
 		// Assert
 		count.Should().Be(2, because: "the Count column of the single row is the answer");
@@ -58,7 +61,7 @@ public class RecordRightsActualizationClientTests {
 		expression.GetProperty("functionType").GetInt32().Should().Be(2, because: "an aggregation");
 		expression.GetProperty("aggregationType").GetInt32().Should().Be(1, because: "a COUNT");
 		_applicationClient.Received(1).ExecutePostRequest(SelectUrl, Arg.Any<string>(),
-			RecordRightsActualizationClient.CountTimeOutMilliseconds, 1, Arg.Any<int>());
+			ObjectRecordCounter.CountTimeOutMilliseconds, 1, Arg.Any<int>());
 	}
 
 	[Test]
@@ -96,7 +99,7 @@ public class RecordRightsActualizationClientTests {
 	}
 
 	[Test]
-	[Description("ReadStatus reads the Status lookup of the run's SysProcessLog row; a run without a row reads as null.")]
+	[Description("ReadStatus reads the Status lookup of the run's SysProcessLog row.")]
 	public void ReadStatus_ShouldParseLookup() {
 		// Arrange
 		Answers(SelectUrl, "{\"success\":true,\"rows\":[{\"Status\":{\"value\":\"815c9586-b6e2-df11-971b-001d60e938c6\","
@@ -109,5 +112,63 @@ public class RecordRightsActualizationClientTests {
 		status.StatusId.Should().Be(ProcessRunStatus.Completed, because: "the lookup value is the status id");
 		status.IsFinal.Should().BeTrue(because: "completed ends the run");
 		_body.Should().Contain(ProcessId.ToString(), because: "the row is read by the process id");
+	}
+
+	[Test]
+	[Description("A run without a SysProcessLog row reads as null, not as a status.")]
+	public void ReadStatus_ShouldReturnNull_WhenNoRow() {
+		// Arrange
+		Answers(SelectUrl, "{\"success\":true,\"rows\":[]}");
+
+		// Act
+		ProcessRunStatus status = _client.ReadStatus(ProcessId, new CreatioRequestOptions());
+
+		// Assert
+		status.Should().BeNull(because: "there is no row to read a status from");
+	}
+
+	[TestCase("", "empty response", TestName = "Start_ShouldReturnError_WhenBodyIsEmpty")]
+	[TestCase("<html>error</html>", "could not read", TestName = "Start_ShouldReturnError_WhenBodyIsNotJson")]
+	[Description("A launch answered with an empty or a non-JSON body is an error, never a started run.")]
+	public void Start_ShouldReturnError_WhenBodyIsUnreadable(string body, string expected) {
+		// Arrange
+		Answers(RunUrl, body);
+
+		// Act
+		RunProcessResponse response = _client.Start(SchemaUId, new CreatioRequestOptions());
+
+		// Assert
+		response.Error.Should().Contain(expected, because: "an unreadable answer is reported as such");
+		response.ProcessId.Should().BeNull(because: "no run can be followed");
+	}
+
+	[Test]
+	[Description("A count answered with no row is an error, not zero records.")]
+	public void CountRecords_ShouldThrow_WhenNoRow() {
+		// Arrange
+		Answers(SelectUrl, "{\"success\":true,\"rows\":[]}");
+
+		// Act
+		Action count = () => _counter.CountRecords("Account", new CreatioRequestOptions());
+
+		// Assert
+		count.Should().Throw<InvalidOperationException>(because: "a missing row must never read as 'no records'")
+			.WithMessage("*returned no row*");
+	}
+
+	[Test]
+	[Description("FindRunning reads the running runs of ObjectRecordRightsActualizationProcess from SysProcessLog, filtered by the process schema and the Running status, newest first.")]
+	public void FindRunning_ShouldFilterByProcessAndRunningStatus() {
+		// Arrange
+		Answers(SelectUrl, "{\"success\":true,\"rows\":[{\"Id\":\"" + ProcessId + "\",\"StartDate\":\"2026-10-05T10:00:00\"}]}");
+
+		// Act
+		var running = _client.FindRunning(new CreatioRequestOptions());
+
+		// Assert
+		running.Should().ContainSingle(because: "one run is going").Which.ProcessId.Should().Be(ProcessId, because: "its id is read");
+		_body.Should().Contain("SysSchema.Name").And.Contain("ObjectRecordRightsActualizationProcess",
+			because: "only runs of the update are looked at");
+		_body.Should().Contain(ProcessRunStatus.Running.ToString(), because: "only running runs count");
 	}
 }

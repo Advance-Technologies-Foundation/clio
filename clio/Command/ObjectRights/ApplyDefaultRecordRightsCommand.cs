@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Clio.Common;
 using Clio.Common.ObjectRights;
 using CommandLine;
@@ -99,6 +100,7 @@ public class ApplyDefaultRecordRightsCommand : Command<ApplyDefaultRecordRightsO
 				+ "started.");
 			return 1;
 		}
+		WarnIfAnUpdateIsRunning(schemaName, requestOptions);
 		string summary = $"Apply the default record rules of '{schemaName}' to its existing records "
 			+ $"({ObjectRightsCommandInput.DescribeRecordCount(_recordCounter, schemaName, requestOptions, out _)}). Rights that came from default rules are replaced by "
 			+ "the current rules; rights granted by hand stay. The run is heavy on large tables.";
@@ -110,7 +112,10 @@ public class ApplyDefaultRecordRightsCommand : Command<ApplyDefaultRecordRightsO
 			case ConfirmDecision.Refused:
 				return 1;
 		}
-		if (!HasTimeToLaunch(requestOptions, schemaName)) {
+		// The launch is sent once and is not idempotent, so it goes out only while the call's deadline still covers one
+		// full request: a launch cut short by the deadline would leave it unknown whether the run started.
+		if (!ObjectRightsCommandInput.HasTimeFor(requestOptions, 1, schemaName, "launch", "the launch needs",
+				"nothing was started", _logger)) {
 			return 1;
 		}
 		RunProcessResponse started;
@@ -136,21 +141,28 @@ public class ApplyDefaultRecordRightsCommand : Command<ApplyDefaultRecordRightsO
 			: ReportStillRunning(schemaName, processId, waited: false);
 	}
 
-	// The launch is sent once and is not idempotent, so it goes out only when the call's deadline still covers one full
-	// request: a launch cut short by the deadline would leave it unknown whether the run started. Refused before anything
-	// is sent, so nothing has started.
-	private bool HasTimeToLaunch(CreatioRequestOptions requestOptions, string schemaName) {
-		if (requestOptions.Deadline is not { } deadline) {
-			return true;
+	// A second run started while one is going doubles the load and, for the same object, does the same work twice. The
+	// log cannot say which object a run is for, so this only warns — an update of another object is no reason to stop —
+	// and a failed check never stops the call.
+	private void WarnIfAnUpdateIsRunning(string schemaName, CreatioRequestOptions requestOptions) {
+		IReadOnlyList<RunningUpdate> running;
+		try {
+			running = _actualization.FindRunning(requestOptions);
 		}
-		TimeSpan needed = TimeSpan.FromMilliseconds(requestOptions.TimeOut);
-		if (deadline.Remaining >= needed) {
-			return true;
+		catch (Exception ex) when (ObjectRightsSupport.IsServiceFailure(ex) || ex is TimeoutException) {
+			_logger.WriteWarning($"'{schemaName}': could not check whether a record-rights update is already running "
+				+ $"({ObjectRightsSupport.DisplayFailure(ex)}).");
+			return;
 		}
-		_logger.WriteError($"Error: '{schemaName}': the reads before the launch took most of the call's time limit of "
-			+ $"{deadline.Budget.TotalSeconds:0} s: {deadline.Remaining.TotalSeconds:0} s are left, and the launch needs "
-			+ $"up to {needed.TotalSeconds:0} s. The launch was not sent — nothing was started. Re-run the call.");
-		return false;
+		if (running.Count == 0) {
+			return;
+		}
+		RunningUpdate newest = running[0];
+		_logger.WriteWarning($"'{schemaName}': a record-rights update is already running on this environment (process "
+			+ $"{newest.ProcessId}, started {ObjectRightsSupport.Display(newest.StartDate)}"
+			+ (running.Count > 1 ? $", and {running.Count - 1} more" : "") + "). The log does not say which object it is "
+			+ "for: if it is this one, wait for it to end (check SysProcessLog, Id = that process) instead of starting "
+			+ "another — two runs at once double the load.");
 	}
 
 	// A launch that got no answer may still have started the run, and re-sending it would start a second heavy run.
@@ -167,8 +179,9 @@ public class ApplyDefaultRecordRightsCommand : Command<ApplyDefaultRecordRightsO
 		return 1;
 	}
 
-	// Polls the run's SysProcessLog row until it ends or the wait is over. Running out of time is not a failure: the
-	// run goes on, and the result names the process to check.
+	// Polls the run's SysProcessLog row until it ends or the wait is over. A failed read is retried at the next poll: one
+	// fault does not end the wait. Running out of time is not a failure — the run goes on, and the result names the
+	// process to check — but "still running" is said only when a status was actually read.
 	private int WaitForEnd(string schemaName, Guid processId, int timeoutSeconds, CreatioRequestOptions requestOptions) {
 		TimeSpan waitFor = TimeSpan.FromSeconds(timeoutSeconds);
 		if (requestOptions.Deadline is { } call && call.Remaining < waitFor) {
@@ -176,25 +189,38 @@ public class ApplyDefaultRecordRightsCommand : Command<ApplyDefaultRecordRightsO
 		}
 		RequestDeadline wait = new(waitFor);
 		CreatioRequestOptions pollOptions = requestOptions with { Deadline = wait };
+		bool statusSeen = false;
+		string lastReadError = null;
 		while (!wait.IsSpent) {
-			ProcessRunStatus status;
 			try {
-				status = _actualization.ReadStatus(processId, pollOptions);
+				ProcessRunStatus status = _actualization.ReadStatus(processId, pollOptions);
+				if (status is not null) {
+					statusSeen = true;
+					if (status.IsFinal) {
+						return ReportEnd(schemaName, processId, status);
+					}
+				}
 			}
 			catch (Exception ex) when (ObjectRightsSupport.IsServiceFailure(ex) || ex is TimeoutException) {
-				if (wait.IsSpent) {
-					break;
-				}
-				_logger.WriteWarning($"'{schemaName}': the run's status could not be read "
-					+ $"({ObjectRightsSupport.DisplayFailure(ex)}); the run itself was started.");
-				return ReportStillRunning(schemaName, processId, waited: true);
+				lastReadError = ObjectRightsSupport.DisplayFailure(ex);
 			}
-			if (status is { IsFinal: true }) {
-				return ReportEnd(schemaName, processId, status);
+			if (wait.IsSpent) {
+				break;
 			}
 			_delay.Wait(wait.Remaining < PollInterval ? wait.Remaining : PollInterval);
 		}
-		return ReportStillRunning(schemaName, processId, waited: true);
+		return statusSeen
+			? ReportStillRunning(schemaName, processId, waited: true)
+			: ReportStatusUnknown(schemaName, processId, lastReadError);
+	}
+
+	// The run was started, but no status of it was ever read (no SysProcessLog row, or every read failed): clio cannot
+	// say whether it is going, finished or failed — so it does not say "still running".
+	private int ReportStatusUnknown(string schemaName, Guid processId, string readError) {
+		_logger.WriteWarning($"'{schemaName}': the record-rights update was started (process {processId}), but its status "
+			+ "could not be read" + (readError is null ? " (no SysProcessLog row was found)" : $" ({readError})")
+			+ $". Do NOT start it again: check SysProcessLog (Id = {processId}) for its outcome.");
+		return 0;
 	}
 
 	private int ReportEnd(string schemaName, Guid processId, ProcessRunStatus status) {

@@ -93,18 +93,35 @@ internal static class ObjectRightsCommandInput {
 	/// <param name="schemaName">The object, for the message.</param>
 	/// <param name="logger">Where the refusal is written.</param>
 	/// <returns><see langword="true"/> when the save may be sent.</returns>
-	internal static bool HasTimeToSave(CreatioRequestOptions requestOptions, string schemaName, ILogger logger) {
+	internal static bool HasTimeToSave(CreatioRequestOptions requestOptions, string schemaName, ILogger logger) =>
+		HasTimeFor(requestOptions, 2, schemaName, "save", "the save and the read-back need", "nothing was changed",
+			logger);
+
+	/// <summary>
+	/// Whether the call's deadline leaves time for <paramref name="requests"/> more requests of at most one timeout
+	/// each. A one-shot write started later could still be in flight when the caller's deadline ends the call, and its
+	/// outcome would then be unknown, so it is refused before anything is sent.
+	/// </summary>
+	/// <param name="requestOptions">The call's request options.</param>
+	/// <param name="requests">How many requests the step makes.</param>
+	/// <param name="schemaName">The object, for the message.</param>
+	/// <param name="step">The step that is not sent: <c>save</c>, <c>launch</c>.</param>
+	/// <param name="needs">What needs the time, for the message: <c>the launch needs</c>.</param>
+	/// <param name="outcome">What the refusal leaves: <c>nothing was changed</c>.</param>
+	/// <param name="logger">Where the refusal is written.</param>
+	/// <returns><see langword="true"/> when the step may be sent.</returns>
+	internal static bool HasTimeFor(CreatioRequestOptions requestOptions, int requests, string schemaName, string step,
+		string needs, string outcome, ILogger logger) {
 		if (requestOptions.Deadline is not { } deadline) {
 			return true;
 		}
-		TimeSpan needed = TimeSpan.FromMilliseconds(2.0 * requestOptions.TimeOut);
+		TimeSpan needed = TimeSpan.FromMilliseconds((double)requests * requestOptions.TimeOut);
 		if (deadline.Remaining >= needed) {
 			return true;
 		}
-		logger.WriteError($"Error: '{schemaName}': the reads before the save took most of the call's time limit "
-			+ $"of {deadline.Budget.TotalSeconds:0} s: {deadline.Remaining.TotalSeconds:0} s are left, and the save and "
-			+ $"the read-back need up to {needed.TotalSeconds:0} s. The save was not sent — nothing was changed. Re-run "
-			+ "the call.");
+		logger.WriteError($"Error: '{schemaName}': the reads before the {step} took most of the call's time limit "
+			+ $"of {deadline.Budget.TotalSeconds:0} s: {deadline.Remaining.TotalSeconds:0} s are left, and {needs} "
+			+ $"up to {needed.TotalSeconds:0} s. The {step} was not sent — {outcome}. Re-run the call.");
 		return false;
 	}
 

@@ -321,13 +321,12 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 		// Assert
 		exitCode.Should().Be(0, because: "the read completed");
 		lines.Should().Equal(new[] {
-			$"Object operation permissions for 'UsrOrder' and its connected objects (grantee {Role}):",
+			$"Object permissions for 'UsrOrder' and its connected objects (grantee {Role}):",
 			$"  {GetObjectRightsCommand.PriorityRule}",
 			$"  {GetObjectRightsCommand.GuidancePointer}",
 			"  UsrOrder: administered by operation permissions. Rows in priority order:",
 			$"    [0] Sales managers ({Role}): read/create/edit",
 			RecordsOff,
-			"    0 existing record(s), counted under the calling account.",
 			"  UsrStatus: administered by operation permissions. Rows in priority order:",
 			$"    grantee {Role} has NO row (no operations granted).",
 			"    A new row would go below every row; these decide first for a user who is also in those roles:",
@@ -336,7 +335,8 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 			"  UsrOpen: not administered by operation permissions (they are OFF) — available to all internal users.",
 			"    It has no 'All employees' row: set-object-rights --enable-operation-permissions adds one with "
 				+ "read/create/edit/delete below any stored rows, unless the grant is for All employees itself.",
-			RecordsOff
+			RecordsOff,
+			"  UsrOrder: 0 existing record(s), counted under the calling account."
 		}, because: "the output is the facts per object — the operation rows unchanged, then the record layer, and the "
 			+ "record count for the named object only — and nothing more: no verdict");
 	}
@@ -696,7 +696,7 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 		// Assert
 		exitCode.Should().Be(0, because: "the count is a fact, not part of the read");
 		_recordCounter.Received(1).CountRecords("UsrOrder", Arg.Any<CreatioRequestOptions>());
-		_logger.Received().WriteWarning(Arg.Is<string>(line => line.Contains("Existing records not counted")));
+		_logger.Received().WriteWarning(Arg.Is<string>(line => line.Contains("UsrOrder: existing records not counted")));
 	}
 
 	[Test]
@@ -722,5 +722,23 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 			.Which.Should().StartWith($"      Author ({Employees}) → Grantee ({Employees})", because: "it is the matching rule");
 		byGrantee.Should().ContainSingle(because: "only the rule with that grantee is listed")
 			.Which.Should().StartWith($"      Author ({Role}) → Grantee ({Role})", because: "it is the matching rule");
+	}
+
+	[Test]
+	[Description("The named object's records are counted only after every object is read, so the count never takes the read budget of the connected objects.")]
+	public void Execute_ShouldCountAfterTheConnectedReads() {
+		// Arrange
+		_connectedObjects.Resolve("UsrOrder", true, Arg.Any<int?>()).Returns(Resolution("UsrOrder", "UsrStatus"));
+		_rightsReader.GetObjectRights(Arg.Any<string>(), Arg.Any<CreatioRequestOptions>())
+			.Returns(call => WithRecords((string)call[0], true));
+
+		// Act
+		_command.Execute(new GetObjectRightsOptions { EntitySchemaName = "UsrOrder", IncludeConnected = true });
+
+		// Assert
+		Received.InOrder(() => {
+			_rightsReader.GetObjectRights("UsrStatus", Arg.Any<CreatioRequestOptions>());
+			_recordCounter.CountRecords("UsrOrder", Arg.Any<CreatioRequestOptions>());
+		});
 	}
 }

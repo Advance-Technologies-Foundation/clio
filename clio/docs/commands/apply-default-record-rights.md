@@ -45,7 +45,7 @@ clio apply-default-record-rights --entity-schema-name <Name> [--wait true|false]
 
 ## Exit codes
 
-- `0` — completed, still running (with its process id), queued without an id, or cancelled at the prompt.
+- `0` — completed, still running (with its process id), started but its status could not be read (said so, with the process id), queued without an id, or cancelled at the prompt.
 - `1` — invalid input, no confirmation in a non-interactive run, the object could not be read, record permissions
   are OFF, the run could not be started, or it ended in error or was cancelled.
 

@@ -177,4 +177,20 @@ public class DefaultRecordRightsToolTests {
 		args.ExtensionData.Should().BeNullOrEmpty(because: "author is a known argument");
 		options.Author.Should().Be("a29a3ba5-4b0d-de11-9a51-005056c00008", because: "the filter maps");
 	}
+
+	[Test]
+	[Description("The apply tool states one call limit, the one it runs with: McpCallBudget.")]
+	public void ApplyDefaultRecordRights_ShouldDescribeItsOwnCallBudget() {
+		// Arrange
+		string description = ((System.ComponentModel.DescriptionAttribute)typeof(ApplyDefaultRecordRightsTool)
+			.GetMethod(nameof(ApplyDefaultRecordRightsTool.ApplyDefaultRecordRights))!
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false).Single()).Description;
+
+		// Act
+		string limit = $"{ApplyDefaultRecordRightsTool.McpCallBudget.TotalSeconds:0} s";
+
+		// Assert
+		description.Should().Contain($"ends within {limit}", because: "the described limit is the one the call runs with");
+		description.Should().NotContain("90 s", because: "a second, different ceiling would contradict it");
+	}
 }

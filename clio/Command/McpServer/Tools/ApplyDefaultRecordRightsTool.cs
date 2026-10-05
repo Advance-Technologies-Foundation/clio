@@ -45,7 +45,7 @@ public sealed class ApplyDefaultRecordRightsTool(
 	[Description("Apply an object's current default record rules to its EXISTING records — the platform's \"Update record permissions\" (ObjectRecordRightsActualizationProcess) (DESTRUCTIVE, NOT idempotent: every call starts a run). " +
 		"Run it ONLY when the user asked for it: after enabling record permissions or changing rules with set-default-record-rights, ASK the user whether and when to apply them, stating the record count and that the run is heavy on large tables; never run it on your own. " +
 		"The run deletes the record rights that came from default rules and applies the current rules to every existing record; rights granted by hand (set-record-rights) stay. Refused when the object's record permissions are OFF. " +
-		"wait (default true) polls the run until it completes or fails, up to timeout-seconds (default 60, at most about 90 s on MCP); a run still going then is reported as 'still running' with its process id — not a failure: do NOT start it again, check SysProcessLog (Id = the process id) later. Fails (success=false) when the run could not be started or ended in error. " +
+		"wait (default true) polls the run until it completes or fails, up to timeout-seconds (default 60); the whole call — read, record count, launch and wait — ends within 100 s, so the wait is at most what is left of that; a run still going then is reported as 'still running' with its process id — not a failure: do NOT start it again, check SysProcessLog (Id = the process id) later. When no status of the run could be read, the result says so instead of 'still running' — check SysProcessLog too. Fails (success=false) when the run could not be started or ended in error. " +
 		"Unknown or misspelled argument names are REFUSED before any read or write.")]
 	public ObjectRightsToolResponse ApplyDefaultRecordRights(
 		[Description("Parameters: environment-name, entity-schema-name (required); wait, timeout-seconds (optional).")]
@@ -96,7 +96,7 @@ public sealed record ApplyDefaultRecordRightsArgs(
 	bool? Wait = null,
 
 	[property: JsonPropertyName("timeout-seconds")]
-	[property: Description("How long to wait for the run, in seconds (default 60; the call itself ends after about 100 s). Past it the run keeps going and is reported as still running.")]
+	[property: Description("How long to wait for the run, in seconds (default 60). The whole call ends within 100 s, so the wait is at most what is left of that. Past it the run keeps going and is reported as still running.")]
 	int? TimeoutSeconds = null
 ) {
 	/// <summary>Overflow bag for unknown JSON fields; a non-empty bag refuses the call before any read or write.</summary>

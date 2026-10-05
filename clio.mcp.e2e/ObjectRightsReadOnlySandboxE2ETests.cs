@@ -156,7 +156,8 @@ public sealed class ObjectRightsReadOnlySandboxE2ETests : McpContractFixtureBase
 		(preview.Output ?? string.Empty).Should().Match(output => output.Contains("PREVIEW — nothing was changed")
 				|| output.Contains("(no change)"),
 			because: "a preview either shows the planned change or says which row already holds it — and writes nothing");
-		after.Output.Should().Be(before.Output, because: "the preview must leave Contact's rights exactly as they were");
+		WithoutRecordCount(after.Output).Should().Be(WithoutRecordCount(before.Output),
+			because: "the preview must leave Contact's rights exactly as they were (the record count is not a right: another client can add a Contact between the two reads)");
 		before.Output.Should().Contain("priority order", because: "every listing states the priority rule its rows follow");
 	}
 
@@ -191,8 +192,15 @@ public sealed class ObjectRightsReadOnlySandboxE2ETests : McpContractFixtureBase
 		(preview.Output ?? string.Empty).Should().Match(output => output.Contains("PREVIEW — nothing was changed")
 				|| output.Contains("(no change)"),
 			because: "a preview either shows the planned change or says the rule already holds it — and writes nothing");
-		after.Output.Should().Be(before.Output, because: "the preview must leave Contact's rights exactly as they were");
+		WithoutRecordCount(after.Output).Should().Be(WithoutRecordCount(before.Output),
+			because: "the preview must leave Contact's rights exactly as they were (the record count is not a right: another client can add a Contact between the two reads)");
 	}
+
+	// The permission facts of a get-object-rights listing: every line except the named object's record count, which
+	// is data, not a right, and can change on the shared stand between two reads.
+	private static string WithoutRecordCount(string? output) =>
+		string.Join('\n', (output ?? string.Empty).Split('\n')
+			.Where(line => !line.Contains("existing record", StringComparison.OrdinalIgnoreCase)));
 
 	private static async Task<ObjectRightsToolResponse> CallAsync(ArrangeContext context, string toolName,
 		Dictionary<string, object?> args) {

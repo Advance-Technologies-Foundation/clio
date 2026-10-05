@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Clio.Command;
 using Clio.Command.ObjectRights;
 using Clio.Common;
@@ -54,6 +55,7 @@ public class ApplyDefaultRecordRightsCommandTests : BaseCommandTests<ApplyDefaul
 		_actualization = Substitute.For<IRecordRightsActualization>();
 		_actualization.Start(Arg.Any<Guid>(), Arg.Any<CreatioRequestOptions>())
 			.Returns(new RunProcessResponse { Status = "running", ProcessId = ProcessId.ToString() });
+		_actualization.FindRunning(Arg.Any<CreatioRequestOptions>()).Returns(Array.Empty<RunningUpdate>());
 		_counter = Substitute.For<IObjectRecordCounter>();
 		_delay = Substitute.For<IRetryDelay>();
 		_console = Substitute.For<IInteractiveConsole>();
@@ -268,21 +270,201 @@ public class ApplyDefaultRecordRightsCommandTests : BaseCommandTests<ApplyDefaul
 		_actualization.DidNotReceiveWithAnyArgs().ReadStatus(default, default);
 	}
 
+
+	// Each poll interval passes for real time, so a wait that is never ended by a final status ends by the clock.
+	private void RealDelay() =>
+		_delay.When(d => d.Wait(Arg.Any<TimeSpan>())).Do(call => System.Threading.Thread.Sleep((TimeSpan)call[0]));
+
 	[Test]
-	[Description("A status read that fails while waiting is a warning: the run was started, so it is reported as still running, exit 0.")]
-	public void Execute_ShouldReportStillRunning_WhenStatusCannotBeRead() {
+	[Description("When every status read fails, the result says the status could not be read — not 'still running' — and the reads go on until the wait ends instead of stopping at the first fault.")]
+	public void Execute_ShouldReportStatusUnknown_WhenEveryReadFails() {
 		// Arrange
 		ObjectIs(true);
+		RealDelay();
 		_actualization.ReadStatus(ProcessId, Arg.Any<CreatioRequestOptions>())
 			.Returns(_ => throw new InvalidOperationException("SelectQuery failed: denied"));
+
+		// Act
+		int exitCode = _command.Execute(Options(o => o.TimeoutSeconds = 3));
+
+		// Assert
+		exitCode.Should().Be(0, because: "the launch succeeded");
+		_actualization.ReceivedCalls().Count(call => call.GetMethodInfo().Name == nameof(IRecordRightsActualization.ReadStatus))
+			.Should().BeGreaterThan(1, because: "one failed read does not end the wait");
+		_warnings.Should().Contain(w => w.Contains("could not be read") && w.Contains("denied") && w.Contains(ProcessId.ToString()),
+			because: "the unknown status and the process to check are named");
+		_infos.Should().NotContain(i => i.Contains("still running"), because: "clio never saw the run going");
+	}
+
+	[Test]
+	[Description("A run whose SysProcessLog row never appears is reported as status unknown, not as still running.")]
+	public void Execute_ShouldReportStatusUnknown_WhenNoLogRow() {
+		// Arrange
+		ObjectIs(true);
+		RealDelay();
+		_actualization.ReadStatus(ProcessId, Arg.Any<CreatioRequestOptions>()).Returns((ProcessRunStatus)null);
+
+		// Act
+		int exitCode = _command.Execute(Options(o => o.TimeoutSeconds = 1));
+
+		// Assert
+		exitCode.Should().Be(0, because: "the launch succeeded");
+		_warnings.Should().Contain(w => w.Contains("no SysProcessLog row was found"), because: "the reason is named");
+		_infos.Should().NotContain(i => i.Contains("still running"), because: "clio never saw the run going");
+	}
+
+	[Test]
+	[Description("A status read that times out is retried: the run's Completed status read afterwards is reported.")]
+	public void Execute_ShouldReportCompleted_WhenAReadTimesOutFirst() {
+		// Arrange
+		ObjectIs(true);
+		int reads = 0;
+		_actualization.ReadStatus(ProcessId, Arg.Any<CreatioRequestOptions>()).Returns(_ => ++reads == 1
+			? throw new TimeoutException("no answer")
+			: new ProcessRunStatus(ProcessRunStatus.Completed, "Completed"));
 
 		// Act
 		int exitCode = _command.Execute(Options());
 
 		// Assert
-		exitCode.Should().Be(0, because: "the launch succeeded");
-		_warnings.Should().Contain(w => w.Contains("could not be read"), because: "the failed read is reported");
-		_infos.Should().Contain(i => i.Contains("still running") && i.Contains(ProcessId.ToString()),
-			because: "the process to check is named");
+		exitCode.Should().Be(0, because: "the run completed");
+		_infos.Should().Contain(i => i.Contains("completed"), because: "the second read saw the end");
+	}
+
+	[Test]
+	[Description("On MCP the wait is cut to what is left of the call budget, so a run still going is reported long before --timeout-seconds and the worker is not killed after the launch.")]
+	public void Execute_ShouldCutTheWaitToTheCallBudget() {
+		// Arrange
+		ObjectIs(true);
+		RealDelay();
+		_actualization.ReadStatus(ProcessId, Arg.Any<CreatioRequestOptions>())
+			.Returns(new ProcessRunStatus(ProcessRunStatus.Running, "Running"));
+		System.Diagnostics.Stopwatch watch = System.Diagnostics.Stopwatch.StartNew();
+
+		// Act
+		int exitCode = _command.Execute(Options(o => {
+			o.TimeoutSeconds = 60;
+			o.TimeOut = 500;
+			o.CallBudget = TimeSpan.FromSeconds(2);
+		}));
+
+		// Assert
+		watch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(10), because: "the 2 s call budget, not the 60 s wait, ends it");
+		exitCode.Should().Be(0, because: "a run still going is not a failure");
+		_infos.Should().Contain(i => i.Contains("still running"), because: "the run was seen going");
+	}
+
+	[TestCase(0, TestName = "Execute_ShouldRefuseZeroTimeout")]
+	[TestCase(-5, TestName = "Execute_ShouldRefuseNegativeTimeout")]
+	[Description("--timeout-seconds must be positive; nothing is read or started otherwise.")]
+	public void Execute_ShouldRefuseNonPositiveTimeout(int seconds) {
+		// Act
+		int exitCode = _command.Execute(Options(o => o.TimeoutSeconds = seconds));
+
+		// Assert
+		exitCode.Should().Be(1, because: "a wait of no time is meaningless");
+		_errors.Should().Contain(e => e.Contains("--timeout-seconds must be a positive"), because: "the option is named");
+		_reader.DidNotReceiveWithAnyArgs().GetObjectRights(default, default);
+	}
+
+	[Test]
+	[Description("An object read without a schema UId starts nothing: the process needs the UId.")]
+	public void Execute_ShouldRefuse_WhenSchemaUIdIsMissing() {
+		// Arrange
+		_reader.GetObjectRights(Arg.Any<string>(), Arg.Any<CreatioRequestOptions>())
+			.Returns(new ObjectRightsInfo(true, "UsrFoo", "Foo", true, Array.Empty<RoleOperationRights>(),
+				AdministratedByRecords: true, RecordRules: Array.Empty<DefaultRecordRule>()));
+
+		// Act
+		int exitCode = _command.Execute(Options());
+
+		// Assert
+		exitCode.Should().Be(1, because: "the launch has no object to name");
+		_errors.Should().Contain(e => e.Contains("schema UId"), because: "the reason is named");
+		_actualization.DidNotReceiveWithAnyArgs().Start(default, default);
+	}
+
+	[Test]
+	[Description("A launch the server answered with a fault (not a missing answer) says the run was NOT started — the opposite advice of a launch with no answer.")]
+	public void Execute_ShouldSayNotStarted_WhenLaunchFailsDefinitely() {
+		// Arrange
+		ObjectIs(true);
+		_actualization.Start(Arg.Any<Guid>(), Arg.Any<CreatioRequestOptions>())
+			.Returns(_ => throw new InvalidOperationException("Unexpected response: an HTML page"));
+
+		// Act
+		int exitCode = _command.Execute(Options());
+
+		// Assert
+		exitCode.Should().Be(1, because: "nothing was started");
+		_errors.Should().Contain(e => e.Contains("was not started"), because: "the server answered with a fault");
+		_errors.Should().NotContain(e => e.Contains("MAY already be going"), because: "that advice is for a missing answer only");
+	}
+
+	[Test]
+	[Description("A record count that fails before the confirmation is reported in the summary and does not stop the run.")]
+	public void Execute_ShouldStart_WhenCountFails() {
+		// Arrange
+		ObjectIs(true);
+		_counter.CountRecords(Arg.Any<string>(), Arg.Any<CreatioRequestOptions>())
+			.Returns(_ => throw new InvalidOperationException("SelectQuery failed: denied"));
+		_console.IsInteractive.Returns(true);
+		_console.Prompt(Arg.Any<string>()).Returns(true);
+		List<string> prompts = new();
+		_logger.When(l => l.WriteWarning(Arg.Any<string>())).Do(call => prompts.Add((string)call[0]));
+		_actualization.ReadStatus(ProcessId, Arg.Any<CreatioRequestOptions>())
+			.Returns(new ProcessRunStatus(ProcessRunStatus.Completed, "Completed"));
+
+		// Act
+		int exitCode = _command.Execute(Options(o => o.Confirm = false));
+
+		// Assert
+		exitCode.Should().Be(0, because: "the count is a fact for the user, not part of the run");
+		prompts.Should().Contain(w => w.Contains("existing records not counted"), because: "the prompt says the count failed");
+		_actualization.Received(1).Start(Arg.Any<Guid>(), Arg.Any<CreatioRequestOptions>());
+	}
+
+	[Test]
+	[Description("When a record-rights update is already running on the environment, the call warns before the confirmation (naming the process) and still starts — the log cannot say which object the running update is for.")]
+	public void Execute_ShouldWarn_WhenAnUpdateIsAlreadyRunning() {
+		// Arrange
+		ObjectIs(true);
+		Guid running = Guid.Parse("11111111-2222-3333-4444-555555555555");
+		_actualization.FindRunning(Arg.Any<CreatioRequestOptions>())
+			.Returns(new[] { new RunningUpdate(running, "2026-10-05T10:00:00") });
+		_actualization.ReadStatus(ProcessId, Arg.Any<CreatioRequestOptions>())
+			.Returns(new ProcessRunStatus(ProcessRunStatus.Completed, "Completed"));
+
+		// Act
+		int exitCode = _command.Execute(Options());
+
+		// Assert
+		exitCode.Should().Be(0, because: "the warning does not block: the running update may be for another object");
+		_warnings.Should().Contain(w => w.Contains("already running") && w.Contains(running.ToString()),
+			because: "the running process is named so the user can check it");
+		Received.InOrder(() => {
+			_actualization.FindRunning(Arg.Any<CreatioRequestOptions>());
+			_actualization.Start(Arg.Any<Guid>(), Arg.Any<CreatioRequestOptions>());
+		});
+	}
+
+	[Test]
+	[Description("A check for running updates that fails is reported and never stops the call.")]
+	public void Execute_ShouldStart_WhenTheRunningCheckFails() {
+		// Arrange
+		ObjectIs(true);
+		_actualization.FindRunning(Arg.Any<CreatioRequestOptions>())
+			.Returns(_ => throw new InvalidOperationException("SelectQuery failed: denied"));
+		_actualization.ReadStatus(ProcessId, Arg.Any<CreatioRequestOptions>())
+			.Returns(new ProcessRunStatus(ProcessRunStatus.Completed, "Completed"));
+
+		// Act
+		int exitCode = _command.Execute(Options());
+
+		// Assert
+		exitCode.Should().Be(0, because: "the check is advisory");
+		_warnings.Should().Contain(w => w.Contains("could not check whether a record-rights update is already running"),
+			because: "the failed check is reported");
+		_actualization.Received(1).Start(Arg.Any<Guid>(), Arg.Any<CreatioRequestOptions>());
 	}
 }

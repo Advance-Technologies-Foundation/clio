@@ -7,7 +7,10 @@ using CommandLine;
 
 namespace Clio.Command.ObjectRights;
 
-/// <summary>Options of <c>get-object-rights</c>: read the per-role object operation permissions of an object.</summary>
+/// <summary>
+/// Options of <c>get-object-rights</c>: read the object permissions of an object — the per-role operation permissions
+/// and the record layer (the "Use record permissions" switch and the default record rules).
+/// </summary>
 [Verb("get-object-rights", HelpText =
 	"Read object permissions: operation permissions (read/create/edit/delete per role) and record permissions (the "
 	+ "switch and the default record rules) of an object and, optionally, its connected objects")]
@@ -47,9 +50,9 @@ public class GetObjectRightsOptions : RemoteCommandOptions {
 }
 
 /// <summary>
-/// Reports the facts of the object-permissions layer — per object, which operations each role (or the one
-/// grantee) holds, or that the object is not administered by operation permissions, or that it could not be
-/// read. It deliberately draws no coverage verdict: what those facts mean for a particular audience (for
+/// Reports the facts of the object permissions — per object, which operations each role (or the one grantee) holds,
+/// or that the object is not administered by operation permissions, and its record layer (the switch and the default
+/// record rules); for the named object also its number of records; or that the object could not be read. It deliberately draws no coverage verdict: what those facts mean for a particular audience (for
 /// example the portal) is owned by the guidance for that scenario, not by this general tool.
 /// </summary>
 public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
@@ -95,7 +98,7 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 			_logger.WriteError($"Error: {ObjectRightsSupport.DisplayFailure(ex)}");
 			return 1;
 		}
-		ReportHeader(options, granteeFilter, resolution);
+		ReportHeader(options, granteeFilter, authorFilter, resolution);
 		bool rootFailed = false;
 		for (int index = 0; index < resolution.Objects.Count; index++) {
 			bool isRoot = index == 0;
@@ -109,7 +112,7 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 			}
 			// Each request of the read gets at most what is left of the budget (CreatioRequestOptions.ForNextRequest).
 			ObjectRightsInfo info = ReadRights(target, requestOptions);
-			bool read = ReportTarget(target, info, isRoot, granteeFilter, ruleFilter, requestOptions);
+			bool read = ReportTarget(target, info, isRoot, granteeFilter, ruleFilter);
 			rootFailed |= isRoot && !read;
 			if (info.TimedOut && index < resolution.Objects.Count - 1) {
 				// A hang, not a fault: every further read against the same stand would most likely wait as long, and on
@@ -118,6 +121,12 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 					+ $"{string.Join(", ", resolution.Objects.Skip(index + 1))} — read them one by one.");
 				break;
 			}
+		}
+		if (!rootFailed) {
+			// Last, and only for the named object: the number of records is what a user needs to decide on
+			// apply-default-record-rights. Counting reads the whole table, so it never takes the read budget of the
+			// connected objects, and counting each connected object would cost a query each.
+			ReportRecordCount(options.EntitySchemaName, requestOptions);
 		}
 		return rootFailed ? 1 : 0;
 	}
@@ -135,12 +144,13 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 		return true;
 	}
 
-	private void ReportHeader(GetObjectRightsOptions options, Guid? granteeFilter, ConnectedObjectsResolution resolution) {
+	private void ReportHeader(GetObjectRightsOptions options, Guid? granteeFilter, Guid? authorFilter,
+		ConnectedObjectsResolution resolution) {
 		_logger.WriteInfo(
-			$"Object operation permissions for '{options.EntitySchemaName}'"
+			$"Object permissions for '{options.EntitySchemaName}'"
 			+ (options.IncludeConnected ? " and its connected objects" : "")
 			+ (granteeFilter is null ? "" : $" (grantee {granteeFilter})")
-			+ (string.IsNullOrWhiteSpace(options.Author) ? "" : $" (rules of author {options.Author})") + ":");
+			+ (authorFilter is null ? "" : $" (rules of author {authorFilter})") + ":");
 		_logger.WriteInfo($"  {PriorityRule}");
 		_logger.WriteInfo($"  {GuidancePointer}");
 		if (resolution.EnumerationError is not null) {
@@ -175,7 +185,7 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 
 	// Reports one object and returns whether it could be read.
 	private bool ReportTarget(string schemaName, ObjectRightsInfo info, bool isRoot, Guid? granteeFilter,
-		RuleFilter ruleFilter, CreatioRequestOptions requestOptions) {
+		RuleFilter ruleFilter) {
 		if (!info.IsRead) {
 			string reason = info.FailureReason;
 			if (isRoot) {
@@ -189,11 +199,6 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 		}
 		ReportOperationLayer(schemaName, info, granteeFilter);
 		ReportRecordLayer(info.RecordState, ruleFilter);
-		if (isRoot) {
-			// Only for the named object: the number of records is what a user needs to decide on
-			// apply-default-record-rights, and counting every connected object would cost a query each.
-			ReportRecordCount(schemaName, requestOptions);
-		}
 		return true;
 	}
 
@@ -228,7 +233,7 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 	private void ReportRecordCount(string schemaName, CreatioRequestOptions requestOptions) {
 		string fact = ObjectRightsCommandInput.DescribeRecordCount(_recordCounter, schemaName, requestOptions,
 			out long? count);
-		string line = $"    {char.ToUpperInvariant(fact[0])}{fact[1..]}.";
+		string line = $"  {schemaName}: {fact}.";
 		if (count is null) {
 			_logger.WriteWarning(line);
 		} else {

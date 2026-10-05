@@ -115,6 +115,10 @@ returns the record layer. The output adds, after the operation rows (which stay 
 - Destructive and idempotent: `--confirm` on the CLI, host approval on MCP (ENG-99741 D4). A call whose plan changes
   nothing reports "no change" and does not save. `preview` is a dry run rendered from the same plan.
 
+- Review follow-up (2026-10-05, RC-9): kept as is. A grant sets the named operations to `level` (default granted),
+  which can lower delegated; the preview, which the guidance requires before every write, shows it as before → after.
+  No extra rule for an omitted `level`.
+
 **RD3 — The switch changes only with its flag; both directions are allowed when named.**
 - A grant on an object whose switch is off is refused without `enable-record-permissions`. The refusal names the
   stored rules that would come into effect.
@@ -160,6 +164,10 @@ a timeout or transport fault ("may still be applied, re-read"), redaction.
 changes a rule report the number of existing records, read with one DataService count query under the caller's
 account. It is the fact the user needs to decide on RD7. A failed count is reported as "not counted" and never fails
 the call.
+- Decided after the PR review (2026-10-05): the count stays an exact DataService `COUNT(Id)`, one attempt of at most
+  10 s; `get-object-rights` runs it last, after every object is read, so it never takes the read budget of the
+  connected objects. Measured on kravchuk_0922 (8.3.4): `COUNT` over tables of up to 18 020 rows cost no more than a
+  `ping`; its cost on a much larger customer table is not measured (accepted risk R9).
 
 **RD7 — Apply: a separate tool `apply-default-record-rights`; the agent never runs it on its own.**
 - Separate from `set` on purpose: several rule changes are followed by one heavy run, and its cost and risk differ.
@@ -168,12 +176,22 @@ the call.
 - Starts `ObjectRecordRightsActualizationProcess` once, through the existing `KnownRoute.RunProcess`, with
   `MaxAttempts = 1` (a retry would start a second run). The response is interpreted by the existing
   `RunProcessCommand.BuildResponse` (refusal, no-handle and failure rules are the same).
-- Returns `processId`. With `wait`, polls `SysProcessLog` by primary key until Completed / Error / Canceled or the
+- Returns `processId`. A status read that fails is retried at the next poll; when no status was ever read (no
+  `SysProcessLog` row, or every read failed) the result says the status could not be read — never "still running".
+  With `wait`, polls `SysProcessLog` by primary key until Completed / Error / Canceled or the
   deadline. The deadline gives "still running, process <id>", exit 0, not a failure; Error gives exit 1.
 - Destructive, NOT idempotent (each call starts a run). On MCP the whole call — read, record count, launch and wait —
   shares a 100 s budget (worker budget policy `ParentKillDefault`); `timeout-seconds` defaults to 60 there.
 - **The agent never applies rules on its own initiative** (Jira decision Q2): after any enable or rule change
   the guidance requires asking the user, with the record count and the cost, and the user decides whether and when.
+
+**Repeated grant on an object that is OFF (AC6).** It is refused (`EnableNotRequested`) every time, like the first
+identical call: that call could not have landed, so the refusal is the stable outcome. A call that names the enable
+reports "no change" once the state is in place.
+
+**A changed rule is written field by field.** Only the levels and the flag the plan changes are written; a field the
+change does not touch stays exactly as the service stored it (decided after the PR review, 2026-10-05; a separate
+"unreadable level" state was considered and dropped as unneeded).
 
 **RD8 — Version tolerance.** Target is 10.2. The parser tolerates a missing `recordRightsDenied` (8.3.4) and a missing
 `entitySchemaRecordDefRights` (treated as no rules). No behaviour depends on the version.
@@ -213,6 +231,8 @@ auto-apply**; verification by re-reading with `get-object-rights` and, per recor
     lost, not only a concurrent change of the same rule (platform model 2). The read-back detects it after the fact.
   - **R7 — The record count is under the caller's rights.** For a caller without "view any data" on an object with
     record permissions on, it counts only the records visible to that caller. The output says whose count it is.
+  - **R9 — The record count is an exact COUNT.** On a very large table it can take long on the server even after
+    clio's 10 s client timeout; not measured on such a table (the largest measured: 18 020 rows, as fast as a ping).
   - **R8 — No destructive e2e in CI** (as R4 of ENG-99741): the round trip is an opt-in LocalOnly test, run once at
     the final head.
 
