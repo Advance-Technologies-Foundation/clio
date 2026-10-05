@@ -17,11 +17,12 @@ namespace Clio.Mcp.E2E;
 /// <summary>
 /// Stand-free end-to-end contract coverage for clio#1368 / clio#1300 - a Lookup on the schema registry holds the
 /// schema UId, not a record id - read off the ADVERTISED contract through <c>get-tool-contract</c> over the real
-/// MCP stdio transport. The behavioural half, which needs a stand carrying CrtProcessBuilder 1.6.6.64, is
-/// <c>ModifyBusinessProcessToolE2ETests.ModifyBusinessProcess_Should_StoreTheSchemaUId_WhenAddMappingTargetsASchemaRegistryLookup</c>.
-/// <para>What is asserted is the instruction surface the descriptions and the archive version separately: the
-/// modify rule that names the exception to "a Lookup value is a bare record Guid", and the describe field that
-/// is the only signal an element stored the old way carries.</para>
+/// MCP stdio transport. The behavioural half needs a stand carrying the bundled CrtProcessBuilder and lives in
+/// <c>ModifyBusinessProcessToolE2ETests</c> (the two <c>...SchemaRegistryLookup</c> /
+/// <c>...DataElementsObject</c> tests).
+/// <para>What is asserted here is the instruction surface, which ships with clio and can drift from the archive
+/// on its own: the modify rule that names the exception to "a Lookup value is a bare record Guid", and the route
+/// that sets or changes the object.</para>
 /// </summary>
 [TestFixture]
 [AllureNUnit]
@@ -30,10 +31,9 @@ namespace Clio.Mcp.E2E;
 public sealed class SchemaReferenceLookupContractToolE2ETests : McpContractFixtureBase {
 
 	private const string ModifyToolName = ModifyBusinessProcessTool.ModifyBusinessProcessToolName;
-	private const string DescribeToolName = DescribeProcessTool.ToolName;
 
 	[Test]
-	[Description("modify-business-process advertises the schema-registry exception to the Lookup-value rule: Add data EntitySchemaId and Modify data EntitySchemaUId hold the schema UId, and a registry row id is stored as that UId. Without it the 'bare record Guid' rule beside it reads as 'pass the view's row Id' - the value that used to fail at run time.")]
+	[Description("modify-business-process advertises the schema-registry exception to the Lookup-value rule: Add/Delete data EntitySchemaId and Modify data EntitySchemaUId hold the schema UId, never a row Id, and the object itself is set or changed only with setElement. Without it the 'bare record Guid' rule beside it reads as 'pass the view's row Id' - the value that used to fail at run time.")]
 	[AllureFeature(ModifyToolName)]
 	[AllureTag(ModifyToolName)]
 	[AllureName("modify-business-process advertises the schema-registry Lookup rule")]
@@ -45,32 +45,13 @@ public sealed class SchemaReferenceLookupContractToolE2ETests : McpContractFixtu
 		string description = await AdvertisedDescriptionAsync(context, ModifyToolName);
 
 		// Assert
-		description.Should().Contain("a Lookup on the schema registry (Add/Delete data EntitySchemaId",
+		description.Should().Contain("a schema-registry Lookup (Add/Delete data EntitySchemaId",
 			because: "naming the parameters is how a caller recognises the case before it writes one");
-		description.Should().Contain("holds the schema UId, and a registry row id is stored as that UId",
-			because: "both halves are the contract: the UId describe reports is accepted, and a row id is "
-				+ "normalized rather than refused");
-	}
-
-	[Test]
-	[Description("describe-business-process advertises objectWarning on the three data blocks and its two causes. An element whose object was stored as a schema-registry row id or a formula reads back with source null, exactly like an ordinary formula target, so the field is the only thing that tells a caller the designer shows it blank - and, for the row id, that it fails at run time.")]
-	[AllureFeature(DescribeToolName)]
-	[AllureTag(DescribeToolName)]
-	[AllureName("describe-business-process advertises objectWarning on the data blocks")]
-	public async Task DescribeBusinessProcess_Should_AdvertiseTheObjectWarning() {
-		// Arrange
-		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
-
-		// Act
-		string description = await AdvertisedDescriptionAsync(context, DescribeToolName);
-
-		// Assert
-		description.Should().Contain("each data block's objectWarning (addData, changeData, deleteData",
-			because: "a caller has to know which blocks carry the field to look for it");
-		description.Should().Contain("ItemNotFoundException",
-			because: "a stored row id fails at run time, the half of the warning no designer view shows");
-		description.Should().Contain("naming the in-place addMapping repair",
-			because: "the warning is only useful if it names a repair the element in that state accepts");
+		description.Should().Contain("holds the schema UId, never a row Id",
+			because: "both halves are the contract: the UId describe reports is the value, and the view's row Id "
+				+ "is not");
+		description.Should().Contain("only setElement sets or changes that object",
+			because: "addMapping refuses to set or change the object, so the contract has to name the route that does");
 	}
 
 	/// <summary>

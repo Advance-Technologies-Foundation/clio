@@ -380,27 +380,6 @@ public sealed class DescribeProcessToolTests {
 		return File.ReadAllText(Path.Combine(directory!.FullName, platformPath));
 	}
 
-	[Test]
-	[Category("Unit")]
-	[Description("clio#1368: describe advertises objectWarning on the three data blocks, and what it means. An element whose object was stored as a schema-registry row id (older addMapping calls accepted one) or as a formula reads back with source null - indistinguishable from an ordinary formula target - while the designer shows it blank and the row id also fails at run time; the field is the only signal an agent gets, so the contract has to name both shapes and the repair.")]
-	public void DescribeProcess_ShouldAdvertiseTheObjectWarning_OnTheDataBlocks() {
-		// Arrange
-		string description = ReadDescribeToolDescription();
-
-		// Act
-		int start = description.IndexOf("objectWarning", StringComparison.Ordinal);
-
-		// Assert
-		start.Should().BeGreaterThan(-1, because: "a field the contract never names is a field no caller reads");
-		description.Should().Contain("each data block's objectWarning (addData, changeData, deleteData",
-			because: "the warning is carried by all three data blocks, and naming them tells a caller where to look");
-		description.Should().Contain("ItemNotFoundException",
-			because: "a stored row id fails at run time, which is the half of the warning a designer view cannot show");
-		description.Should().Contain("naming the in-place addMapping repair",
-			because: "the repair is an addMapping of the schema UId, which keeps the element's values and filter - "
-				+ "the block route would read the stored row id as a different object");
-	}
-
 	/// <summary>Reads the describe tool's own [Description] - the agent-facing contract under test.</summary>
 	private static string ReadDescribeToolDescription() =>
 		((System.ComponentModel.DescriptionAttribute)typeof(DescribeProcessTool)

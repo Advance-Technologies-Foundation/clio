@@ -3286,48 +3286,91 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		""";
 
 	[Test]
-	[Description("clio#1368 / #1300 over the real MCP path: a Lookup on the schema registry holds the schema UId. addMapping on an Add data element's EntitySchemaId given Contact's VwSysEntitySchemaInWorkspace ROW Id - the view's primary column - stores Contact's schema UId, so describe names the object and raises no objectWarning; before the fix the row id was stored verbatim, failed at run time with ItemNotFoundException and opened blank in the designer. Re-submitting the EntitySchemaUId that describe reports for a Modify data element then succeeds, where it was refused with 'no SysSchema record has this id'. Needs CrtProcessBuilder 1.6.6.64 or later on the stand.")]
+	[Description("clio#1300 over the real MCP path: a Modify data element's object is a Lookup on the schema registry, and the EntitySchemaUId describe reports for it re-submits through addMapping unchanged - the object stays Contact. Before the fix the value describe returned was refused with 'no SysSchema record has this id'. Needs CrtProcessBuilder 1.6.6.66 or later on the stand.")]
 	[AllureTag(ToolName)]
-	[AllureName("modify-business-process stores a schema-registry Lookup as the schema UId")]
-	public async Task ModifyBusinessProcess_Should_StoreTheSchemaUId_WhenAddMappingTargetsASchemaRegistryLookup() {
+	[AllureName("modify-business-process re-submits the described object of a schema-registry Lookup")]
+	public async Task ModifyBusinessProcess_Should_ResubmitTheDescribedObject_WhenAddMappingTargetsASchemaRegistryLookup() {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
 		string processName = $"UsrClioBpSchemaRefE2e{Guid.NewGuid():N}";
 		try {
-			CallToolResult created = await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
-				["environment-name"] = context.EnvironmentName,
-				["descriptor"] = BuildSchemaReferenceDescriptor(processName)
-			});
-			created.IsError.Should().NotBeTrue(because: "arrange: the process the edits run against must exist");
-			(string contactRowId, string contactSchemaUId) = await ReadContactRegistryRowAsync(context);
+			await CreateProcessAsync(context, processName, BuildSchemaReferenceDescriptor(processName));
+			(_, string contactSchemaUId) = await ReadRootRegistryRowAsync(context, "Contact");
+			string described = (await DescribeSchemaReferenceProcessAsync(context, processName)).Elements
+				.Single(e => e.Name == "ChangeData1").Parameters.Single(p => p.Name == "EntitySchemaUId").Value;
 
-			// Act - the row id onto Add data, then describe's own value back onto Modify data. Both go through
-			// ModifyExpectingSuccessAsync: the success line, not the absence of one refusal, is what proves an edit.
+			// Act - ModifyExpectingSuccessAsync asserts the success line, not merely the absence of a refusal
 			await ModifyExpectingSuccessAsync(context, processName,
-				AddMappingOperation("AddData1", "EntitySchemaId", contactRowId));
-			DescribeProcessResult described = ParseDescribeResult(await CallToolAsync(context, DescribeToolName,
-				new Dictionary<string, object?> {
-					["environment-name"] = context.EnvironmentName, ["process-name"] = processName
-				}));
-			string describedChangeTarget = described.Elements.Single(e => e.Name == "ChangeData1").Parameters
-				.Single(p => p.Name == "EntitySchemaUId").Value;
-			await ModifyExpectingSuccessAsync(context, processName,
-				AddMappingOperation("ChangeData1", "EntitySchemaUId", describedChangeTarget));
+				AddMappingOperation("ChangeData1", "EntitySchemaUId", described));
+			DescribeProcessResult resubmitted = await DescribeSchemaReferenceProcessAsync(context, processName);
 
-			// Assert - both edits were applied (asserted inside ModifyExpectingSuccessAsync); what they stored:
-			JsonElement addData = described.Elements.Single(e => e.Name == "AddData1").AdditionalData["addData"];
-			addData.GetProperty("source").GetString().Should().Be("Contact",
-				because: "a stored schema UId resolves back to the object's name; a stored row id read back as null");
-			addData.GetProperty("sourceSchemaUId").GetString().Should().Be(contactSchemaUId,
-				because: "what is stored must be the UId the runtime's GetInstanceByUId loads");
-			addData.TryGetProperty("objectWarning", out _).Should().BeFalse(
-				because: "the warning is for objects the designer cannot show, and this one is the designer's form");
-			describedChangeTarget.Should().Be(contactSchemaUId,
-				because: "the changeData block wrote Contact's schema UId, which describe reports verbatim - and "
-					+ "re-submitting it was refused with 'no SysSchema record has this id' before the fix (clio#1300)");
+			// Assert
+			described.Should().BeEquivalentTo(contactSchemaUId,
+				because: "the changeData block stores the schema UId, which describe reports verbatim");
+			JsonElement changeData = resubmitted.Elements.Single(e => e.Name == "ChangeData1")
+				.AdditionalData["changeData"];
+			changeData.GetProperty("source").GetString().Should().Be("Contact",
+				because: "re-submitting the described value is a no-op on the object, not a change of it");
+			changeData.GetProperty("sourceSchemaUId").GetString().Should().BeEquivalentTo(contactSchemaUId,
+				because: "what is stored is still the UId the runtime's GetInstanceByUId loads");
 		} finally {
 			await DeleteProcessAsync(context.EnvironmentName!, processName);
 		}
+	}
+
+	[Test]
+	[Description("addMapping only keeps a data element's object, over the real MCP path. Setting one on an Add data element that has none, changing a Modify data element's object to Account, and passing Contact's registry ROW Id (the view's primary column, which the runtime cannot load) are each refused, naming setElement.<block> or the schema UId to pass - and the element keeps its object. The block re-checks what this route cannot: dependent mappings, the values for the new object, a filter written for the old one. Needs CrtProcessBuilder 1.6.6.66 or later on the stand.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process refuses to set or change a data element's object through addMapping")]
+	public async Task ModifyBusinessProcess_Should_RefuseToSetOrChange_ADataElementsObject() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpSchemaKeepE2e{Guid.NewGuid():N}";
+		try {
+			await CreateProcessAsync(context, processName, BuildSchemaReferenceDescriptor(processName));
+			(string contactRowId, string contactSchemaUId) = await ReadRootRegistryRowAsync(context, "Contact");
+			(_, string accountSchemaUId) = await ReadRootRegistryRowAsync(context, "Account");
+
+			// Act - one refusal per call, so each message is about one case
+			string set = await ModifyExpectingRefusalAsync(context, processName,
+				AddMappingOperation("AddData1", "EntitySchemaId", contactSchemaUId));
+			string change = await ModifyExpectingRefusalAsync(context, processName,
+				AddMappingOperation("ChangeData1", "EntitySchemaUId", accountSchemaUId));
+			string rowId = await ModifyExpectingRefusalAsync(context, processName,
+				AddMappingOperation("ChangeData1", "EntitySchemaUId", contactRowId));
+			DescribeProcessResult after = await DescribeSchemaReferenceProcessAsync(context, processName);
+
+			// Assert
+			set.Should().Contain("holds no object yet",
+				because: "setting an object skips the block's first-configuration checks");
+			set.Should().Contain("setElement.addData {source:", because: "the refusal names the route that sets one");
+			change.Should().Contain("is a different object", because: "the refusal says why the value was not taken");
+			change.Should().Contain("setElement.changeData {source:",
+				because: "the refusal names the route that re-checks the element for the new object");
+			rowId.Should().Contain("is not the UId of an object",
+				because: "a registry row Id is accepted as a row of the view but the runtime cannot load it");
+			after.Elements.Single(e => e.Name == "ChangeData1").AdditionalData["changeData"].GetProperty("source")
+				.GetString().Should().Be("Contact", because: "every refused call left the element on its object");
+			DescribedElement addData = after.Elements.Single(e => e.Name == "AddData1");
+			(addData.AdditionalData != null && addData.AdditionalData.TryGetValue("addData", out JsonElement block)
+					&& block.TryGetProperty("source", out JsonElement source) ? source.GetString() : null)
+				.Should().BeNull(because: "the refused set left the Add data element without an object");
+		} finally {
+			await DeleteProcessAsync(context.EnvironmentName!, processName);
+		}
+	}
+
+	/// <summary>Applies operations that must be REFUSED and returns the refusal text.</summary>
+	private static async Task<string> ModifyExpectingRefusalAsync(ArrangeContext context, string processName,
+		string operations) {
+		CallToolResult result = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = operations
+		});
+		string text = SerializeToolText(result);
+		text.Should().NotContain("edited (", because: "a refused edit must not be applied");
+		return text;
 	}
 
 	private static string AddMappingOperation(string elementName, string elementParameter, string value) =>
@@ -3340,17 +3383,25 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			}
 		});
 
+	private static async Task<DescribeProcessResult> DescribeSchemaReferenceProcessAsync(ArrangeContext context,
+		string processName) =>
+		ParseDescribeResult(await CallToolAsync(context, DescribeToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName, ["process-name"] = processName
+		}));
+
 	/// <summary>
-	/// Contact's ROOT row in the registry view: its row Id (the view's primary column) and its schema UId. The
-	/// view also lists one row per package extending Contact, each with its own pair; ExtendParent picks the root.
+	/// A schema's ROOT row in the registry view: its row Id (the view's primary column) and its schema UId. The
+	/// view also lists one row per package extending the schema, each with its own pair; ExtendParent picks the
+	/// root.
 	/// </summary>
-	private static async Task<(string RowId, string SchemaUId)> ReadContactRegistryRowAsync(ArrangeContext context) {
+	private static async Task<(string RowId, string SchemaUId)> ReadRootRegistryRowAsync(ArrangeContext context,
+		string schemaName) {
 		CallToolResult result = await context.Session.CallToolAsync(ClioRunTool.ToolName,
 			new Dictionary<string, object?> {
 				["command"] = ExecuteEsqTool.ToolName,
 				["args"] = new Dictionary<string, object?> {
 					["environment-name"] = context.EnvironmentName,
-					["query"] = JsonSerializer.Deserialize<JsonElement>("""
+					["query"] = JsonSerializer.Deserialize<JsonElement>($$"""
 						{ "rootSchemaName": "VwSysEntitySchemaInWorkspace", "operationType": 0, "allColumns": false,
 						  "columns": { "items": {
 						    "Id": { "expression": { "expressionType": 0, "columnPath": "Id" } },
@@ -3358,7 +3409,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 						  "filters": { "filterType": 6, "logicalOperation": 0, "items": {
 						    "name": { "filterType": 1, "comparisonType": 3,
 						      "leftExpression": { "expressionType": 0, "columnPath": "Name" },
-						      "rightExpression": { "expressionType": 2, "parameter": { "dataValueType": 1, "value": "Contact" } } },
+						      "rightExpression": { "expressionType": 2, "parameter": { "dataValueType": 1, "value": "{{schemaName}}" } } },
 						    "root": { "filterType": 1, "comparisonType": 3,
 						      "leftExpression": { "expressionType": 0, "columnPath": "ExtendParent" },
 						      "rightExpression": { "expressionType": 2, "parameter": { "dataValueType": 12, "value": false } } } } } }
@@ -3366,21 +3417,31 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 				}
 			}, context.CancellationTokenSource.Token);
 		ExecuteEsqResponse response = EntitySchemaStructuredResultParser.Extract<ExecuteEsqResponse>(result);
-		response.Success.Should().BeTrue(because: "arrange: the registry view must be readable to pick Contact's row");
+		response.Success.Should().BeTrue(because: $"arrange: the registry view must be readable to pick {schemaName}'s row");
 		JsonElement row = response.Rows!.Value.EnumerateArray().Single();
 		return (row.GetProperty("Id").GetString()!, row.GetProperty("UId").GetString()!);
 	}
 
-	/// <summary>Removes the process the test built; a failure is reported, not thrown, so it cannot mask the test's own.</summary>
+	/// <summary>
+	/// Removes the process the test built. Called from finally, so a failed or timed-out delete is reported, not
+	/// thrown: an exception here would replace the assertion failure the test was already reporting. A remote
+	/// delete-schema can outlast the CLI's default request timeout, so the request gets the same ten minutes the
+	/// cleanup does.
+	/// </summary>
 	private static async Task DeleteProcessAsync(string environmentName, string processName) {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		using CancellationTokenSource cleanup = new(TimeSpan.FromMinutes(10));
-		ClioCliCommandResult deleted = await ClioCliCommandRunner.RunAsync(settings,
-			["delete-schema", processName, "--remote", "-e", environmentName], cancellationToken: cleanup.Token);
-		if (deleted.ExitCode != 0) {
-			await TestContext.Error.WriteLineAsync(
-				$"Could not delete '{processName}': {deleted.StandardOutput} {deleted.StandardError}");
+		try {
+			ClioCliCommandResult deleted = await ClioCliCommandRunner.RunAsync(settings,
+				["delete-schema", processName, "--remote", "-e", environmentName, "--timeout", "600000"],
+				cancellationToken: cleanup.Token);
+			if (deleted.ExitCode != 0) {
+				await TestContext.Error.WriteLineAsync(
+					$"Could not delete '{processName}': {deleted.StandardOutput} {deleted.StandardError}");
+			}
+		} catch (OperationCanceledException) {
+			await TestContext.Error.WriteLineAsync($"Deleting '{processName}' timed out; it stays on the stand.");
 		}
 	}
 

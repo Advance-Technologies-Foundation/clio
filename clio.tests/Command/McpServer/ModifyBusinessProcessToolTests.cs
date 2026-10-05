@@ -457,7 +457,7 @@ public class ModifyBusinessProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("clio#1368 / #1300: the Lookup-value rule in modify-business-process carries its one exception. A Lookup on the schema registry (Add data EntitySchemaId, Modify data EntitySchemaUId, Delete data EntitySchemaId) holds the SCHEMA UId describe reports, not a record id; without the sentence the 'bare record Guid' rule beside it sends a caller to the view's row Id, the one value that failed at run time.")]
+	[Description("clio#1368 / #1300: the Lookup-value rule in modify-business-process carries its one exception. A Lookup on the schema registry (Add data EntitySchemaId, Modify data EntitySchemaUId, Delete data EntitySchemaId) holds the SCHEMA UId describe reports, not a record id; without the sentence the 'bare record Guid' rule beside it sends a caller to the view's row Id, the one value that failed at run time. And the object itself is set or changed only through setElement, which re-checks the element's values, filter and dependents - addMapping refuses both.")]
 	public void ModifyBusinessProcess_ShouldStateTheSchemaRegistryLookupRule() {
 		// Arrange
 		string description = ReadToolDescription(typeof(ModifyBusinessProcessTool),
@@ -473,9 +473,11 @@ public class ModifyBusinessProcessToolTests {
 			because: "the exception has to follow the general rule it narrows, in the same addMapping clause");
 		description.Should().Contain("Add/Delete data EntitySchemaId, Modify data EntitySchemaUId",
 			because: "naming the parameters is what lets a caller recognise the case before it writes one");
-		description.Should().Contain("a registry row id is stored as that UId",
-			because: "the row id is the reference object's primary column, so a caller holding one must learn it "
-				+ "is normalized rather than refused");
+		description.Should().Contain("never a row Id",
+			because: "the row id is the reference object's primary column, so a caller holding one must learn it is "
+				+ "the wrong value before it writes one");
+		description.Should().Contain("only setElement sets or changes that object",
+			because: "addMapping refuses to set or change the object, so the contract has to name the route that does");
 	}
 
 
