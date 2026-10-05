@@ -219,6 +219,24 @@ public class SelectQueryHelperTests {
 			.Should().Equal(["Id", "Name"], because: "the envelope must carry every requested column");
 	}
 
+	[Test]
+	[Description("The plain builder asks for every row by default and for distinct rows only when the caller says so, so a row cap can count distinct values.")]
+	public void BuildSelectQuery_Should_Emit_IsDistinct_Only_When_Asked() {
+		// Arrange
+		SelectQueryHelper.SelectQueryFilterDefinition[] filters = [new("Name", "a", SelectQueryHelper.TextDataValueType)];
+
+		// Act
+		using JsonDocument plain = Serialize(SelectQueryHelper.BuildSelectQuery("SysSchema", Columns, filters));
+		using JsonDocument distinct = Serialize(SelectQueryHelper.BuildSelectQuery("SysSchema", Columns, filters,
+			isDistinct: true));
+
+		// Assert
+		plain.RootElement.GetProperty("isDistinct").GetBoolean().Should().BeFalse(
+			because: "every existing caller keeps the rows it asked for");
+		distinct.RootElement.GetProperty("isDistinct").GetBoolean().Should().BeTrue(
+			because: "a caller that counts distinct values asks for them");
+	}
+
 	#endregion
 
 	#region Methods: Private

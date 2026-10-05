@@ -14,6 +14,13 @@ Read-only companion of `set-object-rights`. Reports the object's **per-role oper
 the `SysEntitySchemaOperationRight` / "Object permissions" layer (who may read/create/edit/delete ANY record
 of the entity). By default every role's row is listed; pass `--grantee` to focus on one role.
 
+The object is named by its **code** (entity schema name), and the code always wins. When no object has that code,
+the object whose **title** it is is read, and the output says so; when several objects have that title, the call
+is refused and lists them as `'title' (code: name)` — re-run with the code. A name that is not a schema identifier
+(a title with spaces, say) is only ever looked up as a title. Each object is shown by its title next to its code —
+`'Creatio functionality' (Feature)` — when its title differs from the code: a developer names an object by its
+title as often as by its code, and the two can name different objects.
+
 The rows are listed in **priority order**, each with its `[position]` (0 is the highest). A user who is in
 several roles gets the operations of the highest matching row — decided per row, so a row with no operations
 denies them. Every listing states that rule once. Per object the output is one of:
@@ -41,7 +48,7 @@ granting: decide per object, then run one `set-object-rights` per object. Securi
 read as connected objects and are named in a warning. A connected object that cannot be read, or a connected set
 that cannot be enumerated, is reported with a warning. A read that times out stops the listing — every further read
 against the same stand would most likely wait as long — and the objects not read yet are named, to be read one by
-one.
+one. When the named object's read times out, its connected objects are not listed at all.
 
 ## Synopsis
 
@@ -53,7 +60,7 @@ clio get-object-rights --entity-schema-name <EntitySchemaName> [--grantee <SysAd
 
 ```bash
 --entity-schema-name NAME
-Object (entity schema) name to read. Required.
+The object to read: its code (entity schema name), or its title when no object has that code. Required.
 
 --grantee GUID
 Optional SysAdminUnit id (role or user): show its row and the rows above it (every row when it has none or when the
@@ -74,6 +81,12 @@ List every row of an object, in priority order:
 clio get-object-rights --entity-schema-name UsrOrder -e production
 ```
 
+Read an object by its title, when no object has that code (the output names the code it resolved to):
+
+```bash
+clio get-object-rights --entity-schema-name "Creatio functionality" -e production
+```
+
 Before granting a role access to an object and its lookups, read the role's rows on all of them:
 
 ```bash
@@ -84,11 +97,15 @@ clio get-object-rights --entity-schema-name UsrOrder --grantee <role-id> --inclu
 
 - Backed by the native `RightManagementService.svc/GetAdministratedObject` service (the same service the
   System Designer "Object permissions" section uses). Read-only.
-- The schema name is resolved to its UId via a DataService `SelectQuery` over `SysSchema`.
+- The schema name is resolved to its UId via a DataService `SelectQuery` over `SysSchema`; a title is looked up in
+  `SysSchema.Caption` (entity schemas only, on any package layer, each object once).
 - Pair with `set-object-rights` to change the rows this command reports.
-- Exit code 1 when the named (root) object is not found or its rights cannot be read, or when the name is not
-  a plain schema identifier (it is trimmed first). A connected object that cannot be read only warns.
+- Exit code 1 when no object has the name as its code or its title, when several objects have it as their title,
+  when the title lookup fails, or when the named (root) object's rights cannot be read. The name is trimmed first.
+  A connected object that cannot be read only warns.
 - On MCP the call is a read bounded by the read-response deadline (120 s by default,
   `CLIO_MCP_READ_DEADLINE_SECONDS`). So that the answer arrives before it, every request gets one attempt of at
   most 30 s, all requests share a 90 s limit (a request gets at most what is left of it), and the listing stops once
-  it is spent, naming the objects not read yet — read them one by one then.
+  it is spent, naming the objects not read yet — read them one by one then. The named object is read first, since it
+  decides which object a title means; when its read times out or the limit is spent by then, its connected objects
+  are not listed, and the output says so.

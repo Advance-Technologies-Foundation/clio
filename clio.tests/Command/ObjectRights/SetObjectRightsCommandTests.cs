@@ -311,7 +311,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		// Assert
 		exitCode.Should().Be(0, because: "a preview of an allowed call is not a failure");
 		NothingSaved();
-		_infos.Should().Contain(m => m.Contains("PREVIEW") && m.Contains("Turn operation permissions OFF on 'UsrFoo'"),
+		_infos.Should().Contain(m => m.Contains("PREVIEW") && m.Contains("Turn operation permissions OFF on 'Foo' (UsrFoo)"),
 			because: "the summary names the call");
 		_infos.Should().Contain(m => m.Contains("available to ALL internal users")
 				&& m.Contains("[0] Grantee: read") && m.Contains("[1] All employees: read/create/edit/delete"),
@@ -381,7 +381,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 
 		// Assert
 		exitCode.Should().Be(1, because: "an administered object with no granting row is never an end state");
-		ErrorContains("would leave no row on 'UsrFoo' that grants any operation", because: "the refusal says why");
+		ErrorContains("would leave no row on 'Foo' (UsrFoo) that grants any operation", because: "the refusal says why");
 		ErrorContains("[1] All employees: no operations", because: "the refusal shows the rows it read");
 		ErrorContains("--grantee, --operations and --enable-operation-permissions", because: "the refusal says how to go on");
 		NothingSaved();
@@ -507,6 +507,8 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 	public void Execute_ShouldFail_WhenReadFails() {
 		// Arrange
 		ObjectIs(new ObjectRightsInfo(true, "UsrFoo", null, false, Array.Empty<RoleOperationRights>(), ReadError: "boom"));
+		_reader.FindObjectsByTitle("UsrFoo", Arg.Any<CreatioRequestOptions>())
+			.Returns(new[] { new ObjectTitleMatch("UsrOther", "UsrFoo") });
 
 		// Act
 		int exitCode = _command.Execute(Options("read,create,edit"));
@@ -514,6 +516,25 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		// Assert
 		exitCode.Should().Be(1, because: "a failed read is never taken for 'available'");
 		ErrorContains("boom", because: "the read error is surfaced");
+		_reader.DidNotReceiveWithAnyArgs().FindObjectsByTitle(default, default);
+		NothingSaved();
+	}
+
+	[Test]
+	[Description("A code no object has, whose title lookup then fails, is reported with both facts, and nothing is saved.")]
+	public void Execute_ShouldSayTheCodeNamesNoObject_WhenItsTitleLookupFails() {
+		// Arrange
+		ObjectIs(new ObjectRightsInfo(false, "UsrFoo", null, false, Array.Empty<RoleOperationRights>()));
+		_reader.FindObjectsByTitle("UsrFoo", Arg.Any<CreatioRequestOptions>())
+			.Returns(_ => throw new System.Net.Http.HttpRequestException("connection reset"));
+
+		// Act
+		int exitCode = _command.Execute(Options("read"));
+
+		// Assert
+		exitCode.Should().Be(1, because: "the name names no object, and the title lookup did not answer");
+		ErrorContains("no object has the code 'UsrFoo', and the lookup of the objects titled 'UsrFoo' failed: connection reset",
+			because: "a typo is not taken for a passing fault");
 		NothingSaved();
 	}
 
@@ -560,7 +581,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 
 		// Assert
 		exitCode.Should().Be(1, because: "a failed save is never reported as done");
-		ErrorContains("'UsrFoo': the save failed (no rights to save)", because: "the error names the object and the cause");
+		ErrorContains("'Foo' (UsrFoo): the save failed (no rights to save)", because: "the error names the object and the cause");
 		ErrorContains("rows [0] All employees: read/create/edit/delete", because: "the error shows the object as read back");
 	}
 
@@ -866,11 +887,129 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		_infos.Should().NotContain(m => m.Contains("granted [read"), because: "an unverified save is not reported as done");
 	}
 
+	// ---- naming the object: by its code, with its title shown ----
+
+	[Test]
+	[Description("The result names the object by its title next to its code when it has a title of its own, so the developer sees which object the code names.")]
+	public void Execute_ShouldNameTheObjectByTitleAndCode_WhenItHasATitleOfItsOwn() {
+		// Arrange
+		ObjectIs(Info(true, Row(AllEmployees, 0, "RCED")));
+
+		// Act
+		int exitCode = _command.Execute(Options("read"));
+
+		// Assert
+		exitCode.Should().Be(0, because: "the grant is applied");
+		_infos.Should().Contain(m => m.StartsWith("'Foo' (UsrFoo): granted [read]"),
+			because: "the result names the object by its title and its code");
+	}
+
+	[Test]
+	[Description("An object whose title is its code is named by the code alone.")]
+	public void Execute_ShouldNameTheObjectByItsCode_WhenItsTitleIsTheCode() {
+		// Arrange
+		ObjectIs(new ObjectRightsInfo(true, "UsrFoo", "UsrFoo", true, new[] { Row(AllEmployees, 0, "RCED") }));
+
+		// Act
+		int exitCode = _command.Execute(Options("read"));
+
+		// Assert
+		exitCode.Should().Be(0, because: "the grant is applied");
+		_infos.Should().Contain(m => m.StartsWith("'UsrFoo': granted [read]"),
+			because: "a title that is the code adds nothing to show");
+	}
+
+	[Test]
+	[Description("An object found by its code is changed without a title lookup: the code always wins.")]
+	public void Execute_ShouldNotLookUpATitle_WhenAnObjectHasTheCode() {
+		// Arrange
+		ObjectIs(Info(true, Row(AllEmployees, 0, "RCED")));
+
+		// Act
+		_command.Execute(Options("read"));
+
+		// Assert
+		_reader.DidNotReceiveWithAnyArgs().FindObjectsByTitle(default, default);
+	}
+
+	[Test]
+	[Description("A name that is no object's code but is an object's title is refused with the code it belongs to, as run-process refuses a caption; that object is not read and nothing is saved.")]
+	public void Execute_ShouldRefuseATitle_NamingItsCode_WhenNoObjectHasTheCode() {
+		// Arrange
+		_reader.GetObjectRights("Order", Arg.Any<CreatioRequestOptions>())
+			.Returns(new ObjectRightsInfo(false, "Order", null, false, Array.Empty<RoleOperationRights>()));
+		_reader.FindObjectsByTitle("Order", Arg.Any<CreatioRequestOptions>())
+			.Returns(new[] { new ObjectTitleMatch("UsrOrder", "Order") });
+
+		// Act
+		int exitCode = _command.Execute(Options("read", o => { o.EntitySchemaName = "Order"; }));
+
+		// Assert
+		exitCode.Should().Be(1, because: "a write names its object by its code");
+		ErrorContains("'Order' is not an object code: it is the title of UsrOrder. Pass the code",
+			because: "the refusal names the code to pass");
+		_reader.DidNotReceive().GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>());
+		NothingSaved();
+	}
+
+	[Test]
+	[Description("A title that is not a schema identifier is refused with every object that has it, by title and code, and is never read as a code.")]
+	public void Execute_ShouldRefuseATitle_ListingEveryObjectWithIt_WhenSeveralHaveIt() {
+		// Arrange
+		_reader.FindObjectsByTitle("Creatio functionality", Arg.Any<CreatioRequestOptions>())
+			.Returns(new[] {
+				new ObjectTitleMatch("Feature", "Creatio functionality"),
+				new ObjectTitleMatch("UsrFeature", "Creatio functionality")
+			});
+
+		// Act
+		int exitCode = _command.Execute(Options("read", o => { o.EntitySchemaName = "Creatio functionality"; }));
+
+		// Assert
+		exitCode.Should().Be(1, because: "a write names its object by its code");
+		ErrorContains("it is the title of 2 objects: 'Creatio functionality' (code: Feature); "
+			+ "'Creatio functionality' (code: UsrFeature)", because: "the refusal lists every object with the title");
+		_reader.DidNotReceiveWithAnyArgs().GetObjectRights(default, default);
+		NothingSaved();
+	}
+
+	[Test]
+	[Description("A name that is neither a schema identifier nor any object's title is refused; no object is read and nothing is saved.")]
+	public void Execute_ShouldRefuseAName_WhenItIsNeitherACodeNorATitle() {
+		// Arrange
+		_reader.FindObjectsByTitle("Usr Foo", Arg.Any<CreatioRequestOptions>()).Returns(Array.Empty<ObjectTitleMatch>());
+
+		// Act
+		int exitCode = _command.Execute(Options("read,create,edit", o => { o.EntitySchemaName = "Usr Foo"; }));
+
+		// Assert
+		exitCode.Should().Be(1, because: "the name names no object");
+		ErrorContains("is not an object code (letters, digits and '_' only), and no object has it as its title",
+			because: "the refusal says the name is neither a code nor a title");
+		_reader.DidNotReceiveWithAnyArgs().GetObjectRights(default, default);
+		NothingSaved();
+	}
+
+	[Test]
+	[Description("A title lookup the service fails is reported as a failure, and nothing is saved.")]
+	public void Execute_ShouldFail_WhenTheTitleLookupFails() {
+		// Arrange
+		_reader.FindObjectsByTitle("Usr Foo", Arg.Any<CreatioRequestOptions>())
+			.Returns(_ => throw new System.Net.Http.HttpRequestException("connection reset"));
+
+		// Act
+		int exitCode = _command.Execute(Options("read", o => { o.EntitySchemaName = "Usr Foo"; }));
+
+		// Assert
+		exitCode.Should().Be(1, because: "the lookup did not answer");
+		ErrorContains("the lookup of the objects titled 'Usr Foo' failed: connection reset",
+			because: "a failed lookup is reported, not taken for 'no object has this title'");
+		NothingSaved();
+	}
+
 	// ---- input validation ----
 
 	private static IEnumerable<TestCaseData> InvalidInputs() {
-		yield return new TestCaseData(Options("read,create,edit", tweak: o => { o.EntitySchemaName = "Usr Foo"; }), "not a schema name")
-			.SetName("Execute_ShouldReject_WhenSchemaNameIsNotAnIdentifier");
 		yield return new TestCaseData(Options("read,create,edit", tweak: o => { o.Grantee = "role-name"; }), "--grantee must be a SysAdminUnit id")
 			.SetName("Execute_ShouldReject_WhenGranteeIsNotAGuid");
 		yield return new TestCaseData(Options("read,own"), "unknown operation 'own'")

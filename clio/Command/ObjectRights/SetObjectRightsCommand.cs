@@ -16,9 +16,10 @@ namespace Clio.Command.ObjectRights;
 	+ "object's operation permissions on or off (destructive)")]
 public class SetObjectRightsOptions : RemoteCommandOptions {
 
-	/// <summary>The object (entity schema) whose operation permissions change.</summary>
+	/// <summary>The object whose operation permissions change, by its code (entity schema name).</summary>
 	[Option("entity-schema-name", Required = true, HelpText =
-		"Object (entity schema) name whose operation permissions are changed. One object per call.")]
+		"Object whose operation permissions are changed, by its code (entity schema name). One object per call. A title "
+		+ "is refused, naming the code it belongs to; the output shows the object's title next to its code.")]
 	public string EntitySchemaName { get; set; }
 
 	/// <summary>
@@ -112,7 +113,7 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 
 	/// <inheritdoc />
 	public override int Execute(SetObjectRightsOptions options) {
-		if (!TryParseInputs(options, out string schemaName, out Guid grantee,
+		if (!TryParseInputs(options, out string named, out Guid grantee,
 				out IReadOnlyCollection<ObjectOperation> operations)) {
 			return 1;
 		}
@@ -126,20 +127,18 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 			}
 			request = request with { GranteeName = granteeName };
 		}
-		ObjectRightsInfo before = _reader.GetObjectRights(schemaName, requestOptions);
-		if (!before.IsRead) {
-			_logger.WriteError($"Error: '{schemaName}': {before.FailureReason}. Nothing was changed.");
+		if (!TryReadObject(named, requestOptions, out string schemaName, out ObjectRightsInfo before)) {
 			return 1;
 		}
 		ObjectRightsPlan plan = _planner.Plan(before.State, request);
-		Change change = new(schemaName,
+		Change change = new(schemaName, before.Caption,
 			request.SwitchOnly ? null : $"'{ObjectRightsSupport.Display(request.GranteeName)}' ({grantee})", request, plan);
 		if (plan.Refused) {
 			_logger.WriteError($"Error: {RefusalMessage(change)} Nothing was changed.");
 			return 1;
 		}
 		if (!plan.Changes) {
-			_logger.WriteInfo($"'{schemaName}': {NoChangeReason(change)} (no change).");
+			_logger.WriteInfo($"{change.Label}: {NoChangeReason(change)} (no change).");
 			return 0;
 		}
 		IReadOnlyList<string> facts = DescribePlan(change);
@@ -168,17 +167,20 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 	}
 
 	// Everything the output of one call is rendered from.
-	private sealed record Change(string SchemaName, string GranteeLabel, ObjectRightsChangeRequest Request,
+	private sealed record Change(string SchemaName, string Caption, string GranteeLabel, ObjectRightsChangeRequest Request,
 		ObjectRightsPlan Plan) {
+
+		// The object by its title and its code, so the developer sees which object the code names.
+		public string Label => ObjectRightsSupport.FormatObject(SchemaName, Caption);
 
 		public string Summary {
 			get {
 				if (Request.SwitchOnly) {
 					string state = Request.DisableOperationPermissions ? "OFF" : "ON";
-					return $"Turn operation permissions {state} on '{SchemaName}'.";
+					return $"Turn operation permissions {state} on {Label}.";
 				}
 				string verb = Request.Revoke ? "Revoke" : "Grant";
-				return $"{verb} [{Operations}] for grantee {GranteeLabel} on '{SchemaName}'.";
+				return $"{verb} [{Operations}] for grantee {GranteeLabel} on {Label}.";
 			}
 		}
 
@@ -194,11 +196,11 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 		public bool GranteeRowChanges => GranteeRowAfter is not null && !GranteeRowAfter.SameRowAs(GranteeRowBefore);
 	}
 
-	private bool TryParseInputs(SetObjectRightsOptions options, out string schemaName, out Guid grantee,
+	private bool TryParseInputs(SetObjectRightsOptions options, out string named, out Guid grantee,
 		out IReadOnlyCollection<ObjectOperation> operations) {
 		grantee = Guid.Empty;
 		operations = Array.Empty<ObjectOperation>();
-		if (!ObjectRightsCommandInput.TryReadSchemaName(options.EntitySchemaName, _logger, out schemaName)) {
+		if (!ObjectRightsCommandInput.TryReadObjectName(options.EntitySchemaName, _logger, out named)) {
 			return false;
 		}
 		if (options.Preview && options.Confirm) {
@@ -268,6 +270,33 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 		return true;
 	}
 
+	// The write's own policy for a title (ObjectRightsCommandInput.TryResolveObjectName owns the code-first rule): the
+	// object a write changes is named by its CODE, which the approval shows. A title is not unique, and the same word can
+	// be one object's code and another's title, so a name that is no object's code but is a title is refused with the
+	// code(s) it belongs to, as run-process refuses a process caption. Returns false after writing the error.
+	private bool TryReadObject(string named, CreatioRequestOptions requestOptions, out string schemaName,
+		out ObjectRightsInfo before) {
+		schemaName = null;
+		before = null;
+		if (!ObjectRightsCommandInput.TryResolveObjectName(named, code => _reader.GetObjectRights(code, requestOptions),
+				_reader, requestOptions, _logger, out ObjectNameResolution resolution)) {
+			return false;
+		}
+		if (resolution.TitleMatches.Count > 0) {
+			_logger.WriteError($"Error: {ObjectRightsCommandInput.NotACode(named, resolution.TitleMatches)}. Pass the code — "
+				+ "a title is not unique, and this call changes access rights. Nothing was changed.");
+			return false;
+		}
+		// Not found, or found but not read: either way nothing is known that a change could be planned on.
+		if (!resolution.ByCode.IsRead) {
+			_logger.WriteError($"Error: '{resolution.Code}': {resolution.ByCode.FailureReason}. Nothing was changed.");
+			return false;
+		}
+		schemaName = resolution.Code;
+		before = resolution.ByCode;
+		return true;
+	}
+
 	// The grantee must exist: granting to an unknown id would change the object for a principal nobody holds and
 	// still report "granted".
 	private bool TryResolveGranteeName(Guid grantee, CreatioRequestOptions requestOptions, out string granteeName) {
@@ -298,7 +327,7 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 		if (deadline.Remaining >= needed) {
 			return true;
 		}
-		_logger.WriteError($"Error: '{change.SchemaName}': the reads before the save took most of the call's time limit "
+		_logger.WriteError($"Error: {change.Label}: the reads before the save took most of the call's time limit "
 			+ $"of {deadline.Budget.TotalSeconds:0} s: {deadline.Remaining.TotalSeconds:0} s are left, and the save and "
 			+ $"the read-back need up to {needed.TotalSeconds:0} s. The save was not sent — nothing was changed. Re-run "
 			+ "the call.");
@@ -306,11 +335,11 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 	}
 
 	private static string RefusalMessage(Change change) {
-		string schema = change.SchemaName;
+		string label = change.Label;
 		ObjectRightsPlan plan = change.Plan;
 		return plan.Refusal switch {
 			ObjectRightsRefusal.EnableNotRequested =>
-				$"'{schema}' does not use operation permissions yet. Granting would turn them ON, and from then on its rows "
+				$"{label} does not use operation permissions yet. Granting would turn them ON, and from then on its rows "
 				+ "decide who can reach it"
 				+ (plan.RowsBecomingEffective.Count > 0
 					? $" ({ObjectRightsSupport.FormatRows(plan.RowsBecomingEffective)})"
@@ -320,25 +349,25 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 					: "")
 				+ ". Re-run with --enable-operation-permissions if that is intended.",
 			ObjectRightsRefusal.RevokeOnNotAdministered =>
-				$"'{schema}' is not administered by operation permissions (they are OFF), so the tool does not revoke on "
+				$"{label} is not administered by operation permissions (they are OFF), so the tool does not revoke on "
 				+ "it. To limit access, turn operation permissions on first with a grant and "
 				+ "--enable-operation-permissions; see get-guidance object-rights.",
 			ObjectRightsRefusal.LeavesNoGrantingRow when change.Request.SwitchOnly =>
-				$"turning operation permissions on would leave no row on '{schema}' that grants any operation "
+				$"turning operation permissions on would leave no row on {label} that grants any operation "
 				+ $"({ObjectRightsSupport.FormatRows(plan.RowsBecomingEffective)}), so every internal user would be cut "
 				+ "off. Grant the operations in the same call instead (--grantee, --operations and "
 				+ "--enable-operation-permissions); for internal users grant them to All employees, whose row decides "
 				+ "before a new row of any other role, which goes at the lowest priority.",
 			ObjectRightsRefusal.LeavesNoGrantingRow =>
-				$"after this revoke no row on '{schema}' would grant any operation. A revoke never turns operation "
+				$"after this revoke no row on {label} would grant any operation. A revoke never turns operation "
 				+ "permissions off: to turn them OFF instead — the object becomes available to ALL internal users and "
 				+ "every row is kept as it is — call set-object-rights with --entity-schema-name and "
 				+ "--disable-operation-permissions only.",
 			ObjectRightsRefusal.DuplicateGranteeRows =>
-				$"grantee {change.GranteeLabel} has {plan.DuplicatePositions.Count} rows on '{schema}' (positions "
+				$"grantee {change.GranteeLabel} has {plan.DuplicatePositions.Count} rows on {label} (positions "
 				+ $"{string.Join(", ", plan.DuplicatePositions)}). Which of them decides depends on the other rows, so "
 				+ "the tool changes none of them. Remove the duplicates in the Object permissions designer, then re-run.",
-			_ => $"the change on '{schema}' is refused ({plan.Refusal})."
+			_ => $"the change on {label} is refused ({plan.Refusal})."
 		};
 	}
 
@@ -369,10 +398,10 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 	// and which rows decide before it. Facts only — no conclusion about who can actually reach the object.
 	private static IReadOnlyList<string> DescribePlan(Change change) {
 		ObjectRightsPlan plan = change.Plan;
-		string schema = change.SchemaName;
+		string label = change.Label;
 		List<string> facts = new();
 		if (plan.EnablesOperationPermissions) {
-			facts.Add($"Operation permissions on '{schema}' are turned ON: from then on its rows decide, in priority order, "
+			facts.Add($"Operation permissions on {label} are turned ON: from then on its rows decide, in priority order, "
 				+ "who can reach it.");
 			if (plan.RowsBecomingEffective.Count > 0) {
 				facts.Add($"Rows that start to decide: {ObjectRightsSupport.FormatRows(plan.RowsBecomingEffective)}.");
@@ -384,7 +413,7 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 			}
 		}
 		if (plan.DisablesOperationPermissions) {
-			facts.Add($"Operation permissions on '{schema}' are turned OFF: it becomes available to ALL internal users. "
+			facts.Add($"Operation permissions on {label} are turned OFF: it becomes available to ALL internal users. "
 				+ "Every row is kept as it is, operations included, and applies again if operation permissions are turned "
 				+ "back on"
 				+ (plan.Before.Roles.Count > 0
@@ -425,27 +454,27 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 	// The call's own result line, from the plan: a row that changed, or — when only the switch changes — that.
 	private static string DoneLine(Change change) {
 		if (change.Request.SwitchOnly) {
-			return $"'{change.SchemaName}': operation permissions turned "
+			return $"{change.Label}: operation permissions turned "
 				+ $"{(change.Plan.DisablesOperationPermissions ? "OFF; every row is kept as it is" : "ON")}.";
 		}
 		if (change.GranteeRowChanges) {
-			return $"'{change.SchemaName}': {(change.Request.Revoke ? "revoked" : "granted")} [{change.Operations}] for "
+			return $"{change.Label}: {(change.Request.Revoke ? "revoked" : "granted")} [{change.Operations}] for "
 				+ $"grantee {change.GranteeLabel}.";
 		}
 		// A grant that changed no row: only its enable did something. A grant or revoke never turns the switch off.
 		string granteeRow = change.GranteeRowAfter is null
 			? $"grantee {change.GranteeLabel} has no row"
 			: $"the row of grantee {change.GranteeLabel} is unchanged";
-		return $"'{change.SchemaName}': operation permissions turned ON; {granteeRow}.";
+		return $"{change.Label}: operation permissions turned ON; {granteeRow}.";
 	}
 
 	// The save succeeded; the read-back is compared with the plan, so a change that did not land is never reported as
 	// done. When the read-back itself fails, nothing shows that the rows this call writes landed — a retry would even
 	// plan "no change" once the switch and the grantee's row are in place — so the call fails and says so.
 	private int ReportSaved(Change change, IReadOnlyList<string> facts, ObjectRightsInfo actual) {
-		string schema = change.SchemaName;
+		string label = change.Label;
 		if (!actual.IsRead) {
-			_logger.WriteError($"Error: '{schema}': saved, but NOT verified — on the read-back "
+			_logger.WriteError($"Error: {label}: saved, but NOT verified — on the read-back "
 				+ $"{actual.FailureReason}. Check it with get-object-rights before retrying: the plan was:");
 			WriteFacts(facts);
 			return 1;
@@ -453,7 +482,7 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 		ObjectRightsReadBackComparison comparison =
 			_readBackVerifier.Compare(change.Plan, change.Request.Grantee, actual.State);
 		if (comparison.Critical.Count > 0) {
-			_logger.WriteError($"Error: '{schema}': the save reported success, but the object read back does not match "
+			_logger.WriteError($"Error: {label}: the save reported success, but the object read back does not match "
 				+ $"the plan: {string.Join("; ", comparison.Critical)}. Check it with get-object-rights.");
 			return 1;
 		}
@@ -467,7 +496,7 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 	// instead of that it did not happen.
 	private int ReportFailedSave(Change change, IReadOnlyList<string> facts, ObjectRightsSaveResult save,
 		ObjectRightsInfo actual) {
-		string schema = change.SchemaName;
+		string label = change.Label;
 		string failure = save.OutcomeUnknown
 			? $"the save got no answer ({save.Error}) and may still be applied"
 			: $"the save failed ({save.Error})";
@@ -475,18 +504,18 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 			? " Re-read the object with get-object-rights before retrying or reporting a failure."
 			: " Read the object with get-object-rights before retrying.";
 		if (!actual.IsRead) {
-			_logger.WriteError($"Error: '{schema}': {failure}, and on the read-back {actual.FailureReason}.{recheck}");
+			_logger.WriteError($"Error: {label}: {failure}, and on the read-back {actual.FailureReason}.{recheck}");
 			return 1;
 		}
 		ObjectRightsReadBackComparison comparison =
 			_readBackVerifier.Compare(change.Plan, change.Request.Grantee, actual.State);
 		if (comparison.Critical.Count > 0) {
-			_logger.WriteError($"Error: '{schema}': {failure}. The object now: operation permissions "
+			_logger.WriteError($"Error: {label}: {failure}. The object now: operation permissions "
 				+ $"{ObjectRightsSupport.FormatSwitch(actual.State)}; rows "
 				+ $"{ObjectRightsSupport.FormatRows(actual.State.Roles)}.{(save.OutcomeUnknown ? recheck : "")}");
 			return 1;
 		}
-		_logger.WriteWarning($"'{schema}': the save reported an error ({save.Error}), but the object read back "
+		_logger.WriteWarning($"{label}: the save reported an error ({save.Error}), but the object read back "
 			+ (comparison.Differences.Count == 0
 				? "matches the plan."
 				: "shows the switch and the rows this call writes as planned."));

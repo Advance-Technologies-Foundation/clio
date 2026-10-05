@@ -62,7 +62,11 @@ it shows the planned change and asks for a `y/n` confirmation. `--preview` write
 change. On MCP the call applies the change: the host's approval of the call is the confirmation, and the
 arguments name the operations and every access-changing transition, so the approval shows everything the call can do.
 
-The object name is trimmed and must be a plain schema identifier (letters, digits, `_`).
+The object is named by its **code** (entity schema name: letters, digits, `_`; trimmed), which the approval shows.
+A title is refused, naming the code it belongs to — `'Creatio functionality' is not an object code: it is the title
+of Feature` — as `run-process` refuses a process caption: a title is not unique, and the same word can be one
+object's code and another object's title. The code always wins. The output shows the object's title next to its
+code — `'Creatio functionality' (Feature)` — so the developer sees which object the code names.
 
 ## Synopsis
 
@@ -75,7 +79,8 @@ clio set-object-rights --entity-schema-name <EntitySchemaName> (--enable-operati
 
 ```bash
 --entity-schema-name NAME
-The one object (entity schema) whose operation permissions are changed. Required.
+The one object whose operation permissions are changed, by its code (entity schema name). A title is refused,
+naming the code it belongs to. Required.
 
 --grantee GUID
 SysAdminUnit id (role or user) to grant/revoke. Names are not unique — pass the id. It must exist. Required for a
@@ -177,12 +182,13 @@ clio set-object-rights --entity-schema-name UsrOrder --enable-operation-permissi
   all requests share a 100 s limit (a request gets at most what is left of it), and the save is sent only while
   50 s are left for it and the read-back. Otherwise the call fails before the save (exit 1) and nothing is changed:
   re-run it. A save that gets no answer is thus still read back and reported before the worker is killed.
-- Exit code 1: invalid input (an object name that is not a schema identifier, a grantee that is not a GUID, a missing
+- Exit code 1: invalid input (a name that is an object's title rather than its code — the refusal names the code — or
+  that is neither, a grantee that is not a GUID, a missing
   `--operations` on a grant or revoke, an unknown operation, an `--operations` value that names no operation,
   `--preview` with `--confirm`, `--enable-operation-permissions` with `--revoke`,
   `--disable-operation-permissions` with `--grantee`, `--operations`, `--revoke` or `--enable-operation-permissions`,
   a call that names no change at all); a missing `--confirm` in a non-interactive run; an object that is not found or
-  cannot be read; a grantee that does not exist in `SysAdminUnit`; a refused plan; a failed save whose read-back does
+  cannot be read; a title lookup that fails (when the name is a code no object has, the error says that too); a grantee that does not exist in `SysAdminUnit`; a refused plan; a failed save whose read-back does
   not show the plan; a successful save whose read-back fails; a read-back that does not show a row this call writes,
   or the planned switch.
 - A re-run that changes nothing says which row already is in the requested state, or that the grantee has no row to

@@ -22,6 +22,19 @@ public interface IObjectRightsReader {
 	/// <param name="requestOptions">Timeout and retry settings.</param>
 	/// <returns>The object's operation permissions, or why they could not be read.</returns>
 	ObjectRightsInfo GetObjectRights(string schemaName, CreatioRequestOptions requestOptions);
+
+	/// <summary>
+	/// Finds the objects (entity schemas) whose title is <paramref name="title"/>, compared by the service. An object is
+	/// returned once, whichever of its package layers carries the title; a name that is not a schema identifier is left
+	/// out. A developer names an object by its title as often as by its code, and a title is not unique. At most 100
+	/// objects are returned, so a count of more may be short.
+	/// </summary>
+	/// <param name="title">The title, as the caller passed it.</param>
+	/// <param name="requestOptions">Timeout, retry and deadline settings.</param>
+	/// <returns>The objects with that title, ordered by code; empty when none has it.</returns>
+	/// <exception cref="Exception">A service failure is thrown, unlike <see cref="GetObjectRights"/>, which reports it in
+	/// its result: an empty answer must never stand for a lookup that failed.</exception>
+	IReadOnlyList<ObjectTitleMatch> FindObjectsByTitle(string title, CreatioRequestOptions requestOptions);
 }
 
 /// <summary>
@@ -153,6 +166,37 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 			_applicationClient, _urlBuilder, query, sendOptions.TimeOut, sendOptions.MaxAttempts, sendOptions.RetryDelay);
 		return response.Rows?.FirstOrDefault()?.Name;
 	}
+
+	/// <inheritdoc />
+	public IReadOnlyList<ObjectTitleMatch> FindObjectsByTitle(string title, CreatioRequestOptions requestOptions) {
+		// Every package layer of an object is its own SysSchema row (Contact has dozens), and a replacing layer can carry
+		// a title of its own, so the title is matched on any layer. The query is DISTINCT over name and title, so the row
+		// cap counts objects, not layers: counting layers, one heavily layered object could push every other object with
+		// the title past the cap, and a read by title would take that object for the only one.
+		object query = SelectQueryHelper.BuildSelectQuery(
+			"SysSchema",
+			new[] {
+				new SelectQueryHelper.SelectQueryColumnDefinition("Name", "Name", OrderDirection: 1, OrderPosition: 0),
+				new SelectQueryHelper.SelectQueryColumnDefinition("Caption", "Caption")
+			},
+			new[] {
+				new SelectQueryHelper.SelectQueryFilterDefinition("Caption", title, SelectQueryHelper.TextDataValueType),
+				new SelectQueryHelper.SelectQueryFilterDefinition("ManagerName", "EntitySchemaManager", SelectQueryHelper.TextDataValueType)
+			},
+			TitleMatchRowCap,
+			isDistinct: true);
+		CreatioRequestOptions sendOptions = requestOptions.ForNextRequest();
+		SchemaTitleSelectResponse response = SelectQueryHelper.ExecuteSelectQuery<SchemaTitleSelectResponse>(
+			_applicationClient, _urlBuilder, query, sendOptions.TimeOut, sendOptions.MaxAttempts, sendOptions.RetryDelay);
+		// A name that is not a schema identifier could not be read or written by its code anyway.
+		return (response.Rows ?? new List<SchemaTitleRow>())
+			.Where(row => ObjectRightsSupport.TryNormalizeSchemaName(row.Name, out _))
+			.GroupBy(row => row.Name.Trim(), StringComparer.OrdinalIgnoreCase)
+			.Select(layers => new ObjectTitleMatch(layers.Key, layers.First().Caption))
+			.ToList();
+	}
+
+	private const int TitleMatchRowCap = 100;
 
 	// Returns the node of the first candidate UId that describes the object, or (null, error, timedOut): error null
 	// means the schema name resolved to no candidate (not found); error set means the UId lookup failed or every
@@ -383,6 +427,21 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 	{
 		[JsonPropertyName("UId")]
 		public Guid UId { get; set; }
+	}
+
+	private sealed class SchemaTitleSelectResponse : SelectQueryHelper.SelectQueryResponseBaseDto
+	{
+		[JsonPropertyName("rows")]
+		public List<SchemaTitleRow> Rows { get; set; }
+	}
+
+	private sealed class SchemaTitleRow
+	{
+		[JsonPropertyName("Name")]
+		public string Name { get; set; }
+
+		[JsonPropertyName("Caption")]
+		public string Caption { get; set; }
 	}
 
 	private sealed class GranteeSelectResponse : SelectQueryHelper.SelectQueryResponseBaseDto

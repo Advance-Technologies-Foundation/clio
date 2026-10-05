@@ -161,6 +161,8 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 		// Arrange
 		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>())
 			.Returns(new ObjectRightsInfo(true, "UsrOrder", null, false, Array.Empty<RoleOperationRights>(), ReadError: "Request Error"));
+		_rightsReader.FindObjectsByTitle("UsrOrder", Arg.Any<CreatioRequestOptions>())
+			.Returns(new[] { new ObjectTitleMatch("UsrOther", "UsrOrder") });
 		GetObjectRightsOptions options = new() { EntitySchemaName = "UsrOrder" };
 
 		// Act
@@ -169,6 +171,8 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 		// Assert
 		exitCode.Should().Be(1, because: "the object the caller named could not be read");
 		_logger.Received().WriteError(Arg.Is<string>(m => m.Contains("operation permissions could not be read")));
+		_rightsReader.DidNotReceiveWithAnyArgs().FindObjectsByTitle(default, default);
+		_rightsReader.DidNotReceive().GetObjectRights("UsrOther", Arg.Any<CreatioRequestOptions>());
 	}
 
 	[Test]
@@ -440,7 +444,7 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 	}
 
 	[Test]
-	[Description("A read of the named object that times out fails the call and stops the listing: the connected objects are named as not read instead of waiting as long again.")]
+	[Description("A read of the named object that times out fails the call and stops: its connected objects are not listed, instead of waiting as long again, and the code is not resolved by title.")]
 	public void Execute_ShouldFailAndStop_WhenTheRootReadTimesOut() {
 		// Arrange
 		_connectedObjects.Resolve("UsrOrder", true, Arg.Any<int?>()).Returns(Resolution("UsrOrder", "UsrStatus"));
@@ -454,9 +458,11 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 		// Assert
 		exitCode.Should().Be(1, because: "the object the caller named could not be read");
 		_rightsReader.DidNotReceive().GetObjectRights("UsrStatus", Arg.Any<CreatioRequestOptions>());
+		_connectedObjects.DidNotReceiveWithAnyArgs().Resolve(default, default, default);
+		_rightsReader.DidNotReceiveWithAnyArgs().FindObjectsByTitle(default, default);
 		_logger.Received().WriteError(Arg.Is<string>(m => m.Contains("UsrOrder: its operation permissions could not be read")));
 		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("Stopped after the read of UsrOrder timed out")
-			&& m.Contains("UsrStatus")));
+			&& m.Contains("its connected objects were not listed")));
 	}
 
 	[Test]
@@ -518,7 +524,7 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 	}
 
 	[Test]
-	[Description("With a read budget that is spent, the named object is still read and the connected objects left are named instead of read, so an answer bounded by a deadline arrives with what was read.")]
+	[Description("With a read budget that is spent, the named object is still read and its connected objects are not listed, so an answer bounded by a deadline arrives with what was read.")]
 	public void Execute_ShouldStopAtTheReadBudget_WhenItIsSpent() {
 		// Arrange
 		_connectedObjects.Resolve("UsrOrder", true, Arg.Any<int?>()).Returns(Resolution("UsrOrder", "UsrStatus", "UsrType"));
@@ -533,9 +539,79 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 
 		// Assert
 		exitCode.Should().Be(0, because: "the named object was read");
+		_connectedObjects.DidNotReceiveWithAnyArgs().Resolve(default, default, default);
 		_rightsReader.DidNotReceive().GetObjectRights("UsrStatus", Arg.Any<CreatioRequestOptions>());
 		_logger.Received().WriteWarning(Arg.Is<string>(message => message.Contains("the read budget of 0 s is spent")
-			&& message.Contains("Not read: UsrStatus, UsrType")));
+			&& message.Contains("the connected objects of UsrOrder were not listed")));
+	}
+
+	[Test]
+	[Description("A read budget spent while the connected objects are listed stops the reads, naming the objects not read, so an answer bounded by a deadline arrives with what was read.")]
+	public void Execute_ShouldNameTheObjectsNotRead_WhenTheBudgetIsSpentWhileListing() {
+		// Arrange
+		TimeSpan elapsed = TimeSpan.Zero;
+		_connectedObjects.Resolve("UsrOrder", true, Arg.Any<int?>()).Returns(_ => {
+			// The listing spends what was left of the budget.
+			elapsed = TimeSpan.FromSeconds(91);
+			return Resolution("UsrOrder", "UsrStatus", "UsrType");
+		});
+		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>())
+			.Returns(Administered("UsrOrder", EmployeesRow(0)));
+		GetObjectRightsOptions options = new() {
+			EntitySchemaName = "UsrOrder", IncludeConnected = true,
+			ReadDeadline = new RequestDeadline(TimeSpan.FromSeconds(90), () => elapsed)
+		};
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "the named object was read");
+		_rightsReader.DidNotReceive().GetObjectRights("UsrStatus", Arg.Any<CreatioRequestOptions>());
+		_logger.Received().WriteWarning(Arg.Is<string>(message =>
+			message.Contains("the read budget of 90 s is spent. Not read: UsrStatus, UsrType")));
+	}
+
+	[Test]
+	[Description("A read budget that runs out between the check and the listing's own timeout is reported like a budget spent before the listing: the root, already read, is still reported, and the call does not fail.")]
+	public void Execute_ShouldStillReportTheRoot_WhenTheBudgetRunsOutJustBeforeTheListing() {
+		// Arrange
+		int clockReads = 0;
+		// The first look at the clock finds time left; every later one finds the budget spent.
+		TimeSpan Elapsed() => ++clockReads == 1 ? TimeSpan.FromSeconds(89) : TimeSpan.FromSeconds(91);
+		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>())
+			.Returns(Administered("UsrOrder", EmployeesRow(0)));
+		GetObjectRightsOptions options = new() {
+			EntitySchemaName = "UsrOrder", IncludeConnected = true,
+			ReadDeadline = new RequestDeadline(TimeSpan.FromSeconds(90), Elapsed)
+		};
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "the named object was read");
+		_logger.Received().WriteInfo("  UsrOrder: administered by operation permissions. Rows in priority order:");
+		_connectedObjects.DidNotReceiveWithAnyArgs().Resolve(default, default, default);
+		_logger.Received().WriteWarning(Arg.Is<string>(message =>
+			message.Contains("the connected objects of UsrOrder were not listed")));
+	}
+
+	[Test]
+	[Description("With a read budget, the listing of the connected objects gets at most what is left of it.")]
+	public void Execute_ShouldBoundTheListingByTheBudget_WhenABudgetIsSet() {
+		// Arrange
+		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>())
+			.Returns(Administered("UsrOrder", EmployeesRow(0)));
+		GetObjectRightsOptions options = new() {
+			EntitySchemaName = "UsrOrder", IncludeConnected = true, TimeOut = 30_000, ReadBudget = TimeSpan.FromSeconds(5)
+		};
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		_connectedObjects.Received(1).Resolve("UsrOrder", true, Arg.Is<int?>(timeout => timeout > 0 && timeout <= 5_000));
 	}
 
 	[Test]
@@ -574,16 +650,153 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 
 	[TestCase("Usr Order")]
 	[TestCase("UsrOrder;")]
-	[Description("A name that is not a schema identifier is refused before anything is read.")]
-	public void Execute_ShouldRefuse_WhenNameIsNotAnIdentifier(string name) {
+	[Description("A name that is not a schema identifier is only ever a title: when no object has it, the call is refused and no object is read.")]
+	public void Execute_ShouldRefuse_WhenTheNameIsNeitherACodeNorATitle(string name) {
 		// Arrange
+		_rightsReader.FindObjectsByTitle(name, Arg.Any<CreatioRequestOptions>()).Returns(Array.Empty<ObjectTitleMatch>());
 		GetObjectRightsOptions options = new() { EntitySchemaName = name };
 
 		// Act
 		int exitCode = _command.Execute(options);
 
 		// Assert
-		exitCode.Should().Be(1, because: "only a plain schema identifier can name an object");
+		exitCode.Should().Be(1, because: "the name names no object");
+		_logger.Received().WriteError(Arg.Is<string>(m => m.Contains("is not an object code (letters, digits and '_' only), "
+			+ "and no object has it as its title")));
 		_rightsReader.DidNotReceiveWithAnyArgs().GetObjectRights(default, default);
+	}
+
+	[Test]
+	[Description("An object with a title of its own is shown by its title next to its code, in the header and on its line, and an object found by its code is never looked up by title.")]
+	public void Execute_ShouldShowTheTitleNextToTheCode_WhenTheObjectHasATitleOfItsOwn() {
+		// Arrange
+		_rightsReader.GetObjectRights("Feature", Arg.Any<CreatioRequestOptions>())
+			.Returns(new ObjectRightsInfo(true, "Feature", "Creatio functionality", true, new[] { EmployeesRow(0) }));
+		GetObjectRightsOptions options = new() { EntitySchemaName = "Feature" };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "the read completed");
+		_logger.Received().WriteInfo("Object operation permissions for 'Creatio functionality' (Feature):");
+		_logger.Received().WriteInfo(
+			"  'Creatio functionality' (Feature): administered by operation permissions. Rows in priority order:");
+		_rightsReader.DidNotReceiveWithAnyArgs().FindObjectsByTitle(default, default);
+	}
+
+	[Test]
+	[Description("When no object has the code, the one object with that title is read, the output says it was found by its title, and its connected objects are resolved from its code.")]
+	public void Execute_ShouldReadTheObjectWithTheTitle_WhenNoObjectHasTheCode() {
+		// Arrange
+		_rightsReader.GetObjectRights("Order", Arg.Any<CreatioRequestOptions>())
+			.Returns(new ObjectRightsInfo(false, "Order", null, false, Array.Empty<RoleOperationRights>()));
+		_rightsReader.FindObjectsByTitle("Order", Arg.Any<CreatioRequestOptions>())
+			.Returns(new[] { new ObjectTitleMatch("UsrOrder", "Order") });
+		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>())
+			.Returns(new ObjectRightsInfo(true, "UsrOrder", "Order", true, new[] { EmployeesRow(0) }));
+		GetObjectRightsOptions options = new() { EntitySchemaName = "Order", IncludeConnected = true };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "the object with that title was read");
+		_logger.Received().WriteInfo("  'Order' is not an object code: it is the title of UsrOrder, which is read.");
+		_logger.Received().WriteInfo(Arg.Is<string>(m => m.StartsWith("Object operation permissions for 'Order' (UsrOrder)")));
+		_connectedObjects.Received(1).Resolve("UsrOrder", true, Arg.Any<int?>());
+	}
+
+	[Test]
+	[Description("A name that is not a schema identifier is looked up only as a title, and the one object with it is read.")]
+	public void Execute_ShouldReadTheObjectWithTheTitle_WhenTheNameIsNotAnIdentifier() {
+		// Arrange
+		_rightsReader.FindObjectsByTitle("Creatio functionality", Arg.Any<CreatioRequestOptions>())
+			.Returns(new[] { new ObjectTitleMatch("Feature", "Creatio functionality") });
+		_rightsReader.GetObjectRights("Feature", Arg.Any<CreatioRequestOptions>())
+			.Returns(new ObjectRightsInfo(true, "Feature", "Creatio functionality", false, Array.Empty<RoleOperationRights>()));
+		GetObjectRightsOptions options = new() { EntitySchemaName = " Creatio functionality " };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "the object with that title was read");
+		_rightsReader.Received(1).GetObjectRights("Feature", Arg.Any<CreatioRequestOptions>());
+		_rightsReader.DidNotReceive().GetObjectRights("Creatio functionality", Arg.Any<CreatioRequestOptions>());
+	}
+
+	[Test]
+	[Description("Several objects with the title are refused, listing them by title and code, and none of them is read: the read never guesses which one was meant.")]
+	public void Execute_ShouldRefuse_WhenSeveralObjectsHaveTheTitle() {
+		// Arrange
+		_rightsReader.GetObjectRights("Feature", Arg.Any<CreatioRequestOptions>())
+			.Returns(new ObjectRightsInfo(false, "Feature", null, false, Array.Empty<RoleOperationRights>()));
+		_rightsReader.FindObjectsByTitle("Feature", Arg.Any<CreatioRequestOptions>())
+			.Returns(new[] { new ObjectTitleMatch("Specification", "Feature"), new ObjectTitleMatch("UsrFeature", "Feature") });
+		GetObjectRightsOptions options = new() { EntitySchemaName = "Feature" };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "the name is ambiguous");
+		_logger.Received().WriteError("Error: 'Feature' is not an object code: it is the title of 2 objects: "
+			+ "'Feature' (code: Specification); 'Feature' (code: UsrFeature). Re-run with the exact code.");
+		_rightsReader.DidNotReceive().GetObjectRights("Specification", Arg.Any<CreatioRequestOptions>());
+		_rightsReader.DidNotReceive().GetObjectRights("UsrFeature", Arg.Any<CreatioRequestOptions>());
+	}
+
+	[Test]
+	[Description("A code no object has and no object's title is reported as not found, after the title was looked up.")]
+	public void Execute_ShouldReportNotFound_WhenNoObjectHasTheCodeOrTheTitle() {
+		// Arrange
+		_rightsReader.GetObjectRights("UsrMissing", Arg.Any<CreatioRequestOptions>())
+			.Returns(new ObjectRightsInfo(false, "UsrMissing", null, false, Array.Empty<RoleOperationRights>()));
+		_rightsReader.FindObjectsByTitle("UsrMissing", Arg.Any<CreatioRequestOptions>()).Returns(Array.Empty<ObjectTitleMatch>());
+		GetObjectRightsOptions options = new() { EntitySchemaName = "UsrMissing" };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "the name names no object");
+		_logger.Received().WriteError("  UsrMissing: the schema was not found.");
+		_rightsReader.Received(1).FindObjectsByTitle("UsrMissing", Arg.Any<CreatioRequestOptions>());
+	}
+
+	[Test]
+	[Description("A title lookup the service fails is reported as a failure, never as 'no object has this title'.")]
+	public void Execute_ShouldFail_WhenTheTitleLookupFails() {
+		// Arrange
+		_rightsReader.FindObjectsByTitle("Usr Order", Arg.Any<CreatioRequestOptions>())
+			.Returns(_ => throw new System.Net.Http.HttpRequestException("connection reset"));
+		GetObjectRightsOptions options = new() { EntitySchemaName = "Usr Order" };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "the lookup did not answer");
+		_logger.Received().WriteError("Error: the lookup of the objects titled 'Usr Order' failed: connection reset");
+	}
+
+	[Test]
+	[Description("A code no object has, whose title lookup then fails, is reported with both facts: the code names no object, and the lookup failed, so a typo is not taken for a passing fault.")]
+	public void Execute_ShouldSayTheCodeNamesNoObject_WhenItsTitleLookupFails() {
+		// Arrange
+		_rightsReader.GetObjectRights("UsrOrdr", Arg.Any<CreatioRequestOptions>())
+			.Returns(new ObjectRightsInfo(false, "UsrOrdr", null, false, Array.Empty<RoleOperationRights>()));
+		_rightsReader.FindObjectsByTitle("UsrOrdr", Arg.Any<CreatioRequestOptions>())
+			.Returns(_ => throw new System.Net.Http.HttpRequestException("connection reset"));
+		GetObjectRightsOptions options = new() { EntitySchemaName = "UsrOrdr" };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "the name names no object, and the title lookup did not answer");
+		_logger.Received().WriteError("Error: no object has the code 'UsrOrdr', and the lookup of the objects titled "
+			+ "'UsrOrdr' failed: connection reset");
 	}
 }

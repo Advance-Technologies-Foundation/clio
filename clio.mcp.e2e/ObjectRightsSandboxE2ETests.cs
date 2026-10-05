@@ -55,13 +55,16 @@ public sealed class ObjectRightsSandboxE2ETests : DataBindingDbFixtureBase {
 		string suffix = Guid.NewGuid().ToString("N").Substring(0, 10);
 		string lookupName = $"UsrOrLkp{suffix}";
 		string rootName = $"UsrOrRoot{suffix}";
+		// Each object has a title of its own, so the output names it by title and code (ADR D10).
+		const string lookupTitle = "Object rights e2e lookup";
+		const string rootTitle = "Object rights e2e root";
 
 		CommandExecutionActResult lookupResult = await ActCommandAsync(arrangeContext, "create-lookup",
 			new Dictionary<string, object?> {
 				["environment-name"] = arrangeContext.EnvironmentName,
 				["package-name"] = arrangeContext.PackageName,
 				["schema-name"] = lookupName,
-				["title-localizations"] = new Dictionary<string, string> { ["en-US"] = "Object rights e2e lookup" }
+				["title-localizations"] = new Dictionary<string, string> { ["en-US"] = lookupTitle }
 			});
 		AssertCommandExitCode(lookupResult, 0, "the disposable lookup must exist before the object references it");
 		CommandExecutionActResult rootResult = await ActCommandAsync(arrangeContext, CreateEntitySchemaToolName,
@@ -69,7 +72,7 @@ public sealed class ObjectRightsSandboxE2ETests : DataBindingDbFixtureBase {
 				["environment-name"] = arrangeContext.EnvironmentName,
 				["package-name"] = arrangeContext.PackageName,
 				["schema-name"] = rootName,
-				["title-localizations"] = new Dictionary<string, string> { ["en-US"] = "Object rights e2e root" },
+				["title-localizations"] = new Dictionary<string, string> { ["en-US"] = rootTitle },
 				["columns"] = new[] {
 					new Dictionary<string, object?> { ["column-name"] = "UsrName", ["type"] = "Text" },
 					new Dictionary<string, object?> {
@@ -125,7 +128,8 @@ public sealed class ObjectRightsSandboxE2ETests : DataBindingDbFixtureBase {
 
 		// Assert — each object was turned on and read back
 		grantRoot.Success.Should().BeTrue(because: $"the grant must apply on a real stand. Error: {grantRoot.Error}");
-		grantRoot.Output.Should().Contain($"'{rootName}': granted [read]", because: "the result line names the object");
+		grantRoot.Output.Should().Contain($"'{rootTitle}' ({rootName}): granted [read]",
+			because: "the result line names the object by its title and its code");
 		grantRoot.Output.Should().Contain("turned ON", because: "the root was not administered before the grant");
 		grantLookup.Success.Should().BeTrue(because: $"the lookup is granted in its own call. Error: {grantLookup.Error}");
 
@@ -140,7 +144,7 @@ public sealed class ObjectRightsSandboxE2ETests : DataBindingDbFixtureBase {
 			because: "the enabling save stored the All employees row the read synthesized, at position 0");
 		read.Output.Should().Contain($"[1] All external users ({ExternalUsers}): read",
 			because: "the grantee's row was saved below it, at the lowest priority");
-		read.Output.Should().Contain($"{lookupName}: administered by operation permissions",
+		read.Output.Should().Contain($"'{lookupTitle}' ({lookupName}): administered by operation permissions",
 			because: "the lookup's own call turned operation permissions on for it");
 
 		// Assert — the save left record and column administration untouched (they were sent as null)
@@ -188,7 +192,7 @@ public sealed class ObjectRightsSandboxE2ETests : DataBindingDbFixtureBase {
 			because: "the result names the switch and that no row changed");
 		disabled.Output.Should().NotContain("Differs from the plan",
 			because: "the read-back matches the plan: the disable wrote the switch and nothing else");
-		afterDisable.Output.Should().Contain($"{rootName}: not administered", because: "the switch is off");
+		afterDisable.Output.Should().Contain($"'{rootTitle}' ({rootName}): not administered", because: "the switch is off");
 		afterDisable.Output.Should().Contain($"[0] All employees ({AllEmployees}): read/create/edit/delete",
 			because: "a disable keeps the rows with their operations, as the designer's switch does");
 		afterDisable.Output.Should().Contain($"[1] All external users ({ExternalUsers}): no operations",
@@ -207,7 +211,7 @@ public sealed class ObjectRightsSandboxE2ETests : DataBindingDbFixtureBase {
 		// Assert — the same rows decide again, and the re-run changes nothing
 		enabled.Success.Should().BeTrue(because: $"the call names the transition. Error: {enabled.Error}");
 		enabled.Output.Should().Contain("operation permissions turned ON", because: "the result names the switch");
-		afterEnable.Output.Should().Contain($"{rootName}: administered by operation permissions",
+		afterEnable.Output.Should().Contain($"'{rootTitle}' ({rootName}): administered by operation permissions",
 			because: "the switch is on again");
 		afterEnable.Output.Should().Contain($"[0] All employees ({AllEmployees}): read/create/edit/delete",
 			because: "the rows the disable kept decide again, unchanged");

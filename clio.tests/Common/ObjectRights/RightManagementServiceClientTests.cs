@@ -888,4 +888,68 @@ public class RightManagementServiceClientTests {
 		save.Error.Should().Contain("not sent", because: "the result says nothing went out");
 		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default, default, default, default);
 	}
+
+	// ---- Find by title ----
+
+	[Test]
+	[Description("FindObjectsByTitle asks SysSchema for entity schemas whose Caption is the title, ordered by Name, and returns each object once although every package layer of it is a row; a name that is not a schema identifier is left out.")]
+	public void FindObjectsByTitle_ShouldReturnEachObjectOnce_WhenSeveralLayersCarryTheTitle() {
+		// Arrange
+		Post(SelectUrl).Returns("{\"success\":true,\"rows\":["
+			+ "{\"Name\":\"Specification\",\"Caption\":\"Feature\"},"
+			+ "{\"Name\":\"Specification\",\"Caption\":\"Feature\"},"
+			+ "{\"Name\":\"UsrFeature\",\"Caption\":\"Feature\"},"
+			+ "{\"Name\":\"Not an identifier\",\"Caption\":\"Feature\"}]}");
+
+		// Act
+		IReadOnlyList<ObjectTitleMatch> matches = _client.FindObjectsByTitle("Feature", new CreatioRequestOptions());
+
+		// Assert
+		matches.Should().Equal(new[] { new ObjectTitleMatch("Specification", "Feature"), new ObjectTitleMatch("UsrFeature", "Feature") },
+			because: "an object with several layers is one object, and only a schema identifier can be read by its code");
+		string selectBody = (string)_applicationClient.ReceivedCalls()
+			.Single(call => call.GetMethodInfo().Name == nameof(IApplicationClient.ExecutePostRequest)
+				&& Equals(call.GetArguments()[0], SelectUrl)).GetArguments()[1];
+		JsonElement query = JsonDocument.Parse(selectBody).RootElement;
+		query.GetProperty("rootSchemaName").GetString().Should().Be("SysSchema", because: "titles are read from the schema metadata");
+		string[] filters = query.GetProperty("filters").GetProperty("items").EnumerateObject()
+			.Select(filter => filter.Value.GetProperty("leftExpression").GetProperty("columnPath").GetString() + "="
+				+ filter.Value.GetProperty("rightExpression").GetProperty("parameter").GetProperty("value").GetString())
+			.ToArray();
+		filters.Should().BeEquivalentTo(new[] { "Caption=Feature", "ManagerName=EntitySchemaManager" },
+			because: "only entity schemas with that title are matched");
+		JsonElement name = query.GetProperty("columns").GetProperty("items").GetProperty("Name");
+		name.GetProperty("orderDirection").GetInt32().Should().Be(1,
+			because: "ordered by name, an object's layers come together before the row cap applies");
+		name.GetProperty("orderPosition").GetInt32().Should().Be(0, because: "the name is the sort key");
+		query.GetProperty("isDistinct").GetBoolean().Should().BeTrue(
+			because: "every package layer of an object is a row, and the row cap must count objects, not layers");
+		query.GetProperty("rowCount").GetInt32().Should().Be(100, because: "the lookup is capped");
+	}
+
+	[Test]
+	[Description("FindObjectsByTitle returns nothing when no entity schema has the title.")]
+	public void FindObjectsByTitle_ShouldReturnNothing_WhenNoObjectHasTheTitle() {
+		// Arrange
+		Post(SelectUrl).Returns("{\"success\":true,\"rows\":[]}");
+
+		// Act
+		IReadOnlyList<ObjectTitleMatch> matches = _client.FindObjectsByTitle("No such title", new CreatioRequestOptions());
+
+		// Assert
+		matches.Should().BeEmpty(because: "no row carries the title");
+	}
+
+	[Test]
+	[Description("A SysSchema lookup the service fails is thrown to the caller, which reports it as a failure rather than as 'no object has this title'.")]
+	public void FindObjectsByTitle_ShouldThrow_WhenTheLookupFails() {
+		// Arrange
+		Post(SelectUrl).Returns(_ => throw new HttpRequestException("connection reset"));
+
+		// Act
+		Action act = () => _client.FindObjectsByTitle("Feature", new CreatioRequestOptions());
+
+		// Assert
+		act.Should().Throw<HttpRequestException>(because: "a failed lookup is not an empty answer");
+	}
 }
