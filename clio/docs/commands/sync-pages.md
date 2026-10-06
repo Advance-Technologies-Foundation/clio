@@ -53,6 +53,11 @@ When `validate` is `true` (the default), the body is checked client-side before 
     subtree, or an `insert` of an element named `Scaffold` whatever its type. The template already provides
     the only permitted Scaffold root, and a second one shadows it so the navigation bar and body come from
     the wrong element. A `merge` onto `Scaffold` is the supported way to patch the template's root.
+  - **Rejected** — a binding to a data source that neither the body's `modelConfigDiff` nor the page's
+    inherited `modelConfig` declares: an attribute's `modelConfig.path`, a `dataSourceName`, or the
+    `primaryDataSourceName`. `sync-pages` replaces the own body, so `"modelConfigDiff": []` drops the template's
+    `PDS` and every field shows "Column removed" (ENG-102161). Carry the `dataSources` operations over from
+    `get-page` `raw.body`.
   - **Warned** — the same authoring in any other slot. There the target may legitimately lack the slot, in
     which case the merge creates it and the authoring works; clio validates against an empty base and cannot
     distinguish the two. Both are `merge`-only — for `insert`/`set` the `values` object becomes the element,

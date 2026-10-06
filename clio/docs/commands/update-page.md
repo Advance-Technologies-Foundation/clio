@@ -152,6 +152,13 @@ name instead of trying to edit a non-existent local `insert`.
     shadows the native element, so the top navigation bar and the page body silently come from the wrong
     element. A `merge` onto `Scaffold` is the SUPPORTED way to patch the template's own root and is left
     alone here — the merge-slot rules above own what may go inside it.
+  - **Rejected — a binding to an undeclared data source.** The first segment of an attribute's
+    `modelConfig.path` in `viewModelConfigDiff`, a `dataSourceName` in `viewConfigDiff`, and the
+    `primaryDataSourceName` must name a data source that the body's `modelConfigDiff` or the page's inherited
+    `modelConfig` declares. A replace write overwrites the own `modelConfigDiff`, so a body sent with
+    `"modelConfigDiff": []` drops the template's `PDS` and every field shows "Column removed" (ENG-102161). Carry
+    the `dataSources` / `primaryDataSourceName` operations over from `get-page` `raw.body`, or use `mode: "append"`.
+    The check passes when the inherited `modelConfig` cannot be read, as on `validate-page`.
   - **Rejected — a `crt.IndicatorWidget` that would show no value.** An `insert`, `set` or `merge` authoring a
     metric must carry `config.layout` and `config.text`, and a `config.data.providing` the mobile runtime can
     execute: `schemaName` plus `aggregation.column.expression` with `expressionType` 1, a `functionArgument.columnPath` and an

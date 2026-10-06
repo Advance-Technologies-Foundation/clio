@@ -60,9 +60,17 @@ internal static class MobilePageValidation {
 				?? (templateBaseContext is null
 					? null
 					: () => MobilePageMergedConfigResolver.ResolveMergedConfig(templateBaseContext));
-			SchemaValidationResult applyResult = MobileDiffApplyValidator.Validate(body, resolveBase);
+			Lazy<(string ViewModelConfigJson, string ModelConfigJson)>? sharedBase =
+				resolveBase is null ? null : new(resolveBase);
+			SchemaValidationResult applyResult = MobileDiffApplyValidator.Validate(
+				body, sharedBase is null ? null : () => sharedBase.Value);
 			if (!applyResult.IsValid) {
 				errors.AddRange(applyResult.Errors);
+			}
+			SchemaValidationResult dataSourceResult = MobileDataSourceReferenceValidator.Validate(
+				body, sharedBase is null ? null : () => sharedBase.Value.ModelConfigJson);
+			if (!dataSourceResult.IsValid) {
+				errors.AddRange(dataSourceResult.Errors);
 			}
 		}
 		bool valid = errors.Count == 0;

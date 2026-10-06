@@ -992,6 +992,43 @@ public sealed class PageSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("ENG-102161: a mobile body whose only PDS reference is a viewConfigDiff dataSourceName, with empty path diffs, still pre-resolves the replace base, so the data-source check runs.")]
+	public async Task SyncPages_PreResolvesMobileBase_ForUndeclaredDataSourceReference() {
+		// Arrange
+		const string mobileBody =
+			"{ \"viewConfigDiff\": [ { \"operation\": \"merge\", \"name\": \"Feed\", \"values\": { \"dataSourceName\": \"PDS\" } } ], " +
+			"\"viewModelConfigDiff\": [], " +
+			"\"modelConfigDiff\": [] }";
+		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommand();
+		IApplicationClient getAppClient = Substitute.For<IApplicationClient>();
+		getAppClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("""{"success":true,"rows":[]}""");
+		PageGetCommand getCommand = new(getAppClient, Substitute.For<IServiceUrlBuilder>(), Substitute.For<ILogger>(),
+			Substitute.For<IPageDesignerHierarchyClient>(), new PageSchemaBodyParser(),
+			new PageBundleBuilder(() => new JsonDiffApplier(), () => new JsonPathDiffApplier()),
+			Substitute.For<IPageFileWriter>());
+		Clio.EnvironmentOptions capturedGetOptions = null;
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
+		commandResolver.Resolve<PageGetCommand>(Arg.Do<Clio.EnvironmentOptions>(o => capturedGetOptions = o)).Returns(getCommand);
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), Substitute.For<IMobileComponentInfoCatalog>(),
+			Substitute.For<IComponentInfoCatalog>(), new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
+		PageSyncArgs args = new(
+			"dev",
+			[new PageSyncPageInput("UsrCarRent_MobileFormPage", mobileBody)],
+			Validate: true);
+
+		// Act
+		await tool.SyncPages(args);
+
+		// Assert
+		capturedGetOptions.Should().BeOfType<PageGetOptions>(
+			because: "with both path diffs empty the apply oracle needs no base, so only the data-source check can request it")
+			.Which.ExcludeOwnBody.Should().BeTrue(because: "the replace write discards the own body that held PDS");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("When a mobile base pre-resolution FAILS on the sync-pages batch path, the injected logger records a warning (parity with update-page) so the degraded validation is not silent.")]
 	public async Task SyncPages_PreResolveMobileBaseFailure_LogsWarning() {
 		// Arrange — same mobile body needing a base, but the get-page read fails (empty rows), so the resolver
