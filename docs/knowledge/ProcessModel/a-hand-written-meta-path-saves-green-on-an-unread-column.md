@@ -1,5 +1,5 @@
 ---
-description: a hand-written [#...#] meta path in a condition, expression or Formula body - a dot missing before [EntityColumn:] is refused at save with a message naming nothing, one missing after the prefix saves and runs, and a correctly spelled one on a column the Read data element does not load SAVES and reads empty at run time; CrtProcessBuilder checks every hand-written meta path itself from 1.6.6.77
+description: a hand-written [#...#] meta path in a condition, expression or Formula body - a dot missing before [EntityColumn:] is refused at save with a message naming nothing, one missing after the prefix saves and runs, and a correctly spelled one on a column the Read data element does not load SAVES and reads empty at run time; from 1.6.6.77 CrtProcessBuilder checks a hand-written meta path itself in a condition, a mapping, connection or value expression, a recordId and a Formula body
 applies-to:
   - clio/CrtProcessBuilder/
   - clio/Command/McpServer/Tools/ProcessDesigner/ModifyBusinessProcessTool.cs
@@ -15,7 +15,8 @@ token written through `modify-business-process`, results read from `run-process`
   process schema. Internal error: "Value for argument "parameterUId" must be specified."` - no flow, no token,
   no index. The generator's end-anchored property regex keeps only `[EntityColumn:]` of the glued segment and
   `new ProcessParameterMapInfo(element, null)` throws (`BaseFlowSchemaGenerator.TryGetParameterMapPath`);
-- a dot missing before `[Parameter:]` is refused telling the caller to add a PROCESS parameter;
+- a dot missing between `[Element:…]` and `[Parameter:]` is refused telling the caller to add a PROCESS parameter
+  (for a process parameter that dot is the one after the prefix, below);
 - a dot missing after `[IsSchema:false]`, and the prefix-less `[Element:…].[Parameter:…]` form, save and RUN;
 - a CORRECTLY spelled reference to a column outside the Read data element's `readData.columns` saves green and
   reads EMPTY at run time - a wrong branch, a null mapping, an empty Formula result - while the same column named

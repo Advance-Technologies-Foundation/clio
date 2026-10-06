@@ -68,12 +68,14 @@ on references rather than on formulas, is the ENG-102114 exception below and liv
 
 **The ENG-102114 exception: a HAND-WRITTEN meta path.** The gate is no substitute for checking one, and that
 check therefore lives in the package (`MetaPathTokenReference`, CrtProcessBuilder 1.6.6.77). Measured: a dot
-missing before `[EntityColumn:…]` is refused with `Value for argument "parameterUId" must be specified`, naming
-neither the flow nor the token; a dot missing before `[Parameter:…]` is refused with advice to add a PROCESS
-parameter; and a correctly spelled reference to a column the Read data element does not load is NOT refused at
-all - it saves and reads empty at run time. The package does not second-guess the FORMULA; it only checks that a
-reference is spelled as the platform writes it and names something this process delivers
-(`../ProcessModel/a-hand-written-meta-path-saves-green-on-an-unread-column.md`). Do not delete it as duplication.
+missing before `[EntityColumn:…]` is refused with `Value for argument "parameterUId" must be specified`,
+naming neither the flow nor the token; a dot missing between `[Element:…]` and `[Parameter:…]` is refused
+with advice to add a PROCESS parameter; and a correctly spelled reference to a column the Read data element
+does not load is NOT refused at all - it saves and reads empty at run time. The package does not
+second-guess the FORMULA; it only checks that a reference is spelled as the platform writes it and names
+something this process delivers
+(`../ProcessModel/a-hand-written-meta-path-saves-green-on-an-unread-column.md`). Do not delete it as
+duplication.
 
 The last package-side piece is **message formatting**: the unresolvable-reference row is
 `Json.Serialize(ProcessParameterErrorInfo)` with no remedy, so `PlatformValidationMessage` rewrites that

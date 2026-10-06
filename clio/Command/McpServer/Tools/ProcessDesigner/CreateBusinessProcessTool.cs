@@ -323,7 +323,7 @@ public class CreateBusinessProcessTool(
 		 + "quoted, it is quoted as the platform's own converter left it - a parameter reference by "
 		 + "the parameter NAME, a fractional literal with an 'm' appended - not as you wrote it. An "
 		 + "unresolvable [#…#] parameter reference is not in this family at all: it names the reference "
-		 + "and what does exist instead. See "
+		 + "and the remedy instead. See "
 		 + "modify-business-process for the full mapping vocabulary, including the Lookup 'value' bare-Guid "
 		 + "rule, its version floor, and its refusals (get-guidance name=process-parameters owns the contract). "
 		 + "To run the process when a record "

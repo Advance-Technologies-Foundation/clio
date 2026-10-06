@@ -176,7 +176,7 @@ public class ModifyBusinessProcessTool(
 		 + "parameter NAME, a fractional literal gains an 'm' and a division gains a ((decimal)…) wrapper, so "
 		 + "do not conclude the wrong formula was validated. A newline is refused with 'Expression contains "
 		 + "invalid line break symbol' and quotes the expression as EMPTY; an unresolvable [#…#] parameter "
-		 + "reference is not in this family at all - it names the reference and what does exist. Must be "
+		 + "reference is not in this family at all - it names the reference and the remedy. Must be "
 		 + "one line; "
 		 + "a Lookup target's 'value' takes a bare non-empty record Guid (ships from CrtProcessBuilder 1.3.1.1; an "
 		 + "older-than-required environment is refused naming the version) - describe reports its resolved NAME "
