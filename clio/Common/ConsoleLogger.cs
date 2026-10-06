@@ -113,6 +113,7 @@ public class ConsoleLogger : ILogger, IDisposable{
 			// its own flow's lines (FR-06). Safe as a field: the drain is single-threaded under _messageBufferLock.
 			_drainingScopedSinks = item.ScopedSinks;
 			Action action = item switch {
+				StderrInfoMessage stderrInfoMessage => () => WriteInfoInternal(stderrInfoMessage.Value.ToString(), Console.Error),
 				InfoMessage infoMessage => () => WriteInfoInternal(infoMessage.Value.ToString()),
 				ErrorMessage errorMessage => () => WriteErrorInternal(errorMessage.Value.ToString()),
 				WarningMessage warningMessage => () => WriteWarningInternal(warningMessage.Value.ToString()),
@@ -213,10 +214,10 @@ public class ConsoleLogger : ILogger, IDisposable{
 	private static System.IO.TextWriter DecoratedLogSink =>
 		Program.IsJsonOutputMode ? Console.Error : Console.Out;
 
-	private void WriteInfoInternal(string value){
+	private void WriteInfoInternal(string value, System.IO.TextWriter consoleSink = null){
 		string linePrefix = GetLinePrefix("[INF]");
 		if (!Program.IsMcpServerMode) {
-			System.IO.TextWriter sink = DecoratedLogSink;
+			System.IO.TextWriter sink = consoleSink ?? DecoratedLogSink;
 			Console.ForegroundColor = ConsoleColor.Green;
 			sink.Write(linePrefix);
 			Console.ForegroundColor = _defaultConsoleColor;
@@ -423,6 +424,24 @@ public class ConsoleLogger : ILogger, IDisposable{
 	}
 
 	/// <summary>
+	/// Enqueues an informational message whose console copy goes to stderr in every output mode.
+	/// </summary>
+	/// <remarks>
+	/// For notices clio prints on its own initiative before a command's output: on stdout they would
+	/// become the first line of data for any program reading that output. The log file and the other
+	/// sinks receive the message exactly as they receive <see cref="WriteInfo"/>.
+	/// </remarks>
+	/// <param name="value">String value to be printed to the log</param>
+	public void WriteInfoToStderr(string value){
+		if(CancellationToken.IsCancellationRequested) {
+			return;
+		}
+		StderrInfoMessage message = new(value);
+		CaptureMessage(message);
+		_logQueue.Enqueue(message);
+	}
+
+	/// <summary>
 	/// Write a empty line to the log.
 	/// </summary>
 	public void WriteLine() {
@@ -611,6 +630,8 @@ internal class InfoMessage(string value) : LogMessage(value){
 	#endregion
 
 }
+
+internal sealed class StderrInfoMessage(string value) : InfoMessage(value);
 
 internal class ErrorMessage(string value) : LogMessage(value){
 	

@@ -64,19 +64,56 @@ internal static partial class PayloadDumpReader {
 	/// vanishing between the probe and the delete would replace a passing outcome with an unrelated IO
 	/// error. A leftover dump is harmless; a hijacked test result is not.
 	/// </para>
+	/// <para>
+	/// A transient lock is retried rather than accepted on the first refusal: up to
+	/// <see cref="DeleteAttempts"/> attempts, <see cref="DeleteRetryDelay"/> apart, stopping early once the
+	/// file is gone. A refusal after the last attempt is still swallowed, so the worst case stays a
+	/// leftover dump plus at most two short waits on a lenient path. That every lenient catch site calls
+	/// this at all is enforced by <c>McpPayloadDumpCleanupPolicyTests</c> in <c>clio.tests</c>
+	/// (GitHub issue #1592).
+	/// </para>
 	/// </remarks>
 	/// <param name="message">The parse-failure message.</param>
-	public static void DeleteIfPresent(string message) {
+	public static void DeleteIfPresent(string message) =>
+		DeleteIfPresent(message, File.Delete, Thread.Sleep);
+
+	/// <summary>
+	/// How many times <see cref="DeleteIfPresent(string)"/> tries to remove a dump before leaving it.
+	/// </summary>
+	internal const int DeleteAttempts = 3;
+
+	/// <summary>
+	/// The pause between two delete attempts — long enough for an indexer or antivirus scan to release a
+	/// just-written file, short enough not to matter on a passing test.
+	/// </summary>
+	internal static readonly TimeSpan DeleteRetryDelay = TimeSpan.FromMilliseconds(100);
+
+	/// <summary>
+	/// The same best-effort delete, through caller-supplied delete and wait operations, so the retry can be
+	/// exercised without an OS-level file lock (which macOS and Linux do not take on an open file).
+	/// </summary>
+	/// <param name="message">The parse-failure message.</param>
+	/// <param name="delete">Removes the file at the given path.</param>
+	/// <param name="wait">Pauses between attempts.</param>
+	internal static void DeleteIfPresent(string message, Action<string> delete, Action<TimeSpan> wait) {
 		string? path = ExtractPath(message);
 		if (path is null) {
 			return;
 		}
 
-		try {
-			File.Delete(path);
-		}
-		catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) {
-			// Intentionally ignored — see the best-effort note above.
+		for (int attempt = 1; ; attempt++) {
+			try {
+				delete(path);
+				return;
+			}
+			catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) {
+				// Intentionally not rethrown — see the best-effort note on DeleteIfPresent(string).
+				if (attempt >= DeleteAttempts || !File.Exists(path)) {
+					return;
+				}
+
+				wait(DeleteRetryDelay);
+			}
 		}
 	}
 

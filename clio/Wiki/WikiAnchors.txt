@@ -4,6 +4,7 @@ add-item:add-item,create
 add-custom-logging:add-custom-logging
 add-package:add-package,ap
 add-package-dependency:add-package-dependency,add-pkg-dependency,add-pkg-dep
+create-package:create-package
 remove-package-dependency:remove-package-dependency,remove-pkg-dependency,remove-pkg-dep
 add-schema:add-schema
 add-user-task:add-user-task
@@ -77,6 +78,8 @@ list-apps:list-apps,get-app-list,app-list,apps,apps-list,lia
 build-theme:build-theme
 get-record-rights:get-record-rights
 set-record-rights:set-record-rights
+set-object-rights:set-object-rights
+get-object-rights:get-object-rights
 list-themes:list-themes,get-themes
 get-theme:get-theme
 create-theme:create-theme
@@ -164,6 +167,7 @@ list-app-sections:list-app-sections
 list-entity-client-schemas:list-entity-client-schemas,migration-unit-resolve
 list-pages:list-pages,page-list
 update-page:update-page,page-update
+localize-page:localize-page
 create-page:create-page,page-create
 list-page-templates:list-page-templates,page-templates,page-templates-list
 create-related-page-addon:create-related-page-addon,related-page-addon,set-related-pages

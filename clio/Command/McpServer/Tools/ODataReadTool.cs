@@ -87,7 +87,7 @@ public sealed class ODataReadTool(
 		"A failure also carries a machine-readable error-code: argument, entity-not-found, invalid-query, server-reported-error, non-json-response, incomplete-response, or transport. " +
 		"error-code invalid-query usually means the request shape is at fault, and the message lists the field, select, expand and order-by names YOU sent; when a filter field looks like a raw lookup column (a name ending in Id) it names the navigation path to use instead, for example AccountId -> Account/Id. " +
 		"The one exception is a member added moments ago: the same rejection is how a column or entity that exists but is not published to OData yet reports itself, so wait for the rebuild and retry once before changing the query - and never re-run a schema write in response. " +
-		"Creatio's own error wording is never reproduced in error; it is written to clio's debug log, which requires clio to be running in-process with --debug and a log sink, so in an MCP worker there is no such line and the correlation-id serves to match this response to clio's own logs. " +
+		"Creatio's own error wording is never reproduced in error - only an enum-like error.code and the identifiers a recognized rejection names (an unknown property and its entity, the operand types of a mistyped filter comparison, a binary column in select) are restated in clio's own sentence; the full wording is written to clio's debug log, which requires clio to be running in-process with --debug and a log sink, so in an MCP worker there is no such line and the correlation-id serves to match this response to clio's own logs. " +
 		"Call get-tool-contract for odata-read to see usage examples and discovery workflow hints.")]
 	public ODataReadResponse Read(
 		[Description("Parameters: entity, environment-name (required); filters, select, expand, order-by, top, skip, count (optional).")]
@@ -609,7 +609,8 @@ public sealed class ODataReadTool(
 				//HTTP 200, so there is no status to report, but the failure still refers to a specific
 				//entity set and a caller correlating several reads needs to know which one.
 				return Fail(
-					CreatioResponseError.DescribeServerReportedReadError(kind, DescribeCallerQuery(args, kind)),
+					CreatioResponseError.DescribeServerReportedReadError(kind, DescribeCallerQuery(args, kind),
+						CreatioResponseError.DescribeStructuredODataError(root)),
 					ErrorCodeFor(kind));
 			}
 

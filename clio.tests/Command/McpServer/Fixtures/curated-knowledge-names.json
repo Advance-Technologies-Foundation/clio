@@ -1,7 +1,7 @@
 {
   "library": "com.creatio.clio",
-  "libraryVersion": "1.15.75",
-  "sequence": 1015075000,
+  "libraryVersion": "1.15.84",
+  "sequence": 1015084000,
   "availableNames": [
     "administration",
     "agent-execution",
@@ -70,6 +70,8 @@
     "creatio.external-organizations",
     "creatio.feature-toggle",
     "creatio.feature-toggle-tests",
+    "creatio.freedom-page-mobile-reason-codes",
+    "creatio.freedom-page-web-to-mobile-conversion",
     "creatio.fsm-mode",
     "creatio.git-three-way-merge",
     "creatio.home-page",
@@ -93,6 +95,7 @@
     "creatio.page-schema-creatio-devkit-common",
     "creatio.page-schema-handlers",
     "creatio.page-schema-resources",
+    "creatio.page-schema-translation",
     "creatio.page-schema-validators",
     "creatio.portal-service-routing",
     "creatio.process-access-rights",
@@ -170,6 +173,8 @@
     "external-organizations",
     "feature-toggle",
     "feature-toggle-tests",
+    "freedom-page-mobile-reason-codes",
+    "freedom-page-web-to-mobile-conversion",
     "fsm-mode",
     "home-page",
     "identity-assertion",
@@ -192,6 +197,7 @@
     "page-schema-creatio-devkit-common",
     "page-schema-handlers",
     "page-schema-resources",
+    "page-schema-translation",
     "page-schema-validators",
     "portal-service-routing",
     "process-access-rights",
@@ -246,10 +252,5 @@
     "when-to-use-requests",
     "workplaces"
   ],
-  "featureGatedNames": [
-    "creatio.freedom-page-mobile-reason-codes",
-    "creatio.freedom-page-web-to-mobile-conversion",
-    "freedom-page-mobile-reason-codes",
-    "freedom-page-web-to-mobile-conversion"
-  ]
+  "featureGatedNames": []
 }

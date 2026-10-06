@@ -39,7 +39,9 @@ public sealed record ApplicationContextResponse(
 	[property: JsonPropertyName("pages")] IReadOnlyList<PageListItem>? Pages = null,
 	[property: JsonPropertyName("schema-name-prefix")] string? SchemaNamePrefix = null,
 	[property: JsonPropertyName("dataforge")] ApplicationDataForgeResult? DataForge = null,
-	[property: JsonPropertyName("error")] string? Error = null);
+	[property: JsonPropertyName("error")] string? Error = null,
+	[property: JsonPropertyName("warnings")] IReadOnlyList<string>? Warnings = null,
+	[property: JsonPropertyName("next-step")] string? NextStep = null);
 
 /// <summary>
 /// Structured existing-app section creation envelope returned by application section MCP tools.
@@ -65,7 +67,9 @@ public sealed record ApplicationSectionContextResponse(
 	[property: JsonPropertyName("error")] string? Error = null,
 	[property: JsonPropertyName("error-class")] string? ErrorClass = null,
 	[property: JsonPropertyName("section-created")] string? SectionCreated = null,
-	[property: JsonPropertyName("retry-guidance")] string? RetryGuidance = null);
+	[property: JsonPropertyName("retry-guidance")] string? RetryGuidance = null,
+	[property: JsonPropertyName("warnings")] IReadOnlyList<string>? Warnings = null,
+	[property: JsonPropertyName("next-step")] string? NextStep = null);
 
 /// <summary>
 /// Structured existing-app section update envelope returned by application section update MCP tools.
@@ -80,7 +84,12 @@ public sealed record ApplicationSectionUpdateContextResponse(
 	[property: JsonPropertyName("application-version")] string? ApplicationVersion = null,
 	[property: JsonPropertyName("previous-section")] ApplicationSectionResult? PreviousSection = null,
 	[property: JsonPropertyName("section")] ApplicationSectionResult? Section = null,
-	[property: JsonPropertyName("error")] string? Error = null);
+	[property: JsonPropertyName("error")] string? Error = null,
+	[property: JsonPropertyName("caption-culture")] string? CaptionCulture = null,
+	[property: JsonPropertyName("caption-culture-value")] string? CaptionCultureValue = null,
+	[property: JsonPropertyName("preserved-cultures")] IReadOnlyList<string>? PreservedCultures = null,
+	[property: JsonPropertyName("warnings")] IReadOnlyList<string>? Warnings = null,
+	[property: JsonPropertyName("next-step")] string? NextStep = null);
 
 /// <summary>
 /// Structured section item returned by the <c>create-app-section</c> MCP tool.

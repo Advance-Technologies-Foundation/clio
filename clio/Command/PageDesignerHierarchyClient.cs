@@ -48,7 +48,7 @@ internal sealed class PageDesignerHierarchyClient : IPageDesignerHierarchyClient
 			["useFullHierarchy"] = true,
 			["userLevelSchema"] = false
 		};
-		string designerUrl = _serviceUrlBuilder.Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/GetParentSchemas");
+		string designerUrl = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetClientUnitDesignerParentSchemas);
 		string responseJson = _applicationClient.ExecutePostRequest(designerUrl, request.ToString(Formatting.None));
 		var response = JObject.Parse(responseJson);
 		if (!(response["success"]?.Value<bool>() ?? false)) {
@@ -79,6 +79,7 @@ internal sealed class PageDesignerHierarchyClient : IPageDesignerHierarchyClient
 				SchemaType = value["schemaType"]?.Value<int>(),
 				Parameters = value["parameters"] as JArray ?? new JArray(),
 				LocalizableStrings = value["localizableStrings"] as JArray ?? new JArray(),
+				Caption = value["caption"] as JArray ?? new JArray(),
 				OptionalProperties = value["optionalProperties"] as JArray ?? new JArray()
 			});
 		}

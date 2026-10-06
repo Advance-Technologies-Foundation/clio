@@ -287,6 +287,71 @@ public sealed class PageGetToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("With include-operations=false, get-page replaces page.ownBodySummary.viewConfigDiffOps with viewConfigDiffOpCounts in the MCP response, while meta.json on disk keeps the full operation list.")]
+	[AllureTag(ToolName)]
+	[AllureName("get-page returns operation counts instead of the operation list when include-operations is false")]
+	[AllureDescription("Reads the first page of the seeded application AutoTestClioMcp with include-operations=false and verifies the response summary carries viewConfigDiffOpCounts and no viewConfigDiffOps, and meta.json still carries viewConfigDiffOps.")]
+	public async Task PageGetTool_ShouldReturnOperationCounts_WhenIncludeOperationsIsFalse() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		PageDiscoveryCandidate candidate = await ResolveSeededPageCandidateOrIgnoreAsync(
+			arrangeContext.Session,
+			arrangeContext.CancellationTokenSource.Token,
+			arrangeContext.EnvironmentName,
+			ApplicationCode);
+
+		// Act
+		CallToolResult callResult = await AllureApi.Step(
+			"Act by reading the page with include-operations=false",
+			async () => await arrangeContext.Session.CallToolAsync(
+				ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["schema-name"] = candidate.Page.SchemaName,
+						["environment-name"] = arrangeContext.EnvironmentName,
+						["include-operations"] = false
+					}
+				},
+				arrangeContext.CancellationTokenSource.Token));
+		PageGetResponse response = EntitySchemaStructuredResultParser.Extract<PageGetResponse>(callResult);
+		// The typed summary defaults viewConfigDiffOps to an empty list, so absence is read from the wire JSON.
+		JsonElement raw = EntitySchemaStructuredResultParser.Extract<JsonElement>(callResult);
+
+		// Assert
+		AllureApi.Step("Assert a structured tool result", () =>
+			callResult.IsError.Should().NotBeTrue(
+				because: "the seeded page should return a structured get-page payload instead of a transport-level error"));
+		AllureApi.Step("Assert page read success", () =>
+			response.Success.Should().BeTrue(
+				because: $"get-page should succeed for a seeded page: {response.Error}"));
+		JsonElement summary = AllureApi.Step("Assert the response carries the own-body summary", () => {
+			raw.GetProperty("page").TryGetProperty("ownBodySummary", out JsonElement ownBodySummary).Should().BeTrue(
+				because: "include-operations changes the content of the summary, not whether it is returned");
+			return ownBodySummary;
+		});
+		AllureApi.Step("Assert the operation list is absent", () =>
+			summary.TryGetProperty("viewConfigDiffOps", out _).Should().BeFalse(
+				because: "include-operations=false leaves the per-operation list out of the MCP response"));
+		AllureApi.Step("Assert the operation counts are present", () =>
+			summary.TryGetProperty("viewConfigDiffOpCounts", out _).Should().BeTrue(
+				because: "include-operations=false returns the number of operations per operation type instead of the list"));
+		AllureApi.Step("Assert the operation counts are an object", () =>
+			summary.GetProperty("viewConfigDiffOpCounts").ValueKind.Should().Be(JsonValueKind.Object,
+				because: "the counts map each operation type to its number of operations"));
+		using JsonDocument metadata = JsonDocument.Parse(await File.ReadAllTextAsync(response.Files.MetaFile));
+		AllureApi.Step("Assert meta.json keeps the operation list", () =>
+			metadata.RootElement.GetProperty("page").GetProperty("ownBodySummary")
+				.TryGetProperty("viewConfigDiffOps", out _).Should().BeTrue(
+					because: "meta.json on disk keeps the full operation list whatever the response carries"));
+		AllureApi.Step("Assert meta.json operation list is an array", () =>
+			metadata.RootElement.GetProperty("page").GetProperty("ownBodySummary").GetProperty("viewConfigDiffOps")
+				.ValueKind.Should().Be(JsonValueKind.Array,
+					because: "the persisted list holds one entry per viewConfigDiff operation"));
+	}
+
+	[Test]
 	[Description("Reports readable failures when get-page is called with an invalid environment name.")]
 	[AllureTag(ToolName)]
 	[AllureName("get-page reports invalid environment failures")]

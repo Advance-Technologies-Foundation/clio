@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using ATF.Repository.Providers;
 using Clio.Command;
 using Clio.Command.EntitySchemaDesigner;
+using Clio.Command.Localization;
 using Clio.Command.PackageCommand;
 using Clio.Command.McpServer.Prompts;
 using Clio.Command.McpServer.Tools;
@@ -791,6 +792,55 @@ public sealed class ApplicationToolTests {
 			because: "the before-section payload should preserve the original stored caption");
 		result.Section!.Caption.Should().Be("Orders",
 			because: "the after-section payload should preserve the updated plain-text caption");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("TC-U-49: maps caption-culture into the section-update request for the resolved environment (the service reads SysCulture through its own client of that environment), and returns the caption-culture readback and warnings.")]
+	public void ApplicationSectionUpdate_Should_Pass_CaptionCulture_To_ResolvedEnvironment() {
+		// Arrange
+		IApplicationSectionUpdateService applicationSectionUpdateService = Substitute.For<IApplicationSectionUpdateService>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		EnvironmentSettings resolvedSettings = new() { Uri = "https://sandbox.example.com" };
+		commandResolver.Resolve<EnvironmentSettings>(
+				Arg.Is<EnvironmentOptions>(options => options.Environment == "sandbox"))
+			.Returns(resolvedSettings);
+		ApplicationSectionInfoResult section = new(
+			"section-id", "UsrOrders", "Orders", null, "UsrOrder", "pkg-uid", "section-schema-uid", "icon", "#111111", null);
+		const string inactiveWarning = "Culture 'es-ES' exists but is inactive; users cannot select it until it is activated in the Languages section.";
+		applicationSectionUpdateService.UpdateSection(resolvedSettings, Arg.Any<ApplicationSectionUpdateRequest>())
+			.Returns(new ApplicationSectionUpdateResult(
+				"pkg-uid", "UsrOrdersApp", "app-id", "Orders App", "UsrOrdersApp", "8.3.0", section, section,
+				CaptionCulture: "es-ES",
+				CaptionCultureValue: "Pedidos",
+				PreservedCultures: ["de-DE"],
+				Warnings: [inactiveWarning]));
+		ApplicationSectionUpdateTool tool = new(
+			Substitute.For<ILogger>(), commandResolver, applicationSectionUpdateService);
+
+		// Act
+		ApplicationSectionUpdateContextResponse result = tool.ApplicationSectionUpdate(new ApplicationSectionUpdateArgs(
+			ApplicationCode: "UsrOrdersApp",
+			SectionCode: "UsrOrders",
+			EnvironmentName: "sandbox",
+			Caption: "Pedidos",
+			CaptionCulture: "es-ES"), null, CancellationToken.None).GetAwaiter().GetResult();
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "a caption written in another culture is a successful section update");
+		applicationSectionUpdateService.Received(1).UpdateSection(
+			resolvedSettings,
+			Arg.Is<ApplicationSectionUpdateRequest>(request =>
+				request.Caption == "Pedidos" && request.CaptionCulture == "es-ES"));
+		result.CaptionCulture.Should().Be("es-ES",
+			because: "the envelope must name the culture the caption was written in");
+		result.CaptionCultureValue.Should().Be("Pedidos",
+			because: "the envelope must return the stored caption in that culture");
+		result.PreservedCultures.Should().Equal(["de-DE"],
+			because: "the envelope must list the other languages that were kept");
+		result.Warnings.Should().Equal([inactiveWarning],
+			because: "the inactive-culture warning must reach the agent");
 	}
 
 	[Test]
