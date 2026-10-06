@@ -1,0 +1,166 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Threading.Tasks;
+using Allure.NUnit;
+using Allure.NUnit.Attributes;
+using Clio.Command.McpServer.Tools.ProcessDesigner;
+using Clio.Mcp.E2E.Support.Configuration;
+using Clio.Mcp.E2E.Support.Mcp;
+using FluentAssertions;
+using ModelContextProtocol.Protocol;
+
+namespace Clio.Mcp.E2E;
+
+/// <summary>
+/// End-to-end coverage for ENG-102114 over the real MCP path: a condition written on an EXISTING process takes the
+/// <c>[#Element.Parameter.Column#]</c> name a build-path condition takes, and a meta path written by hand is
+/// accepted only in the spelling describe reports. NOT in CI — run manually against an environment carrying
+/// CrtProcessBuilder 1.6.6.76 or later.
+/// <para>The motivating defect (clio#1529): a hand-assembled token missing the dot before
+/// <c>[EntityColumn:…]</c>. On a Script value the platform refuses it at save with "Value for argument
+/// "parameterUId" must be specified", which names neither the flow nor the token; these tests pin that the package
+/// refuses it first, naming the flow and handing back the canonical token, and that the modify path no longer
+/// needs the hand-assembled token at all.</para>
+/// </summary>
+[TestFixture]
+[AllureNUnit]
+[AllureFeature(ModifyBusinessProcessTool.ModifyBusinessProcessToolName)]
+[NonParallelizable]
+[Category(McpE2ECategories.ProcessDesigner)]
+public sealed class MetaPathConditionToolE2ETests {
+
+	private const string CreateToolName = CreateBusinessProcessTool.CreateBusinessProcessToolName;
+	private const string ModifyToolName = ModifyBusinessProcessTool.ModifyBusinessProcessToolName;
+
+	/// <summary>The first cut that expands names on the modify path and checks a hand-written meta path.</summary>
+	private const string MinimumPackageVersion = "1.6.6.76";
+
+	#region Methods: Tests
+
+	[Test]
+	[Description("setFlowCondition on an existing process takes [#ReadContact.ResultEntity.DoNotUseCall#] and describe reads the condition back as the platform's three-segment meta path - the caller no longer assembles the UId token by hand.")]
+	[AllureTag(ModifyToolName)]
+	[AllureName("modify-business-process setFlowCondition expands a record-column name")]
+	public async Task ModifyBusinessProcess_Should_ExpandANamedCondition() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context =
+			await ProcessDesignerE2EArrange.StartAsync("Meta-path condition", MinimumPackageVersion);
+		string processName = $"UsrClioBpMetaPathE2e{Guid.NewGuid():N}";
+		await CreateAsync(context, processName, condition: null);
+
+		// Act
+		CallToolResult modified = await ProcessDesignerE2EArrange.CallToolAsync(context, ModifyToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName,
+				["operations"] = SetCondition("[#ReadContact.ResultEntity.DoNotUseCall#] == false")
+			});
+
+		// Assert
+		JsonSerializer.Serialize(modified).Should().Contain("edited",
+			because: "a name the process can answer for is expanded, so the platform's gate accepts the condition");
+		string condition = ConditionOnCall(
+			DescribedProcessGraph.Read(await ProcessDesignerE2EArrange.DescribeAsync(context, processName)));
+		condition.Should().Contain("].[EntityColumn:{",
+			because: "the name is stored as the platform's three-segment meta path");
+		condition.Should().NotContain("ReadContact.ResultEntity",
+			because: "an unexpanded name would never be evaluated at run time");
+	}
+
+	[Test]
+	[Description("A hand-written meta path missing the dot before [EntityColumn:] - clio#1529's typo - is refused by the package naming the flow and handing back the canonical token, instead of the platform's 'parameterUId must be specified'; the stored condition is left as it was.")]
+	[AllureTag(ModifyToolName)]
+	[AllureName("modify-business-process refuses a misspelled meta path in a condition")]
+	public async Task ModifyBusinessProcess_Should_RefuseAMisspelledMetaPath() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context =
+			await ProcessDesignerE2EArrange.StartAsync("Meta-path condition", MinimumPackageVersion);
+		string processName = $"UsrClioBpMetaPathBadE2e{Guid.NewGuid():N}";
+		await CreateAsync(context, processName, "[#ReadContact.ResultEntity.DoNotUseCall#] == false");
+		string canonical = ConditionOnCall(
+			DescribedProcessGraph.Read(await ProcessDesignerE2EArrange.DescribeAsync(context, processName)));
+		string missingDot = canonical.Replace("].[EntityColumn:", "][EntityColumn:");
+
+		// Act
+		CallToolResult refused = await ProcessDesignerE2EArrange.CallToolAsync(context, ModifyToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName,
+				["operations"] = SetCondition(missingDot)
+			});
+
+		// Assert
+		missingDot.Should().NotBe(canonical, because: "the arrange must actually have removed the dot");
+		string refusal = JsonSerializer.Serialize(refused);
+		refusal.Should().Contain("is not spelled exactly",
+			because: "the package refuses the spelling before the platform's gate reports it cryptically");
+		refusal.Should().Contain("from 'ReadContact' to 'Call'",
+			because: "the refusal names the flow, which the platform's message does not");
+		refusal.Should().NotContain("parameterUId",
+			because: "the platform's unattributed message must not be what the caller reads");
+		ConditionOnCall(DescribedProcessGraph.Read(await ProcessDesignerE2EArrange.DescribeAsync(context, processName)))
+			.Should().Be(canonical, because: "a refused edit writes nothing");
+	}
+
+	#endregion
+
+	#region Methods: Private
+
+	private static async Task CreateAsync(ProcessDesignerArrangeContext context, string processName,
+			string? condition) {
+		CallToolResult created = await ProcessDesignerE2EArrange.CallToolAsync(context, CreateToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["descriptor"] = BuildDescriptor(processName, condition)
+			});
+		JsonSerializer.Serialize(created).Should().Contain("created (UId:",
+			because: "the process the modify call edits must exist, or the assertions fail for the wrong reason");
+	}
+
+	/// <summary>Read contact, then Call; the flow between them is conditional when a condition is given.</summary>
+	private static string BuildDescriptor(string processName, string? condition) {
+		// Without a condition the read leads straight to the call and End2 is not built at all, so the process has
+		// no disconnected element; with one, End2 is the default branch beside the conditional one.
+		string readToCall = condition == null
+			? """{ "source": "ReadContact", "target": "Call" }"""
+			: $$"""{ "source": "ReadContact", "target": "Call", "kind": "conditional", "condition": {{JsonSerializer.Serialize(condition)}} }, { "source": "ReadContact", "target": "End2", "kind": "default" }""";
+		string end2 = condition == null ? string.Empty : """, { "name": "End2", "type": "endEvent" }""";
+		return $$"""
+			{
+			  "name": "{{processName}}",
+			  "caption": "Clio BP Meta-path Condition E2E",
+			  "packageName": "Custom",
+			  "elements": [
+			    { "name": "Start1", "type": "startEvent" },
+			    { "name": "ReadContact", "type": "readData", "caption": "Read contact",
+			      "readData": { "source": "Contact", "mode": "first" } },
+			    { "name": "Call", "type": "performTask", "caption": "Call the contact" },
+			    { "name": "End1", "type": "endEvent" }{{end2}}
+			  ],
+			  "flows": [
+			    { "source": "Start1", "target": "ReadContact" },
+			    {{readToCall}},
+			    { "source": "Call", "target": "End1" }
+			  ]
+			}
+			""";
+	}
+
+	private static string SetCondition(string condition) =>
+		JsonSerializer.Serialize(new[] {
+			new Dictionary<string, string> {
+				["op"] = "setFlowCondition", ["source"] = "ReadContact", ["target"] = "Call", ["condition"] = condition
+			}
+		});
+
+	private static string ConditionOnCall(JsonObject graph) =>
+		graph["flows"]!.AsArray().Select(flow => flow!.AsObject())
+			.Single(flow => flow["target"]?.GetValue<string>() == "Call")["condition"]?.GetValue<string>()
+		?? string.Empty;
+
+	#endregion
+
+}

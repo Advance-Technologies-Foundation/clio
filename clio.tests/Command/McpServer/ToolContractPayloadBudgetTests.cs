@@ -156,6 +156,11 @@ public sealed class ToolContractPayloadBudgetTests {
 	// clause - which value a Lookup on Add/Modify/Delete data's object holds, and that only setElement sets or
 	// changes the object - by tightening its own wording, not by raising the ceiling; that leaves it 19 bytes,
 	// about three escaped characters.
+	//
+	// ENG-102114 (2026-10-06) changed what a modify condition accepts - [#Name#] forms are expanded as on
+	// create, and a hand-written meta path must be spelled exactly as describe reports it - and paid for the
+	// setFlowCondition rewrite by dropping the refusal-message detail process-formulas already owns:
+	// modify-business-process 35037, create-business-process 34871.
 	private const int MaxToolContractSerializedBytes = 137 * 256;
 
 	[Test]
