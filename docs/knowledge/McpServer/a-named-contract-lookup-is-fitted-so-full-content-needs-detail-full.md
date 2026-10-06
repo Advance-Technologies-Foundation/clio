@@ -13,10 +13,11 @@ date: 2026-09-26
 **What is true** — since ENG-100154 `get-tool-contract` with `tool-names` and no `detail` returns every
 contract in full only while the serialized reply fits `ToolContractShortForm.InlineReplyBudgetBytes`
 (18 KB); otherwise the LARGEST contracts are replaced, one at a time, by a short form marked
-`detail: "short"` and `full-contract-bytes`. Measured on the default surface: every process-designer
-write contract and four business-rule/page contracts are over the budget alone, so their default read is
-short (`create-business-process` 34 KB -> 3 KB). `detail: "full"` returns everything; `detail: "short"`
-shortens everything.
+`detail: "short"` and `full-contract-bytes`. The contracts over the budget alone are the large
+process-designer and business-rule ones (`create-`, `modify-`, `describe-business-process`,
+`create-entity-business-rules`, `create-page-business-rules`, `update-entity-business-rules`), so their
+default read is short (`create-business-process` 34 KB -> 3 KB); the set moves with every description
+edit. `detail: "full"` returns everything; `detail: "short"` shortens everything.
 
 Which text survives is decided by word patterns, not by structure, and the patterns are a compromise
 MEASURED against the budget:
@@ -30,10 +31,9 @@ MEASURED against the budget:
 - A destructive tool whose description OPENS with its warning (a marker sentence starts inside the first
   500 characters) keeps a lead of up to 1 500 characters, so the unmarked sentences of that warning block
   stay too. Every other tool keeps a 500-character lead.
-- Seven process contracts in one call measured 18 062 of 18 432 bytes on 2026-09-26, and 18 649 - over
-  the budget - once master's process descriptions grew by 2026-10-06. The short-form note was compressed
-  to win it back (the note is paid once per short contract, and a quoted `"full"` costs 12 bytes more
-  under the escaping encoder): 18 387 bytes, 45 bytes of headroom.
+- Seven process contracts in one call fit the budget by a few dozen bytes. The short-form note is paid
+  once per short contract, so lengthening the note, or any process tool's description, can push that
+  reply over; a quoted value in the note costs twelve bytes more under the escaping encoder.
 - A contract whose short form would be no smaller is left complete and unmarked, and a field label such
   as "Optional, default true." is kept in front of the field's first sentence, not instead of it.
 
@@ -51,8 +51,7 @@ never" to 24 KB, an emphatic "do NOT" to 21 KB. Each is the spill the short form
 
 **What breaks if you ignore it** — a test that asserts a large contract's description, examples or field
 text through a default lookup now asserts the SHORT form: it fails if it checks deep text, and worse, it
-PASSES VACUOUSLY if it measures size - `GetToolContracts_ShouldKeepLargestContractWithinBudget_WhenEveryIndexedToolIsNamed`
-stayed green while measuring short forms until it was given `detail=full`. Pass
+PASSES VACUOUSLY if it measures size, because it measures short forms. Pass
 `ToolContractShortForm.FullDetail` whenever the full text is the subject. A new duty worded outside the
 markers is silently dropped from a short form, and the pattern-driven test
 `ShortLookup_Should_KeepEverySafetySentence_OfEveryTool` cannot see it, because it uses the same pattern:
