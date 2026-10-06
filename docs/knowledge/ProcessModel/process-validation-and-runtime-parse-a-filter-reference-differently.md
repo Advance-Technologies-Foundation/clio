@@ -21,7 +21,7 @@ an unknown column on an existing parameter is refused at save.
 **Why it is this way** — the platform's own designer never writes anything but the canonical
 `ProcessSchemaParameter.GetMetaPath()` spelling (a parameter is picked from a list), so the two grammars never
 disagree on designer-made processes. Every disagreement comes from a value written by something else. That is
-why CrtProcessBuilder 1.6.6.71 accepts a filter `expression` only as the exact canonical token of a reference
+why CrtProcessBuilder 1.6.6.72 accepts a filter `expression` only as the exact canonical token of a reference
 that resolves, instead of relying on the platform's save validation.
 
 **What breaks if you ignore it** — "Process validation passed" is not evidence that a filter reference works.

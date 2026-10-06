@@ -614,45 +614,44 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	}
 
 	[Test]
-	[Description("Over the real MCP path (clio#1742, ENG-102110): describe reads a Read data filter's parameter reference back as its BARE meta path; setFilter REFUSES that same path wrapped in [# #] - the formula form, which a filter never evaluates (on a stand it failed the element with FormatException) - and re-applies the bare path describe reported. The refusal is the package's (CrtProcessBuilder 1.6.6.71+): a stand on an older package accepts the wrapped value and this test fails on the refusal assertion, which is how it tells a stale stand apart.")]
+	[Description("Over the real MCP path (clio#1742 / clio#1529, ENG-102110): describe reads a Read data filter's parameter reference back as its BARE meta path - for a process parameter AND for one column of another element's record - and setFilter REFUSES each wrapped in [# #] (the formula form a filter never evaluates: on a stand a wrapped parameter reference failed the element and a wrapped column reference matched no record) while the bare path describe reported re-applies unchanged. The refusal is the package's (CrtProcessBuilder 1.6.6.72+); a stand on an older package accepts the wrapped value and the refusal assertion fails, which is how this test tells a stale stand apart.")]
 	[AllureTag(ToolName)]
 	[AllureName("modify-business-process setFilter refuses a [#...#]-wrapped expression and re-applies the bare one")]
 	public async Task ModifyBusinessProcess_Should_RefuseAWrappedFilterExpressionAndReapplyTheBareOne() {
-		// Arrange — a Read data element filtered by a process parameter; describe reports its bare meta path.
+		// Arrange — ReadContact filtered by a process parameter, ReadSame by a column of ReadContact's record.
 		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
 		string processName = $"UsrClioBpFilterExprE2e{Guid.NewGuid():N}";
-		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
-			["environment-name"] = context.EnvironmentName,
-			["descriptor"] = BuildReadByParameterDescriptor(processName)
-		});
-		string bare = await ReadFilterExpressionAsync(context, processName);
+		try {
+			await CreateProcessAsync(context, processName, BuildReadByParameterDescriptor(processName));
+			string parameterPath = await ReadFilterExpressionAsync(context, processName, "ReadContact");
+			string columnPath = await ReadFilterExpressionAsync(context, processName, "ReadSame");
 
-		// Act — the wrapped form an agent carries over from formulas, then the bare form describe reported.
-		CallToolResult wrapped = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
-			["environment-name"] = context.EnvironmentName,
-			["process-name"] = processName,
-			["operations"] = BuildSetFilterExpressionOperations($"[#{bare}#]")
-		});
-		CallToolResult reapplied = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
-			["environment-name"] = context.EnvironmentName,
-			["process-name"] = processName,
-			["operations"] = BuildSetFilterExpressionOperations(bare)
-		});
+			// Act — the wrapped form an agent carries over from formulas, then the bare form describe reported.
+			string parameterRefusal = await ModifyExpectingRefusalAsync(context, processName,
+				BuildSetFilterExpressionOperations("ReadContact", $"[#{parameterPath}#]"));
+			string columnRefusal = await ModifyExpectingRefusalAsync(context, processName,
+				BuildSetFilterExpressionOperations("ReadSame", $"[#{columnPath}#]"));
+			await ModifyExpectingSuccessAsync(context, processName,
+				BuildSetFilterExpressionOperations("ReadContact", parameterPath));
+			await ModifyExpectingSuccessAsync(context, processName,
+				BuildSetFilterExpressionOperations("ReadSame", columnPath));
 
-		// Assert — on the call TEXT for the refusal (IsError is null on a refusal on this surface), quote-free.
-		bare.Should().StartWith("[IsOwnerSchema:false].[IsSchema:false].[Parameter:",
-			because: "describe reports a filter's parameter reference as the bare meta path, never wrapped");
-		string refusal = SerializeToolText(wrapped);
-		refusal.Should().Contain("BARE meta path",
-			because: "the wrapped form must be refused at build, naming what a filter takes instead");
-		refusal.Should().Contain("wrapper is never",
-			because: "the refusal says WHY - the runtime never evaluates the wrapper in a filter");
-		reapplied.IsError.Should().NotBeTrue(
-			because: "the bare meta path describe reported is the canonical spelling and must re-apply");
-		SerializeToolText(reapplied).Should().Contain("operation(s) applied",
-			because: "a successful setFilter reports the applied operation");
-		(await ReadFilterExpressionAsync(context, processName)).Should().Be(bare,
-			because: "re-applying the read-back stores the identical reference");
+			// Assert — quote-free fragments only: the refusal arrives as a serialized envelope.
+			parameterPath.Should().StartWith("[IsOwnerSchema:false].[IsSchema:false].[Parameter:",
+				because: "describe reports a process-parameter reference as the bare meta path, never wrapped");
+			columnPath.Should().Contain("].[EntityColumn:",
+				because: "describe reports a record-column reference as the bare three-segment meta path");
+			parameterRefusal.Should().Contain("BARE meta path",
+				because: "a wrapped parameter reference must be refused at build, naming what a filter takes");
+			columnRefusal.Should().Contain("wrapper is never",
+				because: "a wrapped column reference must be refused too - stored, it matched no record with no error");
+			(await ReadFilterExpressionAsync(context, processName, "ReadContact")).Should().Be(parameterPath,
+				because: "re-applying the read-back stores the identical process-parameter reference");
+			(await ReadFilterExpressionAsync(context, processName, "ReadSame")).Should().Be(columnPath,
+				because: "re-applying the read-back stores the identical column reference, segment included");
+		} finally {
+			await DeleteProcessAsync(context.EnvironmentName!, processName);
+		}
 	}
 
 	[Test]
@@ -1430,8 +1429,8 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		]
 		""";
 
-	// A Read data element over Contact filtered by a Guid process parameter - the processParameter source writes the
-	// bare meta path that describe then reports as the condition's expression.
+	// Two Read data elements over Contact: ReadContact filtered by a Guid process parameter, ReadSame by one column of
+	// ReadContact's record. The structured sources write the bare meta paths describe then reports as expressions.
 	private static string BuildReadByParameterDescriptor(string processName) =>
 		$$"""
 		{
@@ -1444,20 +1443,25 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		    { "name": "ReadContact", "type": "readData", "readData": { "source": "Contact" },
 		      "filter": { "object": "Contact",
 		        "conditions": [ { "column": "Id", "comparison": "equal", "processParameter": "ContactId" } ] } },
+		    { "name": "ReadSame", "type": "readData", "readData": { "source": "Contact" },
+		      "filter": { "object": "Contact",
+		        "conditions": [ { "column": "Id", "comparison": "equal",
+		          "elementParameter": { "elementName": "ReadContact", "parameter": "ResultEntity", "column": "Id" } } ] } },
 		    { "name": "EndEvent1", "type": "endEvent" }
 		  ],
 		  "flows": [
 		    { "source": "StartEvent1", "target": "ReadContact" },
-		    { "source": "ReadContact", "target": "EndEvent1" }
+		    { "source": "ReadContact", "target": "ReadSame" },
+		    { "source": "ReadSame", "target": "EndEvent1" }
 		  ]
 		}
 		""";
 
 	// Serialized rather than interpolated: the expression is caller data and must be JSON-escaped.
-	private static string BuildSetFilterExpressionOperations(string expression) =>
+	private static string BuildSetFilterExpressionOperations(string elementName, string expression) =>
 		JsonSerializer.Serialize(new object[] {
 			new {
-				op = "setFilter", elementName = "ReadContact",
+				op = "setFilter", elementName,
 				filter = new {
 					@object = "Contact", logicalOperation = "and",
 					conditions = new[] { new { column = "Id", comparison = "equal", expression } }
@@ -1465,11 +1469,12 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			}
 		});
 
-	private static async Task<string> ReadFilterExpressionAsync(ArrangeContext context, string processName) =>
+	private static async Task<string> ReadFilterExpressionAsync(ArrangeContext context, string processName,
+			string elementName) =>
 		ParseDescribeResult(await CallToolAsync(context, DescribeToolName, new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName, ["process-name"] = processName
 			}))
-			.Elements.Single(element => element.Name == "ReadContact")
+			.Elements.Single(element => element.Name == elementName)
 			.Filter.Conditions.Single().Expression;
 
 	// setSignal restricting the existing signalStart to a tracked-change column (Contact.Name, a base column on every
