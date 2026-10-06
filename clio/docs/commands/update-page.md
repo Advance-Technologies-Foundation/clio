@@ -158,7 +158,8 @@ name instead of trying to edit a non-existent local `insert`.
     `modelConfig` declares. A replace write overwrites the own `modelConfigDiff`, so a body sent with
     `"modelConfigDiff": []` drops the template's `PDS` and every field shows "Column removed" (ENG-102161). Carry
     the `dataSources` / `primaryDataSourceName` operations over from `get-page` `raw.body`, or use `mode: "append"`.
-    The check passes when the inherited `modelConfig` cannot be read, as on `validate-page`.
+    The check passes when the inherited `modelConfig` cannot be read. `validate-page` has no environment, so it
+    reports this only for a body that carries its own `modelConfig`.
   - **Rejected — a `crt.IndicatorWidget` that would show no value.** An `insert`, `set` or `merge` authoring a
     metric must carry `config.layout` and `config.text`, and a `config.data.providing` the mobile runtime can
     execute: `schemaName` plus `aggregation.column.expression` with `expressionType` 1, a `functionArgument.columnPath` and an

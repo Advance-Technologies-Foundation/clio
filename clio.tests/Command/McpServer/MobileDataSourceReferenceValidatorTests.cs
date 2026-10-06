@@ -226,4 +226,93 @@ public sealed class MobileDataSourceReferenceValidatorTests {
 		result.ContentOk.Should().BeFalse(because: "sync-pages and update-page must not report success for a page with no data source");
 		result.Errors.Should().Contain(e => e.Contains("'PDS'"), because: "the data-source error must reach the tool response");
 	}
+
+	[Test]
+	[Description("A primaryDataSourceName that only the template sets is not blamed on the body, even when the template does not declare it.")]
+	public void Validate_TemplatePrimaryDataSourceUndeclared_IsNotReported() {
+		// Arrange
+		const string body = """
+			{ "viewConfigDiff": [], "modelConfigDiff": [],
+			  "viewModelConfigDiff": [ { "operation": "merge", "path": ["attributes"], "values": {
+				"Items": { "modelConfig": { "path": "ListDS" } } } } ] }
+			""";
+		const string templateModelConfig = """{ "dataSources": { "ListDS": {} }, "primaryDataSourceName": "PDS" }""";
+
+		// Act
+		SchemaValidationResult result = MobileDataSourceReferenceValidator.Validate(body, () => templateModelConfig);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "the body references only ListDS, which the template declares; the template's own primary is not the body's edit");
+	}
+
+	[Test]
+	[Description("A body with an inline modelConfig is checked against it alone, without reading the inherited base.")]
+	public void Validate_InlineModelConfig_IsUsedWithoutReadingBase() {
+		// Arrange
+		const string declaring = """
+			{ "modelConfig": { "dataSources": { "PDS": {} } },
+			  "viewModelConfigDiff": [ { "operation": "merge", "path": ["attributes"], "values": {
+				"Name": { "modelConfig": { "path": "PDS.Name" } } } } ] }
+			""";
+		string missing = declaring.Replace("\"PDS\": {}", "\"OtherDS\": {}");
+		int baseReads = 0;
+		Func<string> resolver = () => {
+			baseReads++;
+			return """{ "dataSources": { "PDS": {} } }""";
+		};
+
+		// Act
+		SchemaValidationResult declaringResult = MobileDataSourceReferenceValidator.Validate(declaring, resolver);
+		SchemaValidationResult missingResult = MobileDataSourceReferenceValidator.Validate(missing, resolver);
+
+		// Assert
+		declaringResult.IsValid.Should().BeTrue(because: "the inline modelConfig declares PDS");
+		missingResult.Errors.Should().ContainSingle(because: "the inline modelConfig is the body's whole base and lacks PDS")
+			.Which.Should().Contain("'PDS'", because: "the error must name the missing data source");
+		baseReads.Should().Be(0, because: "a body that inlines its base never needs the inherited one");
+	}
+
+	[Test]
+	[Description("The error lists at most three referrers and counts the rest.")]
+	public void Validate_ManyReferrers_AreCapped() {
+		// Arrange
+		const string body = """
+			{ "viewConfigDiff": [], "modelConfigDiff": [],
+			  "viewModelConfigDiff": [ { "operation": "merge", "path": ["attributes"], "values": {
+				"A": { "modelConfig": { "path": "PDS.A" } }, "B": { "modelConfig": { "path": "PDS.B" } },
+				"C": { "modelConfig": { "path": "PDS.C" } }, "D": { "modelConfig": { "path": "PDS.D" } },
+				"E": { "modelConfig": { "path": "PDS.E" } } } } ] }
+			""";
+
+		// Act
+		SchemaValidationResult result = MobileDataSourceReferenceValidator.Validate(body, () => "{}");
+
+		// Assert
+		result.Errors.Should().ContainSingle(because: "five references to one missing data source collapse into one error")
+			.Which.Should().Contain("and 2 more", because: "only three referrers are listed by name")
+			.And.NotContain("attribute 'D'", because: "the fourth referrer is counted, not listed");
+	}
+
+	[Test]
+	[Description("The apply oracle and the data-source check share one base read in the validation pipeline.")]
+	public async Task RunAsync_BothChecksNeedBase_ReadsItOnce() {
+		// Arrange
+		int baseReads = 0;
+		Func<(string ViewModelConfigJson, string ModelConfigJson)> resolver = () => {
+			baseReads++;
+			return ("""{ "attributes": {} }""", "{}");
+		};
+
+		// Act
+		PageSyncValidationResult result = await MobilePageValidation.RunAsync(
+			BodyWithoutDataSource,
+			Substitute.For<IMobileComponentInfoCatalog>(),
+			Substitute.For<IComponentInfoCatalog>(),
+			resolveTemplateBase: resolver);
+
+		// Assert
+		result.ContentOk.Should().BeFalse(because: "the base has no PDS, so the data-source check still rejects the body");
+		baseReads.Should().Be(1, because: "both checks need the base and must share a single get-page read");
+	}
 }

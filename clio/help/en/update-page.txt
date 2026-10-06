@@ -147,9 +147,11 @@ DESCRIPTION
       an attribute's modelConfig.path, a dataSourceName, or the
       primaryDataSourceName. A replace write overwrites the own body, so
       "modelConfigDiff": [] drops the template's PDS and every field shows
-      "Column removed" (ENG-102161). Carry the dataSources operations over
-      from get-page raw.body, or use --mode append. Passes when the
-      inherited modelConfig cannot be read (validate-page).
+      "Column removed" (ENG-102161). Carry the dataSources and
+      primaryDataSourceName operations over from get-page raw.body, or
+      use --mode append. Passes when the inherited modelConfig cannot be
+      read; validate-page reports it only for a body that carries its own
+      modelConfig.
     - Not enforced: the same type-placement and merge-slot mechanisms
       break web pages too
       and is not checked there; sync-pages validate=false skips these

@@ -72,7 +72,7 @@ public sealed class PageSyncTool(
 		             "When verify=true, the read-back body is written to .clio-pages/{schema-name}/body.js, anchored at the workspace root (or the `output-directory` argument); see get-page for the anchoring rules. " +
 	             "Client-side validation, when enabled, also enforces VendorPrefix.Name format " +
 	             "(SCHEMA_CONVERTERS and SCHEMA_VALIDATORS keys; SCHEMA_HANDLERS entry `request` values). " +
-	             "On MOBILE bodies it additionally rejects a viewConfigDiff insert/set whose component `type` sits on the operation object instead of inside `values` (the differ discards it and the element never renders), and a `merge` whose `values` authors child elements on `Scaffold`'s `actions`, `leading` or `items` (every shipped form template populates those, so the differ strips the property and nothing is created; use one `insert` per child into a page container — clio validates against an empty base, so a bare Scaffold whose slots are empty is refused too), warns on the same authoring in any other slot, and warns when a `crt.Button` is inserted into `Scaffold`/`actions` (it saves but does not appear on the mobile designer canvas — use a page container's `items` with a `layoutConfig`), and a binding (`modelConfig.path`, `dataSourceName`, `primaryDataSourceName`) to a data source that neither the body's `modelConfigDiff` nor the page's inherited modelConfig declares — sync-pages replaces the own body, so carry the template's `dataSources` over from get-page `raw.body`; see get-guidance `mobile-page-modification`. " +
+	             "On MOBILE bodies it additionally rejects a viewConfigDiff insert/set whose component `type` sits on the operation object instead of inside `values` (the differ discards it and the element never renders), and a `merge` whose `values` authors child elements on `Scaffold`'s `actions`, `leading` or `items` (every shipped form template populates those, so the differ strips the property and nothing is created; use one `insert` per child into a page container — clio validates against an empty base, so a bare Scaffold whose slots are empty is refused too), warns on the same authoring in any other slot, and warns when a `crt.Button` is inserted into `Scaffold`/`actions` (it saves but does not appear on the mobile designer canvas — use a page container's `items` with a `layoutConfig`). It also rejects a binding to a data source neither the body's `modelConfigDiff` nor the inherited modelConfig declares — sync-pages replaces the own body, so carry the `dataSources` and `primaryDataSourceName` operations over from get-page `raw.body`; see get-guidance `mobile-page-modification`. " +
 	             "Before editing page bodies or resource payloads, call get-guidance with name `page-modification` and use its pre-edit checklist to select specialized page-authoring guides. " +
 	             "For conditional visibility, editability, required state based on field values or conditional set and clear value. Also filtering of lookups, based on condition or valur from other field (e.g. \"when Status=Closed, hide Description\"), use business rules instead of writing handlers or validators in page body \u2014 call get-guidance with name `business-rules` to learn more. " +
 	             "Section authoring rules for the body payload: " +
@@ -271,7 +271,8 @@ public sealed class PageSyncTool(
 		string tenantKey = commandResolver.GetTenantKey(new PageUpdateOptions { Environment = args.EnvironmentName });
 		// Pre-resolve the mobile apply-oracle bases OUTSIDE the per-tenant lock so the locked save loop performs no
 		// network I/O. A mobile page whose path diff needs an external base (MobileDiffApplyValidator.NeedsResolvedBase)
-		// or that binds to a data source it does not declare (MobileDataSourceReferenceValidator.NeedsResolvedBase) would otherwise trigger a synchronous get-page read INSIDE the lock — serializing N live round trips other
+		// or that binds to a data source it does not declare (MobileDataSourceReferenceValidator.NeedsResolvedBase)
+		// would otherwise trigger a synchronous get-page read INSIDE the lock — serializing N live round trips other
 		// same-tenant sync-pages/update-page calls block on, against this tool's lock-time goal. Resolving them here
 		// keeps the critical section network-free. Best-effort: a failed resolution is omitted and validation falls
 		// back to the oracle's seeded base exactly as before.
@@ -498,10 +499,11 @@ public sealed class PageSyncTool(
 		};
 	}
 
-	// Resolves each pending mobile page's apply-oracle base BEFORE the per-tenant lock, so the locked save loop
-	// does no network I/O. Only a mobile page whose path diff needs an external base is read (mirrors the oracle's
-	// lazy guard) — a viewConfigDiff-only body or one that inlines its own base is skipped. Best-effort: a failed
-	// resolution (null base) is omitted so validation falls back to the oracle's seeded base, exactly as before.
+	// Resolves each pending mobile page's validation base BEFORE the per-tenant lock, so the locked save loop
+	// does no network I/O. A mobile page is read only when the apply oracle (a path diff without an inline base) or
+	// the data-source check (a binding to a data source the body does not declare) needs the base; other bodies are
+	// skipped. Best-effort: a failed resolution is omitted and the page is marked degraded, so validation falls back
+	// to the oracle's seeded base and the data-source check fails open, both with a per-page warning.
 	// <para>
 	// The reads run SEQUENTIALLY here (one get-page per qualifying mobile page). This is an accepted trade-off,
 	// not an oversight: the count is bounded by the batch's pending mobile pages that actually need a base
@@ -518,9 +520,11 @@ public sealed class PageSyncTool(
 		var degraded = new HashSet<int>();
 		foreach (int index in pendingIndices) {
 			PageSyncPageInput page = pages[index];
-			if (PageSchemaTypeExtensions.FromBody(page.Body) != PageSchemaType.Mobile
-				|| !(MobileDiffApplyValidator.NeedsResolvedBase(page.Body)
-					|| MobileDataSourceReferenceValidator.NeedsResolvedBase(page.Body))) {
+			if (PageSchemaTypeExtensions.FromBody(page.Body) != PageSchemaType.Mobile) {
+				continue;
+			}
+			bool dataSourceCheckNeedsBase = MobileDataSourceReferenceValidator.NeedsResolvedBase(page.Body);
+			if (!dataSourceCheckNeedsBase && !MobileDiffApplyValidator.NeedsResolvedBase(page.Body)) {
 				continue;
 			}
 			// Replace semantics — sync-pages writes the body verbatim, so the base excludes the page's own body.
@@ -531,11 +535,12 @@ public sealed class PageSyncTool(
 					Uri: null, Login: null, Password: null, Mode: "replace", Logger: logger));
 			if (vmc is not null || mc is not null) {
 				bases[index] = (vmc, mc);
-			} else {
-				// This page NEEDS an external base but resolution failed (read/auth error). Record it so the page's
-				// per-page result carries a warning: without this the body would be validated against the permissive
-				// seeded stub and a not-a-container error could pass unnoticed — a degraded validation must not read
-				// as a genuine pass. (The log line records WHY; this drives the caller-visible signal.)
+			}
+			if ((vmc is null && mc is null) || (dataSourceCheckNeedsBase && mc is null)) {
+				// This page NEEDS an external base but resolution failed (read/auth error), or returned no modelConfig
+				// for the data-source check. Record it so the page's result carries a warning: a not-a-container error or
+				// a dropped data source could otherwise pass unnoticed, and a degraded validation must not read as a
+				// genuine pass. (The log line records WHY; this drives the caller-visible signal.)
 				degraded.Add(index);
 			}
 		}
@@ -773,7 +778,8 @@ public sealed class PageSyncTool(
 			// stub — surface that in the per-page result so a degraded validation is not read as a clean pass.
 			validationResult = AppendCommandWarnings(validationResult, [
 				$"Mobile validation base for '{page.SchemaName}' could not be resolved; the body was validated against "
-					+ "a permissive seeded base, so a template-owned-array error may not have been caught. Re-run when "
+					+ "a permissive seeded base, so a template-owned-array error or a binding to an undeclared data source "
+				+ "(for example PDS dropped by a replace write) may not have been caught. Re-run when "
 					+ "the environment/credentials are available to validate against the real base."
 			]);
 		}

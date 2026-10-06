@@ -47,14 +47,14 @@ internal static class MobilePageValidation {
 		// Gated on a structurally-sound body so a malformed diff is not double-reported (the structural
 		// validators already flag it).
 		if (errors.Count == 0) {
-			// The apply-oracle needs the page's merged config ONLY to resolve a path-diff insert that appends to
-			// an array the mobile template owns. Pass it a lazy resolver (not a pre-fetched base): the oracle
-			// invokes it at most once and ONLY when a non-empty viewModelConfigDiff / modelConfigDiff actually
-			// carries no own base object -- a viewConfigDiff-only body, or one with an inline base, spends no
-			// get-page read. A caller may supply resolveTemplateBase directly (sync-pages pre-resolves the base
-			// OFF its per-tenant lock and hands it in as a no-network delegate); otherwise it is derived from the
-			// context. A null context (validate-page, which has no schema/environment) resolves to no base and the
-			// oracle seeds its own.
+			// The page's merged config is needed by two checks: the apply oracle, to resolve a path-diff insert into
+			// an array the mobile template owns, and the data-source check, to see data sources the template declares.
+			// Both share one lazy resolver, so the base is read at most once, and only when one of them needs it: a
+			// non-empty path diff without an own base object, or a binding to a data source the body does not
+			// declare. A caller may supply resolveTemplateBase directly (sync-pages pre-resolves the base OFF its
+			// per-tenant lock and hands it in as a no-network delegate); otherwise it is derived from the context. A
+			// null context (validate-page, which has no schema/environment) resolves to no base: the oracle seeds its
+			// own and the data-source check passes.
 			Func<(string ViewModelConfigJson, string ModelConfigJson)>? resolveBase =
 				resolveTemplateBase
 				?? (templateBaseContext is null
@@ -152,7 +152,7 @@ internal static class MobilePageMergedConfigResolver {
 			// when a later validation result looks off.
 			context.Logger?.WriteWarning(
 				$"Mobile validation base for '{context.SchemaName}' could not be resolved ({response?.Error ?? "no bundle returned"}); " +
-				"falling back to the insert-path-seeded base.");
+				"falling back to the insert-path-seeded base and skipping the data-source check.");
 		} catch (OperationCanceledException) {
 			// A cancelled validation must propagate, not silently degrade to the seeded base. NOTE: the context
 			// carries no CancellationToken and PageGetCommand.TryGetPage takes none, so the synchronous get-page
@@ -166,9 +166,9 @@ internal static class MobilePageMergedConfigResolver {
 			// permissions problem is not silently read as "template unavailable" during triage.
 			context.Logger?.WriteWarning(LooksLikeAccessDenied(ex)
 				? $"Mobile validation base for '{context.SchemaName}' could not be resolved: ACCESS DENIED ({ex.Message}) — "
-					+ "check the environment credentials/permissions. Falling back to the insert-path-seeded base."
+					+ "check the environment credentials/permissions. Falling back to the insert-path-seeded base and skipping the data-source check."
 				: $"Mobile validation base for '{context.SchemaName}' failed to resolve: {ex.Message}; "
-					+ "falling back to the insert-path-seeded base.");
+					+ "falling back to the insert-path-seeded base and skipping the data-source check.");
 		}
 		return (null, null);
 	}
@@ -190,9 +190,9 @@ internal static class MobilePageMergedConfigResolver {
 
 /// <summary>
 /// The schema + environment identity a validation caller (update-page / sync-pages) hands to
-/// <see cref="MobilePageValidation"/> so the apply-oracle can lazily resolve the mobile-diff base only when it
-/// is actually reached (a structurally-invalid body, or one with no path diff, is validated without any
-/// get-page read).
+/// <see cref="MobilePageValidation"/> so the base is resolved lazily, only when the apply oracle or the data-source
+/// check needs it (a structurally-invalid body, or one with no path diff and no undeclared data-source binding, is
+/// validated without any get-page read).
 /// </summary>
 internal sealed record MobilePageMergedConfigContext(
 	IToolCommandResolver CommandResolver,

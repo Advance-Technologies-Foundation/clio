@@ -51,7 +51,6 @@ internal static class MobileDataSourceReferenceValidator {
 				return result;
 			}
 			AddDeclaredDataSources(templateModelConfig[DataSources], declared);
-			AddPrimaryDataSourceReference(templateModelConfig, references);
 		}
 		foreach ((string dataSource, List<string> referrers) in references.Where(r => !declared.Contains(r.Key))) {
 			result.Errors.Add(FormatError(dataSource, referrers));
