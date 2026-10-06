@@ -437,7 +437,7 @@ public sealed class RequestInfoTool(
 /// <summary>
 /// Arguments for the <c>get-request-info</c> MCP tool.
 /// </summary>
-public sealed record RequestInfoArgs(
+public record RequestInfoArgs(
 	[property: JsonPropertyName("request-type")]
 	[property: Description("Freedom UI request type, for example 'crt.ClosePageRequest'. Omit or use 'list' to return the catalog.")]
 	string? RequestType = null,

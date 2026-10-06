@@ -1,4 +1,4 @@
-{
+﻿{
   "version": "latest",
   "defaultMobileTemplate": "BaseMobilePageTemplate",
   "mobileFormPageTemplates": ["BaseMobilePageTemplate", "MobilePageWithTabsFreedomTemplate"],
@@ -48,18 +48,18 @@
       "note": "Tabbed record page (Tabs + Feed + Attachments). Preferred target for web tabbed record pages.",
       "declaredElements": [
         {
-          "name": "AdditionalInfoTab",
+          "name": "MobileAdditionalInfoTab",
           "type": "crt.TabContainer",
           "parentName": "Tabs",
           "propertyName": "items",
           "index": 1,
-          "captionResource": { "key": "AdditionalInfoTab_caption", "value": "General information" }
+          "captionResource": { "key": "MobileAdditionalInfoTab_caption", "value": "General information" }
         }
       ],
       "containers": [
         { "web": "Tabs", "mobile": "Tabs" },
-        { "web": "GeneralInfoTab", "mobile": "AdditionalInfoTab" },
-        { "web": "GeneralInfoTabContainer", "mobile": "AdditionalInfoTab" },
+        { "web": "GeneralInfoTab", "mobile": "MobileAdditionalInfoTab" },
+        { "web": "GeneralInfoTabContainer", "mobile": "MobileAdditionalInfoTab" },
         { "web": "FeedTabContainer", "mobile": "FeedContainer" },
         { "web": "AttachmentsTabContainer", "mobile": "AttachmentsContainer" },
         { "web": "CardToggleTabPanel", "mobile": "Tabs" },
@@ -291,10 +291,49 @@
         {
           "type": "crt.SearchFilter",
           "parentType": "crt.ExpansionPanel",
-          "propertiesContainerName": "tools",
-          "note": "ENG-95081: the panel's tools strip is a compact icon-only header row on mobile, which a search field does not fit. Positional only - crt.SearchFilter elsewhere on the page converts normally."
+          "propertiesContainerName": "tools"
+        },
+        {
+          "type": "crt.QuickFilter",
+          "parentType": "crt.ExpansionPanel",
+          "propertiesContainerName": "tools"
+        },
+        {
+          "exceptTypes": ["crt.Button", "crt.MenuItem", "crt.FlexContainer", "crt.GridContainer"],
+          "childSlots": ["items", "tools", "menuItems"],
+          "parentType": "crt.ExpansionPanel",
+          "propertiesContainerName": "tools"
         }
       ]
+    }
+  ],
+  "componentRemovals": [
+    {
+      "type": "crt.Button",
+      "reason": "drop-unsupported-request",
+      "filters": {
+        "filterType": "Group",
+        "logicalOperation": "and",
+        "items": [
+          { "filterType": "IsEmpty", "leftExpression": "clicked" },
+          { "filterType": "IsEmpty", "leftExpression": "menuItems" }
+        ]
+      }
+    },
+    {
+      "type": "crt.MenuItem",
+      "reason": "drop-unsupported-request",
+      "filters": { "filterType": "IsEmpty", "leftExpression": "clicked" }
+    }
+  ],
+  "actionComponents": [
+    {
+      "type": "crt.Button",
+      "actionPropertyNames": ["clicked"]
+    },
+    {
+      "type": "crt.MenuItem",
+      "actionPropertyNames": ["clicked"]
     }
   ],
   "nonConvertingScopeContainers": ["MainHeader"],

@@ -1,8 +1,9 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
@@ -13,7 +14,7 @@ using ModelContextProtocol.Server;
 namespace Clio.Command.McpServer.Tools;
 
 /// <summary>
-/// MCP tool surface for full Creatio compilation and package-only compilation.
+/// MCP tool surface for Creatio compilation: full, one package, or the package a business process is in.
 /// </summary>
 [McpServerToolType]
 public sealed class CompileCreatioTool(
@@ -26,6 +27,12 @@ public sealed class CompileCreatioTool(
 	/// </summary>
 	internal const string CompileCreatioToolName = "compile-creatio";
 
+	/// <summary>The wire name of the one-package scope argument.</summary>
+	internal const string PackageNameArgument = "package-name";
+
+	/// <summary>The wire name of the business-process scope argument.</summary>
+	internal const string ProcessNameArgument = "process-name";
+
 	/// <summary>
 	/// Test seam overriding the MCP response deadline passed to
 	/// <see cref="McpProgressHeartbeat.RunWithProgressAndDeadlineAsync{TResult}(global::ModelContextProtocol.Server.McpServer, global::ModelContextProtocol.Protocol.ProgressToken?, string, System.Func{TResult}, System.TimeSpan?, CancellationToken, System.TimeSpan?)"/>.
@@ -35,8 +42,20 @@ public sealed class CompileCreatioTool(
 	/// </summary>
 	internal TimeSpan? ResponseDeadlineOverride { get; set; }
 
+	// OrdinalIgnoreCase on purpose: the binder matches names case-insensitively, so 'ProcessName' also misses the
+	// hyphen and lands in the bag. Copying EnvironmentNameAliases under Ordinal would drop that spelling's hint.
+	private static readonly Dictionary<string, string> LegacyAliases =
+		new(McpToolArgumentSupport.EnvironmentNameAliases, StringComparer.OrdinalIgnoreCase) {
+			["packageName"] = PackageNameArgument,
+			["package_name"] = PackageNameArgument,
+			["package"] = PackageNameArgument,
+			["processName"] = ProcessNameArgument,
+			["process_name"] = ProcessNameArgument,
+			["process"] = ProcessNameArgument
+		};
+
 	/// <summary>
-	/// Compiles Creatio fully or rebuilds a single package for a registered environment.
+	/// Compiles Creatio fully, one package, or the package a business process is in, for a registered environment.
 	/// </summary>
 	[McpServerTool(Name = CompileCreatioToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[McpToolExecution(
@@ -47,21 +66,25 @@ public sealed class CompileCreatioTool(
 		RequiresClientRequests = McpToolClientRequests.Progress,
 		SharedFileResource = McpToolSharedFileResource.ConfigurationBuild,
 		StartsOperation = true)]
-	[Description("BEFORE CALLING: compilation is a HEAVY operation that forces a runtime reload affecting EVERY user connected to the environment. Every time (not once per session), first warn the user of that impact and ask whether to compile now or postpone; call this tool ONLY after the user confirms. A repeated or explicit request to compile is NOT itself that confirmation, and a prior in-session warning or answer is NOT standing consent — re-ask before every call, including an identical repeat. If the user postpones, do NOT call this tool — tell them it can be run later. Long-running, may take several minutes; recompiles a registered Creatio environment and forces a runtime reload. Omit `package-name` to run a full compilation (`clio cc -e ENV_NAME --all`). Provide `package-name` to compile only one package. Call only when: (1) C# schemas were added or modified, (2) `set-fsm-mode` has just been toggled, or (3) the runtime reports a missing-in-runtime/schema-not-found error. Do NOT call after `create-app`, `update-page`, `sync-pages`, `update-entity-schema`, `create-page`, or any Freedom UI page-body edit — those changes are AMD modules applied at runtime and DDL is handled by `update-entity-schema`. Do NOT decide to compile a business process from a raw status column: never read the raw process record (odata/esq — e.g. `VwSysProcess`) to judge readiness — use `describe-business-process`. A freshly-saved process shows `NeedInstall`, `NeedUpdateSourceCode` and `NeedUpdateStructure` all = true, and NONE of them is a compile trigger (`NeedInstall` is a DB-install marker); inferring `compile` from a column NAME is the trap here. Within a process, compile ONLY for C# YOU authored — a Script Task, or a user task carrying an after-activity-save script (case (1) above); everything else (add/read/modify data, formulas, connections, signals, using an already-compiled user task) runs with no compile. A CUSTOM user-task SCHEMA is a separate obligation: creating or changing one needs a compile. Long-running: streams notifications/progress while compiling. If the MCP response deadline is reached first, returns exit-code 0 with an in-progress note carrying an operation-id — the compile is still running server-side; do NOT retry, poll compile-status instead.")]
+	[Description("BEFORE CALLING: compilation is a HEAVY operation that forces a runtime reload affecting EVERY user connected to the environment. Every time (not once per session), first warn the user of that impact and ask whether to compile now or postpone; call this tool ONLY after the user confirms. A repeated or explicit request to compile is NOT itself that confirmation, and a prior in-session warning or answer is NOT standing consent — re-ask before every call, including an identical repeat. If the user postpones, do NOT call this tool — tell them it can be run later. Long-running, may take several minutes; recompiles a registered Creatio environment and forces a runtime reload. Omit both `package-name` and `process-name` to run a full compilation (`clio cc -e ENV_NAME --all`). Provide `package-name` to compile only one package; that call waits for the finished build and fails (exit-code 1) with the CSxxxx compiler diagnostics when the C# does not compile; the new code is then not loaded. Provide `process-name` instead to compile the package a business process is in through CrtProcessBuilder 1.6.6.33+: that is the compile a Script Task or process methods saved by create/modify-business-process need, because on Creatio 10.x a `package-name` compile does not pick such a save up and a full one takes about 20 minutes; it answers with the compiler errors, the process's own first, and compiles nothing for an interpreted process without C#. Call only when: (1) C# schemas were added or modified - a business-process save or activation that warns the process cannot run \"until the configuration is compiled\" (C# it carries, or a version the runtime does not interpret) included, and then with `process-name` - (2) `set-fsm-mode` has just been toggled, (3) the runtime reports a missing-in-runtime/schema-not-found error, or (4) a culture was just activated in the Languages section (full compile: omit `package-name` and `process-name`). Do NOT call after `create-app`, `update-page`, `sync-pages`, `update-entity-schema`, `create-page`, or any Freedom UI page-body edit — those changes are AMD modules applied at runtime and DDL is handled by `update-entity-schema`. Do NOT decide to compile a business process from a raw status column: never read the raw process record (odata/esq — e.g. `VwSysProcess`) to judge readiness — use `describe-business-process`. A freshly-saved process shows `NeedInstall`, `NeedUpdateSourceCode` and `NeedUpdateStructure` all = true, and NONE of them is a compile trigger (`NeedInstall` is a DB-install marker); inferring `compile` from a column NAME is the trap here. Within a process, compile ONLY when that warning came back - it does for C# YOU authored: a Script Task, process methods, a user task carrying an after-activity-save script (case (1) above) - and it speaks for its own call only; everything else (add/read/modify data, formulas, connections, signals, using an already-compiled user task) runs with no compile. A CUSTOM user-task SCHEMA is a separate obligation: creating or changing one needs a compile. Long-running: streams notifications/progress while compiling. If the MCP response deadline is reached first, returns exit-code 0 with an in-progress note carrying an operation-id — the compile is still running server-side; do NOT retry, poll compile-status instead.")]
 	public async Task<CommandExecutionResult> CompileCreatio(
 		[Description("Compilation parameters")] [Required] CompileCreatioArgs args,
 		global::ModelContextProtocol.Server.McpServer server = null,
 		RequestContext<CallToolRequestParams> requestContext = null,
 		CancellationToken cancellationToken = default)
 	{
-		if (!string.IsNullOrWhiteSpace(args.PackageName) && args.PackageName.Contains(',', StringComparison.Ordinal))
+		if (args is null)
 		{
-			return new CommandExecutionResult(1, [
-				new ErrorMessage("`package-name` must contain exactly one package name. Comma-separated package lists are not supported by `compile-creatio`.")
-			]);
+			return new CommandExecutionResult(1, [new ErrorMessage("compile-creatio needs its args object.")]);
 		}
 
-		string packageName = string.IsNullOrWhiteSpace(args.PackageName) ? null : args.PackageName.Trim();
+		CommandExecutionResult? refusal = RefuseScope(args, ExplicitNullScope(requestContext?.Params?.Arguments),
+			out string? packageName, out string? processName);
+		if (refusal is not null)
+		{
+			return refusal;
+		}
+
 		string tenantKey = commandResolver.GetTenantKey(new EnvironmentOptions { Environment = args.EnvironmentName });
 
 		// Compile<->compile mutual exclusion via a NARROW reservation, not the broad per-tenant execution
@@ -85,7 +108,7 @@ public sealed class CompileCreatioTool(
 			]);
 		}
 
-		CompileOperationRecord operation = registry.Begin(tenantKey, args.EnvironmentName, packageName);
+		CompileOperationRecord operation = registry.Begin(tenantKey, args.EnvironmentName, packageName, processName);
 
 		try
 		{
@@ -100,9 +123,7 @@ public sealed class CompileCreatioTool(
 					// stuck Running forever for the single most common failure (a bad environment name).
 					CommandExecutionResult result;
 					try {
-						result = packageName is null
-							? ExecuteFullCompile(args.EnvironmentName)
-							: ExecutePackageCompile(args.EnvironmentName, packageName);
+						result = ExecuteScopedCompile(args.EnvironmentName, packageName, processName);
 					} catch (EnvironmentResolutionException exception) {
 						result = CommandExecutionResult.FromResolverError(exception);
 					} catch (Exception exception) {
@@ -125,7 +146,7 @@ public sealed class CompileCreatioTool(
 					// worker, once this tool routes to one — so the parent cannot read it to decide when to reap.
 					// The private signal is the one thing that crosses the boundary. It is emitted by
 					// WorkerOperationCompletionSignal's choke point, which the call-tool filter runs around EVERY
-					// exit of this call — including the two refusals above, which used to return without it and
+					// exit of this call — including the refusals above, which used to return without it and
 					// strand the worker for its whole hard lifetime. The heartbeat helper below leases this work,
 					// so a compile still running past the response deadline is not mistaken for one that ended.
 					return result;
@@ -140,6 +161,121 @@ public sealed class CompileCreatioTool(
 	}
 
 	/// <summary>
+	/// Refuses a scope the tool must not guess at - an unbound or legacy key, a package list, a blank
+	/// <c>package-name</c> or <c>process-name</c>, or both at once - and normalizes the two scope arguments.
+	/// Each of those, read as "omitted", would turn a scoped request into a FULL compile.
+	/// </summary>
+	/// <param name="args">The call's arguments.</param>
+	/// <param name="explicitNullScope">The scope argument the call sent as an explicit JSON <c>null</c>, if any.</param>
+	/// <param name="packageName">The trimmed package name, or <c>null</c> when omitted.</param>
+	/// <param name="processName">The trimmed process code, or <c>null</c> when omitted.</param>
+	/// <returns>The refusal, or <c>null</c> when the call may proceed.</returns>
+	private static CommandExecutionResult? RefuseScope(CompileCreatioArgs args, string? explicitNullScope,
+		out string? packageName, out string? processName)
+	{
+		// Refused, not dropped: the scope arguments are all optional, so a dropped 'process-name' or 'package-name'
+		// leaves a call that means "compile everything" - a full compile reloading the runtime for every user.
+		// Checked before the reservation and registry.Begin, so a refusal starts and tracks nothing.
+		packageName = null;
+		processName = null;
+		string? unboundError = McpToolArgumentSupport.BuildLegacyAliasError(
+			args.ExtensionData, LegacyAliases, ".",
+			"Valid: environment-name, package-name, process-name; omit both scope arguments for a full compile.");
+		if (unboundError is not null)
+		{
+			return new CommandExecutionResult(1, [
+				new ErrorMessage($"{unboundError} Nothing was compiled.")
+			]);
+		}
+
+		if (!string.IsNullOrWhiteSpace(args.PackageName) && args.PackageName.Contains(',', StringComparison.Ordinal))
+		{
+			return new CommandExecutionResult(1, [
+				new ErrorMessage("`package-name` must contain exactly one package name. Comma-separated package lists are not supported by `compile-creatio`.")
+			]);
+		}
+
+		if (args.PackageName is not null && string.IsNullOrWhiteSpace(args.PackageName))
+		{
+			// The same rule as a blank process-name: an empty scoped request must not become a FULL compile.
+			return new CommandExecutionResult(1, [
+				new ErrorMessage("`package-name` is empty. Pass the package name, or omit the argument for a full compilation.")
+			]);
+		}
+
+		packageName = string.IsNullOrWhiteSpace(args.PackageName) ? null : args.PackageName.Trim();
+		if (args.ProcessName is not null && string.IsNullOrWhiteSpace(args.ProcessName))
+		{
+			// A blank process-name must not fall back to a FULL compile: the user consented to a scoped one.
+			return new CommandExecutionResult(1, [
+				new ErrorMessage("`process-name` is empty. Pass the business process code, or omit the argument for a full compilation.")
+			]);
+		}
+
+		processName = string.IsNullOrWhiteSpace(args.ProcessName) ? null : args.ProcessName.Trim();
+		if (explicitNullScope is not null && packageName is null && processName is null)
+		{
+			// Sent, but null, and no other scope left: the same refusal as a blank value, because a null binds to the
+			// C# null an OMITTED argument binds to, and omitted means a FULL compile the user never agreed to. A null
+			// beside a real scope is what clients that serialize every optional field send, and it is harmless.
+			return new CommandExecutionResult(1, [
+				new ErrorMessage($"`{explicitNullScope}` is null. Pass a value, or omit both scope arguments for a full compilation. Nothing was compiled.")
+			]);
+		}
+
+		if (packageName is not null && processName is not null)
+		{
+			return new CommandExecutionResult(1, [
+				new ErrorMessage("Provide only one of `package-name` or `process-name`: `process-name` already compiles the package the process is in.")
+			]);
+		}
+
+		return null;
+	}
+
+	/// <summary>
+	/// The scope argument - <c>package-name</c> or <c>process-name</c> - that the raw call arguments carry as an
+	/// explicit JSON <c>null</c>.
+	/// </summary>
+	/// <remarks>
+	/// Read from the raw arguments because the binder cannot tell: a present <c>null</c> and an absent key both bind
+	/// the record's <c>string?</c> parameter to <c>null</c>, and neither reaches <see cref="CompileCreatioArgs.ExtensionData"/>.
+	/// Keeping the parameters <c>string?</c> keeps the published input schema a string; the binder matches names
+	/// case-insensitively, so this does too.
+	/// </remarks>
+	/// <param name="arguments">The call's raw arguments; <c>null</c> for a call made in process.</param>
+	/// <returns>The argument's name as sent, or <c>null</c> when neither scope argument is an explicit null.</returns>
+	internal static string? ExplicitNullScope(IDictionary<string, JsonElement>? arguments)
+	{
+		if (arguments is null || !arguments.TryGetValue("args", out JsonElement argsElement)
+			|| argsElement.ValueKind != JsonValueKind.Object)
+		{
+			return null;
+		}
+		foreach (JsonProperty property in argsElement.EnumerateObject())
+		{
+			if (property.Value.ValueKind == JsonValueKind.Null
+				&& (string.Equals(property.Name, ProcessNameArgument, StringComparison.OrdinalIgnoreCase)
+					|| string.Equals(property.Name, PackageNameArgument, StringComparison.OrdinalIgnoreCase)))
+			{
+				return property.Name;
+			}
+		}
+		return null;
+	}
+
+	private CommandExecutionResult ExecuteScopedCompile(string environmentName, string? packageName, string? processName)
+	{
+		if (processName is not null)
+		{
+			return ExecuteProcessCompile(environmentName, processName);
+		}
+		return packageName is null
+			? ExecuteFullCompile(environmentName)
+			: ExecutePackageCompile(environmentName, packageName);
+	}
+
+	/// <summary>
 	/// Builds the in-progress notice returned when compilation exceeds the MCP response deadline.
 	/// Extracted as a pure function (rather than inlined in the catch block) so its wording is directly
 	/// unit-testable without racing the real response-deadline timer.
@@ -150,7 +286,8 @@ public sealed class CompileCreatioTool(
 		+ "same environment-name (or this operation-id) for its current state — do NOT retry compile-creatio: "
 		+ "the Creatio core serializes compilation, so a second concurrent compile for the same environment is "
 		+ "rejected, not queued. Do NOT issue other environment-bound calls (e.g. restart-by-environment-name) "
-		+ "for this environment until compile-status reports completion. Typical full compilation is 3-15 minutes.";
+		+ "for this environment until compile-status reports completion. A full compilation typically takes 3-20 "
+		+ "minutes; a process-name compile a few.";
 
 	/// <summary>
 	/// Message returned when a same-tenant compile is requested while one is already in flight. The compile
@@ -178,16 +315,40 @@ public sealed class CompileCreatioTool(
 
 	private CommandExecutionResult ExecutePackageCompile(string environmentName, string packageName)
 	{
+		// Wait = true: without it the command returns when the environment's compilation activity first
+		// pauses, which can be before a later project - and its compile error - has been built (issue #1632).
+		// An agent treats this tool's result as proof the C# compiled, so it gets the finished build's verdict.
 		CompilePackageOptions options = new()
 		{
 			Environment = environmentName,
-			PackageName = packageName
+			PackageName = packageName,
+			Wait = true
 		};
 		CompilePackageCommand command = commandResolver.Resolve<CompilePackageCommand>(options);
 		return Execute(command, options);
 	}
 
-	private CommandExecutionResult Execute<TOptions>(Command<TOptions> command, TOptions options)
+	// The package's own compile, not a platform build: on Creatio 10.x the platform's optimized builds compile only
+	// packages a DESIGNER save marked, and a save through create/modify-business-process cannot mark one, so a
+	// package-name compile left such an edit uncompiled on a stand (after 17 minutes of static content) while this
+	// path compiled it in 3 min 21 s. The options carry [RequiresPackage] for the CompileProcess operation; this tool is not
+	// a BaseTool, so the gate BaseTool applies to its commands is applied here, before any request is sent - and
+	// inside Execute, after the session container is pinned, because the check itself queries the environment
+	// through the same client a concurrent different-tenant Acquire could otherwise dispose.
+	private CommandExecutionResult ExecuteProcessCompile(string environmentName, string processName)
+	{
+		CompileBusinessProcessOptions options = new()
+		{
+			Environment = environmentName,
+			ProcessName = processName
+		};
+		IRequiredPackageChecker checker = commandResolver.Resolve<IRequiredPackageChecker>(options);
+		CompileBusinessProcessCommand command = commandResolver.Resolve<CompileBusinessProcessCommand>(options);
+		return Execute(command, options, preflight: () => checker.EnsureRequirements(options));
+	}
+
+	private CommandExecutionResult Execute<TOptions>(Command<TOptions> command, TOptions options,
+		Action preflight = null)
 	{
 		int exitCode = -1;
 		string tenantKey = options is EnvironmentOptions environmentOptions
@@ -212,6 +373,7 @@ public sealed class CompileCreatioTool(
 		logger.PreserveMessages = true;
 		try
 		{
+			preflight?.Invoke();
 			exitCode = command.Execute(options);
 			Thread.Sleep(500);
 			// FR-11 (review): redact the self-captured snapshot on a passthrough request before it
@@ -248,6 +410,15 @@ public sealed record CompileCreatioArgs(
 	[Required]
 	string EnvironmentName,
 
-	[property: JsonPropertyName("package-name")]
-	[Description("Optional package name. When omitted, the tool performs a full compilation.")]
-	string? PackageName = null);
+	[property: JsonPropertyName(CompileCreatioTool.PackageNameArgument)]
+	[Description("Optional package name: compiles that one package. When both package-name and process-name are omitted, the tool performs a full compilation. Exclusive with process-name.")]
+	string? PackageName = null,
+
+	[property: JsonPropertyName(CompileCreatioTool.ProcessNameArgument)]
+	[Description("Optional business process code. Compiles the package that process is in through the CrtProcessBuilder package - the compile a script task or process methods saved by create/modify-business-process need. Exclusive with package-name.")]
+	string? ProcessName = null) {
+
+	/// <summary>Overflow bag for JSON fields that bind to no parameter; any entry refuses the call before it compiles.</summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
+}

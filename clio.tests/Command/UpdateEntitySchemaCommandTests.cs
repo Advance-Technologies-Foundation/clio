@@ -226,6 +226,386 @@ internal sealed class UpdateEntitySchemaCommandTests : BaseClioModuleTests
 	}
 
 	[Test]
+	[Description("Rejects an operation field the command does not know, naming the field and the nearest known field, before any remote mutation (ENG-101526).")]
+	public void Execute_ReturnsFailure_WhenOperationHasUnknownField() {
+		// Arrange
+		UpdateEntitySchemaOptions options = new() {
+			Environment = "dev",
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Operations = ["""{"action":"modify","colum-name":"UsrStatus","title":"Status"}"""]
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "a misspelled field would otherwise be silently dropped and the operation would target no column");
+		_columnManager.DidNotReceiveWithAnyArgs().ModifyColumns(default!);
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("Operation payload at index 0 has unknown field 'colum-name'.")
+			&& message.Contains("Did you mean 'column-name'?")));
+	}
+
+	[Test]
+	[Description("Accepts 'name' as an alias of 'column-name' in operation JSON, matching the MCP tool and create-entity-schema (ENG-101526).")]
+	public void Execute_MapsNameAlias_ToColumnName() {
+		// Arrange
+		UpdateEntitySchemaOptions options = new() {
+			Environment = "dev",
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Operations = ["""{"action":"modify","name":"UsrStatus","title":"Status"}"""]
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "'name' is an accepted alias of 'column-name'");
+		_columnManager.Received(1).ModifyColumns(Arg.Is<IEnumerable<ModifyEntitySchemaColumnOptions>>(mutations =>
+			mutations.Count() == 1
+			&& mutations.ElementAt(0).ColumnName == "UsrStatus"
+			&& mutations.ElementAt(0).Title == "Status"));
+	}
+
+	[Test]
+	[Description("Rejects an operation that sets both 'column-name' and its alias 'name' to different values, before any remote mutation (ENG-101526).")]
+	public void Execute_ReturnsFailure_WhenNameAliasConflictsWithColumnName() {
+		// Arrange
+		UpdateEntitySchemaOptions options = new() {
+			Environment = "dev",
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Operations = ["""{"action":"modify","column-name":"UsrStatus","name":"UsrOwner","title":"Status"}"""]
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "two different column names in one operation are ambiguous");
+		_columnManager.DidNotReceiveWithAnyArgs().ModifyColumns(default!);
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("'column-name' ('UsrStatus')") && message.Contains("'name' ('UsrOwner')")));
+	}
+
+	[Test]
+	[Description("Reports the unknown field even when another field of the same operation has a value of the wrong type, because field names are checked before typed deserialization (ENG-101526).")]
+	public void Execute_ReportsUnknownField_WhenAnotherFieldHasWrongType() {
+		// Arrange
+		UpdateEntitySchemaOptions options = new() {
+			Environment = "dev",
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Operations = ["""{"action":"modify","colum-name":"UsrStatus","required":"yes"}"""]
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "the operation is invalid on two counts");
+		_columnManager.DidNotReceiveWithAnyArgs().ModifyColumns(default!);
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("has unknown field 'colum-name'.") && message.Contains("Did you mean 'column-name'?")));
+		_logger.DidNotReceive().WriteError(Arg.Is<string>(message => message.Contains("is not valid JSON")));
+	}
+
+	[Test]
+	[Description("Malformed operation JSON still reports that the payload is not valid JSON after field validation moved ahead of deserialization (ENG-101526).")]
+	public void Execute_ReportsInvalidJson_WhenOperationIsMalformed() {
+		// Arrange
+		UpdateEntitySchemaOptions options = new() {
+			Environment = "dev",
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Operations = ["""{"action":"modify","colum-name":"""]
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "a payload that is not JSON cannot be applied");
+		_columnManager.DidNotReceiveWithAnyArgs().ModifyColumns(default!);
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("Operation payload at index 0 is not valid JSON.")));
+	}
+
+	[Test]
+	[Description("Strips control characters such as a terminal escape sequence and a line break from an unknown field name before echoing it (ENG-101526).")]
+	public void Execute_StripsControlCharacters_FromEchoedUnknownField() {
+		// Arrange
+		UpdateEntitySchemaOptions options = new() {
+			Environment = "dev",
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Operations = ["""{"action":"modify","column-name":"UsrStatus","bad\u001b[2Jkey\nnext":"x"}"""]
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "the field is unknown");
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("unknown field 'bad[2Jkeynext'")
+			&& !message.Contains('\u001b')
+			&& !message.Contains('\n')));
+	}
+
+	[Test]
+	[Description("Cuts a very long unknown field name to 64 characters plus an ellipsis before echoing it (ENG-101526).")]
+	public void Execute_TruncatesVeryLongEchoedUnknownField() {
+		// Arrange
+		string longKey = new('k', 500);
+		UpdateEntitySchemaOptions options = new() {
+			Environment = "dev",
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Operations = [$$"""{"action":"modify","column-name":"UsrStatus","{{longKey}}":"x"}"""]
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "the field is unknown");
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains($"unknown field '{new string('k', 64)}...'")
+			&& !message.Contains(new string('k', 65))));
+	}
+
+	[Test]
+	[Description("Strips invisible Unicode format characters (bidirectional override U+202E, zero-width space U+200B, isolates U+2066-U+2069) from an echoed name, so the message cannot hide or reorder what it shows (ENG-101526).")]
+	public void SanitizeForMessage_RemovesUnicodeFormatCharacters() {
+		// Arrange
+		string value = "ab\u202Ecd\u200Bef\u2066gh\u2067ij\u2068kl\u2069mn";
+
+		// Act
+		string result = UpdateEntitySchemaCommand.SanitizeForMessage(value);
+
+		// Assert
+		result.Should().Be("abcdefghijklmn",
+			because: "format characters are invisible in a terminal and would let a field name disguise itself");
+	}
+
+	[Test]
+	[Description("Cuts a long echoed name before a surrogate pair that straddles the 64-character limit instead of splitting it into a lone high surrogate (ENG-101526).")]
+	public void SanitizeForMessage_DoesNotSplitSurrogatePairAtCut() {
+		// Arrange
+		string value = new string('k', 63) + "\U0001F600" + new string('z', 10);
+
+		// Act
+		string result = UpdateEntitySchemaCommand.SanitizeForMessage(value);
+
+		// Assert
+		result.Should().Be(new string('k', 63) + "...",
+			because: "the emoji occupies characters 64 and 65, so keeping only its high surrogate would emit invalid UTF-16");
+		result.Any(char.IsSurrogate).Should().BeFalse(
+			because: "no half of a surrogate pair may survive the cut");
+	}
+
+	[Test]
+	[Description("Keeps a surrogate pair that ends exactly at the 64-character limit (ENG-101526).")]
+	public void SanitizeForMessage_KeepsSurrogatePairEndingAtCut() {
+		// Arrange
+		string value = new string('k', 62) + "\U0001F600" + new string('z', 10);
+
+		// Act
+		string result = UpdateEntitySchemaCommand.SanitizeForMessage(value);
+
+		// Assert
+		result.Should().Be(new string('k', 62) + "\U0001F600...",
+			because: "the pair fits entirely inside the first 64 characters, so it is kept whole");
+	}
+
+	[Test]
+	[Description("Strips non-BMP format characters such as the tag character U+E0041, which occupy a surrogate pair, from an echoed name (ENG-101526).")]
+	public void SanitizeForMessage_RemovesNonBmpFormatCharacters() {
+		// Arrange
+		string value = "ab\U000E0041cd\U000E007Fef";
+
+		// Act
+		string result = UpdateEntitySchemaCommand.SanitizeForMessage(value);
+
+		// Assert
+		result.Should().Be("abcdef",
+			because: "tag characters are invisible format characters even though each one takes two UTF-16 units");
+	}
+
+	[Test]
+	[Description("Drops lone high and low surrogates from an echoed name while keeping a valid surrogate pair (ENG-101526).")]
+	public void SanitizeForMessage_DropsLoneSurrogates() {
+		// Arrange
+		string value = "a\uD800b\uDC00c\U0001F600d\uD83D";
+
+		// Act
+		string result = UpdateEntitySchemaCommand.SanitizeForMessage(value);
+
+		// Assert
+		result.Should().Be("abc\U0001F600d",
+			because: "a lone surrogate is invalid UTF-16 and must not be echoed, but a well-formed pair is a real character");
+	}
+
+	[Test]
+	[Description("Reports an operation whose field name is an escaped lone surrogate as invalid JSON instead of leaking a serializer error (ENG-101526).")]
+	public void Execute_ReportsInvalidJson_WhenFieldNameIsLoneSurrogate() {
+		// Arrange
+		UpdateEntitySchemaOptions options = new() {
+			Environment = "dev",
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Operations = ["""{"action":"modify","column-name":"UsrStatus","\uD800":1}"""]
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "a field name that is not valid UTF-16 cannot be read as text");
+		_columnManager.DidNotReceiveWithAnyArgs().ModifyColumns(default!);
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message == "Operation payload at index 0 is not valid JSON."));
+	}
+
+	[Test]
+	[Description("Reports an operation whose string value is an escaped lone surrogate as an invalid value at its JSON path instead of leaking a serializer error (ENG-101526).")]
+	public void Execute_ReportsInvalidValue_WhenFieldValueIsLoneSurrogate() {
+		// Arrange
+		UpdateEntitySchemaOptions options = new() {
+			Environment = "dev",
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Operations = ["""{"action":"modify","column-name":"Usr\uDC00Status"}"""]
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "a string value that is not valid UTF-16 cannot be read as text");
+		_columnManager.DidNotReceiveWithAnyArgs().ModifyColumns(default!);
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message == "Operation payload at index 0 has an invalid value at JSON path '$.column-name'."));
+	}
+
+	[TestCase("[]")]
+	[TestCase("42")]
+	[TestCase("\"modify\"")]
+	[Description("Rejects a well-formed operation payload that is not a JSON object with a message saying it must be an object, not that it is invalid JSON (ENG-101526).")]
+	public void Execute_ReturnsFailure_WhenOperationIsNotJsonObject(string payload) {
+		// Arrange
+		UpdateEntitySchemaOptions options = new() {
+			Environment = "dev",
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Operations = [payload]
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "only a JSON object describes an operation");
+		_columnManager.DidNotReceiveWithAnyArgs().ModifyColumns(default!);
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("Operation payload at index 0 must be a JSON object.")));
+		_logger.DidNotReceive().WriteError(Arg.Is<string>(message => message.Contains("is not valid JSON")));
+	}
+
+	[Test]
+	[Description("Reports a well-formed operation whose field has a value of the wrong type as an invalid value at its JSON path, not as invalid JSON (ENG-101526).")]
+	public void Execute_ReportsInvalidValueWithPath_WhenFieldHasWrongType() {
+		// Arrange
+		UpdateEntitySchemaOptions options = new() {
+			Environment = "dev",
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Operations = ["""{"action":"modify","column-name":"UsrStatus","required":"yes"}"""]
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "'required' takes a boolean, so the operation cannot be applied");
+		_columnManager.DidNotReceiveWithAnyArgs().ModifyColumns(default!);
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("Operation payload at index 0 has an invalid value at JSON path '$.required'.")));
+		_logger.DidNotReceive().WriteError(Arg.Is<string>(message => message.Contains("is not valid JSON")));
+	}
+
+	[Test]
+	[Description("Accepts an operation that sets 'column-name' and its alias 'name' to the same value (ENG-101526).")]
+	public void Execute_Succeeds_WhenNameAliasEqualsColumnName() {
+		// Arrange
+		UpdateEntitySchemaOptions options = new() {
+			Environment = "dev",
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Operations = ["""{"action":"modify","column-name":"UsrStatus","name":"UsrStatus","title":"Status"}"""]
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "the same column named twice is not ambiguous");
+		_columnManager.Received(1).ModifyColumns(Arg.Is<IEnumerable<ModifyEntitySchemaColumnOptions>>(mutations =>
+			mutations.Count() == 1 && mutations.ElementAt(0).ColumnName == "UsrStatus"));
+	}
+
+	[TestCase("""{"Action":"modify","COLUMN-NAME":"UsrStatus","Title":"Status"}""")]
+	[TestCase("""{"ACTION":"modify","Name":"UsrStatus","TITLE":"Status"}""")]
+	[Description("Known operation fields, including the 'name' alias, are matched case-insensitively by the unknown-field check, keeping the case-insensitive JSON contract (ENG-101526).")]
+	public void Execute_AcceptsKnownFields_WrittenInMixedCase(string payload) {
+		// Arrange
+		UpdateEntitySchemaOptions options = new() {
+			Environment = "dev",
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Operations = [payload]
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "a known field written in another case is not an unknown field");
+		_logger.DidNotReceive().WriteError(Arg.Is<string>(message => message.Contains("unknown field")));
+		_columnManager.Received(1).ModifyColumns(Arg.Is<IEnumerable<ModifyEntitySchemaColumnOptions>>(mutations =>
+			mutations.Count() == 1
+			&& mutations.ElementAt(0).ColumnName == "UsrStatus"
+			&& mutations.ElementAt(0).Title == "Status"));
+	}
+
+	[Test]
+	[Description("An unknown field in a later operation fails the whole batch before anything is saved, even when an earlier operation is valid, and the error names the failing index (ENG-101526).")]
+	public void Execute_FailsWholeBatch_WhenLaterOperationHasUnknownField() {
+		// Arrange
+		UpdateEntitySchemaOptions options = new() {
+			Environment = "dev",
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Operations = [
+				"""{"action":"modify","column-name":"UsrStatus","title":"Status"}""",
+				"""{"action":"modify","colum-name":"UsrOwner","title":"Owner"}"""
+			]
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "one invalid operation fails the batch");
+		_columnManager.DidNotReceiveWithAnyArgs().ModifyColumns(default!);
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("Operation payload at index 1 has unknown field 'colum-name'.")));
+	}
+
+	[Test]
 	[Description("Preserves semicolons inside structured JSON --operation payloads so valid titles and defaults are not split by the command-line parser.")]
 	public void Parse_Should_Preserve_Semicolons_In_Json_Operation_Payload() {
 		// Arrange

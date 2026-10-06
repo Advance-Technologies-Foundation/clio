@@ -52,7 +52,7 @@ public class SetActiveProcessVersionToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Emits the deterministic compile-not-required note on success — activating a version puts the environment into no state that needs compiling, and an agent that assumes otherwise runs compile-creatio for nothing (ENG-95706).")]
+	[Description("Emits the deterministic compile-not-required note on success — activating a version of a process without C# puts the environment into no state that needs compiling, and an agent that assumes otherwise runs compile-creatio for nothing (ENG-95706).")]
 	public void SetActiveProcessVersion_Should_Emit_CompileNotRequiredNote_On_Success() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
@@ -69,6 +69,32 @@ public class SetActiveProcessVersionToolTests {
 		// Assert
 		result.Note.Should().Be(CommandExecutionResult.CompileNotRequiredNote,
 			because: "the note is the one channel an agent cannot skip past on the way to a wrong compile");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Withholds the compile-not-required note when the server warns that the activated version cannot run until the configuration is compiled: a version of a process that carries C# is a schema of its own, and activating it before a compile leaves every new instance refusing to start.")]
+	public void SetActiveProcessVersion_Should_Not_Emit_CompileNotRequiredNote_When_The_Server_Demands_A_Compile() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		string warning = "Every new instance of the process now runs version 'UsrSampleProcessCustom2'. The process "
+			+ "carries C# in script task 'Calc', so it cannot run the code it was saved with "
+			+ CommandExecutionResult.CompileRequiredWarningMarker + ".";
+		FakeCommand resolvedCommand = new(warning: warning);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<SetActiveProcessVersionCommand>(Arg.Any<SetActiveProcessVersionOptions>())
+			.Returns(resolvedCommand);
+		SetActiveProcessVersionTool tool = new(new FakeCommand(), ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.SetActiveProcessVersion(
+			new SetActiveProcessVersionArgs("docker_fix2", "UsrSampleProcessCustom2"));
+
+		// Assert
+		result.ExitCode.Should().Be(0, because: "the activation itself succeeded");
+		(result.Note ?? string.Empty).Should().NotContain(CommandExecutionResult.CompileNotRequiredNote,
+			because: "the note would contradict the server's own warning that the version must be compiled first");
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
@@ -207,6 +233,29 @@ public class SetActiveProcessVersionToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The description says that a compile made before the activation still covers an interpreted version - activation re-saves the family but changes no code - so an agent that compiled and then activated does not ask for a second compile (measured, ENG-92711). Nothing but this pin fails if the sentence goes.")]
+	public void SetActiveProcessVersion_Description_ShouldSayAnEarlierCompileStillCovers() {
+		// Arrange
+		MethodInfo method = typeof(SetActiveProcessVersionTool)
+			.GetMethod(nameof(SetActiveProcessVersionTool.SetActiveProcessVersion))!;
+
+		// Act
+		string description = ((System.ComponentModel.DescriptionAttribute)method!
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false).Single()).Description;
+
+		// Assert
+		description.Should().Contain("owes no second compile",
+			because: "the activation answer used to send an agent that had already compiled to ask for another");
+		description.Should().Contain("for an interpreted version only",
+			because: "the claim was measured for an interpreted version only, and must not cover the compiled one");
+		description.Should().Contain("compile that SUCCEEDED",
+			because: "a compile that failed covers nothing");
+		description.Should().NotContain("unless the version was compiled with process-name since its last edit",
+			because: "that clause sat on the warning for EVERY version, the non-interpreted one included");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("The description states that ANY member is a valid activation target, the family ROOT included. It said the opposite until ENG-94374 - 'it must be the version itself, not the family root' - and there is no guard behind either wording, so nothing but this pin fails when the sentence regresses. A mutation run restoring the old sentence left the whole suite green.")]
 	public void SetActiveProcessVersion_Description_ShouldStateThatTheRootIsAValidTarget() {
 		// Arrange
@@ -303,16 +352,22 @@ public class SetActiveProcessVersionToolTests {
 
 	private sealed class FakeCommand : SetActiveProcessVersionCommand {
 		private readonly int _exitCode;
+		private readonly string? _warning;
 
 		public SetActiveProcessVersionOptions? CapturedOptions { get; private set; }
 
-		public FakeCommand(int exitCode = 0)
+		public FakeCommand(int exitCode = 0, string? warning = null)
 			: base(Substitute.For<ISetActiveProcessVersionService>(), Substitute.For<ILogger>()) {
 			_exitCode = exitCode;
+			_warning = warning;
 		}
 
 		public override int Execute(SetActiveProcessVersionOptions options) {
 			CapturedOptions = options;
+			if (_warning != null) {
+				// As the real command relays a server warning.
+				ConsoleLogger.Instance.WriteWarning(_warning);
+			}
 			return _exitCode;
 		}
 	}

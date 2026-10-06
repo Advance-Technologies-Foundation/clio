@@ -169,7 +169,10 @@ public sealed class McpWorkerModeTests {
 	[Description("TC-U-302: the frozen generation round-trips every feature the assembly gates, including the CLI-only ring flag, and keeps the case-insensitive key comparison the settings repository uses.")]
 	public void FrozenFeatures_ShouldRoundTripEveryGatedFeatureCaseInsensitively() {
 		// Arrange — the whole map, not a hand-picked subset: a worker also dispatches CLI verbs, so a
-		// CLI-only flag is in scope even though it gates no MCP tool.
+		// CLI-only flag is in scope even though it gates no MCP tool. mobile-page-converter is kept on
+		// purpose after it stopped gating anything (ENG-94638): a Beta tester's leftover key is exactly
+		// what a real parent map carries, and the worker must round-trip an ORPHAN key unchanged rather
+		// than dropping it and making the parent and worker disagree about the settings they share.
 		Dictionary<string, bool> parentFeatures = new(StringComparer.OrdinalIgnoreCase) {
 			["deploy-identity"] = true,
 			[ProcessDesignerFeature] = false,

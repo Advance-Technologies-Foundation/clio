@@ -5,13 +5,13 @@ using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Linq;
 using System.Text;
-using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using Clio.Common;
 using Clio.CreatioModel;
+using Clio.Package;
 using CommandLine;
 
 namespace Clio.Command;
@@ -26,6 +26,21 @@ public class CompileConfigurationOptions : RemoteCommandOptions
 	public bool All {
 		get; set;
 	}
+	/// <summary>
+	/// Accepted for symmetry with <c>compile-package --wait</c>; it changes nothing, because this command
+	/// always blocks until the build has ended.
+	/// </summary>
+	/// <remarks>
+	/// Since issue #1422 completion is observed on the environment (the build response, the runtime reload
+	/// that ends a build, or compilation activity that has stopped), bounded by <c>--timeout</c>. A script
+	/// written against the <c>compile-package</c> form can pass the same flag here without failing to parse.
+	/// </remarks>
+	[Option("wait", Required = false, Default = false,
+		HelpText = "Accepted for symmetry with compile-package --wait. compile-configuration always blocks until the build has ended, bounded by --timeout")]
+	public bool Wait {
+		get; set;
+	}
+
 	// No DefaultTimeout override. RemoteCommandOptions.GetTimeOut already declares 60 minutes for
 	// `compile-configuration`, and this class used to override it with Timeout.Infinite - which also
 	// silently discarded any --timeout the caller passed. An unbounded wait is what let a build whose
@@ -494,69 +509,82 @@ public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOpt
 		if (string.Equals(record.ErrorsWarnings, "[]", StringComparison.OrdinalIgnoreCase)) {
 			_logger.WriteInfo($"At: {record.CreatedOn:HH:mm:ss} after: {decoratedDuration} sec. {decoratedProjectName}");
 		} else {
-			_logger.WriteWarning($"At: {record.CreatedOn:HH:mm:ss} after: {decoratedDuration} sec. {decoratedProjectName} with: {ParseErrors(record.ErrorsWarnings)}");
+			_logger.WriteWarning($"At: {record.CreatedOn:HH:mm:ss} after: {decoratedDuration} sec. {decoratedProjectName} with: {FormatHistoryDiagnostics(record.ErrorsWarnings)}");
 		}
 	}
 
-	private static readonly JsonSerializerOptions JsonSerializerOptions = new()
-		{ PropertyNameCaseInsensitive = true };
-	private static readonly Func<string, string> ParseErrors = (json) => {
-		try {
-			List<CompError> errors = JsonSerializer.Deserialize<List<CompError>>(json, JsonSerializerOptions);
-			StringBuilder sb = new();
-			int errorNumber = 1;
-			foreach (string message in errors.Select(error => error switch {
-				var _ when string.IsNullOrWhiteSpace(error.FileName) && error.IsWarning => $"({ConsoleLogger.WrapYellow(error.ErrorNumber)}): {error.ErrorText}",
-				var _ when string.IsNullOrWhiteSpace(error.FileName) && !error.IsWarning => $"({ConsoleLogger.WrapRed(error.ErrorNumber)}): {error.ErrorText}",
-				var _ when !string.IsNullOrWhiteSpace(error.FileName) && error.IsWarning => $"({ConsoleLogger.WrapYellow(error.ErrorNumber)}) in {ConsoleLogger.WrapYellow(error.FileName)} at ({error.Line},{error.Column}): {error.ErrorText}",
-				var _ when !string.IsNullOrWhiteSpace(error.FileName) && !error.IsWarning => $"({ConsoleLogger.WrapRed(error.ErrorNumber)}) in {ConsoleLogger.WrapYellow(error.FileName)} at ({error.Line},{error.Column}) : {error.ErrorText}",
-				var _ => json //We should never be here, this is to make compiler happy
-			})) {
-				sb.AppendLine().Append('\t').Append($"{errorNumber++} of {errors.Count} ").Append(message);
-			}
-			return sb.ToString();
+	/// <summary>
+	/// Renders a history row's <c>ErrorsWarnings</c> payload, one numbered diagnostic per line.
+	/// </summary>
+	/// <param name="errorsWarnings">The row's raw <c>ErrorsWarnings</c> JSON.</param>
+	/// <returns>The rendered diagnostics, or the raw payload when it holds none that can be read.</returns>
+	internal static string FormatHistoryDiagnostics(string errorsWarnings) {
+		IReadOnlyList<PackageBuildDiagnostic> diagnostics =
+			PackageBuildResultParser.ParseHistoryDiagnostics(errorsWarnings);
+		if (diagnostics.Count == 0) {
+			return errorsWarnings;
 		}
-		// Could not parse errors, return original json
-		catch {
-			return json;
+		StringBuilder sb = new();
+		int errorNumber = 1;
+		foreach (PackageBuildDiagnostic diagnostic in diagnostics) {
+			Func<string, string> decorateCode = diagnostic.IsWarning ? ConsoleLogger.WrapYellow : ConsoleLogger.WrapRed;
+			string message = diagnostic.Format(decorateCode, ConsoleLogger.WrapYellow);
+			sb.AppendLine().Append('\t').Append($"{errorNumber++} of {diagnostics.Count} ").Append(message);
 		}
-	};
+		return sb.ToString();
+	}
 
 	protected override void ProceedResponse(string response, CompileConfigurationOptions options) {
 		base.ProceedResponse(response, options);
-		try {
-			if (string.IsNullOrWhiteSpace(response)) {
-				CommandSuccess = _isSuccess = false;
-				Logger.WriteError("Empty response received from server during compilation.");
-				Logger.WriteError($"Endpoint: {ServiceUri}");
-				return;
-			}
-
-			string trimmed = response.TrimStart();
-			if (trimmed.StartsWith("<", StringComparison.Ordinal)) {
-				CommandSuccess = _isSuccess = false;
-				Logger.WriteError("Server returned non-JSON response during compilation (looks like HTML).");
-				Logger.WriteError($"Endpoint: {ServiceUri}");
-				Logger.WriteError("Full response:");
-				Logger.WriteLine(trimmed);
-				Logger.WriteError("Check environment URI, IsNetCore flag, and credentials (a login/404 page is often returned as HTML).");
-				return;
-			}
-
-			CreatioResponse model = JsonSerializer.Deserialize<CreatioResponse>(response);
-			CommandSuccess = _isSuccess = model.Success;
-			if (!model.Success) {
-				Logger.WriteError($"{model.ErrorInfo.ErrorCode}: {model.ErrorInfo.Message}");
-			}
-		}
-		catch (Exception e) {
+		if (string.IsNullOrWhiteSpace(response)) {
 			CommandSuccess = _isSuccess = false;
-			Logger.WriteError(e.Message);
+			Logger.WriteError("Empty response received from server during compilation.");
 			Logger.WriteError($"Endpoint: {ServiceUri}");
-			if (!string.IsNullOrWhiteSpace(response)) {
-				Logger.WriteError("Full response:");
-				Logger.WriteLine(response);
-			}
+			return;
+		}
+		if (PackageBuildResultParser.IsUnrecognizedBody(response)) {
+			CommandSuccess = _isSuccess = false;
+			Logger.WriteError("Server returned non-JSON response during compilation.");
+			Logger.WriteError($"Endpoint: {ServiceUri}");
+			// The body is not echoed, as in compile-package: a login or SSO page can carry tokens or internal URLs.
+			Logger.WriteError($"Response length: {response.Length} characters.");
+			Logger.WriteError("Check environment URI, IsNetCore flag, and credentials (a login/404 page is often returned as HTML).");
+			return;
+		}
+		if (PackageBuildResultParser.IsMalformedJson(response)) {
+			// A truncated or broken body is not a well-formed answer without a verdict: the connection on this
+			// endpoint is often reset mid-response, and saying so points at the cause. The body is not echoed.
+			CommandSuccess = _isSuccess = false;
+			Logger.WriteError("The compilation response is not valid JSON; it may have been cut off.");
+			Logger.WriteError($"Endpoint: {ServiceUri}");
+			return;
+		}
+		PackageBuildResult result = PackageBuildResultParser.TryParseResponse(response);
+		if (result is null) {
+			// A JSON body without a readable `success` field is not a verdict. It used to deserialize to
+			// Success=false and then fail on a null errorInfo, so the user saw a NullReferenceException text.
+			// The body is not echoed, as in compile-package: it can carry a stack trace or internal URLs.
+			CommandSuccess = _isSuccess = false;
+			Logger.WriteError("The compilation response carried no build result.");
+			Logger.WriteError($"Endpoint: {ServiceUri}");
+			return;
+		}
+		CommandSuccess = _isSuccess = result.Success;
+		if (result.Success) {
+			return;
+		}
+		// Always one error line, as ApplyEnvironmentVerdict does: a failed verdict with no errorInfo and only
+		// warnings (or no diagnostics) must not exit 1 silently.
+		// Absent fields are left out rather than printed blank, as compile-package's Fail does.
+		string buildResultPart = result.BuildResult is { } buildResult ? $" Build result: {buildResult}." : string.Empty;
+		Logger.WriteError($"Compilation failed on the environment.{buildResultPart}");
+		string errorInfo = string.Join(": ",
+			new[] { result.ErrorCode, result.ErrorMessage }.Where(part => !string.IsNullOrWhiteSpace(part)));
+		if (errorInfo.Length > 0) {
+			Logger.WriteError(errorInfo);
+		}
+		foreach (PackageBuildDiagnostic diagnostic in result.Errors) {
+			Logger.WriteError(diagnostic.ToString());
 		}
 	}
 }
@@ -594,23 +622,3 @@ public class ErrorInfo
 	public object StackTrace { get; set; }
 }
 
-public class CompError
-{
-	[JsonPropertyName("Line")]
-	public int Line { get; set; }
-
-	[JsonPropertyName("Column")]
-	public int Column { get; set; }
-
-	[JsonPropertyName("ErrorNumber")]
-	public string ErrorNumber { get; set; }
-
-	[JsonPropertyName("ErrorText")]
-	public string ErrorText { get; set; }
-
-	[JsonPropertyName("IsWarning")]
-	public bool IsWarning { get; set; }
-
-	[JsonPropertyName("FileName")]
-	public string FileName { get; set; }
-}

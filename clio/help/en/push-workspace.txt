@@ -36,6 +36,21 @@ EXAMPLES
     clio push-workspace -e dev --use-application-installer
         Push the workspace using ApplicationInstaller
 
+NOTES
+    Before installing, push-workspace checks every Freedom UI page schema (web
+    and mobile) in the workspace packages for user-visible text (caption, label,
+    title, tooltip, placeholder) written as an inline literal. The MCP
+    update-page tool rejects such text; push-workspace still installs it, but
+    prints one warning per page schema with the schema name and the offending
+    <node>.<property> elements. Bind the text via $Resources.Strings.<Key> or
+    #ResourceString(<Key>)# and register the key in the schema resources to
+    clear the warning.
+
+    A second warning names literal-only properties (for example
+    crt.ImageInput.tooltip) bound to a localizable resource: update-page rejects
+    them too, because such text renders empty at runtime. Set those values as
+    plain literals.
+
 SEE ALSO
     create-workspace - Create a workspace
     restore-workspace - Restore a workspace from an environment

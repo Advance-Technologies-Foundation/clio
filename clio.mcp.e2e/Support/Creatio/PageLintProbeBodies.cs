@@ -8,6 +8,14 @@ namespace Clio.Mcp.E2E.Support.Creatio;
 internal static class PageLintProbeBodies {
 
 	/// <summary>
+	/// A helper that is initialized now but removed on a Designer save while its handler call survives.
+	/// </summary>
+	public static string DesignerDiscardedHelper(string schemaName) =>
+		ConditionallyDeclaredHelper(schemaName).Replace(
+			"if (false) { function lintProbeHelper() { return 1; } }",
+			"function lintProbeHelper() { return 1; }");
+
+	/// <summary>
 	/// A body whose returned handler calls a helper the factory declares only inside a branch that
 	/// never runs. The name hoists, so the binding exists; nothing ever stores the function in it, so
 	/// the handler throws a TypeError on the deployed page. Rejected with `undefined-section-call`.

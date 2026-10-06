@@ -31,6 +31,13 @@ dropped it from `latest` on 2026-09-17, so requiring it would fail on the curren
 producer-side schema change. Nothing refreshes it when the producer merely ADDS components, because adding a
 component changes no schema and trips no guard.
 
+The drift is FAST, which is the part that surprises people. ENG-94638 refreshed it again barely a week after
+ENG-96589 did, and the producer had already added a component and rewritten an existing one's input set in
+that window — `crt.List` gained `blankSlateDescription` and its `blankSlateText` changed meaning from "text
+shown when the list has no data" to a TITLE with a separate description beneath. So "it was refreshed
+recently" is not evidence that it is current, and a semantic change to an input a test already reads is
+invisible in a count.
+
 **What breaks if you ignore it** — a converter test that derives its mobile type set from this fixture, which
 looks like the most faithful thing to do, quietly asserts the opposite of what it reads as asserting. With
 `crt.SearchFilter` missing from the type set, the converter drops it as `type 'crt.SearchFilter' not in mobile

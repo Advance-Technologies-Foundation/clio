@@ -36,7 +36,6 @@ namespace Clio.Command {
 	}
 
 	public class ClientUnitSchemaCreateCommand : Command<ClientUnitSchemaCreateOptions> {
-		private const string SaveSchemaRoute = "/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema";
 		private const string ClientUnitManagerName = "ClientUnitSchemaManager";
 
 		private readonly IApplicationClient _applicationClient;
@@ -191,7 +190,7 @@ namespace Clio.Command {
 
 		private bool TrySaveSchema(JObject payload, out string error) {
 			error = null;
-			string url = _serviceUrlBuilder.Build(SaveSchemaRoute);
+			string url = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.SaveClientUnitDesignerSchema);
 			string responseJson = _applicationClient.ExecutePostRequest(url, payload.ToString(Formatting.None));
 			JObject response = JObject.Parse(responseJson);
 			if (response["success"]?.Value<bool>() ?? false) {

@@ -2,6 +2,7 @@
 description: mcp-server and mcp-http write <user home>/.clio/mcp-hosts/mcp-server.<pid>.lock while resident - per USER, not per clio home, and RunStartupUpdateCheck must test for it BEFORE TryScheduleAutoupdate, which advances next-run as part of deciding an update is due
 applies-to:
   - clio/Common/McpHostPresence.cs
+  - clio/Common/ConsoleLogger.cs
   - clio/Environment/ISettingsRepository.cs
   - clio/Program.cs
   - clio/Command/McpServer/McpServerCommand.cs
@@ -34,7 +35,12 @@ already downloading still has its binaries replaced: the marker is read before t
 launched, so it cannot see one already in flight, and closing that window means coordinating with the
 lifetime of a process clio deliberately does not wait for. Accepted; the remedy is restarting that
 session, which is the remedy the whole issue ends in. Beyond that, the deferral is UNBOUNDED: a host that stays up for weeks
-defers the clio self-update for weeks, and the only signal is the one `[INF]` line per command. The
+defers the clio self-update for weeks, and the only signal is the one `[INF]` line per command.
+That line goes through `ConsoleLogger.WriteInfoToStderr`, not `WriteInfo` (whose console copy goes
+to stdout outside `--json`): it precedes EVERY command's output, and on stdout it became the first
+line of data for callers such as Clio Explorer reading `clio info -s` (issue #1665). Writing it with
+a bare `Console.Error.WriteLine` instead drops it from the `--log` file, which is started before the
+startup update check. The
 liveness probe fails SAFE (anything it cannot determine counts as alive), so a process clio may not
 inspect also defers indefinitely. Both are chosen over the opposite mistake, which is the outage this
 record exists for.

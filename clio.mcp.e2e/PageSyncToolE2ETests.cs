@@ -440,12 +440,13 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 			because: "the operator must know the body did not reach the server without inspecting logs, mirroring the syntax-gate tail");
 	}
 
-	[Test]
-	[Description("A NON-dry-run sync-pages of a body whose handler calls a conditionally declared helper fails at the lint gate and leaves the page on the stand byte-identical — the existing lint scenario targets a page that does not exist, so it cannot show that a real save was prevented.")]
+	[TestCase(false)]
+	[TestCase(true)]
+	[Description("A NON-dry-run sync-pages of a body whose handler calls an uninitialized or Designer-discarded helper fails at the lint gate and leaves the page on the stand byte-identical — the existing lint scenario targets a page that does not exist, so it cannot show that a real save was prevented.")]
 	[AllureTag(ToolName)]
-	[AllureName("sync-pages blocks a real save on undefined-section-call and leaves the page unchanged")]
-	[AllureDescription("Against the seeded page ClioMcp_BlankPageToSave: captures the body with get-page, submits a marker-complete body whose returned handler calls a helper declared only inside an `if (false)` block, asserts the lint gate rejects the page, then re-reads the page and asserts the stored body is unchanged.")]
-	public async Task PageSyncTool_Should_Block_Real_Save_And_Leave_Page_Unchanged_When_HelperIsConditionallyDeclared() {
+	[AllureName("sync-pages blocks a real save on unsafe helper calls and leaves the page unchanged")]
+	[AllureDescription("Against the seeded page ClioMcp_BlankPageToSave: captures the body with get-page, submits a marker-complete body whose returned handler calls a helper either declared inside an `if (false)` block or discarded by Designer, asserts the lint gate rejects the page, then re-reads the page and asserts the stored body is unchanged.")]
+	public async Task PageSyncTool_Should_Block_Real_Save_And_Leave_Page_Unchanged_When_HelperIsUnsafe(bool designerDiscarded) {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
@@ -473,7 +474,7 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 		try {
 			// Act 2: the real save path — no dry-run — with a body only the AST lint pass rejects.
 			CallToolResult syncResult = await SyncBodyAsync(context, environmentName,
-				PageLintProbeBodies.ConditionallyDeclaredHelper(SavePage));
+				(designerDiscarded ? PageLintProbeBodies.DesignerDiscardedHelper(SavePage) : PageLintProbeBodies.ConditionallyDeclaredHelper(SavePage)));
 			PageSyncResponse response = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(syncResult);
 
 			// Act 3: read the page back.
@@ -494,12 +495,12 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 
 			// Assert
 			response.Success.Should().BeFalse(
-				because: "the handler calls a helper whose only declaration sits in a branch that never runs, so the page would throw a TypeError on open");
+				because: "the helper is either uninitialized now or removed by the next Designer save");
 			response.Pages.Should().ContainSingle(
 				because: "one page was submitted");
 			response.Pages[0].Error.Should().Contain("Page body lint failed",
 				because: "the canonical lint prefix is what tells the agent this was a lint rejection rather than a syntax or transport failure");
-			response.Pages[0].Error.Should().Contain("undefined-section-call",
+			response.Pages[0].Error.Should().Contain(designerDiscarded ? "designer-unsafe-section-call" : "undefined-section-call",
 				because: "the rule id must reach the wire so the agent can map the refusal back to the authoring rule");
 			readback.Success.Should().BeTrue(
 				because: $"the page must still be readable after the refused write. Error: {readback.Error}");

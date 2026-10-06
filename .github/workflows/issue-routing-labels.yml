@@ -1,0 +1,42 @@
+# Creates the labels declared in .github/component-owners.json as soon as the map changes on the
+# default branch. Agents create issues with `gh issue create --label component:<id>`, which fails
+# when the label does not exist yet; routing itself would only create it on first use.
+# Existing labels are never modified (teams may restyle them).
+name: Issue routing labels
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - .github/component-owners.json
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: issue-routing-labels
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Create missing labels
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # SHA-pinned, not tag-pinned: this job carries an `issues: write` token.
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          sparse-checkout: |
+            .github/component-owners.json
+            .github/scripts/issue-routing
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Create labels missing from the repository
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const routing = require('./.github/scripts/issue-routing/issue-routing.js');
+            await routing.syncLabels({ github, context, core, configPath: '.github/component-owners.json' });

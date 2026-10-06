@@ -32,6 +32,7 @@ public sealed class ApplicationSectionCreateServiceTests {
 	private IOwnedApplicationClient _applicationClient = null!;
 	private IServiceUrlBuilder _serviceUrlBuilder = null!;
 	private IApplicationInfoService _applicationInfoService = null!;
+	private INavigationCacheResetter _navigationCacheResetter = null!;
 	private ISysSettingsManager _sysSettingsManager = null!;
 	private EnvironmentSettings _environmentSettings = null!;
 	private ApplicationSectionCreateService _sut = null!;
@@ -46,6 +47,7 @@ public sealed class ApplicationSectionCreateServiceTests {
 		_applicationClient = Substitute.For<IOwnedApplicationClient>();
 		_serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		_applicationInfoService = Substitute.For<IApplicationInfoService>();
+		_navigationCacheResetter = NavigationCacheResetterSubstitute.Succeeding();
 		_logger = new NullLogger();
 		_environmentSettings = new EnvironmentSettings {
 			Uri = "https://example.invalid",
@@ -594,6 +596,7 @@ public sealed class ApplicationSectionCreateServiceTests {
 			_logger,
 			resolver,
 			new SectionCreateSerializationGuard(_logger),
+			_navigationCacheResetter,
 			// No-op delay seam: run the contention backoff and settle/poll loops instantly under test.
 			contentionDelay: _ => { });
 	}
@@ -620,6 +623,7 @@ public sealed class ApplicationSectionCreateServiceTests {
 			_logger,
 			_captionCultureResolver,
 			new SectionCreateSerializationGuard(_logger),
+			_navigationCacheResetter,
 			contentionDelay: contentionDelay,
 			recoveryTimestampProvider: recoveryTimestampProvider);
 	}
@@ -640,6 +644,7 @@ public sealed class ApplicationSectionCreateServiceTests {
 			logger,
 			_captionCultureResolver,
 			new SectionCreateSerializationGuard(logger),
+			_navigationCacheResetter,
 			// No-op delay seam: run the contention backoff and settle/poll loops instantly under test.
 			contentionDelay: _ => { });
 	}
@@ -753,6 +758,7 @@ public sealed class ApplicationSectionCreateServiceTests {
 			_logger,
 			_captionCultureResolver,
 			guard,
+			_navigationCacheResetter,
 			// No-op delay seam: run the contention backoff and settle/poll loops instantly under test.
 			contentionDelay: _ => { });
 	}
@@ -798,6 +804,65 @@ public sealed class ApplicationSectionCreateServiceTests {
 		capturedEnvironmentKeys[0].Should().Be(
 			SectionCreateSerializationGuard.BuildEnvironmentKey(_environmentSettings),
 			because: "both overloads must key the guard off the canonical normalized environment identity, not the registered name or the raw Uri");
+	}
+
+	[Test]
+	[Description("ENG-101680: after the section is created the navigation cache is reset through the same client that inserted it, and a successful reset adds no warning.")]
+	public void CreateSection_Should_Reset_Navigation_Cache_In_Creating_Session_On_Success() {
+		// Arrange
+		SetUpSuccessfulCreateWithReadbackCapture();
+
+		// Act
+		ApplicationSectionCreateResult result = _sut.CreateSection("sandbox", CreateReuseEntityRequest());
+
+		// Assert
+		_navigationCacheResetter.Received(1).TryReset(_applicationClient, _environmentSettings);
+		result.Warnings.Should().BeNull(
+			because: "a successful navigation cache reset is not a finding worth reporting");
+		result.NextStep.Should().Be(NavigationCacheResetterSubstitute.BrowserSessionNote,
+			because: "the caller must learn how to refresh an open browser tab that missed the websocket message");
+	}
+
+	[Test]
+	[Description("ENG-101680: a failed navigation cache reset becomes a result warning and does not fail the created section.")]
+	public void CreateSection_Should_Return_Warning_When_Navigation_Cache_Reset_Fails() {
+		// Arrange
+		SetUpSuccessfulCreateWithReadbackCapture();
+		_navigationCacheResetter.TryReset(Arg.Any<IApplicationClient>(), Arg.Any<EnvironmentSettings>())
+			.Returns("navigation cache reset failed: boom");
+
+		// Act
+		ApplicationSectionCreateResult result = _sut.CreateSection("sandbox", CreateReuseEntityRequest());
+
+		// Assert
+		result.Section.Should().NotBeNull(
+			because: "the created section must still be returned when only the cache reset failed");
+		result.Warnings.Should().ContainSingle(
+				because: "the failed reset must reach the caller instead of being swallowed")
+			.Which.Should().Be("navigation cache reset failed: boom",
+				because: "the warning must carry the resetter's message unchanged");
+	}
+
+	[Test]
+	[Description("ENG-101680: a section insert that the server rejects changes nothing, so no navigation cache reset is sent.")]
+	public void CreateSection_Should_Not_Reset_Navigation_Cache_When_Insert_Fails() {
+		// Arrange
+		SetUpInsertFailureMocks("""{"success":false,"errorInfo":{"message":"Cannot insert duplicate key row"}}""");
+		StubExistingEntitySchema("Contact");
+
+		// Act
+		Action action = () => _sut.CreateSection(
+			"sandbox",
+			new ApplicationSectionCreateRequest(
+				ApplicationCode: "UsrOrdersApp",
+				Caption: "Contacts",
+				EntitySchemaName: "Contact"));
+
+		// Assert
+		action.Should().Throw<InvalidOperationException>(
+			because: "a rejected section insert must still fail the command");
+		_navigationCacheResetter.DidNotReceiveWithAnyArgs().TryReset(default!, default!);
+		_navigationCacheResetter.DidNotReceiveWithAnyArgs().BuildBrowserSessionNote(default!);
 	}
 
 	[Test]
@@ -2981,6 +3046,7 @@ public sealed class ApplicationSectionCreateServiceTests {
 			collaborators,
 			// The REAL guard drives the full guard → commit path under genuine concurrency.
 			new SectionCreateSerializationGuard(new NullLogger()),
+			_navigationCacheResetter,
 			// No-op delay seam so the contention backoff/settle loops add no wall-clock time.
 			contentionDelay: _ => { });
 

@@ -64,7 +64,7 @@ internal static class OutputPathConfinement {
 	/// <summary>
 	/// Output-path counterpart of <see cref="ResolveForRead"/> that returns the CANONICAL (symlink-followed)
 	/// path rather than the lexical one, so the create runs against the same path confinement approved.
-	/// Used by the OData file contract, whose payload boundary is caller-supplied on both directions.
+	/// Used by the OData file contract and by <c>IMcpOutputFileWriter</c>, the writer of every <c>*-to-file</c> MCP tool.
 	/// </summary>
 	/// <param name="fileSystem">File-system abstraction used for path resolution and the workspace-marker probe.</param>
 	/// <param name="outputFile">The caller-supplied output path (may be relative).</param>

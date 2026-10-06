@@ -24,6 +24,8 @@ The command performs the following actions:
 - Copies clio icon files to the user's AppData folder
 - Imports Windows registry entries to add clio to context menus
 - Enables right-click access to clio commands from Windows Explorer
+- ZIP Deploy Creatio includes --disable-reset-password by default on corporate-eligible machines. It preserves the password already present in the build database.
+- Registers ZIP deployment with the absolute path of the current clio build, including its assembly argument when running through dotnet
 
 REQUIREMENTS:
 - Windows operating system only
@@ -64,8 +66,8 @@ register --Path "C:\Tools\clio"
 2. Verifies administrator privileges
 3. Creates %APPDATA%\clio folder if it doesn't exist
 4. Copies all icon files from clio installation img folder to AppData
-5. Imports unregister registry file to clean previous entries
-6. Imports register registry file to add new context menu entries
+5. Resolves and validates the current executable and writes a generated registry file under %APPDATA%\clio
+6. Imports the unregister registry file, then the generated registration file to add new context menu entries
 7. Displays success or error message
 
 ## Registry Files Used
@@ -84,6 +86,8 @@ register --Path "C:\Tools\clio"
 - Administrator privileges are mandatory
 - Previous context menu entries are automatically removed before registration
 - Icons are stored in: %APPDATA%\clio\
+- ZIP deployment launches clio directly and passes the selected file as one quoted argument.
+- Run `clio register` again after upgrading or moving clio to refresh the registered executable and assembly paths.
 - To remove context menu entries, use the 'unregister' command
 
 ## Security Considerations
