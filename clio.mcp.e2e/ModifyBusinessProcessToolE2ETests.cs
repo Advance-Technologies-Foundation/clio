@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Allure.NUnit;
@@ -647,7 +648,9 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 				because: "a wrapped parameter reference must be refused at build, naming what a filter takes");
 			parameterRefusal.Should().Contain("without the wrapper, spelled",
 				because: "a wrapped reference that resolves is handed back in its canonical bare spelling");
-			parameterRefusal.Should().Contain(parameterPath,
+			// Anchored to the hand-back phrase, so an envelope echoing the request cannot satisfy it; the quote may
+			// arrive escaped (') in the serialized envelope.
+			parameterRefusal.Should().MatchRegex(@"spelled (?:'|\\u0027)" + Regex.Escape(parameterPath),
 				because: "the token handed back is the one describe reported, not the caller's unwrapped text");
 			columnRefusal.Should().Contain("wrapper is never",
 				because: "a wrapped column reference must be refused too - stored, it matched no record with no error");
