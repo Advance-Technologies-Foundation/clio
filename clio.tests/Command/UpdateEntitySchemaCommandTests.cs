@@ -26,6 +26,10 @@ internal sealed class UpdateEntitySchemaCommandTests : BaseClioModuleTests
 	private IRemoteEntitySchemaColumnManager _columnManager;
 	private ILogger _logger;
 
+	private static string Root => OperatingSystem.IsWindows() ? @"C:\" : "/";
+
+	internal static string WorkPath(params string[] segments) => Path.Combine([Root, "work", .. segments]);
+
 	public override void Setup() {
 		base.Setup();
 		_command = Container.GetRequiredService<UpdateEntitySchemaCommand>();
@@ -639,7 +643,7 @@ internal sealed class UpdateEntitySchemaCommandTests : BaseClioModuleTests
 	[Description("Reads a multi-line, BOM-prefixed JSON array from --operations-file and appends its operations after the --operation and --operations values, in that order (ENG-101526).")]
 	public void Execute_AppendsOperationsFromFile_AfterOperationAndOperationsValues() {
 		// Arrange
-		const string filePath = @"C:\work\operations.json";
+		string filePath = WorkPath("operations.json");
 		FileSystem.AddFile(filePath, new System.IO.Abstractions.TestingHelpers.MockFileData(
 			"\uFEFF[\r\n  {\"action\":\"add\",\"column-name\":\"UsrFromFile1\",\"type\":\"Text\",\"title\":\"First\"},\r\n"
 			+ "  {\"action\":\"modify\",\"name\":\"UsrFromFile2\",\"title\":\"Second\"}\r\n]\r\n"));
@@ -670,7 +674,7 @@ internal sealed class UpdateEntitySchemaCommandTests : BaseClioModuleTests
 	[Description("Uses --operations-file as the only operation source (ENG-101526).")]
 	public void Execute_UsesOperationsFile_WhenItIsTheOnlySource() {
 		// Arrange
-		const string filePath = @"C:\work\only.json";
+		string filePath = WorkPath("only.json");
 		FileSystem.AddFile(filePath, new System.IO.Abstractions.TestingHelpers.MockFileData(
 			"[\n  {\"action\":\"remove\",\"column-name\":\"UsrObsolete\"}\n]"));
 		UpdateEntitySchemaOptions options = new() {
@@ -693,7 +697,7 @@ internal sealed class UpdateEntitySchemaCommandTests : BaseClioModuleTests
 	[Description("A missing --operations-file fails before anything is saved, naming the option and the path (ENG-101526).")]
 	public void Execute_ReturnsFailure_WhenOperationsFileIsMissing() {
 		// Arrange
-		const string filePath = @"C:\work\missing.json";
+		string filePath = WorkPath("missing.json");
 		UpdateEntitySchemaOptions options = new() {
 			Package = "UsrPkg",
 			SchemaName = "UsrVehicle",
@@ -716,7 +720,7 @@ internal sealed class UpdateEntitySchemaCommandTests : BaseClioModuleTests
 	[Description("Content that is not a JSON array fails before anything is saved, naming the option and the path (ENG-101526).")]
 	public void Execute_ReturnsFailure_WhenOperationsFileIsNotJsonArray(string content) {
 		// Arrange
-		const string filePath = @"C:\work\bad.json";
+		string filePath = WorkPath("bad.json");
 		FileSystem.AddFile(filePath, new System.IO.Abstractions.TestingHelpers.MockFileData(content));
 		UpdateEntitySchemaOptions options = new() {
 			Package = "UsrPkg",
@@ -740,8 +744,8 @@ internal sealed class UpdateEntitySchemaCommandTests : BaseClioModuleTests
 	public void Execute_SanitizesOperationsFilePathInError() {
 		// Arrange
 		string longFolder = new('d', 80);
-		string filePath = $@"C:\work\{longFolder}\ops" + "\u001b[31m\u202E" + "missing.json";
-		string expectedPath = $@"C:\work\{longFolder}\ops[31mmissing.json";
+		string filePath = WorkPath(longFolder, "ops" + "\u001b[31m\u202E" + "missing.json");
+		string expectedPath = WorkPath(longFolder, "ops[31mmissing.json");
 		UpdateEntitySchemaOptions options = new() {
 			Package = "UsrPkg",
 			SchemaName = "UsrVehicle",
@@ -815,7 +819,7 @@ internal sealed class UpdateEntitySchemaCommandTests : BaseClioModuleTests
 	[Description("An operations file in an ANSI code page (cp1251, as Windows PowerShell 5.1 Set-Content writes it) fails before anything is saved instead of saving its non-ASCII caption as replacement characters, with or without a UTF-8 BOM (ENG-101526).")]
 	public void Execute_ReturnsFailure_WhenOperationsFileIsNotUtf8(bool withUtf8Bom) {
 		// Arrange
-		const string filePath = @"C:\work\cp1251.json";
+		string filePath = WorkPath("cp1251.json");
 		byte[] prefix = Encoding.ASCII.GetBytes("[{\"action\":\"add\",\"column-name\":\"UsrStatus\",\"type\":\"Text\",\"title\":\"");
 		byte[] statusInCp1251 = [0xD1, 0xF2, 0xE0, 0xF2, 0xF3, 0xF1];
 		byte[] suffix = Encoding.ASCII.GetBytes("\"}]");
@@ -840,7 +844,7 @@ internal sealed class UpdateEntitySchemaCommandTests : BaseClioModuleTests
 	[Description("A UTF-16 LE file with a byte order mark (Windows PowerShell 5.1 Out-File default) is decoded as UTF-16 and keeps its non-ASCII caption (ENG-101526).")]
 	public void Execute_ReadsUtf16LittleEndianOperationsFileWithBom() {
 		// Arrange
-		const string filePath = @"C:\work\utf16.json";
+		string filePath = WorkPath("utf16.json");
 		const string json = "[\r\n  {\"action\":\"add\",\"column-name\":\"UsrStatus\",\"type\":\"Text\",\"title\":\"Статус\"}\r\n]";
 		FileSystem.AddFile(filePath, new MockFileData([.. Encoding.Unicode.GetPreamble(), .. Encoding.Unicode.GetBytes(json)]));
 		UpdateEntitySchemaOptions options = new() {
@@ -860,38 +864,12 @@ internal sealed class UpdateEntitySchemaCommandTests : BaseClioModuleTests
 			&& mutations.Single().Title == "Статус"));
 	}
 
-	[TestCase(typeof(IOException))]
-	[TestCase(typeof(UnauthorizedAccessException))]
-	[Description("A read failure of an existing operations file (locked file, denied access) fails before anything is saved, naming the option and the sanitized path instead of the raw .NET message (ENG-101526).")]
-	public void Execute_ReturnsFailure_WhenOperationsFileCannotBeRead(Type exceptionType) {
-		// Arrange
-		const string filePath = "C:\\work\\locked\u001b.json";
-		Clio.Common.IFileSystem fileSystem = Substitute.For<Clio.Common.IFileSystem>();
-		fileSystem.ExistsFile(filePath).Returns(true);
-		fileSystem.ReadAllBytes(filePath).Throws((Exception)Activator.CreateInstance(exceptionType, "raw failure")!);
-		UpdateEntitySchemaCommand command = new(_columnManager, _logger,
-			Substitute.For<IOptionSuggestionService>(), fileSystem);
-		UpdateEntitySchemaOptions options = new() {
-			Package = "UsrPkg",
-			SchemaName = "UsrVehicle",
-			OperationsFile = filePath
-		};
-
-		// Act
-		int result = command.Execute(options);
-
-		// Assert
-		result.Should().Be(1, because: "an unreadable operations file cannot be applied");
-		_columnManager.DidNotReceiveWithAnyArgs().ModifyColumns(default!);
-		_logger.Received(1).WriteError(@"--operations-file 'C:\work\locked.json' could not be read.");
-	}
-
 	[TestCase("")]
 	[TestCase("   \r\n\t ")]
 	[Description("An empty or whitespace-only operations file fails before anything is saved, naming the option and the path (ENG-101526).")]
 	public void Execute_ReturnsFailure_WhenOperationsFileIsEmpty(string content) {
 		// Arrange
-		const string filePath = @"C:\work\empty.json";
+		string filePath = WorkPath("empty.json");
 		FileSystem.AddFile(filePath, new MockFileData(content));
 		UpdateEntitySchemaOptions options = new() {
 			Package = "UsrPkg",
@@ -909,10 +887,10 @@ internal sealed class UpdateEntitySchemaCommandTests : BaseClioModuleTests
 	}
 
 	[Test]
-	[Description("An operations file holding an array of non-objects fails before anything is saved; the index counts across all operation sources (ENG-101526).")]
+	[Description("An operations file holding an array of non-objects fails before anything is saved, naming the option, the path and the index within the file (ENG-101526).")]
 	public void Execute_ReturnsFailure_WhenOperationsFileArrayHoldsNonObjects() {
 		// Arrange
-		const string filePath = @"C:\work\numbers.json";
+		string filePath = WorkPath("numbers.json");
 		FileSystem.AddFile(filePath, new MockFileData("[1,2]"));
 		UpdateEntitySchemaOptions options = new() {
 			Package = "UsrPkg",
@@ -927,7 +905,7 @@ internal sealed class UpdateEntitySchemaCommandTests : BaseClioModuleTests
 		// Assert
 		result.Should().Be(1, because: "every operation must be a JSON object");
 		_columnManager.DidNotReceiveWithAnyArgs().ModifyColumns(default!);
-		_logger.Received(1).WriteError("Operation payload at index 1 must be a JSON object.");
+		_logger.Received(1).WriteError($"--operations-file '{filePath}' item at index 0 is not a JSON object.");
 	}
 
 	[TestCase("not json at all")]
@@ -988,5 +966,50 @@ internal sealed class UpdateEntitySchemaCommandTests : BaseClioModuleTests
 			CultureInfo.CurrentCulture = _originalCurrentCulture;
 			CultureInfo.CurrentUICulture = _originalCurrentUiCulture;
 		}
+	}
+}
+
+[TestFixture]
+[NonParallelizable]
+[Property("Module", "Command")]
+internal sealed class UpdateEntitySchemaCommandUnreadableFileTests : BaseClioModuleTests
+{
+	private IRemoteEntitySchemaColumnManager _columnManager;
+	private ILogger _logger;
+	private Clio.Common.IFileSystem _fileSystem;
+
+	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
+		base.AdditionalRegistrations(containerBuilder);
+		_columnManager = Substitute.For<IRemoteEntitySchemaColumnManager>();
+		_logger = Substitute.For<ILogger>();
+		_fileSystem = Substitute.For<Clio.Common.IFileSystem>();
+		containerBuilder.AddTransient(_ => _columnManager);
+		containerBuilder.AddTransient(_ => _logger);
+		containerBuilder.AddTransient(_ => _fileSystem);
+	}
+
+	[TestCase(typeof(IOException))]
+	[TestCase(typeof(UnauthorizedAccessException))]
+	[Description("A read failure of an existing operations file (locked file, denied access) fails before anything is saved, naming the option and the sanitized path instead of the raw .NET message (ENG-101526).")]
+	public void Execute_ReturnsFailure_WhenOperationsFileCannotBeRead(Type exceptionType) {
+		// Arrange
+		string filePath = UpdateEntitySchemaCommandTests.WorkPath("locked\u001b.json");
+		_fileSystem.ExistsFile(filePath).Returns(true);
+		_fileSystem.ReadAllBytes(filePath).Throws((Exception)Activator.CreateInstance(exceptionType, "raw failure")!);
+		UpdateEntitySchemaCommand command = Container.GetRequiredService<UpdateEntitySchemaCommand>();
+		UpdateEntitySchemaOptions options = new() {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			OperationsFile = filePath
+		};
+
+		// Act
+		int result = command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "an unreadable operations file cannot be applied");
+		_columnManager.DidNotReceiveWithAnyArgs().ModifyColumns(default!);
+		_logger.Received(1).WriteError(
+			$"--operations-file '{UpdateEntitySchemaCommandTests.WorkPath("locked.json")}' could not be read.");
 	}
 }

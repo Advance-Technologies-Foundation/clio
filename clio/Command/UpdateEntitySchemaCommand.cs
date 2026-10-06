@@ -245,8 +245,16 @@ public class UpdateEntitySchemaCommand : Command<UpdateEntitySchemaOptions>
 		} catch (JsonException exception) {
 			throw new InvalidOperationException($"{source} is not a valid JSON array of operations.", exception);
 		}
-		return operations?.Select(element => element.GetRawText())
-			?? throw new InvalidOperationException($"{source} is not a valid JSON array of operations.");
+		if (operations is null) {
+			throw new InvalidOperationException($"{source} is not a valid JSON array of operations.");
+		}
+		// Checked here, not in ParseOperation, so the error names the source and counts the index within it.
+		for (int index = 0; index < operations.Count; index++) {
+			if (operations[index].ValueKind != JsonValueKind.Object) {
+				throw new InvalidOperationException($"{source} item at index {index} is not a JSON object.");
+			}
+		}
+		return operations.Select(element => element.GetRawText());
 	}
 
 	private IEnumerable<ModifyEntitySchemaColumnOptions> BuildColumnMutations(UpdateEntitySchemaOptions options) {
