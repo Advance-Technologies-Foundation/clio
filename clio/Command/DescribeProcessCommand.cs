@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Command.ProcessModel;
@@ -117,18 +119,16 @@ public class DescribeProcessCommand(IProcessDescriber describer, ILogger logger)
 	/// (create, modify, <c>AccessRightsBlockExpectation</c>) run their own describe, so none of them sees it.</para>
 	/// </remarks>
 	internal static DescribeProcessResult OmitDecodedFilterPayloads(DescribeProcessResult result) {
-		foreach (DescribedElement element in result?.Elements ?? []) {
-			if (element?.Filter is null || element.FilterDecodedCompletely != true || element.Parameters is null) {
-				continue;
-			}
-			foreach (DescribedParameter parameter in element.Parameters) {
-				if (parameter is not null
-					&& !string.IsNullOrEmpty(parameter.Value)
-					&& string.Equals(parameter.Name, DataSourceFiltersParameterName, StringComparison.OrdinalIgnoreCase)) {
-					parameter.Value = null;
-					parameter.ValueOmitted = DecodedFilterNote;
-				}
-			}
+		IEnumerable<DescribedParameter> rawFilters = (result?.Elements ?? [])
+			.Where(element => element?.Filter is not null && element.FilterDecodedCompletely == true
+				&& element.Parameters is not null)
+			.SelectMany(element => element.Parameters)
+			.Where(parameter => parameter is not null
+				&& !string.IsNullOrEmpty(parameter.Value)
+				&& string.Equals(parameter.Name, DataSourceFiltersParameterName, StringComparison.OrdinalIgnoreCase));
+		foreach (DescribedParameter parameter in rawFilters) {
+			parameter.Value = null;
+			parameter.ValueOmitted = DecodedFilterNote;
 		}
 		return result;
 	}

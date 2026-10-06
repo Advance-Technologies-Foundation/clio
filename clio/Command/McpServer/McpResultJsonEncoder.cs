@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text.Encodings.Web;
 
@@ -36,6 +37,11 @@ internal sealed class McpResultJsonEncoder : JavaScriptEncoder {
 
 	private const int EscapeLength = 6;
 
+	private const string UnsafeOverrideJustification = "JavaScriptEncoder declares these members abstract over "
+		+ "char*, so an encoder cannot exist without them. Both read or write only within the length the "
+		+ "framework passes alongside the pointer, and delegate to UnsafeRelaxedJsonEscaping for everything "
+		+ "but the BMP Format characters.";
+
 	private McpResultJsonEncoder() {
 	}
 
@@ -48,6 +54,8 @@ internal sealed class McpResultJsonEncoder : JavaScriptEncoder {
 		IsBmpFormat(unicodeScalar) || Relaxed.WillEncode(unicodeScalar);
 
 	/// <inheritdoc />
+	[SuppressMessage("Security", "S6640:Make sure that using \"unsafe\" is safe here",
+		Justification = UnsafeOverrideJustification)]
 	public override unsafe int FindFirstCharacterToEncode(char* text, int textLength) {
 		ArgumentNullException.ThrowIfNull(text);
 		int relaxedIndex = Relaxed.FindFirstCharacterToEncode(text, textLength);
@@ -61,6 +69,8 @@ internal sealed class McpResultJsonEncoder : JavaScriptEncoder {
 	}
 
 	/// <inheritdoc />
+	[SuppressMessage("Security", "S6640:Make sure that using \"unsafe\" is safe here",
+		Justification = UnsafeOverrideJustification)]
 	public override unsafe bool TryEncodeUnicodeScalar(int unicodeScalar, char* buffer, int bufferLength,
 		out int numberOfCharactersWritten) {
 		ArgumentNullException.ThrowIfNull(buffer);
