@@ -269,9 +269,9 @@ public sealed class DescribeProcessCommandTests {
 
 		// Assert
 		result.Should().Be(0, because: "a found process is described successfully");
-		written.Should().Contain("\"sourceColumn\": \"Owner\"",
+		written.Should().Contain("\"sourceColumn\":\"Owner\"",
 			because: "the column must survive the clio DTO re-serialization");
-		written.Should().Contain("\"sourceElementParameter\": \"ResultEntity\"",
+		written.Should().Contain("\"sourceElementParameter\":\"ResultEntity\"",
 			because: "so must the record parameter");
 		foreach (string field in new[] { "sourceElement", "sourceElementParameter", "sourceColumn" }) {
 			System.Text.RegularExpressions.Regex.Matches(written, $"\"{field}\"").Count.Should().Be(1,

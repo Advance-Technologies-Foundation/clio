@@ -270,7 +270,7 @@ public sealed class RequestInfoToolTests {
 			because: "the inline response is the default and stays byte-for-byte unchanged");
 	}
 
-	private const string PinnedDetailWireJson = """{"success":true,"mode":"detail","count":1,"requestType":"crt.ClosePageRequest","description":"Closes the currently open page.","parameters":{},"baseParameters":{"$context":{"type":"ViewModelContext","description":"Platform-injected view-model context."},"scopes":{"type":"array","items":{"type":"string"},"description":"Platform-populated scope chain."},"type":{"type":"string","description":"Request type discriminator."},"$initialEvent":{"type":"unknown","description":"The original UI event.","deprecated":true,"deprecationReason":"use event binding expression instead."}},"references":{"typeDefinitions":{"RequestBindingConfig":{"fields":{"params":{"type":"Record","keyType":"string","valueType":"string | boolean | number"},"request":{"type":"string","required":true}}}}},"documentation":"# How to Wire the Close Page Request\n\n## Steps\n\nDo it.","documentationSource":"cdn","resolvedTargetVersion":"latest","resolvedFrom":"latest-fallback","versionWarning":"Catalog was loaded from \u0027latest\u0027 (a superset of all GA versions). A component listed here may not exist in the target environment\u0027s actual platform version, so a page built against it can fail to render at runtime. The target platform version could not be determined: do NOT silently assume this component set. Before generating an implementation plan, tell the user the version is unknown and request explicit confirmation before proceeding against \u0027latest\u0027. To scope results to a real version, pass an explicit version or target a registered environment so clio can resolve its platform version (no cliogate required \u2014 resolved via ApplicationInfoService, with the cliogate GetSysInfo probe as fallback).","requiresVersionConfirmation":true,"resolvedFromReason":"no-active-environment"}""";
+	private const string PinnedDetailWireJson = """{"success":true,"mode":"detail","count":1,"requestType":"crt.ClosePageRequest","description":"Closes the currently open page.","parameters":{},"baseParameters":{"$context":{"type":"ViewModelContext","description":"Platform-injected view-model context."},"scopes":{"type":"array","items":{"type":"string"},"description":"Platform-populated scope chain."},"type":{"type":"string","description":"Request type discriminator."},"$initialEvent":{"type":"unknown","description":"The original UI event.","deprecated":true,"deprecationReason":"use event binding expression instead."}},"references":{"typeDefinitions":{"RequestBindingConfig":{"fields":{"params":{"type":"Record","keyType":"string","valueType":"string | boolean | number"},"request":{"type":"string","required":true}}}}},"documentation":"# How to Wire the Close Page Request\n\n## Steps\n\nDo it.","documentationSource":"cdn","resolvedTargetVersion":"latest","resolvedFrom":"latest-fallback","versionWarning":"Catalog was loaded from 'latest' (a superset of all GA versions). A component listed here may not exist in the target environment's actual platform version, so a page built against it can fail to render at runtime. The target platform version could not be determined: do NOT silently assume this component set. Before generating an implementation plan, tell the user the version is unknown and request explicit confirmation before proceeding against 'latest'. To scope results to a real version, pass an explicit version or target a registered environment so clio can resolve its platform version (no cliogate required — resolved via ApplicationInfoService, with the cliogate GetSysInfo probe as fallback).","requiresVersionConfirmation":true,"resolvedFromReason":"no-active-environment"}""";
 
 	private static (RequestInfoToFileTool tool, System.IO.Abstractions.TestingHelpers.MockFileSystem fileSystem, string outputFile)
 		BuildToFileTool(RequestInfoTool infoTool, System.IO.Abstractions.TestingHelpers.MockFileSystem? fileSystem = null) {
@@ -373,7 +373,7 @@ public sealed class RequestInfoToolTests {
 
 		// Assert
 		fileSystem.File.Exists(outputFile).Should().BeFalse(because: "a list response has no documentation to write");
-		response.ToJsonString().Should().Be(McpResponseBaseline.Serialize(inline),
+		McpResponseBaseline.Serialize(response).Should().Be(McpResponseBaseline.Serialize(inline),
 			because: "without documentation the twin returns exactly what get-request-info returns");
 	}
 
@@ -391,7 +391,7 @@ public sealed class RequestInfoToolTests {
 
 		// Assert
 		inline.Success.Should().BeFalse(because: "the fixture request type is not in the catalog");
-		response.ToJsonString().Should().Be(McpResponseBaseline.Serialize(inline),
+		McpResponseBaseline.Serialize(response).Should().Be(McpResponseBaseline.Serialize(inline),
 			because: "the twin must not reword or drop anything from the inline failure");
 		fileSystem.File.Exists(outputFile).Should().BeFalse(because: "a failed lookup leaves no file");
 	}
