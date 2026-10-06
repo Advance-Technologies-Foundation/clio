@@ -63,7 +63,7 @@ public static class ModifyBusinessProcessPrompt {
 		 the order their flows were added and the first true one wins. No gateway is needed — the platform
 		 synthesizes one for a conditional flow whose source is an activity. The condition must be a bool (an int is refused; the interpreted engine does not coerce)
 		 and every `[#…#]` parameter reference in it must resolve in that process: write it by NAME as on create
-		 (`[#Amount#]`, `[#Read.ResultEntity.Owner#]`), or as the meta path describe reports, spelled exactly —
+		 (`[#Amount#]`, `[#Read.ResultEntity.Owner#]`), or as its UId meta path, every segment dot-separated —
 		 any other spelling, or a column the read does not load, is refused. A condition on a DEFAULT branch
 		 is refused. The clear-condition operation is `setFlow`, which re-kinds in place —
 		 same UId, same position, and a NAME re-derived from the new kind when the old one was
