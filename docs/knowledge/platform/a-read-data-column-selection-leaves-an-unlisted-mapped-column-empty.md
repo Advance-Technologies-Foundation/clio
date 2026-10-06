@@ -22,7 +22,8 @@ the query, not as a hint. The mapped-columns fallback exists only for the no-sel
 then falls back to was not measured - and a branch on an unlisted column reads null every time.
 CrtProcessBuilder (1.6.6.40+) refuses it where it can see a NAME: a `sourceColumn`, a filter `column`, a
 `[#Read.ResultEntity.Column#]` condition or Formula name (`RecordColumnReference.ResolveColumn`), and a later
-`setElement readData.columns` that drops a column something still reads (`ReadDataConfigApplier`). The UId
-form bypasses the write-side check — a hand-written `expression` or a modify-path `setFlowCondition` carrying
-`[EntityColumn:{uid}]` is stored as given, so the column has to be listed (or the list omitted) by the author.
+`setElement readData.columns` that drops a column something still reads (`ReadDataConfigApplier`). From
+1.6.6.77 (ENG-102114) it refuses the UId form too - a hand-written `[EntityColumn:{uid}]` in a condition, an
+`expression` or a Formula body goes through the same rule (`RecordColumnReference.ResolveColumnByUId`);
+below that version such a token was stored as given, and the platform saves it green (measured).
 The primary column is always selected, so `Id` never needs listing. Traced in source, not measured on a stand.

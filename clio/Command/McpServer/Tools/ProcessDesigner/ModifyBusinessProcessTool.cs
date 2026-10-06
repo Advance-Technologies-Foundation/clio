@@ -97,7 +97,7 @@ public class ModifyBusinessProcessTool(
 		 + "pre-save gate, like a mapped 'expression' and by the same rule — it must be a bool (an int is refused: "
 		 + "the interpreted engine does not coerce), it must parse, and its macro family must be one a converter "
 		 + "resolves. Name a parameter as on create ([#Amount#], [#Read.ResultEntity.Owner#]) or write its UId meta "
-		 + "path, every segment dot-separated - a misspelt one, or a column the read does not load, is "
+		 + "path, every segment dot-separated, prefix optional - a misspelt one, or a column the read does not load, is "
 		 + "refused. A refusal aborts the whole edit, writes nothing, and names the flow; the character index "
 		 + "comes only with the 'Formula value error:' PARSE family. An empty condition is "
 		 + "refused, because the platform stores one as the literal 'true' and the branch becomes always-taken; "

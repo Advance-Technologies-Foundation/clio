@@ -7,10 +7,11 @@ ticket: ENG-91853
 date: 2026-09-06
 ---
 
-**What is true** — on the BUILD path, and only there, a flow condition may address a parameter by NAME:
+**What is true** — on the BUILD path, and since 1.6.6.77 on the modify path too, a flow condition may
+address a parameter by NAME:
 `[#Amount#]` for a process parameter and `[#Read.ResultEntity#]` for an element output. The package
 expands each to the UId meta-path the platform actually evaluates, in a pass over the whole schema that
-runs after every parameter and element exists. Since CrtProcessBuilder 1.6.6.76 (ENG-102114) the MODIFY
+runs after every parameter and element exists. Since CrtProcessBuilder 1.6.6.77 (ENG-102114) the MODIFY
 path expands the same names too - per operation, in the one condition `addFlow` / `setFlow` /
 `setFlowCondition` writes, never as a pass over a schema that may hold designer-authored conditions.
 Before that a modify caller had to assemble the UId form by hand, which is how a dot went missing before
@@ -37,9 +38,9 @@ with a stored expression, ~341 of them decoding to an empty one the runtime repl
 **The expansion does NOT reach all 932, and the difference is 242 flows.** A condition that addresses a
 COLUMN of the record an element returned carries a THIRD meta-path segment, `[EntityColumn:{uid}]`, and
 `[#Element.Parameter#]` has no way to say it. So by-name coverage is 245 + 445 = **690 of 1 061 = 65%**,
-not 88%, and the column form still belongs to the modify path. Stated separately rather than rounded up
-because "88% is buildable now" is what a reader takes away, and it would be wrong by 242 flows. An
-`[#Element.Parameter.Column#]` arm would close the rest. A clean-room agent run confirmed the consequence
+not 88% - when this was measured. Stated separately rather than rounded up because "88% is buildable now" is
+what a reader would have taken away, and it was wrong by 242 flows. The `[#Element.Parameter.Column#]` arm
+has since closed the rest (ENG-91844). A clean-room agent run confirmed the consequence
 before the fix: the executor never used `flows[].condition` once and routed every branch through a
 later `modify-business-process`.
 
@@ -58,9 +59,12 @@ families would refuse the next one the platform adds. Two consequences worth kno
   only fixtures. The check is also the ONLY thing separating an element output from a macro family:
   name an ELEMENT `SysSettings` and `[#SysSettings.Foo#]` resolves against it. Caller-controlled,
   exotic, and deliberately not fixed — every alternative reintroduces the family enumeration.
-- The **short** meta-path spelling `[#[Parameter:{uid}]#]` carries no dot, so it would read as a bare
-  name and be refused. It is passed through by an explicit bracket check, because the platform emits a
-  parameter reference both with and without the `[IsOwnerSchema:false].[IsSchema:false].` prefix.
+- A meta path already written by hand is not expanded. Since 1.6.6.77 (ENG-102114) it is CHECKED
+  instead: it must be the platform's spelling of an item of this process, its
+  `[IsOwnerSchema:false].[IsSchema:false].` prefix optional - the platform writes only the prefixed form (all
+  9 140 shipped tokens), but the published guidance taught the short `[#[Parameter:{uid}]#]` one and the
+  platform resolves it, so clio-built processes carry it. Any other spelling is refused with the correct
+  token handed back (`a-hand-written-meta-path-saves-green-on-an-unread-column.md`).
 
 **What breaks if you ignore it** — three things, all of which were live during this change:
 

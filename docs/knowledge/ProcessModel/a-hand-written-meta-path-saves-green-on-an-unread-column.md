@@ -1,5 +1,5 @@
 ---
-description: the platform's save check refuses a malformed hand-written [#...#] meta path in a condition, expression or Formula body with a message naming nothing, and SAVES a correctly spelled one on a column the Read data element does not load, which reads empty at run time; CrtProcessBuilder 1.6.6.76 checks both itself
+description: the platform's save check refuses a malformed hand-written [#...#] meta path in a condition, expression or Formula body with a message naming nothing, and SAVES a correctly spelled one on a column the Read data element does not load, which reads empty at run time; CrtProcessBuilder 1.6.6.77 checks both itself
 applies-to:
   - clio/CrtProcessBuilder/
   - clio/Command/McpServer/Tools/ProcessDesigner/ModifyBusinessProcessTool.cs
@@ -29,7 +29,7 @@ agents to assemble from the uids describe reports, so clio-built processes store
 generator's grammar and its error messages were never designed for hand-written tokens; and the "column is
 loaded" rule exists only in the designer CLIENT (`ProcessSchemaUserTaskUtilities.getResultInfo` offers only the
 selected columns). Every parser of these tokens in `Terrasoft.Core` is `internal`, so a package cannot reuse it.
-From 1.6.6.76 the package checks a hand-written meta path itself (`MetaPathTokenReference`): the prefixed or the
+From 1.6.6.77 the package checks a hand-written meta path itself (`MetaPathTokenReference`): the prefixed or the
 prefix-less spelling of an item of THIS process, built from the element the reference names, and a column only
 when its record delivers it; anything else is refused naming the flow or field with the correct token handed back.
 

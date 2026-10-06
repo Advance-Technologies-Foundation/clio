@@ -18,8 +18,8 @@ namespace Clio.Mcp.E2E;
 /// <summary>
 /// End-to-end coverage for ENG-102114 over the real MCP path: a condition written on an EXISTING process takes the
 /// <c>[#Element.Parameter.Column#]</c> name a build-path condition takes, and a meta path written by hand is
-/// accepted only in the spelling describe reports. NOT in CI — run manually against an environment carrying
-/// CrtProcessBuilder 1.6.6.76 or later.
+/// accepted only in the spelling the platform writes, its prefix optional, naming a column the record delivers. NOT in CI — run manually against an environment carrying
+/// CrtProcessBuilder 1.6.6.77 or later.
 /// <para>The motivating defect (clio#1529): a hand-assembled token missing the dot before
 /// <c>[EntityColumn:…]</c>. On a Script value the platform refuses it at save with "Value for argument
 /// "parameterUId" must be specified", which names neither the flow nor the token; these tests pin that the package
@@ -37,7 +37,10 @@ public sealed class MetaPathConditionToolE2ETests {
 	private const string ModifyToolName = ModifyBusinessProcessTool.ModifyBusinessProcessToolName;
 
 	/// <summary>The first cut that expands names on the modify path and checks a hand-written meta path.</summary>
-	private const string MinimumPackageVersion = "1.6.6.76";
+	private const string MinimumPackageVersion = "1.6.6.77";
+
+	/// <summary>The prefix the platform's GetMetaPath writes before every reference.</summary>
+	private const string Prefix = "[IsOwnerSchema:false].[IsSchema:false].";
 
 	#region Methods: Tests
 
@@ -61,7 +64,7 @@ public sealed class MetaPathConditionToolE2ETests {
 			});
 
 		// Assert
-		JsonSerializer.Serialize(modified).Should().Contain("edited",
+		McpCommandExecutionParser.Extract(modified).ExitCode.Should().Be(0,
 			because: "a name the process can answer for is expanded, so the platform's gate accepts the condition");
 		string condition = ConditionOnCall(
 			DescribedProcessGraph.Read(await ProcessDesignerE2EArrange.DescribeAsync(context, processName)));
@@ -110,6 +113,73 @@ public sealed class MetaPathConditionToolE2ETests {
 			.Should().Be(canonical, because: "a refused edit writes nothing");
 	}
 
+	[Test]
+	[Description("The prefix-less meta path - the spelling the published guidance taught, which processes built through clio store - is accepted and stored exactly as written, so a describe-then-modify round trip of such a process is never refused.")]
+	[AllureTag(ModifyToolName)]
+	[AllureName("modify-business-process accepts the prefix-less meta path in a condition")]
+	public async Task ModifyBusinessProcess_Should_AcceptThePrefixLessMetaPath() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context =
+			await ProcessDesignerE2EArrange.StartAsync("Meta-path condition", MinimumPackageVersion);
+		string processName = $"UsrClioBpMetaPathShortE2e{Guid.NewGuid():N}";
+		await CreateAsync(context, processName, "[#ReadContact.ResultEntity.DoNotUseCall#] == false");
+		string canonical = ConditionOnCall(
+			DescribedProcessGraph.Read(await ProcessDesignerE2EArrange.DescribeAsync(context, processName)));
+		string prefixLess = canonical.Replace(Prefix, string.Empty);
+
+		// Act
+		CallToolResult modified = await ProcessDesignerE2EArrange.CallToolAsync(context, ModifyToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName,
+				["operations"] = SetCondition(prefixLess)
+			});
+
+		// Assert
+		prefixLess.Should().NotBe(canonical, because: "the arrange must actually have dropped the prefix");
+		McpCommandExecutionParser.Extract(modified).ExitCode.Should().Be(0,
+			because: "the prefix-less spelling is one of the two the check accepts");
+		ConditionOnCall(DescribedProcessGraph.Read(await ProcessDesignerE2EArrange.DescribeAsync(context, processName)))
+			.Should().Be(prefixLess, because: "an accepted token is never rewritten");
+	}
+
+	[Test]
+	[Description("A correctly spelled reference to a column the Read data element does not load is refused, naming the column - the platform would save it green and the branch would read an empty value at run time.")]
+	[AllureTag(ModifyToolName)]
+	[AllureName("modify-business-process refuses a condition on a column the read does not load")]
+	public async Task ModifyBusinessProcess_Should_RefuseAColumnTheReadDoesNotLoad() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context =
+			await ProcessDesignerE2EArrange.StartAsync("Meta-path condition", MinimumPackageVersion);
+		string processName = $"UsrClioBpMetaPathUnreadE2e{Guid.NewGuid():N}";
+		await CreateAsync(context, processName, "[#ReadContact.ResultEntity.DoNotUseCall#] == false");
+		string canonical = ConditionOnCall(
+			DescribedProcessGraph.Read(await ProcessDesignerE2EArrange.DescribeAsync(context, processName)));
+		await ModifyExpectingSuccessAsync(context, processName, SetCondition("true"));
+		await ModifyExpectingSuccessAsync(context, processName, JsonSerializer.Serialize(new[] {
+			new Dictionary<string, object> {
+				["op"] = "setElement", ["elementName"] = "ReadContact",
+				["elementUpdate"] = new Dictionary<string, object> {
+					["readData"] = new Dictionary<string, object> { ["columns"] = new[] { "Id" } }
+				}
+			}
+		}));
+
+		// Act
+		CallToolResult refused = await ProcessDesignerE2EArrange.CallToolAsync(context, ModifyToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName,
+				["operations"] = SetCondition(canonical)
+			});
+
+		// Assert
+		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(refused);
+		execution.ExitCode.Should().NotBe(0, because: "the column is no longer read, so it would arrive empty");
+		string.Join(" ", (execution.Output ?? []).Select(message => message.Value)).Should()
+			.Contain("is not among the columns", because: "the refusal names why the reference cannot work");
+	}
+
 	#endregion
 
 	#region Methods: Private
@@ -152,6 +222,18 @@ public sealed class MetaPathConditionToolE2ETests {
 			  ]
 			}
 			""";
+	}
+
+	private static async Task ModifyExpectingSuccessAsync(ProcessDesignerArrangeContext context, string processName,
+			string operations) {
+		CallToolResult result = await ProcessDesignerE2EArrange.CallToolAsync(context, ModifyToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName,
+				["operations"] = operations
+			});
+		McpCommandExecutionParser.Extract(result).ExitCode.Should().Be(0,
+			because: "the arrangement edit must apply, or the assertions fail for the wrong reason");
 	}
 
 	private static string SetCondition(string condition) =>

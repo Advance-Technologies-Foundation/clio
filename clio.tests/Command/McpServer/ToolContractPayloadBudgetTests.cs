@@ -160,7 +160,7 @@ public sealed class ToolContractPayloadBudgetTests {
 	// ENG-102114 (2026-10-06) changed what a modify condition accepts - [#Name#] forms are expanded as on
 	// create, and a hand-written meta path must have every segment dot-separated - and paid for the
 	// setFlowCondition rewrite by dropping the refusal-message detail process-formulas already owns:
-	// modify-business-process 35030, create-business-process 34822.
+	// modify-business-process 35047, create-business-process 34656.
 	private const int MaxToolContractSerializedBytes = 137 * 256;
 
 	[Test]
