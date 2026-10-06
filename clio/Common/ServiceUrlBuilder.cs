@@ -374,7 +374,12 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		///     Reads the configuration data (ConfigurationDataService GetData). Called with <c>forceGet = true</c>
 		///     it clears the calling session's cached module structure and workplace/section caches.
 		/// </summary>
-		GetConfigurationData = 112
+		GetConfigurationData = 112,
+
+		/// <summary>Read one administrated object's per-role operation/record/column rights by schema UId.</summary>
+		GetAdministratedObject = 113,
+		/// <summary>Persist an administrated object's per-role operation/record/column rights (read-modify-write).</summary>
+		SaveAdministratedObject = 114
 
 	}
 
@@ -500,6 +505,8 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.GetSchemaDataDesignItem, "ServiceModel/SchemaDataDesignerService.svc/GetSchema"},
 		{KnownRoute.CreateNewClientUnitDesignerSchema, "/ServiceModel/ClientUnitSchemaDesignerService.svc/CreateNewSchema"},
 		{KnownRoute.GetClientUnitDesignerParentSchemas, "/ServiceModel/ClientUnitSchemaDesignerService.svc/GetParentSchemas"},
+		{KnownRoute.GetAdministratedObject, "ServiceModel/RightManagementService.svc/GetAdministratedObject"},
+		{KnownRoute.SaveAdministratedObject, "ServiceModel/RightManagementService.svc/SaveAdministratedObject"},
 	};
 
 	private EnvironmentSettings _environmentSettings;
