@@ -148,6 +148,11 @@ public class UpdateEntitySchemaCommand : Command<UpdateEntitySchemaOptions>
 	private const int MaxEchoedNameLength = 64;
 
 	/// <summary>
+	/// Longest user-supplied file path an error message echoes before it is cut off (the Windows MAX_PATH).
+	/// </summary>
+	private const int MaxEchoedPathLength = 260;
+
+	/// <summary>
 	/// Every top-level field an operation object may carry; anything else is rejected rather than ignored.
 	/// Internal so tests can prove every field the MCP tool emits is accepted here.
 	/// </summary>
@@ -194,7 +199,7 @@ public class UpdateEntitySchemaCommand : Command<UpdateEntitySchemaOptions>
 			ops.AddRange(ParseOperationsArray(options.OperationsJson, "--operations value"));
 		}
 		if (!string.IsNullOrWhiteSpace(options.OperationsFile)) {
-			string source = $"--operations-file '{options.OperationsFile}'";
+			string source = $"--operations-file '{SanitizeForMessage(options.OperationsFile, MaxEchoedPathLength)}'";
 			ops.AddRange(ParseOperationsArray(ReadOperationsFile(options.OperationsFile, source), source));
 		}
 		return ops;
@@ -329,10 +334,10 @@ public class UpdateEntitySchemaCommand : Command<UpdateEntitySchemaOptions>
 	/// control characters (terminal escape sequences, line breaks) and invisible format characters (bidirectional
 	/// overrides such as U+202E, zero-width characters such as U+200B, non-BMP tag characters such as U+E0041) are
 	/// removed whether they occupy one UTF-16 unit or a surrogate pair, and a lone surrogate, which is not a character
-	/// at all, is dropped. The result is cut to <see cref="MaxEchoedNameLength"/> UTF-16 units without splitting a
-	/// surrogate pair.
+	/// at all, is dropped. The result is cut to <paramref name="maxLength"/> UTF-16 units (by default
+	/// <see cref="MaxEchoedNameLength"/>) without splitting a surrogate pair.
 	/// </summary>
-	internal static string SanitizeForMessage(string value) {
+	internal static string SanitizeForMessage(string value, int maxLength = MaxEchoedNameLength) {
 		StringBuilder printable = new(value.Length);
 		ReadOnlySpan<char> remaining = value;
 		while (!remaining.IsEmpty) {
@@ -344,10 +349,10 @@ public class UpdateEntitySchemaCommand : Command<UpdateEntitySchemaOptions>
 			}
 			printable.Append(rune.ToString());
 		}
-		if (printable.Length <= MaxEchoedNameLength) {
+		if (printable.Length <= maxLength) {
 			return printable.ToString();
 		}
-		int cut = char.IsHighSurrogate(printable[MaxEchoedNameLength - 1]) ? MaxEchoedNameLength - 1 : MaxEchoedNameLength;
+		int cut = char.IsHighSurrogate(printable[maxLength - 1]) ? maxLength - 1 : maxLength;
 		return printable.ToString(0, cut) + "...";
 	}
 

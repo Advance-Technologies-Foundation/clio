@@ -732,6 +732,28 @@ internal sealed class UpdateEntitySchemaCommandTests : BaseClioModuleTests
 	}
 
 	[Test]
+	[Description("A missing --operations-file is echoed without control or format characters, and a path longer than a schema name is still named in full (ENG-101526).")]
+	public void Execute_SanitizesOperationsFilePathInError() {
+		// Arrange
+		string longFolder = new('d', 80);
+		string filePath = $@"C:\work\{longFolder}\ops" + "\u001b[31m\u202E" + "missing.json";
+		string expectedPath = $@"C:\work\{longFolder}\ops[31mmissing.json";
+		UpdateEntitySchemaOptions options = new() {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			OperationsFile = filePath
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "an operations file that does not exist cannot be applied");
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains($"'{expectedPath}'") && !message.Contains('\u001b') && !message.Contains('\u202E')));
+	}
+
+	[Test]
 	[Description("The parser accepts --operations-file as an operation source (ENG-101526).")]
 	public void Parse_Should_AcceptOperationsFile() {
 		// Arrange
