@@ -398,7 +398,7 @@ public class ModifyBusinessProcessToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.ModifyBusinessProcess(
-			new ModifyBusinessProcessArgs("docker_fix2", SampleOperations, "UsrSampleProcess", null));
+			new ModifyBusinessProcessArgs("docker_fix2", JsonArgument.Text(SampleOperations), "UsrSampleProcess", null));
 
 		// Assert
 		result.ExitCode.Should().Be(0, because: "an edit that needs a compile still succeeded");

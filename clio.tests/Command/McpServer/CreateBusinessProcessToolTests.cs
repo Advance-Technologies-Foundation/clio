@@ -291,7 +291,7 @@ public class CreateBusinessProcessToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.CreateBusinessProcess(
-			new CreateBusinessProcessArgs("docker_fix2", SampleDescriptor, "MyApp"));
+			new CreateBusinessProcessArgs("docker_fix2", JsonArgument.Text(SampleDescriptor), "MyApp"));
 
 		// Assert
 		result.ExitCode.Should().Be(0, because: "a build that needs a compile still succeeded");
