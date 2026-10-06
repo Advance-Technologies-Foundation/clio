@@ -623,18 +623,19 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		string processName = $"UsrClioBpFilterExprE2e{Guid.NewGuid():N}";
 		try {
 			await CreateProcessAsync(context, processName, BuildReadByParameterDescriptor(processName));
-			string parameterPath = await ReadFilterExpressionAsync(context, processName, "ReadContact");
-			string columnPath = await ReadFilterExpressionAsync(context, processName, "ReadSame");
+			string parameterPath = await ReadFilterExpressionAsync(context, processName, "ReadContact") ?? string.Empty;
+			string columnPath = await ReadFilterExpressionAsync(context, processName, "ReadSame") ?? string.Empty;
 
-			// Act — the wrapped form an agent carries over from formulas, then the bare form describe reported.
+			// Act — the wrapped form an agent carries over from formulas, then the bare form describe reported,
+			// re-applied onto a CLEARED filter so the read-back can only come from the expression itself.
 			string parameterRefusal = await ModifyExpectingRefusalAsync(context, processName,
 				BuildSetFilterExpressionOperations("ReadContact", $"[#{parameterPath}#]"));
 			string columnRefusal = await ModifyExpectingRefusalAsync(context, processName,
 				BuildSetFilterExpressionOperations("ReadSame", $"[#{columnPath}#]"));
 			await ModifyExpectingSuccessAsync(context, processName,
-				BuildSetFilterExpressionOperations("ReadContact", parameterPath));
+				BuildReplaceFilterWithExpressionOperations("ReadContact", parameterPath));
 			await ModifyExpectingSuccessAsync(context, processName,
-				BuildSetFilterExpressionOperations("ReadSame", columnPath));
+				BuildReplaceFilterWithExpressionOperations("ReadSame", columnPath));
 
 			// Assert — quote-free fragments only: the refusal arrives as a serialized envelope.
 			parameterPath.Should().StartWith("[IsOwnerSchema:false].[IsSchema:false].[Parameter:",
@@ -646,9 +647,10 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			columnRefusal.Should().Contain("wrapper is never",
 				because: "a wrapped column reference must be refused too - stored, it matched no record with no error");
 			(await ReadFilterExpressionAsync(context, processName, "ReadContact")).Should().Be(parameterPath,
-				because: "re-applying the read-back stores the identical process-parameter reference");
+				because: "the filter was cleared first, so this reference was stored by the bare expression alone");
 			(await ReadFilterExpressionAsync(context, processName, "ReadSame")).Should().Be(columnPath,
-				because: "re-applying the read-back stores the identical column reference, segment included");
+				because: "the filter was cleared first, so this column reference, segment included, was stored by the "
+					+ "bare expression alone");
 		} finally {
 			await DeleteProcessAsync(context.EnvironmentName!, processName);
 		}
@@ -1460,6 +1462,20 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	// Serialized rather than interpolated: the expression is caller data and must be JSON-escaped.
 	private static string BuildSetFilterExpressionOperations(string elementName, string expression) =>
 		JsonSerializer.Serialize(new object[] {
+			new {
+				op = "setFilter", elementName,
+				filter = new {
+					@object = "Contact", logicalOperation = "and",
+					conditions = new[] { new { column = "Id", comparison = "equal", expression } }
+				}
+			}
+		});
+
+	// clearFilter, then setFilter with the expression, in ONE atomic batch: the stored filter can only be the one the
+	// expression built, so a server that accepted the call but ignored the expression would read back no filter.
+	private static string BuildReplaceFilterWithExpressionOperations(string elementName, string expression) =>
+		JsonSerializer.Serialize(new object[] {
+			new { op = "clearFilter", elementName },
 			new {
 				op = "setFilter", elementName,
 				filter = new {
