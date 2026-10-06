@@ -86,8 +86,10 @@ NOTES
     - repeating --operation (--operation A --operation B) is rejected by the
       parser; pass the values after one --operation (--operation A B) or use
       --operations / --operations-file
-    - a missing --operations-file, or content that is not a JSON array, fails
-      before anything is saved and names the option and the path
+    - a missing or unreadable --operations-file, a file that is not valid UTF-8
+      (for example one saved in an ANSI code page), or content that is not a
+      JSON array, fails before anything is saved and names the option and the
+      path
     - an operation field the command does not know (for example a misspelled
       colum-name) fails the batch before anything is saved, naming the field and
       the nearest known field

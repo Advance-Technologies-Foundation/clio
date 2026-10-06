@@ -312,6 +312,52 @@ EXAMPLE
 		output.Should().NotContain("--package-name", because: "the hidden alias of --package must not be listed");
 	}
 
+	[Test]
+	[Description("Generated command help omits Hidden environment aliases (--url, --clientId) from ENVIRONMENT OPTIONS while keeping the visible --uri (ENG-101526).")]
+	public void TryRenderCommandHelp_WhenEnvironmentOptionIsHidden_OmitsItFromEnvironmentOptions() {
+		// Act
+		string output = _exportRenderer.TryRenderCommandHelp("update-entity-schema");
+		string environmentOptions = output[output.IndexOf("ENVIRONMENT OPTIONS", StringComparison.Ordinal)..];
+
+		// Assert
+		environmentOptions.Should().Contain("--uri <VALUE>", because: "the visible environment option is still listed");
+		environmentOptions.Should().NotContain("--url", because: "the hidden alias of --uri must not be listed");
+		environmentOptions.Should().NotContain("--clientId", because: "the hidden alias of --client-id must not be listed");
+	}
+
+	[Test]
+	[Description("The generated markdown doc omits Hidden environment aliases (--url, --clientId) from Environment Options while keeping the visible --uri (ENG-101526).")]
+	public void RenderMarkdownDoc_WhenEnvironmentOptionIsHidden_OmitsItFromEnvironmentOptions() {
+		// Arrange
+		CommandHelpCatalog catalog = new();
+		catalog.TryGetCommand("update-entity-schema", out HelpCommandMetadata command).Should().BeTrue(
+			because: "update-entity-schema is a catalogued command");
+
+		// Act
+		string output = _exportRenderer.RenderMarkdownDoc(command);
+		string environmentOptions = output[output.IndexOf("## Environment Options", StringComparison.Ordinal)..];
+
+		// Assert
+		environmentOptions.Should().Contain("--uri <VALUE>", because: "the visible environment option is still listed");
+		environmentOptions.Should().NotContain("--url", because: "the hidden alias of --uri must not be listed");
+		environmentOptions.Should().NotContain("--clientId", because: "the hidden alias of --client-id must not be listed");
+	}
+
+	[Test]
+	[Description("The rendered update-entity-schema --help documents several values after one --operation, not repeating the flag, and states how --operations-file is read (ENG-101526).")]
+	public void TryRenderCommandHelp_ForUpdateEntitySchema_DescribesOperationAndOperationsFileUsage() {
+		// Act
+		string output = _exportRenderer.TryRenderCommandHelp("update-entity-schema");
+		string flattened = System.Text.RegularExpressions.Regex.Replace(output, @"\s+", " ");
+
+		// Assert
+		flattened.Should().Contain("after one --operation", because: "the accepted form is several values after a single --operation");
+		flattened.Should().NotContain("Repeat the option", because: "a repeated --operation is rejected by the parser");
+		flattened.Should().Contain("A relative path resolves from the current directory",
+			because: "runtime help is generated from the option attributes, so the path rule must live there");
+		flattened.Should().Contain("The file must be UTF-8", because: "a non-UTF-8 operations file is rejected");
+	}
+
 	private CommandHelpRenderer CreateRenderer(Func<bool> supportsAnsi) =>
 		new(FileSystem, new CommandHelpCatalog(), featureToggleService: null, supportsAnsi);
 }

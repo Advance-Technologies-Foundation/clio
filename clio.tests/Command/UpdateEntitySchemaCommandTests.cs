@@ -1,7 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
+using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
+using System.Text;
 using Clio.Command;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
@@ -9,6 +12,7 @@ using CommandLine;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command;
@@ -804,6 +808,168 @@ internal sealed class UpdateEntitySchemaCommandTests : BaseClioModuleTests
 		// Assert
 		parseResult.Tag.Should().Be(ParserResultType.Parsed, because: "several values after one --operation is the documented form");
 		parsedOptions!.Operations.Should().Equal([first, second], because: "every value must reach the command in order");
+	}
+
+	[TestCase(false)]
+	[TestCase(true)]
+	[Description("An operations file in an ANSI code page (cp1251, as Windows PowerShell 5.1 Set-Content writes it) fails before anything is saved instead of saving its non-ASCII caption as replacement characters, with or without a UTF-8 BOM (ENG-101526).")]
+	public void Execute_ReturnsFailure_WhenOperationsFileIsNotUtf8(bool withUtf8Bom) {
+		// Arrange
+		const string filePath = @"C:\work\cp1251.json";
+		byte[] prefix = Encoding.ASCII.GetBytes("[{\"action\":\"add\",\"column-name\":\"UsrStatus\",\"type\":\"Text\",\"title\":\"");
+		byte[] statusInCp1251 = [0xD1, 0xF2, 0xE0, 0xF2, 0xF3, 0xF1];
+		byte[] suffix = Encoding.ASCII.GetBytes("\"}]");
+		byte[] bom = withUtf8Bom ? [0xEF, 0xBB, 0xBF] : [];
+		FileSystem.AddFile(filePath, new MockFileData([.. bom, .. prefix, .. statusInCp1251, .. suffix]));
+		UpdateEntitySchemaOptions options = new() {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			OperationsFile = filePath
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "bytes that are not UTF-8 must not be decoded into replacement characters and saved");
+		_columnManager.DidNotReceiveWithAnyArgs().ModifyColumns(default!);
+		_logger.Received(1).WriteError($"--operations-file '{filePath}' is not valid UTF-8.");
+	}
+
+	[Test]
+	[Description("A UTF-16 LE file with a byte order mark (Windows PowerShell 5.1 Out-File default) is decoded as UTF-16 and keeps its non-ASCII caption (ENG-101526).")]
+	public void Execute_ReadsUtf16LittleEndianOperationsFileWithBom() {
+		// Arrange
+		const string filePath = @"C:\work\utf16.json";
+		const string json = "[\r\n  {\"action\":\"add\",\"column-name\":\"UsrStatus\",\"type\":\"Text\",\"title\":\"Статус\"}\r\n]";
+		FileSystem.AddFile(filePath, new MockFileData([.. Encoding.Unicode.GetPreamble(), .. Encoding.Unicode.GetBytes(json)]));
+		UpdateEntitySchemaOptions options = new() {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			OperationsFile = filePath
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "a UTF-16 file announced by its BOM is a readable operations file");
+		_columnManager.Received(1).ModifyColumns(Arg.Is<IEnumerable<ModifyEntitySchemaColumnOptions>>(mutations =>
+			mutations.Count() == 1
+			&& mutations.Single().ColumnName == "UsrStatus"
+			&& mutations.Single().Title == "Статус"));
+	}
+
+	[TestCase(typeof(IOException))]
+	[TestCase(typeof(UnauthorizedAccessException))]
+	[Description("A read failure of an existing operations file (locked file, denied access) fails before anything is saved, naming the option and the sanitized path instead of the raw .NET message (ENG-101526).")]
+	public void Execute_ReturnsFailure_WhenOperationsFileCannotBeRead(Type exceptionType) {
+		// Arrange
+		const string filePath = "C:\\work\\locked\u001b.json";
+		Clio.Common.IFileSystem fileSystem = Substitute.For<Clio.Common.IFileSystem>();
+		fileSystem.ExistsFile(filePath).Returns(true);
+		fileSystem.ReadAllBytes(filePath).Throws((Exception)Activator.CreateInstance(exceptionType, "raw failure")!);
+		UpdateEntitySchemaCommand command = new(_columnManager, _logger,
+			Substitute.For<IOptionSuggestionService>(), fileSystem);
+		UpdateEntitySchemaOptions options = new() {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			OperationsFile = filePath
+		};
+
+		// Act
+		int result = command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "an unreadable operations file cannot be applied");
+		_columnManager.DidNotReceiveWithAnyArgs().ModifyColumns(default!);
+		_logger.Received(1).WriteError(@"--operations-file 'C:\work\locked.json' could not be read.");
+	}
+
+	[TestCase("")]
+	[TestCase("   \r\n\t ")]
+	[Description("An empty or whitespace-only operations file fails before anything is saved, naming the option and the path (ENG-101526).")]
+	public void Execute_ReturnsFailure_WhenOperationsFileIsEmpty(string content) {
+		// Arrange
+		const string filePath = @"C:\work\empty.json";
+		FileSystem.AddFile(filePath, new MockFileData(content));
+		UpdateEntitySchemaOptions options = new() {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			OperationsFile = filePath
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "a file without a JSON array holds no operations");
+		_columnManager.DidNotReceiveWithAnyArgs().ModifyColumns(default!);
+		_logger.Received(1).WriteError($"--operations-file '{filePath}' is not a valid JSON array of operations.");
+	}
+
+	[Test]
+	[Description("An operations file holding an array of non-objects fails before anything is saved; the index counts across all operation sources (ENG-101526).")]
+	public void Execute_ReturnsFailure_WhenOperationsFileArrayHoldsNonObjects() {
+		// Arrange
+		const string filePath = @"C:\work\numbers.json";
+		FileSystem.AddFile(filePath, new MockFileData("[1,2]"));
+		UpdateEntitySchemaOptions options = new() {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Operations = ["""{"action":"modify","column-name":"UsrStatus","title":"Status"}"""],
+			OperationsFile = filePath
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "every operation must be a JSON object");
+		_columnManager.DidNotReceiveWithAnyArgs().ModifyColumns(default!);
+		_logger.Received(1).WriteError("Operation payload at index 1 must be a JSON object.");
+	}
+
+	[TestCase("not json at all")]
+	[TestCase("""{"action":"add","column-name":"UsrX","type":"Text"}""")]
+	[Description("An --operations value that is not a JSON array fails before anything is saved, naming the option (ENG-101526).")]
+	public void Execute_ReturnsFailure_WhenOperationsValueIsNotJsonArray(string value) {
+		// Arrange
+		UpdateEntitySchemaOptions options = new() {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			OperationsJson = value
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "--operations must hold a JSON array of operation objects");
+		_columnManager.DidNotReceiveWithAnyArgs().ModifyColumns(default!);
+		_logger.Received(1).WriteError("--operations value is not a valid JSON array of operations.");
+	}
+
+	[Test]
+	[Description("Repeating --operation is rejected by the parser, which is why the help documents several values after one --operation (ENG-101526).")]
+	public void Parse_Should_RejectRepeatedOperationOption() {
+		// Arrange
+		string[] arguments = [
+			"--package", "UsrPkg", "--schema-name", "UsrVehicle",
+			"--operation", """{"action":"modify","column-name":"UsrA","title":"A"}""",
+			"--operation", """{"action":"modify","column-name":"UsrB","title":"B"}"""
+		];
+		using Parser parser = new(settings => settings.HelpWriter = null);
+
+		// Act
+		ParserResult<UpdateEntitySchemaOptions> parseResult = parser.ParseArguments<UpdateEntitySchemaOptions>(arguments);
+
+		// Assert
+		parseResult.Tag.Should().Be(ParserResultType.NotParsed,
+			because: "the parser does not allow the same option twice");
+		((NotParsed<UpdateEntitySchemaOptions>)parseResult).Errors.Should()
+			.Contain(error => error.Tag == ErrorType.RepeatedOptionError,
+				because: "the failure is the repeated option, not a missing value");
 	}
 
 	private sealed class CultureScope : IDisposable {

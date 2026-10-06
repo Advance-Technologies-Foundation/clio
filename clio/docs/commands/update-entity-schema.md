@@ -130,8 +130,10 @@ cliogate must be installed on the target Creatio environment.
 - Operation sources are combined in a fixed order: the `--operation` values, then the `--operations`
   array, then the `--operations-file` array.
 - `--operations-file` avoids shell quoting problems with multi-line JSON in cmd.exe and Windows
-  PowerShell 5.1. A missing file, or content that is not a JSON array, fails before anything is saved;
-  the error names `--operations-file` and the path.
+  PowerShell 5.1. A missing or unreadable file, a file that is not valid UTF-8 (for example one saved
+  in an ANSI code page by `Set-Content` without `-Encoding UTF8`), or content that is not a JSON array
+  fails before anything is saved; the error names `--operations-file` and the path. A UTF-16 file with
+  a byte order mark is also read.
 - A `modify` operation on an **inherited** column may override only its caption/description (`title-localizations`/`description-localizations`); changing its name, type, or flags is rejected and stops the batch on that operation.
 - An operation field the command does not know (for example a misspelled `colum-name`) fails the
   batch before anything is saved; the error names the field and the nearest known field

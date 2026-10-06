@@ -42,7 +42,7 @@ public class UpdateEntitySchemaOptions : RemoteCommandOptions
 	/// Windows PowerShell 5.1.
 	/// </summary>
 	[Option("operations-file", Required = false,
-		HelpText = "Path to a UTF-8 file with a JSON array of operations (same format as --operations; multi-line allowed). Applied after --operation and --operations.")]
+		HelpText = "Path to a file with a JSON array of operations (same format as --operations; multi-line allowed). A relative path resolves from the current directory. The file must be UTF-8 (a BOM is allowed; UTF-16 with a BOM is also read). Applied after --operation and --operations.")]
 	public string? OperationsFile { get; set; }
 
 	[Option("caption-culture", Required = false, HelpText = "Override the culture used for written column captions/descriptions (e.g. en-US, uk-UA). Precedence: this override > the connected user's profile culture > en-US. Supplying it skips the profile-culture lookup.")]
@@ -152,6 +152,10 @@ public class UpdateEntitySchemaCommand : Command<UpdateEntitySchemaOptions>
 	/// </summary>
 	private const int MaxEchoedPathLength = 260;
 
+	private static readonly Encoding StrictUtf8 = new UTF8Encoding(false, throwOnInvalidBytes: true);
+	private static readonly Encoding StrictUtf16LittleEndian = new UnicodeEncoding(false, false, throwOnInvalidBytes: true);
+	private static readonly Encoding StrictUtf16BigEndian = new UnicodeEncoding(true, false, throwOnInvalidBytes: true);
+
 	/// <summary>
 	/// Every top-level field an operation object may carry; anything else is rejected rather than ignored.
 	/// Internal so tests can prove every field the MCP tool emits is accepted here.
@@ -209,8 +213,29 @@ public class UpdateEntitySchemaCommand : Command<UpdateEntitySchemaOptions>
 		if (!_fileSystem.ExistsFile(path)) {
 			throw new InvalidOperationException($"{source} was not found.");
 		}
-		// A BOM is tolerated even when the reader does not strip it (Windows PowerShell 5.1 writes one by default).
-		return _fileSystem.ReadAllText(path).TrimStart((char)0xFEFF);
+		byte[] content;
+		try {
+			content = _fileSystem.ReadAllBytes(path);
+		} catch (Exception exception) when (exception is System.IO.IOException or UnauthorizedAccessException) {
+			throw new InvalidOperationException($"{source} could not be read.", exception);
+		}
+		return DecodeOperationsFile(content, source);
+	}
+
+	// Decodes strictly: a file in an ANSI code page (Windows PowerShell 5.1 Set-Content without -Encoding) must fail
+	// rather than save non-ASCII captions as U+FFFD. A UTF-8 BOM is stripped, and a UTF-16 BOM selects UTF-16.
+	private static string DecodeOperationsFile(byte[] content, string source) {
+		(Encoding encoding, int bomLength, string encodingName) = content switch {
+			[0xEF, 0xBB, 0xBF, ..] => (StrictUtf8, 3, "UTF-8"),
+			[0xFF, 0xFE, ..] => (StrictUtf16LittleEndian, 2, "UTF-16"),
+			[0xFE, 0xFF, ..] => (StrictUtf16BigEndian, 2, "UTF-16"),
+			_ => (StrictUtf8, 0, "UTF-8")
+		};
+		try {
+			return encoding.GetString(content, bomLength, content.Length - bomLength);
+		} catch (DecoderFallbackException exception) {
+			throw new InvalidOperationException($"{source} is not valid {encodingName}.", exception);
+		}
 	}
 
 	private static IEnumerable<string> ParseOperationsArray(string json, string source) {
