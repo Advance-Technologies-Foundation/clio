@@ -25,5 +25,6 @@ CrtProcessBuilder (1.6.6.40+) refuses it where it can see a NAME: a `sourceColum
 `setElement readData.columns` that drops a column something still reads (`ReadDataConfigApplier`). From
 1.6.6.77 (ENG-102114) it refuses the UId form too - a hand-written `[EntityColumn:{uid}]` in a condition, an
 `expression` or a Formula body goes through the same rule (`RecordColumnReference.ResolveColumnByUId`);
-below that version such a token was stored as given, and the platform saves it green (measured).
-The primary column is always selected, so `Id` never needs listing. Traced in source, not measured on a stand.
+below that version such a token was stored as given, and the platform saves it green (measured, ENG-102114).
+The primary column is always selected, so `Id` never needs listing - that one is traced in source, not measured
+on a stand.

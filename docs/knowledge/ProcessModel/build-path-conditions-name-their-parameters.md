@@ -1,7 +1,8 @@
 ---
-description: a build-path flow condition references a parameter BY NAME - [#Amount#] or [#Element.Parameter#] - and CrtProcessBuilder expands it to the UId meta-path after the schema is built, because on create-business-process those UIds do not exist until the same call creates them; the expansion is narrow by design and passes every platform macro family through untouched
+description: a flow condition references a parameter BY NAME - [#Amount#], [#Element.Parameter#] or [#Element.Parameter.Column#] - on the build path and, from CrtProcessBuilder 1.6.6.77, on the modify path, and the package expands it to the UId meta-path, because on create-business-process those UIds do not exist until the same call creates them; the expansion is narrow by design and passes every platform macro family through untouched
 applies-to:
   - clio/Command/McpServer/Tools/ProcessDesigner/CreateBusinessProcessTool.cs
+  - clio/Command/McpServer/Tools/ProcessDesigner/ModifyBusinessProcessTool.cs
   - clio/CrtProcessBuilder/CrtProcessBuilder.gz
 ticket: ENG-91853
 date: 2026-09-06
@@ -24,10 +25,10 @@ parameters and elements are created by that same call, and `ProcessParameterDesc
 that reference no parameter. Measured over the shipped 7.8.0 corpus — 1 405 conditional flows, 1 402
 with a stored expression, ~341 of them decoding to an empty one the runtime replaces with `true`:
 
-| Expression shape | Count | Before the expansion | By NAME today |
+| Expression shape | Count | Before the expansion | By NAME now |
 |---|---|---|---|
 | element output, record only `[Element].[Parameter]` | 245 | no | **yes** — `[#Element.Parameter#]` |
-| element output, one COLUMN `[Element].[Parameter].[EntityColumn]` | 242 | no | **no** — see below |
+| element output, one COLUMN `[Element].[Parameter].[EntityColumn]` | 242 | no | **yes** — `[#Element.Parameter.Column#]` (ENG-91844; see below) |
 | process parameter `[Parameter:{uid}]` | 445 | no | **yes** — `[#Name#]` |
 | literal / call into the schema's own generated code | 92 | rarely | n/a |
 | `[#SysSettings.Code<Type>#]` | 37 | yes | passes through |
@@ -46,7 +47,7 @@ later `modify-business-process`.
 
 **The rule is deliberately narrow toward doing NOTHING.** Only a bare identifier, or a dotted one whose
 head is an element of this schema, is touched. Everything else passes through — a list of known macro
-families would refuse the next one the platform adds. Two consequences worth knowing:
+families would refuse the next one the platform adds. Three consequences worth knowing:
 
 - A **bare** name that resolves to nothing is REFUSED, naming the flow by its endpoints and listing the
   parameters that exist. That is safe because no platform macro family is a single identifier, and that

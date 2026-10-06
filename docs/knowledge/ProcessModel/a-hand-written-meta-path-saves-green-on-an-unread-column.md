@@ -1,5 +1,5 @@
 ---
-description: the platform's save check refuses a malformed hand-written [#...#] meta path in a condition, expression or Formula body with a message naming nothing, and SAVES a correctly spelled one on a column the Read data element does not load, which reads empty at run time; CrtProcessBuilder 1.6.6.77 checks both itself
+description: a hand-written [#...#] meta path in a condition, expression or Formula body - a dot missing before [EntityColumn:] is refused at save with a message naming nothing, one missing after the prefix saves and runs, and a correctly spelled one on a column the Read data element does not load SAVES and reads empty at run time; CrtProcessBuilder checks every hand-written meta path itself from 1.6.6.77
 applies-to:
   - clio/CrtProcessBuilder/
   - clio/Command/McpServer/Tools/ProcessDesigner/ModifyBusinessProcessTool.cs
@@ -38,3 +38,9 @@ case saves, describes back plausibly and takes the wrong branch at run time. Do 
 "well-formed" alone, and do not drop the prefix-less spelling without first moving the guidance and checking what
 clio-built processes store - every echo of such a process would be refused. Filters are a different rule (one
 prefixed spelling; see `process-validation-and-runtime-parse-a-filter-reference-differently.md`).
+
+The check reads the caller's text, and some edits re-send text the designer stored: `setFlow` needs `kind`, so
+even a relabel re-sends the condition, and a Modify data `values` array replaces the whole set. A designer
+condition or value that reads an unread column - or names an element the process no longer has - is therefore
+refused on such an unrelated edit. Kept deliberately (gate-3 review, ENG-102114): the reference reads empty at
+run time, or fails the platform's save anyway, so letting the edit through would re-store a defect silently.

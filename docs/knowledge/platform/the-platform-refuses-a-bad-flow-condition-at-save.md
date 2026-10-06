@@ -63,7 +63,8 @@ turns it off, a bad condition saves and reports success, and nothing in clio wil
 
 The one thing that does NOT belong to the platform is a **length bound**, and only because of ordering: the
 pre-save gate is what runs the platform's macro converters, whose regexes have no match timeout, so a bound
-has to run before it. That is all `ProcessFormulaValidator` still does.
+has to run before it. That is all `ProcessFormulaValidator` still does; the one other check the package keeps,
+on references rather than on formulas, is the ENG-102114 exception below and lives in a class of its own.
 
 **The ENG-102114 exception: a HAND-WRITTEN meta path.** The gate is no substitute for checking one, and that
 check therefore lives in the package (`MetaPathTokenReference`, CrtProcessBuilder 1.6.6.77). Measured: a dot
@@ -74,7 +75,7 @@ all - it saves and reads empty at run time. The package does not second-guess th
 reference is spelled as the platform writes it and names something this process delivers
 (`../ProcessModel/a-hand-written-meta-path-saves-green-on-an-unread-column.md`). Do not delete it as duplication.
 
-And the one thing worth keeping in the package is **message formatting**: the unresolvable-reference row is
+The last package-side piece is **message formatting**: the unresolvable-reference row is
 `Json.Serialize(ProcessParameterErrorInfo)` with no remedy, so `PlatformValidationMessage` rewrites that
 blob into a sentence. It decides nothing about validity — an unknown error type or a changed serialisation
 returns the platform's text untouched.
