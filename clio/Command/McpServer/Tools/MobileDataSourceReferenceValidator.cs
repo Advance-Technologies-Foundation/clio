@@ -85,8 +85,10 @@ internal static class MobileDataSourceReferenceValidator {
 			}
 		}
 		if (root[ModelConfigDiff] is JArray modelOperations) {
-			foreach (JObject values in modelOperations.OfType<JObject>().Select(RootValues).Where(v => v is not null)) {
-				AddPrimaryDataSourceReference(values, references);
+			foreach (JObject operation in modelOperations.OfType<JObject>()) {
+				if (IsRootOperation(operation) && operation["values"] is JObject values) {
+					AddPrimaryDataSourceReference(values, references);
+				}
 			}
 		}
 		return references;
@@ -170,10 +172,8 @@ internal static class MobileDataSourceReferenceValidator {
 		return declared;
 	}
 
-	private static JObject RootValues(JObject operation) =>
-		operation["path"] is JArray { Count: 0 } || operation["path"] is null
-			? operation["values"] as JObject
-			: null;
+	private static bool IsRootOperation(JObject operation) =>
+		operation["path"] is null or JArray { Count: 0 };
 
 	private static void AddDeclaredDataSources(JToken dataSources, HashSet<string> declared) {
 		if (dataSources is JObject map) {
