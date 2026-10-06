@@ -30,13 +30,17 @@ MEASURED against the budget:
 - A destructive tool whose description OPENS with its warning (a marker sentence starts inside the first
   500 characters) keeps a lead of up to 1 500 characters, so the unmarked sentences of that warning block
   stay too. Every other tool keeps a 500-character lead.
-- Seven process contracts in one call measured 18 062 of 18 432 bytes on 2026-09-26: there is little
-  headroom.
+- Seven process contracts in one call measured 18 062 of 18 432 bytes on 2026-09-26, and 18 649 - over
+  the budget - once master's process descriptions grew by 2026-10-06. The short-form note was compressed
+  to win it back (the note is paid once per short contract, and a quoted `"full"` costs 12 bytes more
+  under the escaping encoder): 18 387 bytes, 45 bytes of headroom.
+- A contract whose short form would be no smaller is left complete and unmarked, and a field label such
+  as "Optional, default true." is kept in front of the field's first sentence, not instead of it.
 
 Known gap, by decision: ordinary imperatives - "do NOT run compile-creatio", "Do NOT remove the flow and
 add a plain one", "do not paraphrase" - are NOT markers and are dropped from the process contracts' short
 forms. The same rules are in the process guidance (`core-rules`, the process articles) the agent reads
-before building. The short form's note therefore says it kept the "safety-marked sentences", not all rules.
+before building. The short form's note therefore says it kept the "safety sentences", not all rules.
 
 **Why it is this way** — agent CLIs do not show a large tool result inline: Copilot CLI spilled every result
 from 21.3 KB up in the CAADT transcripts, and the agent then spent 3-9 shell turns per process run grepping

@@ -278,6 +278,25 @@ public sealed class ToolContractPayloadBudgetTests {
 				+ $"pieces through the shell; measured {replyBytes} bytes");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("describe-environment - the named contract ClioRing reads - comes back from a default lookup byte-identical to its full form, so fitting never changes what Ring receives.")]
+	public void GetToolContracts_ShouldReturnDescribeEnvironmentUnchanged_ByDefault() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolOverDefaultSurface();
+
+		// Act
+		ToolContractGetResponse byDefault = tool.GetToolContracts(new ToolContractGetArgs(["describe-environment"]));
+		ToolContractGetResponse full = tool.GetToolContracts(
+			new ToolContractGetArgs(["describe-environment"], ToolContractShortForm.FullDetail));
+
+		// Assert
+		byDefault.Tools!.Single().Detail.Should().BeNull(
+			because: "ClioRing parses this contract and must never receive a short form of it");
+		JsonSerializer.Serialize(byDefault).Should().Be(JsonSerializer.Serialize(full),
+			because: "ClioRing compatibility rests on this contract being byte-identical with and without detail=full");
+	}
+
 	// Builds get-tool-contract over the REAL invoker registry so uncurated tools resolve through the same
 	// registry-schema path clio-run dispatches against.
 	//

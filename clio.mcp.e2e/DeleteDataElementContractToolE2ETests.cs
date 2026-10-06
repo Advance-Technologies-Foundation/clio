@@ -142,7 +142,7 @@ public sealed class DeleteDataElementContractToolE2ETests : McpContractFixtureBa
 		string description = await AdvertisedDescriptionAsync(context, toolName, detail: null);
 
 		// Assert
-		description.Should().Contain("[Short form",
+		description.Should().Contain("detail=full has all.]",
 			because: "the default read of this contract is its short form, or this test exercises nothing");
 		description.Should().Contain(countClause,
 			because: "the count is the part of the duty that turns an approval into an informed one");

@@ -1410,7 +1410,7 @@ internal static class ToolContractCatalog {
 			new ToolInputSchemaContract(
 				[],
 				[
-					Field("tool-names", ArrayType, "Optional array of tool names. Omit for a compact index of all tools; pass names to expand their full contracts."),
+					Field("tool-names", ArrayType, "Optional array of tool names. Omit for a compact index of all tools; pass names to expand their contracts, fitted to one reply (detail=full for all in full)."),
 					Field("detail", StringType, "Optional detail level. Without tool-names: 'index' (default) returns the compact index; 'full' returns every tool's full contract. With tool-names: omit it to fit the reply inline (the largest contracts come back short only when needed); 'full' returns every named contract complete; 'short' returns every named contract in its short form.")
 				]),
 			EnvelopeOutput(
@@ -1440,7 +1440,7 @@ internal static class ToolContractCatalog {
 					["detail"] = ToolContractShortForm.FullDetail
 				})
 			],
-			Flow(["get-tool-contract"], "Call with no args first for the compact index of all tools, then call with specific tool-names for full schemas before execution."),
+			Flow(["get-tool-contract"], "Call with no args first for the compact index of all tools, then call with specific tool-names for their contracts before execution (detail=full when a short form is not enough)."),
 			[],
 			[]);
 	}

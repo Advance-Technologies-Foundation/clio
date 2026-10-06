@@ -198,9 +198,15 @@ internal static class ToolContractShortForm {
 				// many tools cannot fit, and returning less than was asked for would be worse than a spill.
 				break;
 			}
-			fitted[largest] = Shorten(fitted[largest], isDestructive(fitted[largest].Name));
 			done[largest] = true;
-			int shortSize = MeasureBytes(fitted[largest]);
+			ToolContractDefinition shortened = Shorten(fitted[largest], isDestructive(fitted[largest].Name));
+			int shortSize = MeasureBytes(shortened);
+			// A contract with nothing to cut only gains the short-form markers, and a "short" label on a complete
+			// contract invites a needless detail=full call.
+			if (shortSize >= sizes[largest]) {
+				continue;
+			}
+			fitted[largest] = shortened;
 			total += shortSize - sizes[largest];
 			sizes[largest] = shortSize;
 		}
@@ -338,21 +344,26 @@ internal static class ToolContractShortForm {
 
 	/// <summary>
 	/// A field description that states a safety duty is kept WHOLE; any other is cut to its first real
-	/// sentence - a leading label such as "Optional." or "Required." (<see cref="LeadingLabel"/>) does not
-	/// count as one, since a field cut to its label says nothing about what the field is.
+	/// sentence - a leading label such as "Optional." or "Optional, default true." (<see cref="LeadingLabel"/>)
+	/// does not count as one, since a field cut to its label says nothing about what the field is. The label is
+	/// kept in front of that sentence, and the sentence alone is cut to fit, so a long one cannot leave the
+	/// label as the whole description.
 	/// </summary>
 	private static string TrimFieldDescription(string? text) {
 		if (string.IsNullOrEmpty(text) || SafetyDuty.IsMatch(text) || FieldDuty.IsMatch(text)) {
 			return text ?? string.Empty;
 		}
-		int searchFrom = LeadingLabel.Match(text).Length;
-		int end = ToolContractCatalog.FindSentenceEnd(text, searchFrom);
-		string sentence = end >= 0 ? text[..(end + 1)] : text;
-		return BuildLead(sentence, MaxFieldDescriptionChars);
+		string label = LeadingLabel.Match(text).Value;
+		int end = ToolContractCatalog.FindSentenceEnd(text, label.Length);
+		string sentence = end >= 0 ? text[label.Length..(end + 1)] : text[label.Length..];
+		return label + BuildLead(sentence, Math.Max(0, MaxFieldDescriptionChars - label.Length));
 	}
 
-	/// <summary>A field description's leading "Optional." / "Required." label, with the space after it.</summary>
-	private static readonly Regex LeadingLabel = new(@"^\s*(Optional|Required)\.\s+",
+	/// <summary>
+	/// A field description's leading label - "Optional.", "Required." or "Optional, default true." - with the
+	/// space after it.
+	/// </summary>
+	private static readonly Regex LeadingLabel = new(@"^\s*(Optional|Required)(,\s*default\s+[^.\s]+)?\.\s+",
 		RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
 
 	/// <summary>
@@ -395,7 +406,7 @@ internal static class ToolContractShortForm {
 	private static string BuildNote(int descriptionChars, int keptChars, int omittedExamples, bool fieldsTrimmed) {
 		List<string> omitted = [];
 		if (keptChars < descriptionChars) {
-			omitted.Add($"{descriptionChars - keptChars}/{descriptionChars} description chars");
+			omitted.Add($"{descriptionChars - keptChars} description chars");
 		}
 		if (omittedExamples > 0) {
 			omitted.Add(omittedExamples == 1 ? "the example" : $"{omittedExamples} examples");
@@ -406,7 +417,8 @@ internal static class ToolContractShortForm {
 		if (omitted.Count == 0) {
 			return string.Empty;
 		}
-		return $"[Short form, safety-marked sentences kept. Cut: {string.Join(", ", omitted)}. "
-			+ "detail=\"full\" has all.]";
+		// Every byte here is paid once per short contract in a fitted reply, and the contract's own detail="short"
+		// already says it is short; a quoted value also costs twelve bytes more under the escaping encoder.
+		return $"[Safety sentences kept; cut {string.Join(", ", omitted)}; detail=full has all.]";
 	}
 }

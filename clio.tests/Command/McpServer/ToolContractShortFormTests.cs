@@ -103,7 +103,7 @@ public sealed class ToolContractShortFormTests {
 		shortForm.Examples.Should().BeEmpty(because: "examples are the bulk the short form trades away");
 		shortForm.Description.Should().Contain("3 examples",
 			because: "the description names what was left out");
-		shortForm.Description.Should().Contain("detail=\"full\"",
+		shortForm.Description.Should().Contain("detail=full",
 			because: "the description says how to get the rest in one call");
 		shortForm.Description.Length.Should().BeLessThan(full.Description.Length,
 			because: "the description tail is left out");
@@ -226,6 +226,51 @@ public sealed class ToolContractShortFormTests {
 			because: "an explicit full request is the escape hatch and must never be shortened");
 		allShort.Should().OnlyContain(contract => contract.Detail == ToolContractShortForm.ShortDetail,
 			because: "an explicit short request shortens every contract, fitting or not");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("When the reply cannot fit, a contract whose short form would be no smaller stays complete and unmarked instead of growing and being labelled short.")]
+	public void Fit_Should_KeepAContractFull_WhenItsShortFormIsNoSmaller() {
+		// Arrange
+		ToolContractDefinition large = BuildContract("large", descriptionSentences: 900, examples: 5);
+		ToolContractDefinition tiny = BuildContract("tiny", descriptionSentences: 1, examples: 0);
+
+		// Act
+		IReadOnlyList<ToolContractDefinition> result =
+			ToolContractShortForm.Fit([large, tiny], _ => int.MaxValue, NothingDestructive);
+
+		// Assert
+		result.Single(contract => contract.Name == "large").Detail.Should().Be(ToolContractShortForm.ShortDetail,
+			because: "a contract with text to cut is still shortened while the reply is over the budget");
+		result.Single(contract => contract.Name == "tiny").Should().BeSameAs(tiny,
+			because: "shortening a contract with nothing to cut only adds the short-form markers, and a short label "
+				+ "on a complete contract invites a needless detail=full call");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A field description that opens with a label such as \"Optional, default true.\" keeps the label AND the start of the sentence after it, even when that sentence is longer than the field bound.")]
+	public void Shorten_Should_KeepTheFieldSentenceAfterADefaultLabel() {
+		// Arrange
+		const string label = "Optional, default true. ";
+		string sentence = "Applies only with verify=true: false leaves the operation list out of the read-back page and "
+			+ string.Join(" ", Enumerable.Repeat("puts the per-type operation counts in its place", 6)) + ".";
+		ToolContractDefinition baseline = BuildContract("probe-tool", descriptionSentences: 200, examples: 0);
+		ToolContractDefinition full = baseline with {
+			InputSchema = baseline.InputSchema with {
+				Properties = [new ToolContractField("include-operations", "boolean", label + sentence + " More text.")]
+			}
+		};
+
+		// Act
+		string trimmed = ToolContractShortForm.Shorten(full, destructive: false).InputSchema.Properties.Single().Description;
+
+		// Assert
+		trimmed.Should().StartWith(label + "Applies only with verify=true",
+			because: "a field cut to its label says nothing about what the field does");
+		trimmed.Length.Should().BeLessThanOrEqualTo(ToolContractShortForm.MaxFieldDescriptionChars + 1,
+			because: "the label counts toward the field bound, so keeping it does not grow the short form");
 	}
 
 	[Test]
