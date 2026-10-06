@@ -71,12 +71,13 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 				["process-name"] = "UsrAccount_Onboard",
 				["operations"] = operations.RootElement.Clone()
 			}));
-		string objectResultJson = JsonSerializer.Serialize(await CallToolAsync(context, ToolName,
+		CallToolResult objectResult = await CallToolAsync(context, ToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = unregisteredEnvironment,
 				["process-name"] = "UsrAccount_Onboard",
 				["operations"] = notAnArray.RootElement.Clone()
-			}));
+			});
+		string objectResultJson = JsonSerializer.Serialize(objectResult);
 
 		// Assert
 		arrayResultJson.Should().NotContain("invalid-parameter-type",
@@ -91,6 +92,10 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		objectResultJson.Should().Contain("operations must be a JSON array, or a string holding one",
 			because: "the same call with an object reaches the reader and is refused by it, which proves the array "
 				+ "above was read, not merely bound");
+		string.Join(" ", objectResult.Content.OfType<TextContentBlock>().Select(block => block.Text))
+			.Should().Contain("\"exit-code\":1",
+				because: "operations of the wrong kind are a caller error, exit code 1 over the real server too - not -1, "
+					+ "which means clio itself broke");
 	}
 
 	[Test]

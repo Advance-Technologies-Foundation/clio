@@ -321,8 +321,9 @@ public sealed class ProcessDesignerEmittedSchemaTests {
 		// Arrange
 		ToolContractGetTool tool = new(BuildProductionRegistry());
 
-		// Act - detail "full": the contract under test is the complete one. A default named lookup may be
-		// fitted to one inline reply (ENG-100154), which cuts field descriptions to their first sentence.
+		// Act - detail "full": the contract under test is the complete one. Today detail is ignored for a named
+		// lookup; once ENG-100154 lands, a default named lookup is fitted to one inline reply and shortens long
+		// field descriptions, and "full" keeps this test reading the whole field.
 		ToolContractDefinition contract = tool.GetToolContracts(
 			new ToolContractGetArgs([toolName], "full")).Tools!.Single();
 		ToolContractField field = contract.InputSchema.Properties.Single(property => property.Name == wireName);

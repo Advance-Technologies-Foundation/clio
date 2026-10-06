@@ -378,8 +378,8 @@ public class CreateBusinessProcessTool(
 		}
 
 		if (!McpToolArgumentSupport.TryReadJsonDocumentArgument(args.Descriptor, JsonValueKind.Object,
-				"descriptor", out string descriptorJson, out string descriptorError)) {
-			return CommandExecutionResult.FromError(descriptorError);
+				"descriptor", out string descriptorJson, out CommandExecutionResult? descriptorRefusal)) {
+			return descriptorRefusal;
 		}
 
 		CreateBusinessProcessOptions options = new() {

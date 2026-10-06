@@ -41,9 +41,6 @@ public class ModifyBusinessProcessTool(
 	/// Applies an inline JSON operations array to an existing process (identified by name or uid).
 	/// </summary>
 	/// <param name="args">The tool arguments; see <see cref="ModifyBusinessProcessArgs"/>.</param>
-	/// <param name="operations">Inline JSON operations array.</param>
-	/// <param name="confirmLayoutChange">Agreement to have THIS process re-drawn, sent only after the user has
-	/// turned down the new-version route.</param>
 	/// <returns>The command execution result with the edited schema identity in the log output.</returns>
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
@@ -385,8 +382,8 @@ public class ModifyBusinessProcessTool(
 		}
 
 		if (!McpToolArgumentSupport.TryReadJsonDocumentArgument(args.Operations, JsonValueKind.Array,
-				"operations", out string operationsJson, out string operationsError)) {
-			return CommandExecutionResult.FromError(operationsError);
+				"operations", out string operationsJson, out CommandExecutionResult? operationsRefusal)) {
+			return operationsRefusal;
 		}
 
 		ModifyBusinessProcessOptions options = new() {

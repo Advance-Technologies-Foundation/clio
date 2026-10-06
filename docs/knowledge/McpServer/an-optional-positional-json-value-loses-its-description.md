@@ -8,9 +8,9 @@ ticket: ENG-100153
 date: 2026-09-26
 ---
 
-**What is true** — measured through `McpServerTool.Create` on the production serializer options (SDK
-pinned in `Directory.Packages.props` on 2026-09-26), for an args record carrying `[Description]` on each
-member:
+**What is true** — measured through `McpServerTool.Create` on the production serializer options
+(ModelContextProtocol 2.2.0, `ModelContextProtocolVersion` in `Directory.Packages.props`), for an args
+record carrying `[Description]` on each member; re-measure after an SDK upgrade:
 
 ```
 JsonElement  A            (positional, no default) -> {"description":"A desc"}   required

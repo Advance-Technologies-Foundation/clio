@@ -129,11 +129,15 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		});
 
 		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a successful build from an object descriptor returns a normal MCP tool result, as the string form does");
 		string callResultJson = JsonSerializer.Serialize(callResult);
 		callResultJson.Should().NotContain("invalid-parameter-type",
 			because: "an object descriptor must bind; the refusal this replaces came from the binder, before the tool body");
 		callResultJson.Should().Contain(processName,
 			because: "a successful build from an object descriptor reports the created schema name, exactly as the string form does");
+		callResultJson.Should().Contain(CommandExecutionResult.CompileNotRequiredNote,
+			because: "the object form takes the same success path as the string form, compile-not-required note included (ENG-95706)");
 		string describeJson = JsonSerializer.Serialize(await DescribeAsync(context, processName));
 		describeJson.Should().Contain("task1",
 			because: "the read-back graph must contain the element the object descriptor declared - an echo is not a build");
@@ -179,6 +183,10 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		// Assert
 		JsonSerializer.Serialize(callResult).Should().Contain("descriptor must be a JSON object, or a string holding one",
 			because: "an array is not a descriptor, and the refusal must name both forms the tool accepts");
+		string.Join(" ", callResult.Content.OfType<TextContentBlock>().Select(block => block.Text))
+			.Should().Contain("\"exit-code\":1",
+				because: "a descriptor of the wrong kind is a caller error, exit code 1 over the real server too - not -1, "
+					+ "which means clio itself broke");
 	}
 
 	[Test]

@@ -33,6 +33,10 @@ internal static class McpToolRegistrySchemaContract {
 	private const string EnvironmentNamePropertyName = "environment-name";
 	private const string UriPropertyName = "uri";
 
+	// The keywords that only annotate a schema; a schema made of nothing else constrains no value (IsUnconstrained).
+	private static readonly HashSet<string> AnnotationKeywords =
+		[DescriptionPropertyName, "default", "title", "examples", "readOnly", "writeOnly", "deprecated"];
+
 	// reg-web-app is the one tool whose `environment-name` + `uri` pair is NOT a connection selector:
 	// `uri` is the application BEING REGISTERED and `environment-name` is the key it is stored under, so
 	// the two are conjunctive inputs, not alternatives. It is told apart from the genuine fallbacks by the
@@ -226,9 +230,6 @@ internal static class McpToolRegistrySchemaContract {
 		propertyValue.ValueKind == JsonValueKind.True
 		|| (propertyValue.ValueKind == JsonValueKind.Object
 			&& propertyValue.EnumerateObject().All(member => AnnotationKeywords.Contains(member.Name)));
-
-	private static readonly HashSet<string> AnnotationKeywords =
-		[DescriptionPropertyName, "default", "title", "examples", "readOnly", "writeOnly", "deprecated"];
 
 	// JSON-schema `type` is either a scalar string ("string") or an array of candidates where the SDK
 	// emits nullable shapes as ["string","null"]. Collapse to the first non-null concrete type.

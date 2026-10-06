@@ -104,6 +104,31 @@ public sealed class ProcessDesignerJsonDocumentArgumentTests {
 			because: "the refusal names both accepted forms so the caller can correct the call in one step");
 		TextOf(result).Should().Contain(received.Replace("a JSON ", "Received a JSON "),
 			because: "the refusal says what was received, which is what distinguishes it from an empty descriptor");
+		TextOf(result).Should().Contain("\"exit-code\":1",
+			because: "a descriptor of the wrong kind is a caller error, exit code 1 under the CommandExecutionResult contract - the code the command gives the same mistake in string form - and not -1, which means clio itself broke");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("create-business-process answers a descriptor STRING that cannot be read as text (an unpaired surrogate escape) with a refusal naming both accepted forms, instead of letting JsonElement.GetString throw out of the tool. Before ENG-100153 the binder refused such a value; it must still be refused, as a caller error.")]
+	public async Task CreateBusinessProcess_Should_RefuseADescriptorStringThatIsNotValidText() {
+		// Arrange
+		FakeCreateCommand command = new();
+		McpServerTool tool = CreateTool(command);
+
+		// Act
+		CallToolResult result = await InvokeAsync(tool, CreateBusinessProcessTool.CreateBusinessProcessToolName,
+			"{\"environment-name\":\"sandbox\",\"descriptor\":\"\\ud800\"}");
+
+		// Assert
+		command.CapturedOptions.Should().BeNull(
+			because: "a string that cannot be read as text holds no document to build");
+		TextOf(result).Should().Contain("descriptor must be a JSON object, or a string holding one",
+			because: "the refusal names both accepted forms so the caller can correct the call in one step");
+		TextOf(result).Should().Contain("Received a JSON string that is not valid text",
+			because: "the refusal says why this string was not accepted");
+		TextOf(result).Should().Contain("\"exit-code\":1",
+			because: "an unreadable string is a caller error, not a clio failure");
 	}
 
 	[Test]
@@ -166,6 +191,8 @@ public sealed class ProcessDesignerJsonDocumentArgumentTests {
 			because: "a single operation object is not an operations array, and guessing a wrapper would hide the mistake");
 		TextOf(result).Should().Contain("operations must be a JSON array, or a string holding one",
 			because: "the refusal names both accepted forms");
+		TextOf(result).Should().Contain("\"exit-code\":1",
+			because: "operations of the wrong kind are a caller error, exit code 1 - not -1, which means clio itself broke");
 	}
 
 	[Test]
@@ -213,6 +240,30 @@ public sealed class ProcessDesignerJsonDocumentArgumentTests {
 			because: "the snapshot form reaches the command as no operations, exactly as before ENG-100153");
 	}
 
+	[TestCase("{\"op\":\"removeElement\"}", "Received a JSON object", Description = "operations an object")]
+	[TestCase("\"\\ud800\"", "Received a JSON string that is not valid text", Description = "operations an unreadable string")]
+	[Category("Unit")]
+	[Description("modify-business-process-as-new-version refuses operations that are present but not an array or a readable string holding one, as a caller error (exit code 1), without dispatching the command. The unreadable string goes through the snapshot check first, so this also pins that the check cannot throw.")]
+	public async Task ModifyProcessAsNewVersion_Should_RefuseOperationsOfAnotherKind(string operations, string received) {
+		// Arrange
+		FakeNewVersionCommand command = new();
+		McpServerTool tool = NewVersionTool(command);
+
+		// Act
+		CallToolResult result = await InvokeAsync(tool, ModifyProcessAsNewVersionTool.ModifyProcessAsNewVersionToolName,
+			$"{{\"environment-name\":\"sandbox\",\"process-name\":\"UsrAccount_Onboard\",\"operations\":{operations}}}");
+
+		// Assert
+		command.CapturedOptions.Should().BeNull(
+			because: "operations that are present but unusable are refused, not taken for the snapshot form");
+		TextOf(result).Should().Contain("operations must be a JSON array, or a string holding one",
+			because: "the refusal names both accepted forms");
+		TextOf(result).Should().Contain(received,
+			because: "the refusal says what was received");
+		TextOf(result).Should().Contain("\"exit-code\":1",
+			because: "unusable operations are a caller error, exit code 1 - not -1, which means clio itself broke");
+	}
+
 	[TestCase(JsonValueKind.String)]
 	[TestCase(JsonValueKind.Number)]
 	[TestCase(JsonValueKind.Undefined)]
@@ -220,7 +271,8 @@ public sealed class ProcessDesignerJsonDocumentArgumentTests {
 	[Description("The JSON-document reader accepts only Object or Array as the expected kind, and throws on any other: a caller passing String would make every string argument 'the expected kind' and silently skip the kind check.")]
 	public void TryReadJsonDocumentArgument_Should_Throw_WhenTheExpectedKindIsNotAContainer(JsonValueKind expectedKind) {
 		// Arrange
-		JsonElement value = JsonDocument.Parse("{}").RootElement.Clone();
+		using JsonDocument document = JsonDocument.Parse("{}");
+		JsonElement value = document.RootElement.Clone();
 
 		// Act
 		System.Action act = () => McpToolArgumentSupport.TryReadJsonDocumentArgument(value, expectedKind, "descriptor",

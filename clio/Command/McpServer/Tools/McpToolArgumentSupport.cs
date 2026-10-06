@@ -9,11 +9,12 @@ using System.Threading;
 namespace Clio.Command.McpServer.Tools;
 
 /// <summary>
-/// Shared helpers for MCP tools that bind a single <c>args</c> record with kebab-case fields.
-/// Centralizes two pieces of logic several tools used to copy verbatim — legacy-alias rejection
-/// over the <c>[JsonExtensionData]</c> overflow bag, and the edit-distance ranking used for
-/// "did you mean" suggestions — so the behavior (and the SonarCloud duplication budget) stays in
-/// one place. Each caller keeps its own canonical alias map and wording via the parameters.
+/// Shared helpers for MCP tools that bind a single <c>args</c> record with kebab-case fields: which
+/// parameters the SDK binds from caller arguments, the unknown-argument and legacy-alias refusals over the
+/// <c>[JsonExtensionData]</c> overflow bag, the edit-distance ranking behind "did you mean" suggestions, and
+/// the reader for JSON-document arguments that accept a value or a string holding it. Keeping them here
+/// keeps the behavior (and the SonarCloud duplication budget) in one place; each caller keeps its own
+/// canonical alias map and wording via the parameters.
 /// </summary>
 internal static class McpToolArgumentSupport {
 	/// <summary>
@@ -375,6 +376,19 @@ internal static class McpToolArgumentSupport {
 	/// words them. A value of the expected kind is returned as its raw JSON text, so the command sees the
 	/// same document the caller sent.
 	/// </para>
+	/// <para>
+	/// Use it ONLY for an argument whose string form already was the contract (today the process-designer
+	/// <c>descriptor</c> and <c>operations</c>). An argument declared as an object keeps refusing a JSON
+	/// string, as <c>clio/Command/McpServer/AGENTS.md</c> requires; reading it through this helper would
+	/// widen that contract for good.
+	/// </para>
+	/// <para>
+	/// The refusal follows the exit-code contract of <see cref="CommandExecutionResult"/>: a document of the
+	/// wrong kind, or a string that cannot be read as text, is a caller error and answers exit code 1
+	/// (<see cref="CommandExecutionResult.FromValidationError"/>), the code the command gives the same mistake
+	/// in string form. A missing document keeps the tools' long-standing "is required" refusal
+	/// (<see cref="CommandExecutionResult.FromError"/>, -1), which ENG-99100 tracks for the whole family.
+	/// </para>
 	/// </remarks>
 	/// <param name="value">The bound argument; <see cref="JsonValueKind.Undefined"/> when the key was absent.</param>
 	/// <param name="expectedKind">
@@ -383,34 +397,46 @@ internal static class McpToolArgumentSupport {
 	/// </param>
 	/// <param name="argumentName">The wire name, used in the refusal.</param>
 	/// <param name="json">The JSON text to hand to the command, or empty on refusal.</param>
-	/// <param name="error">The refusal, or empty when <paramref name="json"/> is usable.</param>
+	/// <param name="refusal">
+	/// The result to answer the caller with when the argument is refused; <see langword="null"/> when
+	/// <paramref name="json"/> is usable.
+	/// </param>
 	/// <returns><see langword="true"/> when <paramref name="json"/> holds text for the command to parse.</returns>
 	public static bool TryReadJsonDocumentArgument(JsonElement value, JsonValueKind expectedKind,
-		string argumentName, out string json, out string error) {
+		string argumentName, out string json, [NotNullWhen(false)] out CommandExecutionResult? refusal) {
 		if (expectedKind is not (JsonValueKind.Object or JsonValueKind.Array)) {
 			throw new ArgumentOutOfRangeException(nameof(expectedKind), expectedKind,
 				"A JSON-document argument is an object or an array.");
 		}
 		json = string.Empty;
-		error = string.Empty;
-		string expected = expectedKind == JsonValueKind.Array ? "a JSON array" : "a JSON object";
-		if (IsAbsentJsonDocument(value)) {
-			error = $"{argumentName} is required and cannot be empty.";
+		refusal = null;
+		if (value.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null) {
+			refusal = MissingJsonDocument(argumentName);
 			return false;
 		}
-		switch (value.ValueKind) {
-			case JsonValueKind.String:
-				json = value.GetString()!;
-				return true;
-			default:
-				if (value.ValueKind != expectedKind) {
-					error = $"{argumentName} must be {expected}, or a string holding one. "
-						+ $"Received a JSON {DescribeKind(value.ValueKind)}.";
-					return false;
-				}
-				json = value.GetRawText();
-				return true;
+		string expected = expectedKind == JsonValueKind.Array ? "a JSON array" : "a JSON object";
+		if (value.ValueKind == JsonValueKind.String) {
+			if (!TryGetText(value, out string text)) {
+				refusal = CommandExecutionResult.FromValidationError(
+					$"{argumentName} must be {expected}, or a string holding one. "
+					+ "Received a JSON string that is not valid text.");
+				return false;
+			}
+			if (string.IsNullOrWhiteSpace(text)) {
+				refusal = MissingJsonDocument(argumentName);
+				return false;
+			}
+			json = text;
+			return true;
 		}
+		if (value.ValueKind != expectedKind) {
+			refusal = CommandExecutionResult.FromValidationError(
+				$"{argumentName} must be {expected}, or a string holding one. "
+				+ $"Received a JSON {DescribeKind(value.ValueKind)}.");
+			return false;
+		}
+		json = value.GetRawText();
+		return true;
 	}
 
 	/// <summary>
@@ -422,7 +448,24 @@ internal static class McpToolArgumentSupport {
 	/// <returns><see langword="true"/> when the argument carries no document.</returns>
 	public static bool IsAbsentJsonDocument(JsonElement value) =>
 		value.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null
-		|| (value.ValueKind == JsonValueKind.String && string.IsNullOrWhiteSpace(value.GetString()));
+		|| (value.ValueKind == JsonValueKind.String && TryGetText(value, out string text)
+			&& string.IsNullOrWhiteSpace(text));
+
+	private static CommandExecutionResult MissingJsonDocument(string argumentName) =>
+		CommandExecutionResult.FromError($"{argumentName} is required and cannot be empty.");
+
+	// GetString throws for a string carrying an unpaired surrogate escape; before ENG-100153 the binder refused
+	// such a value, so it is answered here as a refusal rather than escaping the tool as an exception.
+	private static bool TryGetText(JsonElement value, out string text) {
+		try {
+			text = value.GetString() ?? string.Empty;
+			return true;
+		}
+		catch (InvalidOperationException) {
+			text = string.Empty;
+			return false;
+		}
+	}
 
 	// The JSON name of a value kind: True and False are both a boolean to the caller who sent it.
 	private static string DescribeKind(JsonValueKind kind) =>
