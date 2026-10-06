@@ -614,7 +614,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	}
 
 	[Test]
-	[Description("Over the real MCP path (clio#1742 / clio#1529, ENG-102110): describe reads a Read data filter's parameter reference back as its BARE meta path - for a process parameter AND for one column of another element's record - and setFilter REFUSES each wrapped in [# #] (the formula form a filter never evaluates: on a stand a wrapped parameter reference failed the element and a wrapped column reference matched no record) while the bare path describe reported re-applies unchanged. The refusal is the package's (CrtProcessBuilder 1.6.6.72+); a stand on an older package accepts the wrapped value and the refusal assertion fails, which is how this test tells a stale stand apart.")]
+	[Description("Over the real MCP path (clio#1742 / clio#1529, ENG-102110): describe reads a Read data filter's parameter reference back as its BARE meta path - for a process parameter AND for one column of another element's record - and setFilter REFUSES each wrapped in [# #] (the formula form a filter never evaluates: on a stand a wrapped parameter reference failed the element and a wrapped column reference matched no record) while the bare path describe reported re-applies unchanged. The refusal is the package's (CrtProcessBuilder 1.6.6.74+) and hands back the canonical token. A stand on an older package never reaches setFilter: clio's convergence check refuses the gated create call first, naming install-process-builder.")]
 	[AllureTag(ToolName)]
 	[AllureName("modify-business-process setFilter refuses a [#...#]-wrapped expression and re-applies the bare one")]
 	public async Task ModifyBusinessProcess_Should_RefuseAWrappedFilterExpressionAndReapplyTheBareOne() {
@@ -625,6 +625,11 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			await CreateProcessAsync(context, processName, BuildReadByParameterDescriptor(processName));
 			string parameterPath = await ReadFilterExpressionAsync(context, processName, "ReadContact") ?? string.Empty;
 			string columnPath = await ReadFilterExpressionAsync(context, processName, "ReadSame") ?? string.Empty;
+			// Guards: the Act below sends these paths, so a describe that drifted must fail HERE, by name.
+			parameterPath.Should().StartWith("[IsOwnerSchema:false].[IsSchema:false].[Parameter:",
+				because: "describe reports a process-parameter reference as the bare meta path, never wrapped");
+			columnPath.Should().Contain("].[EntityColumn:",
+				because: "describe reports a record-column reference as the bare three-segment meta path");
 
 			// Act — the wrapped form an agent carries over from formulas, then the bare form describe reported,
 			// re-applied onto a CLEARED filter so the read-back can only come from the expression itself.
@@ -638,12 +643,12 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 				BuildReplaceFilterWithExpressionOperations("ReadSame", columnPath));
 
 			// Assert — quote-free fragments only: the refusal arrives as a serialized envelope.
-			parameterPath.Should().StartWith("[IsOwnerSchema:false].[IsSchema:false].[Parameter:",
-				because: "describe reports a process-parameter reference as the bare meta path, never wrapped");
-			columnPath.Should().Contain("].[EntityColumn:",
-				because: "describe reports a record-column reference as the bare three-segment meta path");
 			parameterRefusal.Should().Contain("BARE meta path",
 				because: "a wrapped parameter reference must be refused at build, naming what a filter takes");
+			parameterRefusal.Should().Contain("without the wrapper, spelled",
+				because: "a wrapped reference that resolves is handed back in its canonical bare spelling");
+			parameterRefusal.Should().Contain(parameterPath,
+				because: "the token handed back is the one describe reported, not the caller's unwrapped text");
 			columnRefusal.Should().Contain("wrapper is never",
 				because: "a wrapped column reference must be refused too - stored, it matched no record with no error");
 			(await ReadFilterExpressionAsync(context, processName, "ReadContact")).Should().Be(parameterPath,

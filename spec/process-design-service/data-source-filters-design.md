@@ -124,7 +124,7 @@ unambiguous for an AI to author (leaves → `conditions`, subgroups → `groups`
 Per condition, exactly one right-hand source: **`value`** (constant), **`processParameter`** (by name),
 **`elementParameter`** (`{elementName, parameter}` — e.g. a preceding element's output), or **`expression`**
 (advanced: the BARE meta path of one of those references, exactly as `describe-business-process` reports it —
-NOT the `[#…#]` formula form, which a filter never evaluates; CrtProcessBuilder 1.6.6.72+ refuses a wrapped,
+NOT the `[#…#]` formula form, which a filter never evaluates; CrtProcessBuilder 1.6.6.74+ refuses a wrapped,
 malformed or dangling expression, ENG-102110); `isNull`/`isNotNull` take no right side. `comparison` token →
 `ComparisonType` (equal/notEqual/greater/greaterOrEqual/less/lessOrEqual/contains/startWith/endWith/
 isNull/isNotNull).
