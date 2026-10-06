@@ -219,6 +219,24 @@ public class SelectQueryHelperTests {
 			.Should().Equal(["Id", "Name"], because: "the envelope must carry every requested column");
 	}
 
+	[Test]
+	[Description("The plain builder asks for every row by default and for distinct rows only when the caller says so, so a row cap can count distinct values.")]
+	public void BuildSelectQuery_Should_Emit_IsDistinct_Only_When_Asked() {
+		// Arrange
+		SelectQueryHelper.SelectQueryFilterDefinition[] filters = [new("Name", "a", SelectQueryHelper.TextDataValueType)];
+
+		// Act
+		using JsonDocument plain = Serialize(SelectQueryHelper.BuildSelectQuery("SysSchema", Columns, filters));
+		using JsonDocument distinct = Serialize(SelectQueryHelper.BuildSelectQuery("SysSchema", Columns, filters,
+			isDistinct: true));
+
+		// Assert
+		plain.RootElement.GetProperty("isDistinct").GetBoolean().Should().BeFalse(
+			because: "every existing caller keeps the rows it asked for");
+		distinct.RootElement.GetProperty("isDistinct").GetBoolean().Should().BeTrue(
+			because: "a caller that counts distinct values asks for them");
+	}
+
 	#endregion
 
 	#region Methods: Private
@@ -241,4 +259,55 @@ public class SelectQueryHelperTests {
 
 	#endregion
 
+	#region Methods: Public (column ordering)
+
+	private static System.Text.Json.JsonElement ColumnItem(object query, string alias) =>
+		System.Text.Json.JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(query)).RootElement
+			.GetProperty("columns").GetProperty("items").GetProperty(alias);
+
+	[Test]
+	[Description("A column declared without ordering keeps the unordered wire defaults (orderDirection 0, orderPosition -1) in both builders, so existing callers are unaffected by the optional ordering parameters.")]
+	public void Builders_Should_Emit_Unordered_Defaults_When_Column_Has_No_Ordering() {
+		// Arrange
+		SelectQueryHelper.SelectQueryColumnDefinition[] columns = { new("Name", "Name") };
+
+		// Act
+		object andQuery = SelectQueryHelper.BuildSelectQuery("SysSchema", columns,
+			new SelectQueryHelper.SelectQueryFilterDefinition[] { new("Name", "UsrFoo", SelectQueryHelper.TextDataValueType) });
+		object orQuery = SelectQueryHelper.BuildSelectQueryWithOrFilter("SysSchema", columns, "Name",
+			new[] { "UsrFoo", "UsrBar" }, SelectQueryHelper.TextDataValueType);
+
+		// Assert
+		foreach (object query in new[] { andQuery, orQuery }) {
+			System.Text.Json.JsonElement column = ColumnItem(query, "Name");
+			column.GetProperty("orderDirection").GetInt32().Should().Be(0, because: "no ordering was requested");
+			column.GetProperty("orderPosition").GetInt32().Should().Be(-1, because: "an unordered column has no sort position");
+		}
+	}
+
+	[Test]
+	[Description("Explicit ordering is emitted by both builders, and the OR builder combines its filters with logicalOperation 1.")]
+	public void Builders_Should_Emit_Explicit_Ordering_When_Column_Is_Ordered() {
+		// Arrange
+		SelectQueryHelper.SelectQueryColumnDefinition[] columns = { new("ExtendParent", "ExtendParent", 1, 0) };
+
+		// Act
+		object andQuery = SelectQueryHelper.BuildSelectQuery("SysSchema", columns,
+			Array.Empty<SelectQueryHelper.SelectQueryFilterDefinition>());
+		object orQuery = SelectQueryHelper.BuildSelectQueryWithOrFilter("SysSchema", columns, "Name",
+			new[] { "UsrFoo", "UsrBar" }, SelectQueryHelper.TextDataValueType);
+
+		// Assert
+		foreach (object query in new[] { andQuery, orQuery }) {
+			System.Text.Json.JsonElement column = ColumnItem(query, "ExtendParent");
+			column.GetProperty("orderDirection").GetInt32().Should().Be(1, because: "ascending was requested");
+			column.GetProperty("orderPosition").GetInt32().Should().Be(0, because: "it is the primary sort key");
+		}
+		System.Text.Json.JsonElement orFilters = System.Text.Json.JsonDocument
+			.Parse(System.Text.Json.JsonSerializer.Serialize(orQuery)).RootElement.GetProperty("filters");
+		orFilters.GetProperty("logicalOperation").GetInt32().Should().Be(1, because: "the batch filter is an OR group");
+		orFilters.GetProperty("items").EnumerateObject().Should().HaveCount(2, because: "one filter per value");
+	}
+
+	#endregion
 }
