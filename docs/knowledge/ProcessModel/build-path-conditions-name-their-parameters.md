@@ -10,8 +10,11 @@ date: 2026-09-06
 **What is true** — on the BUILD path, and only there, a flow condition may address a parameter by NAME:
 `[#Amount#]` for a process parameter and `[#Read.ResultEntity#]` for an element output. The package
 expands each to the UId meta-path the platform actually evaluates, in a pass over the whole schema that
-runs after every parameter and element exists. On the MODIFY path there is no expansion and none is
-needed: the UIds exist by then and `describe-business-process` reports them.
+runs after every parameter and element exists. Since CrtProcessBuilder 1.6.6.76 (ENG-102114) the MODIFY
+path expands the same names too - per operation, in the one condition `addFlow` / `setFlow` /
+`setFlowCondition` writes, never as a pass over a schema that may hold designer-authored conditions.
+Before that a modify caller had to assemble the UId form by hand, which is how a dot went missing before
+`[EntityColumn:…]` (clio#1529).
 
 **Why it has to work this way** — a condition is evaluated through the meta-path and never through the
 name, and on `create-business-process` those UIds do not exist when the caller writes the request: the
