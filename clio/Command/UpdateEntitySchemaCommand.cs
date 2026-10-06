@@ -29,12 +29,21 @@ public class UpdateEntitySchemaOptions : RemoteCommandOptions
 	public string SchemaName { get; set; }
 
 	[Option("operation", Required = false,
-		HelpText = "Structured operation JSON. Repeat the option for multiple values.")]
+		HelpText = "Structured operation JSON. Pass several values after one --operation; the flag itself cannot be repeated.")]
 	public IEnumerable<string> Operations { get; set; }
 
 	[Option("operations", Required = false,
-		HelpText = "JSON array of operations, e.g. '[{\"action\":\"add\",...}]'. Alternative to repeating --operation.")]
+		HelpText = "JSON array of operations, e.g. '[{\"action\":\"add\",...}]'. Applied after the --operation values.")]
 	public string? OperationsJson { get; set; }
+
+	/// <summary>
+	/// Path of a UTF-8 file holding a JSON array of operations (same format as <see cref="OperationsJson"/>).
+	/// Lets multi-line operation JSON reach clio from shells that mangle quotes, such as cmd.exe and
+	/// Windows PowerShell 5.1.
+	/// </summary>
+	[Option("operations-file", Required = false,
+		HelpText = "Path to a UTF-8 file with a JSON array of operations (same format as --operations; multi-line allowed). Applied after --operation and --operations.")]
+	public string? OperationsFile { get; set; }
 
 	[Option("caption-culture", Required = false, HelpText = "Override the culture used for written column captions/descriptions (e.g. en-US, uk-UA). Precedence: this override > the connected user's profile culture > en-US. Supplying it skips the profile-culture lookup.")]
 	public string? CaptionCulture { get; set; }
@@ -151,12 +160,14 @@ public class UpdateEntitySchemaCommand : Command<UpdateEntitySchemaOptions>
 	private readonly IRemoteEntitySchemaColumnManager _columnManager;
 	private readonly ILogger _logger;
 	private readonly IOptionSuggestionService _suggestionService;
+	private readonly IFileSystem _fileSystem;
 
 	public UpdateEntitySchemaCommand(IRemoteEntitySchemaColumnManager columnManager, ILogger logger,
-		IOptionSuggestionService suggestionService) {
+		IOptionSuggestionService suggestionService, IFileSystem fileSystem) {
 		_columnManager = columnManager;
 		_logger = logger;
 		_suggestionService = suggestionService;
+		_fileSystem = fileSystem;
 	}
 
 	public override int Execute(UpdateEntitySchemaOptions options) {
@@ -176,14 +187,36 @@ public class UpdateEntitySchemaCommand : Command<UpdateEntitySchemaOptions>
 		}
 	}
 
-	private static IEnumerable<string> ResolveOperations(UpdateEntitySchemaOptions options) {
+	// Operation sources are additive and applied in a fixed order: --operation, --operations, --operations-file.
+	private IEnumerable<string> ResolveOperations(UpdateEntitySchemaOptions options) {
 		List<string> ops = (options.Operations ?? []).ToList();
 		if (!string.IsNullOrWhiteSpace(options.OperationsJson)) {
-			List<JsonElement> fromJson = JsonSerializer.Deserialize<List<JsonElement>>(options.OperationsJson)
-				?? throw new InvalidOperationException("--operations value is not a valid JSON array.");
-			ops.AddRange(fromJson.Select(e => e.GetRawText()));
+			ops.AddRange(ParseOperationsArray(options.OperationsJson, "--operations value"));
+		}
+		if (!string.IsNullOrWhiteSpace(options.OperationsFile)) {
+			string source = $"--operations-file '{options.OperationsFile}'";
+			ops.AddRange(ParseOperationsArray(ReadOperationsFile(options.OperationsFile, source), source));
 		}
 		return ops;
+	}
+
+	private string ReadOperationsFile(string path, string source) {
+		if (!_fileSystem.ExistsFile(path)) {
+			throw new InvalidOperationException($"{source} was not found.");
+		}
+		// A BOM is tolerated even when the reader does not strip it (Windows PowerShell 5.1 writes one by default).
+		return _fileSystem.ReadAllText(path).TrimStart((char)0xFEFF);
+	}
+
+	private static IEnumerable<string> ParseOperationsArray(string json, string source) {
+		List<JsonElement>? operations;
+		try {
+			operations = JsonSerializer.Deserialize<List<JsonElement>>(json);
+		} catch (JsonException exception) {
+			throw new InvalidOperationException($"{source} is not a valid JSON array of operations.", exception);
+		}
+		return operations?.Select(element => element.GetRawText())
+			?? throw new InvalidOperationException($"{source} is not a valid JSON array of operations.");
 	}
 
 	private IEnumerable<ModifyEntitySchemaColumnOptions> BuildColumnMutations(UpdateEntitySchemaOptions options) {
@@ -344,12 +377,12 @@ public class UpdateEntitySchemaCommand : Command<UpdateEntitySchemaOptions>
 			throw new InvalidOperationException("Schema name is required.");
 		}
 		if (options.Operations == null) {
-			throw new InvalidOperationException("At least one operation is required (use --operation or --operations).");
+			throw new InvalidOperationException("At least one operation is required (use --operation, --operations or --operations-file).");
 		}
 
 		using IEnumerator<string> enumerator = options.Operations.GetEnumerator();
 		if (!enumerator.MoveNext()) {
-			throw new InvalidOperationException("At least one operation is required (use --operation or --operations).");
+			throw new InvalidOperationException("At least one operation is required (use --operation, --operations or --operations-file).");
 		}
 	}
 }

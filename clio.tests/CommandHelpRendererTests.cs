@@ -299,6 +299,19 @@ EXAMPLE
 			because: "RemoteCommandOptions.TimeOut computes its real default (100_000ms) lazily in the getter, so the renderer must read it from a constructed options instance instead of the CLR default (0) for int");
 	}
 
+	[Test]
+	[Description("Generated command help omits options declared with Hidden = true, such as backward-compatibility aliases (ENG-101526).")]
+	public void TryRenderCommandHelp_WhenOptionIsHidden_OmitsIt() {
+		// Act
+		string output = _exportRenderer.TryRenderCommandHelp("create-entity-schema");
+
+		// Assert
+		output.Should().Contain("--name <VALUE>", because: "visible options are still listed");
+		output.Should().Contain("--package <VALUE>", because: "visible options are still listed");
+		output.Should().NotContain("--schema-name", because: "the hidden alias of --name must not be listed");
+		output.Should().NotContain("--package-name", because: "the hidden alias of --package must not be listed");
+	}
+
 	private CommandHelpRenderer CreateRenderer(Func<bool> supportsAnsi) =>
 		new(FileSystem, new CommandHelpCatalog(), featureToggleService: null, supportsAnsi);
 }

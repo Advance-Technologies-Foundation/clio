@@ -631,6 +631,159 @@ internal sealed class UpdateEntitySchemaCommandTests : BaseClioModuleTests
 			because: "semicolons inside a JSON title or default value are part of the operation payload, not separators");
 	}
 
+	[Test]
+	[Description("Reads a multi-line, BOM-prefixed JSON array from --operations-file and appends its operations after the --operation and --operations values, in that order (ENG-101526).")]
+	public void Execute_AppendsOperationsFromFile_AfterOperationAndOperationsValues() {
+		// Arrange
+		const string filePath = @"C:\work\operations.json";
+		FileSystem.AddFile(filePath, new System.IO.Abstractions.TestingHelpers.MockFileData(
+			"\uFEFF[\r\n  {\"action\":\"add\",\"column-name\":\"UsrFromFile1\",\"type\":\"Text\",\"title\":\"First\"},\r\n"
+			+ "  {\"action\":\"modify\",\"name\":\"UsrFromFile2\",\"title\":\"Second\"}\r\n]\r\n"));
+		UpdateEntitySchemaOptions options = new() {
+			Environment = "dev",
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Operations = ["""{"action":"modify","column-name":"UsrFromOperation","title":"Op"}"""],
+			OperationsJson = """[{"action":"modify","column-name":"UsrFromOperations","title":"Ops"}]""",
+			OperationsFile = filePath
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "a valid operations file is an accepted operation source");
+		_columnManager.Received(1).ModifyColumns(Arg.Is<IEnumerable<ModifyEntitySchemaColumnOptions>>(mutations =>
+			mutations.Select(mutation => mutation.ColumnName).SequenceEqual(new[] {
+				"UsrFromOperation", "UsrFromOperations", "UsrFromFile1", "UsrFromFile2"
+			})
+			&& mutations.ElementAt(2).Action == "add"
+			&& mutations.ElementAt(2).Type == "Text"
+			&& mutations.ElementAt(3).Title == "Second"));
+	}
+
+	[Test]
+	[Description("Uses --operations-file as the only operation source (ENG-101526).")]
+	public void Execute_UsesOperationsFile_WhenItIsTheOnlySource() {
+		// Arrange
+		const string filePath = @"C:\work\only.json";
+		FileSystem.AddFile(filePath, new System.IO.Abstractions.TestingHelpers.MockFileData(
+			"[\n  {\"action\":\"remove\",\"column-name\":\"UsrObsolete\"}\n]"));
+		UpdateEntitySchemaOptions options = new() {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			OperationsFile = filePath
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "a file alone satisfies the at-least-one-operation rule");
+		_columnManager.Received(1).ModifyColumns(Arg.Is<IEnumerable<ModifyEntitySchemaColumnOptions>>(mutations =>
+			mutations.Count() == 1 && mutations.Single().ColumnName == "UsrObsolete"
+			&& mutations.Single().Action == "remove"));
+	}
+
+	[Test]
+	[Description("A missing --operations-file fails before anything is saved, naming the option and the path (ENG-101526).")]
+	public void Execute_ReturnsFailure_WhenOperationsFileIsMissing() {
+		// Arrange
+		const string filePath = @"C:\work\missing.json";
+		UpdateEntitySchemaOptions options = new() {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			OperationsFile = filePath
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "an operations file that does not exist cannot be applied");
+		_columnManager.DidNotReceiveWithAnyArgs().ModifyColumns(default!);
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("--operations-file") && message.Contains(filePath)));
+	}
+
+	[TestCase("not json at all")]
+	[TestCase("""{"action":"add","column-name":"UsrX","type":"Text"}""")]
+	[TestCase("null")]
+	[Description("Content that is not a JSON array fails before anything is saved, naming the option and the path (ENG-101526).")]
+	public void Execute_ReturnsFailure_WhenOperationsFileIsNotJsonArray(string content) {
+		// Arrange
+		const string filePath = @"C:\work\bad.json";
+		FileSystem.AddFile(filePath, new System.IO.Abstractions.TestingHelpers.MockFileData(content));
+		UpdateEntitySchemaOptions options = new() {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Operations = ["""{"action":"modify","column-name":"UsrStatus","title":"Status"}"""],
+			OperationsFile = filePath
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "the file must hold a JSON array of operation objects");
+		_columnManager.DidNotReceiveWithAnyArgs().ModifyColumns(default!);
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("--operations-file") && message.Contains(filePath)));
+	}
+
+	[Test]
+	[Description("The parser accepts --operations-file as an operation source (ENG-101526).")]
+	public void Parse_Should_AcceptOperationsFile() {
+		// Arrange
+		string[] arguments = ["--package", "UsrPkg", "--schema-name", "UsrVehicle", "--operations-file", "ops.json"];
+		UpdateEntitySchemaOptions? parsedOptions = null;
+
+		// Act
+		ParserResult<UpdateEntitySchemaOptions> parseResult = Parser.Default
+			.ParseArguments<UpdateEntitySchemaOptions>(arguments)
+			.WithParsed(result => parsedOptions = result);
+
+		// Assert
+		parseResult.Tag.Should().Be(ParserResultType.Parsed, because: "--operations-file is a declared option");
+		parsedOptions!.OperationsFile.Should().Be("ops.json", because: "the path must reach the command unchanged");
+	}
+
+	[Test]
+	[Description("The --operation help describes several values after one --operation instead of repeating the flag, which the parser rejects (ENG-101526).")]
+	public void OperationHelpText_Should_DescribeSeveralValuesAfterOneOption() {
+		// Arrange
+		System.Reflection.PropertyInfo property = typeof(UpdateEntitySchemaOptions)
+			.GetProperty(nameof(UpdateEntitySchemaOptions.Operations))!;
+
+		// Act
+		OptionAttribute attribute = (OptionAttribute)Attribute.GetCustomAttribute(property, typeof(OptionAttribute))!;
+
+		// Assert
+		attribute.HelpText.Should().NotContain("Repeat the option",
+			because: "a repeated --operation fails with 'Option is defined multiple times'");
+		attribute.HelpText.Should().Contain("after one --operation",
+			because: "the accepted form is several values after a single --operation");
+	}
+
+	[Test]
+	[Description("Several values after one --operation, the form the help now documents, parse in input order (ENG-101526).")]
+	public void Parse_Should_AcceptSeveralValuesAfterOneOperation() {
+		// Arrange
+		string first = """{"action":"modify","column-name":"UsrA","title":"A"}""";
+		string second = """{"action":"modify","column-name":"UsrB","title":"B"}""";
+		string[] arguments = ["--package", "UsrPkg", "--schema-name", "UsrVehicle", "--operation", first, second];
+		UpdateEntitySchemaOptions? parsedOptions = null;
+
+		// Act
+		ParserResult<UpdateEntitySchemaOptions> parseResult = Parser.Default
+			.ParseArguments<UpdateEntitySchemaOptions>(arguments)
+			.WithParsed(result => parsedOptions = result);
+
+		// Assert
+		parseResult.Tag.Should().Be(ParserResultType.Parsed, because: "several values after one --operation is the documented form");
+		parsedOptions!.Operations.Should().Equal([first, second], because: "every value must reach the command in order");
+	}
+
 	private sealed class CultureScope : IDisposable {
 		private readonly CultureInfo _originalCurrentCulture;
 		private readonly CultureInfo _originalCurrentUiCulture;

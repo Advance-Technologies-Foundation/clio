@@ -50,7 +50,7 @@ clio create-entity-schema -e dev --package Custom --name UsrExternalVehicle --ti
 --package <VALUE>
 Target package name. Required.
 --name <VALUE>
-Schema name. Required.
+Schema name. Required. `--schema-name` is accepted as a hidden alias (not shown in `--help`).
 --title <VALUE>
 Schema title. Required.
 --parent <VALUE>
@@ -139,6 +139,10 @@ cliogate must be installed on the target Creatio environment.
 
 ## Notes
 
+- `--schema-name` is a hidden alias of `--name`, matching the spelling of the other entity-schema
+  commands. Supplying both with different values fails with an error naming both values; equal values
+  (ignoring case) are accepted. A call with neither fails before anything is sent to the server and
+  names both flags.
 - `default-value-config` is recommended for non-constant sources.
 - When `--parent` is omitted the schema defaults to `BaseEntity`; pass `--parent` explicitly to inherit from a different schema. A parentless root schema (reachable only when a parent is forced empty in a direct API call) uses its first Guid column as the primary column and adds a generated, prefixed Guid column when none is supplied, which makes it unusable over OData — hence the default.
 - A schema with a parent preserves the parent's primary column; custom Guid columns remain ordinary columns.

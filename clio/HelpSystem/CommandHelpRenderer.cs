@@ -715,6 +715,7 @@ internal sealed class CommandHelpRenderer {
 		GetProperties(optionsType)
 			.Select(property => (Property: property, Attribute: property.GetCustomAttribute<OptionAttribute>(true)))
 			.Where(item => item.Attribute != null)
+			.Where(item => !item.Attribute.Hidden)
 			.Where(item => IsEnvironmentOption(item.Property) == environmentOptionsOnly)
 			.OrderBy(item => item.Property.DeclaringType == typeof(EnvironmentOptions) ? 1 : 0)
 			.ThenBy(item => item.Property.MetadataToken)
