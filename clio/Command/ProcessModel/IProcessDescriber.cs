@@ -1680,7 +1680,8 @@ public sealed class DescribedFilterCondition {
 	public DescribedFilterElementRef ElementParameter { get; set; }
 
 	/// <summary>
-	/// Raw meta-path expression token. The read-back surfaces EVERY parameter reference here (both process- and
+	/// The BARE meta-path token of a parameter reference, never <c>[#...#]</c>-wrapped; a setFilter accepts it
+	/// back only in exactly this spelling. The read-back surfaces EVERY parameter reference here (both process- and
 	/// element-parameter references), which is why <see cref="ProcessParameter"/> / <see cref="ElementParameter"/>
 	/// stay null on a real describe.
 	/// </summary>

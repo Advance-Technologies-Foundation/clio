@@ -125,11 +125,22 @@ internal static class SelectQueryHelper
 				detail.Contains(marker, StringComparison.OrdinalIgnoreCase));
 	}
 
+	/// <summary>
+	/// Builds a SelectQuery whose filters are combined with AND.
+	/// </summary>
+	/// <param name="rootSchemaName">Schema to query.</param>
+	/// <param name="columns">Columns to return.</param>
+	/// <param name="filters">Comparison filters, all of which a row must match.</param>
+	/// <param name="rowCount">Maximum number of rows to return.</param>
+	/// <param name="isDistinct">Return each distinct combination of the selected columns once, so the row cap counts
+	/// distinct values rather than every row that carries them.</param>
+	/// <returns>The query, ready for JSON serialization.</returns>
 	internal static object BuildSelectQuery(
 		string rootSchemaName,
 		IReadOnlyList<SelectQueryColumnDefinition> columns,
 		IReadOnlyList<SelectQueryFilterDefinition> filters,
-		int rowCount = 10000)
+		int rowCount = 10000,
+		bool isDistinct = false)
 	{
 		Dictionary<string, object> filterItems = filters
 			.Select((filter, index) => new { filter, index })
@@ -158,7 +169,7 @@ internal static class SelectQueryHelper
 				},
 				StringComparer.Ordinal);
 
-		return BuildQueryEnvelope(rootSchemaName, columns, 0, filterItems, rowCount);
+		return BuildQueryEnvelope(rootSchemaName, columns, 0, filterItems, rowCount, isDistinct);
 	}
 
 	/// <summary>
@@ -253,8 +264,8 @@ internal static class SelectQueryHelper
 	}
 
 	/// <summary>
-	/// Builds the column items of a SelectQuery: one visible, unordered column expression per definition,
-	/// keyed by alias.
+	/// Builds the column items of a SelectQuery: one visible column expression per definition, keyed by alias, with
+	/// the definition's order (unordered by default).
 	/// </summary>
 	private static Dictionary<string, object> BuildColumnItems(IReadOnlyList<SelectQueryColumnDefinition> columns)
 	{
@@ -268,8 +279,8 @@ internal static class SelectQueryHelper
 						expressionType = 0,
 						columnPath = column.Path
 					},
-					orderDirection = 0,
-					orderPosition = -1,
+					orderDirection = column.OrderDirection,
+					orderPosition = column.OrderPosition,
 					isVisible = true
 				},
 				StringComparer.Ordinal);
@@ -284,14 +295,15 @@ internal static class SelectQueryHelper
 		IReadOnlyList<SelectQueryColumnDefinition> columns,
 		int logicalOperation,
 		Dictionary<string, object> filterItems,
-		int rowCount)
+		int rowCount,
+		bool isDistinct = false)
 	{
 		return new
 		{
 			rootSchemaName,
 			operationType = 0,
 			allColumns = false,
-			isDistinct = false,
+			isDistinct,
 			ignoreDisplayValues = false,
 			rowCount,
 			rowsOffset = -1,
@@ -361,7 +373,11 @@ internal static class SelectQueryHelper
 			}
 		};
 
-	internal sealed record SelectQueryColumnDefinition(string Path, string Alias);
+	/// <summary>A selected column. <paramref name="OrderDirection"/>: 0 = none, 1 = ascending, 2 = descending;
+	/// <paramref name="OrderPosition"/>: -1 = not ordered. Ordering matters whenever a row cap could cut off the
+	/// row the caller wants, because <c>rowCount</c> is applied to an otherwise unordered result.</summary>
+	internal sealed record SelectQueryColumnDefinition(string Path, string Alias, int OrderDirection = 0,
+		int OrderPosition = -1);
 
 	internal sealed record SelectQueryFilterDefinition(
 		string ColumnPath,
