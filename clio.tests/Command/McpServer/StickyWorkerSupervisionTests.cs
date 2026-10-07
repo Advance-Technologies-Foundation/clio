@@ -1642,6 +1642,32 @@ public sealed class StickyWorkerSupervisionTests {
 			because: "the kept worker still holds its admission slot - the slot comes back when the operation ends, not when the caller stops waiting");
 	}
 
+	[TestCase(CompileToolName, McpToolOperationFamily.ConfigurationBuild, "compile-status", "")]
+	[TestCase(RestartToolName, McpToolOperationFamily.Restart, "restart-status", "cannot report")]
+	[TestCase("restart-by-credentials", McpToolOperationFamily.Restart, "describe-environment", "Poll restart-status")]
+	[TestCase(InstallProcessBuilderToolName, McpToolOperationFamily.ConfigurationBuild, "no status tool", "Poll")]
+	[TestCase("install-dashboards-migrator", McpToolOperationFamily.ConfigurationBuild, "no status tool", "Poll")]
+	[TestCase("create-app-section", McpToolOperationFamily.AppSectionCreate, "list-app-sections", "Poll")]
+	[Category("Unit")]
+	[Description("ENG-102333 review: the long-operation refusal names the status route that exists for the REFUSED tool. A family can mix routes - restart-status reports restart-by-environment-name but cannot report restart-by-credentials - and the installs and create-app-section have no status tool, so one list for every family sent a timed-out credentials restart to a not-found it could not leave.")]
+	public void LongOperationInProgressResult_ShouldNameTheStatusRouteOfTheRefusedTool(string toolName,
+		McpToolOperationFamily family, string expected, string forbidden) {
+		// Arrange
+		// Act
+		CallToolResult refusal = McpWorkerCallDispatcher.LongOperationInProgressResult(toolName, family, EnvironmentName);
+		string text = string.Join(" ", refusal.Content.OfType<TextContentBlock>().Select(block => block.Text));
+
+		// Assert
+		ReadErrorClass(refusal).Should().Be(LongOperationInProgressErrorClass,
+			because: "the machine-readable class agents key on must not change with the wording");
+		text.Should().Contain(expected,
+			because: "the caller must be sent to a route that can actually report the operation it collided with");
+		if (forbidden.Length > 0) {
+			text.Should().NotContain(forbidden,
+				because: "naming a route that cannot report this tool's operation is the dead end the review found");
+		}
+	}
+
 	[TestCase(CompileToolName, McpToolOperationFamily.ConfigurationBuild,
 		McpToolSharedFileResource.ConfigurationBuild, "clio-configuration-build-in-progress")]
 	[TestCase(InstallProcessBuilderToolName, McpToolOperationFamily.ConfigurationBuild,

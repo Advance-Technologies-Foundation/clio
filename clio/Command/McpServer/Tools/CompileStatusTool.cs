@@ -34,17 +34,18 @@ public sealed class CompileStatusTool(ICompileOperationRegistry registry, IToolC
 	/// <para>
 	/// <b>That verdict carries no time.</b> It belongs to the latest FINISHED build (see
 	/// <see cref="Clio.Common.ICompilationResultReader"/>), so read while a compile is still running it is the
-	/// previous build's — which is why the note says to wait before relying on it and never to restart on it.
+	/// previous build's — which is why the note says not to rely on it, or restart on it, until the compile has had
+	/// time to finish. It is a timing rule, not a ban: a restart the workflow needs afterwards (a package
+	/// compile's activation) is still owed.
 	/// </para>
 	/// </remarks>
 	internal const string NotFoundNote =
 		"This MCP server session holds no record of a compile-creatio operation for this environment. That does "
 		+ "not mean no compile ran: a record lives only in this session, and only for a while after its compile "
 		+ "ends. Do not compile again to find out. " + LastCompilationLogTool.ToolName + " (through clio-run) "
-		+ "reads the environment's latest FINISHED compile and carries no time: while a compile may still be "
-		+ "running (a process-name compile takes minutes, a full one up to about 20) it can return an earlier "
-		+ "compile's verdict, so wait that long before relying on it, and never restart the environment on that "
-		+ "answer alone.";
+		+ "reads the environment's latest FINISHED compile and carries no time, so until a compile you started "
+		+ "has had time to finish (a package or process-name compile a few minutes, a full one up to about 20) it "
+		+ "can return an earlier compile's verdict: do not rely on it, or restart on it, before then.";
 
 	/// <summary>
 	/// Returns the tracked status of a compile-creatio operation.
@@ -57,7 +58,7 @@ public sealed class CompileStatusTool(ICompileOperationRegistry registry, IToolC
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillExtended,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.ConfigurationBuild)]
-	[Description("Returns the status of the most recent compile-creatio operation tracked for an environment, or of a specific operation-id from a compile-creatio in-progress response. Use this after compile-creatio returns an in-progress note, AND after your MCP client stopped waiting for compile-creatio (for example 'Request timed out'): the compile keeps running and is tracked here. Do not re-run compile-creatio just to check. A not-found answer means this MCP server session holds no record, not that nothing ran: then last-compilation-log (through clio-run) reads the environment's latest FINISHED compile - it carries no time, so while a compile may still be running it can be an earlier compile's verdict, and it is never a reason to restart.")]
+	[Description("Returns the status of the most recent compile-creatio operation tracked for an environment, or of a specific operation-id from a compile-creatio in-progress response. Use this after compile-creatio returns an in-progress note, AND after your MCP client stopped waiting for compile-creatio (for example 'Request timed out'): the compile keeps running and is tracked here. Do not re-run compile-creatio just to check. A not-found answer means this MCP server session holds no record, not that nothing ran: then last-compilation-log (through clio-run) reads the environment's latest FINISHED compile - it carries no time, so until the compile has had time to finish it can be an earlier compile's verdict: do not rely on it, or restart on it, before then.")]
 	public CompileStatusResponse GetStatus(
 		[Description("Status query parameters")] [Required] CompileStatusArgs args) {
 		if (string.IsNullOrWhiteSpace(args.EnvironmentName)) {

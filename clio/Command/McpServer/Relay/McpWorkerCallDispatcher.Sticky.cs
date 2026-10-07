@@ -951,8 +951,7 @@ public sealed partial class McpWorkerCallDispatcher {
 			: $"'{environmentName}'";
 		string text = string.Format(CultureInfo.InvariantCulture,
 			"'{0}' was not started: an operation of the '{1}' family is already running for {2} in this "
-			+ "clio MCP host. Poll that operation's status tool for its result where it has one "
-			+ "(compile-status, restart-status), or wait for it to finish before starting another.", toolName, family, target);
+			+ "clio MCP host. {3}", toolName, family, target, LongOperationNextStep(toolName));
 		JsonObject payload = new() {
 			["success"] = false,
 			["tool"] = toolName,
@@ -970,6 +969,41 @@ public sealed partial class McpWorkerCallDispatcher {
 			StructuredContent = JsonSerializer.SerializeToElement(payload)
 		};
 	}
+
+	/// <summary>
+	/// Says what the caller of a refused starter can do while the operation already running finishes.
+	/// </summary>
+	/// <param name="toolName">The refused tool.</param>
+	/// <returns>One sentence naming the status route that actually exists for that tool.</returns>
+	/// <remarks>
+	/// <b>Per tool, not per family, and that is the point.</b> One family can hold tools with different
+	/// status routes: <c>restart-status</c> reports a <c>restart-by-environment-name</c> but cannot report a
+	/// <c>restart-by-credentials</c> (it is keyed by a registered environment name), and the installs and
+	/// <c>create-app-section</c> have no status tool at all. Since ENG-102333 a starter whose client timed out
+	/// keeps its worker, so its retry meets this refusal routinely; one list of status tools for every family
+	/// sent the credentials restart to a <c>not-found</c> it could not leave.
+	/// </remarks>
+	internal static string LongOperationNextStep(string toolName) => toolName switch {
+		Tools.CompileCreatioTool.CompileCreatioToolName =>
+			$"Poll {Tools.CompileStatusTool.CompileStatusToolName} with the same environment-name for its result; "
+			+ "do not start another compile meanwhile.",
+		Tools.RestartTool.RestartByEnvironmentNameToolName =>
+			$"Poll {Tools.RestartStatusTool.RestartStatusToolName} with the same environment-name for its result, or "
+			+ "wait for it to finish before starting another.",
+		Tools.RestartTool.RestartByCredentialsToolName =>
+			$"{Tools.RestartStatusTool.RestartStatusToolName} cannot report a restart started with credentials: check "
+			+ $"that the instance answers with {Tools.GetCreatioInfoTool.ToolName} (through clio-run, with the same uri, "
+			+ "login and password) instead of restarting again.",
+		Tools.ApplicationSectionCreateTool.ApplicationSectionCreateToolName =>
+			$"It has no status tool: {Tools.ApplicationSectionGetListTool.ApplicationSectionGetListToolName} shows the section once "
+			+ "it exists; wait for that before starting another.",
+		Tools.InstallProcessBuilderTool.InstallProcessBuilderToolName
+			or Tools.InstallDashboardsMigratorTool.InstallDashboardsMigratorToolName =>
+			$"It has no status tool: wait for it to finish ({Tools.GetPkgListTool.GetPkgListToolName} shows the "
+			+ "installed version) before starting another.",
+		_ => "Poll that operation's status tool for its result if it has one, or wait for it to finish before "
+			+ "starting another."
+	};
 
 	/// <summary>
 	/// Holds the per-key start gate for one starter and frees it exactly once.

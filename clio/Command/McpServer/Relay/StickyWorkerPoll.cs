@@ -112,9 +112,11 @@ public sealed class StickyWorkerPoll : IStickyWorkerPoll {
 				// the worker was told to stop through `notifications/cancelled`. The transport is whole — that
 				// is what makes this session reusable at all — but a worker that ignores the notification is
 				// still executing the abandoned call, and reusing it would put a second request on a session
-				// whose first one is still in flight. BOUNDED, and the bound is the point: the one worker
-				// state this asks about is a worker whose pipe is open and which answers nothing, so an
-				// unbounded proof would hang on exactly the worker it exists to catch.
+				// whose first one is still in flight. For a STARTER the parent kept (ENG-102333) the abandoned
+				// call's work running on is the intended state - its operation is detached - so there the probe
+				// proves only what it says: the worker still answers. BOUNDED, and the bound is the point:
+				// the one worker state this asks about is a worker whose pipe is open and which answers
+				// nothing, so an unbounded proof would hang on exactly the worker it exists to catch.
 				if (!await entry.Session.ProbeLivenessAsync(budgetSource.Token).ConfigureAwait(false)) {
 					_logger.WriteWarning(
 						$"A sticky MCP worker for operation family '{key.Family}' did not answer the liveness "
