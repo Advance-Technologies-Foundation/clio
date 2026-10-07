@@ -205,9 +205,9 @@
 		/// <param name="viewConfigApplierFactory">Creates the platform diff interpreter for mandatory parent validation.</param>
 		/// <param name="pageDesignerPresenceNotifier">Best-effort notifier used by the update-page
 		/// entry points to publish Designer Presence save events.</param>
-		/// <param name="unresolvedMergeDetector">Advisory check that reports viewModelConfigDiff/modelConfigDiff
-		/// merges the platform differ will skip because their path does not resolve (GH-1753). Optional because it
-		/// only adds warnings: without it a save behaves exactly as before.</param>
+		/// <param name="unresolvedMergeDetector">Check of the viewModelConfigDiff/modelConfigDiff merges against the
+		/// parent schemas (GH-1753): a merge the platform differ skips is a warning, a merge it throws on (so the page
+		/// fails to build) rejects the save. Optional: without it a save behaves exactly as before.</param>
 		[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
 			Justification = "DI constructor: each collaborator owns a separate write concern. The factory creates a fresh stateful diff interpreter per hierarchy; bundling unrelated services would hide dependencies.")]
 		public PageUpdateCommand(
@@ -310,7 +310,7 @@
 			List<string> RegisteredKeys,
 			IReadOnlyList<string> DowngradeWarnings,
 			IReadOnlyList<string> InertWarnings,
-			IReadOnlyList<string> UnresolvedMergeWarnings,
+			PageConfigMergeReport ConfigMergeReport,
 			PageUpdateResponse CaptionGateFailure);
 
 		/// <summary>
@@ -335,13 +335,13 @@
 			IReadOnlyList<string> downgradeWarnings =
 				PageInsertDowngradeDetector.Detect(schemaToSave["body"]?.ToString(), bodyToWrite);
 			IReadOnlyList<string> inertWarnings = PageInertOperationDetector.Detect(bodyToWrite);
-			IReadOnlyList<string> unresolvedMergeWarnings = DetectUnresolvedConfigMerges(bodyToWrite, context);
+			PageConfigMergeReport configMergeReport = DetectUnresolvedConfigMerges(bodyToWrite, context);
 			List<string> registeredKeys = UpdateSchemaBody(
 				schemaToSave, bodyToWrite, context.SchemaType, explicitResources, parsedOptionalProperties);
 			PageUpdateResponse captionGateFailure =
 				ValidateInsertedWidgetCaptionsResolve(options, schemaToSave, bodyToWrite, context.SchemaType);
 			prepared = new PreparedWrite(schemaToSave, bodyToWrite, projection, registeredKeys,
-				downgradeWarnings, inertWarnings, unresolvedMergeWarnings, captionGateFailure);
+				downgradeWarnings, inertWarnings, configMergeReport, captionGateFailure);
 			return true;
 		}
 
@@ -369,17 +369,18 @@
 			"so a merge whose path does not exist would not be reported: {0}";
 
 		/// <summary>
-		/// Reports the config <c>merge</c> operations in <paramref name="body"/> that the platform differ will skip
-		/// because their path does not resolve (GH-1753). Advisory: the save still goes ahead, because a page can
-		/// legitimately carry such an operation from earlier saves and rejecting it would block unrelated edits.
+		/// Checks the config <c>merge</c> operations in <paramref name="body"/> against the parent schemas (GH-1753).
+		/// A merge the platform differ skips is a warning only, because a page can legitimately carry such an
+		/// operation from earlier saves and rejecting it would block unrelated edits. A merge the differ throws on
+		/// is an error: the page already fails to build, so the save is rejected.
 		/// </summary>
-		/// <returns>The warnings, empty when every merge resolves or nothing applies; a single "could not check"
-		/// entry when the check could not run.</returns>
-		private IReadOnlyList<string> DetectUnresolvedConfigMerges(string body, EditableSchemaContext context) {
+		/// <returns>The findings, empty when every merge resolves or nothing applies; a single "could not check"
+		/// warning when the check could not run.</returns>
+		private PageConfigMergeReport DetectUnresolvedConfigMerges(string body, EditableSchemaContext context) {
 			if (_unresolvedMergeDetector is null || _hierarchyClient is null
 				|| context.SchemaType == PageSchemaType.Mobile
 				|| PageSchemaTypeExtensions.FromBody(body) == PageSchemaType.Mobile) {
-				return [];
+				return PageConfigMergeReport.Empty;
 			}
 			try {
 				// The detector reads the hierarchy only when the body has a merge that can miss its target.
@@ -390,8 +391,9 @@
 				// advisory check must never fail a save, and a check that did not run must say so - staying silent
 				// would look exactly like "every merge resolves". The reason is server-authored text: neutralized
 				// and length-capped before it reaches a model.
-				return [string.Format(CultureInfo.InvariantCulture, UnresolvedMergeCheckSkippedWarning,
-					SensitiveErrorTextRedactor.RedactUntrustedOrNull(ex.Message) ?? ex.GetType().Name)];
+				return new PageConfigMergeReport([], [string.Format(CultureInfo.InvariantCulture,
+					UnresolvedMergeCheckSkippedWarning,
+					SensitiveErrorTextRedactor.RedactUntrustedOrNull(ex.Message) ?? ex.GetType().Name)]);
 			}
 		}
 
@@ -430,7 +432,7 @@
 				response.Warnings = CombineWarnings(
 					BuildDryRunWidgetCaptionWarnings(options.Body, context.SchemaType, explicitResources),
 					PageInertOperationDetector.Detect(options.Body),
-					DetectUnresolvedConfigMerges(options.Body, context));
+					ConfigMergeWarningsForDryRun(DetectUnresolvedConfigMerges(options.Body, context)));
 				return true;
 			}
 			// ENG-96262 / GH-1150: append used to return before the merge, so a dry run reported `success`
@@ -451,7 +453,7 @@
 				BuildProjectedLossWarnings(prepared.Projection),
 				prepared.DowngradeWarnings,
 				prepared.InertWarnings,
-				prepared.UnresolvedMergeWarnings);
+				ConfigMergeWarningsForDryRun(prepared.ConfigMergeReport));
 			return true;
 		}
 
@@ -464,6 +466,14 @@
 			if (!TryPrepareWrite(options, context, explicitResources, parsedOptionalProperties,
 				out PreparedWrite prepared, out response)) return false;
 			if (prepared.CaptionGateFailure != null) { response = prepared.CaptionGateFailure; return false; }
+			if (prepared.ConfigMergeReport.Errors.Count > 0) {
+				response = new PageUpdateResponse {
+					Success = false,
+					Error = string.Join(Environment.NewLine, prepared.ConfigMergeReport.Errors),
+					Warnings = prepared.ConfigMergeReport.Warnings.Count > 0 ? [.. prepared.ConfigMergeReport.Warnings] : null
+				};
+				return false;
+			}
 			if (!TrySaveSchema(prepared.Schema, out response)) return false;
 			response = CreateSuccessResponse(options, dryRun: false, prepared.RegisteredKeys);
 			// The save reports the same projection: a caller who skipped the dry run has no other place to
@@ -471,7 +481,7 @@
 			response.AppendProjection = prepared.Projection;
 			response.Warnings = CombineWarnings(
 				BuildProjectedLossWarnings(prepared.Projection), prepared.DowngradeWarnings, prepared.InertWarnings,
-				prepared.UnresolvedMergeWarnings,
+				prepared.ConfigMergeReport.Warnings,
 				explicitResources?.Count > 0 || prepared.RegisteredKeys?.Count > 0
 					? new List<string> { ResourceWorkspaceCaptureWarning } : null);
 			PopulatePostSaveChecksum(options, context, response);
@@ -596,6 +606,11 @@
 		/// </summary>
 		private static IReadOnlyList<string> BuildCaptionGateWarnings(PageUpdateResponse captionGateFailure) =>
 			captionGateFailure is null ? null : [captionGateFailure.Error];
+
+		// Like the caption gate, the config-merge errors that reject a save are advisory on a dry run: its job is to
+		// say what would happen. The errors come first, because each of them would stop the save.
+		private static IReadOnlyList<string> ConfigMergeWarningsForDryRun(PageConfigMergeReport report) =>
+			[.. report.Errors, .. report.Warnings];
 
 		/// <summary>
 		/// Whether the caller asked for the incoming body to be merged with the schema's current body

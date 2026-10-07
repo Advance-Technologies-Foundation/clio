@@ -24,6 +24,8 @@ public sealed class PageUpdateCommandUnresolvedMergeTests {
 	private const string Uid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
 	private const string UnresolvedMerge =
 		"""[{ "operation": "merge", "path": ["dataSources", "UsrNewDS"], "values": { "type": "crt.EntityDataSource" } }]""";
+	private const string ThrowingMerge =
+		"""[{ "operation": "merge", "path": ["dataSources", "PDS", "config"], "values": null }]""";
 	private const string ResolvedMerge =
 		"""[{ "operation": "merge", "path": ["dataSources", "PDS", "config"], "values": { "entitySchemaName": "Account" } }]""";
 
@@ -97,6 +99,40 @@ public sealed class PageUpdateCommandUnresolvedMergeTests {
 		result.Should().BeTrue(because: "the warning is advisory and must not block the write: " + response.Error);
 		response.Warnings.Should().ContainSingle(w => w.StartsWith("modelConfigDiff merge at path [\"dataSources\",\"UsrNewDS\"]"),
 			because: "the caller must learn that this merge is saved but has no effect");
+	}
+
+	[TestCase("replace")]
+	[TestCase("append")]
+	[Description("A merge the runtime throws on (null values on a target that resolves) breaks the page, so the save is rejected with the merge named and nothing is written.")]
+	public void TryUpdatePage_ShouldRejectSave_WhenConfigMergeBreaksThePage(string mode) {
+		// Arrange
+		PageUpdateOptions options = new() { SchemaName = "UsrPage", Mode = mode, Body = Body(ThrowingMerge) };
+
+		// Act
+		bool result = _command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeFalse(because: "a merge the runtime throws on makes the page fail to build");
+		response.Error.Should().StartWith("modelConfigDiff merge at path [\"dataSources\",\"PDS\",\"config\"]",
+			because: "the caller must learn which merge breaks the page");
+		_client.DidNotReceive().ExecutePostRequest(Arg.Is<string>(x => x.EndsWith("SaveSchema")), Arg.Any<string>(),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[TestCase("replace")]
+	[TestCase("append")]
+	[Description("On a dry run the same merge is reported as a warning, like the caption gate: a dry run says what would happen instead of refusing.")]
+	public void TryUpdatePage_ShouldWarnOnDryRun_WhenConfigMergeBreaksThePage(string mode) {
+		// Arrange
+		PageUpdateOptions options = new() { SchemaName = "UsrPage", Mode = mode, DryRun = true, Body = Body(ThrowingMerge) };
+
+		// Act
+		bool result = _command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "a dry run reports instead of refusing: " + response.Error);
+		response.Warnings.Should().Contain(w => w.Contains("breaks the page"),
+			because: "the dry run must tell the caller that the save would be rejected");
 	}
 
 	[TestCase("replace")]

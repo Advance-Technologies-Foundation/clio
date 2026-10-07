@@ -72,6 +72,9 @@ public class JsonDiffApplier : IJsonDiffApplier {
 	protected JToken _sourceObject;
 	private JObject _rootWrapper;
 	private JsonApplierOperationsOptions _operationsOptions;
+
+	/// <summary>The options of the <see cref="Apply"/> call in progress; <c>null</c> outside it.</summary>
+	protected JsonApplierOperationsOptions OperationsOptions => _operationsOptions;
 	private Dictionary<string, JsonApplierAliasInfo> _aliases;
 
 	/// <param name="disableApplyMoveIfIndirectParentMoved">Mirrors the client
@@ -840,6 +843,11 @@ public sealed class JsonApplierOperationsOptions {
 	/// skipped because its target did not resolve. The platform interpreter drops these silently; the sink only
 	/// observes them and never changes what is applied. Defaults to <c>null</c> (no observation).</summary>
 	public ICollection<JObject> UnresolvedMerges { get; init; }
+
+	/// <summary>Clio diagnostic sink: when set, receives a copy of every path-addressed <c>merge</c> whose target
+	/// is an array. The client reports such a merge as applied, but the keys it sets on the array are lost, so it
+	/// changes nothing. Observation only. Defaults to <c>null</c> (no observation).</summary>
+	public ICollection<JObject> ArrayTargetMerges { get; init; }
 }
 
 /// <summary>Error thrown by <see cref="JsonDiffApplier"/>, mirroring the client <c>new Error(...)</c> throws.</summary>
@@ -864,4 +872,6 @@ public static class JsonDiffApplierResources {
 	public const string NotContainerItemInsertException = "Item \"{0}\" is not a container for other items";
 	public const string ItemWithItemsPropertyMergeException = "Item \"{0}\" should not contain parameter \"{1}\"";
 	public const string ItemNameAlreadyExists = "Item with value \"{0}\" of the \"name\" parameter already exists";
+	public const string MergeValuesMissing = "Merge into \"{0}\" has no \"values\": cannot convert undefined or null to object";
+	public const string MergeTargetNotObject = "Merge into \"{0}\" cannot set properties: the value at that path is not an object";
 }

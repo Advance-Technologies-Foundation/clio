@@ -398,9 +398,12 @@ config the way the platform does. For every merge that would be skipped, the res
 add a new key, merge into its existing parent and put the key inside `values`: `path: ["dataSources"]`
 with `values: { "NewDS": { ... } }`, or `path: []` with the whole branch. `attributes` and `dataSources`
 always exist at runtime, even on a blank page whose `get-page` bundle shows neither, so merging into
-them is safe. A merge whose path ends on an array or a single value, or whose `values` is not an object,
-is reported the same way, with its own reason. If the parent schemas cannot
-be read for this check, the response says the check did not run, and the save is not blocked.
+them is safe. A merge whose path ends on an array, or whose `values` is an array, a string, a number
+or a boolean, is reported the same way, with its own reason. A merge the runtime throws on makes the
+page fail to build, so it rejects the save (a `--dry-run` lists it as a warning): a path that ends on a
+single value, such as `isCollection`, and a merge with no `values` or `values: null` on a target that
+exists. If the parent schemas cannot be read for this check, the response says the check did not run,
+and the save is not blocked.
 
 ### What a `--dry-run` tells you about an append
 

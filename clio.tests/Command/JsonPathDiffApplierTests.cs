@@ -166,4 +166,103 @@ public sealed class JsonPathDiffApplierTests {
 		JToken.DeepEquals(result, source).Should().BeTrue(because: "the client skips a merge whose target is falsy");
 		unresolved.Should().ContainSingle(because: "the skipped merge must reach the diagnostic sink");
 	}
+
+	[TestCase("null")]
+	[TestCase("false")]
+	[TestCase("0")]
+	[TestCase("\"\"")]
+	[Description("GH-1753: remove with properties shares the falsy fallback with merge; a falsy value at the path with no element of that _id is a no-op, as on the client (it used to cast the value to an object and throw).")]
+	public void Remove_ShouldBeNoOp_WhenPropertiesPathPointsAtFalsyValue(string falsyValue) {
+		// Arrange
+		JToken source = JToken.Parse("{ \"attributes\": { \"A\": " + falsyValue + " } }");
+
+		// Act
+		JToken result = new JsonPathDiffApplier().Apply(source,
+			(JArray)JToken.Parse("""[ { "operation": "remove", "path": ["attributes", "A"], "properties": ["x"] } ]"""));
+
+		// Assert
+		JToken.DeepEquals(result, source).Should().BeTrue(because: "the client finds no item to remove properties from");
+	}
+
+	[TestCase("5")]
+	[TestCase("true")]
+	[TestCase("\"text\"")]
+	[Description("GH-1753: a merge into a single value throws, like the client, which sets the merged keys on a primitive in strict mode.")]
+	public void Merge_ShouldThrow_WhenTargetIsSingleValue(string value) {
+		// Arrange
+		JToken source = JToken.Parse("{ \"attributes\": { \"A\": " + value + " } }");
+
+		// Act
+		System.Action act = () => new JsonPathDiffApplier().Apply(source,
+			(JArray)JToken.Parse("""[ { "operation": "merge", "path": ["attributes", "A"], "values": { "x": 1 } } ]"""));
+
+		// Assert
+		act.Should().Throw<JsonDiffApplierException>(because: "the client throws a TypeError for this merge")
+			.WithMessage("*[\"attributes\",\"A\"]*not an object*");
+	}
+
+	[Test]
+	[Description("GH-1753: a merge into an array reports success and changes nothing, like the client, and reaches the ArrayTargetMerges sink.")]
+	public void Merge_ShouldChangeNothingAndReport_WhenTargetIsArray() {
+		// Arrange
+		var arrayTargets = new System.Collections.Generic.List<JObject>();
+		var unresolved = new System.Collections.Generic.List<JObject>();
+		JToken source = JToken.Parse("""{ "attributes": { "A": [1, 2] } }""");
+
+		// Act
+		JToken result = new JsonPathDiffApplier().Apply(source,
+			(JArray)JToken.Parse("""[ { "operation": "merge", "path": ["attributes", "A"], "values": { "x": 1 } } ]"""),
+			new JsonApplierOperationsOptions { UnresolvedMerges = unresolved, ArrayTargetMerges = arrayTargets });
+
+		// Assert
+		JToken.DeepEquals(result, source).Should().BeTrue(because: "keys set on an array are lost");
+		arrayTargets.Should().ContainSingle(because: "the merge has no effect and must reach the diagnostic sink");
+		unresolved.Should().BeEmpty(because: "the client reports this merge as applied");
+	}
+
+	[TestCase("""{ "operation": "merge", "path": ["attributes", "A"] }""")]
+	[TestCase("""{ "operation": "merge", "path": ["attributes", "A"], "values": null }""")]
+	[Description("GH-1753: a merge with missing or null values on a target that resolves throws, like the client's Object.keys(undefined or null).")]
+	public void Merge_ShouldThrow_WhenValuesMissingAndTargetResolves(string merge) {
+		// Arrange
+		JToken source = JToken.Parse("""{ "attributes": { "A": { "y": 1 } } }""");
+
+		// Act
+		System.Action act = () => new JsonPathDiffApplier().Apply(source, (JArray)JToken.Parse($"[{merge}]"));
+
+		// Assert
+		act.Should().Throw<JsonDiffApplierException>(because: "the client throws a TypeError for this merge")
+			.WithMessage("*has no \"values\"*");
+	}
+
+	[TestCase("""["p", "q"]""", """{ "y": 1, "0": "p", "1": "q" }""")]
+	[TestCase("\"pq\"", """{ "y": 1, "0": "p", "1": "q" }""")]
+	[TestCase("5", """{ "y": 1 }""")]
+	[TestCase("true", """{ "y": 1 }""")]
+	[Description("GH-1753: values that are not an object are keyed like JS Object.keys - an array or a string by index, a number or a boolean not at all.")]
+	public void Merge_ShouldKeyNonObjectValuesLikeObjectKeys(string values, string expected) {
+		// Arrange
+		JToken source = JToken.Parse("""{ "attributes": { "A": { "y": 1 } } }""");
+
+		// Act
+		JToken result = new JsonPathDiffApplier().Apply(source,
+			(JArray)JToken.Parse("""[ { "operation": "merge", "path": ["attributes", "A"], "values": """ + values + " } ]"));
+
+		// Assert
+		AssertEqual(result["attributes"]!["A"]!, expected);
+	}
+
+	[Test]
+	[Description("GH-1753: when the first path segment names an element by _id and the rest of the path does not resolve, the client merges into undefined and throws; the clone throws too instead of a NullReferenceException.")]
+	public void Merge_ShouldThrow_WhenIdFallbackRemainderDoesNotResolve() {
+		// Arrange
+		JToken source = JToken.Parse("""{ "attributes": { "A": { "_id": "Root", "inner": {} } } }""");
+
+		// Act
+		System.Action act = () => new JsonPathDiffApplier().Apply(source,
+			(JArray)JToken.Parse("""[ { "operation": "merge", "path": ["Root", "missing"], "values": { "x": 1 } } ]"""));
+
+		// Assert
+		act.Should().Throw<JsonDiffApplierException>(because: "the client throws a TypeError for this merge");
+	}
 }

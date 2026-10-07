@@ -57,7 +57,7 @@ public sealed class PageUnresolvedMergeDetectorTests {
 		string body = Body(modelConfigDiff: modelConfigDiff);
 
 		// Act
-		IReadOnlyList<string> warnings = Detector.Detect(body, TemplateParent);
+		IReadOnlyList<string> warnings = Detector.Detect(body, TemplateParent).Warnings;
 
 		// Assert
 		warnings.Should().ContainSingle(because: "the differ skips exactly this one merge");
@@ -76,7 +76,7 @@ public sealed class PageUnresolvedMergeDetectorTests {
 		string body = Body(modelConfigDiff: modelConfigDiff);
 
 		// Act
-		IReadOnlyList<string> warnings = Detector.Detect(body, TemplateParent);
+		IReadOnlyList<string> warnings = Detector.Detect(body, TemplateParent).Warnings;
 
 		// Assert
 		warnings.Should().BeEmpty(because: "every segment of the path exists in the config the template produces");
@@ -95,7 +95,7 @@ public sealed class PageUnresolvedMergeDetectorTests {
 			""");
 
 		// Act
-		IReadOnlyList<string> warnings = Detector.Detect(body, TemplateParent);
+		IReadOnlyList<string> warnings = Detector.Detect(body, TemplateParent).Warnings;
 
 		// Assert
 		warnings.Should().HaveCount(2, because: "the two merges into missing keys are skipped and the third applies");
@@ -115,8 +115,8 @@ public sealed class PageUnresolvedMergeDetectorTests {
 		const string patch = """{ "operation": "merge", "path": ["dataSources", "UsrNewDS", "config"], "values": { "entitySchemaName": "Account" } }""";
 
 		// Act
-		IReadOnlyList<string> createdFirst = Detector.Detect(Body(modelConfigDiff: $"[{create},{patch}]"), TemplateParent);
-		IReadOnlyList<string> patchedFirst = Detector.Detect(Body(modelConfigDiff: $"[{patch},{create}]"), TemplateParent);
+		IReadOnlyList<string> createdFirst = Detector.Detect(Body(modelConfigDiff: $"[{create},{patch}]"), TemplateParent).Warnings;
+		IReadOnlyList<string> patchedFirst = Detector.Detect(Body(modelConfigDiff: $"[{patch},{create}]"), TemplateParent).Warnings;
 
 		// Assert
 		createdFirst.Should().BeEmpty(because: "the earlier merge in the same body already created the target");
@@ -135,7 +135,7 @@ public sealed class PageUnresolvedMergeDetectorTests {
 		string body = Body(modelConfigDiff: """[{ "operation": "merge", "path": ["dataSources", "PDS", "config"], "values": { "entitySchemaName": "Account" } }]""");
 
 		// Act
-		IReadOnlyList<string> warnings = Detector.Detect(body, () => parents);
+		IReadOnlyList<string> warnings = Detector.Detect(body, () => parents).Warnings;
 
 		// Assert
 		warnings.Should().BeEmpty(because: "the full-config parent defines dataSources.PDS.config");
@@ -154,7 +154,7 @@ public sealed class PageUnresolvedMergeDetectorTests {
 		string body = Body(modelConfigDiff: """[{ "operation": "merge", "path": ["dataSources", "AttachmentListDS", "extra"], "values": { "x": 1 } }]""");
 
 		// Act
-		IReadOnlyList<string> warnings = Detector.Detect(body, () => parents);
+		IReadOnlyList<string> warnings = Detector.Detect(body, () => parents).Warnings;
 
 		// Assert
 		warnings.Should().BeEmpty(because: "the template defines AttachmentListDS first and the nearer parent then adds 'extra' to it");
@@ -175,7 +175,7 @@ public sealed class PageUnresolvedMergeDetectorTests {
 				""");
 
 		// Act
-		IReadOnlyList<string> warnings = Detector.Detect(body, () => []);
+		IReadOnlyList<string> warnings = Detector.Detect(body, () => []).Warnings;
 
 		// Assert
 		warnings.Should().ContainSingle(because: "only 'dependencies' is absent from the runtime's starting config");
@@ -196,15 +196,15 @@ public sealed class PageUnresolvedMergeDetectorTests {
 			modelConfigDiff: """[{ "operation": "merge", "path": ["dataSources"], "values": { "UsrNewDS": { "type": "crt.EntityDataSource" } } }]""");
 
 		// Act
-		IReadOnlyList<string> warnings = Detector.Detect(body, () => blankChain);
+		IReadOnlyList<string> warnings = Detector.Detect(body, () => blankChain).Warnings;
 
 		// Assert
 		warnings.Should().BeEmpty(because: "the runtime seeds both containers, so both merges apply on a blank page");
 	}
 
 	[Test]
-	[Description("A merge whose path ends on a single value or an array is named with its own reason, and the other merges in the same diff are still checked.")]
-	public void Detect_ShouldNameMergeIntoNonObject_AndKeepCheckingOthers() {
+	[Description("A merge whose path ends on a single value makes the runtime throw (it sets the merged keys on a primitive), so it is an error, and the other merges in the same diff are still checked.")]
+	public void Detect_ShouldReportMergeIntoSingleValueAsError_AndKeepCheckingOthers() {
 		// Arrange
 		string body = Body(viewModelConfigDiff: """
 			[
@@ -214,14 +214,65 @@ public sealed class PageUnresolvedMergeDetectorTests {
 			""");
 
 		// Act
-		IReadOnlyList<string> warnings = Detector.Detect(body, TemplateParent);
+		PageConfigMergeReport report = Detector.Detect(body, TemplateParent);
 
 		// Assert
-		warnings.Should().HaveCount(2, because: "both merges fail to apply, for different reasons");
-		warnings.Should().Contain(w => w.Contains("[\"attributes\",\"AttachmentList\",\"isCollection\"]") && w.Contains("is not an object"),
-			because: "isCollection holds a single value, so there is no object to merge into");
-		warnings.Should().Contain(w => w.Contains("[\"attributes\",\"UsrMissing\"]") && w.Contains("does not exist"),
-			because: "the unrelated missing path must still be reported after the non-object target");
+		report.Errors.Should().ContainSingle(because: "only the merge into the single value breaks the page");
+		report.Errors[0].Should().StartWith("viewModelConfigDiff merge at path [\"attributes\",\"AttachmentList\",\"isCollection\"]",
+			because: "the error must name the merge that throws").And.Contain("breaks the page");
+		report.Warnings.Should().ContainSingle(w => w.Contains("[\"attributes\",\"UsrMissing\"]") && w.Contains("does not exist"),
+			because: "the unrelated missing path must still be reported after the throwing merge");
+	}
+
+	[Test]
+	[Description("A merge whose path ends on an array is reported by the runtime as applied, but the keys it sets on the array are lost, so it is a warning, not an error.")]
+	public void Detect_ShouldReportMergeIntoArrayAsWarning() {
+		// Arrange
+		string body = Body(viewModelConfigDiff: """
+			[
+				{ "operation": "merge", "path": [], "values": { "UsrList": [1, 2] } },
+				{ "operation": "merge", "path": ["UsrList"], "values": { "x": 1 } }
+			]
+			""");
+
+		// Act
+		PageConfigMergeReport report = Detector.Detect(body, TemplateParent);
+
+		// Assert
+		report.Errors.Should().BeEmpty(because: "the runtime does not throw on an array target");
+		report.Warnings.Should().ContainSingle(because: "the merge into the array changes nothing");
+		report.Warnings[0].Should().StartWith("viewModelConfigDiff merge at path [\"UsrList\"]")
+			.And.Contain("is an array", because: "the warning must say why the merge has no effect");
+	}
+
+	[TestCase("""{ "operation": "merge", "path": ["attributes", "AttachmentList"] }""")]
+	[TestCase("""{ "operation": "merge", "path": ["attributes", "AttachmentList"], "values": null }""")]
+	[Description("A merge with missing or null values on a target that resolves makes the runtime throw (Object.keys of undefined or null), so it is an error.")]
+	public void Detect_ShouldReportMissingValuesAsError_WhenTargetResolves(string merge) {
+		// Arrange
+		string body = Body(viewModelConfigDiff: $"[{merge}]");
+
+		// Act
+		PageConfigMergeReport report = Detector.Detect(body, TemplateParent);
+
+		// Assert
+		report.Errors.Should().ContainSingle(because: "the runtime throws on this merge");
+		report.Errors[0].Should().Contain("no \"values\" object", because: "the error must say what is wrong");
+		report.Warnings.Should().BeEmpty(because: "the merge is reported once, as an error");
+	}
+
+	[Test]
+	[Description("A merge with null values whose target does not resolve is skipped by the runtime before it reads the values, so it is a warning about the path, not an error.")]
+	public void Detect_ShouldReportMissingValuesAsWarning_WhenTargetDoesNotResolve() {
+		// Arrange
+		string body = Body(viewModelConfigDiff: """[{ "operation": "merge", "path": ["attributes", "UsrMissing"], "values": null }]""");
+
+		// Act
+		PageConfigMergeReport report = Detector.Detect(body, TemplateParent);
+
+		// Assert
+		report.Errors.Should().BeEmpty(because: "the runtime never reaches the values of a merge it skips");
+		report.Warnings.Should().ContainSingle(w => w.Contains("does not exist"), because: "the path does not resolve");
 	}
 
 	[Test]
@@ -236,7 +287,7 @@ public sealed class PageUnresolvedMergeDetectorTests {
 			""");
 
 		// Act
-		IReadOnlyList<string> warnings = Detector.Detect(body, TemplateParent);
+		IReadOnlyList<string> warnings = Detector.Detect(body, TemplateParent).Warnings;
 
 		// Assert
 		warnings.Should().HaveCount(2, because: "the malformed merge and the unresolved merge are both reported");
@@ -251,7 +302,7 @@ public sealed class PageUnresolvedMergeDetectorTests {
 		string body = Body(viewModelConfigDiff: """[{ "operation": "merge", "values": { "PDS_UsrName": { "modelConfig": { "path": "PDS.UsrName" } } } }]""");
 
 		// Act
-		IReadOnlyList<string> warnings = Detector.Detect(body, TemplateParent);
+		IReadOnlyList<string> warnings = Detector.Detect(body, TemplateParent).Warnings;
 
 		// Assert
 		warnings.Should().ContainSingle(because: "the differ cannot resolve a target for this merge");
@@ -266,7 +317,7 @@ public sealed class PageUnresolvedMergeDetectorTests {
 		const string merge = """{ "operation": "merge", "path": ["dataSources", "UsrNewDS"], "values": { "x": 1 } }""";
 
 		// Act
-		IReadOnlyList<string> warnings = Detector.Detect(Body(modelConfigDiff: $"[{merge},{merge}]"), TemplateParent);
+		IReadOnlyList<string> warnings = Detector.Detect(Body(modelConfigDiff: $"[{merge},{merge}]"), TemplateParent).Warnings;
 
 		// Assert
 		warnings.Should().ContainSingle(because: "a repeated finding adds no information and buries the others");
@@ -281,7 +332,7 @@ public sealed class PageUnresolvedMergeDetectorTests {
 			$$"""{ "operation": "merge", "path": ["dataSources", "Missing{{i}}"], "values": { "x": 1 } }""")) + "]";
 
 		// Act
-		IReadOnlyList<string> warnings = Detector.Detect(Body(modelConfigDiff: operations), TemplateParent);
+		IReadOnlyList<string> warnings = Detector.Detect(Body(modelConfigDiff: operations), TemplateParent).Warnings;
 
 		// Assert
 		warnings.Should().HaveCount(PageUnresolvedMergeDetector.MaxReportedFindings + 1,

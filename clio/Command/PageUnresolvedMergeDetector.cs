@@ -8,8 +8,9 @@ using Newtonsoft.Json.Linq;
 
 /// <summary>
 /// Finds the <c>merge</c> operations in a web page body's <c>viewModelConfigDiff</c> and
-/// <c>modelConfigDiff</c> that the Creatio differ skips because their target does not exist, and
-/// describes each one as an advisory warning.
+/// <c>modelConfigDiff</c> that the Creatio differ does not apply. A merge the differ skips or applies with no
+/// effect is described as an advisory warning; a merge that makes the differ throw, so the page fails to build,
+/// is described as an error.
 /// </summary>
 /// <remarks>
 /// The differ resolves a path-addressed <c>merge</c> by walking its <c>path</c> through the config the
@@ -23,8 +24,8 @@ public interface IPageUnresolvedMergeDetector {
 	/// <summary>
 	/// Builds the <c>viewModelConfig</c> and <c>modelConfig</c> that the parent schemas produce on top of the
 	/// runtime's starting config (an empty <c>attributes</c> object and the <c>PageParameters</c> data source), applies the
-	/// body's config diffs on top of them the way the platform does, and returns one warning for every
-	/// <c>merge</c> the differ skipped.
+	/// body's config diffs on top of them the way the platform does, and returns one finding for every
+	/// <c>merge</c> the differ skips or throws on.
 	/// </summary>
 	/// <param name="body">The full web page body that will be saved.</param>
 	/// <param name="readInheritedSchemas">Reads the schemas the saved body layers over, nearest parent first
@@ -32,8 +33,20 @@ public interface IPageUnresolvedMergeDetector {
 	/// and only when the body has a merge that can fail to apply (any merge except one with <c>path: []</c>, which
 	/// targets the always-present root, and object <c>values</c>), so a body without one costs no read. Its
 	/// exceptions propagate.</param>
-	/// <returns>The warnings; empty when every merge resolves or there is nothing to check.</returns>
-	IReadOnlyList<string> Detect(string body, Func<IEnumerable<PageDesignerHierarchySchema>> readInheritedSchemas);
+	/// <returns>The errors and the warnings; both empty when every merge resolves or there is nothing to check.</returns>
+	/// <exception cref="JsonDiffApplierException">An operation that is not a merge makes the differ throw, so the
+	/// merges cannot be checked.</exception>
+	PageConfigMergeReport Detect(string body, Func<IEnumerable<PageDesignerHierarchySchema>> readInheritedSchemas);
+
+}
+
+/// <summary>The outcome of <see cref="IPageUnresolvedMergeDetector.Detect"/>.</summary>
+/// <param name="Errors">Merges that make the runtime differ throw, so the page fails to build.</param>
+/// <param name="Warnings">Merges the runtime differ skips, or applies with no effect.</param>
+public sealed record PageConfigMergeReport(IReadOnlyList<string> Errors, IReadOnlyList<string> Warnings) {
+
+	/// <summary>No findings.</summary>
+	public static PageConfigMergeReport Empty { get; } = new([], []);
 
 }
 
@@ -50,12 +63,19 @@ internal sealed class PageUnresolvedMergeDetector : IPageUnresolvedMergeDetector
 	private enum SkipReason {
 
 		PathNotFound,
+		TargetIsArray,
+		ValuesNotObject,
 		TargetNotObject,
-		ValuesNotObject
+		ValuesMissing
 
 	}
 
-	private readonly record struct SkippedMerge(string Section, JObject Operation, SkipReason Reason);
+	private readonly record struct SkippedMerge(string Section, JObject Operation, SkipReason Reason) {
+
+		/// <summary>The runtime throws on this merge, so the page fails to build.</summary>
+		public bool IsError => Reason is SkipReason.TargetNotObject or SkipReason.ValuesMissing;
+
+	}
 
 	/// <summary>
 	/// Ceiling on reported findings, so a body full of stale operations cannot bury the response. Past it,
@@ -81,13 +101,13 @@ internal sealed class PageUnresolvedMergeDetector : IPageUnresolvedMergeDetector
 	}
 
 	/// <inheritdoc />
-	public IReadOnlyList<string> Detect(string body, Func<IEnumerable<PageDesignerHierarchySchema>> readInheritedSchemas) {
+	public PageConfigMergeReport Detect(string body, Func<IEnumerable<PageDesignerHierarchySchema>> readInheritedSchemas) {
 		if (string.IsNullOrWhiteSpace(body)) {
-			return [];
+			return PageConfigMergeReport.Empty;
 		}
 		PageParsedSchemaBody candidate = _bodyParser.Parse(body);
 		if (!ContainsCheckableMerge(candidate.ViewModelConfigDiff) && !ContainsCheckableMerge(candidate.ModelConfigDiff)) {
-			return [];
+			return PageConfigMergeReport.Empty;
 		}
 		IEnumerable<PageDesignerHierarchySchema> inheritedSchemas =
 			readInheritedSchemas?.Invoke() ?? Enumerable.Empty<PageDesignerHierarchySchema>();
@@ -108,7 +128,9 @@ internal sealed class PageUnresolvedMergeDetector : IPageUnresolvedMergeDetector
 		var skipped = new List<SkippedMerge>();
 		skipped.AddRange(FindSkippedMerges(viewModelApplier, viewModelConfig, candidate.ViewModelConfigDiff, ViewModelConfigDiffSection));
 		skipped.AddRange(FindSkippedMerges(modelApplier, modelConfig, candidate.ModelConfigDiff, ModelConfigDiffSection));
-		return Describe(skipped);
+		return new PageConfigMergeReport(
+			Describe(skipped.Where(merge => merge.IsError)),
+			Describe(skipped.Where(merge => !merge.IsError)));
 	}
 
 	// The runtime starts every config chain from these two objects before the first schema is applied (client
@@ -139,29 +161,38 @@ internal sealed class PageUnresolvedMergeDetector : IPageUnresolvedMergeDetector
 		if (diff is not JArray { Count: > 0 } operations) {
 			return [];
 		}
-		// A merge whose "values" is not an object never applies as written (the runtime reads its keys), and the
-		// clone cannot replay it at all, so it is reported here and left out of the replay.
-		List<JObject> malformed = operations.OfType<JObject>()
-			.Where(operation => IsMerge(operation) && operation["values"] is not JObject)
-			.ToList();
-		var skipped = malformed.Select(operation => new SkippedMerge(section, operation, SkipReason.ValuesNotObject)).ToList();
-		JArray replay = malformed.Count == 0
-			? operations
-			: new JArray(operations.Where(operation => !malformed.Any(m => ReferenceEquals(m, operation))));
+		var skipped = new List<SkippedMerge>();
 		var unresolved = new List<JObject>();
+		var arrayTargets = new List<JObject>();
 		try {
 			// The whole diff in one call, exactly as the runtime applies it.
-			applier.Apply(current, replay, new JsonApplierOperationsOptions { UnresolvedMerges = unresolved });
+			applier.Apply(current, operations,
+				new JsonApplierOperationsOptions { UnresolvedMerges = unresolved, ArrayTargetMerges = arrayTargets });
 			skipped.AddRange(unresolved.Select(operation => new SkippedMerge(section, operation, SkipReason.PathNotFound)));
-		} catch (InvalidCastException) {
-			// The clone casts the merge target to an object. A merge whose path ends on an array or a single value
-			// throws here, where the runtime merges nothing into it. Replay the merges one by one to name that merge
-			// and still check the others; merges run first and in array order, so the other operations in the diff
-			// cannot change the outcome.
-			skipped.AddRange(FindSkippedMergesOneByOne(applier, current, replay, section));
+			skipped.AddRange(arrayTargets.Select(operation => new SkippedMerge(section, operation, SkipReason.TargetIsArray)));
+		} catch (JsonDiffApplierException) {
+			// The runtime throws on this diff too. Replay the merges one by one to name the merge that throws and
+			// still check the others; merges run first and in array order, so the other operations in the diff
+			// cannot change the outcome. When no merge throws, an insert, move, remove or set is the cause, which
+			// this check does not cover: rethrow, so the caller says the check did not run.
+			List<SkippedMerge> oneByOne = FindSkippedMergesOneByOne(applier, current, operations, section);
+			if (!oneByOne.Exists(merge => merge.IsError)) {
+				throw;
+			}
+			skipped.AddRange(oneByOne);
 		}
+		// A merge whose "values" is an array, a string, a number or a boolean applies its indexes as keys, or
+		// nothing at all, so it does not do what it says. Reported unless another finding already names it.
+		skipped.AddRange(operations.OfType<JObject>()
+			.Where(operation => IsMerge(operation) && HasNonObjectValues(operation)
+				&& !skipped.Exists(merge => JToken.DeepEquals(merge.Operation, operation)))
+			.Select(operation => new SkippedMerge(section, operation, SkipReason.ValuesNotObject))
+			.ToList());
 		return skipped;
 	}
+
+	private static bool HasNonObjectValues(JObject operation) =>
+		operation["values"] is { Type: not (JTokenType.Object or JTokenType.Null or JTokenType.Undefined) };
 
 	private static bool IsMerge(JObject operation) =>
 		string.Equals(operation.Value<string>("operation"), MergeOperation, StringComparison.Ordinal);
@@ -172,14 +203,20 @@ internal sealed class PageUnresolvedMergeDetector : IPageUnresolvedMergeDetector
 		JObject config = current;
 		foreach (JObject operation in operations.OfType<JObject>().Where(IsMerge)) {
 			var unresolved = new List<JObject>();
+			var arrayTargets = new List<JObject>();
 			try {
 				config = applier.Apply(config, new JArray(operation),
-					new JsonApplierOperationsOptions { UnresolvedMerges = unresolved }) as JObject ?? config;
-			} catch (InvalidCastException) {
-				skipped.Add(new SkippedMerge(section, operation, SkipReason.TargetNotObject));
+					new JsonApplierOperationsOptions { UnresolvedMerges = unresolved, ArrayTargetMerges = arrayTargets })
+					as JObject ?? config;
+			} catch (JsonDiffApplierException) {
+				SkipReason reason = operation["values"] is null or { Type: JTokenType.Null or JTokenType.Undefined }
+					? SkipReason.ValuesMissing
+					: SkipReason.TargetNotObject;
+				skipped.Add(new SkippedMerge(section, operation, reason));
 				continue;
 			}
 			skipped.AddRange(unresolved.Select(merge => new SkippedMerge(section, merge, SkipReason.PathNotFound)));
+			skipped.AddRange(arrayTargets.Select(merge => new SkippedMerge(section, merge, SkipReason.TargetIsArray)));
 		}
 		return skipped;
 	}
@@ -202,21 +239,29 @@ internal sealed class PageUnresolvedMergeDetector : IPageUnresolvedMergeDetector
 			}
 		}
 		if (unlisted > 0) {
-			findings.Add($"{unlisted} more viewModelConfigDiff/modelConfigDiff merge(s) are not applied; "
+			findings.Add($"{unlisted} more viewModelConfigDiff/modelConfigDiff merge(s) have the same kind of problem; "
 				+ "they are not listed here.");
 		}
 		return findings;
 	}
 
 	private static string Describe(SkippedMerge merge, JArray path, string name) {
-		if (path is null) {
+		if (path is null && merge.Reason == SkipReason.PathNotFound) {
 			return DescribeMergeWithoutPath(merge.Section, name);
 		}
-		string target = $"{merge.Section} merge at path {Shorten(path.ToString(Formatting.None))}";
+		string target = path is null
+			? $"{merge.Section} merge named '{Shorten(name ?? string.Empty)}'"
+			: $"{merge.Section} merge at path {Shorten(path.ToString(Formatting.None))}";
 		return merge.Reason switch {
-			SkipReason.TargetNotObject => $"{target} is not applied: the value at that path is not an object (it is an "
-				+ "array or a single value), so there is nothing to merge \"values\" into. Merge into the object that "
-				+ "holds it instead, with the new value inside \"values\".",
+			SkipReason.TargetNotObject => $"{target} breaks the page: the value at that path is a single value, not an "
+				+ "object, and the Creatio runtime throws when it sets the merged keys on it, so the page fails to "
+				+ "build. Merge into the object that holds it instead, with the new value inside \"values\".",
+			SkipReason.ValuesMissing => $"{target} breaks the page: it has no \"values\" object, and the Creatio "
+				+ "runtime throws when it reads the keys of a missing or null \"values\", so the page fails to build. "
+				+ "Give the merge a \"values\" object, or remove the operation.",
+			SkipReason.TargetIsArray => $"{target} is not applied: the value at that path is an array, and the Creatio "
+				+ "differ sets the merged keys on the array, where they are lost. Merge into the object that holds the "
+				+ "array instead, with the new array inside \"values\".",
 			SkipReason.ValuesNotObject => $"{target} is not applied as written: its \"values\" is not an object. A "
 				+ "merge's \"values\" must be an object whose keys are merged into the target.",
 			_ => DescribeMergeWithPath(target)

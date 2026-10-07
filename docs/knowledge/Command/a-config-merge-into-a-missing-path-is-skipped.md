@@ -1,5 +1,5 @@
 ---
-description: a viewModelConfigDiff/modelConfigDiff merge whose path does not exist is skipped by the Creatio differ (it never creates the missing key) - the save succeeds and the operation silently has no effect, so update-page warns since GH-1753 and the warning must stay advisory
+description: a viewModelConfigDiff/modelConfigDiff merge whose path does not exist is skipped by the Creatio differ (it never creates the missing key) - the save succeeds and the operation silently has no effect, so update-page warns since GH-1753 and the warning must stay advisory; a merge the runtime throws on (single-value target, missing or null values) rejects the save
 applies-to:
   - clio/Command/PageUnresolvedMergeDetector.cs
   - clio/Command/PageBundleBuilder.cs
@@ -47,14 +47,26 @@ That happens only when the body has a merge with a non-root path, and the read i
 not check" warning, never a failed save. That includes a timeout surfacing as `TaskCanceledException`,
 since no cancellation token reaches this path. A falsy value at the path (`null`, `false`, `0`, `""`)
 counts as missing, as in the client's `!itemInfo.item` test. Before GH-1753 the clone threw an
-`InvalidCastException` there. A path that ends on a non-falsy single value or an array still makes the
-clone throw `InvalidCastException`, while the runtime merges nothing into it. The detector then replays
-the merges one at a time to name that merge with its own reason. A merge whose `values` is not an
-object is reported separately and left out of the replay.
+`InvalidCastException` there.
+
+Not every merge the runtime fails to apply is skipped. The client `_merge` runs in strict mode, and
+these cases were checked with the `deepmerge` package creatio-ui uses. A path that ends on a non-falsy
+single value (`5`, `"s"`, `true`) throws `TypeError` when the merged keys are set on the primitive.
+The same happens when the first path segment matches an element `_id` and the rest of the path does
+not resolve, because the target is then `undefined`. The page fails to build. Missing or `null`
+`values` on a target that resolves throws in `Object.keys`. On a target that does not resolve, the
+merge is skipped before `values` is read. The clone throws `JsonDiffApplierException` in all of these
+cases. The detector replays the merges one at a time to name the merge, and reports it as an error,
+which rejects the save; a dry run lists it as a warning. A path that ends on an array is different:
+the client sets the keys on the array, where they are lost, and still returns `true`. So the merge is
+not in `UnresolvedMerges`. The clone reports it through the `ArrayTargetMerges` sink, and it is an
+advisory warning. A merge whose `values` is an array or a string is applied with index keys (`"0"`,
+`"1"`, ...); one with a number or a boolean applies nothing. Both are advisory warnings.
 
 **What breaks if you ignore it** — replace the replay with a shortcut, such as checking the merge
 against the body alone or against `get-page`'s bundle of the CURRENT page: it reports merges that
 the parents satisfy, or misses merges that only an earlier merge in the same body satisfies (array
-order matters inside the merge group). Promote the warning to an error, and saving any page that
-already carries a stale merge becomes impossible. Drop the sink, and the issue's false
+order matters inside the merge group). Promote the skipped-merge warning to an error, and saving any page that
+already carries a stale merge becomes impossible. Demote a throwing merge to a warning, and clio saves
+a body that breaks the page at runtime. Drop the sink, and the issue's false
 `success:true` comes back with no failing test except the ones that pin this record.
