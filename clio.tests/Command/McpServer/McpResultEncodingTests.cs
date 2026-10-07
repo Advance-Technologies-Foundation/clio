@@ -41,8 +41,10 @@ public sealed class McpResultEncodingTests {
 	[TestCase("\u2066", "\\u2066", Description = "left-to-right isolate")]
 	[TestCase("\u200B", "\\u200B", Description = "zero-width space")]
 	[TestCase("\u00AD", "\\u00AD", Description = "soft hyphen")]
+	[TestCase("\U000E0001", "\\uDB40\\uDC01", Description = "language tag (astral, Tags block)")]
+	[TestCase("\U000E0041", "\\uDB40\\uDC41", Description = "tag Latin capital A (astral, Tags block - the ASCII-smuggling range)")]
 	[Category("Unit")]
-	[Description("The MCP serializer escapes an invisible Format character - a bidi control or a zero-width character - so a caption carrying one cannot show the agent's transcript, or an approval prompt quoting it, text other than what is stored.")]
+	[Description("The MCP serializer escapes an invisible Format character - a bidi control, a zero-width character, or an astral Tags-block character, which McpResultJsonEncoder leaves to the relaxed encoder - so a caption carrying one cannot show the agent's transcript, or an approval prompt quoting it, text other than what is stored.")]
 	public void McpSerializerOptions_Should_StillEscape_InvisibleFormatCharacters(string character, string escape) {
 		// Arrange
 		JsonSerializerOptions options = Clio.BindingsModule.CreateMcpSerializerOptions();
