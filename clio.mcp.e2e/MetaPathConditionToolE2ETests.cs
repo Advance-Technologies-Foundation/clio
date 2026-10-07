@@ -21,7 +21,7 @@ namespace Clio.Mcp.E2E;
 /// <c>[#Element.Parameter.Column#]</c> name a build-path condition takes, and a meta path written by hand is
 /// accepted only in the spelling the platform writes, its prefix optional, naming a column the record delivers - in a
 /// condition and in a mapping expression - and stored with its GUIDs lower-cased. NOT in CI — run manually against an
-/// environment carrying CrtProcessBuilder 1.6.6.77 or later (1.6.6.84 for the GUID-case test).
+/// environment carrying CrtProcessBuilder 1.6.6.77 or later (1.6.6.85 for the GUID-case test).
 /// <para>The motivating defect (clio#1529): a hand-assembled token missing the dot before
 /// <c>[EntityColumn:…]</c>. On a Script value the platform refuses it at save with "Value for argument
 /// "parameterUId" must be specified", which names neither the flow nor the token; these tests pin that the package
@@ -42,7 +42,7 @@ public sealed class MetaPathConditionToolE2ETests {
 	private const string MinimumPackageVersion = "1.6.6.77";
 
 	/// <summary>The first cut that stores an accepted meta path with its GUIDs lower-cased.</summary>
-	private const string GuidCaseMinimumPackageVersion = "1.6.6.84";
+	private const string GuidCaseMinimumPackageVersion = "1.6.6.85";
 
 	/// <summary>The prefix the platform's GetMetaPath writes before every reference.</summary>
 	private const string Prefix = "[IsOwnerSchema:false].[IsSchema:false].";

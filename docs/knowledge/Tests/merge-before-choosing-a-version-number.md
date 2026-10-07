@@ -44,7 +44,7 @@ way of resolving that conflict is wrong:
 
 Every `[RequiresPackage]` floor passes either way. The engine PR that merges second must merge `main`, re-cut above
 every number already cut, and the clio PR that merges second must be rebundled from that combined cut (review on
-crt-process-builder#89, 2026-10-07).
+crt-process-builder#89, 2026-10-07). Resolved the same day: ENG-99970 merged first, and #89 merged `main` and re-cut as 1.6.6.85.
 
 **Why it is this way** — a version is chosen at the moment of building an artifact, and a branch that
 takes hours to land is a branch whose base moves underneath the choice. Nothing in either repository's
