@@ -17,14 +17,28 @@ public sealed record PackageItemFolderWithoutDescriptor(string FolderPath, IRead
 
 	private const string LocalizationFolderPrefix = "Localization/";
 
+	// Files the operating system drops into any folder a user opened; git ignores them, so they survive a deleted
+	// binding next to its Localization files and must not turn a leftover into a "damaged element".
+	private static readonly string[] OperatingSystemFileNames = [".DS_Store", "Thumbs.db", "desktop.ini"];
+
 	/// <summary>
-	/// Gets whether every file of the folder lies under <c>Localization/</c>: the shape a deleted data binding
-	/// leaves behind when git removes its tracked files and keeps the ignored per-culture files. Any other file
-	/// means the element itself is still there and only its <c>descriptor.json</c> is missing.
+	/// Gets whether every file of the folder lies under <c>Localization/</c>, apart from operating system metadata
+	/// such as <c>.DS_Store</c>: the shape a deleted data binding leaves behind when git removes its tracked files
+	/// and keeps the ignored per-culture files. Any other file means the element itself is still there and only its
+	/// <c>descriptor.json</c> is missing.
 	/// </summary>
-	public bool HoldsOnlyLocalization =>
-		Files.Count > 0
-		&& Files.All(file => file.StartsWith(LocalizationFolderPrefix, StringComparison.OrdinalIgnoreCase));
+	public bool HoldsOnlyLocalization {
+		get {
+			List<string> elementFiles = Files.Where(file => !IsOperatingSystemFile(file)).ToList();
+			return elementFiles.Count > 0
+				&& elementFiles.All(file => file.StartsWith(LocalizationFolderPrefix, StringComparison.OrdinalIgnoreCase));
+		}
+	}
+
+	private static bool IsOperatingSystemFile(string file) {
+		string fileName = file[(file.LastIndexOf('/') + 1)..];
+		return OperatingSystemFileNames.Contains(fileName, StringComparer.OrdinalIgnoreCase);
+	}
 
 }
 

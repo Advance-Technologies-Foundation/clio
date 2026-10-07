@@ -178,4 +178,21 @@ public sealed class PackageItemDescriptorCheckTests {
 		damagedVerdict.Should().BeFalse("because data.json means the binding itself is still there and must not be deleted");
 	}
 
+	[Test]
+	[Description("Operating system metadata such as .DS_Store next to the Localization files does not turn a deleted binding's leftover into a damaged element.")]
+	public void HoldsOnlyLocalization_ShouldIgnoreOperatingSystemFiles_WhenTheyLieNextToLocalization() {
+		// Arrange
+		PackageItemFolderWithoutDescriptor leftover = new("Data/Lookup_Status",
+			[".DS_Store", "Localization/.DS_Store", "Localization/data.en-US.json", "Thumbs.db"]);
+		PackageItemFolderWithoutDescriptor onlyMetadata = new("Data/Lookup_Status", [".DS_Store"]);
+
+		// Act
+		bool leftoverVerdict = leftover.HoldsOnlyLocalization;
+		bool onlyMetadataVerdict = onlyMetadata.HoldsOnlyLocalization;
+
+		// Assert
+		leftoverVerdict.Should().BeTrue("because Finder and Explorer files are not part of the element");
+		onlyMetadataVerdict.Should().BeFalse("because a folder with no Localization file is not the leftover shape this verdict describes");
+	}
+
 }
