@@ -15,9 +15,16 @@ namespace Clio
 			}
 		}
 
-		// The long name used to be declared as "--fail-on-error", which the parser accepts only as
-		// "----fail-on-error"; kept hidden so scripts written against that spelling keep working.
-		[Option("--fail-on-error", Required = false, Hidden = true, HelpText = "Alias for --fail-on-error")]
+		/// <summary>
+		/// Hidden legacy spelling <c>----fail-on-error</c> of <see cref="FailOnError"/>.
+		/// </summary>
+		/// <remarks>
+		/// The long name used to be declared as <c>"--fail-on-error"</c>, which the parser accepts only as
+		/// <c>----fail-on-error</c>; kept hidden so scripts written against that spelling keep working. The setter
+		/// only turns the flag on, so an unset alias never clears a flag the main option set.
+		/// </remarks>
+		[Option("--fail-on-error", Required = false, Hidden = true,
+			HelpText = "Legacy ----fail-on-error spelling of --fail-on-error")]
 		public bool FailOnErrorAlias {
 			get => FailOnError;
 			set { if (value) FailOnError = value; }
@@ -33,8 +40,12 @@ namespace Clio
 			}
 		}
 
-		// Same legacy "----fail-on-warning" spelling as FailOnErrorAlias.
-		[Option("--fail-on-warning", Required = false, Hidden = true, HelpText = "Alias for --fail-on-warning")]
+		/// <summary>
+		/// Hidden legacy spelling <c>----fail-on-warning</c> of <see cref="FailOnWarning"/>; see
+		/// <see cref="FailOnErrorAlias"/>.
+		/// </summary>
+		[Option("--fail-on-warning", Required = false, Hidden = true,
+			HelpText = "Legacy ----fail-on-warning spelling of --fail-on-warning")]
 		public bool FailOnWarningAlias {
 			get => FailOnWarning;
 			set { if (value) FailOnWarning = value; }

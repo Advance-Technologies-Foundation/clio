@@ -219,6 +219,7 @@ get-guidance again with the selected name.
 - If you use an external MCP client wrapper, follow that wrapper's own parsing and transport guarantees
 - Boolean parameters must be JSON booleans (true/false), not strings
 - Entity tools work DB-first: schemas are created directly in PostgreSQL
+- `--fail-on-error` makes package and application installs that run inside the server process treat an install as failed unless its log contains the platform's success message. Tool calls run in a child worker do not inherit it, so they keep the default check. `--fail-on-warning` is accepted for compatibility and has no effect.
 - Guidance lookups use the persistent disk cache and hot reload only when its activation marker changes; the publisher is contacted by install-knowledge/update-knowledge and by a read-triggered refresh bounded by the autoupdate.knowledge schedule (hourly by default), never per MCP session or per lookup
 - Some tool calls run in a short-lived child worker process the server supervises and can kill. How many such workers may run at once is capped, and `CLIO_MCP_WORKER_CONCURRENCY` raises or lowers that cap. The default is derived from the host's processor count, so on a single-vCPU host it is low: a long operation (`compile-creatio`, `restart-*`) can be refused with `error-class=clio-worker-saturated` until the variable is raised. Nothing is spawned and no request reaches Creatio on that refusal, so it is safe to retry.
 

@@ -125,6 +125,7 @@ internal class HelpArtifactConsistencyTests {
 	[TestCase("modify-entity-schema-column")]
 	[TestCase("assert")]
 	[TestCase("hosts")]
+	[TestCase("mcp-http")]
 	[Description("The OPTIONS sections of the manual help file of each command that runtime --help renders from its .txt list every visible option of the command, including inherited ones such as --timeout and the environment credential options, and the file names none of the long names only a Hidden option declares (ENG-102433).")]
 	public void ManualHelpFile_ShouldListVisibleOptionsAndOmitHiddenOnes(string commandName) {
 		// Arrange

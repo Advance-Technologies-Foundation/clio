@@ -157,6 +157,15 @@ OPTIONS
         wherever possible; this is a documented escape hatch, not a
         recommended posture.
 
+    --fail-on-error
+        Package and application installs run by this server treat an install
+        as failed unless its log contains the platform's success message. The
+        setting is process-wide and applies to every install for the life of
+        the server.
+
+    --fail-on-warning
+        Accepted for compatibility; has no effect.
+
     When authorization is enabled, EVERY request to the MCP endpoint requires a
     valid token — pre-registered '-e <env>' / stored-credential access included,
     not just the credential-passthrough leg. The edge serves Protected Resource
