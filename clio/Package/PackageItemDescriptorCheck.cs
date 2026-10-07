@@ -10,10 +10,23 @@ namespace Clio.Package;
 /// <param name="FolderPath">
 /// Folder path. <see cref="PackageItemDescriptorCheck"/> returns it relative to the package root with <c>/</c>
 /// separators (<c>Data/Lookup_Status</c>); <see cref="PackageItemDescriptorMissingException"/> carries the full
-/// local path, so the message points at the folder to delete.
+/// local path, so the message points at the folder to fix.
 /// </param>
 /// <param name="Files">Paths, relative to the folder, of the files the folder would put into the archive.</param>
-public sealed record PackageItemFolderWithoutDescriptor(string FolderPath, IReadOnlyList<string> Files);
+public sealed record PackageItemFolderWithoutDescriptor(string FolderPath, IReadOnlyList<string> Files) {
+
+	private const string LocalizationFolderPrefix = "Localization/";
+
+	/// <summary>
+	/// Gets whether every file of the folder lies under <c>Localization/</c>: the shape a deleted data binding
+	/// leaves behind when git removes its tracked files and keeps the ignored per-culture files. Any other file
+	/// means the element itself is still there and only its <c>descriptor.json</c> is missing.
+	/// </summary>
+	public bool HoldsOnlyLocalization =>
+		Files.Count > 0
+		&& Files.All(file => file.StartsWith(LocalizationFolderPrefix, StringComparison.OrdinalIgnoreCase));
+
+}
 
 /// <summary>
 /// Finds the element folders of a package archive that Creatio rejects: a folder directly under
@@ -21,13 +34,15 @@ public sealed record PackageItemFolderWithoutDescriptor(string FolderPath, IRead
 /// </summary>
 /// <remarks>
 /// Creatio loads an installed archive with <c>PackageFileStorage</c>, which reads <c>descriptor.json</c> from
-/// every directory under <c>Schemas/</c> and <c>Data/</c>. One directory without it fails the whole installation
-/// with "Invalid descriptor", and the message names only the last segment of the folder path. The check works on
-/// the list of files that is about to be packed, not on the folder on disk: an empty directory, or one whose
-/// files <c>.clioignore</c> excludes, never reaches the archive, so the platform never sees it either.
+/// every directory under <c>Schemas/</c>, <c>Data/</c>, <c>Assemblies/</c> and <c>SqlScripts/</c>. One directory
+/// without it fails the whole installation with "Invalid descriptor", and the message names only the last segment
+/// of the folder path. The check works on the list of files that is about to be packed, not on the folder on
+/// disk: an empty directory, or one whose files <c>.clioignore</c> excludes, never reaches the archive, so the
+/// platform never sees it either.
 /// <para>
-/// Only <c>Schemas/</c> and <c>Data/</c> are checked. <c>Assemblies/</c>, <c>Files/</c>, <c>Resources/</c> and
-/// <c>SqlScripts/</c> are left alone, so a layout this check was not written for is never refused.
+/// Only <c>Schemas/</c> and <c>Data/</c> are checked on purpose. <c>Assemblies/</c> and <c>SqlScripts/</c> are
+/// left out until it is shown that every real package layout keeps a descriptor there, so the check never refuses
+/// a package that installs today; <c>Files/</c> and <c>Resources/</c> are not read with descriptors at all.
 /// </para>
 /// </remarks>
 internal static class PackageItemDescriptorCheck {
@@ -52,7 +67,7 @@ internal static class PackageItemDescriptorCheck {
 	public static IReadOnlyList<PackageItemFolderWithoutDescriptor> FindFoldersWithoutDescriptor(
 		IEnumerable<string> packageRelativeFilePaths) {
 		ArgumentNullException.ThrowIfNull(packageRelativeFilePaths);
-		Dictionary<string, List<string>> filesByFolder = new(StringComparer.Ordinal);
+		Dictionary<string, SortedSet<string>> filesByFolder = new(StringComparer.Ordinal);
 		HashSet<string> foldersWithDescriptor = new(StringComparer.Ordinal);
 		foreach (string filePath in packageRelativeFilePaths) {
 			string[] segments = (filePath ?? string.Empty).Split(PathSeparators, StringSplitOptions.RemoveEmptyEntries);
@@ -62,10 +77,11 @@ internal static class PackageItemDescriptorCheck {
 				continue;
 			}
 			string folder = $"{segments[0]}/{segments[1]}";
-			if (!filesByFolder.TryGetValue(folder, out List<string> files)) {
-				files = [];
+			if (!filesByFolder.TryGetValue(folder, out SortedSet<string> files)) {
+				files = new SortedSet<string>(StringComparer.Ordinal);
 				filesByFolder.Add(folder, files);
 			}
+			// A set: the clioignore filter can hand the same file in twice, and the message must not double it.
 			files.Add(string.Join('/', segments, 2, segments.Length - 2));
 			// Case-insensitive on purpose: a check that runs before the install must never refuse an archive the
 			// platform can load, and a Windows host reads Descriptor.json as descriptor.json.
@@ -77,8 +93,7 @@ internal static class PackageItemDescriptorCheck {
 		return filesByFolder
 			.Where(pair => !foldersWithDescriptor.Contains(pair.Key))
 			.OrderBy(pair => pair.Key, StringComparer.Ordinal)
-			.Select(pair => new PackageItemFolderWithoutDescriptor(pair.Key,
-				pair.Value.Order(StringComparer.Ordinal).ToList()))
+			.Select(pair => new PackageItemFolderWithoutDescriptor(pair.Key, pair.Value.ToList()))
 			.ToList();
 	}
 

@@ -145,7 +145,10 @@ namespace Clio
 			if (folders.Count == 0) {
 				return;
 			}
-			string packageContentPath = _packageUtilities.GetPackageContentFolderPath(packagePath);
+			// Full path: a relative package path (push-pkg UsrPkg) would otherwise name a folder relative to the
+			// working directory of clio, which an MCP host or a script cannot locate.
+			string packageContentPath =
+				_msFileSystem.Path.GetFullPath(_packageUtilities.GetPackageContentFolderPath(packagePath));
 			throw new PackageItemDescriptorMissingException(folders.Select(folder => folder with {
 				FolderPath = _msFileSystem.Path.Combine(
 					[packageContentPath, .. folder.FolderPath.Split('/')])
@@ -241,26 +244,38 @@ namespace Clio
 				SearchOption.AllDirectories);
 		}
 
+		/// <inheritdoc />
 		public void Pack(string packagePath, string packedPackagePath, bool skipPdb, bool overwrite = true) {
 			CheckPackArgument(packagePath, packedPackagePath);
-			_fileSystem.CheckOrDeleteExistsFile(packedPackagePath, overwrite);
 			_workingDirectoriesProvider.CreateTempDirectory(tempPath => {
 				_packageUtilities.CopyPackageElements(packagePath, tempPath, overwrite);
 				List<string> files = GetAllFiles(tempPath, skipPdb, packagePath).ToList();
 				EnsureElementFoldersHaveDescriptors(packagePath, tempPath, files);
+				// Only after the check: a refused package must leave a previously built archive in place.
+				_fileSystem.CheckOrDeleteExistsFile(packedPackagePath, overwrite);
 				_compressionUtilities.PackToGZip(files, tempPath, packedPackagePath);
 			}); 
 		}
 
+		/// <inheritdoc />
 		public void Pack(string sourcePath, string destinationPath, IEnumerable<string> names, bool skipPdb, 
 				bool overwrite = true) {
 			_workingDirectoriesProvider.CreateTempDirectory(tempPath => {
 				sourcePath ??= Environment.CurrentDirectory;
+				List<PackageItemFolderWithoutDescriptor> foldersWithoutDescriptor = [];
 				foreach (var name in names)
 				{
 					var currentSourcePath = Path.Combine(sourcePath, name);
 					var currentDestinationPath = Path.Combine(tempPath, name + ".gz");
-					Pack(currentSourcePath, currentDestinationPath, skipPdb, overwrite);
+					try {
+						Pack(currentSourcePath, currentDestinationPath, skipPdb, overwrite);
+					} catch (PackageItemDescriptorMissingException exception) {
+						// Keep packing: one run names the folders of every package, as push-workspace does.
+						foldersWithoutDescriptor.AddRange(exception.Folders);
+					}
+				}
+				if (foldersWithoutDescriptor.Count > 0) {
+					throw new PackageItemDescriptorMissingException(foldersWithoutDescriptor);
 				}
 				ZipFile.CreateFromDirectory(tempPath, destinationPath);
 			});

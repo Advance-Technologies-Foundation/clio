@@ -73,7 +73,7 @@ the existing backup behavior
 | Code | Meaning |
 |---|---|
 | `0` | The installation finished and nothing else in the run failed. Schemas the platform skipped because they were modified on the environment are reported as `[WAR]` warnings and do not fail the command &mdash; the package itself was installed. |
-| `1` | The installation actually failed, or clio could not reach the environment. The reason the platform reported and the package that failed are both named on the closing lines. A run that skipped a locally modified schema **and** failed to compile also lands here: `--continue-if-error` is on by default, so a single archive can carry both, and the closing line then names the compiler diagnostic instead of the platform's generic message. A package **folder** whose `Schemas/` or `Data/` holds a folder without `descriptor.json` is refused before upload, and the error names the full local path of each such folder; Creatio would reject it with `Invalid descriptor`. |
+| `1` | The installation actually failed, or clio could not reach the environment. The reason the platform reported and the package that failed are both named on the closing lines. A run that skipped a locally modified schema **and** failed to compile also lands here: `--continue-if-error` is on by default, so a single archive can carry both, and the closing line then names the compiler diagnostic instead of the platform's generic message. A package **folder** whose `Schemas/` or `Data/` holds a folder without `descriptor.json` is refused before upload, and the error names the full local path of each such folder and whether to delete it (only `Localization/` files) or restore its `descriptor.json`; Creatio would reject it with `Invalid descriptor`. |
 
 ## Reporting Bugs
 

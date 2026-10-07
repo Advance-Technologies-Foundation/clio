@@ -17,13 +17,48 @@ namespace Clio.Workspaces
 
 		#region Methods: Public
 
+		/// <summary>
+		/// Packs the workspace packages and installs them into the environment.
+		/// </summary>
+		/// <param name="packages">Workspace package names to install.</param>
+		/// <param name="creatioPackagesZipName">Name of the zip that carries the packages; a default when <c>null</c>.</param>
+		/// <param name="useApplicationInstaller">Whether the application installer is used instead of the package installer.</param>
+		/// <param name="createBackup">Whether the environment backs the packages up before installing.</param>
+		/// <exception cref="PackageItemDescriptorMissingException">
+		/// A package holds a <c>Schemas/</c> or <c>Data/</c> folder without <c>descriptor.json</c>. Every package is
+		/// packed before the first call to the environment, so nothing was reset or installed, and the exception
+		/// names the folders of all packages.
+		/// </exception>
 		void Install(IEnumerable<string> packages, string creatioPackagesZipName = null,
 			bool useApplicationInstaller = false, bool createBackup = true);
 
+		/// <summary>
+		/// Packs the workspace packages into a zip and copies it to a folder.
+		/// </summary>
+		/// <param name="packages">Workspace package names to publish.</param>
+		/// <param name="zipFileName">Name of the resulting zip.</param>
+		/// <param name="destionationFolderPath">Folder that receives the zip.</param>
+		/// <param name="ovverideFile">Whether an existing zip is replaced.</param>
+		/// <exception cref="PackageItemDescriptorMissingException">
+		/// A package holds a <c>Schemas/</c> or <c>Data/</c> folder without <c>descriptor.json</c>; see
+		/// <see cref="Install"/>.
+		/// </exception>
 		void Publish(IList<string> packages, string zipFileName, string destionationFolderPath, bool ovverideFile);
 
 		//string PublishToFolder(string workspaceFolderPath, string zipFileName, string destinationFolderPath, bool overwrite);
 
+		/// <summary>
+		/// Packs the workspace packages into a zip in a folder, without contacting the environment.
+		/// </summary>
+		/// <param name="packages">Workspace package names to publish.</param>
+		/// <param name="zipFileName">Name of the resulting zip.</param>
+		/// <param name="destinationFolderPath">Folder that receives the zip; created when missing.</param>
+		/// <param name="overwrite">Whether an existing zip is replaced.</param>
+		/// <returns>Full path of the written zip.</returns>
+		/// <exception cref="PackageItemDescriptorMissingException">
+		/// A package holds a <c>Schemas/</c> or <c>Data/</c> folder without <c>descriptor.json</c>; see
+		/// <see cref="Install"/>.
+		/// </exception>
 		string PublishToFolder(IEnumerable<string> packages, string zipFileName, string destinationFolderPath,
 			bool overwrite);
 

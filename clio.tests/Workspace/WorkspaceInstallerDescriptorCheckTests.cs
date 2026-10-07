@@ -82,8 +82,8 @@ public sealed class WorkspaceInstallerDescriptorCheckTests : BaseClioModuleTests
 		PackageItemDescriptorMissingException exception = act.Should().Throw<PackageItemDescriptorMissingException>(
 			"because the workspace holds packages Creatio would reject").Which;
 		exception.Folders.Should().HaveCount(2, "because the folders of every refused package are collected before failing");
-		exception.Message.Should().Contain("Lookup_A").And.Contain("Lookup_C",
-			"because one run must name the folders of all packages");
+		exception.Message.Should().Contain("Lookup_A", "because the first refused package must be named")
+			.And.Contain("Lookup_C", "because one run must name the folders of all packages");
 		_packageArchiver.Received(3).Pack(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<bool>());
 		_applicationClient.DidNotReceive().ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>());
 		_packageInstaller.DidNotReceiveWithAnyArgs().Install(default, default, default, default, default);

@@ -119,6 +119,11 @@ public sealed class WorkspaceSyncToolE2ETests : McpContractFixtureBase {
 		AssertCommandExitCode(pushResult, 1, "Creatio would reject the archive, so push-workspace must fail before installing it");
 		AssertIncludesErrorMessageContaining(pushResult, strayFolderRelativePath,
 			"the refusal must name the folder to delete, not only its last path segment");
+		AssertIncludesErrorMessageContaining(pushResult, "only Localization files, delete the folder",
+			"a folder holding only Localization files is a deleted binding's leftover");
+		pushResult.Execution.Output.Should().NotContain(message =>
+			message.Value != null && message.Value.ToString()!.Contains("Installing workspace packages using", StringComparison.Ordinal),
+			because: "the refusal happens while packing, before the installer is ever called; without the pre-flight the platform would also reject the archive, so only this message proves the order");
 		packageListResult.Packages.Should().NotContain(package => package.Name == arrangeContext.PackageName,
 			because: "the refusal happens before upload, so the package must not reach the environment");
 	}

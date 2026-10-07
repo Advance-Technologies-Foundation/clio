@@ -72,23 +72,29 @@ literals.
 
 ### Folders without descriptor.json
 
-`push-workspace` packs every workspace package before it sends anything to the
-environment. It stops when a folder under `Schemas/` or `Data/` has no
-`descriptor.json`: Creatio rejects the whole installation for such a folder with
-`Invalid descriptor` and names only the last segment of its path. The error lists
-the full local path of every such folder in all packages, and the command exits
-with `1`:
+`push-workspace` packs every workspace package before it installs anything. It
+stops when a folder under `Schemas/` or `Data/` has no `descriptor.json`: Creatio
+rejects the whole installation for such a folder with `Invalid descriptor` and
+names only the last segment of its path. The error lists the full local path of
+every such folder in all packages (the first 20, then a count), and the command
+exits with `1`:
 
 ```text
-[ERR] - This package folder has no descriptor.json: /repo/packages/UsrApp/Data/Lookup_Status (28 files, e.g. Localization/data.de-DE.json, Localization/data.en-US.json, Localization/data.es-ES.json). Creatio rejects the whole installation ...
+[ERR] - This package folder has no descriptor.json: /repo/packages/UsrApp/Data/Lookup_Status (28 files, e.g. Localization/data.de-DE.json, Localization/data.en-US.json, Localization/data.es-ES.json; only Localization files, delete the folder). Creatio rejects the whole installation ...
 ```
 
-Such a folder is usually left behind when a schema or data binding is deleted:
-git removes the tracked files and keeps the ignored `Localization/` or
-`Resources/` files. Delete the folder, or restore its `descriptor.json` if the
-element is still needed. Empty folders and files excluded by `clioignore` are not
-packed, so they are not reported. Folders under `Assemblies/`, `Files/`,
-`Resources/` and `SqlScripts/` are not checked.
+Each folder carries a verdict:
+
+- `only Localization files, delete the folder` — git leaves such a folder behind
+  when a data binding is deleted: it removes the tracked files and keeps the
+  ignored per-culture `Localization/data.<culture>.json` files.
+- `element files, restore descriptor.json` — the element is still there and only
+  its descriptor is missing. Restore it, for example from git; deleting the folder
+  can remove the element from the environment on the next install.
+
+Empty folders and files excluded by `clioignore` are not packed, so they are not
+reported. Folders under `Assemblies/`, `Files/`, `Resources/` and `SqlScripts/`
+are not checked.
 
 ## See Also
 

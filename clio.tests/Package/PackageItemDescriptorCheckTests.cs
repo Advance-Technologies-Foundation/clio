@@ -148,4 +148,34 @@ public sealed class PackageItemDescriptorCheckTests {
 			"because a stable order makes the error message reproducible");
 	}
 
+	[Test]
+	[Description("A file the clioignore filter hands in twice is listed once, so the message does not double the count.")]
+	public void FindFoldersWithoutDescriptor_ShouldListEachFileOnce_WhenTheSameFileArrivesTwice() {
+		// Arrange
+		string[] files = ["Data/Lookup_Status/Localization/data.en-US.json", "Data/Lookup_Status/Localization/data.en-US.json"];
+
+		// Act
+		IReadOnlyList<PackageItemFolderWithoutDescriptor> folders = PackageItemDescriptorCheck.FindFoldersWithoutDescriptor(files);
+
+		// Assert
+		folders.Should().ContainSingle("because both entries belong to one folder")
+			.Which.Files.Should().Equal(["Localization/data.en-US.json"], "because a duplicate entry is still one file");
+	}
+
+	[Test]
+	[Description("A folder holding only Localization files is classified as a deleted binding's leftover; any other file marks an element that lost its descriptor.")]
+	public void HoldsOnlyLocalization_ShouldTellALeftoverFromADamagedElement() {
+		// Arrange
+		PackageItemFolderWithoutDescriptor leftover = new("Data/Lookup_Status", ["Localization/data.en-US.json"]);
+		PackageItemFolderWithoutDescriptor damaged = new("Data/Lookup_Status", ["Localization/data.en-US.json", "data.json"]);
+
+		// Act
+		bool leftoverVerdict = leftover.HoldsOnlyLocalization;
+		bool damagedVerdict = damaged.HoldsOnlyLocalization;
+
+		// Assert
+		leftoverVerdict.Should().BeTrue("because git keeps only the ignored per-culture files of a deleted binding");
+		damagedVerdict.Should().BeFalse("because data.json means the binding itself is still there and must not be deleted");
+	}
+
 }

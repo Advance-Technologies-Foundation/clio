@@ -79,8 +79,10 @@ public sealed class ToolContractGetToolTests {
 		string description = result.Tools!.Single().Description;
 		description.Should().Contain("descriptor.json", because: "the agent must learn which folders fail the push");
 		description.Should().Contain("installs nothing", because: "the agent must know the environment was not changed");
-		description.Should().Contain("delete it, or restore its descriptor.json",
-			because: "the agent needs the remedy rather than a retry of the same push");
+		description.Should().Contain("only Localization files, delete the folder",
+			because: "the agent needs the remedy for a leftover rather than a retry of the same push");
+		description.Should().Contain("restore its descriptor.json and do not delete it",
+			because: "deleting a folder that still holds the element can remove the element from the environment");
 	}
 
 	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);

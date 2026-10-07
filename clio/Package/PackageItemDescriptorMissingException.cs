@@ -20,6 +20,7 @@ public sealed class PackageItemDescriptorMissingException : Exception {
 	#region Constants: Private
 
 	private const int ListedFileCount = 3;
+	private const int ListedFolderCount = 20;
 
 	#endregion
 
@@ -55,25 +56,38 @@ public sealed class PackageItemDescriptorMissingException : Exception {
 	#region Methods: Private
 
 	// One line, folder paths first: a reader that keeps only the [ERR] line still gets them. The platform's own
-	// message puts its (shortened) path on a later line that carries no [ERR] prefix (issue #1749).
+	// message puts its (shortened) path on a later line that carries no [ERR] prefix (issue #1749). The list is
+	// capped so a large branch switch does not turn one log entry into hundreds of paths; Folders keeps them all.
 	private static string BuildMessage(IReadOnlyCollection<PackageItemFolderWithoutDescriptor> folders) {
 		string subject = folders.Count == 1
 			? "This package folder has no descriptor.json"
 			: $"These {folders.Count} package folders have no descriptor.json";
-		string list = string.Join("; ", folders.Select(folder => $"{folder.FolderPath} {DescribeFiles(folder.Files)}"));
-		return $"{subject}: {list}. Creatio rejects the whole installation when a folder under Schemas/ or Data/ "
-			+ "has no descriptor.json (\"Invalid descriptor\"), so clio stopped before building the package archive. "
-			+ "Such a folder is usually left behind when a schema or data binding is deleted: git removes the tracked "
-			+ "files and keeps the ignored Localization or Resources files. Delete the folder, or restore its "
-			+ "descriptor.json if the element is still needed.";
+		string list = string.Join("; ", folders.Take(ListedFolderCount).Select(DescribeFolder));
+		string more = folders.Count > ListedFolderCount
+			? $"; and {folders.Count - ListedFolderCount} more"
+			: string.Empty;
+		return $"{subject}: {list}{more}. Creatio rejects the whole installation when a folder under Schemas/ or "
+			+ "Data/ has no descriptor.json (\"Invalid descriptor\"), so clio stopped before building the package "
+			+ "archive. A folder that holds only Localization files is what git leaves behind when a data binding is "
+			+ "deleted: delete it. A folder that still holds other files is an element that lost its descriptor.json: "
+			+ "restore the descriptor, for example from git, because deleting the folder can remove the element from "
+			+ "the environment on the next install.";
+	}
+
+	// Each folder carries its own verdict, so a reader does not have to apply the rule above to the file list.
+	private static string DescribeFolder(PackageItemFolderWithoutDescriptor folder) {
+		string advice = folder.HoldsOnlyLocalization
+			? "only Localization files, delete the folder"
+			: "element files, restore descriptor.json";
+		return $"{folder.FolderPath} ({DescribeFiles(folder.Files)}; {advice})";
 	}
 
 	private static string DescribeFiles(IReadOnlyList<string> files) {
 		string listed = string.Join(", ", files.Take(ListedFileCount));
 		return files.Count switch {
-			1 => $"(1 file: {listed})",
-			<= ListedFileCount => $"({files.Count} files: {listed})",
-			_ => $"({files.Count} files, e.g. {listed})"
+			1 => $"1 file: {listed}",
+			<= ListedFileCount => $"{files.Count} files: {listed}",
+			_ => $"{files.Count} files, e.g. {listed}"
 		};
 	}
 
