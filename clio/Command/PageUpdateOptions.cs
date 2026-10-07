@@ -330,7 +330,7 @@
 			List<string> registeredKeys = UpdateSchemaBody(
 				schemaToSave, bodyToWrite, context.SchemaType, explicitResources, parsedOptionalProperties);
 			PageUpdateResponse captionGateFailure =
-				ValidateInsertedWidgetCaptionsResolve(options, schemaToSave, bodyToWrite, context.SchemaType);
+				ValidateInsertedWidgetCaptionsResolve(options, schemaToSave, bodyToWrite, context);
 			prepared = new PreparedWrite(schemaToSave, bodyToWrite, projection, registeredKeys,
 				downgradeWarnings, inertWarnings, captionGateFailure);
 			return true;
@@ -379,10 +379,12 @@
 			if (!IsAppendMode(options)) {
 				if (!TryValidateParents(options.Body, context, out response)) return false;
 				// Parent references require the target hierarchy even during a dry run. No schema is saved.
-				// Caption checks remain fragment-scoped because replace does not fetch localizableStrings.
+				// The caption check reads the schema's stored and inherited keys only for a binding the body
+				// and `resources` leave unresolved (issue #1740), through the same cached read as ValidateInput.
 				response = CreateSuccessResponse(options, dryRun: true, registeredKeys: null);
 				response.Warnings = CombineWarnings(
-					BuildDryRunWidgetCaptionWarnings(options.Body, context.SchemaType, explicitResources),
+					BuildDryRunWidgetCaptionWarnings(options.Body, context.SchemaType, explicitResources,
+						() => _persistedResourceKeyReader.Read(options, () => ReadPersistedResourceKeys(context))?.Keys),
 					PageInertOperationDetector.Detect(options.Body));
 				return true;
 			}
@@ -481,6 +483,13 @@
 		/// every key it had ever registered (issue #1320). Best-effort: any failure degrades to an empty
 		/// set, which restores the previous, stricter behaviour instead of letting the save through.
 		/// <para>
+		/// The set also carries the keys of the already-resolved designer hierarchy
+		/// (<see cref="GetInheritedResourceKeys"/>), at no extra round trip: <c>GetSchema</c> with
+		/// <c>useFullHierarchy:false</c> omits inherited keys that come from an ancestor's replacing schema in
+		/// another package, and those resolve at runtime too (issue #1740). The widget-caption pre-flight uses
+		/// this same read, on its own failure path only.
+		/// </para>
+		/// <para>
 		/// PURE with respect to the request — the memo that used to live on <see cref="PageUpdateOptions"/>
 		/// is gone. Caching is <see cref="IPersistedResourceKeyReader"/>'s job, keyed by the thing actually
 		/// being read rather than by the identity of one options instance (issue #1464).
@@ -500,8 +509,9 @@
 				if (!TryGetSchema(context.TemplateSchemaUId, out JObject schema, out string schemaError)) {
 					return LogPersistedResourceKeyFailure(schemaError);
 				}
-				return PersistedResourceKeyRead.FromKeys(
-					ResourceStringHelper.GetExistingKeys(schema[LocalizableStringsKey] as JArray));
+				HashSet<string> keys = ResourceStringHelper.GetExistingKeys(schema[LocalizableStringsKey] as JArray);
+				keys.UnionWith(GetInheritedResourceKeys(context));
+				return PersistedResourceKeyRead.FromKeys(keys);
 			} catch (Exception ex) when (ex is not OperationCanceledException) {
 				return LogPersistedResourceKeyFailure(ex.Message);
 			}
@@ -525,19 +535,50 @@
 		}
 
 		/// <summary>
-		/// Validates widget caption resource resolutions for a REPLACE dry run (web pages only), returning
-		/// advisory warnings. Weaker than the save's gate on purpose: without the server's
-		/// <c>localizableStrings</c> it can only resolve against the explicitly supplied resources, and
-		/// fetching them would cost this path its offline guarantee. An append dry run does not use this -
-		/// it already has the schema, so it runs the authoritative gate instead.
+		/// Collects the <c>localizableStrings</c> keys of the target schema's level in the already-resolved
+		/// designer hierarchy and of every level it inherits from.
 		/// </summary>
+		/// <param name="context">The resolved target schema.</param>
+		/// <returns>The keys; empty when the context carries no hierarchy or the target is not in it.</returns>
+		/// <remarks>
+		/// Levels ABOVE the target (replacing schemas in packages that depend on the design package) are left
+		/// out on purpose: their keys resolve today only because those packages are installed, which this
+		/// save cannot rely on. An empty result keeps the stricter, <c>GetSchema</c>-only verdict.
+		/// </remarks>
+		private static IEnumerable<string> GetInheritedResourceKeys(EditableSchemaContext context) {
+			IReadOnlyList<PageDesignerHierarchySchema> hierarchy = context?.ResolvedHierarchy;
+			if (hierarchy is null || hierarchy.Count == 0) {
+				return [];
+			}
+			int own = hierarchy.ToList().FindIndex(schema => SchemaUIdsMatch(schema?.UId, context.EditableSchemaUId));
+			if (own < 0) {
+				return [];
+			}
+			return hierarchy.Skip(own)
+				.SelectMany(schema => ResourceStringHelper.GetExistingKeys(schema?.LocalizableStrings));
+		}
+
+		/// <summary>
+		/// Validates widget caption resource resolutions for a REPLACE dry run (web pages only), returning
+		/// advisory warnings. A replace dry run does not fetch the schema body, so the check first resolves
+		/// against the body and the explicitly supplied resources and only then, for what is still
+		/// unresolved, against the keys the schema already stores or inherits. An append dry run does not use
+		/// this - it already has the schema, so it runs the authoritative gate instead.
+		/// </summary>
+		/// <param name="body">The body the caller sent.</param>
+		/// <param name="schemaType">The target page type; mobile pages are not checked.</param>
+		/// <param name="explicitResources">The <c>resources</c> argument of the call.</param>
+		/// <param name="persistedResourceKeysProvider">Supplies the stored and inherited keys; invoked only when
+		/// a binding is still unresolved, so a clean body costs no round trip.</param>
 		/// <returns>Warning messages for unresolved captions, or <c>null</c> if none.</returns>
 		private static List<string> BuildDryRunWidgetCaptionWarnings(
-				string body, PageSchemaType schemaType, Dictionary<string, string> explicitResources) {
+				string body, PageSchemaType schemaType, Dictionary<string, string> explicitResources,
+				Func<IReadOnlySet<string>> persistedResourceKeysProvider) {
 			if (schemaType == PageSchemaType.Mobile) {
 				return null;
 			}
-			SchemaValidationResult result = SchemaValidationService.ValidateInsertedWidgetCaptionResources(body, explicitResources);
+			SchemaValidationResult result = SchemaValidationService.ValidateInsertedWidgetCaptionResources(
+				body, explicitResources, persistedResourceKeysProvider);
 			return result.IsValid ? null : new List<string>(result.Errors);
 		}
 
@@ -1072,21 +1113,24 @@
 		/// <summary>
 		/// Authoritative widget-caption resolvability gate. After <see cref="UpdateSchemaBody"/>
 		/// has produced the final <c>localizableStrings</c>, this rejects the save when a freshly inserted
-		/// widget/container caption binds a localizable key that is neither
-		/// present in that final set nor auto-provided by a DS-bound attribute
+		/// widget/container caption binds a localizable key that is neither present in that final set,
+		/// nor inherited from the resolved designer hierarchy, nor auto-provided by a DS-bound attribute.
 		/// </summary>
 		/// <returns>A failure response when a saved inserted widget caption would render raw; otherwise <c>null</c>.</returns>
 		private static PageUpdateResponse ValidateInsertedWidgetCaptionsResolve(
-				PageUpdateOptions options, JObject schemaToSave, string body, PageSchemaType schemaType) {
+				PageUpdateOptions options, JObject schemaToSave, string body, EditableSchemaContext context) {
 			// validate=false is the explicit escape hatch for a pre-existing page defect: skip the
 			// client-side content checks here rather than at the call site, so TryUpdatePage stays flat.
 			if (!options.Validate) {
 				return null;
 			}
-			if (schemaType == PageSchemaType.Mobile) {
+			if (context.SchemaType == PageSchemaType.Mobile) {
 				return null;
 			}
 			HashSet<string> registeredNames = ResourceStringHelper.GetExistingKeys(schemaToSave[LocalizableStringsKey] as JArray);
+			// GetSchema's own list omits keys an ancestor's replacing schema in another package declares; they
+			// render at runtime, so refusing them was a false refusal (issue #1740). Same set the dry run reads.
+			registeredNames.UnionWith(GetInheritedResourceKeys(context));
 			HashSet<string> dsBoundKeys = SchemaValidationService.CollectViewModelPaths(body).Keys
 				.ToHashSet(StringComparer.OrdinalIgnoreCase);
 			SchemaValidationResult result = SchemaValidationService.ValidateInsertedWidgetCaptionsRegistered(

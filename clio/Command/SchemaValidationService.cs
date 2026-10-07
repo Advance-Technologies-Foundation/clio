@@ -2858,19 +2858,36 @@ public static class SchemaValidationService
 	/// Validates that captions on inserted widgets reference resolvable localizable resource keys.
 	/// </summary>
 	/// <remarks>
-	/// Pre-flight check based only on the body and <paramref name="explicitResources"/>.
+	/// Pre-flight check based on the body and <paramref name="explicitResources"/> and, only when a binding
+	/// does not resolve against those, on the keys <paramref name="persistedResourceKeysProvider"/> supplies.
 	/// Use <see cref="ValidateInsertedWidgetCaptionsRegistered"/> for the authoritative save-time validation.
 	/// </remarks>
 	/// <param name="jsBody">Raw JavaScript body of a Freedom UI page schema (marker-delimited).</param>
 	/// <param name="explicitResources">Explicit resources passed to the save, or <c>null</c>.</param>
+	/// <param name="persistedResourceKeysProvider">
+	/// Supplies the resource keys the target schema already resolves at runtime: its stored
+	/// <c>localizableStrings</c> and the ones it inherits from its designer hierarchy. Invoked ONLY when the
+	/// body-only check left a binding unresolved, so a clean body never pays the round trip. Pass <c>null</c>
+	/// from a caller that has no target schema or must stay offline; a <c>null</c> provider, or one that yields
+	/// nothing, leaves the body-only verdict standing.
+	/// </param>
 	/// <returns>A <see cref="SchemaValidationResult"/> invalid when an inserted widget caption uses an unresolvable localizable key.</returns>
 	public static SchemaValidationResult ValidateInsertedWidgetCaptionResources(
 		string jsBody,
-		IReadOnlyDictionary<string, string>? explicitResources = null) {
+		IReadOnlyDictionary<string, string>? explicitResources = null,
+		Func<IReadOnlySet<string>>? persistedResourceKeysProvider = null) {
 		if (string.IsNullOrEmpty(jsBody)) {
 			return new SchemaValidationResult { IsValid = true };
 		}
-		return ScanInsertedWidgetCaptions(jsBody, BodyOnlyCaptionResolver(jsBody, explicitResources));
+		IReadOnlyList<UnresolvedCaptionBinding> bindings = FindUnresolvedInsertedWidgetCaptions(
+			jsBody, BodyOnlyCaptionResolver(jsBody, explicitResources));
+		// A key the schema already stores, or inherits, resolves at runtime whether or not this call repeats it
+		// in `resources`. Without this a layout-only re-save warned once for every key an earlier call had
+		// registered (issue #1740) - the blind spot #1320 removed from the label-resource validators.
+		if (bindings.Count > 0 && persistedResourceKeysProvider?.Invoke() is { Count: > 0 } persistedKeys) {
+			bindings = bindings.Where(binding => !persistedKeys.Contains(binding.Key)).ToList();
+		}
+		return ToPerOccurrenceCaptionResult(bindings);
 	}
 
 	/// <summary>
@@ -2928,13 +2945,14 @@ public static class SchemaValidationService
 	// placeholder) whose localizable key does not satisfy <paramref name="resolves"/>. Merges are skipped
 	// (a merge may target a caption a parent schema already provides). Fail-open on empty/missing marker/
 	// unparseable body, matching the sibling content validators.
-	private static SchemaValidationResult ScanInsertedWidgetCaptions(string jsBody, Func<string, bool> resolves) {
-		var result = new SchemaValidationResult { IsValid = true };
-		foreach (UnresolvedCaptionBinding binding in FindUnresolvedInsertedWidgetCaptions(jsBody, resolves)) {
+	private static SchemaValidationResult ScanInsertedWidgetCaptions(string jsBody, Func<string, bool> resolves) =>
+		ToPerOccurrenceCaptionResult(FindUnresolvedInsertedWidgetCaptions(jsBody, resolves));
+
+	// One error per unresolved binding, invalid when there is any - the shape the save paths report.
+	private static SchemaValidationResult ToPerOccurrenceCaptionResult(IReadOnlyList<UnresolvedCaptionBinding> bindings) {
+		var result = new SchemaValidationResult { IsValid = bindings.Count == 0 };
+		foreach (UnresolvedCaptionBinding binding in bindings) {
 			result.Errors.Add(BuildUnresolvedCaptionError(binding.Node, binding.Property, binding.Key));
-		}
-		if (result.Errors.Count > 0) {
-			result.IsValid = false;
 		}
 		return result;
 	}

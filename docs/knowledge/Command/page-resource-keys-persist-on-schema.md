@@ -7,7 +7,7 @@ applies-to:
   - clio/Command/McpServer/Tools/PageSyncTool.cs
   - clio/Command/SchemaValidationService.cs
   - clio/Command/ResourceStringHelper.cs
-ticket: GH-1320, GH-1464
+ticket: GH-1320, GH-1464, GH-1740
 date: 2026-09-12
 ---
 
@@ -55,6 +55,21 @@ The `ResolveSyntaxFailure` path passes `offlineOnly: true` and therefore no prov
 promises no Creatio I/O for a body that cannot parse. A body already blocked by a standard-field
 ERROR short-circuits before the provider is invoked at all, so a binding rejection never pays a
 round-trip either.
+
+The widget-caption pre-flight (`ValidateInsertedWidgetCaptionResources`) takes the same provider and
+calls it only when a caption binding is still unresolved after the body and `resources` (GH-1740). The
+replace dry run of `update-page` and both `sync-pages` gates pass it; `validate-page` has no target
+schema and stays body-only. Before GH-1740 the pre-flight never saw stored keys, so a layout-only
+re-save warned once for every key an earlier save had registered - while the save itself, which checks
+the final `localizableStrings`, accepted the body.
+
+The key set the reader returns is NOT only `GetSchema`'s list: `PageUpdateCommand.ReadPersistedResourceKeys`
+adds the `localizableStrings` of the target's level and every ancestor level of the ALREADY-RESOLVED
+designer hierarchy (`EditableSchemaContext.ResolvedHierarchy`, no extra request), and the authoritative
+caption save gate adds the same hierarchy keys. `GetSchema` with `useFullHierarchy:false` leaves out keys an
+ancestor's replacing schema in another package declares (see
+`docs/knowledge/platform/page-resource-save-replaces-own-values-but-stores-only-overrides-of-inherited-keys.md`);
+those render at runtime, so refusing them was a false refusal. Levels above the target are not counted.
 
 **Why it is this way** — validation runs before the schema is loaded for saving, and reordering the
 two turns every body-level rejection into whatever the `GetSchema` call happens to return. The
