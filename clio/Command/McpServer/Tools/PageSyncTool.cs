@@ -871,6 +871,9 @@ public sealed class PageSyncTool(
 		if (metaWarning != null) {
 			validationResult = AppendCommandWarnings(validationResult, [metaWarning]);
 		}
+		// GH-1752: the read-back may have resolved the page only by skipping an operation the platform rejects
+		// (for example one inherited from a parent schema); the save succeeded, but the page does not render.
+		validationResult = AppendCommandWarnings(validationResult, getResponse.Warnings);
 		return new PageSyncPageResult {
 			SchemaName = page.SchemaName,
 			Success = true,

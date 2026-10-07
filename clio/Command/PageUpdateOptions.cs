@@ -345,7 +345,7 @@
 			if (!slotResult.IsValid) {
 				response = new PageUpdateResponse {
 					Success = false,
-					Error = PlacementSlotFailurePrefix + string.Join("; ", slotResult.Errors)
+					Error = PlacementSlotFailurePrefix + string.Join("; ", slotResult.Errors) + PlacementSlotFailureHint
 				};
 				return false;
 			}
@@ -1322,6 +1322,13 @@
 
 		/// <summary>Prefix of the mandatory GH-1752 rejection: an insert/move with a parentName but no propertyName.</summary>
 		internal const string PlacementSlotFailurePrefix = "Body places an element without a slot: ";
+
+		// The check runs on the body that would be WRITTEN. In append mode that is the stored body merged with
+		// the fragment, so the operation (and its index) may come from the page as an older clio saved it.
+		private const string PlacementSlotFailureHint =
+			" In append mode the index counts the stored body merged with your fragment: an operation already "
+			+ "stored on the page is fixed by appending the same operation with its propertyName, or by saving "
+			+ "the corrected get-page body in replace mode.";
 
 		/// <summary>
 		/// Text appended to every CONTENT-validation failure so the caller learns about the escape hatch at

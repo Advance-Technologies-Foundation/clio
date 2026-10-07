@@ -740,8 +740,13 @@ public sealed class PageUpdateTool(
 				Password = args.Password
 			};
 			PageGetCommand getCommand = _commandResolver.Resolve<PageGetCommand>(getOptions);
-			if (getCommand.TryGetPage(getOptions, out PageGetResponse getResponse) && getResponse.Success)
+			if (getCommand.TryGetPage(getOptions, out PageGetResponse getResponse) && getResponse.Success) {
 				response.Page = getResponse.Page.ForResponse(args.IncludeOperations);
+				// GH-1752: a read-back that had to skip an operation the platform rejects is not a clean page.
+				if (getResponse.Warnings is { Count: > 0 }) {
+					response.Warnings = (response.Warnings ?? []).Concat(getResponse.Warnings).ToList();
+				}
+			}
 		} catch {
 			// verify is best-effort; failure does not fail the update
 		}

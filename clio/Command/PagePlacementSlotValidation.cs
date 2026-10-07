@@ -2,6 +2,7 @@ namespace Clio.Command;
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Newtonsoft.Json.Linq;
 
 /// <summary>
@@ -29,7 +30,8 @@ internal static class PagePlacementSlotValidation {
 	private const string NameKey = "name";
 	private const string ParentNameKey = "parentName";
 	private const string PropertyNameKey = "propertyName";
-	private static readonly HashSet<string> PlacementOperations = new(StringComparer.Ordinal) { "insert", "move" };
+	private static readonly HashSet<string> PlacementOperations =
+		new(StringComparer.Ordinal) { PageViewConfigDiffVerbs.Insert, PageViewConfigDiffVerbs.Move };
 
 	/// <summary>
 	/// Validates a raw page body (web AMD body or mobile JSON body). Returns one error per placement without a
@@ -51,14 +53,25 @@ internal static class PagePlacementSlotValidation {
 		return result;
 	}
 
-	/// <summary>Lists the placements without a slot in one <c>viewConfigDiff</c> operation array.</summary>
+	/// <summary>
+	/// Lists the placements without a slot in one <c>viewConfigDiff</c> operation array. A <c>move</c> whose
+	/// element the same array removes is skipped: the differ drops such a move before applying anything
+	/// (<c>FilterMoveOperation</c>), the same exemption <see cref="PageParentNameValidation"/> makes.
+	/// </summary>
 	internal static IReadOnlyList<SlotlessPlacement> Find(JToken viewConfigDiff) {
 		if (viewConfigDiff is not JArray operations) {
 			return [];
 		}
+		HashSet<string> removed = operations.OfType<JObject>()
+			.Where(op => StringValue(op[OperationKey]) == PageViewConfigDiffVerbs.Remove && op["properties"] is not JArray)
+			.Select(op => StringValue(op[NameKey]))
+			.Where(name => name is not null)
+			.ToHashSet(StringComparer.Ordinal);
 		var found = new List<SlotlessPlacement>();
 		for (int index = 0; index < operations.Count; index++) {
-			if (operations[index] is JObject operation && IsSlotless(operation)) {
+			if (operations[index] is JObject operation && IsSlotless(operation)
+				&& !(StringValue(operation[OperationKey]) == PageViewConfigDiffVerbs.Move
+					&& removed.Contains(StringValue(operation[NameKey]) ?? string.Empty))) {
 				found.Add(new SlotlessPlacement(
 					index,
 					operation.Value<string>(OperationKey),
@@ -87,11 +100,15 @@ internal static class PagePlacementSlotValidation {
 	/// <summary>
 	/// The advisory <c>get-page</c> reports when it had to resolve a page without such a placement.
 	/// </summary>
-	internal static string DescribeSkipped(string schemaName, SlotlessPlacement placement) =>
-		$"Schema '{schemaName}' viewConfigDiff[{placement.Index}] ({placement.Operation} '{placement.Name}') names "
-		+ $"parentName '{placement.ParentName}' but no propertyName. The Creatio differ rejects it "
-		+ $"(\"{NotContainerMessage(placement)}\"), so the page cannot render; get-page resolved the bundle WITHOUT "
-		+ "this operation. Fix the operation in that schema's body (add the parent's slot, e.g. "
+	/// <param name="schemaName">Name of the schema whose body carries the operation.</param>
+	/// <param name="packageName">Package of that schema; replacing schemas share one name, so it tells the layers
+	/// apart.</param>
+	/// <param name="placement">The skipped operation.</param>
+	internal static string DescribeSkipped(string schemaName, string packageName, SlotlessPlacement placement) =>
+		$"Schema '{schemaName}' (package '{packageName}') viewConfigDiff[{placement.Index}] ({placement.Operation} "
+		+ $"'{placement.Name}') names parentName '{placement.ParentName}' but no propertyName. The Creatio differ "
+		+ $"rejects such an operation (\"{NotContainerMessage(placement)}\"), so the page cannot render; get-page "
+		+ "resolved the bundle WITHOUT it. Fix the operation in that schema's body (add the parent's slot, e.g. "
 		+ "\"propertyName\": \"items\", or remove the operation) and save it with update-page.";
 
 	/// <summary>

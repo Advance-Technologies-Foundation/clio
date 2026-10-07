@@ -294,7 +294,7 @@ public class PageGetCommand : Command<PageGetOptions>, IProcessPageReader {
 		JArray kept = new(((JArray)part.ParsedBody.ViewConfigDiff)
 			.Where((_, index) => !skippedIndexes.Contains(index))
 			.Select(operation => operation.DeepClone()));
-		skipped.AddRange(slotless.Select(placement => PagePlacementSlotValidation.DescribeSkipped(part.Schema.Name, placement)));
+		skipped.AddRange(slotless.Select(placement => PagePlacementSlotValidation.DescribeSkipped(part.Schema.Name, part.Schema.PackageName, placement)));
 		return new PageSchemaBundlePart(part.Schema, part.ParsedBody.WithViewConfigDiff(kept));
 	}
 
