@@ -23,17 +23,27 @@ public sealed class CompileStatusTool(ICompileOperationRegistry registry, IToolC
 	/// The note a <c>not-found</c> answer carries.
 	/// </summary>
 	/// <remarks>
-	/// <b>It must not read as "nothing ran" (ENG-102333).</b> The record lives in this MCP server session only,
-	/// so a compile started before the server (re)started, from another client or from the CLI is not here —
-	/// while the environment itself still holds the verdict of its latest compile. An agent told only that
-	/// nothing was recorded either guesses or compiles again, and a second compile is a second runtime reload
-	/// for every user; <c>last-compilation-log</c> reads that verdict without compiling.
+	/// <para>
+	/// <b>It must not read as "nothing ran" (ENG-102333).</b> The record lives only in this MCP server session,
+	/// and only for a while after its compile ends, while the environment itself still holds the verdict of its
+	/// latest build. An agent told only that nothing was recorded either guesses or compiles again, and a
+	/// second compile is a second runtime reload for every user; <c>last-compilation-log</c> reads that verdict
+	/// without compiling. The note names no list of reasons on purpose: any list is one more place to fall
+	/// out of date.
+	/// </para>
+	/// <para>
+	/// <b>That verdict carries no time.</b> It belongs to the latest FINISHED build (see
+	/// <see cref="Clio.Common.ICompilationResultReader"/>), so read while a compile is still running it is the
+	/// previous build's — which is why the note says to wait before relying on it and never to restart on it.
+	/// </para>
 	/// </remarks>
 	internal const string NotFoundNote =
-		"No compile-creatio operation is recorded for this environment in this MCP server session. That does "
-		+ "not mean no compile ran: one started before this server (re)started, from another client or from the "
-		+ "CLI is not tracked here. Do not compile again to find out - read the environment's latest compile "
-		+ "verdict with " + LastCompilationLogTool.ToolName + " (through clio-run) instead.";
+		"This MCP server session holds no record of a compile-creatio operation for this environment. That does "
+		+ "not mean no compile ran: a record lives only in this session, and only for a while after its compile "
+		+ "ends. Do not compile again to find out. " + LastCompilationLogTool.ToolName + " (through clio-run) "
+		+ "reads the environment's latest FINISHED compile and carries no time: while a compile may still be "
+		+ "running (a process-name compile takes minutes) it can return an earlier compile's verdict, so wait that "
+		+ "long before relying on it, and never restart the environment on that answer alone.";
 
 	/// <summary>
 	/// Returns the tracked status of a compile-creatio operation.
@@ -46,7 +56,7 @@ public sealed class CompileStatusTool(ICompileOperationRegistry registry, IToolC
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillExtended,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.ConfigurationBuild)]
-	[Description("Returns the status of the most recent compile-creatio operation tracked for an environment, or of a specific operation-id from a compile-creatio in-progress response. Use this after compile-creatio returns an in-progress note, AND after your MCP client stopped waiting for compile-creatio (for example 'Request timed out'): the compile keeps running and is tracked here. Do not re-run compile-creatio just to check. A not-found answer means this MCP server session holds no record, not that nothing ran: read the environment's latest compile verdict with last-compilation-log (through clio-run).")]
+	[Description("Returns the status of the most recent compile-creatio operation tracked for an environment, or of a specific operation-id from a compile-creatio in-progress response. Use this after compile-creatio returns an in-progress note, AND after your MCP client stopped waiting for compile-creatio (for example 'Request timed out'): the compile keeps running and is tracked here. Do not re-run compile-creatio just to check. A not-found answer means this MCP server session holds no record, not that nothing ran: then last-compilation-log (through clio-run) reads the environment's latest FINISHED compile - it carries no time, so while a compile may still be running it can be an earlier compile's verdict.")]
 	public CompileStatusResponse GetStatus(
 		[Description("Status query parameters")] [Required] CompileStatusArgs args) {
 		if (string.IsNullOrWhiteSpace(args.EnvironmentName)) {

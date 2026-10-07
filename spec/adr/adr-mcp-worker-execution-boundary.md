@@ -402,21 +402,39 @@ their constraint to honour, not a Stage 4 detail.
 
 **Decided 2026-10-07 (ENG-102333): a cancelled STARTER is decided by the same fact as a cancelled poll.** Story
 14 left open what a cancelled starter means (its AC-03 asked for the reuse decision to be written down), and the
-first implementation reaped the worker on every caller cancellation. That is wrong for the families whose work
+first implementation reaped the worker on every caller cancellation. That is wrong for every family whose work
 outlives the call: an MCP client's own request timeout (Claude Code: `Request timed out`, followed by
 `notifications/cancelled`) fired before clio's 150 s in-progress answer, the parent reaped the worker that held
 the only `CompileOperationRegistry` record, and `compile-status` then answered `not-found` for compiles that ran
 to completion on the stand. So:
 
 - the request was **written** (session not retired, worker alive) → the worker is **kept** and marked
-  abandoned. Its tool already reserved the build, recorded the operation and handed the work to the detached
-  heartbeat, which runs it to the end; the status poll reaches it, the private completion signal (rule 5)
-  releases the target's reservation when the work really ends, and the completion linger and the lifetime bound
-  reap it. The next call over the session proves the worker alive with the bounded probe first, exactly as the
-  poll path does;
+  abandoned. All six starters (compile, both restarts, both installs, `create-app-section`) hand their long work
+  to the detached heartbeat, which runs it to the end and then sends the private completion signal (rule 5);
+  killing the worker would cut that work part-way - a compile or restart Creatio already has keeps running
+  without its record, an install or section creation stops in the middle of its own steps. Kept, the work
+  finishes, the signal releases the target's reservation, a status poll (where the family has one) still
+  reaches the record, and the completion linger and the lifetime bound reap the worker. The next call over the
+  session proves the worker alive with the bounded probe first, exactly as the poll path does;
 - the send did **not** complete, the worker exited, or the cancellation came before the entry was registered
   (spawn, handshake) → the worker is released at once, as before. Nothing reached the worker, so there is no
   operation to keep, and a retired session is never reused.
+
+Two consequences are accepted rather than missed. **Cancelling no longer stops an operation whose request
+reached the worker but whose first request to Creatio has not been sent yet** (environment resolution, login);
+before, a kill in that window could stop it by winning a race, while the deadline path never could. And **once
+the caller has cancelled, the parent bounds the kept worker only by the completion signal, supervision (exit or
+retirement) and the lifetime bound** (`StickyWorkerLifetimeBound.ExplicitMaximum`, 65 min) - the sticky call
+budget no longer applies, exactly as for a worker that answered in-progress at the deadline. That leaves one
+case the parent cannot see: a worker that received the call but never opened its completion ledger. The
+SDK does run clio's call-tool filter for a request whose cancellation arrives right behind it - measured with
+`notifications/cancelled` written back to back with the `tools/call`: the worker signalled at once, with no
+compile started - and `CompileCreatioClientTimeoutE2ETests` pins it, so an SDK upgrade that changed it fails a
+test instead of stranding reservations. What remains is a worker that wedges after receiving the call, which
+the deadline path was exposed to already.
+
+When `mcp-http` returns (stage 5), a kept worker no longer ends with its caller, so its lifetime must be bounded
+by the credential's validity - `StickyWorkerLifetimeBound.Resolve` already takes it.
 
 The terminal-stage family (§3.3) is unaffected: a cancelled deploy still kills its child and reports the last
 stage reached.

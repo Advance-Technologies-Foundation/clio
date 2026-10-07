@@ -3,13 +3,18 @@ using System.Text.Json;
 using Allure.Net.Commons;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
+using Clio.Command.McpServer;
+using Clio.Command.McpServer.Relay;
 using Clio.Command.McpServer.Tools;
+using Clio.Common.McpWorker;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Creatio;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
 using ModelContextProtocol;
+using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E;
@@ -62,7 +67,7 @@ public sealed class CompileCreatioClientTimeoutE2ETests {
 	[AllureTag(CompileStatusTool.CompileStatusToolName)]
 	[AllureName("A client that stops waiting for compile-creatio does not lose the compile")]
 	[AllureDescription("Starts the real clio MCP server against a Creatio stub that holds the compile's login open, calls compile-creatio with process-name and cancels the call once the request has reached the worker - what an MCP client's own request timeout does. Then: compile-status must answer running (not not-found), a second compile-creatio must be refused as already in progress, and once the held compile ends compile-status must report its final status with the exit code and the message tail.")]
-	[Description("ENG-102333 TC-01/TC-03: after the client cancels compile-creatio, compile-status answers running and then the final status with exit code and message tail, and a second compile-creatio for the target is refused as already in progress.")]
+	[Description("ENG-102333 (the Jira issue's TC-01 and TC-03): after the client cancels compile-creatio, compile-status answers running and then the final status with exit code and message tail, and a second compile-creatio for the target is refused as already in progress.")]
 	public async Task CompileStatus_Should_ReportTheCompile_WhenTheClientStoppedWaitingForCompileCreatio() {
 		// Arrange
 		await using CreatioWedgeStubServer stub = CreatioWedgeStubServer.Start();
@@ -78,21 +83,7 @@ public sealed class CompileCreatioClientTimeoutE2ETests {
 			// IsNetCore=false pins the .NET Framework routes the stub matches by substring; registering inline
 			// keeps reg-web-app's runtime detection - and its logins - out of the counter this test waits on.
 			using TemporaryClioSettingsOverride settingsOverride = TemporaryClioSettingsOverride.ReplaceContent(
-				$$"""
-				{
-				  "ActiveEnvironmentKey": "{{EnvironmentName}}",
-				  "Environments": {
-				    "{{EnvironmentName}}": {
-				      "Uri": "{{stub.BaseUrl}}",
-				      "Login": "Supervisor",
-				      "Password": "Supervisor",
-				      "IsNetCore": false
-				    }
-				  }
-				}
-				""",
-				settings.ClioProcessPath,
-				settings.ProcessEnvironmentVariables);
+				StubSettings(stub), settings.ClioProcessPath, settings.ProcessEnvironmentVariables);
 			settingsOverride.AppSettingsPath.Should().StartWith(tempHome,
 				because: "the replaced settings file must live in this fixture's own clio home");
 			using CancellationTokenSource scenario = new(ScenarioBudget);
@@ -143,6 +134,98 @@ public sealed class CompileCreatioClientTimeoutE2ETests {
 		}
 	}
 
+	[Test]
+	[Category("McpE2E.NoEnvironment")]
+	[AllureTag(CompileCreatioTool.CompileCreatioToolName)]
+	[AllureName("A worker signals completion for a compile call cancelled right behind its request")]
+	[AllureDescription("Talks to a real clio mcp-server --worker directly, the way the parent does, and writes notifications/cancelled immediately behind the compile-creatio request - the tightest race a parent can produce. The parent keeps such a worker and relies on it to send the private completion signal when the work ends; if the MCP SDK refused a request already cancelled before clio's call-tool filter ran, no signal would ever come and the kept worker would hold the target's configuration-build reservation until its 65-minute lifetime bound.")]
+	[Description("ENG-102333: a worker whose compile-creatio call is cancelled right behind its request still sends the private completion signal - at once when the cancellation won, when the compile ends when it did not - so a parent that keeps the worker is always released.")]
+	public async Task Worker_Should_SendTheCompletionSignal_WhenItsCompileCallIsCancelledRightBehindTheRequest() {
+		// Arrange
+		await using CreatioWedgeStubServer stub = CreatioWedgeStubServer.Start();
+		string tempHome = Path.Combine(Path.GetTempPath(), $"clio-e2e-102333w-{Guid.NewGuid():N}");
+		Directory.CreateDirectory(tempHome);
+		try {
+			McpE2ESettings settings = TestConfiguration.Load();
+			settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+			settings.ProcessEnvironmentVariables[OperatingSystem.IsWindows() ? "LOCALAPPDATA" : "HOME"] = tempHome;
+			settings.ProcessEnvironmentVariables["CLIO_HOME"] = tempHome;
+			using TemporaryClioSettingsOverride settingsOverride = TemporaryClioSettingsOverride.ReplaceContent(
+				StubSettings(stub), settings.ClioProcessPath, settings.ProcessEnvironmentVariables);
+			settingsOverride.AppSettingsPath.Should().StartWith(tempHome,
+				because: "the replaced settings file must live in this fixture's own clio home");
+			using CancellationTokenSource scenario = new(ScenarioBudget);
+			await using DirectWorker worker = await DirectWorker.StartAsync(settings, tempHome, scenario.Token);
+			TaskCompletionSource<JsonRpcNotification> signal = new(TaskCreationOptions.RunContinuationsAsynchronously);
+			await using IAsyncDisposable signalHandler = worker.Client.RegisterNotificationHandler(
+				WorkerOperationSignalContract.NotificationMethod, (notification, _) => {
+					signal.TrySetResult(notification);
+					return default;
+				});
+			stub.ResetCounters();
+			stub.SetLoginDelay(TimeSpan.FromSeconds(5));
+			RequestId requestId = new($"eng-102333-worker-{Guid.NewGuid():N}");
+
+			// Act - the request and its cancellation leave back to back, from one thread. Which of the two the
+			// worker acts on first is a race, and both outcomes are correct: cancelled before the tool started,
+			// the call ends with nothing running and signals at once (measured: no login reached the stub);
+			// started first, the compile runs detached and signals when it ends. What may never happen is no
+			// signal at all.
+			using CancellationTokenSource local = CancellationTokenSource.CreateLinkedTokenSource(scenario.Token);
+			Task<JsonRpcResponse> call = worker.Client.SendRequestAsync(CompileRequest(requestId), local.Token);
+			await worker.Client.SendNotificationAsync(NotificationMethods.CancelledNotification,
+				new CancelledNotificationParams { RequestId = requestId, Reason = "Request timed out" },
+				cancellationToken: scenario.Token);
+			await local.CancelAsync();
+			_ = call.ContinueWith(static abandoned => abandoned.Exception, CancellationToken.None,
+				TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
+			Task finished = await Task.WhenAny(signal.Task, Task.Delay(TerminalStateBound, scenario.Token));
+
+			// Assert
+			finished.Should().BeSameAs(signal.Task,
+				because: "the worker must send its completion signal for a call cancelled right behind its request; without it a parent that kept the worker holds the target's reservation for the whole lifetime bound. Stub: {0}. Worker: {1}",
+				stub.DescribeState(), worker.Describe());
+			WorkerOperationSignalContract.TryRead(await signal.Task, out McpToolOperationFamily family, out int? _)
+				.Should().BeTrue(because: "the signal must be the parent's private completion contract");
+			family.Should().Be(McpToolOperationFamily.ConfigurationBuild,
+				because: "the signal belongs to the compile's operation family");
+		}
+		finally {
+			TryDeleteDirectory(tempHome);
+		}
+	}
+
+	private static string StubSettings(CreatioWedgeStubServer stub) =>
+		$$"""
+		{
+		  "ActiveEnvironmentKey": "{{EnvironmentName}}",
+		  "Environments": {
+		    "{{EnvironmentName}}": {
+		      "Uri": "{{stub.BaseUrl}}",
+		      "Login": "Supervisor",
+		      "Password": "Supervisor",
+		      "IsNetCore": false
+		    }
+		  }
+		}
+		""";
+
+	private static JsonRpcRequest CompileRequest(RequestId requestId) =>
+		new() {
+			Id = requestId,
+			Method = RequestMethods.ToolsCall,
+			Params = JsonSerializer.SerializeToNode(new CallToolRequestParams {
+				Name = ClioRunTool.ToolName,
+				Arguments = new Dictionary<string, JsonElement> {
+					["command"] = JsonSerializer.SerializeToElement(CompileCreatioTool.CompileCreatioToolName),
+					["args"] = JsonSerializer.SerializeToElement(new Dictionary<string, string> {
+						["environment-name"] = EnvironmentName,
+						["process-name"] = ProcessName
+					})
+				}
+			}, McpJsonUtilities.DefaultOptions)
+		};
+
 	private static Dictionary<string, object?> CompileArguments() =>
 		new() {
 			["args"] = new Dictionary<string, object?> {
@@ -166,22 +249,8 @@ public sealed class CompileCreatioClientTimeoutE2ETests {
 	private static async Task<Exception> CallCompileAndGiveUpAsync(McpServerSession session,
 		CreatioWedgeStubServer stub, CancellationToken scenario) {
 		RequestId requestId = new($"eng-102333-{Guid.NewGuid():N}");
-		JsonRpcRequest request = new() {
-			Id = requestId,
-			Method = RequestMethods.ToolsCall,
-			Params = JsonSerializer.SerializeToNode(new CallToolRequestParams {
-				Name = ClioRunTool.ToolName,
-				Arguments = new Dictionary<string, JsonElement> {
-					["command"] = JsonSerializer.SerializeToElement(CompileCreatioTool.CompileCreatioToolName),
-					["args"] = JsonSerializer.SerializeToElement(new Dictionary<string, string> {
-						["environment-name"] = EnvironmentName,
-						["process-name"] = ProcessName
-					})
-				}
-			}, McpJsonUtilities.DefaultOptions)
-		};
 		using CancellationTokenSource client = CancellationTokenSource.CreateLinkedTokenSource(scenario);
-		Task<JsonRpcResponse> call = session.Client.SendRequestAsync(request, client.Token);
+		Task<JsonRpcResponse> call = session.Client.SendRequestAsync(CompileRequest(requestId), client.Token);
 		Stopwatch waited = Stopwatch.StartNew();
 		while (stub.LoginCount == 0 && !call.IsCompleted && waited.Elapsed < CompileHold) {
 			await Task.Delay(100, scenario);
@@ -246,6 +315,123 @@ public sealed class CompileCreatioClientTimeoutE2ETests {
 		}
 		catch (UnauthorizedAccessException) {
 			// Same reasoning.
+		}
+	}
+
+	/// <summary>
+	/// One real <c>clio mcp-server --worker</c> child, started and spoken to the way the parent's supervisor
+	/// and relay do: a cleared environment carrying the supervisor's allowlist and the sticky composition, and
+	/// MCP over the child's own streams.
+	/// </summary>
+	/// <remarks>
+	/// A smaller copy of <c>McpWorkerModeE2ETests.WorkerProcess</c>, which is private to that fixture; this
+	/// one only needs to start the child, drain its standard error and expose the client.
+	/// </remarks>
+	private sealed class DirectWorker : IAsyncDisposable {
+
+		private readonly Process _process;
+		private readonly System.Text.StringBuilder _standardError = new();
+		private Task? _standardErrorPump;
+
+		private DirectWorker(Process process) => _process = process;
+
+		public McpClient Client { get; private set; } = null!;
+
+		public static async Task<DirectWorker> StartAsync(McpE2ESettings settings, string home,
+			CancellationToken cancellationToken) {
+			ClioProcessDescriptor descriptor =
+				ClioExecutableResolver.Resolve(settings, "mcp-server", McpWorkerEnvironment.WorkerFlag);
+			ProcessStartInfo startInfo = new() {
+				FileName = descriptor.Command,
+				WorkingDirectory = descriptor.WorkingDirectory,
+				UseShellExecute = false,
+				RedirectStandardInput = true,
+				RedirectStandardOutput = true,
+				RedirectStandardError = true
+			};
+			foreach (string argument in descriptor.Arguments) {
+				startInfo.ArgumentList.Add(argument);
+			}
+			startInfo.Environment.Clear();
+			foreach (string name in WorkerProcessSupervisor.DefaultInheritedEnvironmentVariableAllowlist) {
+				string? value = Environment.GetEnvironmentVariable(name);
+				if (value is not null) {
+					startInfo.Environment[name] = value;
+				}
+			}
+			IReadOnlyDictionary<string, string> composed = McpWorkerEnvironment.ComposeChildEnvironment(
+				new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase), McpWorkerLifetime.Sticky);
+			foreach (KeyValuePair<string, string> pair in composed) {
+				startInfo.Environment[pair.Key] = pair.Value;
+			}
+			startInfo.Environment["CLIO_HOME"] = home;
+			startInfo.Environment[OperatingSystem.IsWindows() ? "LOCALAPPDATA" : "HOME"] = home;
+			startInfo.Environment["CLIO_NO_UPDATE_CHECK"] = "true";
+			Process process = Process.Start(startInfo)
+				?? throw new InvalidOperationException("Unable to start the clio MCP worker child process.");
+			DirectWorker worker = new(process);
+			try {
+				await worker.ConnectAsync(cancellationToken);
+			}
+			catch {
+				await worker.DisposeAsync();
+				throw;
+			}
+			return worker;
+		}
+
+		public string Describe() {
+			string standardError;
+			lock (_standardError) {
+				standardError = _standardError.ToString();
+			}
+			string shortened = standardError.Length <= 600 ? standardError : standardError[..600];
+			return $"pid={_process.Id}, exited={_process.HasExited}, "
+				+ $"stderr=[{shortened.Replace('\r', ' ').Replace('\n', ' ')}]";
+		}
+
+		public async ValueTask DisposeAsync() {
+			if (Client is not null) {
+				try {
+					await Client.DisposeAsync();
+				}
+				catch (Exception) {
+					// Teardown must not hide an assertion failure.
+				}
+			}
+			try {
+				if (!_process.HasExited) {
+					_process.Kill(entireProcessTree: true);
+					await _process.WaitForExitAsync(new CancellationTokenSource(TimeSpan.FromSeconds(10)).Token);
+				}
+			}
+			catch (Exception) {
+				// Best-effort teardown of a child this fixture owns.
+			}
+			if (_standardErrorPump is not null) {
+				await Task.WhenAny(_standardErrorPump, Task.Delay(TimeSpan.FromSeconds(2)));
+			}
+			_process.Dispose();
+		}
+
+		private async Task ConnectAsync(CancellationToken cancellationToken) {
+			// Drained continuously: an undrained pipe eventually blocks the child, which would surface as an
+			// unexplained hang rather than as a failed assertion.
+			_standardErrorPump = Task.Run(async () => {
+				string? line;
+				while ((line = await _process.StandardError.ReadLineAsync()) is not null) {
+					lock (_standardError) {
+						_standardError.AppendLine(line);
+					}
+				}
+			});
+			StreamClientTransport transport = new(_process.StandardInput.BaseStream,
+				_process.StandardOutput.BaseStream, NullLoggerFactory.Instance);
+			Client = await McpClient.CreateAsync(transport,
+				new McpClientOptions {
+					ClientInfo = new Implementation { Name = "clio.mcp.e2e.eng-102333-parent", Version = "1.0.0" }
+				},
+				NullLoggerFactory.Instance, cancellationToken);
 		}
 	}
 }

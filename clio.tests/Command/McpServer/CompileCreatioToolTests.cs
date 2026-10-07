@@ -788,7 +788,7 @@ public sealed class CompileCreatioToolTests
 
 	[Test]
 	[Category("Unit")]
-	[Description("ENG-102333: compile-creatio's description and its curated contract both say what to do when the agent's own MCP client stops waiting first - poll compile-status, never compile again to check, and read last-compilation-log when compile-status has no record.")]
+	[Description("ENG-102333: compile-creatio's description and its curated contract both say what to do when the agent's own MCP client stops waiting first - poll compile-status, never compile again to check, and read last-compilation-log, whose undated verdict can be an earlier compile's, when compile-status has no record.")]
 	public void CompileCreatio_Description_And_Contract_Should_Cover_A_Client_Side_Timeout()
 	{
 		// Arrange
@@ -799,12 +799,14 @@ public sealed class CompileCreatioToolTests
 		// Act
 		string description = ((System.ComponentModel.DescriptionAttribute)method
 			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false).Single()).Description;
-		string contractDescription = contractTool
+		ToolAntiPattern recompile = contractTool
 			.GetToolContracts(new ToolContractGetArgs([CompileCreatioTool.CompileCreatioToolName]))
-			.Tools!.Single().Description;
+			.Tools!.Single().AntiPatterns!
+			.Single(pattern => pattern.Pattern
+				== $"{CompileCreatioTool.CompileCreatioToolName} → {CompileCreatioTool.CompileCreatioToolName}");
 
 		// Assert
-		foreach (string text in new[] { description, contractDescription })
+		foreach (string text in new[] { description, recompile.Why })
 		{
 			text.Should().Contain("Request timed out",
 				because: "an agent whose client gave up must recognise the case: the compile keeps running on the stand");
@@ -812,6 +814,8 @@ public sealed class CompileCreatioToolTests
 				because: "the record of the running compile is reached through compile-status");
 			text.Should().Contain(LastCompilationLogTool.ToolName,
 				because: "when compile-status holds no record, the environment's own verdict is read with last-compilation-log rather than by compiling again");
+			text.Should().Contain("FINISHED compile",
+				because: "last-compilation-log carries no time, so while this compile still runs it shows an earlier one's verdict");
 		}
 	}
 

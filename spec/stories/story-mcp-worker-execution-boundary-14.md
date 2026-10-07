@@ -56,7 +56,9 @@ a worker that outlives the response stops working on an answer nobody will ever 
       caller's pending slot.
 - [ ] AC-03 — The reuse decision for a cancelled sticky worker is explicit and written down (returned to the
       pool only after a bounded liveness confirmation — story 15 — or retired outright), not left to whichever
-      code path reaches the worker first.
+      code path reaches the worker first. Decided for both paths in ADR §3.2a: a cancelled poll (story 15) and,
+      since 2026-10-07 (ENG-102333), a cancelled starter keep the worker when the request was written — behind a
+      bounded liveness probe on reuse — and retire it when the send did not complete.
 - [ ] AC-04 — Per-call workers behave exactly as they do today; the supervisor kill remains their bound and no
       extra round trip is added to the hot path.
 - [ ] AC-05 — TC-E-404's claim ("the child stops issuing backend requests") is asserted for a STICKY worker on

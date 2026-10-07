@@ -51,7 +51,7 @@ public sealed class CompileStatusToolTests {
 	}
 
 	[Test]
-	[Description("Reports not-found (not an error) when no compile-creatio operation has ever run for the environment.")]
+	[Description("Reports not-found (not an error) when no compile-creatio operation has ever run for the environment, and the note does not read as 'nothing ran': it names last-compilation-log and warns that its undated verdict can be an earlier compile's (ENG-102333).")]
 	public void GetStatus_Should_ReturnNotFound_WhenNoOperationTrackedForEnvironment() {
 		// Arrange
 		CompileOperationRegistry registry = new();
@@ -64,24 +64,12 @@ public sealed class CompileStatusToolTests {
 		response.Success.Should().BeTrue(because: "an empty history is a legitimate state, not a tool error");
 		response.Status.Should().Be("not-found", because: "no operation was ever tracked for this environment");
 		response.EnvironmentName.Should().Be("sandbox", because: "the response must echo the queried environment name");
-	}
-
-	[Test]
-	[Description("ENG-102333: a not-found answer names last-compilation-log as the way to read the environment's latest compile verdict and says the missing record does not mean nothing ran - an MCP server restart or another client leaves a finished compile with no record in this session.")]
-	public void GetStatus_Should_PointToLastCompilationLog_WhenNoOperationIsTracked() {
-		// Arrange
-		CompileOperationRegistry registry = new();
-		CompileStatusTool tool = new(registry, CreateResolver("tenant-a"));
-
-		// Act
-		CompileStatusResponse response = tool.GetStatus(new CompileStatusArgs("sandbox", null));
-
-		// Assert
-		response.Status.Should().Be("not-found", because: "no operation is tracked in this session");
-		response.Note.Should().Contain(LastCompilationLogTool.ToolName,
-			because: "the environment still holds its latest compile verdict, and last-compilation-log reads it without compiling again");
 		response.Note.Should().Contain("does not mean no compile ran",
 			because: "a not-found that reads as 'nothing ran' sends an agent to compile again - a second runtime reload for every user");
+		response.Note.Should().Contain(LastCompilationLogTool.ToolName,
+			because: "the environment still holds its latest compile verdict, and last-compilation-log reads it without compiling");
+		response.Note.Should().Contain("carries no time",
+			because: "that verdict belongs to the latest FINISHED build, so read while a compile runs it is an earlier one's");
 	}
 
 	[Test]

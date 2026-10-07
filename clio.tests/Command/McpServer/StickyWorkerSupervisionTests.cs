@@ -1684,7 +1684,7 @@ public sealed class StickyWorkerSupervisionTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("ENG-102333: a compile whose caller gave up keeps the target's configuration-build reservation for as long as it actually runs, and gives it back when the worker reports the compile ended - so the next compile is admitted, by a new worker, rather than refused for the linger or the lifetime bound.")]
+	[Description("ENG-102333: a compile whose caller gave up keeps the target's configuration-build reservation for as long as it actually runs, and gives it back the moment the worker reports the compile ended rather than at the lifetime bound, and its status poll is still answered after that.")]
 	public async Task DispatchAsync_ShouldReleaseTheReservation_WhenACancelledCompilesWorkerSignalsCompletion() {
 		// Arrange
 		using StickyFixture fixture = CreateFixture(concurrencyCap: 2,

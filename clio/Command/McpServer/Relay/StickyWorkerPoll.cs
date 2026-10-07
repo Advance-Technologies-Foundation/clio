@@ -147,9 +147,8 @@ public sealed class StickyWorkerPoll : IStickyWorkerPoll {
 			// use it after an in-progress note, and the shipped workspace template says "poll
 			// compile-status" verbatim, so a caller polling twice is the DOCUMENTED usage. The second poll
 			// then found no entry, fell through to an ordinary per-call worker whose in-worker operation
-			// registry is empty, and the tool answered "no compile-creatio operation has been recorded for
-			// this environment in the current MCP server session" — a sentence that is false, about an
-			// operation the parent had just destroyed: poll one answers 'failed', poll two 'not-found'.
+			// registry is empty, and the tool answered 'not-found' — no record in this MCP server session — about
+			// an operation the parent had just destroyed: poll one answers 'failed', poll two 'not-found'.
 			//
 			// The slot concern it was solving is already solved elsewhere and better: a starter arriving for
 			// this key SUPERSEDES a lingering completed worker (see DispatchStickyAsync), so the next long

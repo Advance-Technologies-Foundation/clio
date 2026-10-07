@@ -1,13 +1,11 @@
 ---
-description: a client cancelling CallToolAsync does not flip the tool's CancellationToken in the e2e harness - nor the parent's dispatcher token; an e2e that "proves" cancellation that way passes for the wrong reason; send notifications/cancelled with a known request id instead
+description: a client cancelling CallToolAsync does not flip the tool's CancellationToken in the e2e harness; an e2e that "proves" cancellation by counting requests too early passes for the wrong reason
 applies-to:
   - clio/Command/McpServer/Tools/ODataCreateTool.cs
   - clio/Command/McpServer/Tools/ODataReadToFileTool.cs
   - clio.mcp.e2e/ODataFileModeSuccessE2ETests.cs
-  - clio.mcp.e2e/CompileCreatioClientTimeoutE2ETests.cs
-  - clio.mcp.e2e/Support/Mcp/McpServerSession.cs
 ticket: "1221"
-date: 2026-10-07
+date: 2026-09-02
 ---
 
 **What is true** — an MCP tool method can take a `CancellationToken`, the SDK binds it, and `clio-run`
@@ -26,14 +24,3 @@ cancellation e2e waited only two row-delays and passed; waiting longer than the 
 rows had been sent. Any test of this shape must wait longer than the work would take if nothing stopped it,
 and if it then fails, the conclusion is that cancellation is not delivered — not that the tool ignores it.
 Cancellation guards belong in unit tests, where the token is under the test's control.
-
-**It is not just the tool's token (ENG-102333, measured 2026-10-07).** The PARENT's token does not flip
-either: with the worker boundary in place, the unfixed parent reaps a sticky starter's worker when its
-caller cancels, yet an e2e that cancelled `CallToolAsync` once the compile was running inside the worker
-saw `compile-status` answer `running` - the parent had never been told, so the test passed against the
-very defect it was written for. A real client does tell it: Claude Code with `MCP_TOOL_TIMEOUT=60000`
-killed the worker at exactly 60 s on a stand. What works in this harness is to write the wire sequence
-yourself - `session.Client.SendRequestAsync` with a `JsonRpcRequest` whose `Id` you chose, then
-`session.Client.SendNotificationAsync(NotificationMethods.CancelledNotification, new CancelledNotificationParams
-{ RequestId = thatId })` - after which the same e2e failed on the unfixed server with `not-found`, as it
-must. `CompileCreatioClientTimeoutE2ETests.CallCompileAndGiveUpAsync` is the worked example.
