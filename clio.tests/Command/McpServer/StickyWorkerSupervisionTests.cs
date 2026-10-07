@@ -119,6 +119,12 @@ public sealed class StickyWorkerSupervisionTests {
 	/// </summary>
 	private static readonly TimeSpan ProbeBoundCeiling = TimeSpan.FromSeconds(3);
 
+	/// <summary>
+	/// How long a starter that must be REFUSED is given: a refusal is answered before anything is spawned,
+	/// so anything near this bound means the call was admitted instead.
+	/// </summary>
+	private static readonly TimeSpan RefusalBound = TimeSpan.FromSeconds(10);
+
 	private ILogger _logger;
 	private IProcessExecutor _processExecutor;
 	private IClioExecutablePathProvider _pathProvider;
@@ -1585,6 +1591,194 @@ public sealed class StickyWorkerSupervisionTests {
 			because: "a worker that failed its probe is retired then and there, or its admission slot and reservation stay held until expiry for a process nothing can talk to");
 	}
 
+	// ---------------------------------------------------------------------------------------------
+	// ENG-102333 — a STARTER whose caller gives up is the same two cases as a poll whose caller gives up.
+	// The client's own request timeout (Claude Code: "Request timed out") cancels the call it is waiting
+	// for; the operation it started is already running in the worker, which holds its only record.
+	// ---------------------------------------------------------------------------------------------
+
+	[TestCase(CompileToolName, CompileStatusToolName, McpToolOperationFamily.ConfigurationBuild,
+		McpToolSharedFileResource.ConfigurationBuild)]
+	[TestCase(RestartToolName, RestartStatusToolName, McpToolOperationFamily.Restart,
+		McpToolSharedFileResource.None)]
+	[Category("Unit")]
+	[Description("ENG-102333: a starter whose CALLER cancelled after the request was written to the worker - an MCP client's own request timeout - leaves the sticky worker registered, so the family's status poll reaches the process that holds the operation record instead of a fresh worker that answers not-found. The worker is proved alive before the poll reuses its session.")]
+	public async Task DispatchAsync_ShouldKeepTheStickyWorkerForItsPoll_WhenTheCallerCancelsAStarterAfterItsRequestWasWritten(
+		string starterName, string pollerName, McpToolOperationFamily family, McpToolSharedFileResource resource) {
+		// Arrange - a total of two admits exactly one sticky worker, so a poll that went through admission
+		// instead of reaching the kept worker would be refused, not quietly served by a second process.
+		using StickyFixture fixture = CreateFixture(concurrencyCap: 2,
+			callScript: new ChildCallScript(starterName, BlockHeldCallSends: false));
+		using CancellationTokenSource caller = new();
+		Task<CallToolResult> starting = fixture.DispatchAsync(starterName, StarterMetadata(family, resource),
+			EnvironmentName, caller.Token);
+		await WaitUntilAsync(() => fixture.Children.Count == 1 && fixture.Children[0].HeldCallCount == 1);
+
+		// Act
+		await caller.CancelAsync();
+		Func<Task> awaitingTheStarter = async () => await starting;
+		await awaitingTheStarter.Should().ThrowAsync<OperationCanceledException>(
+			because: "the caller that gave up must still see its own cancellation; keeping the worker is a decision about the OPERATION, not an answer to a caller who is no longer listening");
+		await WaitUntilAsync(() => fixture.Children[0].CancellationsReceived == 1);
+		int registeredAfterCancel = fixture.StickyWorkers.Count;
+		CallToolResult status = await fixture.DispatchAsync(pollerName, PollerMetadata(family, resource),
+			EnvironmentName);
+
+		// Assert
+		fixture.Children[0].CancellationsReceived.Should().Be(1,
+			because: "the worker had the request, so it is TOLD through notifications/cancelled (story 14) - which is what proves the send completed and this is the clean-cancellation case");
+		registeredAfterCancel.Should().Be(1,
+			because: "the request reached the worker, so the operation is running there and the worker is the only place its record lives; reaping it here is what turned the reporter's compile-status into not-found");
+		status.IsError.Should().NotBeTrue(
+			because: "the poll must be answered by the kept worker rather than refused for want of the slot that worker holds");
+		fixture.Containment.LaunchCount.Should().Be(1,
+			because: "the poll must reach the worker that holds the operation; a second launch is the fresh per-call worker whose empty registry answers not-found");
+		fixture.Children[0].CallCount.Should().Be(1,
+			because: "the one answered call on that worker is the poll - the abandoned starter is still running, never answered");
+		fixture.Children[0].ReceivedMethods.Should().ContainInOrder(
+			new[] { CallToolMethodName, ListToolsMethodName, CallToolMethodName },
+			because: "the session carried an abandoned call, so its reuse is preceded by the bounded liveness probe, exactly as the poll path does after its own clean cancellation (ADR 3.2a)");
+		fixture.Supervisor.GetSnapshot().ActiveStickyWorkers.Should().Be(1,
+			because: "the kept worker still holds its admission slot - the slot comes back when the operation ends, not when the caller stops waiting");
+	}
+
+	[TestCase(CompileToolName, McpToolOperationFamily.ConfigurationBuild,
+		McpToolSharedFileResource.ConfigurationBuild, "clio-configuration-build-in-progress")]
+	[TestCase(InstallProcessBuilderToolName, McpToolOperationFamily.ConfigurationBuild,
+		McpToolSharedFileResource.ConfigurationBuild, "clio-configuration-build-in-progress")]
+	[TestCase(RestartToolName, McpToolOperationFamily.Restart, McpToolSharedFileResource.None,
+		LongOperationInProgressErrorClass)]
+	[Category("Unit")]
+	[Description("ENG-102333: while the operation of a starter whose caller gave up is still running, a second starter for the same target is refused as already in progress and creates nothing - a client that timed out and calls again must not start a second compile, install or restart on the stand.")]
+	public async Task DispatchAsync_ShouldRefuseASecondStarter_WhileACancelledStartersOperationIsStillRunning(
+		string starterName, McpToolOperationFamily family, McpToolSharedFileResource resource,
+		string expectedErrorClass) {
+		// Arrange
+		using StickyFixture fixture = CreateFixture(concurrencyCap: 8,
+			callScript: new ChildCallScript(starterName, BlockHeldCallSends: false));
+		using CancellationTokenSource caller = new();
+		Task<CallToolResult> starting = fixture.DispatchAsync(starterName, StarterMetadata(family, resource),
+			EnvironmentName, caller.Token);
+		await WaitUntilAsync(() => fixture.Children.Count == 1 && fixture.Children[0].HeldCallCount == 1);
+		await caller.CancelAsync();
+		Func<Task> awaitingTheStarter = async () => await starting;
+		await awaitingTheStarter.Should().ThrowAsync<OperationCanceledException>(
+			because: "the arrangement depends on the first starter genuinely being abandoned by its caller");
+
+		// Act - bounded: a refusal answers at once, while a starter that was ADMITTED would sit on the held
+		// call for the whole sticky call budget, and that must fail this case quickly rather than slowly.
+		using CancellationTokenSource refusalBound = new(RefusalBound);
+		Func<Task<CallToolResult>> secondStarter = () => fixture.DispatchAsync(starterName,
+			StarterMetadata(family, resource), EnvironmentName, refusalBound.Token);
+		CallToolResult second = (await secondStarter.Should().NotThrowAsync(
+			because: "a second starter must be REFUSED at once; one that was admitted and started a second operation waits on its own call instead")).Subject;
+
+		// Assert
+		second.IsError.Should().BeTrue(
+			because: "the first operation is still running on the target; starting another is what the reservation and the registry exist to refuse");
+		ReadErrorClass(second).Should().Be(expectedErrorClass,
+			because: "the refusal must say the operation is ALREADY RUNNING, which tells the agent to poll rather than to retry");
+		fixture.Containment.LaunchCount.Should().Be(1,
+			because: "a refused starter must create nothing: no second worker, and therefore no second request to Creatio");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-102333: a compile whose caller gave up keeps the target's configuration-build reservation for as long as it actually runs, and gives it back when the worker reports the compile ended - so the next compile is admitted, by a new worker, rather than refused for the linger or the lifetime bound.")]
+	public async Task DispatchAsync_ShouldReleaseTheReservation_WhenACancelledCompilesWorkerSignalsCompletion() {
+		// Arrange
+		using StickyFixture fixture = CreateFixture(concurrencyCap: 2,
+			callScript: new ChildCallScript(CompileToolName, BlockHeldCallSends: false));
+		McpToolExecutionMetadata compile = StarterMetadata(McpToolOperationFamily.ConfigurationBuild,
+			McpToolSharedFileResource.ConfigurationBuild);
+		using CancellationTokenSource caller = new();
+		Task<CallToolResult> starting = fixture.DispatchAsync(CompileToolName, compile, EnvironmentName,
+			caller.Token);
+		await WaitUntilAsync(() => fixture.Children.Count == 1 && fixture.Children[0].HeldCallCount == 1);
+		await caller.CancelAsync();
+		Func<Task> awaitingTheStarter = async () => await starting;
+		await awaitingTheStarter.Should().ThrowAsync<OperationCanceledException>(
+			because: "the arrangement depends on the compile's caller genuinely giving up");
+		int heldWhileRunning = fixture.Reservations.HeldCount;
+
+		// Act - the detached compile ends inside the worker, which says so on the private channel.
+		await fixture.Children[0].SendCompletionSignalAsync(McpToolOperationFamily.ConfigurationBuild,
+			exitCode: 1);
+		await WaitUntilAsync(() => fixture.Reservations.HeldCount == 0);
+		CallToolResult next = await fixture.DispatchAsync(CompileStatusToolName,
+			PollerMetadata(McpToolOperationFamily.ConfigurationBuild, McpToolSharedFileResource.ConfigurationBuild),
+			EnvironmentName);
+
+		// Assert
+		heldWhileRunning.Should().Be(1,
+			because: "a compile that is still running server-side must keep denying a second configuration build for its target, whoever stopped waiting for it");
+		fixture.Reservations.HeldCount.Should().Be(0,
+			because: "the reservation is released the moment the compile actually ends, not at the lifetime bound half an hour later");
+		next.IsError.Should().NotBeTrue(
+			because: "after the compile ended the poll is still answered - from the worker lingering with the finished record, or from a fresh one once that worker has gone - and never refused");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-102333: a starter whose caller gave up BEFORE the request was fully written still releases its worker at once - the session may hold half a JSON-RPC frame (ADR 3.2a), the worker never received the call, so there is no operation to keep and its slot and the target's reservation come back immediately.")]
+	public async Task DispatchAsync_ShouldReleaseTheWorker_WhenTheCallerCancelsAStarterBeforeItsRequestWasWritten() {
+		// Arrange
+		using StickyFixture fixture = CreateFixture(concurrencyCap: 2,
+			callScript: new ChildCallScript(CompileToolName, BlockHeldCallSends: true));
+		using CancellationTokenSource caller = new();
+		Task<CallToolResult> starting = fixture.DispatchAsync(CompileToolName,
+			StarterMetadata(McpToolOperationFamily.ConfigurationBuild, McpToolSharedFileResource.ConfigurationBuild),
+			EnvironmentName, caller.Token);
+		await WaitUntilAsync(() => fixture.Children.Count == 1 && fixture.Children[0].BlockedSendCount == 1);
+
+		// Act
+		await caller.CancelAsync();
+		Func<Task> awaitingTheStarter = async () => await starting;
+		await awaitingTheStarter.Should().ThrowAsync<OperationCanceledException>(
+			because: "the caller must still see its own cancellation");
+		await WaitUntilAsync(() => fixture.Supervisor.GetSnapshot().ActiveStickyWorkers == 0);
+
+		// Assert
+		fixture.Children[0].HeldCallCount.Should().Be(0,
+			because: "the arrangement is the INCOMPLETE send: the worker never received the call, so nothing was started on the stand");
+		fixture.StickyWorkers.Count.Should().Be(0,
+			because: "a session whose send did not complete is retired, never reused (ADR 3.2a), and a worker that never received its call holds no operation worth keeping");
+		fixture.Reservations.HeldCount.Should().Be(0,
+			because: "no configuration build was started, so the target must not stay reserved for one");
+		fixture.Supervisor.GetSnapshot().ActiveStickyWorkers.Should().Be(0,
+			because: "the released worker's admission slot must come back at once");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-102333 edge case: a starter whose caller gave up while the worker was still being spawned or handshaking sent nothing to the stand, so the worker is released at once and nothing is left registered for a poll to report as running.")]
+	public async Task DispatchAsync_ShouldReleaseTheWorker_WhenTheCallerCancelsAStarterDuringTheHandshake() {
+		// Arrange - the handshake is held long enough for the caller to give up inside it.
+		using StickyFixture fixture = CreateFixture(concurrencyCap: 2, handshakeDelay: TimeSpan.FromSeconds(5));
+		using CancellationTokenSource caller = new();
+		Task<CallToolResult> starting = fixture.DispatchAsync(CompileToolName,
+			StarterMetadata(McpToolOperationFamily.ConfigurationBuild, McpToolSharedFileResource.ConfigurationBuild),
+			EnvironmentName, caller.Token);
+		await WaitUntilAsync(() => fixture.Children.Count == 1);
+
+		// Act
+		await caller.CancelAsync();
+		Func<Task> awaitingTheStarter = async () => await starting;
+		await awaitingTheStarter.Should().ThrowAsync<OperationCanceledException>(
+			because: "the caller must still see its own cancellation");
+		await WaitUntilAsync(() => fixture.Supervisor.GetSnapshot().ActiveStickyWorkers == 0);
+
+		// Assert
+		fixture.Children[0].CallCount.Should().Be(0,
+			because: "the arrangement is a cancellation BEFORE the call was relayed, so the stand received nothing");
+		fixture.StickyWorkers.Count.Should().Be(0,
+			because: "nothing was started, so nothing may be left registered for compile-status to report as running");
+		fixture.Reservations.HeldCount.Should().Be(0,
+			because: "a compile that never started must not keep its target reserved");
+		fixture.Supervisor.GetSnapshot().ActiveStickyWorkers.Should().Be(0,
+			because: "the worker's admission slot must come back at once");
+	}
+
 
 	// ---------------------------------------------------------------------------------------------
 	// Helpers
@@ -1684,11 +1878,12 @@ public sealed class StickyWorkerSupervisionTests {
 	}
 
 	private StickyFixture CreateFixture(int concurrencyCap, TimeSpan? completionLinger = null,
-		TimeSpan? handshakeDelay = null, TimeProvider clock = null, TimeSpan? supervisionInterval = null) {
+		TimeSpan? handshakeDelay = null, TimeProvider clock = null, TimeSpan? supervisionInterval = null,
+		ChildCallScript callScript = null) {
 		// The delay is a STATED arrangement, not a sleep in a test: it holds a starter inside the
 		// spawn-to-register window long enough for a second starter of the same key to be there too, which
 		// is the only condition under which the lost race happens at all.
-		PipedContainment containment = new(handshakeDelay ?? TimeSpan.Zero);
+		PipedContainment containment = new(handshakeDelay ?? TimeSpan.Zero, callScript ?? ChildCallScript.AnswerAll);
 		WorkerProcessSupervisor supervisor = new(_logger, _processExecutor, containment, _pathProvider,
 			_staleWorkers, concurrencyCap, ShortQueueWaitBound);
 		// The clock is the registry's OWN seam: it judges expiry and schedules the lifetime deadline on
@@ -1741,8 +1936,21 @@ public sealed class StickyWorkerSupervisionTests {
 
 		internal IReadOnlyList<ScriptedChild> Children => Containment.Children;
 
-		internal async Task<CallToolResult> DispatchAsync(string toolName,
+		internal Task<CallToolResult> DispatchAsync(string toolName,
 			McpToolExecutionMetadata metadata, string environmentName) =>
+			DispatchAsync(toolName, metadata, environmentName, CancellationToken.None);
+
+		/// <summary>
+		/// Dispatches a resident-shaped call under the CALLER's token, so a case can stand for a client that
+		/// stops waiting — which is what an MCP client's own request timeout does.
+		/// </summary>
+		/// <param name="toolName">The tool the route resolved to.</param>
+		/// <param name="metadata">The declared execution metadata for that tool.</param>
+		/// <param name="environmentName">The environment the call names.</param>
+		/// <param name="cancellationToken">The caller's token.</param>
+		/// <returns>The dispatch result.</returns>
+		internal async Task<CallToolResult> DispatchAsync(string toolName,
+			McpToolExecutionMetadata metadata, string environmentName, CancellationToken cancellationToken) =>
 			await _dispatcher.DispatchAsync(
 				new McpExecutionRoute(toolName, McpToolExecutionLocation.Worker,
 					McpExecutionDisposition.Worker, metadata),
@@ -1754,7 +1962,7 @@ public sealed class StickyWorkerSupervisionTests {
 					}
 				},
 				Client,
-				CancellationToken.None);
+				cancellationToken);
 
 		/// <summary>
 		/// Dispatches a routed call with params the test built itself, so a call shape other than the
@@ -1828,9 +2036,13 @@ public sealed class StickyWorkerSupervisionTests {
 		private readonly List<ScriptedChild> _ordered = [];
 		private readonly object _gate = new();
 		private readonly TimeSpan _handshakeDelay;
+		private readonly ChildCallScript _callScript;
 		private int _nextProcessId = 20_000;
 
-		internal PipedContainment(TimeSpan handshakeDelay) => _handshakeDelay = handshakeDelay;
+		internal PipedContainment(TimeSpan handshakeDelay, ChildCallScript callScript) {
+			_handshakeDelay = handshakeDelay;
+			_callScript = callScript;
+		}
 
 		public bool OwnsProcessCreation => true;
 
@@ -1851,7 +2063,7 @@ public sealed class StickyWorkerSupervisionTests {
 		}
 
 		public IContainedWorker Launch(WorkerLaunchRequest request) {
-			ScriptedChild child = new(Interlocked.Increment(ref _nextProcessId), _handshakeDelay);
+			ScriptedChild child = new(Interlocked.Increment(ref _nextProcessId), _handshakeDelay, _callScript);
 			_children.Add(child);
 			lock (_gate) {
 				_ordered.Add(child);
@@ -1887,11 +2099,17 @@ public sealed class StickyWorkerSupervisionTests {
 			new(TaskCreationOptions.RunContinuationsAsynchronously);
 		private readonly SemaphoreSlim _writeGate = new(1, 1);
 		private readonly TimeSpan _handshakeDelay;
+		private readonly ChildCallScript _callScript;
+		private readonly GatedChildInput _standardInput;
+		private readonly ConcurrentQueue<string> _receivedMethods = new();
 		private StreamWriter _toParent;
 		private int _callCount;
+		private int _heldCallCount;
+		private int _cancellationsReceived;
 
-		internal ScriptedChild(int processId, TimeSpan handshakeDelay) {
+		internal ScriptedChild(int processId, TimeSpan handshakeDelay, ChildCallScript callScript) {
 			_handshakeDelay = handshakeDelay;
+			_callScript = callScript;
 			ProcessId = processId;
 			StartTimeUtc = DateTime.UtcNow;
 			_parentToChildReader = new AnonymousPipeServerStream(PipeDirection.In, HandleInheritability.None);
@@ -1900,6 +2118,8 @@ public sealed class StickyWorkerSupervisionTests {
 			_childToParentWriter = new AnonymousPipeServerStream(PipeDirection.Out, HandleInheritability.None);
 			_childToParentReader =
 				new AnonymousPipeClientStream(PipeDirection.In, _childToParentWriter.GetClientHandleAsString());
+			_standardInput = new GatedChildInput(_parentToChildWriter,
+				callScript.BlockHeldCallSends ? callScript.HeldToolName : null);
 		}
 
 		public int ProcessId { get; }
@@ -1908,7 +2128,22 @@ public sealed class StickyWorkerSupervisionTests {
 
 		public string ExecutablePath => "/scripted/clio";
 
-		public Stream StandardInput => _parentToChildWriter;
+		public Stream StandardInput => _standardInput;
+
+		/// <summary>
+		/// Gets how many <c>tools/call</c> requests for the script's held tool this child RECEIVED and left
+		/// unanswered — the state of a long operation the worker is still running.
+		/// </summary>
+		internal int HeldCallCount => Volatile.Read(ref _heldCallCount);
+
+		/// <summary>Gets how many <c>notifications/cancelled</c> the parent sent this child.</summary>
+		internal int CancellationsReceived => Volatile.Read(ref _cancellationsReceived);
+
+		/// <summary>Gets how many sends of the held tool's call were begun and never completed.</summary>
+		internal int BlockedSendCount => _standardInput.BlockedSendCount;
+
+		/// <summary>Gets every JSON-RPC method this child received, in arrival order.</summary>
+		internal IReadOnlyList<string> ReceivedMethods => [.. _receivedMethods];
 
 		public Stream StandardOutput => _childToParentReader;
 
@@ -1985,6 +2220,29 @@ public sealed class StickyWorkerSupervisionTests {
 		private async Task AnswerAsync(string line) {
 			JsonNode request = JsonNode.Parse(line);
 			string method = request?["method"]?.GetValue<string>();
+			if (method is not null) {
+				_receivedMethods.Enqueue(method);
+			}
+			if (method == NotificationMethods.CancelledNotification) {
+				Interlocked.Increment(ref _cancellationsReceived);
+				return;
+			}
+			if (method == ListToolsMethodName) {
+				// The bounded liveness probe a reused session must pass after an abandoned call.
+				await WriteAsync(new JsonObject {
+					["jsonrpc"] = "2.0",
+					["id"] = request["id"]?.DeepClone(),
+					["result"] = new JsonObject { ["tools"] = new JsonArray() }
+				}).ConfigureAwait(false);
+				return;
+			}
+			if (method == CallToolMethodName
+				&& string.Equals(request["params"]?["name"]?.GetValue<string>(), _callScript.HeldToolName,
+					StringComparison.Ordinal)) {
+				// A long operation that is still running: received, never answered.
+				Interlocked.Increment(ref _heldCallCount);
+				return;
+			}
 			if (method == "initialize") {
 				if (_handshakeDelay > TimeSpan.Zero) {
 					// A worker that takes a moment to come up: p50 spawn plus initialize measured 2.763 s on
@@ -2020,7 +2278,13 @@ public sealed class StickyWorkerSupervisionTests {
 		}
 
 		private async Task WriteAsync(JsonObject message) {
-			await _writeGate.WaitAsync().ConfigureAwait(false);
+			try {
+				await _writeGate.WaitAsync().ConfigureAwait(false);
+			}
+			catch (ObjectDisposedException) {
+				// The parent already released this worker; a worker that is gone writes nothing.
+				return;
+			}
 			try {
 				if (_toParent is not null) {
 					await _toParent.WriteLineAsync(message.ToJsonString()).ConfigureAwait(false);
@@ -2032,6 +2296,94 @@ public sealed class StickyWorkerSupervisionTests {
 			finally {
 				_writeGate.Release();
 			}
+		}
+	}
+
+	/// <summary>
+	/// What a <see cref="ScriptedChild"/> does with a <c>tools/call</c>.
+	/// </summary>
+	/// <param name="HeldToolName">
+	/// A tool whose calls the child receives and never answers — a long operation still running — or
+	/// <see langword="null"/> to answer every call.
+	/// </param>
+	/// <param name="BlockHeldCallSends">
+	/// Whether the parent's WRITE of that tool's call never completes, so a caller that gives up does so
+	/// before the request reached the worker (ADR 3.2a's incomplete send).
+	/// </param>
+	private sealed record ChildCallScript(string HeldToolName, bool BlockHeldCallSends) {
+
+		/// <summary>Answers every call at once, as every case written before ENG-102333 expects.</summary>
+		internal static ChildCallScript AnswerAll { get; } = new(HeldToolName: null, BlockHeldCallSends: false);
+	}
+
+	/// <summary>
+	/// The worker's standard input as the parent writes it, with one stated failure: a write carrying the
+	/// held tool's call can be made to never complete.
+	/// </summary>
+	/// <remarks>
+	/// The block waits on the WRITER's token, which is the caller's token threaded through the SDK's send,
+	/// so cancelling the call is what ends the write — with nothing of the frame written. That is the state
+	/// the relay reads as an incomplete send and retires the session over; a real half frame over real pipes
+	/// is already pinned by <c>WorkerMcpRelayTests.RequestAsync_ShouldRetireTheSession_WhenASendWasCancelledMidFrame</c>.
+	/// </remarks>
+	private sealed class GatedChildInput : Stream {
+
+		private readonly Stream _inner;
+		private readonly byte[] _blockedMarker;
+		private int _blockedSendCount;
+
+		internal GatedChildInput(Stream inner, string blockedToolName) {
+			_inner = inner;
+			_blockedMarker = blockedToolName is null
+				? null
+				: System.Text.Encoding.UTF8.GetBytes($"\"name\":\"{blockedToolName}\"");
+		}
+
+		internal int BlockedSendCount => Volatile.Read(ref _blockedSendCount);
+
+		public override bool CanRead => false;
+
+		public override bool CanSeek => false;
+
+		public override bool CanWrite => _inner.CanWrite;
+
+		public override long Length => throw new NotSupportedException();
+
+		public override long Position {
+			get => throw new NotSupportedException();
+			set => throw new NotSupportedException();
+		}
+
+		public override void Flush() => _inner.Flush();
+
+		public override Task FlushAsync(CancellationToken cancellationToken) => _inner.FlushAsync(cancellationToken);
+
+		public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+		public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+		public override void SetLength(long value) => throw new NotSupportedException();
+
+		public override void Write(byte[] buffer, int offset, int count) =>
+			WriteAsync(buffer.AsMemory(offset, count)).AsTask().GetAwaiter().GetResult();
+
+		public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
+			WriteAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+
+		public override async ValueTask WriteAsync(ReadOnlyMemory<byte> buffer,
+			CancellationToken cancellationToken = default) {
+			if (_blockedMarker is not null && buffer.Span.IndexOf(_blockedMarker) >= 0) {
+				Interlocked.Increment(ref _blockedSendCount);
+				await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
+			}
+			await _inner.WriteAsync(buffer, cancellationToken).ConfigureAwait(false);
+		}
+
+		protected override void Dispose(bool disposing) {
+			if (disposing) {
+				_inner.Dispose();
+			}
+			base.Dispose(disposing);
 		}
 	}
 

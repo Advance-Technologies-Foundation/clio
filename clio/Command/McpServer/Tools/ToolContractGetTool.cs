@@ -6269,7 +6269,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildCompileCreatio() {
 		return new ToolContractDefinition(
 			CompileCreatioTool.CompileCreatioToolName,
-			"Recompiles a registered Creatio environment and forces a runtime reload. Long-running (often several minutes). Reserved for C# schema changes, FSM-mode transitions, schema-missing runtime errors, and a culture just activated in the Languages section. Freedom UI page-body edits (validators, handlers, converters) do NOT require compilation — those changes are AMD modules served at runtime.",
+			"Recompiles a registered Creatio environment and forces a runtime reload. Long-running (often several minutes). Reserved for C# schema changes, FSM-mode transitions, schema-missing runtime errors, and a culture just activated in the Languages section. Freedom UI page-body edits (validators, handlers, converters) do NOT require compilation — those changes are AMD modules served at runtime. If your MCP client stops waiting before the compile answers (for example 'Request timed out'), the compile keeps running: never call compile-creatio again to check — poll `compile-status` with the same environment-name, and read `last-compilation-log` when it answers not-found.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName],
 				[

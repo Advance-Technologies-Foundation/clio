@@ -400,6 +400,27 @@ never reused.** Any code path that cancels a send on a sticky worker must retire
 "the send threw `OperationCanceledException`" is the signal. Stages 7 and 8 own the sticky pool, so this is
 their constraint to honour, not a Stage 4 detail.
 
+**Decided 2026-10-07 (ENG-102333): a cancelled STARTER is decided by the same fact as a cancelled poll.** Story
+14 left open what a cancelled starter means (its AC-03 asked for the reuse decision to be written down), and the
+first implementation reaped the worker on every caller cancellation. That is wrong for the families whose work
+outlives the call: an MCP client's own request timeout (Claude Code: `Request timed out`, followed by
+`notifications/cancelled`) fired before clio's 150 s in-progress answer, the parent reaped the worker that held
+the only `CompileOperationRegistry` record, and `compile-status` then answered `not-found` for compiles that ran
+to completion on the stand. So:
+
+- the request was **written** (session not retired, worker alive) → the worker is **kept** and marked
+  abandoned. Its tool already reserved the build, recorded the operation and handed the work to the detached
+  heartbeat, which runs it to the end; the status poll reaches it, the private completion signal (rule 5)
+  releases the target's reservation when the work really ends, and the completion linger and the lifetime bound
+  reap it. The next call over the session proves the worker alive with the bounded probe first, exactly as the
+  poll path does;
+- the send did **not** complete, the worker exited, or the cancellation came before the entry was registered
+  (spawn, handshake) → the worker is released at once, as before. Nothing reached the worker, so there is no
+  operation to keep, and a retired session is never reused.
+
+The terminal-stage family (§3.3) is unaffected: a cancelled deploy still kills its child and reports the last
+stage reached.
+
 #### 3.2b How far a structural guard can enforce rule 12 — corrected 2026-08-18
 
 Rule 12 is guarded structurally today: TC-U-401 walks `Assembly.GetTypes()` restricted to the relay's

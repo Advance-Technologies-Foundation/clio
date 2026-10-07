@@ -67,6 +67,41 @@ public sealed class CompileStatusToolTests {
 	}
 
 	[Test]
+	[Description("ENG-102333: a not-found answer names last-compilation-log as the way to read the environment's latest compile verdict and says the missing record does not mean nothing ran - an MCP server restart or another client leaves a finished compile with no record in this session.")]
+	public void GetStatus_Should_PointToLastCompilationLog_WhenNoOperationIsTracked() {
+		// Arrange
+		CompileOperationRegistry registry = new();
+		CompileStatusTool tool = new(registry, CreateResolver("tenant-a"));
+
+		// Act
+		CompileStatusResponse response = tool.GetStatus(new CompileStatusArgs("sandbox", null));
+
+		// Assert
+		response.Status.Should().Be("not-found", because: "no operation is tracked in this session");
+		response.Note.Should().Contain(LastCompilationLogTool.ToolName,
+			because: "the environment still holds its latest compile verdict, and last-compilation-log reads it without compiling again");
+		response.Note.Should().Contain("does not mean no compile ran",
+			because: "a not-found that reads as 'nothing ran' sends an agent to compile again - a second runtime reload for every user");
+	}
+
+	[Test]
+	[Description("ENG-102333: compile-status's own description tells an agent to poll it after its client stopped waiting for compile-creatio, and to fall back to last-compilation-log on not-found.")]
+	public void GetStatus_Description_Should_CoverAClientSideTimeoutAndTheNotFoundFallback() {
+		// Arrange
+		System.Reflection.MethodInfo method = typeof(CompileStatusTool).GetMethod(nameof(CompileStatusTool.GetStatus))!;
+
+		// Act
+		string description = ((System.ComponentModel.DescriptionAttribute)System.Attribute.GetCustomAttribute(
+			method, typeof(System.ComponentModel.DescriptionAttribute))!).Description;
+
+		// Assert
+		description.Should().Contain("Request timed out",
+			because: "an agent whose client gave up must know the compile keeps running and is tracked here");
+		description.Should().Contain(LastCompilationLogTool.ToolName,
+			because: "the description must name the fallback for a session that holds no record");
+	}
+
+	[Test]
 	[Description("Returns the latest tracked operation for the environment when operation-id is omitted.")]
 	public void GetStatus_Should_ReturnLatestOperation_WhenOperationIdOmitted() {
 		// Arrange

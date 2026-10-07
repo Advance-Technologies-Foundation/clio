@@ -723,6 +723,100 @@ public sealed class CompileCreatioToolTests
 
 	[Test]
 	[Category("Unit")]
+	[Description("ENG-102333: when the caller stops waiting for compile-creatio (an MCP client's own request timeout cancels the call), the compile already started keeps running: the record stays 'running', a second compile for the target is refused, and the compile still finishes, records its verdict and releases the configuration-build reservation. This is the worker half the parent relies on when it keeps such a worker.")]
+	public async Task CompileCreatio_Should_KeepTheOperationRunningAndFinishIt_WhenTheCallerCancelsTheCall()
+	{
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.GetTenantKey(Arg.Any<EnvironmentOptions>()).Returns("sandbox-tenant");
+		commandResolver.GetTargetKey(Arg.Any<EnvironmentOptions>()).Returns("sandbox-target");
+		using ManualResetEventSlim executeGate = new(false);
+		FakeCompileConfigurationCommand resolvedCommand = new() { ExecuteGate = executeGate };
+		commandResolver.Resolve<CompileConfigurationCommand>(Arg.Any<CompileConfigurationOptions>())
+			.Returns(resolvedCommand);
+		ICompileOperationRegistry registry = new CompileOperationRegistry();
+		CompileCreatioTool tool = new(ConsoleLogger.Instance, commandResolver, registry);
+		using CancellationTokenSource caller = new();
+
+		try
+		{
+			// Act
+			Task<CommandExecutionResult> abandoned = tool.CompileCreatio(new CompileCreatioArgs("sandbox", null),
+				cancellationToken: caller.Token);
+			await caller.CancelAsync();
+			Func<Task> awaitingTheCall = async () => await abandoned;
+			await awaitingTheCall.Should().ThrowAsync<OperationCanceledException>(
+				because: "a cancelled call is reported as cancelled; the client that cancelled is no longer waiting for a result");
+			CompileOperationStatus statusAfterCancel = registry.GetLatest("sandbox-tenant")!.Status;
+			CommandExecutionResult second = await tool.CompileCreatio(new CompileCreatioArgs("sandbox", null));
+			executeGate.Set();
+			bool finished = SpinWait.SpinUntil(
+				() => registry.GetLatest("sandbox-tenant")?.Status != CompileOperationStatus.Running,
+				TimeSpan.FromSeconds(10));
+			bool reservationReleased = SpinWait.SpinUntil(() => {
+				if (!McpToolExecutionLock.TryReserveConfigurationBuild("sandbox-target",
+						out McpToolExecutionLock.BuildReservation probe))
+				{
+					return false;
+				}
+				McpToolExecutionLock.ReleaseConfigurationBuild("sandbox-target", probe);
+				return true;
+			}, TimeSpan.FromSeconds(10));
+
+			// Assert
+			statusAfterCancel.Should().Be(CompileOperationStatus.Running,
+				because: "the compile was handed to the detached heartbeat before the caller gave up, so it is still running and compile-status must say so");
+			second.ExitCode.Should().Be(1,
+				because: "the first compile still owns the target, so a second one must be refused rather than started beside it");
+			second.Output.Should().Contain(message => message.Value != null
+					&& message.Value.ToString()!.Contains(CompileStatusTool.CompileStatusToolName),
+				because: "the refusal must send the caller to compile-status for the compile that is still running");
+			finished.Should().BeTrue(
+				because: "the compile runs to its end whatever happened to the call that started it");
+			registry.GetLatest("sandbox-tenant")!.Status.Should().Be(CompileOperationStatus.Succeeded,
+				because: "the verdict of the finished compile is recorded for compile-status to report");
+			reservationReleased.Should().BeTrue(
+				because: "the configuration-build reservation is released where the compile really ends, not when its caller stopped waiting");
+		}
+		finally
+		{
+			executeGate.Set();
+			ConsoleLogger.Instance.ClearMessages();
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-102333: compile-creatio's description and its curated contract both say what to do when the agent's own MCP client stops waiting first - poll compile-status, never compile again to check, and read last-compilation-log when compile-status has no record.")]
+	public void CompileCreatio_Description_And_Contract_Should_Cover_A_Client_Side_Timeout()
+	{
+		// Arrange
+		System.Reflection.MethodInfo method = typeof(CompileCreatioTool)
+			.GetMethod(nameof(CompileCreatioTool.CompileCreatio))!;
+		ToolContractGetTool contractTool = new();
+
+		// Act
+		string description = ((System.ComponentModel.DescriptionAttribute)method
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false).Single()).Description;
+		string contractDescription = contractTool
+			.GetToolContracts(new ToolContractGetArgs([CompileCreatioTool.CompileCreatioToolName]))
+			.Tools!.Single().Description;
+
+		// Assert
+		foreach (string text in new[] { description, contractDescription })
+		{
+			text.Should().Contain("Request timed out",
+				because: "an agent whose client gave up must recognise the case: the compile keeps running on the stand");
+			text.Should().Contain(CompileStatusTool.CompileStatusToolName,
+				because: "the record of the running compile is reached through compile-status");
+			text.Should().Contain(LastCompilationLogTool.ToolName,
+				because: "when compile-status holds no record, the environment's own verdict is read with last-compilation-log rather than by compiling again");
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Exposes destructive MCP metadata for compilation so hosts can prompt for confirmation before the long-running runtime reload.")]
 	public void CompileCreatio_Should_Expose_Expected_Mcp_Metadata()
 	{

@@ -474,6 +474,9 @@ public sealed partial class McpWorkerCallDispatcher {
 			return result;
 		}
 		catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) {
+			if (KeepAbandonedStarter(toolName, key, entry, ownershipTransferred)) {
+				throw;
+			}
 			await ReleaseStartedWorkerAsync(key, entry, ownershipTransferred).ConfigureAwait(false);
 			await ReleaseUnregisteredAsync(entry, lease, standardError, reservation).ConfigureAwait(false);
 			throw;
@@ -505,6 +508,56 @@ public sealed partial class McpWorkerCallDispatcher {
 				await entry.ReleaseAsync().ConfigureAwait(false);
 			}
 		}
+	}
+
+	/// <summary>
+	/// Decides what a starter whose CALLER gave up leaves behind: the worker and the operation it is
+	/// running, or nothing.
+	/// </summary>
+	/// <param name="toolName">The canonical tool name, for the log line.</param>
+	/// <param name="key">The key the worker is registered under.</param>
+	/// <param name="entry">The worker, or <see langword="null"/> when the session never opened.</param>
+	/// <param name="ownershipTransferred">Whether the registry took the entry.</param>
+	/// <returns>
+	/// <see langword="true"/> when the worker was KEPT: the caller's cancellation is rethrown and nothing is
+	/// released. <see langword="false"/> when the caller must release it.
+	/// </returns>
+	/// <remarks>
+	/// <para>
+	/// <b>The same two cases as a poll whose caller gave up (<see cref="StickyWorkerPoll"/>), decided by the
+	/// same fact.</b> An MCP client's own request timeout cancels the call it is waiting for — Claude Code
+	/// reports it as "Request timed out" and sends <c>notifications/cancelled</c> — and that is not a reason to
+	/// end the operation the call started (ENG-102333). Once the request has been WRITTEN, the worker has it:
+	/// its tool reserved the build, recorded the operation in the worker's own registry and handed the work to
+	/// the detached heartbeat, which runs it to the end whatever the call does. The worker is the only place
+	/// that record lives, so reaping it here is what made the reporter's <c>compile-status</c> answer
+	/// <c>not-found</c> for four compiles that ran to completion on the stand. Kept, the worker answers the
+	/// family's status poll, its private completion signal releases the target's reservation when the work
+	/// really ends, and the linger and the lifetime bound reap it as they reap any finished operation.
+	/// </para>
+	/// <para>
+	/// <b>A session that is no longer writable is released, as before.</b> A send the token interrupted may
+	/// have left half a JSON-RPC frame on the child's stdin (ADR §3.2a), so that session is retired and never
+	/// reused — and a worker that never received its call is running nothing worth keeping. A worker whose
+	/// process has ended has nothing to keep either. A cancellation before the entry was registered (spawn,
+	/// handshake) never sent the call at all.
+	/// </para>
+	/// <para>
+	/// The kept session carries an abandoned call, so the next call over it proves the worker alive with a
+	/// bounded probe first, exactly as a poll does after its own clean cancellation.
+	/// </para>
+	/// </remarks>
+	private bool KeepAbandonedStarter(string toolName, StickyWorkerKey key, StickyWorkerEntry entry,
+		bool ownershipTransferred) {
+		if (entry is null || !ownershipTransferred || entry.HasStoppedBeingReachable) {
+			return false;
+		}
+		entry.MarkCallAbandoned();
+		_logger.WriteInfo(string.Format(CultureInfo.InvariantCulture,
+			"The caller of '{0}' stopped waiting after the request reached its sticky worker; the worker is kept "
+			+ "so the operation family '{1}' runs to its end and its status poll can still reach it.",
+			toolName, key.Family));
+		return true;
 	}
 
 	/// <summary>
