@@ -1,6 +1,10 @@
 using System;
+using System.Buffers;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
+using System.Reflection;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Command.EntitySchemaDesigner;
@@ -25,12 +29,21 @@ public class UpdateEntitySchemaOptions : RemoteCommandOptions
 	public string SchemaName { get; set; }
 
 	[Option("operation", Required = false,
-		HelpText = "Structured operation JSON. Repeat the option for multiple values.")]
+		HelpText = "Structured operation JSON. Pass several values after one --operation; the flag itself cannot be repeated.")]
 	public IEnumerable<string> Operations { get; set; }
 
 	[Option("operations", Required = false,
-		HelpText = "JSON array of operations, e.g. '[{\"action\":\"add\",...}]'. Alternative to repeating --operation.")]
+		HelpText = "JSON array of operations, e.g. '[{\"action\":\"add\",...}]'. Applied after the --operation values.")]
 	public string? OperationsJson { get; set; }
+
+	/// <summary>
+	/// Path of a UTF-8 file holding a JSON array of operations (same format as <see cref="OperationsJson"/>).
+	/// Lets multi-line operation JSON reach clio from shells that mangle quotes, such as cmd.exe and
+	/// Windows PowerShell 5.1.
+	/// </summary>
+	[Option("operations-file", Required = false,
+		HelpText = "Path to a file with a JSON array of operations (same format as --operations; multi-line allowed). A relative path resolves from the current directory. The file must be UTF-8 (a BOM is allowed; UTF-16 with a BOM is also read). Applied after --operation and --operations.")]
+	public string? OperationsFile { get; set; }
 
 	[Option("caption-culture", Required = false, HelpText = "Override the culture used for written column captions/descriptions (e.g. en-US, uk-UA). Precedence: this override > the connected user's profile culture > en-US. Supplying it skips the profile-culture lookup.")]
 	public string? CaptionCulture { get; set; }
@@ -43,6 +56,12 @@ internal sealed record UpdateEntitySchemaOperationDefinition
 
 	[JsonPropertyName("column-name")]
 	public string ColumnName { get; init; }
+
+	/// <summary>
+	/// Alias of <see cref="ColumnName"/>, the field name the MCP tool and create-entity-schema use.
+	/// </summary>
+	[JsonPropertyName("name")]
+	public string Name { get; init; }
 
 	[JsonPropertyName("new-name")]
 	public string NewName { get; init; }
@@ -123,19 +142,49 @@ public class UpdateEntitySchemaCommand : Command<UpdateEntitySchemaOptions>
 		PropertyNameCaseInsensitive = true
 	};
 
+	/// <summary>
+	/// Longest user-supplied name an error message echoes before it is cut off.
+	/// </summary>
+	private const int MaxEchoedNameLength = 64;
+
+	/// <summary>
+	/// Longest user-supplied file path an error message echoes before it is cut off (the Windows MAX_PATH).
+	/// </summary>
+	private const int MaxEchoedPathLength = 260;
+
+	private static readonly Encoding StrictUtf8 = new UTF8Encoding(false, throwOnInvalidBytes: true);
+	private static readonly Encoding StrictUtf16LittleEndian = new UnicodeEncoding(false, false, throwOnInvalidBytes: true);
+	private static readonly Encoding StrictUtf16BigEndian = new UnicodeEncoding(true, false, throwOnInvalidBytes: true);
+
+	/// <summary>
+	/// Every top-level field an operation object may carry; anything else is rejected rather than ignored.
+	/// Internal so tests can prove every field the MCP tool emits is accepted here.
+	/// </summary>
+	internal static readonly string[] KnownOperationFields = typeof(UpdateEntitySchemaOperationDefinition)
+		.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+		.Select(property => property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name)
+		.Where(name => !string.IsNullOrEmpty(name))
+		.ToArray();
+
 	private readonly IRemoteEntitySchemaColumnManager _columnManager;
 	private readonly ILogger _logger;
+	private readonly IOptionSuggestionService _suggestionService;
+	private readonly IFileSystem _fileSystem;
 
-	public UpdateEntitySchemaCommand(IRemoteEntitySchemaColumnManager columnManager, ILogger logger) {
+	public UpdateEntitySchemaCommand(IRemoteEntitySchemaColumnManager columnManager, ILogger logger,
+		IOptionSuggestionService suggestionService, IFileSystem fileSystem) {
 		_columnManager = columnManager;
 		_logger = logger;
+		_suggestionService = suggestionService;
+		_fileSystem = fileSystem;
 	}
 
 	public override int Execute(UpdateEntitySchemaOptions options) {
 		try {
-			options.Operations = ResolveOperations(options);
+			List<LabelledOperation> resolved = ResolveOperations(options);
+			options.Operations = resolved.Select(operation => operation.Raw).ToList();
 			Validate(options);
-			List<ModifyEntitySchemaColumnOptions> operations = [.. BuildColumnMutations(options)];
+			List<ModifyEntitySchemaColumnOptions> operations = [.. BuildColumnMutations(options, resolved)];
 			foreach (ModifyEntitySchemaColumnOptions operation in operations) {
 				ModifyEntitySchemaColumnCommand.ValidateOptions(operation);
 			}
@@ -148,30 +197,82 @@ public class UpdateEntitySchemaCommand : Command<UpdateEntitySchemaOptions>
 		}
 	}
 
-	private static IEnumerable<string> ResolveOperations(UpdateEntitySchemaOptions options) {
-		List<string> ops = (options.Operations ?? []).ToList();
+	// A raw operation payload and the prefix its errors start with, so an error names the source the payload came from
+	// and counts the index within that source rather than across all of them.
+	private sealed record LabelledOperation(string Raw, string Label);
+
+	// Operation sources are additive and applied in a fixed order: --operation, --operations, --operations-file.
+	private List<LabelledOperation> ResolveOperations(UpdateEntitySchemaOptions options) {
+		List<LabelledOperation> ops = [.. (options.Operations ?? [])
+			.Select((raw, index) => new LabelledOperation(raw, $"Operation payload at index {index}"))];
 		if (!string.IsNullOrWhiteSpace(options.OperationsJson)) {
-			List<JsonElement> fromJson = JsonSerializer.Deserialize<List<JsonElement>>(options.OperationsJson)
-				?? throw new InvalidOperationException("--operations value is not a valid JSON array.");
-			ops.AddRange(fromJson.Select(e => e.GetRawText()));
+			ops.AddRange(ParseOperationsArray(options.OperationsJson, "--operations value"));
+		}
+		if (!string.IsNullOrWhiteSpace(options.OperationsFile)) {
+			string source = $"--operations-file '{SanitizeForMessage(options.OperationsFile, MaxEchoedPathLength)}'";
+			ops.AddRange(ParseOperationsArray(ReadOperationsFile(options.OperationsFile, source), source));
 		}
 		return ops;
 	}
 
-	private static IEnumerable<ModifyEntitySchemaColumnOptions> BuildColumnMutations(UpdateEntitySchemaOptions options) {
-		int index = 0;
-		foreach (string rawOperation in options.Operations) {
+	private string ReadOperationsFile(string path, string source) {
+		if (!_fileSystem.ExistsFile(path)) {
+			throw new InvalidOperationException($"{source} was not found.");
+		}
+		byte[] content;
+		try {
+			content = _fileSystem.ReadAllBytes(path);
+		} catch (Exception exception) when (exception is System.IO.IOException or UnauthorizedAccessException) {
+			throw new InvalidOperationException($"{source} could not be read.", exception);
+		}
+		return DecodeOperationsFile(content, source);
+	}
+
+	// Decodes strictly: a file in an ANSI code page (Windows PowerShell 5.1 Set-Content without -Encoding) must fail
+	// rather than save non-ASCII captions as U+FFFD. A UTF-8 BOM is stripped, and a UTF-16 BOM selects UTF-16.
+	private static string DecodeOperationsFile(byte[] content, string source) {
+		(Encoding encoding, int bomLength, string encodingName) = content switch {
+			[0xEF, 0xBB, 0xBF, ..] => (StrictUtf8, 3, "UTF-8"),
+			[0xFF, 0xFE, ..] => (StrictUtf16LittleEndian, 2, "UTF-16"),
+			[0xFE, 0xFF, ..] => (StrictUtf16BigEndian, 2, "UTF-16"),
+			_ => (StrictUtf8, 0, "UTF-8")
+		};
+		try {
+			return encoding.GetString(content, bomLength, content.Length - bomLength);
+		} catch (DecoderFallbackException exception) {
+			throw new InvalidOperationException($"{source} is not valid {encodingName}.", exception);
+		}
+	}
+
+	private static IEnumerable<LabelledOperation> ParseOperationsArray(string json, string source) {
+		List<JsonElement>? operations;
+		try {
+			operations = JsonSerializer.Deserialize<List<JsonElement>>(json);
+		} catch (JsonException exception) {
+			throw new InvalidOperationException($"{source} is not a valid JSON array of operations.", exception);
+		}
+		if (operations is null) {
+			throw new InvalidOperationException($"{source} is not a valid JSON array of operations.");
+		}
+		// Checked here, not in ParseOperation, so the error names the source and counts the index within it.
+		for (int index = 0; index < operations.Count; index++) {
+			if (operations[index].ValueKind != JsonValueKind.Object) {
+				throw new InvalidOperationException($"{source} item at index {index} is not a JSON object.");
+			}
+		}
+		return operations.Select((element, index) =>
+			new LabelledOperation(element.GetRawText(), $"{source} item at index {index}"));
+	}
+
+	private IEnumerable<ModifyEntitySchemaColumnOptions> BuildColumnMutations(UpdateEntitySchemaOptions options,
+		IEnumerable<LabelledOperation> resolved) {
+		foreach ((string rawOperation, string label) in resolved) {
 			if (string.IsNullOrWhiteSpace(rawOperation)) {
-				throw new InvalidOperationException($"Operation payload at index {index} is empty.");
+				throw new InvalidOperationException($"{label} is empty.");
 			}
 
-			UpdateEntitySchemaOperationDefinition operation;
-			try {
-				operation = JsonSerializer.Deserialize<UpdateEntitySchemaOperationDefinition>(rawOperation, JsonOptions)
-					?? throw new InvalidOperationException($"Operation payload at index {index} is empty.");
-			} catch (JsonException exception) {
-				throw new InvalidOperationException($"Operation payload at index {index} is not valid JSON.", exception);
-			}
+			UpdateEntitySchemaOperationDefinition operation = ParseOperation(rawOperation, label);
+			string columnName = ResolveColumnName(operation, label);
 			string? normalizedScalarTitle = NormalizeTitle(operation.Title);
 			TitleLocalizationNormalizationResult titleNormalization =
 				EntitySchemaDesignerSupport.NormalizeTitleLocalizations(
@@ -185,7 +286,7 @@ public class UpdateEntitySchemaCommand : Command<UpdateEntitySchemaOptions>
 				SchemaName = options.SchemaName,
 				CaptionCulture = options.CaptionCulture,
 				Action = operation.Action,
-				ColumnName = operation.ColumnName,
+				ColumnName = columnName,
 				NewName = operation.NewName,
 				Type = operation.Type,
 				Title = titleNormalization.EffectiveTitle,
@@ -211,8 +312,97 @@ public class UpdateEntitySchemaCommand : Command<UpdateEntitySchemaOptions>
 				DoNotControlIntegrity = operation.DoNotControlIntegrity,
 				UsageType = operation.UsageType
 			};
-			index++;
 		}
+	}
+
+	// Parses the payload once: unknown fields are rejected BEFORE typed deserialization, so a misspelled field is
+	// reported even when another field of the same payload has a value of the wrong type.
+	private UpdateEntitySchemaOperationDefinition ParseOperation(string rawOperation, string label) {
+		JsonDocument document;
+		try {
+			document = JsonDocument.Parse(rawOperation);
+		} catch (JsonException exception) {
+			throw new InvalidOperationException($"{label} is not valid JSON.", exception);
+		}
+		using (document) {
+			JsonElement root = document.RootElement;
+			if (root.ValueKind == JsonValueKind.Null) {
+				throw new InvalidOperationException($"{label} is empty.");
+			}
+			if (root.ValueKind != JsonValueKind.Object) {
+				throw new InvalidOperationException($"{label} must be a JSON object.");
+			}
+			RejectUnknownFields(root, label);
+			try {
+				return root.Deserialize<UpdateEntitySchemaOperationDefinition>(JsonOptions)
+					?? throw new InvalidOperationException($"{label} is empty.");
+			} catch (JsonException exception) {
+				// The text already parsed, so this is a well-formed value of the wrong type, not malformed JSON.
+				string path = SanitizeForMessage(string.IsNullOrEmpty(exception.Path) ? "$" : exception.Path);
+				throw new InvalidOperationException(
+					$"{label} has an invalid value at JSON path '{path}'.", exception);
+			}
+		}
+	}
+
+	private void RejectUnknownFields(JsonElement root, string label) {
+		foreach (JsonProperty property in root.EnumerateObject()) {
+			string name = ReadPropertyName(property, label);
+			if (KnownOperationFields.Contains(name, StringComparer.OrdinalIgnoreCase)) {
+				continue;
+			}
+			string suggestion = _suggestionService.SuggestName(name, KnownOperationFields);
+			string hint = suggestion is null ? string.Empty : $" Did you mean '{suggestion}'?";
+			throw new InvalidOperationException(
+				$"{label} has unknown field '{SanitizeForMessage(name)}'.{hint}");
+		}
+	}
+
+	// JsonDocument.Parse accepts an escaped lone surrogate such as "\uD800" in a field name; decoding it then throws
+	// a serializer InvalidOperationException whose text would otherwise reach the user as the command error.
+	private static string ReadPropertyName(JsonProperty property, string label) {
+		try {
+			return property.Name;
+		} catch (InvalidOperationException exception) {
+			throw new InvalidOperationException($"{label} is not valid JSON.", exception);
+		}
+	}
+
+	/// <summary>
+	/// Makes a user-supplied name safe to echo in an error message: the value is read as Unicode scalar values, so
+	/// control characters (terminal escape sequences, line breaks) and invisible format characters (bidirectional
+	/// overrides such as U+202E, zero-width characters such as U+200B, non-BMP tag characters such as U+E0041) are
+	/// removed whether they occupy one UTF-16 unit or a surrogate pair, and a lone surrogate, which is not a character
+	/// at all, is dropped. The result is cut to <paramref name="maxLength"/> UTF-16 units (by default
+	/// <see cref="MaxEchoedNameLength"/>) without splitting a surrogate pair.
+	/// </summary>
+	internal static string SanitizeForMessage(string value, int maxLength = MaxEchoedNameLength) {
+		StringBuilder printable = new(value.Length);
+		ReadOnlySpan<char> remaining = value;
+		while (!remaining.IsEmpty) {
+			OperationStatus status = Rune.DecodeFromUtf16(remaining, out Rune rune, out int consumed);
+			remaining = remaining[consumed..];
+			if (status != OperationStatus.Done || Rune.IsControl(rune)
+				|| Rune.GetUnicodeCategory(rune) == UnicodeCategory.Format) {
+				continue;
+			}
+			printable.Append(rune.ToString());
+		}
+		if (printable.Length <= maxLength) {
+			return printable.ToString();
+		}
+		int cut = char.IsHighSurrogate(printable[maxLength - 1]) ? maxLength - 1 : maxLength;
+		return printable.ToString(0, cut) + "...";
+	}
+
+	private static string ResolveColumnName(UpdateEntitySchemaOperationDefinition operation, string label) {
+		bool hasColumnName = !string.IsNullOrWhiteSpace(operation.ColumnName);
+		bool hasName = !string.IsNullOrWhiteSpace(operation.Name);
+		if (hasColumnName && hasName && !string.Equals(operation.ColumnName, operation.Name, StringComparison.Ordinal)) {
+			throw new InvalidOperationException(
+				$"{label} sets both 'column-name' ('{SanitizeForMessage(operation.ColumnName)}') and its alias 'name' ('{SanitizeForMessage(operation.Name)}'). Supply only one.");
+		}
+		return hasName && !hasColumnName ? operation.Name : operation.ColumnName;
 	}
 
 	private static string? NormalizeTitle(string? title) {
@@ -231,12 +421,12 @@ public class UpdateEntitySchemaCommand : Command<UpdateEntitySchemaOptions>
 			throw new InvalidOperationException("Schema name is required.");
 		}
 		if (options.Operations == null) {
-			throw new InvalidOperationException("At least one operation is required (use --operation or --operations).");
+			throw new InvalidOperationException("At least one operation is required (use --operation, --operations or --operations-file).");
 		}
 
 		using IEnumerator<string> enumerator = options.Operations.GetEnumerator();
 		if (!enumerator.MoveNext()) {
-			throw new InvalidOperationException("At least one operation is required (use --operation or --operations).");
+			throw new InvalidOperationException("At least one operation is required (use --operation, --operations or --operations-file).");
 		}
 	}
 }

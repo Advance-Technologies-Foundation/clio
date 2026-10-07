@@ -73,7 +73,7 @@ public class ModifyBusinessProcessTool(
 		 + "approval? (approval elements — same block as create-business-process), "
 		 + "performer? (performTask elements — same block as create-business-process: who performs the task), "
 		 + "signal? {entity, on:added|modified|deleted, changedColumns?:[<ColumnName>,...]}, "
-		 + "formula?), "
+		 + "formula?, scriptTask?), "
 		 + "removeElement (with 'elementName' = the element's local name or UId), addFlow "
 		 + "(with 'source' and 'target' element names, plus an optional 'kind' — sequence (default) | "
 		 + "conditional | default — for a conditional one its 'condition', and an optional 'label') / "
@@ -95,12 +95,11 @@ public class ModifyBusinessProcessTool(
 		 + "the FIRST true one is taken. No gateway is needed or created: the platform synthesizes one for a "
 		 + "conditional flow whose source is an activity. The condition is validated by the PLATFORM at the "
 		 + "pre-save gate, like a mapped 'expression' and by the same rule — it must be a bool (an int is refused: "
-		 + "the interpreted engine does not coerce), it must parse, every [#…#] parameter reference in it must "
-		 + "resolve in THIS process, and its macro family must be one a converter resolves, so [#Price#] does not "
-		 + "save. A refusal aborts the whole edit, writes nothing, and names the flow and the expression as the "
-		 + "converter left it; the character index comes only with the 'Formula value error:' PARSE family, so "
-		 + "do not wait for one on a type mismatch or an unknown identifier, and an unresolvable [#…#] "
-		 + "reference names the reference and the remedy instead of either. An empty condition is "
+		 + "the interpreted engine does not coerce), it must parse, and its macro family must be one a converter "
+		 + "resolves. Name a parameter as on create ([#Amount#], [#Read.ResultEntity.Owner#]) or write its UId meta "
+		 + "path exactly as the platform does (every segment dot-separated, prefix optional) - any other spelling, "
+		 + "or a column the read does not load, is refused. A refusal aborts the whole edit, writes nothing, and names the flow; the character index "
+		 + "comes only with the 'Formula value error:' PARSE family. An empty condition is "
 		 + "refused, because the platform stores one as the literal 'true' and the branch becomes always-taken; "
 		 + "to CHANGE a condition call setFlowCondition again - it overwrites in place and keeps the flow's "
 		 + "position. Do NOT remove the flow and add a plain one to 'clear' a condition: if it was the last "
@@ -161,31 +160,33 @@ public class ModifyBusinessProcessTool(
 		 + "[#BooleanValue.True#]. An expression is VALIDATED, by the PLATFORM, at the pre-save gate — so a bad "
 		 + "one aborts the whole edit with 'Process validation failed' and nothing is saved, rather than being "
 		 + "attributed to the one operation that carried it, which is why such a refusal reports NO "
-		 + "failedOperationIndex while one caused by a single operation reports its zero-based index (on CrtProcessBuilder this clio requires 1.6.6.40, for "
-		 + "sourceColumn and subProcess.multiInstanceOptions {enabled, executionMode, ignoreErrors}; this message "
-		 + "contract dates from 1.4.0.44 - the package stopped validating formulas a second time in .41, and .44 is "
-		 + "the first archive with that and the ENG-96325 lookup-constant contract). It must parse, every parameter "
-		 + "reference must resolve in THIS process, its result must fit the target parameter's DECLARED type (so a "
+		 + "failedOperationIndex while one caused by a single operation reports its zero-based index (on CrtProcessBuilder this clio requires 1.6.6.77, for "
+		 + "the meta-path checks, sourceColumn, scriptTask, addUsing/removeUsing/setMethods and subProcess.multiInstanceOptions; "
+		 + "1.4.0.41 is where the PACKAGE stopped validating formulas itself). It must parse, every parameter "
+		 + "reference must resolve in THIS process - a UId meta path exactly as the platform does (every segment "
+		 + "dot-separated, prefix optional), on a column the read loads - its result must fit the target parameter's DECLARED type (so a "
 		 + "fractional formula into an Integer parameter is refused), and every [#…#] macro family must be one a "
 		 + "converter resolves where you used it — an invented family and the real [#ColumnValue…#] and "
 		 + "[#SamplingColumnValue…#] are all three refused over a mapping onto a plain process parameter, measured. "
 		 + "A refusal always names the parametrized element or the parameter. The character index comes with a "
 		 + "PARSE fault only - a syntax error, 'Expression expected', 'No applicable method' - so do not wait "
 		 + "for one on a type mismatch ('Cannot convert type X to Y') or an unknown identifier ('Parameter X "
-		 + "not found'): those are the two commonest ways to get a formula wrong, and both already name what "
-		 + "to fix. When the expression IS quoted, it is quoted as the platform's own converter left it - NOT "
+		 + "not found'): both already name what to fix. When the expression IS quoted, it is quoted as the platform's own converter left it - NOT "
 		 + "as you wrote it: a parameter reference is shown by the "
 		 + "parameter NAME, a fractional literal gains an 'm' and a division gains a ((decimal)…) wrapper, so "
 		 + "do not conclude the wrong formula was validated. A newline is refused with 'Expression contains "
 		 + "invalid line break symbol' and quotes the expression as EMPTY; an unresolvable [#…#] parameter "
-		 + "reference is not in this family at all - it names the reference and the remedy instead. Must be "
+		 + "reference is not in this family at all - it names the reference and the remedy. Must be "
 		 + "one line; "
 		 + "a Lookup target's 'value' takes a bare non-empty record Guid (ships from CrtProcessBuilder 1.3.1.1; an "
 		 + "older-than-required environment is refused naming the version) - describe reports its resolved NAME "
 		 + "as valueDisplay beside the unchanged Guid, and an already-composed [#Lookup…#] macro is also accepted "
 		 + "and decoded, so a described value re-submits unchanged; a non-Guid value, Guid.Empty, or a Guid of "
 		 + "the WRONG entity (e.g. a role id on the Contact-typed OwnerId - use the element-level 'performer' "
-		 + "block for a TEAM) is refused naming why. get-guidance name=process-parameters owns the full contract, "
+		 + "block for a TEAM) is refused naming why; a schema-registry Lookup (Add/Delete data "
+		 + "EntitySchemaId, Modify data EntitySchemaUId) holds the schema UId, never a row Id; only setElement sets "
+		 + "or changes that object. "
+		 + "get-guidance name=process-parameters owns the full contract, "
 		 + "including the same rule for a Lookup parameter's DEFAULT. Re-mapping an already-bound target "
 		 + "overwrites it in place — there is no removeMapping/clear op), "
 		 + "setParameter (with 'parameterName' = the target parameter by name/UId and 'parameterUpdate' = any of "
@@ -199,7 +200,8 @@ public class ModifyBusinessProcessTool(
 		 + "parameter, an element mapping, an execution-context parameter or a conditional-flow CONDITION still "
 		 + "references it — including from inside a sub-process; the refusal names each site), setFilter (elementName + a 'filter': {object, logicalOperation:and|or, "
 		 + "conditions:[{column (may be a lookup dot-path), comparison:equal|notEqual|greater|less|contains|isNull|..., "
-		 + "one of value|processParameter|elementParameter {elementName, parameter, column?}|expression|macro "
+		 + "one of value|processParameter|elementParameter {elementName, parameter, column?}|expression "
+		 + "(bare, no [#...#])|macro "
 		 + "(+macroArgument), optional datePart}], groups?} — on a signalStart restricts the "
 		 + "record trigger (there its right side must be value/macro/datePart only, NOT a parameter reference — the "
 		 + "server rejects one); server serializes the platform filter), clearFilter (elementName), setSignal "
@@ -208,7 +210,7 @@ public class ModifyBusinessProcessTool(
 		 + "element and its flows; partial update: omit on to keep the current change type, omit entity to keep the "
 		 + "current one (retargeting it clears any old-entity filter), omit changedColumns to clear column tracking; "
 		 + "changedColumns is valid only for on:modified), setElement (elementName + an 'elementUpdate':"
-		 + "{useBackgroundMode?, readData?, changeData?, addData?, deleteData?, accessRights?, email?, approval?, formula?, performer?, openEditPage?, preconfiguredPage?, subProcess? (get-guidance name=process-element-catalog owns the formula block, name=process-sub-process owns the subProcess block)} — changes element-level fields IN PLACE, preserving the element and its "
+		 + "{useBackgroundMode?, readData?, changeData?, addData?, deleteData?, accessRights?, email?, approval?, formula?, scriptTask?, performer?, openEditPage?, preconfiguredPage?, subProcess? (get-guidance name=process-element-catalog owns the formula block, name=process-sub-process owns the subProcess block)} — changes element-level fields IN PLACE, preserving the element and its "
 		 + "flows; only the fields you pass change. readData "
 		 + "{source?, mode?:first|collection|count|aggregation, columns?, numberOfRecords? (collection only), "
 		 + "sort?:{column, direction?:asc|desc}, "
@@ -356,9 +358,11 @@ public class ModifyBusinessProcessTool(
 		 + "element parameters in place; only 'column' is read and a source is rejected. Idempotent, and it reports "
 		 + "which bindings it actually cleared, because a cleared connection vanishes from describe-business-process "
 		 + "and is then indistinguishable from one that was never bound). "
+		 + "addUsing / removeUsing (using:{namespace, alias?}) and setMethods (methods: C# class members as one "
+		 + "string, empty clears): the process-level usings and methods of its scriptTask C#. "
 		 + "Operations apply in order; any failure aborts the edit (nothing is saved). A SUCCESSFUL edit may still "
-		 + "report caveats: they arrive as entries with message-type \"Warning\" in execution-log-messages (there is "
-		 + "no separate 'warnings' field on the response) — outcomes that APPLIED but are not what you would assume. "
+		 + "report caveats: they arrive as entries with message-type \"Warning\" in execution-log-messages (no "
+		 + "separate 'warnings' field) — outcomes that APPLIED but are not what you would assume. "
 		 + "Read them, and note some are neutral acknowledgements (a column that was already unbound), not failures. "
 		 + "Use describe-business-process to inspect the current elements/names first. May remove elements — destructive. "
 		 + "Removals are NOT structurally validated (a broken graph can still be saved) and every edit re-lays-out the "
@@ -366,7 +370,7 @@ public class ModifyBusinessProcessTool(
 		 + "first. For a setFlowCondition operation or an 'expression' mapping source read get-guidance "
 			 + "name=process-formulas - it owns the accepted vocabulary, the reference syntax, what each "
 			 + "refusal names, and the length bound. "
-			 + "Requires the ProcessDesignService (CrtProcessBuilder) package; install with install-process-builder. After a successful edit the process stays INTERPRETED and runs as-is: do NOT run compile-creatio, and do NOT infer a compile need from a raw `VwSysProcess` read (its dirty flags are not a compile trigger) — verify with describe-business-process, whose response carries a compile-not-required note; a compile is needed only for a Script Task (custom C#), which clio cannot author.")]
+			 + "Requires the ProcessDesignService (CrtProcessBuilder) package; install with install-process-builder. Unless the edit adds a scriptTask (get-guidance name=process-script-task first), replaces its body or changes a using or the methods, the result carries the compile-not-required note: do NOT run compile-creatio, and do NOT infer a compile need from a raw `VwSysProcess` read. Such an edit warns compile-REQUIRED instead: ask the user, then run compile-creatio with process-name. Either signal covers THIS call only; a compile an earlier save owed stays owed.")]
 	public CommandExecutionResult ModifyBusinessProcess(
 		[Description("modify-business-process parameters")] [Required] ModifyBusinessProcessArgs args
 	) {
@@ -391,21 +395,12 @@ public class ModifyBusinessProcessTool(
 			OperationsJson = args.Operations,
 			ConfirmLayoutChange = args.ConfirmLayoutChange ?? false
 		};
-		// A business process edited by clio stays interpreted and runs as-is — editing it never needs
-		// compilation (clio cannot author a Script Task or an after-activity-save script, the only in-process
-		// C#). Emit the deterministic post-op note on success (same channel as update-entity-schema) so
-		// "edited" is not mistaken for "must be compiled to run"; do not run compile-creatio, and do not infer
-		// one from a raw process read (ENG-95706).
+		// An edit that leaves no new C# behind needs no compile, and the deterministic post-op note says so
+		// (ENG-95706). An edit that adds a script task, replaces its body or changes a using does need one: the
+		// server then warns that the process cannot run "until the configuration is compiled", and the gate
+		// drops the note rather than contradict it (ENG-92711). The gate appends, so a command-set note stays.
 		CommandExecutionResult result = InternalExecute<ModifyBusinessProcessCommand>(options);
-		if (result.ExitCode != 0) {
-			return result;
-		}
-		// Append (not clobber) so a command-set success note is preserved (mirrors PageCreateTool).
-		return result with {
-			Note = string.IsNullOrWhiteSpace(result.Note)
-				? CommandExecutionResult.CompileNotRequiredNote
-				: result.Note + " " + CommandExecutionResult.CompileNotRequiredNote
-		};
+		return result.ExitCode != 0 ? result : result.WithCompileNotRequiredNote();
 	}
 }
 

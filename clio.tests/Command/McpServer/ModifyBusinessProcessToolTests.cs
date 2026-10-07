@@ -384,19 +384,49 @@ public class ModifyBusinessProcessToolTests {
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("modify-business-process drops the compile-not-required note when the server warns that the process cannot run until the configuration is compiled - the warning a Script task produces (ENG-92711). The two cannot both be acted on, and the note used to be appended unconditionally.")]
+	public void ModifyBusinessProcess_Should_Not_Emit_CompileNotRequiredNote_When_The_Server_Requires_A_Compile() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeModifyBusinessProcessCommand resolvedCommand = new(warning: "Process 'UsrSampleProcess' carries C# in script task 'CalcTotal', so it cannot run until the configuration is compiled. Run compile-creatio on this environment after the save.");
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<ModifyBusinessProcessCommand>(Arg.Any<ModifyBusinessProcessOptions>())
+			.Returns(resolvedCommand);
+		ModifyBusinessProcessTool tool = new(new FakeModifyBusinessProcessCommand(), ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.ModifyBusinessProcess(
+			new ModifyBusinessProcessArgs("docker_fix2", SampleOperations, "UsrSampleProcess", null));
+
+		// Assert
+		result.ExitCode.Should().Be(0, because: "an edit that needs a compile still succeeded");
+		(result.Note ?? string.Empty).Should().NotContain(CommandExecutionResult.CompileNotRequiredNote,
+			because: "the server said this process cannot run until the configuration is compiled, and a note saying the opposite is what sends an agent past the compile");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
 	private sealed class FakeModifyBusinessProcessCommand : ModifyBusinessProcessCommand {
 		private readonly int _exitCode;
+		private readonly string? _warning;
 
 		public ModifyBusinessProcessOptions? CapturedOptions { get; private set; }
 
-		public FakeModifyBusinessProcessCommand(int exitCode = 0)
+		public FakeModifyBusinessProcessCommand(int exitCode = 0, string? warning = null)
 			: base(Substitute.For<IModifyBusinessProcessService>(), Substitute.For<IProcessDescriber>(),
 				Substitute.For<ILogger>()) {
 			_exitCode = exitCode;
+			_warning = warning;
 		}
 
 		public override int Execute(ModifyBusinessProcessOptions options) {
 			CapturedOptions = options;
+			// The real command writes the server's warnings through the logger the tool captures; the fake
+			// writes one the same way.
+			if (_warning != null) {
+				ConsoleLogger.Instance.WriteWarning(_warning);
+			}
 			return _exitCode;
 		}
 	}
@@ -423,6 +453,53 @@ public class ModifyBusinessProcessToolTests {
 			surface.Should().NotContain("match no records",
 				because: "the same inversion in the future tense - both phrasings reached shipped text before");
 		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-102114: clio-knowledge decides whether a modify-path condition takes [#Name#] forms by finding the exact phrase 'every segment dot-separated' in this contract (process-branch-conditions, MODIFY PATH). The guidance ships on its own train, so the phrase is a cross-repository contract: rewording it under byte pressure would silently send every agent back to hand-assembling UId tokens.")]
+	public void ModifyBusinessProcess_ShouldCarryThePhraseTheGuidanceGatesOn() {
+		// Arrange
+		string description = ReadToolDescription(typeof(ModifyBusinessProcessTool),
+			nameof(ModifyBusinessProcessTool.ModifyBusinessProcess));
+
+		// Act
+		bool carriesGate = description.Contains("every segment dot-separated", StringComparison.Ordinal);
+		bool namesTheNameForm = description.Contains("Name a parameter as on create", StringComparison.Ordinal);
+
+		// Assert
+		carriesGate.Should().BeTrue(
+			because: "clio-knowledge gates modify-path name expansion on this exact phrase; change both together");
+		namesTheNameForm.Should().BeTrue(
+			because: "the phrase only gates the guidance; the contract itself must still say a condition takes names");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("clio#1368 / #1300: the Lookup-value rule in modify-business-process carries its one exception. A Lookup on the schema registry (Add data EntitySchemaId, Modify data EntitySchemaUId, Delete data EntitySchemaId) holds the SCHEMA UId describe reports, not a record id; without the sentence the 'bare record Guid' rule beside it sends a caller to the view's row Id, the one value that failed at run time. And the object itself is set or changed only through setElement, which re-checks the element's values, filter and dependents - addMapping refuses both.")]
+	public void ModifyBusinessProcess_ShouldStateTheSchemaRegistryLookupRule() {
+		// Arrange
+		string description = ReadToolDescription(typeof(ModifyBusinessProcessTool),
+			nameof(ModifyBusinessProcessTool.ModifyBusinessProcess));
+
+		// Act
+		int recordRule = description.IndexOf("takes a bare non-empty record Guid", StringComparison.Ordinal);
+		int schemaRule = description.IndexOf("holds the schema UId", StringComparison.Ordinal);
+
+		// Assert
+		recordRule.Should().BeGreaterThan(-1, because: "the general rule the exception narrows must still be stated");
+		schemaRule.Should().BeGreaterThan(recordRule,
+			because: "the exception has to follow the general rule it narrows, in the same addMapping clause");
+		description.Should().Contain("Add/Delete data EntitySchemaId, Modify data EntitySchemaUId",
+			because: "naming the parameters is what lets a caller recognise the case before it writes one");
+		description.Should().Contain("never a row Id",
+			because: "the row id is the reference object's primary column, so a caller holding one must learn it is "
+				+ "the wrong value before it writes one");
+		description.Should().Contain("only setElement sets or changes that object",
+			because: "addMapping refuses to set or change the object, so the contract has to name the route that does");
+		ModifyBusinessProcessPrompt.PromptByProcess("env", "UsrSampleProcess").Should()
+			.Contain("never the registry row Id", because: "the prompt states the same Lookup rule and must carry "
+				+ "the same exception, or an agent following it passes the view's row Id and is refused");
 	}
 
 

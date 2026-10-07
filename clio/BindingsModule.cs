@@ -411,6 +411,9 @@ public class BindingsModule {
 
 		services.AddTransient<Clio.Command.RecordRights.GetRecordRightsCommand>();
 		services.AddTransient<Clio.Command.RecordRights.SetRecordRightsCommand>();
+		services.AddTransient<Clio.Command.ObjectRights.SetObjectRightsCommand>();
+		services.AddTransient<Clio.Command.ObjectRights.GetObjectRightsCommand>();
+		services.AddTransient<Clio.Command.ObjectRights.IConnectedObjectsResolver, Clio.Command.ObjectRights.ConnectedObjectsResolver>();
 		services.AddTransient<Clio.Command.Administration.ManageUserCommand>();
 		services.AddTransient<Clio.Command.Administration.ManageRoleCommand>();
 		services.AddTransient<Clio.Command.Administration.ManageAccessCommand>();
@@ -511,6 +514,8 @@ public class BindingsModule {
 		services.AddTransient<ModifyProcessAsNewVersionCommand>();
 		services.AddTransient<ISetActiveProcessVersionService, SetActiveProcessVersionService>();
 		services.AddTransient<SetActiveProcessVersionCommand>();
+		services.AddTransient<ICompileBusinessProcessService, CompileBusinessProcessService>();
+		services.AddTransient<CompileBusinessProcessCommand>();
 		services.AddTransient<IApplicationSectionGetListService, ApplicationSectionGetListService>();
 		services.AddTransient<GetAppSectionsCommand>();
 		services.AddTransient<IdentityProviderListCommand>();
@@ -717,6 +722,7 @@ public class BindingsModule {
 		services.AddTransient<GetClientUnitSchemaTool>();
 		services.AddTransient<GetClassicPageSourcesTool>();
 		services.AddTransient<ListEntityClientSchemasTool>();
+		services.AddTransient<ListEntityClientSchemasToFileTool>();
 		services.AddTransient<SqlSchemaCreateTool>();
 		services.AddTransient<RegisterProcessElementTool>();
 		services.AddTransient<SqlSchemaGetTool>();
@@ -791,8 +797,10 @@ public class BindingsModule {
 		services.AddTransient<ListKnowledgeSourcesCommand>();
 		services.AddTransient<ListKnowledgeExamplesCommand>();
 		services.AddTransient<ComponentInfoTool>();
+		services.AddTransient<ComponentInfoToFileTool>();
 		services.AddTransient<ExportComponentRegistryTool>();
 		services.AddTransient<RequestInfoTool>();
+		services.AddTransient<RequestInfoToFileTool>();
 		services.AddTransient<BuildThemeTool>();
 		services.AddTransient<AdviseThemePaletteTool>();
 		services.AddTransient<ClearThemesCacheTool>();
@@ -817,6 +825,7 @@ public class BindingsModule {
 		services.AddTransient<AddPackageDependencyTool>();
 		services.AddTransient<AddCustomLoggingTool>();
 		services.AddTransient<RemovePackageDependencyTool>();
+		services.AddTransient<CreatePackageTool>();
 		services.AddTransient<CreateUiProjectTool>();
 		services.AddTransient<DataForgeTool>();
 		services.AddTransient<GetTargetPackageTool>();
@@ -890,6 +899,7 @@ public class BindingsModule {
 		services.AddTransient<IDataForgeContextService, DataForgeContextService>();
 		services.AddTransient<IConfinedFileAccess, ConfinedFileAccess>();
 		services.AddTransient<IODataFileContract, ODataFileContract>();
+		services.AddTransient<IMcpOutputFileWriter, McpOutputFileWriter>();
 		services.AddTransient<ODataReadTool>();
 		services.AddTransient<ODataReadToFileTool>();
 		services.AddTransient<ODataCreateTool>();
@@ -1021,6 +1031,11 @@ public class BindingsModule {
 		services.AddTransient<SetLogoCommand>();
 		services.AddTransient<CheckThemingAccessCommand>();
 		services.AddTransient<ICreatioRightsClient, CreatioRightsClient>();
+		services.AddTransient<Clio.Common.ObjectRights.IObjectRightsReader, Clio.Common.ObjectRights.RightManagementServiceClient>();
+		services.AddTransient<Clio.Common.ObjectRights.IObjectRightsWriter, Clio.Common.ObjectRights.RightManagementServiceClient>();
+		services.AddTransient<Clio.Common.ObjectRights.IGranteeLookup, Clio.Common.ObjectRights.RightManagementServiceClient>();
+		services.AddTransient<Clio.Common.ObjectRights.IObjectRightsPlanner, Clio.Common.ObjectRights.ObjectRightsPlanner>();
+		services.AddTransient<Clio.Common.ObjectRights.IObjectRightsReadBackVerifier, Clio.Common.ObjectRights.ObjectRightsReadBackVerifier>();
 		services.AddTransient<ICreatioLicenseClient, CreatioLicenseClient>();
 		services.AddTransient<IFsmModeStatusService, FsmModeStatusService>();
 		services.AddTransient<SetFsmConfigCommand>();
@@ -1125,6 +1140,7 @@ public class BindingsModule {
 		services.AddTransient<PackageEditableMutator>();
 		services.AddTransient<AddPackageDependencyCommand>();
 		services.AddTransient<RemovePackageDependencyCommand>();
+		services.AddTransient<CreatePackageCommand>();
 		services.AddTransient<PackageDependencyManager>();
 		services.AddTransient<SaveSettingsToManifestCommand>();
 		services.AddTransient<ShowDiffEnvironmentsCommand>();
@@ -1160,6 +1176,7 @@ public class BindingsModule {
 		services.AddTransient<GenerateProcessModelCommand>();
 		services.AddTransient<DescribeProcessCommand>();
 		services.AddTransient<GetProcessSignatureCommand>();
+		services.AddTransient<IProcessRunLogReader, ProcessRunLogReader>();
 		services.AddTransient<RunProcessCommand>();
 		services.AddTransient<ListPrintablesCommand>();
 		services.AddTransient<AddItemCommand>();
@@ -1289,6 +1306,7 @@ public class BindingsModule {
 		services.AddTransient<IPostgres, Postgres>();
 		services.AddSingleton<CommandHelpCatalog>();
 		services.AddTransient<CommandHelpRenderer>();
+		services.AddSingleton<IOptionSuggestionService, OptionSuggestionService>();
 		// HelpArtifactExporter is constructed directly in Program.ExportHelpArtifacts with a
 		// deterministic export-baseline IFeatureToggleService (see ExportFeatureToggleService) so
 		// committed docs never depend on local feature flags. It is therefore not DI-resolved.

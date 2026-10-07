@@ -244,7 +244,7 @@ function planResolved({ base, current, present, liveComponentLabels, currentAssi
   const mode = notificationMode(current.component, config);
   let ownerCandidates = [];
   let ownersToMention = [];
-  if (!alreadyRouted && owners.length === 0 && !present.has(triage)) {
+  if (!alreadyRouted && owners.length === 0 && !present.has(triage) && currentAssignees.length === 0) {
     // Nobody owns this component: route the label, but a human still has to pick the issue up.
     add.push(config.triageLabel.name);
   } else if (!alreadyRouted && owners.length > 0) {
@@ -261,7 +261,7 @@ function planResolved({ base, current, present, liveComponentLabels, currentAssi
 // No routable component. When the form explicitly says "not sure" (or an unknown value), component
 // labels are cleared if the author changed the dropdown in THIS edit, or if routing applied them
 // itself; a component label a human triager applied is kept. A blank issue is never cleared.
-function planUnrouted({ base, current, previousBody, present, liveComponentLabels, routingAppliedLabels, config }) {
+function planUnrouted({ base, current, previousBody, present, liveComponentLabels, currentAssignees, routingAppliedLabels, config }) {
   const explicit = current.status !== 'missing';
   const changedByAuthor = explicit
     && previousBody !== undefined
@@ -271,10 +271,66 @@ function planUnrouted({ base, current, previousBody, present, liveComponentLabel
   const stale = liveComponentLabels.filter(l => changedByAuthor || (explicit && routingAppliedLabels.has(l)));
   const remove = stale.map(l => present.get(l));
   const keepsComponentLabel = liveComponentLabels.length > remove.length;
-  const needsTriage = !keepsComponentLabel && !present.has(normalize(config.triageLabel.name));
+  // An assigned issue has someone looking at it already; it is not waiting for triage.
+  const needsTriage = !keepsComponentLabel && currentAssignees.length === 0
+    && !present.has(normalize(config.triageLabel.name));
   const add = needsTriage ? [config.triageLabel.name] : [];
   if (add.length === 0 && remove.length === 0) return unchangedPlan(base);
   return { ...base, labelsToAdd: add, labelsToRemove: remove };
+}
+
+// Several component labels and no Component field: nobody can be routed, so an unassigned issue goes
+// to the triage queue instead of silently waiting.
+function planAmbiguous({ base, present, currentAssignees, config }) {
+  const routed = { ...base, source: 'ambiguous-labels' };
+  const needsTriage = currentAssignees.length === 0 && !present.has(normalize(config.triageLabel.name));
+  return needsTriage ? { ...routed, labelsToAdd: [config.triageLabel.name] } : unchangedPlan(routed);
+}
+
+// An issue created through the API has no Component field; its component can still be given as
+// exactly one `component:*` label (e.g. `gh issue create --label component:package`). The label is
+// the choice, so labels stay as they are and only the owners are notified. That happens when the
+// issue is opened or the label is added, never on a later text edit, so owners are told once.
+function planFromLabel({ base, present, liveComponentLabels, currentAssignees, trigger, labeledName, config }) {
+  if (liveComponentLabels.length !== 1) {
+    return { ...base, source: liveComponentLabels.length > 1 ? 'ambiguous-labels' : 'none' };
+  }
+  const component = config.components.find(c => c.label && normalize(c.label) === liveComponentLabels[0]);
+  const routed = { ...base, status: 'resolved', component, source: 'label' };
+  // A text edit does not re-notify, unless routing evidently never ran for this label: the label is
+  // there together with needs-triage (GitHub replaced the pending `labeled` run with this `edited`
+  // one). Once routing notified, needs-triage is gone, so an owner a human unassigned stays unassigned.
+  const triage = normalize(config.triageLabel.name);
+  if (trigger === 'edited' && !present.has(triage)) return unchangedPlan(routed);
+  // Only the event that added THIS label routes; adding some other component label (a typo, or a
+  // second one being considered) must not re-notify the owners or strip needs-triage.
+  if (trigger === 'labeled' && normalize(labeledName) !== liveComponentLabels[0]) return unchangedPlan(routed);
+  const changes = ownerChanges(component, present, currentAssignees, config);
+  const nothing = Object.values(changes).every(list => list.length === 0);
+  return nothing ? unchangedPlan(routed) : { ...routed, ...changes };
+}
+
+// Who is told about a routed issue, and what that does to the triage label.
+function ownerChanges(component, present, currentAssignees, config) {
+  const owners = component.owners.map(o => String(o).replace(/^@/, ''));
+  const triage = normalize(config.triageLabel.name);
+  const unassigned = currentAssignees.length === 0;
+  if (owners.length === 0) {
+    const needsTriage = !present.has(triage) && unassigned;
+    return { labelsToAdd: needsTriage ? [config.triageLabel.name] : [], labelsToRemove: [], ownerCandidates: [], ownersToMention: [] };
+  }
+  const mention = notificationMode(component, config) === 'mention';
+  const ownerCandidates = !mention && unassigned ? owners : [];
+  const ownersToMention = mention ? owners : [];
+  // needs-triage goes only when someone is actually being told; an assigned issue keeps whatever
+  // triage decision a human made.
+  const notifying = ownerCandidates.length > 0 || ownersToMention.length > 0;
+  return {
+    labelsToAdd: [],
+    labelsToRemove: notifying && present.has(triage) ? [present.get(triage)] : [],
+    ownerCandidates,
+    ownersToMention,
+  };
 }
 
 /**
@@ -293,8 +349,12 @@ function planUnrouted({ base, current, previousBody, present, liveComponentLabel
  * - A component without owners gets its label and `needs-triage`.
  * - With `ownerNotification: "mention"` the owners are listed in `ownersToMention` instead: they
  *   are notified through a comment and the assignee stays free for whoever claims the issue.
+ * - Without a Component field (an issue created through the API), a single `component:*` label is
+ *   taken as the component; see planFromLabel. `trigger` is the event action: `opened`, `edited`
+ *   or `labeled` (defaults from `previousBody`).
+ * - `needs-triage` is added only to an issue nobody is assigned to.
  */
-function planRouting({ body, previousBody, currentLabels = [], currentAssignees = [], routingAppliedLabels = [], config }) {
+function planRouting({ body, previousBody, currentLabels = [], currentAssignees = [], routingAppliedLabels = [], trigger, labeledName, config }) {
   const current = classify(body, config);
   const base = {
     status: current.status,
@@ -306,13 +366,22 @@ function planRouting({ body, previousBody, currentLabels = [], currentAssignees 
     ownersToMention: [],
     alreadyAssigned: currentAssignees.length > 0,
     unchanged: false,
+    source: current.status === 'missing' ? 'none' : 'form',
   };
   const present = new Map(currentLabels.map(l => [normalize(l), l]));
   const componentLabels = new Set(config.components.filter(c => c.label).map(c => normalize(c.label)));
   const liveComponentLabels = [...present.keys()].filter(l => componentLabels.has(l));
   const applied = new Set(routingAppliedLabels.map(normalize));
-  const context = { base, current, previousBody, present, liveComponentLabels, currentAssignees, routingAppliedLabels: applied, config };
-  return current.status === 'resolved' ? planResolved(context) : planUnrouted(context);
+  const event = trigger ?? (previousBody === undefined ? 'opened' : 'edited');
+  const context = { base, current, previousBody, present, liveComponentLabels, currentAssignees, routingAppliedLabels: applied, trigger: event, labeledName, config };
+  if (current.status === 'resolved') return planResolved(context);
+  if (current.status === 'missing') {
+    const fromLabel = planFromLabel(context);
+    if (fromLabel.source === 'label') return fromLabel;
+    if (fromLabel.source === 'ambiguous-labels') return planAmbiguous(context);
+    return { ...planUnrouted(context), source: fromLabel.source };
+  }
+  return planUnrouted(context);
 }
 
 function labelSpec(name, config) {
@@ -428,13 +497,14 @@ async function assignOwner(github, core, repo, issueNumber, candidates) {
 }
 
 // A routed issue nobody could be assigned to still needs a human: keep or add the triage label.
-function keepForTriage(labels, config) {
+function keepForTriage(labels, config, alreadyAssigned = false) {
   const triage = normalize(config.triageLabel.name);
   const isTriage = l => normalize(l) === triage;
   if (labels.remove.some(isTriage)) {
     return { add: labels.add, remove: labels.remove.filter(l => !isTriage(l)) };
   }
-  if (labels.add.some(isTriage)) return labels;
+  // An assigned issue already has someone on it: keep a triage label that is there, add none.
+  if (labels.add.some(isTriage) || alreadyAssigned) return labels;
   return { add: [...labels.add, config.triageLabel.name], remove: labels.remove };
 }
 
@@ -510,7 +580,7 @@ async function notifyOwners(github, core, repo, issueNumber, plan, config) {
       return { labels, assigned: null, mentioned: plan.ownersToMention };
     }
     core.warning(`The owners of "${plan.component.id}" could not be mentioned; marking the issue for triage.`);
-    return { labels: keepForTriage(labels, config), assigned: null, mentioned: [] };
+    return { labels: keepForTriage(labels, config, plan.alreadyAssigned), assigned: null, mentioned: [] };
   }
   if (plan.status === 'resolved' && plan.alreadyAssigned) {
     core.info('Issue already has an assignee; leaving assignment unchanged.');
@@ -520,7 +590,19 @@ async function notifyOwners(github, core, repo, issueNumber, plan, config) {
 
 function describePlan(issueNumber, plan) {
   const component = plan.component ? ' (' + plan.component.id + ')' : '';
-  return `Issue #${issueNumber}: component field = ${JSON.stringify(plan.values)} -> ${plan.status}${component}`;
+  const source = plan.source === 'label' ? ' from its component label' : '';
+  return `Issue #${issueNumber}: component field = ${JSON.stringify(plan.values)} -> ${plan.status}${component}${source}`;
+}
+
+const UNCHANGED_REASONS = {
+  form: 'Labels already match the selected component; leaving labels and assignees as they are.',
+  label: 'Routed from its component label when the issue was opened or labelled; a text edit changes nothing.',
+  'ambiguous-labels': 'No Component field and more than one component label; nothing to route (already in triage or assigned).',
+  none: 'No Component field and a component label or an assignee is already set; nothing to do.',
+};
+
+function unchangedReason(plan) {
+  return UNCHANGED_REASONS[plan.source] ?? UNCHANGED_REASONS.none;
 }
 
 function skipReason(payload) {
@@ -532,6 +614,10 @@ function skipReason(payload) {
   return null;
 }
 
+function isComponentLabelEvent(payload, config) {
+  return normalize(payload.label?.name).startsWith(normalize(config.componentLabelPrefix));
+}
+
 async function writeSummary(core, issueNumber, plan, outcome) {
   let assignee = outcome.assigned || '-';
   if (!outcome.assigned && plan.alreadyAssigned) assignee = '(unchanged, already assigned)';
@@ -540,7 +626,7 @@ async function writeSummary(core, issueNumber, plan, outcome) {
     .addTable([
       [{ data: 'Field', header: true }, { data: 'Value', header: true }],
       ['Component value', plan.values.join(', ') || '(none)'],
-      ['Status', plan.status],
+      ['Status', plan.status + (plan.source === 'label' ? ' (from label)' : '')],
       ['Labels added', outcome.added.join(', ') || '-'],
       ['Labels removed', outcome.removed.join(', ') || '-'],
       ['Assignee', assignee],
@@ -564,24 +650,36 @@ async function run({ github, context, core, configPath }) {
   }
 
   const config = loadConfig(configPath);
+  if (payload.action === 'labeled' && !isComponentLabelEvent(payload, config)) {
+    core.info(`Label "${payload.label?.name}" is not a component label; nothing to route.`);
+    return;
+  }
   const repo = context.repo;
   const issueNumber = payload.issue.number;
   const live = await readLiveIssue(github, core, repo, payload.issue);
   if (!live) return;
   const currentLabels = (live.labels || []).map(l => (typeof l === 'string' ? l : l.name));
-  const needsHistory = classify(live.body, config).status !== 'resolved';
+  const status = classify(live.body, config).status;
+  if (payload.action === 'labeled' && status !== 'missing') {
+    // The form is the source of truth on form issues; a label added by hand is a human decision.
+    core.info('The issue has a Component field; a label added later does not re-route it.');
+    return;
+  }
+  const needsHistory = status !== 'resolved';
   const plan = planRouting({
     body: live.body,
     previousBody: payload.action === 'edited' ? payload.changes.body.from ?? '' : undefined,
     currentLabels,
     currentAssignees: (live.assignees || []).map(a => a.login),
     routingAppliedLabels: needsHistory ? await readRoutingAppliedLabels(github, core, repo, issueNumber, currentLabels, config) : [],
+    trigger: payload.action,
+    labeledName: payload.label?.name,
     config,
   });
 
   core.info(describePlan(issueNumber, plan));
   if (plan.unchanged) {
-    core.info('Labels already match the selected component; leaving labels and assignees as they are.');
+    core.info(unchangedReason(plan));
     return;
   }
   if (plan.status === 'unknown') {
@@ -593,7 +691,82 @@ async function run({ github, context, core, configPath }) {
   await writeSummary(core, issueNumber, plan, { assigned: notified.assigned, mentioned: notified.mentioned, ...applied });
 }
 
+// Returns true when the label was missing and has been created.
+async function createIfMissing(github, core, repo, spec) {
+  try {
+    await github.rest.issues.getLabel({ ...repo, name: spec.name });
+    return false;
+  } catch (error) {
+    if (error.status !== 404) {
+      core.warning(`Could not read label "${spec.name}": ${error.message}`);
+      return false;
+    }
+    return ensureLabel(github, core, repo, spec);
+  }
+}
+
+/**
+ * Creates every label the map declares (component labels and the triage label) that the repository
+ * does not have yet, so an agent can pass `--label component:<id>` for a new component before
+ * routing has ever used it. Existing labels are left alone: a team may have restyled them.
+ */
+async function syncLabels({ github, context, core, configPath }) {
+  const config = loadConfig(configPath);
+  const specs = [config.triageLabel, ...config.components.filter(c => c.label).map(c => labelSpec(c.label, config))];
+  // A few dozen independent reads, and creations only for the (usually zero) missing labels, so
+  // running them concurrently stays far below GitHub's rate limits.
+  const outcomes = await Promise.all(specs.map(spec => createIfMissing(github, core, context.repo, spec)));
+  const created = specs.filter((spec, index) => outcomes[index]).map(spec => spec.name);
+  core.info(created.length > 0 ? `Created labels: ${created.join(', ')}` : 'All labels from the map already exist.');
+  return created;
+}
+
+// ---- Choosing a component from code paths (used by agents through component-for.js).
+
+// `paths` entries: a directory prefix ending with "/", an exact file, or a pattern with "*"
+// (matches within one path segment). Returns how specific the match is (literal characters), or -1.
+function pathMatchScore(pattern, file) {
+  const pat = String(pattern).replaceAll('\\', '/');
+  const target = String(file).replaceAll('\\', '/').replace(/^\.\//, '');
+  if (pat.endsWith('/')) return target.startsWith(pat) ? pat.length : -1;
+  if (!pat.includes('*')) return target === pat ? pat.length + 1 : -1;
+  const parts = pat.split('*').map(part => part.replaceAll(/[.+?^${}()|[\]\\]/g, String.raw`\$&`));
+  return new RegExp('^' + parts.join('[^/]*') + '$').test(target) ? pat.replaceAll('*', '').length : -1;
+}
+
+/**
+ * Ranks the components whose `paths` cover the given files. For each file only the most specific
+ * component counts (an exact file beats a directory), so a tool with its own entry is not claimed
+ * by the broad directory of the MCP server. Returns [{ component, files }] sorted by file count.
+ */
+// The components whose best pattern for this file is the most specific one (ties are all returned).
+function bestComponentsFor(file, config) {
+  let best = -1;
+  let winners = [];
+  for (const component of config.components) {
+    const score = Math.max(-1, ...(component.paths || []).map(pattern => pathMatchScore(pattern, file)));
+    if (score < 0 || score < best) continue;
+    if (score > best) { best = score; winners = []; }
+    winners.push(component);
+  }
+  return winners;
+}
+
+function matchComponents(files, config) {
+  const hits = new Map();
+  for (const file of files) {
+    for (const component of bestComponentsFor(file, config)) {
+      if (!hits.has(component.id)) hits.set(component.id, { component, files: [] });
+      hits.get(component.id).files.push(file);
+    }
+  }
+  return [...hits.values()].sort((a, b) => b.files.length - a.files.length);
+}
+
 module.exports = {
+  syncLabels,
+  pathMatchScore,
+  matchComponents,
   NO_RESPONSE,
   parseIssueFormSections,
   extractFieldValues,

@@ -276,7 +276,7 @@ public sealed class PageValidateTool(
 			InsertSelfConsistency: RunContentValidation(contentResult,
 				() => SchemaValidationService.ValidateInsertedFieldSelfConsistency(body, explicitResources)),
 			WidgetCaption: RunContentValidation(contentResult,
-				() => SchemaValidationService.ValidateInsertedWidgetCaptionResources(body, explicitResources)),
+				() => SchemaValidationService.ValidateInsertedWidgetCaptionResourcesGrouped(body, explicitResources)),
 			LocalizableText: RunContentValidation(contentResult,
 				() => SchemaValidationService.ValidateLocalizableTextLiterals(body)),
 			Binding: RunContentValidation(contentResult,
@@ -313,6 +313,7 @@ public sealed class PageValidateTool(
 		// Widget-caption resolvability is a body-only PRE-FLIGHT heuristic here (validate-page has no schema
 		// context, so it cannot see keys a prior save already registered). Surface it as a warning; the
 		// authoritative hard gate runs on the save path (PageUpdateCommand) against the final merged set.
+		// It arrives as ONE warning that states the rule once and lists every unresolved binding.
 		if (!content.WidgetCaption.IsValid) {
 			warnings.AddRange(content.WidgetCaption.Errors);
 		}

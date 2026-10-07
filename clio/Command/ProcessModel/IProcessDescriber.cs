@@ -381,6 +381,39 @@ public class DescribeProcessResult {
 	public List<DescribedParameter> Parameters { get; set; }
 
 	/// <summary>
+	/// The process's own using directives as it stores them (Process properties -> Methods -> Usings), in the shape
+	/// a build's <c>usings[]</c> takes - including an entry the platform's code generator emits nothing for (a
+	/// default namespace, an alias on an imported namespace, a repeat of an earlier entry), which carries
+	/// <see cref="DescribedUsing.Ignored"/> from CrtProcessBuilder 1.6.6.51. The namespaces the generator adds on
+	/// its own are not listed.
+	/// <c>null</c> on a server that predates CrtProcessBuilder 1.6.6.30.
+	/// </summary>
+	[JsonPropertyName("usings")]
+	public List<DescribedUsing> Usings { get; set; }
+
+	/// <summary>
+	/// The process's own C# methods (Process properties -> Methods), verbatim: class members compiled into the
+	/// same class as its interpreted script tasks, which call them. <c>null</c> when there are none, and on a
+	/// server that predates CrtProcessBuilder 1.6.6.30.
+	/// </summary>
+	[JsonPropertyName("methods")]
+	public string Methods { get; set; }
+
+	/// <summary>
+	/// The older compiled variant's methods, reported read-only: they live in the compiled process class and
+	/// only compiled-variant script tasks can call them. <c>null</c> when there are none.
+	/// </summary>
+	[JsonPropertyName("compiledMethods")]
+	public string CompiledMethods { get; set; }
+
+	/// <summary>
+	/// How many methods the process still keeps in the older per-method list, which has no text form here;
+	/// while it holds an interpreted method, <c>setMethods</c> is refused. <c>null</c> when there are none.
+	/// </summary>
+	[JsonPropertyName("legacyMethodCount")]
+	public int? LegacyMethodCount { get; set; }
+
+	/// <summary>
 	/// Captures every other field the server returns at the graph root so the description round-trips
 	/// losslessly: a newer <c>CrtProcessBuilder</c> reporting something this build does not declare reaches the
 	/// command output verbatim instead of being discarded without a trace.
@@ -675,6 +708,14 @@ public sealed class DescribedElement {
 	/// </remarks>
 	[JsonPropertyName("formula")]
 	public DescribedFormula Formula { get; set; }
+
+	/// <summary>
+	/// For a Script task (CrtProcessBuilder 1.6.6.30 and later): its C# body and which of the platform's two
+	/// script variants it is. <c>null</c> for other element kinds - a Formula task included, although its class
+	/// derives from the script task's - and on a server that predates the element.
+	/// </summary>
+	[JsonPropertyName("scriptTask")]
+	public DescribedScriptTask ScriptTask { get; set; }
 
 	/// <summary>
 	/// Captures every other field the server reports on an element so the description round-trips losslessly:
@@ -1639,7 +1680,8 @@ public sealed class DescribedFilterCondition {
 	public DescribedFilterElementRef ElementParameter { get; set; }
 
 	/// <summary>
-	/// Raw meta-path expression token. The read-back surfaces EVERY parameter reference here (both process- and
+	/// The BARE meta-path token of a parameter reference, never <c>[#...#]</c>-wrapped; a setFilter accepts it
+	/// back only in exactly this spelling. The read-back surfaces EVERY parameter reference here (both process- and
 	/// element-parameter references), which is why <see cref="ProcessParameter"/> / <see cref="ElementParameter"/>
 	/// stay null on a real describe.
 	/// </summary>
@@ -1982,6 +2024,50 @@ public sealed class DescribedFormula {
 	/// <summary>Where the result is written. <c>null</c> when the element has no target yet.</summary>
 	[JsonPropertyName("target")]
 	public DescribedFormulaTarget Target { get; set; }
+
+	/// <summary>Anything a newer server reports that this build does not declare.</summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
+}
+
+/// <summary>A Script task read back: its C# body and which script variant it is.</summary>
+public sealed class DescribedScriptTask {
+
+	/// <summary>The C# body, verbatim as stored.</summary>
+	[JsonPropertyName("body")]
+	public string Body { get; set; }
+
+	/// <summary>
+	/// The designer's "For interpreted process" option. <c>true</c> - every script task clio builds - means the
+	/// body reaches parameters through <c>Get&lt;T&gt;("Name")</c> / <c>Set("Name", value)</c>; <c>false</c> is the
+	/// older compiled variant, where parameters are plain properties and Get/Set do not compile.
+	/// </summary>
+	[JsonPropertyName("forInterpretedProcess")]
+	public bool ForInterpretedProcess { get; set; }
+
+	/// <summary>Anything a newer server reports that this build does not declare.</summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
+}
+
+/// <summary>One process-level using directive, in the shape a build's <c>usings[]</c> entry takes.</summary>
+public sealed class DescribedUsing {
+
+	/// <summary>The imported namespace, or the type when <see cref="Alias"/> is set.</summary>
+	[JsonPropertyName("namespace")]
+	public string Namespace { get; set; }
+
+	/// <summary>The alias of a <c>using Alias = Namespace;</c> directive; <c>null</c> for a plain one.</summary>
+	[JsonPropertyName("alias")]
+	public string Alias { get; set; }
+
+	/// <summary>
+	/// Why the platform's code generator emits nothing for this entry, or <c>null</c> when it emits it (and on a
+	/// server before CrtProcessBuilder 1.6.6.51). An entry that carries it does nothing at compile time; leave it
+	/// out when feeding describe back into a build, which refuses some of them.
+	/// </summary>
+	[JsonPropertyName("ignored")]
+	public string Ignored { get; set; }
 
 	/// <summary>Anything a newer server reports that this build does not declare.</summary>
 	[JsonExtensionData]
