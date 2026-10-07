@@ -637,8 +637,10 @@ when it does not answer.
   when the build fails is UNVERIFIED: the experiment did not run because a deliberately-broken archive was
   rejected earlier, at `AppInstallInfoResolver.ValidateInstallInfos`, before compilation.
 - **clio's own log check is inert.** `BasePackageInstaller` consults the installation log only under
-  `GlobalContext.FailOnError` (`--fail-on-error`), and then matches "application installed successfully" —
-  a phrase package installs do not emit. So the check is either off or wrong.
+  `GlobalContext.FailOnError`, and then matches "application installed successfully" — a phrase package
+  installs do not emit. Only `assert` and `hosts` can set that flag (`--fail-on-error`), and neither installs
+  anything; the MCP verbs accept the flag but ignore it (ENG-102487). So in practice the check is always off,
+  and if it were on it would be wrong.
 - **The outcome check is per-package, and it is LIVENESS only.** `install-process-builder` asks the package's
   own ungated `Ping` whether it is serving, and fails unless it answers. That decides "did the target build it"
   on a FIRST install — with no assembly there is no type, no route, nothing to answer. It does NOT decide an

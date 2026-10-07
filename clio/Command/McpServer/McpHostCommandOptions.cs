@@ -82,7 +82,6 @@ public abstract class McpHostCommandOptions
 		}
 		return $"{string.Join(" and ", ignored)} {(ignored.Count == 1 ? "is" : "are")} not supported by the MCP "
 			+ "server and IGNORED: package installs made through MCP tools never use the strict install-log "
-			+ "check, whether the call runs in the server or in a worker process. Remove the flag from the "
-			+ "MCP client configuration.";
+			+ "check. Remove the flag from the MCP client configuration.";
 	}
 }

@@ -210,6 +210,9 @@ list-hosts
 - No environment selection needed (auto-discovers all)
 - On Windows, sites are "Running" only when both site AND app pool started
 - Set CLIO_DEBUG_IIS=true for detailed IIS detection diagnostics
+- in a YAML scenario step the legacy key `--fail-on-error` can only turn the flag on;
+use the key `fail-on-error` to turn it off. The flag matters only to package
+installs in later steps of the same scenario
 
 ## Reporting Bugs
 

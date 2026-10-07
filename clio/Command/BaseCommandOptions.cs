@@ -2,10 +2,23 @@
 
 namespace Clio
 {
+	/// <summary>
+	/// Options shared by the verbs that accept <c>--fail-on-error</c> and <c>--fail-on-warning</c>
+	/// (<c>assert</c> and <c>hosts</c>).
+	/// </summary>
 	public class BaseCommandOptions
 	{
 
-		[Option("fail-on-error", Required = false, HelpText = "Return fail code on errors")]
+		/// <summary>
+		/// Gets or sets <see cref="GlobalContext.FailOnError"/>. Accepted for compatibility: only package and
+		/// application installs read it, and neither verb that accepts it installs anything.
+		/// </summary>
+		/// <remarks>
+		/// A YAML scenario step that uses the legacy key <c>--fail-on-error</c> binds
+		/// <see cref="FailOnErrorAlias"/>, which can only turn the flag on; use the key <c>fail-on-error</c> to
+		/// turn it off again.
+		/// </remarks>
+		[Option("fail-on-error", Required = false, HelpText = "Accepted for compatibility; has no effect")]
 		public bool FailOnError {
 			get {
 				return GlobalContext.FailOnError;
@@ -30,7 +43,10 @@ namespace Clio
 			set { if (value) FailOnError = value; }
 		}
 
-		// Accepted for compatibility only: nothing ever read the value, so it no longer feeds GlobalContext.
+		/// <summary>
+		/// Gets or sets whether <c>--fail-on-warning</c> was passed. Accepted for compatibility only: nothing ever
+		/// read the value, so it no longer feeds <see cref="GlobalContext"/>.
+		/// </summary>
 		[Option("fail-on-warning", Required = false, HelpText = "Accepted for compatibility; has no effect")]
 		public bool FailOnWarning { get; set; }
 

@@ -1,9 +1,14 @@
+using System;
+using System.Collections.Generic;
 using System.Linq;
 using Clio.Command;
 using Clio.Command.McpServer;
+using Clio.YAML;
 using CommandLine;
 using FluentAssertions;
 using NUnit.Framework;
+using OneOf;
+using OneOf.Types;
 
 namespace Clio.Tests.Command;
 
@@ -131,6 +136,70 @@ internal sealed class BaseCommandOptionsParsingTests {
 			because: "assert fs without the flags is a valid command line").Subject;
 		assertOptions.FailOnError.Should().BeFalse(because: "--fail-on-error was not given");
 		assertOptions.FailOnWarning.Should().BeFalse(because: "--fail-on-warning was not given");
+	}
+
+	[TestCase("--fail-on-error")]
+	[TestCase("fail-on-error")]
+	[Description("A YAML scenario step can turn the strict flag on with either key: the legacy key --fail-on-error binds the hidden alias and the key fail-on-error the main option.")]
+	public void Activate_ShouldTurnFailOnErrorOn_WhenYamlStepSetsEitherKeyToTrue(string key) {
+		// Arrange
+		Step step = CreateAssertStep(key, "true");
+
+		// Act
+		AssertOptions options = Activate(step);
+
+		// Assert
+		options.FailOnError.Should().BeTrue(because: $"the YAML key {key} set to true must turn the flag on");
+		GlobalContext.FailOnError.Should().BeTrue(because: "FailOnError is stored in GlobalContext");
+	}
+
+	[Test]
+	[Description("The legacy YAML key --fail-on-error set to false binds the hidden alias, whose setter only turns the flag on, so a flag an earlier step set stays on; the help files document this (ENG-102481).")]
+	public void Activate_ShouldLeaveFailOnErrorOn_WhenLegacyYamlKeyIsFalse() {
+		// Arrange
+		GlobalContext.FailOnError = true;
+		Step step = CreateAssertStep("--fail-on-error", "false");
+
+		// Act
+		AssertOptions options = Activate(step);
+
+		// Assert
+		options.FailOnError.Should().BeTrue(
+			because: "the alias setter ignores false so that an unset alias never clears the main option on the command line");
+		GlobalContext.FailOnError.Should().BeTrue(because: "the legacy key cannot turn the process-global flag off");
+	}
+
+	[Test]
+	[Description("The YAML key fail-on-error set to false turns off a flag an earlier step set, which is the documented way to clear it.")]
+	public void Activate_ShouldTurnFailOnErrorOff_WhenYamlKeyIsFalse() {
+		// Arrange
+		GlobalContext.FailOnError = true;
+		Step step = CreateAssertStep("fail-on-error", "false");
+
+		// Act
+		AssertOptions options = Activate(step);
+
+		// Assert
+		options.FailOnError.Should().BeFalse(because: "the main option assigns the value as given");
+		GlobalContext.FailOnError.Should().BeFalse(because: "a later install step must no longer use the strict check");
+	}
+
+	private static Step CreateAssertStep(string key, string value) =>
+		new() {
+			Action = "assert",
+			Description = "assert filesystem",
+			Options = new Dictionary<object, object> {
+				{"scope", "fs"},
+				{key, value}
+			}
+		};
+
+	private static AssertOptions Activate(Step step) {
+		Func<string, OneOf<object, None>> noLookup = _ => new None();
+		Tuple<OneOf<None, object>, string> activated =
+			step.Activate(typeof(AssertOptions).Assembly.GetTypes(), noLookup, noLookup);
+		return activated.Item1.Value.Should().BeOfType<AssertOptions>(
+			because: "the assert action resolves to AssertOptions").Subject;
 	}
 
 	private static object Parse(string[] args) {

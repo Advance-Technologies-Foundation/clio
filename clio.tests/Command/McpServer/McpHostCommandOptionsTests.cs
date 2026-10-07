@@ -1,11 +1,8 @@
 using System;
-using System.Collections.Generic;
 using System.Reflection;
 using Clio.Command;
 using Clio.Command.McpServer;
 using Clio.Common;
-using Clio.Common.McpWorker;
-using Clio.Command.McpServer.Relay;
 using CommandLine;
 using FluentAssertions;
 using NSubstitute;
@@ -105,7 +102,15 @@ public sealed class McpHostCommandOptionsTests {
 	[TestCase(typeof(McpHttpServerCommandOptions))]
 	[Description("Neither MCP options type inherits BaseCommandOptions, whose setter writes the process-global strict flag.")]
 	public void McpOptionTypes_ShouldNotInheritBaseCommandOptions(Type optionsType) {
+		// Arrange
+		Type baseCommandOptionsType = typeof(BaseCommandOptions);
+
+		// Act
+		bool inheritsBaseCommandOptions = baseCommandOptionsType.IsAssignableFrom(optionsType);
+
 		// Assert
+		inheritsBaseCommandOptions.Should().BeFalse(
+			because: "BaseCommandOptions.FailOnError writes GlobalContext, which a worker process never receives");
 		optionsType.Should().NotBeAssignableTo<BaseCommandOptions>(
 			because: "BaseCommandOptions.FailOnError writes GlobalContext, which a worker process never receives");
 	}
@@ -130,8 +135,12 @@ public sealed class McpHostCommandOptionsTests {
 		string warning = McpHostCommandOptions.DescribeIgnoredFailOnOptions(options);
 
 		// Assert
-		warning.Should().Contain("--fail-on-error").And.Contain("--fail-on-warning").And.Contain("IGNORED",
+		warning.Should().Contain("--fail-on-error", because: "the warning names every ignored flag");
+		warning.Should().Contain("--fail-on-warning", because: "the warning names every ignored flag");
+		warning.Should().Contain("IGNORED",
 			because: "the operator must learn that the configured flag has no effect on an MCP server");
+		warning.Should().NotContain("worker",
+			because: "the same text is logged by mcp-http, which never relays a call to a worker process");
 	}
 
 	[Test]
@@ -164,14 +173,31 @@ public sealed class McpHostCommandOptionsTests {
 	}
 
 	[Test]
-	[Description("A worker is spawned with the worker verb and flag only, which is now the same strictness as the host.")]
-	public void ComposeSpawnRequest_ShouldCarryNoFailOnFlag() {
+	[Description("The HTTP host logs a startup warning when a fail-on flag was passed.")]
+	public void HttpWarnIgnoredFailOnOptions_ShouldLogWarning_WhenFailOnWarningPassed() {
+		// Arrange
+		ILogger logger = Substitute.For<ILogger>();
+		McpHttpServerCommandOptions options = new() { FailOnWarning = true };
+
 		// Act
-		WorkerSpawnRequest request = McpWorkerCallDispatcher.ComposeSpawnRequest(
-			new Dictionary<string, string>(), TimeSpan.FromSeconds(5));
+		string warning = McpHttpServerCommand.WarnIgnoredFailOnOptions(options, logger);
 
 		// Assert
-		request.Arguments.Should().Equal(["mcp-server", McpWorkerEnvironment.WorkerFlag],
-			because: "the host ignores the fail-on flags, so forwarding nothing keeps worker and in-process installs identical");
+		warning.Should().Contain("--fail-on-warning", because: "the warning names the ignored flag");
+		logger.Received(1).WriteWarning(Arg.Is<string>(m => m.Contains("--fail-on-warning")));
+	}
+
+	[Test]
+	[Description("The HTTP host stays silent when no fail-on flag was passed.")]
+	public void HttpWarnIgnoredFailOnOptions_ShouldNotLog_WhenNoFlagPassed() {
+		// Arrange
+		ILogger logger = Substitute.For<ILogger>();
+
+		// Act
+		string warning = McpHttpServerCommand.WarnIgnoredFailOnOptions(new McpHttpServerCommandOptions(), logger);
+
+		// Assert
+		warning.Should().BeNull(because: "nothing was ignored");
+		logger.DidNotReceive().WriteWarning(Arg.Any<string>());
 	}
 }

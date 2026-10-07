@@ -378,6 +378,9 @@ clio assert <scope> [options]
 - Filesystem permission checks are Windows-only (use ACLs)
 - Setting key 'iis-clio-root-path' resolves from appsettings.json
 - All I/O operations have configurable timeouts
+- in a YAML scenario step the legacy key --fail-on-error can only turn the flag on;
+use the key fail-on-error to turn it off. The flag matters only to package
+installs in later steps of the same scenario
 
 ## Use Cases
 

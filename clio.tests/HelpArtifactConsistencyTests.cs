@@ -165,6 +165,31 @@ internal class HelpArtifactConsistencyTests {
 			because: $"{commandName}.txt must not advertise backward-compatibility aliases declared Hidden");
 	}
 
+	[Test]
+	[Description("mcp-server.txt, which runtime --help renders and which has no visible option to list, does not advertise the fail-on flags the verb accepts only for compatibility and declares Hidden (ENG-102487).")]
+	public void ManualHelpFile_ForMcpServer_ShouldNotNameHiddenFailOnOptions() {
+		// Arrange
+		new CommandHelpCatalog().TryGetCommand("mcp-server", out HelpCommandMetadata command).Should().BeTrue(
+			because: "mcp-server is a catalogued command");
+		string[] failOnNames = ["fail-on-error", "--fail-on-error", "fail-on-warning", "--fail-on-warning"];
+		OptionAttribute[] failOnOptions = command.OptionsType
+			.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+			.Select(property => property.GetCustomAttribute<OptionAttribute>(true))
+			.Where(option => option is not null && failOnNames.Contains(option.LongName))
+			.ToArray();
+
+		// Act
+		string helpText = File.ReadAllText(Path.Combine(HelpDirectory, "mcp-server.txt"));
+
+		// Assert
+		failOnOptions.Select(option => option.LongName).Should().BeEquivalentTo(failOnNames,
+			because: "mcp-server still declares both spellings of both fail-on flags so existing configurations parse");
+		failOnOptions.Should().OnlyContain(option => option.Hidden,
+			because: "the fail-on flags are unsupported on mcp-server and must not appear in its generated help");
+		failOnNames.Where(name => ContainsOptionToken(helpText, name)).Should().BeEmpty(
+			because: "mcp-server.txt must not advertise the ignored fail-on flags");
+	}
+
 	[TestCase("create-entity-schema")]
 	[TestCase("update-entity-schema")]
 	[TestCase("modify-entity-schema-column")]
