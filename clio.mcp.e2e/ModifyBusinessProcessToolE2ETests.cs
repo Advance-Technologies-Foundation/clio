@@ -99,6 +99,29 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	}
 
 	[Test]
+	[Description("Over the real MCP path, with no Creatio needed, a call with no operations at all reaches the tool body and is refused there as a caller error, exit code 1 - not -1, which tells the caller that clio broke (ENG-100153). This tool has no snapshot form: the operations are the edit. The environment is unregistered, so a refusal that stopped firing could not reach a real Creatio.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process refuses missing operations with exit code 1")]
+	public async Task ModifyBusinessProcess_Should_RefuseMissingOperations_AsACallerError() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: false);
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = $"clio-e2e-unregistered-{Guid.NewGuid():N}",
+			["process-name"] = "UsrAccount_Onboard"
+		});
+
+		// Assert
+		JsonSerializer.Serialize(callResult).Should().Contain("operations is required and cannot be empty",
+			because: "absent operations must reach the tool body and get its own refusal, not a binder error");
+		string.Join(" ", callResult.Content.OfType<TextContentBlock>().Select(block => block.Text))
+			.Should().Contain("\"exit-code\":1",
+				because: "missing operations are a caller error fixed by sending them, exit code 1 over the real server "
+					+ "too - not -1, which tells the caller that clio broke and a retry will not help");
+	}
+
+	[Test]
 	[Description("Over the real MCP path, setFlow re-kinds an existing flow in place — the operation ENG-91853 added and the one nothing else in this suite sends. Two directions in one call, because they fail differently: sequence -> conditional must store the condition, and conditional -> sequence is the clear-condition route. The source is an ORDINARY element, and that is the correction: an earlier version of this test asked for kind sequence on a flow out of a GATEWAY, which the builder refuses whenever a conditional sibling exists, so its expected outcome was unreachable and the operation before it could never have been committed either. Unit tests build the operation record positionally in C#, so the JSON binder for op/kind/condition is exercised nowhere else.")]
 	[AllureTag(ToolName)]
 	[AllureName("modify-business-process re-kinds a flow with setFlow in both directions")]

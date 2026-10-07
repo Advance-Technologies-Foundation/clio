@@ -335,4 +335,28 @@ public sealed class ProcessDesignerEmittedSchemaTests {
 		field.Description.Should().Contain("string holding the same JSON is also accepted",
 			because: "the derived contract carries the emitted description, which names both accepted forms");
 	}
+
+	[TestCase(CreateBusinessProcessTool.CreateBusinessProcessToolName, "descriptor")]
+	[TestCase(ModifyBusinessProcessTool.ModifyBusinessProcessToolName, "operations")]
+	[TestCase(ModifyProcessAsNewVersionTool.ModifyProcessAsNewVersionToolName, "operations")]
+	[Category("Unit")]
+	[Description("With no invoker registry, get-tool-contract falls back to the contract reflected from the args record, and that fallback types the JSON-document argument as 'any' too - the answer the registry-derived contract gives - rather than 'object' (ENG-100153).")]
+	public void ReflectedFallbackContract_Should_TypeTheJsonDocumentArgument_AsAny(string toolName, string wireName) {
+		// Arrange - no registry: the degraded path that resolves an uncurated tool through McpToolSchemaCatalog.
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractDefinition contract = tool.GetToolContracts(
+			new ToolContractGetArgs([toolName], "full")).Tools!.Single();
+		ToolContractField field = contract.InputSchema.Properties.Single(property => property.Name == wireName);
+
+		// Assert
+		contract.Description.Should().Contain("Auto-generated from the tool input schema",
+			because: "the contract under test must come from the reflection fallback, not from a registry");
+		field.Type.Should().Be(McpToolRegistrySchemaContract.AnyType,
+			because: $"both contract builders must type '{wireName}' the same way, and it accepts the JSON value or a "
+				+ "string holding it - 'object' would tell the caller the operations array is an object");
+		field.Description.Should().Contain("string holding the same JSON is also accepted",
+			because: "the fallback reads the same member description, which names both accepted forms");
+	}
 }

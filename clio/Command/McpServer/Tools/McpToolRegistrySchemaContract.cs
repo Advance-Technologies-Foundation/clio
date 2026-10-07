@@ -224,7 +224,7 @@ internal static class McpToolRegistrySchemaContract {
 
 	// A schema that constrains nothing: the boolean `true` schema, or an object carrying only annotations.
 	// The SDK emits a JsonElement member this way - `{"description":"..."}` - and reporting it as "object"
-	// told a caller that the process-designer `operations` ARRAY was an object (ENG-100153). Anything with
+	// would tell a caller that the process-designer `operations` ARRAY is an object (ENG-100153). Anything with
 	// a real keyword ($ref, anyOf, properties, ...) keeps the old "object" fallback.
 	private static bool IsUnconstrained(JsonElement propertyValue) =>
 		propertyValue.ValueKind == JsonValueKind.True

@@ -383,11 +383,13 @@ internal static class McpToolArgumentSupport {
 	/// widen that contract for good.
 	/// </para>
 	/// <para>
-	/// The refusal follows the exit-code contract of <see cref="CommandExecutionResult"/>: a document of the
-	/// wrong kind, or a string that cannot be read as text, is a caller error and answers exit code 1
-	/// (<see cref="CommandExecutionResult.FromValidationError"/>), the code the command gives the same mistake
-	/// in string form. A missing document keeps the tools' long-standing "is required" refusal
-	/// (<see cref="CommandExecutionResult.FromError"/>, -1), which ENG-99100 tracks for the whole family.
+	/// The refusal follows the exit-code contract of <see cref="CommandExecutionResult"/>: every refusal here is a
+	/// caller error and answers exit code 1 (<see cref="CommandExecutionResult.FromValidationError"/>), the code the
+	/// command gives the same mistake in string form. That covers a document of the wrong kind, a string that
+	/// cannot be read as text, and a missing document - absent, JSON <c>null</c>, or an empty or whitespace-only
+	/// string - which is the same mistake spelled another way. The missing document answered -1 before
+	/// ENG-100153; the tools' older environment-name and process-identity checks still do, and ENG-99100 tracks
+	/// those.
 	/// </para>
 	/// </remarks>
 	/// <param name="value">The bound argument; <see cref="JsonValueKind.Undefined"/> when the key was absent.</param>
@@ -452,7 +454,7 @@ internal static class McpToolArgumentSupport {
 			&& string.IsNullOrWhiteSpace(text));
 
 	private static CommandExecutionResult MissingJsonDocument(string argumentName) =>
-		CommandExecutionResult.FromError($"{argumentName} is required and cannot be empty.");
+		CommandExecutionResult.FromValidationError($"{argumentName} is required and cannot be empty.");
 
 	// GetString throws for a string carrying an unpaired surrogate escape; before ENG-100153 the binder refused
 	// such a value, so it is answered here as a refusal rather than escaping the tool as an exception.

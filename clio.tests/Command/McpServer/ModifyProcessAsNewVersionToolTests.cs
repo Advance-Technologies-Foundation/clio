@@ -38,7 +38,9 @@ public class ModifyProcessAsNewVersionToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.ModifyProcessAsNewVersion(new ModifyProcessAsNewVersionArgs(
-			"docker_fix2", "UsrSampleProcess", null, "UsrAntonTest") { Operations = JsonArgument.Text(SampleOperations) });
+			"docker_fix2", "UsrSampleProcess", null) {
+			PackageName = "UsrAntonTest", Operations = JsonArgument.Text(SampleOperations)
+		});
 
 		// Assert
 		result.ExitCode.Should().Be(0,

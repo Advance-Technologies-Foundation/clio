@@ -215,7 +215,7 @@ public class CreateBusinessProcessToolTests {
 	}
 
 	[Test]
-	[Description("Returns a failed result without resolving any command when the descriptor is empty.")]
+	[Description("Refuses an empty descriptor as a caller error (exit code 1) without resolving any command.")]
 	[Category("Unit")]
 	public void CreateBusinessProcess_Should_Fail_When_Descriptor_Is_Empty() {
 		// Arrange
@@ -229,8 +229,9 @@ public class CreateBusinessProcessToolTests {
 			new CreateBusinessProcessArgs("docker_fix2", JsonArgument.Text("   "), null));
 
 		// Assert
-		result.ExitCode.Should().Be(-1,
-			because: "an empty descriptor is a validation error that must not reach command resolution");
+		result.ExitCode.Should().Be(1,
+			because: "an empty descriptor is a validation error the caller fixes by sending one, so it answers 1, "
+				+ "not -1, which means clio itself broke - and it must not reach command resolution");
 		commandResolver.DidNotReceiveWithAnyArgs().Resolve<CreateBusinessProcessCommand>(default!);
 		ConsoleLogger.Instance.ClearMessages();
 	}

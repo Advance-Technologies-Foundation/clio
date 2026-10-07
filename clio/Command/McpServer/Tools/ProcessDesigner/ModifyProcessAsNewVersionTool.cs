@@ -161,13 +161,22 @@ public sealed record ModifyProcessAsNewVersionArgs(
 
 	[property: JsonPropertyName("process-uid")]
 	[property: Description("Schema UId of the SOURCE process; provide exactly one of process-name or process-uid.")]
-	string? ProcessUid = null,
+	string? ProcessUid = null) {
 
-	[property: JsonPropertyName("package-name")]
-	[property: Description(
+	/// <summary>
+	/// Package the new version is saved into; <see langword="null"/> when the caller named none.
+	/// </summary>
+	/// <remarks>
+	/// An init property for a C# reason, not a wire one: <see cref="Operations"/> left the constructor (ENG-100153),
+	/// and a positional <c>PackageName</c> would have slid into the fourth slot the operations string used to hold.
+	/// A call written for the old shape - <c>new(env, name, uid, operationsJson)</c> - would then still compile and
+	/// save the version into a package named after a JSON array. Out of the constructor, that call fails to compile.
+	/// </remarks>
+	[JsonPropertyName("package-name")]
+	[Description(
 		"Package the new version is saved into. Omit to let the platform choose; a version does not inherit the "
 		+ "root's package.")]
-	string? PackageName = null) {
+	public string? PackageName { get; init; }
 
 	/// <summary>
 	/// The operations array, or a string holding its JSON; absent, null or empty snapshots the source unchanged.

@@ -131,6 +131,31 @@ public sealed class ProcessDesignerJsonDocumentArgumentTests {
 			because: "an unreadable string is a caller error, not a clio failure");
 	}
 
+	[TestCase("", Description = "descriptor omitted")]
+	[TestCase(",\"descriptor\":null", Description = "descriptor null")]
+	[TestCase(",\"descriptor\":\"\"", Description = "descriptor an empty string")]
+	[TestCase(",\"descriptor\":\"   \"", Description = "descriptor a whitespace-only string")]
+	[Category("Unit")]
+	[Description("create-business-process refuses a missing descriptor - omitted, null or an empty string - through the real binder with its own 'is required' refusal and exit code 1, without dispatching the command. Pins that an absent key still reaches the tool body rather than becoming a binder error.")]
+	public async Task CreateBusinessProcess_Should_RefuseAMissingDescriptor_AsACallerError(string descriptor) {
+		// Arrange
+		FakeCreateCommand command = new();
+		McpServerTool tool = CreateTool(command);
+
+		// Act
+		CallToolResult result = await InvokeAsync(tool, CreateBusinessProcessTool.CreateBusinessProcessToolName,
+			$"{{\"environment-name\":\"sandbox\"{descriptor}}}");
+
+		// Assert
+		command.CapturedOptions.Should().BeNull(
+			because: "there is no descriptor to build a process from");
+		TextOf(result).Should().Contain("descriptor is required and cannot be empty",
+			because: "every spelling of a missing descriptor gets the tool's own refusal, which names the argument");
+		TextOf(result).Should().Contain("\"exit-code\":1",
+			because: "a missing descriptor is a caller error fixed by sending one, the code a descriptor of the wrong "
+				+ "kind gets - not -1, which tells the caller that clio broke and a retry will not help");
+	}
+
 	[Test]
 	[Category("Unit")]
 	[Description("modify-business-process binds operations sent as a JSON ARRAY and hands the command that same array.")]
@@ -195,6 +220,31 @@ public sealed class ProcessDesignerJsonDocumentArgumentTests {
 			because: "operations of the wrong kind are a caller error, exit code 1 - not -1, which means clio itself broke");
 	}
 
+	[TestCase("", Description = "operations omitted")]
+	[TestCase(",\"operations\":null", Description = "operations null")]
+	[TestCase(",\"operations\":\"\"", Description = "operations an empty string")]
+	[TestCase(",\"operations\":\"   \"", Description = "operations a whitespace-only string")]
+	[Category("Unit")]
+	[Description("modify-business-process refuses missing operations - omitted, null or an empty string - through the real binder with its own 'is required' refusal and exit code 1, without dispatching the command. Unlike modify-business-process-as-new-version, this tool has no snapshot form: the operations are the edit.")]
+	public async Task ModifyBusinessProcess_Should_RefuseMissingOperations_AsACallerError(string operations) {
+		// Arrange
+		FakeModifyCommand command = new();
+		McpServerTool tool = ModifyTool(command);
+
+		// Act
+		CallToolResult result = await InvokeAsync(tool, ModifyBusinessProcessTool.ModifyBusinessProcessToolName,
+			$"{{\"environment-name\":\"sandbox\",\"process-name\":\"UsrAccount_Onboard\"{operations}}}");
+
+		// Assert
+		command.CapturedOptions.Should().BeNull(
+			because: "there is no edit to apply");
+		TextOf(result).Should().Contain("operations is required and cannot be empty",
+			because: "every spelling of missing operations gets the tool's own refusal, which names the argument");
+		TextOf(result).Should().Contain("\"exit-code\":1",
+			because: "missing operations are a caller error fixed by sending them, the code operations of the wrong "
+				+ "kind get - not -1, which tells the caller that clio broke and a retry will not help");
+	}
+
 	[Test]
 	[Category("Unit")]
 	[Description("modify-business-process-as-new-version binds operations sent as a JSON ARRAY and hands the command that same array.")]
@@ -214,6 +264,28 @@ public sealed class ProcessDesignerJsonDocumentArgumentTests {
 			because: "the call must reach the command before what it received can be asserted");
 		JsonDocumentsShouldBeEqual(command.CapturedOptions!.OperationsJson, Operations,
 			because: "the command must receive the operations the caller sent");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("modify-business-process-as-new-version binds package-name by its wire name now that PackageName is an init property rather than a positional parameter, and hands it to the command.")]
+	public async Task ModifyProcessAsNewVersion_Should_BindThePackageName() {
+		// Arrange
+		FakeNewVersionCommand command = new();
+		McpServerTool tool = NewVersionTool(command);
+
+		// Act
+		CallToolResult result = await InvokeAsync(tool, ModifyProcessAsNewVersionTool.ModifyProcessAsNewVersionToolName,
+			"{\"environment-name\":\"sandbox\",\"process-name\":\"UsrAccount_Onboard\",\"package-name\":\"Custom\"}");
+
+		// Assert
+		result.IsError.Should().NotBe(true,
+			because: "package-name is a declared argument and must bind rather than be refused as unknown");
+		command.CapturedOptions.Should().NotBeNull(
+			because: "the call must reach the command before what it received can be asserted");
+		command.CapturedOptions!.PackageName.Should().Be("Custom",
+			because: "package-name is the only way to choose where the version is saved; an init property that did not "
+				+ "bind would silently save it into the source's package instead");
 	}
 
 	[TestCase("", Description = "operations omitted")]

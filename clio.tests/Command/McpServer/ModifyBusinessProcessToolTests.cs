@@ -327,7 +327,7 @@ public class ModifyBusinessProcessToolTests {
 	}
 
 	[Test]
-	[Description("Returns a failed result without resolving any command when the operations are empty.")]
+	[Description("Refuses empty operations as a caller error (exit code 1) without resolving any command.")]
 	[Category("Unit")]
 	public void ModifyBusinessProcess_Should_Fail_When_Operations_Are_Empty() {
 		// Arrange
@@ -341,8 +341,9 @@ public class ModifyBusinessProcessToolTests {
 			new ModifyBusinessProcessArgs("docker_fix2", JsonArgument.Text("   "), "UsrSampleProcess", null));
 
 		// Assert
-		result.ExitCode.Should().Be(-1,
-			because: "empty operations is a validation error that must not reach command resolution");
+		result.ExitCode.Should().Be(1,
+			because: "empty operations is a validation error the caller fixes by sending them, so it answers 1, "
+				+ "not -1, which means clio itself broke - and it must not reach command resolution");
 		commandResolver.DidNotReceiveWithAnyArgs().Resolve<ModifyBusinessProcessCommand>(default!);
 		ConsoleLogger.Instance.ClearMessages();
 	}

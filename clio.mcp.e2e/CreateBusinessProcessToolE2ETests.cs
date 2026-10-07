@@ -190,6 +190,28 @@ public sealed class CreateBusinessProcessToolE2ETests {
 	}
 
 	[Test]
+	[Description("Over the real MCP path, with no Creatio needed, a call with no descriptor at all reaches the tool body and is refused there as a caller error, exit code 1 - not -1, which tells the caller that clio broke (ENG-100153). The unit tests reach the binder only in-process; this call also crosses the long-tail dispatch. The environment is unregistered, so a refusal that stopped firing could not reach a real Creatio.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process refuses a missing descriptor with exit code 1")]
+	public async Task CreateBusinessProcess_Should_RefuseAMissingDescriptor_AsACallerError() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: false);
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = $"clio-e2e-unregistered-{Guid.NewGuid():N}"
+		});
+
+		// Assert
+		JsonSerializer.Serialize(callResult).Should().Contain("descriptor is required and cannot be empty",
+			because: "an absent descriptor must reach the tool body and get its own refusal, not a binder error");
+		string.Join(" ", callResult.Content.OfType<TextContentBlock>().Select(block => block.Text))
+			.Should().Contain("\"exit-code\":1",
+				because: "a missing descriptor is a caller error fixed by sending one, exit code 1 over the real server "
+					+ "too - not -1, which tells the caller that clio broke and a retry will not help");
+	}
+
+	[Test]
 	[Description("Over the real MCP path, create-business-process accepts the ENG-92127 type-mirror (typeFromElement) parameter, and describe-business-process reads the built process back with each parameter's direction surfaced.")]
 	[AllureTag(ToolName)]
 	[AllureName("create-business-process mirrors an element parameter's type and describe surfaces direction")]
