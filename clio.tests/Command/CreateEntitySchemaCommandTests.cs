@@ -304,6 +304,122 @@ internal class CreateEntitySchemaCommandTests : BaseCommandTests<CreateEntitySch
 		result.Tag.Should().Be(ParserResultType.NotParsed, because: "an incomplete request must fail before schema creation");
 	}
 
+	[Test]
+	[Description("Creates the schema under the --schema-name alias when --name is omitted, so create-entity-schema accepts the flag spelling the other entity-schema commands use (ENG-101526).")]
+	public void Execute_Should_UseSchemaNameAlias_WhenNameOmitted() {
+		// Arrange
+		CreateEntitySchemaOptions options = new() {
+			Package = "UsrPkg",
+			SchemaNameAlias = "UsrVehicle",
+			Title = "Vehicle"
+		};
+		List<string> schemaNamesAtCreateTime = [];
+		_creator.When(creator => creator.Create(Arg.Any<CreateEntitySchemaOptions>()))
+			.Do(callInfo => schemaNamesAtCreateTime.Add(callInfo.Arg<CreateEntitySchemaOptions>().SchemaName));
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "--schema-name is an accepted spelling of --name");
+		schemaNamesAtCreateTime.Should().ContainSingle(because: "the remote creator must be invoked exactly once")
+			.Which.Should().Be("UsrVehicle",
+				because: "the alias value must reach the creator as the schema name");
+	}
+
+	[Test]
+	[Description("Fails with an error naming both --name and --schema-name, and makes no remote call, when neither is supplied (ENG-101526).")]
+	public void Execute_Should_Fail_WhenNeitherNameNorAliasSupplied() {
+		// Arrange
+		CreateEntitySchemaOptions options = new() {
+			Package = "UsrPkg",
+			Title = "Vehicle"
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "a schema cannot be created without a name");
+		_creator.DidNotReceiveWithAnyArgs().Create(default!);
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("--name") && message.Contains("--schema-name")));
+	}
+
+	[Test]
+	[Description("Rejects --name and --schema-name with different values before any remote call, naming both values (ENG-101526).")]
+	public void Execute_Should_Fail_WhenNameAndAliasConflict() {
+		// Arrange
+		CreateEntitySchemaOptions options = new() {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			SchemaNameAlias = "UsrTruck",
+			Title = "Vehicle"
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "two different schema names are ambiguous");
+		_creator.DidNotReceiveWithAnyArgs().Create(default!);
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("'UsrVehicle'") && message.Contains("'UsrTruck'")
+			&& message.Contains("--name") && message.Contains("--schema-name")));
+	}
+
+	[Test]
+	[Description("Accepts --name and --schema-name when they carry the same value ignoring case, and keeps the --name spelling (ENG-101526).")]
+	public void Execute_Should_Succeed_WhenNameAndAliasMatchIgnoringCase() {
+		// Arrange
+		CreateEntitySchemaOptions options = new() {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			SchemaNameAlias = "usrvehicle",
+			Title = "Vehicle"
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "the same name supplied twice is not a conflict");
+		_creator.Received(1).Create(Arg.Is<CreateEntitySchemaOptions>(created => created.SchemaName == "UsrVehicle"));
+	}
+
+	[Test]
+	[Description("The parser accepts --schema-name as the only name option of create-entity-schema (ENG-101526).")]
+	public void Parse_Should_AcceptSchemaNameAlias_WhenNameOmitted() {
+		// Arrange
+		string[] arguments = ["--package", "UsrPkg", "--schema-name", "UsrVehicle", "--title", "Vehicle"];
+		CreateEntitySchemaOptions? parsed = null;
+
+		// Act
+		ParserResult<CreateEntitySchemaOptions> result = Parser.Default
+			.ParseArguments<CreateEntitySchemaOptions>(arguments).WithParsed(options => parsed = options);
+
+		// Assert
+		result.Tag.Should().Be(ParserResultType.Parsed,
+			because: "--name is no longer parser-required once the alias can supply it");
+		parsed!.SchemaNameAlias.Should().Be("UsrVehicle", because: "the alias value must be captured for the command");
+	}
+
+	[Test]
+	[Description("The --schema-name alias is hidden from generated create-entity-schema help (ENG-101526).")]
+	public void SchemaNameAlias_Should_BeHiddenFromGeneratedHelp() {
+		// Arrange
+		System.Reflection.PropertyInfo property = typeof(CreateEntitySchemaOptions)
+			.GetProperty(nameof(CreateEntitySchemaOptions.SchemaNameAlias))!;
+
+		// Act
+		OptionAttribute attribute = (OptionAttribute)System.Attribute.GetCustomAttribute(property, typeof(OptionAttribute))!;
+
+		// Assert
+		attribute.LongName.Should().Be("schema-name", because: "the alias must use the spelling of the other entity-schema commands");
+		attribute.Hidden.Should().BeTrue(because: "--name stays the documented option; the alias must not appear in --help");
+		attribute.Required.Should().BeFalse(because: "either --name or the alias may supply the schema name");
+	}
+
 	[TestCase("update-entity-schema")]
 	[TestCase("create-data-binding")]
 	[Description("Scopes repeated-column normalization to entity creation.")]
