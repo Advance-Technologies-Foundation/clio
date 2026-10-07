@@ -250,7 +250,9 @@ Successful saves may also return `warnings`. Every entry is informational only �
 schema save already succeeded, so never retry on a warning. Today they cover the live
 Designer Presence push, a component whose `insert` the submitted body replaced with a
 `merge`/`move`/`remove`, an operation the differ will drop because another operation
-for the same component name cancels it (see "Write modes"), and — on `append` — an
+for the same component name cancels it (see "Write modes"), a `viewModelConfigDiff` /
+`modelConfigDiff` `merge` whose `path` does not resolve (see "Config merges into a missing
+path"), and — on `append` — an
 existing operation the merge could not preserve because your fragment superseded an
 identity the page carried more than once. That last one names the component and tells you
 to re-read with `get-page`, because it is the one case where appending removes something
@@ -375,6 +377,27 @@ parent schema that inserts the same name puts the component in the base and can 
 apply after all. A `--dry-run` reports it too, against the body that would actually be written — so
 in append mode it sees pairs formed between your fragment and the server's body, not only pairs
 inside your fragment.
+
+### Config merges into a missing path
+
+A `viewModelConfigDiff` or `modelConfigDiff` `merge` is addressed by `path`. The platform differ walks
+that path through the config built from the parent schemas and the merges that come before it in the
+same body. If a segment does not exist, the differ skips the merge. It does not create the
+missing key. The body is saved with the operation in it, but the operation has no effect.
+Typical shapes:
+
+- a new data source written as `path: ["dataSources", "NewDS"]`. The key does not exist yet;
+- `path: ["dependencies"]` on a page whose chain has no `dependencies` yet;
+- a nested key that the parent schema's data source or attribute does not have, for example
+  `path: ["dataSources", "AttachmentListDS", "config", "sortingConfig"]`;
+- a nested merge placed before the merge that creates its target. Merges run in array order.
+
+`update-page` resolves the page's real parent schemas and applies the body's config diffs to that
+config the way the platform does. For every merge that would be skipped, the response gets an advisory
+`warnings` entry naming the section and the path. The save still succeeds, on `--dry-run` as well. To
+add a new key, merge into its existing parent and put the key inside `values`: `path: ["dataSources"]`
+with `values: { "NewDS": { ... } }`, or `path: []` with the whole branch. If the parent schemas cannot
+be read for this check, the response says the check did not run, and the save is not blocked.
 
 ### What a `--dry-run` tells you about an append
 

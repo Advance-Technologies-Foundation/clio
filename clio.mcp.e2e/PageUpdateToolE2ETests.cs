@@ -340,6 +340,8 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		ToolContractField warningsField = pageUpdate.OutputContract.Fields.Single(field => field.Name == "warnings");
 		warningsField.Description.Should().Contain("never retry on a warning",
 			because: "the save already succeeded; an agent that reads an advisory finding as a failure will re-save and can trip conflict detection");
+		warningsField.Description.Should().Contain("`merge` whose `path` does not exist",
+			because: "GH-1753: a config merge into a missing path is saved but skipped by the differ, and the contract must name that warning so the agent acts on it");
 	}
 
 	[Test]
@@ -544,6 +546,56 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		match.Success.Should().BeTrue(
 			because: "the seeded page must be in diff form for an append to be meaningful");
 		return JArray.Parse(match.Groups["content"].Value.Trim()).Count;
+	}
+
+	[Test]
+	[Description("GitHub #1753: a modelConfigDiff merge whose path does not exist is saved but skipped by the platform differ. update-page must still succeed and must name the operation in `warnings` over the real MCP transport, against the seeded page's real parent schemas.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page warns about a config merge whose path does not resolve")]
+	[AllureDescription("Reads the seeded page ClioMcp_BlankPageToSave, submits an append fragment whose modelConfigDiff merges into a data source key no schema defines, with dry-run=true, and verifies the structured response is successful and carries a warning naming that merge's path. Then re-reads the page and asserts the stored body is unchanged. Non-destructive by construction: a dry run never reaches TrySaveSchema.")]
+	public async Task PageUpdateTool_Should_Warn_When_A_Config_Merge_Path_Does_Not_Resolve() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+		const string savePage = "ClioMcp_BlankPageToSave";
+		string bodyBefore = await ReadRawBodyAsync(arrangeContext, environmentName, savePage);
+		string fragment = "define(\"" + savePage + "\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[{\"operation\":\"merge\",\"path\":[\"dataSources\",\"UsrClioE2EMissingDS\",\"config\"]," +
+			"\"values\":{\"entitySchemaName\":\"Contact\"}}]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+			"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+
+		// Act
+		CallToolResult updateResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = savePage,
+					["body"] = fragment,
+					["mode"] = "append",
+					["dry-run"] = true,
+					["environment-name"] = environmentName
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		PageUpdateResponse response =
+			EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(updateResult);
+
+		// Assert
+		updateResult.IsError.Should().NotBeTrue(
+			because: "an append dry run against a seeded diff-form page is a structured read, not a transport error");
+		response.Success.Should().BeTrue(
+			because: $"the warning is advisory and must not block the write. Error: {response.Error}");
+		response.Warnings.Should().Contain(
+			warning => warning.StartsWith("modelConfigDiff merge at path [\"dataSources\",\"UsrClioE2EMissingDS\",\"config\"]"),
+			because: "no schema in the page's chain defines that data source, so the differ skips the merge and the caller must be told");
+		string bodyAfter = await ReadRawBodyAsync(arrangeContext, environmentName, savePage);
+		bodyAfter.Should().Be(bodyBefore, because: "a dry run must not write the page");
 	}
 
 	/// <summary>Builds a minimal diff-form append fragment adding one uniquely named container.</summary>

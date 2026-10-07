@@ -102,4 +102,68 @@ public sealed class JsonPathDiffApplierTests {
 			"""[ { "operation": "merge", "path": ["attributes"], "values": { "PDS_New": { "modelConfig": { "path": "PDS.New" } } } } ]""");
 		AssertEqual(result, """{ "attributes": { "PDS_New": { "modelConfig": { "path": "PDS.New" } } } }""");
 	}
+	[Test]
+	[Description("GH-1753: a merge whose path does not resolve is skipped, and the optional UnresolvedMerges sink receives it while the resolvable merge beside it still applies.")]
+	public void Apply_ShouldReportUnresolvedMerge_WhenSinkIsProvided() {
+		// Arrange
+		var unresolved = new System.Collections.Generic.List<JObject>();
+		var options = new JsonApplierOperationsOptions { UnresolvedMerges = unresolved };
+		JArray operations = (JArray)JToken.Parse("""
+			[
+				{ "operation": "merge", "path": ["dataSources", "NewDS"], "values": { "type": "crt.EntityDataSource" } },
+				{ "operation": "merge", "path": ["dataSources"], "values": { "OtherDS": { "type": "crt.EntityDataSource" } } }
+			]
+			""");
+
+		// Act
+		JToken result = new JsonPathDiffApplier().Apply(
+			JToken.Parse("""{ "dataSources": { "PDS": {} } }"""), operations, options);
+
+		// Assert
+		AssertEqual(result, """{ "dataSources": { "PDS": {}, "OtherDS": { "type": "crt.EntityDataSource" } } }""");
+		unresolved.Should().ContainSingle(because: "only the merge into the missing 'NewDS' key fails to resolve");
+		unresolved[0]["path"]!.ToString(Newtonsoft.Json.Formatting.None).Should().Be("[\"dataSources\",\"NewDS\"]",
+			because: "the sink receives the skipped operation itself, so a caller can name its path");
+	}
+
+	[Test]
+	[Description("GH-1753: the UnresolvedMerges sink only observes - the applied result is identical with and without it.")]
+	public void Apply_ShouldProduceSameResult_WhenUnresolvedMergeSinkIsProvided() {
+		// Arrange
+		const string source = """{ "attributes": { "A": { "x": 1 } } }""";
+		const string operations = """
+			[
+				{ "operation": "merge", "path": ["attributes", "Missing"], "values": { "y": 1 } },
+				{ "operation": "merge", "path": ["attributes", "A"], "values": { "x": 2 } }
+			]
+			""";
+
+		// Act
+		JToken withoutSink = new JsonPathDiffApplier().Apply(JToken.Parse(source), (JArray)JToken.Parse(operations));
+		JToken withSink = new JsonPathDiffApplier().Apply(JToken.Parse(source), (JArray)JToken.Parse(operations),
+			new JsonApplierOperationsOptions { UnresolvedMerges = new System.Collections.Generic.List<JObject>() });
+
+		// Assert
+		JToken.DeepEquals(withSink, withoutSink).Should().BeTrue(
+			because: "the sink is a diagnostic and must never change what the differ applies");
+	}
+	[TestCase("null")]
+	[TestCase("false")]
+	[TestCase("0")]
+	[TestCase("\"\"")]
+	[Description("GH-1753: like the client's `!itemInfo.item` test, a falsy value at the merge path is treated as a missing target - the merge is skipped and reported, not merged into (which threw InvalidCastException).")]
+	public void Merge_ShouldSkipAndReport_WhenPathPointsAtFalsyValue(string falsyValue) {
+		// Arrange
+		var unresolved = new System.Collections.Generic.List<JObject>();
+		JToken source = JToken.Parse("{ \"attributes\": { \"A\": " + falsyValue + " } }");
+
+		// Act
+		JToken result = new JsonPathDiffApplier().Apply(source,
+			(JArray)JToken.Parse("""[ { "operation": "merge", "path": ["attributes", "A"], "values": { "x": 1 } } ]"""),
+			new JsonApplierOperationsOptions { UnresolvedMerges = unresolved });
+
+		// Assert
+		JToken.DeepEquals(result, source).Should().BeTrue(because: "the client skips a merge whose target is falsy");
+		unresolved.Should().ContainSingle(because: "the skipped merge must reach the diagnostic sink");
+	}
 }

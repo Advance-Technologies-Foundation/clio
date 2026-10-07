@@ -6,6 +6,7 @@ applies-to:
   - clio/Command/McpServer/Tools/PageUpdateTool.cs
   - clio/Command/PageInsertDowngradeDetector.cs
   - clio/Command/PageInertOperationDetector.cs
+  - clio/Command/PageUnresolvedMergeDetector.cs
 ticket: GH-1150
 date: 2026-08-31
 ---
@@ -24,7 +25,8 @@ context resolution, and `TryCompleteDryRun` for `mode: append` loads the schema
   distinguishable from a failed real save;
 - runs the SAME body checks the save runs, against the projected final body: the inert-operation
   detector (so it sees pairs formed between the caller's fragment and the server's body), the
-  insert-downgrade detector, and the save's own authoritative widget-caption gate — the last
+  insert-downgrade detector, the unresolved config-merge check (GH-1753, run against the real
+  parent schemas), and the save's own authoritative widget-caption gate — the last
   reported as a warning rather than a refusal, because a dry run's job is to say what would happen,
   not to refuse. Severity is the only difference between the two paths;
 - returns `appendProjection` — the counts, the replaced labels, and **three separate loss channels**
@@ -80,7 +82,7 @@ handler — which the DTO documents rather than reporting zeros for.
 **`mode: replace` is narrower than "offline", and saying otherwise misleads.** `TryResolveContext`
 runs before either mode is chosen and already reaches the server, so a replace dry run is not an
 offline operation. What it skips is `TryCompleteDryRun`'s designer `GetSchema` of the current body —
-precisely what `TryUpdatePage_WhenDryRun_SkipsDesignerServiceCalls` asserts for its body without parent references, and no more. Explicit web parent references additionally require the inherited designer hierarchy, including on replace dry runs (GH-1640). Do not
+precisely what `TryUpdatePage_WhenDryRun_SkipsDesignerServiceCalls` asserts for its body without parent references, and no more. Explicit web parent references additionally require the inherited designer hierarchy, including on replace dry runs (GH-1640); so does a `viewModelConfigDiff`/`modelConfigDiff` merge with a non-root `path` (GH-1753), whose check reuses the hierarchy already resolved for the context and reads it only on the `target-schema-uid` and create-replacing paths, and whose read failure is a warning, not a failure. Do not
 widen that test's name into a claim that the path runs without a server; a caller who plans an
 offline workflow on it will find one that cannot run. The cost of that guarantee is the one
 divergence left: a replace dry run's caption check resolves only against the explicitly passed

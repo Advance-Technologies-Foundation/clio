@@ -68,7 +68,9 @@ public sealed class JsonPathDiffApplier : JsonDiffApplier, IJsonPathDiffApplier 
 		if (itemInfo?.Item is null && pathArr is not null) {
 			List<object> parts = PathSegments(pathArr);
 			JToken found = GetByPath(_sourceObject, parts, parts.Count > 0 ? null : _sourceObject);
-			itemInfo = new ItemInfo { Item = found };
+			// The client tests `!itemInfo.item`, so a JSON null (or other falsy value) at the path falls back like
+			// a missing one instead of being merged into (GH-1753: the cast in Merge used to throw here).
+			itemInfo = new ItemInfo { Item = IsFalsy(found) ? null : found };
 			if (itemInfo.Item is null) {
 				string parentName = parts.Count > 0 ? parts[0]?.ToString() : null;
 				if (parts.Count > 0) {

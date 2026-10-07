@@ -2,6 +2,7 @@
 	using System;
 	using System.Collections.Generic;
 	using System.Diagnostics.CodeAnalysis;
+	using System.Globalization;
 	using System.IO;
 	using System.Linq;
 	using Clio.Command.McpServer;
@@ -180,6 +181,7 @@
 		private readonly IPageDesignerPresenceNotifier? _pageDesignerPresenceNotifier;
 		private readonly IPageBaselineGuard _pageBaselineGuard;
 		private readonly IPersistedResourceKeyReader _persistedResourceKeyReader;
+		private readonly IPageUnresolvedMergeDetector? _unresolvedMergeDetector;
 
 		/// <summary>
 		/// Initializes a new instance of the <see cref="PageUpdateCommand"/> class.
@@ -203,6 +205,9 @@
 		/// <param name="viewConfigApplierFactory">Creates the platform diff interpreter for mandatory parent validation.</param>
 		/// <param name="pageDesignerPresenceNotifier">Best-effort notifier used by the update-page
 		/// entry points to publish Designer Presence save events.</param>
+		/// <param name="unresolvedMergeDetector">Advisory check that reports viewModelConfigDiff/modelConfigDiff
+		/// merges the platform differ will skip because their path does not resolve (GH-1753). Optional because it
+		/// only adds warnings: without it a save behaves exactly as before.</param>
 		[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
 			Justification = "DI constructor: each collaborator owns a separate write concern. The factory creates a fresh stateful diff interpreter per hierarchy; bundling unrelated services would hide dependencies.")]
 		public PageUpdateCommand(
@@ -213,7 +218,8 @@
 			IPersistedResourceKeyReader persistedResourceKeyReader,
 			IPageDesignerHierarchyClient hierarchyClient = null,
 			IPageDesignerPresenceNotifier? pageDesignerPresenceNotifier = null,
-			Func<IJsonDiffApplier> viewConfigApplierFactory = null) {
+			Func<IJsonDiffApplier> viewConfigApplierFactory = null,
+			IPageUnresolvedMergeDetector? unresolvedMergeDetector = null) {
 			_applicationClient = applicationClient;
 			_serviceUrlBuilder = serviceUrlBuilder;
 			_logger = logger;
@@ -222,6 +228,7 @@
 			_pageDesignerPresenceNotifier = pageDesignerPresenceNotifier;
 			_pageBaselineGuard = pageBaselineGuard;
 			_persistedResourceKeyReader = persistedResourceKeyReader;
+			_unresolvedMergeDetector = unresolvedMergeDetector;
 		}
 
 		/// <summary>
@@ -303,6 +310,7 @@
 			List<string> RegisteredKeys,
 			IReadOnlyList<string> DowngradeWarnings,
 			IReadOnlyList<string> InertWarnings,
+			IReadOnlyList<string> UnresolvedMergeWarnings,
 			PageUpdateResponse CaptionGateFailure);
 
 		/// <summary>
@@ -327,12 +335,13 @@
 			IReadOnlyList<string> downgradeWarnings =
 				PageInsertDowngradeDetector.Detect(schemaToSave["body"]?.ToString(), bodyToWrite);
 			IReadOnlyList<string> inertWarnings = PageInertOperationDetector.Detect(bodyToWrite);
+			IReadOnlyList<string> unresolvedMergeWarnings = DetectUnresolvedConfigMerges(bodyToWrite, context);
 			List<string> registeredKeys = UpdateSchemaBody(
 				schemaToSave, bodyToWrite, context.SchemaType, explicitResources, parsedOptionalProperties);
 			PageUpdateResponse captionGateFailure =
 				ValidateInsertedWidgetCaptionsResolve(options, schemaToSave, bodyToWrite, context.SchemaType);
 			prepared = new PreparedWrite(schemaToSave, bodyToWrite, projection, registeredKeys,
-				downgradeWarnings, inertWarnings, captionGateFailure);
+				downgradeWarnings, inertWarnings, unresolvedMergeWarnings, captionGateFailure);
 			return true;
 		}
 
@@ -355,19 +364,56 @@
 			return true;
 		}
 
+		internal const string UnresolvedMergeCheckSkippedWarning =
+			"Could not check whether the viewModelConfigDiff/modelConfigDiff merges resolve against the parent schemas, " +
+			"so a merge whose path does not exist would not be reported: {0}";
+
+		/// <summary>
+		/// Reports the config <c>merge</c> operations in <paramref name="body"/> that the platform differ will skip
+		/// because their path does not resolve (GH-1753). Advisory: the save still goes ahead, because a page can
+		/// legitimately carry such an operation from earlier saves and rejecting it would block unrelated edits.
+		/// </summary>
+		/// <returns>The warnings, empty when every merge resolves or nothing applies; a single "could not check"
+		/// entry when the check could not run.</returns>
+		private IReadOnlyList<string> DetectUnresolvedConfigMerges(string body, EditableSchemaContext context) {
+			if (_unresolvedMergeDetector is null || _hierarchyClient is null
+				|| context.SchemaType == PageSchemaType.Mobile
+				|| PageSchemaTypeExtensions.FromBody(body) == PageSchemaType.Mobile) {
+				return [];
+			}
+			try {
+				// The detector reads the hierarchy only when the body has a merge that can miss its target.
+				return _unresolvedMergeDetector.Detect(body, () => GetInheritedHierarchy(context));
+			} catch (Exception ex) {
+				// Every exception, deliberately: no cancellation token reaches this synchronous path, so even a
+				// TaskCanceledException is an HTTP timeout of the hierarchy read, not a caller's cancellation. An
+				// advisory check must never fail a save, and a check that did not run must say so - staying silent
+				// would look exactly like "every merge resolves". The reason is server-authored text: neutralized
+				// and length-capped before it reaches a model.
+				return [string.Format(CultureInfo.InvariantCulture, UnresolvedMergeCheckSkippedWarning,
+					SensitiveErrorTextRedactor.RedactUntrustedOrNull(ex.Message) ?? ex.GetType().Name)];
+			}
+		}
+
 		private IEnumerable<PageDesignerHierarchySchema> GetInheritedHierarchy(EditableSchemaContext context) {
+			// Read once per write: the parent check and the merge check both need it, and on the target-schema-uid
+			// and create-replacing paths every read is a designer request.
+			if (context.InheritedHierarchy is not null) {
+				return context.InheritedHierarchy;
+			}
 			string uid = context.IsCreateReplacing ? context.TemplateSchemaUId : context.EditableSchemaUId;
 			string package = context.DesignPackageUId ?? _hierarchyClient.GetDesignPackageUId(uid);
 			IReadOnlyList<PageDesignerHierarchySchema> hierarchy = context.ResolvedHierarchy ?? _hierarchyClient.GetParentSchemas(uid, package);
 			if (hierarchy is null || hierarchy.Count == 0)
-				throw new InvalidOperationException("Cannot validate parentName: page hierarchy is unavailable.");
+				throw new InvalidOperationException("Cannot read the page's parent schemas: page hierarchy is unavailable.");
 			IEnumerable<PageDesignerHierarchySchema> inherited = hierarchy;
 			if (!context.IsCreateReplacing) {
 				int own = hierarchy.ToList().FindIndex(x => SchemaUIdsMatch(x.UId, uid));
-				if (own < 0) throw new InvalidOperationException("Cannot validate parentName: target schema is missing from the hierarchy.");
+				if (own < 0) throw new InvalidOperationException("Cannot read the page's parent schemas: target schema is missing from the hierarchy.");
 				inherited = hierarchy.Skip(own + 1);
 			}
-			return inherited;
+			context.InheritedHierarchy = inherited.ToList();
+			return context.InheritedHierarchy;
 		}
 
 		private bool TryCompleteDryRun(
@@ -383,7 +429,8 @@
 				response = CreateSuccessResponse(options, dryRun: true, registeredKeys: null);
 				response.Warnings = CombineWarnings(
 					BuildDryRunWidgetCaptionWarnings(options.Body, context.SchemaType, explicitResources),
-					PageInertOperationDetector.Detect(options.Body));
+					PageInertOperationDetector.Detect(options.Body),
+					DetectUnresolvedConfigMerges(options.Body, context));
 				return true;
 			}
 			// ENG-96262 / GH-1150: append used to return before the merge, so a dry run reported `success`
@@ -403,7 +450,8 @@
 				BuildCaptionGateWarnings(prepared.CaptionGateFailure),
 				BuildProjectedLossWarnings(prepared.Projection),
 				prepared.DowngradeWarnings,
-				prepared.InertWarnings);
+				prepared.InertWarnings,
+				prepared.UnresolvedMergeWarnings);
 			return true;
 		}
 
@@ -423,6 +471,7 @@
 			response.AppendProjection = prepared.Projection;
 			response.Warnings = CombineWarnings(
 				BuildProjectedLossWarnings(prepared.Projection), prepared.DowngradeWarnings, prepared.InertWarnings,
+				prepared.UnresolvedMergeWarnings,
 				explicitResources?.Count > 0 || prepared.RegisteredKeys?.Count > 0
 					? new List<string> { ResourceWorkspaceCaptureWarning } : null);
 			PopulatePostSaveChecksum(options, context, response);
@@ -1041,6 +1090,10 @@
 			public string ParentSchemaName { get; set; }
 			public string TemplateSchemaUId { get; set; }
 			public PageSchemaType SchemaType { get; set; }
+			/// <summary>The schemas the written body layers over, nearest parent first; read once per write by
+			/// <see cref="GetInheritedHierarchy"/>. Separate from <see cref="ResolvedHierarchy"/>, which stays
+			/// <c>null</c> on the create-replacing path.</summary>
+			public IReadOnlyList<PageDesignerHierarchySchema> InheritedHierarchy { get; set; }
 		}
 
 		private static string FindRootSchemaUId(IReadOnlyList<PageDesignerHierarchySchema> hierarchy, string schemaName) {

@@ -159,7 +159,7 @@ public class JsonDiffApplier : IJsonDiffApplier {
 	};
 
 	// Mirrors JS `!value` falsiness for required-parameter presence checks.
-	private static bool IsFalsy(JToken token) {
+	protected static bool IsFalsy(JToken token) {
 		if (token is null || token.Type is JTokenType.Null or JTokenType.Undefined) {
 			return true;
 		}
@@ -275,7 +275,13 @@ public class JsonDiffApplier : IJsonDiffApplier {
 
 	private void ApplyOperations(JArray operations) {
 		SplittedOperations splitted = GetSplittedOperations(operations);
-		ApplyOperationGroup(op => Merge(op), splitted.Merge);
+		List<JObject> unresolvedMerges = ApplyOperationGroup(op => Merge(op), splitted.Merge);
+		// The platform differ discards this list. Clio may observe it (GH-1753); observing changes nothing applied.
+		if (_operationsOptions?.UnresolvedMerges is { } unresolvedMergeSink) {
+			foreach (JObject unresolvedMerge in unresolvedMerges) {
+				unresolvedMergeSink.Add(unresolvedMerge);
+			}
+		}
 		ApplyChangePositionOperationGroup(splitted.Remove, splitted.Insert, splitted.Move);
 		ApplyOperationGroup(op => Remove(op), splitted.RemoveProperties);
 		ApplyOperationGroup(op => Set(op), splitted.Set);
@@ -829,6 +835,11 @@ public sealed class JsonApplierOperationsOptions {
 	public bool RejectUnresolvedParents { get; set; }
 
 	public bool ApplyMoveIfIndirectParentMoved { get; init; }
+
+	/// <summary>Clio diagnostic sink: when set, receives a copy of every <c>merge</c> operation the differ
+	/// skipped because its target did not resolve. The platform interpreter drops these silently; the sink only
+	/// observes them and never changes what is applied. Defaults to <c>null</c> (no observation).</summary>
+	public ICollection<JObject> UnresolvedMerges { get; init; }
 }
 
 /// <summary>Error thrown by <see cref="JsonDiffApplier"/>, mirroring the client <c>new Error(...)</c> throws.</summary>
