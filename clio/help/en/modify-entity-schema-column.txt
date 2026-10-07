@@ -94,6 +94,12 @@ OPTIONS
     -u, --uri                      Application URI
     -l, --login                    User login
     -p, --password                 User password
+    --client-id                    OAuth client id; with --client-secret and
+                                   --auth-app-uri, replaces --login/--password
+    --client-secret                OAuth client secret
+    --auth-app-uri                 OAuth app URI
+    --external-access-token        Support access-list token, exchanged for a
+                                   Creatio session instead of a login and password
 
 REQUIREMENTS
     cliogate must be installed on the target Creatio environment.

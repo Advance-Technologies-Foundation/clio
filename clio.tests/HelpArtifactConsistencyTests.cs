@@ -124,7 +124,7 @@ internal class HelpArtifactConsistencyTests {
 	[TestCase("update-entity-schema")]
 	[TestCase("modify-entity-schema-column")]
 	[TestCase("assert")]
-	[Description("The manual help file of each command that runtime --help renders from its .txt lists every visible option of the command, including inherited ones such as --timeout, and none of the long names only a Hidden option declares (ENG-102433).")]
+	[Description("The OPTIONS sections of the manual help file of each command that runtime --help renders from its .txt list every visible option of the command, including inherited ones such as --timeout and the environment credential options, and the file names none of the long names only a Hidden option declares (ENG-102433).")]
 	public void ManualHelpFile_ShouldListVisibleOptionsAndOmitHiddenOnes(string commandName) {
 		// Arrange
 		new CommandHelpCatalog().TryGetCommand(commandName, out HelpCommandMetadata command).Should().BeTrue(
@@ -134,8 +134,8 @@ internal class HelpArtifactConsistencyTests {
 			.Select(property => (Property: property, Option: property.GetCustomAttribute<OptionAttribute>(true)))
 			.Where(item => item.Option is not null && !string.IsNullOrWhiteSpace(item.Option.LongName))
 			.ToArray();
-		// EnvironmentOptions is documented as the short environment block, not option by option.
-		// BaseCommandOptions declares its long names with the leading dashes ("--fail-on-error"), so the
+		// EnvironmentOptions is documented as a short environment block that lists only the credential options
+		// (EnvironmentCredentialOptionNames), not every connection setting. BaseCommandOptions declares its long names with the leading dashes ("--fail-on-error"), so the
 		// parser accepts only "----fail-on-error"; that is a separate defect, and those names are not
 		// documented as usable options.
 		string[] visibleNames = options
@@ -143,6 +143,7 @@ internal class HelpArtifactConsistencyTests {
 				&& item.Property.DeclaringType != typeof(EnvironmentOptions)
 				&& item.Property.DeclaringType != typeof(BaseCommandOptions))
 			.Select(item => item.Option.LongName)
+			.Concat(typeof(EnvironmentOptions).IsAssignableFrom(command.OptionsType) ? EnvironmentCredentialOptionNames : [])
 			.Distinct(StringComparer.Ordinal)
 			.ToArray();
 		string[] hiddenOnlyNames = options
@@ -153,11 +154,14 @@ internal class HelpArtifactConsistencyTests {
 
 		// Act
 		string helpText = File.ReadAllText(Path.Combine(HelpDirectory, $"{commandName}.txt"));
+		string optionsText = GetOptionSectionsText(helpText);
 
 		// Assert
 		visibleNames.Should().NotBeEmpty(because: $"{commandName} has command options");
-		visibleNames.Where(name => !ContainsOptionToken(helpText, name)).Should().BeEmpty(
-			because: $"{commandName}.txt is what --help shows, so it must document every visible option, inherited ones included");
+		visibleNames.Where(name => !options.Any(item => !item.Option.Hidden && item.Option.LongName == name)).Should().BeEmpty(
+			because: "every name the help file must list has to be a visible option of the command");
+		visibleNames.Where(name => !ContainsOptionToken(optionsText, name)).Should().BeEmpty(
+			because: $"{commandName}.txt is what --help shows, so its OPTIONS sections must document every visible option, inherited ones included, not only mention it in an example or a note");
 		hiddenOnlyNames.Where(name => ContainsOptionToken(helpText, name)).Should().BeEmpty(
 			because: $"{commandName}.txt must not advertise backward-compatibility aliases declared Hidden");
 	}
@@ -178,6 +182,30 @@ internal class HelpArtifactConsistencyTests {
 		// Assert
 		Regex.Replace(helpText, @"\s+", " ").Should().Contain(command.Requirement,
 			because: $"{commandName}.txt is what --help shows, so it must carry the requirement generated help printed");
+	}
+
+	// The credential options a command derived from EnvironmentOptions accepts; its environment block must list them
+	// even though the remaining connection settings stay undocumented there.
+	private static readonly string[] EnvironmentCredentialOptionNames = [
+		"environment", "uri", "login", "password", "client-id", "client-secret", "auth-app-uri", "external-access-token"
+	];
+
+	private static readonly Regex SectionHeadingRegex = new(@"^[A-Z][A-Z0-9 /&-]+:?$", RegexOptions.None, TimeSpan.FromSeconds(1));
+
+	// The text of every section whose heading ends in OPTIONS (OPTIONS, COMMON OPTIONS, KUBERNETES OPTIONS, ...).
+	private static string GetOptionSectionsText(string helpText) {
+		List<string> lines = [];
+		bool inOptionSection = false;
+		foreach (string line in helpText.Replace("\r\n", "\n").Split('\n')) {
+			if (SectionHeadingRegex.IsMatch(line.TrimEnd())) {
+				inOptionSection = line.TrimEnd().TrimEnd(':').EndsWith("OPTIONS", StringComparison.Ordinal);
+				continue;
+			}
+			if (inOptionSection) {
+				lines.Add(line);
+			}
+		}
+		return string.Join("\n", lines);
 	}
 
 	private static bool ContainsOptionToken(string text, string longName) =>
