@@ -236,10 +236,50 @@ public sealed class ValidatePageToolTests {
 		response.Valid.Should().BeTrue(because: "native parsing handles comments and trailing commas without rewriting strings");
 	}
 
+	private static string WebBodyWithModel(string viewModelConfig, string modelConfig) =>
+		"define(\"UsrPdsRepro_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
+		"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+		"viewModelConfig: /**SCHEMA_VIEW_MODEL_CONFIG*/" + viewModelConfig + "/**SCHEMA_VIEW_MODEL_CONFIG*/, " +
+		"modelConfig: /**SCHEMA_MODEL_CONFIG*/" + modelConfig + "/**SCHEMA_MODEL_CONFIG*/, " +
+		"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+		"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+
+	private const string PdsBindings = """{ "attributes": { "UsrName": { "modelConfig": { "path": "PDS.UsrName" } } } }""";
+
+	[Test]
+	[Description("validate-page has no base: a web body that declares every data source it binds passes without a data-source warning.")]
+	public async System.Threading.Tasks.Task ValidatePage_WebBodyDeclaringItsDataSources_PassesWithoutWarning() {
+		// Arrange
+		string body = WebBodyWithModel(PdsBindings, """{ "dataSources": { "PDS": { "type": "crt.EntityDataSource" } }, "primaryDataSourceName": "PDS" }""");
+
+		// Act
+		PageValidateResponse response = await CreateTool().ValidatePage(new PageValidateArgs(Body: body));
+
+		// Assert
+		response.Valid.Should().BeTrue(because: $"the body declares PDS itself. Errors: {string.Join("; ", response.Validation.Errors ?? [])}");
+		(response.Validation.Warnings ?? []).Should().NotContain(w => w.Contains("were not checked"),
+			because: "nothing needed the inherited base, so the check ran completely");
+	}
+
+	[Test]
+	[Description("validate-page has no base: a web body whose binding only the template could declare passes with a warning that the check did not run.")]
+	public async System.Threading.Tasks.Task ValidatePage_WebBodyNeedingTheBase_WarnsThatTheCheckDidNotRun() {
+		// Arrange
+		string body = WebBodyWithModel(PdsBindings, """{ "dataSources": { "OtherDS": { "type": "crt.EntityDataSource" } } }""");
+
+		// Act
+		PageValidateResponse response = await CreateTool().ValidatePage(new PageValidateArgs(Body: body));
+
+		// Assert
+		response.Valid.Should().BeTrue(because: "the template may declare PDS, and validate-page cannot read it");
+		response.Validation.Warnings.Should().Contain(w => w.Contains("PDS") && w.Contains("were not checked"),
+			because: "a green validate-page must not be read as proof that PDS is declared");
+	}
+
 	private static PageValidateTool CreateTool(IFileSystem? fileSystem = null) => new(
 		Substitute.For<IMobileComponentInfoCatalog>(),
 		Substitute.For<IComponentInfoCatalog>(),
-		fileSystem ?? new MockFileSystem());
+		fileSystem ?? new MockFileSystem(), new PageDataSourceReferenceValidator(new PageSchemaBodyParser()));
 
 	private static string BodyFilePath(string schemaName = "TestPage") =>
 		Path.GetFullPath(Path.Combine("workspace", ".clio-pages", schemaName, "body.js"));
@@ -460,6 +500,7 @@ public sealed class ValidatePageToolTests {
 			Substitute.For<IMobileComponentInfoCatalog>(),
 			Substitute.For<IComponentInfoCatalog>(),
 			fileSystem,
+			new PageDataSourceReferenceValidator(new PageSchemaBodyParser()),
 			httpContextAccessor);
 		PageValidateArgs args = new(BodyFile: BodyFilePath());
 
@@ -885,7 +926,7 @@ public sealed class ValidatePageToolTests {
 	public async System.Threading.Tasks.Task ValidatePage_WhenVersionProvided_ScopesChartCatalogToThatVersion() {
 		// Arrange
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageValidateTool tool = new(Substitute.For<IMobileComponentInfoCatalog>(), webCatalog, new MockFileSystem());
+		PageValidateTool tool = new(Substitute.For<IMobileComponentInfoCatalog>(), webCatalog, new MockFileSystem(), new PageDataSourceReferenceValidator(new PageSchemaBodyParser()));
 		string amdBody =
 			"define(\"UsrPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
 			"function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/{ return { " +

@@ -117,6 +117,18 @@ name instead of trying to edit a non-existent local `insert`.
   declarations, callback parameters, AMD dependency arguments and known JavaScript/Creatio globals
   remain valid. Missing direct callees produce `undefined-section-call`. These AST checks run only on
   MCP `update-page` / `sync-pages` / `validate-page`; the CLI `update-page` verb does not run them.
+- **Data-source bindings (web and mobile).** MCP `update-page` / `sync-pages` / `validate-page` only. The first
+  segment of an attribute's `modelConfig.path`, a `dataSourceName`, and the `primaryDataSourceName` must name a data
+  source that the body or the page's inherited `modelConfig` declares, after the body is applied the way the page
+  bundle is built (a non-empty model config diff is applied over the base; otherwise the full `modelConfig` is merged
+  into it; `remove` operations and merges below a missing data source declare nothing). Templates never declare
+  `PDS`: a generated page holds it in its own body, so a replace write that drops it is rejected (ENG-102161). Keep
+  the web `SCHEMA_MODEL_CONFIG` section (or the `dataSources` / `primaryDataSourceName` operations of
+  `SCHEMA_MODEL_CONFIG_DIFF`, or the mobile `modelConfigDiff`) from `get-page` `raw.body`. A non-empty
+  `SCHEMA_MODEL_CONFIG_DIFF` makes `SCHEMA_MODEL_CONFIG` ignored. `mode: "append"`, whose base includes the page's own
+  body, works only on a page in diff form: a generated web form page is full-config and append refuses it. When the inherited `modelConfig` cannot be read the check passes and the
+  response warns that it did not run; `validate-page` has no environment, so it decides only bodies that declare
+  every binding themselves.
 - **Mobile page rules.** These run only on the MCP `update-page` / `sync-pages` / `validate-page` tools.
   The CLI `update-page` verb does **not** run them — it validates a mobile body only for disallowed
   sections — so a body rejected through MCP still saves from the command line.
@@ -152,14 +164,6 @@ name instead of trying to edit a non-existent local `insert`.
     shadows the native element, so the top navigation bar and the page body silently come from the wrong
     element. A `merge` onto `Scaffold` is the SUPPORTED way to patch the template's own root and is left
     alone here — the merge-slot rules above own what may go inside it.
-  - **Rejected — a binding to an undeclared data source.** The first segment of an attribute's
-    `modelConfig.path` in `viewModelConfigDiff`, a `dataSourceName` in `viewConfigDiff`, and the
-    `primaryDataSourceName` must name a data source that the body's `modelConfigDiff` or the page's inherited
-    `modelConfig` declares. A replace write overwrites the own `modelConfigDiff`, so a body sent with
-    `"modelConfigDiff": []` drops the template's `PDS` and every field shows "Column removed" (ENG-102161). Carry
-    the `dataSources` / `primaryDataSourceName` operations over from `get-page` `raw.body`, or use `mode: "append"`.
-    The check passes when the inherited `modelConfig` cannot be read. `validate-page` has no environment, so it
-    reports this only for a body that carries its own `modelConfig`.
   - **Rejected — a `crt.IndicatorWidget` that would show no value.** An `insert`, `set` or `merge` authoring a
     metric must carry `config.layout` and `config.text`, and a `config.data.providing` the mobile runtime can
     execute: `schemaName` plus `aggregation.column.expression` with `expressionType` 1, a `functionArgument.columnPath` and an

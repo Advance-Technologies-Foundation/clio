@@ -81,6 +81,19 @@ DESCRIPTION
       and known JavaScript/Creatio globals remain valid. Missing helper calls
       are rejected with undefined-section-call. These AST checks run on MCP
       update-page / sync-pages / validate-page only, not the CLI verb below.
+    DATA-SOURCE BINDINGS (web and mobile; MCP update-page / sync-pages /
+    validate-page only):
+    - Rejected: a binding to a data source that neither the body nor the
+      page's inherited modelConfig declares -- an attribute's
+      modelConfig.path, a dataSourceName, or the primaryDataSourceName.
+      Templates never declare PDS, so a replace write that drops the
+      page's own PDS is rejected (ENG-102161). Keep the web
+      SCHEMA_MODEL_CONFIG section (or the dataSources and
+      primaryDataSourceName operations of SCHEMA_MODEL_CONFIG_DIFF, or
+      the mobile modelConfigDiff) from get-page raw.body; --mode append
+      works only on a page in diff form. Passes with a warning when the
+      inherited modelConfig cannot be read; validate-page decides only
+      bodies that declare every binding themselves.
     MOBILE RULES (MCP update-page / sync-pages / validate-page only --
     the CLI verb below does NOT run them; it checks a mobile body only
     for disallowed sections):
@@ -142,16 +155,6 @@ DESCRIPTION
       "Scaffold" / propertyName "actions", which saves but does not show
       up on the mobile designer canvas (ENG-95429) -- place it in a page
       container's "items" with a "layoutConfig" instead.
-    - Rejected: a binding to a data source that neither the body's
-      modelConfigDiff nor the page's inherited modelConfig declares --
-      an attribute's modelConfig.path, a dataSourceName, or the
-      primaryDataSourceName. A replace write overwrites the own body, so
-      "modelConfigDiff": [] drops the template's PDS and every field shows
-      "Column removed" (ENG-102161). Carry the dataSources and
-      primaryDataSourceName operations over from get-page raw.body, or
-      use --mode append. Passes when the inherited modelConfig cannot be
-      read; validate-page reports it only for a body that carries its own
-      modelConfig.
     - Not enforced: the same type-placement and merge-slot mechanisms
       break web pages too
       and is not checked there; sync-pages validate=false skips these

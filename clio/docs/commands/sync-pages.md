@@ -33,6 +33,15 @@ When `validate` is `true` (the default), the body is checked client-side before 
   `usr.HandleSomeRequest`). Call the MCP `get-guidance` tool with `name=page-schema-handlers` for details.
 - **SCHEMA_VALIDATORS keys** (object form) must follow `VendorPrefix.ValidatorName` format
   (e.g., `usr.RequiredValidator`). Call the MCP `get-guidance` tool with `name=page-schema-validators` for details.
+- **Data-source bindings (web and mobile).** Applied to every body when `validate` is `true`. The first segment
+  of an attribute's `modelConfig.path`, a `dataSourceName`, and the `primaryDataSourceName` must name a data source
+  that the body or the page's inherited `modelConfig` declares, after the body is applied the way the page bundle is
+  built (a non-empty model config diff is applied over the base; otherwise the full `modelConfig` is merged into it).
+  Templates never declare `PDS`: a generated page holds it in its own body, so a replace write that drops it is
+  rejected (ENG-102161). On web, keep the `SCHEMA_MODEL_CONFIG` section, or the `dataSources` and
+  `primaryDataSourceName` operations of `SCHEMA_MODEL_CONFIG_DIFF`; on mobile, the `modelConfigDiff` operations. The
+  inherited `modelConfig` is read before the per-tenant lock; when it cannot be read the check passes and the page
+  result says it did not run.
 - **Mobile page rules.** Applied to each mobile body when `validate` is `true`. Note this validates the
   WHOLE body, so a page that already stores a rejected shape fails until it is corrected.
   - **Rejected** — an `operation:"insert"`/`"set"` whose `values` object carries no usable `"type"` while a
@@ -64,12 +73,6 @@ When `validate` is `true` (the default), the body is checked client-side before 
     place it in a page container's `items` with a `layoutConfig` instead; and a component type in NEITHER
     the mobile nor the web registry, which is either a custom component registered in your package or a
     typo — confirm with `get-component-info` and `schema-type: "mobile"`.
-  - **Rejected** — a binding to a data source that neither the body's `modelConfigDiff` nor the page's
-    inherited `modelConfig` declares: an attribute's `modelConfig.path`, a `dataSourceName`, or the
-    `primaryDataSourceName`. `sync-pages` replaces the own body, so `"modelConfigDiff": []` drops the template's
-    `PDS` and every field shows "Column removed" (ENG-102161). Carry the `dataSources` and `primaryDataSourceName`
-    operations over from `get-page` `raw.body`. The check passes when the inherited `modelConfig` cannot be read;
-    the page result then carries a degraded-validation warning.
   - **Not enforced** — the same type-placement and merge-slot defects break **web** pages identically and are not checked
     there, and `validate: false` skips these checks along with every other one, re-opening the
     silent-persist path; do not use it to get past a rejection.

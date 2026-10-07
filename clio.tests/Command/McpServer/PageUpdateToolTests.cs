@@ -90,7 +90,7 @@ public sealed class PageUpdateToolTests {
 			command, logger, _commandResolver,
 			Substitute.For<IMobileComponentInfoCatalog>(),
 			_webComponentCatalog,
-			Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(),
+			Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), new PageDataSourceReferenceValidator(new PageSchemaBodyParser()),
 			_resolverFactory, settingsRepository);
 	}
 
