@@ -145,6 +145,8 @@ cliogate must be installed on the target Creatio environment.
   (for example `"required":"yes"`) is reported with its JSON path
   (`... has an invalid value at JSON path '$.required'.`); only text that is not JSON at all is
   reported as `is not valid JSON`.
+- An error in an operation that came from `--operations` or `--operations-file` names that source and
+  counts the index within it, e.g. `--operations-file 'ops.json' item at index 0 has unknown field 'colum-name'.`
 - `--operation` payloads can include structured `default-value-config`.
 - `--operation` payloads can include `usage-type` (`General`, `Advanced`, or `None`; any column type); on `modify` the stored value is left unchanged when omitted.
 - For `SystemValue`, clio resolves Guid/alias/caption to canonical Guid before save.

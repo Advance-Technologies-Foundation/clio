@@ -181,9 +181,10 @@ public class UpdateEntitySchemaCommand : Command<UpdateEntitySchemaOptions>
 
 	public override int Execute(UpdateEntitySchemaOptions options) {
 		try {
-			options.Operations = ResolveOperations(options);
+			List<LabelledOperation> resolved = ResolveOperations(options);
+			options.Operations = resolved.Select(operation => operation.Raw).ToList();
 			Validate(options);
-			List<ModifyEntitySchemaColumnOptions> operations = [.. BuildColumnMutations(options)];
+			List<ModifyEntitySchemaColumnOptions> operations = [.. BuildColumnMutations(options, resolved)];
 			foreach (ModifyEntitySchemaColumnOptions operation in operations) {
 				ModifyEntitySchemaColumnCommand.ValidateOptions(operation);
 			}
@@ -196,9 +197,14 @@ public class UpdateEntitySchemaCommand : Command<UpdateEntitySchemaOptions>
 		}
 	}
 
+	// A raw operation payload and the prefix its errors start with, so an error names the source the payload came from
+	// and counts the index within that source rather than across all of them.
+	private sealed record LabelledOperation(string Raw, string Label);
+
 	// Operation sources are additive and applied in a fixed order: --operation, --operations, --operations-file.
-	private IEnumerable<string> ResolveOperations(UpdateEntitySchemaOptions options) {
-		List<string> ops = (options.Operations ?? []).ToList();
+	private List<LabelledOperation> ResolveOperations(UpdateEntitySchemaOptions options) {
+		List<LabelledOperation> ops = [.. (options.Operations ?? [])
+			.Select((raw, index) => new LabelledOperation(raw, $"Operation payload at index {index}"))];
 		if (!string.IsNullOrWhiteSpace(options.OperationsJson)) {
 			ops.AddRange(ParseOperationsArray(options.OperationsJson, "--operations value"));
 		}
@@ -238,7 +244,7 @@ public class UpdateEntitySchemaCommand : Command<UpdateEntitySchemaOptions>
 		}
 	}
 
-	private static IEnumerable<string> ParseOperationsArray(string json, string source) {
+	private static IEnumerable<LabelledOperation> ParseOperationsArray(string json, string source) {
 		List<JsonElement>? operations;
 		try {
 			operations = JsonSerializer.Deserialize<List<JsonElement>>(json);
@@ -254,18 +260,19 @@ public class UpdateEntitySchemaCommand : Command<UpdateEntitySchemaOptions>
 				throw new InvalidOperationException($"{source} item at index {index} is not a JSON object.");
 			}
 		}
-		return operations.Select(element => element.GetRawText());
+		return operations.Select((element, index) =>
+			new LabelledOperation(element.GetRawText(), $"{source} item at index {index}"));
 	}
 
-	private IEnumerable<ModifyEntitySchemaColumnOptions> BuildColumnMutations(UpdateEntitySchemaOptions options) {
-		int index = 0;
-		foreach (string rawOperation in options.Operations) {
+	private IEnumerable<ModifyEntitySchemaColumnOptions> BuildColumnMutations(UpdateEntitySchemaOptions options,
+		IEnumerable<LabelledOperation> resolved) {
+		foreach ((string rawOperation, string label) in resolved) {
 			if (string.IsNullOrWhiteSpace(rawOperation)) {
-				throw new InvalidOperationException($"Operation payload at index {index} is empty.");
+				throw new InvalidOperationException($"{label} is empty.");
 			}
 
-			UpdateEntitySchemaOperationDefinition operation = ParseOperation(rawOperation, index);
-			string columnName = ResolveColumnName(operation, index);
+			UpdateEntitySchemaOperationDefinition operation = ParseOperation(rawOperation, label);
+			string columnName = ResolveColumnName(operation, label);
 			string? normalizedScalarTitle = NormalizeTitle(operation.Title);
 			TitleLocalizationNormalizationResult titleNormalization =
 				EntitySchemaDesignerSupport.NormalizeTitleLocalizations(
@@ -305,60 +312,59 @@ public class UpdateEntitySchemaCommand : Command<UpdateEntitySchemaOptions>
 				DoNotControlIntegrity = operation.DoNotControlIntegrity,
 				UsageType = operation.UsageType
 			};
-			index++;
 		}
 	}
 
 	// Parses the payload once: unknown fields are rejected BEFORE typed deserialization, so a misspelled field is
 	// reported even when another field of the same payload has a value of the wrong type.
-	private UpdateEntitySchemaOperationDefinition ParseOperation(string rawOperation, int index) {
+	private UpdateEntitySchemaOperationDefinition ParseOperation(string rawOperation, string label) {
 		JsonDocument document;
 		try {
 			document = JsonDocument.Parse(rawOperation);
 		} catch (JsonException exception) {
-			throw new InvalidOperationException($"Operation payload at index {index} is not valid JSON.", exception);
+			throw new InvalidOperationException($"{label} is not valid JSON.", exception);
 		}
 		using (document) {
 			JsonElement root = document.RootElement;
 			if (root.ValueKind == JsonValueKind.Null) {
-				throw new InvalidOperationException($"Operation payload at index {index} is empty.");
+				throw new InvalidOperationException($"{label} is empty.");
 			}
 			if (root.ValueKind != JsonValueKind.Object) {
-				throw new InvalidOperationException($"Operation payload at index {index} must be a JSON object.");
+				throw new InvalidOperationException($"{label} must be a JSON object.");
 			}
-			RejectUnknownFields(root, index);
+			RejectUnknownFields(root, label);
 			try {
 				return root.Deserialize<UpdateEntitySchemaOperationDefinition>(JsonOptions)
-					?? throw new InvalidOperationException($"Operation payload at index {index} is empty.");
+					?? throw new InvalidOperationException($"{label} is empty.");
 			} catch (JsonException exception) {
 				// The text already parsed, so this is a well-formed value of the wrong type, not malformed JSON.
 				string path = SanitizeForMessage(string.IsNullOrEmpty(exception.Path) ? "$" : exception.Path);
 				throw new InvalidOperationException(
-					$"Operation payload at index {index} has an invalid value at JSON path '{path}'.", exception);
+					$"{label} has an invalid value at JSON path '{path}'.", exception);
 			}
 		}
 	}
 
-	private void RejectUnknownFields(JsonElement root, int index) {
+	private void RejectUnknownFields(JsonElement root, string label) {
 		foreach (JsonProperty property in root.EnumerateObject()) {
-			string name = ReadPropertyName(property, index);
+			string name = ReadPropertyName(property, label);
 			if (KnownOperationFields.Contains(name, StringComparer.OrdinalIgnoreCase)) {
 				continue;
 			}
 			string suggestion = _suggestionService.SuggestName(name, KnownOperationFields);
 			string hint = suggestion is null ? string.Empty : $" Did you mean '{suggestion}'?";
 			throw new InvalidOperationException(
-				$"Operation payload at index {index} has unknown field '{SanitizeForMessage(name)}'.{hint}");
+				$"{label} has unknown field '{SanitizeForMessage(name)}'.{hint}");
 		}
 	}
 
 	// JsonDocument.Parse accepts an escaped lone surrogate such as "\uD800" in a field name; decoding it then throws
 	// a serializer InvalidOperationException whose text would otherwise reach the user as the command error.
-	private static string ReadPropertyName(JsonProperty property, int index) {
+	private static string ReadPropertyName(JsonProperty property, string label) {
 		try {
 			return property.Name;
 		} catch (InvalidOperationException exception) {
-			throw new InvalidOperationException($"Operation payload at index {index} is not valid JSON.", exception);
+			throw new InvalidOperationException($"{label} is not valid JSON.", exception);
 		}
 	}
 
@@ -389,12 +395,12 @@ public class UpdateEntitySchemaCommand : Command<UpdateEntitySchemaOptions>
 		return printable.ToString(0, cut) + "...";
 	}
 
-	private static string ResolveColumnName(UpdateEntitySchemaOperationDefinition operation, int index) {
+	private static string ResolveColumnName(UpdateEntitySchemaOperationDefinition operation, string label) {
 		bool hasColumnName = !string.IsNullOrWhiteSpace(operation.ColumnName);
 		bool hasName = !string.IsNullOrWhiteSpace(operation.Name);
 		if (hasColumnName && hasName && !string.Equals(operation.ColumnName, operation.Name, StringComparison.Ordinal)) {
 			throw new InvalidOperationException(
-				$"Operation payload at index {index} sets both 'column-name' ('{SanitizeForMessage(operation.ColumnName)}') and its alias 'name' ('{SanitizeForMessage(operation.Name)}'). Supply only one.");
+				$"{label} sets both 'column-name' ('{SanitizeForMessage(operation.ColumnName)}') and its alias 'name' ('{SanitizeForMessage(operation.Name)}'). Supply only one.");
 		}
 		return hasName && !hasColumnName ? operation.Name : operation.ColumnName;
 	}

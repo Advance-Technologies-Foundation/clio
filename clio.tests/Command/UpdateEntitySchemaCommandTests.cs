@@ -908,6 +908,123 @@ internal sealed class UpdateEntitySchemaCommandTests : BaseClioModuleTests
 		_logger.Received(1).WriteError($"--operations-file '{filePath}' item at index 0 is not a JSON object.");
 	}
 
+	[Test]
+	[Description("A field-level error in an --operations-file item names the option, the path and the index within the file, not the index merged across --operation and --operations (ENG-101526).")]
+	public void Execute_ReportsFileLocalIndex_WhenOperationsFileItemHasUnknownField() {
+		// Arrange
+		string filePath = WorkPath("misspelled.json");
+		FileSystem.AddFile(filePath, new MockFileData("""[{"action":"modify","colum-name":"UsrOwner","title":"Owner"}]"""));
+		UpdateEntitySchemaOptions options = new() {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Operations = ["""{"action":"modify","column-name":"UsrStatus","title":"Status"}"""],
+			OperationsJson = """[{"action":"modify","column-name":"UsrDueDate","title":"Due date"}]""",
+			OperationsFile = filePath
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "one invalid operation fails the batch");
+		_columnManager.DidNotReceiveWithAnyArgs().ModifyColumns(default!);
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.StartsWith($"--operations-file '{filePath}' item at index 0 has unknown field 'colum-name'.")));
+	}
+
+	[Test]
+	[Description("A field-level error in an --operations item names that option and the index within its array (ENG-101526).")]
+	public void Execute_ReportsSourceLocalIndex_WhenOperationsValueItemHasWrongType() {
+		// Arrange
+		UpdateEntitySchemaOptions options = new() {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Operations = ["""{"action":"modify","column-name":"UsrStatus","title":"Status"}"""],
+			OperationsJson = """[{"action":"modify","column-name":"UsrDueDate","title":"Due date"},{"action":"modify","column-name":"UsrOwner","required":"yes"}]"""
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "'required' takes a boolean, so the operation cannot be applied");
+		_columnManager.DidNotReceiveWithAnyArgs().ModifyColumns(default!);
+		_logger.Received(1).WriteError(
+			"--operations value item at index 1 has an invalid value at JSON path '$.required'.");
+	}
+
+	[Test]
+	[Description("A UTF-16 BE file with a byte order mark is decoded as UTF-16 BE and keeps its non-ASCII caption (ENG-101526).")]
+	public void Execute_ReadsUtf16BigEndianOperationsFileWithBom() {
+		// Arrange
+		string filePath = WorkPath("utf16be.json");
+		const string json = """[{"action":"add","column-name":"UsrStatus","type":"Text","title":"Статус"}]""";
+		FileSystem.AddFile(filePath,
+			new MockFileData([.. Encoding.BigEndianUnicode.GetPreamble(), .. Encoding.BigEndianUnicode.GetBytes(json)]));
+		UpdateEntitySchemaOptions options = new() {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			OperationsFile = filePath
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "a UTF-16 BE file announced by its BOM is a readable operations file");
+		_columnManager.Received(1).ModifyColumns(Arg.Is<IEnumerable<ModifyEntitySchemaColumnOptions>>(mutations =>
+			mutations.Count() == 1
+			&& mutations.Single().ColumnName == "UsrStatus"
+			&& mutations.Single().Title == "Статус"));
+	}
+
+	[TestCase(true)]
+	[TestCase(false)]
+	[Description("A file announced as UTF-16 LE by its BOM whose bytes are not valid UTF-16 (an odd byte count, or a lone high surrogate) fails before anything is saved, naming the option and the path (ENG-101526).")]
+	public void Execute_ReturnsFailure_WhenUtf16OperationsFileIsInvalid(bool oddByteCount) {
+		// Arrange
+		string filePath = WorkPath("bad-utf16.json");
+		byte[] body = Encoding.Unicode.GetBytes("[{\"title\":\"");
+		byte[] invalid = oddByteCount ? [0x41] : [0x00, 0xD8, 0x41, 0x00];
+		FileSystem.AddFile(filePath, new MockFileData([.. Encoding.Unicode.GetPreamble(), .. body, .. invalid]));
+		UpdateEntitySchemaOptions options = new() {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			OperationsFile = filePath
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "bytes that are not valid UTF-16 cannot be read as operations");
+		_columnManager.DidNotReceiveWithAnyArgs().ModifyColumns(default!);
+		_logger.Received(1).WriteError($"--operations-file '{filePath}' is not valid UTF-16.");
+	}
+
+	[Test]
+	[Description("A relative --operations-file path resolves from the current directory (ENG-101526).")]
+	public void Execute_ResolvesRelativeOperationsFilePath_FromCurrentDirectory() {
+		// Arrange
+		FileSystem.AddFile(WorkPath("operations.json"),
+			new MockFileData("""[{"action":"remove","column-name":"UsrObsolete"}]"""));
+		FileSystem.Directory.SetCurrentDirectory(WorkPath());
+		UpdateEntitySchemaOptions options = new() {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			OperationsFile = "operations.json"
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "a relative path is resolved against the current directory");
+		_columnManager.Received(1).ModifyColumns(Arg.Is<IEnumerable<ModifyEntitySchemaColumnOptions>>(mutations =>
+			mutations.Count() == 1 && mutations.Single().ColumnName == "UsrObsolete"
+			&& mutations.Single().Action == "remove"));
+	}
+
 	[TestCase("not json at all")]
 	[TestCase("""{"action":"add","column-name":"UsrX","type":"Text"}""")]
 	[Description("An --operations value that is not a JSON array fails before anything is saved, naming the option (ENG-101526).")]
