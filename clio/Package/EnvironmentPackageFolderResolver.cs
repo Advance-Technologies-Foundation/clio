@@ -86,12 +86,10 @@ public sealed class EnvironmentPackageFolderResolver : IEnvironmentPackageFolder
 			? registered?.EnvironmentPath
 			: environmentPathOverride.Trim();
 		if (string.IsNullOrWhiteSpace(environmentPath)) {
-			string environmentLabel = string.IsNullOrWhiteSpace(environmentName)
-				? "this connection"
-				: $"'{environmentName}'";
-			return EnvironmentPackageFolderResolution.NotFound(
-				$"no site folder (EnvironmentPath) is registered for environment {environmentLabel}; register it with "
-				+ "'clio reg-web-app <environment> --ep <site folder>' or pass --ep");
+			return EnvironmentPackageFolderResolution.NotFound(string.IsNullOrWhiteSpace(environmentName)
+				? "the call names no registered environment, so no site folder is known; pass --ep <site folder>"
+				: $"no site folder (EnvironmentPath) is registered for environment '{environmentName}'; register it "
+					+ "with 'clio reg-web-app <environment> --ep <site folder>' or pass --ep");
 		}
 		string packagesRoot = GetPackagesRootCandidates(environmentPath, registered?.IsNetCore ?? false)
 			.FirstOrDefault(_fileSystem.ExistsDirectory);

@@ -26,7 +26,7 @@ DESCRIPTION
 
     File system mode
     The platform delete removes database records only. When the environment is
-    in file system mode (MCP get-fsm-mode reports on), the command also removes
+    in file system mode (its file design mode flag is on), the command also removes
     the item's folders from the package folder on the machine where clio runs,
     otherwise the next pkg-to-db would register the item again:
         schema              Schemas/<name>/ and Resources/<name>.*/
@@ -36,9 +36,11 @@ DESCRIPTION
         assembly            Assemblies/<name>/
     The package folder is <site>/Terrasoft.Configuration/Pkg/<package> (.NET 8)
     or <site>/Terrasoft.WebApp/Terrasoft.Configuration/Pkg/<package>
-    (.NET Framework), where <site> is the registered EnvironmentPath or --ep. A
-    package linked with link-from-repository is changed in the repository.
-    When clio cannot reach the folder or read the mode, the schema is still
+    (.NET Framework), where <site> is the registered EnvironmentPath or --ep (a
+    call with --uri uses only --ep). A package linked with link-from-repository
+    is changed in the repository, uncommitted changes included; links below the
+    package folder are not followed. When clio cannot reach the folder or read
+    the mode, the schema is still
     reported as deleted and a warning lists every folder left behind; remove
     them by hand. Outside file system mode no files are touched.
 

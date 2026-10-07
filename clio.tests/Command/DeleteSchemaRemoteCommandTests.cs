@@ -1,6 +1,7 @@
 namespace Clio.Tests.Command;
 
 using Clio.Command;
+using System;
 using System.Collections.Generic;
 using Clio.Common;
 using Clio.Package;
@@ -17,6 +18,7 @@ public sealed class DeleteSchemaRemoteCommandTests {
 	private const string TestBase = "http://test";
 	private const string GetWorkspaceItemsUrl = TestBase + "/ServiceModel/WorkspaceExplorerService.svc/GetWorkspaceItems";
 	private const string DeleteUrl = TestBase + "/ServiceModel/WorkspaceExplorerService.svc/Delete";
+	private const string FileDesignModeUrl = TestBase + "/ServiceModel/WorkspaceExplorerService.svc/GetIsFileDesignMode";
 	private const string SchemaId = "11111111-1111-1111-1111-111111111111";
 	private const string SchemaUId = "22222222-2222-2222-2222-222222222222";
 	private const string PackageUId = "33333333-3333-3333-3333-333333333333";
@@ -61,6 +63,7 @@ public sealed class DeleteSchemaRemoteCommandTests {
 		_serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetWorkspaceItems).Returns(GetWorkspaceItemsUrl);
 		_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.DeleteWorkspaceItem).Returns(DeleteUrl);
+		_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetIsFileDesignMode).Returns(FileDesignModeUrl);
 		_cleaner = Substitute.For<IDeletedItemFileCleaner>();
 		_logger = Substitute.For<ILogger>();
 		_command = new DeleteSchemaCommand(
@@ -174,7 +177,7 @@ public sealed class DeleteSchemaRemoteCommandTests {
 	public void Execute_ShouldSayTheTableIsNotDropped_WhenRemoteDeleteRemovesAnEntitySchema() {
 		// Arrange
 		ArrangeSuccessfulDelete(itemType: 3);
-		ArrangeCleanup(Result(DeletedItemFileCleanupStatus.FileSystemModeOff));
+		ArrangeFileDesignMode(isOn: false);
 
 		// Act
 		int exitCode = _command.Execute(RemoteOptions());
@@ -192,7 +195,7 @@ public sealed class DeleteSchemaRemoteCommandTests {
 	public void Execute_ShouldNotMentionTables_WhenRemoteDeleteRemovesAClientUnitSchema() {
 		// Arrange
 		ArrangeSuccessfulDelete(itemType: 4);
-		ArrangeCleanup(Result(DeletedItemFileCleanupStatus.FileSystemModeOff));
+		ArrangeFileDesignMode(isOn: false);
 
 		// Act
 		int exitCode = _command.Execute(RemoteOptions());
@@ -203,11 +206,28 @@ public sealed class DeleteSchemaRemoteCommandTests {
 	}
 
 	[Test]
-	[Description("After a successful remote delete the deleted item, its package, its type and the environment are handed to the file cleanup.")]
-	public void Execute_ShouldHandDeletedItemToFileCleanup_WhenRemoteDeleteSucceeds() {
+	[Description("Outside file system mode the package files are not touched: the cleanup is never called and nothing is reported about files.")]
+	public void Execute_ShouldLeaveFilesAlone_WhenFileDesignModeIsOff() {
 		// Arrange
 		ArrangeSuccessfulDelete(itemType: 3);
-		ArrangeCleanup(Result(DeletedItemFileCleanupStatus.FileSystemModeOff));
+		ArrangeFileDesignMode(isOn: false);
+
+		// Act
+		_command.Execute(RemoteOptions());
+
+		// Assert
+		_cleaner.DidNotReceive().Clean(Arg.Any<DeletedItemFileCleanupRequest>());
+		_applicationClient.Received(1).ExecutePostRequest(FileDesignModeUrl, string.Empty, Arg.Any<int>(),
+			Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("In file system mode the deleted item, its package, its type, the environment and --ep are handed to the file cleanup.")]
+	public void Execute_ShouldHandDeletedItemToFileCleanup_WhenFileDesignModeIsOn() {
+		// Arrange
+		ArrangeSuccessfulDelete(itemType: 3);
+		ArrangeFileDesignMode(isOn: true);
+		ArrangeCleanup(Result(DeletedItemFileCleanupStatus.Cleaned, packageFolder: "/site/Pkg/Custom"));
 		DeleteSchemaOptions options = RemoteOptions();
 		options.EnvironmentPath = "/sites/dev";
 
@@ -228,7 +248,8 @@ public sealed class DeleteSchemaRemoteCommandTests {
 	public void Execute_ShouldNotPassActiveEnvironmentName_WhenCallUsesBareUri() {
 		// Arrange
 		ArrangeSuccessfulDelete(itemType: 3);
-		ArrangeCleanup(Result(DeletedItemFileCleanupStatus.FileSystemModeUnknown, problem: "no registered environment"));
+		ArrangeFileDesignMode(isOn: true);
+		ArrangeCleanup(Result(DeletedItemFileCleanupStatus.NotCleaned, problem: "no site folder is known"));
 		_command.EnvironmentSettings.EnvironmentName = "active-but-unrelated";
 		DeleteSchemaOptions options = new() { SchemaName = "UsrSchema", Remote = true, Uri = TestBase };
 
@@ -240,10 +261,45 @@ public sealed class DeleteSchemaRemoteCommandTests {
 	}
 
 	[Test]
-	[Description("When file system mode is on and clio removed the folders, the result lists the removed folders and no warning.")]
+	[Description("A call that names a registered environment but overrides its URI targets another site, so the cleanup is not given that environment's name.")]
+	public void Execute_ShouldNotPassEnvironmentName_WhenUriOverridesRegisteredEnvironment() {
+		// Arrange
+		ArrangeSuccessfulDelete(itemType: 3);
+		ArrangeFileDesignMode(isOn: true);
+		ArrangeCleanup(Result(DeletedItemFileCleanupStatus.NotCleaned, problem: "no site folder is known"));
+		DeleteSchemaOptions options = RemoteOptions();
+		options.Uri = "https://another-site";
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		_cleaner.Received(1).Clean(Arg.Is<DeletedItemFileCleanupRequest>(request => request.EnvironmentName == null));
+	}
+
+	[Test]
+	[Description("A cleanup that throws after the database delete is reported as a warning and does not turn the delete into a failure.")]
+	public void Execute_ShouldWarnAndSucceed_WhenFileCleanupThrows() {
+		// Arrange
+		ArrangeSuccessfulDelete(itemType: 3);
+		ArrangeFileDesignMode(isOn: true);
+		_cleaner.Clean(Arg.Any<DeletedItemFileCleanupRequest>()).Throws(new InvalidOperationException("settings unreadable"));
+
+		// Act
+		int exitCode = _command.Execute(RemoteOptions());
+
+		// Assert
+		exitCode.Should().Be(0, because: "the schema is already deleted and a retry could only fail with 'not found'");
+		_logger.Received(1).WriteWarning(Arg.Is<string>(message =>
+			message.Contains("settings unreadable") && message.Contains("Schemas/UsrSchema/")));
+	}
+
+	[Test]
+	[Description("When clio removed the folders, the result lists the removed folders and no warning.")]
 	public void Execute_ShouldListRemovedFolders_WhenCleanupRemovedThem() {
 		// Arrange
 		ArrangeSuccessfulDelete(itemType: 3);
+		ArrangeFileDesignMode(isOn: true);
 		ArrangeCleanup(Result(DeletedItemFileCleanupStatus.Cleaned, packageFolder: "/site/Pkg/Custom",
 			removed: ["Schemas/UsrSchema/", "Resources/UsrSchema.Entity/"]));
 
@@ -260,10 +316,27 @@ public sealed class DeleteSchemaRemoteCommandTests {
 	}
 
 	[Test]
-	[Description("When file system mode is on but the package folder is unreachable, the result warns and names every folder left behind.")]
+	[Description("When the package folder holds no folders of the item, the result says where it searched.")]
+	public void Execute_ShouldNameSearchedFolders_WhenNothingWasFound() {
+		// Arrange
+		ArrangeSuccessfulDelete(itemType: 3);
+		ArrangeFileDesignMode(isOn: true);
+		ArrangeCleanup(Result(DeletedItemFileCleanupStatus.Cleaned, packageFolder: "/site/Pkg/Custom"));
+
+		// Act
+		_command.Execute(RemoteOptions());
+
+		// Assert
+		_logger.Received(1).WriteInfo(Arg.Is<string>(message =>
+			message.Contains("No folders of 'UsrSchema'") && message.Contains("Resources/UsrSchema.*/")));
+	}
+
+	[Test]
+	[Description("In file system mode with an unreachable package folder, the result warns and names every folder left behind.")]
 	public void Execute_ShouldWarnWithLeftoverFolders_WhenPackageFolderIsUnreachable() {
 		// Arrange
 		ArrangeSuccessfulDelete(itemType: 3);
+		ArrangeFileDesignMode(isOn: true);
 		ArrangeCleanup(Result(DeletedItemFileCleanupStatus.NotCleaned, problem: "no site folder is registered"));
 
 		// Act
@@ -280,21 +353,43 @@ public sealed class DeleteSchemaRemoteCommandTests {
 			&& message.Contains("pkg-to-db")));
 	}
 
-	[Test]
-	[Description("When the file system mode cannot be read, the result warns and names the folders to check.")]
-	public void Execute_ShouldWarnWithFoldersToCheck_WhenFileSystemModeIsUnknown() {
+	[TestCase("{\"success\": false, \"errorInfo\": {\"message\": \"probe refused\"}}", "probe refused")]
+	[TestCase("<html>login</html>", "GetIsFileDesignMode")]
+	[Description("When the file design mode cannot be read, no file is touched and the result warns with the folders to check.")]
+	public void Execute_ShouldWarnWithFoldersToCheck_WhenFileDesignModeIsUnknown(string probeResponse, string reason) {
 		// Arrange
 		ArrangeSuccessfulDelete(itemType: 3);
-		ArrangeCleanup(Result(DeletedItemFileCleanupStatus.FileSystemModeUnknown, problem: "probe timed out"));
+		_applicationClient.ExecutePostRequest(FileDesignModeUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns(probeResponse);
 
 		// Act
-		_command.Execute(RemoteOptions());
+		int exitCode = _command.Execute(RemoteOptions());
 
 		// Assert
+		exitCode.Should().Be(0, because: "an unreadable mode never fails a completed delete");
+		_cleaner.DidNotReceive().Clean(Arg.Any<DeletedItemFileCleanupRequest>());
 		_logger.Received(1).WriteWarning(Arg.Is<string>(message =>
 			message.Contains("Could not check whether the environment is in file system mode")
-			&& message.Contains("probe timed out")
+			&& message.Contains(reason)
 			&& message.Contains("Schemas/UsrSchema/")));
+	}
+
+	[Test]
+	[Description("The mode probe uses the delete's own connection with the caller's timeout and retry settings.")]
+	public void Execute_ShouldProbeWithCommandTimeouts_WhenCheckingFileDesignMode() {
+		// Arrange
+		ArrangeSuccessfulDelete(itemType: 3);
+		ArrangeFileDesignMode(isOn: false);
+		DeleteSchemaOptions options = RemoteOptions();
+		options.TimeOut = 4321;
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		_applicationClient.Received(1).ExecutePostRequest(FileDesignModeUrl, string.Empty, 4321, Arg.Any<int>(),
+			Arg.Any<int>());
 	}
 
 	[Test]
@@ -302,6 +397,7 @@ public sealed class DeleteSchemaRemoteCommandTests {
 	public void Execute_ShouldWarnAboutRemainingFolders_WhenSomeFoldersCouldNotBeRemoved() {
 		// Arrange
 		ArrangeSuccessfulDelete(itemType: 3);
+		ArrangeFileDesignMode(isOn: true);
 		ArrangeCleanup(Result(DeletedItemFileCleanupStatus.Cleaned, packageFolder: "/site/Pkg/Custom",
 			removed: ["Schemas/UsrSchema/"], remaining: ["Resources/UsrSchema.Entity/ (access denied)"]));
 
@@ -317,6 +413,7 @@ public sealed class DeleteSchemaRemoteCommandTests {
 	[Description("A failed platform delete never reaches the file cleanup, so no file is removed for a schema that still exists.")]
 	public void Execute_ShouldNotCleanFiles_WhenPlatformDeleteFails() {
 		// Arrange
+		ArrangeFileDesignMode(isOn: true);
 		_applicationClient.ExecutePostRequest(GetWorkspaceItemsUrl, Arg.Any<string>(),
 				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(GetWorkspaceItemsJson(type: 3));
@@ -343,6 +440,12 @@ public sealed class DeleteSchemaRemoteCommandTests {
 		_applicationClient.ExecutePostRequest(DeleteUrl, Arg.Any<string>(),
 				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("""{"success": true, "rowsAffected": 1}""");
+	}
+
+	private void ArrangeFileDesignMode(bool isOn) {
+		_applicationClient.ExecutePostRequest(FileDesignModeUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns(isOn ? """{"success": true, "value": true}""" : """{"success": true, "value": false}""");
 	}
 
 	private void ArrangeCleanup(DeletedItemFileCleanupResult result) {

@@ -33,8 +33,9 @@ correct `SchemaManager` for every supported workspace item.
 ### File system mode
 
 The platform delete removes database records only. When the environment is in
-file system mode (the MCP tool `get-fsm-mode` reports `on`), the item's files would stay
-in the package folder, and the next `pkg-to-db` would register the item again.
+file system mode (its file design mode flag is on, the same flag `pkg-to-db`
+checks), the item's files would stay in the package folder, and the next
+`pkg-to-db` would register the item again.
 In workspace mode and with `--remote` alike, the command therefore also removes
 the item's folders from the package folder on the machine where clio runs:
 
@@ -52,9 +53,11 @@ may ignore. The package folder is
 `<site>/Terrasoft.Configuration/Pkg/<package>` (.NET 8) or
 `<site>/Terrasoft.WebApp/Terrasoft.Configuration/Pkg/<package>` (.NET Framework),
 where `<site>` is the environment's registered `EnvironmentPath` or the `--ep`
-value. A package linked with `link-from-repository` is a symbolic link, so the
-folders are removed from the repository working tree. An item folder that is
-itself a symbolic link is not followed.
+value. A call with `--uri` uses only `--ep`, because the registered folder may
+belong to another site. A package linked with `link-from-repository` is a symbolic link, so the
+folders are removed from the repository working tree, including uncommitted
+changes in them. A symbolic link below the package folder (for example a linked
+`Schemas` folder) is not followed; it is reported as left behind.
 
 When clio cannot reach the package folder (no `EnvironmentPath`, a site on
 another machine, a missing folder) or cannot read the file system mode, the

@@ -18,6 +18,8 @@ public class DeleteSchemaCommandTests : BaseCommandTests<DeleteSchemaOptions> {
 		"https://localhost/0/ServiceModel/WorkspaceExplorerService.svc/Delete";
 	private const string GetWorkspaceItemsUrl =
 		"https://localhost/0/ServiceModel/WorkspaceExplorerService.svc/GetWorkspaceItems";
+	private const string FileDesignModeUrl =
+		"https://localhost/0/ServiceModel/WorkspaceExplorerService.svc/GetIsFileDesignMode";
 	private const string WorkspaceRootPath = @"C:\workspace";
 	private const string WorkspaceSettingsPath = @"C:\workspace\.clio\workspaceSettings.json";
 
@@ -56,7 +58,7 @@ public class DeleteSchemaCommandTests : BaseCommandTests<DeleteSchemaOptions> {
 			.Returns("""{"rowsAffected":1,"success":true,"errorInfo":null}""");
 
 		DeleteSchemaCommand command = new(applicationClient, settings, serviceUrlBuilder, workspacePathBuilder,
-			jsonConverter, fileSystem, FileSystemModeOffCleaner());
+			jsonConverter, fileSystem, UnusedCleaner());
 		DeleteSchemaOptions options = new() {
 			SchemaName = "UsrSendInvoice"
 		};
@@ -103,7 +105,7 @@ public class DeleteSchemaCommandTests : BaseCommandTests<DeleteSchemaOptions> {
 			.Returns("""{"rowsAffected":1,"success":true,"errorInfo":null}""");
 
 		DeleteSchemaCommand command = new(applicationClient, settings, serviceUrlBuilder, workspacePathBuilder,
-			jsonConverter, fileSystem, FileSystemModeOffCleaner());
+			jsonConverter, fileSystem, UnusedCleaner());
 		DeleteSchemaOptions options = new() {
 			SchemaName = "UsrSendInvoice",
 			WorkspacePath = explicitWorkspacePath
@@ -141,7 +143,7 @@ public class DeleteSchemaCommandTests : BaseCommandTests<DeleteSchemaOptions> {
 			.Returns("""{"items":[{"id":"16cd93aa-c7ce-445c-9418-c46439708abe","uId":"2d3946f3-28d5-4560-bb34-f13d14572e96","name":"UsrSendInvoice","packageUId":"1d07fd0e-2ca4-4d20-93b4-eb5a795ea03f","packageName":"OtherPackage","type":8,"modifiedOn":"2026-03-07T05:50:52.434Z","isChanged":true,"isLocked":true,"isReadOnly":false}]}""");
 
 		DeleteSchemaCommand command = new(applicationClient, settings, serviceUrlBuilder, workspacePathBuilder,
-			jsonConverter, fileSystem, FileSystemModeOffCleaner());
+			jsonConverter, fileSystem, UnusedCleaner());
 		DeleteSchemaOptions options = new() {
 			SchemaName = "UsrSendInvoice"
 		};
@@ -168,7 +170,7 @@ public class DeleteSchemaCommandTests : BaseCommandTests<DeleteSchemaOptions> {
 		fileSystem.ExistsDirectory(WorkspaceRootPath).Returns(true);
 
 		DeleteSchemaCommand command = new(applicationClient, settings, serviceUrlBuilder, workspacePathBuilder,
-			jsonConverter, fileSystem, FileSystemModeOffCleaner());
+			jsonConverter, fileSystem, UnusedCleaner());
 		DeleteSchemaOptions options = new() {
 			SchemaName = "UsrSendInvoice"
 		};
@@ -194,6 +196,7 @@ public class DeleteSchemaCommandTests : BaseCommandTests<DeleteSchemaOptions> {
 		ILogger logger = Substitute.For<ILogger>();
 		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetWorkspaceItems).Returns(GetWorkspaceItemsUrl);
 		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.DeleteWorkspaceItem).Returns(DeleteUrl);
+		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetIsFileDesignMode).Returns(FileDesignModeUrl);
 		workspacePathBuilder.RootPath.Returns(WorkspaceRootPath);
 		workspacePathBuilder.WorkspaceSettingsPath.Returns(WorkspaceSettingsPath);
 		workspacePathBuilder.IsWorkspace.Returns(true);
@@ -204,6 +207,9 @@ public class DeleteSchemaCommandTests : BaseCommandTests<DeleteSchemaOptions> {
 		applicationClient.ExecutePostRequest(GetWorkspaceItemsUrl, string.Empty, Arg.Any<int>(), Arg.Any<int>(),
 				Arg.Any<int>())
 			.Returns(GetWorkspaceItemsResponse(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()));
+		applicationClient.ExecutePostRequest(FileDesignModeUrl, string.Empty, Arg.Any<int>(), Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns("""{"success":true,"value":true}""");
 		applicationClient.ExecutePostRequest(DeleteUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
 				Arg.Any<int>())
 			.Returns("""{"rowsAffected":1,"success":true,"errorInfo":null}""");
@@ -276,7 +282,7 @@ public class DeleteSchemaCommandTests : BaseCommandTests<DeleteSchemaOptions> {
 			.Returns("""{"rowsAffected":1,"success":true,"errorInfo":null}""");
 
 		DeleteSchemaCommand command = new(applicationClient, settings, serviceUrlBuilder, workspacePathBuilder,
-			jsonConverter, fileSystem, FileSystemModeOffCleaner());
+			jsonConverter, fileSystem, UnusedCleaner());
 		DeleteSchemaOptions options = new() { SchemaName = "UsrSchema" };
 
 		int result = command.Execute(options);
@@ -323,7 +329,7 @@ public class DeleteSchemaCommandTests : BaseCommandTests<DeleteSchemaOptions> {
 			.Returns("""{"rowsAffected":1,"success":true,"errorInfo":null}""");
 
 		DeleteSchemaCommand command = new(applicationClient, settings, serviceUrlBuilder, workspacePathBuilder,
-			jsonConverter, fileSystem, FileSystemModeOffCleaner());
+			jsonConverter, fileSystem, UnusedCleaner());
 		DeleteSchemaOptions options = new() {
 			SchemaName = "UsrSendInvoice"
 		};
@@ -444,10 +450,5 @@ public class DeleteSchemaCommandTests : BaseCommandTests<DeleteSchemaOptions> {
 		return JsonSerializer.Serialize(response);
 	}
 
-	private static IDeletedItemFileCleaner FileSystemModeOffCleaner() {
-		IDeletedItemFileCleaner cleaner = Substitute.For<IDeletedItemFileCleaner>();
-		cleaner.Clean(Arg.Any<DeletedItemFileCleanupRequest>()).Returns(new DeletedItemFileCleanupResult(
-			DeletedItemFileCleanupStatus.FileSystemModeOff, null, [], [], [], null));
-		return cleaner;
-	}
+	private static IDeletedItemFileCleaner UnusedCleaner() => Substitute.For<IDeletedItemFileCleaner>();
 }
