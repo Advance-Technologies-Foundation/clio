@@ -323,7 +323,7 @@ public class UpdateEntitySchemaToolTests {
 		public FakeUpdateEntitySchemaCommand(int exitCode = 0)
 			: base(
 				Substitute.For<Clio.Command.EntitySchemaDesigner.IRemoteEntitySchemaColumnManager>(),
-				Substitute.For<ILogger>(), Substitute.For<Clio.Common.IOptionSuggestionService>()) {
+				Substitute.For<ILogger>(), Substitute.For<Clio.Common.IOptionSuggestionService>(), Substitute.For<Clio.Common.IFileSystem>()) {
 			_exitCode = exitCode;
 		}
 

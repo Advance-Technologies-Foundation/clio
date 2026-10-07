@@ -483,6 +483,25 @@ internal class CommonProgramTest : BaseClioModuleTests{
 	}
 
 	[Test]
+	[Description("create-entity-schema --help keeps --name as the documented option and does not show the hidden --schema-name alias (ENG-101526).")]
+	public void ExecuteCommands_WithCreateEntitySchemaHelp_ShouldNotShowSchemaNameAlias() {
+		// Arrange
+		ThreadSafeStringWriter consoleOutput = new();
+		Console.SetOut(consoleOutput);
+		Console.SetError(consoleOutput);
+		string[] args = ["create-entity-schema", "--help"];
+
+		// Act
+		int exitCode = Program.ExecuteCommands(args);
+		string output = consoleOutput.ToString();
+
+		// Assert
+		exitCode.Should().Be(0, because: "a help request is not an error");
+		output.Should().Contain("--name", because: "--name remains the documented schema name option");
+		output.Should().NotContain("--schema-name", because: "the alias is hidden from help");
+	}
+
+	[Test]
 	[Description("A -h that the verb claims for its own option (healthcheck --web-host) is not a help request, so a real option error after it still prints the short error and no help screen (ENG-101526).")]
 	public void ExecuteCommands_WithVerbOwnedShortHAndUnknownOption_ShouldPrintShortError() {
 		// Arrange
