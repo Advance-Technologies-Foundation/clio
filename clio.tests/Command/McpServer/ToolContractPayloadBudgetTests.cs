@@ -78,10 +78,13 @@ public sealed class ToolContractPayloadBudgetTests {
 	// contract-available flipping to true and the curated purpose replacing the reflected one); next
 	// 256-byte step is 46848 (183). The tool stays long-tail on purpose - it is NOT in
 	// McpCoreToolProfile.CoreToolTypes - so that entry is the whole per-session cost of the un-gate.
+	// Re-pinned for ENG-99741: set-object-rights and get-object-rights are two more long-tail tools. Measured 47257
+	// bytes on the default surface with them registered as well (469 bytes for the two); next 256-byte step is
+	// 47360 (185).
 	// Serialization uses the default JSON encoder,
 	// which escapes non-ASCII (a purpose ellipsis is written as a 6-byte escape), so it over-counts the real
 	// UTF-8 wire size — conservative, which is the safe direction for a ceiling.
-	private const int MaxCompactIndexSerializedBytes = 183 * 256;
+	private const int MaxCompactIndexSerializedBytes = 185 * 256;
 
 	// Worst-case ceiling for ONE named full contract, measured as the SERIALIZED contract in UTF-8 bytes
 	// — the same quantity the index ratchet above measures, and what the agent actually receives.
@@ -147,6 +150,12 @@ public sealed class ToolContractPayloadBudgetTests {
 	// added is what a caller writes (sourceColumn / elementParameter.column, the scriptTask block, usings[],
 	// methods, the operations that edit them), and the provenance around them was already swapped out, so the
 	// cut would have been a caller-facing fact. 189 bytes of headroom is about thirty escaped characters.
+	//
+	// Re-measured by lowering the ceiling after ENG-102113 (2026-10-05): modify-business-process 35053,
+	// create-business-process 34863, describe-business-process 33148. modify paid for the schema-registry
+	// clause - which value a Lookup on Add/Modify/Delete data's object holds, and that only setElement sets or
+	// changes the object - by tightening its own wording, not by raising the ceiling; that leaves it 19 bytes,
+	// about three escaped characters.
 	private const int MaxToolContractSerializedBytes = 137 * 256;
 
 	[Test]
