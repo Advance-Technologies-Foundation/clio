@@ -24,8 +24,9 @@ DESCRIPTION
     description, default value, mask, usage type, or required flag leaves the
     OData contract unchanged and does
     not trigger a rebuild. When a rebuild is requested, it runs in the
-    background (~1-2 min); a 404 from OData right after the change is the
-    expected async gap, so wait and retry rather than compiling. Each call
+    background (~1-2 min); a 404 (or "The request is invalid") from OData right
+    after the change is the expected async gap, so wait and retry rather than
+    compiling. Each call
     publishes once - to change several columns at once, batch them through
     update-entity-schema.
 
@@ -55,15 +56,15 @@ DESCRIPTION
     ImageLookup ("Image link") type. The binary Image type does not work with crt.ImageInput.
 
 OPTIONS
-    --package                      Target package name
-    --schema-name                  Entity schema name
-    --action                       Column action: add, modify, or remove
-    --column-name                  Target column name
+    --package                      Target package name. Required
+    --schema-name                  Entity schema name. Required
+    --action                       Column action: add, modify, or remove. Required
+    --column-name                  Target column name. Required
     --new-name                     New column name for rename operations
     --type                         Column type for add/modify
     --title                        Column title/caption
     --description                  Column description
-    --reference-schema             Lookup reference schema name
+    --reference-schema             Lookup reference schema name (not used for ImageLookup)
     --required                     Set required flag
     --indexed                      Set indexed flag
     --cloneable                    Set make-copy flag
@@ -88,10 +89,10 @@ OPTIONS
                                    Supplying it skips the profile-culture lookup.
 
     Environment options are also available:
-    -e, --Environment              Environment name from the registered configuration
+    -e, --environment              Environment name from the registered configuration
     -u, --uri                      Application URI
-    -l, --Login                    User login
-    -p, --Password                 User password
+    -l, --login                    User login
+    -p, --password                 User password
 
 EXAMPLES
     # Add a text column
@@ -118,7 +119,8 @@ EXAMPLES
 NOTES
     - own columns support all mutations; an INHERITED column can have only its caption/description
       overridden (--title/title-localizations, --description/description-localizations) on a
-      replacing/child schema — its name, type, and flags stay read-only, and it cannot be removed
+      replacing/child schema — its name, type, and flags stay read-only, and it cannot be removed.
+      The override is stored on the child schema and does not change the parent
     - remove clears schema-level references to the deleted column and validates required fallbacks locally
     - unspecified modify options are preserved as-is in the saved payload
     - MCP callers can also send structured default-value-config with source
@@ -142,12 +144,21 @@ NOTES
       record cannot be read)
     - Binary, Image, and File columns do not support --default-value or --default-value-source Const
     - After save, the schema is reloaded immediately; save is treated as failed if the mutated column cannot be read back
+    - when --caption-culture is omitted, clio uses the connected user's profile
+      culture (see get-user-culture) and falls back to en-US if it cannot be resolved;
+      column reads (get-entity-schema-column-properties) keep using the host locale
+    - each title-localizations / description-localizations value must be written in
+      the language of its culture key: the en-US value must be English, and a value in
+      a script that does not match a Latin-script culture key (for example Cyrillic
+      under en-US) is rejected; put localized text under its own culture key (uk-UA)
     - every caption culture must exist in the Languages section (System Designer -> Languages).
-      A culture the environment does not have fails before anything is saved, listing the
+      Creatio silently drops a value in a culture it does not have, so a culture the
+      environment does not have fails before anything is saved, listing the
       available cultures; an inactive culture is saved with a warning
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio
 
 SEE ALSO
-    get-entity-schema-column-properties, get-entity-schema-properties, create-entity-schema
+    get-entity-schema-column-properties, get-entity-schema-properties, create-entity-schema,
+    update-entity-schema, get-user-culture

@@ -13,6 +13,11 @@ namespace Clio.Tests;
 
 [TestFixture]
 [Property("Module", "Core")]
+// The renderer reads the process-wide Parser.Default.Settings.HelpDirectory on every call, and other fixtures
+// (HelpArtifactExporterTests, ReadmeChecker via BaseCommandTests) repoint it while they run. A test that
+// renders a manual help file from this fixture's mock file system would then fall back to generated help,
+// so the fixture runs exclusively rather than in parallel with them.
+[NonParallelizable]
 internal class CommandHelpRendererTests : BaseClioModuleTests {
 	private string _helpDirectory;
 	private CommandHelpRenderer _exportRenderer;
@@ -345,8 +350,8 @@ EXAMPLE
 	}
 
 	[Test]
-	[Description("The rendered update-entity-schema --help documents several values after one --operation, not repeating the flag, and states how --operations-file is read (ENG-101526).")]
-	public void TryRenderCommandHelp_ForUpdateEntitySchema_DescribesOperationAndOperationsFileUsage() {
+	[Description("The generated update-entity-schema help documents several values after one --operation, not repeating the flag, and states how --operations-file is read (ENG-101526).")]
+	public void TryRenderCommandHelp_ForUpdateEntitySchemaWithoutManualHelp_DescribesOperationAndOperationsFileUsage() {
 		// Act
 		string output = _exportRenderer.TryRenderCommandHelp("update-entity-schema");
 		string flattened = System.Text.RegularExpressions.Regex.Replace(output, @"\s+", " ");
@@ -355,8 +360,123 @@ EXAMPLE
 		flattened.Should().Contain("after one --operation", because: "the accepted form is several values after a single --operation");
 		flattened.Should().NotContain("Repeat the option", because: "a repeated --operation is rejected by the parser");
 		flattened.Should().Contain("A relative path resolves from the current directory",
-			because: "runtime help is generated from the option attributes, so the path rule must live there");
+			because: "generated help is built from the option attributes, so the path rule must live there");
 		flattened.Should().Contain("The file must be UTF-8", because: "a non-UTF-8 operations file is rejected");
+	}
+
+	[Test]
+	[Description("The shipped update-entity-schema.txt, which runtime --help renders, documents several values after one --operation, --operations, and the --operations-file UTF-8 and relative-path rules (ENG-102433).")]
+	public void TryRenderCommandHelp_ForUpdateEntitySchemaManualHelp_DescribesOperationAndOperationsFileUsage() {
+		// Arrange
+		AddRepositoryHelpFile("update-entity-schema");
+
+		// Act
+		string output = _exportRenderer.TryRenderCommandHelp("update-entity-schema");
+		string flattened = System.Text.RegularExpressions.Regex.Replace(output, @"\s+", " ");
+
+		// Assert
+		flattened.Should().Contain("clio-native batch mutation contract",
+			because: "runtime help must come from the manual file, not from the generated fallback");
+		flattened.Should().Contain("after one --operation", because: "the accepted form is several values after a single --operation");
+		flattened.Should().NotContain("Repeat the option", because: "a repeated --operation is rejected by the parser");
+		ContainsOptionToken(output, "operations").Should().BeTrue(because: "--operations is a visible option of the command");
+		flattened.Should().Contain("A relative path resolves from the current directory",
+			because: "the manual help must state how a relative --operations-file path is resolved");
+		flattened.Should().Contain("The file must be UTF-8", because: "a non-UTF-8 operations file is rejected");
+	}
+
+	[Test]
+	[Description("A manual help file that mentions 'alias for' in prose, such as a column-type alias note, renders as manual --help instead of being treated as an alias shim (ENG-102433).")]
+	public void TryRenderCommandHelp_WhenManualHelpMentionsAliasForInProse_RendersManualHelp() {
+		// Arrange
+		AddHelpFile("create-entity-schema", AliasForProseHelp);
+
+		// Act
+		string output = _exportRenderer.TryRenderCommandHelp("create-entity-schema");
+
+		// Assert
+		output.Should().Contain("This line proves the manual file is used.",
+			because: "a manual file that only mentions a type alias in prose is ordinary manual help");
+		output.Should().Contain("Blob is accepted as an alias for Binary",
+			because: "the manual description must be rendered as written");
+		output.Should().NotContain("ENVIRONMENT OPTIONS",
+			because: "manual help is not merged with the generated environment options");
+	}
+
+	[Test]
+	[Description("A manual help file that mentions 'alias for' in prose renders as the manual markdown doc instead of the generated one (ENG-102433).")]
+	public void RenderMarkdownDoc_WhenManualHelpMentionsAliasForInProse_RendersManualDoc() {
+		// Arrange
+		AddHelpFile("create-entity-schema", AliasForProseHelp);
+		new CommandHelpCatalog().TryGetCommand("create-entity-schema", out HelpCommandMetadata command).Should().BeTrue(
+			because: "create-entity-schema is a catalogued command");
+
+		// Act
+		string output = _exportRenderer.RenderMarkdownDoc(command);
+
+		// Assert
+		output.Should().Contain("This line proves the manual file is used.",
+			because: "a manual file that only mentions a type alias in prose is ordinary manual help");
+		output.Should().NotContain("## Environment Options",
+			because: "the manual markdown doc does not synthesize generated option sections");
+	}
+
+	[Test]
+	[Description("The set-app-icon help file, a real alias shim marked by its legacy heading, still renders generated help and its stub text is ignored (ENG-102433).")]
+	public void TryRenderCommandHelp_WhenHelpFileIsLegacyHeadingShim_RendersGeneratedHelp() {
+		// Arrange
+		AddRepositoryHelpFile("set-app-icon");
+
+		// Act
+		string output = _exportRenderer.TryRenderCommandHelp("set-app-icon");
+
+		// Assert
+		output.Should().Contain("clio set-app-icon [options]",
+			because: "a shim falls back to the generated usage line");
+		output.Should().NotContain("Legacy heading in Commands.md",
+			because: "the shim's legacy-heading stub must not reach the rendered help");
+		output.Should().NotContain("Supports the canonical set-app-icon command options",
+			because: "the shim's placeholder OPTIONS text must be replaced by the generated option list");
+	}
+
+	[TestCase("create-entity-schema", "EntitySchemaDesignerService")]
+	[TestCase("update-entity-schema", "clio-native batch mutation contract")]
+	[TestCase("modify-entity-schema-column", "Supported actions:")]
+	[TestCase("assert", "DESIGN PRINCIPLES")]
+	[Description("Runtime --help for each command whose manual file mentions 'alias for' in prose renders that shipped manual file, not generated help (ENG-102433).")]
+	public void TryRenderCommandHelp_ForCommandWithAliasForProse_RendersShippedManualHelp(string commandName, string manualOnlyText) {
+		// Arrange
+		AddRepositoryHelpFile(commandName);
+
+		// Act
+		string output = _exportRenderer.TryRenderCommandHelp(commandName);
+
+		// Assert
+		output.Should().Contain(manualOnlyText,
+			because: $"{commandName}.txt is ordinary manual help and must be what --help shows");
+		output.Should().NotContain("ENVIRONMENT OPTIONS",
+			because: "manual help is not merged with the generated environment options");
+	}
+
+	[TestCase("create-entity-schema")]
+	[TestCase("update-entity-schema")]
+	[TestCase("modify-entity-schema-column")]
+	[TestCase("assert")]
+	[Description("The committed docs/commands markdown of each command whose manual file mentions 'alias for' in prose equals the doc rendered from its shipped manual file (ENG-102433).")]
+	public void RenderMarkdownDoc_ForCommandWithAliasForProse_MatchesCommittedDoc(string commandName) {
+		// Arrange
+		AddRepositoryHelpFile(commandName);
+		new CommandHelpCatalog().TryGetCommand(commandName, out HelpCommandMetadata command).Should().BeTrue(
+			because: $"{commandName} is a catalogued command");
+		string committedDoc = System.IO.File.ReadAllText(
+			System.IO.Path.Combine(RepositoryRoot, "clio", "docs", "commands", $"{commandName}.md"));
+
+		// Act
+		string output = _exportRenderer.RenderMarkdownDoc(command);
+
+		// Assert
+		NormalizeLineEndings(output).Should().Be(NormalizeLineEndings(committedDoc),
+			because: $"docs/commands/{commandName}.md must be regenerated from {commandName}.txt by the help exporter");
 	}
 
 	[TestCaseSource(nameof(CatalogCommandNames))]
@@ -395,6 +515,31 @@ EXAMPLE
 		System.Text.RegularExpressions.Regex.IsMatch(
 			output,
 			$@"(?<![\w-])--{System.Text.RegularExpressions.Regex.Escape(longName)}(?![\w-])");
+
+	private const string AliasForProseHelp = """
+NAME
+    create-entity-schema - Manual create help
+
+DESCRIPTION
+    Blob is accepted as an alias for Binary.
+
+CUSTOM NOTES
+    This line proves the manual file is used.
+""";
+
+	private static readonly string RepositoryRoot =
+		System.IO.Path.GetFullPath(System.IO.Path.Combine(AppContext.BaseDirectory, "..", "..", "..", ".."));
+
+	private void AddHelpFile(string commandName, string content) {
+		FileSystem.AddDirectory(_helpDirectory);
+		FileSystem.AddFile(System.IO.Path.Combine(_helpDirectory, $"{commandName}.txt"), new MockFileData(content));
+	}
+
+	private void AddRepositoryHelpFile(string commandName) =>
+		AddHelpFile(commandName, System.IO.File.ReadAllText(
+			System.IO.Path.Combine(RepositoryRoot, "clio", "help", "en", $"{commandName}.txt")));
+
+	private static string NormalizeLineEndings(string value) => value.Replace("\r\n", "\n");
 
 	private CommandHelpRenderer CreateRenderer(Func<bool> supportsAnsi) =>
 		new(FileSystem, new CommandHelpCatalog(), featureToggleService: null, supportsAnsi);

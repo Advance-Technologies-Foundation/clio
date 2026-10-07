@@ -2,7 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
+using System.Text.RegularExpressions;
 using Clio.Help;
+using CommandLine;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -116,6 +119,44 @@ internal class HelpArtifactConsistencyTests {
 				because: $"'{verb}' must carry a human-readable description in the catalog");
 		}
 	}
+
+	[TestCase("create-entity-schema")]
+	[TestCase("update-entity-schema")]
+	[TestCase("modify-entity-schema-column")]
+	[TestCase("assert")]
+	[Description("The manual help file of each command that runtime --help renders from its .txt lists every visible option the command declares and none of the long names only a Hidden option declares (ENG-102433).")]
+	public void ManualHelpFile_ShouldListDeclaredVisibleOptionsAndOmitHiddenOnes(string commandName) {
+		// Arrange
+		new CommandHelpCatalog().TryGetCommand(commandName, out HelpCommandMetadata command).Should().BeTrue(
+			because: $"{commandName} is a catalogued command");
+		(PropertyInfo Property, OptionAttribute Option)[] options = command.OptionsType
+			.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+			.Select(property => (Property: property, Option: property.GetCustomAttribute<OptionAttribute>(true)))
+			.Where(item => item.Option is not null && !string.IsNullOrWhiteSpace(item.Option.LongName))
+			.ToArray();
+		string[] declaredVisibleNames = options
+			.Where(item => !item.Option.Hidden && item.Property.DeclaringType == command.OptionsType)
+			.Select(item => item.Option.LongName)
+			.ToArray();
+		string[] hiddenOnlyNames = options
+			.Where(item => item.Option.Hidden)
+			.Select(item => item.Option.LongName)
+			.Where(name => !options.Any(item => !item.Option.Hidden && item.Option.LongName == name))
+			.ToArray();
+
+		// Act
+		string helpText = File.ReadAllText(Path.Combine(HelpDirectory, $"{commandName}.txt"));
+
+		// Assert
+		declaredVisibleNames.Should().NotBeEmpty(because: $"{commandName} declares its own options");
+		declaredVisibleNames.Where(name => !ContainsOptionToken(helpText, name)).Should().BeEmpty(
+			because: $"{commandName}.txt is what --help shows, so it must document every visible option the command declares");
+		hiddenOnlyNames.Where(name => ContainsOptionToken(helpText, name)).Should().BeEmpty(
+			because: $"{commandName}.txt must not advertise backward-compatibility aliases declared Hidden");
+	}
+
+	private static bool ContainsOptionToken(string text, string longName) =>
+		Regex.IsMatch(text, $@"(?<![\w-])--{Regex.Escape(longName)}(?![\w-])");
 
 	[Test]
 	[Description("The CLI help directory should contain only canonical command files plus the root help file.")]

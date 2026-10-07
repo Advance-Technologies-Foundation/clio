@@ -1,186 +1,183 @@
 # modify-entity-schema-column
 
-Add, modify, or remove a column in a remote Creatio entity schema.
+## Command Type
 
+    Development commands
 
-## Usage
+## Name
+
+modify-entity-schema-column - Add, modify, or remove a column in a remote Creatio entity schema
+
+## Synopsis
 
 ```bash
-clio modify-entity-schema-column [options]
+clio modify-entity-schema-column [OPTIONS]
 ```
 
 ## Description
 
-Add, modify, or remove a column in a remote Creatio entity schema.
+Loads the full entity schema design item from the remote Creatio environment,
+mutates one own column locally, and saves the schema back through
+EntitySchemaDesignerService.
 
-After saving the column the command always publishes the configuration, so the
-changed column becomes visible to lookup pickers without a manual compile. The
-command additionally requests an OData entities rebuild only when the mutation
-changes the published OData contract — adding or removing a column, renaming one
-(`--new-name`), or changing its type or reference schema. Changing a column's
-caption, description, default value, mask, usage type, or required flag leaves
-the OData contract unchanged
-and does not trigger a rebuild. When a rebuild is requested, it runs in the
-background — OData access (`/0/odata/<Entity>`) appears within a few minutes,
-not immediately. A 404 (or "The request is invalid") from OData right after
-the change is the expected async gap; wait and retry rather than running a
-full compile. Each call publishes once, so to change several columns at once
-batch them through `update-entity-schema` instead of one call per column.
+This command is part of the canonical clio MCP mutation surface for
+explicit single-column edits. Use sync-schemas when the work spans
+multiple ordered schema operations.
 
-## Examples
+After saving, the configuration is always published, so the changed column
+becomes visible to lookup pickers without a manual compile. The OData
+entities are rebuilt only when the mutation changes the published OData
+contract - adding or removing a column, renaming one (--new-name), or
+changing its type or reference schema. Changing a column's caption,
+description, default value, mask, usage type, or required flag leaves the
+OData contract unchanged and does
+not trigger a rebuild. When a rebuild is requested, it runs in the
+background (~1-2 min); a 404 (or "The request is invalid") from OData right
+after the change is the expected async gap, so wait and retry rather than
+compiling. Each call
+publishes once - to change several columns at once, batch them through
+update-entity-schema.
 
-```bash
-clio modify-entity-schema-column -e dev
-```
+Supported actions:
+- add
+- modify
+- remove
+
+Supported types for add and modify:
+- Guid
+- Text, ShortText, MediumText, LongText, MaxSizeText
+- Text50, Text250, Text500, TextUnlimited, PhoneNumber, WebLink, Email, RichText
+- Binary, Image, File, SecureText (Blob is accepted as an alias for Binary; Encrypted and Password are accepted as aliases for SecureText; EmailAddress is accepted as an alias for Email)
+- ImageLookup (ImageLink is accepted as an alias; references the SysImage schema automatically — no --reference-schema)
+- Integer
+- Float
+- Decimal0, Decimal1, Decimal2, Decimal3, Decimal4, Decimal8, Currency0, Currency1, Currency2, Currency3
+(Money is accepted as an alias for Currency2 — the normal two-decimal Creatio money column;
+Decimal is accepted as an alias for Decimal2, same as Float)
+- Boolean
+- DateTime (Date and Time are accepted, but are aliases of DateTime: the column is stored as DateTime
+and read back as DateTime, so date-only or time-only intent is not preserved)
+- Lookup (requires --reference-schema)
+- Color (stores a hex color string such as #RRGGBB; not a text column — the text-only options multiline/accent-insensitive/format-validated/masked do not apply)
+
+For image/photo fields rendered with the crt.ImageInput Freedom UI component, use the
+ImageLookup ("Image link") type. The binary Image type does not work with crt.ImageInput.
 
 ## Options
 
 ```bash
---package <VALUE>
-Target package name. Required.
---schema-name <VALUE>
-Entity schema name. Required.
---action <VALUE>
-Column action: add, modify, or remove. Required.
---column-name <VALUE>
-Target column name. Required.
---new-name <VALUE>
-New column name for rename operations
---type <VALUE>
-Column type. Supported values:
-Guid, Integer, Float, Boolean, Date, DateTime,
-Time, Lookup,
-Binary, Image, ImageLookup, File, SecureText,
-Text, ShortText, MediumText, LongText, MaxSizeText,
-Text50,
-Text250, Text500, TextUnlimited, PhoneNumber, WebLink, Email, RichText,
-Decimal0, Decimal1, Decimal2, Decimal3, Decimal4, Decimal8, 
-Currency0,
-Currency1, Currency2, Currency3, Color.
-`Color` stores a hex color string (e.g. `#RRGGBB`) and is not a text column — the text-only options
-(multiline / accent-insensitive / format-validated / masked) do not apply to it.
-ImageLink is accepted as an alias for ImageLookup.
-`Money` is accepted as an alias for `Currency2` (the normal two-decimal Creatio money column), and
-`Decimal` for `Decimal2` (same as `Float`).
-`Date` and `Time` are accepted but are aliases of `DateTime`: Creatio stores the column as `DateTime`
-and the readback tools report it as `DateTime`, so date-only or time-only intent is not preserved.
-For image/photo fields rendered with the `crt.ImageInput` Freedom UI component, use
-`ImageLookup` ("Image link") — the binary `Image` type does not work with `crt.ImageInput`.
-`ImageLookup` references the `SysImage` schema automatically (no `--reference-schema`).
---title <VALUE>
-Column title/caption
---description <VALUE>
-Column description
---reference-schema <VALUE>
-Lookup reference schema name (not used for ImageLookup)
---required
-Set required flag
---indexed
-Set indexed flag
---cloneable
-Set make-copy flag
---track-changes
-Set update-change-log flag
---default-value <VALUE>
-Set a constant default value
---default-value-source <VALUE>
-Default value source: Const or None
---multiline-text
-Set multi-line text flag
---localizable-text
-Set localizable text flag
---accent-insensitive
-Set accent-insensitive flag
---masked
-Set masked flag
---format-validated
-Set format-validated flag
---use-seconds
-Set use-seconds flag
---simple-lookup
-Set simple-lookup flag
---cascade
-Set cascade-connection flag
---do-not-control-integrity
-Set do-not-control-integrity flag
---usage-type
-Column usage type: General (default), Advanced, or None (case-insensitive; applies to any column type). On modify the stored value is left unchanged when omitted.
---timeout <NUMBER>
-Request timeout in milliseconds. Default: 100000.
+--package                      Target package name. Required
+--schema-name                  Entity schema name. Required
+--action                       Column action: add, modify, or remove. Required
+--column-name                  Target column name. Required
+--new-name                     New column name for rename operations
+--type                         Column type for add/modify
+--title                        Column title/caption
+--description                  Column description
+--reference-schema             Lookup reference schema name (not used for ImageLookup)
+--required                     Set required flag
+--indexed                      Set indexed flag
+--cloneable                    Set make-copy flag
+--track-changes                Set update-change-log flag
+--default-value-source         Legacy default value shorthand: Const or None
+--default-value                Legacy constant default value shorthand
+--multiline-text               Set multi-line text flag (Text only)
+--localizable-text             Set localizable text flag (Text only)
+--accent-insensitive           Set accent-insensitive flag (Text only)
+--masked                       Set masked flag (Text/SecureText only)
+--format-validated             Set format-validated flag (Text only)
+--use-seconds                  Set use-seconds flag (DateTime only)
+--simple-lookup                Set simple-lookup flag (Lookup only)
+--cascade                      Set cascade-connection flag (Lookup only)
+--do-not-control-integrity     Set do-not-control-integrity flag (Lookup only)
+--usage-type                   Column usage type: General (default), Advanced,
+or None (case-insensitive; any column type). On
+modify the stored value is left unchanged when omitted.
+--caption-culture              Override the culture for the written column
+caption/description (e.g. en-US, uk-UA).
+Precedence: override > profile culture > en-US.
+Supplying it skips the profile-culture lookup.
+
+Environment options are also available:
+-e, --environment              Environment name from the registered configuration
+-u, --uri                      Application URI
+-l, --login                    User login
+-p, --password                 User password
 ```
 
-## Environment Options
+## Examples
 
 ```bash
--u, --uri <VALUE>
-Application uri
--p, --Password <VALUE>
-User password
--l, --Login <VALUE>
-User login (administrator permission required)
--i, --IsNetCore
-Use NetCore application
--e, --Environment <VALUE>
-Environment name
--m, --Maintainer <VALUE>
-Maintainer name
--c, --dev <VALUE>
-Developer mode state for environment
---WorkspacePathes <VALUE>
-Workspace path
--s, --Safe <VALUE>
-Safe action in this environment
---clientId <VALUE>
-OAuth client id
---clientSecret <VALUE>
-OAuth client secret
---authAppUri <VALUE>
-OAuth app URI
---silent
-Use default behavior without user interaction
---restart-environment
-Restart environment after execute command
---db-server-uri <VALUE>
-Db server uri
---db-user <VALUE>
-Database user
---db-password <VALUE>
-Database password
---backup-file <VALUE>
-Full path to backup file
---db-working-folder <VALUE>
-Folder visible to db server
---db-name <VALUE>
-Desired database name
---force
-Force restore
---callback-process <VALUE>
-Callback process name
---ep <VALUE>
-Path to the application root folder
+# Add a text column
+clio modify-entity-schema-column -e dev --package Custom --schema-name UsrVehicle --action add --column-name Name --type Text --title "Vehicle name"
+
+# Add a lookup column
+clio modify-entity-schema-column -e dev --package Custom --schema-name UsrVehicle --action add --column-name Owner --type Lookup --reference-schema Contact --title "Owner"
+
+# Rename and update a column
+clio modify-entity-schema-column -e dev --package Custom --schema-name UsrVehicle --action modify --column-name Owner --new-name PrimaryOwner --title "Primary owner"
+
+# Clear a previously configured default value
+clio modify-entity-schema-column -e dev --package Custom --schema-name UsrVehicle --action modify --column-name Status --default-value-source None
+
+# Set a column's usage type
+clio modify-entity-schema-column -e dev --package Custom --schema-name UsrVehicle --action modify --column-name Status --usage-type Advanced
+
+# Remove an own column
+clio modify-entity-schema-column -e dev --package Custom --schema-name UsrVehicle --action remove --column-name LegacyCode
+
+# Override the caption of an inherited column on a replacing/child schema
+clio modify-entity-schema-column -e dev --package Custom --schema-name UsrTickets --action modify --column-name Symptoms --title "Description"
 ```
-
-## Requirements
-
-cliogate must be installed on the target Creatio environment.
 
 ## Notes
 
-- Own columns support all mutations. An **inherited** column can have only its **caption/description** overridden (`--title`/`title-localizations`, `--description`/`description-localizations`) on a replacing/child schema — its name, type, and flags stay read-only, and it cannot be removed. The override is persisted on the child schema (keyed `<Schema>.Columns.<Column>.Caption`) and does not change the parent. Attempting a non-caption change to an inherited column fails with `Error: Column '<C>' is inherited; only its caption and description can be overridden. Its name, type, and flags are read-only.`
-- CLI flags `--default-value-source/--default-value` remain shorthand for `Const` and `None`.
-- MCP structured `default-value-config` also supports `Settings` and `SystemValue`.
-- For `SystemValue`, clio resolves Guid/alias/caption to canonical Guid before save.
-- For `Settings`, clio resolves code/name/id to canonical setting code before save.
-- For `Sequence` (text columns only), the static prefix comes from `sequence-prefix` (e.g. `LN-`) or from a `value` mask whose single `{0}` placeholder is at the end (e.g. `LN-{0}` produces `LN-00001`); setting both is rejected. Masks with static text after `{0}` (a suffix) are not supported and fail with a validation error instead of being silently dropped.
-- For a **lookup** column, a `Const` value is the GUID of a record in the referenced schema. clio validates the record exists before save and rejects an unknown GUID with `Error: ... default value record '<guid>' was not found in referenced schema '<schema>'.` (non-zero exit, schema not saved). The check is point-in-time (TOCTOU) and is skipped when the referenced record cannot be read (e.g. no access), so a write is never blocked on an unverifiable check.
-- `--caption-culture <VALUE>` overrides the culture for the written column caption/description (e.g. `en-US`, `uk-UA`). Precedence: override > the connected user's profile culture (see `get-user-culture`) > `en-US`. When omitted, clio resolves the profile culture and falls back to `en-US` if it cannot be resolved. Column READ/display (`get-entity-schema-column-properties`) keeps using the host locale.
-- For `add`/`modify`, each `title-localizations` / `description-localizations` value must be written in the language of its culture key. The `en-US` value must be English; a value in a script that does not match a Latin-script culture key (e.g. Cyrillic under `en-US`) is rejected — put localized text under its own culture key such as `uk-UA`.
-- **Culture must exist in the environment.** Every culture a caption or description is written in (each `title-localizations` / `description-localizations` key and the effective `--caption-culture`) must be a culture of the Languages section (System Designer → Languages). Creatio silently drops a value in a culture it does not have and still reports success, so clio checks the cultures before saving and fails with `Culture '<c>' is not available in this environment. Add it in the Languages section (System Designer → Languages) first. Available: …`. A culture that exists but is inactive is saved, and a warning is printed.
+- own columns support all mutations; an INHERITED column can have only its caption/description
+overridden (--title/title-localizations, --description/description-localizations) on a
+replacing/child schema — its name, type, and flags stay read-only, and it cannot be removed.
+The override is stored on the child schema and does not change the parent
+- remove clears schema-level references to the deleted column and validates required fallbacks locally
+- unspecified modify options are preserved as-is in the saved payload
+- MCP callers can also send structured default-value-config with source
+None, Const, Settings, SystemValue, or Sequence; direct CLI flags remain
+shorthand for Const and None
+- For default-value-config source=SystemValue:
+value-source can be Guid, enum alias, or caption; values are normalized
+to Guid before save
+- For default-value-config source=Settings:
+value-source can be setting code, setting name, or setting id; values are
+normalized to setting code before save
+- For default-value-config source=Sequence (text columns only):
+set the static prefix via sequence-prefix (e.g. LN-) or a value mask
+ending with {0} (e.g. LN-{0} produces LN-00001), not both; masks with
+static text after {0} are rejected with a validation error
+- If Settings or SystemValue lookup is ambiguous, the command fails with a
+validation error and requests explicit code/Guid input
+- For a lookup column, a Const value is the GUID of a record in the
+referenced schema; the command validates the record exists before save and
+rejects an unknown GUID (point-in-time check; skipped when the referenced
+record cannot be read)
+- Binary, Image, and File columns do not support --default-value or --default-value-source Const
+- After save, the schema is reloaded immediately; save is treated as failed if the mutated column cannot be read back
+- when --caption-culture is omitted, clio uses the connected user's profile
+culture (see get-user-culture) and falls back to en-US if it cannot be resolved;
+column reads (get-entity-schema-column-properties) keep using the host locale
+- each title-localizations / description-localizations value must be written in
+the language of its culture key: the en-US value must be English, and a value in
+a script that does not match a Latin-script culture key (for example Cyrillic
+under en-US) is rejected; put localized text under its own culture key (uk-UA)
+- every caption culture must exist in the Languages section (System Designer -> Languages).
+Creatio silently drops a value in a culture it does not have, so a culture the
+environment does not have fails before anything is saved, listing the
+available cultures; an inactive culture is saved with a warning
 
-## See also
+## Reporting Bugs
 
-- `get-entity-schema-column-properties`
-- `get-user-culture`
-- `get-entity-schema-properties`
+    https://github.com/Advance-Technologies-Foundation/clio
+
+## See Also
+
+get-entity-schema-column-properties, get-entity-schema-properties, create-entity-schema,
+update-entity-schema, get-user-culture
 
 - [Clio Command Reference](../../Commands.md#modify-entity-schema-column)

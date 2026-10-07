@@ -30,5 +30,8 @@ regeneration of that specific file (for example, editing `clio/help/en/<command>
 reason and re-running the exporter for that command). At that point the bold text, inline code, and
 blockquotes silently revert to plain prose with no error, no test failure, and no diff review signal
 beyond an ordinary-looking markdown diff — `HelpArtifactConsistencyTests` only checks that the files
-exist, never that their content matches what the generator would produce. Put any wording you want
-preserved into the `.txt` source, not the `.md` output.
+exist, never that their content matches what the generator would produce. The exception is the four
+commands pinned by `CommandHelpRendererTests.RenderMarkdownDoc_ForCommandWithAliasForProse_MatchesCommittedDoc`
+(`create-entity-schema`, `update-entity-schema`, `modify-entity-schema-column`, `assert`), whose
+committed `.md` must equal the exporter output, so a hand edit there fails the build. Put any wording
+you want preserved into the `.txt` source, not the `.md` output.

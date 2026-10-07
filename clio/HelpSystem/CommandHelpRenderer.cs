@@ -461,9 +461,9 @@ internal sealed class CommandHelpRenderer {
 			currentSection.Value.Lines.Add(line.Trim('\ufeff'));
 			sections[^1] = currentSection.Value;
 		}
-		bool isAliasShim = content.Contains("alias for", StringComparison.OrdinalIgnoreCase)
-			|| content.Contains("legacy heading", StringComparison.OrdinalIgnoreCase)
-			|| content.Contains("exists so the legacy heading", StringComparison.OrdinalIgnoreCase);
+		// Only the legacy-heading marker identifies an alias shim. Prose such as "Blob is accepted as an
+		// alias for Binary" is ordinary manual help and must not demote the file to generated help.
+		bool isAliasShim = content.Contains("legacy heading", StringComparison.OrdinalIgnoreCase);
 		return new HelpDocument(
 			sections
 				.Select(section => new HelpSection(section.Heading, section.NormalizedHeading, TrimEmptyLines(section.Lines)))
