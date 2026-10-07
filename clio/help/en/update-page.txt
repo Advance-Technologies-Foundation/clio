@@ -248,6 +248,8 @@ DESCRIPTION
       a nested key the parent data source does not have. The differ skips such a
       merge, so it is saved but has no effect. Merge into an existing parent
       instead (path ["dataSources"] with the new key inside values, or path []).
+      "attributes" and "dataSources" always exist at runtime, even on a blank
+      page, so merging into them is safe.
       clio checks this against the page's real parent schemas, on save and on
       --dry-run; the save still succeeds.
 

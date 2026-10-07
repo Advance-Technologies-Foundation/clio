@@ -396,7 +396,10 @@ Typical shapes:
 config the way the platform does. For every merge that would be skipped, the response gets an advisory
 `warnings` entry naming the section and the path. The save still succeeds, on `--dry-run` as well. To
 add a new key, merge into its existing parent and put the key inside `values`: `path: ["dataSources"]`
-with `values: { "NewDS": { ... } }`, or `path: []` with the whole branch. If the parent schemas cannot
+with `values: { "NewDS": { ... } }`, or `path: []` with the whole branch. `attributes` and `dataSources`
+always exist at runtime, even on a blank page whose `get-page` bundle shows neither, so merging into
+them is safe. A merge whose path ends on an array or a single value, or whose `values` is not an object,
+is reported the same way, with its own reason. If the parent schemas cannot
 be read for this check, the response says the check did not run, and the save is not blocked.
 
 ### What a `--dry-run` tells you about an append

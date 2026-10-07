@@ -2,6 +2,7 @@
 description: a viewModelConfigDiff/modelConfigDiff merge whose path does not exist is skipped by the Creatio differ (it never creates the missing key) - the save succeeds and the operation silently has no effect, so update-page warns since GH-1753 and the warning must stay advisory
 applies-to:
   - clio/Command/PageUnresolvedMergeDetector.cs
+  - clio/Command/PageBundleBuilder.cs
   - clio/Command/JsonPathDiffApplier.cs
   - clio/Command/JsonDiffApplier.cs
   - clio/Command/PageUpdateOptions.cs
@@ -22,6 +23,16 @@ whose every segment exists all applied. The parent layer itself is irrelevant; o
 matters. clio-knowledge guidance (`related-data/list.md`) still recommends `path: ["dependencies"]`,
 which is inert whenever no layer has declared `dependencies` yet.
 
+The runtime does not start from an empty config. The client `BaseSchemaBuilderService.getEmptySchemaPart`
+puts an empty `attributes` object into `viewModelConfig` and a `PageParameters` data source
+(`crt.PageParametersDataSource`) into `modelConfig`, before the first schema is applied. So
+`path: ["attributes"]` and `path: ["dataSources"]` apply even on a `BlankPageTemplate` chain where no
+schema declares them. This was checked in the browser: a label and a grid bound to such merges
+rendered their values. A `path: ["attributes", "New"]` merge on the same page rendered an empty label,
+so a missing path is skipped at runtime too, not only in clio's clone. The detector starts from the same
+seed. **`get-page`'s bundle (`PageBundleBuilder`) does not** — it shows no `attributes` / `dataSources` on
+such a page — so the bundle is not a reliable oracle for whether these two top-level paths exist.
+
 **Why it is this way** — the behaviour is the platform's, so clio cannot make the operation apply.
 `PageUnresolvedMergeDetector` replays the inherited chain and the body through the same applier, and
 the applier's `JsonApplierOperationsOptions.UnresolvedMerges` sink makes the discarded list visible.
@@ -36,7 +47,10 @@ That happens only when the body has a merge with a non-root path, and the read i
 not check" warning, never a failed save. That includes a timeout surfacing as `TaskCanceledException`,
 since no cancellation token reaches this path. A falsy value at the path (`null`, `false`, `0`, `""`)
 counts as missing, as in the client's `!itemInfo.item` test. Before GH-1753 the clone threw an
-`InvalidCastException` there.
+`InvalidCastException` there. A path that ends on a non-falsy single value or an array still makes the
+clone throw `InvalidCastException`, while the runtime merges nothing into it. The detector then replays
+the merges one at a time to name that merge with its own reason. A merge whose `values` is not an
+object is reported separately and left out of the replay.
 
 **What breaks if you ignore it** — replace the replay with a shortcut, such as checking the merge
 against the body alone or against `get-page`'s bundle of the CURRENT page: it reports merges that

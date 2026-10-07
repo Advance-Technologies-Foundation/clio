@@ -161,16 +161,87 @@ public sealed class PageUnresolvedMergeDetectorTests {
 	}
 
 	[Test]
-	[Description("With no parent schema at all, the config base is empty, so any merge with a non-empty path is reported.")]
-	public void Detect_ShouldReportEveryPathMerge_WhenThereAreNoParents() {
+	[Description("The runtime starts every chain from an empty 'attributes' object and a 'PageParameters' data source, so with no parent declaring them a merge into 'attributes' or 'dataSources' still applies, while 'dependencies' does not.")]
+	public void Detect_ShouldResolveAgainstRuntimeSeed_WhenNoParentDeclaresTheContainers() {
 		// Arrange
-		string body = Body(modelConfigDiff: """[{ "operation": "merge", "path": ["dataSources"], "values": { "UsrNewDS": {} } }]""");
+		string body = Body(
+			viewModelConfigDiff: """[{ "operation": "merge", "path": ["attributes"], "values": { "UsrProbe": { "value": 1 } } }]""",
+			modelConfigDiff: """
+				[
+					{ "operation": "merge", "path": ["dataSources"], "values": { "UsrNewDS": {} } },
+					{ "operation": "merge", "path": ["dataSources", "PageParameters", "config"], "values": { "x": 1 } },
+					{ "operation": "merge", "path": ["dependencies"], "values": { "UsrNewDS": [] } }
+				]
+				""");
 
 		// Act
 		IReadOnlyList<string> warnings = Detector.Detect(body, () => []);
 
 		// Assert
-		warnings.Should().ContainSingle(because: "the runtime base is empty, so 'dataSources' does not exist");
+		warnings.Should().ContainSingle(because: "only 'dependencies' is absent from the runtime's starting config");
+		warnings[0].Should().StartWith("modelConfigDiff merge at path [\"dependencies\"]",
+			because: "the seed holds 'attributes' and 'dataSources.PageParameters', not 'dependencies'");
+	}
+
+	[Test]
+	[Description("A BlankPageTemplate-like chain whose schemas carry only viewConfigDiff: the merges the warning recommends - into 'attributes' and 'dataSources' - are not reported.")]
+	public void Detect_ShouldNotReportRecommendedMerges_WhenChainDeclaresNoConfig() {
+		// Arrange
+		IReadOnlyList<PageDesignerHierarchySchema> blankChain = [
+			new PageDesignerHierarchySchema { UId = "blank", Name = "BlankPageTemplate", Body = Body() },
+			new PageDesignerHierarchySchema { UId = "base", Name = "BasePageTemplate", Body = Body() }
+		];
+		string body = Body(
+			viewModelConfigDiff: """[{ "operation": "merge", "path": ["attributes"], "values": { "UsrList": { "isCollection": true, "modelConfig": { "path": "UsrNewDS" } } } }]""",
+			modelConfigDiff: """[{ "operation": "merge", "path": ["dataSources"], "values": { "UsrNewDS": { "type": "crt.EntityDataSource" } } }]""");
+
+		// Act
+		IReadOnlyList<string> warnings = Detector.Detect(body, () => blankChain);
+
+		// Assert
+		warnings.Should().BeEmpty(because: "the runtime seeds both containers, so both merges apply on a blank page");
+	}
+
+	[Test]
+	[Description("A merge whose path ends on a single value or an array is named with its own reason, and the other merges in the same diff are still checked.")]
+	public void Detect_ShouldNameMergeIntoNonObject_AndKeepCheckingOthers() {
+		// Arrange
+		string body = Body(viewModelConfigDiff: """
+			[
+				{ "operation": "merge", "path": ["attributes", "AttachmentList", "isCollection"], "values": { "x": 1 } },
+				{ "operation": "merge", "path": ["attributes", "UsrMissing"], "values": { "x": 1 } }
+			]
+			""");
+
+		// Act
+		IReadOnlyList<string> warnings = Detector.Detect(body, TemplateParent);
+
+		// Assert
+		warnings.Should().HaveCount(2, because: "both merges fail to apply, for different reasons");
+		warnings.Should().Contain(w => w.Contains("[\"attributes\",\"AttachmentList\",\"isCollection\"]") && w.Contains("is not an object"),
+			because: "isCollection holds a single value, so there is no object to merge into");
+		warnings.Should().Contain(w => w.Contains("[\"attributes\",\"UsrMissing\"]") && w.Contains("does not exist"),
+			because: "the unrelated missing path must still be reported after the non-object target");
+	}
+
+	[Test]
+	[Description("A merge whose values is not an object is reported as not applied as written, and the rest of the diff is still checked.")]
+	public void Detect_ShouldReportMergeWithNonObjectValues_AndKeepCheckingOthers() {
+		// Arrange
+		string body = Body(modelConfigDiff: """
+			[
+				{ "operation": "merge", "path": [], "values": ["dataSources"] },
+				{ "operation": "merge", "path": ["dataSources", "UsrMissing"], "values": { "x": 1 } }
+			]
+			""");
+
+		// Act
+		IReadOnlyList<string> warnings = Detector.Detect(body, TemplateParent);
+
+		// Assert
+		warnings.Should().HaveCount(2, because: "the malformed merge and the unresolved merge are both reported");
+		warnings.Should().Contain(w => w.StartsWith("modelConfigDiff merge at path []") && w.Contains("\"values\" is not an object"),
+			because: "a merge's values must be an object");
 	}
 
 	[Test]
@@ -222,6 +293,7 @@ public sealed class PageUnresolvedMergeDetectorTests {
 	[TestCase("""[{ "operation": "insert", "path": ["attributes"], "values": {} }]""", 0)]
 	[TestCase("""[{ "operation": "merge", "path": ["attributes"], "values": {} }]""", 1)]
 	[TestCase("""[{ "operation": "merge", "values": {} }]""", 1)]
+	[TestCase("""[{ "operation": "merge", "path": [] }]""", 1)]
 	[Description("The parent schemas are read only when the body has a merge that can miss its target, so a body with root merges alone costs no hierarchy read.")]
 	public void Detect_ShouldReadParentsOnlyWhenAMergeCanMissItsTarget(string viewModelConfigDiff, int expectedReads) {
 		// Arrange

@@ -21,15 +21,17 @@ using Newtonsoft.Json.Linq;
 public interface IPageUnresolvedMergeDetector {
 
 	/// <summary>
-	/// Builds the <c>viewModelConfig</c> and <c>modelConfig</c> that the parent schemas produce, applies the
+	/// Builds the <c>viewModelConfig</c> and <c>modelConfig</c> that the parent schemas produce on top of the
+	/// runtime's starting config (an empty <c>attributes</c> object and the <c>PageParameters</c> data source), applies the
 	/// body's config diffs on top of them the way the platform does, and returns one warning for every
 	/// <c>merge</c> the differ skipped.
 	/// </summary>
 	/// <param name="body">The full web page body that will be saved.</param>
 	/// <param name="readInheritedSchemas">Reads the schemas the saved body layers over, nearest parent first
 	/// (designer hierarchy order), without the schema being saved, which the body replaces. Called at most once,
-	/// and only when the body has a merge whose target can be missing (any merge except <c>path: []</c>, which
-	/// targets the always-present root), so a body without one costs no read. Its exceptions propagate.</param>
+	/// and only when the body has a merge that can fail to apply (any merge except one with <c>path: []</c>, which
+	/// targets the always-present root, and object <c>values</c>), so a body without one costs no read. Its
+	/// exceptions propagate.</param>
 	/// <returns>The warnings; empty when every merge resolves or there is nothing to check.</returns>
 	IReadOnlyList<string> Detect(string body, Func<IEnumerable<PageDesignerHierarchySchema>> readInheritedSchemas);
 
@@ -41,6 +43,19 @@ internal sealed class PageUnresolvedMergeDetector : IPageUnresolvedMergeDetector
 	private const string ViewModelConfigDiffSection = "viewModelConfigDiff";
 	private const string ModelConfigDiffSection = "modelConfigDiff";
 	private const string MergeOperation = "merge";
+	private const string PageParametersDataSourceName = "PageParameters";
+	private const string PageParametersDataSourceType = "crt.PageParametersDataSource";
+
+	/// <summary>Why the differ does not apply one merge.</summary>
+	private enum SkipReason {
+
+		PathNotFound,
+		TargetNotObject,
+		ValuesNotObject
+
+	}
+
+	private readonly record struct SkippedMerge(string Section, JObject Operation, SkipReason Reason);
 
 	/// <summary>
 	/// Ceiling on reported findings, so a body full of stale operations cannot bury the response. Past it,
@@ -80,8 +95,8 @@ internal sealed class PageUnresolvedMergeDetector : IPageUnresolvedMergeDetector
 		// ancestor, so a fresh instance for the candidate would resolve differently from the runtime.
 		IJsonPathDiffApplier viewModelApplier = _pathApplierFactory();
 		IJsonPathDiffApplier modelApplier = _pathApplierFactory();
-		JObject viewModelConfig = new();
-		JObject modelConfig = new();
+		JObject viewModelConfig = RuntimeViewModelConfigSeed();
+		JObject modelConfig = RuntimeModelConfigSeed();
 		foreach (PageDesignerHierarchySchema schema in inheritedSchemas.Reverse()) {
 			if (string.IsNullOrWhiteSpace(schema?.Body)) {
 				continue;
@@ -90,63 +105,130 @@ internal sealed class PageUnresolvedMergeDetector : IPageUnresolvedMergeDetector
 			viewModelConfig = ApplyLayer(viewModelApplier, viewModelConfig, layer.ViewModelConfigDiff, layer.ViewModelConfig);
 			modelConfig = ApplyLayer(modelApplier, modelConfig, layer.ModelConfigDiff, layer.ModelConfig);
 		}
-		var skipped = new List<(string Section, JObject Operation)>();
-		skipped.AddRange(FindUnresolvedMerges(viewModelApplier, viewModelConfig, candidate.ViewModelConfigDiff)
-			.Select(operation => (ViewModelConfigDiffSection, operation)));
-		skipped.AddRange(FindUnresolvedMerges(modelApplier, modelConfig, candidate.ModelConfigDiff)
-			.Select(operation => (ModelConfigDiffSection, operation)));
+		var skipped = new List<SkippedMerge>();
+		skipped.AddRange(FindSkippedMerges(viewModelApplier, viewModelConfig, candidate.ViewModelConfigDiff, ViewModelConfigDiffSection));
+		skipped.AddRange(FindSkippedMerges(modelApplier, modelConfig, candidate.ModelConfigDiff, ModelConfigDiffSection));
 		return Describe(skipped);
 	}
+
+	// The runtime starts every config chain from these two objects before the first schema is applied (client
+	// BaseSchemaBuilderService.getEmptySchemaPart), so a merge into "attributes" or "dataSources" resolves even
+	// when no schema in the chain declares them - on a BlankPageTemplate page, for instance.
+	private static JObject RuntimeViewModelConfigSeed() => new() { ["attributes"] = new JObject() };
+
+	private static JObject RuntimeModelConfigSeed() => new() {
+		["dataSources"] = new JObject {
+			[PageParametersDataSourceName] = new JObject {
+				["type"] = PageParametersDataSourceType,
+				["config"] = new JObject()
+			}
+		}
+	};
 
 	private static bool ContainsCheckableMerge(JToken diff) =>
 		diff is JArray operations && operations.OfType<JObject>().Any(IsCheckableMerge);
 
 	private static bool IsCheckableMerge(JObject operation) =>
-		string.Equals(operation.Value<string>("operation"), MergeOperation, StringComparison.Ordinal)
-		&& operation["path"] is not JArray { Count: 0 };
+		IsMerge(operation) && (operation["path"] is not JArray { Count: 0 } || operation["values"] is not JObject);
 
 	private static JObject ApplyLayer(IJsonPathDiffApplier applier, JObject current, JToken diff, JToken config) =>
 		PageBundleMergeHelpers.ApplyConfigLayer(applier, current, diff, config);
 
-	private static List<JObject> FindUnresolvedMerges(IJsonPathDiffApplier applier, JObject current, JToken diff) {
-		var unresolved = new List<JObject>();
-		if (diff is JArray { Count: > 0 } operations) {
-			applier.Apply(current, operations, new JsonApplierOperationsOptions { UnresolvedMerges = unresolved });
+	private static List<SkippedMerge> FindSkippedMerges(
+		IJsonPathDiffApplier applier, JObject current, JToken diff, string section) {
+		if (diff is not JArray { Count: > 0 } operations) {
+			return [];
 		}
-		return unresolved;
+		// A merge whose "values" is not an object never applies as written (the runtime reads its keys), and the
+		// clone cannot replay it at all, so it is reported here and left out of the replay.
+		List<JObject> malformed = operations.OfType<JObject>()
+			.Where(operation => IsMerge(operation) && operation["values"] is not JObject)
+			.ToList();
+		var skipped = malformed.Select(operation => new SkippedMerge(section, operation, SkipReason.ValuesNotObject)).ToList();
+		JArray replay = malformed.Count == 0
+			? operations
+			: new JArray(operations.Where(operation => !malformed.Any(m => ReferenceEquals(m, operation))));
+		var unresolved = new List<JObject>();
+		try {
+			// The whole diff in one call, exactly as the runtime applies it.
+			applier.Apply(current, replay, new JsonApplierOperationsOptions { UnresolvedMerges = unresolved });
+			skipped.AddRange(unresolved.Select(operation => new SkippedMerge(section, operation, SkipReason.PathNotFound)));
+		} catch (InvalidCastException) {
+			// The clone casts the merge target to an object. A merge whose path ends on an array or a single value
+			// throws here, where the runtime merges nothing into it. Replay the merges one by one to name that merge
+			// and still check the others; merges run first and in array order, so the other operations in the diff
+			// cannot change the outcome.
+			skipped.AddRange(FindSkippedMergesOneByOne(applier, current, replay, section));
+		}
+		return skipped;
 	}
 
-	private static List<string> Describe(IEnumerable<(string Section, JObject Operation)> skipped) {
+	private static bool IsMerge(JObject operation) =>
+		string.Equals(operation.Value<string>("operation"), MergeOperation, StringComparison.Ordinal);
+
+	private static List<SkippedMerge> FindSkippedMergesOneByOne(
+		IJsonPathDiffApplier applier, JObject current, JArray operations, string section) {
+		var skipped = new List<SkippedMerge>();
+		JObject config = current;
+		foreach (JObject operation in operations.OfType<JObject>().Where(IsMerge)) {
+			var unresolved = new List<JObject>();
+			try {
+				config = applier.Apply(config, new JArray(operation),
+					new JsonApplierOperationsOptions { UnresolvedMerges = unresolved }) as JObject ?? config;
+			} catch (InvalidCastException) {
+				skipped.Add(new SkippedMerge(section, operation, SkipReason.TargetNotObject));
+				continue;
+			}
+			skipped.AddRange(unresolved.Select(merge => new SkippedMerge(section, merge, SkipReason.PathNotFound)));
+		}
+		return skipped;
+	}
+
+	private static List<string> Describe(IEnumerable<SkippedMerge> skipped) {
 		var seen = new HashSet<string>(StringComparer.Ordinal);
 		var findings = new List<string>();
 		int unlisted = 0;
-		foreach ((string section, JObject operation) in skipped) {
-			JArray path = operation["path"] as JArray;
-			string name = operation.Value<string>("name");
+		foreach (SkippedMerge merge in skipped) {
+			JArray path = merge.Operation["path"] as JArray;
+			string name = merge.Operation.Value<string>("name");
 			// The same operation authored twice is skipped twice; naming it twice adds nothing.
-			if (!seen.Add(section + "|" + (path?.ToString(Formatting.None) ?? "name:" + name))) {
+			if (!seen.Add($"{merge.Section}|{merge.Reason}|{path?.ToString(Formatting.None) ?? "name:" + name}")) {
 				continue;
 			}
 			if (findings.Count < MaxReportedFindings) {
-				findings.Add(path is null ? DescribeMergeWithoutPath(section, name) : DescribeMergeWithPath(section, path));
+				findings.Add(Describe(merge, path, name));
 			} else {
 				unlisted++;
 			}
 		}
 		if (unlisted > 0) {
-			findings.Add($"{unlisted} more viewModelConfigDiff/modelConfigDiff merge(s) are not applied "
-				+ "because their path does not resolve; they are not listed here.");
+			findings.Add($"{unlisted} more viewModelConfigDiff/modelConfigDiff merge(s) are not applied; "
+				+ "they are not listed here.");
 		}
 		return findings;
 	}
 
-	private static string DescribeMergeWithPath(string section, JArray path) =>
-		$"{section} merge at path {Shorten(path.ToString(Formatting.None))} is not applied: that path does not exist "
-		+ "in the config built from the parent schemas and this body's earlier merges, and the Creatio differ skips a "
-		+ "merge whose path does not resolve, so the operation stays in the body but changes nothing. To add a new key, "
-		+ "merge into its existing parent and put the key inside \"values\" (for example path [\"dataSources\"] with "
-		+ "values {\"NewDS\": {...}}, or path [] with the whole branch); to change a nested value, check every path "
-		+ "segment against get-page's bundle.";
+	private static string Describe(SkippedMerge merge, JArray path, string name) {
+		if (path is null) {
+			return DescribeMergeWithoutPath(merge.Section, name);
+		}
+		string target = $"{merge.Section} merge at path {Shorten(path.ToString(Formatting.None))}";
+		return merge.Reason switch {
+			SkipReason.TargetNotObject => $"{target} is not applied: the value at that path is not an object (it is an "
+				+ "array or a single value), so there is nothing to merge \"values\" into. Merge into the object that "
+				+ "holds it instead, with the new value inside \"values\".",
+			SkipReason.ValuesNotObject => $"{target} is not applied as written: its \"values\" is not an object. A "
+				+ "merge's \"values\" must be an object whose keys are merged into the target.",
+			_ => DescribeMergeWithPath(target)
+		};
+	}
+
+	private static string DescribeMergeWithPath(string target) =>
+		$"{target} is not applied: that path does not exist in the config built from the parent schemas and this "
+		+ "body's earlier merges, and the Creatio differ skips a merge whose path does not resolve, so the operation "
+		+ "stays in the body but changes nothing. To add a new key, merge into its existing parent and put the key "
+		+ "inside \"values\" (for example path [\"dataSources\"] with values {\"NewDS\": {...}}, or path [] with the "
+		+ "whole branch); to change a nested value, make sure every segment of the path already exists.";
 
 	private static string DescribeMergeWithoutPath(string section, string name) {
 		string target = string.IsNullOrEmpty(name) ? "with no name" : $"named '{Shorten(name)}'";
