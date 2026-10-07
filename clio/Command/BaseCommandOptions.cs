@@ -11,12 +11,14 @@ namespace Clio
 
 		/// <summary>
 		/// Gets or sets <see cref="GlobalContext.FailOnError"/>. Accepted for compatibility: only package and
-		/// application installs read it, and neither verb that accepts it installs anything.
+		/// application installs read it, and neither verb that accepts it installs anything on its own.
 		/// </summary>
 		/// <remarks>
-		/// A YAML scenario step that uses the legacy key <c>--fail-on-error</c> binds
-		/// <see cref="FailOnErrorAlias"/>, which can only turn the flag on; use the key <c>fail-on-error</c> to
-		/// turn it off again.
+		/// In <c>run-scenario</c> the value still reaches installs: every step's options are activated before the
+		/// first step runs, so the last step that sets the flag decides it for every install in the scenario,
+		/// earlier steps included. A step that uses the legacy key <c>--fail-on-error</c> binds
+		/// <see cref="FailOnErrorAlias"/>, which can only turn the flag on; the key <c>fail-on-error</c> can also
+		/// turn it off.
 		/// </remarks>
 		[Option("fail-on-error", Required = false, HelpText = "Accepted for compatibility; has no effect")]
 		public bool FailOnError {

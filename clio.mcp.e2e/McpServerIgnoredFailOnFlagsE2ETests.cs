@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Allure.Net.Commons;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Mcp.E2E.Support.Configuration;
@@ -17,6 +18,11 @@ namespace Clio.Mcp.E2E;
 /// The unit tests pin the warning text and that the logger receives it. Only a real stdio process proves that
 /// the warning does not reach standard output, which is the JSON-RPC channel: a stray line there would break
 /// the handshake of every MCP client configured with the flag.
+/// <para>
+/// The transport is built here rather than through <c>McpServerSession.StartAsync</c>, which always starts
+/// <c>mcp-server</c> without extra arguments. Like every fixture in this assembly it runs under the shared
+/// isolated home of <c>McpSharedHomeSetUpFixture</c>, where the curated-knowledge source is already disabled.
+/// </para>
 /// </remarks>
 [TestFixture]
 [Category("McpE2E.NoEnvironment")]
@@ -25,12 +31,17 @@ namespace Clio.Mcp.E2E;
 [NonParallelizable]
 public sealed class McpServerIgnoredFailOnFlagsE2ETests {
 	private const string McpServerVerb = "mcp-server";
+	private const string IgnoredFlagWarning = "--fail-on-error is not supported by the MCP server";
 	private static readonly TimeSpan StartupTimeout = TimeSpan.FromMinutes(2);
+	// The warning is written before the handshake, but the SDK reads standard error on its own reader, so the
+	// line can reach the callback after ListToolsAsync returns. Waiting for it keeps the test from racing.
+	private static readonly TimeSpan StandardErrorDeadline = TimeSpan.FromSeconds(10);
 
 	[Test]
 	[Description("clio mcp-server --fail-on-error completes the MCP handshake and lists tools, and the warning that the flag is ignored arrives on standard error (ENG-102487).")]
 	[AllureTag(McpServerVerb)]
 	[AllureName("mcp-server starts with an ignored --fail-on-error flag")]
+	[AllureDescription("Starts the real clio mcp-server with --fail-on-error, completes the MCP initialize handshake, lists tools, and verifies that the warning about the ignored flag arrives on standard error rather than on the JSON-RPC stdout.")]
 	public async Task McpServer_ShouldCompleteHandshakeAndWarnOnStandardError_WhenStartedWithFailOnError() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -56,10 +67,25 @@ public sealed class McpServerIgnoredFailOnFlagsE2ETests {
 			timeoutSource.Token);
 		IList<McpClientTool> tools = await client.ListToolsAsync(cancellationToken: timeoutSource.Token);
 
+		bool warningSeen = await WaitForStandardErrorLineAsync(standardErrorLines, IgnoredFlagWarning);
+
 		// Assert
-		tools.Should().NotBeEmpty(
-			because: "a server started with an ignored flag must complete initialize and serve its tools, so nothing it wrote broke the JSON-RPC stream on standard output");
-		standardErrorLines.Should().Contain(line => line.Contains("--fail-on-error is not supported by the MCP server"),
-			because: "the operator learns from standard error that the configured flag has no effect");
+		AllureApi.Step("Assert the MCP handshake completed and tools are listed", () =>
+			tools.Should().NotBeEmpty(
+				because: "a server started with an ignored flag must complete initialize and serve its tools, so nothing it wrote broke the JSON-RPC stream on standard output"));
+		AllureApi.Step("Assert standard error names the ignored flag", () =>
+			warningSeen.Should().BeTrue(
+				because: $"the operator learns from standard error that the configured flag has no effect; stderr was: {string.Join(" | ", standardErrorLines)}"));
+	}
+
+	private static async Task<bool> WaitForStandardErrorLineAsync(ConcurrentQueue<string> lines, string fragment) {
+		DateTime deadline = DateTime.UtcNow + StandardErrorDeadline;
+		while (DateTime.UtcNow < deadline) {
+			if (lines.Any(line => line.Contains(fragment, StringComparison.Ordinal))) {
+				return true;
+			}
+			await Task.Delay(TimeSpan.FromMilliseconds(100));
+		}
+		return lines.Any(line => line.Contains(fragment, StringComparison.Ordinal));
 	}
 }

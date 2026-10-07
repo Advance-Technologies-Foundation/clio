@@ -146,42 +146,59 @@ internal sealed class BaseCommandOptionsParsingTests {
 		Step step = CreateAssertStep(key, "true");
 
 		// Act
-		AssertOptions options = Activate(step);
+		Activate(step);
 
 		// Assert
-		options.FailOnError.Should().BeTrue(because: $"the YAML key {key} set to true must turn the flag on");
-		GlobalContext.FailOnError.Should().BeTrue(because: "FailOnError is stored in GlobalContext");
+		GlobalContext.FailOnError.Should().BeTrue(
+			because: $"the YAML key {key} set to true must turn on the process-global flag the installers read");
 	}
 
 	[Test]
-	[Description("The legacy YAML key --fail-on-error set to false binds the hidden alias, whose setter only turns the flag on, so a flag an earlier step set stays on; the help files document this (ENG-102481).")]
-	public void Activate_ShouldLeaveFailOnErrorOn_WhenLegacyYamlKeyIsFalse() {
+	[Description("After a step turns the strict flag on, a step with the legacy YAML key --fail-on-error set to false leaves it on: the key binds the hidden alias, whose setter only turns the flag on. run-scenario activates every step before running any, so the flag then applies to all installs in the scenario (ENG-102481).")]
+	public void Activate_ShouldLeaveFailOnErrorOn_WhenLegacyYamlKeyIsFalseAfterTrue() {
 		// Arrange
-		GlobalContext.FailOnError = true;
-		Step step = CreateAssertStep("--fail-on-error", "false");
+		Step enablingStep = CreateAssertStep("--fail-on-error", "true");
+		Step legacyFalseStep = CreateAssertStep("--fail-on-error", "false");
+		Activate(enablingStep);
+		GlobalContext.FailOnError.Should().BeTrue(because: "the legacy key set to true binds the alias and turns the flag on");
 
 		// Act
-		AssertOptions options = Activate(step);
+		Activate(legacyFalseStep);
 
 		// Assert
-		options.FailOnError.Should().BeTrue(
+		GlobalContext.FailOnError.Should().BeTrue(
 			because: "the alias setter ignores false so that an unset alias never clears the main option on the command line");
-		GlobalContext.FailOnError.Should().BeTrue(because: "the legacy key cannot turn the process-global flag off");
 	}
 
 	[Test]
-	[Description("The YAML key fail-on-error set to false turns off a flag an earlier step set, which is the documented way to clear it.")]
-	public void Activate_ShouldTurnFailOnErrorOff_WhenYamlKeyIsFalse() {
+	[Description("After a step turns the strict flag on, a step with the YAML key fail-on-error set to false turns it off, which is the documented way to clear it.")]
+	public void Activate_ShouldTurnFailOnErrorOff_WhenYamlKeyIsFalseAfterTrue() {
 		// Arrange
-		GlobalContext.FailOnError = true;
-		Step step = CreateAssertStep("fail-on-error", "false");
+		Step enablingStep = CreateAssertStep("fail-on-error", "true");
+		Step disablingStep = CreateAssertStep("fail-on-error", "false");
+		Activate(enablingStep);
+		GlobalContext.FailOnError.Should().BeTrue(because: "the key set to true turns the flag on");
+
+		// Act
+		Activate(disablingStep);
+
+		// Assert
+		GlobalContext.FailOnError.Should().BeFalse(because: "the main option assigns the value as given, so false clears the flag");
+	}
+
+	[TestCase("--fail-on-warning")]
+	[TestCase("fail-on-warning")]
+	[Description("A YAML scenario step accepts either fail-on-warning key and binds it, so a scenario that still carries the flag keeps activating; the value has no effect anywhere.")]
+	public void Activate_ShouldBindFailOnWarning_WhenYamlStepSetsEitherKeyToTrue(string key) {
+		// Arrange
+		Step step = CreateAssertStep(key, "true");
 
 		// Act
 		AssertOptions options = Activate(step);
 
 		// Assert
-		options.FailOnError.Should().BeFalse(because: "the main option assigns the value as given");
-		GlobalContext.FailOnError.Should().BeFalse(because: "a later install step must no longer use the strict check");
+		options.FailOnWarning.Should().BeTrue(because: $"the YAML key {key} must bind to FailOnWarning");
+		GlobalContext.FailOnError.Should().BeFalse(because: "fail-on-warning must not switch on the strict install-log check");
 	}
 
 	private static Step CreateAssertStep(string key, string value) =>

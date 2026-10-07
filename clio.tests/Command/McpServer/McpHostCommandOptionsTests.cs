@@ -111,22 +111,23 @@ public sealed class McpHostCommandOptionsTests {
 		// Assert
 		inheritsBaseCommandOptions.Should().BeFalse(
 			because: "BaseCommandOptions.FailOnError writes GlobalContext, which a worker process never receives");
-		optionsType.Should().NotBeAssignableTo<BaseCommandOptions>(
-			because: "BaseCommandOptions.FailOnError writes GlobalContext, which a worker process never receives");
 	}
 
 	[Test]
 	[Description("No warning is produced when neither fail-on flag was passed.")]
 	public void DescribeIgnoredFailOnOptions_ShouldReturnNull_WhenNoFlagPassed() {
+		// Arrange
+		McpServerCommandOptions options = new();
+
 		// Act
-		string warning = McpHostCommandOptions.DescribeIgnoredFailOnOptions(new McpServerCommandOptions());
+		string warning = McpHostCommandOptions.DescribeIgnoredFailOnOptions(options);
 
 		// Assert
 		warning.Should().BeNull(because: "a host started without the flags has nothing to warn about");
 	}
 
 	[Test]
-	[Description("The warning names every ignored fail-on flag so the operator knows what to remove.")]
+	[Description("The warning names every ignored fail-on flag so the operator knows what to remove, and its text is the same for both hosts, so it says nothing about worker processes that mcp-http does not have.")]
 	public void DescribeIgnoredFailOnOptions_ShouldNameEveryIgnoredFlag() {
 		// Arrange
 		McpHttpServerCommandOptions options = new() { FailOnError = true, FailOnWarning = true };
@@ -135,12 +136,11 @@ public sealed class McpHostCommandOptionsTests {
 		string warning = McpHostCommandOptions.DescribeIgnoredFailOnOptions(options);
 
 		// Assert
-		warning.Should().Contain("--fail-on-error", because: "the warning names every ignored flag");
-		warning.Should().Contain("--fail-on-warning", because: "the warning names every ignored flag");
-		warning.Should().Contain("IGNORED",
-			because: "the operator must learn that the configured flag has no effect on an MCP server");
-		warning.Should().NotContain("worker",
-			because: "the same text is logged by mcp-http, which never relays a call to a worker process");
+		warning.Should().Be(
+			"--fail-on-error and --fail-on-warning are not supported by the MCP server and IGNORED: package installs "
+			+ "made through MCP tools never use the strict install-log check. Remove the flag from the MCP client "
+			+ "configuration.",
+			because: "the warning names every ignored flag and is logged verbatim by both mcp-server and mcp-http");
 	}
 
 	[Test]
