@@ -76,8 +76,8 @@ public sealed class EnvironmentPackageFolderResolverTests {
 	}
 
 	[Test]
-	[Description("Without a registered EnvironmentPath the resolver says so and names how to register it.")]
-	public void Resolve_ShouldExplainHowToRegisterSiteFolder_WhenEnvironmentPathIsMissing() {
+	[Description("Without a registered EnvironmentPath the resolver says so and names how to supply the folder.")]
+	public void Resolve_ShouldExplainHowToSupplySiteFolder_WhenEnvironmentPathIsMissing() {
 		// Arrange
 		Register(new EnvironmentSettings { EnvironmentPath = string.Empty });
 

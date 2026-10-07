@@ -51,13 +51,18 @@ public sealed record DeletedItemFileCleanupRequest(
 /// <param name="RemovedFolders">Package-relative folders that were removed.</param>
 /// <param name="RemainingFolders">Package-relative folders that were found but could not be removed, with the reason.</param>
 /// <param name="Problem">Why nothing was removed; <c>null</c> when <see cref="Status"/> is Cleaned.</param>
+/// <param name="KeptFolders">
+/// Package-relative folders deliberately left in place because another item still uses them, with the reason; they
+/// must not be removed by hand. <c>null</c> when there are none.
+/// </param>
 public sealed record DeletedItemFileCleanupResult(
 	DeletedItemFileCleanupStatus Status,
 	string PackageFolderPath,
 	IReadOnlyList<string> ExpectedFolders,
 	IReadOnlyList<string> RemovedFolders,
 	IReadOnlyList<string> RemainingFolders,
-	string Problem);
+	string Problem,
+	IReadOnlyList<string> KeptFolders = null);
 
 /// <summary>
 /// Removes the files of a deleted workspace item from its package folder on this machine. The platform's
@@ -122,9 +127,8 @@ public sealed class DeletedItemFileCleaner : IDeletedItemFileCleaner {
 			// A localization item shares Resources/<name>.*/ with a schema of the same name in this package;
 			// removing that folder would strip the remaining schema's captions.
 			return new DeletedItemFileCleanupResult(DeletedItemFileCleanupStatus.Cleaned, folder.PackageFolderPath,
-				expected, [],
-				[$"{expected[0]} (the package also holds schema '{request.ItemName}', which uses these resources)"],
-				null);
+				expected, [], [], null,
+				[$"{expected[0]} (the package also holds schema '{request.ItemName}', which uses these resources)"]);
 		}
 		return RemoveFolders(folder.PackageFolderPath, rules, expected);
 	}

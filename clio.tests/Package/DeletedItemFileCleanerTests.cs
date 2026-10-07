@@ -163,7 +163,8 @@ public sealed class DeletedItemFileCleanerTests {
 
 		// Assert
 		result.RemovedFolders.Should().BeEmpty(because: "removing the folder would strip the remaining schema's captions");
-		result.RemainingFolders.Should().ContainSingle(because: "the kept folder is reported")
+		result.RemainingFolders.Should().BeEmpty(because: "the folder is not left behind by mistake and must not be removed by hand");
+		result.KeptFolders.Should().ContainSingle(because: "the deliberately kept folder is reported")
 			.Which.Should().Contain("Resources/Contact.*/").And.Contain("schema 'Contact'");
 		FolderExists("Resources", "Contact.Entity").Should().BeTrue(because: "the schema still uses these resources");
 	}

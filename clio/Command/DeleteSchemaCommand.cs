@@ -212,7 +212,12 @@ public class DeleteSchemaCommand : RemoteCommand<DeleteSchemaOptions> {
 				$"Could not remove from package folder '{result.PackageFolderPath}': "
 				+ $"{string.Join(", ", result.RemainingFolders)}. Remove them by hand, {consequence}.");
 		}
-		if (result.RemovedFolders.Count == 0 && result.RemainingFolders.Count == 0) {
+		if (result.KeptFolders is { Count: > 0 }) {
+			Logger.WriteInfo($"Kept in package folder '{result.PackageFolderPath}' because they are still in use: "
+				+ $"{string.Join(", ", result.KeptFolders)}.");
+		}
+		if (result.RemovedFolders.Count == 0 && result.RemainingFolders.Count == 0
+			&& result.KeptFolders is not { Count: > 0 }) {
 			Logger.WriteInfo($"No folders of '{itemName}' were found in package folder '{result.PackageFolderPath}' "
 				+ $"(searched: {expectedFolders}).");
 		}

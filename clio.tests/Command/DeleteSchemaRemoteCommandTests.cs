@@ -393,6 +393,24 @@ public sealed class DeleteSchemaRemoteCommandTests {
 	}
 
 	[Test]
+	[Description("Folders kept on purpose because another item still uses them are reported as information, never as folders to remove by hand.")]
+	public void Execute_ShouldReportKeptFoldersWithoutWarning_WhenCleanupKeptSharedResources() {
+		// Arrange
+		ArrangeSuccessfulDelete(itemType: 13);
+		ArrangeFileDesignMode(isOn: true);
+		ArrangeCleanup(new DeletedItemFileCleanupResult(DeletedItemFileCleanupStatus.Cleaned, "/site/Pkg/Custom",
+			["Resources/UsrSchema.*/"], [], [], null, ["Resources/UsrSchema.*/ (the package also holds schema 'UsrSchema')"]));
+
+		// Act
+		_command.Execute(RemoteOptions());
+
+		// Assert
+		_logger.Received(1).WriteInfo(Arg.Is<string>(message =>
+			message.Contains("Kept in package folder") && message.Contains("Resources/UsrSchema.*/")));
+		_logger.DidNotReceive().WriteWarning(Arg.Any<string>());
+	}
+
+	[Test]
 	[Description("Folders found but not removable are named in a warning next to the ones that were removed.")]
 	public void Execute_ShouldWarnAboutRemainingFolders_WhenSomeFoldersCouldNotBeRemoved() {
 		// Arrange
