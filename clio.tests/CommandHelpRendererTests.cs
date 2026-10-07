@@ -1,6 +1,7 @@
 using System;
 using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
+using System.Reflection;
 using Clio.Help;
 using Clio.Tests.Command;
 using Clio.Tests.Infrastructure;
@@ -357,6 +358,43 @@ EXAMPLE
 			because: "runtime help is generated from the option attributes, so the path rule must live there");
 		flattened.Should().Contain("The file must be UTF-8", because: "a non-UTF-8 operations file is rejected");
 	}
+
+	[TestCaseSource(nameof(CatalogCommandNames))]
+	[Description("Across the whole command catalog, generated help lists every option not declared Hidden and none of the long names that only a Hidden option declares. This pins the intentional global Hidden filter (ENG-101526, DR1).")]
+	public void TryRenderCommandHelp_ForEveryCatalogCommand_ListsVisibleOptionsAndOmitsHiddenOnes(string commandName) {
+		// Arrange
+		new CommandHelpCatalog().TryGetCommand(commandName, out HelpCommandMetadata command).Should().BeTrue(
+			because: "the case source enumerates catalogued commands");
+		OptionAttribute[] options = command.OptionsType
+			.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+			.Select(property => property.GetCustomAttribute<OptionAttribute>(true))
+			.Where(option => option is not null && !string.IsNullOrWhiteSpace(option.LongName))
+			.ToArray();
+		string[] visibleNames = options.Where(option => !option.Hidden).Select(option => option.LongName).ToArray();
+		string[] hiddenOnlyNames = options
+			.Where(option => option.Hidden)
+			.Select(option => option.LongName)
+			.Where(name => !visibleNames.Contains(name, StringComparer.Ordinal))
+			.ToArray();
+
+		// Act
+		string output = _exportRenderer.TryRenderCommandHelp(commandName);
+
+		// Assert
+		output.Should().NotBeNullOrWhiteSpace(because: "every catalogued command renders generated help without a manual file");
+		visibleNames.Where(name => !ContainsOptionToken(output, name)).Should().BeEmpty(
+			because: $"every option of {commandName} not declared Hidden must still be listed in its help");
+		hiddenOnlyNames.Where(name => ContainsOptionToken(output, name)).Should().BeEmpty(
+			because: $"options of {commandName} declared Hidden must not be listed in its help");
+	}
+
+	private static System.Collections.Generic.IEnumerable<string> CatalogCommandNames() =>
+		new CommandHelpCatalog().Commands.Select(command => command.CanonicalName);
+
+	private static bool ContainsOptionToken(string output, string longName) =>
+		System.Text.RegularExpressions.Regex.IsMatch(
+			output,
+			$@"(?<![\w-])--{System.Text.RegularExpressions.Regex.Escape(longName)}(?![\w-])");
 
 	private CommandHelpRenderer CreateRenderer(Func<bool> supportsAnsi) =>
 		new(FileSystem, new CommandHelpCatalog(), featureToggleService: null, supportsAnsi);
