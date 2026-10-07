@@ -1591,14 +1591,11 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 	[Description("Issue #1741: a target-package-uid that names the design package get-page resolved must keep the external-modification check. The meta.json baseline is rewritten to the state get-page records before an editable schema exists, while the schema does exist, which is what a schema created by someone else after get-page looks like: the same dry-run save must be refused as schema-created-externally with and without the selector. With no baseline at all, the selector save must warn that no baseline was found instead of claiming a redirect.")]
 	[AllureTag(ToolName)]
 	[AllureName("update-page keeps the conflict check when target-package-uid names the resolved design package")]
-	[AllureDescription("Against the seeded page ClioMcp_BlankPageToSave: (1) get-page anchored at a temp directory; (2) its meta.json baseline is rewritten to editableSchemaExists:false; (3) a dry-run update-page without a selector and one with target-package-uid = page.designPackageUId (upper-case) must both fail with conflict:true / schema-created-externally; (4) a dry-run update-page with the same selector from an empty anchor must succeed and warn that no .clio-pages baseline was found, without saying the selector redirected the write. Dry runs only, so the stand is not changed.")]
+	[AllureDescription("Against the seeded page ClioMcp_BlankPageToSave: (1) get-page anchored at a temp directory; (2) its meta.json baseline is rewritten to editableSchemaExists:false; (3) a dry-run update-page without a selector and one with target-package-uid = page.designPackageUId (upper-case) must both fail with conflict:true / schema-created-externally; (4) a dry-run update-page with the same selector from an empty anchor must succeed and warn that no .clio-pages baseline was found, without saying the selector redirected the write. Non-destructive by construction: only dry runs reach the stand and only a local meta.json is rewritten, so this needs no AllowDestructiveMcpTests opt-in.")]
 	public async Task PageUpdateTool_Should_Keep_Conflict_Check_When_TargetPackageUid_Names_The_Resolved_Design_Package() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		if (!settings.AllowDestructiveMcpTests) {
-			Assert.Ignore("AllowDestructiveMcpTests is false — skipping the update-page target-package-uid conflict test.");
-		}
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
 		const string savePage = "ClioMcp_BlankPageToSave";

@@ -391,16 +391,23 @@ public sealed class PageUpdateCommandConflictTests
 	}
 
 	[Test]
-	[Description("Issue #1741: a baseline that recorded no editable schema is carried by the design package get-page resolved. When target-package-uid resolves to that package (spelled in another case) and an editable schema now exists there, the save must be refused as schema-created-externally, exactly as the same save without the selector is. It used to save with success: true.")]
+	[Description("Issue #1741: a baseline that recorded no editable schema is carried by the design package get-page resolved. When target-package-uid resolves to that package (recorded braced and upper-case, typed bare and lower-case) and an editable schema now exists there, the save must be refused as schema-created-externally, exactly as the same save without the selector is. It used to save with success: true.")]
 	public void TryUpdatePage_ShouldReturnSchemaCreatedExternally_WhenTargetPackageUidNamesTheAbsentBaselinePackage() {
-		// Arrange — the default hierarchy resolves an EXISTING editable schema in "test-pkg-uid".
+		// Arrange — the hierarchy resolves an EXISTING editable schema in the targeted package.
+		const string packageUId = "0f3c1d2e-aaaa-bbbb-cccc-1234567890ab";
+		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		hierarchyClient.GetParentSchemas(SchemaUId, packageUId).Returns([
+			new PageDesignerHierarchySchema { UId = SchemaUId, Name = SchemaName, PackageUId = packageUId }
+		]);
+		PageUpdateCommand command = new(_applicationClient, _serviceUrlBuilder, Substitute.For<ILogger>(),
+			Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), hierarchyClient);
 		PageUpdateOptions options = CreateOptions();
-		options.TargetPackageUId = "test-pkg-uid";
-		options.ConditionalBaselineDesignPackageUId = "TEST-PKG-UID";
+		options.TargetPackageUId = packageUId;
+		options.ConditionalBaselineDesignPackageUId = "{" + packageUId.ToUpperInvariant() + "}";
 		options.ConditionalBaselineSchemaAbsent = true;
 
 		// Act
-		bool result = _command.TryUpdatePage(options, out PageUpdateResponse response);
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
 
 		// Assert
 		result.Should().BeFalse(

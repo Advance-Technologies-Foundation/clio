@@ -525,6 +525,82 @@ public sealed class PageBaselineGuardTests {
 	}
 
 	[Test]
+	[Description("Issue #1741: package UIds are usually the same on every environment, so the environment match is the only thing that keeps an absent-schema baseline captured on another environment from refusing this save as schema-created-externally. Such a baseline must not be carried, and the trace must name the environment as the cause.")]
+	public void TryArm_ShouldNotCarryTheAbsentSchemaBaseline_WhenItWasCapturedForAnotherEnvironment() {
+		// Arrange
+		const string designPackageUId = "99999999-8888-7777-6666-555555555555";
+		AddMetaWithBaseline("other-env", checksum: null, editableExists: false, designPackageUId: designPackageUId);
+		PageUpdateOptions options = CreateOptions("dev");
+		options.TargetPackageUId = designPackageUId;
+
+		// Act
+		(_, _, string warning) = _guard.TryArm(options, OutputDirectory);
+
+		// Assert
+		options.ConditionalBaselineDesignPackageUId.Should().BeNull(
+			because: "a baseline from another environment is not evidence about this environment's design package");
+		options.ConditionalBaselineSchemaAbsent.Should().BeFalse(
+			because: "carrying the absence marker would refuse a save nothing external touched");
+		warning.Should().Contain("another environment",
+			because: "the trace has to name the actual cause");
+	}
+
+	[Test]
+	[Description("Issue #1741: an absent-schema baseline whose meta.json carries no usable design package (an older file, or a value that is not a GUID) cannot be matched to target-package-uid. It must not be carried, and the trace must say what is missing and keep the get-page advice, because re-running get-page is the fix.")]
+	public void TryArm_ShouldNotCarryTheAbsentSchemaBaseline_WhenMetaRecordsNoUsableDesignPackage() {
+		// Arrange
+		AddMetaWithBaseline("dev", checksum: null, editableExists: false, designPackageUId: "not-a-guid");
+		PageUpdateOptions options = CreateOptions("dev");
+		options.TargetPackageUId = "99999999-8888-7777-6666-555555555555";
+
+		// Act
+		(_, _, string warning) = _guard.TryArm(options, OutputDirectory);
+
+		// Assert
+		options.ConditionalBaselineDesignPackageUId.Should().BeNull(
+			because: "only a GUID read from the local file may become a match key and part of a warning");
+		warning.Should().Contain("no design package",
+			because: "the trace has to name what the baseline is missing");
+		warning.Should().Contain("run get-page",
+			because: "re-running get-page records the design package and is what arms the check again");
+	}
+
+	[Test]
+	[Description("Issue #1741: a design package UId recorded with braces and upper-case letters is carried in canonical form, so the value that reaches the comparison and the warning is always a plain GUID.")]
+	public void TryArm_ShouldCarryTheDesignPackageInCanonicalForm_WhenMetaRecordsItInAnotherSpelling() {
+		// Arrange
+		AddMetaWithBaseline("dev", checksum: null, editableExists: false,
+			designPackageUId: "{99999999-8888-7777-6666-55555555555A}");
+		PageUpdateOptions options = CreateOptions("dev");
+		options.TargetPackageUId = "99999999-8888-7777-6666-55555555555a";
+
+		// Act
+		_guard.TryArm(options, OutputDirectory);
+
+		// Assert
+		options.ConditionalBaselineDesignPackageUId.Should().Be("99999999-8888-7777-6666-55555555555a",
+			because: "the recorded value is normalized to the canonical GUID form");
+	}
+
+	[Test]
+	[Description("Issue #1741: when meta.json exists but cannot be read, the selector trace must not also claim that no baseline was found - the read warning already says the file exists, and the two statements contradicted each other.")]
+	public void TryArm_ShouldNameTheUnreadableBaseline_WhenAnUnpinnedSelectorSaveHitsUnreadableMeta() {
+		// Arrange
+		_fileSystem.AddFile(_metaPath, new MockFileData("{ this is not json"));
+		PageUpdateOptions options = CreateOptions("dev");
+		options.TargetPackageUId = "99999999-8888-7777-6666-555555555555";
+
+		// Act
+		(_, _, string warning) = _guard.TryArm(options, OutputDirectory);
+
+		// Assert
+		warning.Should().Contain("could not be read",
+			because: "the cause is a baseline that exists but cannot be read");
+		warning.Should().NotContain("was found",
+			because: "saying no baseline was found contradicts the read warning on the same response");
+	}
+
+	[Test]
 	[Description("A --target-package-uid redirect keeps a caller-supplied checksum: the resolved target is checked after hierarchy resolution, so an existing same-package target remains protected and a pin from another target fails safe with a checksum conflict. With a readable on-disk baseline the guard ALSO carries that baseline's schema identity, so a successful same-target save can refresh it (issue #1538).")]
 	public void TryArm_ShouldKeepThePinAndCarryTheBaselineIdentity_WhenTheWriteIsRedirectedByTargetPackageUIdOnly() {
 		// Arrange

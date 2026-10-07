@@ -199,7 +199,7 @@ internal static class PageBaselineStore {
 	/// either side is NOT a match — the conflict check is then skipped, because a baseline from a
 	/// different environment is not evidence of an external modification.
 	/// </summary>
-	internal static bool MatchesEnvironment(PageBaselineInfo baseline, string environmentName, string uri) {
+	internal static bool MatchesEnvironment([NotNullWhen(true)] PageBaselineInfo baseline, string environmentName, string uri) {
 		if (baseline is null) {
 			return false;
 		}

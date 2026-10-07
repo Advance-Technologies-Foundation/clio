@@ -17,7 +17,8 @@ there are three cases. On the UNPINNED, non-redirected path all three fields com
 `ExpectedSchemaAbsent`. On a PINNED save (CLI `--expected-checksum`, MCP `checksum`) the caller's
 checksum alone governs the comparison — neither identity field is armed from disk. On a REDIRECTED
 save (`target-package-uid` / `target-schema-uid`) the disk baseline is READ but arms nothing: its
-schema identity travels as `ConditionalBaselineSchemaUId` and the comparison is decided only after
+identity travels as `ConditionalBaselineSchemaUId` (or, when it recorded no editable schema, as
+`ConditionalBaselineDesignPackageUId`) and the comparison is decided only after
 the target is resolved, and a caller pin is retained for comparison with that resolved target; the
 response warns that the disk baseline did not apply directly. That
 on-disk baseline is keyed by **(anchor directory, schema name)** only — not by schema UId — and the
@@ -61,7 +62,8 @@ another schema. With no explicit pin, the write is only unverifiable, so the war
 
 **A selector that resolves to the page's OWN schema is not a redirect, and the refresh decision is
 separate from the conflict decision.** `PromoteConditionalBaselineWhenTargetMatches` compares
-`ConditionalBaselineSchemaUId` with the resolved `EditableSchemaUId` and, on a match, sets
+`ConditionalBaselineSchemaUId` with the resolved `EditableSchemaUId` (or
+`ConditionalBaselineDesignPackageUId` with the resolved design package, see below) and, on a match, sets
 `ConditionalBaselineApplied` — which is what the post-save `refreshBaseline || ConditionalBaselineApplied`
 gate reads in all three writers. On a match with NO caller pin the disk baseline is also promoted to
 govern the conflict check; with a pin the pin keeps that role and the match decides only the refresh.

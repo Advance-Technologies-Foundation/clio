@@ -618,15 +618,36 @@
 			"Use force=true ONLY after the user explicitly confirms overwriting the external changes.";
 
 		/// <summary>
-		/// Compares the caller-supplied baseline (expected checksum / schema UId / absence marker)
-		/// against the resolved editable schema state and blocks the save with a structured conflict
-		/// when the schema was modified outside the current session. Skipped entirely when
-		/// <see cref="PageUpdateOptions.Force"/> is set or no baseline information was supplied.
+		/// Compares two schema UIds by VALUE rather than by spelling. The design package UId of a baseline
+		/// that recorded no editable schema is a GUID too and is compared the same way.
 		/// </summary>
-		/// <returns><c>true</c> when the write may proceed; <c>false</c> with a conflict response otherwise.</returns>
+		/// <remarks>
+		/// The two sides reach this comparison from different places and are written by different people.
+		/// The left one comes off disk, in whatever form clio recorded; the right one can be the raw
+		/// <c>--target-schema-uid</c> / <c>--target-package-uid</c> the caller typed, which
+		/// <c>TryResolveContext</c> uses verbatim. GUIDs have several legal spellings, and a braced
+		/// <c>{xxxxxxxx-…}</c> selector against a bare recorded UId is the same value written two ways. A plain
+		/// string comparison read that as a redirect and silently skipped the post-save refresh — the very
+		/// failure issue #1538 is about, reintroduced for one input shape. Only a value that does not parse as
+		/// a GUID at all falls back to the string comparison, so nothing that used to match stops matching.
+		/// </remarks>
+		/// <param name="recordedSchemaUId">The UId carried over from the on-disk baseline.</param>
+		/// <param name="resolvedSchemaUId">The UId the write actually resolved to.</param>
+		/// <returns><c>true</c> when both name the same schema (or package).</returns>
+		private static bool SchemaUIdsMatch(string recordedSchemaUId, string resolvedSchemaUId) {
+			if (string.IsNullOrWhiteSpace(recordedSchemaUId) || string.IsNullOrWhiteSpace(resolvedSchemaUId)) {
+				return false;
+			}
+			if (Guid.TryParse(recordedSchemaUId, out Guid recorded) && Guid.TryParse(resolvedSchemaUId, out Guid resolved)) {
+				return recorded == resolved;
+			}
+			return string.Equals(recordedSchemaUId, resolvedSchemaUId, StringComparison.OrdinalIgnoreCase);
+		}
+
 		/// <summary>
 		/// Arms the baseline that <see cref="PageBaselineGuard"/> could not decide on, once the resolved
-		/// target turns out to be the very schema that baseline describes.
+		/// target turns out to be the page that baseline describes: the same editable schema, or, for a
+		/// baseline that recorded no editable schema, the same design package.
 		/// </summary>
 		/// <remarks>
 		/// The guard runs BEFORE the target is resolved, so a save carrying <c>target-package-uid</c> /
@@ -638,39 +659,12 @@
 		/// target that resolves elsewhere still leaves the baseline dropped, which is the redirect case
 		/// the guard exists to handle.
 		/// </remarks>
-		/// <summary>
-		/// Compares two schema UIds by VALUE rather than by spelling.
-		/// </summary>
-		/// <remarks>
-		/// The two sides reach this comparison from different places and are written by different people.
-		/// The left one comes off disk, in whatever form clio recorded; the right one can be the raw
-		/// <c>--target-schema-uid</c> the caller typed, which <c>TryResolveContext</c> uses verbatim. GUIDs
-		/// have several legal spellings, and a braced <c>{xxxxxxxx-…}</c> selector against a bare recorded
-		/// UId is the same schema written two ways. A plain string comparison read that as a redirect and
-		/// silently skipped the post-save refresh — the very failure issue #1538 is about, reintroduced for
-		/// one input shape. Only a value that does not parse as a GUID at all falls back to the string
-		/// comparison, so nothing that used to match stops matching.
-		/// </remarks>
-		/// <param name="recordedSchemaUId">The schema UId carried over from the on-disk baseline.</param>
-		/// <param name="resolvedSchemaUId">The schema UId the write actually resolved to.</param>
-		/// <returns><c>true</c> when both name the same schema.</returns>
-		private static bool SchemaUIdsMatch(string recordedSchemaUId, string resolvedSchemaUId) {
-			if (string.IsNullOrWhiteSpace(recordedSchemaUId) || string.IsNullOrWhiteSpace(resolvedSchemaUId)) {
-				return false;
-			}
-			if (Guid.TryParse(recordedSchemaUId, out Guid recorded) && Guid.TryParse(resolvedSchemaUId, out Guid resolved)) {
-				return recorded == resolved;
-			}
-			return string.Equals(recordedSchemaUId, resolvedSchemaUId, StringComparison.OrdinalIgnoreCase);
-		}
-
 		private static void PromoteConditionalBaselineWhenTargetMatches(
 				PageUpdateOptions options, EditableSchemaContext context) {
 			// A baseline that recorded an editable schema is matched by that schema's UId. A baseline that
 			// recorded none is matched by the design package get-page resolved: a target-package-uid that
-			// resolves to that package is the write it describes (issue #1741). Package UIds are GUIDs too,
-			// so they are compared by value in the same way. DesignPackageUId is empty on the
-			// target-schema-uid path, so that path never matches by package.
+			// resolves to that package is the write it describes (issue #1741). DesignPackageUId is empty on
+			// the target-schema-uid path, so that path never matches by package.
 			bool targetIsTheBaselinePage =
 				SchemaUIdsMatch(options.ConditionalBaselineSchemaUId, context.EditableSchemaUId)
 				|| SchemaUIdsMatch(options.ConditionalBaselineDesignPackageUId, context.DesignPackageUId);
@@ -692,6 +686,13 @@
 			options.ExpectedSchemaAbsent = options.ConditionalBaselineSchemaAbsent;
 		}
 
+		/// <summary>
+		/// Compares the caller-supplied baseline (expected checksum / schema UId / absence marker)
+		/// against the resolved editable schema state and blocks the save with a structured conflict
+		/// when the schema was modified outside the current session. Skipped entirely when
+		/// <see cref="PageUpdateOptions.Force"/> is set or no baseline information was supplied.
+		/// </summary>
+		/// <returns><c>true</c> when the write may proceed; <c>false</c> with a conflict response otherwise.</returns>
 		private bool TryCheckForExternalModification(
 				PageUpdateOptions options,
 				EditableSchemaContext context,
