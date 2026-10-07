@@ -1,5 +1,5 @@
 ---
-description: a hand-written [#...#] meta path in a condition, expression or Formula body - a dot missing before [EntityColumn:] is refused at save with a message naming nothing, one missing after the prefix saves and runs, and a correctly spelled one on a column the Read data element does not load SAVES and reads empty at run time, and so does one with UPPER-case GUIDs; from 1.6.6.77 CrtProcessBuilder checks a hand-written meta path itself in a condition, a mapping, connection or value expression, a recordId and a Formula body, and from 1.6.6.83 stores it with its GUIDs lower-cased
+description: a hand-written [#...#] meta path in a condition, expression or Formula body - a dot missing before [EntityColumn:] is refused at save with a message naming nothing, one missing after the prefix saves and runs, and a correctly spelled one on a column the Read data element does not load SAVES and reads empty at run time, and so does one with UPPER-case GUIDs; from 1.6.6.77 CrtProcessBuilder checks a hand-written meta path itself in a condition, a mapping, connection or value expression, a recordId and a Formula body, and from 1.6.6.84 stores it with its GUIDs lower-cased
 applies-to:
   - clio/CrtProcessBuilder/
   - clio/Command/McpServer/Tools/ProcessDesigner/ModifyBusinessProcessTool.cs
@@ -37,15 +37,17 @@ selected columns). Every parser of these tokens in `Terrasoft.Core` is `internal
 From 1.6.6.77 the package checks a hand-written meta path itself (`MetaPathTokenReference`): the prefixed or the
 prefix-less spelling of an item of THIS process, built from the element the reference names, and a column only
 when its record delivers it; anything else is refused naming the flow or field with the correct token handed back.
-The GUIDs inside braces are compared case-insensitively, and from 1.6.6.83 every surface stores an accepted
-reference with them lower-cased - the one rewrite the check makes. Only the reference's own GUIDs change: a
+The GUIDs inside braces are compared case-insensitively, and from 1.6.6.84 every surface the check covers stores
+an accepted reference with them lower-cased - the one rewrite the check makes. The check does NOT cover the Send
+email recipient and template-entity expressions, the performer and approver contact formulas or the access-rights
+grantee: those store a caller's formula as written, so a misspelling or an upper-case GUID there still reads empty. Only the reference's own GUIDs change: a
 `Lookup` macro's record ids and GUIDs in string literals are data and keep their case.
 
 **What breaks if you ignore it** — "it saved" is not evidence a hand-written reference works: the unread-column
 case saves, describes back plausibly and takes the wrong branch at run time. Do not relax the package check to
 "well-formed" alone, and do not drop the prefix-less spelling without first moving the guidance and checking what
 clio-built processes store - every echo of such a process would be refused. Do not "keep the caller's text" for
-the GUID case either: on 1.6.6.77-1.6.6.82 an upper-case GUID was stored as written and read empty. Values stored
+the GUID case either: before 1.6.6.84 an upper-case GUID was stored as written and read empty. Values stored
 that way are not repaired; re-sending them normalises them. Filters are a different rule (one
 prefixed spelling; see `process-validation-and-runtime-parse-a-filter-reference-differently.md`).
 

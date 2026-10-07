@@ -21,7 +21,7 @@ namespace Clio.Mcp.E2E;
 /// <c>[#Element.Parameter.Column#]</c> name a build-path condition takes, and a meta path written by hand is
 /// accepted only in the spelling the platform writes, its prefix optional, naming a column the record delivers - in a
 /// condition and in a mapping expression - and stored with its GUIDs lower-cased. NOT in CI — run manually against an
-/// environment carrying CrtProcessBuilder 1.6.6.77 or later (1.6.6.83 for the GUID-case test).
+/// environment carrying CrtProcessBuilder 1.6.6.77 or later (1.6.6.84 for the GUID-case test).
 /// <para>The motivating defect (clio#1529): a hand-assembled token missing the dot before
 /// <c>[EntityColumn:…]</c>. On a Script value the platform refuses it at save with "Value for argument
 /// "parameterUId" must be specified", which names neither the flow nor the token; these tests pin that the package
@@ -42,7 +42,7 @@ public sealed class MetaPathConditionToolE2ETests {
 	private const string MinimumPackageVersion = "1.6.6.77";
 
 	/// <summary>The first cut that stores an accepted meta path with its GUIDs lower-cased.</summary>
-	private const string GuidCaseMinimumPackageVersion = "1.6.6.83";
+	private const string GuidCaseMinimumPackageVersion = "1.6.6.84";
 
 	/// <summary>The prefix the platform's GetMetaPath writes before every reference.</summary>
 	private const string Prefix = "[IsOwnerSchema:false].[IsSchema:false].";
@@ -121,7 +121,7 @@ public sealed class MetaPathConditionToolE2ETests {
 	}
 
 	[Test]
-	[Description("The prefix-less meta path - the spelling the published guidance taught, which processes built through clio store - is accepted and stored exactly as written, so a describe-then-modify round trip of such a process is never refused.")]
+	[Description("The prefix-less meta path - the spelling the published guidance taught, which processes built through clio store - is accepted and stored in that spelling, not rewritten to the prefixed one, so a describe-then-modify round trip of such a process is never refused.")]
 	[AllureTag(ModifyToolName)]
 	[AllureName("modify-business-process accepts the prefix-less meta path in a condition")]
 	public async Task ModifyBusinessProcess_Should_AcceptThePrefixLessMetaPath() {
@@ -162,6 +162,7 @@ public sealed class MetaPathConditionToolE2ETests {
 		await CreateAsync(context, processName, "[#ReadContact.ResultEntity.DoNotUseCall#] == false");
 		string canonical = ConditionOnCall(
 			DescribedProcessGraph.Read(await ProcessDesignerE2EArrange.DescribeAsync(context, processName)));
+		// Overwrite the built condition first, so the final read cannot pass on the create's own lower-case text.
 		await ModifyExpectingSuccessAsync(context, processName, SetCondition("true"));
 		string upper = Regex.Replace(canonical, @"\{[0-9a-f-]{36}\}", match => match.Value.ToUpperInvariant(),
 			RegexOptions.None, TimeSpan.FromSeconds(1));
