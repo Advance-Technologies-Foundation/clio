@@ -457,6 +457,25 @@ public class ModifyBusinessProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("ENG-102114: clio-knowledge decides whether a modify-path condition takes [#Name#] forms by finding the exact phrase 'every segment dot-separated' in this contract (process-branch-conditions, MODIFY PATH). The guidance ships on its own train, so the phrase is a cross-repository contract: rewording it under byte pressure would silently send every agent back to hand-assembling UId tokens.")]
+	public void ModifyBusinessProcess_ShouldCarryThePhraseTheGuidanceGatesOn() {
+		// Arrange
+		string description = ReadToolDescription(typeof(ModifyBusinessProcessTool),
+			nameof(ModifyBusinessProcessTool.ModifyBusinessProcess));
+
+		// Act
+		bool carriesGate = description.Contains("every segment dot-separated", StringComparison.Ordinal);
+		bool namesTheNameForm = description.Contains("Name a parameter as on create", StringComparison.Ordinal);
+
+		// Assert
+		carriesGate.Should().BeTrue(
+			because: "clio-knowledge gates modify-path name expansion on this exact phrase; change both together");
+		namesTheNameForm.Should().BeTrue(
+			because: "the phrase only gates the guidance; the contract itself must still say a condition takes names");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("clio#1368 / #1300: the Lookup-value rule in modify-business-process carries its one exception. A Lookup on the schema registry (Add data EntitySchemaId, Modify data EntitySchemaUId, Delete data EntitySchemaId) holds the SCHEMA UId describe reports, not a record id; without the sentence the 'bare record Guid' rule beside it sends a caller to the view's row Id, the one value that failed at run time. And the object itself is set or changed only through setElement, which re-checks the element's values, filter and dependents - addMapping refuses both.")]
 	public void ModifyBusinessProcess_ShouldStateTheSchemaRegistryLookupRule() {
 		// Arrange
