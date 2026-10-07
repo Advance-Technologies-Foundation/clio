@@ -30,15 +30,9 @@ namespace Clio
 			set { if (value) FailOnError = value; }
 		}
 
-		[Option("fail-on-warning", Required = false, HelpText = "Return fail code on warnings ")]
-		public bool FailOnWarning {
-			get {
-				return GlobalContext.FailOnWarning;
-			}
-			set {
-				GlobalContext.FailOnWarning = value;
-			}
-		}
+		// Accepted for compatibility only: nothing ever read the value, so it no longer feeds GlobalContext.
+		[Option("fail-on-warning", Required = false, HelpText = "Accepted for compatibility; has no effect")]
+		public bool FailOnWarning { get; set; }
 
 		/// <summary>
 		/// Hidden legacy spelling <c>----fail-on-warning</c> of <see cref="FailOnWarning"/>; see

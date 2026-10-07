@@ -21,7 +21,7 @@ using AspNetWebApplicationBuilder = Microsoft.AspNetCore.Builder.WebApplicationB
 namespace Clio.Command.McpServer;
 
 [Verb("mcp-http", HelpText = "Starts MCP server in HTTP transport mode")]
-public class McpHttpServerCommandOptions : BaseCommandOptions
+public class McpHttpServerCommandOptions : McpHostCommandOptions
 {
 	[Option("port", Default = 8005, Required = false, HelpText = "Port to listen on")]
 	public int Port { get; set; }
@@ -222,6 +222,12 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 			AuthConfiguration.Resolve(options, AuthEnvironment.FromProcessEnvironment());
 		if (authConfiguration.Enabled) {
 			McpHttpAuthentication.ConfigureServices(builder.Services, authConfiguration);
+		}
+
+		// The fail-on flags are accepted on the MCP verbs only for compatibility (see McpHostCommandOptions).
+		string ignoredFailOnOptionsWarning = McpHostCommandOptions.DescribeIgnoredFailOnOptions(options);
+		if (ignoredFailOnOptionsWarning is not null) {
+			ConsoleLogger.Instance.WriteWarning(ignoredFailOnOptionsWarning);
 		}
 
 		// ENG-93386 Story 7 (FR-12/D-6): --platform-api-key is retired as the default front door
