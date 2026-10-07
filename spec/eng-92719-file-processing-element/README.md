@@ -25,14 +25,14 @@ readiness and object attachments mode, then ENG-96506 Generated report + process
 Sub-task. A human merges every PR. With an AI agent writing the code, ENG-95984 File process parameter type takes
 about 7-15 h of agent time and 4.5-10 h of the owner's time (3-5 working days), and ENG-92719 File processing element
 about 26-52 h of agent time and 15-33.5 h of the owner's time (about 7-10 working days after that); about 2-3 weeks
-from day 0 for both. Eighteen owner questions are open (Q7 was answered by M3). Of the 27 stand measurements, 11 are
+from day 0 for both. Ten owner questions are open (Q10-Q19): the owner agreed Q1-Q9 as recommended on 2026-10-07 (Q7 had been answered by M3). Q10-Q12 and Q19 are needed before ENG-95984 File process parameter type's code. Of the 27 stand measurements, 11 are
 done, 2 partly, 1 skipped and 13 open. Every measurement that gates PK-PT or PK-OA code is done; the seven that
 still gate code gate PK-RP (M1, M2) or PK-SF (M7, M8, M21, M23, M25). The day-0 decisions come before any code.
 
 Written 2026-10-01; measured on the stand 2026-10-02. No product code was written. The probes were built in package
 `Custom` and deleted with their fixtures the same day (open-questions C.7). The documents are on the local clio
-branch `feature/ENG-92719-process-file-spec` and attached to the four Jira issues. **Status: open. No owner
-decision has been taken yet.** The code was read at these points:
+branch `feature/ENG-92719-process-file-spec` and attached to the four Jira issues. **Status: open. Q1-Q9 were agreed
+on 2026-10-07; Q10-Q19 are open.** The code was read at these points:
 
 | Source | Version read |
 |---|---|
@@ -73,7 +73,7 @@ Q1-Q19 are defined in [decisions](eng-92719-file-processing-element-decisions.md
 | 3 | [serialization-capture](eng-92719-file-processing-element-serialization-capture.md) | **The oracle for every "matches a designer-built capture" criterion.** Every metadata key decoded, and the provenance rules measured over 400 stored parameter entries. Which shipped capture each variant is compared with. What is missing: no saved SysFile-mode element exists anywhere. The named exceptions of the comparison rule, and the capture procedure SC-0..SC-4 on the stand. |
 | 4 | [traps](eng-92719-file-processing-element-traps.md) | **T-1..T-68, 58 of them silent (T-8 among them, refuted by M3; T-68 added on 2026-10-02).** Each trap has its builder rule, refusal or test. The banner lists the traps that rest on a source trace only, and the run that settles each one. |
 | 5 | [reuse](eng-92719-file-processing-element-reuse.md) | **What to reuse, mirror or write new.** What comes from core. About twenty constants and seven algorithms that must be mirrored from CrtProcessDesigner, because production code cannot reference `Terrasoft.Configuration`. The four CrtProcessBuilder pieces that must change before reuse. What is genuinely new. |
-| 6 | [decisions](eng-92719-file-processing-element-decisions.md) | **The contract.** D1-D29 with options and consequences; 14 of them wait for the owner (D9 was answered by M3). Part D holds the replacement acceptance criteria for FE, OA and RP (D-2..D-4); D-1 points to AC-1..AC-10 of the ENG-95984 File process parameter type plan §1.4; D-5 holds the proposed Sub-tasks. Appendix A is the refusal and notice catalogue; Appendix B is the review log. |
+| 6 | [decisions](eng-92719-file-processing-element-decisions.md) | **The contract.** D1-D29 with options and consequences; 10 of them wait for the owner (D22-D24 and D27 were agreed on 2026-10-07, D9 answered by M3). Part D holds the replacement acceptance criteria for FE, OA and RP (D-2..D-4); D-1 points to AC-1..AC-10 of the ENG-95984 File process parameter type plan §1.4; D-5 holds the proposed Sub-tasks. Appendix A is the refusal and notice catalogue; Appendix B is the review log. |
 | 7 | [ENG-95984 File process parameter type plan](../eng-95984-file-parameter-type/eng-95984-file-parameter-type-plan.md) | **The parameter type.** Replacement AC-1..AC-10, and the binder rules P1/P2/P2-MI/P3/R-M1/R-M2 in one table. Work packages PB/CL/KB with `path:line`. The stand rows W0, V0, SC-0 and V1-V6, the estimate, the Definition of Done, and owner items O-1..O-10. |
 | 8 | [ENG-95984 File process parameter type test-plan](../eng-95984-file-parameter-type/eng-95984-file-parameter-type-test-plan.md) | **How the parameter type is tested.** Package (PU), clio (CU), e2e, knowledge (KU) and stand (V0-V8) cases, traced to AC-1..AC-10. The package mocking recipe. The cases that move with an open decision. |
 | 9 | [plan](eng-92719-file-processing-element-plan.md) | **The element.** What the tickets say that is not true (N1-N16), and what exists versus what is missing. The delivery shape and the work packages OA / RP / SF, with files and hours. Stand gates and post-cut proofs, the knowledge records owed, the estimate, and the Definition of Done per issue. |
@@ -344,15 +344,15 @@ changes, are in [open-questions](eng-92719-file-processing-element-open-question
 
 | Q | Decision | Recommended | Needed before |
 |---|---|---|---|
-| Q1 | Replace the acceptance criteria of PT, FE, OA and RP | yes: PT with AC-1..AC-10 of the [ENG-95984 File process parameter type plan](../eng-95984-file-parameter-type/eng-95984-file-parameter-type-plan.md) §1.4; FE, OA and RP with [decisions](eng-92719-file-processing-element-decisions.md) Part D (D-2..D-4) | any PR |
-| Q2 | Jira links | PT **relates to** OA; PT **blocks** RP; OA blocks RP; RP blocks SF; PT and OA block ENG-95985 Send email attachments | any PR |
-| Q3 | Where SysFile storage ships | the new Sub-task SF; OA refuses SysFile with a message | PK-OA |
-| Q4 | Slot order of RP and SF | RP first, unless custom-object attachments rank above generated reports | PK-RP |
-| Q5 | Downstream consumers | Send email → ENG-95985 Send email attachments; the Creatio.ai call is out of scope ("not buildable through this tool yet", never "Creatio cannot") | FE AC |
-| Q6 | PR split | one PR per Jira issue per repository, plus SF, CL-PT-DOC and CL-DOC (14 PRs, the docs-only CL-PT-DOC and CL-DOC included) | any PR |
+| Q1 | Replace the acceptance criteria of PT, FE, OA and RP | yes: PT with AC-1..AC-10 of the [ENG-95984 File process parameter type plan](../eng-95984-file-parameter-type/eng-95984-file-parameter-type-plan.md) §1.4; FE, OA and RP with [decisions](eng-92719-file-processing-element-decisions.md) Part D (D-2..D-4) **Agreed 2026-10-07.** | any PR |
+| Q2 | Jira links | PT **relates to** OA; PT **blocks** RP; OA blocks RP; RP blocks SF; PT and OA block ENG-95985 Send email attachments **Agreed 2026-10-07.** | any PR |
+| Q3 | Where SysFile storage ships | the new Sub-task SF; OA refuses SysFile with a message **Agreed 2026-10-07.** | PK-OA |
+| Q4 | Slot order of RP and SF | RP first, unless custom-object attachments rank above generated reports **Agreed 2026-10-07.** | PK-RP |
+| Q5 | Downstream consumers | Send email → ENG-95985 Send email attachments; the Creatio.ai call is out of scope ("not buildable through this tool yet", never "Creatio cannot") **Agreed 2026-10-07.** | FE AC |
+| Q6 | PR split | one PR per Jira issue per repository, plus SF, CL-PT-DOC and CL-DOC (14 PRs, the docs-only CL-PT-DOC and CL-DOC included) **Agreed 2026-10-07.** | any PR |
 | Q7 | Where defect H-1 is fixed | answered by M3 (2026-10-02): H-1 refuted, so no MH; binding the items is one parity commit in PK-PT (X4) | - |
-| Q8 | Delivery protocol (O4-O8, and the ENG-95984 File process parameter type plan's O-10) | CL-PT-DOC and CL-DOC first; the variant registry recorded in the ADR; merge commits for stacked PRs; merge windows with the owners of the in-flight branches; ask for a second stand | CL-PT-DOC and CL-DOC |
-| Q9 | Follow-up Sub-tasks | the unconditional ones on day 0; MH not created (M3 refuted H-1); the designer bug report only after M11; the X2 one only on that contingency | any PR |
+| Q8 | Delivery protocol (O4-O8, and the ENG-95984 File process parameter type plan's O-10) | CL-PT-DOC and CL-DOC first; the variant registry recorded in the ADR; merge commits for stacked PRs; merge windows with the owners of the in-flight branches; ask for a second stand **Agreed 2026-10-07.** | CL-PT-DOC and CL-DOC |
+| Q9 | Follow-up Sub-tasks | the unconditional ones on day 0; MH not created (M3 refuted H-1); the designer bug report only after M11; the X2 one only on that contingency **Agreed 2026-10-07.** | any PR |
 | Q10 | How a file collection is declared | `type: FileCollection`, read back as `FileCollection` | PK-PT |
 | Q11 | Default direction of a FileCollection | Out (a caller-filled one is declared `In`) | PK-PT |
 | Q12 | Binder policy | P3 resets a stale parent with a notice; P2 and R-M2 apply only to file-consuming targets | PK-PT |

@@ -4,8 +4,8 @@ This document lists what is still open before and during the implementation of E
 type (Task) and ENG-92719 File processing element (Story), with its sub-tasks ENG-96505 Element readiness and object
 attachments mode and ENG-96506 Generated report + process parameter modes (epic ENG-92704 Create BP via AI Toolkit).
 It has four parts. **Part A** holds 19 owner questions (Q1-Q19). Each has options, a recommendation the plan already
-assumes, and what a different answer changes. Q1-Q9 are about Jira and delivery and should be answered before any PR
-opens. Q10-Q19 fix the contract. **Part B** holds 27 stand measurements with exact recipes and read-only evidence
+assumes, and what a different answer changes. Q1-Q9 are about Jira and delivery; **the owner agreed
+Q1-Q9 as recommended on 2026-10-07** (Q7 had been answered by M3). Q10-Q19 fix the contract. **Part B** holds 27 stand measurements with exact recipes and read-only evidence
 queries. Seven are read-only. The rest need writes on disposable processes in the `Custom` package, and each needs
 the user's go-ahead. Fifteen of them gate code; the rest verify or tune wording. **Part C** records what was already
 measured on 2026-10-01: versions, feature states, the user's designer observations UO-1..UO-4, describe of the
@@ -49,15 +49,15 @@ the owner row of the sibling documents.
 
 | Q | Question | Recommended answer | Before | Ref |
 |---|---|---|---|---|
-| Q1 | Replace the acceptance criteria of PT, FE, OA and RP | yes: PT as AC-1..AC-10 of the ENG-95984 File process parameter type plan section 1.4; FE, OA and RP as decisions Part D (D-2..D-4) | any PR | D24; decisions row 14 |
-| Q2 | Jira links | L1-L5: PT relates to OA, PT blocks RP, OA blocks RP, RP blocks SF, PT and OA block ENG-95985 Send email attachments | any PR | D23; L1-L7 |
-| Q3 | Where SysFile attachment storage ships | in the NEW Sub-task SF; OA refuses SysFile sources and targets with a message | PK-OA | D15; O1 |
-| Q4 | Slot order of RP and SF | RP first, SF last | PK-RP | O3; X3 |
-| Q5 | Downstream consumer patterns | Send email to ENG-95985 Send email attachments; Creatio.ai call out of scope | FE AC | D22; decisions row 12 |
-| Q6 | PR split | one PR per Jira issue per repository, plus SF and the docs-only CL-PT-DOC and CL-DOC (14 PRs) | any PR | D27; decisions row 15 |
+| Q1 | Replace the acceptance criteria of PT, FE, OA and RP | yes: PT as AC-1..AC-10 of the ENG-95984 File process parameter type plan section 1.4; FE, OA and RP as decisions Part D (D-2..D-4) **Agreed 2026-10-07.** | any PR | D24; decisions row 14 |
+| Q2 | Jira links | L1-L5: PT relates to OA, PT blocks RP, OA blocks RP, RP blocks SF, PT and OA block ENG-95985 Send email attachments **Agreed 2026-10-07.** | any PR | D23; L1-L7 |
+| Q3 | Where SysFile attachment storage ships | in the NEW Sub-task SF; OA refuses SysFile sources and targets with a message **Agreed 2026-10-07.** | PK-OA | D15; O1 |
+| Q4 | Slot order of RP and SF | RP first, SF last **Agreed 2026-10-07.** | PK-RP | O3; X3 |
+| Q5 | Downstream consumer patterns | Send email to ENG-95985 Send email attachments; Creatio.ai call out of scope **Agreed 2026-10-07.** | FE AC | D22; decisions row 12 |
+| Q6 | PR split | one PR per Jira issue per repository, plus SF and the docs-only CL-PT-DOC and CL-DOC (14 PRs) **Agreed 2026-10-07.** | any PR | D27; decisions row 15 |
 | Q7 | Where the mirror defect H-1 is fixed | answered by M3 (2026-10-02): H-1 refuted, so no MH; binding the items is one parity commit in PK-PT (X4) | - | D9; O2; X4 |
-| Q8 | Delivery protocol bundle | yes to CL-PT-DOC and CL-DOC first, the variant registry in the ADR, merge commits for stacked PRs, merge windows, a second stand | CL-PT-DOC and CL-DOC | O4-O8; ENG-95984 File process parameter type plan O-10 |
-| Q9 | Which follow-up Sub-tasks to create, and when | the unconditional ones now (day 0); MH not created (M3 refuted H-1); the designer bug report only after M11; the X2 one only on that contingency | any PR | decisions D-5; pr-split 12.3 |
+| Q8 | Delivery protocol bundle | yes to CL-PT-DOC and CL-DOC first, the variant registry in the ADR, merge commits for stacked PRs, merge windows, a second stand **Agreed 2026-10-07.** | CL-PT-DOC and CL-DOC | O4-O8; ENG-95984 File process parameter type plan O-10 |
+| Q9 | Which follow-up Sub-tasks to create, and when | the unconditional ones now (day 0); MH not created (M3 refuted H-1); the designer bug report only after M11; the X2 one only on that contingency **Agreed 2026-10-07.** | any PR | decisions D-5; pr-split 12.3 |
 | Q10 | How a caller declares a file collection | `type: FileCollection`, read back as `FileCollection` | PK-PT | D2; decisions row 1 |
 | Q11 | Default direction of a FileCollection | Out | PK-PT | D3; decisions row 2 |
 | Q12 | Two-level binder policy (P3, P2 scope) | P3 resets a stale parent with a notice; P2 and R-M2 only on file-consuming targets | PK-PT | D5; decisions rows 3, 4 |
@@ -71,7 +71,7 @@ the owner row of the sibling documents.
 
 ### A.1 Jira and delivery (answer before any PR opens)
 
-#### Q1. Replace the acceptance criteria?
+#### Q1. Replace the acceptance criteria? (agreed 2026-10-07: as recommended)
 
 The AC of all four issues contain statements that cannot pass, such as "addParameter accepts the Binary / File data
 type". The platform type name `File` is the BLOB type BA40CFC5. Binary B7342B7A cannot hold a process value
@@ -90,7 +90,7 @@ basis=source).
 [test-plan](eng-92719-file-processing-element-test-plan.md) and
 [ENG-95984 File process parameter type test-plan](../eng-95984-file-parameter-type/eng-95984-file-parameter-type-test-plan.md) follows the new text.
 
-#### Q2. Jira links
+#### Q2. Jira links (agreed 2026-10-07: as recommended)
 
 Today PT "blocks" OA (link 560203), and RP has no links (measured 2026-10-01). In code, the Object variant needs no
 File process parameter. What needs PT is RP's Process-parameter variant, plus OA's per-file multi-instance test
@@ -104,7 +104,7 @@ File process parameter. What needs PT is RP's Process-parameter variant, plus OA
 **Recommendation: a** (b is acceptable if the team uses "blocks" for sequencing). **What changes:** Jira links only.
 OA may start development as a stacked draft while PK-PT is in review.
 
-#### Q3. Where does SysFile attachment storage ship?
+#### Q3. Where does SysFile attachment storage ship? (agreed 2026-10-07: as recommended)
 
 With `ProcessFeatures.UseSysFileInObjectFileProcessing` on (the stand's state, measured), the designer chooses
 storage per object. Objects with a dedicated `<X>File` object keep it; every other object is a SysFile entry, with
@@ -130,7 +130,7 @@ M25). Three of them need the user to build designer probes.
 **Recommendation: a** (O1). **What changes:** create SF (Q9). OA's AC row reads as in pr-split 12.4. The SysFile
 capture (M21) moves to SF. M7, M8, M21, M23 and M25 leave OA's path.
 
-#### Q4. Slot order of RP and SF
+#### Q4. Slot order of RP and SF (agreed 2026-10-07: as recommended)
 
 | Option | Consequence |
 |---|---|
@@ -141,7 +141,7 @@ capture (M21) moves to SF. M7, M8, M21, M23 and M25 leave OA's path.
 create custom objects, and a custom object is the typical SysFile case (inference). **What changes:** the slot order
 in pr-split section 6, and link L4.
 
-#### Q5. Downstream consumer patterns
+#### Q5. Downstream consumer patterns (agreed 2026-10-07: as recommended)
 
 FE's AC asks for tests of five patterns. Two consumers, Send email and the Creatio.ai call, read files through
 DYNAMIC element parameters `Attachments<N>` + `Attachments<N>FileLocator` and `Files<N>` + `Files<N>FileLocator`.
@@ -160,7 +160,7 @@ and no PB file mentions `Attachments` (grep, 0 files, 2026-10-01), so the builde
 **Recommendation: a.** **What changes:** FE's "Tests cover the five patterns" row (D24), ENG-95985 Send email
 attachments' scope (link L5), and the "Consumers" section of the new guide.
 
-#### Q6. PR split
+#### Q6. PR split (agreed 2026-10-07: as recommended)
 
 | Option | PRs | Comment |
 |---|---|---|
@@ -194,7 +194,7 @@ M3 refuted H-1, so neither option applies: MH does not exist, and binding the it
 PK-PT (contingency X4). **Recommendation before M3: a.** **What changes now:** nothing on the track; no MH triple, no
 KB-MH.
 
-#### Q8. Delivery protocol bundle (O4-O8, O-10)
+#### Q8. Delivery protocol bundle (O4-O8, O-10) (agreed 2026-10-07: as recommended)
 
 | # | Item | Recommendation |
 |---|---|---|
@@ -207,7 +207,7 @@ KB-MH.
 
 **What changes:** the review and merge protocol in pr-split section 14. A human merges every PR.
 
-#### Q9. Which follow-up Sub-tasks to create, and when
+#### Q9. Which follow-up Sub-tasks to create, and when (agreed 2026-10-07: as recommended)
 
 All are of type Sub-task (titles from decisions D-5 and pr-split 12.3):
 

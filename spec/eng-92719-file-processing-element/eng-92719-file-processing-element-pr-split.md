@@ -583,17 +583,17 @@ These are also collected in [open-questions](eng-92719-file-processing-element-o
 
 | # | Decision | Recommendation |
 |---|---|---|
-| O1 | SysFile storage leaves OA and becomes the NEW Sub-task SF under ENG-92719 File processing element. Accept one interim release that refuses SysFile-mode sources and targets. | yes |
+| O1 | SysFile storage leaves OA and becomes the NEW Sub-task SF under ENG-92719 File processing element. Accept one interim release that refuses SysFile-mode sources and targets. | yes **Agreed 2026-10-07.** |
 | O2 | If M3 confirms H-1, the NEW Sub-task MH under ENG-95984 File process parameter type lands first (D9) | moot: M3 refuted H-1 on 2026-10-02, so MH is not created (X4) |
-| O3 | Slot order: RP before SF, or the reverse (X3) | RP first: one set of measurements and one SysFile lift for all three variants. Revisit if AI Toolkit custom-object attachments are the priority. |
-| O4 | The FE spec goes in a docs-only clio PR (CL-DOC) | yes |
-| O5 | The variant registry becomes OA's design, recorded in the ADR | yes |
-| O6 | Ask for a second disposable .NET Framework stand for draft iteration | yes (it speeds things up; the plan does not depend on it) |
-| O7 | Lower PRs with a stacked draft above them are merged with "Create a merge commit". If one is squashed anyway, the draft is rebuilt with a non-interactive `git rebase --onto origin/main <old lower tip>` while it is still a draft. | yes |
-| O8 | A merge window per ticket, agreed with the owners of CA, SK and CI | yes |
-| PT O-10 | ENG-95984 File process parameter type's BMAD set goes in the docs-only CL-PT-DOC (section 5.7), merged before PK-PT opens (E9); the alternative is an owner-approved exception | yes |
-| D23 | Jira re-link L1-L5 (section 12.2) | yes |
-| D27 | One PR per Jira issue per repository (this document) | yes |
+| O3 | Slot order: RP before SF, or the reverse (X3) | RP first: one set of measurements and one SysFile lift for all three variants. Revisit if AI Toolkit custom-object attachments are the priority. **Agreed 2026-10-07.** |
+| O4 | The FE spec goes in a docs-only clio PR (CL-DOC) | yes **Agreed 2026-10-07.** |
+| O5 | The variant registry becomes OA's design, recorded in the ADR | yes **Agreed 2026-10-07.** |
+| O6 | Ask for a second disposable .NET Framework stand for draft iteration | yes (it speeds things up; the plan does not depend on it) **Agreed 2026-10-07.** |
+| O7 | Lower PRs with a stacked draft above them are merged with "Create a merge commit". If one is squashed anyway, the draft is rebuilt with a non-interactive `git rebase --onto origin/main <old lower tip>` while it is still a draft. | yes **Agreed 2026-10-07.** |
+| O8 | A merge window per ticket, agreed with the owners of CA, SK and CI | yes **Agreed 2026-10-07.** |
+| PT O-10 | ENG-95984 File process parameter type's BMAD set goes in the docs-only CL-PT-DOC (section 5.7), merged before PK-PT opens (E9); the alternative is an owner-approved exception | yes **Agreed 2026-10-07.** |
+| D23 | Jira re-link L1-L5 (section 12.2) | yes **Agreed 2026-10-07.** |
+| D27 | One PR per Jira issue per repository (this document) | yes **Agreed 2026-10-07.** |
 
 ---
 
