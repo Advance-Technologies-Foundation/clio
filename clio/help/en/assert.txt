@@ -203,7 +203,7 @@ LOCAL EXAMPLES
 
     Full filesystem validation preset:
         clio assert fs --all
-OUTPUT FORMAT
+OUTPUT EXAMPLES
 
     Kubernetes success example:
     {

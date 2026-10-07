@@ -439,12 +439,60 @@ EXAMPLE
 			because: "the shim's placeholder OPTIONS text must be replaced by the generated option list");
 	}
 
+	[Test]
+	[Description("A synthetic help file whose SEE ALSO line ends in the legacy-heading marker is an alias shim: --help renders generated help and drops the stub text, whatever the marker's case (ENG-102433).")]
+	public void TryRenderCommandHelp_WhenHelpFileEndsLineWithLegacyHeadingMarker_RendersGeneratedHelp() {
+		// Arrange
+		AddHelpFile("create-entity-schema", """
+NAME
+    create-entity-schema - Shim stub
+
+DESCRIPTION
+    This stub text must not be rendered.
+
+SEE ALSO
+    create-schema - LEGACY HEADING IN COMMANDS.MD
+""");
+
+		// Act
+		string output = _exportRenderer.TryRenderCommandHelp("create-entity-schema");
+
+		// Assert
+		output.Should().NotContain("This stub text must not be rendered.",
+			because: "a shim's sections are replaced by generated help");
+		output.Should().Contain("clio create-entity-schema [options]",
+			because: "a shim falls back to the generated usage line");
+	}
+
+	[Test]
+	[Description("A manual help file that mentions a legacy heading in prose, without the shim marker line, renders as manual --help (ENG-102433).")]
+	public void TryRenderCommandHelp_WhenManualHelpMentionsLegacyHeadingInProse_RendersManualHelp() {
+		// Arrange
+		AddHelpFile("create-entity-schema", """
+NAME
+    create-entity-schema - Manual create help
+
+DESCRIPTION
+    The legacy heading create-schema in older docs points here.
+
+CUSTOM NOTES
+    This line proves the manual file is used.
+""");
+
+		// Act
+		string output = _exportRenderer.TryRenderCommandHelp("create-entity-schema");
+
+		// Assert
+		output.Should().Contain("This line proves the manual file is used.",
+			because: "only a line ending in the shim marker makes a file a shim, not the phrase in prose");
+	}
+
 	[TestCase("create-entity-schema", "EntitySchemaDesignerService")]
 	[TestCase("update-entity-schema", "clio-native batch mutation contract")]
 	[TestCase("modify-entity-schema-column", "Supported actions:")]
 	[TestCase("assert", "DESIGN PRINCIPLES")]
 	[Description("Runtime --help for each command whose manual file mentions 'alias for' in prose renders that shipped manual file, not generated help (ENG-102433).")]
-	public void TryRenderCommandHelp_ForCommandWithAliasForProse_RendersShippedManualHelp(string commandName, string manualOnlyText) {
+	public void TryRenderCommandHelp_ForPinnedManualHelpCommand_RendersShippedManualHelp(string commandName, string manualOnlyText) {
 		// Arrange
 		AddRepositoryHelpFile(commandName);
 
@@ -463,7 +511,7 @@ EXAMPLE
 	[TestCase("modify-entity-schema-column")]
 	[TestCase("assert")]
 	[Description("The committed docs/commands markdown of each command whose manual file mentions 'alias for' in prose equals the doc rendered from its shipped manual file (ENG-102433).")]
-	public void RenderMarkdownDoc_ForCommandWithAliasForProse_MatchesCommittedDoc(string commandName) {
+	public void RenderMarkdownDoc_ForPinnedManualHelpCommand_MatchesCommittedDoc(string commandName) {
 		// Arrange
 		AddRepositoryHelpFile(commandName);
 		new CommandHelpCatalog().TryGetCommand(commandName, out HelpCommandMetadata command).Should().BeTrue(

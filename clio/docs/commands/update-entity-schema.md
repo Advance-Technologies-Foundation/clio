@@ -65,6 +65,7 @@ UTF-16 with a BOM is also read). Applied after
 descriptions (e.g. en-US, uk-UA). Precedence:
 override > profile culture > en-US. Supplying it
 skips the profile-culture lookup.
+--timeout              Request timeout in milliseconds. Default: 100000
 
 Environment options are also available:
 -e, --environment      Environment name from the registered configuration
@@ -72,6 +73,10 @@ Environment options are also available:
 -l, --login            User login
 -p, --password         User password
 ```
+
+## Requirements
+
+cliogate must be installed on the target Creatio environment.
 
 ## Examples
 

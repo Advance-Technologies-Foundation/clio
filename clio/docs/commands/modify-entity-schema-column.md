@@ -21,8 +21,8 @@ mutates one own column locally, and saves the schema back through
 EntitySchemaDesignerService.
 
 This command is part of the canonical clio MCP mutation surface for
-explicit single-column edits. Use sync-schemas when the work spans
-multiple ordered schema operations.
+explicit single-column edits. Use update-entity-schema when the work spans
+several column operations on one schema.
 
 After saving, the configuration is always published, so the changed column
 becomes visible to lookup pickers without a manual compile. The OData
@@ -97,6 +97,7 @@ modify the stored value is left unchanged when omitted.
 caption/description (e.g. en-US, uk-UA).
 Precedence: override > profile culture > en-US.
 Supplying it skips the profile-culture lookup.
+--timeout                      Request timeout in milliseconds. Default: 100000
 
 Environment options are also available:
 -e, --environment              Environment name from the registered configuration
@@ -104,6 +105,10 @@ Environment options are also available:
 -l, --login                    User login
 -p, --password                 User password
 ```
+
+## Requirements
+
+cliogate must be installed on the target Creatio environment.
 
 ## Examples
 
@@ -162,7 +167,8 @@ record cannot be read)
 - when --caption-culture is omitted, clio uses the connected user's profile
 culture (see get-user-culture) and falls back to en-US if it cannot be resolved;
 column reads (get-entity-schema-column-properties) keep using the host locale
-- each title-localizations / description-localizations value must be written in
+- (MCP only; the CLI sets one caption through --title / --description) each
+title-localizations / description-localizations value must be written in
 the language of its culture key: the en-US value must be English, and a value in
 a script that does not match a Latin-script culture key (for example Cyrillic
 under en-US) is rejected; put localized text under its own culture key (uk-UA)

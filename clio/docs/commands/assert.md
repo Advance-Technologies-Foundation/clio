@@ -215,90 +215,90 @@ clio assert <scope> [options]
     Full filesystem validation preset:
         clio assert fs --all
 
-## Output Format
+## Output Examples
 
-Kubernetes success example:
-{
-"status": "pass",
-"context": {
-"name": "dev-cluster",
-"cluster": "dev",
-"server": "https://10.0.0.1",
-"namespace": "default"
-},
-"resolved": {
-"databases": [
-{
-"engine": "postgres",
-"name": "clio-postgres-0",
-"host": "clio-postgres-lb",
-"port": 5432,
-"version": "PostgreSQL 16.5"
-}
-],
-"redis": {
-"name": "clio-redis",
-"host": "clio-redis-lb",
-"port": 6379,
-"firstAvailableDb": 3
-}
-}
-}
+    Kubernetes success example:
+    {
+      "status": "pass",
+      "context": {
+        "name": "dev-cluster",
+        "cluster": "dev",
+        "server": "https://10.0.0.1",
+        "namespace": "default"
+      },
+      "resolved": {
+        "databases": [
+          {
+            "engine": "postgres",
+            "name": "clio-postgres-0",
+            "host": "clio-postgres-lb",
+            "port": 5432,
+            "version": "PostgreSQL 16.5"
+          }
+        ],
+        "redis": {
+          "name": "clio-redis",
+          "host": "clio-redis-lb",
+          "port": 6379,
+          "firstAvailableDb": 3
+        }
+      }
+    }
 
-Filesystem success example:
-{
-"status": "pass",
-"scope": "Fs",
-"resolved": {
-"path": "C:\\inetpub\\wwwroot\\clio",
-"userIdentity": "BUILTIN\\IIS_IUSRS",
-"permission": "full-control"
-},
-"details": {
-"requestedPath": "iis-clio-root-path"
-}
-}
+    Filesystem success example:
+    {
+      "status": "pass",
+      "scope": "Fs",
+      "resolved": {
+        "path": "C:\\inetpub\\wwwroot\\clio",
+        "userIdentity": "BUILTIN\\IIS_IUSRS",
+        "permission": "full-control"
+      },
+      "details": {
+        "requestedPath": "iis-clio-root-path"
+      }
+    }
 
-Kubernetes failure example:
-{
-"status": "fail",
-"scope": "K8",
-"failedAt": "DbConnect",
-"reason": "Cannot connect to postgres database at clio-postgres-lb:5432",
-"details": {
-"engine": "postgres",
-"host": "clio-postgres-lb",
-"port": 5432
-}
-}
+    Kubernetes failure example:
+    {
+      "status": "fail",
+      "scope": "K8",
+      "failedAt": "DbConnect",
+      "reason": "Cannot connect to postgres database at clio-postgres-lb:5432",
+      "details": {
+        "engine": "postgres",
+        "host": "clio-postgres-lb",
+        "port": 5432
+      }
+    }
 
-Filesystem failure example:
-{
-"status": "fail",
-"scope": "Fs",
-"failedAt": "FsPerm",
-"reason": "User 'BUILTIN\\IIS_IUSRS' does not have 'full-control' permission on path 'C:\\inetpub\\wwwroot\\clio'",
-"details": {
-"requestedPath": "iis-clio-root-path",
-"resolvedPath": "C:\\inetpub\\wwwroot\\clio",
-"userIdentity": "BUILTIN\\IIS_IUSRS",
-"requiredPermission": "full-control"
-}
-}
+    Filesystem failure example:
+    {
+      "status": "fail",
+      "scope": "Fs",
+      "failedAt": "FsPerm",
+      "reason": "User 'BUILTIN\\IIS_IUSRS' does not have 'full-control' permission on path 'C:\\inetpub\\wwwroot\\clio'",
+      "details": {
+        "requestedPath": "iis-clio-root-path",
+        "resolvedPath": "C:\\inetpub\\wwwroot\\clio",
+        "userIdentity": "BUILTIN\\IIS_IUSRS",
+        "requiredPermission": "full-control"
+      }
+    }
 
-Local Redis success example:
-{
-"status": "pass",
-"scope": "Local",
-"resolved": {
-"redis": {
-"name": "local-redis",
-"host": "localhost",
-"port": 6379,
-"firstAvailableDb": 3
-}
-}
-}
+    Local Redis success example:
+    {
+      "status": "pass",
+      "scope": "Local",
+      "resolved": {
+        "redis": {
+          "name": "local-redis",
+          "host": "localhost",
+          "port": 6379,
+          "firstAvailableDb": 3
+        }
+      }
+    }
 
 ## Design Principles
 

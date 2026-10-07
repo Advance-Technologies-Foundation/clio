@@ -40,15 +40,17 @@ Supported column types:
 - Text, ShortText, MediumText, LongText, MaxSizeText
 - Text50, Text250, Text500, TextUnlimited, PhoneNumber, WebLink, Email, RichText
 - Binary, Image, File, SecureText (Blob is accepted as an alias for Binary; Encrypted and Password are accepted as aliases for SecureText; EmailAddress is accepted as an alias for Email)
-- ImageLookup (ImageLink is accepted as an alias; references the SysImage schema automatically — no --reference-schema)
+- ImageLookup (ImageLink is accepted as an alias; references the SysImage schema automatically — no reference schema needed)
 - Integer
 - Float
 - Decimal0, Decimal1, Decimal2, Decimal3, Decimal4, Decimal8, Currency0, Currency1, Currency2, Currency3
 (Money is accepted as an alias for Currency2 — the normal two-decimal Creatio money column;
 Decimal is accepted as an alias for Decimal2, same as Float)
 - Boolean
-- Date, DateTime, Time
-- Lookup (requires --reference-schema)
+- DateTime (Date and Time are accepted, but are aliases of DateTime: the column is stored as DateTime
+and read back as DateTime, so date-only or time-only intent is not preserved)
+- Lookup (requires a reference schema: the 4th segment of a --column spec, or
+reference-schema-name in a JSON column)
 - Color (stores a hex color string such as #RRGGBB; not a text column — the text-only options multiline/accent-insensitive/format-validated/masked do not apply)
 
 For image/photo fields rendered with the crt.ImageInput Freedom UI component, use the
@@ -84,6 +86,7 @@ Invalid array entries fail before saving the schema.
 column captions/labels (e.g. en-US, uk-UA). Precedence:
 this override > the connected user's profile culture >
 en-US. Supplying it skips the profile-culture lookup.
+--timeout              Request timeout in milliseconds. Default: 100000
 
 Environment options are also available:
 -e, --environment      Environment name from the registered configuration
@@ -91,6 +94,10 @@ Environment options are also available:
 -l, --login            User login
 -p, --password         User password
 ```
+
+## Requirements
+
+cliogate must be installed on the target Creatio environment.
 
 ## Examples
 
@@ -172,7 +179,8 @@ ending with {0} (e.g. LN-{0} produces LN-00001), not both; masks with
 static text after {0} are rejected with a validation error
 - If Settings or SystemValue lookup is ambiguous, the command fails with a
 validation error and requests explicit code/Guid input
-- Binary, Image, and File columns do not support --default-value or --default-value-source Const
+- Binary, Image, and File columns do not support a Const default value
+(default-value-source Const / default-value in a JSON column)
 - After save, the schema is reloaded immediately; save is treated as failed if the schema cannot be read back
 - After save, the configuration is published automatically; if publication
 fails, the schema stays saved but invisible to lookup pickers and
@@ -185,7 +193,8 @@ If requesting the rebuild fails, it is logged as a warning and schema
 creation still succeeds
 - when --caption-culture is omitted, clio uses the connected user's profile
 culture (see get-user-culture) and falls back to en-US if it cannot be resolved
-- each title-localizations / description-localizations value must be written in
+- (MCP only; the CLI sets one caption through --title) each title-localizations /
+description-localizations value must be written in
 the language of its culture key: the en-US value must be English, and a value in
 a script that does not match a Latin-script culture key (for example Cyrillic
 under en-US) is rejected; put localized text under its own culture key (uk-UA)

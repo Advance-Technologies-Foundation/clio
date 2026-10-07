@@ -124,8 +124,8 @@ internal class HelpArtifactConsistencyTests {
 	[TestCase("update-entity-schema")]
 	[TestCase("modify-entity-schema-column")]
 	[TestCase("assert")]
-	[Description("The manual help file of each command that runtime --help renders from its .txt lists every visible option the command declares and none of the long names only a Hidden option declares (ENG-102433).")]
-	public void ManualHelpFile_ShouldListDeclaredVisibleOptionsAndOmitHiddenOnes(string commandName) {
+	[Description("The manual help file of each command that runtime --help renders from its .txt lists every visible option of the command, including inherited ones such as --timeout, and none of the long names only a Hidden option declares (ENG-102433).")]
+	public void ManualHelpFile_ShouldListVisibleOptionsAndOmitHiddenOnes(string commandName) {
 		// Arrange
 		new CommandHelpCatalog().TryGetCommand(commandName, out HelpCommandMetadata command).Should().BeTrue(
 			because: $"{commandName} is a catalogued command");
@@ -134,9 +134,16 @@ internal class HelpArtifactConsistencyTests {
 			.Select(property => (Property: property, Option: property.GetCustomAttribute<OptionAttribute>(true)))
 			.Where(item => item.Option is not null && !string.IsNullOrWhiteSpace(item.Option.LongName))
 			.ToArray();
-		string[] declaredVisibleNames = options
-			.Where(item => !item.Option.Hidden && item.Property.DeclaringType == command.OptionsType)
+		// EnvironmentOptions is documented as the short environment block, not option by option.
+		// BaseCommandOptions declares its long names with the leading dashes ("--fail-on-error"), so the
+		// parser accepts only "----fail-on-error"; that is a separate defect, and those names are not
+		// documented as usable options.
+		string[] visibleNames = options
+			.Where(item => !item.Option.Hidden
+				&& item.Property.DeclaringType != typeof(EnvironmentOptions)
+				&& item.Property.DeclaringType != typeof(BaseCommandOptions))
 			.Select(item => item.Option.LongName)
+			.Distinct(StringComparer.Ordinal)
 			.ToArray();
 		string[] hiddenOnlyNames = options
 			.Where(item => item.Option.Hidden)
@@ -148,11 +155,29 @@ internal class HelpArtifactConsistencyTests {
 		string helpText = File.ReadAllText(Path.Combine(HelpDirectory, $"{commandName}.txt"));
 
 		// Assert
-		declaredVisibleNames.Should().NotBeEmpty(because: $"{commandName} declares its own options");
-		declaredVisibleNames.Where(name => !ContainsOptionToken(helpText, name)).Should().BeEmpty(
-			because: $"{commandName}.txt is what --help shows, so it must document every visible option the command declares");
+		visibleNames.Should().NotBeEmpty(because: $"{commandName} has command options");
+		visibleNames.Where(name => !ContainsOptionToken(helpText, name)).Should().BeEmpty(
+			because: $"{commandName}.txt is what --help shows, so it must document every visible option, inherited ones included");
 		hiddenOnlyNames.Where(name => ContainsOptionToken(helpText, name)).Should().BeEmpty(
 			because: $"{commandName}.txt must not advertise backward-compatibility aliases declared Hidden");
+	}
+
+	[TestCase("create-entity-schema")]
+	[TestCase("update-entity-schema")]
+	[TestCase("modify-entity-schema-column")]
+	[Description("The manual help file of each entity-schema command states the catalog requirement that generated help would print, so switching to manual help does not drop the cliogate prerequisite (ENG-102433).")]
+	public void ManualHelpFile_ShouldStateCatalogRequirement(string commandName) {
+		// Arrange
+		new CommandHelpCatalog().TryGetCommand(commandName, out HelpCommandMetadata command).Should().BeTrue(
+			because: $"{commandName} is a catalogued command");
+		command.Requirement.Should().NotBeNullOrWhiteSpace(because: $"{commandName} has a catalog requirement");
+
+		// Act
+		string helpText = File.ReadAllText(Path.Combine(HelpDirectory, $"{commandName}.txt"));
+
+		// Assert
+		Regex.Replace(helpText, @"\s+", " ").Should().Contain(command.Requirement,
+			because: $"{commandName}.txt is what --help shows, so it must carry the requirement generated help printed");
 	}
 
 	private static bool ContainsOptionToken(string text, string longName) =>

@@ -40,6 +40,10 @@ internal sealed class CommandHelpRenderer {
 	private const string SecRequirements = "REQUIREMENTS";
 	private const string SecNotes = "NOTES";
 	private const string SecSeeAlso = "SEE ALSO";
+	// The line an alias shim (today only set-app-icon.txt) carries in SEE ALSO. A shim is recognized by a line
+	// ending in this text, not by a phrase anywhere in the file, so manual help that mentions an alias or a
+	// legacy heading in prose stays manual help.
+	private const string AliasShimMarker = "- Legacy heading in Commands.md";
 	private readonly IFileSystem _fileSystem;
 	private readonly CommandHelpCatalog _catalog;
 	private readonly Func<bool> _supportsAnsi;
@@ -461,9 +465,8 @@ internal sealed class CommandHelpRenderer {
 			currentSection.Value.Lines.Add(line.Trim('\ufeff'));
 			sections[^1] = currentSection.Value;
 		}
-		// Only the legacy-heading marker identifies an alias shim. Prose such as "Blob is accepted as an
-		// alias for Binary" is ordinary manual help and must not demote the file to generated help.
-		bool isAliasShim = content.Contains("legacy heading", StringComparison.OrdinalIgnoreCase);
+		bool isAliasShim = sections.Any(section => section.Lines.Any(line =>
+			line.EndsWith(AliasShimMarker, StringComparison.OrdinalIgnoreCase)));
 		return new HelpDocument(
 			sections
 				.Select(section => new HelpSection(section.Heading, section.NormalizedHeading, TrimEmptyLines(section.Lines)))
