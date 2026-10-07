@@ -87,6 +87,12 @@ internal interface IPackageDataBindingWriter {
 	/// Passing a reduced <paramref name="boundRecordIds"/> set drops rows from the binding; an empty set is
 	/// not how a binding is removed — use <see cref="DeleteBinding"/> for that.
 	/// </summary>
+	/// <remarks>
+	/// The platform saves the binding to the database only. When file system development mode is enabled,
+	/// or its state cannot be read, a warning is logged after the save naming the package folder on disk
+	/// that does not have the change and the command that writes it there (<c>pkg-to-file-system</c>).
+	/// The warning never fails the save.
+	/// </remarks>
 	/// <param name="package">The package that receives the binding.</param>
 	/// <param name="bindingName">The binding folder name.</param>
 	/// <param name="entitySchemaName">Name of the entity schema the binding delivers.</param>
@@ -115,6 +121,10 @@ internal interface IPackageDataBindingWriter {
 	/// the rows the binding delivered stay in the environment. The endpoint keys on (package, name) alone, so
 	/// a caller that must not destroy a binding it does not own has to check <see cref="FindBinding"/> first.
 	/// </summary>
+	/// <remarks>
+	/// Like <see cref="SaveBinding"/>, this changes the database only, and logs the same file system
+	/// development mode warning: the package folder on disk still carries the binding.
+	/// </remarks>
 	/// <param name="package">The package that owns the binding.</param>
 	/// <param name="bindingName">The binding folder name.</param>
 	/// <exception cref="InvalidOperationException">Thrown when the environment rejects the delete.</exception>
@@ -135,11 +145,28 @@ internal sealed class PackageDataBindingWriter(
 	IApplicationClient applicationClient,
 	IServiceUrlBuilder serviceUrlBuilder,
 	IPackageTargetResolver targetResolver,
-	IDataBindingSchemaClient schemaClient) : IPackageDataBindingWriter {
+	IDataBindingSchemaClient schemaClient,
+	IFileDesignModeStateReader fileDesignModeStateReader,
+	ILogger logger) : IPackageDataBindingWriter {
 
 	private const string PackageSchemaDataSchema = "SysPackageSchemaData";
 
+	/// <summary>
+	/// The command that writes a database-only binding change into the package folder on disk. Its CLI
+	/// verb and its MCP tool share this name.
+	/// </summary>
+	internal const string FileSystemExportCommandName = "pkg-to-file-system";
+
+	/// <summary>
+	/// The command that loads the package folders on disk into the database. Named in the warning because it
+	/// makes the database match the disk, so it must not run before the export.
+	/// </summary>
+	internal const string FileSystemImportCommandName = "pkg-to-db";
+
 	private readonly Dictionary<string, DataBindingDbSchema> _projectedSchemas = new(StringComparer.Ordinal);
+
+	private bool _fileDesignModeStateRead;
+	private bool? _isFileDesignModeEnabled;
 
 	/// <inheritdoc />
 	public PackageRef ResolvePackage(string packageName) {
@@ -239,6 +266,8 @@ internal sealed class PackageDataBindingWriter(
 		string response = applicationClient.ExecutePostRequest(
 			serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.SaveSchemaData), requestBody);
 		DataServiceResponse.ThrowIfUnsuccessful(response, "SaveSchema");
+		WarnIfPackageFolderIsNotUpdated(package, bindingName,
+			existingBindingUId.HasValue ? BindingChange.Refreshed : BindingChange.Created);
 	}
 
 	/// <inheritdoc />
@@ -250,6 +279,73 @@ internal sealed class PackageDataBindingWriter(
 		string response = applicationClient.ExecutePostRequest(
 			serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.DeletePackageSchemaData), body);
 		DataServiceResponse.ThrowIfUnsuccessful(response, "DeletePackageSchemaDataRequest");
+		WarnIfPackageFolderIsNotUpdated(package, bindingName, BindingChange.Removed);
+	}
+
+	/// <summary>
+	/// Logs a warning when the change just made may be missing from the package folder on disk. The
+	/// platform's binding endpoints write to the database only; in file system development mode the package
+	/// folder is what gets committed, so without this warning a binding that "succeeded" never reaches the
+	/// next environment. The state is read once per writer instance; the writer is transient, so a caller
+	/// that resolves it again reads the state again.
+	/// </summary>
+	private void WarnIfPackageFolderIsNotUpdated(PackageRef package, string bindingName, BindingChange change) {
+		if (!_fileDesignModeStateRead) {
+			_isFileDesignModeEnabled = fileDesignModeStateReader.GetIsFileDesignModeEnabled();
+			_fileDesignModeStateRead = true;
+		}
+		if (_isFileDesignModeEnabled == false) {
+			return;
+		}
+		logger.WriteWarning(BuildPackageFolderWarning(_isFileDesignModeEnabled, package.Name, bindingName, change));
+	}
+
+	/// <summary>Builds the warning text for a binding change the package folder on disk does not have.</summary>
+	/// <param name="isFileDesignModeEnabled"><see langword="true"/> when enabled; <see langword="null"/> when unknown.</param>
+	/// <param name="packageName">Package that owns the binding.</param>
+	/// <param name="bindingName">The binding folder name.</param>
+	/// <param name="change">What happened to the binding in the database.</param>
+	internal static string BuildPackageFolderWarning(
+		bool? isFileDesignModeEnabled, string packageName, string bindingName, BindingChange change) {
+		string folder = $"Pkg/{packageName}/Data/{bindingName}";
+		string verb = change switch {
+			BindingChange.Created => "created in",
+			BindingChange.Refreshed => "re-saved in",
+			_ => "removed from"
+		};
+		string remedy =
+			$"To write the database state to disk, run {FileSystemExportCommandName} for this environment " +
+			$"(CLI: clio {FileSystemExportCommandName} -e <environment>; MCP: clio-run with command " +
+			$"{FileSystemExportCommandName}). It rewrites " +
+			"every package folder on disk from the database, except client modules and C# source code, and " +
+			"removes on-disk items the database does not have, so commit or copy on-disk work that is not in " +
+			$"the database yet before running it. Run it before the next {FileSystemImportCommandName}, which " +
+			"makes the database match the files on disk.";
+		if (isFileDesignModeEnabled is null) {
+			return $"Data binding '{bindingName}' of package '{packageName}' was {verb} the database, but clio " +
+				"could not read whether file system development mode is enabled on this environment. If it is, " +
+				$"the package folder on disk ({folder}) was not updated. {remedy}";
+		}
+		string consequence = change switch {
+			BindingChange.Created => "a commit of that package ships it without this binding",
+			BindingChange.Refreshed => "a commit of that package carries the binding as the last export wrote it",
+			_ => "a commit of that package still ships the removed binding"
+		};
+		return $"File system development mode is enabled: data binding '{bindingName}' of package " +
+			$"'{packageName}' was {verb} the database only. The package folder on disk ({folder}) was not " +
+			$"updated by this change, so {consequence}. {remedy}";
+	}
+
+	/// <summary>What happened to a binding in the database.</summary>
+	internal enum BindingChange {
+		/// <summary>A new binding registration was saved.</summary>
+		Created,
+
+		/// <summary>An existing binding registration was saved again, with new rows or columns or unchanged.</summary>
+		Refreshed,
+
+		/// <summary>The binding registration was deleted.</summary>
+		Removed
 	}
 
 	/// <inheritdoc />

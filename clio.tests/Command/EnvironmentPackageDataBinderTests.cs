@@ -1308,7 +1308,8 @@ public sealed class EnvironmentPackageDataBinderTests {
 				applicationClient,
 				serviceUrlBuilder,
 				new PackageDataBindingWriter(
-					applicationClient, serviceUrlBuilder, targetResolver, CreateSchemaClient()),
+					applicationClient, serviceUrlBuilder, targetResolver, CreateSchemaClient(),
+					CreateDisabledFileDesignMode(), Substitute.For<ILogger>()),
 				targetResolver,
 				Substitute.For<ILogger>());
 		}
@@ -1472,6 +1473,12 @@ public sealed class EnvironmentPackageDataBinderTests {
 			serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Insert).Returns(InsertRowUrl);
 			serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Update).Returns(UpdateRowUrl);
 			return serviceUrlBuilder;
+		}
+
+		private static IFileDesignModeStateReader CreateDisabledFileDesignMode() {
+			IFileDesignModeStateReader stateReader = Substitute.For<IFileDesignModeStateReader>();
+			stateReader.GetIsFileDesignModeEnabled().Returns(false);
+			return stateReader;
 		}
 
 		private IDataBindingSchemaClient CreateSchemaClient() {

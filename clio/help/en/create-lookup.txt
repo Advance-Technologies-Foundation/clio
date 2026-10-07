@@ -25,6 +25,12 @@ DESCRIPTION
     Optionally add extra columns with --column using the format
     <name>:<type>[:<title>], repeating the option for each column.
 
+    The Lookups registration is a package data binding named Lookup_<name>.
+    In file system development mode the platform saves it to the database
+    only: the schema files reach the package folder on disk, the
+    Data/Lookup_<name> folder does not. The command prints a warning naming the
+    folder; run 'clio pkg-to-file-system -e <env>' to write it to disk.
+
 SYNOPSIS
     clio create-lookup [options]
 

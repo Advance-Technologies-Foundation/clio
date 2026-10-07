@@ -79,6 +79,58 @@ public sealed class DataBindingDbToolE2ETests : DataBindingDbFixtureBase {
 	}
 
 	[Test]
+	[Description("Reports through MCP that a DB-first binding exists only in the database exactly when the environment is in file system development mode, naming pkg-to-file-system as the step that writes it into the package folder (GitHub #1747).")]
+	[AllureTag(CreateDbToolName)]
+	[AllureName("Create DB-first data binding reports the package folder gap only in file system mode")]
+	[AllureDescription("Creates a binding through the real clio MCP server, reads the sandbox's file system development mode with get-fsm-mode, and verifies the result carries the database-only warning naming pkg-to-file-system when the mode is on, and no such warning when it is off.")]
+	public async Task CreateDataBindingDb_Should_Report_Package_Folder_Gap_Only_In_File_System_Mode() {
+		// Arrange
+		await using DataBindingDbArrangeContext arrangeContext = await ArrangeAsync(requireEnvironment: true);
+		string bindingName = $"UsrDbFsmE2E{arrangeContext.PackageName}";
+
+		// Act
+		CommandExecutionActResult result = await ActCommandAsync(
+			arrangeContext,
+			CreateDbToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = arrangeContext.EnvironmentName,
+				["package-name"] = arrangeContext.PackageName,
+				["schema-name"] = "Lookup",
+				["binding-name"] = bindingName,
+				["rows"] = """[{"values":{"Name":"E2E FSM gap row"}}]"""
+			});
+		// get-fsm-mode derives the mode from GetApplicationInfo (useStaticFileContent), while the writer reads
+		// WorkspaceExplorerService.GetIsFileDesignMode. Both follow the same fileDesignMode switch on a stand
+		// configured by turn-fsm; a stand where the two disagree fails here, and that disagreement is worth seeing.
+		FsmModeStatusEnvelope fsmStatus = FsmModeStatusResultParser.Extract(
+			await arrangeContext.Session.CallToolAsync(
+				FsmModeTool.GetFsmModeToolName,
+				new Dictionary<string, object?> { ["environmentName"] = arrangeContext.EnvironmentName },
+				arrangeContext.CancellationTokenSource.Token));
+		bool fileDesignModeOn = string.Equals(fsmStatus.Mode, "on", System.StringComparison.OrdinalIgnoreCase);
+		TestContext.Out.WriteLine($"Sandbox file system development mode: {fsmStatus.Mode}; asserting the "
+			+ (fileDesignModeOn ? "warning" : "absence of any warning") + ".");
+
+		// Assert
+		AssertToolCallSucceeded(result);
+		AssertCommandExitCode(result, 0,
+			"the warning must never turn a saved binding into a failure that a caller would retry");
+		AssertOutputDoesNotContain(result, "could not read whether file system development mode is enabled",
+			"the real GetIsFileDesignMode request must be readable, or every binding write carries a conditional warning");
+		if (fileDesignModeOn) {
+			AssertOutputContains(result, $"Data/{bindingName}",
+				"in file system development mode the result must name the package folder that lacks the binding");
+			AssertOutputContains(result, LoadPackagesTool.LoadPackagesToFileSystemToolName,
+				"in file system development mode the result must name the command that writes the binding to disk");
+		} else {
+			AssertOutputDoesNotContain(result, LoadPackagesTool.LoadPackagesToFileSystemToolName,
+				"with file system development mode off the package folder on disk is not the source of the package, so there is nothing to warn about");
+			AssertOutputDoesNotContain(result, $"Data/{bindingName}",
+				"with file system development mode off no package folder is named");
+		}
+	}
+
+	[Test]
 	[Description("Fails create-data-binding-db through MCP with exit code 1 when environment-name is empty, matching the command-layer validation guard.")]
 	[AllureTag(CreateDbToolName)]
 	[AllureName("Create DB-first binding without environment fails with exit code 1")]

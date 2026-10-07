@@ -41,7 +41,8 @@ public sealed class LookupRegistrationServiceTests {
 		LookupRegistrationService sut = new(
 			applicationClient,
 			serviceUrlBuilder,
-			new PackageDataBindingWriter(applicationClient, serviceUrlBuilder, targetResolver, schemaClient),
+			new PackageDataBindingWriter(applicationClient, serviceUrlBuilder, targetResolver, schemaClient,
+				CreateDisabledFileDesignMode(), Substitute.For<ILogger>()),
 			logger);
 
 		// Act
@@ -94,7 +95,8 @@ public sealed class LookupRegistrationServiceTests {
 		LookupRegistrationService sut = new(
 			applicationClient,
 			serviceUrlBuilder,
-			new PackageDataBindingWriter(applicationClient, serviceUrlBuilder, targetResolver, schemaClient),
+			new PackageDataBindingWriter(applicationClient, serviceUrlBuilder, targetResolver, schemaClient,
+				CreateDisabledFileDesignMode(), Substitute.For<ILogger>()),
 			logger);
 
 		// Act
@@ -121,6 +123,12 @@ public sealed class LookupRegistrationServiceTests {
 		ReadJsonArray(saveBody!, "boundRecordIds").Should().Equal([ExistingLookupRowId.ToString()],
 			because: "the canonical binding should point only to the existing Lookup row");
 		logger.Received(1).WriteInfo("Lookup 'UsrOrderStatus' registered in Lookups.");
+	}
+
+	private static IFileDesignModeStateReader CreateDisabledFileDesignMode() {
+		IFileDesignModeStateReader stateReader = Substitute.For<IFileDesignModeStateReader>();
+		stateReader.GetIsFileDesignModeEnabled().Returns(false);
+		return stateReader;
 	}
 
 	private static IServiceUrlBuilder CreateServiceUrlBuilder() {
@@ -181,7 +189,8 @@ public sealed class LookupRegistrationServiceTests {
 		LookupRegistrationService sut = new(
 			applicationClient,
 			serviceUrlBuilder,
-			new PackageDataBindingWriter(applicationClient, serviceUrlBuilder, targetResolver, schemaClient),
+			new PackageDataBindingWriter(applicationClient, serviceUrlBuilder, targetResolver, schemaClient,
+				CreateDisabledFileDesignMode(), Substitute.For<ILogger>()),
 			logger);
 
 		// Act
