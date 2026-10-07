@@ -430,6 +430,37 @@ public sealed class CreateBusinessProcessToolE2ETests {
 	}
 
 	[Test]
+	[Description("Over the real MCP path, a Read data element with a plain record filter is described with its filter DECODED, the server's filterDecodedCompletely true, and the raw platform FilterGroup of its DataSourceFilters parameter left out and marked rather than repeated (ENG-99970: the raw value was 16-27% of a measured describe result). Needs CrtProcessBuilder 1.6.6.39 on the stand; an older package does not judge the decode and the raw value stays.")]
+	[AllureTag(ToolName)]
+	[AllureName("describe-business-process leaves out a completely decoded Read data filter's raw value")]
+	public async Task CreateBusinessProcess_Should_DescribeAReadDataFilter_WithoutItsRawValue() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpReadFilterE2e{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildFilteredReadDataDescriptor(processName)
+		});
+		DescribeProcessResult graph = ParseDescribeGraph(await DescribeAsync(context, processName));
+
+		// Assert
+		JsonSerializer.Serialize(callResult).Should().Contain(processName,
+			because: "a Read data element with a record filter must build (run against an environment with a writable Custom package)");
+		DescribedElement read = graph.Elements.Single(element => element.Name == "ReadContact1");
+		read.Filter.Should().NotBeNull(because: "the Read data element's filter is decoded");
+		read.Filter!.Conditions.Should().Contain(condition => condition.Value == "ClioReadFilterProbe",
+			because: "the decoded filter carries the condition value");
+		read.FilterDecodedCompletely.Should().BeTrue(
+			because: "a plain contains condition is carried back without loss, and the server says so");
+		DescribedParameter raw = read.Parameters.Single(parameter => parameter.Name == "DataSourceFilters");
+		raw.Value.Should().BeNull(because: "the raw FilterGroup duplicates a completely decoded filter and is left out");
+		raw.ValueOmitted.Should().Be("decoded into the element's filter",
+			because: "the parameter says where its left-out value is, so it does not read as empty");
+	}
+
+	[Test]
 	[Description("Over the real MCP path, create-business-process builds a signalStart filter using a relative-date macro (Today), an integer date-part (Year(CreatedOn) = 2026) and a Time-of-day date-part (HourMinute(CreatedOn) = 14:30), and describe-business-process reads the macro and both date-parts back (round-trip of the extended filter vocabulary).")]
 	[AllureTag(ToolName)]
 	[AllureName("create-business-process builds a macro + date-part filter and describe reads them back")]
@@ -502,6 +533,29 @@ public sealed class CreateBusinessProcessToolE2ETests {
 	// A signal-start process whose EntityFilters carry a distinctive constant value, so the describe read-back can
 	// prove the filter round-tripped (build serialize -> describe decode) rather than just that a signalStart exists.
 	// Contact.Name is a base column present on every stand.
+	// A Read data element whose record filter carries a distinctive constant, so the describe read-back can show
+	// the value arrived through the DECODED filter while the raw DataSourceFilters value was left out.
+	private static string BuildFilteredReadDataDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Read Filter E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "ReadContact1", "type": "readData", "caption": "Read the probe contact",
+		      "readData": { "source": "Contact", "mode": "first" },
+		      "filter": { "object": "Contact", "logicalOperation": "and",
+		        "conditions": [ { "column": "Name", "comparison": "contains", "value": "ClioReadFilterProbe" } ] } },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "ReadContact1" },
+		    { "source": "ReadContact1", "target": "EndEvent1" }
+		  ]
+		}
+		""";
+
 	private static string BuildFilteredDescriptor(string processName) =>
 		$$"""
 		{
