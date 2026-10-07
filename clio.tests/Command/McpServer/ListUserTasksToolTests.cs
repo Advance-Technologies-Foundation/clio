@@ -1,3 +1,4 @@
+using System.Reflection;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
@@ -58,6 +59,23 @@ public class ListUserTasksToolTests {
 			because: "an empty environment name is a validation error that must not reach command resolution");
 		commandResolver.DidNotReceiveWithAnyArgs().Resolve<ListUserTasksCommand>(default!);
 		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Description("ENG-102112: list-user-tasks tells the caller to pass a task name on a generic userTask, so its description must carve out PreconfiguredPageUserTask - that route is refused from CrtProcessBuilder 1.6.6.87 and built a page-less element before it.")]
+	[Category("Unit")]
+	public void ListUserTasks_Description_ShouldRoutePreconfiguredPageToItsDedicatedType() {
+		// Arrange
+		string description = typeof(ListUserTasksTool).GetMethod(nameof(ListUserTasksTool.ListUserTasks))!
+			.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description;
+
+		// Act & Assert
+		description.Should().Contain("PreconfiguredPageUserTask (Pre-configured page) is built ONLY as type preconfiguredPage",
+			because: "the description names the generic userTask route as the default, so the one task it is refused for must be named");
+		description.Should().Contain("REFUSED",
+			because: "the caller must learn that the generic route fails, not that it is merely second best");
+		description.Should().Contain("EXCEPT for PreconfiguredPageUserTask",
+			because: "the closing fallback to a generic userTask for an older package must not send the caller back to the refused route");
 	}
 
 	private sealed class FakeListUserTasksCommand : ListUserTasksCommand {

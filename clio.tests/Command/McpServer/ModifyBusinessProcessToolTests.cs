@@ -39,6 +39,21 @@ public class ModifyBusinessProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("ENG-102112: the addElement field list names the preconfiguredPage block and says a generic userTask naming PreconfiguredPageUserTask is refused. Without it the modify contract offered no way to add a Pre-configured page, and the server's refusal pointed at a block the contract never mentioned.")]
+	public void ModifyBusinessProcess_Description_ShouldOfferThePreconfiguredPageBlockOnAddElement() {
+		// Arrange
+		string description = ReadToolDescription(typeof(ModifyBusinessProcessTool),
+			nameof(ModifyBusinessProcessTool.ModifyBusinessProcess));
+
+		// Act & Assert
+		description.Should().Contain("preconfiguredPage? (same block as create-business-process",
+			because: "addElement applies the block, so the contract has to list it");
+		description.Should().Contain("userTask naming PreconfiguredPageUserTask is REFUSED",
+			because: "the caller must learn the generic route is refused before the server tells it");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Pins the destructive classification of modify-business-process. This annotation - not the description prose - is what an MCP host reads to decide whether a call needs human approval, so a silent flip back to false would let a host auto-run it.")]
 	public void ModifyBusinessProcess_Should_Be_Marked_As_Destructive() {
 		// Arrange

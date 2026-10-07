@@ -324,6 +324,28 @@ public class CreateBusinessProcessToolTests {
 			return _exitCode;
 		}
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-102112: the always-loaded tool description and the prompt route a Pre-configured page to type preconfiguredPage and say the generic userTask route naming PreconfiguredPageUserTask is refused. That route cannot carry the page, and before CrtProcessBuilder 1.6.6.87 it built green and failed at run time, so the prose is what keeps a caller off it.")]
+	public void CreateBusinessProcessTool_ShouldSteerAPreconfiguredPageOffTheGenericUserTaskRoute() {
+		// Arrange
+		string toolDescription = typeof(CreateBusinessProcessTool)
+			.GetMethod(nameof(CreateBusinessProcessTool.CreateBusinessProcess))!
+			.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description;
+
+		// Act
+		string prompt = CreateBusinessProcessPrompt.PromptByEnvironmentName("sandbox");
+
+		// Assert
+		// Whole phrases on purpose: both surfaces already say "refused" about other things (a Classic UI page,
+		// an unknown type), so a bare word would pass with this sentence deleted.
+		toolDescription.Should().Contain("userTask naming PreconfiguredPageUserTask is REFUSED",
+			because: "the always-loaded description must say the generic route is refused, not merely discouraged");
+		prompt.Should().Contain("`PreconfiguredPageUserTask`, which cannot carry the block and is refused",
+			because: "the prompt steers the build and must name the task the generic route is refused for");
+	}
+
 	[Test]
 	[Category("Unit")]
 	[Description("Pins the DIRECTION of the record-filter consequence in the always-loaded tool description and in the prompt. An ABSENT record filter is the WIDENING state - the runtime gates on a non-empty filter, so the query runs unfiltered with record permissions disabled - while a PRESENT-but-conditionless one is the inert state. The shipped text had these two swapped, on every surface at once, which told callers that the widest permission change the feature can produce was harmless. Prose is the whole contract here: the element has no output parameters, so nothing at run time contradicts a wrong description.")]

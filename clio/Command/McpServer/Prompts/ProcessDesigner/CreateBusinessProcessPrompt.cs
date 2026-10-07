@@ -81,7 +81,8 @@ public static class CreateBusinessProcessPrompt {
 		 `value`+`unit` pair and the unit is required with a non-zero value, because the platform stores the number
 		 and the unit separately and a number alone silently keeps the old unit.
 		 To hand a user a purpose-built page and resume when they press a completing button, add a
-		 `preconfiguredPage` element with a `preconfiguredPage` block. Its `page` must already exist as a
+		 `preconfiguredPage` element with a `preconfiguredPage` block — never a generic `userTask` naming
+		 `PreconfiguredPageUserTask`, which cannot carry the block and is refused. Its `page` must already exist as a
 		 **Freedom UI** page — the server never creates one, and it refuses both an unknown page and a Classic
 		 UI page — so when nothing suitable exists, propose a page to the user and create it through the normal
 		 `create-page` flow FIRST. At least one completing `button` is REQUIRED and is not defaulted for you:

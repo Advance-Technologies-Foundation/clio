@@ -343,6 +343,45 @@ public sealed class CreateBusinessProcessToolE2ETests {
 				+ "parameter reference is shown by the parameter NAME, not by the metapath the caller sent");
 	}
 
+	[Test]
+	[Description("Over the real MCP path, a generic userTask naming PreconfiguredPageUserTask is refused BY THE SERVER and the process is not created (ENG-102112). That route can never carry the preconfiguredPage block, and before CrtProcessBuilder 1.6.6.87 it built green with no page, which failed at run time with an ItemNotFoundException. Needs CrtProcessBuilder 1.6.6.87 on the stand.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process refuses a generic userTask Pre-configured page")]
+	public async Task CreateBusinessProcess_Should_RefuseAGenericUserTaskPreconfiguredPage() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpGenericPrePageE2e{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildGenericPreconfiguredPageDescriptor(processName)
+		});
+
+		// Assert
+		string describeJson = JsonSerializer.Serialize(await DescribeAsync(context, processName));
+		describeJson.Should().Contain("was not found",
+			because: "the refusal must leave nothing behind - a saved process with an unconfigured page element is "
+				+ "exactly the defect, so the message alone would not prove the fix");
+		// The tool TEXT, not the serialized result: serializing escapes the apostrophes the message quotes with.
+		string text = string.Join(" ", callResult.Content.OfType<TextContentBlock>().Select(block => block.Text));
+		text.Should().Contain("PrePage1",
+			because: "the refusal names the element the caller has to change");
+		text.Should().Contain("type 'preconfiguredPage'",
+			because: "the refusal names the only route that carries the page, its buttons and data sources");
+		text.Should().Contain("get-process-page-facts",
+			because: "the buttons and data sources are facts of the page, and the refusal says where to read them");
+	}
+
+	private static string BuildGenericPreconfiguredPageDescriptor(string processName) =>
+		"{\"name\":\"" + processName + "\",\"caption\":\"Clio BP Generic Pre-configured Page E2E\","
+		+ "\"packageName\":\"Custom\","
+		+ "\"elements\":[{\"name\":\"StartEvent1\",\"type\":\"startEvent\"},"
+		+ "{\"name\":\"PrePage1\",\"type\":\"userTask\",\"userTaskName\":\"PreconfiguredPageUserTask\"},"
+		+ "{\"name\":\"EndEvent1\",\"type\":\"endEvent\"}],"
+		+ "\"flows\":[{\"source\":\"StartEvent1\",\"target\":\"PrePage1\"},"
+		+ "{\"source\":\"PrePage1\",\"target\":\"EndEvent1\"}]}";
+
 	private static string BuildFormulaMappingDescriptor(string processName, string expression) =>
 		"{\"name\":\"" + processName + "\",\"caption\":\"Clio BP Create Formula E2E\",\"packageName\":\"Custom\","
 		+ "\"elements\":[{\"name\":\"StartEvent1\",\"type\":\"startEvent\"},"

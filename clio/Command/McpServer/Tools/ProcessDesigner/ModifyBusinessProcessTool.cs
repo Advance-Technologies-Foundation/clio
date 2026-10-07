@@ -69,6 +69,8 @@ public class ModifyBusinessProcessTool(
 		 + "email? (sendEmail elements — same block as create-business-process), "
 		 + "approval? (approval elements — same block as create-business-process), "
 		 + "performer? (performTask elements — same block as create-business-process: who performs the task), "
+		 + "preconfiguredPage? (same block as create-business-process; a generic userTask naming "
+		 + "PreconfiguredPageUserTask is REFUSED), "
 		 + "signal? {entity, on:added|modified|deleted, changedColumns?:[<ColumnName>,...]}, "
 		 + "formula?, scriptTask?), "
 		 + "removeElement (with 'elementName' = the element's local name or UId), addFlow "
