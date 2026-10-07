@@ -26,17 +26,11 @@ public sealed class CreateUiProjectToolE2ETests : McpContractFixtureBase {
 
 	[SetUp]
 	public async Task CreateWorkspaceAsync() {
-		_workspace = Path.Combine(Path.GetTempPath(), $"clio-ui-project-e2e-{Guid.NewGuid():N}");
+		// The base class deletes fixture directories best-effort at fixture teardown.
+		_workspace = CreateFixtureDirectory("ui-project");
 		Directory.CreateDirectory(Path.Combine(_workspace, ".clio"));
 		await File.WriteAllTextAsync(Path.Combine(_workspace, ".clio", "workspaceSettings.json"),
 			"{\"Packages\":[],\"ApplicationVersion\":\"10.0.0\"}");
-	}
-
-	[TearDown]
-	public void DeleteWorkspace() {
-		if (Directory.Exists(_workspace)) {
-			Directory.Delete(_workspace, true);
-		}
 	}
 
 	[Test]
@@ -55,7 +49,8 @@ public sealed class CreateUiProjectToolE2ETests : McpContractFixtureBase {
 		string projectPath = Path.Combine(_workspace, "projects", projectName);
 		JsonNode packageJson = JsonNode.Parse(await File.ReadAllTextAsync(
 			Path.Combine(projectPath, "package.json"), cancellation.Token))!;
-		string devkitRange = packageJson["dependencies"]?["@creatio-devkit/common"]?.GetValue<string>() ?? string.Empty;
+		string? devkitRange = packageJson["dependencies"]?["@creatio-devkit/common"]?.GetValue<string>();
+		devkitRange.Should().NotBeNullOrEmpty(because: "every UI project template depends on @creatio-devkit/common");
 		devkitRange.Should().NotStartWith("^0.80",
 			because: "Creatio 10.0.0 must not fall back to a legacy 8.0.x snapshot and its SDK line");
 		execution.Output.Should().Contain(message => message.MessageType == LogDecoratorType.Info
@@ -64,9 +59,10 @@ public sealed class CreateUiProjectToolE2ETests : McpContractFixtureBase {
 				&& message.Value.Contains("requested Creatio version: 10.0.0", StringComparison.Ordinal)
 				&& message.Value.Contains($"@creatio-devkit/common: {devkitRange}.", StringComparison.Ordinal),
 			because: "the caller must see which template and SDK range the requested version mapped to");
-		packageJson["scripts"]?["clean"]?.GetValue<string>().Should().Contain(
-			$"packages/{PackageName}/Files/src/js/{projectName}",
-			because: "the bundle belongs in the hosting package's Files/src/js folder");
+		string? cleanScript = packageJson["scripts"]?["clean"]?.GetValue<string>();
+		cleanScript.Should().NotBeNull(because: "the current template removes its bundle through the npm clean script")
+			.And.Contain($"packages/{PackageName}/Files/src/js/{projectName}",
+				because: "the bundle belongs in the hosting package's Files/src/js folder");
 	}
 
 	[Test]

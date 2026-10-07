@@ -34,12 +34,13 @@ namespace Clio.Package
 		/// selects the closest legacy template under <c>tpl/ui/&lt;version&gt;</c>. The selected template and
 		/// the <c>@creatio-devkit/common</c> range it declares are reported through the logger.
 		/// </param>
-		/// <exception cref="ArgumentException">
-		/// <paramref name="creatioVersion"/> is not a valid version, or is older than every shipped template.
-		/// </exception>
 		/// <param name="enableDownloadPackage">
 		/// Callback that decides whether an environment package should be downloaded when no local package exists.
 		/// </param>
+		/// <exception cref="ArgumentException">
+		/// <paramref name="projectName"/> is not snake_case, or <paramref name="creatioVersion"/> is not a valid
+		/// version or is older than every shipped template. Both are detected before anything is written.
+		/// </exception>
 		void Create(string projectName, string packageName, string vendorPrefix, bool isEmpty, string creatioVersion,
 			Func<string, bool> enableDownloadPackage);
 
@@ -94,7 +95,7 @@ namespace Clio.Package
 		private const string PackageJsonFileName = "package.json";
 		private const string DevkitPackageName = "@creatio-devkit/common";
 		private const string InvalidCreatioVersionMessage =
-			"Creatio version '{0}' is not a valid version. Use major.minor[.build], for example 10.0.0.";
+			"Creatio version '{0}' is not a valid version. Use major.minor[.build[.revision]], for example 10.0.0.";
 		private const string UnsupportedCreatioVersionMessage =
 			"Creatio version '{0}' is not supported: the oldest UI project template targets Creatio {1}.";
 		private const string CurrentTemplateReportMessage =
@@ -317,8 +318,9 @@ namespace Clio.Package
 				return null;
 			}
 			if (!Version.TryParse(creatioVersion.Trim(), out Version requestedVersion)) {
+				// No paramName: the message is printed as-is by the CLI, where the option is --version.
 				throw new ArgumentException(string.Format(CultureInfo.InvariantCulture,
-					InvalidCreatioVersionMessage, creatioVersion), nameof(creatioVersion));
+					InvalidCreatioVersionMessage, creatioVersion));
 			}
 			if (requestedVersion >= CurrentTemplateMinimumCreatioVersion) {
 				return null;
@@ -332,7 +334,7 @@ namespace Clio.Package
 			if (compatibleVersion is null) {
 				Version oldestVersion = legacyVersions.Count > 0 ? legacyVersions.Min() : CurrentTemplateMinimumCreatioVersion;
 				throw new ArgumentException(string.Format(CultureInfo.InvariantCulture,
-					UnsupportedCreatioVersionMessage, creatioVersion, oldestVersion), nameof(creatioVersion));
+					UnsupportedCreatioVersionMessage, creatioVersion, oldestVersion));
 			}
 			return compatibleVersion;
 		}
@@ -341,10 +343,10 @@ namespace Clio.Package
 		/// Reports which template produced the project and the <c>@creatio-devkit/common</c> range it declares,
 		/// so a caller that asked for a specific Creatio version sees the mapping instead of only "Done".
 		/// </summary>
-		private void ReportSelectedTemplate(string templateFolderName, string creatioVersion,
-			Version legacyTemplateVersion, string projectPath) {
+		private void ReportSelectedTemplate(string projectName, string templateFolderName, string creatioVersion,
+			Version legacyTemplateVersion) {
 			string requestedVersion = string.IsNullOrWhiteSpace(creatioVersion) ? NotSpecifiedValue : creatioVersion.Trim();
-			string devkitRange = ReadDeclaredDevkitRange(Path.Combine(projectPath, PackageJsonFileName));
+			string devkitRange = ReadDeclaredDevkitRange(Path.Combine(ProjectsPath, projectName, PackageJsonFileName));
 			string message = legacyTemplateVersion is null
 				? string.Format(CultureInfo.InvariantCulture, CurrentTemplateReportMessage, templateFolderName,
 					CurrentTemplateMinimumCreatioVersion, requestedVersion, DevkitPackageName, devkitRange)
@@ -353,11 +355,15 @@ namespace Clio.Package
 			_logger.WriteInfo(message);
 		}
 
+		/// <summary>
+		/// Best-effort read of the devkit range for the report only: the project is already in place, so a
+		/// failure here must never fail the command.
+		/// </summary>
 		private string ReadDeclaredDevkitRange(string packageJsonPath) {
-			if (!_fileSystem.ExistsFile(packageJsonPath)) {
-				return UnknownValue;
-			}
 			try {
+				if (!_fileSystem.ExistsFile(packageJsonPath)) {
+					return UnknownValue;
+				}
 				JsonNode devkitNode = JsonNode.Parse(_fileSystem.ReadAllText(packageJsonPath))?["dependencies"]?[DevkitPackageName];
 				return devkitNode is JsonValue devkitValue && devkitValue.TryGetValue(out string range)
 					&& !string.IsNullOrWhiteSpace(range)
@@ -366,12 +372,17 @@ namespace Clio.Package
 			} catch (JsonException) {
 				return UnknownValue;
 			} catch (InvalidOperationException) {
+				// The JSON root or "dependencies" is not an object.
+				return UnknownValue;
+			} catch (IOException) {
+				return UnknownValue;
+			} catch (UnauthorizedAccessException) {
 				return UnknownValue;
 			}
 		}
 
-		private void CreateProject(string projectName, string packageName, string vendorPrefix, bool isEmpty,
-			string creatioVersion, Version legacyTemplateVersion) {
+		private string CreateProject(string projectName, string packageName, string vendorPrefix, bool isEmpty,
+			Version legacyTemplateVersion) {
 			_fileSystem.CreateDirectoryIfNotExists(ProjectsPath);
 			string projectPath = Path.Combine(ProjectsPath, projectName);
 			string stagingPath = Path.Combine(ProjectsPath, $".{projectName}.{Guid.NewGuid():N}.tmp");
@@ -395,7 +406,7 @@ namespace Clio.Package
 				}
 				throw;
 			}
-			ReportSelectedTemplate(templateFolderName, creatioVersion, legacyTemplateVersion, projectPath);
+			return templateFolderName;
 		}
 
 		/// <summary>
@@ -493,8 +504,9 @@ namespace Clio.Package
 					CreatePackage(packageName);
 				}
 			}
-			CreateProject(projectName, packageName, vendorPrefix, isEmpty, creatioVersion, legacyTemplateVersion);
+			string templateFolderName = CreateProject(projectName, packageName, vendorPrefix, isEmpty, legacyTemplateVersion);
 			IntegrateEsprojIntoSolution(projectName, packageName);
+			ReportSelectedTemplate(projectName, templateFolderName, creatioVersion, legacyTemplateVersion);
 		}
 
 		#endregion

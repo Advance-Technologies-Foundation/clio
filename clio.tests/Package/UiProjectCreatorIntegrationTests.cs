@@ -233,6 +233,8 @@ public class UiProjectCreatorIntegrationTests {
 		string shippedPackageJsonPath = Path.Combine(
 			_workingDirectoriesProvider.GetTemplateFolderPath(templateFolderName), "package.json");
 		JsonNode shippedDependencies = JsonNode.Parse(File.ReadAllText(shippedPackageJsonPath))?["dependencies"];
+		shippedDependencies.Should().NotBeNull(
+			because: "the comparison below is meaningful only when the shipped template declares dependencies");
 
 		// Act
 		_creator.Create(ProjectName, PackageName, VendorPrefix, isEmpty, "10.0.0", _ => false);

@@ -45,7 +45,9 @@ both the C# package assembly and the Angular client bundle. Specifically it:
 | `8.0.10` up to `8.3.3` | legacy template `ui/8.0.10` |
 | `8.0.8` – `8.0.9` | legacy template `ui/8.0.8` |
 | `8.0.3` – `8.0.7` | legacy template `ui/8.0.3` |
-| below `8.0.3`, or not a `major.minor[.build]` version | rejected before any package or project is created |
+| below `8.0.3`, or not a version such as `10.0.0` | rejected before any package or project is created |
+
+A two-part version is compared as `.0`: `8.3` means `8.3.0` and selects `ui/8.0.10`.
 
 Every template writes the bundle to `packages/<package-name>/Files/src/js/<name>`. On success the
 command prints the template it used and the `@creatio-devkit/common` range written to

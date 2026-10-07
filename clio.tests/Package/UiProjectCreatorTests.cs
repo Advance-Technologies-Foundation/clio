@@ -537,6 +537,7 @@ public class UiProjectCreatorTests {
 	}
 
 	[TestCase("8.3.3", "8.0.10")]
+	[TestCase("8.3", "8.0.10")]
 	[TestCase("8.0.10", "8.0.10")]
 	[TestCase("8.0.9", "8.0.8")]
 	[TestCase("8.0.3", "8.0.3")]
@@ -556,7 +557,9 @@ public class UiProjectCreatorTests {
 
 	[TestCase("ten")]
 	[TestCase("10")]
+	[TestCase("../8.0.10")]
 	[TestCase("7.9.0")]
+	[TestCase("8.0.2")]
 	[Description("Rejects an unparsable or unsupported Creatio version before any package or project is created.")]
 	public void Create_ShouldRejectCreatioVersion_BeforeAnySideEffect_WhenVersionIsInvalidOrUnsupported(
 		string creatioVersion) {
@@ -572,7 +575,61 @@ public class UiProjectCreatorTests {
 			.WithMessage($"*Creatio version '{creatioVersion}'*",
 				because: "the message must name the rejected version so the caller can correct it");
 		_packageCreator.DidNotReceiveWithAnyArgs().Create(default, default);
+		_packageDownloader.DidNotReceiveWithAnyArgs().DownloadPackage(default, default, default);
+		_workspace.DidNotReceiveWithAnyArgs().AddPackageIfNeeded(default);
+		_fileSystem.DidNotReceiveWithAnyArgs().CreateDirectoryIfNotExists(default);
 		_templateProvider.DidNotReceiveWithAnyArgs().CopyTemplateFolder(default, default, default, default);
+		_solutionCreator.DidNotReceiveWithAnyArgs().AddProjectToSolution(default, default);
+	}
+
+	[Test]
+	[Description("Names the oldest shipped template when the requested Creatio version is older than all of them.")]
+	public void Create_ShouldNameOldestTemplate_WhenCreatioVersionIsOlderThanEveryTemplate() {
+		// Arrange
+		StubLegacyTemplateDirectories();
+
+		// Act
+		Action act = () => _creator.Create(ProjectName, PackageName, VendorPrefix, true, "8.0.2", _ => false);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "no shipped template targets Creatio 8.0.2")
+			.Which.Message.Should().Be(
+				"Creatio version '8.0.2' is not supported: the oldest UI project template targets Creatio 8.0.3.",
+				because: "the caller needs the lowest supported version, and the CLI prints the message as-is without a parameter suffix");
+	}
+
+	[Test]
+	[Description("Falls back to the current template's minimum in the message when no legacy template is shipped.")]
+	public void Create_ShouldNameCurrentTemplateMinimum_WhenNoLegacyTemplateIsShipped() {
+		// Arrange
+		_templateProvider.GetTemplateDirectories("ui").Returns(Array.Empty<string>());
+
+		// Act
+		Action act = () => _creator.Create(ProjectName, PackageName, VendorPrefix, true, "8.2.0", _ => false);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "without legacy templates only the current template remains")
+			.WithMessage("*targets Creatio 8.3.4.",
+				because: "the current template's minimum is then the lowest supported version");
+	}
+
+	[Test]
+	[Description("Reports an unknown SDK range and still completes the solution integration when the generated package.json cannot be read.")]
+	public void Create_ShouldCompleteAndReportUnknownDevkitRange_WhenGeneratedPackageJsonCannotBeRead() {
+		// Arrange
+		string packageJsonPath = Path.Combine(RootPath, "projects", ProjectName, "package.json");
+		_fileSystem.ExistsFile(packageJsonPath).Returns(true);
+		_fileSystem.ReadAllText(packageJsonPath).Returns(_ => throw new IOException("locked"));
+
+		// Act
+		Action act = () => _creator.Create(ProjectName, PackageName, VendorPrefix, false, "10.0.0", _ => false);
+
+		// Assert
+		act.Should().NotThrow(because: "the template report is informational and must not fail a created project");
+		_solutionCreator.Received(1).AddProjectToSolution(
+			Path.Combine(RootPath, "MainSolution.slnx"), Arg.Any<IEnumerable<SolutionProject>>());
+		_logger.Received(1).WriteInfo(Arg.Is<string>(message =>
+			message.EndsWith("@creatio-devkit/common: unknown.", StringComparison.Ordinal)));
 	}
 
 	[Test]
