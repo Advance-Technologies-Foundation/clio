@@ -183,13 +183,15 @@ public sealed class ToolContractPayloadBudgetTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("No single tool's resolved contract exceeds the per-fetch byte budget, ratcheting what one get-tool-contract call costs an agent.")]
+	[Description("No single tool's FULL contract exceeds the per-fetch byte budget, ratcheting what the complete contract costs an agent that asks for it with detail=full.")]
 	public void GetToolContracts_ShouldKeepLargestContractWithinBudget_WhenEveryIndexedToolIsNamed() {
 		// Arrange
-		// Every tool is resolved BY NAME, one call each, exactly as an agent reaches a long-tail tool.
-		// detail=full is deliberately NOT used: it answers from CanonicalToolNames, i.e. the CURATED
-		// catalog only, so every uncurated tool - which is where the unbounded [Description] attributes
-		// actually live - is absent from that payload and would escape the ratchet entirely.
+		// Every tool is resolved BY NAME, one call each, exactly as an agent reaches a long-tail tool, and
+		// with detail=full: since ENG-100154 a default named lookup is FITTED to one inline reply, so without
+		// it the largest contracts would be measured in their short form and this ratchet would pass while
+		// measuring nothing. (A no-names detail=full is not the same request - it answers from
+		// CanonicalToolNames, the CURATED catalog only, and would drop every uncurated tool, which is where
+		// the unbounded [Description] attributes actually live.)
 		ToolContractGetTool tool = BuildToolOverDefaultSurface();
 		string[] toolNames = (tool.GetToolContracts().Index ?? [])
 			.Select(entry => entry.Name)
@@ -199,7 +201,8 @@ public sealed class ToolContractPayloadBudgetTests {
 		(string Name, int Bytes)[] resolved = toolNames
 			.Select(name => {
 				ToolContractDefinition? contract = tool
-					.GetToolContracts(new ToolContractGetArgs([name])).Tools?.SingleOrDefault();
+					.GetToolContracts(new ToolContractGetArgs([name], ToolContractShortForm.FullDetail))
+					.Tools?.SingleOrDefault();
 				return (
 					Name: name,
 					Bytes: contract is null
@@ -225,6 +228,106 @@ public sealed class ToolContractPayloadBudgetTests {
 			.Select(entry => $"{entry.Name} {entry.Bytes}B"));
 		largest.Bytes.Should().BeLessThanOrEqualTo(MaxToolContractSerializedBytes,
 			because: $"one get-tool-contract call must stay under {MaxToolContractSerializedBytes} bytes; largest three are {leaderboard}. If you did not edit the tool named first, check yours - this ceiling tracks the MAXIMUM, so any description crossing it fails here. Raising it is the moment to ask whether the text belongs in a [Description] at all");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A default named lookup of ANY single tool fits one inline reply (ENG-100154), so reading a contract is one turn and never a spill to a file that the agent then greps back in pieces.")]
+	public void GetToolContracts_ShouldFitEverySingleToolLookupInline_WhenDetailIsOmitted() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolOverDefaultSurface();
+		string[] toolNames = (tool.GetToolContracts().Index ?? []).Select(entry => entry.Name).ToArray();
+
+		// Act
+		(string Name, int Bytes, string? Detail)[] replies = toolNames
+			.Select(name => {
+				ToolContractGetResponse reply = tool.GetToolContracts(new ToolContractGetArgs([name]));
+				return (Name: name, Bytes: Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(reply)),
+					Detail: reply.Tools?.SingleOrDefault()?.Detail);
+			})
+			.ToArray();
+
+		// Assert
+		toolNames.Should().NotBeEmpty(because: "the compact index enumerates every tool this guard has to cover");
+		replies.Where(reply => reply.Bytes > ToolContractShortForm.InlineReplyBudgetBytes)
+			.Select(reply => $"{reply.Name} {reply.Bytes}B")
+			.Should().BeEmpty(
+				because: $"a single default lookup must fit {ToolContractShortForm.InlineReplyBudgetBytes} bytes; a tool "
+					+ "listed here does not fit even in its short form, so its short form keeps too much");
+		replies.Where(reply => reply.Detail is not null).Should().NotBeEmpty(
+			because: "anti-vacuity: at least the process-designer contracts are far over the budget in full, so a "
+				+ "run in which nothing came back short did not exercise the fitting at all");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The request measured in the CAADT transcripts - the seven process-designer contracts in ONE call, 34 KB for one of them in full - fits one inline reply by default (ENG-100154).")]
+	public void GetToolContracts_ShouldFitTheSevenProcessDesignerContractsInline_WhenRequestedTogether() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolOverDefaultSurface();
+		string[] processTools = [
+			"create-business-process", "modify-business-process", "describe-business-process",
+			"validate-process-graph", "list-user-tasks", "modify-business-process-as-new-version",
+			"set-active-business-process-version"
+		];
+
+		// Act
+		ToolContractGetResponse reply = tool.GetToolContracts(new ToolContractGetArgs(processTools));
+		int replyBytes = Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(reply));
+
+		// Assert
+		reply.Tools.Should().HaveCount(processTools.Length,
+			because: "fitting shortens contracts, it never drops one the caller asked for");
+		replyBytes.Should().BeLessThanOrEqualTo(ToolContractShortForm.InlineReplyBudgetBytes,
+			because: $"this exact request answered with well over 100 KB before ENG-100154 and was grepped back in "
+				+ $"pieces through the shell; measured {replyBytes} bytes");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The seven process-designer contracts still fit one inline reply when every one of them is short and their shared error codes are carried once - the floor fitting can reach, so growth in their kept text is caught here before the default reply stops fitting.")]
+	public void GetToolContracts_ShouldKeepTheSevenProcessDesignerContractsShortFormsWithinBudget() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolOverDefaultSurface();
+		string[] processTools = [
+			"create-business-process", "modify-business-process", "describe-business-process",
+			"validate-process-graph", "list-user-tasks", "modify-business-process-as-new-version",
+			"set-active-business-process-version"
+		];
+		ToolContractDefinition[] full = [.. tool.GetToolContracts(
+			new ToolContractGetArgs(processTools, ToolContractShortForm.FullDetail)).Tools!];
+
+		// Act
+		// A measure that never fits shortens every contract; destructive leads are the longer, conservative case.
+		ToolContractDefinition[] floor = [.. ToolContractShortForm.Fit(full, _ => int.MaxValue, _ => true)];
+		int floorBytes = ToolContractShortForm.MeasureBytes(new ToolContractGetResponse(true, Tools: floor));
+		ToolContractDefinition largest = floor.MaxBy(ToolContractShortForm.MeasureBytes)!;
+
+		// Assert
+		floorBytes.Should().BeLessThanOrEqualTo(ToolContractShortForm.InlineReplyBudgetBytes,
+			because: $"with nothing left to cut the seven short forms measure {floorBytes} bytes; the largest kept form is "
+				+ $"{largest.Name} at {ToolContractShortForm.MeasureBytes(largest)} bytes. Trim the kept text of the "
+				+ "contract you lengthened (its lead, a safety-marked sentence, a field's first sentence) - do not raise "
+				+ "the budget, which sits below the 21.3 KB a Copilot CLI tool result spills to a file at");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("describe-environment - the named contract ClioRing reads - comes back from a default lookup byte-identical to its full form, so fitting never changes what Ring receives.")]
+	public void GetToolContracts_ShouldReturnDescribeEnvironmentUnchanged_ByDefault() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolOverDefaultSurface();
+
+		// Act
+		ToolContractGetResponse byDefault = tool.GetToolContracts(new ToolContractGetArgs(["describe-environment"]));
+		ToolContractGetResponse full = tool.GetToolContracts(
+			new ToolContractGetArgs(["describe-environment"], ToolContractShortForm.FullDetail));
+
+		// Assert
+		byDefault.Tools!.Single().Detail.Should().BeNull(
+			because: "ClioRing parses this contract and must never receive a short form of it");
+		JsonSerializer.Serialize(byDefault).Should().Be(JsonSerializer.Serialize(full),
+			because: "ClioRing compatibility rests on this contract being byte-identical with and without detail=full");
 	}
 
 	// Builds get-tool-contract over the REAL invoker registry so uncurated tools resolve through the same
