@@ -45,9 +45,10 @@ hosts [options]
 ## Options
 
 ```bash
---fail-on-error         Return non-zero exit code on errors
+--fail-on-error         Accepted for compatibility; has no effect on hosts, which
+                        already exits with 1 when listing fails
 
---fail-on-warning       Return non-zero exit code on warnings
+--fail-on-warning       Accepted for compatibility; has no effect on hosts
 ```
 
 ## Example
@@ -56,11 +57,8 @@ hosts [options]
 clio hosts
 lists all registered Creatio environments with their status
 
-clio hosts
+clio list-hosts
 same as above, using alias
-
-clio hosts --fail-on-error
-list hosts, returning error code on failure
 
 Example output (Windows with IIS):
 Scanning 3 environment(s) in parallel...

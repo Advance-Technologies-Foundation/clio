@@ -35,9 +35,10 @@ SYNOPSIS
     hosts [options]
 
 OPTIONS
-    --fail-on-error         Return non-zero exit code on errors
+    --fail-on-error         Accepted for compatibility; has no effect on hosts, which
+                            already exits with 1 when listing fails
 
-    --fail-on-warning       Return non-zero exit code on warnings
+    --fail-on-warning       Accepted for compatibility; has no effect on hosts
 
 EXAMPLE
     clio hosts
@@ -45,9 +46,6 @@ EXAMPLE
 
     clio list-hosts
         same as above, using alias
-
-    clio hosts --fail-on-error
-        list hosts, returning error code on failure
 
     Example output (Windows with IIS):
     Scanning 3 environment(s) in parallel...

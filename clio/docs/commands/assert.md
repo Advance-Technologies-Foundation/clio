@@ -52,6 +52,9 @@ clio assert <scope> [options]
 
     --all                           Run full validation checks applicable to selected scope
                                     Cannot be combined with explicit scope assertion options
+    --fail-on-error                 Accepted for compatibility; has no effect on assert, which
+                                    already exits with 1 when an assertion fails
+    --fail-on-warning               Accepted for compatibility; has no effect on assert
 
 ## Kubernetes Options
 
