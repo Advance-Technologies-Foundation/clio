@@ -34,8 +34,9 @@ correct `SchemaManager` for every supported workspace item.
 
 The platform delete removes database records only. When the environment is in
 file system mode (its file design mode flag is on, the same flag `pkg-to-db`
-checks), the item's files would stay in the package folder, and the next
-`pkg-to-db` would register the item again.
+checks), the item's files would stay in the package folder: the next
+`pkg-to-db` would register the item again, and until then the next
+configuration publish can fail with `Item with name "<name>" not found`.
 In workspace mode and with `--remote` alike, the command therefore also removes
 the item's folders from the package folder on the machine where clio runs:
 

@@ -28,7 +28,8 @@ DESCRIPTION
     The platform delete removes database records only. When the environment is
     in file system mode (its file design mode flag is on), the command also removes
     the item's folders from the package folder on the machine where clio runs,
-    otherwise the next pkg-to-db would register the item again:
+    otherwise the next pkg-to-db would register the item again and the next
+    configuration publish can fail with Item with name "<name>" not found:
         schema              Schemas/<name>/ and Resources/<name>.*/
         localization item   Resources/<name>.*/
         data binding        Data/<name>/

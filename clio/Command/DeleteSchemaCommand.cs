@@ -142,7 +142,8 @@ public class DeleteSchemaCommand : RemoteCommand<DeleteSchemaOptions> {
 		IReadOnlyList<string> expected = PackageItemFolders.GetRules(itemType, itemName)
 			.Select(rule => rule.Describe()).ToList();
 		string expectedFolders = expected.Count > 0 ? string.Join(", ", expected) : "every folder that holds it";
-		string consequence = $"otherwise the next pkg-to-db registers '{itemName}' again";
+		string consequence = $"otherwise the next pkg-to-db registers '{itemName}' again and the next "
+			+ $"configuration publish can fail with 'Item with name \"{itemName}\" not found'";
 		bool? isFileDesignMode = ReadFileDesignMode(out string probeProblem);
 		if (isFileDesignMode == false) {
 			// The site does not read the package folder, so its files are not the source of truth.
