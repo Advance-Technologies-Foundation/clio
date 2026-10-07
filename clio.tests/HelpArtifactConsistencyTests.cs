@@ -124,6 +124,7 @@ internal class HelpArtifactConsistencyTests {
 	[TestCase("update-entity-schema")]
 	[TestCase("modify-entity-schema-column")]
 	[TestCase("assert")]
+	[TestCase("hosts")]
 	[Description("The OPTIONS sections of the manual help file of each command that runtime --help renders from its .txt list every visible option of the command, including inherited ones such as --timeout and the environment credential options, and the file names none of the long names only a Hidden option declares (ENG-102433).")]
 	public void ManualHelpFile_ShouldListVisibleOptionsAndOmitHiddenOnes(string commandName) {
 		// Arrange
@@ -135,13 +136,10 @@ internal class HelpArtifactConsistencyTests {
 			.Where(item => item.Option is not null && !string.IsNullOrWhiteSpace(item.Option.LongName))
 			.ToArray();
 		// EnvironmentOptions is documented as a short environment block that lists only the credential options
-		// (EnvironmentCredentialOptionNames), not every connection setting. BaseCommandOptions declares its long names with the leading dashes ("--fail-on-error"), so the
-		// parser accepts only "----fail-on-error"; that is a separate defect, and those names are not
-		// documented as usable options.
+		// (EnvironmentCredentialOptionNames), not every connection setting.
 		string[] visibleNames = options
 			.Where(item => !item.Option.Hidden
-				&& item.Property.DeclaringType != typeof(EnvironmentOptions)
-				&& item.Property.DeclaringType != typeof(BaseCommandOptions))
+				&& item.Property.DeclaringType != typeof(EnvironmentOptions))
 			.Select(item => item.Option.LongName)
 			.Concat(typeof(EnvironmentOptions).IsAssignableFrom(command.OptionsType) ? EnvironmentCredentialOptionNames : [])
 			.Distinct(StringComparer.Ordinal)
