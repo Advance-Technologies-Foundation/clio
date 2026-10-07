@@ -1778,7 +1778,7 @@ public sealed class ComponentInfoToolTests {
 			because: "the inline response is the default and stays byte-for-byte unchanged");
 	}
 
-	private const string PinnedDetailWireJson = """{"success":true,"mode":"detail","count":1,"componentType":"crt.WithDocs","description":"Sample with attached documentation.","container":false,"resolvedTargetVersion":"latest","resolvedFrom":"latest-fallback","versionWarning":"Catalog was loaded from \u0027latest\u0027 (a superset of all GA versions). A component listed here may not exist in the target environment\u0027s actual platform version, so a page built against it can fail to render at runtime. The target platform version could not be determined: do NOT silently assume this component set. Before generating an implementation plan, tell the user the version is unknown and request explicit confirmation before proceeding against \u0027latest\u0027. To scope results to a real version, pass an explicit version or target a registered environment so clio can resolve its platform version (no cliogate required \u2014 resolved via ApplicationInfoService, with the cliogate GetSysInfo probe as fallback).","requiresVersionConfirmation":true,"resolvedFromReason":"no-active-environment","documentation":"# Intro\n\nBody.\n\n## Usage\n\nMore.","documentationSource":"cdn"}""";
+	private const string PinnedDetailWireJson = """{"success":true,"mode":"detail","count":1,"componentType":"crt.WithDocs","description":"Sample with attached documentation.","container":false,"resolvedTargetVersion":"latest","resolvedFrom":"latest-fallback","versionWarning":"Catalog was loaded from 'latest' (a superset of all GA versions). A component listed here may not exist in the target environment's actual platform version, so a page built against it can fail to render at runtime. The target platform version could not be determined: do NOT silently assume this component set. Before generating an implementation plan, tell the user the version is unknown and request explicit confirmation before proceeding against 'latest'. To scope results to a real version, pass an explicit version or target a registered environment so clio can resolve its platform version (no cliogate required — resolved via ApplicationInfoService, with the cliogate GetSysInfo probe as fallback).","requiresVersionConfirmation":true,"resolvedFromReason":"no-active-environment","documentation":"# Intro\n\nBody.\n\n## Usage\n\nMore.","documentationSource":"cdn"}""";
 
 	private static (ComponentInfoToFileTool tool, System.IO.Abstractions.TestingHelpers.MockFileSystem fileSystem, string outputFile)
 		BuildToFileTool(ComponentInfoTool infoTool, System.IO.Abstractions.TestingHelpers.MockFileSystem? fileSystem = null) {
@@ -1905,7 +1905,7 @@ public sealed class ComponentInfoToolTests {
 
 		// Assert
 		fileSystem.File.Exists(outputFile).Should().BeFalse(because: "there is no documentation to write");
-		response.ToJsonString().Should().Be(McpResponseBaseline.Serialize(inline),
+		McpResponseBaseline.Serialize(response).Should().Be(McpResponseBaseline.Serialize(inline),
 			because: "without documentation the twin returns exactly what get-component-info returns");
 	}
 

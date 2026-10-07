@@ -20,6 +20,34 @@ public sealed class CompileStatusTool(ICompileOperationRegistry registry, IToolC
 	internal const string CompileStatusToolName = "compile-status";
 
 	/// <summary>
+	/// The note a <c>not-found</c> answer carries.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// <b>It must not read as "nothing ran" (ENG-102333).</b> The record lives only in this MCP server session,
+	/// and only for a while after its compile ends, while the environment itself still holds the verdict of its
+	/// latest build. An agent told only that nothing was recorded either guesses or compiles again, and a
+	/// second compile is a second runtime reload for every user; <c>last-compilation-log</c> reads that verdict
+	/// without compiling. The note names no list of reasons on purpose: any list is one more place to fall
+	/// out of date.
+	/// </para>
+	/// <para>
+	/// <b>That verdict carries no time.</b> It belongs to the latest FINISHED build (see
+	/// <see cref="Clio.Common.ICompilationResultReader"/>), so read while a compile is still running it is the
+	/// previous build's — which is why the note says not to rely on it, or restart on it, until the compile has had
+	/// time to finish. It is a timing rule, not a ban: a restart the workflow needs afterwards (a package
+	/// compile's activation) is still owed.
+	/// </para>
+	/// </remarks>
+	internal const string NotFoundNote =
+		"This MCP server session holds no record of a compile-creatio operation for this environment. That does "
+		+ "not mean no compile ran: a record lives only in this session, and only for a while after its compile "
+		+ "ends. Do not compile again to find out. " + LastCompilationLogTool.ToolName + " (through clio-run) "
+		+ "reads the environment's latest FINISHED compile and carries no time, so until a compile you started "
+		+ "has had time to finish (a package or process-name compile a few minutes, a full one up to about 20) it "
+		+ "can return an earlier compile's verdict: do not rely on it, or restart on it, before then.";
+
+	/// <summary>
 	/// Returns the tracked status of a compile-creatio operation.
 	/// </summary>
 	[McpServerTool(Name = CompileStatusToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
@@ -30,7 +58,7 @@ public sealed class CompileStatusTool(ICompileOperationRegistry registry, IToolC
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillExtended,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.ConfigurationBuild)]
-	[Description("Returns the status of the most recent compile-creatio operation tracked for an environment, or of a specific operation-id from a compile-creatio in-progress response. Use this after compile-creatio returns an in-progress note to check whether the compile finished; do not re-run compile-creatio just to check.")]
+	[Description("Returns the status of the most recent compile-creatio operation tracked for an environment, or of a specific operation-id from a compile-creatio in-progress response. Use this after compile-creatio returns an in-progress note, AND after your MCP client stopped waiting for compile-creatio (for example 'Request timed out'): the compile keeps running and is tracked here. Do not re-run compile-creatio just to check. A not-found answer means this MCP server session holds no record, not that nothing ran: then last-compilation-log (through clio-run) reads the environment's latest FINISHED compile - it carries no time, so until the compile has had time to finish it can be an earlier compile's verdict: do not rely on it, or restart on it, before then.")]
 	public CompileStatusResponse GetStatus(
 		[Description("Status query parameters")] [Required] CompileStatusArgs args) {
 		if (string.IsNullOrWhiteSpace(args.EnvironmentName)) {
@@ -52,7 +80,7 @@ public sealed class CompileStatusTool(ICompileOperationRegistry registry, IToolC
 
 		if (record is null) {
 			return new CompileStatusResponse(true, "not-found", EnvironmentName: args.EnvironmentName,
-				Note: "No compile-creatio operation has been recorded for this environment in the current MCP server session.");
+				Note: NotFoundNote);
 		}
 
 		return new CompileStatusResponse(
