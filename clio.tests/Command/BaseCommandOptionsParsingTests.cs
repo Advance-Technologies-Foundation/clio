@@ -1,5 +1,6 @@
 using System.Linq;
 using Clio.Command;
+using Clio.Command.McpServer;
 using CommandLine;
 using FluentAssertions;
 using NUnit.Framework;
@@ -10,27 +11,23 @@ namespace Clio.Tests.Command;
 /// Parses whole command lines of verbs whose options derive from <see cref="BaseCommandOptions"/> through the
 /// verb set clio registers, so --fail-on-error and --fail-on-warning are checked the way a user types them.
 /// </summary>
-// [NonParallelizable] because the options write the process-global GlobalContext.FailOnError / FailOnWarning.
+// [NonParallelizable] because the options write the process-global GlobalContext.FailOnError.
 [TestFixture]
 [NonParallelizable]
 [Category("Unit")]
 [Property("Module", "Command")]
 internal sealed class BaseCommandOptionsParsingTests {
 	private bool _originalFailOnError;
-	private bool _originalFailOnWarning;
 
 	[SetUp]
 	public void SetUp() {
 		_originalFailOnError = GlobalContext.FailOnError;
-		_originalFailOnWarning = GlobalContext.FailOnWarning;
 		GlobalContext.FailOnError = false;
-		GlobalContext.FailOnWarning = false;
 	}
 
 	[TearDown]
 	public void TearDown() {
 		GlobalContext.FailOnError = _originalFailOnError;
-		GlobalContext.FailOnWarning = _originalFailOnWarning;
 	}
 
 	[Test]
@@ -68,8 +65,8 @@ internal sealed class BaseCommandOptionsParsingTests {
 	}
 
 	[Test]
-	[Description("mcp-server and mcp-http also derive their options from BaseCommandOptions, so --fail-on-error parses on both MCP transports.")]
-	public void Parse_ShouldSetFailOnError_WhenMcpServerVerbIsGivenFailOnError(
+	[Description("mcp-server and mcp-http accept --fail-on-error so an existing client configuration keeps starting, but the flag is unsupported there and never reaches GlobalContext (ENG-102487).")]
+	public void Parse_ShouldAcceptFailOnErrorWithoutStrictMode_WhenMcpServerVerbIsGivenFailOnError(
 		[Values("mcp-server", "mcp-http")] string verb) {
 		// Arrange
 		string[] args = [verb, "--fail-on-error"];
@@ -78,10 +75,12 @@ internal sealed class BaseCommandOptionsParsingTests {
 		object options = Parse(args);
 
 		// Assert
-		BaseCommandOptions baseOptions = options.Should().BeAssignableTo<BaseCommandOptions>(
-			because: $"{verb} options inherit --fail-on-error from BaseCommandOptions").Subject;
-		baseOptions.FailOnError.Should().BeTrue(because: "--fail-on-error must set FailOnError");
-		baseOptions.FailOnWarning.Should().BeFalse(because: "--fail-on-warning was not given");
+		McpHostCommandOptions mcpOptions = options.Should().BeAssignableTo<McpHostCommandOptions>(
+			because: $"{verb} options declare the unsupported fail-on flags on McpHostCommandOptions").Subject;
+		mcpOptions.FailOnError.Should().BeTrue(because: "the flag is recorded so the host can warn that it is ignored");
+		mcpOptions.FailOnWarning.Should().BeFalse(because: "--fail-on-warning was not given");
+		GlobalContext.FailOnError.Should().BeFalse(
+			because: "a worker never receives the flag, so the host must not apply it in-process either");
 	}
 
 	[Test]

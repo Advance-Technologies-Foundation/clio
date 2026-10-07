@@ -14,7 +14,7 @@ namespace Clio.Command.McpServer;
 
 
 [Verb("mcp-server", Aliases = ["mcp"], HelpText = "Starts mcp server in stdio mode")]
-public class McpServerCommandOptions : BaseCommandOptions
+public class McpServerCommandOptions : McpHostCommandOptions
 {
 
 	/// <summary>
@@ -73,6 +73,7 @@ public class McpServerCommand(ModelContextProtocol.Server.McpServer server,
 		// own process group and arms parent-death signalling, so a hard-killed parent takes the worker and
 		// everything below it. A parent that is SIGKILLed runs no code, so this half cannot live there.
 		ArmWorkerContainment(options, logger);
+		WarnIgnoredFailOnOptions(options, logger);
 		ReapStaleWorkersForHost(options, workerProcessSupervisor, logger);
 		SweepWorkingDirectoryResidueForHost(options, workerTempResidueSweeper, logger);
 		BootstrapCuratedKnowledgeForHost(options, curatedKnowledgeBootstrapService, logger);
@@ -144,6 +145,24 @@ public class McpServerCommand(ModelContextProtocol.Server.McpServer server,
 			McpLogNotifier.Reset();
 		}
 		return 0;
+	}
+
+	/// <summary>
+	/// Warns that <c>--fail-on-error</c> / <c>--fail-on-warning</c> were passed and are ignored on this verb.
+	/// </summary>
+	/// <remarks>
+	/// The flags are accepted only so an existing MCP client configuration keeps starting; see
+	/// <see cref="McpHostCommandOptions"/> for why they no longer switch on the strict install check.
+	/// </remarks>
+	/// <param name="options">The parsed command options.</param>
+	/// <param name="logger">The host logger.</param>
+	/// <returns>The warning that was emitted, or <see langword="null"/> when no fail-on flag was passed.</returns>
+	internal static string WarnIgnoredFailOnOptions(McpServerCommandOptions options, ILogger logger) {
+		string warning = McpHostCommandOptions.DescribeIgnoredFailOnOptions(options);
+		if (warning is not null) {
+			WarnDuringStartup(warning, logger);
+		}
+		return warning;
 	}
 
 	/// <summary>
