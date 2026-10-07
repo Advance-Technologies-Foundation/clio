@@ -6,7 +6,7 @@ applies-to:
   - clio/Command/McpServer/Tools/McpPersistedResourceKeyGate.cs
   - clio/Command/McpServer/Tools/PageUpdateTool.cs
   - clio/Command/McpServer/Tools/PageSyncTool.cs
-ticket: GH-1464
+ticket: GH-1464, GH-1740
 date: 2026-09-12
 ---
 
@@ -29,13 +29,16 @@ verdict rather than a slow one.
   context, would have read it successfully. The reason is recorded separately so it still reaches the
   caller's warning channel.
 - **The entry is dropped after a successful save of that schema, and `sync-pages` also defers.** A
-  save REGISTERS keys, so every cached read of that schema is stale the moment it lands. That alone
-  is not enough for a batch: `sync-pages` materialises its deterministic content verdict for EVERY
+  save REGISTERS keys, so every cached read of that schema is stale the moment it lands. Dropping
+  the entry alone is not enough for a batch: `sync-pages` materialises its deterministic content verdict for EVERY
   page in a pre-pass that runs before ANY page is saved, so a second page on the same schema would be
   rejected there for a key the first page's save is about to create. For a schema an earlier page in
   the batch also writes, the pre-pass therefore skips the CONTENT half and lets the in-lock gate —
   which re-runs the identical chain after that save — decide. The lint half still runs in the
-  pre-pass, because the in-lock path materialises lint warnings only.
+  pre-pass, because the in-lock path materialises lint warnings only. A dry run is not a save:
+  `update-page` keeps the entry after a successful dry run, because since GH-1740 a successful replace
+  dry run can carry a FAILED caption-key read whose reason is appended to the response only after the
+  command returns - dropping the entry first erased it.
 
 With NO scope open the reader simply reads, uncached. That is the plain-CLI and unit-test shape and
 it is correct, only more expensive.
