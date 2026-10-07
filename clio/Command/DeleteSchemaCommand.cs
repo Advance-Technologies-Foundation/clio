@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Common;
 using Clio.Common.Responses;
+using Clio.Package;
 using Clio.Workspaces;
 using CommandLine;
 
@@ -39,6 +40,12 @@ public sealed class DeleteSchemaRemoteResponse {
 	[System.Text.Json.Serialization.JsonPropertyName("packageName")]
 	public string PackageName { get; set; }
 
+	/// <summary>
+	/// Platform workspace item type (<c>WorkspaceItemType</c>) of the deleted item, as GetWorkspaceItems reported it.
+	/// </summary>
+	[System.Text.Json.Serialization.JsonPropertyName("itemType")]
+	public int ItemType { get; set; }
+
 	[System.Text.Json.Serialization.JsonPropertyName("error")]
 	public string Error { get; set; }
 }
@@ -53,15 +60,29 @@ public class DeleteSchemaCommand : RemoteCommand<DeleteSchemaOptions> {
 	private readonly IWorkspacePathBuilder _workspacePathBuilder;
 	private readonly IJsonConverter _jsonConverter;
 	private readonly IFileSystem _fileSystem;
+	private readonly IDeletedItemFileCleaner _deletedItemFileCleaner;
 
+	/// <summary>
+	/// Initializes a new instance of the <see cref="DeleteSchemaCommand"/> class.
+	/// </summary>
+	/// <param name="applicationClient">Client of the target environment.</param>
+	/// <param name="settings">Target environment settings.</param>
+	/// <param name="serviceUrlBuilder">Builds the WorkspaceExplorerService routes.</param>
+	/// <param name="workspacePathBuilder">Resolves the local workspace in workspace mode.</param>
+	/// <param name="jsonConverter">Reads the workspace settings.</param>
+	/// <param name="fileSystem">Checks the workspace folder.</param>
+	/// <param name="deletedItemFileCleaner">
+	/// Removes the deleted item's folders from the package folder when the environment is in file system mode.
+	/// </param>
 	public DeleteSchemaCommand(IApplicationClient applicationClient, EnvironmentSettings settings,
 		IServiceUrlBuilder serviceUrlBuilder, IWorkspacePathBuilder workspacePathBuilder,
-		IJsonConverter jsonConverter, IFileSystem fileSystem)
+		IJsonConverter jsonConverter, IFileSystem fileSystem, IDeletedItemFileCleaner deletedItemFileCleaner)
 		: base(applicationClient, settings) {
 		_serviceUrlBuilder = serviceUrlBuilder;
 		_workspacePathBuilder = workspacePathBuilder;
 		_jsonConverter = jsonConverter;
 		_fileSystem = fileSystem;
+		_deletedItemFileCleaner = deletedItemFileCleaner;
 	}
 
 	protected override void ExecuteRemoteCommand(DeleteSchemaOptions options) {
@@ -74,7 +95,9 @@ public class DeleteSchemaCommand : RemoteCommand<DeleteSchemaOptions> {
 				throw new InvalidOperationException(remoteResponse.Error);
 			}
 			Logger.WriteInfo(
-				$"Deleted schema '{remoteResponse.SchemaName}' (uId={remoteResponse.SchemaUId}) from package '{remoteResponse.PackageName}'.");
+				$"Deleted schema '{remoteResponse.SchemaName}' (uId={remoteResponse.SchemaUId}) from package '{remoteResponse.PackageName}'."
+				+ DescribeRetainedDatabaseObjects(remoteResponse.ItemType));
+			ReportPackageFiles(options, remoteResponse.PackageName, remoteResponse.SchemaName, remoteResponse.ItemType);
 			return;
 		}
 		ConfigureWorkspace(options);
@@ -92,7 +115,78 @@ public class DeleteSchemaCommand : RemoteCommand<DeleteSchemaOptions> {
 		DeleteWorkspaceItemsResponse deleteResponse =
 			Deserialize<DeleteWorkspaceItemsResponse>(deleteResponseJson, "Delete");
 		EnsureDeleteSucceeded(deleteResponse, schemaItem.Name, schemaItem.PackageName);
-		Logger.WriteInfo($"Deleted schema '{schemaItem.Name}' from package '{schemaItem.PackageName}'.");
+		Logger.WriteInfo($"Deleted schema '{schemaItem.Name}' from package '{schemaItem.PackageName}'."
+			+ DescribeRetainedDatabaseObjects(schemaItem.Type));
+		ReportPackageFiles(options, schemaItem.PackageName, schemaItem.Name, schemaItem.Type);
+	}
+
+	/// <summary>
+	/// Names what the platform delete leaves in the database, so a caller does not take the delete as complete.
+	/// </summary>
+	private static string DescribeRetainedDatabaseObjects(int itemType) =>
+		itemType == PackageItemFolders.EntitySchemaType
+			? " The database table, its columns and its data are not dropped: delete-schema removes the schema "
+				+ "metadata only."
+			: string.Empty;
+
+	/// <summary>
+	/// In file system mode the platform delete leaves the item's folders in the package folder, and the next
+	/// pkg-to-db registers the item again. Removes them, or names every folder left behind.
+	/// </summary>
+	private void ReportPackageFiles(DeleteSchemaOptions options, string packageName, string itemName, int itemType) {
+		DeletedItemFileCleanupResult result = _deletedItemFileCleaner.Clean(new DeletedItemFileCleanupRequest(
+			ResolveEnvironmentName(options), options.EnvironmentPath, packageName, itemName, itemType));
+		string expectedFolders = result.ExpectedFolders.Count > 0
+			? string.Join(", ", result.ExpectedFolders)
+			: "every folder that holds it";
+		string problem = result.Problem?.TrimEnd('.', ' ');
+		string consequence = $"otherwise the next pkg-to-db registers '{itemName}' again";
+		switch (result.Status) {
+			case DeletedItemFileCleanupStatus.FileSystemModeUnknown:
+				Logger.WriteWarning(
+					$"Could not check whether the environment is in file system mode: {problem}. If it is, "
+					+ $"remove these folders of '{itemName}' from package '{packageName}', {consequence}: "
+					+ $"{expectedFolders}.");
+				return;
+			case DeletedItemFileCleanupStatus.NotCleaned:
+				Logger.WriteWarning(
+					$"The environment is in file system mode, but clio did not remove the files of '{itemName}' "
+					+ $"from package '{packageName}': {problem}. Remove these folders from the package (in the "
+					+ $"linked repository, if the package is linked) by hand, {consequence}: {expectedFolders}.");
+				return;
+			case DeletedItemFileCleanupStatus.Cleaned:
+				ReportCleanedPackageFiles(result, itemName, consequence);
+				return;
+			default:
+				// FileSystemModeOff: the site does not read the package folder, so its files are not the source of truth.
+				return;
+		}
+	}
+
+	private void ReportCleanedPackageFiles(DeletedItemFileCleanupResult result, string itemName, string consequence) {
+		if (result.RemovedFolders.Count > 0) {
+			Logger.WriteInfo(
+				$"Removed from package folder '{result.PackageFolderPath}': {string.Join(", ", result.RemovedFolders)}.");
+		}
+		if (result.RemainingFolders.Count > 0) {
+			Logger.WriteWarning(
+				$"Could not remove from package folder '{result.PackageFolderPath}': "
+				+ $"{string.Join(", ", result.RemainingFolders)}. Remove them by hand, {consequence}.");
+		}
+		if (result.RemovedFolders.Count == 0 && result.RemainingFolders.Count == 0) {
+			Logger.WriteInfo($"No files of '{itemName}' were found in package folder '{result.PackageFolderPath}'.");
+		}
+	}
+
+	/// <summary>
+	/// The registered environment the command runs against. A bare <c>--uri</c> call has none: the settings then
+	/// carry the active environment's name, which is not the site the call targets.
+	/// </summary>
+	private string ResolveEnvironmentName(DeleteSchemaOptions options) {
+		if (!string.IsNullOrWhiteSpace(options.Environment)) {
+			return options.Environment.Trim();
+		}
+		return string.IsNullOrWhiteSpace(options.Uri) ? EnvironmentSettings?.EnvironmentName : null;
 	}
 
 	internal bool TryDeleteRemote(string schemaName, out DeleteSchemaRemoteResponse response) {
@@ -149,7 +243,8 @@ public class DeleteSchemaCommand : RemoteCommand<DeleteSchemaOptions> {
 				Success = true,
 				SchemaName = schemaName,
 				SchemaUId = item.UId.ToString(),
-				PackageName = item.PackageName
+				PackageName = item.PackageName,
+				ItemType = item.Type
 			};
 			return true;
 		}

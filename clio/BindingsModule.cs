@@ -1038,6 +1038,8 @@ public class BindingsModule {
 		services.AddTransient<Clio.Common.ObjectRights.IObjectRightsReadBackVerifier, Clio.Common.ObjectRights.ObjectRightsReadBackVerifier>();
 		services.AddTransient<ICreatioLicenseClient, CreatioLicenseClient>();
 		services.AddTransient<IFsmModeStatusService, FsmModeStatusService>();
+		services.AddTransient<IEnvironmentPackageFolderResolver, EnvironmentPackageFolderResolver>();
+		services.AddTransient<IDeletedItemFileCleaner, DeletedItemFileCleaner>();
 		services.AddTransient<SetFsmConfigCommand>();
 		services.AddTransient<TurnFsmCommand>();
 		services.AddTransient<TurnFarmModeCommand>();

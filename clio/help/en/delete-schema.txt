@@ -24,14 +24,40 @@ DESCRIPTION
     (WorkspaceExplorerItemType), so classic .NET Framework Creatio dispatches the
     correct SchemaManager for every supported workspace item.
 
+    File system mode
+    The platform delete removes database records only. When the environment is
+    in file system mode (MCP get-fsm-mode reports on), the command also removes
+    the item's folders from the package folder on the machine where clio runs,
+    otherwise the next pkg-to-db would register the item again:
+        schema              Schemas/<name>/ and Resources/<name>.*/
+        localization item   Resources/<name>.*/
+        data binding        Data/<name>/
+        SQL script          SqlScripts/<name>/
+        assembly            Assemblies/<name>/
+    The package folder is <site>/Terrasoft.Configuration/Pkg/<package> (.NET 8)
+    or <site>/Terrasoft.WebApp/Terrasoft.Configuration/Pkg/<package>
+    (.NET Framework), where <site> is the registered EnvironmentPath or --ep. A
+    package linked with link-from-repository is changed in the repository.
+    When clio cannot reach the folder or read the mode, the schema is still
+    reported as deleted and a warning lists every folder left behind; remove
+    them by hand. Outside file system mode no files are touched.
+
+    Database objects
+    Deleting an entity schema removes its metadata only. Its database table,
+    columns and data are not dropped, and the result line says so.
+
 SYNOPSIS
-    clio delete-schema <SCHEMA_NAME> -e <ENVIRONMENT_NAME> [--remote]
+    clio delete-schema <SCHEMA_NAME> -e <ENVIRONMENT_NAME> [--remote] [--ep <SITE_FOLDER>]
 
 OPTIONS
     Schema name (pos. 0)    Schema name to delete
 
     --remote                Delete the schema directly from the remote environment
                             instead of requiring a workspace
+
+    --ep                    Site root folder of the environment. Overrides the
+                            registered EnvironmentPath when clio looks for the
+                            package folder in file system mode
 
     --Environment       -e  Environment name
 
@@ -54,6 +80,10 @@ EXAMPLE
     clio delete-schema UsrLegacyHelper --remote -e docker_fix2
         delete UsrLegacyHelper directly from the remote environment (no workspace
         needed)
+
+    clio delete-schema UsrOldLookup --remote -e local_fsm --ep C:\inetpub\wwwroot\local_fsm
+        in file system mode, also remove Schemas/UsrOldLookup/ and
+        Resources/UsrOldLookup.*/ from the package folder of that site
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio

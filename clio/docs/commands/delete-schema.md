@@ -30,10 +30,48 @@ without requiring a local workspace. The schema is resolved by name through
 (`WorkspaceExplorerItemType`), so classic .NET Framework Creatio dispatches the
 correct `SchemaManager` for every supported workspace item.
 
+### File system mode
+
+The platform delete removes database records only. When the environment is in
+file system mode (the MCP tool `get-fsm-mode` reports `on`), the item's files would stay
+in the package folder, and the next `pkg-to-db` would register the item again.
+In workspace mode and with `--remote` alike, the command therefore also removes
+the item's folders from the package folder on the machine where clio runs:
+
+| Item | Folders removed from `Pkg/<package>` |
+|------|--------------------------------------|
+| Schema (entity, client unit, source code, process, ...) | `Schemas/<name>/`, `Resources/<name>.*/` |
+| Localization item | `Resources/<name>.*/` |
+| Data binding | `Data/<name>/` |
+| SQL script | `SqlScripts/<name>/` |
+| Assembly | `Assemblies/<name>/` |
+
+Whole folders are removed, including culture files such as
+`resource.<culture>.xml` or `Localization/data.<culture>.json` that a repository
+may ignore. The package folder is
+`<site>/Terrasoft.Configuration/Pkg/<package>` (.NET 8) or
+`<site>/Terrasoft.WebApp/Terrasoft.Configuration/Pkg/<package>` (.NET Framework),
+where `<site>` is the environment's registered `EnvironmentPath` or the `--ep`
+value. A package linked with `link-from-repository` is a symbolic link, so the
+folders are removed from the repository working tree. An item folder that is
+itself a symbolic link is not followed.
+
+When clio cannot reach the package folder (no `EnvironmentPath`, a site on
+another machine, a missing folder) or cannot read the file system mode, the
+schema is still reported as deleted, and a warning lists every folder left
+behind. Remove those folders by hand. The command does not fail in this case:
+the database delete cannot be undone, and a retry would fail with "not found".
+Outside file system mode no files are touched.
+
+### Database objects
+
+Deleting an entity schema removes its metadata only. Its database table,
+columns and data are not dropped, and the result line says so.
+
 ## Synopsis
 
 ```bash
-clio delete-schema <SCHEMA_NAME> -e <ENVIRONMENT_NAME> [--remote]
+clio delete-schema <SCHEMA_NAME> -e <ENVIRONMENT_NAME> [--remote] [--ep <SITE_FOLDER>]
 ```
 
 ## Options
@@ -43,6 +81,10 @@ Schema name (pos. 0)    Schema name to delete
 
 --remote                Delete the schema directly from the remote environment
                         instead of requiring a workspace
+
+--ep                    Site root folder of the environment. Overrides the
+                        registered EnvironmentPath when clio looks for the
+                        package folder in file system mode
 
 --Environment       -e  Environment name
 
@@ -66,6 +108,10 @@ clio delete-schema Activity -e docker_fix2
 
 clio delete-schema UsrLegacyHelper --remote -e docker_fix2
 # delete UsrLegacyHelper directly from the remote environment (no workspace needed)
+
+clio delete-schema UsrOldLookup --remote -e local_fsm --ep C:\inetpub\wwwroot\local_fsm
+# in file system mode, also remove Schemas/UsrOldLookup/ and Resources/UsrOldLookup.*/
+# from the package folder of the site in C:\inetpub\wwwroot\local_fsm
 ```
 
 ## Reporting Bugs
