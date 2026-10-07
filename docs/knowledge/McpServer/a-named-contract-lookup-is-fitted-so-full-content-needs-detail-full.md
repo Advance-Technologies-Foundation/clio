@@ -31,16 +31,20 @@ MEASURED against the budget:
 - A destructive tool whose description OPENS with its warning (a marker sentence starts inside the first
   500 characters) keeps a lead of up to 1 500 characters, so the unmarked sentences of that warning block
   stay too. Every other tool keeps a 500-character lead.
-- Seven process contracts in one call fit the budget by a few dozen bytes. The short-form note is paid
-  once per short contract, so lengthening the note, or any process tool's description, can push that
-  reply over; a quoted value in the note costs twelve bytes more under the escaping encoder.
+- Before cutting any text, a reply over the budget carries each repeated set of error codes once - later
+  contracts get `{codes: [], same-as: <first>}`. Most contracts share the same generic codes, so for the
+  seven process contracts this alone is about 1.5 KB, and fitting spends it keeping small contracts whole.
+  The guard is therefore the FLOOR (every contract short, codes shared), not the default reply:
+  `GetToolContracts_ShouldKeepTheSevenProcessDesignerContractsShortFormsWithinBudget`. The short-form
+  note is paid once per short contract; a quoted value in it costs twelve bytes more under the escaping
+  encoder.
 - A contract whose short form would be no smaller is left complete and unmarked, and a field label such
   as "Optional, default true." is kept in front of the field's first sentence, not instead of it.
 
 Known gap, by decision: ordinary imperatives - "do NOT run compile-creatio", "Do NOT remove the flow and
 add a plain one", "do not paraphrase" - are NOT markers and are dropped from the process contracts' short
 forms. The same rules are in the process guidance (`core-rules`, the process articles) the agent reads
-before building. The short form's note therefore says it kept the "safety sentences", not all rules.
+before building. The short form's note therefore says it kept the "marked sentences", not all rules.
 
 **Why it is this way** — agent CLIs do not show a large tool result inline: Copilot CLI spilled every result
 from 21.3 KB up in the CAADT transcripts, and the agent then spent 3-9 shell turns per process run grepping

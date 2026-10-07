@@ -230,6 +230,30 @@ public sealed class ToolContractShortFormTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("A reply over the budget carries identical error codes once: a later contract with the same codes names the first in same-as and carries none itself, while a reply that fits is never touched.")]
+	public void Fit_Should_CarryRepeatedErrorCodesOnce_OnlyWhenTheReplyIsOverBudget() {
+		// Arrange
+		ToolContractDefinition first = BuildContract("first", descriptionSentences: 900, examples: 5);
+		ToolContractDefinition second = BuildContract("second", descriptionSentences: 900, examples: 5);
+
+		// Act
+		IReadOnlyList<ToolContractDefinition> over =
+			ToolContractShortForm.Fit([first, second], _ => int.MaxValue, NothingDestructive);
+		IReadOnlyList<ToolContractDefinition> fits = ToolContractShortForm.Fit([first, second], _ => 0, NothingDestructive);
+
+		// Assert
+		over[0].ErrorContract.Should().BeEquivalentTo(first.ErrorContract,
+			because: "the first contract with a set of error codes keeps them, so the reply carries them once");
+		over[1].ErrorContract.SameAs.Should().Be("first",
+			because: "a repeated set is replaced by the name of the contract in the same reply that carries it");
+		over[1].ErrorContract.Codes.Should().BeEmpty(
+			because: "the point of sharing is that the reply does not carry the same codes twice");
+		fits.Should().Equal([first, second],
+			because: "a reply that already fits is returned exactly as resolved, error codes included");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("When the reply cannot fit, a contract whose short form would be no smaller stays complete and unmarked instead of growing and being labelled short.")]
 	public void Fit_Should_KeepAContractFull_WhenItsShortFormIsNoSmaller() {
 		// Arrange
@@ -243,9 +267,12 @@ public sealed class ToolContractShortFormTests {
 		// Assert
 		result.Single(contract => contract.Name == "large").Detail.Should().Be(ToolContractShortForm.ShortDetail,
 			because: "a contract with text to cut is still shortened while the reply is over the budget");
-		result.Single(contract => contract.Name == "tiny").Should().BeSameAs(tiny,
+		ToolContractDefinition kept = result.Single(contract => contract.Name == "tiny");
+		kept.Detail.Should().BeNull(
 			because: "shortening a contract with nothing to cut only adds the short-form markers, and a short label "
 				+ "on a complete contract invites a needless detail=full call");
+		kept.Description.Should().Be(tiny.Description,
+			because: "the complete contract is kept as resolved - only its repeated error codes are shared");
 	}
 
 	[Test]

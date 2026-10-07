@@ -425,8 +425,15 @@ public sealed record ToolOutputContract(
 	[property: JsonPropertyName("fields")] IReadOnlyList<ToolContractField> Fields
 );
 
+/// <param name="Codes">The error codes; empty when <paramref name="SameAs"/> names the contract carrying them.</param>
+/// <param name="SameAs">
+/// ENG-100154: in a fitted reply, the name of an earlier contract in the same reply whose error codes are identical,
+/// so the reply carries them once.
+/// </param>
 public sealed record ToolErrorContract(
-	[property: JsonPropertyName("codes")] IReadOnlyList<ToolErrorCodeContract> Codes
+	[property: JsonPropertyName("codes")] IReadOnlyList<ToolErrorCodeContract> Codes,
+	[property: JsonPropertyName("same-as"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	string? SameAs = null
 );
 
 public sealed record ToolErrorCodeContract(
@@ -1419,7 +1426,7 @@ internal static class ToolContractCatalog {
 					SuccessFalseSignal
 				],
 				Field(SuccessFieldName, BooleanType, "Whether discovery succeeded or at least one requested name resolved. Check not-found for partial results."),
-				Field("tools", ArrayType, "Tool contract definitions; populated when tool-names are passed or detail=full. A short contract carries detail=\"short\" and full-contract-bytes (the size of its full form); a full contract carries neither."),
+				Field("tools", ArrayType, "Tool contract definitions; populated when tool-names are passed or detail=full. A short contract carries detail=\"short\" and full-contract-bytes (the size of its full form); a full contract carries neither. In a reply fitted below the inline budget, an error-contract may be {codes: [], same-as: <tool>}: the same codes as that earlier contract in the reply."),
 				Field("not-found", ArrayType, "Unresolved names with per-name error codes, messages and suggestions. Valid contracts remain in tools; omitted when all names resolve. If no names resolve, success=false and error retains the first tool-not-found diagnostic."),
 				Field("index", ArrayType, "Compact tool index (name, purpose, contract-available, resident, destructive); populated for a no-names request unless detail=full. resident=true tools are present in tools/list and are called natively; resident=false tools are reachable only via clio-run/clio-run-destructive — never wrap a resident tool in clio-run."),
 				Field(ErrorFieldName, ObjectType, "Structured error payload when lookup fails.")

@@ -184,6 +184,9 @@ internal static class ToolContractShortForm {
 		if (total <= InlineReplyBudgetBytes) {
 			return fitted;
 		}
+		// Lossless before lossy: identical error codes are carried once before any text is cut.
+		ShareRepeatedErrorContracts(fitted);
+		total = measureReply(fitted);
 		int[] sizes = [.. fitted.Select(MeasureBytes)];
 		bool[] done = new bool[fitted.Length];
 		while (total > InlineReplyBudgetBytes) {
@@ -211,6 +214,31 @@ internal static class ToolContractShortForm {
 			sizes[largest] = shortSize;
 		}
 		return fitted;
+	}
+
+	/// <summary>
+	/// Replaces every repeated set of error codes in a reply with <see cref="ToolErrorContract.SameAs"/> naming the
+	/// first contract that carries it.
+	/// </summary>
+	/// <remarks>
+	/// Most contracts publish the same generic codes (an unknown tool, a missing or mistyped parameter), and seven
+	/// process-designer contracts carried them seven times - about 1.8 KB of a reply fitted to 18 KB. Sharing them
+	/// is lossless, so it runs before any text is cut, and it gives the fit room to keep a small contract complete.
+	/// </remarks>
+	private static void ShareRepeatedErrorContracts(ToolContractDefinition[] contracts) {
+		Dictionary<string, string> firstByCodes = new(StringComparer.Ordinal);
+		for (int index = 0; index < contracts.Length; index++) {
+			ToolErrorContract? errors = contracts[index].ErrorContract;
+			if (errors is null || errors.SameAs is not null || errors.Codes.Count == 0) {
+				continue;
+			}
+			string key = JsonSerializer.Serialize(errors.Codes);
+			if (firstByCodes.TryGetValue(key, out string? first)) {
+				contracts[index] = contracts[index] with { ErrorContract = new ToolErrorContract([], first) };
+			} else {
+				firstByCodes[key] = contracts[index].Name;
+			}
+		}
 	}
 
 	/// <summary>
@@ -419,6 +447,6 @@ internal static class ToolContractShortForm {
 		}
 		// Every byte here is paid once per short contract in a fitted reply, and the contract's own detail="short"
 		// already says it is short; a quoted value also costs twelve bytes more under the escaping encoder.
-		return $"[Safety sentences kept; cut {string.Join(", ", omitted)}; detail=full has all.]";
+		return $"[Marked sentences kept; cut {string.Join(", ", omitted)}; detail=full has all.]";
 	}
 }

@@ -285,6 +285,34 @@ public sealed class ToolContractPayloadBudgetTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The seven process-designer contracts still fit one inline reply when every one of them is short and their shared error codes are carried once - the floor fitting can reach, so growth in their kept text is caught here before the default reply stops fitting.")]
+	public void GetToolContracts_ShouldKeepTheSevenProcessDesignerContractsShortFormsWithinBudget() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolOverDefaultSurface();
+		string[] processTools = [
+			"create-business-process", "modify-business-process", "describe-business-process",
+			"validate-process-graph", "list-user-tasks", "modify-business-process-as-new-version",
+			"set-active-business-process-version"
+		];
+		ToolContractDefinition[] full = [.. tool.GetToolContracts(
+			new ToolContractGetArgs(processTools, ToolContractShortForm.FullDetail)).Tools!];
+
+		// Act
+		// A measure that never fits shortens every contract; destructive leads are the longer, conservative case.
+		ToolContractDefinition[] floor = [.. ToolContractShortForm.Fit(full, _ => int.MaxValue, _ => true)];
+		int floorBytes = ToolContractShortForm.MeasureBytes(new ToolContractGetResponse(true, Tools: floor));
+		ToolContractDefinition largest = floor.MaxBy(ToolContractShortForm.MeasureBytes)!;
+
+		// Assert
+		floorBytes.Should().BeLessThanOrEqualTo(ToolContractShortForm.InlineReplyBudgetBytes,
+			because: $"with nothing left to cut the seven short forms measure {floorBytes} bytes; the largest kept form is "
+				+ $"{largest.Name} at {ToolContractShortForm.MeasureBytes(largest)} bytes. Trim the kept text of the "
+				+ "contract you lengthened (its lead, a safety-marked sentence, a field's first sentence) - do not raise "
+				+ "the budget, which sits below the 21.3 KB a Copilot CLI tool result spills to a file at");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("describe-environment - the named contract ClioRing reads - comes back from a default lookup byte-identical to its full form, so fitting never changes what Ring receives.")]
 	public void GetToolContracts_ShouldReturnDescribeEnvironmentUnchanged_ByDefault() {
 		// Arrange
