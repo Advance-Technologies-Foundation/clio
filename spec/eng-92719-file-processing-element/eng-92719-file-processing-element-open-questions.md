@@ -5,7 +5,7 @@ type (Task) and ENG-92719 File processing element (Story), with its sub-tasks EN
 attachments mode and ENG-96506 Generated report + process parameter modes (epic ENG-92704 Create BP via AI Toolkit).
 It has four parts. **Part A** holds 19 owner questions (Q1-Q19). Each has options, a recommendation the plan already
 assumes, and what a different answer changes. Q1-Q9 are about Jira and delivery; **the owner agreed
-Q1-Q9 as recommended on 2026-10-07** (Q7 had been answered by M3). Q10-Q19 fix the contract. **Part B** holds 27 stand measurements with exact recipes and read-only evidence
+Q1-Q9 as recommended on 2026-10-07** (Q7 had been answered by M3), and Q10 (option A) the same day. Q10-Q19 fix the contract. **Part B** holds 27 stand measurements with exact recipes and read-only evidence
 queries. Seven are read-only. The rest need writes on disposable processes in the `Custom` package, and each needs
 the user's go-ahead. Fifteen of them gate code; the rest verify or tune wording. **Part C** records what was already
 measured on 2026-10-01: versions, feature states, the user's designer observations UO-1..UO-4, describe of the
@@ -58,7 +58,7 @@ the owner row of the sibling documents.
 | Q7 | Where the mirror defect H-1 is fixed | answered by M3 (2026-10-02): H-1 refuted, so no MH; binding the items is one parity commit in PK-PT (X4) | - | D9; O2; X4 |
 | Q8 | Delivery protocol bundle | yes to CL-PT-DOC and CL-DOC first, the variant registry in the ADR, merge commits for stacked PRs, merge windows, a second stand **Agreed 2026-10-07.** | CL-PT-DOC and CL-DOC | O4-O8; ENG-95984 File process parameter type plan O-10 |
 | Q9 | Which follow-up Sub-tasks to create, and when | the unconditional ones now (day 0); MH not created (M3 refuted H-1); the designer bug report only after M11; the X2 one only on that contingency **Agreed 2026-10-07.** | any PR | decisions D-5; pr-split 12.3 |
-| Q10 | How a caller declares a file collection | `type: FileCollection`, read back as `FileCollection` | PK-PT | D2; decisions row 1 |
+| Q10 | How a caller declares a file collection | `type: FileCollection`, read back as `FileCollection` **Agreed 2026-10-07.** | PK-PT | D2; decisions row 1 |
 | Q11 | Default direction of a FileCollection | Out | PK-PT | D3; decisions row 2 |
 | Q12 | Two-level binder policy (P3, P2 scope) | P3 resets a stale parent with a notice; P2 and R-M2 only on file-consuming targets | PK-PT | D5; decisions rows 3, 4 |
 | Q13 | Element token and variant discriminator | `fileProcessing` (alias `processFile`); the group present is the variant; `source` is an optional check | PK-OA | D10; decisions row 6 |
@@ -231,7 +231,7 @@ No Sub-task is created for Process file -> Send email attachments: ENG-95985 Sen
 
 ### A.2 ENG-95984 File process parameter type contract
 
-#### Q10. How does a caller declare a file collection?
+#### Q10. How does a caller declare a file collection? (agreed 2026-10-07: A)
 
 A file collection is the generic `CompositeObjectList` 651ec16f with one FileLocator item; no file-collection data
 type exists (basis=source). A file output cannot be mirrored because its items carry no Tag

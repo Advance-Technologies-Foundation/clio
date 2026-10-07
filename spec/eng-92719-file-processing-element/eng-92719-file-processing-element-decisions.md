@@ -4,7 +4,7 @@
 |---|---|
 | Issues | ENG-92719 File processing element (Story), with its sub-tasks ENG-96505 Element readiness and object attachments mode and ENG-96506 Generated report + process parameter modes; ENG-95984 File process parameter type (Task), on which the element depends |
 | Epic | ENG-92704 Create BP via AI Toolkit |
-| Status | Proposed, 2026-10-01. 10 decisions wait for the owner (section 1, Q10-Q19): D22, D23, D24 and D27 were agreed as recommended on 2026-10-07, D15's SysFile half (Q3) too, and D9 was answered by M3 on 2026-10-02 |
+| Status | Proposed, 2026-10-01. 9 decisions wait for the owner (section 1, Q11-Q19): D2, D22, D23, D24 and D27 were agreed as recommended on 2026-10-07, D15's SysFile half (Q3) too, and D9 was answered by M3 on 2026-10-02 |
 | Baselines | CrtProcessBuilder `main` `3f4cce50` (package 1.6.6.54, also installed on the stand); clio `master` `03ef3944f`; clio-knowledge `master` `d0b5a2b` (guidance libraryVersion 1.15.90); Creatio core 10.1.37 (the stand's core) |
 | How it was made | Read-only. Nothing was built, run, committed or written to a repository or to the stand. Jira was read for issue wording only; no Jira text is used as evidence for a platform fact |
 
@@ -106,7 +106,7 @@ named decision and nothing else unless stated.
 
 | # | Decision | Question | Recommended | Alternative and its cost |
 |---|---|---|---|---|
-| 1 | D2 | How does a caller declare a file collection? | `type: FileCollection`, read back by describe as `FileCollection` | Relax the `typeFromElement` mirror (cannot declare a callee input or a script-filled list); generic `itemProperties` (an older server silently drops it and saves a shapeless collection) |
+| 1 | D2 | How does a caller declare a file collection? | `type: FileCollection`, read back by describe as `FileCollection` **Agreed 2026-10-07.** | Relax the `typeFromElement` mirror (cannot declare a callee input or a script-filled list); generic `itemProperties` (an older server silently drops it and saves a shapeless collection) |
 | 2 | D3 | Default direction of a FileCollection | Out (one default per stored type, the shipped majority, the existing pin) | Variable (designer plain-Add parity; a second rule for one stored type) |
 | 3 | D5 | Plain source onto a collection item whose parent is bound to a collection (P3) | Reset the parent, with a notice | Designer parity: keep the stale parent, which yields N copies of one file |
 | 4 | D5 | Scope of item pairing and the wrong-shape refusal (P2, R-M2) | File-consuming targets only | Every collection: also changes Read data -> multi-instance mappings, unmeasured and outside this work |
@@ -135,7 +135,7 @@ same questions, with their options, are Q1-Q19 in
 | ID | Title | Ticket | Owner | Pending |
 |---|---|---|---|---|
 | D1 | One file is `FileLocator`; friendly names; Binary stays refused | PT | no | - |
-| D2 | Declaring a file collection: `FileCollection` | PT | **yes** | - |
+| D2 | Declaring a file collection: `FileCollection` | PT | agreed 2026-10-07 | - |
 | D3 | Direction and Tag defaults | PT | **yes** | - |
 | D4 | Dotted process-parameter paths | PT | no | - |
 | D5 | The two-level collection binder | PT | **yes** | M6 (R-M1; done 2026-10-02: refusal stays) |
@@ -288,7 +288,7 @@ same questions, with their options, are Q1-Q19 in
   `CollectionParameterGuidanceTests.cs:24-25` is amended and the new sentence is pinned. Measured together with
   the D1 type-list edit, because the article has about 345 characters left (D25).
 - `setParameter type: FileCollection` on a collection of another shape is refused (D7).
-- **Owner decision: yes.** Confirm A over B and C. Low stakes; the recommendation is firm.
+- **Owner decision: A, agreed on 2026-10-07.**
 
 ## D3. Direction and Tag defaults
 

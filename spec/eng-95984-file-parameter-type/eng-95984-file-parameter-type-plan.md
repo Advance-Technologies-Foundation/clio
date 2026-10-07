@@ -595,7 +595,7 @@ remote), clio, knowledge.
 
 | # | Decision | Recommendation |
 |---|---|---|
-| O-1 | D2: FileCollection as a type alias (A) over relaxing the mirror (B) or generic `itemProperties` (C) | A |
+| O-1 | D2: FileCollection as a type alias (A) over relaxing the mirror (B) or generic `itemProperties` (C) | A **Agreed 2026-10-07.** |
 | O-2 | D3: FileCollection default direction | Out |
 | O-3 | D5: P3 resets a stale parent with a notice, or keeps designer parity (leave it) | reset with notice |
 | O-4 | D5: P2 scope | file-consuming targets only (not every collection) |
