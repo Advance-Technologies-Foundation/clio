@@ -70,6 +70,10 @@ caption save gate adds the same hierarchy keys. `GetSchema` with `useFullHierarc
 ancestor's replacing schema in another package declares (see
 `docs/knowledge/platform/page-resource-save-replaces-own-values-but-stores-only-overrides-of-inherited-keys.md`);
 those render at runtime, so refusing them was a false refusal. Levels above the target are not counted.
+For a replacing schema the save is about to CREATE (`IsCreateReplacing`) the read targets the schema it
+replaces (`TemplateSchemaUId`), because `BuildNewReplacingSchemaDto` copies that schema's
+`localizableStrings` into the new one; it used to return nothing there, so the dry run warned about keys
+the save then accepted. That context has no resolved hierarchy, so no hierarchy keys are added on that path.
 
 **Why it is this way** — validation runs before the schema is loaded for saving, and reordering the
 two turns every body-level rejection into whatever the `GetSchema` call happens to return. The

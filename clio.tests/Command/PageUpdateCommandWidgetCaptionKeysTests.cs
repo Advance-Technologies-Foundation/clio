@@ -24,10 +24,12 @@ public sealed class PageUpdateCommandWidgetCaptionKeysTests {
 	private const string SaveSchemaUrl = "http://test/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema";
 	private const string SchemaUId = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
 	private const string ParentSchemaUId = "bbbbbbbb-cccc-dddd-eeee-ffffffffffff";
+	private const string TargetSchemaUId = "cccccccc-dddd-eeee-ffff-000000000000";
 	private const string SchemaName = "Test_FormPage";
 	private const string PackageUId = "test-pkg-uid";
 	private const string StoredKey = "ProbeButton_caption";
 	private const string InheritedOnlyKey = "PostponeQueueItemButton_caption";
+	private const string AboveTargetOnlyKey = "DependentPackageButton_caption";
 	private const string MissingKey = "NeverRegistered_caption";
 	private const string UnresolvedCaptionFragment = "will not be registered";
 
@@ -94,17 +96,51 @@ public sealed class PageUpdateCommandWidgetCaptionKeysTests {
 	private static JArray BuildLocalizableStrings(string[] keys) =>
 		new(keys.Select(key => new JObject { ["name"] = key, ["value"] = "stored caption" }));
 
-	/// <summary>A replace body that inserts one button whose caption binds <paramref name="key"/>.</summary>
-	private static string BuildButtonBody(string key) =>
+	private static string BuildBody(string viewConfigDiff, string viewModelConfigDiff) =>
 		"define(\"" + SchemaName + "\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
-		"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"ProbeButton\"," +
-		"\"parentName\":\"ActionButtonsContainer\",\"propertyName\":\"items\",\"index\":0," +
-		"\"values\":{\"type\":\"crt.Button\",\"caption\":\"$Resources.Strings." + key + "\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
-		"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+		"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/" + viewConfigDiff + "/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+		"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/" + viewModelConfigDiff + "/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
 		"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
 		"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
 		"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
 		"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+
+	/// <summary>A replace body that inserts one button whose caption binds <paramref name="key"/>.</summary>
+	private static string BuildButtonBody(string key) =>
+		BuildBody(
+			"[{\"operation\":\"insert\",\"name\":\"ProbeButton\"," +
+			"\"parentName\":\"ActionButtonsContainer\",\"propertyName\":\"items\",\"index\":0," +
+			"\"values\":{\"type\":\"crt.Button\",\"caption\":\"$Resources.Strings." + key + "\"}}]",
+			"[]");
+
+	/// <summary>
+	/// Makes the design package hold the target BELOW the hierarchy head: the head is a replacing schema from a
+	/// package that depends on the design package and declares <paramref name="aboveKeys"/>, the target sits
+	/// in the design package, and its parent declares <paramref name="parentKeys"/>.
+	/// </summary>
+	private void StubTargetBelowTheHead(string[] aboveKeys, string[] parentKeys) {
+		_hierarchyClient.GetParentSchemas(SchemaUId, PackageUId).Returns([
+			new PageDesignerHierarchySchema {
+				UId = SchemaUId, Name = SchemaName, PackageUId = "dependent-pkg-uid",
+				LocalizableStrings = BuildLocalizableStrings(aboveKeys)
+			},
+			new PageDesignerHierarchySchema { UId = TargetSchemaUId, Name = SchemaName, PackageUId = PackageUId },
+			new PageDesignerHierarchySchema {
+				UId = ParentSchemaUId, Name = "ParentTemplate", PackageUId = "parent-pkg-uid",
+				LocalizableStrings = BuildLocalizableStrings(parentKeys)
+			}
+		]);
+		StubSchemaInDesignPackage(TargetSchemaUId);
+	}
+
+	/// <summary>Stubs the "does the design package already hold this schema" lookup.</summary>
+	private void StubSchemaInDesignPackage(string schemaUId) =>
+		_applicationClient.ExecutePostRequest(
+				SelectQueryUrl, Arg.Is<string>(body => body.Contains("byPackage")),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(schemaUId is null
+				? """{"success": true, "rows": []}"""
+				: $$"""{"success": true, "rows": [{"UId": "{{schemaUId}}"}]}""");
 
 	private static PageUpdateOptions ReplaceDryRun(string body, string resources = null) =>
 		new() { SchemaName = SchemaName, Body = body, Resources = resources, DryRun = true };
@@ -208,17 +244,11 @@ public sealed class PageUpdateCommandWidgetCaptionKeysTests {
 		// auto-provide it: only the stored/inherited key set can resolve it.
 		StubStoredKeys();
 		StubHierarchy(InheritedOnlyKey);
-		string body =
-			"define(\"" + SchemaName + "\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
-			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"CaseSLA\"," +
-			"\"values\":{\"type\":\"crt.Input\",\"label\":\"$Resources.Strings." + InheritedOnlyKey + "\",\"control\":\"$PDS_CaseSLA\"}}]" +
-			"/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
-			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[{\"operation\":\"merge\",\"path\":[]," +
-			"\"values\":{\"attributes\":{\"PDS_CaseSLA\":{\"modelConfig\":{\"path\":\"PDS.UsrSLA\"}}}}}]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
-			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
-			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
-			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
-			"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		string body = BuildBody(
+			"[{\"operation\":\"insert\",\"name\":\"CaseSLA\",\"values\":{\"type\":\"crt.Input\"," +
+			"\"label\":\"$Resources.Strings." + InheritedOnlyKey + "\",\"control\":\"$PDS_CaseSLA\"}}]",
+			"[{\"operation\":\"merge\",\"path\":[]," +
+			"\"values\":{\"attributes\":{\"PDS_CaseSLA\":{\"modelConfig\":{\"path\":\"PDS.UsrSLA\"}}}}}]");
 
 		// Act
 		bool saved = _command.TryUpdatePage(ReplaceSave(body), out PageUpdateResponse response);
@@ -246,5 +276,77 @@ public sealed class PageUpdateCommandWidgetCaptionKeysTests {
 				because: "the refusal must name the defect class")
 			.And.Contain(MissingKey, because: "the refusal must name the missing key");
 		CallCount(SaveSchemaUrl).Should().Be(0, because: "a refused save must not reach the designer service");
+	}
+
+	[Test]
+	[Description("Issue #1740: only the target's own level and the levels it inherits from count. A key declared solely by a replacing schema ABOVE the target - in a package that depends on the design package - resolves today only because that package is installed, so the save still refuses it.")]
+	public void TryUpdatePage_ShouldRefuse_WhenCaptionKeyIsDeclaredOnlyAboveTheTarget() {
+		// Arrange
+		StubStoredKeys();
+		StubTargetBelowTheHead(aboveKeys: [AboveTargetOnlyKey], parentKeys: [InheritedOnlyKey]);
+
+		// Act
+		bool saved = _command.TryUpdatePage(ReplaceSave(BuildButtonBody(AboveTargetOnlyKey)), out PageUpdateResponse response);
+
+		// Assert
+		saved.Should().BeFalse(
+			because: "a key only a dependent package declares is not something the design package can rely on");
+		response.Error.Should().Contain(AboveTargetOnlyKey, because: "the refusal must name the key");
+		CallCount(SaveSchemaUrl).Should().Be(0, because: "a refused save must not reach the designer service");
+	}
+
+	[Test]
+	[Description("Issue #1740: when the target is not the hierarchy head, the levels BELOW it still count - the target is located by its UId, not assumed to be the first level.")]
+	public void TryUpdatePage_ShouldSave_WhenCaptionKeyIsInheritedBelowATargetThatIsNotTheHead() {
+		// Arrange
+		StubStoredKeys();
+		StubTargetBelowTheHead(aboveKeys: [AboveTargetOnlyKey], parentKeys: [InheritedOnlyKey]);
+
+		// Act
+		bool saved = _command.TryUpdatePage(ReplaceSave(BuildButtonBody(InheritedOnlyKey)), out PageUpdateResponse response);
+
+		// Assert
+		saved.Should().BeTrue(
+			because: $"the target's parent level declares the key, so it resolves at runtime. Error: {response.Error}");
+		CallCount(SaveSchemaUrl).Should().Be(1, because: "the save must reach the designer service exactly once");
+	}
+
+	[Test]
+	[Description("Issue #1740: on the FIRST save into a design package (a replacing schema that does not exist yet) the replace dry run resolves against the replaced schema's localizableStrings - the set the save copies into the new schema - so it no longer warns where the save accepts.")]
+	public void TryUpdatePage_ShouldNotWarn_WhenCreateReplacingDryRunCaptionKeyIsStoredOnTheReplacedSchema() {
+		// Arrange - the hierarchy head lives in another package and the design package holds no copy yet.
+		_hierarchyClient.GetParentSchemas(SchemaUId, PackageUId).Returns([
+			new PageDesignerHierarchySchema { UId = SchemaUId, Name = SchemaName, PackageUId = "base-pkg-uid" }
+		]);
+		StubSchemaInDesignPackage(null);
+		StubStoredKeys(StoredKey);
+
+		// Act
+		bool result = _command.TryUpdatePage(ReplaceDryRun(BuildButtonBody(StoredKey)), out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "a dry run of a valid body succeeds");
+		(response.Warnings ?? []).Should().NotContain(warning => warning.Contains(UnresolvedCaptionFragment),
+			because: "the save copies the replaced schema's localizableStrings, so the key resolves on the new schema");
+		CallCount(SaveSchemaUrl).Should().Be(0, because: "a dry run never writes");
+	}
+
+	[Test]
+	[Description("Issue #1740 review: validate=false skips the save's caption gate, so the replace dry run previewing that save neither warns about a caption nor pays the stored-key read for it.")]
+	public void TryUpdatePage_ShouldNotCheckCaptions_WhenReplaceDryRunHasValidationOff() {
+		// Arrange
+		StubStoredKeys(StoredKey);
+		PageUpdateOptions options = ReplaceDryRun(BuildButtonBody(MissingKey));
+		options.Validate = false;
+
+		// Act
+		bool result = _command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "a dry run with validation off succeeds for a well-formed body");
+		(response.Warnings ?? []).Should().NotContain(warning => warning.Contains(UnresolvedCaptionFragment),
+			because: "the save it previews skips the caption gate, so warning here would disagree with the save");
+		CallCount(GetSchemaUrl).Should().Be(0,
+			because: "a check that is switched off must not cost a designer read");
 	}
 }

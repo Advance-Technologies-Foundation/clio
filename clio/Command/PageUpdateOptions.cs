@@ -383,7 +383,7 @@
 				// and `resources` leave unresolved (issue #1740), through the same cached read as ValidateInput.
 				response = CreateSuccessResponse(options, dryRun: true, registeredKeys: null);
 				response.Warnings = CombineWarnings(
-					BuildDryRunWidgetCaptionWarnings(options.Body, context.SchemaType, explicitResources,
+					BuildDryRunWidgetCaptionWarnings(options, context.SchemaType, explicitResources,
 						() => _persistedResourceKeyReader.Read(options, () => ReadPersistedResourceKeys(context))?.Keys),
 					PageInertOperationDetector.Detect(options.Body));
 				return true;
@@ -475,7 +475,8 @@
 		/// <param name="context">The resolved target schema.</param>
 		/// <returns>The keys, and the reason when the read produced none.</returns>
 		/// <remarks>
-		/// Used ONLY on the failure path of the label-resource validators, so the extra <c>GetSchema</c>
+		/// Used ONLY on the failure path of the label-resource validators and of the widget-caption
+		/// pre-flight, so the extra <c>GetSchema</c>
 		/// round-trip is not paid by a body that validates cleanly, and a body that fails on structure
 		/// still reports its own error rather than a network error. A key already stored on the schema
 		/// resolves at runtime whether or not the current call repeats it in <c>resources</c>; without
@@ -497,10 +498,10 @@
 		/// </remarks>
 		private PersistedResourceKeyRead ReadPersistedResourceKeys(EditableSchemaContext context) {
 			try {
-				if (context.IsCreateReplacing) {
-					// Nothing is persisted yet on a schema this save is about to create.
-					return PersistedResourceKeyRead.None;
-				}
+				// A schema this save is about to CREATE has nothing of its own yet, but TemplateSchemaUId then
+				// names the schema it replaces, and BuildNewReplacingSchemaDto copies that schema's
+				// localizableStrings into the new one - so reading the template answers with exactly the keys
+				// the save will carry, and the dry run agrees with the save's caption gate (issue #1740).
 				// A CLEAN GetSchema refusal is the third way this read ends with no keys, and it used to be
 				// the only silent one: the designer service answers success:false (schema not found, access
 				// denied, a redirected target UId), TryGetSchema returns false with the server's own message,
@@ -509,9 +510,8 @@
 				if (!TryGetSchema(context.TemplateSchemaUId, out JObject schema, out string schemaError)) {
 					return LogPersistedResourceKeyFailure(schemaError);
 				}
-				HashSet<string> keys = ResourceStringHelper.GetExistingKeys(schema[LocalizableStringsKey] as JArray);
-				keys.UnionWith(GetInheritedResourceKeys(context));
-				return PersistedResourceKeyRead.FromKeys(keys);
+				return PersistedResourceKeyRead.FromKeys(
+					CollectResolvableKeys(schema[LocalizableStringsKey] as JArray, context));
 			} catch (Exception ex) when (ex is not OperationCanceledException) {
 				return LogPersistedResourceKeyFailure(ex.Message);
 			}
@@ -532,6 +532,21 @@
 			PersistedResourceKeyRead failure = PersistedResourceKeyRead.Failure(detail);
 			_logger?.WriteWarning(failure.FailureWarning);
 			return failure;
+		}
+
+		/// <summary>
+		/// The keys a caption or label on the target schema resolves at runtime: the given
+		/// <c>localizableStrings</c> entries plus <see cref="GetInheritedResourceKeys"/>. The one definition
+		/// shared by the persisted-key read and the caption save gate, so the dry run and the save cannot
+		/// drift apart on it.
+		/// </summary>
+		/// <param name="localizableStrings">The schema's <c>localizableStrings</c> array, or <c>null</c>.</param>
+		/// <param name="context">The resolved target schema.</param>
+		/// <returns>A new, mutable key set.</returns>
+		private static HashSet<string> CollectResolvableKeys(JArray localizableStrings, EditableSchemaContext context) {
+			HashSet<string> keys = ResourceStringHelper.GetExistingKeys(localizableStrings);
+			keys.UnionWith(GetInheritedResourceKeys(context));
+			return keys;
 		}
 
 		/// <summary>
@@ -565,20 +580,23 @@
 		/// unresolved, against the keys the schema already stores or inherits. An append dry run does not use
 		/// this - it already has the schema, so it runs the authoritative gate instead.
 		/// </summary>
-		/// <param name="body">The body the caller sent.</param>
+		/// <param name="options">The request; its body is checked, and <c>validate=false</c> skips the check
+		/// exactly as it skips the save's caption gate.</param>
 		/// <param name="schemaType">The target page type; mobile pages are not checked.</param>
 		/// <param name="explicitResources">The <c>resources</c> argument of the call.</param>
 		/// <param name="persistedResourceKeysProvider">Supplies the stored and inherited keys; invoked only when
 		/// a binding is still unresolved, so a clean body costs no round trip.</param>
 		/// <returns>Warning messages for unresolved captions, or <c>null</c> if none.</returns>
 		private static List<string> BuildDryRunWidgetCaptionWarnings(
-				string body, PageSchemaType schemaType, Dictionary<string, string> explicitResources,
+				PageUpdateOptions options, PageSchemaType schemaType, Dictionary<string, string> explicitResources,
 				Func<IReadOnlySet<string>> persistedResourceKeysProvider) {
-			if (schemaType == PageSchemaType.Mobile) {
+			// validate=false skips the save's caption gate (ValidateInsertedWidgetCaptionsResolve), so the
+			// preview of that save has nothing to warn about - and must not pay the stored-key read for it.
+			if (!options.Validate || schemaType == PageSchemaType.Mobile) {
 				return null;
 			}
 			SchemaValidationResult result = SchemaValidationService.ValidateInsertedWidgetCaptionResources(
-				body, explicitResources, persistedResourceKeysProvider);
+				options.Body, explicitResources, persistedResourceKeysProvider);
 			return result.IsValid ? null : new List<string>(result.Errors);
 		}
 
@@ -1127,10 +1145,10 @@
 			if (context.SchemaType == PageSchemaType.Mobile) {
 				return null;
 			}
-			HashSet<string> registeredNames = ResourceStringHelper.GetExistingKeys(schemaToSave[LocalizableStringsKey] as JArray);
 			// GetSchema's own list omits keys an ancestor's replacing schema in another package declares; they
 			// render at runtime, so refusing them was a false refusal (issue #1740). Same set the dry run reads.
-			registeredNames.UnionWith(GetInheritedResourceKeys(context));
+			HashSet<string> registeredNames =
+				CollectResolvableKeys(schemaToSave[LocalizableStringsKey] as JArray, context);
 			HashSet<string> dsBoundKeys = SchemaValidationService.CollectViewModelPaths(body).Keys
 				.ToHashSet(StringComparer.OrdinalIgnoreCase);
 			SchemaValidationResult result = SchemaValidationService.ValidateInsertedWidgetCaptionsRegistered(

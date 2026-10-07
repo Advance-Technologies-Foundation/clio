@@ -48,8 +48,9 @@ internal static class McpPersistedResourceKeyGate {
 		}).Keys;
 
 	/// <summary>
-	/// Builds the lazy provider the label-resource validators take. The delegate is invoked ONLY for an
-	/// unresolved label-resource rejection, so a clean body never pays the round trip.
+	/// Builds the lazy provider the label-resource validators and the widget-caption pre-flight take. The
+	/// delegate is invoked ONLY for an unresolved label-resource rejection or an unresolved caption binding,
+	/// so a clean body never pays the round trip.
 	/// </summary>
 	/// <returns>A provider yielding the persisted keys, or an empty set when the read failed.</returns>
 	public static Func<IReadOnlySet<string>> BuildProvider(

@@ -399,4 +399,32 @@ public sealed class PageSyncToolPersistedResourcesTests {
 		page.Success.Should().BeFalse(
 			because: "the authoritative save gate refuses a caption bound to a key nobody registers");
 	}
+
+	[Test]
+	[Description("Issue #1740: sync-pages resolves a caption key that only a parent level of the resolved designer hierarchy declares - GetSchema omits such keys, they render at runtime, and the save gate accepts them, so the pre-flight must not warn either.")]
+	public async Task SyncPages_ShouldNotWarnAboutTheCaption_WhenItsKeyIsDeclaredOnlyByAParentLevel() {
+		// Arrange
+		StubSchemaWithPersistedKeys();
+		_hierarchyClient.GetParentSchemas(SchemaUId, "test-pkg-uid").Returns([
+			new PageDesignerHierarchySchema { UId = SchemaUId, Name = SchemaName, PackageUId = "test-pkg-uid" },
+			new PageDesignerHierarchySchema {
+				UId = "bbbbbbbb-cccc-dddd-eeee-ffffffffffff", Name = "ParentTemplate", PackageUId = "parent-pkg-uid",
+				LocalizableStrings = [new Newtonsoft.Json.Linq.JObject { ["name"] = "ParentButton_caption" }]
+			}
+		]);
+		PageSyncTool tool = CreateTool();
+		PageSyncArgs args = BuildArgs(
+			new PageSyncPageInput(SchemaName, BuildButtonCaptionPageBody("ParentButton_caption")));
+
+		// Act
+		PageSyncResponse response = await tool.SyncPages(args);
+
+		// Assert
+		PageSyncPageResult page = response.Pages.Should().ContainSingle().Subject;
+		page.Success.Should().BeTrue(
+			because: "the parent level declares the key, so the save gate accepts the caption");
+		(page.Validation?.Warnings ?? Array.Empty<string>()).Should().NotContain(
+			warning => warning.Contains("will not be registered"),
+			because: "the pre-flight reads the same stored-plus-hierarchy key set the save accepts");
+	}
 }

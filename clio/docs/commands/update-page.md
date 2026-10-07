@@ -210,10 +210,11 @@ name instead of trying to edit a non-existent local `insert`.
 - **Inserted widget/metric titles must resolve.** A `title`/`caption`/`tooltip`/`placeholder` on a
   freshly inserted (`operation:"insert"`) widget/container bound as 
   `#ResourceString(<Key>)#` is **rejected** when `<Key>` will not resolve — i.e. it is not passed in
-  `--resources`, is not already stored in the target schema's `localizableStrings` or declared by a
-  schema of its designer hierarchy, is not a DS-bound attribute, and is not a `Usr`-prefixed key clio
-  auto-derives. A layout-only re-save therefore does not have to repeat keys an earlier save registered,
-  and a caption may bind a key a parent page declares. This guards the metric/chart-widget-title case (a title such as
+  `--resources`, is not already stored in the target schema's `localizableStrings` (on the first save
+  into a package: in the schema it replaces, whose strings the save copies) or declared by a level of
+  the designer hierarchy clio resolved for the page (not with `--target-schema-uid`), is not a DS-bound
+  attribute, and is not a `Usr`-prefixed key clio auto-derives. A layout-only re-save therefore does not
+  have to repeat keys an earlier save registered. This guards the metric/chart-widget-title case (a title such as
   `#ResourceString(IndicatorWidget_<slug>_title)#` is registered only when you pass it in `--resources`;
   otherwise it renders raw as `$Resources.Strings.IndicatorWidget_<slug>_title`).
 

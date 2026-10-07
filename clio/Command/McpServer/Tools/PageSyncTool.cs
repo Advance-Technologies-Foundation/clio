@@ -781,7 +781,8 @@ public sealed class PageSyncTool(
 
 	/// <summary>
 	/// Builds the lazy persisted-resource-key provider for one page. The delegate is handed to the
-	/// content-validation chain and invoked ONLY for an unresolved label-resource rejection.
+	/// content-validation chain and invoked ONLY for an unresolved label-resource rejection or an
+	/// unresolved widget-caption binding.
 	/// </summary>
 	/// <param name="environmentName">The batch's target environment; may be blank under credential passthrough.</param>
 	/// <param name="schemaName">The page whose schema is read.</param>

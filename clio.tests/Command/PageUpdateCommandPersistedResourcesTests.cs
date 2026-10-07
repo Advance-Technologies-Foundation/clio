@@ -12,7 +12,7 @@ namespace Clio.Tests.Command;
 /// PR #1356 review (d-krestov, Gate 3): AC-2's PRODUCTION wiring had no coverage at any level. The seven
 /// SchemaValidationServiceTests cases all call <c>ValidateFieldLabelResources</c> with a hand-built
 /// <c>HashSet</c> or a counting lambda, so the chain that actually delivers AC-2 —
-/// <c>provider -> TryResolveContext -> IsCreateReplacing guard -> TryGetSchema -> schema["localizableStrings"]
+/// <c>provider -> TryResolveContext -> TryGetSchema -> schema["localizableStrings"]
 /// -> ResourceStringHelper.GetExistingKeys -> key match -> save proceeds</c> — was entirely unexercised, and
 /// every step in it could be broken by a refactor with a green suite. These tests drive the real
 /// <see cref="PageUpdateCommand"/> over a stubbed client and assert the end-to-end outcome (save issued /

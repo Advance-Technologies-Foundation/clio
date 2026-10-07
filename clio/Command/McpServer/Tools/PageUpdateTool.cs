@@ -114,8 +114,9 @@ public sealed class PageUpdateTool(
 				args,
 				cancellationToken);
 		if (earlyFailure != null) {
-			// The label-resource validators are the ONLY consumer of the persisted-key rescue, so its
-			// failure reason is produced on exactly the path that returns here - before the warning merge
+			// In this pre-execution gate the label-resource validators are the ONLY consumer of the
+			// persisted-key rescue, so its failure reason is produced on exactly the path that returns here
+			// - before the warning merge
 			// at the end of this method. Without this the caller sees only the validator's own
 			// "resource ... is neither auto-provided nor registered" and never why the rescue was skipped.
 			AppendPersistedResourceKeyWarning(earlyFailure, options);
@@ -142,7 +143,10 @@ public sealed class PageUpdateTool(
 		// A save REGISTERS keys, so any cached read of this schema is now stale. One update-page call
 		// makes at most one save, so nothing in THIS call reads it again - the drop keeps the rule stated
 		// in one place rather than making the two write tools differ on when a cache entry survives.
-		if (response.Success) {
+		// A dry run registers nothing, and a SUCCESSFUL dry run can carry a failed read - its caption check
+		// only warns (issue #1740) - so dropping the entry here would erase the reason before
+		// AppendPersistedResourceKeyWarning reports it below.
+		if (response.Success && !options.DryRun) {
 			persistedResourceKeyReader.Invalidate(options);
 		}
 		// The command layer marks a content-rule failure but does not word the hint - `validate` is
