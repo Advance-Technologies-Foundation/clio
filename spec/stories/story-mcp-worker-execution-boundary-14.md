@@ -15,7 +15,9 @@ caller who cancels a tool call that is running in a sticky worker
 the relay to tell the worker its call was abandoned
 
 ## So that
-a worker that outlives the response stops working on an answer nobody will ever read
+a worker that outlives the response stops working on an answer nobody will ever read - for a status poll
+and other abandoned reads. A cancelled operation STARTER is the exception (ENG-102333, ADR §3.2a): its
+operation is meant to run to its end, so its worker is kept rather than stopped.
 
 ## Design
 - **What the relay does today**, read out of `clio/Command/McpServer/Relay/WorkerMcpRelay.cs`, not inferred:
@@ -54,7 +56,7 @@ a worker that outlives the response stops working on an answer nobody will ever 
       request id the relay used for that call, and the caller's await still completes as cancelled.
 - [ ] AC-02 — A late response for a cancelled id is still discarded; it must not fault the session or the next
       caller's pending slot.
-- [ ] AC-03 — The reuse decision for a cancelled sticky worker is explicit and written down (returned to the
+- [x] AC-03 — The reuse decision for a cancelled sticky worker is explicit and written down (returned to the
       pool only after a bounded liveness confirmation — story 15 — or retired outright), not left to whichever
       code path reaches the worker first. Decided for both paths in ADR §3.2a: a cancelled poll (story 15) and,
       since 2026-10-07 (ENG-102333), a cancelled starter keep the worker when the request was written — behind a
@@ -62,7 +64,9 @@ a worker that outlives the response stops working on an answer nobody will ever 
 - [ ] AC-04 — Per-call workers behave exactly as they do today; the supervisor kill remains their bound and no
       extra round trip is added to the hot path.
 - [ ] AC-05 — TC-E-404's claim ("the child stops issuing backend requests") is asserted for a STICKY worker on
-      backend request counters — the per-call case is satisfied by the kill and proves nothing about this one.
+      backend request counters — the per-call case is satisfied by the kill and proves nothing about this one. Scope: a
+      cancelled POLL or read. A cancelled operation STARTER is excluded on purpose - since ENG-102333 its
+      operation keeps issuing backend requests to its end (ADR §3.2a; `CompileCreatioClientTimeoutE2ETests`).
 
 ## Tests
 Unit TC-U-704 (`clio.tests/Command/McpServer/WorkerMcpRelayTests.cs`, `Module=McpServer`): cancelling a

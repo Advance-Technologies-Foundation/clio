@@ -1713,7 +1713,7 @@ public sealed class StickyWorkerSupervisionTests {
 		heldWhileRunning.Should().Be(1,
 			because: "a compile that is still running server-side must keep denying a second configuration build for its target, whoever stopped waiting for it");
 		fixture.Reservations.HeldCount.Should().Be(0,
-			because: "the reservation is released the moment the compile actually ends, not at the lifetime bound half an hour later");
+			because: "the reservation is released the moment the compile actually ends, not at the 65-minute lifetime bound");
 		next.IsError.Should().NotBeTrue(
 			because: "after the compile ended the poll is still answered - from the worker lingering with the finished record, or from a fresh one once that worker has gone - and never refused");
 	}

@@ -34,7 +34,7 @@ public sealed class RestartStatusTool(IRestartOperationRegistry registry, IToolC
 		"This MCP server session holds no record of a restart operation for this environment. That does not mean "
 		+ "no restart ran: a record lives only in this session, and only for a while after its restart ends. Do "
 		+ "not restart again to find out - check that the environment answers, for example with "
-		+ GetCreatioInfoTool.ToolName + ".";
+		+ GetCreatioInfoTool.ToolName + " (through clio-run); a restarted instance can take 1-10 minutes to warm up.";
 
 	/// <summary>
 	/// Returns the tracked status of a restart readiness wait.

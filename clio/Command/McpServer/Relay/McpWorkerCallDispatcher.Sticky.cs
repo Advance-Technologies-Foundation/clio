@@ -951,8 +951,8 @@ public sealed partial class McpWorkerCallDispatcher {
 			: $"'{environmentName}'";
 		string text = string.Format(CultureInfo.InvariantCulture,
 			"'{0}' was not started: an operation of the '{1}' family is already running for {2} in this "
-			+ "clio MCP host. Poll that operation's status tool for its result, or wait for it to finish "
-			+ "before starting another.", toolName, family, target);
+			+ "clio MCP host. Poll that operation's status tool for its result where it has one "
+			+ "(compile-status, restart-status), or wait for it to finish before starting another.", toolName, family, target);
 		JsonObject payload = new() {
 			["success"] = false,
 			["tool"] = toolName,

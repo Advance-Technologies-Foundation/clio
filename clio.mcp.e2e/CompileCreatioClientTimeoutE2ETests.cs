@@ -139,7 +139,7 @@ public sealed class CompileCreatioClientTimeoutE2ETests {
 	[AllureTag(CompileCreatioTool.CompileCreatioToolName)]
 	[AllureName("A worker signals completion for a compile call cancelled right behind its request")]
 	[AllureDescription("Talks to a real clio mcp-server --worker directly, the way the parent does, and writes notifications/cancelled immediately behind the compile-creatio request - the tightest race a parent can produce. The parent keeps such a worker and relies on it to send the private completion signal when the work ends; if the MCP SDK refused a request already cancelled before clio's call-tool filter ran, no signal would ever come and the kept worker would hold the target's configuration-build reservation until its 65-minute lifetime bound.")]
-	[Description("ENG-102333: a worker whose compile-creatio call is cancelled right behind its request still sends the private completion signal - at once when the cancellation won, when the compile ends when it did not - so a parent that keeps the worker is always released.")]
+	[Description("ENG-102333: a worker whose compile-creatio call is cancelled right behind its request still sends the private completion signal - at once when the cancellation won, when the compile ends when it did not - so a parent that keeps the worker is always released. An uncancelled control call on the same worker proves the setup reaches the environment.")]
 	public async Task Worker_Should_SendTheCompletionSignal_WhenItsCompileCallIsCancelledRightBehindTheRequest() {
 		// Arrange
 		await using CreatioWedgeStubServer stub = CreatioWedgeStubServer.Start();
@@ -180,6 +180,15 @@ public sealed class CompileCreatioClientTimeoutE2ETests {
 			_ = call.ContinueWith(static abandoned => abandoned.Exception, CancellationToken.None,
 				TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
 			Task finished = await Task.WhenAny(signal.Task, Task.Delay(TerminalStateBound, scenario.Token));
+			int loginsWhenSignalled = stub.LoginCount;
+			// Control: the same worker and setup, NOT cancelled, must reach the environment. Without it a fast signal
+			// proves nothing - a call that fails at once for any other reason (a broken child environment, say)
+			// sends exactly the same signal. Whichever branch the race above took, its call has ended by now, so
+			// nothing in the worker refuses this one.
+			using CancellationTokenSource control = CancellationTokenSource.CreateLinkedTokenSource(scenario.Token);
+			control.CancelAfter(TerminalStateBound);
+			await worker.Client.SendRequestAsync(CompileRequest(new RequestId($"eng-102333-control-{Guid.NewGuid():N}")),
+				control.Token);
 
 			// Assert
 			finished.Should().BeSameAs(signal.Task,
@@ -189,6 +198,9 @@ public sealed class CompileCreatioClientTimeoutE2ETests {
 				.Should().BeTrue(because: "the signal must be the parent's private completion contract");
 			family.Should().Be(McpToolOperationFamily.ConfigurationBuild,
 				because: "the signal belongs to the compile's operation family");
+			stub.LoginCount.Should().BeGreaterThan(loginsWhenSignalled,
+				because: "the uncancelled control call must reach the environment, or the signal above could have come from a setup that cannot compile at all. Logins when signalled: {0}. Worker: {1}",
+				loginsWhenSignalled, worker.Describe());
 		}
 		finally {
 			TryDeleteDirectory(tempHome);
@@ -402,7 +414,8 @@ public sealed class CompileCreatioClientTimeoutE2ETests {
 			try {
 				if (!_process.HasExited) {
 					_process.Kill(entireProcessTree: true);
-					await _process.WaitForExitAsync(new CancellationTokenSource(TimeSpan.FromSeconds(10)).Token);
+					using CancellationTokenSource exitWait = new(TimeSpan.FromSeconds(10));
+					await _process.WaitForExitAsync(exitWait.Token);
 				}
 			}
 			catch (Exception) {

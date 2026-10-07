@@ -17,8 +17,10 @@ once it sent the request through `session.Client.SendRequestAsync` with an `Id` 
 { RequestId = thatId })`. A real client does reach the parent: Claude Code with `MCP_TOOL_TIMEOUT=60000`
 killed the worker at exactly 60 s on a stand.
 
-**Why it is this way** — not measured. The SDK client only abandons its local await here; why its own
-cancellation does not arrive was not traced.
+**Why it is this way** — not traced. In this harness the SDK client's cancellation only abandons its local
+await; whether it sends `notifications/cancelled` at all was not checked, because the explicit notification
+is the reliable test either way. It is the tool-side fact of `mcp-cancellation-does-not-reach-tools.md`,
+one layer up.
 
 **What breaks if you ignore it** — a test of what clio does when a client gives up goes green on the code
 it was written to catch. Write the wire sequence explicitly; `CallCompileAndGiveUpAsync` in

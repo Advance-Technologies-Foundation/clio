@@ -221,6 +221,7 @@ get-guidance again with the selected name.
 - Entity tools work DB-first: schemas are created directly in PostgreSQL
 - Guidance lookups use the persistent disk cache and hot reload only when its activation marker changes; the publisher is contacted by install-knowledge/update-knowledge and by a read-triggered refresh bounded by the autoupdate.knowledge schedule (hourly by default), never per MCP session or per lookup
 - Some tool calls run in a short-lived child worker process the server supervises and can kill. How many such workers may run at once is capped, and `CLIO_MCP_WORKER_CONCURRENCY` raises or lowers that cap. The default is derived from the host's processor count, so on a single-vCPU host it is low: a long operation (`compile-creatio`, `restart-*`) can be refused with `error-class=clio-worker-saturated` until the variable is raised. Nothing is spawned and no request reaches Creatio on that refusal, so it is safe to retry.
+- A long operation keeps its worker when your MCP client stops waiting after the call reached it (for example a client-side request timeout): the operation runs to its end, `compile-status` / `restart-status` can still report it, and the worker holds its slot until then. A second operation of the same kind for that environment is refused as already in progress meanwhile.
 
 ## Return Values
 
