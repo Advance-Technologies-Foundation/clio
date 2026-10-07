@@ -1,9 +1,11 @@
 ---
-description: in file system development mode a package data binding saved through SchemaDataDesignerService (every clio DB-first binding write) reaches the database only — Data/<binding> never appears in the package folder, and pkg-to-file-system / pkg-to-db are whole-package overwrites, so clio only warns and names pkg-to-file-system instead of exporting
+description: in file system development mode a package data binding saved through SchemaDataDesignerService reaches the database only — Data/<binding> never appears in the package folder, and pkg-to-file-system / pkg-to-db are whole-package overwrites, so PackageDataBindingWriter only warns and names pkg-to-file-system instead of exporting; the SysModule_<code> re-save in update-app-section (ApplicationSectionLocalization) bypasses that writer and does not warn
 applies-to:
   - clio/Command/PackageDataBindingWriter.cs
   - clio/Package/FileDesignModePackages.cs
   - clio/Command/McpServer/Prompts/DataBindingDbPrompt.cs
+  - clio/Command/ApplicationSectionLocalization.cs
+  - clio/Command/SectionLocalizationPlanner.cs
 ticket: ENG-102507
 date: 2026-10-07
 ---
@@ -39,4 +41,9 @@ command reports success, the commit ships the package without its data, and the 
 empty lookup. `PackageDataBindingWriter` therefore reads `GetIsFileDesignMode` once per writer instance
 after a save or delete. It warns with the folder and the `pkg-to-file-system` step, also when the state
 cannot be read, and never fails the write. A failed write would make callers retry a non-idempotent
-insert.
+insert. The warning covers only bindings written through that writer: `create-data-binding-db`,
+`upsert-data-binding-row-db`, `remove-data-binding-row-db`, `sync-schemas` and `create-lookup`, and the
+branding/feature binder. `ApplicationSectionLocalization.RefreshSectionPackageBinding` re-saves the
+`SysModule_<code>` binding by posting SaveSchema itself (called from `SectionLocalizationPlanner`, that is
+`update-app-section` after a caption localization), so that binding stays database-only in FSM without any
+warning. The same `pkg-to-file-system` step applies there.

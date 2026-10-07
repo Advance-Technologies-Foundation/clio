@@ -291,13 +291,27 @@ internal sealed class PackageDataBindingWriter(
 	/// </summary>
 	private void WarnIfPackageFolderIsNotUpdated(PackageRef package, string bindingName, BindingChange change) {
 		if (!_fileDesignModeStateRead) {
-			_isFileDesignModeEnabled = fileDesignModeStateReader.GetIsFileDesignModeEnabled();
+			_isFileDesignModeEnabled = ReadFileDesignModeState();
 			_fileDesignModeStateRead = true;
 		}
 		if (_isFileDesignModeEnabled == false) {
 			return;
 		}
 		logger.WriteWarning(BuildPackageFolderWarning(_isFileDesignModeEnabled, package.Name, bindingName, change));
+	}
+
+	/// <summary>
+	/// Reads the file system development mode state for the warning, treating every failure as an unknown
+	/// state. The binding has already been committed when this runs: an exception escaping here would report
+	/// that committed write as failed, and a caller such as <c>sync-schemas</c> seed-data would then replay a
+	/// non-idempotent insert and duplicate rows. Only out-of-memory propagates, since nothing can continue then.
+	/// </summary>
+	private bool? ReadFileDesignModeState() {
+		try {
+			return fileDesignModeStateReader.GetIsFileDesignModeEnabled();
+		} catch (Exception exception) when (exception is not OutOfMemoryException) {
+			return null;
+		}
 	}
 
 	/// <summary>Builds the warning text for a binding change the package folder on disk does not have.</summary>

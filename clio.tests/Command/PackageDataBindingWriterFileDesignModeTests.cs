@@ -104,6 +104,23 @@ public sealed class PackageDataBindingWriterFileDesignModeTests {
 	}
 
 	[Test]
+	[Description("Keeps a committed save successful when the state reader throws a non-HTTP exception, and warns that the state is unknown, because a failed save would make sync-schemas seed-data replay a non-idempotent insert.")]
+	public void SaveBinding_Should_Succeed_And_Warn_Conditionally_When_The_State_Reader_Throws() {
+		// Arrange
+		_stateReader.GetIsFileDesignModeEnabled().Returns(_ => throw new NullReferenceException("converter defect"));
+
+		// Act
+		Action act = () => _sut.SaveBinding(Package, "UsrStatus", "UsrStatus", BuildSchema(), [RowId]);
+
+		// Assert
+		act.Should().NotThrow(
+			because: "the binding is already saved, and reporting it as failed invites a duplicate-row replay");
+		_logger.Received(1).WriteWarning(Arg.Is<string>(message =>
+			message.Contains("could not read whether file system development mode is enabled")
+			&& message.Contains("Pkg/UsrPkg/Data/UsrStatus")));
+	}
+
+	[Test]
 	[Description("Does not read the mode or warn when SaveSchema is refused, because nothing changed in the database and the caller already reports the failure.")]
 	public void SaveBinding_Should_Not_Warn_When_The_Save_Is_Refused() {
 		// Arrange
