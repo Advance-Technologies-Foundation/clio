@@ -87,7 +87,7 @@ public sealed class ProcessDesignerUnknownArgumentRefusalTests {
 		// Arrange
 		CreateBusinessProcessTool tool = new(null, ConsoleLogger.Instance, _commandResolver);
 		CreateBusinessProcessArgs args =
-			new(EnvironmentName: EnvName, Descriptor: "{}") { ExtensionData = Overflow() };
+			new(EnvironmentName: EnvName, Descriptor: JsonArgument.Text("{}")) { ExtensionData = Overflow() };
 
 		// Act
 		CommandExecutionResult result = tool.CreateBusinessProcess(args);
@@ -121,7 +121,7 @@ public sealed class ProcessDesignerUnknownArgumentRefusalTests {
 	public void ModifyBusinessProcess_ShouldRefuseAnUnknownArgument_AndNameIt() {
 		// Arrange
 		ModifyBusinessProcessTool tool = new(null, ConsoleLogger.Instance, _commandResolver);
-		ModifyBusinessProcessArgs args = new(EnvironmentName: EnvName, Operations: "[]",
+		ModifyBusinessProcessArgs args = new(EnvironmentName: EnvName, Operations: JsonArgument.Text("[]"),
 			ProcessName: "UsrOrder_Handle") { ExtensionData = Overflow() };
 
 		// Act
@@ -138,7 +138,7 @@ public sealed class ProcessDesignerUnknownArgumentRefusalTests {
 		// Arrange
 		ModifyProcessAsNewVersionTool tool = new(null, ConsoleLogger.Instance, _commandResolver);
 		ModifyProcessAsNewVersionArgs args = new(EnvironmentName: EnvName,
-			ProcessName: "UsrOrder_Handle", Operations: "[]") { ExtensionData = Overflow() };
+			ProcessName: "UsrOrder_Handle") { Operations = JsonArgument.Text("[]"), ExtensionData = Overflow() };
 
 		// Act
 		CommandExecutionResult result = tool.ModifyProcessAsNewVersion(args);

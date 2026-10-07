@@ -41,9 +41,6 @@ public class ModifyBusinessProcessTool(
 	/// Applies an inline JSON operations array to an existing process (identified by name or uid).
 	/// </summary>
 	/// <param name="args">The tool arguments; see <see cref="ModifyBusinessProcessArgs"/>.</param>
-	/// <param name="operations">Inline JSON operations array.</param>
-	/// <param name="confirmLayoutChange">Agreement to have THIS process re-drawn, sent only after the user has
-	/// turned down the new-version route.</param>
 	/// <returns>The command execution result with the edited schema identity in the log output.</returns>
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
@@ -384,15 +381,16 @@ public class ModifyBusinessProcessTool(
 			return targetError;
 		}
 
-		if (string.IsNullOrWhiteSpace(args.Operations)) {
-			return CommandExecutionResult.FromError("operations is required and cannot be empty.");
+		if (!McpToolArgumentSupport.TryReadJsonDocumentArgument(args.Operations, JsonValueKind.Array,
+				"operations", out string operationsJson, out CommandExecutionResult? operationsRefusal)) {
+			return operationsRefusal;
 		}
 
 		ModifyBusinessProcessOptions options = new() {
 			Environment = args.EnvironmentName,
 			ProcessName = args.ProcessName ?? string.Empty,
 			ProcessUid = args.ProcessUid ?? string.Empty,
-			OperationsJson = args.Operations,
+			OperationsJson = operationsJson,
 			ConfirmLayoutChange = args.ConfirmLayoutChange ?? false
 		};
 		// An edit that leaves no new C# behind needs no compile, and the deterministic post-op note says so
@@ -414,10 +412,12 @@ public sealed record ModifyBusinessProcessArgs(
 	[property: Required]
 	string EnvironmentName,
 
+	// JsonElement, not string: the array itself is the natural call, and a string holding the same JSON keeps
+	// working. McpToolArgumentSupport.TryReadJsonDocumentArgument says why (ENG-100153).
 	[property: JsonPropertyName("operations")]
-	[property: Description("The operations array SERIALIZED AS A JSON STRING - not a nested array. A real array fails with \"Cannot get the value of a token type 'StartArray' as a string\". e.g. \"[{\\\"op\\\":\\\"removeElement\\\",\\\"elementName\\\":\\\"StartEvent1\\\"}]\".")]
+	[property: Description("The operations as a JSON array, e.g. [{\"op\":\"removeElement\",\"elementName\":\"NotifyAccountOwner\"}]. A string holding the same JSON is also accepted.")]
 	[property: Required]
-	string Operations,
+	JsonElement Operations,
 
 	[property: JsonPropertyName("process-name")]
 	[property: Description("Process code (schema Name) to edit; provide exactly one of process-name or process-uid.")]

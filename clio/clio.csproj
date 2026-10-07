@@ -5,6 +5,8 @@
 		<TargetFrameworks>net8.0</TargetFrameworks>
 		<TargetFrameworks Condition="$([MSBuild]::VersionGreaterThanOrEquals('$(NETCoreSdkVersion)', '10.0'))">net10.0;net8.0</TargetFrameworks>
 		<PackAsTool>true</PackAsTool>
+		<!-- One use: McpResultJsonEncoder overrides JavaScriptEncoder, whose abstract members take char*. -->
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 		<PackageId>clio</PackageId>
 		<Company>creatio</Company>
 		<Authors>creatio rnd team</Authors>

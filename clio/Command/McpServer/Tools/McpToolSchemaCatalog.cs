@@ -5,6 +5,7 @@ using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Reflection;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using ModelContextProtocol.Server;
 
@@ -234,6 +235,11 @@ internal static class McpToolSchemaCatalog {
 			underlying == typeof(float) || underlying == typeof(double) ||
 			underlying == typeof(decimal)) {
 			return NumberType;
+		}
+		// A member that takes any JSON value, such as the process-designer descriptor and operations (ENG-100153).
+		// The registry-derived contract reports it as "any"; this fallback must not answer "object" for the same field.
+		if (underlying == typeof(JsonElement)) {
+			return McpToolRegistrySchemaContract.AnyType;
 		}
 		if (underlying != typeof(string) && typeof(IEnumerable).IsAssignableFrom(underlying)) {
 			return ArrayType;

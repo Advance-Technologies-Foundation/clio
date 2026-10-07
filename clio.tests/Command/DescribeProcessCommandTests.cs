@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Text.Json.Nodes;
 using Clio.Command;
 using Clio.Command.ProcessModel;
@@ -268,9 +269,9 @@ public sealed class DescribeProcessCommandTests {
 
 		// Assert
 		result.Should().Be(0, because: "a found process is described successfully");
-		written.Should().Contain("\"sourceColumn\": \"Owner\"",
+		written.Should().Contain("\"sourceColumn\":\"Owner\"",
 			because: "the column must survive the clio DTO re-serialization");
-		written.Should().Contain("\"sourceElementParameter\": \"ResultEntity\"",
+		written.Should().Contain("\"sourceElementParameter\":\"ResultEntity\"",
 			because: "so must the record parameter");
 		foreach (string field in new[] { "sourceElement", "sourceElementParameter", "sourceColumn" }) {
 			System.Text.RegularExpressions.Regex.Matches(written, $"\"{field}\"").Count.Should().Be(1,
@@ -314,9 +315,10 @@ public sealed class DescribeProcessCommandTests {
 
 		// Assert
 		result.Should().Be(0, because: "a found process is described successfully");
-		written.Should().Contain("\"direction\": \"Variable\"",
+		JsonNode parameter = JsonNode.Parse(written)!["elements"]![0]!["parameters"]![0]!;
+		parameter["direction"]!.GetValue<string>().Should().Be("Variable",
 			because: "a parameter's direction must survive the clio DTO re-serialization so callers can classify it");
-		written.Should().Contain("\"isResult\": true",
+		parameter["isResult"]!.GetValue<bool>().Should().BeTrue(
 			because: "an element output (IsResult true) marks a parameter usable as a mapping source even when its direction is Variable, and must not be dropped by the clio DTO");
 	}
 
@@ -352,9 +354,10 @@ public sealed class DescribeProcessCommandTests {
 
 		// Assert
 		result.Should().Be(0, because: "a found process is described successfully");
-		written.Should().Contain("\"isOutput\": true",
+		JsonNode parameter = JsonNode.Parse(written)!["elements"]![0]!["parameters"]![0]!;
+		parameter["isOutput"]!.GetValue<bool>().Should().BeTrue(
 			because: "isOutput is the output marker agents are told to key on, and must survive the clio DTO");
-		written.Should().Contain("\"isResult\": false",
+		parameter["isResult"]!.GetValue<bool>().Should().BeFalse(
 			because: "the stored flag is still reported beside it, truthfully");
 	}
 
@@ -593,4 +596,108 @@ public sealed class DescribeProcessCommandTests {
 			because: "no member was flagged active, so naming one would be an invention");
 	}
 
+	[TestCase(true, false, TestName = "a complete decode leaves the raw value out")]
+	[TestCase(false, true, TestName = "an incomplete decode keeps the raw value")]
+	[TestCase(null, true, TestName = "an older server that does not judge keeps the raw value")]
+	[Category("Unit")]
+	[Description("Leaves out a Read data element's raw platform filter only when the server judged its decoded filter COMPLETE: the raw FilterGroup is 16-27% of a measured describe and a duplicate when the decode is complete, but the only full record when it is not - an Exists leaf read as equal, one value of a multi-value lookup, a disabled condition (ENG-99970).")]
+	public void Execute_ShouldOmitTheRawFilterValue_OnlyWhenTheDecodeIsComplete(bool? decodedCompletely,
+		bool rawValueKept) {
+		// Arrange
+		_describer.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>())
+			.Returns(FilteredProcess(("Read1", decodedCompletely, "DataSourceFilters")));
+		string written = null;
+		_logger.WriteInfo(Arg.Do<string>(value => written = value));
+
+		// Act
+		int result = _command.Execute(new DescribeProcessOptions { Environment = "dev", ProcessName = "UsrFiltered" });
+
+		// Assert
+		result.Should().Be(0, because: "a found process is described successfully");
+		JsonNode element = JsonNode.Parse(written)!["elements"]![0]!;
+		JsonNode filterParameter = element["parameters"]![0]!;
+		if (rawValueKept) {
+			filterParameter["value"]!.GetValue<string>().Should().Be(RawFilter,
+				because: "without the server's word that the decode is complete, the raw value may be the only full record");
+			filterParameter["valueOmitted"].Should().BeNull(because: "nothing was left out");
+		} else {
+			filterParameter["value"].Should().BeNull(
+				because: "a completely decoded filter makes the raw FilterGroup a duplicate, and it is left out");
+			filterParameter["valueOmitted"]!.GetValue<string>().Should().Be(DescribeProcessCommand.DecodedFilterNote,
+				because: "an omitted value must say where its content is, or the parameter reads as empty");
+		}
+		element["filter"]!["object"]!.GetValue<string>().Should().Be("Contact",
+			because: "the decoded filter is always written, whichever way the raw value goes");
+		element["parameters"]![1]!["value"]!.GetValue<string>().Should().Be("0",
+			because: "only the raw filter is ever left out; every other parameter value is written as stored");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Judges each element on its OWN decode: an element whose filter decoded completely loses its raw value while its neighbour, whose decode was incomplete, keeps it - and the parameter name is matched case-insensitively.")]
+	public void Execute_ShouldJudgeEachElement_OnItsOwnDecode() {
+		// Arrange
+		_describer.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>())
+			.Returns(FilteredProcess(("Complete1", true, "datasourcefilters"), ("Partial1", false, "DataSourceFilters")));
+		string written = null;
+		_logger.WriteInfo(Arg.Do<string>(value => written = value));
+
+		// Act
+		_command.Execute(new DescribeProcessOptions { Environment = "dev", ProcessName = "UsrFiltered" });
+
+		// Assert
+		JsonNode elements = JsonNode.Parse(written)!["elements"]!;
+		elements[0]!["parameters"]![0]!["value"].Should().BeNull(
+			because: "the first element's decode is complete, and the name matches whatever its casing");
+		elements[1]!["parameters"]![0]!["value"]!.GetValue<string>().Should().Be(RawFilter,
+			because: "the second element's decode is incomplete; another element's verdict says nothing about it");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Keeps the raw filter value when the server could not decode the filter at all: describe decodes only the modern wrapper, so for a legacy designer-built filter the raw value is the only evidence that a filter exists.")]
+	public void Execute_ShouldKeepTheRawFilterValue_WhenTheFilterIsNotDecoded() {
+		// Arrange
+		DescribeProcessResult process = FilteredProcess(("Read1", null, "DataSourceFilters"));
+		process.Elements[0].Filter = null;
+		_describer.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>()).Returns(process);
+		string written = null;
+		_logger.WriteInfo(Arg.Do<string>(value => written = value));
+
+		// Act
+		_command.Execute(new DescribeProcessOptions { Environment = "dev", ProcessName = "UsrFiltered" });
+
+		// Assert
+		JsonNode parameter = JsonNode.Parse(written)!["elements"]![0]!["parameters"]![0]!;
+		parameter["value"]!.GetValue<string>().Should().Be(RawFilter,
+			because: "with no decoded filter the raw value is the only sign a filter narrows this element");
+		parameter["valueOmitted"].Should().BeNull(because: "nothing was left out");
+	}
+
+	private const string RawFilter = "{\"className\":\"Terrasoft.FilterGroup\",\"items\":{}}";
+
+	// A process whose elements each carry a decoded Contact filter, the given verdict, a raw filter parameter under
+	// the given name and one ordinary parameter.
+	private static DescribeProcessResult FilteredProcess(
+		params (string Name, bool? DecodedCompletely, string FilterParameterName)[] elements) =>
+		new() {
+			Name = "UsrFiltered",
+			SchemaUId = "uid",
+			Elements = elements.Select(element => new DescribedElement {
+				Name = element.Name, Uid = element.Name, BuildType = "readData",
+				Filter = new DescribedFilter { Object = "Contact" },
+				FilterDecodedCompletely = element.DecodedCompletely,
+				Parameters = [
+					new DescribedParameter {
+						Name = element.FilterParameterName, UId = element.Name + "-p1", Type = "Text", Source = "ConstValue",
+						Value = RawFilter
+					},
+					new DescribedParameter {
+						Name = "ResultType", UId = element.Name + "-p2", Type = "Integer", Source = "ConstValue", Value = "0"
+					}
+				]
+			}).ToList(),
+			Flows = [],
+			Parameters = []
+		};
 }
