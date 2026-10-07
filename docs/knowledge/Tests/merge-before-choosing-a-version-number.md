@@ -5,7 +5,7 @@ applies-to:
   - clio/Common/BundledPackageCatalog.cs
   - clio.tests/Common/BundledProcessBuilderPackageTests.cs
 ticket: ENG-91853
-date: 2026-09-08
+date: 2026-10-07
 ---
 
 **What is true** — **merge first, then choose the version.** Choosing first guarantees a collision,
@@ -33,6 +33,18 @@ master  "libraryVersion": "1.13.98"   guidance tree 94ca3ef6…   <- different, 
 
 Re-read the base's version at **push** time, not at commit time. "master was still at .98 as of the
 commit" is exactly the condition that was true in all three collisions, right up until it was not.
+
+**Two engine branches open at once are the same failure in another shape: each bundle lacks the other's
+change.** ENG-99970 (crt-process-builder#81, 1.6.6.82, bundled by clio#1693) and ENG-102114
+(crt-process-builder#89, 1.6.6.84, bundled by clio#1764) were cut from the same engine `main`, so the archive of each
+lacks the other's code. The two clio PRs conflict on the pins and the `.gz`, so nothing merges silently. But either
+way of resolving that conflict is wrong:
+- taking the higher number ships 1.6.6.84 without the ENG-99970 filter reader that clio#1693's describe relies on;
+- taking the other side goes back to 1.6.6.82 and loses the GUID fix.
+
+Every `[RequiresPackage]` floor passes either way. The engine PR that merges second must merge `main`, re-cut above
+every number already cut, and the clio PR that merges second must be rebundled from that combined cut (review on
+crt-process-builder#89, 2026-10-07). Resolved the same day: ENG-99970 merged first, and #89 merged `main` and re-cut as 1.6.6.85.
 
 **Why it is this way** — a version is chosen at the moment of building an artifact, and a branch that
 takes hours to land is a branch whose base moves underneath the choice. Nothing in either repository's
