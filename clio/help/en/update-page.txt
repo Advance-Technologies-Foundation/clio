@@ -172,6 +172,14 @@ DESCRIPTION
     - Resource keys already stored on the schema count as registered: a later save
       of the same page does NOT have to repeat every key that an earlier save
       registered. --resources is additions/overrides on top of what is persisted.
+    - Rejected on web and mobile pages, also with validate=false: an "insert"
+      or "move" that names a parentName but no propertyName. The differ places
+      the element into the parent's propertyName slot (usually "items");
+      without it the platform refuses the page ("Item <parent> is not a
+      container for other items") and get-page cannot resolve it. Without a
+      parentName the element goes to the root list and needs no slot. A page
+      saved this way by an older clio still reads back: get-page resolves it
+      without that operation and names it in "warnings".
     A malformed VendorPrefix.Name causes a Creatio runtime error:
       "Error when register X. Type property should have format VendorPrefix.TypeName"
     - Call the MCP `get-guidance` tool with `name=page-schema-converters` for converter details

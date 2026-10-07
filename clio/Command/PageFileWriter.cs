@@ -191,6 +191,7 @@ public sealed class PageFileWriter : IPageFileWriter {
 			Bundle = response.Bundle,
 			Raw = response.Raw,
 			Editable = response.Editable,
+			Warnings = response.Warnings,
 			Files = new PageGetFilesInfo {
 				BodyFile = bodyFile,
 				BundleFile = bundleFile,

@@ -2555,7 +2555,7 @@ public class PageToolsTests
 			viewConfigDiff: """
 				[
 					{"operation":"insert","name":"OwnerFlex","values":{"type":"crt.FlexContainer","direction":"column"}},
-					{"operation":"insert","name":"UsrPhoto","parentName":"OwnerFlex","values":{"type":"crt.ImageInput","value":"$UsrPhoto","size":"large","tooltip":"Upload a photo of the task owner"}}
+					{"operation":"insert","name":"UsrPhoto","parentName":"OwnerFlex","propertyName":"items","values":{"type":"crt.ImageInput","value":"$UsrPhoto","size":"large","tooltip":"Upload a photo of the task owner"}}
 				]
 				""",
 			viewModelConfigDiff: """[{"operation":"merge","path":[],"values":{"attributes":{"UsrPhoto":{"modelConfig":{"path":"PDS.UsrPhoto"}}}}}]""");
@@ -4865,7 +4865,7 @@ public class PageToolsTests
 					_ => saveResponse.ToString()
 				};
 			});
-		string incomingFragment = "/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"TestButton\",\"values\":{\"type\":\"crt.Button\",\"caption\":\"Test\"},\"parentName\":\"ActionButtonsContainer\"}]/**SCHEMA_VIEW_CONFIG_DIFF*/ /**SCHEMA_HANDLERS*/[{request:\"usr.TestRequest\",handler:()=>alert(\"Test\")}]/**SCHEMA_HANDLERS*/";
+		string incomingFragment = "/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"TestButton\",\"values\":{\"type\":\"crt.Button\",\"caption\":\"Test\"},\"parentName\":\"ActionButtonsContainer\",\"propertyName\":\"items\"}]/**SCHEMA_VIEW_CONFIG_DIFF*/ /**SCHEMA_HANDLERS*/[{request:\"usr.TestRequest\",handler:()=>alert(\"Test\")}]/**SCHEMA_HANDLERS*/";
 		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), hierarchyClient, viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 
 		bool ok = command.TryUpdatePage(new PageUpdateOptions {

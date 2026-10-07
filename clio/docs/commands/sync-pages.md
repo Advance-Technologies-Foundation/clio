@@ -87,6 +87,10 @@ When `validate` is `true` (the default), the body is checked client-side before 
   `resources`, is not a DS-bound attribute, and is not a `Usr`-prefixed key. This guards the
   metric/chart-widget-title case (`#ResourceString(IndicatorWidget_<slug>_title)#` is registered only
   when passed in `resources`; otherwise it renders raw as `$Resources.Strings.IndicatorWidget_<slug>_title`).
+- **A placement that names a parent must name its slot** (web and mobile, also with `validate: false`).
+  An `insert` or `move` with a `parentName` but no `propertyName` is **rejected** before saving: the
+  Creatio differ places the element into the parent's `propertyName` slot (usually `"items"`), and
+  without it the platform refuses the page and `get-page` cannot resolve it.
 
 A malformed `VendorPrefix.Name` in any of these sections causes a Creatio runtime error:
 `"Error when register X. Type property should have format VendorPrefix.TypeName"`.

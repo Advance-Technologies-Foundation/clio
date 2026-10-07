@@ -338,6 +338,17 @@
 
 		private bool TryValidateParents(string body, EditableSchemaContext context, out PageUpdateResponse response) {
 			response = null;
+			// GH-1752: body-only and mandatory, so it runs for mobile pages too (the parent check below does not)
+			// and on update-page, sync-pages and the CLI alike. A placement without a slot saves fine but the page
+			// can then neither render nor be read back by get-page.
+			SchemaValidationResult slotResult = PagePlacementSlotValidation.Validate(body);
+			if (!slotResult.IsValid) {
+				response = new PageUpdateResponse {
+					Success = false,
+					Error = PlacementSlotFailurePrefix + string.Join("; ", slotResult.Errors)
+				};
+				return false;
+			}
 			if (context.SchemaType == PageSchemaType.Mobile) return true;
 			JArray candidate = PageParentNameValidation.ReadDiff(body);
 			if (!candidate.OfType<JObject>().Any(x => (x.Value<string>("operation") is "insert" or "move" or "set")
@@ -1308,6 +1319,9 @@
 		/// <summary>The canonical error for a malformed <c>resources</c> payload.</summary>
 		internal const string InvalidResourcesError = "resources must be a valid JSON object string";
 		internal const string MobileValidationFailedPrefix = "Mobile page validation failed: ";
+
+		/// <summary>Prefix of the mandatory GH-1752 rejection: an insert/move with a parentName but no propertyName.</summary>
+		internal const string PlacementSlotFailurePrefix = "Body places an element without a slot: ";
 
 		/// <summary>
 		/// Text appended to every CONTENT-validation failure so the caller learns about the escape hatch at

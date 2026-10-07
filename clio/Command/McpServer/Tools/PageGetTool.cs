@@ -70,7 +70,8 @@ public sealed class PageGetTool(
 				Success = true,
 				Page = written.Page.ForResponse(args.IncludeOperations),
 				Editable = written.Editable,
-				Files = written.Files
+				Files = written.Files,
+				Warnings = written.Warnings
 			};
 		});
 	}

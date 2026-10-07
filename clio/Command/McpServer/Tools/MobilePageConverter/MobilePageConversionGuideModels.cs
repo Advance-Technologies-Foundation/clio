@@ -538,10 +538,10 @@ public sealed class ViewConfigDiffOperation {
 	public string ParentName { get; init; }
 
 	/// <summary>
-	/// The parent's child collection. ALWAYS present on an <c>insert</c> — including when it is the default
-	/// <c>items</c>, which the applier would have assumed anyway — because this list is meant to be pasted
-	/// and an explicit slot is one less thing a reader must know about the applier to trust what they are
-	/// pasting. Absent on a <c>merge</c>, which resolves by <c>name</c> alone. (This summary previously said
+	/// The parent's child collection. ALWAYS present on an <c>insert</c> — including when it is <c>items</c> —
+	/// because the applier has NO default slot: an insert or move that names a parent but no
+	/// <c>propertyName</c> is rejected as "not a container" and the page does not load (GH-1752), so
+	/// update-page refuses to save it. Absent on a <c>merge</c>, which resolves by <c>name</c> alone. (This summary previously said
 	/// "absent when it is the default items", which would have a caller read a present
 	/// <c>propertyName: "items"</c> as a NON-default slot — the one inference the field exists to prevent.)
 	/// </summary>

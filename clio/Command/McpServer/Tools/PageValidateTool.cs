@@ -70,6 +70,12 @@ public sealed class PageValidateTool(
 			if (!mobileRunProcessResult.IsValid) {
 				mobileResult = FoldInContentErrors(mobileResult, mobileRunProcessResult);
 			}
+			// GH-1752: the mandatory placement-slot rule of the save path (PageUpdateCommand). The mobile
+			// apply-oracle cannot see it: against its empty base a move of a template element moves nothing.
+			SchemaValidationResult mobileSlotResult = PagePlacementSlotValidation.Validate(body);
+			if (!mobileSlotResult.IsValid) {
+				mobileResult = FoldInContentErrors(mobileResult, mobileSlotResult);
+			}
 			return new PageValidateResponse {
 				Valid = mobileResult.ContentOk,
 				Validation = mobileResult
@@ -88,6 +94,11 @@ public sealed class PageValidateTool(
 			SchemaValidationService.ValidateRunProcessButtonStructure(body);
 		if (!runProcessResult.IsValid) {
 			result = FoldInContentErrors(result, runProcessResult);
+		}
+		// GH-1752: the mandatory placement-slot rule of the save path (PageUpdateCommand).
+		SchemaValidationResult slotResult = PagePlacementSlotValidation.Validate(body);
+		if (!slotResult.IsValid) {
+			result = FoldInContentErrors(result, slotResult);
 		}
 		if (result.JsSyntaxOk && result.MarkersOk && result.ContentOk) {
 			SchemaValidationResult parents = PageParentNameValidation.Validate(body, args.KnownContainers);

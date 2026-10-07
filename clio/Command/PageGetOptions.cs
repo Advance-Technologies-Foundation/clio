@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text.Json;
 using Clio.Common;
 using CommandLine;
+using Newtonsoft.Json.Linq;
 
 /// <summary>
 /// Options for the <c>get-page</c> command.
@@ -150,8 +151,8 @@ public class PageGetCommand : Command<PageGetOptions>, IProcessPageReader {
 
 			PageDesignerHierarchySchema currentSchema = hierarchy[0];
 
-			var parts = BuildBundleParts(hierarchy);
-			PageBundleInfo bundle = _bundleBuilder.Build(parts);
+			List<PageSchemaBundlePart> parts = BuildBundle(
+				BuildBundleParts(hierarchy), out PageBundleInfo bundle, out IReadOnlyList<string> resolutionWarnings);
 			var schemaChain = BuildSchemaChain(hierarchy);
 			string designPackageName = PageSchemaMetadataHelper.QueryPackageName(
 				_applicationClient, _serviceUrlBuilder, designPackageUId);
@@ -207,6 +208,7 @@ public class PageGetCommand : Command<PageGetOptions>, IProcessPageReader {
 				Editable = editableInfo,
 				BaseViewModelConfig = baseViewModelConfig,
 				BaseModelConfig = baseModelConfig,
+				Warnings = resolutionWarnings,
 				Error = null
 			};
 			return true;
@@ -245,6 +247,55 @@ public class PageGetCommand : Command<PageGetOptions>, IProcessPageReader {
 			designPackageUId = null;
 		}
 		return string.IsNullOrWhiteSpace(designPackageUId) ? fallbackPackageUId : designPackageUId;
+	}
+
+	/// <summary>
+	/// Builds the merged bundle strictly, with one narrow recovery (GH-1752): when the strict build fails with the
+	/// differ's not-a-container rejection of a <c>viewConfigDiff</c> insert/move that names a <c>parentName</c> but
+	/// no <c>propertyName</c> — a shape that older clio versions saved — it builds again without such operations
+	/// and reports each one, so the page can still be read and its body repaired through clio. Any other
+	/// failure, including one that remains after the skip, reaches the strict handler unchanged.
+	/// </summary>
+	/// <param name="parts">The hierarchy parts, current page first.</param>
+	/// <param name="bundle">The merged bundle.</param>
+	/// <param name="warnings">One advisory per skipped operation; <c>null</c> when nothing was skipped.</param>
+	/// <returns>The parts the bundle was built from, so a second build over the same chain resolves too.</returns>
+	private List<PageSchemaBundlePart> BuildBundle(
+		List<PageSchemaBundlePart> parts, out PageBundleInfo bundle, out IReadOnlyList<string> warnings) {
+		warnings = null;
+		try {
+			bundle = _bundleBuilder.Build(parts);
+			return parts;
+		} catch (JsonDiffApplierException ex) when (IsSlotlessPlacementRejection(parts, ex)) {
+			List<string> skipped = [];
+			List<PageSchemaBundlePart> withoutSlotless = parts.Select(part => WithoutSlotlessPlacements(part, skipped)).ToList();
+			bundle = _bundleBuilder.Build(withoutSlotless);
+			foreach (string warning in skipped) {
+				_logger.WriteWarning(warning);
+			}
+			warnings = skipped;
+			return withoutSlotless;
+		}
+	}
+
+	// Only the rejection a slotless placement itself causes is recovered. A chain that fails for another reason
+	// (a cycle, a merge without values, an insert into an undeclared slot) stays a strict failure even when it
+	// also carries such a placement.
+	private static bool IsSlotlessPlacementRejection(IEnumerable<PageSchemaBundlePart> parts, JsonDiffApplierException ex) =>
+		parts.SelectMany(part => PagePlacementSlotValidation.Find(part.ParsedBody.ViewConfigDiff))
+			.Any(placement => PagePlacementSlotValidation.IsRejectionOf(placement, ex.Message));
+
+	private static PageSchemaBundlePart WithoutSlotlessPlacements(PageSchemaBundlePart part, List<string> skipped) {
+		IReadOnlyList<SlotlessPlacement> slotless = PagePlacementSlotValidation.Find(part.ParsedBody.ViewConfigDiff);
+		if (slotless.Count == 0) {
+			return part;
+		}
+		HashSet<int> skippedIndexes = slotless.Select(placement => placement.Index).ToHashSet();
+		JArray kept = new(((JArray)part.ParsedBody.ViewConfigDiff)
+			.Where((_, index) => !skippedIndexes.Contains(index))
+			.Select(operation => operation.DeepClone()));
+		skipped.AddRange(slotless.Select(placement => PagePlacementSlotValidation.DescribeSkipped(part.Schema.Name, placement)));
+		return new PageSchemaBundlePart(part.Schema, part.ParsedBody.WithViewConfigDiff(kept));
 	}
 
 	/// <summary>
