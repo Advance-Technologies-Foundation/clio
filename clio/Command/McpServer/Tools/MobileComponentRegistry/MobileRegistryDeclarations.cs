@@ -5,9 +5,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 
-// What the mobile component registry declares, shared by the web-to-mobile converter (which prunes
-// undeclared properties) and the mobile page validator (which only checks bindings the runtime reads).
-
 /// <summary>
 /// Which mobile-registry generation was loaded, judged by the inherited input surface that came with it.
 /// It is the ONLY thing that decides whether the property prune runs and whether the binding check narrows.

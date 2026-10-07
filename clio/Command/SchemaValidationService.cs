@@ -2019,7 +2019,7 @@ public static class SchemaValidationService
 			if (values.ValueKind != JsonValueKind.Object) {
 				continue;
 			}
-			// A merge carries no type, so DeclaresProperty fails open and every property is still checked.
+			// A merge carries no type, so every property is checked.
 			string componentType = values.TryGetProperty(TypePropertyName, out JsonElement typeElement) &&
 				typeElement.ValueKind == JsonValueKind.String
 					? typeElement.GetString()

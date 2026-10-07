@@ -1,6 +1,7 @@
 ---
 description: MobileComponentRegistry.json exists in two generations and only the runtime-derived one is a valid statement of mobile support, so the converter's property prune is gated on the CONTENT of the payload it loaded (the inherited baseInputs surface) and not on the stand's platform version - which is what lets a regenerated versioned file switch pruning on for that version with no clio release
 applies-to:
+  - clio/Command/McpServer/Tools/MobileComponentRegistry/MobileRegistryDeclarations.cs
   - clio/Command/McpServer/Tools/MobilePageConverter/WebToMobilePropertyPrune.cs
   - clio/Command/McpServer/Tools/MobilePageConverter/MobilePageConversionGuideTool.cs
   - clio.tests/Command/McpServer/Tools/MobilePageConverter/WebToMobilePropertyPruneTests.cs
