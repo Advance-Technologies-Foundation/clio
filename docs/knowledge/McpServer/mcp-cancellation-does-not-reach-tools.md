@@ -24,3 +24,6 @@ cancellation e2e waited only two row-delays and passed; waiting longer than the 
 rows had been sent. Any test of this shape must wait longer than the work would take if nothing stopped it,
 and if it then fails, the conclusion is that cancellation is not delivered — not that the tool ignores it.
 Cancellation guards belong in unit tests, where the token is under the test's control.
+
+The clio PARENT does not see that cancellation either, and an explicit `notifications/cancelled` does reach it:
+see `e2e-cancellation-needs-an-explicit-notifications-cancelled.md` (ENG-102333) before writing such a test.

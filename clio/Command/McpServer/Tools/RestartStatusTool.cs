@@ -22,6 +22,21 @@ public sealed class RestartStatusTool(IRestartOperationRegistry registry, IToolC
 	internal const string RestartStatusToolName = "restart-status";
 
 	/// <summary>
+	/// The note a <c>not-found</c> answer carries.
+	/// </summary>
+	/// <remarks>
+	/// It must not read as "nothing ran" (ENG-102333): the record lives only in this MCP server session, and only
+	/// for a while after its readiness wait ends, so an agent whose client stopped waiting for a restart can poll
+	/// into a session that no longer holds it. Restarting again to find out reloads the runtime for every user a
+	/// second time; asking the environment whether it answers does not.
+	/// </remarks>
+	internal const string NotFoundNote =
+		"This MCP server session holds no record of a restart operation for this environment. That does not mean "
+		+ "no restart ran: a record lives only in this session, and only for a while after its restart ends. Do "
+		+ "not restart again to find out - check that the environment answers, for example with "
+		+ GetCreatioInfoTool.ToolName + " (through clio-run); a restarted instance can take 1-10 minutes to warm up.";
+
+	/// <summary>
 	/// Returns the tracked status of a restart readiness wait.
 	/// </summary>
 	[McpServerTool(Name = RestartStatusToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
@@ -57,7 +72,7 @@ public sealed class RestartStatusTool(IRestartOperationRegistry registry, IToolC
 
 		if (record is null) {
 			return new RestartStatusResponse(true, "not-found", EnvironmentName: args.EnvironmentName,
-				Note: "No restart operation has been recorded for this environment in the current MCP server session.");
+				Note: NotFoundNote);
 		}
 
 		return new RestartStatusResponse(

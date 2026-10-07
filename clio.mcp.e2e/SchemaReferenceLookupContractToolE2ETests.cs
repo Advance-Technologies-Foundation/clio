@@ -69,7 +69,10 @@ public sealed class SchemaReferenceLookupContractToolE2ETests : McpContractFixtu
 			ToolContractGetTool.ToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
-					["tool-names"] = new[] { toolName }
+					["tool-names"] = new[] { toolName },
+					// Since ENG-100154 a default lookup of this large contract is its short form, which keeps
+					// safety-marked sentences only; this test pins the description text itself.
+					["detail"] = ToolContractShortForm.FullDetail
 				}
 			},
 			context.CancellationTokenSource.Token);

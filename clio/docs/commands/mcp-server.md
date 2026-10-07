@@ -195,6 +195,9 @@ Bootstrap an existing-app or page workflow from the authoritative contract befor
 Use your MCP client to call get-tool-contract {"tool-names":["get-page","get-component-info","sync-pages"]}.
 Bootstrap page inspection/editing and discover whether get-component-info is needed before mutating the page body file get-page writes.
 
+Use your MCP client to call get-tool-contract {"tool-names":["create-business-process"],"detail":"full"}.
+A named lookup is fitted to one inline reply by default: every contract comes back in full when the reply fits, and otherwise the largest come back in a SHORT form (marked "detail":"short" with "full-contract-bytes") that keeps the purpose and every sentence carrying a safety marker (a confirmation, an ask/tell/warn-the-user rule, a prohibition or an irreversibility warning, in the description or in a field; other rules may need "detail":"full"), the input schema, the error codes, preconditions and flows, and leaves out the rest of the description and the examples. Pass "detail":"full" for the complete contracts, or "detail":"short" for all short. A reply that still does not fit carries repeated error codes once: a later contract's error-contract then names the earlier one in "same-as".
+
 Use your MCP client to call get-guidance with an unknown name, inspect `availableGuides`, then call
 get-guidance again with the selected name.
     Discover and read the currently installed publisher-owned guidance catalog.
@@ -221,6 +224,7 @@ get-guidance again with the selected name.
 - Entity tools work DB-first: schemas are created directly in PostgreSQL
 - Guidance lookups use the persistent disk cache and hot reload only when its activation marker changes; the publisher is contacted by install-knowledge/update-knowledge and by a read-triggered refresh bounded by the autoupdate.knowledge schedule (hourly by default), never per MCP session or per lookup
 - Some tool calls run in a short-lived child worker process the server supervises and can kill. How many such workers may run at once is capped, and `CLIO_MCP_WORKER_CONCURRENCY` raises or lowers that cap. The default is derived from the host's processor count, so on a single-vCPU host it is low: a long operation (`compile-creatio`, `restart-*`) can be refused with `error-class=clio-worker-saturated` until the variable is raised. Nothing is spawned and no request reaches Creatio on that refusal, so it is safe to retry.
+- A long operation keeps its worker when your MCP client stops waiting after the call reached it (for example a client-side request timeout): the operation runs to its end, `compile-status` / `restart-status` can still report it, and the worker holds its slot until then. A second operation of the same kind for that environment is refused as already in progress meanwhile.
 
 ## Return Values
 

@@ -387,7 +387,9 @@ public sealed class StickyWorkerEntry {
 	/// stdin, so its session is retired and the worker goes. A send that DID complete left the transport
 	/// whole and the worker was told through <c>notifications/cancelled</c> — the session is reusable,
 	/// but a worker that ignores that notification is still busy with the call nobody is waiting for, and
-	/// that is what the bounded probe asks about.
+	/// that is what the bounded probe asks about. A STARTER kept after its caller gave up (ENG-102333) is
+	/// meant to stay busy - its operation runs on detached - so for it the probe proves only that the worker
+	/// still answers, which is what reusing its session needs.
 	/// </remarks>
 	public bool RequiresLivenessProof => Volatile.Read(ref _unprovenAfterCancellation) == 1;
 

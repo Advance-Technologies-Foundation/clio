@@ -146,6 +146,9 @@ EXAMPLES
     Use your MCP client to call get-tool-contract {"tool-names":["get-page","get-component-info","sync-pages"]}.
         Bootstrap page inspection/editing and discover whether get-component-info is needed before mutating the page body file get-page writes.
 
+    Use your MCP client to call get-tool-contract {"tool-names":["create-business-process"],"detail":"full"}.
+        A named lookup is fitted to one inline reply by default: every contract comes back in full when the reply fits, and otherwise the largest come back in a SHORT form (marked "detail":"short" with "full-contract-bytes") that keeps the purpose and every sentence carrying a safety marker (a confirmation, an ask/tell/warn-the-user rule, a prohibition or an irreversibility warning, in the description or in a field; other rules may need "detail":"full"), the input schema, the error codes, preconditions and flows, and leaves out the rest of the description and the examples. Pass "detail":"full" for the complete contracts, or "detail":"short" for all short. A reply that still does not fit carries repeated error codes once: a later contract's error-contract then names the earlier one in "same-as".
+
     Use your MCP client to call get-guidance with an unknown name, inspect availableGuides,
     then call get-guidance again with the selected name.
         Discover and read the currently installed publisher-owned guidance catalog.
@@ -168,6 +171,7 @@ NOTES
     - Boolean parameters must be JSON booleans (true/false), not strings
     - Entity tools work DB-first: schemas are created directly in PostgreSQL
     - Some tool calls run in a short-lived child worker process the server supervises and can kill. The number of such workers allowed at once is capped, and CLIO_MCP_WORKER_CONCURRENCY raises or lowers that cap. The default is derived from the processor count, so on a single-vCPU host it is low and a long operation (compile-creatio, restart-*) can be refused with error-class=clio-worker-saturated until the variable is raised; nothing is spawned and no request reaches Creatio on that refusal, so it is safe to retry
+    - A long operation keeps its worker when your MCP client stops waiting after the call reached it (for example a client-side request timeout): the operation runs to its end, compile-status / restart-status can still report it, and the worker holds its slot until then; a second operation of the same kind for that environment is refused as already in progress meanwhile
     - Guidance/resource/example lookups use local installed content; only explicit install/update or info-knowledge checkUpdates=true operations contact transports
     - Product telemetry is consent-gated: nothing is uploaded unless consent is granted. A production collector endpoint ships as the default, so uploads begin automatically once consent is granted; override it with CLIO_TELEMETRY_ENDPOINT or the settings "telemetry.endpoint" (https, or http only for loopback), or disable uploading entirely (regardless of consent) with CLIO_TELEMETRY_ENABLED=false or "telemetry.enabled": false. Events are stored under <clio-home>/telemetry (override CLIO_TELEMETRY_HOME) and exclude prompts, secrets, customer data, and generated content
 
