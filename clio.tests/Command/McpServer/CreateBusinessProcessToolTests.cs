@@ -52,7 +52,7 @@ public class CreateBusinessProcessToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.CreateBusinessProcess(
-			new CreateBusinessProcessArgs("docker_fix2", SampleDescriptor, "MyApp"));
+			new CreateBusinessProcessArgs("docker_fix2", JsonArgument.Text(SampleDescriptor), "MyApp"));
 
 		// Assert
 		result.ExitCode.Should().Be(0,
@@ -84,7 +84,7 @@ public class CreateBusinessProcessToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.CreateBusinessProcess(
-			new CreateBusinessProcessArgs("docker_fix2", SampleDescriptor, "MyApp"));
+			new CreateBusinessProcessArgs("docker_fix2", JsonArgument.Text(SampleDescriptor), "MyApp"));
 
 		// Assert
 		result.ExitCode.Should().Be(0, because: "the fake command reports a successful create");
@@ -107,7 +107,7 @@ public class CreateBusinessProcessToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.CreateBusinessProcess(
-			new CreateBusinessProcessArgs("docker_fix2", SampleDescriptor, "MyApp"));
+			new CreateBusinessProcessArgs("docker_fix2", JsonArgument.Text(SampleDescriptor), "MyApp"));
 
 		// Assert
 		result.ExitCode.Should().NotBe(0, because: "the fake command reports a failed create");
@@ -140,7 +140,7 @@ public class CreateBusinessProcessToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.CreateBusinessProcess(
-			new CreateBusinessProcessArgs("docker_fix2", sendEmailDescriptor, null));
+			new CreateBusinessProcessArgs("docker_fix2", JsonArgument.Text(sendEmailDescriptor), null));
 
 		// Assert
 		result.ExitCode.Should().Be(0,
@@ -179,7 +179,7 @@ public class CreateBusinessProcessToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.CreateBusinessProcess(
-			new CreateBusinessProcessArgs("docker_fix2", openEditPageDescriptor, null));
+			new CreateBusinessProcessArgs("docker_fix2", JsonArgument.Text(openEditPageDescriptor), null));
 
 		// Assert
 		result.ExitCode.Should().Be(0,
@@ -205,7 +205,7 @@ public class CreateBusinessProcessToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.CreateBusinessProcess(
-			new CreateBusinessProcessArgs("   ", SampleDescriptor, null));
+			new CreateBusinessProcessArgs("   ", JsonArgument.Text(SampleDescriptor), null));
 
 		// Assert
 		result.ExitCode.Should().Be(-1,
@@ -215,7 +215,7 @@ public class CreateBusinessProcessToolTests {
 	}
 
 	[Test]
-	[Description("Returns a failed result without resolving any command when the descriptor is empty.")]
+	[Description("Refuses an empty descriptor as a caller error (exit code 1) without resolving any command.")]
 	[Category("Unit")]
 	public void CreateBusinessProcess_Should_Fail_When_Descriptor_Is_Empty() {
 		// Arrange
@@ -226,11 +226,12 @@ public class CreateBusinessProcessToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.CreateBusinessProcess(
-			new CreateBusinessProcessArgs("docker_fix2", "   ", null));
+			new CreateBusinessProcessArgs("docker_fix2", JsonArgument.Text("   "), null));
 
 		// Assert
-		result.ExitCode.Should().Be(-1,
-			because: "an empty descriptor is a validation error that must not reach command resolution");
+		result.ExitCode.Should().Be(1,
+			because: "an empty descriptor is a validation error the caller fixes by sending one, so it answers 1, "
+				+ "not -1, which means clio itself broke - and it must not reach command resolution");
 		commandResolver.DidNotReceiveWithAnyArgs().Resolve<CreateBusinessProcessCommand>(default!);
 		ConsoleLogger.Instance.ClearMessages();
 	}
@@ -263,7 +264,7 @@ public class CreateBusinessProcessToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.CreateBusinessProcess(
-			new CreateBusinessProcessArgs("docker_fix2", accessRightsDescriptor, null));
+			new CreateBusinessProcessArgs("docker_fix2", JsonArgument.Text(accessRightsDescriptor), null));
 
 		// Assert
 		result.ExitCode.Should().Be(0,
@@ -291,7 +292,7 @@ public class CreateBusinessProcessToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.CreateBusinessProcess(
-			new CreateBusinessProcessArgs("docker_fix2", SampleDescriptor, "MyApp"));
+			new CreateBusinessProcessArgs("docker_fix2", JsonArgument.Text(SampleDescriptor), "MyApp"));
 
 		// Assert
 		result.ExitCode.Should().Be(0, because: "a build that needs a compile still succeeded");
