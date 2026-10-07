@@ -1588,6 +1588,73 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("Issue #1741: a target-package-uid that names the design package get-page resolved must keep the external-modification check. The meta.json baseline is rewritten to the state get-page records before an editable schema exists, while the schema does exist, which is what a schema created by someone else after get-page looks like: the same dry-run save must be refused as schema-created-externally with and without the selector. With no baseline at all, the selector save must warn that no baseline was found instead of claiming a redirect.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page keeps the conflict check when target-package-uid names the resolved design package")]
+	[AllureDescription("Against the seeded page ClioMcp_BlankPageToSave: (1) get-page anchored at a temp directory; (2) its meta.json baseline is rewritten to editableSchemaExists:false; (3) a dry-run update-page without a selector and one with target-package-uid = page.designPackageUId (upper-case) must both fail with conflict:true / schema-created-externally; (4) a dry-run update-page with the same selector from an empty anchor must succeed and warn that no .clio-pages baseline was found, without saying the selector redirected the write. Dry runs only, so the stand is not changed.")]
+	public async Task PageUpdateTool_Should_Keep_Conflict_Check_When_TargetPackageUid_Names_The_Resolved_Design_Package() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("AllowDestructiveMcpTests is false — skipping the update-page target-package-uid conflict test.");
+		}
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
+		const string savePage = "ClioMcp_BlankPageToSave";
+		string sessionDir = Directory.CreateTempSubdirectory("clio-e2e-selector-session-").FullName;
+		string emptyAnchorDir = Directory.CreateTempSubdirectory("clio-e2e-selector-empty-").FullName;
+		try {
+			PageGetResponse getResponse = await GetPageAsync(arrangeContext, savePage, environmentName, sessionDir);
+			getResponse.Success.Should().BeTrue(
+				because: $"get-page must succeed for the seeded page '{savePage}'. Error: {getResponse.Error}");
+			getResponse.Editable.EditableSchemaExists.Should().BeTrue(
+				because: "the seeded page owns its schema, which is what makes the rewritten baseline stand for a schema created after get-page");
+			string designPackageUId = getResponse.Page.DesignPackageUId;
+			designPackageUId.Should().NotBeNullOrWhiteSpace(
+				because: "get-page must report the design package the target-package-uid is compared with");
+			string body = await File.ReadAllTextAsync(getResponse.Files.BodyFile);
+			System.Text.Json.Nodes.JsonNode meta =
+				System.Text.Json.Nodes.JsonNode.Parse(await File.ReadAllTextAsync(getResponse.Files.MetaFile))!;
+			System.Text.Json.Nodes.JsonObject baseline = meta["baseline"]!.AsObject();
+			baseline["editableSchemaExists"] = false;
+			baseline.Remove("editableSchemaUId");
+			baseline.Remove("checksum");
+			baseline.Remove("modifiedOn");
+			await File.WriteAllTextAsync(getResponse.Files.MetaFile, meta.ToJsonString());
+
+			// Act
+			PageUpdateResponse withoutSelector = await UpdatePageAsync(
+				arrangeContext, savePage, body, environmentName, sessionDir, dryRun: true);
+			PageUpdateResponse withSelector = await UpdatePageAsync(
+				arrangeContext, savePage, body, environmentName, sessionDir,
+				targetPackageUId: designPackageUId.ToUpperInvariant(), dryRun: true);
+			PageUpdateResponse withoutBaseline = await UpdatePageAsync(
+				arrangeContext, savePage, body, environmentName, emptyAnchorDir,
+				targetPackageUId: designPackageUId, dryRun: true);
+
+			// Assert
+			withoutSelector.Conflict.Should().BeTrue(
+				because: "the baseline recorded no editable schema, but the design package now holds one");
+			withoutSelector.ConflictDetails.Reason.Should().Be("schema-created-externally",
+				because: "that is the conflict the absent-schema baseline exists to report");
+			withSelector.Conflict.Should().BeTrue(
+				because: $"target-package-uid names the design package get-page resolved, so nothing is redirected and the check must still run. Warnings: {string.Join(" | ", withSelector.Warnings ?? [])}");
+			withSelector.ConflictDetails.Reason.Should().Be("schema-created-externally",
+				because: "the selector names the same write, so it must get the same verdict as the save without it");
+			withoutBaseline.Success.Should().BeTrue(
+				because: $"with no baseline there is nothing to compare, so the dry run proceeds. Error: {withoutBaseline.Error}");
+			(withoutBaseline.Warnings ?? []).Should().Contain(warning => warning.Contains("no .clio-pages baseline"),
+				because: "the caller must learn that the check did not run because no baseline was found");
+			(withoutBaseline.Warnings ?? []).Should().NotContain(warning => warning.Contains("redirect the write"),
+				because: "a selector that names the resolved design package does not redirect anything");
+		} finally {
+			TryDeleteDirectory(sessionDir);
+			TryDeleteDirectory(emptyAnchorDir);
+		}
+	}
+
+	[Test]
 	[Description("AC-1 behavioural round trip (PR #1356 review): get-page's `editable.checksum` is passed verbatim as update-page's `checksum` on two consecutive pinned saves, both of which must report conflict:false, and the checksum get-page returns after a save must be byte-identical to the `newChecksum` that save reported. The stale first baseline is then re-sent and must be refused with reason `checksum-mismatch` without landing a save. This is the exact reproduction in issue #1320; the contract test above only asserts that the served description mentions `checksum`.")]
 	[AllureTag(ToolName)]
 	[AllureName("update-page round-trips get-page's checksum through two consecutive pinned saves")]
@@ -2050,7 +2117,9 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		bool? force = null,
 		string? mode = null,
 		string? checksum = null,
-		string? resources = null) {
+		string? resources = null,
+		string? targetPackageUId = null,
+		bool? dryRun = null) {
 		Dictionary<string, object?> args = new() {
 			["schema-name"] = schemaName,
 			["body"] = body,
@@ -2059,6 +2128,12 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		};
 		if (force == true) {
 			args["force"] = true;
+		}
+		if (targetPackageUId is not null) {
+			args["target-package-uid"] = targetPackageUId;
+		}
+		if (dryRun == true) {
+			args["dry-run"] = true;
 		}
 		if (!string.IsNullOrWhiteSpace(mode)) {
 			args["mode"] = mode;

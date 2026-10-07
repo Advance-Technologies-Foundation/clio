@@ -391,6 +391,74 @@ public sealed class PageUpdateCommandConflictTests
 	}
 
 	[Test]
+	[Description("Issue #1741: a baseline that recorded no editable schema is carried by the design package get-page resolved. When target-package-uid resolves to that package (spelled in another case) and an editable schema now exists there, the save must be refused as schema-created-externally, exactly as the same save without the selector is. It used to save with success: true.")]
+	public void TryUpdatePage_ShouldReturnSchemaCreatedExternally_WhenTargetPackageUidNamesTheAbsentBaselinePackage() {
+		// Arrange — the default hierarchy resolves an EXISTING editable schema in "test-pkg-uid".
+		PageUpdateOptions options = CreateOptions();
+		options.TargetPackageUId = "test-pkg-uid";
+		options.ConditionalBaselineDesignPackageUId = "TEST-PKG-UID";
+		options.ConditionalBaselineSchemaAbsent = true;
+
+		// Act
+		bool result = _command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "the target is the design package the baseline was captured for, so the baseline still applies");
+		response.Conflict.Should().BeTrue(because: "an editable schema appeared after get-page recorded none");
+		response.ConflictDetails.Reason.Should().Be(PageConflictReasons.SchemaCreatedExternally,
+			because: "the baseline recorded no editable schema in that package, but the package now holds one");
+		options.ConditionalBaselineApplied.Should().BeTrue(
+			because: "the package match is what decides that the baseline applies");
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			SaveSchemaUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("Issue #1741: the legitimate first save. When target-package-uid resolves to the design package of an absent-schema baseline and the replacing schema still does not exist, the save proceeds, and the baseline is marked applied so the successful save refreshes it.")]
+	public void TryUpdatePage_ShouldSaveAndMarkTheBaselineApplied_WhenTargetPackageUidNamesTheAbsentBaselinePackageAndTheSchemaIsStillAbsent() {
+		// Arrange
+		StubChecksumRow("fresh-after-save");
+		StubReplacingSchemaAbsentInPackage();
+		PageUpdateCommand command = CreateReplacingCommand();
+		PageUpdateOptions options = CreateOptions();
+		options.TargetPackageUId = "design-pkg-uid";
+		options.ConditionalBaselineDesignPackageUId = "design-pkg-uid";
+		options.ConditionalBaselineSchemaAbsent = true;
+
+		// Act
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "creating the replacing schema now is exactly what the absent baseline expects");
+		response.Conflict.Should().BeFalse(because: "nothing was created externally");
+		options.ConditionalBaselineApplied.Should().BeTrue(
+			because: "the save landed in the package the baseline describes, so that baseline must be refreshed");
+		response.NewChecksum.Should().Be("fresh-after-save",
+			because: "the applied baseline puts the post-save checksum query in play, which the refresh needs");
+	}
+
+	[Test]
+	[Description("Issue #1741: a target-package-uid that resolves to a DIFFERENT package than the one an absent-schema baseline was captured for is a real redirect. The baseline must stay dropped, or an existing schema in the other package would be refused as schema-created-externally.")]
+	public void TryUpdatePage_ShouldIgnoreTheAbsentSchemaBaseline_WhenTargetPackageUidNamesAnotherPackage() {
+		// Arrange
+		StubChecksumRow("server-checksum");
+		PageUpdateOptions options = CreateOptions();
+		options.TargetPackageUId = "test-pkg-uid";
+		options.ConditionalBaselineDesignPackageUId = "other-pkg-uid";
+		options.ConditionalBaselineSchemaAbsent = true;
+
+		// Act
+		bool result = _command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "a baseline captured for another package says nothing about this target");
+		response.Conflict.Should().BeFalse(because: "refusing here would be a false conflict on a genuine redirect");
+		options.ExpectedSchemaAbsent.Should().BeFalse(because: "an inapplicable baseline must not be promoted");
+		options.ConditionalBaselineApplied.Should().BeFalse(because: "nothing was promoted, so nothing may be refreshed");
+	}
+
+	[Test]
 	[Description("TryUpdatePage must return a schema-created-externally conflict when the baseline says absent but a replacing schema now exists.")]
 	public void TryUpdatePage_ShouldReturnConflict_WhenBaselineSaysAbsentButReplacingSchemaExists() {
 		// Arrange

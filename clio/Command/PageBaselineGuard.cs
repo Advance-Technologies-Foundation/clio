@@ -42,11 +42,14 @@ public interface IPageBaselineGuard {
 	/// post-save refresh moves that baseline forward to the new checksum, instead of leaving it pinned at
 	/// the overwritten value (which would raise a false conflict on the next unpinned save).
 	/// When <see cref="PageUpdateOptions.TargetPackageUId"/> or <see cref="PageUpdateOptions.TargetSchemaUId"/>
-	/// redirects the write, nothing on disk describes the schema being written, so no baseline is read and
-	/// the disk-derived identity halves are cleared. Both redirect kinds KEEP a caller-supplied checksum:
-	/// the command resolves the target after this method returns and compares the pin with that actual
-	/// schema. This protects a target-package-uid write when it names the existing package, and fails safe
-	/// with a checksum conflict when the pin came from another schema. Either way the method reports
+	/// is supplied, nothing is armed directly and the disk-derived identity halves are cleared, because the
+	/// target is resolved only after this method returns. An environment-matched baseline is carried as a
+	/// CONDITIONAL one instead: keyed by its editable schema UId, or, when it recorded no editable schema
+	/// and the selector is <c>target-package-uid</c>, by the design package <c>get-page</c> resolved. The
+	/// update command applies it once the resolved target turns out to be the one described. Both selector
+	/// kinds KEEP a caller-supplied checksum: the command compares the pin with the resolved schema. This
+	/// protects a target-package-uid write when it names the existing package, and fails safe with a
+	/// checksum conflict when the pin came from another schema. Either way the method reports
 	/// <c>RefreshBaseline: false</c> with a warning.
 	/// <para>
 	/// The warning exists because "no check" is a legitimate outcome AND a failure mode, and the two used
@@ -343,9 +346,17 @@ public sealed class PageBaselineGuard : IPageBaselineGuard {
 	/// the selector saved with <c>success: true</c> with it, losing the other writer's change. The target
 	/// is resolved after this method returns, so the decision cannot be taken here - the baseline is
 	/// instead handed over as <see cref="PageUpdateOptions.ConditionalBaselineSchemaUId"/> and promoted by
-	/// the update command only once the resolved schema turns out to be that same one. A target that
-	/// resolves elsewhere still leaves everything dropped, which is the redirect case this method exists
-	/// for.
+	/// the update command only once the resolved schema turns out to be that same one. A baseline that
+	/// recorded no editable schema has no UId, so it is handed over as
+	/// <see cref="PageUpdateOptions.ConditionalBaselineDesignPackageUId"/> instead and promoted when the
+	/// resolved design package is the one <c>get-page</c> resolved (issue #1741). A target that resolves
+	/// elsewhere still leaves everything dropped, which is the redirect case this method exists for.
+	/// <para>
+	/// The "did not run" trace is reserved for the case where nothing on disk can be matched to the target.
+	/// It names the cause it finds. It used to say "redirect" on every such path, also when the selector named
+	/// the resolved package and the real cause was a missing baseline, which leaves the same save unchecked
+	/// without the selector too.
+	/// </para>
 	/// </remarks>
 	private (string MetaFilePath, bool RefreshBaseline, string Warning) ArmForSelectorTargetedWrite(
 		PageUpdateOptions options, string outputDirectory, bool callerPinnedChecksum) {
@@ -371,65 +382,123 @@ public sealed class PageBaselineGuard : IPageBaselineGuard {
 		// Best-effort: a baseline that cannot be located or read simply leaves the pre-existing
 		// behaviour (nothing armed) rather than failing a save.
 		List<string> selectorWarnings = new();
-		PageBaselineInfo baseline = null;
+		PageMetaFileModel meta = null;
 		if (metaFilePath is not null) {
-			baseline = PageBaselineStore.TryReadBaseline(
+			meta = PageBaselineStore.TryReadMetaFile(
 				_fileSystem, _fileGate, metaFilePath, out string readWarning);
-			// Surfaced for the same reason as on the non-selector path: TryReadBaseline sets this only
+			// Surfaced for the same reason as on the non-selector path: TryReadMetaFile sets this only
 			// when meta.json EXISTS but cannot be read or deserialized, and swallowing it left a pinned
 			// selector save unable to explain why no baseline decision was taken.
 			AddWarning(selectorWarnings, readWarning);
 		}
-		bool baselineDescribesAKnownSchema = baseline is not null
-			&& PageBaselineStore.MatchesEnvironment(baseline, options.Environment, options.Uri)
-			&& !string.IsNullOrWhiteSpace(baseline.EditableSchemaUId);
-		if (baselineDescribesAKnownSchema) {
+		PageBaselineInfo baseline = meta?.Baseline;
+		bool baselineMatchesEnvironment =
+			PageBaselineStore.MatchesEnvironment(baseline, options.Environment, options.Uri);
+		if (baselineMatchesEnvironment && !string.IsNullOrWhiteSpace(baseline.EditableSchemaUId)) {
 			options.ConditionalBaselineSchemaUId = baseline.EditableSchemaUId;
-			if (callerPinnedChecksum) {
-				// The divergence trace is now due here, and was not before: a pinned selector save used to
-				// leave the baseline untouched, so a divergent pin stayed recorded on disk. Since this save
-				// can refresh meta.json once the target turns out to be the baseline's own schema, staying
-				// silent would let RefreshOrDrop erase the only local record that the pin ever diverged -
-				// exactly the bypass AppendPinnedBaselineDivergenceWarnings exists to expose.
-				AppendPinnedBaselineDivergenceWarnings(selectorWarnings, options, baseline);
-				AddWarning(selectorWarnings,
-					$"The checksum pinned for '{options.SchemaName}' governs this save; the .clio-pages "
-					+ $"baseline describes schema {baseline.EditableSchemaUId} and is used only to decide "
-					+ "whether it is refreshed afterwards, never to arm a second conflict check. The pin is "
-					+ "still compared with the resolved target; if it came from another schema, the save is "
-					+ "refused. If the write resolves elsewhere, the baseline is left untouched, because "
-					+ "get-page always reads the automatically resolved schema and has no redirect of its "
-					+ "own. " + PinnedChecksumMergeAdvice);
-				return (metaFilePath, false, JoinWarnings(selectorWarnings));
-			}
-			options.ConditionalBaselineChecksum = baseline.Checksum;
-			options.ConditionalBaselineSchemaAbsent = !baseline.EditableSchemaExists;
-			AddWarning(selectorWarnings,
-				$"target-package-uid / target-schema-uid were supplied for '{options.SchemaName}', so "
-				+ "the .clio-pages baseline is applied only if the write resolves to the schema it "
-				+ $"describes ({baseline.EditableSchemaUId}); if it resolves elsewhere, the write "
-				+ "proceeds unchecked, because get-page always reads the automatically resolved schema "
-				+ "and has no redirect of its own.");
-			return (metaFilePath, false, JoinWarnings(selectorWarnings));
+			return CarryConditionalBaseline(options, metaFilePath, baseline, callerPinnedChecksum,
+				selectorWarnings, "schema", baseline.EditableSchemaUId);
 		}
+		// A baseline that recorded NO editable schema (get-page reported willCreateReplacingInDesignPackage)
+		// has no schema UId to compare the target with, but it still describes one write: the one that
+		// lands in the design package get-page resolved. A target-package-uid naming that package is that
+		// write, and dropping the baseline there removed the schema-created-externally check the same save
+		// gets without the selector (issue #1741). A target-schema-uid bypasses package resolution
+		// altogether, so it can never be matched to a package and keeps the baseline dropped.
+		bool baselineRecordedNoEditableSchema = baselineMatchesEnvironment && !baseline.EditableSchemaExists;
+		string recordedDesignPackageUId = baselineRecordedNoEditableSchema
+			&& string.IsNullOrWhiteSpace(options.TargetSchemaUId)
+				? meta.Page?.DesignPackageUId
+				: null;
+		if (!string.IsNullOrWhiteSpace(recordedDesignPackageUId)) {
+			options.ConditionalBaselineDesignPackageUId = recordedDesignPackageUId;
+			return CarryConditionalBaseline(options, metaFilePath, baseline, callerPinnedChecksum,
+				selectorWarnings, "design package",
+				$"{recordedDesignPackageUId}, where it recorded no editable schema");
+		}
+		// Nothing on disk can be matched to this target. Say WHY: the old wording claimed a redirect on
+		// every path that reached here, also when the selector named the resolved package and the real
+		// cause was a missing baseline, which leaves the same save unchecked without the selector too.
+		string cause = baselineRecordedNoEditableSchema
+			? "the .clio-pages baseline recorded no editable schema for this page, and only a "
+				+ "target-package-uid that names the design package it was captured for can be matched to that "
+				+ "record, because get-page always reads the automatically resolved schema and has no redirect "
+				+ "of its own"
+			: "no .clio-pages baseline from get-page was found for this page in this environment and workspace "
+				+ "anchor, so there is nothing to compare the target with, with or without target-package-uid / "
+				+ "target-schema-uid";
 		if (callerPinnedChecksum) {
 			// The pin stays and still governs the save: TryCheckForExternalModification gates on
 			// ExpectedChecksum alone. Nothing local corroborates it, which is what the trace says.
 			AddWarning(selectorWarnings,
 				$"The checksum pinned for '{options.SchemaName}' governs this save but could not be "
-				+ "corroborated locally: the redirect sends the write to a schema the "
-				+ ".clio-pages baseline does not describe, because get-page always reads the "
-				+ "automatically resolved schema and has no redirect of its own. The pin is still "
-				+ "compared with the resolved target; if it came from another schema, the save is refused. "
-				+ PinnedChecksumMergeAdvice);
+				+ $"corroborated locally: {cause}. The pin is still compared with the resolved target; if it "
+				+ "came from another schema, the save is refused. " + PinnedChecksumMergeAdvice);
 			return (null, false, JoinWarnings(selectorWarnings));
 		}
 		AddWarning(selectorWarnings,
-			$"External-modification detection did not run for this save of '{options.SchemaName}': "
-				+ "target-package-uid / target-schema-uid redirect the write to a schema the .clio-pages "
-				+ "baseline does not describe, because get-page always reads the automatically resolved "
-				+ "schema and has no redirect of its own. The write proceeds unchecked.");
+			$"External-modification detection did not run for this save of '{options.SchemaName}': {cause}. "
+				+ "The write proceeds unchecked."
+				+ (baselineRecordedNoEditableSchema
+					? string.Empty
+					: " To have it checked, run get-page for this page first (same environment and "
+						+ "output-directory), or pass the editable.checksum from that get-page as the checksum "
+						+ "(MCP checksum, CLI --expected-checksum)."));
 		return (metaFilePath, false, JoinWarnings(selectorWarnings));
+	}
+
+	/// <summary>
+	/// Hands an applicable on-disk baseline over as a CONDITIONAL one, whose identity half the caller has
+	/// already set (<see cref="PageUpdateOptions.ConditionalBaselineSchemaUId"/> or
+	/// <see cref="PageUpdateOptions.ConditionalBaselineDesignPackageUId"/>), and records the trace.
+	/// </summary>
+	/// <remarks>
+	/// For a pinned save only the refresh decision is carried: the pin keeps governing the conflict check.
+	/// For an unpinned save the baseline's checksum and schema-absent marker travel too, and the update
+	/// command arms them once the resolved target turns out to be the one described.
+	/// </remarks>
+	/// <param name="options">The pending write request. Mutated in place.</param>
+	/// <param name="metaFilePath">The <c>meta.json</c> the baseline was read from.</param>
+	/// <param name="baseline">The environment-matched baseline.</param>
+	/// <param name="callerPinnedChecksum">Whether the caller pinned a checksum.</param>
+	/// <param name="warnings">The traces accumulated so far.</param>
+	/// <param name="describedKind">What the baseline identifies: <c>schema</c> or <c>design package</c>.</param>
+	/// <param name="describedId">The identity, as worded in the trace.</param>
+	/// <returns>The <see cref="TryArm"/> result for this save.</returns>
+	private static (string MetaFilePath, bool RefreshBaseline, string Warning) CarryConditionalBaseline(
+		PageUpdateOptions options,
+		string metaFilePath,
+		PageBaselineInfo baseline,
+		bool callerPinnedChecksum,
+		List<string> warnings,
+		string describedKind,
+		string describedId) {
+		if (callerPinnedChecksum) {
+			// The divergence trace is now due here, and was not before: a pinned selector save used to
+			// leave the baseline untouched, so a divergent pin stayed recorded on disk. Since this save
+			// can refresh meta.json once the target turns out to be the baseline's own schema, staying
+			// silent would let RefreshOrDrop erase the only local record that the pin ever diverged -
+			// exactly the bypass AppendPinnedBaselineDivergenceWarnings exists to expose.
+			AppendPinnedBaselineDivergenceWarnings(warnings, options, baseline);
+			AddWarning(warnings,
+				$"The checksum pinned for '{options.SchemaName}' governs this save; the .clio-pages "
+				+ $"baseline describes {describedKind} {describedId} and is used only to decide "
+				+ "whether it is refreshed afterwards, never to arm a second conflict check. The pin is "
+				+ "still compared with the resolved target; if it came from another schema, the save is "
+				+ "refused. If the write resolves elsewhere, the baseline is left untouched, because "
+				+ "get-page always reads the automatically resolved schema and has no redirect of its "
+				+ "own. " + PinnedChecksumMergeAdvice);
+			return (metaFilePath, false, JoinWarnings(warnings));
+		}
+		options.ConditionalBaselineChecksum = baseline.Checksum;
+		options.ConditionalBaselineSchemaAbsent = !baseline.EditableSchemaExists;
+		AddWarning(warnings,
+			$"target-package-uid / target-schema-uid were supplied for '{options.SchemaName}', so "
+			+ $"the .clio-pages baseline is applied only if the write resolves to the {describedKind} it "
+			+ $"describes ({describedId}); if it resolves elsewhere, the write "
+			+ "proceeds unchecked, because get-page always reads the automatically resolved schema "
+			+ "and has no redirect of its own.");
+		return (metaFilePath, false, JoinWarnings(warnings));
 	}
 
 	/// <summary>

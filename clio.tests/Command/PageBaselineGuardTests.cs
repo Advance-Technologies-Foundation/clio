@@ -75,10 +75,11 @@ public sealed class PageBaselineGuardTests {
 			_fileSystem.Path.GetFullPath(OutputDirectory), ".clio-pages", SchemaName, "meta.json");
 	}
 
-	private void AddMetaWithBaseline(string environmentName, string checksum, bool editableExists = true) {
+	private void AddMetaWithBaseline(
+		string environmentName, string checksum, bool editableExists = true, string designPackageUId = null) {
 		_fileSystem.AddFile(_metaPath, new MockFileData(JsonSerializer.Serialize(new PageMetaFileModel {
 			FetchedAt = "2026-06-16T10:00:00Z",
-			Page = new PageMetadataInfo { SchemaName = SchemaName },
+			Page = new PageMetadataInfo { SchemaName = SchemaName, DesignPackageUId = designPackageUId },
 			Baseline = new PageBaselineInfo {
 				SchemaName = SchemaName,
 				EnvironmentName = environmentName,
@@ -420,6 +421,107 @@ public sealed class PageBaselineGuardTests {
 			because: "the recorded absence describes the auto-resolved schema, so carrying it into a redirected write would refuse the save as schema-created-externally on a schema the baseline never described");
 		refreshBaseline.Should().BeFalse(
 			because: "a redirected write must not move the schema-name-keyed baseline forward");
+	}
+
+	[Test]
+	[Description("Issue #1741: a baseline that recorded NO editable schema has no schema UId, so it used to be dropped for every target-package-uid, even one naming the very design package get-page resolved. The same save without the selector is refused as schema-created-externally. The guard must carry that baseline as a conditional one keyed by meta.json page.designPackageUId, and arm nothing until the command has resolved the target.")]
+	public void TryArm_ShouldCarryTheAbsentSchemaBaselineByDesignPackage_WhenTargetPackageUIdIsSupplied() {
+		// Arrange
+		const string designPackageUId = "99999999-8888-7777-6666-555555555555";
+		AddMetaWithBaseline("dev", checksum: null, editableExists: false, designPackageUId: designPackageUId);
+		PageUpdateOptions options = CreateOptions("dev");
+		options.TargetPackageUId = designPackageUId;
+
+		// Act
+		(string metaFilePath, bool refreshBaseline, string warning) = _guard.TryArm(options, OutputDirectory);
+
+		// Assert
+		options.ConditionalBaselineDesignPackageUId.Should().Be(designPackageUId,
+			because: "the design package get-page resolved is the only identity a baseline without an editable schema records");
+		options.ConditionalBaselineSchemaAbsent.Should().BeTrue(
+			because: "the absence marker is what lets the command refuse a schema created externally after get-page");
+		options.ConditionalBaselineSchemaUId.Should().BeNull(
+			because: "the baseline recorded no editable schema, so there is no schema UId to match");
+		options.ConditionalBaselineChecksum.Should().BeNull(
+			because: "a schema that did not exist has no checksum");
+		options.ExpectedSchemaAbsent.Should().BeFalse(
+			because: "nothing may be armed before the target is resolved, or a real redirect would be refused as schema-created-externally");
+		refreshBaseline.Should().BeFalse(
+			because: "the refresh is decided after resolution, only if the target matched");
+		_fileSystem.Path.GetFullPath(metaFilePath).Should().Be(_fileSystem.Path.GetFullPath(_metaPath),
+			because: "a refresh after a matched save needs the path the baseline was read from");
+		warning.Should().Contain("design package",
+			because: "the trace has to say which identity the baseline is matched by");
+		warning.Should().NotContain("did not run",
+			because: "the check is still due when the target resolves to the recorded design package, so claiming it did not run would be false");
+	}
+
+	[Test]
+	[Description("Issue #1741: the pinned twin of the test above. The pin keeps governing the conflict check, so no disk-derived absence marker may travel, but the design package key still must, so a matched save refreshes the baseline instead of leaving it describing a schema that no longer is absent.")]
+	public void TryArm_ShouldCarryOnlyTheDesignPackageKey_WhenAPinnedSaveTargetsTheAbsentSchemaBaselinePackage() {
+		// Arrange
+		const string designPackageUId = "99999999-8888-7777-6666-555555555555";
+		AddMetaWithBaseline("dev", checksum: null, editableExists: false, designPackageUId: designPackageUId);
+		PageUpdateOptions options = CreateOptions("dev");
+		options.ExpectedChecksum = "caller-pinned-checksum";
+		options.TargetPackageUId = designPackageUId;
+
+		// Act
+		(string metaFilePath, _, string warning) = _guard.TryArm(options, OutputDirectory);
+
+		// Assert
+		options.ConditionalBaselineDesignPackageUId.Should().Be(designPackageUId,
+			because: "the refresh decision after a pinned same-target save needs the recorded identity");
+		options.ConditionalBaselineSchemaAbsent.Should().BeFalse(
+			because: "a pinned save must not gain a second, disk-derived conflict witness");
+		options.ExpectedChecksum.Should().Be("caller-pinned-checksum",
+			because: "the caller's pin stays authoritative");
+		metaFilePath.Should().NotBeNull(because: "a matched save must be able to refresh this baseline");
+		warning.Should().Contain("refreshed afterwards",
+			because: "the trace must say the disk baseline only decides the refresh");
+	}
+
+	[Test]
+	[Description("Issue #1741: target-schema-uid bypasses package resolution, so a baseline that recorded no editable schema can never be matched to it. That one stays dropped, and the trace must name that cause instead of a missing baseline.")]
+	public void TryArm_ShouldNotCarryTheAbsentSchemaBaseline_WhenTargetSchemaUIdIsSupplied() {
+		// Arrange
+		AddMetaWithBaseline("dev", checksum: null, editableExists: false,
+			designPackageUId: "99999999-8888-7777-6666-555555555555");
+		PageUpdateOptions options = CreateOptions("dev");
+		options.TargetSchemaUId = "99999999-8888-7777-6666-444444444444";
+
+		// Act
+		(_, _, string warning) = _guard.TryArm(options, OutputDirectory);
+
+		// Assert
+		options.ConditionalBaselineDesignPackageUId.Should().BeNull(
+			because: "a target-schema-uid write has no resolved design package to compare with");
+		warning.Should().Contain("did not run",
+			because: "nothing on disk can be matched to this target, so the save really is unchecked");
+		warning.Should().Contain("recorded no editable schema",
+			because: "the trace has to name the actual cause, which is a baseline the target cannot be matched to");
+	}
+
+	[Test]
+	[Description("Issue #1741: with no baseline at all, the same save is unchecked with or without a selector. The trace used to claim that target-package-uid redirected the write, also when it named the resolved package, which sent callers after the wrong cause and never told them how to arm the check.")]
+	public void TryArm_ShouldNameTheMissingBaselineInsteadOfARedirect_WhenNoBaselineExistsForASelectorSave() {
+		// Arrange
+		PageUpdateOptions options = CreateOptions("dev");
+		options.TargetPackageUId = "99999999-8888-7777-6666-555555555555";
+
+		// Act
+		(_, bool refreshBaseline, string warning) = _guard.TryArm(options, OutputDirectory);
+
+		// Assert
+		refreshBaseline.Should().BeFalse(because: "there is no baseline to move forward");
+		warning.Should().Contain("did not run",
+			because: "the save really is unchecked, and the caller must learn that");
+		warning.Should().Contain("no .clio-pages baseline",
+			because: "a missing baseline is the actual cause");
+		warning.Should().Contain("get-page",
+			because: "the trace must say how to arm the check");
+		warning.Should().NotContain("redirect the write",
+			because: "nothing proves a redirect here, and the same save without the selector is unchecked too");
 	}
 
 	[Test]

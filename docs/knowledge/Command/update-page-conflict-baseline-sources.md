@@ -7,8 +7,8 @@ applies-to:
   - clio/Command/McpServer/Tools/PageUpdateTool.cs
   - clio/Command/McpServer/Tools/PageSyncTool.cs
   - clio/Command/LocalizePageCommand.cs
-ticket: GH-1320, GH-1464, GH-1538, ENG-90576
-date: 2026-09-15
+ticket: GH-1320, GH-1464, GH-1538, ENG-90576, GH-1741
+date: 2026-10-07
 ---
 
 **What is true** — what `PageBaselineGuard.TryArm` arms depends on how the save was addressed, and
@@ -69,6 +69,26 @@ Tying the two together (GH-1538) meant a successful PINNED same-target save left
 superseded checksum, and the caller's next UNPINNED save of the same page conflicted with its own
 previous save. The cost of the fix is one baseline read under its lock on a pinned selector save — the
 same read the unpinned selector path already performed.
+
+**A baseline that recorded NO editable schema is matched by design package, not by schema UId.**
+`get-page` leaves `baseline.editableSchemaUId` empty when the page has no editable schema in the design
+package yet (`willCreateReplacingInDesignPackage: true`), so there is no UId to compare a selector with.
+The only identity that baseline has is the design package `get-page` resolved, and that sits in the
+OTHER block of the same file, `page.designPackageUId`. That is why the selector path reads the whole
+`meta.json` (`PageBaselineStore.TryReadMetaFile`). It carries that UId as
+`ConditionalBaselineDesignPackageUId`, and the promotion compares it with the resolved design package.
+This is only possible for `target-package-uid`, because `target-schema-uid` skips package resolution and
+the context has no design package. Before GH-1741 the guard required `editableSchemaUId`, so such a baseline
+was dropped for every selector. A `target-package-uid` naming the design package then saved
+with `success: true` over a replacing schema someone else had created, while the same save without the
+selector was refused as `schema-created-externally`.
+
+**The selector-path "did not run" warning must name its cause.** It is reached only when nothing on disk
+can be matched to the target. Usually that means no environment-matched baseline at all, and then the
+same save WITHOUT the selector is unchecked too (and silent, by the "no baseline" contract). Until GH-1741
+the text said the selector had redirected the write in every case, so a report that "passing
+target-package-uid turns the check off" looked like a real lost-update defect. Reading that wording as
+proof of a redirect sends the next investigation after the wrong cause.
 
 **`localize-page` writes the page too, but arms no check.** It re-reads the schema immediately before
 its save and changes only resource values, so it never calls `TryArm`. After a save it calls

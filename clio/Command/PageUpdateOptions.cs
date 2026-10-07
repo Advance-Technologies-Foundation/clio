@@ -140,6 +140,21 @@
 		internal bool ConditionalBaselineSchemaAbsent { get; set; }
 
 		/// <summary>
+		/// Gets or sets the design package UId the on-disk baseline was captured for, when that baseline
+		/// recorded NO editable schema and the save carries <c>target-package-uid</c>. MCP-internal.
+		/// </summary>
+		/// <remarks>
+		/// A baseline that recorded no editable schema has no UId for
+		/// <see cref="ConditionalBaselineSchemaUId"/>. The package <c>get-page</c> resolved
+		/// (<c>meta.json</c> <c>page.designPackageUId</c>) identifies it instead. A target that resolves
+		/// to that same design package is the write the baseline describes. Without this key the baseline
+		/// was dropped for every <c>target-package-uid</c>, also for one that named that same package, and
+		/// the save lost the <c>schema-created-externally</c> check that the same save without the selector
+		/// gets (issue #1741).
+		/// </remarks>
+		internal string? ConditionalBaselineDesignPackageUId { get; set; }
+
+		/// <summary>
 		/// Gets or sets a value indicating whether the resolved target turned out to be the very schema the
 		/// conditional baseline describes. The save must then refresh the on-disk baseline like any other
 		/// armed save, or the next unpinned save auto-arms from a superseded checksum.
@@ -651,7 +666,15 @@
 
 		private static void PromoteConditionalBaselineWhenTargetMatches(
 				PageUpdateOptions options, EditableSchemaContext context) {
-			if (!SchemaUIdsMatch(options.ConditionalBaselineSchemaUId, context.EditableSchemaUId)) {
+			// A baseline that recorded an editable schema is matched by that schema's UId. A baseline that
+			// recorded none is matched by the design package get-page resolved: a target-package-uid that
+			// resolves to that package is the write it describes (issue #1741). Package UIds are GUIDs too,
+			// so they are compared by value in the same way. DesignPackageUId is empty on the
+			// target-schema-uid path, so that path never matches by package.
+			bool targetIsTheBaselinePage =
+				SchemaUIdsMatch(options.ConditionalBaselineSchemaUId, context.EditableSchemaUId)
+				|| SchemaUIdsMatch(options.ConditionalBaselineDesignPackageUId, context.DesignPackageUId);
+			if (!targetIsTheBaselinePage) {
 				return;
 			}
 			// The write landed on the very schema the on-disk baseline describes, so that baseline is the
