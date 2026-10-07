@@ -52,7 +52,12 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 		CallToolResult result = await context.Session.CallToolAsync(
 			ToolContractGetTool.ToolName,
 			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> { ["tool-names"] = new[] { CreateBusinessProcessTool.CreateBusinessProcessToolName } }
+				// A named lookup returns the short contract since ENG-100154, which keeps neither the apostrophe nor a
+				// quote inside a string; "full" keeps this test reading the text it was written against.
+				["args"] = new Dictionary<string, object?> {
+					["tool-names"] = new[] { CreateBusinessProcessTool.CreateBusinessProcessToolName },
+					["detail"] = "full"
+				}
 			},
 			context.CancellationTokenSource.Token);
 		string text = string.Concat((result.Content ?? []).OfType<TextContentBlock>().Select(block => block.Text));
