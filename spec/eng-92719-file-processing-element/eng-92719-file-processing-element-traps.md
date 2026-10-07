@@ -280,15 +280,16 @@ M-G6-4), [T-43](#t-43).
 
 ### T-6
 **An Out FileCollection cannot be filled by a caller.**
-- **What happens.** FileCollection defaults to Out (one default per stored type, the shipped majority), while the
-  designer's plain Add writes Variable. A sub-process caller can feed only an In or Variable callee parameter.
+- **What happens.** A FileCollection declared `direction: Out` cannot be filled by a caller: a sub-process caller
+  can feed only an In or Variable callee parameter. The default is Variable (D3, agreed 2026-10-07), so only an
+  explicit Out hits this; a generic `Collection` still defaults to Out.
 - **Silent or loud.** Loud: `EnsureSubProcessTargetCanHoldAValue` refuses the caller's `addMapping`.
 - **Basis / evidence.** source: `PB/Parameters/ProcessParameterService.cs:103-107` (default; the comment's "designer
   writes Out" is wrong), `PB/Mappings/ProcessMappingService.cs:79-110`; `PD/ProcessSchemaPropertiesPage/ProcessSchemaPropertiesPage.js:1204-1236`
   (plain Add = Variable, no Tag). measured (corpus, recount 2026-10-01): shipped process-level collections 85 Out,
   30 Variable, 12 In, 6 Internal of 133 (17 more in user-task schemas are element parameters).
-- **Neutraliser.** D3: the guide sentence "a FileCollection that a CALLER fills must be declared `direction: In` (or
-  `Variable`)"; the existing refusal names the fix; the misleading package comment is corrected.
+- **Neutraliser.** D3: the Variable default; the existing refusal names the fix for an explicit Out; the misleading
+  package comment is corrected.
 
 ### T-7
 **The dotted mirror silently creates an unbound FileLocator parameter.**

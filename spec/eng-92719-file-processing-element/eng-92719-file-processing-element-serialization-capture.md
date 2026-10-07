@@ -634,8 +634,8 @@ Designer captures (`PS/ProcessTests/branches/7.8.0/Schemas/FileParameterProcess/
 
 **What the builder will write** (D2, D3; basis=source): `type: File` gives `L1` FileLocator with no `L12` and no
 Tag, which matches `FileParameter`. `type: FileCollection` gives CompositeObjectList with exactly one item `File`
-(caption "File", FileLocator, Variable, no Tag); the root is Out by default (`L12: 1`, matching `FilesCollection`) or
-Variable (matching `FileCollection`). One predicted difference is named in both comparison rules (TC-41, and the
+(caption "File", FileLocator, Variable, no Tag); the root is Variable by default (no `L12`, matching `FileCollection`;
+D3, agreed 2026-10-07) or Out when declared so (`L12: 1`, matching `FilesCollection`). One predicted difference is named in both comparison rules (TC-41, and the
 ENG-95984 File process parameter type AC-8 rule):
 `ProcessParameterService.AddProcessParameter` sets `ContainerUId = schema.UId` on every process parameter and every
 cloned item (`PB/Parameters/ProcessParameterService.cs:65, :478`). The writer emits `IL2` whenever ContainerUId is
@@ -815,8 +815,8 @@ Process parameters (Add parameter):
 |---|---|---|---|
 | `PContact` / `PAccount` / `PAddr` / `PInvoice` | Lookup → Contact / Account / Account address / Invoice | default | record references; no records needed |
 | `PFile` | Other → File | default (Variable) | G-C7 single File |
-| `PFiles` | Other → Collection of records; on it, Add → Other → File named `File` (caption "File") | default (Variable) | G-C7 Variable FileCollection (the D2 item name) |
-| `PFilesOut` | as `PFiles`, Direction Out | | G-C7 Out FileCollection (the D3 default) |
+| `PFiles` | Other → Collection of records; on it, Add → Other → File named `File` (caption "File") | default (Variable) | G-C7 Variable FileCollection (the D2 item name; the D3 default) |
+| `PFilesOut` | as `PFiles`, Direction Out | | G-C7 Out FileCollection (an explicit Out) |
 
 Elements. Drag "Process file" from the palette each time; for a Report or Process element, change "What is the source
 of the file?" on the still-unconfigured element. Chain them Start → E1 → … → E11 → End in this order, so that every

@@ -486,7 +486,7 @@ copy the relevant `BP2` parameter blocks into test resources.
 | Object attachments, legacy storage | `PS/CopilotAutoTest/branches/7.8.0/Schemas/SkillFilesValidationProcess/metadata.json` | OA serialization parity (designer nested UIds, `IL2`, both-level consumer bindings) |
 | Generated report, MS Word, SaveToFiles | `PS/CrtInvoice/branches/7.8.0/Schemas/PrintInvoiceReport/metadata.json` | RP parity; product recipe |
 | Process parameter variant, File and FileCollection parameters | `PS/ProcessTests/branches/7.8.0/Schemas/FileParameterProcess/metadata.json` (parameters `:13-55`, nested mapping `:1417-1440`) | PT parity (Variable FileCollection, item name `FileCollectionParameter`), RP `files` decode |
-| Out FileCollection | `PS/ProcessLibrary/branches/7.8.0/Schemas/MarkProcessesToCancel/metadata.json:76-91` | PT parity for the D3 Out default |
+| Out FileCollection | `PS/ProcessLibrary/branches/7.8.0/Schemas/MarkProcessesToCancel/metadata.json:76-91` | PT parity for an explicitly declared Out FileCollection (the D3 default is Variable, compared with `FileParameterProcess.FileCollection`) |
 | Multi-instance per file | `PS/ProcessTests/branches/7.8.0/Schemas/CRM60006PP`, callee `CRM60006SP` (`SPFiles` at `metadata.json:17-20`) | OA per-file pattern |
 | Legacy record scope | `PS/ProcessTests/branches/7.8.0/Schemas/FileCopyProcessPP/metadata.json` (`Contact = RD1.Id`) | the D16 describe lift |
 | Product report processes (describe only) | `PS/CrtLeadOppMgmtApp/branches/7.8.0/Schemas/PrintQuotationReport`; `PS/CrtEmailMarketingApp/branches/7.8.0/Schemas/GenerateDNSRecordsSpecification` | describe fixtures, including the unlinked `DNSGuideFile` shape (D15 `linkColumn` repair) |

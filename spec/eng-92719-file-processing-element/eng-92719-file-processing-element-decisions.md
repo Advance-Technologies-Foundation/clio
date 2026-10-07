@@ -4,7 +4,7 @@
 |---|---|
 | Issues | ENG-92719 File processing element (Story), with its sub-tasks ENG-96505 Element readiness and object attachments mode and ENG-96506 Generated report + process parameter modes; ENG-95984 File process parameter type (Task), on which the element depends |
 | Epic | ENG-92704 Create BP via AI Toolkit |
-| Status | Proposed, 2026-10-01. 9 decisions wait for the owner (section 1, Q11-Q19): D2, D22, D23, D24 and D27 were agreed as recommended on 2026-10-07, D15's SysFile half (Q3) too, and D9 was answered by M3 on 2026-10-02 |
+| Status | Proposed, 2026-10-01. 8 decisions wait for the owner (section 1, Q12-Q19): D2, D3 (Variable), D22, D23, D24 and D27 were agreed as recommended on 2026-10-07, D15's SysFile half (Q3) too, and D9 was answered by M3 on 2026-10-02 |
 | Baselines | CrtProcessBuilder `main` `3f4cce50` (package 1.6.6.54, also installed on the stand); clio `master` `03ef3944f`; clio-knowledge `master` `d0b5a2b` (guidance libraryVersion 1.15.90); Creatio core 10.1.37 (the stand's core) |
 | How it was made | Read-only. Nothing was built, run, committed or written to a repository or to the stand. Jira was read for issue wording only; no Jira text is used as evidence for a platform fact |
 
@@ -107,7 +107,7 @@ named decision and nothing else unless stated.
 | # | Decision | Question | Recommended | Alternative and its cost |
 |---|---|---|---|---|
 | 1 | D2 | How does a caller declare a file collection? | `type: FileCollection`, read back by describe as `FileCollection` **Agreed 2026-10-07.** | Relax the `typeFromElement` mirror (cannot declare a callee input or a script-filled list); generic `itemProperties` (an older server silently drops it and saves a shapeless collection) |
-| 2 | D3 | Default direction of a FileCollection | Out (one default per stored type, the shipped majority, the existing pin) | Variable (designer plain-Add parity; a second rule for one stored type) |
+| 2 | D3 | Default direction of a FileCollection | **Variable**: never refused, designer plain-Add parity, the shipped in-process file case. **Agreed 2026-10-07** (it reverses the first recommendation, Out) | Out (one rule per stored type; but shipped Out collections are results, 3 of 84 read inside their process, and a caller-filled one is refused until re-declared) |
 | 3 | D5 | Plain source onto a collection item whose parent is bound to a collection (P3) | Reset the parent, with a notice | Designer parity: keep the stale parent, which yields N copies of one file |
 | 4 | D5 | Scope of item pairing and the wrong-shape refusal (P2, R-M2) | File-consuming targets only | Every collection: also changes Read data -> multi-instance mappings, unmeasured and outside this work |
 | 5 | D9 | Where the mirror defect H-1 is fixed | Answered by M3 (2026-10-02): H-1 refuted, so no MH; binding the items is one parity commit in PK-PT (X4) | - |
@@ -136,7 +136,7 @@ same questions, with their options, are Q1-Q19 in
 |---|---|---|---|---|
 | D1 | One file is `FileLocator`; friendly names; Binary stays refused | PT | no | - |
 | D2 | Declaring a file collection: `FileCollection` | PT | agreed 2026-10-07 | - |
-| D3 | Direction and Tag defaults | PT | **yes** | - |
+| D3 | Direction and Tag defaults | PT | agreed 2026-10-07 (Variable) | - |
 | D4 | Dotted process-parameter paths | PT | no | - |
 | D5 | The two-level collection binder | PT | **yes** | M6 (R-M1; done 2026-10-02: refusal stays) |
 | D6 | The dotted-mirror bug | PT | no | - |
@@ -305,24 +305,34 @@ same questions, with their options, are Q1-Q19 in
   singles Variable; collections one Variable, one Out. basis=measured (corpus, 2026-10-01).
 - A sub-process caller can feed only an In or Variable callee parameter; anything else is refused loudly by
   `EnsureSubProcessTargetCanHoldAValue` (`PB/Mappings/ProcessMappingService.cs:79-110`). basis=source.
+- The core does not restrict a PROCESS-level parameter by direction: the direction check of
+  `ParameterValuesValidationRule` (`CORE/Terrasoft.Core/Process/ParameterValuesValidationRule.cs:252-286`) returns at
+  once for a parameter with no element. The one platform rule is the sub-process element's: it silently clears a
+  mapping onto a callee parameter that is not In or Variable (`ProcessSchemaSubProcess.cs:144-183`), which the
+  builder turns into the refusal above. basis=source.
+- Recount 2026-10-07 with in-process reads: 84 Out, 30 Variable, 12 In, 6 Internal; a mapping inside the same process reads **3 of the 84 Out** and **11 of the 30 Variable** collections (script reads by name are not counted). Out is the shape of a RESULT handed to the caller; a collection filled and then used in the same
+  process is Variable, as in the one shipped in-process file case `FileParameterProcess.FileCollection`.
+  basis=measured (corpus).
 
 **Options.** File: Variable (`ParseDirection(null)`, `:357-369`); there is no alternative worth costing.
 FileCollection: (i) Out, the existing rule for the stored type; (ii) Variable, designer plain-Add parity, which
 costs a second default for one stored type, a second rule text and a guide line. D2 makes (ii) implementable;
 its cost is a second rule agents must hold, not feasibility.
 
-**Decision.** File: Variable, no Tag, no reference schema. FileCollection: **Out** (i), with its item Variable
-and no Tag. The comment at `:103-104` is corrected: the rule stands on "one rule per stored type" and the shipped
-majority, 85 of 133 (64%), not on designer parity.
+**Decision (owner, 2026-10-07).** File: Variable, no Tag, no reference schema. FileCollection: **Variable** (ii),
+with its item Variable and no Tag. The first recommendation was Out; the in-process recount reversed it, because a
+Variable FileCollection is never refused (a caller can fill it and the process can return it). The generic
+`Collection` keeps its Out default, so the stored type now has two defaults. The comment at `:103-104` is corrected
+(plain Add writes Variable).
 
 **Consequences.**
-- Guide sentence: "a FileCollection that a CALLER fills must be declared `direction: In` (or `Variable`)". The
-  caller's `addMapping` onto an Out callee parameter is refused loudly with a message naming the fix.
-- Serialization pins: an Out FileCollection equals the shipped `MarkProcessesToCancel.FilesCollection`
-  (`PS/ProcessLibrary/branches/7.8.0/Schemas/MarkProcessesToCancel/metadata.json:76-91`); a Variable one equals
-  `FileParameterProcess.FileCollection`. Both captures exist, so the "matches a designer-built capture" criterion
-  is satisfiable whichever default the owner picks.
-- **Owner decision: yes.** FileCollection default Out (recommended) or Variable.
+- Guide sentence: "a FileCollection defaults to Variable: a caller can fill it and the process can return it;
+  declare `direction: In` or `Out` only to narrow it. A generic Collection still defaults to Out." A caller's
+  `addMapping` onto an explicitly Out callee parameter stays refused loudly, with a message naming the fix.
+- Serialization pins: a Variable FileCollection (the default) equals the shipped
+  `FileParameterProcess.FileCollection` (under row PT-b of the comparison rule); an explicit Out one equals
+  `MarkProcessesToCancel.FilesCollection` (`PS/ProcessLibrary/branches/7.8.0/Schemas/MarkProcessesToCancel/metadata.json:76-91`).
+- **Owner decision: Variable, agreed on 2026-10-07.**
 
 ## D4. Dotted process-parameter paths
 
