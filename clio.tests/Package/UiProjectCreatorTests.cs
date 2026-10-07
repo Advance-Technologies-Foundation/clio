@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.Json.Nodes;
 using Clio.Common;
 using Clio.Package;
@@ -8,6 +9,7 @@ using Clio.Workspace;
 using Clio.Workspaces;
 using FluentAssertions;
 using NSubstitute;
+using NSubstitute.Core;
 using NUnit.Framework;
 
 namespace Clio.Tests.Package;
@@ -642,7 +644,7 @@ public class UiProjectCreatorTests {
 		_creator.Create(ProjectName, PackageName, VendorPrefix, true, "10.0.0", _ => false);
 
 		// Assert
-		_logger.Received(1).WriteInfo(
+		LoggedInfoMessages().Should().ContainSingle().Which.Should().Be(
 			"UI project template: ui-project-Empty (current template, targets Creatio 8.3.4 and later); "
 			+ "requested Creatio version: 10.0.0; @creatio-devkit/common: ^0.834.0.");
 	}
@@ -658,7 +660,7 @@ public class UiProjectCreatorTests {
 		_creator.Create(ProjectName, PackageName, VendorPrefix, true, "8.2.0", _ => false);
 
 		// Assert
-		_logger.Received(1).WriteInfo(
+		LoggedInfoMessages().Should().ContainSingle().Which.Should().Be(
 			"UI project template: ui/8.0.10/ui-project-Empty (legacy template for Creatio 8.0.10); "
 			+ "requested Creatio version: 8.2.0; @creatio-devkit/common: ^0.808.0.");
 	}
@@ -675,7 +677,7 @@ public class UiProjectCreatorTests {
 		_creator.Create(ProjectName, PackageName, VendorPrefix, false, string.Empty, _ => false);
 
 		// Assert
-		_logger.Received(1).WriteInfo(
+		LoggedInfoMessages().Should().ContainSingle().Which.Should().Be(
 			"UI project template: ui-project (current template, targets Creatio 8.3.4 and later); "
 			+ "requested Creatio version: not specified; @creatio-devkit/common: unknown.");
 	}
@@ -693,6 +695,13 @@ public class UiProjectCreatorTests {
 			Path.Combine(legacyRoot, "not-a-version")
 		]);
 	}
+
+	// Reads the recorded WriteInfo calls so the report expectations read as plain assertions
+	// on observed values instead of NSubstitute Received() verifications (SonarCloud S2699).
+	private List<string> LoggedInfoMessages() => _logger.ReceivedCalls()
+		.Where(call => call.GetMethodInfo().Name == nameof(ILogger.WriteInfo))
+		.Select(call => (string)call.GetArguments()[0])
+		.ToList();
 
 	private void StubGeneratedPackageJson(string devkitRange) {
 		string packageJsonPath = Path.Combine(RootPath, "projects", ProjectName, "package.json");
