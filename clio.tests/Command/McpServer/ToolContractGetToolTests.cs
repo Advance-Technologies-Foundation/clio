@@ -64,6 +64,25 @@ public sealed class ToolContractGetToolTests {
 		description.Should().Contain("create-package", because: "the agent needs the tool that creates an editable package");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Issue #1749: the curated push-workspace contract tells agents that a Schemas/Data folder without descriptor.json fails the push before anything is installed, and what to do about it.")]
+	public void PushWorkspaceContract_ShouldDescribeTheDescriptorPreflight() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result =
+			tool.GetToolContracts(new ToolContractGetArgs([PushWorkspaceTool.PushWorkspaceToolName]));
+
+		// Assert
+		string description = result.Tools!.Single().Description;
+		description.Should().Contain("descriptor.json", because: "the agent must learn which folders fail the push");
+		description.Should().Contain("installs nothing", because: "the agent must know the environment was not changed");
+		description.Should().Contain("delete it, or restore its descriptor.json",
+			because: "the agent needs the remedy rather than a retry of the same push");
+	}
+
 	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
 
 	[Test, Category("Unit")]

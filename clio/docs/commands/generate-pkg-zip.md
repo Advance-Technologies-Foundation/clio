@@ -43,6 +43,13 @@ generate-pkg-zip more than one packages to single .gz file if command run from
 packages containing directory
 ```
 
+## Notes
+
+The archive is not built when a folder under `Schemas/` or `Data/` has no
+`descriptor.json`, because Creatio would reject its installation with
+`Invalid descriptor`. The error names the full local path of each such folder;
+delete the folder, or restore its `descriptor.json`.
+
 ## Reporting Bugs
 
     https://github.com/Advance-Technologies-Foundation/clio

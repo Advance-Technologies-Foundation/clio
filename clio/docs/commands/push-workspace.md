@@ -70,6 +70,26 @@ A second warning names literal-only properties (for example
 them too, because such text renders empty at runtime; set those values as plain
 literals.
 
+### Folders without descriptor.json
+
+`push-workspace` packs every workspace package before it sends anything to the
+environment. It stops when a folder under `Schemas/` or `Data/` has no
+`descriptor.json`: Creatio rejects the whole installation for such a folder with
+`Invalid descriptor` and names only the last segment of its path. The error lists
+the full local path of every such folder in all packages, and the command exits
+with `1`:
+
+```text
+[ERR] - This package folder has no descriptor.json: /repo/packages/UsrApp/Data/Lookup_Status (28 files, e.g. Localization/data.de-DE.json, Localization/data.en-US.json, Localization/data.es-ES.json). Creatio rejects the whole installation ...
+```
+
+Such a folder is usually left behind when a schema or data binding is deleted:
+git removes the tracked files and keeps the ignored `Localization/` or
+`Resources/` files. Delete the folder, or restore its `descriptor.json` if the
+element is still needed. Empty folders and files excluded by `clioignore` are not
+packed, so they are not reported. Folders under `Assemblies/`, `Files/`,
+`Resources/` and `SqlScripts/` are not checked.
+
 ## See Also
 
 create-workspace - Create a workspace

@@ -6820,7 +6820,8 @@ internal static class ToolContractCatalog {
 			"Pushes the local workspace at workspace-path to the specified Creatio environment using the application installer. " +
 			"A package that does not yet exist in the environment is created locked (InstallType 1, not editable) and registered as an installed application; this tool has no option to install it unlocked. To create a new editable package in the environment use create-package instead. " +
 			"Before installing, it emits one non-blocking warning message per Freedom UI page schema (web or mobile) whose user-visible text (caption, label, title, tooltip, placeholder) is an inline literal - the same text update-page rejects - naming the schema, its package, and the offending <node>.<property> elements; bind the text via $Resources.Strings.<Key> or #ResourceString(<Key>)# to clear it. " +
-			"A second warning names literal-only properties (e.g. crt.ImageInput.tooltip) bound to a localizable resource, which update-page also rejects because the text renders empty; set them as plain literals (see get-guidance page-schema-resources).",
+			"A second warning names literal-only properties (e.g. crt.ImageInput.tooltip) bound to a localizable resource, which update-page also rejects because the text renders empty; set them as plain literals (see get-guidance page-schema-resources). " +
+			"Every package is packed before the first call to the environment: when a Schemas/<Name>/ or Data/<Name>/ folder has no descriptor.json the call fails with exit-code 1 and installs nothing, and the error names each such folder's local path. Creatio would otherwise reject the whole installation with 'Invalid descriptor' naming only the folder's last path segment. Such a folder is usually a leftover of a deleted schema or data binding: delete it, or restore its descriptor.json.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, WorkspacePathFieldName],
 				[

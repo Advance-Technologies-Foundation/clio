@@ -123,4 +123,26 @@ public sealed class InstallApplicationCommandTests : BaseCommandTests<InstallApp
 		result.Should().Be(5,
 			because: "invalid GZip archive failures should have a dedicated exit code");
 	}
+	[Test]
+	[Description("Issue #1749: when packing an application folder refuses a Schemas/Data folder without descriptor.json, the refusal is logged alone, without a stack trace, and the command returns one.")]
+	public void Execute_Should_Log_Only_The_Refusal_When_Packing_Finds_A_Folder_Without_Descriptor() {
+		// Arrange
+		InstallApplicationOptions options = new() {
+			Name = @"C:\Packages\UsrApp"
+		};
+		PackageItemDescriptorMissingException refusal = new([
+			new PackageItemFolderWithoutDescriptor(@"C:\Packages\UsrApp\Data\Lookup_Status", ["Localization/data.en-US.json"])
+		]);
+		_applicationInstaller.Install(options.Name, Arg.Any<EnvironmentSettings>(), options.ReportPath, options.CheckCompilationErrors)
+			.Returns(_ => throw refusal);
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "nothing was installed");
+		_logger.Received(1).WriteError(refusal.Message);
+		_logger.Received(1).WriteError(Arg.Any<string>());
+	}
+
 }

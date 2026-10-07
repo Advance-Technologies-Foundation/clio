@@ -127,6 +127,29 @@ namespace Clio.Workspaces
 			_packageArchiver.Pack(packagePath, packedPackagePath, true, true);
 		}
 
+		/// <summary>
+		/// Packs every workspace package before anything is sent to the environment.
+		/// </summary>
+		/// <param name="packageNames">Workspace packages to pack.</param>
+		/// <param name="rootPackedPackagePath">Folder that receives one <c>.gz</c> archive per package.</param>
+		/// <exception cref="PackageItemDescriptorMissingException">
+		/// One or more packages hold a <c>Schemas/</c> or <c>Data/</c> folder without <c>descriptor.json</c>. The
+		/// remaining packages are still checked, so a single run names the folders of every package (issue #1749).
+		/// </exception>
+		private void PackPackages(IEnumerable<string> packageNames, string rootPackedPackagePath){
+			List<PackageItemFolderWithoutDescriptor> foldersWithoutDescriptor = [];
+			foreach (string packageName in packageNames) {
+				try {
+					PackPackage(packageName, rootPackedPackagePath);
+				} catch (PackageItemDescriptorMissingException exception) {
+					foldersWithoutDescriptor.AddRange(exception.Folders);
+				}
+			}
+			if (foldersWithoutDescriptor.Count > 0) {
+				throw new PackageItemDescriptorMissingException(foldersWithoutDescriptor);
+			}
+		}
+
 		private string CreateRootPackedPackageDirectory(string creatioPackagesZipName, string tempDirectory){
 			string rootPackedPackagePath = Path.Combine(tempDirectory, creatioPackagesZipName);
 			_fileSystem.CreateDirectory(rootPackedPackagePath);
@@ -174,11 +197,14 @@ namespace Clio.Workspaces
 				useApplicationInstaller = false;
 			}
 			
+			List<string> packageNames = packages.ToList();
 			_workingDirectoriesProvider.CreateTempDirectory(tempDirectory => {
 				var rootPackedPackagePath =
 					CreateRootPackedPackageDirectory(creatioPackagesZipName, tempDirectory);
-				foreach (string packageName in packages) {
-					PackPackage(packageName, rootPackedPackagePath);
+				// Pack everything first: a package the platform would reject must stop the push before the first
+				// call that changes the environment.
+				PackPackages(packageNames, rootPackedPackagePath);
+				foreach (string packageName in packageNames) {
 					ResetSchemaChangeStateServiceUrlByPackage(packageName);
 				}
 				var applicationZip = ZipPackages(creatioPackagesZipName, tempDirectory, rootPackedPackagePath);
@@ -190,8 +216,8 @@ namespace Clio.Workspaces
 		public void Publish(IList<string> packages, string zipFileName, string destionationFolderPath, bool overrideFile = false){
 			_workingDirectoriesProvider.CreateTempDirectory(tempDirectory => {
 				string rootPackedPackagePath = CreateRootPackedPackageDirectory(zipFileName, tempDirectory);
+				PackPackages(packages, rootPackedPackagePath);
 				foreach (string packageName in packages) {
-					PackPackage(packageName, rootPackedPackagePath);
 					ResetSchemaChangeStateServiceUrlByPackage(packageName);
 				}
 				var applicationZip = ZipPackages(zipFileName, tempDirectory, rootPackedPackagePath);
@@ -207,10 +233,7 @@ namespace Clio.Workspaces
 			_workingDirectoriesProvider.CreateTempDirectory(tempDirectory => {
 				var rootPackedPackagePath =
 					CreateRootPackedPackageDirectory(zipFileName, tempDirectory);
-				foreach (string packageName in packages) {
-					PackPackage(packageName, rootPackedPackagePath);
-					//ResetSchemaChangeStateServiceUrl(packageName);
-				}
+				PackPackages(packages, rootPackedPackagePath);
 				var applicationZip = ZipPackages(zipFileName, tempDirectory, rootPackedPackagePath);
 				var filename = Path.GetFileName(applicationZip);
 				resultApplicationFilePath = Path.Combine(destinationFolderPath, filename);
