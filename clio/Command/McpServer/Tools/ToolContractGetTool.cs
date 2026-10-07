@@ -775,8 +775,9 @@ internal static class ToolContractCatalog {
 		+ "table is unknown. Inspect lookup metadata with get-entity-schema-properties and verify supplied IDs; "
 		+ "if unresolved, ask an administrator to map the constraint instead of guessing replacement IDs. "
 		+ "This error alone does not prove an OData mapping defect or identify which submitted field is wrong; "
-		+ "it can originate in an entity event handler. For a delete, the record is still referenced by the "
-		+ "named table. The hint does not change record-created, side-effect or retry-guidance.";
+		+ "it can originate in an entity event handler. For a delete or key update, the record is still "
+		+ "referenced by the named table. The hint does not change record-created, side-effect or "
+		+ "retry-guidance.";
 
 	private const string DataWriteDiagnosticFieldName = "diagnostic";
 	private const string DataWriteDiagnosticDescription = "Optional bounded context: operation, entity, item-index, write-attempted, transport-outcome, side-effect, retry-advice and sanitized message. No inferred HTTP status or offending field.";
