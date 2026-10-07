@@ -53,6 +53,75 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	}
 
 	[Test]
+	[Description("Over the real MCP path, with no Creatio needed, operations sent as a JSON ARRAY bind AND pass the tool's operations reader, while an object in the same place reaches that reader and is refused by it (ENG-100153). The environment is well-formed but unregistered, so the target guard passes and the call stops only after the reader.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process reads an operations array over the real server")]
+	public async Task ModifyBusinessProcess_Should_ReadAnOperationsArray_AndRefuseAnObject() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: false);
+		string unregisteredEnvironment = $"clio-e2e-unregistered-{Guid.NewGuid():N}";
+		using JsonDocument operations = JsonDocument.Parse(
+			"[{\"op\":\"removeElement\",\"elementName\":\"NotifyAccountOwner\"}]");
+		using JsonDocument notAnArray = JsonDocument.Parse("{\"op\":\"removeElement\"}");
+
+		// Act
+		string arrayResultJson = JsonSerializer.Serialize(await CallToolAsync(context, ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = unregisteredEnvironment,
+				["process-name"] = "UsrAccount_Onboard",
+				["operations"] = operations.RootElement.Clone()
+			}));
+		CallToolResult objectResult = await CallToolAsync(context, ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = unregisteredEnvironment,
+				["process-name"] = "UsrAccount_Onboard",
+				["operations"] = notAnArray.RootElement.Clone()
+			});
+		string objectResultJson = JsonSerializer.Serialize(objectResult);
+
+		// Assert
+		arrayResultJson.Should().NotContain("invalid-parameter-type",
+			because: "an operations array must bind rather than be refused as a non-string before the tool runs");
+		arrayResultJson.Should().NotContain("operations must be a JSON array",
+			because: "the array passed the tool's reader - the call stops later, on the unregistered environment");
+		arrayResultJson.Should().Contain(unregisteredEnvironment,
+			because: "the array call must get as far as resolving the environment, the step AFTER the reader - a "
+				+ "reader that refused the array as missing would answer before naming it");
+		arrayResultJson.Should().Contain("not found",
+			because: "the unregistered environment is what stops the array call, which proves the reader let it through");
+		objectResultJson.Should().Contain("operations must be a JSON array, or a string holding one",
+			because: "the same call with an object reaches the reader and is refused by it, which proves the array "
+				+ "above was read, not merely bound");
+		string.Join(" ", objectResult.Content.OfType<TextContentBlock>().Select(block => block.Text))
+			.Should().Contain("\"exit-code\":1",
+				because: "operations of the wrong kind are a caller error, exit code 1 over the real server too - not -1, "
+					+ "which means clio itself broke");
+	}
+
+	[Test]
+	[Description("Over the real MCP path, with no Creatio needed, a call with no operations at all reaches the tool body and is refused there as a caller error, exit code 1 - not -1, which tells the caller that clio broke (ENG-100153). This tool has no snapshot form: the operations are the edit. The environment is unregistered, so a refusal that stopped firing could not reach a real Creatio.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process refuses missing operations with exit code 1")]
+	public async Task ModifyBusinessProcess_Should_RefuseMissingOperations_AsACallerError() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: false);
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = $"clio-e2e-unregistered-{Guid.NewGuid():N}",
+			["process-name"] = "UsrAccount_Onboard"
+		});
+
+		// Assert
+		JsonSerializer.Serialize(callResult).Should().Contain("operations is required and cannot be empty",
+			because: "absent operations must reach the tool body and get its own refusal, not a binder error");
+		string.Join(" ", callResult.Content.OfType<TextContentBlock>().Select(block => block.Text))
+			.Should().Contain("\"exit-code\":1",
+				because: "missing operations are a caller error fixed by sending them, exit code 1 over the real server "
+					+ "too - not -1, which tells the caller that clio broke and a retry will not help");
+	}
+
+	[Test]
 	[Description("Over the real MCP path, setFlow re-kinds an existing flow in place — the operation ENG-91853 added and the one nothing else in this suite sends. Two directions in one call, because they fail differently: sequence -> conditional must store the condition, and conditional -> sequence is the clear-condition route. The source is an ORDINARY element, and that is the correction: an earlier version of this test asked for kind sequence on a flow out of a GATEWAY, which the builder refuses whenever a conditional sibling exists, so its expected outcome was unreachable and the operation before it could never have been committed either. Unit tests build the operation record positionally in C#, so the JSON binder for op/kind/condition is exercised nowhere else.")]
 	[AllureTag(ToolName)]
 	[AllureName("modify-business-process re-kinds a flow with setFlow in both directions")]

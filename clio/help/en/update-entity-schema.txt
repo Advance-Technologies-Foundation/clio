@@ -39,8 +39,16 @@ DESCRIPTION
 OPTIONS
     --package              Target package name
     --schema-name          Entity schema name
-    --operation            Structured operation JSON. Repeat the option for
-                           multiple values
+    --operation            Structured operation JSON. Pass several values
+                           after one --operation; the flag itself cannot be
+                           repeated
+    --operations           JSON array of operation objects. Applied after the
+                           --operation values
+    --operations-file      Path to a UTF-8 file with a JSON array of operation
+                           objects (same format as --operations; multi-line
+                           and a byte order mark are allowed; a relative path
+                           is resolved from the current directory). Applied
+                           after --operation and --operations
     --caption-culture      Override the culture for written column captions/
                            descriptions (e.g. en-US, uk-UA). Precedence:
                            override > profile culture > en-US. Supplying it
@@ -54,10 +62,10 @@ OPTIONS
 
 EXAMPLES
     # Add two columns in one batch
-    clio update-entity-schema -e dev --package Custom --schema-name UsrVehicle --operation "{\"action\":\"add\",\"column-name\":\"UsrStatus\",\"type\":\"Lookup\",\"title\":\"Status\",\"reference-schema-name\":\"UsrVehicleStatus\",\"required\":true}" --operation "{\"action\":\"add\",\"column-name\":\"UsrDueDate\",\"type\":\"Date\",\"title\":\"Due date\"}"
+    clio update-entity-schema -e dev --package Custom --schema-name UsrVehicle --operation "{\"action\":\"add\",\"column-name\":\"UsrStatus\",\"type\":\"Lookup\",\"title\":\"Status\",\"reference-schema-name\":\"UsrVehicleStatus\",\"required\":true}" "{\"action\":\"add\",\"column-name\":\"UsrDueDate\",\"type\":\"Date\",\"title\":\"Due date\"}"
 
     # Rename a column and clear its default in one batch
-    clio update-entity-schema -e dev --package Custom --schema-name UsrVehicle --operation "{\"action\":\"modify\",\"column-name\":\"Owner\",\"new-name\":\"PrimaryOwner\",\"title\":\"Primary owner\"}" --operation "{\"action\":\"modify\",\"column-name\":\"Status\",\"default-value-source\":\"None\"}"
+    clio update-entity-schema -e dev --package Custom --schema-name UsrVehicle --operation "{\"action\":\"modify\",\"column-name\":\"Owner\",\"new-name\":\"PrimaryOwner\",\"title\":\"Primary owner\"}" "{\"action\":\"modify\",\"column-name\":\"Status\",\"default-value-source\":\"None\"}"
 
     # Set a system-value default in one batch (caption/alias/guid accepted)
     clio update-entity-schema -e dev --package Custom --schema-name UsrVehicle --operation "{\"action\":\"modify\",\"column-name\":\"UsrStartDate\",\"default-value-config\":{\"source\":\"SystemValue\",\"value-source\":\"Current Time and Date\"}}"
@@ -65,12 +73,23 @@ EXAMPLES
     # Set a system-setting default in one batch (name/code/id accepted)
     clio update-entity-schema -e dev --package Custom --schema-name UsrVehicle --operation "{\"action\":\"modify\",\"column-name\":\"UsrOwner\",\"default-value-config\":{\"source\":\"Settings\",\"value-source\":\"Maintainer\"}}"
 
+    # Read a multi-line operations array from a file (works in cmd.exe and Windows PowerShell 5.1)
+    clio update-entity-schema -e dev --package Custom --schema-name UsrVehicle --operations-file operations.json
+
 NOTES
     - this command applies COLUMN operations only; its per-operation title-localizations
       is a COLUMN caption. To change the SCHEMA caption use set-entity-schema-properties
       (--title / --title-localizations)
     - at least one operation is required; a call with none reports what is missing
-    - operations are applied in order
+    - operations are applied in order: the --operation values first, then the
+      --operations array, then the --operations-file array
+    - repeating --operation (--operation A --operation B) is rejected by the
+      parser; pass the values after one --operation (--operation A B) or use
+      --operations / --operations-file
+    - a missing or unreadable --operations-file, a file that is not valid UTF-8
+      (for example one saved in an ANSI code page), or content that is not a
+      JSON array, fails before anything is saved and names the option and the
+      path
     - an operation field the command does not know (for example a misspelled
       colum-name) fails the batch before anything is saved, naming the field and
       the nearest known field

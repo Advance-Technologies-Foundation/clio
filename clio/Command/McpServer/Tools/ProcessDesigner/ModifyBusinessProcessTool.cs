@@ -41,9 +41,6 @@ public class ModifyBusinessProcessTool(
 	/// Applies an inline JSON operations array to an existing process (identified by name or uid).
 	/// </summary>
 	/// <param name="args">The tool arguments; see <see cref="ModifyBusinessProcessArgs"/>.</param>
-	/// <param name="operations">Inline JSON operations array.</param>
-	/// <param name="confirmLayoutChange">Agreement to have THIS process re-drawn, sent only after the user has
-	/// turned down the new-version route.</param>
 	/// <returns>The command execution result with the edited schema identity in the log output.</returns>
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
@@ -95,12 +92,11 @@ public class ModifyBusinessProcessTool(
 		 + "the FIRST true one is taken. No gateway is needed or created: the platform synthesizes one for a "
 		 + "conditional flow whose source is an activity. The condition is validated by the PLATFORM at the "
 		 + "pre-save gate, like a mapped 'expression' and by the same rule — it must be a bool (an int is refused: "
-		 + "the interpreted engine does not coerce), it must parse, every [#…#] parameter reference in it must "
-		 + "resolve in THIS process, and its macro family must be one a converter resolves, so [#Price#] does not "
-		 + "save. A refusal aborts the whole edit, writes nothing, and names the flow and the expression as the "
-		 + "converter left it; the character index comes only with the 'Formula value error:' PARSE family, so "
-		 + "do not wait for one on a type mismatch or an unknown identifier, and an unresolvable [#…#] "
-		 + "reference names the reference and the remedy instead of either. An empty condition is "
+		 + "the interpreted engine does not coerce), it must parse, and its macro family must be one a converter "
+		 + "resolves. Name a parameter as on create ([#Amount#], [#Read.ResultEntity.Owner#]) or write its UId meta "
+		 + "path exactly as the platform does (every segment dot-separated, prefix optional) - any other spelling, "
+		 + "or a column the read does not load, is refused. A refusal aborts the whole edit, writes nothing, and names the flow; the character index "
+		 + "comes only with the 'Formula value error:' PARSE family. An empty condition is "
 		 + "refused, because the platform stores one as the literal 'true' and the branch becomes always-taken; "
 		 + "to CHANGE a condition call setFlowCondition again - it overwrites in place and keeps the flow's "
 		 + "position. Do NOT remove the flow and add a plain one to 'clear' a condition: if it was the last "
@@ -161,23 +157,23 @@ public class ModifyBusinessProcessTool(
 		 + "[#BooleanValue.True#]. An expression is VALIDATED, by the PLATFORM, at the pre-save gate — so a bad "
 		 + "one aborts the whole edit with 'Process validation failed' and nothing is saved, rather than being "
 		 + "attributed to the one operation that carried it, which is why such a refusal reports NO "
-		 + "failedOperationIndex while one caused by a single operation reports its zero-based index (on CrtProcessBuilder this clio requires 1.6.6.40, for "
-		 + "sourceColumn, scriptTask, addUsing/removeUsing/setMethods and subProcess.multiInstanceOptions {enabled, executionMode, ignoreErrors}; "
+		 + "failedOperationIndex while one caused by a single operation reports its zero-based index (on CrtProcessBuilder this clio requires 1.6.6.77, for "
+		 + "the meta-path checks, sourceColumn, scriptTask, addUsing/removeUsing/setMethods and subProcess.multiInstanceOptions; "
 		 + "1.4.0.41 is where the PACKAGE stopped validating formulas itself). It must parse, every parameter "
-		 + "reference must resolve in THIS process, its result must fit the target parameter's DECLARED type (so a "
+		 + "reference must resolve in THIS process - a UId meta path exactly as the platform does (every segment "
+		 + "dot-separated, prefix optional), on a column the read loads - its result must fit the target parameter's DECLARED type (so a "
 		 + "fractional formula into an Integer parameter is refused), and every [#…#] macro family must be one a "
 		 + "converter resolves where you used it — an invented family and the real [#ColumnValue…#] and "
 		 + "[#SamplingColumnValue…#] are all three refused over a mapping onto a plain process parameter, measured. "
 		 + "A refusal always names the parametrized element or the parameter. The character index comes with a "
 		 + "PARSE fault only - a syntax error, 'Expression expected', 'No applicable method' - so do not wait "
 		 + "for one on a type mismatch ('Cannot convert type X to Y') or an unknown identifier ('Parameter X "
-		 + "not found'): those are the two commonest ways to get a formula wrong, and both already name what "
-		 + "to fix. When the expression IS quoted, it is quoted as the platform's own converter left it - NOT "
+		 + "not found'): both already name what to fix. When the expression IS quoted, it is quoted as the platform's own converter left it - NOT "
 		 + "as you wrote it: a parameter reference is shown by the "
 		 + "parameter NAME, a fractional literal gains an 'm' and a division gains a ((decimal)…) wrapper, so "
 		 + "do not conclude the wrong formula was validated. A newline is refused with 'Expression contains "
 		 + "invalid line break symbol' and quotes the expression as EMPTY; an unresolvable [#…#] parameter "
-		 + "reference is not in this family at all - it names the reference and the remedy instead. Must be "
+		 + "reference is not in this family at all - it names the reference and the remedy. Must be "
 		 + "one line; "
 		 + "a Lookup target's 'value' takes a bare non-empty record Guid (ships from CrtProcessBuilder 1.3.1.1; an "
 		 + "older-than-required environment is refused naming the version) - describe reports its resolved NAME "
@@ -385,15 +381,16 @@ public class ModifyBusinessProcessTool(
 			return targetError;
 		}
 
-		if (string.IsNullOrWhiteSpace(args.Operations)) {
-			return CommandExecutionResult.FromError("operations is required and cannot be empty.");
+		if (!McpToolArgumentSupport.TryReadJsonDocumentArgument(args.Operations, JsonValueKind.Array,
+				"operations", out string operationsJson, out CommandExecutionResult? operationsRefusal)) {
+			return operationsRefusal;
 		}
 
 		ModifyBusinessProcessOptions options = new() {
 			Environment = args.EnvironmentName,
 			ProcessName = args.ProcessName ?? string.Empty,
 			ProcessUid = args.ProcessUid ?? string.Empty,
-			OperationsJson = args.Operations,
+			OperationsJson = operationsJson,
 			ConfirmLayoutChange = args.ConfirmLayoutChange ?? false
 		};
 		// An edit that leaves no new C# behind needs no compile, and the deterministic post-op note says so
@@ -415,10 +412,12 @@ public sealed record ModifyBusinessProcessArgs(
 	[property: Required]
 	string EnvironmentName,
 
+	// JsonElement, not string: the array itself is the natural call, and a string holding the same JSON keeps
+	// working. McpToolArgumentSupport.TryReadJsonDocumentArgument says why (ENG-100153).
 	[property: JsonPropertyName("operations")]
-	[property: Description("The operations array SERIALIZED AS A JSON STRING - not a nested array. A real array fails with \"Cannot get the value of a token type 'StartArray' as a string\". e.g. \"[{\\\"op\\\":\\\"removeElement\\\",\\\"elementName\\\":\\\"StartEvent1\\\"}]\".")]
+	[property: Description("The operations as a JSON array, e.g. [{\"op\":\"removeElement\",\"elementName\":\"NotifyAccountOwner\"}]. A string holding the same JSON is also accepted.")]
 	[property: Required]
-	string Operations,
+	JsonElement Operations,
 
 	[property: JsonPropertyName("process-name")]
 	[property: Description("Process code (schema Name) to edit; provide exactly one of process-name or process-uid.")]

@@ -378,6 +378,47 @@ public sealed class ClioRunExecutor(
 	//   3. The same POCO surfaced via StructuredContent when a tool opts into structured output.
 	// Only failure content is touched; a successful payload is never scrubbed (it could carry legitimate
 	// host/path data). SensitiveErrorTextRedactor is the single redaction rule.
+	// The options the redactor's rules were written and pinned against: the DEFAULT encoder, which spells a
+	// quote nested in a string as \u0022. The MCP result encoder (ENG-99970) spells it \" instead, and three
+	// rules - the Windows and POSIX path rules and the bare-value arm of the credential-pair rule - take a
+	// backslash in their value class and stop at a quote, so over relaxed text they swallowed the backslash of
+	// a closing \", broke the JSON, and left password=\"s3cr3t\" in the clear.
+	private static readonly JsonSerializerOptions RedactionSpellingOptions = new();
+
+	private static readonly JsonSerializerOptions ResultTextOptions = BindingsModule.CreateMcpSerializerOptions();
+
+	// Redacts a text block that is usually the tool's serialized JSON envelope: re-spelled in the form the
+	// redactor is pinned against, redacted, and written back in the result encoding. A block that is not JSON
+	// is redacted as the plain text it is, as before.
+	private static string RedactSerializedText(string text) {
+		if (string.IsNullOrEmpty(text)) {
+			return text;
+		}
+		JsonNode node;
+		try {
+			node = JsonNode.Parse(text);
+		}
+		catch (JsonException) {
+			return SensitiveErrorTextRedactor.Redact(text);
+		}
+		if (node is null) {
+			return SensitiveErrorTextRedactor.Redact(text);
+		}
+		string spelled = node.ToJsonString(RedactionSpellingOptions);
+		string redacted = SensitiveErrorTextRedactor.Redact(spelled);
+		if (string.Equals(redacted, spelled, StringComparison.Ordinal)) {
+			return text;
+		}
+		try {
+			return JsonNode.Parse(redacted)?.ToJsonString(ResultTextOptions) ?? redacted;
+		}
+		catch (JsonException) {
+			// The redactor keeps default-spelled JSON parseable (its tests pin that); should a rule ever break
+			// it, the redacted text still goes out rather than the unredacted one.
+			return redacted;
+		}
+	}
+
 	internal static void RedactFailureContent(CallToolResult result) {
 		if (result is null) {
 			return;
@@ -388,7 +429,7 @@ public sealed class ClioRunExecutor(
 		}
 		if (result.Content is not null) {
 			foreach (TextContentBlock textBlock in result.Content.OfType<TextContentBlock>()) {
-				textBlock.Text = SensitiveErrorTextRedactor.Redact(textBlock.Text);
+				textBlock.Text = RedactSerializedText(textBlock.Text);
 			}
 		}
 		if (structured is not null && RedactStructuredErrorFields(structured)) {

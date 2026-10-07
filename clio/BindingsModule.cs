@@ -1623,14 +1623,24 @@ public class BindingsModule {
 	}
 
 	/// <summary>
-	/// Creates <see cref="JsonSerializerOptions"/> for MCP tool/prompt argument deserialization.
+	/// Creates <see cref="JsonSerializerOptions"/> for MCP tool/prompt argument deserialization and for the
+	/// text a tool's return value is serialized into.
 	/// Enables out-of-order metadata properties so that the
 	/// <c>"type"</c> polymorphic discriminator does not have to be the first JSON property —
 	/// LLMs do not guarantee JSON property ordering.
 	/// </summary>
+	/// <remarks>
+	/// <see cref="Clio.Command.McpServer.McpResultJsonEncoder"/> (ENG-99970): the default encoder escapes for
+	/// embedding in HTML, writing a quote inside a string as <c>\u0022</c> and an apostrophe, backtick, dash or
+	/// any non-ASCII character as a six-character sequence. A tool result is read by an agent over JSON-RPC and
+	/// never embedded in a page, so that escaping only costs: guidance articles came back ~10% larger, and
+	/// describe-business-process's graph, carried as a string, paid six characters for every quote. The encoder
+	/// is relaxed except for invisible Format characters (bidi, zero-width), which stay escaped.
+	/// </remarks>
 	internal static JsonSerializerOptions CreateMcpSerializerOptions() {
 		JsonSerializerOptions options = new(McpJsonUtilities.DefaultOptions);
 		options.AllowOutOfOrderMetadataProperties = true;
+		options.Encoder = Clio.Command.McpServer.McpResultJsonEncoder.Instance;
 		return options;
 	}
 
