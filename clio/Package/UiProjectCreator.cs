@@ -169,7 +169,8 @@ namespace Clio.Package
 		}
 
 		/// <summary>
-		/// Bundle output folder (the <c>angular.json</c> <c>outputPath</c>), relative to the Angular
+		/// Bundle output folder (<c>OUTPUT_PATH</c> in the template's <c>rspack.config.js</c>, the esproj
+		/// <c>BuildOutputFolder</c> and the npm <c>clean</c> script), relative to the Angular
 		/// project directory and using forward slashes — e.g.
 		/// <c>../../packages/UsrRssReader/Files/src/js/rss_reader</c>.
 		/// </summary>

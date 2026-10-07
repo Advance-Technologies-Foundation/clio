@@ -5,14 +5,14 @@
     or Visual Studio) also produces the client bundle. The JavaScript SDK runs `npm install`
     (only when package.json / package-lock.json change) and then the build command below.
 
-    `ng build` emits straight into the Creatio package — see angular.json `outputPath` — so there
-    is no separate dist to copy. The SDK version is pinned centrally in the repo-root global.json,
+    `npm run build` (Rspack) emits straight into the Creatio package — see `OUTPUT_PATH` in
+    rspack.config.js — so there is no separate dist to copy. The SDK version is pinned centrally in the repo-root global.json,
     so the Sdk attribute above is intentionally version-less.
   -->
   <PropertyGroup>
     <!--
       Declare the same build configurations the solution defines so the .slnx auto-maps and builds
-      this project under each of them. `ng build` is configuration-agnostic, so dev-n8 / dev-nf
+      this project under each of them. `npm run build` is configuration-agnostic, so dev-n8 / dev-nf
       behave the same as Debug here. NOTE: this alone is not enough for a custom solution config to
       select the project — the empty <Build /> element in MainSolution.slnx is what forces it.
     -->
@@ -23,8 +23,8 @@
     <ShouldRunBuildScript>true</ShouldRunBuildScript>
 
     <!--
-      Where `ng build` writes the bundle (angular.json outputPath). angular.json leaves
-      deleteOutputPath at its default (true), so every build recreates this folder. `dotnet clean`
+      Where `npm run build` writes the bundle (`OUTPUT_PATH` in rspack.config.js). rspack.config.js
+      leaves deleteOutputPath at its default (true), so every build recreates this folder. `dotnet clean`
       runs the npm `clean` script below to remove the bundle; the next build regenerates it.
     -->
     <BuildOutputFolder>$(MSBuildProjectDirectory)/<%distPath%></BuildOutputFolder>
