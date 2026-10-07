@@ -107,6 +107,10 @@ public sealed class CompileCreatioToolE2ETests : McpContractFixtureBase
 		// Assert
 		status.Success.Should().BeTrue(because: "an empty history is a legitimate state, not a tool error");
 		status.Status.Should().Be("not-found");
+		status.Note.Should().Contain(LastCompilationLogTool.ToolName,
+			because: "ENG-102333: a session with no record must send the agent to the environment's own verdict, never read as 'nothing ran'");
+		status.Note.Should().Contain("carries no time",
+			because: "last-compilation-log reads the latest FINISHED compile, which is an earlier one's while a compile still runs");
 	}
 
 	[Test]

@@ -292,7 +292,9 @@ public sealed partial class CreatioArtifactMergeService(Resolver.IConflictResolv
 	private static bool IsSerializedResultWithinLimit(CreatioArtifactMergeResult result) {
 		try {
 			var buffer = new CappedBufferWriter(CreatioArtifactMergeArgs.MaxCombinedContentBytes);
-			using var writer = new Utf8JsonWriter(buffer);
+			// The writer's own encoder decides the escaping, not the options' - measure with the encoder the
+			// result text is written with, or the cap counts escapes the agent never receives (ENG-99970).
+			using var writer = new Utf8JsonWriter(buffer, new JsonWriterOptions { Encoder = ResultJsonOptions.Encoder });
 			JsonSerializer.Serialize(writer, result, ResultJsonOptions);
 			return true;
 		}

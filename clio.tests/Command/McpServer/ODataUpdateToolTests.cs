@@ -637,7 +637,7 @@ public sealed class ODataUpdateToolTests {
 	[TestCase(Clio.Tests.Common.CreatioResponseErrorStructuredDetailTests.PostgresInsertForeignKeyBody,
 		"foreign key constraint 'FK6R22cV5NWM2CfAp2GAV4B2R2GfY' on table 'DocListInFinApp'",
 		TestName = "Update_Should_Add_The_Foreign_Key_Hint_For_Postgres")]
-	[TestCase(Clio.Tests.Common.CreatioResponseErrorStructuredDetailTests.SqlServerInsertForeignKeyBody,
+	[TestCase(Clio.Tests.Common.CreatioResponseErrorStructuredDetailTests.SqlServerUpdateForeignKeyBody,
 		"referenced table 'Account'",
 		TestName = "Update_Should_Add_The_Foreign_Key_Hint_For_SqlServer")]
 	[Category("Unit")]

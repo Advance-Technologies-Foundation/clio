@@ -570,6 +570,16 @@ public sealed class DescribedElement {
 	public DescribedFilter Filter { get; set; }
 
 	/// <summary>
+	/// Whether <see cref="Filter"/> says everything the stored filter says, as the server judged the decode:
+	/// <c>true</c> when nothing was left out or approximated, <c>false</c> when the stored filter holds what the
+	/// high-level shape cannot carry (an Exists or Between leaf, a disabled condition, a multi-value lookup, an
+	/// aggregation, ...). Null when there is no filter, and always null from a <c>CrtProcessBuilder</c> older than
+	/// 1.6.6.39, which does not judge it (ENG-99970).
+	/// </summary>
+	[JsonPropertyName("filterDecodedCompletely")]
+	public bool? FilterDecodedCompletely { get; set; }
+
+	/// <summary>
 	/// For a Send email element (<c>EmailTemplateUserTask</c>): its configuration decoded back into the descriptor
 	/// vocabulary. <c>null</c> for other element kinds and when the server (an older <c>CrtProcessBuilder</c>) does
 	/// not report it. Round-trips into a <c>create</c>/<c>modify</c> <c>email</c> block with TWO qualifications: a
@@ -1952,6 +1962,16 @@ public sealed class DescribedParameter {
 	/// <summary>The source value/expression (for a formula source this is the <c>[#...#]</c> expression).</summary>
 	[JsonPropertyName("value")]
 	public string Value { get; set; }
+
+	/// <summary>
+	/// Set in place of <see cref="Value"/> when describe-business-process leaves the stored value out, saying where
+	/// its content is reported instead - today only the raw platform filter of <c>DataSourceFilters</c>, and only
+	/// when <see cref="DescribedElement.FilterDecodedCompletely"/> is <c>true</c> (ENG-99970).
+	/// <para>Null otherwise, and always null on the model the describer returns: the value is left out only when
+	/// the graph is written for the caller, so clio's own read-backs still see it.</para>
+	/// </summary>
+	[JsonPropertyName("valueOmitted")]
+	public string ValueOmitted { get; set; }
 
 	/// <summary>
 	/// What the designer SHOWS for <see cref="Value"/> — for a Lookup constant the referenced record's name (for
