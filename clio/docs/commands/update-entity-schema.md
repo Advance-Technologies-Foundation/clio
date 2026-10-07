@@ -30,6 +30,12 @@ and retry rather than running a full compile.
 
 ```bash
 clio update-entity-schema -e dev
+
+# Several operations after one --operation (repeating the flag is rejected)
+clio update-entity-schema -e dev --package Custom --schema-name UsrVehicle --operation '{"action":"add","column-name":"UsrStatus","type":"Text","title":"Status"}' '{"action":"add","column-name":"UsrDueDate","type":"Date","title":"Due date"}'
+
+# A multi-line operations array from a file (works in cmd.exe and Windows PowerShell 5.1)
+clio update-entity-schema -e dev --package Custom --schema-name UsrVehicle --operations-file operations.json
 ```
 
 ## Options
@@ -42,12 +48,20 @@ Target package name. Required.
 --schema-name <VALUE>
 Entity schema name. Required.
 --operation <VALUE>
-Structured operation JSON. Repeat the option for multiple values. Required.
+Structured operation JSON. Pass several values after one `--operation`; the flag itself cannot be
+repeated (`--operation A --operation B` fails with `Option 'operation' is defined multiple times.`).
+At least one operation is required from `--operation`, `--operations`, or `--operations-file`.
 Operation `type` accepts the same values as modify-entity-schema-column, including
 Binary, Image, ImageLookup (alias ImageLink), File, SecureText, and Email.
 For image/photo fields bound to the `crt.ImageInput` component, add an `ImageLookup`
 ("Image link") column instead of the binary `Image` type; `ImageLookup` references the
 `SysImage` schema automatically (no reference-schema-name).
+--operations <VALUE>
+JSON array of operation objects, e.g. '[{"action":"add",...}]'. Applied after the `--operation` values.
+--operations-file <VALUE>
+Path to a UTF-8 file with a JSON array of operation objects (same format as `--operations`).
+The file may span several lines and start with a byte order mark; a relative path is resolved from
+the current directory. Applied after `--operation` and `--operations`.
 ```
 
 ## Environment Options
@@ -113,6 +127,13 @@ cliogate must be installed on the target Creatio environment.
   (`--title` / `--title-localizations`).
 - At least one operation is required; a call with none reports what is missing instead of
   failing with an opaque null-reference message.
+- Operation sources are combined in a fixed order: the `--operation` values, then the `--operations`
+  array, then the `--operations-file` array.
+- `--operations-file` avoids shell quoting problems with multi-line JSON in cmd.exe and Windows
+  PowerShell 5.1. A missing or unreadable file, a file that is not valid UTF-8 (for example one saved
+  in an ANSI code page by `Set-Content` without `-Encoding UTF8`), or content that is not a JSON array
+  fails before anything is saved; the error names `--operations-file` and the path. A UTF-16 file with
+  a byte order mark is also read.
 - A `modify` operation on an **inherited** column may override only its caption/description (`title-localizations`/`description-localizations`); changing its name, type, or flags is rejected and stops the batch on that operation.
 - An operation field the command does not know (for example a misspelled `colum-name`) fails the
   batch before anything is saved; the error names the field and the nearest known field
@@ -124,6 +145,8 @@ cliogate must be installed on the target Creatio environment.
   (for example `"required":"yes"`) is reported with its JSON path
   (`... has an invalid value at JSON path '$.required'.`); only text that is not JSON at all is
   reported as `is not valid JSON`.
+- An error in an operation that came from `--operations` or `--operations-file` names that source and
+  counts the index within it, e.g. `--operations-file 'ops.json' item at index 0 has unknown field 'colum-name'.`
 - `--operation` payloads can include structured `default-value-config`.
 - `--operation` payloads can include `usage-type` (`General`, `Advanced`, or `None`; any column type); on `modify` the stored value is left unchanged when omitted.
 - For `SystemValue`, clio resolves Guid/alias/caption to canonical Guid before save.
