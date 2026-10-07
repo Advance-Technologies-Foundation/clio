@@ -37,6 +37,7 @@ public class UiProjectCreatorIntegrationTests {
 
 	private string _tempDir;
 	private UiProjectCreator _creator;
+	private IWorkingDirectoriesProvider _workingDirectoriesProvider;
 
 	#endregion
 
@@ -51,6 +52,7 @@ public class UiProjectCreatorIntegrationTests {
 		IFileSystem fileSystem = new FileSystem(abstractionsFileSystem);
 		ILogger logger = Substitute.For<ILogger>();
 		IWorkingDirectoriesProvider workingDirectoriesProvider = new WorkingDirectoriesProvider(logger, abstractionsFileSystem);
+		_workingDirectoriesProvider = workingDirectoriesProvider;
 		ITemplateProvider templateProvider = new TemplateProvider(workingDirectoriesProvider, fileSystem);
 		ISolutionCreator solutionCreator = new SolutionCreator(fileSystem, logger, templateProvider);
 
@@ -72,7 +74,8 @@ public class UiProjectCreatorIntegrationTests {
 			templateProvider,
 			workingDirectoriesProvider,
 			fileSystem,
-			solutionCreator);
+			solutionCreator,
+			logger);
 	}
 
 	[TearDown]
@@ -218,6 +221,49 @@ public class UiProjectCreatorIntegrationTests {
 			because: "the builder must load the project-specific setup extension point");
 		testTsConfig.Should().Be("tsconfig.spec.json",
 			because: "the builder must compile specs with the generated test TypeScript configuration");
+	}
+
+
+	[TestCase(true)]
+	[TestCase(false)]
+	[Description("Scaffolds the current shipped template, not a legacy snapshot, when Creatio 10.0.0 is requested.")]
+	public void Create_ShouldScaffoldCurrentTemplate_WhenCreatio10IsRequested(bool isEmpty) {
+		// Arrange
+		string templateFolderName = isEmpty ? "ui-project-Empty" : "ui-project";
+		string shippedPackageJsonPath = Path.Combine(
+			_workingDirectoriesProvider.GetTemplateFolderPath(templateFolderName), "package.json");
+		JsonNode shippedDependencies = JsonNode.Parse(File.ReadAllText(shippedPackageJsonPath))?["dependencies"];
+
+		// Act
+		_creator.Create(ProjectName, PackageName, VendorPrefix, isEmpty, "10.0.0", _ => false);
+
+		// Assert
+		string projectPath = Path.Combine(_tempDir, "projects", ProjectName);
+		JsonNode generatedDependencies =
+			JsonNode.Parse(File.ReadAllText(Path.Combine(projectPath, "package.json")))?["dependencies"];
+		JsonNode.DeepEquals(generatedDependencies, shippedDependencies).Should().BeTrue(
+			because: "Creatio 10.0.0 is newer than every legacy snapshot, so it must get the current template's SDK and Angular line");
+	}
+
+	[TestCase("8.0.10")]
+	[TestCase("8.0.8")]
+	[TestCase("8.0.3")]
+	[Description("Points every legacy empty template's Angular build output at the hosting package, like the full template does.")]
+	public void Create_ShouldEmitLegacyEmptyBundleIntoPackage_WhenLegacyCreatioVersionIsRequested(
+		string creatioVersion) {
+		// Arrange
+		string expectedOutputPath = $"../../packages/{PackageName}/Files/src/js/{ProjectName}";
+
+		// Act
+		_creator.Create(ProjectName, PackageName, VendorPrefix, true, creatioVersion, _ => false);
+
+		// Assert
+		string angularJsonPath = Path.Combine(_tempDir, "projects", ProjectName, "angular.json");
+		JsonObject angularJson = JsonNode.Parse(File.ReadAllText(angularJsonPath)).AsObject();
+		string outputPath = angularJson["projects"]?[ProjectName]?["architect"]?["build"]?["options"]?
+			["outputPath"]?.GetValue<string>();
+		outputPath.Should().Be(expectedOutputPath,
+			because: "the esproj BuildOutputFolder and the package deploy read the bundle from the hosting package, not from dist");
 	}
 
 	#endregion

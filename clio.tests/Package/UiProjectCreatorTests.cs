@@ -47,6 +47,7 @@ public class UiProjectCreatorTests {
 	private IPackageDownloader _packageDownloader;
 	private IApplicationPackageListProvider _applicationPackageListProvider;
 	private IWorkspace _workspace;
+	private ILogger _logger;
 	private System.IO.Abstractions.IDirectoryInfo _stagingDirectory;
 	private System.IO.Abstractions.IFileInfo _descriptorFileInfo;
 	private Dictionary<string, string> _writtenFiles;
@@ -90,6 +91,7 @@ public class UiProjectCreatorTests {
 		_packageDownloader = Substitute.For<IPackageDownloader>();
 		_applicationPackageListProvider = Substitute.For<IApplicationPackageListProvider>();
 		_workspace = Substitute.For<IWorkspace>();
+		_logger = Substitute.For<ILogger>();
 
 		_creator = new UiProjectCreator(
 			new EnvironmentSettings(),
@@ -101,7 +103,8 @@ public class UiProjectCreatorTests {
 			_templateProvider,
 			_workingDirectoriesProvider,
 			_fileSystem,
-			_solutionCreator);
+			_solutionCreator,
+			_logger);
 	}
 
 	[Test]
@@ -511,6 +514,134 @@ public class UiProjectCreatorTests {
 		_writtenFiles.Keys.Should().NotContain(k => k.EndsWith(".esproj", StringComparison.OrdinalIgnoreCase));
 		_writtenFiles.Should().NotContainKey(Path.Combine(RootPath, "global.json"));
 		_solutionCreator.DidNotReceiveWithAnyArgs().AddProjectToSolution(default, default);
+	}
+
+	[TestCase("10.0.0")]
+	[TestCase("10.2.414.0")]
+	[TestCase("8.3.4")]
+	[TestCase(" 10.0 ")]
+	[Description("Uses the current template for a Creatio version at or above the version it targets, instead of falling back to a legacy snapshot.")]
+	public void Create_ShouldUseCurrentTemplate_WhenCreatioVersionIsAtLeastCurrentTemplateMinimum(string creatioVersion) {
+		// Arrange
+
+		// Act
+		_creator.Create(ProjectName, PackageName, VendorPrefix, true, creatioVersion, _ => false);
+
+		// Assert
+		_templateProvider.Received(1).CopyTemplateFolder(
+			"ui-project-Empty", Arg.Is<string>(path => path.EndsWith(".tmp")), string.Empty, string.Empty);
+		_templateProvider.DidNotReceive().CopyTemplateFolder(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Is<string>(version => !string.IsNullOrEmpty(version)),
+			Arg.Any<string>(), Arg.Any<bool>());
+		_templateProvider.DidNotReceive().GetTemplateDirectories(Arg.Any<string>());
+	}
+
+	[TestCase("8.3.3", "8.0.10")]
+	[TestCase("8.0.10", "8.0.10")]
+	[TestCase("8.0.9", "8.0.8")]
+	[TestCase("8.0.3", "8.0.3")]
+	[Description("Uses the closest legacy snapshot that is not newer than a Creatio version below the current template's minimum.")]
+	public void Create_ShouldUseClosestLegacyTemplate_WhenCreatioVersionIsBelowCurrentTemplateMinimum(
+		string creatioVersion, string expectedTemplateVersion) {
+		// Arrange
+		StubLegacyTemplateDirectories();
+
+		// Act
+		_creator.Create(ProjectName, PackageName, VendorPrefix, false, creatioVersion, _ => false);
+
+		// Assert
+		_templateProvider.Received(1).CopyTemplateFolder(
+			"ui-project", Arg.Is<string>(path => path.EndsWith(".tmp")), expectedTemplateVersion, "ui");
+	}
+
+	[TestCase("ten")]
+	[TestCase("10")]
+	[TestCase("7.9.0")]
+	[Description("Rejects an unparsable or unsupported Creatio version before any package or project is created.")]
+	public void Create_ShouldRejectCreatioVersion_BeforeAnySideEffect_WhenVersionIsInvalidOrUnsupported(
+		string creatioVersion) {
+		// Arrange
+		StubLegacyTemplateDirectories();
+
+		// Act
+		Action act = () => _creator.Create(ProjectName, PackageName, VendorPrefix, true, creatioVersion, _ => false);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(
+				because: "a version that maps to no shipped template must fail instead of guessing one")
+			.WithMessage($"*Creatio version '{creatioVersion}'*",
+				because: "the message must name the rejected version so the caller can correct it");
+		_packageCreator.DidNotReceiveWithAnyArgs().Create(default, default);
+		_templateProvider.DidNotReceiveWithAnyArgs().CopyTemplateFolder(default, default, default, default);
+	}
+
+	[Test]
+	[Description("Reports the current template, the requested Creatio version and the generated @creatio-devkit/common range.")]
+	public void Create_ShouldReportCurrentTemplateAndDevkitRange_WhenCurrentTemplateIsSelected() {
+		// Arrange
+		StubGeneratedPackageJson("^0.834.0");
+
+		// Act
+		_creator.Create(ProjectName, PackageName, VendorPrefix, true, "10.0.0", _ => false);
+
+		// Assert
+		_logger.Received(1).WriteInfo(
+			"UI project template: ui-project-Empty (current template, targets Creatio 8.3.4 and later); "
+			+ "requested Creatio version: 10.0.0; @creatio-devkit/common: ^0.834.0.");
+	}
+
+	[Test]
+	[Description("Reports the legacy snapshot that was used so an older SDK line is never selected silently.")]
+	public void Create_ShouldReportLegacyTemplateAndDevkitRange_WhenLegacyTemplateIsSelected() {
+		// Arrange
+		StubLegacyTemplateDirectories();
+		StubGeneratedPackageJson("^0.808.0");
+
+		// Act
+		_creator.Create(ProjectName, PackageName, VendorPrefix, true, "8.2.0", _ => false);
+
+		// Assert
+		_logger.Received(1).WriteInfo(
+			"UI project template: ui/8.0.10/ui-project-Empty (legacy template for Creatio 8.0.10); "
+			+ "requested Creatio version: 8.2.0; @creatio-devkit/common: ^0.808.0.");
+	}
+
+	[Test]
+	[Description("Reports an unknown SDK range instead of failing when the generated package.json cannot be read as JSON.")]
+	public void Create_ShouldReportUnknownDevkitRange_WhenGeneratedPackageJsonIsMalformed() {
+		// Arrange
+		string packageJsonPath = Path.Combine(RootPath, "projects", ProjectName, "package.json");
+		_fileSystem.ExistsFile(packageJsonPath).Returns(true);
+		_fileSystem.ReadAllText(packageJsonPath).Returns("not-json");
+
+		// Act
+		_creator.Create(ProjectName, PackageName, VendorPrefix, false, string.Empty, _ => false);
+
+		// Assert
+		_logger.Received(1).WriteInfo(
+			"UI project template: ui-project (current template, targets Creatio 8.3.4 and later); "
+			+ "requested Creatio version: not specified; @creatio-devkit/common: unknown.");
+	}
+
+	#endregion
+
+	#region Methods: Private
+
+	private void StubLegacyTemplateDirectories() {
+		string legacyRoot = Path.Combine("tpl", "ui");
+		_templateProvider.GetTemplateDirectories("ui").Returns([
+			Path.Combine(legacyRoot, "8.0.10"),
+			Path.Combine(legacyRoot, "8.0.3"),
+			Path.Combine(legacyRoot, "8.0.8"),
+			Path.Combine(legacyRoot, "not-a-version")
+		]);
+	}
+
+	private void StubGeneratedPackageJson(string devkitRange) {
+		string packageJsonPath = Path.Combine(RootPath, "projects", ProjectName, "package.json");
+		_fileSystem.ExistsFile(packageJsonPath).Returns(true);
+		_fileSystem.ReadAllText(packageJsonPath).Returns(
+			$"{{\"dependencies\":{{\"@creatio-devkit/common\":\"{devkitRange}\"}}}}");
 	}
 
 	#endregion

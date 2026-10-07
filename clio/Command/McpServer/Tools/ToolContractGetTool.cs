@@ -6488,7 +6488,7 @@ internal static class ToolContractCatalog {
 					Field(EmptyFieldName, BooleanType,
 						"When true, scaffold the 'ui-project-Empty' minimal template instead of the default 'ui-project' template. Default false."),
 					Field(CreatioVersionFieldName, StringType,
-						"Optional Creatio version to pick a matching UI project template. Omit to use the template provider's current default.")
+						"Optional Creatio version used to select the UI project template, as major.minor[.build] (for example '10.0.0'). Omitted, or 8.3.4 and later (10.x included), selects the current template; an older version selects the closest legacy template (8.0.3, 8.0.8 or 8.0.10); a version below 8.0.3 or an unparsable value is rejected before anything is written. The success output names the template used and the @creatio-devkit/common range written to package.json.")
 				],
 				Validators: [
 					new ToolContractValidator(

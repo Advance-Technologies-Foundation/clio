@@ -26,7 +26,14 @@ OPTIONS
 
     --empty                Create an empty UI project.
 
-    --version              Creatio version used to select a compatible template.
+    --version              Creatio version used to select the UI project
+                           template, as major.minor[.build]. Omitted, or 8.3.4
+                           and later (10.x included), uses the current template.
+                           An older version uses the closest legacy template
+                           (8.0.3, 8.0.8 or 8.0.10). A version below 8.0.3 or an
+                           invalid value is rejected before anything is written.
+                           The output names the template used and the
+                           @creatio-devkit/common range in package.json.
 
     --silent               Use default behavior without user interaction.
 
