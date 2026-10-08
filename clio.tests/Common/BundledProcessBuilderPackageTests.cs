@@ -74,7 +74,7 @@ public class BundledProcessBuilderPackageTests {
 	/// SHA-256 of the committed archive. Produced by <c>rebundle-process-builder.ps1</c> at
 	/// <see cref="ExpectedArchiveVersion"/> from
 	/// the <c>ProcessBuilder</c> repository (<c>packages/CrtProcessBuilder</c>, branch
-	/// <c>feature/ENG-102537-unconfigured-element-notices</c>, cut from <c>main</c> — so the cut also carries everything
+	/// <c>feature/ENG-99856-multi-instance</c>, merged from <c>main</c> — so the cut also carries everything
 	/// <c>main</c> had accumulated by then, including the ENG-95890/ENG-98448 branch-band layout and connector
 	/// geometry that landed there while this branch was open, and, transitively, the ENG-95986 Send-email
 	/// template-mode work and the earlier ENG-91853 flow-labels and ENG-94374 process-versioning work), at the
@@ -110,7 +110,7 @@ public class BundledProcessBuilderPackageTests {
 	/// descriptions advertise is a capability. Each raise is what makes a stand still carrying an earlier archive
 	/// DETECTABLY behind — same-version re-cuts make equal version numbers mean nothing, which the convergence
 	/// check cannot see through.</para>
-	/// <para>On TOP of that (an earlier cut, merged from <c>feature/ENG-96503-read-data-count-aggregation</c>): the Read
+	/// <para>On TOP of that (this cut, merged from <c>feature/ENG-96503-read-data-count-aggregation</c>): the Read
 	/// data element's <c>count</c> and <c>aggregation</c> modes — <c>readData.mode</c> takes <c>first</c> |
 	/// <c>count</c> | <c>aggregation</c>, the aggregation pair validated against the source object's column types,
 	/// the result flag moved to the output the runtime actually writes — AND a same-batch dependency-guard bypass
@@ -122,7 +122,7 @@ public class BundledProcessBuilderPackageTests {
 	/// guards with the union of a frozen pre-batch capture and a fresh live re-scan, so neither a dependent cleared
 	/// nor one added mid-batch escapes detection. Every PATCH digit over 1.6.2.5 fixes something a review or a
 	/// live-test run found, and each is raised so a stand still carrying an earlier one is DETECTABLY behind.</para>
-	/// <para>1.6.5.14 (an earlier cut, from <c>feature/ENG-95890-ENG-98448-layout-and-connector-geometry</c>): the
+	/// <para>1.6.5.14 (THIS cut, from <c>feature/ENG-95890-ENG-98448-layout-and-connector-geometry</c>): the
 	/// band layout and connector geometry (ENG-95890, ENG-98448), and on top of them the second review round's
 	/// four fixes. The one that decides whether this archive may ship at all is
 	/// <c>ModifyProcessRequest.ConfirmLayoutChange</c> becoming NULLABLE. This version changed which arm of a
@@ -133,7 +133,7 @@ public class BundledProcessBuilderPackageTests {
 	/// released clio and no direct web-service consumer could send it. Absence now means a caller that predates
 	/// the gate and the edit applies, which is why the clio side must send the member on EVERY request rather
 	/// than only when true - see <c>ModifyBusinessProcessServiceTests</c>, which pins that.</para>
-	/// <para>1.6.2.8 (an earlier cut): two more post-merge review findings on the same feature branch, both confirmed
+	/// <para>1.6.2.8 (this cut): two more post-merge review findings on the same feature branch, both confirmed
 	/// against current code before fixing. <c>ProcessElementDependencyScanner.CaptureSnapshot</c> now also walks
 	/// <c>schema.ExecutionContexts</c> — a second schema-level parameter collection, distinct from
 	/// <c>schema.Parameters</c>, that <c>ProcessParameterService</c>'s parameter-delete guard already scanned; a
@@ -142,14 +142,14 @@ public class BundledProcessBuilderPackageTests {
 	/// — a shipped Function-mode element can carry stale stored values from a designer-side mode switch (the
 	/// designer does not clear them the way this package's own <c>Apply</c> does), and reporting them produced a
 	/// block <c>build</c>/<c>modify</c> immediately refuses, breaking the round-trip.</para>
-	/// <para>1.6.2.9 (an earlier cut): a High-severity post-merge finding on <c>PreconfiguredPageApplier.Apply</c> — it
+	/// <para>1.6.2.9 (this cut): a High-severity post-merge finding on <c>PreconfiguredPageApplier.Apply</c> — it
 	/// mutated the page (and, further down, buttons/performer/data sources) BEFORE its stale-data-source
 	/// dependency guard ran, so a refusal from that guard left the page already switched to the retarget's
 	/// destination while the stale, now-orphaned parameter it named stayed in place. <c>ApplyPage</c> and
 	/// <c>ApplyDataSources</c> are now split into a read-only resolve phase and a mutation-only write phase; every
 	/// guard — the newly-hoisted "no buttons on a new Freedom element" check included — now runs before any write,
 	/// in the method's original relative write order, so a refusal leaves the element exactly as it was.</para>
-	/// <para>1.6.2.10 (an earlier cut): the same atomicity fix, closed the rest of the way. <c>ApplyPerformer</c> called
+	/// <para>1.6.2.10 (this cut): the same atomicity fix, closed the rest of the way. <c>ApplyPerformer</c> called
 	/// the shared <c>IUserTaskPerformerApplier.ApplyToUserTask</c> — which writes the owner/role assignment —
 	/// BEFORE its own "showPage applies to a user performer only" gate, so a role/manager performer with an
 	/// explicit <c>showPage</c> wrote the assignment and only then refused; it now uses the shared mechanism's own
@@ -158,32 +158,28 @@ public class BundledProcessBuilderPackageTests {
 	/// <c>ApplyRecommendation</c> were each already validate-before-write internally, but ran in the write phase
 	/// AFTER the page had already been written; both are now split into a resolve half (validation, no schema
 	/// mutation) and a write half, so every guard in the method runs before any of it commits.</para>
-	/// <para>1.6.2.11 (an earlier cut): a self-regression the atomicity split introduced, found by the same review pass.
+	/// <para>1.6.2.11 (this cut): a self-regression the atomicity split introduced, found by the same review pass.
 	/// The original <c>ApplyDataSources</c> caught two data sources sharing a name in one request because each
 	/// iteration added its parameter to <c>element.Parameters</c> immediately, so a later duplicate hit the
 	/// existing name-conflict check; splitting resolution from writing removed that side effect, so
 	/// <c>ResolveDataSources</c> now runs its own intra-request duplicate check, mirroring the one
 	/// <c>ResolveButtons</c> already runs for completing buttons.</para>
-	/// <para>1.6.2.12 (an earlier cut): the previous cut's new check used <c>StringComparer.Ordinal</c>, but the
+	/// <para>1.6.2.12 (this cut): the previous cut's new check used <c>StringComparer.Ordinal</c>, but the
 	/// runtime's parameter dictionary is case-insensitive while the generated parameter name is only
 	/// case-sensitive as TEXT, so <c>PDS</c> and <c>pds</c> in one request both passed the check and then
 	/// collided at write time the same way an exact duplicate does. Switched to <c>OrdinalIgnoreCase</c>,
 	/// matching the sibling existing-parameter conflict check right below it and <c>ResolveButtons</c>' own
 	/// duplicate check.</para>
-	/// <para>What THIS cut carries, over the 1.6.6.88 this file previously pinned (ENG-102537): an element a
-	/// create or modify request touched is checked once, at the END of the request, against the schema the request
-	/// leaves, and reported with a Warning when it still lacks what it needs to run - Read data, Modify data, Add
-	/// data, Change access rights, Approval, Open edit page, Send email; Delete data, which already warned
-	/// (ENG-92709), now goes through the same check. Warnings, not refusals:
-	/// configuring a bare element in a later call stays supported. A generic userTask naming
-	/// <c>AutoGeneratedPageUserTask</c> or <c>UserQuestionUserTask</c> is REFUSED at create, because the builder
-	/// has no block that could ever configure either. 1.6.6.91 is the review round on top of 1.6.6.90: a false left
-	/// on IsMatchConditions under source None no longer excuses a missing filter (nor is it preserved as update-all),
-	/// an addMapping onto a process parameter no longer counts as touching the element it names, and the check runs
-	/// after the pre-save gate. No operation contract or authorization gate moved. The
-	/// multi-instance Sub-process element (ENG-99856) and the ENG-95890/ENG-98448 branch-band layout arrived in
-	/// earlier cuts of this line.</para>
-	/// <para>The FOURTH digit moves here: the third already stood at 1.6.6 when this branch started, so this cut
+	/// <para>What THIS cut carries, over the 1.6.5.14 this file previously pinned: MULTI-INSTANCE on the
+	/// Sub-process element (ENG-99856) - running the called process once per item of a collection, through
+	/// <c>subProcess.multiInstanceOptions</c>. It REMOVES a refusal rather than adding one: the Sub-process
+	/// element shipped in ENG-92707 refused any multi-instance element outright, and the paragraph that said so
+	/// is gone with it. A converted element stops carrying the callee's parameters and carries two collections
+	/// and three iteration counters instead, with the callee's contract one level down in the input collection's
+	/// item properties - which is why a per-item value is addressed by a DOTTED name and a write into the output
+	/// collection is refused at any depth. Also in the cut, from the <c>main</c> merge: the ENG-95890/ENG-98448
+	/// branch-band layout and connector geometry.</para>
+	/// <para>The FOURTH digit moves here: the third already stood at 1.6.3 when this branch started, so this cut
 	/// continues that line rather than opening one. The paragraph below records why the third digit was moved by
 	/// the cut that opened it, which is the case that was the OPPOSITE of the rule stated above, and the reason is
 	/// the package repository's own
@@ -201,10 +197,10 @@ public class BundledProcessBuilderPackageTests {
 	/// equal version numbers mean nothing, which the convergence check cannot see through.</para>
 	/// <para>
 	/// This cut did NOT run under <c>-SkipTests</c>: the script built the package sources and ran their suite
-	/// on the producing commit before packing anything — 3136 passed, 0 failed, 0 skipped, measured on this cut
+	/// on the producing commit before packing anything — 3088 passed, 0 failed, 0 skipped, measured on this cut
 	/// and not carried over from a previous one. That matters beyond hygiene, because <c>-SkipTests</c> is the
 	/// ONE path that can reach the coarse failure the two security counts below exist to catch. The script also
-	/// verified the archive inventory it produced (230 entries, 2 DLLs, both under <c>Files/Libs</c>, compile
+	/// verified the archive inventory it produced (229 entries, 2 DLLs, both under <c>Files/Libs</c>, compile
 	/// marker present, no own assembly, nothing that executes on install). The byte-for-byte comparison of
 	/// every archive entry
 	/// against the commit's CHECKOUT rendering was NOT re-run here, and the clean-tree refusal does NOT cover
@@ -291,7 +287,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"B444D93A7A7B8807ED86F8A00B0C1B0F9A5B7DD0422580C948E65D6306E4B539";
+		"816CBDF536AEA05413CD50CDAA8EFEC0570BA2C0CCDB74BCE29F573E47BCD7B8";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -319,7 +315,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.6.91";
+	private const string ExpectedArchiveVersion = "1.6.6.88";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, written by
@@ -331,7 +327,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "46ab0656eceac431fb5f0edc25b08e21c2718e61";
+	private const string ExpectedProducingCommit = "7ffb6c6bd00d0139efcd32095918f02dce4cd19d";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -357,7 +353,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1791468946000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1791441975000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
