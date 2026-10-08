@@ -6,7 +6,7 @@ namespace Clio.Command.McpServer.Tools;
 /// Lifecycle status of a tracked restart readiness wait.
 /// </summary>
 public enum RestartOperationStatus {
-	/// <summary>The restart request already succeeded and the readiness wait is still polling.</summary>
+	/// <summary>The restart is under way: its request has not returned yet, or it was accepted and the readiness wait is still polling.</summary>
 	Running,
 
 	/// <summary>The instance answered its health-check within the timeout — it is ready.</summary>
