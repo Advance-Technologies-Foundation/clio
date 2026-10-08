@@ -72,12 +72,28 @@ internal sealed class GuidanceGetTool {
 		[Required] GuidanceGetArgs args,
 		CancellationToken cancellationToken = default) {
 		GuidanceGetResponse response = ResolveGuidance(args);
-		// ENG-100157: metered on the way out, so every exit (an article, a refusal, a failure) is counted at
-		// the size the agent actually receives. Only a served article counts as a read.
-		_servedContentMeter.RecordGuidance(response.Article?.Name, response.Article?.LibraryVersion,
-			McpResultSize.Of(response));
+		// ENG-100157: metered on the way out, so every response this method returns (an article, a refusal,
+		// a failure) is counted at the size the agent receives. Only a served article counts as a read.
+		if (_servedContentMeter.IsCounting) {
+			_servedContentMeter.RecordGuidance(response.Article?.Name, FirstPartyLibraryVersion(response.Article),
+				McpResultSize.Of(response));
+		}
 		return Task.FromResult(response);
 	}
+
+	/// <summary>
+	/// The version of the library that served <paramref name="article"/>, only when that library is clio's own.
+	/// </summary>
+	/// <remarks>
+	/// A partner or customer library carries a version its owner chose ("2.0.0-acme-bank" is a valid one),
+	/// so reporting it would upload customer-authored data next to the installation id. The telemetry
+	/// service additionally accepts only a plain numeric version, because a Git source can claim any
+	/// library id.
+	/// </remarks>
+	private static string? FirstPartyLibraryVersion(GuidanceArticle? article) =>
+		string.Equals(article?.LibraryId, CuratedKnowledgeSourceDefaults.LibraryId, StringComparison.Ordinal)
+			? article!.LibraryVersion
+			: null;
 
 	private GuidanceGetResponse ResolveGuidance(GuidanceGetArgs args) {
 		try {

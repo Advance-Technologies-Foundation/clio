@@ -246,7 +246,7 @@ public sealed class TelemetryService : ITelemetryService
 			? DefaultTelemetryRoot
 			: telemetryRoot;
 		_logger = logger ?? NullLogger<TelemetryService>.Instance;
-		_servedContentMeter = servedContentMeter;
+		_servedContentMeter = servedContentMeter ?? NullServedContentMeter.Instance;
 	}
 
 	/// <inheritdoc />
@@ -450,7 +450,7 @@ public sealed class TelemetryService : ITelemetryService
 	/// <summary>
 	/// Wire key of the guidance library version stamped beside the served-content counters.
 	/// </summary>
-	internal const string GuidanceLibraryVersionAttribute = "guidance_library_version";
+	private const string GuidanceLibraryVersionAttribute = "guidance_library_version";
 
 	/// <summary>
 	/// The served-content counters clio stamps on an event: what this process served the agent so far.
@@ -600,18 +600,36 @@ public sealed class TelemetryService : ITelemetryService
 	/// </remarks>
 	private void AddServedContentAttributes(List<OpenTelemetryAttribute> attributes)
 	{
-		if (_servedContentMeter is null || !_servedContentMeter.TryGetSnapshot(out ServedContentSnapshot served)) {
+		if (!_servedContentMeter.TryGetSnapshot(out ServedContentSnapshot served)) {
 			return;
 		}
 		foreach ((string name, long value) in ServedContentFields(served)) {
 			attributes.Add(new OpenTelemetryAttribute(name, new OpenTelemetryValue(IntValue: value)));
 		}
-		// The version comes out of a published library manifest, not from clio's own code, so it is
-		// shape-checked like any other token before it reaches a ClickHouse column. A value that is not a
-		// bounded lowercase token is dropped rather than truncated: a guessed version is worse than none.
-		if (IsAllowedToken(served.GuidanceLibraryVersion)) {
+		// The version comes out of a library manifest, not from clio's own code. The guidance tool passes only
+		// the first-party library's, but a Git source can claim that library id, so only a plain numeric
+		// version is stored: a suffix such as "-acme-bank" is exactly the customer data this must not carry.
+		// Anything else is dropped rather than trimmed, because a guessed version is worse than none.
+		if (IsAllowedLibraryVersion(served.GuidanceLibraryVersion)) {
 			attributes.Add(StringAttribute(GuidanceLibraryVersionAttribute, served.GuidanceLibraryVersion));
 		}
+	}
+
+	/// <summary>
+	/// Accepts a plain published version: two to four dot-separated groups of one to nine ASCII digits.
+	/// </summary>
+	/// <remarks>
+	/// Linear and regex-free like <see cref="IsAllowedToken"/>. Deliberately narrower than a version string
+	/// can be: pre-release and build suffixes are free text chosen by whoever published the library.
+	/// </remarks>
+	internal static bool IsAllowedLibraryVersion(string value)
+	{
+		if (string.IsNullOrEmpty(value) || value.Length > MaxFieldLength) {
+			return false;
+		}
+		string[] groups = value.Split('.');
+		return groups.Length is >= 2 and <= 4
+			&& groups.All(group => group.Length is >= 1 and <= 9 && group.All(char.IsAsciiDigit));
 	}
 
 	private OpenTelemetryLogEvent BuildLogEvent(TelemetryEventRequest request, string eventId, DateTimeOffset timestamp,

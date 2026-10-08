@@ -16,6 +16,10 @@ namespace Clio.Mcp.E2E;
 /// ENG-100157: the real stdio server counts the guidance and contracts it served and stamps the totals on
 /// the telemetry events the same process records.
 /// </summary>
+/// <remarks>
+/// Keep exactly ONE test in this fixture. The counters are cumulative for the server process the fixture
+/// owns, and the "nothing served yet" assertion holds only while no other test has used that process.
+/// </remarks>
 [TestFixture]
 [Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
@@ -32,12 +36,11 @@ public sealed class ServedContentTelemetryE2ETests : McpContractFixtureBase {
 	];
 
 	private readonly SyntheticKnowledgeNuGetFixture _fixture;
-	private readonly SyntheticPackageEvidence _package;
 	private string _telemetryHome = null!;
 
 	public ServedContentTelemetryE2ETests() {
 		_fixture = SyntheticKnowledgeNuGetFixture.Create();
-		_package = _fixture.PublishValid("1.0.0", sequence: 10, revision: "served-content");
+		_fixture.PublishValid("1.0.0", sequence: 10, revision: "served-content");
 	}
 
 	[OneTimeTearDown]
@@ -59,9 +62,9 @@ public sealed class ServedContentTelemetryE2ETests : McpContractFixtureBase {
 	[AllureTag(GuidanceGetTool.ToolName)]
 	[AllureTag(ToolContractGetTool.ToolName)]
 	[AllureName("send-telemetry stamps what the same session served")]
-	[AllureDescription("Starts the real MCP server over an isolated home with a verified synthetic knowledge library, reads one article twice and one contract, then records stage events and verifies the stored event carries the served totals - and that an event recorded before anything was served carries none.")]
+	[AllureDescription("Starts the real MCP server over an isolated home with a verified synthetic knowledge library, reads one article three times and one contract, then records stage events and verifies the stored event carries the exact served totals - and that an event recorded before anything was served carries none.")]
 	[Description("Stamps the guidance and contract totals the same stdio process served on the stage it records, at the size the agent received, and stamps nothing before anything was served.")]
-	public async Task SendTelemetry_ShouldStampServedContent_FromTheSameProcess() {
+	public async Task SendTelemetry_ShouldStampServedContent_WhenTheSameProcessServedIt() {
 		// Arrange
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
 		string beforeSessionId = Guid.NewGuid().ToString();
@@ -86,49 +89,66 @@ public sealed class ServedContentTelemetryE2ETests : McpContractFixtureBase {
 		});
 
 		// Act
-		CallToolResult beforeResult = await SendStage(context, beforeSessionId, consent: "granted");
-		CallToolResult firstRead = await CallSelectedGuide(context);
-		CallToolResult secondRead = await CallSelectedGuide(context);
-		CallToolResult contract = await context.Session.CallToolAsync(
-			ToolContractGetTool.ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["tool-names"] = new[] { SendTelemetryTool.ToolName }
-				}
-			},
-			context.CancellationTokenSource.Token);
-		CallToolResult afterResult = await SendStage(context, afterSessionId, consent: null);
+		CallToolResult beforeResult = await AllureApi.Step("Record a stage before anything is served",
+			() => SendStage(context, beforeSessionId, consent: "granted"));
+		List<CallToolResult> reads = await AllureApi.Step("Read the same article three times", async () => {
+			List<CallToolResult> results = [];
+			for (int read = 0; read < 3; read++) {
+				results.Add(await CallSelectedGuide(context));
+			}
+			return results;
+		});
+		CallToolResult contract = await AllureApi.Step("Read the send-telemetry contract once",
+			() => context.Session.CallToolAsync(
+				ToolContractGetTool.ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["tool-names"] = new[] { SendTelemetryTool.ToolName }
+					}
+				},
+				context.CancellationTokenSource.Token));
+		CallToolResult afterResult = await AllureApi.Step("Record a stage after serving",
+			() => SendStage(context, afterSessionId, consent: null));
 
 		// Assert
+		AllureApi.Step("Every call succeeded", () => {
+			beforeResult.IsError.Should().NotBeTrue(because: "the consent-granting stage must be recorded");
+			reads.Should().OnlyContain(read => read.IsError != true,
+				because: "the verified synthetic article must be served every time");
+			contract.IsError.Should().NotBeTrue(because: "the send-telemetry contract must be served");
+			afterResult.IsError.Should().NotBeTrue(because: "the second stage must be recorded");
+		});
 		AllureApi.Step("The stage recorded before anything was served carries no served totals", () => {
-			beforeResult.IsError.Should().NotBeTrue(
-				because: "the consent-granting stage must be recorded");
-			Dictionary<string, JsonElement> before = ReadEventAttributes(beforeSessionId);
-			before.Keys.Should().NotContain(ServedContentKeys,
+			ReadEventAttributes(beforeSessionId).Keys.Should().NotContain(ServedContentKeys,
 				because: "a process that served nothing stamps nothing - zeros would read as a session that cost nothing");
 		});
-		AllureApi.Step("The stage recorded after serving carries the exact totals", () => {
-			afterResult.IsError.Should().NotBeTrue(
-				because: "the second stage must be recorded");
-			firstRead.IsError.Should().NotBeTrue(
-				because: "the verified synthetic article must be served");
-			secondRead.IsError.Should().NotBeTrue(
-				because: "the same article must be served again");
-			contract.IsError.Should().NotBeTrue(
-				because: "the send-telemetry contract must be served");
-			Dictionary<string, JsonElement> after = ReadEventAttributes(afterSessionId);
-			IntValue(after, "guidance_reads").Should().Be(2,
-				because: "the article was served twice");
-			IntValue(after, "guidance_rereads").Should().Be(1,
-				because: "the second read was an article this session already had");
-			IntValue(after, "guidance_bytes").Should().Be(TextBytes(firstRead) + TextBytes(secondRead),
+		Dictionary<string, JsonElement> after = ReadEventAttributes(afterSessionId);
+		AllureApi.Step("guidance_reads counts every served article", () => {
+			IntValue(after, "guidance_reads").Should().Be(3,
+				because: "the article was served three times");
+		});
+		AllureApi.Step("guidance_rereads counts the reads of an article the session already had", () => {
+			IntValue(after, "guidance_rereads").Should().Be(2,
+				because: "the second and third reads served an article this session had already received");
+		});
+		AllureApi.Step("guidance_bytes equals the guidance text the agent received", () => {
+			IntValue(after, "guidance_bytes").Should().Be(reads.Sum(TextBytes),
 				because: "the count is the size of the result text the agent received over the wire");
+		});
+		AllureApi.Step("contract_reads counts the one contract response", () => {
 			IntValue(after, "contract_reads").Should().Be(1,
 				because: "one contract response was served");
+		});
+		AllureApi.Step("contract_bytes equals the contract text the agent received", () => {
 			IntValue(after, "contract_bytes").Should().Be(TextBytes(contract),
 				because: "the count is the size of the contract text the agent received over the wire");
-			after["guidance_library_version"].GetProperty("string_value").GetString().Should().Be(_package.PackageVersion,
-				because: "the stamp names the library generation that served the article");
+		});
+		AllureApi.Step("A third-party library version is not reported", () => {
+			after.Keys.Should().NotContain("guidance_library_version",
+				because: "the synthetic library is not clio's own, and a third-party library's version is its owner's data");
+		});
+		AllureApi.Step("The stamped event is schema 3", () => {
+			after.Should().ContainKey("schema_version", because: "every event carries its payload shape");
 			after["schema_version"].GetProperty("string_value").GetString().Should().Be("3",
 				because: "the served totals are the schema 3 payload shape");
 		});

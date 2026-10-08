@@ -1,5 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.IO.Abstractions.TestingHelpers;
+using System.Linq;
+using System.Text.Json;
 using Clio;
 using Clio.Command.McpServer;
 using Clio.Command.McpServer.Knowledge;
@@ -7,6 +10,7 @@ using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using Clio.Common.Telemetry;
 using Clio.Tests.Infrastructure;
+using Clio.UserEnvironment;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
@@ -42,7 +46,60 @@ public class BindingsModuleMcpHostGateTests {
 		first.Should().BeOfType(expectedMeterType,
 			because: "only the stdio host counts; every other container, mcp-http's included, keeps the inert meter so one count never mixes sessions");
 		second.Should().BeSameAs(first,
-			because: "get-guidance, get-tool-contract and the telemetry service must share one count, or the stamp would never see what the tools recorded");
+			because: "a transient meter would hand every resolution its own empty count");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Wires get-tool-contract and the telemetry service of the stdio host to one count, so a contract the tool served is on the next event the host records (ENG-100157).")]
+	public void Register_ShouldStampWhatTheHostToolServed_WhenTheStdioHostRecordsAnEvent() {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		using ServiceProvider provider = (ServiceProvider)new BindingsModule(fileSystem)
+			.Register(profile: BindingsModuleRegistrationProfile.Bootstrap, registerMcpHost: true);
+		ToolContractGetTool contractTool = provider.GetRequiredService<ToolContractGetTool>();
+		ITelemetryService telemetry = provider.GetRequiredService<ITelemetryService>();
+		contractTool.GetToolContracts();
+
+		// Act
+		TelemetryEventResult result = telemetry.Send(new TelemetryEventRequest(
+			"018f6e4a-0000-7000-9000-000000000158", "workflow_started", TelemetryConsent: "granted"));
+
+		// Assert
+		result.Status.Should().Be("recorded",
+			because: "a granted-consent stage event is stored in the host's telemetry spool");
+		string eventsDirectory = TelemetryStoragePaths.EventsDirectory(TelemetryStoragePaths.ResolveRoot());
+		string eventFile = fileSystem.Directory.GetFiles(eventsDirectory, "*.json").Should().ContainSingle(
+			because: "exactly one event was recorded").Subject;
+		using JsonDocument document = JsonDocument.Parse(fileSystem.File.ReadAllText(eventFile));
+		Dictionary<string, JsonElement> attributes = document.RootElement.GetProperty("attributes")
+			.EnumerateArray()
+			.ToDictionary(attribute => attribute.GetProperty("key").GetString(),
+				attribute => attribute.GetProperty("value").Clone());
+		attributes.Should().ContainKey("contract_reads",
+			because: "the contract the host's tool served must reach the host's telemetry service through one shared meter; a meter the DI graph failed to hand to either side stamps nothing");
+		attributes["contract_reads"].GetProperty("int_value").GetInt64().Should().Be(1,
+			because: "exactly one contract response was served before the event was recorded");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Keeps the inert meter on the mcp-http build path (RegisterInto plus the transport-neutral RegisterMcpServer), which serves many sessions from one process (ENG-100157).")]
+	public void RegisterInto_ShouldKeepTheInertMeter_WhenBuildingTheMcpHttpHost() {
+		// Arrange: McpHttpServerCommand's graph - the shared registrations plus the transport-neutral MCP
+		// server builder, and deliberately NOT the stdio block of Register, which that host never runs.
+		IServiceCollection services = new ServiceCollection();
+		ISettingsRepository settingsRepository = new BindingsModule()
+			.RegisterInto(services, applyBootstrapRepairs: false);
+		BindingsModule.RegisterMcpServer(services, settingsRepository);
+		using ServiceProvider provider = services.BuildServiceProvider();
+
+		// Act
+		IServedContentMeter meter = provider.GetRequiredService<IServedContentMeter>();
+
+		// Assert
+		meter.Should().BeSameAs(NullServedContentMeter.Instance,
+			because: "one process count on a host that serves many sessions would stamp one session's cost on another session's events");
 	}
 
 	[TestCase(false)]

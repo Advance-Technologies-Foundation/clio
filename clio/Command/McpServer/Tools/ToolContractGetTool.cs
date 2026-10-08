@@ -30,7 +30,7 @@ public sealed class ToolContractGetTool {
 		"Call get-tool-contract with no arguments for a compact index of every tool.";
 
 	private readonly IMcpToolInvokerRegistry? _toolInvokerRegistry;
-	private readonly IServedContentMeter? _servedContentMeter;
+	private readonly IServedContentMeter _servedContentMeter;
 
 	/// <summary>
 	/// Initializes the tool without a registry. Curated contracts and the lossy reflection fallback
@@ -50,13 +50,13 @@ public sealed class ToolContractGetTool {
 	/// only exercise curated contracts).
 	/// </param>
 	/// <param name="servedContentMeter">
-	/// Counts the contract bytes this session served, for the product telemetry stamp. Optional because the
-	/// count is fail-soft enrichment: without it the contract is served exactly the same, just not counted.
+	/// Counts the contract bytes this session served, for the product telemetry stamp. Optional so the
+	/// many direct test constructions stay valid; omitted, the inert meter is used and nothing is counted.
 	/// </param>
 	public ToolContractGetTool(IMcpToolInvokerRegistry? toolInvokerRegistry,
 		IServedContentMeter? servedContentMeter = null) {
 		_toolInvokerRegistry = toolInvokerRegistry;
-		_servedContentMeter = servedContentMeter;
+		_servedContentMeter = servedContentMeter ?? NullServedContentMeter.Instance;
 	}
 
 	/// <summary>
@@ -102,8 +102,12 @@ public sealed class ToolContractGetTool {
 		RequestContext<CallToolRequestParams>? requestContext = null) {
 		ToolContractGetResponse response = ResolveContracts(args, requestContext);
 		// ENG-100157: metered on the way out, so the index, a fitted batch, a full batch and a refusal are all
-		// counted at the size the agent actually receives.
-		_servedContentMeter?.RecordContract(McpResultSize.Of(response));
+		// counted at the size the agent receives. Not for the legacy CAADT 1.4.0 fallback client: it fetches
+		// the full catalog for its own argument validation in a fresh process per call, the agent never
+		// reads it, and counting it would stamp a session that read only a catalog on that client's events.
+		if (_servedContentMeter.IsCounting && !IsLegacyStdioClient(requestContext?.Server?.ClientInfo)) {
+			_servedContentMeter.RecordContract(McpResultSize.Of(response));
+		}
 		return response;
 	}
 

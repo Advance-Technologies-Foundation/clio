@@ -693,7 +693,7 @@ public class BindingsModule {
 		// Inert by default: only the stdio MCP host (Register with registerMcpHost) counts what a session
 		// served, because only there is one process one agent session. Registered for every container so
 		// the telemetry service and the guidance and contract tools always resolve a meter.
-		services.AddSingleton<IServedContentMeter, NullServedContentMeter>();
+		services.AddSingleton<IServedContentMeter>(NullServedContentMeter.Instance);
 		// Singleton: the service is effectively stateless (its only shared mutable state is a static
 		// lock), so a single instance is safe and keeps the lifetime consistent with the singleton
 		// flusher that depends on it (no captured-dependency lifetime mismatch).
@@ -1811,6 +1811,10 @@ public class BindingsModule {
 					// cleanly, so the auto-scan WOULD register it — as a transient, and which registration
 					// won would then depend on declaration order rather than on intent.
 					|| implementedInterface == typeof(IBundledPackageCatalog)
+					// The served-content meter (ENG-100157) is registered explicitly: inert in every container,
+					// counting in the stdio host. As a transient the counting meter would hand every tool and
+					// the telemetry service their own empty count, and the stamp would silently never appear.
+					|| implementedInterface == typeof(IServedContentMeter)
 					// Knowledge services use explicit singleton registrations because they retain immutable
 					// runtime snapshots, source locks, and transport clients across MCP requests.
 					|| implementedInterface.Namespace == typeof(Command.McpServer.Knowledge.IKnowledgeBundleRuntime).Namespace

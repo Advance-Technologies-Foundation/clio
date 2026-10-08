@@ -4505,6 +4505,30 @@ public sealed class ToolContractGetToolTests {
 			because: "a contract read is not a guidance read");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Does not count the catalog the legacy CAADT 1.4.0 fallback client fetches for its own argument validation, which the agent never reads (ENG-100157).")]
+	public void GetToolContracts_ShouldNotMeterTheResponse_WhenTheCallerIsTheLegacyStdioClient() {
+		// Arrange
+		ServedContentMeter meter = new();
+		ToolContractGetTool tool = new(null, meter);
+		ModelContextProtocol.Server.McpServer server = Substitute.For<ModelContextProtocol.Server.McpServer>();
+		server.ClientInfo.Returns(new Implementation { Name = "mcp_client", Version = "1.0" });
+		RequestContext<CallToolRequestParams> requestContext = new(
+			server,
+			new JsonRpcRequest { Method = "tools/call" },
+			new CallToolRequestParams { Name = ToolContractGetTool.ToolName });
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs(), requestContext);
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "the legacy client is still served its catalog");
+		meter.TryGetSnapshot(out _).Should().BeFalse(
+			because: "a catalog fetched for the script's own validation is not content the agent read, and counting it would stamp a session that read nothing else");
+	}
+
 	private static long McpResultBytes(ToolContractGetResponse response) =>
 		Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(response, Clio.BindingsModule.CreateMcpSerializerOptions()));
 }

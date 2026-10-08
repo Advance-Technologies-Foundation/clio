@@ -332,26 +332,26 @@ public sealed class GuidanceGetToolTests {
 	}
 
 	[Test]
-	[Description("Meters a served article as one read at the size the agent receives, with the library version that served it (ENG-100157).")]
+	[Description("Meters a served first-party article as one read at the size the agent receives, with the clio library version that served it (ENG-100157).")]
 	public async Task GetGuidance_ShouldMeterTheServedArticle_WhenTheArticleIsActive() {
 		// Arrange
 		KnowledgeArticleProvenance provenance = new(
-			"partner",
-			"com.example.partner",
-			"2.1.0",
-			"guide.item",
-			"topic.shared",
+			"creatio-curated",
+			CuratedKnowledgeSourceDefaults.LibraryId,
+			"1.16.2",
+			"routing",
+			"topic.routing",
 			42,
 			"sha256:verified",
 			null);
-		_source.FindByName("partner-guide").Returns(new KnowledgeArticleLookup(
+		_source.FindByName("routing").Returns(new KnowledgeArticleLookup(
 			KnowledgeArticleLookupStatus.Active,
-			new KnowledgeArticle("partner-guide", "docs://partner/guides/guide", "Partner guidance - `rule` \"quoted\".\n"),
+			new KnowledgeArticle("routing", "docs://mcp/guides/routing", "Routing guidance - `rule` \"quoted\".\n"),
 			42,
 			provenance));
 
 		// Act
-		GuidanceGetResponse response = await _tool.GetGuidance(new GuidanceGetArgs("partner-guide"));
+		GuidanceGetResponse response = await _tool.GetGuidance(new GuidanceGetArgs("routing"));
 
 		// Assert
 		_meter.TryGetSnapshot(out ServedContentSnapshot served).Should().BeTrue(
@@ -362,8 +362,39 @@ public sealed class GuidanceGetToolTests {
 			because: "it was the first read of that article");
 		served.GuidanceBytes.Should().Be(McpResultBytes(response),
 			because: "the count is the size of the result text the agent reads, serialized with the MCP result options");
-		served.GuidanceLibraryVersion.Should().Be("2.1.0",
-			because: "the library generation that served the article is what tells a before from an after");
+		served.GuidanceLibraryVersion.Should().Be("1.16.2",
+			because: "the clio library generation that served the article is what tells a before from an after");
+	}
+
+	[Test]
+	[Description("Counts a partner or customer article but never records its library version, which its owner chose and may carry their name (ENG-100157).")]
+	public async Task GetGuidance_ShouldNotRecordTheLibraryVersion_WhenTheLibraryIsNotClios() {
+		// Arrange
+		KnowledgeArticleProvenance provenance = new(
+			"partner",
+			"com.example.partner",
+			"2.0.0-acme-bank",
+			"guide.item",
+			"topic.shared",
+			42,
+			"sha256:verified",
+			null);
+		_source.FindByName("partner-guide").Returns(new KnowledgeArticleLookup(
+			KnowledgeArticleLookupStatus.Active,
+			new KnowledgeArticle("partner-guide", "docs://partner/guides/guide", "Partner guidance.\n"),
+			42,
+			provenance));
+
+		// Act
+		await _tool.GetGuidance(new GuidanceGetArgs("partner-guide"));
+
+		// Assert
+		_meter.TryGetSnapshot(out ServedContentSnapshot served).Should().BeTrue(
+			because: "a partner article is still content this session served");
+		served.GuidanceReads.Should().Be(1,
+			because: "the read itself is clio's own count");
+		served.GuidanceLibraryVersion.Should().BeNull(
+			because: "a third-party library version is customer-authored data and must never reach telemetry");
 	}
 
 	[Test]

@@ -127,29 +127,55 @@ lowercase slug rather than as the caller sent it, so one host is one cohort.
 
 **Amended by ENG-100157** (`schema_version` 3): clio stamps what the session served the agent, so the
 cost of a run is visible on a customer machine and not only in our own CI. Five non-negative integer
-counters - `guidance_reads`, `guidance_rereads`, `guidance_bytes`, `contract_reads`, `contract_bytes` -
-and the string `guidance_library_version`. They differ from every other attribute in two ways:
+counters and one string:
+
+- `guidance_reads`: `get-guidance` responses that served an article, re-reads included
+- `guidance_rereads`: of those, the articles this process had already served once
+- `guidance_bytes`: every `get-guidance` response, refusals (unknown name, no active library) included
+- `contract_reads` and `contract_bytes`: every `get-tool-contract` response (the index, a batch, a
+  refusal)
+- `guidance_library_version`: the version of clio's own guidance library that served the latest article
+
+Only those two tools are counted. Guidance read through `resources/read` (the knowledge resources) is
+not, so for a host that reads resources the `guidance_*` values are a lower bound. They differ from
+every other attribute in two ways:
 
 - **Measured by clio, never accepted from the caller.** `IServedContentMeter` counts the
   `get-guidance` and `get-tool-contract` responses in-process, at the UTF-8 size of the result text the
   agent receives (the response serialized with the MCP result options). A caller that sends one of
   these keys is rejected as `unsupported-fields`, like any unknown field. They are clio's own data, the
   counts and sizes of its own output, and carry nothing of the customer's: not even which article was
-  read, only whether it was read before. `guidance_library_version` comes from a published library
-  manifest and is stored only when it passes the same bounded-token shape as `workflow`.
+  read, only whether it was read before. A size is only a size, but it moves with what a response
+  echoes (a requested guide name, a local path), so a byte count is not purely library content.
+  `guidance_library_version` is reported for clio's own library (`com.creatio.clio`) only and only as a
+  plain numeric version (two to four groups of digits). A partner or customer library chooses its own
+  version string, and "2.0.0-acme-bank" is a valid one, so its version is never reported; the numeric
+  shape also stops a Git source that claims the first-party library id. "Never accepted from the
+  caller" holds inside clio only: at the collector an anonymous sender can post any of these keys, so
+  a consumer compares only versions clio actually published.
 - **Cumulative per stdio process, absent until something is served.** One stdio `clio mcp-server`
-  process is one agent session, so the counters are running totals for that process: a session's total
-  is the maximum, the difference between two stages is what was served between them, and a drop marks a
-  new process. They are stamped on every event the same process records - in practice the agent's
-  stage events - and are ABSENT from an event recorded by a process that served nothing. That rule is
+  process is one agent session, so the counters are running totals for that process: the difference
+  between two stages is what was served between them, and the maximum is the process total. A drop in
+  the series marks a new process (a restarted server), whose maximum adds to the previous one rather
+  than replacing it. The totals count from process start, so the first event recorded after a mid-session
+  consent decision includes what was served before it; they are counts of clio's own responses, and
+  nothing is written or uploaded before consent is granted. They are stamped on every event the same
+  process records (in practice the agent's stage events) and are ABSENT from an event recorded by a
+  process that served nothing. That rule is
   load-bearing: the CAADT hook sends its session-start floor and `session_usage` through a separate,
   short-lived `clio mcp-server` per dispatch, which never serves guidance, so zeros from it would read
   as sessions that cost nothing. Only the stdio host counts; every other container, the multi-session
-  mcp-http host included, keeps an inert meter rather than mixing sessions into one count.
+  mcp-http host included, keeps an inert meter rather than mixing sessions into one count. The
+  catalog the legacy CAADT 1.4.0 fallback client (`mcp_client/1.0`) fetches for its own argument
+  validation is not counted either, because the agent never reads it.
 
 `guidance_rereads` is the field the work exists for: a re-read of an article the session already
 received is the measurable trace of a context compaction, which is what multiplies the cost of a
-process build (ENG-99970). Before/after comparisons of guidance changes key on
+process build (ENG-99970). It includes compactions rather than equalling them. A stdio process can
+host more than one run: subagents share the session's MCP process and each re-reads the mandatory
+`core-rules` and `routing` articles, and an IDE host or a cleared conversation keeps the process
+alive into the next run. So the totals of one run are the difference between its own events, not the
+maximum of the process. Before/after comparisons of guidance changes key on
 `guidance_library_version`, because guidance now refreshes independently of the clio version.
 
 Unknown fields are rejected; agent-supplied free strings are
@@ -218,8 +244,10 @@ one path that transitions an existing `granted` decision to `denied`.
 - **ENG-100157:** the six served-content keys must be in the collector's `transform/caadt_attributes`
   allow-list in all three `values-*.yaml` (and `check-vocabulary-sync.ps1` expects 23 keys) BEFORE a clio
   emitting `schema_version` 3 is released - against an older collector they are uploaded and dropped
-  silently, exactly like the ENG-92551 attributes were. A consumer reading them must use
-  `toUInt64OrZero()` on `LogAttributes` and must not read their absence as zero (see decision 7).
+  silently, exactly like the ENG-92551 attributes were. Since this change a consumer routes the
+  served-content keys on `schema_version` 3. A query must first keep only the rows that carry them
+  (`mapContains(LogAttributes, 'guidance_reads')`) and only then cast with `toUInt64OrZero()`: the cast
+  alone turns an absent key into 0, which brings back the free sessions decision 7 exists to keep out.
 - The edge-collector attribute allow-list must accept the stored attribute set in decision 7, and
   its event-name filter must key on the dedicated OTLP `event_name` field (decision 9), not an
   attribute.

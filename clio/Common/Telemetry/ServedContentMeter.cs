@@ -14,6 +14,12 @@ namespace Clio.Common.Telemetry;
 public interface IServedContentMeter
 {
 	/// <summary>
+	/// Gets whether this meter counts at all. A caller checks it before measuring a response, so a host
+	/// that does not count never serializes a response a second time just to have the size discarded.
+	/// </summary>
+	bool IsCounting { get; }
+
+	/// <summary>
 	/// Records one <c>get-guidance</c> response.
 	/// </summary>
 	/// <param name="articleName">
@@ -60,6 +66,9 @@ public sealed class ServedContentMeter : IServedContentMeter
 	private long _contractReads;
 	private long _contractBytes;
 	private string _guidanceLibraryVersion;
+
+	/// <inheritdoc />
+	public bool IsCounting => true;
 
 	/// <inheritdoc />
 	public void RecordGuidance(string articleName, string libraryVersion, long responseBytes)
@@ -113,6 +122,18 @@ public sealed class ServedContentMeter : IServedContentMeter
 /// </remarks>
 public sealed class NullServedContentMeter : IServedContentMeter
 {
+	/// <summary>
+	/// The one inert meter; it holds no state, so every container and every "no meter" default shares it.
+	/// </summary>
+	public static NullServedContentMeter Instance { get; } = new();
+
+	private NullServedContentMeter()
+	{
+	}
+
+	/// <inheritdoc />
+	public bool IsCounting => false;
+
 	/// <inheritdoc />
 	public void RecordGuidance(string articleName, string libraryVersion, long responseBytes)
 	{
